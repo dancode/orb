@@ -186,11 +186,14 @@ bool                gui_build_any_changed( void );
     (widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
     gui_volatile_cb_open records where its commands start, gui_volatile_stamp (called from inside
     the callback body, by gui_volatile_begin) records the window/z/vp/font/clip context and the
-    layout cursor position, and gui_volatile_cb_close records where they end and folds a topology
-    hash.  tess_dispatch (gui_build_tess.c) captures the resulting vertex/index span once the
-    window is tessellated.  gui_update_volatile (wired to gui()->update_volatile) is called by the
-    host on frames where frame_dirty() is false: it re-invokes each row's callback standalone and,
-    if the replay reproduces the exact same command topology, patches the geometry in place.
+    layout cursor position, and gui_volatile_cb_close records where they end and tags the range.
+    tess_dispatch (gui_build_tess.c) then reserves the block a padded region of its window's slot
+    (vertices, indices, and its own GPU commands, each with headroom past the live geometry).
+    gui_update_volatile (wired to gui()->update_volatile) is called by the host on frames where
+    frame_dirty() is false: it re-invokes each row's callback standalone, re-tessellates the
+    result, and patches it into the reserved region -- any output that FITS the reservation is
+    accepted (text may grow/shrink etc); only outgrowing it falls back to one real frame, which
+    recaptures at the larger size.
 
     Reverse direction (backend -> core): gui_update_volatile needs a valid layout/id scope for the
     callback to emit into, which only the UI unit owns (lf(), the id stack).  gui_replay_scope_enter
@@ -200,7 +203,7 @@ bool                gui_build_any_changed( void );
 
 void     gui_volatile_cb_open ( gui_id_t id );                 // (re)open row `id`; cmd_lo = current cmd_count
 void     gui_volatile_stamp   ( f32 x, f32 y, f32 w );          // fill win/z/vp/font/clip + cursor stamp for the open row
-void     gui_volatile_cb_close( gui_volatile_fn fn );           // cmd_hi + topo hash + fn for the open row; tags the command range
+void     gui_volatile_cb_close( gui_volatile_fn fn );           // cmd_hi + fn for the open row; tags the command range
 void     gui_update_volatile  ( void );
 
 /* Implemented in the UI unit (widgets/gui_volatile.c); called only from gui_update_volatile. */

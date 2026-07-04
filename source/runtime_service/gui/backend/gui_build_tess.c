@@ -38,6 +38,11 @@ static struct
     gui_gpu_cmd_t    cmds     [ GUI_MAX_CMDS  ];
     u32                cmd_vp   [ GUI_MAX_CMDS  ];
     u32                cmd_vbase[ GUI_MAX_CMDS  ];  /* vertex-buffer slot where this cmd's geometry starts */
+    u32                cmd_ibase[ GUI_MAX_CMDS  ];  /* index-buffer slot where this cmd's indices start (its
+                                                        draw call's first_index).  Explicit rather than
+                                                        accumulated from elem_counts at flush time so the
+                                                        index buffer may contain reserved gaps (volatile
+                                                        block headroom) between commands. */
 
     u32 vert_count, idx_count, cmd_count;
 
@@ -48,6 +53,16 @@ static struct
        tess are (local_vert - slot_vert_base), making them 0-relative within the slot.  At draw
        time vertex_offset = slot.vert_base shifts them to the correct absolute VB position. */
     u32 slot_vert_base;
+
+    /* Index/command base and tessellation generation of the window slot currently being
+       tessellated -- set alongside slot_vert_base by cache_build_frame's retess path.  Volatile
+       blocks record their position slot-RELATIVE (never absolute) so a later patch can resolve
+       the current absolute position from the live slot table, and stamp slot_tess_gen so a patch
+       only ever writes into geometry produced by the exact tessellation pass that captured it
+       (see backend/gui_build_volatile.c). */
+    u32 slot_idx_base;
+    u32 slot_cmd_base;
+    u32 slot_tess_gen;
 
     /* Set before each cache_tess_window call so tess_ensure_gpu_cmd always opens a fresh
        command for the first primitive of a new slot, even when the previous slot's last
@@ -144,6 +159,9 @@ tess_reset( void )
     s_tess.idx_count       = 0;
     s_tess.cmd_count       = 0;
     s_tess.slot_vert_base  = 0;
+    s_tess.slot_idx_base   = 0;
+    s_tess.slot_cmd_base   = 0;
+    s_tess.slot_tess_gen   = 0;
     s_tess.force_new_cmd   = false;
     s_tess.overflow        = false;
 }
@@ -171,8 +189,10 @@ tess_ensure_gpu_cmd( u32 tex_idx )
         return;
     s_tess.cmd_vp   [ s_tess.cmd_count ] = s_tess.cur_vp;
     /* Vertex span of this command starts at the current vert_count; the next command's vbase (or
-       the final vert_count for the last) bounds it.  Lets a surface upload only its own vertices. */
+       the final vert_count for the last) bounds it.  Lets a surface upload only its own vertices.
+       cmd_ibase records where this command's indices start -- its draw call's first_index. */
     s_tess.cmd_vbase[ s_tess.cmd_count ] = s_tess.vert_count;
+    s_tess.cmd_ibase[ s_tess.cmd_count ] = s_tess.idx_count;
     s_tess.cmds     [ s_tess.cmd_count++ ] = ( gui_gpu_cmd_t ){
         .elem_count = 0,
         .tex_idx    = tex_idx,
@@ -656,21 +676,23 @@ tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     return true;
 }
 
-/* Forward decl: backend/gui_build_volatile.c (included right after this file in the
-   gui_backend.c unity build) implements the volatile-widget registry.  tess_dispatch calls this
-   once a tagged command RANGE's vertices/indices are fully written, handing over the absolute
-   span so gui_update_volatile can patch it later on frames where the UI build is skipped
-   entirely. */
-static void volatile_capture( gui_id_t id, gui_id_t win, u32 vert_base, u32 vert_count,
-                              u32 idx_base, u32 idx_count );
+/* Volatile-widget seam (backend/gui_build_volatile.c, included right after this file in the
+   gui_backend.c unity build).  tess_dispatch calls volatile_range_close once a tagged command
+   RANGE's vertices/indices/GPU commands are fully written; it records the block's slot-relative
+   position, reserves padded headroom past the live geometry (advancing this file's write heads),
+   and stamps the slot tessellation generation.  s_volatile_patching is defined HERE (first in the
+   TU) and set by volatile_patch around its scratch re-tessellation so the range tracking below
+   stays inert during a patch -- a patch must never look like a fresh capture. */
+static bool s_volatile_patching;
+static void volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 cmd_open );
 
 /* Tessellate one frame's semantic command list into s_tess geometry.
 
    `order` is a permutation of [0,count): the indices grouped by clip within each z-run (built by
    cache_tess_window) so equal-clip commands tessellate contiguously and collapse into one GPU batch.
    `fonts` is the parallel font id of each ordered entry (its segment's font).  `win` is the window
-   being tessellated -- passed through only so a volatile-tagged command can register which window
-   owns it (see cmd_volatile_id / gui_volatile_rect).  Before tessellating a command we activate its
+   being tessellated (informational; volatile rows already know their window from emit-time
+   stamping).  Before tessellating a command we activate its
    font so the tess-time lookups -- font_glyph (UVs), font_atlas_idx (atlas), the white texel and
    dash rows -- resolve from the right atlas; tess_ensure_gpu_cmd then splits the GPU batch on the
    resulting atlas change.  The active font is saved and restored so the BUILD phase leaves the
@@ -681,27 +703,35 @@ tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 co
     u32 saved_font = font_active_id();
     u32 cur_font   = saved_font;
 
-    /* Volatile-widget span tracking: cmd_volatile_id tags a contiguous RANGE of commands (not
-       just one), so accumulate [vb_open, vert_count) / [ib_open, idx_count) while the tag stays
-       the same and flush the span to volatile_capture whenever it changes (or at the end).  Works
-       for any command type, not just filled rects -- a callback's text/rect/etc all fall under
-       whichever id gui_volatile_cb tagged the range with at emit time. */
+    /* Volatile-widget range tracking: cmd_volatile_id tags a contiguous RANGE of commands (not
+       just one), so bracket [vb_open, ...) / [ib_open, ...) / [cmd_open, ...) while the tag stays
+       the same and hand the finished range to volatile_range_close when it changes (or at the
+       end).  force_new_cmd is raised when a range OPENS so the block's geometry lands in its own
+       fresh GPU command(s), never merged with a neighbour's -- the block's elem_counts must stay
+       independently rewritable by a later patch.  Tracking is inert during a patch's own scratch
+       re-tessellation (s_volatile_patching). */
     gui_id_t open_vid = GUI_ID_NONE;
-    u32      vb_open = 0, ib_open = 0;
+    u32      vb_open = 0, ib_open = 0, cmd_open = 0;
+    (void)win;
 
     for ( u32 oi = 0; oi < count; ++oi )
     {
         u32              ci = order[ oi ];
         const gui_cmd_t* c  = &cmds[ ci ];
 
-        gui_id_t vid = s_draw.cmd_volatile_id[ ci ];
+        gui_id_t vid = s_volatile_patching ? GUI_ID_NONE : s_draw.cmd_volatile_id[ ci ];
         if ( vid != open_vid )
         {
             if ( open_vid != GUI_ID_NONE )
-                volatile_capture( open_vid, win, vb_open, s_tess.vert_count - vb_open,
-                                  ib_open, s_tess.idx_count - ib_open );
+                volatile_range_close( open_vid, vb_open, ib_open, cmd_open );
             open_vid = vid;
-            if ( vid != GUI_ID_NONE ) { vb_open = s_tess.vert_count; ib_open = s_tess.idx_count; }
+            if ( vid != GUI_ID_NONE )
+            {
+                s_tess.force_new_cmd = true;   /* block owns its GPU commands from the first primitive */
+                vb_open  = s_tess.vert_count;
+                ib_open  = s_tess.idx_count;
+                cmd_open = s_tess.cmd_count;
+            }
         }
 
         /* Switch the atlas batch context to this command's segment font when it changes. */
@@ -787,8 +817,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 co
     }
 
     if ( open_vid != GUI_ID_NONE )
-        volatile_capture( open_vid, win, vb_open, s_tess.vert_count - vb_open,
-                          ib_open, s_tess.idx_count - ib_open );
+        volatile_range_close( open_vid, vb_open, ib_open, cmd_open );
 
     /* Leave the global font state as we found it -- the next frame's emit/layout depends on it. */
     if ( cur_font != saved_font )

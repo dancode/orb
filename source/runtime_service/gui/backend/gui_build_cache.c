@@ -158,18 +158,20 @@ static bool s_exempt_perf_overlay = true;
 ==============================================================================================*/
 
 #define RENDER_MAX_WIN    32    // distinct windows tracked per frame
-#define WIN_SLOT_CMD_MAX  16    // max GPU draw commands cached per slot; most windows have 2-4
+#define WIN_SLOT_CMD_MAX  24    // max GPU draw commands cached per slot; most windows have 2-4,
+                                // a volatile block adds its own commands + reserved dormant pads
 #define SLOT_VERT_PAD     64u   // per-slot vertex headroom: absorbs minor growth in-place
 #define SLOT_IDX_PAD      128u  // per-slot index headroom (~2x vertex count for quads)
 
 /* One cached GPU draw command.  Packed AOS so replaying a slot's commands touches one region.
-   z is per-slot (the window's max segment z), not per-command; lvbase is slot-local so the
-   reuse path needs no fixup when the slot's absolute vert_base is unchanged. */
+   z is per-slot (the window's max segment z), not per-command; lvbase/libase are slot-local so
+   the reuse path needs no fixup when the slot's absolute vert_base/idx_base is unchanged. */
 typedef struct
 {
     gui_gpu_cmd_t cmd;     // clip rect, texture slot, element count
     u32           vp;      // viewport this command targets
     u32           lvbase;  // vertex base relative to slot->vert_base (0-relative)
+    u32           libase;  // index base relative to slot->idx_base (the cmd's first_index seed)
 
 } win_slot_cmd_t;
 
@@ -181,6 +183,7 @@ typedef struct
     u32      vert_base, vert_count, vert_alloc;  // VB: absolute position, actual count, padded reservation
     u32      idx_base,  idx_count,  idx_alloc;   // IB: absolute position, actual count, padded reservation
     u32      cmd_base,  cmd_count;               // range into s_tess.cmds[] for this window
+    u32      tess_gen;                           // generation of the tess pass that produced the geometry
     bool     valid;                              // true once geometry has been tessellated at least once
 
 } win_geo_slot_t;
@@ -199,11 +202,41 @@ static win_geo_slot_t* s_slots_prev = s_slots_b;   // previous frame (read)
 static win_geo_slot_t* s_dispatch [ RENDER_MAX_WIN ];
 static u32             s_dispatch_count;
 
-/* Volatile widgets (gui_volatile_cb_open/_stamp/_close, gui_update_volatile, volatile_capture,
-   the registry) live in their own file -- backend/gui_build_volatile.c, included right before
-   this one -- rather than here; see that file's header for the full feature description.  The
-   one piece that stays HERE is the reflow-generation bump below, since it belongs to
-   cache_build_frame's own set_stable computation, not to the volatile-widget logic itself. */
+/* Volatile widgets (gui_volatile_cb_open/_stamp/_close, gui_update_volatile, the registry and
+   volatile_patch) live in their own file -- backend/gui_build_volatile.c, included right before
+   this one; see that file's header for the full feature description.  The pieces that stay HERE
+   are the three helpers it forward-declares (cache_count_volatile_patch above,
+   cache_slot_lookup / cache_invalidate_window below) because they touch s_slots / s_cache /
+   s_stats, plus the per-window tessellation generation (s_tess_gen_next) that anchors the
+   patch-time staleness check. */
+
+/* Monotonic tessellation-pass counter.  Every window retess stamps its slot with a fresh value;
+   a volatile row captured during that pass records the same value, and a patch is only legal
+   while they still match -- the row's slot-relative offsets provably describe the slot's current
+   contents.  Reuse frames carry the generation forward untouched. */
+static u32 s_tess_gen_next;
+
+/* Resolve a window's CURRENT slot position + generation by id (forward-declared in
+   gui_build_volatile.c).  Reads whatever s_slots currently holds: during cache_diff_windows and
+   on idle frames that is the last completed frame's table; during cache_build_frame's slot loop
+   it already contains this frame's slots built so far -- both exactly what a caller wants. */
+static bool
+cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base, u32* tess_gen )
+{
+    for ( u32 i = 0; i < s_slot_count; ++i )
+    {
+        if ( s_slots[ i ].win != win || !s_slots[ i ].valid )
+            continue;
+        *vert_base = s_slots[ i ].vert_base;
+        *idx_base  = s_slots[ i ].idx_base;
+        *cmd_base  = s_slots[ i ].cmd_base;
+        *tess_gen  = s_slots[ i ].tess_gen;
+        return true;
+    }
+    return false;
+}
+
+/* cache_invalidate_window lives below, after s_cache is declared. */
 
 /*==============================================================================================
     Change detection (BUILD step 1) -- diff each window's commands against last frame.
@@ -223,9 +256,11 @@ typedef struct
 {
     gui_id_t win;
     u32      hash;
-    u32      z;        // max segment z this frame (governs slot dispatch order)
-    u32      vp;       // viewport of the last segment this frame
-    bool     changed;  // hash mismatched or window is new this frame
+    u32      z;              // max segment z this frame (governs slot dispatch order)
+    u32      vp;             // viewport of the last segment this frame
+    bool     changed;        // hash mismatched, window is new, or force_changed this frame
+    bool     force_changed;  // a volatile row in this window needs a (re)capture -- tessellate
+                             // regardless of the hash (which excludes volatile commands entirely)
 
 } render_win_hash_t;
 
@@ -247,6 +282,22 @@ bool
 gui_build_any_changed( void )
 {
     return s_cache.any_changed;
+}
+
+/* Force `win` to re-tessellate next frame (forward-declared in gui_build_volatile.c): corrupt its
+   stored hash so the diff mismatches, and raise any_changed so the host sees a dirty frame.  The
+   recovery path for a failed volatile patch -- the retess recaptures the row at its recorded
+   larger reservation. */
+static void
+cache_invalidate_window( gui_id_t win )
+{
+    for ( u32 i = 0; i < s_cache.prev_n; ++i )
+        if ( s_cache.prev[ i ].win == win )
+        {
+            s_cache.prev[ i ].hash ^= 0xA5A5A5A5u;
+            break;
+        }
+    s_cache.any_changed = true;
 }
 
 /* cache_diff_windows -- accumulate per-window hashes from the command list, sort, and diff.
@@ -278,7 +329,7 @@ cache_diff_windows( void )
         if ( bi == s_cache.cur_n )
         {
             if ( s_cache.cur_n >= RENDER_MAX_WIN ) continue;   // overflow: this window treated as changed
-            s_cache.cur[ bi ] = ( render_win_hash_t ){ win, 2166136261u, 0, 0, false };
+            s_cache.cur[ bi ] = ( render_win_hash_t ){ win, 2166136261u, 0, 0, false, false };
             ++s_cache.cur_n;
         }
 
@@ -294,16 +345,21 @@ cache_diff_windows( void )
         h = fnv1a_u32( h, atlas            );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
         {
-            /* A command whose volatile row matched its own previous topology this frame (see
-               gui_volatile_cb_close) is excluded from its window's hash entirely -- it is about to
-               be patched in place (gui_update_volatile on an idle frame, or
-               volatile_patch_reused_window on a real one) regardless of how its color has drifted,
-               so letting its ever-changing per-vertex bytes flow into the window's hash would force
-               the WHOLE window to retessellate every real frame purely because of one animating
-               widget inside it, even though nothing else in the window changed. */
+            /* A volatile-tagged command NEVER participates in its window's hash -- the block is
+               presentation-only by contract and patched out of band (gui_update_volatile on idle
+               frames, volatile_patch_reused_window on reused real frames), so its ever-drifting
+               bytes must not force the whole window to retessellate, and the hash behaves
+               identically whether the retained skip is on or off.  The one thing checked here is
+               whether the row still has a live capture for this window's current slot; if not
+               (first appearance, retired by a failed patch, or the slot rebuilt without it), the
+               window is forced CHANGED so tessellation runs and (re)captures it. */
             gui_id_t vid = s_draw.cmd_volatile_id[ i ];
-            if ( vid != GUI_ID_NONE && volatile_row_stable( vid ) )
+            if ( vid != GUI_ID_NONE )
+            {
+                if ( volatile_row_needs_capture( vid ) )
+                    s_cache.cur[ bi ].force_changed = true;
                 continue;
+            }
             h = fnv1a_u32( h, s_draw.cmd_hashes[ i ] );
         }
         s_cache.cur[ bi ].hash = h;
@@ -339,8 +395,9 @@ cache_diff_windows( void )
         bool match = ( pj < s_cache.prev_n
                        && s_cache.prev[ pj ].win  == s_cache.cur[ i ].win
                        && s_cache.prev[ pj ].hash == s_cache.cur[ i ].hash );
-        s_cache.cur[ i ].changed = !match;
-        if ( match ) ++s_cache.unchanged;
+        bool changed = !match || s_cache.cur[ i ].force_changed;
+        s_cache.cur[ i ].changed = changed;
+        if ( !changed ) ++s_cache.unchanged;
         else if ( !( s_exempt_perf_overlay && s_cache.cur[ i ].win == g_gui_perf_overlay_id ) )
             s_cache.any_changed = true;
 
@@ -417,7 +474,8 @@ cache_tess_window( gui_id_t win )
 
     if ( overflow )
     {
-        /* Too many distinct clips: emit in natural order (correct, just less merged). */
+        /* Too many distinct clips: emit in natural order (correct, just less merged).  Volatile
+           ranges are naturally contiguous in this order, so no special handling is needed. */
         for ( u32 si = 0; si < nseg; ++si )
         {
             if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
@@ -429,13 +487,57 @@ cache_tess_window( gui_id_t win )
     else
     {
         for ( u32 g = 0; g < n_clips; ++g )
+        {
+            /* Plain (non-volatile) commands of this clip group, in emission order -- these all
+               merge into one GPU batch exactly as they always have (titlebar, scrollbar, text). */
             for ( u32 si = 0; si < nseg; ++si )
             {
                 if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
                 for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-                    if ( s_draw.cmds[ i ].clip_idx == clip_ids[ g ] )
+                    if ( s_draw.cmd_volatile_id[ i ] == GUI_ID_NONE
+                      && s_draw.cmds[ i ].clip_idx == clip_ids[ g ] )
                         { win_font[ n ] = segs[ si ].font; win_order[ n++ ] = i; }
             }
+
+            /* Volatile ranges anchored to this clip group, appended at the group's END.  A range
+               must stay CONTIGUOUS in the permutation (tess_dispatch brackets one capture span
+               per range), so it cannot be split across groups: the WHOLE range goes where its
+               first visible command's clip belongs.  Appending after the group's plain commands
+               (rather than in scan position) keeps those mergeable into a single batch on both
+               sides of the widget; the block's own commands are forced separate regardless, since
+               a patch must be able to rewrite their elem_counts.  The one trade: a block paints
+               after same-clip sibling content of its window, so it must not rely on that content
+               overdrawing it. */
+            for ( u32 si = 0; si < nseg; ++si )
+            {
+                if ( segs[ si ].win != win || segs[ si ].lo == segs[ si ].hi ) continue;
+                for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
+                {
+                    gui_id_t vid = s_draw.cmd_volatile_id[ i ];
+                    if ( vid == GUI_ID_NONE )
+                        continue;
+                    if ( i > segs[ si ].lo && s_draw.cmd_volatile_id[ i - 1 ] == vid )
+                        continue;   /* not the range start; emitted with its range */
+
+                    /* The range's first non-empty-clip command anchors it to a group; a fully
+                       clip-empty range is emitted nowhere (matches its hidden state).  The
+                       emitted subset uses the same empty-clip filter volatile_patch applies, so
+                       capture and patch always tessellate the same command set. */
+                    u32 hi = i;
+                    while ( hi < segs[ si ].hi && s_draw.cmd_volatile_id[ hi ] == vid ) ++hi;
+                    u32 anchor = i;
+                    while ( anchor < hi
+                            && rect_empty( s_draw.clip_table[ s_draw.cmds[ anchor ].clip_idx ] ) )
+                        ++anchor;
+                    if ( anchor == hi || s_draw.cmds[ anchor ].clip_idx != clip_ids[ g ] )
+                        continue;
+
+                    for ( u32 j = i; j < hi; ++j )
+                        if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ j ].clip_idx ] ) )
+                            { win_font[ n ] = segs[ si ].font; win_order[ n++ ] = j; }
+                }
+            }
+        }
     }
 
     tess_dispatch( s_draw.cmds, win_order, win_font, n, win );
@@ -491,13 +593,10 @@ cache_build_frame( void )
         if ( s_slots_prev[ wi ].win != s_cache.cur[ wi ].win || !s_slots_prev[ wi ].valid )
             set_stable = false;
 
-    /* A non-stable rebuild means some window's slot may land at a different vert_base than last
-       frame for reasons that have nothing to do with any one widget's own re-emit (a sibling
-       window appeared/vanished/reordered).  Bump the volatile generation (owned by
-       backend/gui_build_volatile.c) so any registry row NOT freshly re-captured during this same
-       rebuild is known stale rather than silently patched at a now-foreign vertex offset. */
-    if ( !set_stable )
-        ++s_volatile_reflow_gen;
+    /* No global "reflow generation" is needed for volatile rows here: a row resolves its window's
+       CURRENT slot by id at patch time (cache_slot_lookup) and its per-slot tess_gen check refuses
+       any slot whose geometry it did not capture -- a moved or rebuilt slot can never be patched
+       at a stale offset by construction. */
 
     u32 vert_retained = 0, tri_retained = 0, win_retained = 0;
     u32 total_vert    = 0, total_tri    = 0, overlay_win  = 0;
@@ -526,11 +625,12 @@ cache_build_frame( void )
             slot->idx_base   = prev->idx_base;
             slot->idx_count  = prev->idx_count;
             slot->idx_alloc  = prev->idx_alloc;
+            slot->tess_gen   = prev->tess_gen;   /* geometry unchanged: same tessellation pass */
             s_tess.vert_count = prev->vert_base + prev->vert_alloc;
             s_tess.idx_count  = prev->idx_base  + prev->idx_alloc;
 
-            /* Replay GPU commands from the stable cache.  lvbase is slot-local, so
-               adding slot->vert_base gives the absolute vertex offset for this frame. */
+            /* Replay GPU commands from the stable cache.  lvbase/libase are slot-local, so
+               adding slot->vert_base/idx_base gives the absolute offsets for this frame. */
             slot->cmd_base  = s_tess.cmd_count;
             slot->cmd_count = s_win_cached_count[ wi ];
             u32 nc = slot->cmd_count;
@@ -540,14 +640,17 @@ cache_build_frame( void )
                 s_tess.cmds    [ ci ]  = s_win_cached[ wi ][ k ].cmd;
                 s_tess.cmd_vp  [ ci ]  = s_win_cached[ wi ][ k ].vp;
                 s_tess.cmd_vbase[ ci ] = slot->vert_base + s_win_cached[ wi ][ k ].lvbase;
+                s_tess.cmd_ibase[ ci ] = slot->idx_base  + s_win_cached[ wi ][ k ].libase;
             }
             s_tess.cmd_count += nc;
 
-            /* This window's own content matched (wh->changed is false), but that comparison
-               already excluded any volatile row's commands (cache_diff_windows).  Patch those
-               rows' geometry into the just-reused slot now, using the live commands this frame's
-               real emit already produced -- no replay needed, gui_volatile_cb_close confirmed the
-               topology matches when it set stable_this_frame. */
+            /* This window's own content matched, but that comparison excludes volatile commands
+               entirely (cache_diff_windows).  Patch those rows' reserved regions in the just-
+               reused slot now, from the live commands this frame's real emit already produced --
+               the slot fields above (incl. tess_gen) are set, so volatile_patch resolves this
+               slot and passes its generation check.  Must run AFTER the cached-command replay so
+               the patch's elem_count/vbase/ibase rewrites are not clobbered by it. */
+            slot->valid = true;
             cache_count_volatile_patch( volatile_patch_reused_window( wh->win ) );
 
             if ( !( s_exempt_perf_overlay && wh->win == g_gui_perf_overlay_id ) )
@@ -556,7 +659,6 @@ cache_build_frame( void )
                 tri_retained  += slot->idx_count / 3u;
                 ++win_retained;
             }
-            slot->valid = true;
         }
         else
         {
@@ -566,7 +668,11 @@ cache_build_frame( void )
             slot->vert_base       = s_tess.vert_count;
             slot->idx_base        = s_tess.idx_count;
             slot->cmd_base        = s_tess.cmd_count;
+            slot->tess_gen        = ++s_tess_gen_next;   /* fresh pass: volatile captures bind to it */
             s_tess.slot_vert_base = s_tess.vert_count;
+            s_tess.slot_idx_base  = s_tess.idx_count;
+            s_tess.slot_cmd_base  = s_tess.cmd_count;
+            s_tess.slot_tess_gen  = slot->tess_gen;
             s_tess.force_new_cmd  = true;
 
             cache_tess_window( wh->win );
@@ -611,6 +717,7 @@ cache_build_frame( void )
                 s_win_cached[ wi ][ k ].cmd    = s_tess.cmds    [ ci ];
                 s_win_cached[ wi ][ k ].vp     = s_tess.cmd_vp  [ ci ];
                 s_win_cached[ wi ][ k ].lvbase = s_tess.cmd_vbase[ ci ] - slot->vert_base;
+                s_win_cached[ wi ][ k ].libase = s_tess.cmd_ibase[ ci ] - slot->idx_base;
             }
             slot->cmd_count = nc;
             slot->valid     = true;

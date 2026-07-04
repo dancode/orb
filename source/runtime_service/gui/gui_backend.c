@@ -79,8 +79,9 @@ static gui_backend_caps_t s_caps;
 #include "runtime_service/gui/backend/gui_build_tess.c"
 
 // BUILD, part A.5: volatile widgets (inline-emit callback replay) -- see that file's header.
-// After gui_build_tess.c (needs s_tess + tess_dispatch); before gui_build_cache.c (cache_build_frame
-// bumps s_volatile_reflow_gen, owned here).
+// After gui_build_tess.c (needs s_tess + tess_dispatch + s_volatile_patching); before
+// gui_build_cache.c (defines the cache_slot_lookup / cache_invalidate_window /
+// cache_count_volatile_patch helpers this file forward-declares).
 #include "runtime_service/gui/backend/gui_build_volatile.c"
 
 // BUILD, part B: retained cache & orchestration (diff, reuse-or-tessellate, z-sort).

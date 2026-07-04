@@ -1080,11 +1080,17 @@ typedef struct
 
     A "volatile" callback contains ordinary UI emit calls (text, colored rects, etc).  It runs
     inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
-    any other code, no special behavior.  On an idle frame (frame_dirty()==false), the same
+    any other code, no special behavior, except that the block's geometry is given its own
+    RESERVED, PADDED region of the window's cached tessellation (vertex/index/draw-command
+    headroom past what it actually produced).  On an idle frame (frame_dirty()==false), the same
     callback is invoked again standalone with is_replay=true; the framework reconstructs just
-    enough context (window/clip/cursor position) for it to reproduce identical commands, and
-    patches the result directly into already-tessellated geometry if the topology matches what
-    was captured during the real emit -- see gui_volatile_cb / gui_volatile_begin / gui_update_volatile.
+    enough context (window/clip/cursor position + the ambient draw state stamped at real emit),
+    re-tessellates the output, and patches it into the reserved region.  The output does NOT have
+    to match the original -- text may grow or shrink, shapes may change -- it only has to FIT the
+    reservation; outgrowing it costs one automatic real frame, after which the block re-captures
+    with a larger reservation (grow-only per widget).  The block's commands are also excluded from
+    the window's retained-cache hash, so an animating block never forces its window to
+    re-tessellate -- see gui_volatile_cb / gui_volatile_begin / gui_update_volatile.
 
     Interactive widgets (button, etc) are safe to call from a volatile callback but are inert
     during replay: hover/active/focus reflect whatever the last real frame established, but a

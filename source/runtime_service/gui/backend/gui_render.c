@@ -393,7 +393,7 @@ batch_debug_color( u32 i )
     result).  Then uploads this surface's slice of the shared geometry into vp's own vb/ib region and
     opens a LOAD pass on vp->target, so a surface's geometry and target travel together.  The host
     calls this once per live surface with that surface's drawable size; slots tagged for another
-    viewport are skipped (their index range still stepped over to keep first_index aligned).
+    viewport are skipped (each command carries its own first_index in s_tess.cmd_ibase).
 
     Geometry is shared and indices are slot-local (vertex_offset = slot->vert_base shifts them to the
     absolute VB position), so the whole vertex/index list is uploaded to every surface's buffer and
@@ -518,26 +518,24 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
 
     /* Walk s_dispatch[] (z-sorted slot pointers) back-to-front.  Each slot owns a contiguous region
        of s_tess.verts[]/indices[]; its GPU commands reference those via 0-relative indices +
-       vertex_offset = slot->vert_base.  Slots for other viewports are skipped entirely; within a
-       slot, a command with a mismatched vp is stepped over (its index range still consumed to keep
-       first_index aligned). */
+       vertex_offset = slot->vert_base.  Slots for other viewports are skipped entirely, as are
+       commands with a mismatched vp (including a volatile block's dormant reserved commands,
+       tagged GUI_VP_INVALID).  first_index comes straight off each command's own cmd_ibase --
+       explicit rather than accumulated, since the index buffer may contain reserved headroom gaps
+       between a volatile block's live indices and the commands that follow it. */
     for ( u32 d = 0; d < s_dispatch_count; ++d )
     {
         const win_geo_slot_t* slot = s_dispatch[ d ];
         if ( slot->vp != vp_index )
             continue;
 
-        u32 first_index = slot->idx_base;   // absolute start of this slot's indices in the IB
         for ( u32 k = 0; k < slot->cmd_count; ++k )
         {
             u32                    ci = slot->cmd_base + k;
             const gui_gpu_cmd_t* dc = &s_tess.cmds[ ci ];
 
             if ( s_tess.cmd_vp[ ci ] != vp_index )
-            {
-                first_index += dc->elem_count;
                 continue;
-            }
             if ( dc->elem_count == 0 )
                 continue;
 
@@ -571,15 +569,13 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
             rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){
                 .index_count    = dc->elem_count,
                 .instance_count = 1,
-                .first_index    = first_index,
+                .first_index    = s_tess.cmd_ibase[ ci ],
                 .vertex_offset  = (i32)slot->vert_base,   // slot-local indices + vert_base = absolute
                 .first_instance = 0,
             } );
-            
+
             if ( !( s_exempt_perf_overlay && slot->win == overlay_id ) )
                 ++draw_calls;
-
-            first_index += dc->elem_count;
         }
     }
 

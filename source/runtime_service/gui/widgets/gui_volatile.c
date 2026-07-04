@@ -6,10 +6,11 @@
     inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
     any other code, no special behavior.  On an idle frame (frame_dirty()==false), the host calls
     gui()->update_volatile() instead of ctx_begin/emit/ctx_end; the backend (BUILD unit,
-    backend/gui_build_volatile.c) re-invokes the same callback standalone and, if the replay
-    reproduces the same command topology real emit recorded, patches the geometry in place --
-    see gui.h (gui_volatile_fn) for the full contract and gui_backend.h for the unit-seam
-    declarations shared with the backend half.
+    backend/gui_build_volatile.c) re-invokes the same callback standalone, re-tessellates its
+    output, and patches it into the padded region reserved for the block inside its window's
+    cached geometry (any output that fits is accepted; only outgrowing the reservation costs a
+    real frame) -- see gui.h (gui_volatile_fn) for the full contract and gui_backend.h for the
+    unit-seam declarations shared with the backend half.
 
     Everything in THIS file is the UI-unit side of the seam:
 
@@ -71,8 +72,8 @@ gui_volatile_begin( void )
        standalone, they read back as "nothing pushed" regardless of what ancestor
        begin_disabled()/push_style_color()/push_style_var() scope this volatile_cb call was
        actually nested in at real emit.  draw_set_alpha/draw_set_rounding (item_flags_resolve) and
-       style_col/style_var would then silently resolve to the wrong value on replay -- not caught by
-       volatile_topo_fold, since neither changes vertex/index count.  A callback is only safe to
+       style_col/style_var would then silently resolve to the wrong value on replay -- and nothing
+       downstream can catch it, since the patched geometry is valid either way.  A callback is only safe to
        replay if it does not depend on inherited disabled/style-push state from its call site;
        assert here so a violation is caught at the call site immediately instead of shipping a
        widget that quietly un-dims or re-colors itself on idle frames. */
