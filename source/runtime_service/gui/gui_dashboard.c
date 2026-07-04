@@ -12,8 +12,9 @@
     What keeps it honest is GUI_WIN_DEBUG_BAND: the band system packs its geometry (and its
     tooltips', via popup band inheritance) AFTER every main-band slot and excludes it from the
     stats and any_changed signals, so the diagnostic never perturbs the arena layout or the
-    metrics it displays.  Its own slot still shows in the map, marked -- the observer is part
-    of the plumbing, marked as such, not hidden.
+    metrics it displays.  Its own geometry lives in the debug (second) band; the "Show second
+    band" toggle reveals it in the arena maps (dimmed, marked), off by default so the observer
+    stays out of the picture it draws.
 
     Data comes from the backend capture (backend/gui_dash_capture.c) via gui_dash_snapshot():
     a coherent copy taken at the end of cache_build_frame / gui_render_flush.  The shell emits
@@ -101,6 +102,19 @@ dash_textf( f32 x, f32 y, f32 max_x, u32 abgr, const char* fmt, ... )
     dash_text( x, y, max_x, abgr, buf );
 }
 
+/* Number label drawn WITHOUT the self-fit ellipsis -- the caller owns a column wide enough for
+   the value, so a count must always read in full rather than truncate to "123..". */
+static void
+dash_num( f32 x, f32 y, u32 abgr, const char* fmt, ... )
+{
+    char buf[ 64 ];
+    va_list args;
+    va_start( args, fmt );
+    vsnprintf( buf, sizeof( buf ), fmt, args );
+    va_end( args );
+    gui_draw_text( x, y, abgr, buf );
+}
+
 static void
 dash_outline( gui_rect_t r, u32 abgr )
 {
@@ -130,6 +144,14 @@ dash_name( gui_id_t id, char* buf, u32 bufsz )
    order (a slot segment under a volatile strip) cannot double-tooltip. */
 static bool s_tip_done;
 
+/* View toggles, set from the shell checkboxes each frame and read by the painters (which take
+   only rect + snapshot).  Defaults chosen so the dashboard's own debug (second) band stays out
+   of the arena maps, and the maps scale to the high-water mark rather than the full cap so the
+   live bars render wide enough to read. */
+static bool s_show_second_band;   /* include band != 0 slots (the dashboard itself) in the maps */
+static bool s_full_range;         /* scale the arena maps to the full cap vs the high-water mark */
+static bool s_show_pad;           /* break out each slot's alloc pad vs. one flat fill over it all */
+
 static bool
 dash_tip_at( gui_rect_t r )
 {
@@ -149,8 +171,8 @@ dash_tip_at( gui_rect_t r )
 ==============================================================================================*/
 
 /* Shared memory-map body: the whole tess vertex (or index) arena as one horizontal bar.
-   Main-band slots first, the dashed band boundary, then the debug band's own slots dimmed --
-   the observer marked, not hidden. */
+   Main-band slots first, the dashed band boundary, then (only when "Show second band" is on) the
+   debug band's own slots dimmed -- the observer marked, not hidden. */
 static void
 dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
 {
@@ -170,12 +192,16 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
 
     gui_draw_rect( bar.x, bar.y, bar.w, bar.h, DASH_COL_BG );   /* free space: flat backdrop */
 
-    f32 px_per = bar.w / (f32)cap;
+    /* Scale the arena to the full cap, or (default) to the high-water mark so the live slots
+       render wider.  Everything drawn (base + alloc) sits at or below hwm, so nothing clips. */
+    u32 scale  = ( s_full_range || hwm == 0 ) ? cap : hwm;
+    f32 px_per = bar.w / (f32)scale;
 
     for ( u32 i = 0; i < sn->slot_count; ++i )
     {
         const dash_slot_t* sl = &sn->slots[ i ];
         if ( !sl->valid ) continue;
+        if ( sl->band != 0 && !s_show_second_band ) continue;   /* second band omitted by default */
 
         u32 base  = vb_axis ? sl->vert_base  : sl->idx_base;
         u32 count = vb_axis ? sl->vert_count : sl->idx_count;
@@ -188,12 +214,19 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
         if ( sl->band != 0 )
             col = ( col & 0x00FFFFFFu ) | 0x60000000u;   /* debug band: dimmed strip at the tail */
 
-        gui_draw_rect( x0, bar.y, xc - x0, bar.h, col );                       /* live geometry   */
-        gui_draw_rect( xc, bar.y, xa - xc, bar.h, ( col & 0x00FFFFFFu ) | 0x30000000u );
-        gui_draw_hatch( ( gui_rect_t ){ xc, bar.y, xa - xc, bar.h }, 5.0f,     /* padded headroom */
-                        1.0f, ( col & 0x00FFFFFFu ) | 0x80000000u );
+        if ( s_show_pad )
+        {
+            gui_draw_rect( x0, bar.y, xc - x0, bar.h, col );                       /* live geometry   */
+            gui_draw_rect( xc, bar.y, xa - xc, bar.h, ( col & 0x00FFFFFFu ) | 0x30000000u );
+            gui_draw_hatch( ( gui_rect_t ){ xc, bar.y, xa - xc, bar.h }, 5.0f,     /* padded headroom */
+                            1.0f, ( col & 0x00FFFFFFu ) | 0x80000000u );
+        }
+        else
+        {
+            gui_draw_rect( x0, bar.y, xa - x0, bar.h, col );   /* whole reservation as one flat fill */
+        }
 
-        /* Volatile sub-slots: brighter inset strips across the top of their owner's extent. */
+        /* Volatile sub-slots: brighter strips over the full height of their owner's extent. */
         if ( vb_axis )
         {
             for ( u32 v = 0; v < sn->vol_count; ++v )
@@ -202,7 +235,7 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
                 if ( !vo->active || vo->win != sl->win ) continue;
                 f32 vx0 = bar.x + (f32)( base + vo->lvert_base ) * px_per;
                 f32 vx1 = bar.x + (f32)( base + vo->lvert_base + vo->vert_alloc ) * px_per;
-                gui_rect_t vr = { vx0, bar.y + 1.0f, vx1 - vx0, bar.h * 0.3f };
+                gui_rect_t vr = { vx0, bar.y + 1.0f, vx1 - vx0, bar.h - 2.0f };
                 gui_draw_rect( vr.x, vr.y, vr.w, vr.h, DASH_COL_VOLATILE );
 
                 if ( dash_tip_at( vr ) )
@@ -275,8 +308,10 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
 static void
 dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
 {
-    const f32 row_h = 22.0f;
-    f32       y     = r.y + 2.0f;
+    const f32  row_h  = 22.0f;
+    f32        y      = r.y + 2.0f;
+    const bool frozen = gui_dash_frozen();   /* the active-region outline/spans rotate every frame --
+                                                only draw them frozen, else they flicker at framerate */
 
     for ( u32 vp = 0; vp < GUI_MAX_VIEWPORTS; ++vp )
     {
@@ -294,7 +329,9 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
             gui_rect_t box = { box_x + (f32)f * ( box_w + 4.0f ), y, box_w, row_h - 4.0f };
             bool       act = ( f == sf->frame_index );
             gui_draw_rect( box.x, box.y, box.w, box.h, DASH_COL_BG );
-            dash_outline( box, act ? DASH_COL_FIF_ACTIVE : DASH_COL_FIF_IDLE );
+            /* Idle outline always; the current-frame green highlight rotates every frame, so only
+               call it out when frozen -- else it strobes at framerate. */
+            dash_outline( box, ( frozen && act ) ? DASH_COL_FIF_ACTIVE : DASH_COL_FIF_IDLE );
             if ( act && sf->vtx_hi > sf->vtx_lo )
             {
                 f32 half = box.h * 0.5f - 2.0f;
@@ -353,6 +390,7 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
         }
 
         const dash_slot_t* sl  = &sn->slots[ sn->dispatch[ d ] ];
+        if ( sl->band != 0 && !s_show_second_band ) continue;   /* second band omitted by default */
         u32                col = dash_win_color( sl->win );
         char               nb[ 12 ];
 
@@ -436,20 +474,21 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
                                  "tessellated vertices", "tessellated indices",
                                  "GPU draw commands" };
     struct { const char* name; u32 used, cap, hwm; } rows[] = {
-        { "cmds",  sn->emit_cmds,  GUI_MAX_CMDS,       0            },
-        { "segs",  sn->emit_segs,  GUI_MAX_SEGS,       0            },
-        { "pts",   sn->emit_pts,   GUI_MAX_PATH_PTS,   0            },
-        { "text",  sn->emit_text,  GUI_MAX_TEXT_POOL,  0            },
-        { "clips", sn->emit_clips, GUI_MAX_CLIP_RECTS, 0            },
-        { "verts", sn->tess_verts, GUI_MAX_VERTS,      sn->vert_hwm },
-        { "idx",   sn->tess_idx,   GUI_MAX_IDX,        sn->idx_hwm  },
-        { "gpu",   sn->tess_cmds,  GUI_MAX_CMDS,       0            },
+        { "cmds",  sn->emit_cmds,  GUI_MAX_CMDS,       sn->emit_cmds_hwm },
+        { "segs",  sn->emit_segs,  GUI_MAX_SEGS,       0                 },
+        { "pts",   sn->emit_pts,   GUI_MAX_PATH_PTS,   0                 },
+        { "text",  sn->emit_text,  GUI_MAX_TEXT_POOL,  0                 },
+        { "clips", sn->emit_clips, GUI_MAX_CLIP_RECTS, 0                 },
+        { "verts", sn->tess_verts, GUI_MAX_VERTS,      sn->vert_hwm      },
+        { "idx",   sn->tess_idx,   GUI_MAX_IDX,        sn->idx_hwm       },
+        { "draws", sn->tess_cmds,  GUI_MAX_CMDS,       0                 },
     };
     const u32 n     = sizeof( rows ) / sizeof( rows[ 0 ] );
     const f32 lh    = gui_line_h();
     const f32 row_h = ( r.h - lh - 4.0f ) / (f32)n;
-    const f32 bar_x = r.x + 84.0f;   /* label column + a clear gap before the bars */
-    const f32 bar_w = r.w - 84.0f - 110.0f;
+    const f32 bar_x = r.x + 84.0f;    /* label column + a clear gap before the bars */
+    const f32 val_w = 132.0f;         /* value column: fits a full "NNNNN / NNNNN" with no ellipsis */
+    const f32 bar_w = r.w - 84.0f - val_w;
 
     for ( u32 i = 0; i < n; ++i )
     {
@@ -463,8 +502,8 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
         if ( rows[ i ].hwm )
             dash_vline( bar_x + bar_w * (f32)rows[ i ].hwm / (f32)rows[ i ].cap,
                         y + 1.0f, y + row_h - 1.0f, DASH_COL_HWM );
-        dash_textf( bar_x + bar_w + 6.0f, y, r.x + r.w, DASH_COL_TEXT_DIM, "%u / %u",
-                    rows[ i ].used, rows[ i ].cap );
+        dash_num( bar_x + bar_w + 6.0f, y, DASH_COL_TEXT_DIM, "%u / %u",
+                  rows[ i ].used, rows[ i ].cap );
 
         if ( dash_tip_at( ( gui_rect_t ){ r.x, y, r.w, row_h } ) )
         {
@@ -606,9 +645,18 @@ gui_pipeline_dashboard( bool* open )
         gui_stack();
         s_tip_done = false;
 
+        /* All view toggles on one line.  Second band = the dashboard's own debug-band geometry,
+           off by default so the observer stays out of the arena maps; full range scales those maps
+           to the cap vs the hwm; show pad breaks out each slot's alloc headroom vs one flat fill. */
         bool frozen = gui_dash_frozen();
-        if ( gui_checkbox( "Freeze capture", &frozen ) )
+        if ( gui_checkbox( "Freeze", &frozen ) )
             gui_dash_set_freeze( frozen );
+        gui_same_line( 0.0f );
+        gui_checkbox( "Second band", &s_show_second_band );
+        gui_same_line( 0.0f );
+        gui_checkbox( "Full range", &s_full_range );
+        gui_same_line( 0.0f );
+        gui_checkbox( "Show pad", &s_show_pad );
 
         /* Panel heights derive from the live line height so text rows never clip mid-glyph. */
         f32 lh = gui_line_h();

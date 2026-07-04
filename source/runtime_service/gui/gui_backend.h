@@ -406,6 +406,7 @@ extern gui_id_t g_gui_dash_window_id;
         bool overflow_ever;
         u32  band0_vert_end, band0_idx_end;              /* main arena ends here; past = debug band */
         u32  emit_cmds, emit_segs, emit_pts, emit_text, emit_clips;
+        u32  emit_cmds_hwm;                              /* running high-water of emit_cmds across captures */
         u32  emit_cmds_dbg;                              /* of emit_cmds, how many the debug band emitted */
         u32  diff_unchanged;  bool any_changed;
         u32  tess_gen_next;

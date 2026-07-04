@@ -100,6 +100,8 @@ dash_capture_build( void )
     sn->emit_cmds     = s_draw.cmd_count;    sn->emit_segs  = s_draw.seg_count;
     sn->emit_pts      = s_draw.pt_count;     sn->emit_text  = s_draw.text_pool_used;
     sn->emit_clips    = s_draw.clip_table_n;
+    if ( sn->emit_cmds > sn->emit_cmds_hwm )   /* emit cmd pool has no backend hwm -- track it here */
+        sn->emit_cmds_hwm = sn->emit_cmds;
 
     /* Debug-band attribution: how much of the shared emit command pool the diagnostic UI itself
        consumed this frame.  Derived from the segment table at capture time -- the emit hot paths
