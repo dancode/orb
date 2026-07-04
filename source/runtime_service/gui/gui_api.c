@@ -24,6 +24,7 @@ const gui_api_t g_gui_api_struct =
     .render_stats                       = gui_build_stats,
     .perf_overlay                       = gui_perf_overlay,
     .state_overlay                      = gui_state_overlay,
+    .pipeline_dashboard                 = gui_pipeline_dashboard,
     .font_load                          = gui_font_load,
     .render                             = gui_render,
     .viewport_open                      = gui_viewport_open,

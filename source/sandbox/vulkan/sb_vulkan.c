@@ -210,6 +210,10 @@ main( int argc, char** argv )
        static UI burns no frames; wants_redraw() keeps frames flowing while a widget animation plays. */
     bool idle_skip = false;
 
+    /* Pipeline dashboard (toggle: F10).  gui writes it back to false when the window's X is
+       clicked, so the key and the button stay in sync. */
+    bool dash_open = false;
+
     /* Main loop. */
     f64 last_time = sys_tick_seconds();
     while ( app()->pump_events() )
@@ -278,6 +282,14 @@ main( int argc, char** argv )
             gui()->debug_set_render_mode( m );
             static const char* names[] = { "normal", "wireframe", "batch" };
             printf( "[sb_vulkan] render mode: %s\n", names[ m ] );
+        }
+
+        /* F10 toggles the pipeline dashboard: a dockable/tear-off window visualizing the render
+           backend (slot memory maps, frames-in-flight uploads, draw batches, buffer usage). */
+        if ( app()->key_pressed( APP_KEY_F10 ) )
+        {
+            dash_open = !dash_open;
+            printf( "[sb_vulkan] pipeline dashboard: %s\n", dash_open ? "open" : "closed" );
         }
 
         /* I toggles Level 1 idle skip (block-on-input vs spin); see the frame-pacing section below. */
@@ -377,6 +389,11 @@ main( int argc, char** argv )
                 gui()->window_end();
             }
 
+            /* Pipeline dashboard (F10): the shell window emits here; its diagnostic content is
+               drawn by the backend at flush time through its own buffers.  The X button writes
+               dash_open back to false so the key toggle stays in sync. */
+            gui()->pipeline_dashboard( &dash_open );
+
             /* Perf overlay -- last so it draws on top, inside the default context's scope and the build
                so its own text is counted in the emit + render cost it reports.  Emit opens at frame_begin
                and closes at frame_end; render is summed across render() below. */
@@ -465,14 +482,14 @@ main( int argc, char** argv )
         /* Frame pacing.  Default: spin at ~250 Hz (game cadence).  Idle-skip on: mirror the editor
            host -- block on OS input so a static UI costs no frames, but while any widget animates
            (any_redraw) keep running at ~60 Hz so the transition finishes before sleeping on input. */
-        if ( idle_skip )
-        {
-            if ( any_redraw )
-                sys_sleep_milliseconds( 16 );        /* animating: ~60fps until it settles */
-            else
-                sys_wait_for_os_events_ms( 500 );    /* idle: wake on input (500 ms safety cap) */
-        }
-        else
+        // if ( idle_skip )
+        // {
+        //     if ( any_redraw )
+        //         sys_sleep_milliseconds( 16 );        /* animating: ~60fps until it settles */
+        //     else
+        //         sys_wait_for_os_events_ms( 500 );    /* idle: wake on input (500 ms safety cap) */
+        // }
+        // else
             sys_sleep_milliseconds( 4 );
     }
 

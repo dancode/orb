@@ -217,7 +217,8 @@ const char* g_defines_always[] = {
 
 const char* g_defines_debug[] = {
     "_DEBUG",
-    "GUI_DEBUG_OVERLAY",   /* compile the gui debug overlay into Debug builds only */
+    "GUI_DEBUG_OVERLAY",       /* compile the gui debug overlay into Debug builds only      */
+    "GUI_PIPELINE_DASHBOARD",  /* compile the gui pipeline dashboard into Debug builds only */
     NULL,
 };
 

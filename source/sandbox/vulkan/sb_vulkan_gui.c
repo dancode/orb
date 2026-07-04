@@ -122,14 +122,16 @@ demo_widgets( void )
 
         static int clicks = 0;
         if ( gui()->button( "Click me" ) )
+        {
             clicks++;
+        }
         gui()->textf( "button pressed %d time(s)", clicks );
 
         gui()->spacing( 0 );
 
         static bool checked = true;
         gui()->checkbox( "Enable feature", &checked );
-        gui()->textf( "feature is %s", checked ? "ON" : "off" );
+        // gui()->textf( "feature is %s", checked ? "ON" : "off" );
 
         gui()->spacing( 0 );
 

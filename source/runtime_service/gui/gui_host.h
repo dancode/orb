@@ -41,6 +41,12 @@ void gui_perf_overlay( gui_clock_fn clock, int mode );
    see gui_debug_name() below. */
 void gui_state_overlay( int mode );
 
+/* built-in pipeline dashboard: a dockable/tear-off window visualizing the render backend
+   (slot memory maps, frames-in-flight uploads, draw batches, buffer usage), rendered through
+   its own vertex/index buffers.  Emit each frame inside a ctx scope, like perf_overlay;
+   Debug builds only (GUI_PIPELINE_DASHBOARD) -- a no-op stub elsewhere. */
+void gui_pipeline_dashboard( bool* open );
+
 /* font */
 u32  gui_font_load( const char* path );
 

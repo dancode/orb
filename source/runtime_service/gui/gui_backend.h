@@ -297,6 +297,110 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
     #define DBG_NAME( id, str )           ( (void)0 )
 #endif
 
+/*==============================================================================================
+    PIPELINE DASHBOARD (backend/gui_dash_overlay.c + gui_dashboard.c) -- Debug builds only.
+
+    A visual diagnostic of the render pipeline itself: memory maps of the shared vertex/index
+    arena (per-window geometry slots with their padded reservations, volatile sub-slots, high-
+    water marks), the per-surface frames-in-flight regions and upload spans, the dispatch-order
+    draw batches, and the EMIT buffer usage vs caps.
+
+    Split across the two units the same way the feature itself is split:
+
+        gui_dashboard.c (UI unit)          -- the window SHELL: a normal window_begin window
+                                              (movable / dockable / tear-off), emitting only
+                                              chrome + canvas() rect reservations + tooltips.
+        backend/gui_dash_overlay.c         -- the CONTENT: captures a snapshot at defined
+                                              pipeline points and, at flush time, expands the
+                                              diagnostic geometry into its OWN vertex/index
+                                              buffers (debug-overlay pattern), scissored to the
+                                              registered canvas rects.  It never writes a byte
+                                              into s_draw / s_tess / the viewport buffers, so
+                                              the dashboard cannot pollute the data it shows.
+
+    The build switch mirrors GUI_DEBUG_OVERLAY: auto-on for Debug builds, force-off with
+    GUI_NO_PIPELINE_DASHBOARD.  Computed here so BOTH units agree.
+==============================================================================================*/
+
+#if defined( _DEBUG ) && !defined( GUI_PIPELINE_DASHBOARD ) && !defined( GUI_NO_PIPELINE_DASHBOARD )
+    #define GUI_PIPELINE_DASHBOARD
+#endif
+#if defined( GUI_NO_PIPELINE_DASHBOARD ) && defined( GUI_PIPELINE_DASHBOARD )
+    #undef GUI_PIPELINE_DASHBOARD
+#endif
+
+/* The dashboard window's id (id_hash of its title), defined in gui_dashboard.c (UI unit); stays
+   0 when the feature is compiled out or the window has never been emitted.  Read by the cache
+   exemption (cache_win_exempt, gui_build_cache.c) so the dashboard's own chrome never poisons
+   idle-skip or the stats it reports -- same rule as g_gui_perf_overlay_id above. */
+extern gui_id_t g_gui_dash_window_id;
+
+#ifdef GUI_PIPELINE_DASHBOARD
+
+    /* Panel ids -- one registered canvas per panel, re-stamped by the UI shell each emit frame. */
+    typedef enum
+    {
+        GUI_DASH_PANEL_VBMAP = 0,   /* vertex-arena memory map                    */
+        GUI_DASH_PANEL_IBMAP,       /* index-arena memory map                     */
+        GUI_DASH_PANEL_FIF,         /* frames-in-flight regions + upload spans    */
+        GUI_DASH_PANEL_BATCH,       /* dispatch-order draw batch inspector        */
+        GUI_DASH_PANEL_EMIT,        /* EMIT/BUILD buffer usage vs caps            */
+        GUI_DASH_PANEL_VOLATILE,    /* volatile sub-slot registry                 */
+        GUI_DASH_PANEL_STATS,       /* frame stats strip                          */
+        GUI_DASH_PANEL_COUNT
+
+    } gui_dash_panel_t;
+
+    /* Hover probe result -- preformatted text lines so no backend-private type crosses the unit
+       seam.  The shell shows them verbatim in a tooltip. */
+    #define GUI_DASH_PROBE_LINES 6
+    typedef struct
+    {
+        u32  count;
+        char line[ GUI_DASH_PROBE_LINES ][ 64 ];
+
+    } gui_dash_probe_t;
+
+    /* Lifecycle, driven by gui_frame.c (UI unit) under the same #ifdef.  gui_dash_flush draws
+       the content for one surface -- called right after gui_render_flush, before the debug
+       overlay, so the overlay stays topmost. */
+    bool gui_dash_init    ( void );
+    void gui_dash_shutdown( void );
+    void gui_dash_flush   ( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+
+    /* UI-shell seam (called from gui_dashboard.c).  ui_begin clears this emit's canvas + tooltip
+       registrations; canvas() re-registers one panel rect (intersected with the ambient clip so
+       a scrolled-out panel draws nothing); tooltip() arms the private cursor tooltip -- the
+       backend probes the hit rects at flush time and draws the result through its own buffers,
+       LAST, so dashboard content can never paint over it (a normal-pipeline tooltip window
+       would be painted over, since dash content flushes after the whole UI); probe resolves a
+       mouse position against the hit rects recorded at the last flush (also used internally). */
+    void gui_dash_ui_begin  ( void );
+    void gui_dash_canvas    ( u32 panel, gui_rect_t r, u32 vp );
+    void gui_dash_tooltip   ( f32 mx, f32 my );
+    bool gui_dash_probe     ( f32 mx, f32 my, gui_dash_probe_t* out );
+    void gui_dash_set_freeze( bool on );
+    bool gui_dash_frozen    ( void );
+    u32  gui_dash_serial    ( void );
+
+    /* Capture hooks, called from the pipeline files (which the unity chain includes before
+       gui_dash_overlay.c) via the DASH_* macros below:
+         dash_capture_build -- end of cache_build_frame: slot table, dispatch order, tess
+                               counters, volatile registry, emit counters, stats.
+         dash_capture_flush -- end of gui_render_flush: one surface's frame index, upload spans,
+                               upload bytes/batches and draw calls. */
+    void dash_capture_build( void );
+    void dash_capture_flush( u32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 idx_hi,
+                             u32 bytes, u32 batches, u32 draws );
+
+    #define DASH_CAPTURE_BUILD()        dash_capture_build()
+    #define DASH_CAPTURE_FLUSH( ... )   dash_capture_flush( __VA_ARGS__ )
+
+#else
+    #define DASH_CAPTURE_BUILD()        ( (void)0 )
+    #define DASH_CAPTURE_FLUSH( ... )   ( (void)0 )
+#endif
+
 // clang-format on
 /*============================================================================================*/
 #endif    // GUI_BACKEND_H

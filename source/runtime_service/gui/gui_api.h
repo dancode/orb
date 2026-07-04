@@ -88,6 +88,16 @@ typedef struct gui_api_s
        mode-tiers-in, no-clock-needed shape as perf_overlay.  0 = off. */
     void                ( *state_overlay )( int mode );
 
+    /* Built-in pipeline dashboard: a dockable / tear-off window visualizing the render backend
+       itself -- memory maps of the vertex/index arena (per-window geometry slots, volatile
+       sub-slots, high-water marks), frames-in-flight upload spans, the dispatch-order draw
+       batches, and EMIT buffer usage.  The heavy content renders through its OWN vertex/index
+       buffers so opening it never perturbs the data shown.  Emit once per frame inside a ctx
+       scope (like perf_overlay); `open` is the host's toggle, written back to false when the
+       window's X button is clicked.  Compiled in for Debug builds (GUI_PIPELINE_DASHBOARD,
+       gui_backend.h); a no-op in Release so the slot keeps func_api_size hot-reload stable. */
+    void                ( *pipeline_dashboard )( bool* open );
+
     /* Frame lifecycle.  A frame is four explicit phases -- this is a multi-context system and the
        API does not hide it; even a single-context host names its one context:
 

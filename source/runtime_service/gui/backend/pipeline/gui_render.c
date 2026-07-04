@@ -421,16 +421,15 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
        we upload.  For a single surface this covers the whole buffer. */
     u32 vtx_lo = s_tess.vert_count, vtx_hi = 0;
     u32 idx_lo = s_tess.idx_count,  idx_hi = 0;
-    
-    gui_id_t overlay_id = g_gui_perf_overlay_id; // id_hash( "perf_overlay" )
-    u32 overlay_bytes = 0;
+
+    u32 overlay_bytes = 0;   // self-measuring windows' share, excluded from the upload stats
 
     for ( u32 d = 0; d < s_dispatch_count; ++d )
     {
         const win_geo_slot_t* sl = s_dispatch[ d ];
         if ( sl->vp != vp_index || sl->vert_count == 0 ) continue;
-        
-        if ( s_exempt_perf_overlay && sl->win == overlay_id )
+
+        if ( cache_win_exempt( sl->win ) )
         {
             overlay_bytes += sl->vert_count * sizeof( gui_draw_vert_t );
             overlay_bytes += sl->idx_count * sizeof( u16 );
@@ -574,7 +573,7 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
                 .first_instance = 0,
             } );
 
-            if ( !( s_exempt_perf_overlay && slot->win == overlay_id ) )
+            if ( !cache_win_exempt( slot->win ) )
                 ++draw_calls;
         }
     }
@@ -583,6 +582,11 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
 
     // Fold this surface's draw-call count into the frame accumulator + lifetime peak (cache stats).
     cache_count_draw_calls( draw_calls );
+
+    /* Pipeline-dashboard flush capture: what physically hit the GPU for this surface (frame
+       region, upload spans, bytes/writes, draws).  A no-op unless GUI_PIPELINE_DASHBOARD. */
+    DASH_CAPTURE_FLUSH( vp_index, frame, vtx_lo, vtx_hi, idx_lo, idx_hi,
+                        up_bytes, up_batches, draw_calls );
 
     static u32 prev_draw_calls = ~0u;   // sentinel: forces a print on the first frame
     if ( s_caps.stats_trace && draw_calls != prev_draw_calls )

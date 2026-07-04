@@ -86,6 +86,14 @@ gui_init( gui_builtin_font_t font )
     }
 #endif
 
+#ifdef GUI_PIPELINE_DASHBOARD
+    /* Pipeline dashboard GPU buffers (its own vb/ib).  Non-fatal: the window still opens, the
+       canvases just stay dark. */
+    if ( gui_dash_init() == false ) {
+         printf( "[gui] WARNING: pipeline dashboard buffers failed; dashboard disabled\n" );
+    }
+#endif
+
     return true;
 }
 
@@ -96,6 +104,10 @@ gui_shutdown( void )
 {
     #ifdef GUI_DEBUG_OVERLAY
     gui_debug_shutdown();
+    #endif
+
+    #ifdef GUI_PIPELINE_DASHBOARD
+    gui_dash_shutdown();
     #endif
 
     /* Destroy GPU surfaces for every context before releasing memory blocks.
@@ -585,6 +597,9 @@ gui_render( gui_vp_t vp, rhi_cmd_t cmd )
        render": emit ends here, render time accumulates across every render() call this frame. */
     f64 t0 = perf_render_begin();
     gui_render_flush( v, vp, cmd, v->disp_w, v->disp_h );
+#ifdef GUI_PIPELINE_DASHBOARD
+    gui_dash_flush( vp, cmd, v->disp_w, v->disp_h );    /* dashboard content over the UI */
+#endif
 #ifdef GUI_DEBUG_OVERLAY
     gui_debug_flush( vp, cmd, v->disp_w, v->disp_h );   /* each viewport flushes its own rects */
 #endif

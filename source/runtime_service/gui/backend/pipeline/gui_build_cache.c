@@ -140,6 +140,20 @@ bool gui_build_retained_skip    ( void )    { return s_caps.retained_cache; }
    frame regardless of anything else being idle. */
 static bool s_exempt_perf_overlay = true;
 
+/* Self-measuring windows exempted from the stats they report and from poisoning any_changed:
+   the perf overlay and the pipeline dashboard's shell (g_gui_dash_window_id, gui_dashboard.c;
+   stays GUI_ID_NONE when that feature is compiled out or never emitted).  Both still hash,
+   diff, and retessellate normally -- they render; only the metrics ignore them. */
+static bool
+cache_win_exempt( gui_id_t win )
+{
+    if ( win == GUI_ID_NONE )
+        return false;
+    if ( s_exempt_perf_overlay && win == g_gui_perf_overlay_id )
+        return true;
+    return win == g_gui_dash_window_id;
+}
+
 /*==============================================================================================
     Window geometry slots -- the retained geometry store.
 
@@ -355,7 +369,7 @@ cache_diff_windows( void )
 
         gui_id_t win = segs[ si ].win;
 
-        if ( !( s_exempt_perf_overlay && win == g_gui_perf_overlay_id ) )
+        if ( !cache_win_exempt( win ) )
             total_cmd += segs[ si ].hi - segs[ si ].lo;
 
         /* Find or create the per-window record. */
@@ -447,7 +461,7 @@ cache_diff_windows( void )
         bool changed = !match || s_cache.cur[ i ].force_changed;
         s_cache.cur[ i ].changed = changed;
         if ( !changed ) ++s_cache.unchanged;
-        else if ( !( s_exempt_perf_overlay && s_cache.cur[ i ].win == g_gui_perf_overlay_id ) )
+        else if ( !cache_win_exempt( s_cache.cur[ i ].win ) )
             s_cache.any_changed = true;
 
         /* The perf overlay's own text (live FPS/ms/vert counters) changes practically every real
@@ -797,7 +811,7 @@ cache_build_frame( void )
             if ( reused_volatile_n < RENDER_MAX_WIN )
                 reused_volatile_wins[ reused_volatile_n++ ] = wh->win;
 
-            if ( !( s_exempt_perf_overlay && wh->win == g_gui_perf_overlay_id ) )
+            if ( !cache_win_exempt( wh->win ) )
             {
                 vert_retained += slot->vert_count;
                 tri_retained  += slot->idx_count / 3u;
@@ -867,9 +881,9 @@ cache_build_frame( void )
             slot->valid     = true;
         }
 
-        /* Accumulate per-slot geometry stats; exclude overlay window from totals. */
-        if ( s_exempt_perf_overlay && wh->win == g_gui_perf_overlay_id )
-            overlay_win = 1;
+        /* Accumulate per-slot geometry stats; exclude self-measuring overlay windows from totals. */
+        if ( cache_win_exempt( wh->win ) )
+            ++overlay_win;
         else
         {
             total_vert += slot->vert_count;
@@ -946,6 +960,10 @@ cache_build_frame( void )
         prev_win_ret  = s_stats.accum.win_retained;
         prev_vert_ret = s_stats.accum.vert_retained;
     }
+
+    /* Pipeline-dashboard snapshot: everything above is final for the frame -- slots placed,
+       dispatch z-sorted, stats accumulated.  A no-op unless GUI_PIPELINE_DASHBOARD. */
+    DASH_CAPTURE_BUILD();
 }
 
 // clang-format on

@@ -108,6 +108,11 @@ static gui_backend_caps_t s_caps;
 // backend/ root -- see the file banner above for why.
 #include "runtime_service/gui/backend/gui_debug_overlay.c"
 
+// PIPELINE DASHBOARD content: another parallel mini-pipeline (own snapshot + own vb/ib),
+// compiled out unless GUI_PIPELINE_DASHBOARD.  Last so it sees every pipeline static it
+// visualizes (s_draw, s_tess, the slot tables, s_volatile, s_render) plus gui_debug_name.
+#include "runtime_service/gui/backend/gui_dash_overlay.c"
+
 /*==============================================================================================
     Backend lifecycle seam -- the entry point the UI unit (gui_init/gui_shutdown, gui_frame.c)
     calls, mirroring how gui.c fronts the UI unit.  Ties together whatever the backend needs to
