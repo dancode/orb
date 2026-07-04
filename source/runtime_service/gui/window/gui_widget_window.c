@@ -1204,7 +1204,13 @@ gui_window_end( void )
        resize the border band uses, so window_begin applies it next frame); double-click it to snap
        the window to this frame's measured content (win->content_* was just written back by
        layout_pop_region).  Only one of the two fires per press, and the double-click never starts a
-       drag.  The grip resizes regardless of NORESIZE -- it is the window's own explicit handle. */
+       drag.  The grip resizes regardless of NORESIZE -- it is the window's own explicit handle.
+
+       Press-1 is deferred behind a drag threshold (s_grip_drag_pending, same mechanism as the
+       native title bar below): grabbing the resize immediately on press-1 would set active_id and
+       swallow press-2 before mouse_double can be tested, so every double-click attempt needed
+       several tries. Only committing once the cursor actually moves keeps the grip's hit rect
+       stationary through a stationary click, so press-2 lands on it. */
     if ( ( s_build.win_flags & GUI_WIN_CAN_AUTOSIZE ) && !s_build.win_collapsed && win )
     {
         f32          g         = WIDGET_H;           /* grip leg length */
@@ -1220,6 +1226,7 @@ gui_window_end( void )
         {
             if ( s_io.mouse_double[ 0 ] )
             {
+                s_grip_drag_pending = false;
                 bool collapsible = ( s_build.win_title_h > 0.0f ) && !( s_build.win_flags & GUI_WIN_NOCOLLAPSE );
                 f32  grip_mb_h   = ( s_build.win_flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
                 f32  max_w, max_h;
@@ -1232,9 +1239,34 @@ gui_window_end( void )
             }
             else if ( s_io.mouse_pressed[ 0 ] )
             {
-                resize_grab( s_build.win_id, ( gui_rect_t ){ win->x, win->y, win->w, win->h },
-                             GUI_RESIZE_R | GUI_RESIZE_B );
-                resizing = true;
+                s_grip_drag_pending = true;
+                s_grip_drag_gui     = s_build.win_id;
+                s_grip_drag_px      = s_io.mouse_x;
+                s_grip_drag_py      = s_io.mouse_y;
+            }
+        }
+
+        /* Advance / commit the pending grip press outside the hot gate, so the cursor sliding off
+           the small grip rect mid-press does not strand the drag -- mirrors the title-bar
+           threshold below. Released without crossing the threshold: it was a (potential first)
+           click, not a drag -- active_id is never touched, leaving the grip in place for press-2. */
+        if ( s_grip_drag_pending && s_grip_drag_gui == s_build.win_id )
+        {
+            if ( !s_io.mouse_down[ 0 ] )
+            {
+                s_grip_drag_pending = false;
+            }
+            else
+            {
+                f32 dx = s_io.mouse_x - s_grip_drag_px;
+                f32 dy = s_io.mouse_y - s_grip_drag_py;
+                if ( dx * dx + dy * dy >= TITLEBAR_DRAG_THRESH * TITLEBAR_DRAG_THRESH )
+                {
+                    s_grip_drag_pending = false;
+                    resize_grab( s_build.win_id, ( gui_rect_t ){ win->x, win->y, win->w, win->h },
+                                 GUI_RESIZE_R | GUI_RESIZE_B );
+                    resizing = true;
+                }
             }
         }
 

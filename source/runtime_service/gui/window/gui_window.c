@@ -54,6 +54,16 @@ static gui_id_t s_titlebar_drag_gui;  /* gui window id -- guards threshold check
 static f32        s_titlebar_drag_px;
 static f32        s_titlebar_drag_py;
 
+/* Autosize-grip drag-threshold state: same problem as the title bar above, but for the
+   CAN_AUTOSIZE corner grip -- an immediate resize_grab on press-1 would set active_id and
+   absorb press-2 before mouse_double can be tested, making the double-click-to-fit gesture
+   need several tries. Reuses TITLEBAR_DRAG_THRESH; the pending press only commits to a resize
+   once the cursor has actually moved. */
+static bool       s_grip_drag_pending;
+static gui_id_t s_grip_drag_gui;
+static f32        s_grip_drag_px;
+static f32        s_grip_drag_py;
+
 /* In-flight edge resize.  The window being resized holds active_id == (id ^ RESIZE_SALT).
    The s_resize_* in-flight state (edges, offsets, far-edge pins) is owned by the shared
    resize mechanism in core/gui_resize.c -- a resizeable child_begin (gui_layout_child.c)
