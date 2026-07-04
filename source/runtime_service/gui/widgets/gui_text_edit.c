@@ -318,13 +318,14 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
            there is no Ctrl+V key check here -- a non-empty s_io.paste IS the paste.  Resolved
            first so it acts on the selection as the user sees it, before navigation moves it. */
 
-        if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_C ] )
+        bool enable_clipboard = true;
+        if ( enable_clipboard && ctrl && has_sel && s_io.keys_pressed[ APP_KEY_C ] )
         {
             gui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
             blink_reset = true;
         }
 
-        if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_X ] )
+        if ( enable_clipboard && ctrl && has_sel && s_io.keys_pressed[ APP_KEY_X ] )
         {
             gui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
             memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
@@ -336,7 +337,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
             blink_reset = true;
         }
 
-        if ( s_io.paste[ 0 ] )
+        if ( enable_clipboard && s_io.paste[ 0 ] )
         {
             /* Drop the selection first so the paste lands where it was. */
             if ( has_sel )
@@ -362,7 +363,8 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
         }
 
         /* Undo / redo.  Ctrl+Z undoes; Ctrl+Y or Ctrl+Shift+Z redoes.  Both repeat. */
-        if ( ctrl && !shift && s_io.keys_pressed_repeat[ APP_KEY_Z ] )
+        bool enable_undo_redo = true;
+        if ( enable_undo_redo && ctrl && !shift && s_io.keys_pressed_repeat[ APP_KEY_Z ] )
         {
             if ( s_undo.cur > 0 )
             {
@@ -376,7 +378,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
             }
         }
 
-        if ( ctrl && ( s_io.keys_pressed_repeat[ APP_KEY_Y ] ||
+        if ( enable_undo_redo && ctrl && ( s_io.keys_pressed_repeat[ APP_KEY_Y ] ||
                        ( shift && s_io.keys_pressed_repeat[ APP_KEY_Z ] ) ) )
         {
             if ( s_undo.cur + 1 < s_undo.top )
@@ -582,7 +584,8 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
             f32 px  = s_io.mouse_x - ( box.x + WIDGET_PAD ) + es->scroll_x;
             u32 off = text_offset_at( buf, len, px );
 
-            if ( st.pressed && s_io.mouse_double[ 0 ] )
+            bool enable_double_click_word_select = true;
+            if ( enable_double_click_word_select && st.pressed && s_io.mouse_double[ 0 ] )
             {
                 /* Double-click: select the word under the cursor.
                    text_offset_at places `off` AFTER a glyph when the click lands on its right
@@ -700,9 +703,10 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
     draw_push_text_clip_n( text_x, text_y, COL_TEXT, buf, 0xFFFFFFFFu, clip_x0, clip_x1 );
 
     /* Blinking caret: visible for the first 0.5 s of each 1 s cycle. */
+    bool enable_caret_blink = true;
     if ( focused )
     {
-        bool caret_vis = ( ( (u32)( es->blink_t * 2.0f ) ) & 1u ) == 0u;
+        bool caret_vis = !enable_caret_blink || ( ( (u32)( es->blink_t * 2.0f ) ) & 1u ) == 0u;
         if ( caret_vis )
         {
             f32 cx = text_x + text_x_at( buf, es->cursor );

@@ -256,14 +256,16 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
         snprintf( line, sizeof( line ), "FPS %5.1f  (%4.2f ms)", fps, fps > 0.0f ? 1000.0f / fps : 0.0f );
         gui_text_colored( fps_col, line );
 
-        if ( mode >= 2 )
+        bool show_timing_rows = ( mode >= 2 );
+        if ( show_timing_rows )
         {
             gui_spacing( 2.0f );
             gui_textf( "emit   %5.2f ms", s_perf.s_emit_ms );
             gui_textf( "render %5.2f ms", s_perf.s_rend_ms );
         }
 
-        if ( mode >= 3 )
+        bool show_geometry_rows = ( mode >= 3 );
+        if ( show_geometry_rows )
         {
             gui_render_stats_t rs = gui_build_stats();
             gui_spacing( 2.0f );
@@ -272,7 +274,8 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
             gui_textf( "batches %6u", rs.draw_calls );
             gui_textf( "cmds    %6u", rs.cmd_count  );
 
-            if ( mode >= 4 )
+            bool show_retained_rows = ( mode >= 4 );
+            if ( show_retained_rows )
             {
                 /* Retained-mode stats: how much geometry was reused vs re-tessellated.
                    volatile patched is a separate signal, not folded into wins ret above -- a
@@ -346,7 +349,8 @@ gui_state_overlay( int mode )
         gui_textf( "Active  %s (btn %u)", dbg_id_str( s_interaction.active_id ), s_interaction.active_button );
         gui_textf( "Window  %s", dbg_id_str( s_interaction.hover_win ) );
 
-        if ( mode >= 2 )
+        bool show_extended_rows = ( mode >= 2 );
+        if ( show_extended_rows )
         {
             gui_spacing( 2.0f );
             gui_textf( "Focused %s", dbg_id_str( s_interaction.focused_id ) );
@@ -355,7 +359,8 @@ gui_state_overlay( int mode )
             gui_textf( "Mouse   %6.1f, %6.1f", s_io.mouse_x, s_io.mouse_y );
         }
 
-        if ( mode >= 3 )
+        bool show_popup_rows = ( mode >= 3 );
+        if ( show_popup_rows )
         {
             gui_spacing( 2.0f );
             gui_textf( "Popups  %u", s_popup_open_count );

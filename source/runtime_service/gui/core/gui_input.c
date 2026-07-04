@@ -262,29 +262,33 @@ input_update( i32 win_w, i32 win_h, f32 dt )
 
     /* Double-click: a press soon after, and close to, the previous press.  Done before the
        text/scroll merge below so it is ready for the widget code this frame. */
-    for ( u32 i = 0; i < 3; ++i )
+    bool detect_double_click = true;
+    if ( detect_double_click )
     {
-        s_io.mouse_double[ i ] = false;
-        s_click_elapsed[ i ]  += dt;
-
-        if ( s_io.mouse_pressed[ i ] )
+        for ( u32 i = 0; i < 3; ++i )
         {
-            f32 dx = s_io.mouse_x - s_click_x[ i ];
-            f32 dy = s_io.mouse_y - s_click_y[ i ];
-            bool in_time = s_click_elapsed[ i ] <= DOUBLE_CLICK_TIME;
-            bool in_dist = ( dx * dx + dy * dy ) <= DOUBLE_CLICK_DIST * DOUBLE_CLICK_DIST;
+            s_io.mouse_double[ i ] = false;
+            s_click_elapsed[ i ]  += dt;
 
-            if ( in_time && in_dist )
+            if ( s_io.mouse_pressed[ i ] )
             {
-                s_io.mouse_double[ i ] = true;
-                s_click_elapsed[ i ]   = 1.0e9f;   /* consume: a 3rd press is a fresh single */
+                f32 dx = s_io.mouse_x - s_click_x[ i ];
+                f32 dy = s_io.mouse_y - s_click_y[ i ];
+                bool in_time = s_click_elapsed[ i ] <= DOUBLE_CLICK_TIME;
+                bool in_dist = ( dx * dx + dy * dy ) <= DOUBLE_CLICK_DIST * DOUBLE_CLICK_DIST;
+
+                if ( in_time && in_dist )
+                {
+                    s_io.mouse_double[ i ] = true;
+                    s_click_elapsed[ i ]   = 1.0e9f;   /* consume: a 3rd press is a fresh single */
+                }
+                else
+                {
+                    s_click_elapsed[ i ] = 0.0f;       /* first press of a potential pair */
+                }
+                s_click_x[ i ] = s_io.mouse_x;
+                s_click_y[ i ] = s_io.mouse_y;
             }
-            else
-            {
-                s_click_elapsed[ i ] = 0.0f;       /* first press of a potential pair */
-            }
-            s_click_x[ i ] = s_io.mouse_x;
-            s_click_y[ i ] = s_io.mouse_y;
         }
     }
 

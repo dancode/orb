@@ -259,14 +259,22 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     s_style.grab_rounding   = (u8)( (f32)s_style_base.grab_rounding   * scale );
 
     /* Prevent vanishing outlines or cursors when scaling down. */
-    if ( s_style.win_border == 0 && s_style_base.win_border > 0 ) s_style.win_border = 1u;
-    if ( s_style.cursor_w == 0   && s_style_base.cursor_w > 0 )   s_style.cursor_w = 1u;
-    if ( s_style.widget_gap == 0 && s_style_base.widget_gap > 0 ) s_style.widget_gap = 1u;
+    bool clamp_min_visible_metrics = true;
+    if ( clamp_min_visible_metrics )
+    {
+        if ( s_style.win_border == 0 && s_style_base.win_border > 0 ) s_style.win_border = 1u;
+        if ( s_style.cursor_w == 0   && s_style_base.cursor_w > 0 )   s_style.cursor_w = 1u;
+        if ( s_style.widget_gap == 0 && s_style_base.widget_gap > 0 ) s_style.widget_gap = 1u;
+    }
 
     /* Floor the row height to the font's glyph box and line advance so a tall-boxed font
        (e.g. one with deep descenders) never clips and a single line of text always fits. */
-    if ( s_style.line_size < char_h ) s_style.line_size = (u8)( char_h );
-    if ( s_style.line_size < line_h ) s_style.line_size = (u8)( line_h );
+    bool clamp_line_size_to_font = true;
+    if ( clamp_line_size_to_font )
+    {
+        if ( s_style.line_size < char_h ) s_style.line_size = (u8)( char_h );
+        if ( s_style.line_size < line_h ) s_style.line_size = (u8)( line_h );
+    }
 }
 
 // clang-format on
