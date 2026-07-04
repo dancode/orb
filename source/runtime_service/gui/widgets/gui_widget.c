@@ -216,6 +216,27 @@ gui_bullet( void )
     widget_track_width( r.x + bsz );
 }
 
+/* Shared button-face label draw: centered when it fits the frame, else a left-anchored
+   ellipsized fit so an oversized label truncates cleanly instead of spilling past both edges.
+   Every pushbutton-style widget (button, button_fill, small_button) draws its face this way --
+   centered is a button's one layout difference from the trailing-label widgets below, which is
+   why it is not routed through widget_split_label / rect_align's LEFT default like they are. */
+static void
+draw_button_label( gui_rect_t r, const char* label )
+{
+    f32 lw    = label_width( label );
+    f32 avail = r.w - 2.0f * WIDGET_PAD;
+    if ( lw <= avail )
+    {
+        gui_rect_t lr = rect_align( r, lw, font_char_h(), GUI_ALIGN_CENTER );
+        draw_label( lr.x, lr.y, COL_TEXT, label );
+    }
+    else
+    {
+        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label, avail );
+    }
+}
+
 /*==============================================================================================
 
     button -- returns true on the frame the button is released while hovered
@@ -233,22 +254,7 @@ gui_button( const char* label )
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, gui_anim_bg( id, st ) );
-
-    /* Centered label -- a button always centers, independent of the region's content align.  When
-       the label outgrows the button (a squeezed cell), fall back to a left-anchored ellipsized fit
-       so it truncates cleanly instead of spilling past both edges. */
-
-    f32 lw = label_width( label );
-    f32 avail = r.w - 2.0f * WIDGET_PAD;
-    if ( lw <= avail )
-    {
-        gui_rect_t lr = rect_align( r, lw, font_char_h(), GUI_ALIGN_CENTER );
-        draw_label( lr.x, lr.y, COL_TEXT, label );
-    }
-    else
-    {
-        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label, avail );
-    }
+    draw_button_label( r, label );
 
     return st.clicked;
 }
@@ -280,18 +286,7 @@ gui_button_fill( const char* label )
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, gui_anim_bg( id, st ) );
-
-    f32 lw    = label_width( label );
-    f32 avail = r.w - 2.0f * WIDGET_PAD;
-    if ( lw <= avail )
-    {
-        gui_rect_t lr = rect_align( r, lw, font_char_h(), GUI_ALIGN_CENTER );
-        draw_label( lr.x, lr.y, COL_TEXT, label );
-    }
-    else
-    {
-        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label, avail );
-    }
+    draw_button_label( r, label );
 
     return st.clicked;
 }
@@ -313,18 +308,7 @@ gui_small_button( const char* label )
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
-
-    f32 lw = label_width( label );
-    f32 avail = r.w - 2.0f * WIDGET_PAD;
-    if ( lw <= avail )
-    {
-        gui_rect_t lr = rect_align( r, lw, font_char_h(), GUI_ALIGN_CENTER );
-        draw_label( lr.x, lr.y, COL_TEXT, label );
-    }
-    else
-    {
-        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label, avail );
-    }
+    draw_button_label( r, label );
 
     return st.clicked;
 }

@@ -509,27 +509,25 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
     return st;
 }
 
-/* Background color for a pushbutton / knob style widget, from its interaction state. */
+/* Frame-background tint for a "framed field" widget (checkbox box, slider track, drag box, input):
+   hover / nav / active lift it to the shared hot / active palette entries -- one at a time, since
+   hover and nav-highlight are mutually exclusive -- over a caller-supplied idle_color_enum base 
+   so each field keeps its own resting colour, matching how Dear ImGui's FrameBgHovered lifts every
+   framed control, not just buttons. */
+
 static u32
-widget_bg_color( widget_state_t st )
+frame_bg_color( widget_state_t st, u32 idle_color_enum )
 {
     if ( st.active )            return COL_WIDGET_ACT;
     if ( st.hover || st.nav )   return COL_WIDGET_HOT;   /* nav cursor lights the body like a hover */
-    return COL_WIDGET_BG;
+    return idle_color_enum;
 }
 
-/* Frame-background tint for a "framed field" widget (checkbox box, slider track, drag box, input):
-   the same hover / nav / active response as a button, but over a caller-supplied idle base so the
-   field keeps its own resting colour.  Mouse hover and keyboard-nav highlight both light it -- one
-   at a time, since they are mutually exclusive -- so it is clear what is under the cursor, matching
-   how Dear ImGui's FrameBgHovered lifts every framed control, not just buttons. */
-
-static u32
-frame_bg_color( widget_state_t st, u32 idle )
-{
-    if ( st.active )            return COL_WIDGET_ACT;
-    if ( st.hover || st.nav )   return COL_WIDGET_HOT;
-    return idle;
+/* Background color for a pushbutton / knob style widget: frame_bg_color with the plain widget
+   background as the idle base. */
+static u32 widget_bg_color( widget_state_t st ) 
+{ 
+    return frame_bg_color( st, COL_WIDGET_BG ); 
 }
 
 // clang-format on
