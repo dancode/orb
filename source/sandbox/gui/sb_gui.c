@@ -538,6 +538,17 @@ demo_volatile_pulse_cb( bool is_replay )
     gui_rect_t r = gui()->canvas( 24.0f );
     r.w = 24.0f;
     gui()->draw_rect( r.x, r.y, r.w, r.h, abgr );
+
+    /* CONTRACT: a volatile block must keep a FIXED LAYOUT FOOTPRINT.  The pixels inside it may
+       change freely every frame (that is the whole point), but its size must not -- surrounding
+       widgets are retained and only re-lay-out on real frames, so a block whose width jitters
+       (e.g. "%.1f" gaining a digit) shoves its same_line neighbours around on real frames while
+       they sit frozen on idle ones: visible flicker.  Fixed field widths + the mono font keep
+       this line's footprint constant while the digits still animate. */
+    f32 delta_time = gui()->get_delta_time();
+    f32 ms  = delta_time * 1000.0f;
+    f32 fps = ( delta_time > 0.0f ) ? 1.0f / delta_time : 0.0f;
+    gui()->textf( "Application average %8.3f ms/frame (%7.1f FPS)", ms, fps );
     gui()->volatile_end();
 }
 
@@ -603,10 +614,10 @@ show_demo_window(bool* p_open)
        window's command hash different frame to frame forever, which would keep frame_dirty()
        true forever and defeat the idle-skip entirely (the exact problem volatile widgets exist
        to route around; see demo_volatile_pulse_cb above for the widget that keeps animating anyway). */
-    gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 6.061f, 165.0f);
+    // gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 6.061f, 165.0f);
 
     gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );
-    gui()->same_line( 0 );
+    // gui()->same_line( 0 );
     gui()->text( "<- volatile widget: keeps pulsing on idle frames, no full rebuild" );
 
     for ( int i = 0; i < 40; i++ )

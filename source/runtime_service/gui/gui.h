@@ -1096,6 +1096,14 @@ typedef struct
     during replay: hover/active/focus reflect whatever the last real frame established, but a
     replay can never newly acquire either state or fire a fresh click -- interaction is only ever
     resolved on real frames, which is guaranteed since input changes always force one.
+
+    CONTRACT -- fixed layout footprint: the block's PIXELS may change every frame, but the space
+    it occupies in the layout must not.  Surrounding widgets are retained and only re-lay-out on
+    real frames; a block whose size varies (e.g. text gaining a digit) shoves its neighbours
+    around on real frames while they sit frozen on idle ones -- visible jitter, plus the window
+    re-tessellates every real frame because the neighbours' positions really did change.  Use
+    fixed-size formatting ("%8.3f" with a mono font), a fixed canvas(), or padding to keep the
+    footprint constant.
 ==============================================================================================*/
 
 typedef void ( *gui_volatile_fn )( bool is_replay );
