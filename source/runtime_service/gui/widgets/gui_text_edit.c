@@ -706,7 +706,8 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
     bool enable_caret_blink = true;
     if ( focused )
     {
-        bool caret_vis = !enable_caret_blink || ( ( (u32)( es->blink_t * 2.0f ) ) & 1u ) == 0u;
+        bool in_visible_half_of_blink_cycle = ( ( (u32)( es->blink_t * 2.0f ) ) & 1u ) == 0u;
+        bool caret_vis = !enable_caret_blink || in_visible_half_of_blink_cycle;
         if ( caret_vis )
         {
             f32 cx = text_x + text_x_at( buf, es->cursor );

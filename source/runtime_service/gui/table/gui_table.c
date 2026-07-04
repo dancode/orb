@@ -576,7 +576,8 @@ gui_table_next_row( f32 min_h )
 
     /* Alternating row tint, drawn first so cell content (emitted after next_column) sits on top.
        Auto-clipped to the body region by the active draw clip. */
-    if ( ( t->flags & GUI_TABLE_ROW_STRIPES ) && ( t->cur_row & 1 ) )
+    bool is_odd_row = ( t->cur_row & 1 ) != 0;
+    if ( ( t->flags & GUI_TABLE_ROW_STRIPES ) && is_odd_row )
         draw_push_rect_filled( t->body_rect.x, t->row_top, t->body_rect.w, t->row_h,
                                0, 0, 0, 0, 0, GUI_COLOR( 0xFF, 0xFF, 0xFF, 0x12 ) );
 

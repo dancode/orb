@@ -122,7 +122,8 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
 
         /* Floor a shrinking flex / fraction track at the usable minimum; let the row overflow
            rather than crush the cell.  Fixed-px ( t > 1 ) and natural ( t == 0 ) are left as-is. */
-        if ( ( t == 1.0f || ( t > 0.0f && t < 1.0f ) ) && sz < min_w )
+        bool is_flex_or_fraction_track = ( t == 1.0f ) || ( t > 0.0f && t < 1.0f );
+        if ( is_flex_or_fraction_track && sz < min_w )
             sz = min_w;
 
         out_pos [ i ] = pos;

@@ -440,8 +440,8 @@ draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b )
             f32 px = box.x + xx * cell, py = box.y + yy * cell;
             f32 cw = px + cell > box.x + box.w ? box.x + box.w - px : cell;
             f32 ch = py + cell > box.y + box.h ? box.y + box.h - py : cell;
-            draw_push_rect_filled( px, py, cw, ch, 0, 0, 1, 1, 0,
-                                   ( ( xx + yy ) & 1u ) ? col_b : col_a );
+            bool is_odd_cell = ( ( xx + yy ) & 1u ) != 0;
+            draw_push_rect_filled( px, py, cw, ch, 0, 0, 1, 1, 0, is_odd_cell ? col_b : col_a );
         }
     draw_set_rounding( save );
 }

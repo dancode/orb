@@ -96,9 +96,12 @@ resize_cursor_for_edges( u8 e )
     bool l = ( e & GUI_RESIZE_L ) != 0, r = ( e & GUI_RESIZE_R ) != 0;
     bool t = ( e & GUI_RESIZE_T ) != 0, b = ( e & GUI_RESIZE_B ) != 0;
 
-    if ( ( t && l ) || ( b && r ) ) return APP_CURSOR_RESIZE_NWSE;
-    if ( ( t && r ) || ( b && l ) ) return APP_CURSOR_RESIZE_NESW;
-    if ( l || r )                   return APP_CURSOR_RESIZE_EW;
+    bool corner_tl_or_br = ( t && l ) || ( b && r );   /* top-left or bottom-right corner grabbed */
+    bool corner_tr_or_bl = ( t && r ) || ( b && l );   /* top-right or bottom-left corner grabbed */
+
+    if ( corner_tl_or_br ) return APP_CURSOR_RESIZE_NWSE;
+    if ( corner_tr_or_bl ) return APP_CURSOR_RESIZE_NESW;
+    if ( l || r )          return APP_CURSOR_RESIZE_EW;
     return APP_CURSOR_RESIZE_NS;
 }
 

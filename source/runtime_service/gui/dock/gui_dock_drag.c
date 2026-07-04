@@ -388,7 +388,8 @@ dock_window_chrome( gui_dock_node_t* node )
         {
             f32 dx = s_io.mouse_x - s_dock_tab_drag.px;
             f32 dy = s_io.mouse_y - s_dock_tab_drag.py;
-            if ( dx * dx + dy * dy >= DOCK_TAB_DRAG_THRESH * DOCK_TAB_DRAG_THRESH )
+            bool moved_past_drag_thresh = ( dx * dx + dy * dy ) >= ( DOCK_TAB_DRAG_THRESH * DOCK_TAB_DRAG_THRESH );
+            if ( moved_past_drag_thresh )
             {
                 gui_id_t wid = s_dock_tab_drag.win_id;
                 u32        vp  = node->viewport;   /* capture before a collapse may free `node` */

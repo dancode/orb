@@ -1220,7 +1220,8 @@ gui_window_end( void )
         /* Hot when the cursor is over the grip square, or when the R+B corner edges are already
            highlighted (cursor landed on the edge band just inside the border at the corner). */
         bool         hot       = ( s_build.win_id == s_interaction.hover_win ) && rect_hit( gr );
-        hot = hot || ( hot_edges & ( GUI_RESIZE_R | GUI_RESIZE_B ) ) == ( GUI_RESIZE_R | GUI_RESIZE_B );
+        bool corner_edges_highlighted = ( hot_edges & ( GUI_RESIZE_R | GUI_RESIZE_B ) ) == ( GUI_RESIZE_R | GUI_RESIZE_B );
+        hot = hot || corner_edges_highlighted;
 
         if ( hot && s_interaction.active_id == GUI_ID_NONE )
         {
@@ -1260,7 +1261,8 @@ gui_window_end( void )
             {
                 f32 dx = s_io.mouse_x - s_grip_drag_px;
                 f32 dy = s_io.mouse_y - s_grip_drag_py;
-                if ( dx * dx + dy * dy >= TITLEBAR_DRAG_THRESH * TITLEBAR_DRAG_THRESH )
+                bool moved_past_drag_thresh = ( dx * dx + dy * dy ) >= ( TITLEBAR_DRAG_THRESH * TITLEBAR_DRAG_THRESH );
+                if ( moved_past_drag_thresh )
                 {
                     s_grip_drag_pending = false;
                     resize_grab( s_build.win_id, ( gui_rect_t ){ win->x, win->y, win->w, win->h },
@@ -1375,7 +1377,8 @@ gui_window_end( void )
         {
             f32 dx = s_io.mouse_x - s_titlebar_drag_px;
             f32 dy = s_io.mouse_y - s_titlebar_drag_py;
-            if ( dx * dx + dy * dy >= TITLEBAR_DRAG_THRESH * TITLEBAR_DRAG_THRESH )
+            bool moved_past_drag_thresh = ( dx * dx + dy * dy ) >= ( TITLEBAR_DRAG_THRESH * TITLEBAR_DRAG_THRESH );
+            if ( moved_past_drag_thresh )
             {
                 s_titlebar_drag_pending = false;
                 if ( s_titlebar_drag_os )
