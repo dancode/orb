@@ -113,6 +113,8 @@ void draw_set_sort_key          ( u32 z );          // paint order stamped on ne
 u32  draw_sort_key              ( void );           // current sort key (saved/restored by the popup layer)
 void draw_set_viewport          ( u32 vp );         // viewport index stamped on new commands (surface routing)
 u32  draw_viewport              ( void );           // current viewport index
+void draw_set_band              ( u32 band );       // arena band: 0 = main UI, 1 = debug (GUI_WIN_DEBUG_BAND)
+u32  draw_band                  ( void );           // current band (saved/restored + inherited by popups)
 void draw_set_window            ( gui_id_t win );   // stable window id stamped on new commands (cache key)
 void draw_set_font              ( u32 font );       // active font id -> per-segment atlas batch context (push/pop/use_font)
 gui_id_t draw_window            ( void );           // current window id (saved/restored by the popup layer)
@@ -144,6 +146,13 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
     BUILD: retained frame-geometry cache (pipeline/gui_build_cache.c)
 ==============================================================================================*/
 
+/* Retained-cache capacities.  Here (not in the .c files) because the dashboard snapshot types
+   below size their arrays with them; both unity units see one definition. */
+#define RENDER_MAX_WIN    32    // distinct windows tracked per frame
+#define GUI_MAX_VOLATILE  16    // registered volatile sub-slot rows
+#define SLOT_VERT_PAD     64u   // per-slot vertex headroom: absorbs minor growth in-place
+#define SLOT_IDX_PAD      128u  // per-slot index headroom (~2x vertex count for quads)
+
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
    The frame's semantic list is tessellated + z-sorted exactly once (lazily, on the first
    surface flush); every other live surface that frame reuses the result.  Called by
@@ -157,8 +166,6 @@ void                gui_build_frame_reset( void );
 
 gui_render_stats_t  gui_build_stats        ( void );
 void                gui_build_stats_publish( void );
-
-extern gui_id_t     g_gui_perf_overlay_id;
 
 /* Retained-skip optimization: when on (default), an unchanged frame (all per-window hashes match
    the previous frame) skips tessellation and reuses s_tess.  Toggle for benchmarking or debugging. */
@@ -298,25 +305,25 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
 #endif
 
 /*==============================================================================================
-    PIPELINE DASHBOARD (backend/gui_dash_overlay.c + gui_dashboard.c) -- Debug builds only.
+    PIPELINE DASHBOARD (backend/gui_dash_capture.c + gui_dashboard.c) -- Debug builds only.
 
     A visual diagnostic of the render pipeline itself: memory maps of the shared vertex/index
-    arena (per-window geometry slots with their padded reservations, volatile sub-slots, high-
-    water marks), the per-surface frames-in-flight regions and upload spans, the dispatch-order
-    draw batches, and the EMIT buffer usage vs caps.
+    arena (per-window geometry slots with their padded reservations, volatile sub-slots, the
+    debug-band boundary, high-water marks), the per-surface frames-in-flight regions and upload
+    spans, the dispatch-order draw batches, and the EMIT buffer usage vs caps.
 
     Split across the two units the same way the feature itself is split:
 
-        gui_dashboard.c (UI unit)          -- the window SHELL: a normal window_begin window
-                                              (movable / dockable / tear-off), emitting only
-                                              chrome + canvas() rect reservations + tooltips.
-        backend/gui_dash_overlay.c         -- the CONTENT: captures a snapshot at defined
-                                              pipeline points and, at flush time, expands the
-                                              diagnostic geometry into its OWN vertex/index
-                                              buffers (debug-overlay pattern), scissored to the
-                                              registered canvas rects.  It never writes a byte
-                                              into s_draw / s_tess / the viewport buffers, so
-                                              the dashboard cannot pollute the data it shows.
+        gui_dashboard.c (UI unit)          -- the WINDOW + every panel painter: an ordinary
+                                              GUI_WIN_DEBUG_BAND window drawn with the standard
+                                              draw API and normal tooltips.  The band system
+                                              (GUI_WIN_DEBUG_BAND, gui.h) is what keeps it
+                                              honest: its geometry packs after every main-band
+                                              slot and the stats/any_changed signals ignore it.
+        backend/gui_dash_capture.c         -- the CAPTURE: copies the snapshot types below at
+                                              defined pipeline points (end of cache_build_frame,
+                                              end of each surface's flush) for the shell to read
+                                              one frame later through gui_dash_snapshot().
 
     The build switch mirrors GUI_DEBUG_OVERLAY: auto-on for Debug builds, force-off with
     GUI_NO_PIPELINE_DASHBOARD.  Computed here so BOTH units agree.
@@ -330,61 +337,99 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
 #endif
 
 /* The dashboard window's id (id_hash of its title), defined in gui_dashboard.c (UI unit); stays
-   0 when the feature is compiled out or the window has never been emitted.  Read by the cache
-   exemption (cache_win_exempt, gui_build_cache.c) so the dashboard's own chrome never poisons
-   idle-skip or the stats it reports -- same rule as g_gui_perf_overlay_id above. */
+   0 when the feature is compiled out or the window has never been emitted.  Read by the dash
+   capture to mark the dashboard's own slot in the memory map ("observer marked, not hidden");
+   its stats/idle-skip exemption now comes from GUI_WIN_DEBUG_BAND, not from this id. */
 extern gui_id_t g_gui_dash_window_id;
 
 #ifdef GUI_PIPELINE_DASHBOARD
 
-    /* Panel ids -- one registered canvas per panel, re-stamped by the UI shell each emit frame. */
-    typedef enum
+    /*------------------------------------------------------------------------------------------
+        Pipeline snapshot -- copied at two defined pipeline moments (end of cache_build_frame,
+        end of each surface's gui_render_flush) so the dashboard displays a coherent picture,
+        never mid-mutation, and can freeze it.  These types live in the seam header because the
+        SHELL (gui_dashboard.c, UI unit) now draws every panel itself with the standard draw API,
+        reading the snapshot through gui_dash_snapshot(); the backend keeps only the capture
+        (backend/gui_dash_capture.c).  Plain data mirrors -- no backend-private type leaks.
+    ------------------------------------------------------------------------------------------*/
+
+    typedef struct                       /* win_geo_slot_t + this frame's diff verdict */
     {
-        GUI_DASH_PANEL_VBMAP = 0,   /* vertex-arena memory map                    */
-        GUI_DASH_PANEL_IBMAP,       /* index-arena memory map                     */
-        GUI_DASH_PANEL_FIF,         /* frames-in-flight regions + upload spans    */
-        GUI_DASH_PANEL_BATCH,       /* dispatch-order draw batch inspector        */
-        GUI_DASH_PANEL_EMIT,        /* EMIT/BUILD buffer usage vs caps            */
-        GUI_DASH_PANEL_VOLATILE,    /* volatile sub-slot registry                 */
-        GUI_DASH_PANEL_STATS,       /* frame stats strip                          */
-        GUI_DASH_PANEL_COUNT
+        gui_id_t win;
+        u32      z, vp, band;
+        u32      vert_base, vert_count, vert_alloc;
+        u32      idx_base,  idx_count,  idx_alloc;
+        u32      cmd_base,  cmd_count;
+        u32      tess_gen;
+        bool     valid, changed;
 
-    } gui_dash_panel_t;
+    } dash_slot_t;
 
-    /* Hover probe result -- preformatted text lines so no backend-private type crosses the unit
-       seam.  The shell shows them verbatim in a tooltip. */
-    #define GUI_DASH_PROBE_LINES 6
+    typedef struct                       /* gui_gpu_cmd_t + its parallel arrays, flattened */
+    {
+        u32        elem_count, tex_idx, vp, vbase, ibase;
+        gui_rect_t clip;
+
+    } dash_cmd_t;
+
+    typedef struct                       /* gui_volatile_slot_t, display fields only */
+    {
+        gui_id_t id, win;
+        u32      tess_gen;
+        u32      lvert_base, vert_count, vert_alloc;
+        u32      lidx_base,  idx_count,  idx_alloc;
+        u32      cmd_count,  cmd_alloc;
+        bool     active, hidden;
+
+    } dash_vol_t;
+
+    typedef struct                       /* one surface's FLUSH capture */
+    {
+        bool live;
+        u32  frame_index;
+        u32  vtx_lo, vtx_hi, idx_lo, idx_hi;             /* lo >= hi means nothing uploaded */
+        u32  up_bytes, up_batches, draw_calls;
+
+    } dash_surf_t;
+
     typedef struct
     {
-        u32  count;
-        char line[ GUI_DASH_PROBE_LINES ][ 64 ];
+        u32  serial;                                     /* bumped per build capture; stale when frozen */
 
-    } gui_dash_probe_t;
+        /* BUILD capture -- end of cache_build_frame. */
+        dash_slot_t slots[ RENDER_MAX_WIN ];     u32 slot_count;
+        u8          dispatch[ RENDER_MAX_WIN ];  u32 dispatch_count;   /* slot indices, z-sorted */
+        dash_cmd_t  cmds[ GUI_MAX_CMDS ];        u32 cmd_count;
+        dash_vol_t  vols[ GUI_MAX_VOLATILE ];    u32 vol_count;
 
-    /* Lifecycle, driven by gui_frame.c (UI unit) under the same #ifdef.  gui_dash_flush draws
-       the content for one surface -- called right after gui_render_flush, before the debug
-       overlay, so the overlay stays topmost. */
-    bool gui_dash_init    ( void );
-    void gui_dash_shutdown( void );
-    void gui_dash_flush   ( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+        u32  tess_verts, tess_idx, tess_cmds, vert_hwm, idx_hwm;
+        bool overflow_ever;
+        u32  band0_vert_end, band0_idx_end;              /* main arena ends here; past = debug band */
+        u32  emit_cmds, emit_segs, emit_pts, emit_text, emit_clips;
+        u32  emit_cmds_dbg;                              /* of emit_cmds, how many the debug band emitted */
+        u32  diff_unchanged;  bool any_changed;
+        u32  tess_gen_next;
+        u32  font_atlas;                                 /* live font atlas tex index (batch coloring) */
 
-    /* UI-shell seam (called from gui_dashboard.c).  ui_begin clears this emit's canvas + tooltip
-       registrations; canvas() re-registers one panel rect (intersected with the ambient clip so
-       a scrolled-out panel draws nothing); tooltip() arms the private cursor tooltip -- the
-       backend probes the hit rects at flush time and draws the result through its own buffers,
-       LAST, so dashboard content can never paint over it (a normal-pipeline tooltip window
-       would be painted over, since dash content flushes after the whole UI); probe resolves a
-       mouse position against the hit rects recorded at the last flush (also used internally). */
-    void gui_dash_ui_begin  ( void );
-    void gui_dash_canvas    ( u32 panel, gui_rect_t r, u32 vp );
-    void gui_dash_tooltip   ( f32 mx, f32 my );
-    bool gui_dash_probe     ( f32 mx, f32 my, gui_dash_probe_t* out );
-    void gui_dash_set_freeze( bool on );
-    bool gui_dash_frozen    ( void );
-    u32  gui_dash_serial    ( void );
+        gui_render_stats_t stats;                        /* last published frame (one-frame lag) */
+        u32  draw_call_hwm;
+
+        /* FLUSH capture -- end of gui_render_flush, per surface. */
+        dash_surf_t surf[ GUI_MAX_VIEWPORTS ];
+
+    } dash_snapshot_t;
+
+    /* Shell seam (called from gui_dashboard.c).  set_enabled gates the captures -- call it every
+       frame, open or closed, so a closed dashboard costs two branches; snapshot() returns the
+       held capture (stable while frozen).  The shell reads it one frame behind the build that
+       produced it -- the standard self-measurement lag. */
+    const dash_snapshot_t* gui_dash_snapshot   ( void );
+    void                   gui_dash_set_enabled( bool on );
+    void                   gui_dash_set_freeze ( bool on );
+    bool                   gui_dash_frozen     ( void );
 
     /* Capture hooks, called from the pipeline files (which the unity chain includes before
-       gui_dash_overlay.c) via the DASH_* macros below:
+       gui_dash_capture.c) via the DASH_* macros below:
          dash_capture_build -- end of cache_build_frame: slot table, dispatch order, tess
                                counters, volatile registry, emit counters, stats.
          dash_capture_flush -- end of gui_render_flush: one surface's frame index, upload spans,

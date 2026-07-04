@@ -133,26 +133,14 @@ bool gui_build_retained_skip    ( void )    { return s_caps.retained_cache; }
     numbers are live through gui()->render_stats() in the perf overlay regardless of the flag.
 ----------------------------------------------------------------------------------------------*/
 
-/* Excludes the perf overlay window from: (1) the vert/tri/win totals its own display reports
-   (gui_render_stats_t), and (2) contributing its own ever-changing hash to any_changed / the
-   frame_dirty signal that drives idle-skip (cache_diff_windows) -- see the comment at that use
-   site.  Without (2), simply having the overlay visible would keep the whole app rebuilding every
-   frame regardless of anything else being idle. */
-static bool s_exempt_perf_overlay = true;
-
-/* Self-measuring windows exempted from the stats they report and from poisoning any_changed:
-   the perf overlay and the pipeline dashboard's shell (g_gui_dash_window_id, gui_dashboard.c;
-   stays GUI_ID_NONE when that feature is compiled out or never emitted).  Both still hash,
-   diff, and retessellate normally -- they render; only the metrics ignore them. */
-static bool
-cache_win_exempt( gui_id_t win )
-{
-    if ( win == GUI_ID_NONE )
-        return false;
-    if ( s_exempt_perf_overlay && win == g_gui_perf_overlay_id )
-        return true;
-    return win == g_gui_dash_window_id;
-}
+/* Debug-band windows (GUI_WIN_DEBUG_BAND: the perf overlay, the pipeline dashboard, their
+   popups/tooltips) are exempted from: (1) the vert/tri/win totals they may themselves display
+   (gui_render_stats_t), and (2) contributing their ever-changing hashes to any_changed / the
+   frame_dirty signal that drives idle-skip.  Without (2), simply having a live readout visible
+   would keep the whole app rebuilding every frame regardless of anything else being idle.
+   Debug-band windows still hash, diff, and retessellate normally -- they render; only the
+   metrics ignore them, and the slot packer places them after every main-band slot (see the
+   band-major sort in cache_diff_windows). */
 
 /*==============================================================================================
     Window geometry slots -- the retained geometry store.
@@ -171,11 +159,10 @@ cache_win_exempt( gui_id_t win )
     absorbs minor in-place growth without touching adjacent slots.
 ==============================================================================================*/
 
-#define RENDER_MAX_WIN    32    // distinct windows tracked per frame
+/* RENDER_MAX_WIN / SLOT_VERT_PAD / SLOT_IDX_PAD live in gui_backend.h (the dashboard snapshot
+   types are sized by them). */
 #define WIN_SLOT_CMD_MAX  24    // max GPU draw commands cached per slot; most windows have 2-4,
                                 // a volatile block adds its own commands + reserved dormant pads
-#define SLOT_VERT_PAD     64u   // per-slot vertex headroom: absorbs minor growth in-place
-#define SLOT_IDX_PAD      128u  // per-slot index headroom (~2x vertex count for quads)
 
 /* One cached GPU draw command.  Packed AOS so replaying a slot's commands touches one region.
    z is per-slot (the window's max segment z), not per-command; lvbase/libase are slot-local so
@@ -194,6 +181,7 @@ typedef struct
 {
     gui_id_t win;
     u32      z, vp;
+    u32      band;                               // arena band (0 = main UI, 1 = debug/diagnostic)
     u32      vert_base, vert_count, vert_alloc;  // VB: absolute position, actual count, padded reservation
     u32      idx_base,  idx_count,  idx_alloc;   // IB: absolute position, actual count, padded reservation
     u32      cmd_base,  cmd_count;               // range into s_tess.cmds[] for this window
@@ -308,11 +296,26 @@ typedef struct
     u32      hash;
     u32      z;              // max segment z this frame (governs slot dispatch order)
     u32      vp;             // viewport of the last segment this frame
+    u32      band;           // arena band: sticky OR across segments (any debug seg = debug window)
     bool     changed;        // hash mismatched, window is new, or force_changed this frame
     bool     force_changed;  // a volatile row in this window needs a (re)capture -- tessellate
                              // regardless of the hash (which excludes volatile commands entirely)
 
 } render_win_hash_t;
+
+/* Band-major, win-minor record ordering.  Sorting debug-band records after every main-band
+   record is what packs their slots at the TAIL of the vertex/index arena: the placement loop
+   walks records in this order with one bottom-up write head, so main-band layout is byte-
+   identical to a world where the debug UI does not exist, and the debug UI's per-frame churn
+   can only downstream-invalidate other debug slots.  Both cur[] and prev[] sort with this same
+   rule every frame, preserving the sorted-alignment invariant set_stable relies on. */
+static inline bool
+cache_rec_before( const render_win_hash_t* a, const render_win_hash_t* b )
+{
+    if ( a->band != b->band )
+        return a->band < b->band;
+    return a->win < b->win;
+}
 
 static struct
 {
@@ -369,7 +372,7 @@ cache_diff_windows( void )
 
         gui_id_t win = segs[ si ].win;
 
-        if ( !cache_win_exempt( win ) )
+        if ( segs[ si ].band == 0 )   /* debug-band UI never counts in the stats it displays */
             total_cmd += segs[ si ].hi - segs[ si ].lo;
 
         /* Find or create the per-window record. */
@@ -392,7 +395,7 @@ cache_diff_windows( void )
                 }
                 continue;
             }
-            s_cache.cur[ bi ] = ( render_win_hash_t ){ win, 2166136261u, 0, 0, false, false };
+            s_cache.cur[ bi ] = ( render_win_hash_t ){ win, 2166136261u, 0, 0, 0, false, false };
             ++s_cache.cur_n;
         }
 
@@ -405,6 +408,7 @@ cache_diff_windows( void )
         h = fnv1a_u32( h, segs[ si ].z    );
         h = fnv1a_u32( h, segs[ si ].vp   );
         h = fnv1a_u32( h, segs[ si ].font );
+        h = fnv1a_u32( h, segs[ si ].band );   /* band flip must re-tessellate (slot changes ends) */
         h = fnv1a_u32( h, atlas            );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
         {
@@ -429,16 +433,18 @@ cache_diff_windows( void )
 
         if ( segs[ si ].z > s_cache.cur[ bi ].z ) s_cache.cur[ bi ].z = segs[ si ].z;
         s_cache.cur[ bi ].vp = segs[ si ].vp;
+        if ( segs[ si ].band != 0 ) s_cache.cur[ bi ].band = 1;   /* sticky: any debug seg tags the window */
     }
 
-    /* Sort cur[] by win id.  Insertion sort over RENDER_MAX_WIN = 32 elements: O(n) when the
-       window set is stable (the common case, already sorted from last frame), O(n^2) at worst.
+    /* Sort cur[] band-major, win-minor (cache_rec_before) -- debug-band windows pack after every
+       main-band window.  Insertion sort over RENDER_MAX_WIN = 32 elements: O(n) when the window
+       set is stable (the common case, already sorted from last frame), O(n^2) at worst.
        prev[] is kept in the same order via the memcpy below, so the diff is a single linear scan. */
     for ( u32 a = 1; a < s_cache.cur_n; ++a )
     {
         render_win_hash_t key = s_cache.cur[ a ];
         u32 b = a;
-        while ( b > 0 && s_cache.cur[ b - 1 ].win > key.win )
+        while ( b > 0 && cache_rec_before( &key, &s_cache.cur[ b - 1 ] ) )
         {
             s_cache.cur[ b ] = s_cache.cur[ b - 1 ];
             --b;
@@ -446,31 +452,32 @@ cache_diff_windows( void )
         s_cache.cur[ b ] = key;
     }
 
-    /* Pass 2: diff against last frame.  Both arrays are sorted by win, so one linear scan
-       suffices -- O(cur_n + prev_n) instead of the O(n^2) nested scan. */
+    /* Pass 2: diff against last frame.  Both arrays share the (band, win) sort order, so one
+       linear scan suffices -- O(cur_n + prev_n) instead of the O(n^2) nested scan. */
     s_cache.unchanged   = 0;
     s_cache.any_changed = ( s_cache.cur_n != s_cache.prev_n );
     u32 pj = 0;
     for ( u32 i = 0; i < s_cache.cur_n; ++i )
     {
-        while ( pj < s_cache.prev_n && s_cache.prev[ pj ].win < s_cache.cur[ i ].win )
+        while ( pj < s_cache.prev_n && cache_rec_before( &s_cache.prev[ pj ], &s_cache.cur[ i ] ) )
             ++pj;
         bool match = ( pj < s_cache.prev_n
                        && s_cache.prev[ pj ].win  == s_cache.cur[ i ].win
+                       && s_cache.prev[ pj ].band == s_cache.cur[ i ].band
                        && s_cache.prev[ pj ].hash == s_cache.cur[ i ].hash );
         bool changed = !match || s_cache.cur[ i ].force_changed;
         s_cache.cur[ i ].changed = changed;
         if ( !changed ) ++s_cache.unchanged;
-        else if ( !cache_win_exempt( s_cache.cur[ i ].win ) )
+        else if ( s_cache.cur[ i ].band == 0 )
             s_cache.any_changed = true;
 
-        /* The perf overlay's own text (live FPS/ms/vert counters) changes practically every real
-           frame it is visible -- if that alone kept any_changed true, gui_build_any_changed()
+        /* A debug-band readout's own text (live FPS/ms/vert counters) changes practically every
+           real frame it is visible -- if that alone kept any_changed true, gui_build_any_changed()
            would report "something changed" forever and frame_dirty would never go false again,
-           silently defeating idle-skip for the WHOLE app for as long as the overlay is on screen.
+           silently defeating idle-skip for the WHOLE app for as long as the readout is on screen.
            s_cache.cur[i].changed above still flags true so cache_build_frame retessellates the
-           overlay's own slot (its digits really did change); only the GLOBAL any_changed signal
-           ignores it. */
+           readout's own slot (its digits really did change); only the GLOBAL any_changed signal
+           ignores debug-band windows. */
     }
 
     /* Promote this frame's sorted table to prev for next frame's diff. */
@@ -729,6 +736,8 @@ cache_build_frame( void )
     s_dispatch_count  = 0;
 
     tess_reset();
+    s_tess.band0_vert_end = 0;   /* re-derived below as main-band slots place; 0 when none exist */
+    s_tess.band0_idx_end  = 0;
 
     /* set_stable: the window set is the same as last frame (count, order, all valid).
        When true, each cur[wi] aligns with slots_prev[wi] by the sorted-by-win invariant,
@@ -768,6 +777,7 @@ cache_build_frame( void )
         slot->win   = wh->win;
         slot->z     = wh->z;    // max segment z, pre-computed in cache_diff_windows
         slot->vp    = wh->vp;   // last segment vp, pre-computed in cache_diff_windows
+        slot->band  = wh->band; // arena band; band-major sort already placed debug slots last
         slot->valid = false;
 
         bool reuse_geo = set_stable && s_caps.retained_cache && !wh->changed && prev->valid;
@@ -811,7 +821,7 @@ cache_build_frame( void )
             if ( reused_volatile_n < RENDER_MAX_WIN )
                 reused_volatile_wins[ reused_volatile_n++ ] = wh->win;
 
-            if ( !cache_win_exempt( wh->win ) )
+            if ( wh->band == 0 )
             {
                 vert_retained += slot->vert_count;
                 tri_retained  += slot->idx_count / 3u;
@@ -881,13 +891,19 @@ cache_build_frame( void )
             slot->valid     = true;
         }
 
-        /* Accumulate per-slot geometry stats; exclude self-measuring overlay windows from totals. */
-        if ( cache_win_exempt( wh->win ) )
+        /* Accumulate per-slot geometry stats; exclude self-measuring debug-band windows from totals. */
+        if ( wh->band != 0 )
             ++overlay_win;
         else
         {
             total_vert += slot->vert_count;
             total_tri  += slot->idx_count / 3u;
+
+            /* Band boundary: the write head after the last main-band slot (band-major order puts
+               them all first).  The dashboard's memory map draws "main arena ends here" at this
+               mark; everything past it is the debug band's own footprint. */
+            s_tess.band0_vert_end = s_tess.vert_count;
+            s_tess.band0_idx_end  = s_tess.idx_count;
         }
 
         s_dispatch[ s_dispatch_count++ ] = slot;

@@ -115,6 +115,7 @@ overlay_detach( void )
     s.window         = draw_window();
     s.sort_key       = draw_sort_key();
     s.viewport       = draw_viewport();
+    s.band           = draw_band();
 
     /* Save the parent's top layout frame so its pen survives the popup's region pop. */
     s.had_parent = ( s_layout_sp > 0 );
@@ -151,6 +152,7 @@ overlay_reattach( gui_overlay_save_t s )
     draw_set_window( s.window );
     draw_set_sort_key( s.sort_key );
     draw_set_viewport( s.viewport );
+    draw_set_band( s.band );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -233,6 +235,12 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
                        f32 fixed_w, f32 cap_h )
 {
     u32 depth = s_popup_begin_count;
+
+    /* Band inheritance: begun inside a debug-band window (the ambient band is still the parent's
+       here), the popup is debug UI too -- its churn must stay out of the main arena band and the
+       stats/idle-skip signals, exactly like its opener. */
+    if ( draw_band() != 0 )
+        flags |= GUI_WIN_DEBUG_BAND;
 
     /* Open at this depth?  The early-out that makes a closed popup free. */
     if ( depth >= g_ctx->popup_depth || s_popup_open_count <= depth
@@ -423,10 +431,15 @@ gui_tooltip_begin( void )
     }
     gui_window_set_next_pos( px, py, GUI_COND_ALWAYS );
 
+    /* Band inheritance, same rule as popup_begin_common_id: a tooltip raised inside a debug-band
+       window is debug UI -- sampled before detach re-stamps anything. */
+    gui_win_flags_t tflags = GUI_WIN_NOTITLEBAR | GUI_POPUP_BASE_FLAGS;
+    if ( draw_band() != 0 )
+        tflags |= GUI_WIN_DEBUG_BAND;
+
     s_tooltip_save = overlay_detach();
     return window_begin_ex( GUI_TOOLTIP_ID, NULL, s_io.mouse_x, s_io.mouse_y,
-                            GUI_POPUP_SEED_W, GUI_POPUP_SEED_H,
-                            GUI_WIN_NOTITLEBAR | GUI_POPUP_BASE_FLAGS );
+                            GUI_POPUP_SEED_W, GUI_POPUP_SEED_H, tflags );
 }
 
 void

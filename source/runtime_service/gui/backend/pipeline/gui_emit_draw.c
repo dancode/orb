@@ -47,6 +47,7 @@ typedef struct
 {
     gui_id_t win;
     u32      z, vp, font;
+    u32      band;     /* arena band: 0 = main UI, 1 = debug/diagnostic UI (GUI_WIN_DEBUG_BAND) */
     u32      lo, hi;   /* half-open command range into s_draw.cmds[] */
 
 } gui_cmd_seg_t;
@@ -76,6 +77,8 @@ static struct
     u32             cur_font;       /* active font id tracked per-segment (draw_set_font); the segment is the
                                        font/atlas batch context -- text glyphs, fills (white texel) and dashed
                                        lines all resolve from it at tessellation time.  NOT baked per command. */
+    u32             cur_band;       /* arena band tracked per-segment (draw_set_band); 0 = main UI,
+                                       1 = debug band (self-measuring diagnostic windows).  NOT per command. */
 
     /* Clip table: append-only per-frame pool of distinct scissor rects.  clip_push_clip_rect
        appends each intersected rect and records its index in clip_idx_stack so the active
@@ -156,10 +159,11 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.cur_z           = 0;   /* background; windows raise it via draw_set_sort_key */
     s_draw.cur_vp          = 0;   /* main viewport; windows route via draw_set_viewport */
     s_draw.cur_font        = font_active_id();   /* background segment inherits whatever font is active now */
+    s_draw.cur_band        = 0;   /* main band; diagnostic windows switch via draw_set_band */
 
-    /* Open the first command segment: background (win 0, z 0, main viewport, active font), at command 0. */
+    /* Open the first command segment: background (win 0, z 0, main viewport, active font, main band). */
     s_draw.seg_count       = 1;
-    s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ 0, 0, 0, s_draw.cur_font, 0, 0 };
+    s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ 0, 0, 0, s_draw.cur_font, 0, 0, 0 };
 
     /* Seed the clip table: slot 0 = full display rect.  clip_idx_stack[0] and cur_clip_idx both
        start at 0 so every emitter finds the root clip without a push being required first. */
@@ -278,9 +282,10 @@ draw_set_root_clip( f32 w, f32 h )
    empty spans.  On overflow the open segment is just extended (its tag may then be stale, but only in
    the pathological >1024-segment case, which cache_tess_window already falls back to natural order). */
 static void
-draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font )
+draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font, u32 band )
 {
-    if ( win == s_draw.cur_win && z == s_draw.cur_z && vp == s_draw.cur_vp && font == s_draw.cur_font )
+    if ( win == s_draw.cur_win && z == s_draw.cur_z && vp == s_draw.cur_vp && font == s_draw.cur_font
+         && band == s_draw.cur_band )
         return;   /* no real change -- keep the open segment as is */
 
     /* No open segment yet -- called outside a frame (e.g. font_use during startup setup, before the
@@ -291,6 +296,7 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font )
         s_draw.cur_z    = z;
         s_draw.cur_vp   = vp;
         s_draw.cur_font = font;
+        s_draw.cur_band = band;
         return;
     }
 
@@ -301,18 +307,20 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font )
         cur->z    = z;
         cur->vp   = vp;
         cur->font = font;
+        cur->band = band;
     }
     else if ( s_draw.seg_count < GUI_MAX_SEGS )
     {
         cur->hi                           = s_draw.cmd_count;   /* close the span here */
         s_draw.segs[ s_draw.seg_count++ ] =
-            ( gui_cmd_seg_t ){ win, z, vp, font, s_draw.cmd_count, s_draw.cmd_count };
+            ( gui_cmd_seg_t ){ win, z, vp, font, band, s_draw.cmd_count, s_draw.cmd_count };
     }
 
     s_draw.cur_win  = win;
     s_draw.cur_z    = z;
     s_draw.cur_vp   = vp;
     s_draw.cur_font = font;
+    s_draw.cur_band = band;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -324,7 +332,7 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font )
 void
 draw_set_window( gui_id_t win )
 {
-    draw_seg_retag( win, s_draw.cur_z, s_draw.cur_vp, s_draw.cur_font );
+    draw_seg_retag( win, s_draw.cur_z, s_draw.cur_vp, s_draw.cur_font, s_draw.cur_band );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -338,7 +346,7 @@ draw_set_window( gui_id_t win )
 void
 draw_set_font( u32 font )
 {
-    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, s_draw.cur_vp, font );
+    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, s_draw.cur_vp, font, s_draw.cur_band );
 }
 
 gui_id_t
@@ -355,7 +363,7 @@ draw_window( void )
 void
 draw_set_sort_key( u32 z )
 {
-    draw_seg_retag( s_draw.cur_win, z, s_draw.cur_vp, s_draw.cur_font );
+    draw_seg_retag( s_draw.cur_win, z, s_draw.cur_vp, s_draw.cur_font, s_draw.cur_band );
 }
 
 /* Current sort key -- saved by the popup layer so an overlay window can restore the parent's
@@ -378,7 +386,7 @@ draw_sort_key( void )
 void
 draw_set_viewport( u32 vp )
 {
-    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp, s_draw.cur_font );
+    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp, s_draw.cur_font, s_draw.cur_band );
 }
 
 /* Current viewport -- saved/restored by the popup layer alongside the sort key, so an overlay
@@ -387,6 +395,29 @@ u32
 draw_viewport( void )
 {
     return s_draw.cur_vp;
+}
+
+/*----------------------------------------------------------------------------------------------
+    draw_set_band -- route subsequent commands into arena band `band` (0 = main UI, 1 = debug).
+
+    Set from GUI_WIN_DEBUG_BAND at the window/region begin seams and back to 0 at window_end,
+    exactly as draw_set_sort_key drives the paint order.  The cache packs debug-band slots after
+    every main-band slot and excludes them from stats + the any_changed idle-skip signal, so a
+    self-measuring diagnostic never pollutes the arena layout or the metrics it displays.
+----------------------------------------------------------------------------------------------*/
+
+void
+draw_set_band( u32 band )
+{
+    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, s_draw.cur_vp, s_draw.cur_font, band );
+}
+
+/* Current band -- saved/restored by the popup layer alongside the sort key, and sampled at popup
+   begin so a popup/tooltip opened from inside a debug-band window inherits the band. */
+u32
+draw_band( void )
+{
+    return s_draw.cur_band;
 }
 
 /* draw_push_clip_root -- push the full-display clip (clip_stack[0]) as a fresh top, WITHOUT

@@ -422,14 +422,14 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
     u32 vtx_lo = s_tess.vert_count, vtx_hi = 0;
     u32 idx_lo = s_tess.idx_count,  idx_hi = 0;
 
-    u32 overlay_bytes = 0;   // self-measuring windows' share, excluded from the upload stats
+    u32 overlay_bytes = 0;   // debug-band windows' share, excluded from the upload stats
 
     for ( u32 d = 0; d < s_dispatch_count; ++d )
     {
         const win_geo_slot_t* sl = s_dispatch[ d ];
         if ( sl->vp != vp_index || sl->vert_count == 0 ) continue;
 
-        if ( cache_win_exempt( sl->win ) )
+        if ( sl->band != 0 )
         {
             overlay_bytes += sl->vert_count * sizeof( gui_draw_vert_t );
             overlay_bytes += sl->idx_count * sizeof( u16 );
@@ -573,7 +573,7 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
                 .first_instance = 0,
             } );
 
-            if ( !cache_win_exempt( slot->win ) )
+            if ( slot->band == 0 )   /* debug-band draws never count in the stats they display */
                 ++draw_calls;
         }
     }

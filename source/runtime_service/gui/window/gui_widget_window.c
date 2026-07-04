@@ -373,6 +373,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     draw_set_window( id );                  /* cache key: docked windows share z=0 but not their id */
     draw_set_sort_key( 0 );
     draw_set_viewport( node->viewport );
+    draw_set_band( ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
     s_build.cur_viewport = node->viewport;
 
     /* Commit the docked window context window_end reads. */
@@ -840,6 +841,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     draw_set_window( id );                  /* stable cache key: all this window's spans share it */
     draw_set_sort_key( win->z );
     draw_set_viewport( win->viewport );
+    draw_set_band( ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
     s_build.cur_viewport = win->viewport;   /* update ambient so new windows created after this inherit it */
 
     /* Debug overlay: show the outer edge-resize grab band (the catch region just outside the
@@ -980,6 +982,7 @@ gui_window_end( void )
         draw_set_window( 0 );
         draw_set_sort_key( 0 );
         draw_set_viewport( 0 );
+        draw_set_band( 0 );
         draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
         return;
     }
@@ -1288,6 +1291,7 @@ gui_window_end( void )
     draw_set_window( 0 );
     draw_set_sort_key( 0 );
     draw_set_viewport( 0 );
+    draw_set_band( 0 );
     draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
 
     /* Window move grab.  Decided here, after this window's widgets have run, and pinned off

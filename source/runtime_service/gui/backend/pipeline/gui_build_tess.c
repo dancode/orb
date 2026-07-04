@@ -73,6 +73,12 @@ static struct
     u32  vert_hwm, idx_hwm;
     bool overflow, overflow_ever;
 
+    /* Arena band boundary: the write head right after the last MAIN-band slot placed this frame
+       (band-major placement packs every debug-band slot after it).  The dashboard's memory map
+       reads these as "main arena ends here"; the span up to vert_count/idx_count past them is
+       the debug UI's own attributed footprint.  Re-derived by cache_build_frame every build. */
+    u32 band0_vert_end, band0_idx_end;
+
 } s_tess;
 
 /*----------------------------------------------------------------------------------------------

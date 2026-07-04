@@ -435,6 +435,7 @@ typedef struct
     gui_id_t             window;        // s_draw.cur_win (retained-cache key)
     u32                    sort_key;      // s_draw.cur_z
     u32                    viewport;      // s_draw.cur_vp (target surface routing)
+    u32                    band;          // s_draw.cur_band (arena band: debug UI isolation)
     bool                   had_parent;    // a layout region was open (parent frame valid)
     layout_frame_t         parent_frame;  // the parent's top frame, restored after the popup
 

@@ -86,13 +86,9 @@ gui_init( gui_builtin_font_t font )
     }
 #endif
 
-#ifdef GUI_PIPELINE_DASHBOARD
-    /* Pipeline dashboard GPU buffers (its own vb/ib).  Non-fatal: the window still opens, the
-       canvases just stay dark. */
-    if ( gui_dash_init() == false ) {
-         printf( "[gui] WARNING: pipeline dashboard buffers failed; dashboard disabled\n" );
-    }
-#endif
+    /* The pipeline dashboard needs no lifecycle here: it is an ordinary GUI_WIN_DEBUG_BAND
+       window drawn through the normal pipeline (gui_dashboard.c); the backend keeps only the
+       snapshot capture, which owns no GPU resources (backend/gui_dash_capture.c). */
 
     return true;
 }
@@ -104,10 +100,6 @@ gui_shutdown( void )
 {
     #ifdef GUI_DEBUG_OVERLAY
     gui_debug_shutdown();
-    #endif
-
-    #ifdef GUI_PIPELINE_DASHBOARD
-    gui_dash_shutdown();
     #endif
 
     /* Destroy GPU surfaces for every context before releasing memory blocks.
@@ -234,8 +226,6 @@ perf_render_end( f64 t0 )
         s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
 }
 
-gui_id_t g_gui_perf_overlay_id = 0;
-
 void
 gui_perf_overlay( gui_clock_fn clock, int mode )
 {
@@ -255,9 +245,10 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
     /* A root region: no chrome to hide (no window body/border to paint transparent), fixed
        top-left, hugging its content (w/h <= 0 autosize both axes).  NO_INPUT: pure text readout,
        a region is interactive by default and this one has no business entering the hover_win
-       contest or eating the mouse wheel. */
-    g_gui_perf_overlay_id = id_hash( "perf_overlay" );
-    gui_region_begin( "perf_overlay", 8.0f, top_y, 0.0f, 0.0f, GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
+       contest or eating the mouse wheel.  DEBUG_BAND: a self-measuring readout -- its own
+       ever-changing digits must not count in the stats it displays or poison idle-skip. */
+    gui_region_begin( "perf_overlay", 8.0f, top_y, 0.0f, 0.0f,
+                      GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
     {
         gui_stack();
         /* FPS, graded by health: >=60 green, >=30 amber, else red. */
@@ -597,9 +588,6 @@ gui_render( gui_vp_t vp, rhi_cmd_t cmd )
        render": emit ends here, render time accumulates across every render() call this frame. */
     f64 t0 = perf_render_begin();
     gui_render_flush( v, vp, cmd, v->disp_w, v->disp_h );
-#ifdef GUI_PIPELINE_DASHBOARD
-    gui_dash_flush( vp, cmd, v->disp_w, v->disp_h );    /* dashboard content over the UI */
-#endif
 #ifdef GUI_DEBUG_OVERLAY
     gui_debug_flush( vp, cmd, v->disp_w, v->disp_h );   /* each viewport flushes its own rects */
 #endif

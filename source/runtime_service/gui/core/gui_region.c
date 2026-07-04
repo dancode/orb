@@ -110,10 +110,12 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_win_flags_
     else if ( flags & GUI_WIN_REGION_FG ) z = GUI_REGION_FG_Z;
 
     /* Stamp the draw state a window would: a stable id for the retained-cache key, this region's
-       z tier, and the main surface -- a root region does not yet route to other viewports. */
+       z tier, the main surface (a root region does not yet route to other viewports), and its
+       arena band (a diagnostic HUD like the perf overlay tags GUI_WIN_DEBUG_BAND). */
     draw_set_window( id );
     draw_set_sort_key( z );
     draw_set_viewport( 0 );
+    draw_set_band( ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
 
     /* s_build.win_id is the id every widget_behavior call in this region compares against
        hover_win to decide hot/active (gui_widget_core.c) -- draw_set_window alone only stamps the

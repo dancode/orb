@@ -66,7 +66,7 @@
 ==============================================================================================*/
 // clang-format off
 
-#define GUI_MAX_VOLATILE  16
+/* GUI_MAX_VOLATILE lives in gui_backend.h (the dashboard snapshot types are sized by it). */
 #define VOL_VERT_PAD      128u   /* vertex headroom reserved past a block's live geometry        */
 #define VOL_IDX_PAD       192u   /* index headroom (~1.5x vertices for quad-heavy content)       */
 #define VOL_CMD_PAD       2u     /* dormant GPU-command slots reserved past the block's live run */

@@ -180,8 +180,8 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/popup/gui_widget_combo.c"
 #include "runtime_service/gui/popup/gui_widget_menu.c"
 
-// Pipeline dashboard shell -- a normal window + canvas reservations + tooltips (popup tier);
-// the content renderer lives in the backend unit (backend/gui_dash_overlay.c).
+// Pipeline dashboard -- an ordinary debug-band window + panel painters over the standard draw
+// API; the snapshot it reads is captured in the backend unit (backend/gui_dash_capture.c).
 #include "runtime_service/gui/gui_dashboard.c"
 
 // Orchestration -- sits above every tier, drives whichever are compiled in

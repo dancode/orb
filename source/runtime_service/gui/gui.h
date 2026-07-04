@@ -621,6 +621,15 @@ typedef enum
     GUI_WIN_REGION_BG         = 1 << 22,   /* region: background z tier -- loses to any raised window */
     GUI_WIN_REGION_FG         = 1 << 23,   /* region: foreground z tier -- wins over every popup */
 
+    /* Arena band: routes this window's (or region's) retained geometry into the debug band of
+       the shared vertex/index arena.  Debug-band windows pack AFTER every main-band slot, are
+       excluded from the render stats they may themselves display, and never raise any_changed /
+       frame_dirty (so a live readout cannot silently defeat idle-skip for the whole app).  For
+       self-measuring diagnostic UI -- the perf overlay and the pipeline dashboard; popups and
+       tooltips opened from inside a debug-band window inherit the band automatically. */
+
+    GUI_WIN_DEBUG_BAND        = 1 << 24,   /* diagnostic UI: debug arena band + stats/dirty exempt */
+
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
        ( GUI_WIN_OVERLAY | GUI_WIN_NOMOUSESCROLL ) and a window's resolved behavior is identical

@@ -480,6 +480,7 @@ static bool show_font_browser_win = false;
 static bool show_split_win        = false;
 static bool show_hud_win          = false;
 static bool show_region_win       = false;
+static bool dash_open             = false;
 
 static void show_example_main_menu_bar()
 {
@@ -833,6 +834,14 @@ main( int argc, char** argv )
             printf( "[sb_vulkan] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
         }
 
+        /* F10 toggles the pipeline dashboard: a dockable/tear-off window visualizing the render
+        backend (slot memory maps, frames-in-flight uploads, draw batches, buffer usage). */
+        if ( app()->key_pressed( APP_KEY_F10 ) )
+        {
+            dash_open = !dash_open;
+            printf( "[sb_vulkan] pipeline dashboard: %s\n", dash_open ? "open" : "closed" );
+        }
+
         /* ------------------------------------------------------------------------------ */
         /* The GUI emit and render frame loop */
            
@@ -875,6 +884,12 @@ main( int argc, char** argv )
 
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
             gui()->state_overlay( state_mode );
+
+            /* Pipeline dashboard (F10): the shell window emits here; its diagnostic content is
+            drawn by the backend at flush time through its own buffers.  The X button writes
+            dash_open back to false so the key toggle stays in sync. */
+            gui()->pipeline_dashboard( &dash_open );
+
 
             gui()->ctx_end();
         }
