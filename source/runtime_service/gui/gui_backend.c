@@ -24,24 +24,24 @@
                        (tessellate + retained cache) -> RENDER (GPU flush).  Named for the
                        pipeline stage each implements, matching the function prefix each exports.
 
-    resource/gui_atlas.h/.c       -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
-    resource/gui_font.h           -- font types shared between the two font files below
-    resource/gui_font_internal.c  -- font registry state + .orb_font loader (all static)
-    resource/gui_font.c           -- font unit's public API: font_load/use, font_glyph (gui_backend.h)
-    resource/gui_icon.c           -- runtime icon atlas: icon_register/find/get, icon_atlas_idx
+    resource/gui_atlas.h/.c         -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
+    resource/gui_font.h             -- font types shared between the two font files below
+    resource/gui_font_internal.c    -- font registry state + .orb_font loader (all static)
+    resource/gui_font.c             -- font unit's public API: font_load/use, font_glyph (gui_backend.h)
+    resource/gui_icon.c             -- runtime icon atlas: icon_register/find/get, icon_atlas_idx
 
-    pipeline/gui_shader.h      -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
-    pipeline/gui_emit_draw.c   -- EMIT: CPU draw list: draw_reset, draw_push_* (incl. draw_push_icon), s_draw
-    pipeline/gui_emit_path.c   -- EMIT: line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
-    pipeline/gui_build_tess.c  -- BUILD: CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
-    pipeline/gui_build_volatile.c -- BUILD: volatile-widget inline-emit replay (see gui_backend.h)
-    pipeline/gui_build_cache.c -- BUILD: retained frame-geometry cache: cache_build_frame, s_cache, s_dispatch,
-                                  gui_build_* public API
-    pipeline/gui_render.c      -- RENDER: GPU resources + flush: viewport_create/destroy, gui_render_* public API
+    pipeline/gui_shader.h           -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
+    pipeline/gui_emit_draw.c        -- EMIT: CPU draw list: draw_reset, draw_push_* (incl. draw_push_icon), s_draw
+    pipeline/gui_emit_path.c        -- EMIT: line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
+    pipeline/gui_build_tess.c       -- BUILD: CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
+    pipeline/gui_build_volatile.c   -- BUILD: volatile-widget inline-emit replay (see gui_backend.h)
+    pipeline/gui_build_cache.c      -- BUILD: retained frame-geometry cache: cache_build_frame, s_cache, s_dispatch,
+                                        gui_build_* public API
+    pipeline/gui_render.c           -- RENDER: GPU resources + flush: viewport_create/destroy, gui_render_* public API
 
-    gui_debug_overlay.c  -- DEBUG OVERLAY: bolt-on second draw list, flushed on top (Debug only).  Stays
-                            at the backend/ root -- it reads resource/ AND pipeline/ internals plus the
-                            UI unit's DBG_* capture calls, so it does not belong to either subfolder.
+    gui_debug_overlay.c             -- DEBUG OVERLAY: bolt-on second draw list, flushed on top (Debug only).  Stays
+                                        at the backend/ root -- it reads resource/ AND pipeline/ internals plus the
+                                        UI unit's DBG_* capture calls, so it does not belong to either subfolder.
 
 ==============================================================================================*/
 

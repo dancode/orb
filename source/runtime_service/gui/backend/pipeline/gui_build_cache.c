@@ -191,16 +191,16 @@ typedef struct
 /* Stable GPU command cache -- outside the ping-pong arrays so the reuse path never copies it.
    Indexed by slot position wi, valid in set_stable mode (same window set and order as prev frame).
    Written when a window tessellates; read every retained frame until the window changes again. */
-static win_slot_cmd_t s_win_cached      [ RENDER_MAX_WIN ][ WIN_SLOT_CMD_MAX ];
-static u32            s_win_cached_count[ RENDER_MAX_WIN ];
+static win_slot_cmd_t   s_win_cached      [ RENDER_MAX_WIN ][ WIN_SLOT_CMD_MAX ];
+static u32              s_win_cached_count[ RENDER_MAX_WIN ];
 
-static u32             s_slot_count, s_slot_prev_count;
-static win_geo_slot_t  s_slots_a  [ RENDER_MAX_WIN ];
-static win_geo_slot_t  s_slots_b  [ RENDER_MAX_WIN ];
-static win_geo_slot_t* s_slots      = s_slots_a;   // current frame (write)
-static win_geo_slot_t* s_slots_prev = s_slots_b;   // previous frame (read)
-static win_geo_slot_t* s_dispatch [ RENDER_MAX_WIN ];
-static u32             s_dispatch_count;
+static u32              s_slot_count, s_slot_prev_count;
+static win_geo_slot_t   s_slots_a  [ RENDER_MAX_WIN ];
+static win_geo_slot_t   s_slots_b  [ RENDER_MAX_WIN ];
+static win_geo_slot_t*  s_slots      = s_slots_a;   // current frame (write)
+static win_geo_slot_t*  s_slots_prev = s_slots_b;   // previous frame (read)
+static win_geo_slot_t*  s_dispatch [ RENDER_MAX_WIN ];
+static u32              s_dispatch_count;
 
 /* Volatile widgets (gui_volatile_cb_open/_stamp/_close, gui_update_volatile, the registry and
    volatile_patch) live in their own file -- backend/pipeline/gui_build_volatile.c, included right

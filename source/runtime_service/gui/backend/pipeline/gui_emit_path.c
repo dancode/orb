@@ -59,7 +59,7 @@ seg_normal( gui_vec2_t a, gui_vec2_t b )
 
 static struct
 {
-    gui_vec2_t pts[ GUI_PATH_MAX ];
+    gui_vec2_t  pts[ GUI_PATH_MAX ];
     u32          count;
 
 } s_path;
