@@ -134,7 +134,8 @@ dock_float_hit( gui_id_t drag_id, u32 vp, gui_dock_node_t** out_node, gui_id_t* 
         if ( w->viewport != vp || w->closed )             continue;
         if ( w->last_frame + 1 < s_retained.frame )       continue;   /* not begun this frame */
         if ( w->z >= GUI_POPUP_Z_BASE )                   continue;   /* popup / tooltip overlay */
-        if ( w->flags & ( GUI_WIN_NATIVE | GUI_WIN_NO_INPUT | GUI_WIN_NOMOVE ) ) continue;
+        if ( w->flags & ( GUI_WIN_NATIVE | GUI_WIN_NO_INPUT | GUI_WIN_NOMOVE
+                          | GUI_WIN_NO_TAB_TARGET ) )     continue;   /* opted out of hosting tabs */
 
         gui_dock_node_t* n = dock_find_window_node( w->id );
         if ( n && !n->floating )
@@ -199,7 +200,11 @@ dock_float_service_request( gui_id_t id, const char* title, gui_window_t* win )
     /* The target may have been tabbed somewhere itself since the commit -- then just join it. */
     gui_dock_node_t* n = dock_find_window_node( id );
     if ( !n )
+    {
+        if ( win->flags & GUI_WIN_NO_TAB_TARGET )
+            return;   /* opted out (re-checked here: flags may have changed since the drop) */
         n = dock_float_group_create( win, id, title );
+    }
     if ( n )
         dock_float_tab_add( n, s_dock_float_req.dragged, s_dock_float_req.dragged_name );
 }
@@ -319,6 +324,8 @@ gui_window_tab( const char* title, const char* onto_title )
         gui_window_t* tw = window_find( tid );
         if ( !tw )
             return;   /* target never begun -- no frame to host a group */
+        if ( tw->flags & GUI_WIN_NO_TAB_TARGET )
+            return;   /* target opted out of hosting tabs */
         n = dock_float_group_create( tw, tid, onto_title );
     }
     if ( n )

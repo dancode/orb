@@ -639,37 +639,41 @@ tab_group_member( const char* title, const char* body, f32 seed_x )
 static void
 show_tabgroup_demo( bool* p_open )
 {
+    /* NO_TAB_TARGET: this is a control panel -- it explains the feature, it must not itself
+       become a tab (its early-out below would then skip the member windows).  A drop on its
+       title bar shows no chip. */
     static const char* WIN = "Tab Groups";
     gui()->window_set_next_size( 340.0f, 240.0f, GUI_COND_ONCE );
-    if ( !gui()->window_begin( WIN, GUI_WIN_CLOSEABLE ) )
+    if ( gui()->window_begin( WIN, GUI_WIN_CLOSEABLE | GUI_WIN_NO_TAB_TARGET ) )
     {
-        if ( p_open && !gui()->window_is_open( WIN ) )
-            *p_open = false;
-        gui()->window_end();
-        return;
-    }
+        gui()->stack();
+        gui()->text_wrapped( "Drag one window's title bar onto another's and drop on the center chip "
+                             "to merge them into a floating tab group -- no split panes.  Drag a tab "
+                             "out of the strip to pull a window back out (the group dissolves when one "
+                             "tab remains).  Drag the strip's empty band to move the group, its edges "
+                             "to resize, tabs sideways to reorder." );
+        gui()->separator();
 
-    gui()->stack();
-    gui()->text_wrapped( "Drag one window's title bar onto another's and drop on the center chip "
-                         "to merge them into a floating tab group -- no split panes.  Drag a tab "
-                         "out of the strip to pull a window back out (the group dissolves when one "
-                         "tab remains).  Drag the strip's empty band to move the group, its edges "
-                         "to resize, tabs sideways to reorder." );
-    gui()->separator();
-
-    if ( gui()->button( "Group programmatically" ) )
-    {
-        gui()->window_tab( "Tab Beta",  "Tab Alpha" );
-        gui()->window_tab( "Tab Gamma", "Tab Alpha" );
+        if ( gui()->button( "Group programmatically" ) )
+        {
+            gui()->window_tab( "Tab Beta",  "Tab Alpha" );
+            gui()->window_tab( "Tab Gamma", "Tab Alpha" );
+        }
+        if ( gui()->button( "Ungroup all" ) )
+        {
+            gui()->dock_undock( "Tab Beta" );
+            gui()->dock_undock( "Tab Gamma" );
+            gui()->dock_undock( "Tab Alpha" );
+        }
     }
-    if ( gui()->button( "Ungroup all" ) )
+    else if ( p_open && !gui()->window_is_open( WIN ) )
     {
-        gui()->dock_undock( "Tab Beta" );
-        gui()->dock_undock( "Tab Gamma" );
-        gui()->dock_undock( "Tab Alpha" );
+        *p_open = false;
     }
     gui()->window_end();
 
+    /* Member windows emit unconditionally: a window tabbed behind another returns false from
+       window_begin, and gating siblings on that would blank the whole demo. */
     tab_group_member( "Tab Alpha", "The Alpha window.  Drop another window on this title bar to grow "
                                    "a tab group around it.", 60.0f );
     tab_group_member( "Tab Beta",  "The Beta window.  Drag this by its title bar onto Alpha's.", 340.0f );

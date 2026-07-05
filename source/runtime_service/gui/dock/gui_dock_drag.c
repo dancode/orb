@@ -389,9 +389,9 @@ dock_undock_by_id( gui_id_t win )
 /*----------------------------------------------------------------------------------------------
     Tab reorder -- a tab drag that stays inside the strip band slides the tab through the strip.
 
-    Live reorder, the ImGui tab-bar feel: while the drag is in flight the dragged tab follows the
-    cursor by moving past its neighbours' midpoints, immediately (no drop step), and stays the
-    active (visible) tab as it moves.  Leaving the strip band vertically is what undocks instead
+    Live reorder: while the drag is in flight the dragged tab follows the cursor by crossing into
+    its neighbours (edge-triggered, flicker-guarded for unequal widths -- see dock_strip_reorder),
+    immediately (no drop step), and stays the active (visible) tab as it moves.  Leaving the strip band vertically is what undocks instead
     (dock_window_chrome below decides which of the two the cursor position means each frame).
 ----------------------------------------------------------------------------------------------*/
 
@@ -407,17 +407,43 @@ dock_strip_reorder( gui_dock_node_t* node, gui_id_t wid, f32 strip_x )
 
     node->active_tab = from;   /* the dragged tab is the one being looked at */
 
-    /* Insertion slot from the cursor x against the tabs' midpoints (natural widths, as drawn). */
-    u32 ins = 0;
-    f32 tx  = strip_x;
+    /* Destination slot: EDGE-triggered -- the tab moves the moment the cursor crosses into the
+       neighbouring tab, not at its midpoint (the standard tab-bar feel).  With unequal widths a
+       bare edge trigger oscillates: right after a swap the cursor can land back inside the tab it
+       just passed, immediately re-triggering the reverse move.  So each step arms at the FARTHER
+       of the two stable points -- the neighbour's near edge (the gesture) and where the dragged
+       tab's origin lands after the swap (the anti-flicker floor):
+
+           right: cross  t0 + max( W, Wn )    left: cross  tp + min( W, Wp )
+
+       where t0 is the dragged tab's slot origin, W its width, Wn/Wp the neighbour's, tp = t0 - Wp.
+       Equal widths reduce both to exactly the shared edge.  Walked stepwise (widths simulated
+       through the swaps) so one long pull can carry the tab across several neighbours per frame. */
+    f32 tw[ GUI_DOCK_TABS_MAX ];
+    f32 t0 = strip_x;
     for ( u32 i = 0; i < node->tab_count; ++i )
     {
-        f32 tw = font_text_w( node->names[ i ] ) + 2.0f * WIDGET_PAD;
-        if ( s_io.mouse_x > tx + tw * 0.5f )
-            ins = i + 1;
-        tx += tw;
+        tw[ i ] = font_text_w( node->names[ i ] ) + 2.0f * WIDGET_PAD;
+        if ( i < from )
+            t0 += tw[ i ];
     }
-    u32 to = ( ins > from ) ? ins - 1 : ins;
+    f32 W  = tw[ from ];
+    u32 to = from;
+
+    while ( to + 1 < node->tab_count
+            && s_io.mouse_x > t0 + ( ( W > tw[ to + 1 ] ) ? W : tw[ to + 1 ] ) )
+    {
+        t0 += tw[ to + 1 ];                             /* dragged origin after the swap      */
+        tw[ to ] = tw[ to + 1 ];  tw[ to + 1 ] = W;     /* neighbour slides into the old slot */
+        ++to;
+    }
+    while ( to > 0
+            && s_io.mouse_x < t0 - tw[ to - 1 ] + ( ( W < tw[ to - 1 ] ) ? W : tw[ to - 1 ] ) )
+    {
+        t0 -= tw[ to - 1 ];
+        tw[ to ] = tw[ to - 1 ];  tw[ to - 1 ] = W;
+        --to;
+    }
     if ( to == from )
         return;
 

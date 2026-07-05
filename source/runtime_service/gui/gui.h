@@ -640,6 +640,12 @@ typedef enum
 
     GUI_WIN_DEBUG_BAND        = 1 << 24,   /* diagnostic UI: debug arena band + stats/dirty exempt */
 
+    /* Never hosts tabs: the window is not a tab-drop target (no center chip when another window is
+       title-dragged over it) and window_tab refuses it as `onto_title`.  For control / instruction
+       panels whose body the host gates on window_begin's return -- becoming an inactive tab would
+       silently skip that body.  The window itself may still be dragged INTO groups or dockspaces. */
+    GUI_WIN_NO_TAB_TARGET     = 1 << 25,
+
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
        ( GUI_WIN_OVERLAY | GUI_WIN_NOMOUSESCROLL ) and a window's resolved behavior is identical
