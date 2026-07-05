@@ -151,9 +151,10 @@ unit_resolve( f32 u, f32 natural, f32 avail )
 /* The size-animate seam: turn a remembered extent's `target` into the extent to use this frame,
    optionally easing toward it through the animation pool.  Every panel / child / split routes its
    size here after picking its own target (a user-resized override, or the content it measured), so
-   animated resize is a matter of handing this an anim_id.  GUI_ID_NONE (today's every caller) is the
-   exact-size fast path -- no pool touch, the target verbatim -- so the hook ships inert until a panel
-   opts in with id_combine( panel_id, tag ).  Speed is the gui_anim_f32 Hz-like rate (10 ~ 250ms). */
+   animated resize is a matter of handing this an anim_id.  GUI_ID_NONE (which every caller currently
+   passes) is the exact-size fast path -- no pool touch, the target verbatim.  SEAM: the animation hook
+   stays inert until a panel opts in with id_combine( panel_id, tag ).  Speed is the gui_anim_f32
+   Hz-like rate (10 ~ 250ms). */
 static f32
 size_animate( f32 target, gui_id_t anim_id, f32 speed )
 {

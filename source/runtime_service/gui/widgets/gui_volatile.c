@@ -49,7 +49,7 @@
    command range it produces (gui_volatile_cb_open/_close, gui_backend.h); the callback itself
    calls gui_volatile_begin/end from inside its own body, per the caller's own code -- begin
    stamps the layout cursor position the callback started at (needed to reconstruct a matching
-   scope on replay), end is reserved for now.  `label` is hashed the same way widget_id() hashes a
+   scope on replay), end is a reserved no-op (see gui_volatile_end).  `label` is hashed the same way widget_id() hashes a
    widget label (id_combine(id_seed(), id_hash(label))) -- callers pass an ordinary string, same as
    any other widget call, rather than manufacturing their own gui_id_t. */
 void
@@ -91,7 +91,7 @@ gui_volatile_begin( void )
 void
 gui_volatile_end( void )
 {
-    /* Reserved for future per-command-type stamping; no-op in v1. */
+    /* FUTURE: per-command-type stamping; currently a no-op (paired bookend to gui_volatile_begin). */
 }
 
 /*----------------------------------------------------------------------------------------------

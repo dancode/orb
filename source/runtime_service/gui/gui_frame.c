@@ -17,7 +17,7 @@
 /* Backend capability flags latched by gui_init_config_back(), read by gui_init when it stands up
    the backend.  Defaults to GUI_CAPS_DEFAULT (set below, GUI_CAPS_DEFAULT is a compound literal
    and not a valid static initializer) so a caller that never calls gui_init_config_back() sees
-   today's full-feature behavior unchanged. */
+   the full-feature defaults unchanged. */
 
 static gui_backend_caps_t s_init_caps = { .icons = true, .retained_cache = true,
                                            .render_debug = true, .stats_trace = false };

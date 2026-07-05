@@ -4,9 +4,10 @@
 
     The record-agnostic mechanism behind every draggable edge in the UI: the grab-band hit test,
     the hot-edge highlight, the press-time anchor record, and the raw cursor-to-edge apply.  Each
-    touches only a rect and the cursor, so a window (gui_widget_window.c), a resizeable
-    child_begin (gui_layout.c), and a future dock splitter all share one resize feel from one
-    place.  The split is mechanism vs policy: this records the anchors and maps the cursor onto the
+    touches only a rect and the cursor, so a window (gui_widget_window.c) and a resizeable
+    child_begin (gui_layout.c) share one resize feel from one place (the dock splitter has its own
+    drag path in dock/, not this mechanism).  The split is mechanism vs policy: this records the
+    anchors and maps the cursor onto the
     edges; the caller layers its own size policy on the result (a window pins + clamps to its min,
     a child clamps to its constraints and persists the size).
 
@@ -27,9 +28,9 @@
 
     The salt, edge bits, grab-band constants, and the record-agnostic helpers -- hit-test, highlight,
     grab, and the raw edge-drag apply.  They sit here (they need the style macros above, and this file
-    is still ahead of gui_layout.c) so the window chrome (gui_widget_window.c), a resizeable
-    child_begin (gui_layout.c), and a future dock splitter all share one resize feel from one
-    mechanism.  Each touches only a rect and the cursor; the s_resize_* in-flight state lives in
+    is still ahead of gui_layout.c) so the window chrome (gui_widget_window.c) and a resizeable
+    child_begin (gui_layout.c) share one resize feel from one mechanism (the dock splitter drives its
+    own drag, not this).  Each touches only a rect and the cursor; the s_resize_* in-flight state lives in
     gui_window.c (included earlier).
 
     The split is mechanism vs policy: resize_grab records the anchors, resize_apply_edges maps the

@@ -18,7 +18,8 @@
     (draw_set_window/sort_key/viewport) so the retained-cache dispatch keys correctly -- but no
     slot in the window pool, no drag/resize/dock/native path, no title, no background fill.
 
-    Root-level only for now: paints on viewport 0 (the main surface).  z tier defaults to a fixed
+    Root-level only: paints on viewport 0 (the main surface); FUTURE: routing a region to a
+    non-main viewport.  z tier defaults to a fixed
     band above ordinary windows and below the popup band (GUI_WIN_REGION_BG / _FG override it --
     see below), and it competes for hover_win in the same z contest windows and popups use, so it
     is interactive by default (opt out with GUI_WIN_NO_INPUT, same flag a window honors).
@@ -110,7 +111,7 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_win_flags_
     else if ( flags & GUI_WIN_REGION_FG ) z = GUI_REGION_FG_Z;
 
     /* Stamp the draw state a window would: a stable id for the retained-cache key, this region's
-       z tier, the main surface (a root region does not yet route to other viewports), and its
+       z tier, the main surface (a root region paints only on viewport 0; FUTURE: other viewports), and its
        arena band (a diagnostic HUD like the perf overlay tags GUI_WIN_DEBUG_BAND). */
     draw_set_window( id );
     draw_set_sort_key( z );

@@ -553,9 +553,10 @@ typedef struct
        viewport_update always has a valid top bound regardless of build ordering. */
     f32 caption_inset;
 
-    /* Docking seam.  GUI_DOCK_REF_NONE = free-float placement (today's behavior, including the main
-       viewport's overlapping windows); otherwise a dock tree tiling/tabbing the windows on this
-       surface.  Inert until docking lands -- a documented placement hook, no machinery yet. */
+    /* Per-surface dock tree root.  GUI_DOCK_REF_NONE = free-float placement (overlapping windows,
+       including the main viewport); otherwise a ref into the context dock-node pool that tiles/tabs
+       the windows on this surface.  Driven by dock/ (dock.c builds it, dock_drag.c re-tiles on drag,
+       dock_serialize.c saves/loads it). */
     gui_dock_ref_t dock_root;
 
 } gui_viewport_t;
@@ -616,7 +617,7 @@ typedef struct gui_dock_node_t
 /* Per-column setup data filled by table_setup_column before the first row. */
 typedef struct
 {
-    char                    label[ 32 ];   /* display name for headers_row (future)       */
+    char                    label[ 32 ];   /* display name drawn by table_headers_row     */
     gui_table_col_flags_t   flags;         /* FIXED / STRETCH / NO_RESIZE / etc.          */
     f32                     init_w;        /* 0 = stretch (==1 fill); >1 = fixed pixels   */
 
@@ -648,8 +649,9 @@ typedef struct
     g_ctx via the aliases in gui_ctx.c -- s_retained, s_nav, the popup open-set -- so switching
     contexts is a single pointer assignment (ctx_bind): no copy, no backup/restore.
 
-    Ambient state (s_interaction) and frame scratch (s_build, the stacks, s_draw) stay global for now;
-    s_io (hardware input snapshot) is always shared.  The `listening` flag gates whether a bound context
+    Ambient state (s_interaction) and frame scratch (s_build, the stacks, s_draw) stay global by design
+    -- tier 1 (one physical user) and tier 3 (scratch reused across contexts each frame); see
+    ARCHITECTURE.md.  s_io (hardware input snapshot) is always shared.  The `listening` flag gates whether a bound context
     receives hover / click / nav updates -- a deaf context renders but returns inert widget state.
 ==============================================================================================*/
 
@@ -687,10 +689,10 @@ typedef struct gui_context_t
 /*==============================================================================================
     Table per-frame state type (gui_table.c)
 
-    Phase 1 only: the persist pool (gui_table_persist_t, above) is embedded per-context in
-    gui_context_t.table_pool.  This is the per-frame active-table context: a single active slot
-    for now, module-static like s_build (frame scratch, not per-context) -- nested tables are a
-    future addition.
+    The persist pool (gui_table_persist_t, above) is embedded per-context in
+    gui_context_t.table_pool.  This is the per-frame active-table context: a single active slot,
+    module-static like s_build (frame scratch, not per-context).  FUTURE: nested tables (a second
+    active slot); today one table is active at a time (gui_table.c rejects nesting).
 ==============================================================================================*/
 
 /* Per-frame active table context.  One table open at a time (no nesting yet). */

@@ -119,7 +119,7 @@ table_resolve_columns( gui_table_t* t, f32 x, f32 w )
         tracks[ i ] = track;
     }
 
-    /* Zero gap between columns -- dividers (Phase 3) will be lines, not gaps. */
+    /* Zero gap between columns -- dividers are drawn as lines, not gaps (see table_draw_dividers). */
     layout_resolve_tracks( tracks, (u32)t->ncols, x, w, 0.0f, t->col_x, t->col_w );
 }
 

@@ -41,7 +41,8 @@
 /* GUI_RESIZE_SALT, the GUI_RESIZE_* edge bits, the WIN_RESIZE_* grab-band constants, and the
    record-agnostic resize helpers (window_resize_hit, window_draw_resize_highlight, resize_grab,
    resize_apply_edges) live in gui_widget_core.c -- alongside the style macros they need and ahead
-   of gui_layout.c -- so child_begin and a future dock splitter reuse the same mechanism.  Only the
+   of gui_layout.c -- so child_begin reuses the same mechanism (the dock splitter does not; it has its
+   own drag path in dock/).  Only the
    window's size policy stays below: the min clamp with far-edge pinning (window_apply_resize) and
    the content auto-fit (window_fit_size). */
 

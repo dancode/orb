@@ -2,22 +2,25 @@
 #define GUI_H
 /*==============================================================================================
 
-    runtime_service/gui/gui.h -- gui module types.
-    
-    // TODO: explain the GUI module, its purpose, and how it fits into the larger system.
-    // TODO: explain how it works, its architecture, and its main components.
+    runtime_service/gui/gui.h -- gui module types (the public type header).
 
+    In-house immediate-mode GUI for ORB.  No Dear ImGui, no GLFW/SDL: windowing/input come from
+    the engine `app` layer (Win32), rendering goes through `rhi` (Vulkan).  The host drives a
+    frame_begin -> ctx_begin/widgets/ctx_end -> frame_end -> render() lifecycle each frame.
 
-    Noteable Optimizations: Fixup wrigin of these features.
+    Read ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is the
+    orientation map: the three state tiers (ambient-singular / per-context retained via g_ctx /
+    frame-scratch), the two unity TUs (gui.c UI unit + gui_backend.c render unit), the
+    EMIT -> BUILD -> RENDER pipeline, and the invariants.  Header split follows the house
+    convention: this file (types) -> gui_api.h (DLL) -> gui_host.h (hosts/sandboxes).
 
-    1. CPU emit cache: (s_frame_dirty, gui_frame.c) — a single global bool.
-       * If there is no input ore events, nothign changes, we can skip the entire
-         emit phase and reuse the previous frame's draw list.
+    Two caches make an idle UI cheap (see ARCHITECTURE.md sec 6):
+    1. CPU emit skip (s_frame_dirty, gui_frame.c): a single global bool.  When no input, animation,
+       or render delta occurred, the whole emit phase is skipped and the previous frame's draw list
+       is reused.
+    2. GPU tessellation cache (gui_build_cache.c): granular per window.  A per-window hash mismatch
+       re-tessellates only that window's slot; sibling windows reuse their geometry in place.
 
-    2. GPU tessellation cache (gui_build_cache.c) — granular per window.
-       * A hash mismatch casues re-tessellateion of one window's slot;
-       * Sibling windows still reuse their geometry
-       
 ==============================================================================================*/
 
 #include "orb.h"
@@ -491,7 +494,7 @@ typedef enum
 {
     GUI_COND_ONCE      = 1 << 0,   /* apply once for this window, then never again -- seeds the
                                       initial position/size on first appearance and never again
-                                      (akin to Dear ImGui's FirstUseEver until a saved-layout lands) */
+                                      (akin to Dear ImGui's FirstUseEver) */
 
     GUI_COND_ALWAYS    = 1 << 1,   /* apply every frame the value is queued -- forced geometry for
                                       layout managers, snapping, animation; pair with NOMOVE /
@@ -1291,12 +1294,12 @@ typedef enum
     GUI_TABLE_COL_STRETCH      = 1 << 1,  // fill remaining space (default when width==0)   
     GUI_TABLE_COL_NO_RESIZE    = 1 << 2,  // pins this column's right boundary (no drag)    
     GUI_TABLE_COL_NO_SORT      = 1 << 3,  // not clickable for sort                         
-    GUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  // right-align cell content (future phase)        
-    GUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  // center cell content (future phase)             
+    GUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  // FUTURE: right-align cell content (flag reserved, unconsumed)
+    GUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  // FUTURE: center cell content (flag reserved, unconsumed)
 
 } gui_table_col_flags_t;
 
-/* Background color override target for table_set_bg_color (future phase). */
+/* Background color override target for table_set_bg_color. */
 typedef enum
 {
     GUI_TABLE_BG_NONE = 0,
@@ -1305,7 +1308,7 @@ typedef enum
 
 } gui_table_bg_target_t;
 
-/* Sort specification returned by table_get_sort_specs (future phase). */
+/* Sort specification returned by table_get_sort_specs. */
 typedef struct
 {
     i32  col;          // sorted column index; -1 = unsorted
