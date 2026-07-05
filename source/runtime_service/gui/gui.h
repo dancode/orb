@@ -293,21 +293,18 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
         > 1.0         fixed pixels
         == 1.0        fill -- an equal share of the leftover (several fills split it evenly)
         (0.0, 1.0)    fraction of the gap-adjusted available extent
-        == 0.0        natural -- the item's own content size.  This only has a measure where the
-                      content is known at resolve time (pack mode, resolved per item); a pre-divided
-                      column / grid track is resolved up front with no content, so a 0 there
-                      collapses to a zero-width track -- use fill / fraction / px in columns + grid.
+        == 0.0        natural size -- the item's own content size.  Only pack mode resolves per
+                      item with content in hand; a pre-divided column / grid track has none at
+                      resolve time, so 0 there collapses to a zero-width track -- use fill /
+                      fraction / px in columns + grid instead.
         <  0.0        GUI_END, the track-list terminator
-    
+
     Gaps sit *between* cells and are subtracted before distribution, so a widget never sees or
     reasons about spacing -- it just fills the rect it is handed.
 
-    This overloaded unit governs track / fit sizes only (row, cols, grid, next_item_fit,
-    field_split).  Pure spacing calls (same_line's `spacing`, new_line's `h`) share the same 0 /
-    negative shape but not this exact rule: a line/gap has no content to measure, so its own
-    "natural" (0) is a literal zero size rather than a content measure, and negative still means
-    "defer" but to the theme's default gap/line height, not to fill.  Each is documented at its
-    own call site -- don't assume this block's rule generalizes to every f32 size-like parameter.
+    Scope: this unit sizes tracks (row / cols / grid / next_item_fit / field_split) only.  Pure
+    spacing calls (same_line, new_line) look similar but aren't -- a gap has no content, so its
+    0 is a literal zero, not a content measure; see their own docs.
 
 ==============================================================================================*/
 
