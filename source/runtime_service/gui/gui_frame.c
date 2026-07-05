@@ -4,7 +4,10 @@
 
     Implements the public functions that bracket a frame: init/shutdown, frame_begin/frame_end,
     ctx_begin/ctx_end, render, viewport open/resize/close, font loading/selection,
-    and clip rect push/pop.
+    and clip rect push/pop.  It also parks the frame-adjacent public services that need no unit
+    of their own: memory stats, the perf / state HUD overlays, the animation-state query, the
+    multi-context lifecycle (ctx_create/destroy/bind/set_listening), and the gui-owned floater
+    surfaces (viewport_spawn / update / render_floaters).
     Included by gui.c before gui_api.c so the vtable can reference these by name.
 
 ==============================================================================================*/
@@ -678,7 +681,7 @@ gui_viewport_close( gui_vp_t vp )
 
     Unlike viewport_open (the host hands gui a window + context to flush into), these own the OS
     window + rhi context end to end: gui creates them on spawn and destroys them on close.  The
-    tear-off gesture (Phase 3) drives spawn/close; a host/sandbox may also call gui_viewport_spawn
+    tear-off gesture drives spawn/close; a host/sandbox may also call gui_viewport_spawn
     directly to place a panel in its own OS window.
 
     viewport_spawn is defined here (not render.c) because it picks a slot from g_ctx->viewports and
@@ -795,8 +798,10 @@ gui_owned_window_event( const app_event_t* ev )
 
 /* Reconcile gui-owned floater surfaces with their OS windows.  Call once per frame after the UI
    build and BEFORE rendering: it is the safe point to tear surfaces down, since no in-flight draw
-   list references one being freed.  Today it destroys surfaces the user closed (pending_close);
-   Phase 3 will also service tear-off / merge-back requests enqueued during the build. */
+   list references one being freed.  Runs in two steps: (1) service tear-off / merge-back requests
+   enqueued during the build (a window dragged off its host surface, or back onto it), then (2)
+   tear down owned surfaces the user closed (pending_close) or abandoned (their panel stopped
+   emitting). */
 
 void
 gui_viewport_update( void )

@@ -39,7 +39,7 @@ neighboring comment. A chunk rushed into paraphrase-mode makes things worse than
             `SEAM:` tag; left untouched. Actual fixes below.
       - [x] Filled the gui.h header banner: overview pointing to ARCHITECTURE.md + cleaned the
             informal "Noteable Optimizations" note (typos AND two non-ASCII em-dashes removed).
-- [ ] **Phase 3 -- Per-subsystem audit (bottom-up, one reviewable chunk each).**
+- [x] **Phase 3 -- Per-subsystem audit (bottom-up, one reviewable chunk each).** COMPLETE 2026-07-04.
       Per-chunk checklist: inventory -> classify (correct/drift/stale-forward/vague/redundant/
       missing-invariant) -> verify each claim by tracing code -> fix -> build-verify unity TU ->
       stop for review.
@@ -198,7 +198,37 @@ neighboring comment. A chunk rushed into paraphrase-mode makes things worse than
                      (gui_layout_child.c:151 precedes gui_table.c:165), the s_tpool = g_ctx->table_pool
                      alias (gui_internal.h:682), and the deep one-clip / chrome-drawn-last / pair-resize /
                      stable-sort prose all trace exactly.)
-      - [ ] gui_frame.c + gui_api.*
+      - [x] gui_frame.c + gui_api.*  DONE 2026-07-04.  7 fixes / 2 files (gui_frame.c 3, gui_api.h 4);
+             gui_api.c + gui_host.h clean.  Two drift classes, and the chunk's headline lesson is
+             CROSS-HEADER PARALLEL DRIFT: every claim I fixed in the .c files during earlier chunks
+             had an un-reconciled TWIN in the public gui_api.h (the popup/ lesson at header scale).
+             (1) STALE-FORWARD / FALSE-FUTURE:
+                 - gui_frame.c:681 owned-floater section "(Phase 3) drives spawn/close" -> dropped
+                   "(Phase 3)"; the twin gui_api.h:148 "the lifecycle the tear-off gesture WILL drive"
+                   -> "drives".
+                 - gui_frame.c:798 gui_viewport_update header "Today it destroys surfaces the user
+                   closed; Phase 3 WILL ALSO service tear-off / merge-back" -- FALSE-FUTURE: both are
+                   implemented directly below (step (1) tear-off/merge-back :804-936, step (2) closed/
+                   abandoned teardown :938-984).  Rewrote to the real two-step contract; twin at
+                   gui_api.h:154 (viewport_update "destroys those the user closed") widened to
+                   "apply tear-off / merge-back and tear down closed or abandoned surfaces".
+                 - gui_api.h:265 Docking "Phase 1 is programmatic ... the later phases built on top"
+                   -> "The programmatic path ... Mouse drag-to-dock and layout persistence build on
+                   the same tree" (public-header twin of the dock/ chunk's gui_dock.c fix).
+             (2) FALSE CLAIM / CONTRADICTION (twin of the table/ chunk):
+                 - gui_api.h:1148 Tables "with independent cell clipping" -> "self-fitting cells (one
+                   table clip, no per-cell clip)"; same false claim as gui.c:47 + gui_table.c:779.
+                 - gui_api.h:1163 table_next_column "clips draw + hit-test to the cell" -- traced
+                   FALSE: gui_table_next_column only sets a text glyph-clamp (draw_set_text_clip_x,
+                   gui_table.c:635) so labels ellipsize to the column; no draw/hit clip (:604-605 "no
+                   per-cell clip is pushed").  Rewrote to "the cell sizes the widget and long text
+                   ellipsizes to the column (self-fit, no per-cell clip)".
+             Also expanded gui_frame.c's file-header enumeration (nav gap: the file had grown to hold
+             the perf/state overlays, memory stats, animation-state query, multi-context lifecycle,
+             and owned-floater surfaces beyond its original bracket-a-frame list).  gui_api.c is a
+             mechanical vtable with accurate prose; gui_host.h's direct-call decls are a curated
+             subset with no completeness claim (not drift).  Comment-only; no build run.
+             ===> PHASE 3 COMPLETE.
 - [ ] **Phase 4 -- Drift prevention.** Contract + ARCHITECTURE.md in-tree; SEAM:/FUTURE: tags make
       future drift greppable; optional CLAUDE.md note (touch a subsystem -> reconcile its comments).
 

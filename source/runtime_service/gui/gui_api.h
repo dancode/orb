@@ -145,15 +145,16 @@ typedef struct gui_api_s
 
     /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
        to flush into, these own the OS window + rhi context end to end -- gui creates them on
-       spawn and tears them down on close.  This is the lifecycle the tear-off gesture will drive;
+       spawn and tears them down on close.  This is the lifecycle the tear-off gesture drives;
        a host may also call viewport_spawn directly to place a panel in its own OS window.
 
        viewport_spawn()          -- open a floater hosting its own OS window at (x,y) sized w x h;
                                     returns its viewport handle (assign windows via
                                     window_set_next_viewport) or GUI_VP_INVALID.  Between frames.
-       viewport_update()         -- reconcile owned floaters with their OS windows; call once per
-                                    frame AFTER the UI build and BEFORE rendering (the safe point to
-                                    tear a surface down -- destroys those the user closed).
+       viewport_update()         -- reconcile owned floaters with their OS windows: apply tear-off /
+                                    merge-back and tear down closed or abandoned surfaces.  Call once
+                                    per frame AFTER the UI build and BEFORE rendering (the safe point
+                                    to free a surface).
        viewport_render_floaters() -- present every owned floater from the shared draw list, each on
                                     its own rhi context (frame_begin/clear/flush/frame_end).  The
                                     host still presents the main surface (index 0) via render(). */
@@ -262,9 +263,10 @@ typedef struct gui_api_s
     bool ( *window_is_open  )( const char* title );
 
     /* Docking -- tile + tab windows into a dock tree that fills a viewport (the DockSpaceOverViewport
-       analogue).  Phase 1 is programmatic: build a layout in code, then windows whose titles were
+       analogue).  The programmatic path: build a layout in code, then windows whose titles were
        dock_window'd render into their node (no per-window title bar -- the node draws a shared tab
-       strip) instead of free-floating.  Free-floating windows still overlap on top of the dockspace.
+       strip) instead of free-floating.  Mouse drag-to-dock and layout persistence (dock_save/load
+       below) build on the same tree.  Free-floating windows still overlap on top of the dockspace.
 
        dockspace_over_viewport() -- ensure viewport vp hosts a dock tree, lay it out over the surface,
                                     draw + interact its splitters, and return the tree ROOT node id.
@@ -1143,8 +1145,8 @@ typedef struct gui_api_s
        and one more real frame is requested -- see volatile_cb's contract. */
     void ( *update_volatile )( void );
 
-    /* Tables -- a multi-column layout with independent cell clipping and optional scrolling,
-       sortable headers, and resizable columns.  Conceptually a grid whose rows accumulate and scroll
+    /* Tables -- a multi-column layout with self-fitting cells (one table clip, no per-cell clip) and
+       optional scrolling, sortable headers, and resizable columns.  Conceptually a grid whose rows accumulate and scroll
        (like flow) with column tracks resolved once per table (like grid), plus frozen header support.
 
        USAGE CONTRACT:
@@ -1158,8 +1160,9 @@ typedef struct gui_api_s
          4. for each row:
               table_next_row()       -- begin a new data row.  First call sets row 0.
               for each column:
-                table_next_column()  -- advance to the next column and return true; clips draw + hit-
-                                        test to the cell.  Returns false past the last column.
+                table_next_column()  -- advance to the next column and return true; the cell sizes the
+                                        widget and long text ellipsizes to the column (self-fit, no
+                                        per-cell clip).  Returns false past the last column.
                 <emit widgets>       -- normal widget calls; they land inside the cell.
          5. table_end()              -- close the table; restores the parent layout.
 
