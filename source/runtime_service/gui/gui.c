@@ -3,11 +3,13 @@
     runtime_service/gui/gui.c -- Unity build entry for the gui UI / core unit.
 
     gui is two translation units linked into one static lib (see gui_backend.h):
+
       - this unit (gui.c): context, layout, widgets, chrome, popups, nav, input, frame
         lifecycle, the module vtable.  Owns s_build / s_io / s_interaction / g_ctx and the stacks.
+
       - the render backend (gui_backend.c): fonts, draw list, tessellation, GPU flush, debug
         overlay.  Owns s_draw / s_tess / s_font / s_render.  Called through gui_backend.h.
-
+    
     Include order matters: each file can reference statics from files included above it.  Files
     are grouped into subdirectories by DEPENDENCY TIER, not by theme -- each tier only needs the
     tiers above it, so this is also where a future `#ifdef GUI_ENABLE_<tier>` would wrap an
@@ -22,21 +24,21 @@
     dock/        -- Tier 3, window-dependent, independent of popup/: dock-node tree + splitters.
     table/       -- Tier 4, independent optional feature: needs only core/, no window dependency.
 
-    core/gui_theme.c         -- theme registry + base/active style state, theme API, layout_compute
-    core/gui_input.c         -- app->IO snapshot: input_update, s_io
-    core/gui_style.c         -- style stacks: colors + metrics, style_col/style_var, push/pop/next
-    core/gui_ctx.c           -- context state: s_interaction, s_build, layout_frame_t, gui_context_t, ctx_new_frame
-    core/gui_ctx_id.c        -- id system + state pool: id_hash, id_combine, id_seed/push/pop, gui_state_get
-    core/gui_ctx_io.c        -- public IO accessors: want_capture_*, is_key_*, is_mouse_*, get_mouse_pos
-    core/gui_widget_core.c   -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
-    core/gui_stacks.c        -- push-model public API: push/pop id, item flags, style color / var
-    core/gui_symbol.c        -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
-    core/gui_resize.c        -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
-    core/gui_layout_core.c   -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
-    core/gui_layout_region.c -- scrollable region engine: gui_region_t, region_scrollbar, push/pop_region
-    core/gui_layout_child.c  -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
-    core/gui_layout.c        -- public layout API verbs: gui_layout, gui_stack, gui_cols, gui_grid
-    core/gui_anim.c          -- widget animation utilities: gui_anim_f32, gui_anim_bg
+    core/gui_theme.c            -- theme registry + base/active style state, theme API, layout_compute
+    core/gui_input.c            -- app->IO snapshot: input_update, s_io
+    core/gui_style.c            -- style stacks: colors + metrics, style_col/style_var, push/pop/next
+    core/gui_ctx.c              -- context state: s_interaction, s_build, layout_frame_t, gui_context_t, ctx_new_frame
+    core/gui_ctx_id.c           -- id system + state pool: id_hash, id_combine, id_seed/push/pop, gui_state_get
+    core/gui_ctx_io.c           -- public IO accessors: want_capture_*, is_key_*, is_mouse_*, get_mouse_pos
+    core/gui_widget_core.c      -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
+    core/gui_stacks.c           -- push-model public API: push/pop id, item flags, style color / var
+    core/gui_symbol.c           -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
+    core/gui_resize.c           -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
+    core/gui_layout_core.c      -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
+    core/gui_layout_region.c    -- scrollable region engine: gui_region_t, region_scrollbar, push/pop_region
+    core/gui_layout_child.c     -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
+    core/gui_layout.c           -- public layout API verbs: gui_layout, gui_stack, gui_cols, gui_grid
+    core/gui_anim.c             -- widget animation utilities: gui_anim_f32, gui_anim_bg
 
     widgets/gui_text_edit.c      -- single-line text editing engine: input_field_edit (behind input_text)
     widgets/gui_widget.c         -- core leaf widgets: text, button, checkbox, input_text, selectable
@@ -59,8 +61,9 @@
     popup/gui_widget_combo.c     -- combo box + list box: a popup dropdown / a scrolling child of selectables
     popup/gui_widget_menu.c      -- menu bar + menu items: built directly on the popup internals
 
-    gui_frame.c              -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, viewport, font, clip
-    gui_api.c                -- vtable, mod_desc, MOD_DEFINE_EXPORTS
+    gui_frame_overlay.c         -- built-in perf / state HUD overlays + the frame-timing helpers they read
+    gui_frame.c                 -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, viewport, font, clip
+    gui_api.c                   -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
 ==============================================================================================*/
 
@@ -72,10 +75,10 @@
 
 #include "orb.h"
 
-// Shared internal types + the render-backend interface (pulls gui_internal.h + rhi_api.h + app_api.h)
+// API GUI render-backend
 #include "runtime_service/gui/gui_backend.h"
 
-// API function headers + access pointers -- wired at module init/reload time
+// API function headers + access pointers -- wired at startup.
 #include "runtime_service/rhi/rhi_api.h"
 #include "engine/app/app_api.h"
 MOD_USE_RHI;
@@ -184,7 +187,10 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 // API; the snapshot it reads is captured in the backend unit (backend/gui_dash_capture.c).
 #include "runtime_service/gui/gui_dashboard.c"
 
-// Orchestration -- sits above every tier, drives whichever are compiled in
+// Orchestration -- sits above every tier, drives whichever are compiled in.  The overlay file
+// carries the perf/state HUDs plus the frame-timing helpers the lifecycle in gui_frame.c calls,
+// so it must precede gui_frame.c in the unity build.
+#include "runtime_service/gui/gui_frame_overlay.c"
 #include "runtime_service/gui/gui_frame.c"
 
 #ifndef GUI_API_C_PRELUDE
