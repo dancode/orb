@@ -110,6 +110,16 @@ void gui_set_item_tooltip( const char* text );
 bool gui_tooltip_begin( void );
 void gui_tooltip_end( void );
 
+/* drag and drop */
+bool gui_drag_source_begin( gui_drag_flags_t flags );
+void gui_drag_source_end( void );
+bool gui_drag_payload_set( const char* type, const void* data, u32 size );
+bool gui_drag_target_begin( void );
+const gui_drag_payload_t* gui_drag_payload_accept( const char* type, gui_drag_flags_t flags );
+void gui_drag_target_end( void );
+bool gui_drag_active( void );
+const gui_drag_payload_t* gui_drag_payload_peek( void );
+
 /* menu */
 bool gui_main_menu_bar_begin( void );
 void gui_main_menu_bar_end( void );

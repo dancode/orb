@@ -27,9 +27,11 @@
     gui_dock_core.c (via the public verbs in gui_dock.c: gui_dock_split / gui_dock_window).
     The overlay paints on a reserved z-band above everything (popups sit at 0x80000000).
 
-    Undock-by-tab-drag: a press on a tab pending past TITLEBAR_DRAG_THRESH pops that window out of its
-    node into a free window that follows the cursor -- handled inside dock_window_chrome below, reusing
-    the window-drag statics (s_drag_off_*, s_z_counter) the tear-off threshold already drives.
+    Tab drag: a press on a tab rides the generic drag machine (drag_from_chrome, core/gui_drag.c),
+    publishing a "gui.dock_tab" payload.  While the cursor stays inside the strip band the drag
+    REORDERS the tabs live (dock_strip_reorder); leaving the band vertically UNDOCKS -- pops that
+    window out of its node into a free window that follows the cursor -- handled inside
+    dock_window_chrome below, reusing the window-drag statics (s_drag_off_*, s_z_counter).
 ----------------------------------------------------------------------------------------------*/
 
 /* Tab salt: each tab gets a stable per-node widget id distinct from the windows + splitter (see
@@ -310,6 +312,64 @@ dock_undock_by_id( gui_id_t win )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Tab reorder -- a tab drag that stays inside the strip band slides the tab through the strip.
+
+    Live reorder, the ImGui tab-bar feel: while the drag is in flight the dragged tab follows the
+    cursor by moving past its neighbours' midpoints, immediately (no drop step), and stays the
+    active (visible) tab as it moves.  Leaving the strip band vertically is what undocks instead
+    (dock_window_chrome below decides which of the two the cursor position means each frame).
+----------------------------------------------------------------------------------------------*/
+
+static void
+dock_strip_reorder( gui_dock_node_t* node, gui_id_t wid, f32 strip_x )
+{
+    /* Current index of the dragged window's tab. */
+    u32 from = node->tab_count;
+    for ( u32 i = 0; i < node->tab_count; ++i )
+        if ( node->tabs[ i ] == wid ) { from = i; break; }
+    if ( from >= node->tab_count )
+        return;
+
+    node->active_tab = from;   /* the dragged tab is the one being looked at */
+
+    /* Insertion slot from the cursor x against the tabs' midpoints (natural widths, as drawn). */
+    u32 ins = 0;
+    f32 tx  = strip_x;
+    for ( u32 i = 0; i < node->tab_count; ++i )
+    {
+        f32 tw = font_text_w( node->names[ i ] ) + 2.0f * WIDGET_PAD;
+        if ( s_io.mouse_x > tx + tw * 0.5f )
+            ins = i + 1;
+        tx += tw;
+    }
+    u32 to = ( ins > from ) ? ins - 1 : ins;
+    if ( to == from )
+        return;
+
+    /* Move from -> to, sliding the span between them one slot toward `from`. */
+    gui_id_t twin = node->tabs[ from ];
+    char       tname[ GUI_DOCK_NAME_CAP ];
+    memcpy( tname, node->names[ from ], GUI_DOCK_NAME_CAP );
+
+    if ( to < from )
+        for ( u32 i = from; i > to; --i )
+        {
+            node->tabs[ i ] = node->tabs[ i - 1 ];
+            memcpy( node->names[ i ], node->names[ i - 1 ], GUI_DOCK_NAME_CAP );
+        }
+    else
+        for ( u32 i = from; i < to; ++i )
+        {
+            node->tabs[ i ] = node->tabs[ i + 1 ];
+            memcpy( node->names[ i ], node->names[ i + 1 ], GUI_DOCK_NAME_CAP );
+        }
+
+    node->tabs[ to ] = twin;
+    memcpy( node->names[ to ], tname, GUI_DOCK_NAME_CAP );
+    node->active_tab = to;
+}
+
+/*----------------------------------------------------------------------------------------------
     Tab-strip chrome -- drawn by the active window's window_end in place of a title bar.
 
     Runs while s_build holds the active docked window (its id is hover_win when the cursor is over the
@@ -372,10 +432,13 @@ dock_window_chrome( gui_dock_node_t* node )
     draw_set_rounding( 0.0f );
     draw_push_rect_outline( x, y, w, s_build.win_h, WIN_BORDER, 0, COL_BORDER );
 
-    /* Undock-by-tab-drag: an armed tab press dragged past the threshold pops its window out of the
-       node into a free window that follows the cursor.  Reuses the window-drag statics so the free
-       drag-apply in window_begin_ex carries the move from next frame.  Released without moving was a
-       tab click (st.clicked already selected it). */
+    /* Tab drag: an armed tab press rides the generic drag machine (drag_from_chrome publishes a
+       "gui.dock_tab" payload carrying the window id, so drop targets elsewhere can accept it).
+       Once live, the cursor position decides the gesture each frame: inside the strip band it
+       REORDERS the tabs (dock_strip_reorder above); leaving the band vertically past the
+       threshold UNDOCKS -- the window pops out into a free window that follows the cursor,
+       reusing the window-drag statics so the free drag-apply in window_begin_ex carries the move
+       from next frame.  Released without moving was a tab click (st.clicked already selected it). */
     if ( s_dock_tab_drag.pending )
     {
         if ( !s_io.mouse_down[ 0 ] )
@@ -384,28 +447,35 @@ dock_window_chrome( gui_dock_node_t* node )
         }
         else
         {
-            f32 dx = s_io.mouse_x - s_dock_tab_drag.px;
-            f32 dy = s_io.mouse_y - s_dock_tab_drag.py;
-            bool moved_past_drag_thresh = ( dx * dx + dy * dy ) >= ( DOCK_TAB_DRAG_THRESH * DOCK_TAB_DRAG_THRESH );
-            if ( moved_past_drag_thresh )
+            gui_id_t wid = s_dock_tab_drag.win_id;
+            if ( drag_from_chrome( wid, s_dock_tab_drag.px, s_dock_tab_drag.py,
+                                   "gui.dock_tab", &wid, sizeof wid ) )
             {
-                gui_id_t wid = s_dock_tab_drag.win_id;
-                u32        vp  = node->viewport;   /* capture before a collapse may free `node` */
-                s_dock_tab_drag.pending = false;
-
-                dock_undock_by_id( wid );
-
-                gui_window_t* win = window_find( wid );
-                if ( win )
+                bool in_strip = ( s_io.mouse_y >= y - DOCK_TAB_DRAG_THRESH )
+                             && ( s_io.mouse_y <  y + th + DOCK_TAB_DRAG_THRESH );
+                if ( in_strip )
                 {
-                    win->viewport = vp;              /* float on the surface it was docked on */
-                    win->z        = ++s_z_counter;   /* raise above the tiles                 */
-                    s_drag_off_x  = WIN_TITLE_H;      /* grab near the title's left edge       */
-                    s_drag_off_y  = WIN_TITLE_H * 0.5f;
-                    win->x        = s_io.mouse_x - s_drag_off_x;
-                    win->y        = s_io.mouse_y - s_drag_off_y;
-                    s_interaction.active_id     = wid;  /* continue as a free window drag      */
-                    s_interaction.active_button = 0;
+                    dock_strip_reorder( node, wid, x );
+                }
+                else
+                {
+                    u32 vp = node->viewport;   /* capture before a collapse may free `node` */
+                    s_dock_tab_drag.pending = false;
+
+                    dock_undock_by_id( wid );
+
+                    gui_window_t* win = window_find( wid );
+                    if ( win )
+                    {
+                        win->viewport = vp;              /* float on the surface it was docked on */
+                        win->z        = ++s_z_counter;   /* raise above the tiles                 */
+                        s_drag_off_x  = WIN_TITLE_H;      /* grab near the title's left edge       */
+                        s_drag_off_y  = WIN_TITLE_H * 0.5f;
+                        win->x        = s_io.mouse_x - s_drag_off_x;
+                        win->y        = s_io.mouse_y - s_drag_off_y;
+                        s_interaction.active_id     = wid;  /* continue as a free window drag      */
+                        s_interaction.active_button = 0;
+                    }
                 }
             }
         }

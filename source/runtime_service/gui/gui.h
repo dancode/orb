@@ -741,6 +741,47 @@ typedef enum
 } gui_dir_t;
 
 /*==============================================================================================
+    Drag and drop
+
+    Item-to-item payload transfer (the ImGui BeginDragDropSource/Target analogue).  A widget
+    becomes a drag SOURCE by calling drag_source_begin right after it emits; while the user
+    drags from it, the source sets a typed payload (a small byte blob, copied) and emits preview
+    widgets that follow the cursor.  Any other widget becomes a drop TARGET by calling
+    drag_target_begin right after it emits; while a drag hovers it, drag_payload_accept matches
+    the type tag, highlights the target, and returns the payload on the release frame.  One drag
+    exists at a time (one mouse), so the payload store is a single ambient slot.  See gui_api.h
+    for the usage contract.
+==============================================================================================*/
+
+#define GUI_DRAG_TYPE_CAP     16    // bytes of a payload type tag, including the NUL
+#define GUI_DRAG_PAYLOAD_CAP  64    // payload bytes copied by drag_payload_set
+
+typedef enum
+{
+    GUI_DRAG_NONE        = 0,
+
+    /* drag_payload_accept: return the payload while the drag hovers the target (every frame),
+       instead of only on the release (drop) frame -- for live preview effects at the target. */
+    GUI_DRAG_ACCEPT_PEEK = 1 << 0,
+
+    /* drag_source_begin: no cursor-following preview tooltip is opened (emit nothing between
+       begin/end).  drag_payload_accept: skip the accept highlight around the target. */
+    GUI_DRAG_NO_PREVIEW  = 1 << 1,
+
+} gui_drag_flags_t;
+
+/* The caller-facing payload view returned by drag_payload_accept / drag_payload_peek.  The bytes
+   were copied at drag_payload_set time and stay valid until the drag ends (the release frame
+   included) -- copy them out if they must outlive the drop. */
+typedef struct
+{
+    const char* type;   // tag stamped by drag_payload_set
+    const void* data;   // payload bytes (copied at set time)
+    u32         size;   // payload byte count
+
+} gui_drag_payload_t;
+
+/*==============================================================================================
     Color edit flags
 ==============================================================================================*/
 

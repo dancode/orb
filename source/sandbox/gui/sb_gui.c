@@ -467,6 +467,158 @@ show_region_demo( void )
 }
 
 /*============================================================================================*/
+/* Drag and drop demo                                                                          */
+/*                                                                                              */
+/* Exercises the gui drag-and-drop API end to end: every list row is both a drag SOURCE          */
+/* (drag_source_begin + drag_payload_set + a cursor tooltip preview) and a drop TARGET           */
+/* (drag_target_begin + drag_payload_accept on the release frame).  Drop a row onto another      */
+/* row to insert before it -- within one list (reorder) or across lists (move) -- or onto a      */
+/* list's append button.  The payload is a tiny (list, index) struct copied by value.            */
+/*============================================================================================*/
+
+#define DD_LIST_CAP  8
+#define DD_NAME_CAP  24
+
+typedef struct { i32 list; i32 idx; } dd_ref_t;
+
+static char s_dd_items[ 2 ][ DD_LIST_CAP ][ DD_NAME_CAP ];
+static i32  s_dd_count[ 2 ];
+static bool s_dd_init;
+static char s_dd_status[ 96 ];
+
+/* Move item (sl,si) so it lands at slot di of list dl (di < 0 or past the end = append). */
+static void
+dd_move( i32 sl, i32 si, i32 dl, i32 di )
+{
+    if ( sl != dl && s_dd_count[ dl ] >= DD_LIST_CAP )
+    {
+        snprintf( s_dd_status, sizeof( s_dd_status ), "List %c is full.", 'A' + dl );
+        return;
+    }
+
+    char tmp[ DD_NAME_CAP ];
+    memcpy( tmp, s_dd_items[ sl ][ si ], DD_NAME_CAP );
+
+    for ( i32 i = si; i + 1 < s_dd_count[ sl ]; ++i )              /* remove from source */
+        memcpy( s_dd_items[ sl ][ i ], s_dd_items[ sl ][ i + 1 ], DD_NAME_CAP );
+    s_dd_count[ sl ]--;
+
+    if ( dl == sl && di > si )
+        di--;                                                       /* removal shifted the slot */
+    if ( di < 0 || di > s_dd_count[ dl ] )
+        di = s_dd_count[ dl ];
+
+    for ( i32 i = s_dd_count[ dl ]; i > di; --i )                   /* open the hole */
+        memcpy( s_dd_items[ dl ][ i ], s_dd_items[ dl ][ i - 1 ], DD_NAME_CAP );
+    memcpy( s_dd_items[ dl ][ di ], tmp, DD_NAME_CAP );
+    s_dd_count[ dl ]++;
+
+    snprintf( s_dd_status, sizeof( s_dd_status ), "Moved '%s' to list %c slot %d.",
+              tmp, 'A' + dl, di );
+}
+
+/* One list column: rows are sources + targets; the trailing button appends a drop. */
+static void
+dd_list_column( i32 list )
+{
+    gui()->push_id_int( list );
+    gui()->stack();
+    gui()->textf( "List %c (%d)", 'A' + list, s_dd_count[ list ] );
+
+    for ( i32 i = 0; i < s_dd_count[ list ]; ++i )
+    {
+        gui()->push_id_int( i );
+
+        bool sel = false;
+        gui()->selectable( s_dd_items[ list ][ i ], &sel );
+
+        /* Source: dragging this row carries its (list, index). */
+        if ( gui()->drag_source_begin( GUI_DRAG_NONE ) )
+        {
+            dd_ref_t ref = { list, i };
+            gui()->drag_payload_set( "DD_ITEM", &ref, sizeof( ref ) );
+            gui()->textf( "Move '%s'", s_dd_items[ list ][ i ] );   /* cursor preview */
+            gui()->drag_source_end();
+        }
+
+        /* Target: dropping another row here inserts it before this row. */
+        if ( gui()->drag_target_begin() )
+        {
+            const gui_drag_payload_t* p = gui()->drag_payload_accept( "DD_ITEM", GUI_DRAG_NONE );
+            if ( p )
+            {
+                dd_ref_t ref;
+                memcpy( &ref, p->data, sizeof( ref ) );
+                dd_move( ref.list, ref.idx, list, i );
+            }
+            gui()->drag_target_end();
+        }
+
+        gui()->pop_id();
+    }
+
+    gui()->small_button( "( drop to append )" );
+    if ( gui()->drag_target_begin() )
+    {
+        const gui_drag_payload_t* p = gui()->drag_payload_accept( "DD_ITEM", GUI_DRAG_NONE );
+        if ( p )
+        {
+            dd_ref_t ref;
+            memcpy( &ref, p->data, sizeof( ref ) );
+            dd_move( ref.list, ref.idx, list, -1 );
+        }
+        gui()->drag_target_end();
+    }
+
+    gui()->pop_id();
+}
+
+static void
+show_dragdrop_demo( bool* p_open )
+{
+    static const char* WIN = "Drag and Drop";
+    if ( !gui()->window_begin( WIN, GUI_WIN_CLOSEABLE ) )
+    {
+        if ( p_open && !gui()->window_is_open( WIN ) )
+            *p_open = false;
+        gui()->window_end();
+        return;
+    }
+
+    if ( !s_dd_init )
+    {
+        static const char* seed_a[] = { "Apple", "Banana", "Cherry", "Dates" };
+        static const char* seed_b[] = { "Iron", "Copper", "Silver" };
+        for ( i32 i = 0; i < 4; ++i ) snprintf( s_dd_items[ 0 ][ i ], DD_NAME_CAP, "%s", seed_a[ i ] );
+        for ( i32 i = 0; i < 3; ++i ) snprintf( s_dd_items[ 1 ][ i ], DD_NAME_CAP, "%s", seed_b[ i ] );
+        s_dd_count[ 0 ] = 4;
+        s_dd_count[ 1 ] = 3;
+        snprintf( s_dd_status, sizeof( s_dd_status ), "Drag a row onto a row or an append button." );
+        s_dd_init = true;
+    }
+
+    gui()->stack();
+    gui()->text_wrapped( "Every row is a drag source AND a drop target: drag one onto another to "
+                         "insert before it (same list = reorder, other list = move), or onto the "
+                         "append button." );
+    gui()->separator();
+
+    gui()->row2( 0.5f, 0.5f );
+    gui()->child_begin( "##list_a", 0.0f, 220.0f, GUI_WIN_NONE );
+    dd_list_column( 0 );
+    gui()->child_end();
+    gui()->child_begin( "##list_b", 0.0f, 220.0f, GUI_WIN_NONE );
+    dd_list_column( 1 );
+    gui()->child_end();
+
+    gui()->stack();
+    gui()->text_disabled( s_dd_status );
+    gui()->textf( "drag_active: %d", gui()->drag_active() );
+
+    gui()->window_end();
+}
+
+/*============================================================================================*/
 /* Demo setup                                                                                  */
 /*============================================================================================*/
 
@@ -480,6 +632,7 @@ static bool show_font_browser_win = false;
 static bool show_split_win        = false;
 static bool show_hud_win          = false;
 static bool show_region_win       = false;
+static bool show_dragdrop_win     = false;
 static bool dash_open             = false;
 
 static void show_example_main_menu_bar()
@@ -493,6 +646,7 @@ static void show_example_main_menu_bar()
             gui()->menu_item( "Split Panels",   NULL, &show_split_win );
             gui()->menu_item( "HUD Overlay",    NULL, &show_hud_win );
             gui()->menu_item( "Region Demo",    NULL, &show_region_win );
+            gui()->menu_item( "Drag and Drop",  NULL, &show_dragdrop_win );
             gui()->menu_end();
         }
         gui()->main_menu_bar_end();
@@ -896,6 +1050,13 @@ main( int argc, char** argv )
 
             if ( show_region_win )
                 show_region_demo();
+
+            static bool s_dragdrop_prev = false;
+            if ( show_dragdrop_win && !s_dragdrop_prev )
+                gui()->window_set_open( "Drag and Drop", true );
+            s_dragdrop_prev = show_dragdrop_win;
+            if ( show_dragdrop_win )
+                show_dragdrop_demo( &show_dragdrop_win );
 
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
             gui()->state_overlay( state_mode );

@@ -1264,6 +1264,40 @@ typedef struct gui_api_s
 
     void ( *dockspace_inset )( gui_vp_t vp, f32 top );
 
+    /* Drag and drop -- typed payload transfer between items (see gui_drag_flags_t /
+       gui_drag_payload_t in gui.h).  One drag exists at a time; the payload bytes are copied.
+
+       USAGE CONTRACT:
+         Source -- right after the widget that should be draggable:
+           if ( gui()->drag_source_begin( GUI_DRAG_NONE ) )      // true while dragging from it
+           {
+               gui()->drag_payload_set( "ASSET", &index, sizeof index );   // every frame is fine
+               gui()->textf( "Move %s", name );                  // preview widgets follow the cursor
+               gui()->drag_source_end();
+           }
+         Target -- right after any widget that should receive drops:
+           if ( gui()->drag_target_begin() )                     // true while a drag hovers it
+           {
+               const gui_drag_payload_t* p = gui()->drag_payload_accept( "ASSET", GUI_DRAG_NONE );
+               if ( p )                                          // non-NULL on the drop frame
+                   place_asset( *(const i32*)p->data );
+               gui()->drag_target_end();
+           }
+
+       drag_payload_accept highlights the target while the types match and returns the payload on
+       the release frame (or every hover frame with GUI_DRAG_ACCEPT_PEEK).  drag_active reports a
+       drag in flight anywhere; drag_payload_peek inspects it without being a target.  The dock
+       tab-strip publishes its tab drags as type "gui.dock_tab" (payload: the window's gui_id_t). */
+
+    bool ( *drag_source_begin   )( gui_drag_flags_t flags );
+    void ( *drag_source_end     )( void );
+    bool ( *drag_payload_set    )( const char* type, const void* data, u32 size );
+    bool ( *drag_target_begin   )( void );
+    const gui_drag_payload_t* ( *drag_payload_accept )( const char* type, gui_drag_flags_t flags );
+    void ( *drag_target_end     )( void );
+    bool ( *drag_active         )( void );
+    const gui_drag_payload_t* ( *drag_payload_peek   )( void );
+
 } gui_api_t;
 
 /*============================================================================================*/

@@ -31,6 +31,7 @@
     core/gui_ctx_id.c           -- id system + state pool: id_hash, id_combine, id_seed/push/pop, gui_state_get
     core/gui_ctx_io.c           -- public IO accessors: want_capture_*, is_key_*, is_mouse_*, get_mouse_pos
     core/gui_widget_core.c      -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
+    core/gui_drag.c             -- drag and drop: typed payload transfer between items (source/target)
     core/gui_stacks.c           -- push-model public API: push/pop id, item flags, style color / var
     core/gui_symbol.c           -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
     core/gui_resize.c           -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
@@ -146,6 +147,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/core/gui_ctx_id.c"
 #include "runtime_service/gui/core/gui_ctx_io.c"
 #include "runtime_service/gui/core/gui_widget_core.c"
+#include "runtime_service/gui/core/gui_drag.c"
 #include "runtime_service/gui/core/gui_stacks.c"
 #include "runtime_service/gui/core/gui_symbol.c"
 #include "runtime_service/gui/core/gui_resize.c"

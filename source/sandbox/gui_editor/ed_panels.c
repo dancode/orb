@@ -49,6 +49,24 @@ ed_hierarchy_panel( void )
         if ( gui()->selectable( label, &sel ) )
             g_ed.selected = i;
 
+        /* Drop target: an asset dragged from the Assets panel assigns to this entity. */
+        if ( gui()->drag_target_begin() )
+        {
+            const gui_drag_payload_t* p = gui()->drag_payload_accept( "ASSET", GUI_DRAG_NONE );
+            if ( p )
+            {
+                i32 ai;
+                memcpy( &ai, p->data, sizeof( ai ) );
+                if ( ai >= 0 && ai < ed_asset_count )
+                {
+                    ed_logf( ED_LOG_INFO, "Assigned asset '%s' to entity '%s'",
+                             ed_assets[ ai ].name, e->name );
+                    g_ed.selected = i;
+                }
+            }
+            gui()->drag_target_end();
+        }
+
         /* Right-click context menu on the row just emitted. */
         if ( gui()->popup_context_item_begin( "entity_ctx" ) )
         {
@@ -273,9 +291,24 @@ ed_assets_panel( void )
 
         for ( i32 k = 0; k < ed_asset_count; k++ )
         {
-            const ed_asset_t* a = &ed_assets[ s_order[ k ] ];
+            i32               ai = s_order[ k ];
+            const ed_asset_t* a  = &ed_assets[ ai ];
             gui()->table_next_row( 0.0f );
-            if ( gui()->table_next_column() ) gui()->text( a->name );
+            if ( gui()->table_next_column() )
+            {
+                /* Name cell is a drag source: drag an asset out and drop it on a Hierarchy
+                   entity (ed_hierarchy_panel accepts the "ASSET" payload). */
+                gui()->push_id_int( ai );
+                bool sel = false;
+                gui()->selectable( a->name, &sel );
+                if ( gui()->drag_source_begin( GUI_DRAG_NONE ) )
+                {
+                    gui()->drag_payload_set( "ASSET", &ai, sizeof( ai ) );
+                    gui()->textf( "%s (%s)", a->name, a->type );   /* cursor preview */
+                    gui()->drag_source_end();
+                }
+                gui()->pop_id();
+            }
             if ( gui()->table_next_column() ) gui()->text( a->type );
             if ( gui()->table_next_column() ) gui()->textf( "%.0f KB", a->size_kb );
         }

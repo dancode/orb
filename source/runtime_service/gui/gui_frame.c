@@ -322,6 +322,7 @@ gui_frame_begin( f32 dt )
            active_id release happen here -- NOT in ctx_new_frame -- so subsequent ctx_begin
            calls for additional contexts do not clobber hover nominations from earlier ones. */
         interaction_frame_reset();
+        drag_new_frame();          /* drag-and-drop lifecycle rides the same once-per-frame reset */
     }
     /* Clean frame: draw_reset / gui_build_frame_reset / interaction_frame_reset are all
        skipped.  s_draw.cmds is preserved from the previous frame; s_frame_built remains true

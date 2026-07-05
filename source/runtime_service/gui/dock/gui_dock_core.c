@@ -212,12 +212,81 @@ dock_node_layout( gui_dock_node_t* n, gui_rect_t r )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Splitter drag -- move the gutter, do not rescale the rest of the tree.
+
+    dock_node_layout stores a split as a RATIO, so a naive ratio drag rescales every descendant
+    pane proportionally (an editor's side panels would all breathe as one divider moves).  The
+    editor rule is: a splitter drag moves ONLY that gutter -- the two panes touching it give or
+    take the pixels, every other pane keeps its exact pixel size.  Ratios stay the storage (so an
+    OS viewport resize still scales the whole tree proportionally, the desired resize behavior);
+    the drag simply REWRITES the ratios of the affected descendants so their gutters keep their
+    absolute pixel positions.
+
+    Within each child subtree the pixels are absorbed by the "near chain": the panes touching the
+    dragged gutter.  side names which end of the subtree that is (1 = its right/bottom edge, i.e.
+    the child[1]-most chain; 0 = left/top).  A same-axis descendant split re-ratios so its FAR
+    child keeps its pixels and recurses into the near child; a cross-axis split spans the full
+    extent on this axis, so both children absorb the same delta.
+----------------------------------------------------------------------------------------------*/
+
+/* Node extent in pixels along a split axis (this frame's resolved rect). */
+static f32
+dock_axis_ext( const gui_dock_node_t* n, u8 axis )
+{
+    return ( axis == DOCK_SPLIT_X ) ? n->rect.w : n->rect.h;
+}
+
+/* How many pixels subtree n can give up along `axis` before a pane on its `side` near chain hits
+   DOCK_MIN_PANE -- the drag clamp, so a deep pane never collapses to nothing. */
+static f32
+dock_shrink_capacity( gui_dock_node_t* n, u8 axis, u32 side )
+{
+    if ( !n ) return 0.0f;
+    if ( n->split == DOCK_SPLIT_NONE )
+    {
+        f32 c = dock_axis_ext( n, axis ) - DOCK_MIN_PANE;
+        return c > 0.0f ? c : 0.0f;
+    }
+    if ( n->split == axis )   /* only the near child shrinks; the far one keeps its pixels */
+        return dock_shrink_capacity( dock_at( n->child[ side ] ), axis, side );
+    /* Cross split: both children shrink by the full delta -- the tighter one limits. */
+    f32 a = dock_shrink_capacity( dock_at( n->child[ 0 ] ), axis, side );
+    f32 b = dock_shrink_capacity( dock_at( n->child[ 1 ] ), axis, side );
+    return a < b ? a : b;
+}
+
+/* Subtree n's extent along `axis` is about to change by `delta` (its `side` edge moves).  Rewrite
+   descendant same-axis ratios so every pane NOT on the near chain keeps its pixel size. */
+static void
+dock_absorb_delta( gui_dock_node_t* n, u8 axis, u32 side, f32 delta )
+{
+    if ( !n || n->split == DOCK_SPLIT_NONE || delta == 0.0f )
+        return;
+    if ( n->split != axis )
+    {
+        dock_absorb_delta( dock_at( n->child[ 0 ] ), axis, side, delta );
+        dock_absorb_delta( dock_at( n->child[ 1 ] ), axis, side, delta );
+        return;
+    }
+    f32 avail_new = dock_axis_ext( n, axis ) - DOCK_SPLITTER + delta;
+    if ( avail_new < 1.0f ) avail_new = 1.0f;
+
+    /* The far child keeps its pixels; child[0]'s new extent follows from which side is far. */
+    f32 far_px = dock_axis_ext( dock_at( n->child[ side ^ 1u ] ), axis );
+    f32 c0_new = ( side == 1u ) ? far_px : ( avail_new - far_px );
+    n->ratio   = clampf( c0_new / avail_new, 0.02f, 0.98f );
+
+    dock_absorb_delta( dock_at( n->child[ side ] ), axis, side, delta );
+}
+
+/*----------------------------------------------------------------------------------------------
     Splitter interaction + draw (one internal node)
 
     The gutter sits between the children and over no window, so hover_win is NONE there unless a
     floating window covers it -- gating the grab on hover_win == NONE thus naturally yields to a
     floater drawn on top.  Grab sets active_id (released globally when the button lifts, like a window
-    drag); while held, the ratio tracks the cursor, clamped so neither pane shrinks below DOCK_MIN_PANE.
+    drag); while held, the gutter tracks the cursor as a pixel DELTA absorbed by the adjacent panes
+    (see dock_absorb_delta above), clamped so no pane on either near chain shrinks below DOCK_MIN_PANE.
 ----------------------------------------------------------------------------------------------*/
 
 static void
@@ -249,13 +318,28 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
     if ( active )
     {
         hot = true;
-        f32 ext  = ( n->split == DOCK_SPLIT_X ) ? ( r.w - thick ) : ( r.h - thick );
-        if ( ext < 1.0f ) ext = 1.0f;
-        f32 rel  = ( n->split == DOCK_SPLIT_X ) ? ( ( s_io.mouse_x - r.x ) / ext )
-                                                : ( ( s_io.mouse_y - r.y ) / ext );
-        f32 minr = DOCK_MIN_PANE / ext;
-        if ( minr > 0.45f ) minr = 0.45f;     /* keep a usable range on a tiny node */
-        n->ratio = clampf( rel, minr, 1.0f - minr );
+        u8  axis = n->split;
+        gui_dock_node_t* c0 = dock_at( n->child[ 0 ] );
+        gui_dock_node_t* c1 = dock_at( n->child[ 1 ] );
+
+        f32 avail = ( ( axis == DOCK_SPLIT_X ) ? r.w : r.h ) - thick;
+        if ( avail < 1.0f ) avail = 1.0f;
+
+        /* Cursor-desired child[0] extent -> a pixel delta against this frame's resolved rect,
+           clamped so no pane on either side's near chain shrinks below DOCK_MIN_PANE. */
+        f32 old0  = dock_axis_ext( c0, axis );
+        f32 want0 = ( axis == DOCK_SPLIT_X ) ? ( s_io.mouse_x - r.x ) : ( s_io.mouse_y - r.y );
+        f32 delta = want0 - old0;
+        f32 cap0  = dock_shrink_capacity( c0, axis, 1u );
+        f32 cap1  = dock_shrink_capacity( c1, axis, 0u );
+        if ( delta < -cap0 ) delta = -cap0;
+        if ( delta >  cap1 ) delta =  cap1;
+
+        n->ratio = clampf( ( old0 + delta ) / avail, 0.02f, 0.98f );
+
+        /* Everything not touching this gutter keeps its pixel size (editor splitter rule). */
+        dock_absorb_delta( c0, axis, 1u,  delta );
+        dock_absorb_delta( c1, axis, 0u, -delta );
     }
 
     /* Directional hardware cursor while the gutter is hot or being dragged: an X split divides
