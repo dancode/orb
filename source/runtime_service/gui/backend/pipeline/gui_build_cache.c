@@ -942,9 +942,12 @@ cache_build_frame( void )
     s_stats.accum.vert_retained = vert_retained;
     s_stats.accum.tri_retained  = tri_retained;
 
-    /* Track geometry high-water marks and warn once on overflow. */
-    if ( s_tess.vert_count > s_tess.vert_hwm ) s_tess.vert_hwm = s_tess.vert_count;
-    if ( s_tess.idx_count  > s_tess.idx_hwm  ) s_tess.idx_hwm  = s_tess.idx_count;
+    /* Track geometry high-water marks and warn once on overflow.  The total (both bands) and the
+       main band alone peak independently, so each gets its own accumulator. */
+    if ( s_tess.vert_count     > s_tess.vert_hwm      ) s_tess.vert_hwm      = s_tess.vert_count;
+    if ( s_tess.idx_count      > s_tess.idx_hwm       ) s_tess.idx_hwm       = s_tess.idx_count;
+    if ( s_tess.band0_vert_end > s_tess.band0_vert_hwm ) s_tess.band0_vert_hwm = s_tess.band0_vert_end;
+    if ( s_tess.band0_idx_end  > s_tess.band0_idx_hwm  ) s_tess.band0_idx_hwm  = s_tess.band0_idx_end;
 
     if ( s_tess.overflow && !s_tess.overflow_ever )
         printf( "[gui] WARNING: draw list overflow -- geometry dropped this frame "

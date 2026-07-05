@@ -402,12 +402,17 @@ extern gui_id_t g_gui_dash_window_id;
         dash_cmd_t  cmds[ GUI_MAX_CMDS ];        u32 cmd_count;
         dash_vol_t  vols[ GUI_MAX_VOLATILE ];    u32 vol_count;
 
-        u32  tess_verts, tess_idx, tess_cmds, vert_hwm, idx_hwm;
+        u32  tess_verts, tess_idx, vert_hwm, idx_hwm;
+        u32  tess_cmds;                                  /* LIVE GPU draw cmds, both bands (dormant/empty excluded) */
+        u32  tess_cmds_dbg;                              /* of tess_cmds, the debug band's share     */
         bool overflow_ever;
         u32  band0_vert_end, band0_idx_end;              /* main arena ends here; past = debug band */
+        u32  band0_vert_hwm, band0_idx_hwm;              /* lifetime peak of the main band alone     */
         u32  emit_cmds, emit_segs, emit_pts, emit_text, emit_clips;
         u32  emit_cmds_hwm;                              /* running high-water of emit_cmds across captures */
-        u32  emit_cmds_dbg;                              /* of emit_cmds, how many the debug band emitted */
+        /* Debug-band share of each shared emit pool, derived from the segment table at capture (the
+           emit hot paths carry no per-band counters).  band-0 usage = total - _dbg. */
+        u32  emit_cmds_dbg, emit_segs_dbg, emit_pts_dbg, emit_text_dbg, emit_clips_dbg;
         u32  diff_unchanged;  bool any_changed;
         u32  tess_gen_next;
         u32  font_atlas;                                 /* live font atlas tex index (batch coloring) */

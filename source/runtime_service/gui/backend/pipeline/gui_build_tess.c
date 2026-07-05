@@ -70,7 +70,7 @@ static struct
        across the slot boundary and corrupt elem_count + first_index tracking). */
     bool force_new_cmd;
 
-    u32  vert_hwm, idx_hwm;
+    u32  vert_hwm, idx_hwm;              /* lifetime peak of the TOTAL write head (both bands)   */
     bool overflow, overflow_ever;
 
     /* Arena band boundary: the write head right after the last MAIN-band slot placed this frame
@@ -78,6 +78,12 @@ static struct
        reads these as "main arena ends here"; the span up to vert_count/idx_count past them is
        the debug UI's own attributed footprint.  Re-derived by cache_build_frame every build. */
     u32 band0_vert_end, band0_idx_end;
+
+    /* Lifetime peak of the MAIN-band (band 0) write head alone -- the real application's geometry
+       ceiling, tracked apart from vert_hwm so the dashboard can show actual use limits with the
+       self-measuring debug band filtered out.  Peaks on a different frame than vert_hwm, so it is a
+       separate accumulator, not a subtraction. */
+    u32 band0_vert_hwm, band0_idx_hwm;
 
 } s_tess;
 

@@ -90,12 +90,36 @@ dash_capture_build( void )
         d->active     = vs->active;           d->hidden     = vs->hidden;
     }
 
-    sn->tess_verts     = s_tess.vert_count;   sn->tess_idx = s_tess.idx_count;
-    sn->tess_cmds      = s_tess.cmd_count;
+    sn->tess_verts     = s_tess.vert_count;   sn->tess_idx = s_tess.idx_count;   /* tess_cmds below */
     sn->vert_hwm       = s_tess.vert_hwm;     sn->idx_hwm  = s_tess.idx_hwm;
     sn->overflow_ever  = s_tess.overflow_ever;
     sn->band0_vert_end = s_tess.band0_vert_end;
     sn->band0_idx_end  = s_tess.band0_idx_end;
+    sn->band0_vert_hwm = s_tess.band0_vert_hwm;
+    sn->band0_idx_hwm  = s_tess.band0_idx_hwm;
+
+    /* GPU DRAW commands per band -- what actually dispatches, matching the renderer's draw-call
+       count and the perf tracker.  A slot's cmd_count includes dormant volatile-pad commands
+       (vp == GUI_VP_INVALID) and can hold empty commands; both occupy pool slots but never draw,
+       so they are excluded here (as the batch inspector already does).  tess_cmds is the live total
+       across both bands; tess_cmds_dbg the debug band's share.  band-0 draws = total - debug. */
+    sn->tess_cmds = sn->tess_cmds_dbg = 0;
+    for ( u32 i = 0; i < sn->slot_count; ++i )
+    {
+        const win_geo_slot_t* sl = &s_slots[ i ];
+        if ( !sl->valid ) continue;
+        u32 live = 0;
+        for ( u32 k = 0; k < sl->cmd_count && sl->cmd_base + k < s_tess.cmd_count; ++k )
+        {
+            u32 ci = sl->cmd_base + k;
+            if ( s_tess.cmd_vp[ ci ] == GUI_VP_INVALID ) continue;   /* dormant volatile pad     */
+            if ( s_tess.cmds[ ci ].elem_count == 0 )    continue;    /* empty -- never dispatched */
+            ++live;
+        }
+        sn->tess_cmds += live;
+        if ( sl->band != 0 )
+            sn->tess_cmds_dbg += live;
+    }
 
     sn->emit_cmds     = s_draw.cmd_count;    sn->emit_segs  = s_draw.seg_count;
     sn->emit_pts      = s_draw.pt_count;     sn->emit_text  = s_draw.text_pool_used;
@@ -103,13 +127,42 @@ dash_capture_build( void )
     if ( sn->emit_cmds > sn->emit_cmds_hwm )   /* emit cmd pool has no backend hwm -- track it here */
         sn->emit_cmds_hwm = sn->emit_cmds;
 
-    /* Debug-band attribution: how much of the shared emit command pool the diagnostic UI itself
-       consumed this frame.  Derived from the segment table at capture time -- the emit hot paths
-       carry no per-band counters. */
-    sn->emit_cmds_dbg = 0;
+    /* Debug-band attribution of every shared emit pool: what the diagnostic UI itself consumed this
+       frame, so the shell can subtract it and show a real application's use limits.  Derived here
+       from the segment table (which carries the band) plus each command's own payload -- the emit
+       hot paths carry no per-band counters.  A clip rect is charged to the debug band when ANY
+       debug-band command references it: the clip table is shared + de-duplicated, so a rect a
+       diagnostic window shares with a real window (e.g. a viewport window's clip that the torn-off
+       dashboard reuses) only exists in this frame's picture because the observer is present -- it is
+       not a cost the application would carry on its own. */
+    sn->emit_cmds_dbg = sn->emit_segs_dbg = 0;
+    sn->emit_pts_dbg  = sn->emit_text_dbg = 0;
+
+    u8 clip_band[ GUI_MAX_CLIP_RECTS ] = { 0 };   /* bit0 = used by band 0, bit1 = used by debug band */
     for ( u32 si = 0; si < s_draw.seg_count; ++si )
-        if ( s_draw.segs[ si ].band != 0 && s_draw.segs[ si ].hi > s_draw.segs[ si ].lo )
-            sn->emit_cmds_dbg += s_draw.segs[ si ].hi - s_draw.segs[ si ].lo;
+    {
+        const gui_cmd_seg_t* sg  = &s_draw.segs[ si ];
+        bool                 dbg = ( sg->band != 0 );
+        if ( dbg && sg->hi > sg->lo )
+        {
+            ++sn->emit_segs_dbg;
+            sn->emit_cmds_dbg += sg->hi - sg->lo;
+        }
+        for ( u32 ci = sg->lo; ci < sg->hi && ci < GUI_MAX_CMDS; ++ci )
+        {
+            const gui_cmd_t* c = &s_draw.cmds[ ci ];
+            if ( dbg )
+            {
+                if ( c->type == GUI_CMD_TEXT )     sn->emit_text_dbg += c->text.len;
+                if ( c->type == GUI_CMD_POLYLINE ) sn->emit_pts_dbg  += c->polyline.pt_count;
+            }
+            clip_band[ c->clip_idx ] |= dbg ? 0x2u : 0x1u;
+        }
+    }
+    sn->emit_clips_dbg = 0;
+    for ( u32 i = 0; i < s_draw.clip_table_n && i < GUI_MAX_CLIP_RECTS; ++i )
+        if ( clip_band[ i ] & 0x2u )               /* touched by the debug band at all */
+            ++sn->emit_clips_dbg;
 
     sn->diff_unchanged = s_cache.unchanged;  sn->any_changed = s_cache.any_changed;
     sn->tess_gen_next  = s_tess_gen_next;
