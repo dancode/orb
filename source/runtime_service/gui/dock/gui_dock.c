@@ -10,9 +10,10 @@
     drag-to-dock / undock-by-tab-drag gestures + tab-strip chrome live in gui_dock_drag.c; layout
     save/load lives in gui_dock_serialize.c.
 
-    Phase 1 is programmatic only: a host builds a layout in code and the windows tile + tab into it.
-    Mouse drag-to-dock (gui_dock_drag.c) and layout persistence (gui_dock_serialize.c) are the later
-    phases built on top.
+    This programmatic path is the foundation: a host builds a whole layout in code and the windows
+    tile + tab into it.  The mouse drag-to-dock gestures (gui_dock_drag.c) and layout persistence
+    (gui_dock_serialize.c) build on the same node tree -- the drag path drives these very verbs, while
+    the loader rebuilds the tree straight from the gui_dock_core.c node pool.
 
     Included by gui.c after gui_dock_core.c + gui_dock_drag.c (and before gui_dock_serialize.c, though
     that ordering doesn't matter -- this file and gui_dock_serialize.c don't call each other).

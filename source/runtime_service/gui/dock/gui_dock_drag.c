@@ -17,13 +17,14 @@
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
-    Drag-to-dock + undock-by-tab-drag (Phase 2 mouse gestures)
+    Drag-to-dock + undock-by-tab-drag (the mouse gestures)
 
     Drag-to-dock: while a FREE window is title-dragged over a dockspace on the same surface,
     dock_drag_detect (called from window_begin_ex) finds the leaf under the cursor, draws a per-node
     5-way chip overlay + a translucent preview of the region the window would take, and records the
     chip the cursor is over.  On the release edge, dock_drag_commit (from window_end) tabs the window
-    into the leaf (center) or splits the leaf and docks it on a side -- reusing the Phase-1 tree edits.
+    into the leaf (center) or splits the leaf and docks it on a side -- reusing the tree edits in
+    gui_dock_core.c (via the public verbs in gui_dock.c: gui_dock_split / gui_dock_window).
     The overlay paints on a reserved z-band above everything (popups sit at 0x80000000).
 
     Undock-by-tab-drag: a press on a tab pending past TITLEBAR_DRAG_THRESH pops that window out of its

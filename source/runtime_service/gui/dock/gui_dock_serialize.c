@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/dock/gui_dock_serialize.c -- Dock layout persistence (Phase 3).
+    runtime_service/gui/dock/gui_dock_serialize.c -- Dock layout persistence.
 
     Serialize a viewport's dock tree to a small ASCII blob and rebuild it later (across a restart
     when the host writes the blob to disk).  The format is a pre-order line stream -- each node

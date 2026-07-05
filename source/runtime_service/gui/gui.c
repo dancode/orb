@@ -44,7 +44,7 @@
     widgets/gui_widget_slider.c  -- slider + drag widgets: slider_float/int, drag_int, slider_render
     widgets/gui_widget_numeric.c -- numeric text inputs: input_int/float/double, input_float2/3/4
 
-    table/gui_table.c            -- table layout: multi-column rows with cell clipping (needs core/ only)
+    table/gui_table.c            -- table layout: multi-column rows, self-fitting cells, one table clip (needs core/ only)
 
     window/gui_window.c          -- persistent per-window state: gui_window_t, window_get, drag mode
     window/gui_widget_window.c   -- the window as a widget: begin/window_end + chrome (resize); body is a region

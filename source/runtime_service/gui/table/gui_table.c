@@ -14,13 +14,13 @@
     any rows that scrolled up under it.  So the entire table -- header, rows, scrollbar -- lives in
     that one clip, and the body needs no clip of its own.
 
-    Phase 1 -- column layout, next_row / next_column, auto-height rows.
-    Phase 2 -- headers_row: header strip with sort click and sort indicator (drawn as chrome).
-    Phase 3 -- decoration: row stripes, H/V dividers + outer frame, row/cell background overrides.
-    Phase 4 -- scrolling body (GUI_TABLE_SCROLL_Y / _X): rows scroll under the one table clip and
-               the chrome header covers the top, so the header stays frozen with no extra clip.
-               Columns resolve inside the region (after the scrollbar gutter is reserved) so header
-               and body cells stay aligned.
+    The feature set, in layers:
+      - Column layout: next_row / next_column, auto-height rows.
+      - headers_row: header strip with sort click and sort indicator (drawn as chrome).
+      - Decoration: row stripes, H/V dividers + outer frame, row/cell background overrides.
+      - Scrolling body (GUI_TABLE_SCROLL_Y / _X): rows scroll under the one table clip and the chrome
+        header covers the top, so the header stays frozen with no extra clip.  Columns resolve inside
+        the region (after the scrollbar gutter is reserved) so header and body cells stay aligned.
 
     Deferred open model:
       table_begin records outer_rect and exits.  table_open_body() (called lazily from
@@ -306,7 +306,8 @@ gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 hei
 {
     if ( !s_fwd_caps.tables ) return false;   /* feature boundary: gui_forward_caps_t.tables */
 
-    /* Nested tables are not yet supported. */
+    /* FUTURE: nested tables -- only one table is open at a time (s_tab is a single frame-scratch
+       slot; see the state-model note in gui_internal.h).  Reject a nested table_begin. */
     if ( s_tab_active ) return false;
     if ( ncols < 1 ) ncols = 1;
     if ( ncols > GUI_TABLE_COLS_MAX ) ncols = GUI_TABLE_COLS_MAX;
@@ -776,7 +777,7 @@ gui_table_set_bg_color( gui_table_bg_target_t target, u32 abgr )
     }
     else if ( target == GUI_TABLE_BG_CELL && t->cur_col >= 0 )
     {
-        /* Current cell fill; the active cell clip keeps it in bounds. */
+        /* Current cell fill; the one table clip keeps it in bounds (there is no per-cell clip). */
         draw_push_rect_filled( t->col_x[ t->cur_col ], t->row_top, t->col_w[ t->cur_col ],
                                t->row_h, 0, 0, 0, 0, 0, abgr );
     }

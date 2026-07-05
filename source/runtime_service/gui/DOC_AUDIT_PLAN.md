@@ -162,8 +162,42 @@ neighboring comment. A chunk rushed into paraphrase-mode makes things worse than
                      gui_widget_menu.c fully clean -- exemplary WHY prose (combo was-open toggle guard,
                      menu_close_chain modal floor, menu_bar clip-widen for hit-test, band inheritance,
                      off-screen premeasure) all traced.)
-      - [ ] dock/
-      - [ ] table/
+      - [x] dock/  (4 fixes / 3 files -- all the phase-numbered stale-forward-marker class; docking is
+                    COMPLETE through phase 4, so the dev-plan phase numbers are unresolvable jargon.
+                    gui_dock_drag.c "(Phase 2 mouse gestures)" -> "(the mouse gestures)" and "reusing the
+                    Phase-1 tree edits" -> named the real source (gui_dock_core.c edits via the gui_dock.c
+                    public verbs).  gui_dock.c "Phase 1 is programmatic only ... the later phases built on
+                    top" -> "This programmatic path is the foundation ... build on the same node tree";
+                    VERIFICATION GUARD: kept the drag path as "drives these very verbs" (dock_drag_commit
+                    calls gui_dock_split / gui_dock_window, confirmed) but described persistence separately
+                    as "rebuilds straight from the node pool" -- the loader uses dock_node_alloc directly,
+                    NOT the public verbs, so a naive "both build on these verbs" would have been a NEW false
+                    claim.  gui_dock_serialize.c title "(Phase 3)" dropped.  gui_dock_core.c fully clean.
+                    Verified every include-order justification: dock_find_window_node / dock_window_chrome /
+                    dock_drag_detect / dock_drag_commit ARE forward-declared in gui_internal.h (773-779) and
+                    called from gui_widget_window.c (585/706/708/987); dock_node_alloc / dock_collapse /
+                    dock_leaf_remove_tab are NOT forward-declared, matching the core header's distinction.)
+      - [x] table/  (4 fixes / 1 file [gui_table.c] + 1 descriptor fix in gui.c; THREE drift classes in
+                     the one focused file the Phase-2 broad sweep had only partly reached.
+                     (1) STALE PHASE JARGON: the header's "Phase 1/2/3/4 --" feature enumeration (tables
+                         are complete through phase 4) -> relabeled to feature layers, content preserved
+                         verbatim; same class as dock/ and the window/ Phase-1 marker.
+                     (2) FALSE CLAIM / CONTRADICTION: gui.c:47 descriptor called the file "multi-column
+                         rows with cell clipping" -- but the file header (:9) and table_next_column (:604)
+                         both emphatically state "NO per-cell clip" (self-fit over clips design); fixed the
+                         descriptor to "multi-column rows, self-fitting cells, one table clip".  Same
+                         species as the Phase-2 gui_api.h:450 NO_INPUT contradiction.
+                     (3) INTERNAL NEAR-CONTRADICTION: the BG_CELL fill comment (:779) said "the active cell
+                         clip keeps it in bounds" while its sibling ROW-fill comment (:773) correctly says
+                         "auto-clipped to the body region"; there is no per-cell rect clip (the cell fill is
+                         a rect, unaffected by the per-cell TEXT glyph-clip) -> "the one table clip keeps it
+                         in bounds (there is no per-cell clip)".
+                     Plus tightened the "Nested tables are not yet supported" guard note into a greppable
+                     FUTURE: tag consistent with the canonical one at gui_internal.h:696-697 (which already
+                     points back here: "gui_table.c rejects nesting").  Verified include order
+                     (gui_layout_child.c:151 precedes gui_table.c:165), the s_tpool = g_ctx->table_pool
+                     alias (gui_internal.h:682), and the deep one-clip / chrome-drawn-last / pair-resize /
+                     stable-sort prose all trace exactly.)
       - [ ] gui_frame.c + gui_api.*
 - [ ] **Phase 4 -- Drift prevention.** Contract + ARCHITECTURE.md in-tree; SEAM:/FUTURE: tags make
       future drift greppable; optional CLAUDE.md note (touch a subsystem -> reconcile its comments).
@@ -316,4 +350,35 @@ location claim).
   exemplary WHY prose (combo was-open toggle guard vs popup_close_check-at-frame-top, menu_close_chain's
   modal floor, the menu_bar clip-widen so bar entries pass rect_hit, band inheritance, off-screen
   premeasure) all traced.  Comment-only; no build run.  Next chunk: dock/.
+- 2026-07-04: Phase 3 chunk dock/ done.  4 fixes / 3 files, all the phase-numbered stale-forward-marker
+  class (the same species cleaned from table code in Phase 2 and window/ this session).  Docking is
+  COMPLETE through phase 4, so the historical dev-plan phase numbers scattered through the headers are
+  unresolvable jargon: gui_dock_drag.c "(Phase 2 mouse gestures)" + "reusing the Phase-1 tree edits",
+  gui_dock.c "Phase 1 is programmatic only ... the later phases built on top", gui_dock_serialize.c
+  title "(Phase 3)".  Each rewritten to describe what the code actually is.  The gui_dock.c rewrite had
+  a verification guard: the drag path DOES drive the public verbs (dock_drag_commit -> gui_dock_split /
+  gui_dock_window, confirmed) but the load path rebuilds the tree straight from dock_node_alloc, NOT the
+  public verbs -- so I described the two separately rather than letting a tidy "both build on these
+  verbs" inject a fresh false claim (the same trap the Phase-2 "future dock splitter shares resize
+  mechanism" catch flagged).  gui_dock_core.c fully clean.  Verified every include-order justification
+  against gui_internal.h (dock_find_window_node / dock_window_chrome / dock_drag_detect / dock_drag_commit
+  forward-declared at 773-779 and called from gui_widget_window.c; the plain-static helpers are not).
+  Comment-only; no build run.  Next chunk: table/.
+- 2026-07-04: Phase 3 chunk table/ done.  4 fixes in gui_table.c (+1 descriptor in gui.c) -- notable as
+  the first chunk to surface THREE distinct drift classes in a single file that the Phase-2 broad sweep
+  had only partly reached (Phase 2 fixed table "future" TAGS; the header enumeration + descriptors it
+  never touched).  (1) Stale phase jargon: the "Phase 1/2/3/4 --" feature enumeration relabeled to
+  feature layers, content preserved (same class as dock/).  (2) False claim: gui.c:47 called the file
+  "multi-column rows with cell clipping" but the code emphatically has NO per-cell clip (self-fit over
+  clips); descriptor corrected (same species as the Phase-2 gui_api.h NO_INPUT contradiction).  (3)
+  Internal near-contradiction: the BG_CELL comment said "the active cell clip keeps it in bounds" while
+  the sibling ROW comment correctly names the body clip -- there is no per-cell rect clip; tightened.
+  Also converted "Nested tables are not yet supported" into a greppable FUTURE: tag matching the
+  canonical one at gui_internal.h:696-697 (which already cross-refs "gui_table.c rejects nesting"), so a
+  FUTURE.*nest sweep now finds both the state-model note and its enforcement site.  Verified include
+  order, the s_tpool = g_ctx->table_pool alias, and the deep one-clip / chrome-drawn-last / pair-resize
+  prose all trace.  LESSON: a Phase-2-style cross-cutting sweep clears greppable TAGS but leaves the
+  no-keyword drift (a wrong top-level DESCRIPTOR, an internal near-contradiction) for the per-file pass
+  -- exactly why Phase 3 revisits files Phase 2 already touched.  Comment-only; no build run.  Next
+  chunk: gui_frame.c + gui_api.* (the last Phase-3 chunk).
 </content>
