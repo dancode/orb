@@ -77,8 +77,35 @@ neighboring comment. A chunk rushed into paraphrase-mode makes things worse than
             - [x] gui_anim.c gui_stacks.c gui_region.c gui_theme.c gui_input.c gui_layout_region.c
                   gui_layout_child.c  (all CLEAN -- headers/cross-refs/claims verified vs code; gui_region.c
                   was Phase-2 done)
-      - [ ] backend/pipeline/
-      - [ ] backend/resource/
+      - [x] backend/pipeline/  DONE 2026-07-04.  5 comment fixes, all one drift class: the command
+            SEGMENT key gained `font` then `band` axes over time (band from the arena-bands work),
+            but several descriptive comments still named the old 3-axis (win,z,vp) key.  Verified
+            the live key is 5 axes: draw_seg_retag tests win/z/vp/font/band (gui_emit_draw.c:287-288).
+            - [x] gui_emit_draw.c   (4: segs[] header block "per-(win,z,vp,font)" -> +band; segs[]
+                                      field inline "per-(z,vp)" -> per-(win,z,vp,font,band); seg_count
+                                      inline "segs[0] is z=0,vp=0" -> "the bg span"; draw_seg_retag fn
+                                      header "(win,z,vp)" -> "(win,z,vp,font,band)" + note each setter
+                                      passes the other four axes through)
+            - [x] gui_build_cache.c (1: pipeline-map header EMIT line "per-(win,z,vp) segments" ->
+                                      per-(win,z,vp,font,band); rest of the 989-line file verified
+                                      clean -- the stats/idle-skip/band-major/set_stable prose all
+                                      traces exactly, best-maintained file in the chunk)
+            - [x] gui_emit_path.c gui_build_tess.c gui_build_volatile.c gui_render.c gui_shader.h
+                  (all CLEAN -- traced headers/cross-refs/fn attributions vs code.  Checked:
+                  tess_stroke_poly_aa/tess_axis_line/tess_dashed_line exist (gui_build_tess.c);
+                  gui_font_internal.c owns font_init (referenced by gui_render.c:267); gui_shader.h
+                  GLSL paraphrase matches shaders/gui.frag exactly -- dbg_tint decode, sRGB-linear,
+                  s.r coverage.  gui_build_volatile.c's long design header is exemplary + accurate.)
+      - [x] backend/resource/  DONE 2026-07-04.  ZERO fixes -- first fully-clean chunk.  All 6 files
+            (gui_atlas.h/.c, gui_font.h/.c, gui_font_internal.c, gui_icon.c) traced clean: headers,
+            cross-refs, and fn attributions all match code.  Verified: draw_push_icon (pipeline/
+            gui_emit_draw.c:629) reads icon_get/icon_atlas_idx as the header claims; the "asset
+            pipeline later" notes (gui_atlas.h:14, gui_icon.c:13) are legit scoped non-goals, not
+            stale promises -- left as-is; font_init's no-op-not-placeholder rationale is accurate.
+            SIDE FIND (not a code fix): my own memory project_imgui_font_system was stale -- it
+            described a bit/bmp/ttf runtime split + _bmp.c/_ttf.c files that do not exist; the real
+            design is a single .orb_font baked-atlas loader (font_tool/FreeType offline).  Memory
+            corrected; NO code comment claimed this, so nothing in-tree to fix.
       - [ ] widgets/
       - [ ] window/
       - [ ] popup/
@@ -179,4 +206,23 @@ location claim).
   after the gui_layout.c -> gui_layout_child.c split.  7 core/ files verified fully clean.  Comment-only;
   no build run.  Next chunk: backend/pipeline/ (start with the gui_emit_draw.c:41 band-axis drift
   logged in Phase 1).
+- 2026-07-04: Phase 3 chunk backend/pipeline/ done.  5 comment fixes across 2 files (gui_emit_draw.c
+  x4, gui_build_cache.c x1); 5 files fully clean.  SINGLE drift class this chunk: the command-segment
+  key gained `font` then `band` axes as features landed (band from the arena-bands work), and several
+  descriptive comments still named the old 3-axis (win,z,vp) key -- textbook past-written-as-present.
+  This closed the gui_emit_draw.c:41 band-axis item logged in Phase 1, plus found 3 sibling instances
+  of the same drift by tracing (2 more in gui_emit_draw.c, 1 in gui_build_cache.c's pipeline-map).
+  Verified live key = draw_seg_retag(win,z,vp,font,band) tests all 5 (gui_emit_draw.c:287).  The
+  retained-cache/volatile-widget files (gui_build_cache/tess/volatile/render) are the best-documented
+  in gui so far -- long design headers, all traced exactly, zero drift.  Comment-only; no build run.
+  Next chunk: backend/resource/ (gui_font*.c / gui_atlas.c / gui_icon.c -- the font registry + atlas).
+- 2026-07-04: Phase 3 chunk backend/resource/ done.  ZERO fixes -- first fully-clean chunk of the
+  campaign.  All 6 files (gui_atlas.h/.c, gui_font.h/.c, gui_font_internal.c, gui_icon.c) traced clean
+  against code; the resource layer's headers describe the shared-atlas helper, the id-addressed font
+  registry, the deferred-reload queue, and the runtime icon packer accurately and in present tense.
+  Confirmed the load-bearing cross-refs (draw_push_icon reads icon_get/icon_atlas_idx; font_init
+  no-op rationale; the "asset pipeline later" scoped non-goals are not drift).  Side find: corrected
+  a stale entry in my OWN memory (project_imgui_font_system named a bit/bmp/ttf split + _bmp/_ttf.c
+  files that don't exist; real design is a single .orb_font baked-atlas loader) -- no in-tree comment
+  claimed it, so nothing to fix in code.  Comment-only campaign; no build run.  Next chunk: widgets/.
 </content>

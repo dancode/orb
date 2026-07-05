@@ -36,11 +36,12 @@ typedef struct
 /*==============================================================================================
     Draw list -- the per-frame command buffer and segment table.
 
-    Commands are pushed into cmds[] by the widget layer.  Whenever (win, z, vp, font) changes,
-    the current open span is closed and a new one is opened, so the buffer is partitioned into
-    contiguous per-(win,z,vp,font) segments.  cache_tess_window walks these segments per window
-    rather than re-scanning the full command buffer.  [lo, hi) is a half-open range; the final
-    segment's hi is closed at build time.  win=0 is the background (non-window) draw layer.
+    Commands are pushed into cmds[] by the widget layer.  Whenever (win, z, vp, font, band)
+    changes, the current open span is closed and a new one is opened, so the buffer is
+    partitioned into contiguous per-(win,z,vp,font,band) segments.  cache_tess_window walks
+    these segments per window rather than re-scanning the full command buffer.  [lo, hi) is a
+    half-open range; the final segment's hi is closed at build time.  win=0 is the background
+    (non-window) draw layer.
 ==============================================================================================*/
 
 typedef struct
@@ -59,8 +60,8 @@ static struct
     gui_id_t        cmd_volatile_id[ GUI_MAX_CMDS ];    // GUI_ID_NONE, or the volatile widget owning this cmd
     gui_vec2_t      points      [ GUI_MAX_PATH_PTS ];   // point pool for CMD_POLYLINE data; indexed by pt_offset
 
-    gui_cmd_seg_t   segs        [ GUI_MAX_SEGS ];       // per-(z,vp) command spans, in emit order 
-    u32             seg_count;                          // spans open this frame (>= 1; segs[0] is z=0,vp=0) 
+    gui_cmd_seg_t   segs        [ GUI_MAX_SEGS ];       // per-(win,z,vp,font,band) spans, in emit order
+    u32             seg_count;                          // spans open this frame (>= 1; segs[0] is the bg span)
 
     /* Flat string pool: draw_push_text_n copies every string here so that stack-local buffers
        (textf, snprintf labels) remain valid until gui_render_flush consumes them. */
@@ -276,7 +277,9 @@ draw_set_root_clip( f32 w, f32 h )
     s_draw.cur_clip_idx        = ci;
 }
 
-/* Re-tag subsequent commands with (win, z, vp), cutting a new command segment at the boundary.  If
+/* Re-tag subsequent commands with (win, z, vp, font, band), cutting a new command segment at the
+   boundary.  Each draw_set_* setter passes the current value for the other four axes, so any one
+   of them changing opens a fresh span.  If
    the current segment is still empty (no command emitted since it opened) its tag is simply rewritten
    in place, so back-to-back set_window / set_sort_key / set_viewport calls before any draw never spawn
    empty spans.  On overflow the open segment is just extended (its tag may then be stale, but only in
