@@ -548,12 +548,12 @@ gui_anchor( gui_rect_t parent, gui_anchor_t a )
 }
 
 /* Reserve a w x h block in the layout and return its screen rect, advancing the pen like any widget
-   (the Dummy analogue) -- blank space, or a slot to fill with custom draw_* geometry / make clickable
-   with invisible_button.  `w` is the main-axis size: honored in a pack run or on a same_line, while
-   column / grid flow sizes the width to the track as for every widget.  The returned rect is always
-   the actual reserved space, so draw into it rather than assuming w x h. */
+   (the ImGui Dummy analogue) -- blank space, or a slot to fill with custom draw_* geometry / make
+   clickable with invisible_button.  `w` is the main-axis size: honored in a pack run or on a
+   same_line, while column / grid flow sizes the width to the track as for every widget.  The
+   returned rect is always the actual reserved space, so draw into it rather than assuming w x h. */
 gui_rect_t
-gui_dummy( f32 w, f32 h )
+gui_empty( f32 w, f32 h )
 {
     return widget_next_rect_w( w, h );
 }

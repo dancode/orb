@@ -302,6 +302,13 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
     Gaps sit *between* cells and are subtracted before distribution, so a widget never sees or
     reasons about spacing -- it just fills the rect it is handed.
 
+    This overloaded unit governs track / fit sizes only (row, cols, grid, next_item_fit,
+    field_split).  Pure spacing calls (same_line's `spacing`, new_line's `h`) share the same 0 /
+    negative shape but not this exact rule: a line/gap has no content to measure, so its own
+    "natural" (0) is a literal zero size rather than a content measure, and negative still means
+    "defer" but to the theme's default gap/line height, not to fill.  Each is documented at its
+    own call site -- don't assume this block's rule generalizes to every f32 size-like parameter.
+
 ==============================================================================================*/
 
 #define GUI_LAYOUT_COLS 8                     // max tracks on one axis (columns or rows)
@@ -1289,7 +1296,6 @@ typedef struct
                            // (idle replay or a live real-frame reuse-patch) -- a separate signal
                            // from win_retained: a window with an animating volatile widget still
                            // counts as fully retained; this is what actually moved.
-
 } gui_render_stats_t;
 
 /*==============================================================================================

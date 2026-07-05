@@ -212,7 +212,7 @@ show_font_browser( bool* p_open )
 
         gui()->input_text_with_hint( "##custom", "Custom preview text...",
                                      s_fb.custom_text, sizeof( s_fb.custom_text ) );
-        gui()->spacing( 0.0f );
+        gui()->new_line( -1.0f );
 
         /* NOTE -- this preview is NOT isolated to these lines.  The renderer has no per-run font:
            text commands store only position/colour/clip (see GUI_CMD_TEXT in gui_emit_draw.c), and the
@@ -321,7 +321,7 @@ show_split_demo( bool* p_open )
     }
 
     /* The panels used absolute rects, so the window pen has not moved -- reserve the band. */
-    gui()->dummy( 0.0f, band.h );
+    gui()->empty( 0.0f, band.h );
 
     gui()->window_end();
 }
@@ -425,7 +425,7 @@ show_hud_demo( bool* p_open )
     }
 
     /* Placement used absolute rects, so reserve the band so the window sizes around it. */
-    gui()->dummy( 0.0f, hud.h );
+    gui()->empty( 0.0f, hud.h );
 
     gui()->window_end();
 }

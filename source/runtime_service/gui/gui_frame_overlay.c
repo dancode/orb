@@ -134,7 +134,7 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
         bool show_timing_rows = ( mode >= 2 );
         if ( show_timing_rows )
         {
-            gui_spacing( 2.0f );
+            gui_new_line( 2.0f );
             gui_textf( "emit   %5.2f ms", s_perf.s_emit_ms );
             gui_textf( "render %5.2f ms", s_perf.s_rend_ms );
         }
@@ -143,7 +143,7 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
         if ( show_geometry_rows )
         {
             gui_render_stats_t rs = gui_build_stats();
-            gui_spacing( 2.0f );
+            gui_new_line( 2.0f );
             gui_textf( "verts   %6u", rs.vert_count );
             gui_textf( "tris    %6u", rs.tri_count  );
             gui_textf( "batches %6u", rs.draw_calls );
@@ -156,14 +156,14 @@ gui_perf_overlay( gui_clock_fn clock, int mode )
                    volatile patched is a separate signal, not folded into wins ret above -- a
                    window holding an animating volatile widget (gui()->volatile_cb) still counts
                    as fully retained; this is what actually moved inside it this frame. */
-                gui_spacing( 2.0f );
+                gui_new_line( 2.0f );
                 gui_textf( "wins ret  %u/%u", rs.win_retained,  rs.win_total   );
                 gui_textf( "verts ret %u/%u", rs.vert_retained, rs.vert_count  );
                 gui_textf( "tris ret  %u/%u", rs.tri_retained,  rs.tri_count   );
                 gui_textf( "vol patch %u",    rs.volatile_patched              );
 
                 /* Upload stats: GPU memory bandwidth. */
-                gui_spacing( 2.0f );
+                gui_new_line( 2.0f );
                 gui_textf( "up batch  %u", rs.upload_batches );
                 gui_textf( "up bytes  %u", rs.upload_bytes   );
             }
@@ -227,7 +227,7 @@ gui_state_overlay( int mode )
         bool show_extended_rows = ( mode >= 2 );
         if ( show_extended_rows )
         {
-            gui_spacing( 2.0f );
+            gui_new_line( 2.0f );
             gui_textf( "Focused %s", dbg_id_str( s_interaction.focused_id ) );
             gui_textf( "Nav id  %s", dbg_id_str( s_nav.id ) );
             gui_textf( "Nav win %s", dbg_id_str( s_nav.win ) );
@@ -237,7 +237,7 @@ gui_state_overlay( int mode )
         bool show_popup_rows = ( mode >= 3 );
         if ( show_popup_rows )
         {
-            gui_spacing( 2.0f );
+            gui_new_line( 2.0f );
             gui_textf( "Popups  %u", s_popup_open_count );
             if ( s_popup_open_count )
                 gui_textf( "Top pop %s", dbg_id_str( s_popups_open[ s_popup_open_count - 1u ].id ) );

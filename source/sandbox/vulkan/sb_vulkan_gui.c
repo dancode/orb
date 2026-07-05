@@ -126,20 +126,19 @@ demo_widgets( void )
             clicks++;
         }
         gui()->textf( "button pressed %d time(s)", clicks );
-
-        gui()->spacing( 0 );
+        gui()->new_line( -1.0f );
 
         static bool checked = true;
         gui()->checkbox( "Enable feature", &checked );
         // gui()->textf( "feature is %s", checked ? "ON" : "off" );
 
-        gui()->spacing( 0 );
+        gui()->new_line( -1.0f );
 
         static f32 amount = 3.0f;
         gui()->slider_float( "Amount", &amount, 0.0f, 10.0f );
         gui()->textf( "amount = %.2f", amount );
 
-        gui()->spacing( 0 );
+        gui()->new_line( -1.0f );
 
         static char name[ 32 ] = "orb";
         gui()->input_text( "Name", name, sizeof( name ) );
@@ -269,7 +268,7 @@ demo_fields( void )
         gui()->field_label_left( 0.0f );        /* clear the split */
         gui()->pop_id();
 
-        gui()->spacing( 0 );
+        gui()->new_line( -1.0f );
         gui()->text( "field_label_right( 90 ) -- labels on the right:" );
         gui()->push_id( "right" );
         gui()->field_label_right( 90.0f );
@@ -278,7 +277,7 @@ demo_fields( void )
         gui()->field_label_right( 0.0f );
         gui()->pop_id();
 
-        gui()->spacing( 0 );
+        gui()->new_line( -1.0f );
         gui()->text( "field_split( LEFT, 0.4, 0.6 ) -- fractional:" );
         gui()->field_split( GUI_LABEL_LEFT, 0.4f, 0.6f );
         gui()->slider_float( "Volume", &f_volume, 0.0f, 10.0f );
@@ -505,7 +504,7 @@ demo_combo_list( void )
     7. Alignment, same_line & spacers -- composition within a row.
 
     align() sets where natural-sized content sits in its cell (persists like the row template).
-    same_line keeps the next widget on the line just emitted.  skip / spacing / separator are the
+    same_line keeps the next widget on the line just emitted.  skip / new_line / separator are the
     cell-consuming spacers that emit nothing interactive.
 ==============================================================================================*/
 
@@ -536,9 +535,9 @@ demo_align( void )
         gui()->same_line( 8.0f );
         gui()->button( "Apply" );
 
-        gui()->separator_text( "spacing()" );
+        gui()->separator_text( "new_line()" );
         gui()->text( "above a 32px gap" );
-        gui()->spacing( 32.0f );
+        gui()->new_line( 32.0f );
         gui()->text( "below the gap" );
     }
     gui()->window_end();
@@ -609,7 +608,7 @@ demo_pack( void )
         gui()->input_text( "##find", find, sizeof( find ) );
 
         gui()->stack();
-        gui()->spacing( 0 );
+        gui()->new_line( -1.0f );
         gui()->text( "pack_nextline() wraps the run -- three per line:" );
 
         gui()->bar();
@@ -879,7 +878,7 @@ demo_menus( void )
                         s_menu_grid ? "ON" : "off", s_menu_stats ? "ON" : "off" );
         gui()->separator();
         gui()->checkbox( "Show main menu bar (top of screen)", &s_menu_mainbar );
-        gui()->spacing( 0 );
+        gui()->new_line( -1.0f );
         gui()->text( "Right-click empty space for a context menu." );
 
         /* (c) A context menu: popup_context_window_begin opens on a right-click in empty window
@@ -968,11 +967,11 @@ demo_lines( void )
 
         gui()->checkbox( "Show guide lines", &show_guides );
 
-        /* A custom-drawn, interactive control built entirely from the primitives: dummy() reserves a
+        /* A custom-drawn, interactive control built entirely from the primitives: empty() reserves a
            cell, is_mouse_hovering_rect() drives the hover tint, draw_text_in() centers the caption,
            and invisible_button() makes the same rect clickable -- cycling the alignment on a click. */
         {
-            gui_rect_t sw  = gui()->dummy( 0.0f, 22.0f );        /* full-width strip, 22px tall */
+            gui_rect_t sw  = gui()->empty( 0.0f, 22.0f );        /* full-width strip, 22px tall */
             bool         hot = gui()->is_mouse_hovering_rect( sw );
             gui()->draw_rect( sw.x, sw.y, sw.w, sw.h, hot ? LINE_CYAN : LINE_BG );
             gui()->draw_text_in( sw, GUI_ALIGN_CENTER, LINE_INK, "click: cycle alignment" );
@@ -1249,7 +1248,7 @@ demo_table( void )
         }
 
         /* --- table containing interactive widgets ----------------------------------------- */
-        gui()->spacing( 0 );
+        gui()->new_line( -1.0f );
         gui()->separator_text( "interactive cells (no header)" );
 
         static float s_vals[ 4 ] = { 0.25f, 0.5f, 0.75f, 1.0f };
@@ -1425,7 +1424,7 @@ demo_docking( void )
     Three icons are rasterized once into a buffer and registered (register_icon -> handle); after
     that they draw as tinted quads in the same flush as text.  image() reserves a layout slot and
     fits the icon into it; draw_icon_in places an icon into a rect the caller already holds, here
-    a dummy() slot paired with a text label -- the "icon + caption" row an editor list uses.
+    an empty() slot paired with a text label -- the "icon + caption" row an editor list uses.
 ==============================================================================================*/
 
 static void
@@ -1470,7 +1469,7 @@ demo_icons( void )
         };
         for ( int i = 0; i < 3; ++i )
         {
-            gui_rect_t slot = gui()->dummy( 240, 28 );
+            gui_rect_t slot = gui()->empty( 240, 28 );
             gui()->draw_icon_in( ( gui_rect_t ){ slot.x + 2, slot.y + 2, 24, 24 }, *rows[ i ].id, 0xFFFFFFFFu );
             gui()->draw_text_in( ( gui_rect_t ){ slot.x + 34, slot.y, slot.w - 34, slot.h },
                                    GUI_ALIGN_VCENTER, 0xFFFFFFFFu, rows[ i ].label );
@@ -1486,7 +1485,7 @@ demo_icons( void )
     (GUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE / _SEPARATOR_STYLE / _PROGRESS_STYLE /
     _SLIDER_KNOB), so the same call (checkbox, arrow_button, separator, progress_bar, slider) re-shapes
     to the selected style; pushing scopes it to just the sample block, set_*_style would set it
-    globally.  Bottom: each raw render_* primitive drawn into a dummy() slot, the pieces editor /
+    globally.  Bottom: each raw render_* primitive drawn into an empty() slot, the pieces editor /
     custom widgets reuse.
 ==============================================================================================*/
 
@@ -1642,7 +1641,7 @@ demo_symbols( void )
         gui()->row( 0 );
 
         gui()->separator_text( "Text effects" );
-        gui_rect_t tr = gui()->dummy( 0.0f, 20.0f );
+        gui_rect_t tr = gui()->empty( 0.0f, 20.0f );
         gui()->draw_text_outline( tr.x + 4.0f, tr.y + 4.0f, "Outlined text", 0xFFFFFFFFu, 0xFF000000u );
     }
     gui()->window_end();
@@ -1661,7 +1660,7 @@ const sb_gui_demo_t sb_gui_demos[] =
     { "Grid",         "grid_cells / skip",                              demo_grid        },
     { "Child / List", "child_begin / selectable / push_id",             demo_child_list  },
     { "Combo / List", "combo / listbox / combo_begin / listbox_begin",  demo_combo_list  },
-    { "Align",        "align / same_line / spacing / separator",        demo_align       },
+    { "Align",        "align / same_line / new_line / separator",       demo_align       },
     { "Sub-layout",   "push_layout / pop_layout",                       demo_sublayout   },
     { "Pack / Bar",   "bar / pack_size / pack_nextline",                demo_pack        },
     { "Windows",      "multiple windows / flags / z-order",             demo_windows     },

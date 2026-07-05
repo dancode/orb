@@ -4,7 +4,7 @@
 
     The everyday controls a caller emits between window_begin / window_end: text, button,
     checkbox, radio_button, input_text, label_text, selectable, collapsing_header, tree_node,
-    and the interaction-less spacers (skip, spacing, new_line, separator, separator_text).
+    and the interaction-less spacers (skip, new_line, separator, separator_text).
     Each takes its rect from widget_next_rect, which carves the next cell out of the active
     region's row template (gui_widget_core.c) -- a plain vertical stack by default, or any
     multi-column shape set via gui_layout / the row sugar.
@@ -757,19 +757,14 @@ gui_skip( void )
     widget_next_rect( WIDGET_H );
 }
 
-/* Consume one cell of height h (<= 0 falls back to the default gap) and draw nothing. */
+/* Break to a fresh line of height h and draw nothing: undoes a same_line and inserts a blank line
+   between runs (the ImGui NewLine, generalized).  A line has no body to measure, so its own
+   "natural" size is literally zero: h == 0 is a true zero-height break, not a fallback.  h < 0
+   defers to the theme's line height (font_char_h()), the vertical mirror of same_line(-1). */
 void
-gui_spacing( f32 h )
+gui_new_line( f32 h )
 {
-    widget_next_rect( h > 0.0f ? h : WIDGET_GAP );
-}
-
-/* Break to a fresh line of one text-height (the ImGui NewLine): undoes a same_line and inserts a
-   blank line between runs.  A spacing() sized to the glyph height, named for its intent. */
-void
-gui_new_line( void )
-{
-    widget_next_rect( font_char_h() );
+    widget_next_rect( h >= 0.0f ? h : font_char_h() );
 }
 
 /* A horizontal rule: a thin line spanning the cell width, centered in a standard-height cell.

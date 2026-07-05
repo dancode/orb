@@ -51,7 +51,7 @@ gui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
 
 /*----------------------------------------------------------------------------------------------
     invisible_button -- standard button interaction (hover, press-capture, click) on an explicit rect
-    you already hold: a cell cut from a canvas(), a dummy() slot, any custom-drawn region.  Returns
+    you already hold: a cell cut from a canvas(), an empty() slot, any custom-drawn region.  Returns
     true on the click frame.  It owns no layout reservation (the rect is the caller's), so it composes
     with the rect helpers: cut/draw the region, then make it clickable.  For just a hover tint use
     is_mouse_hovering_rect; this adds the full press + release-on-target click semantics.
@@ -189,7 +189,7 @@ gui_draw_icon_in( gui_rect_t r, gui_icon_id_t id, u32 col )
 void
 gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col )
 {
-    gui_rect_t r = widget_next_rect_w( w, h );   /* reserve a w x h layout slot (like dummy) */
+    gui_rect_t r = widget_next_rect_w( w, h );   /* reserve a w x h layout slot (like empty) */
     gui_draw_icon_in( r, id, col );
 }
 

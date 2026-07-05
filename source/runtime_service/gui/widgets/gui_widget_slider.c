@@ -430,7 +430,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
     /* Hover tooltip: swatch + hex + component values.
        tooltip_begin does NOT check hover -- it always opens the window; caller must guard.
        Pre-compute all strings and the required content width before opening the tooltip so
-       that gui_dummy() can force content_w to the correct value on this frame.  Without this,
+       that gui_empty() can force content_w to the correct value on this frame.  Without this,
        gui_text() inside would call draw_text_fit_n which truncates text at the (still-narrow)
        window width, preventing content_w from ever growing to fit the actual text. */
     if ( pst.hover )
@@ -460,7 +460,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
         if ( gui_tooltip_begin() )
         {
             gui_stack();
-            gui_dummy( tip_w, 0.0f );   /* force content_w immediately so autosize is right */
+            gui_empty( tip_w, 0.0f );   /* force content_w immediately so autosize is right */
             gui_rect_t tp = gui_canvas( 56.0f );
             {
                 f32 sv = draw_rounding();
@@ -547,9 +547,9 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
     if ( gui_popup_begin( pid, GUI_WIN_ALWAYS_AUTOSIZE ) )
     {
         gui_stack();
-        /* Pin popup width: autosize normally sizes to content; an explicit dummy at the target width
+        /* Pin popup width: autosize normally sizes to content; an explicit empty at the target width
            forces content_w to 200px so the popup isn't as narrow as the shortest drag-float label. */
-        gui_dummy( 200.0f, 0.0f );
+        gui_empty( 200.0f, 0.0f );
 
         /* Large color preview swatch. */
         {

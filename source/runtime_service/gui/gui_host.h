@@ -174,7 +174,6 @@ void gui_next_item_fit( f32 unit );
 void gui_same_line( f32 spacing );
 void gui_stack_same_line( f32 spacing );
 void gui_skip( void );
-void gui_spacing( f32 h );
 void gui_separator( void );
 
 /* layout - blank space canvas */
@@ -194,7 +193,7 @@ gui_rect_t gui_content_rect( void );
 u32        gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
 u32        gui_carve( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out, u32 max );
 gui_rect_t gui_anchor( gui_rect_t parent, gui_anchor_t a );
-gui_rect_t gui_dummy( f32 w, f32 h );
+gui_rect_t gui_empty( f32 w, f32 h );
 
 /* layout - interactive helpers */
 bool gui_invisible_button( const char* id_str, gui_rect_t r );
@@ -239,7 +238,7 @@ void gui_text_colored( u32 abgr, const char* str );
 void gui_text_disabled( const char* str );
 void gui_text_wrapped( const char* str );
 void gui_bullet( void );
-void gui_new_line( void );
+void gui_new_line( f32 h );
 void gui_label_text( const char* label, const char* value );
 bool gui_button( const char* label );
 bool gui_small_button( const char* label );

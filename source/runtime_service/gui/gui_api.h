@@ -546,14 +546,16 @@ typedef struct gui_api_s
            gui()->next_item_fit( 1.0f ); gui()->button( "Save" );  // stretch across its column
 
        same_line() -- keep the next widget on the line just emitted instead of breaking to a new
-                      row; it takes its natural width.  `spacing` is the gap in pixels (0 = flush,
-                      < 0 = the theme default).  Mirrors ImGui::SameLine.
+                      row; it takes its natural width.  `spacing` is a gap, not a track size: its
+                      own natural is a literal 0 (flush), and < 0 defers to the theme default gap.
+                      Mirrors ImGui::SameLine.  new_line() is its vertical mirror: a fresh line of
+                      height h, 0 = literal zero-height break, < 0 = the theme's line height.
 
            gui()->button("OK");  gui()->same_line( 0.0f );  gui()->button("Cancel");
+           gui()->text("A");  gui()->new_line( -1.0f );  gui()->text("B");  // one blank line between
 
        Spacers -- cell-consuming composition that emits nothing interactive:
        skip()      -- leave one blank cell (a hole; the natural way to step over a grid slot).
-       spacing()   -- a blank gap of height h (<= 0 = default gap).
        separator() -- a thin horizontal rule centered in its cell. */
 
     void ( *align      )( gui_align_t a );
@@ -561,7 +563,6 @@ typedef struct gui_api_s
     void ( *same_line  )( f32 spacing );
     void ( *stack_same_line )( f32 spacing );
     void ( *skip       )( void );
-    void ( *spacing    )( f32 h );
     void ( *separator  )( void );
 
     /* canvas() -- reserve a full-width drawing area of `height` px in the layout (height <= 0 fills
@@ -592,11 +593,12 @@ typedef struct gui_api_s
     gui_vec2_t ( *content_avail )( void );
 
     /* cursor_screen_pos -- screen position where the next item would land (GetCursorScreenPos): anchor
-       custom draw_* geometry to the pen.  dummy -- reserve a w x h block and return its screen rect
-       (Dummy): blank space, or a slot to fill with custom draw / make clickable with invisible_button.
-       `w` is the main-axis size (honored in pack / same_line; column flow sizes to the track). */
+       custom draw_* geometry to the pen.  empty -- reserve a w x h block and return its screen rect
+       (the ImGui Dummy analogue): blank space, or a slot to fill with custom draw / make clickable
+       with invisible_button.  `w` is the main-axis size (honored in pack / same_line; column flow
+       sizes to the track). */
     gui_vec2_t ( *cursor_screen_pos )( void );
-    gui_rect_t ( *dummy )( f32 w, f32 h );
+    gui_rect_t ( *empty )( f32 w, f32 h );
 
     /* content_rect -- the current region's available area as a screen rect (cursor_screen_pos joined
        with content_avail).  split -- carve a rect into panels along an axis using the overloaded
@@ -739,12 +741,14 @@ typedef struct gui_api_s
 
     /* text_colored / text_disabled -- a text run in an explicit colour / the dim secondary colour.
        text_wrapped -- a run word-wrapped to the region content width (paragraphs, help blurbs).
-       bullet -- a standalone bullet glyph; new_line -- break + one blank text line (undo same_line). */
+       bullet -- a standalone bullet glyph; new_line -- break + a blank line of height h (undo
+       same_line).  h == 0 is a literal zero-height break; h < 0 defers to the theme's line height
+       (the vertical mirror of same_line's own 0-literal / negative-defers rule). */
     void ( *text_colored  )( u32 abgr, const char* str );
     void ( *text_disabled )( const char* str );
     void ( *text_wrapped  )( const char* str );
     void ( *bullet        )( void );
-    void ( *new_line      )( void );
+    void ( *new_line      )( f32 h );
 
     /* label_text -- a read-only "value + label" row that lays out like the labeled value widgets
        (label track / control track under a form or field_split, trailing label otherwise) but is
@@ -764,7 +768,7 @@ typedef struct gui_api_s
     bool ( *arrow_button )( const char* id_str, gui_dir_t dir );
 
     /* invisible_button -- standard button interaction (hover, press-capture, click) on an explicit
-       rect the caller already holds (a canvas() cut, a dummy() slot, any custom-drawn region); returns
+       rect the caller already holds (a canvas() cut, an empty() slot, any custom-drawn region); returns
        true on the click frame.  Owns no layout reservation, so it composes with the rect helpers:
        cut/draw a region, then make it clickable.  For only a hover tint, use is_mouse_hovering_rect. */
     bool ( *invisible_button )( const char* id_str, gui_rect_t r );
