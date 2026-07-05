@@ -392,6 +392,10 @@ static u32              s_ctx_save_sp;
    previous frame's draw list and tessellation are preserved and reused unchanged. */
 static bool s_frame_dirty = true;   /* start true: forces a full first-frame build */
 
+/* Debug override: when true, frame_dirty is pinned true every frame, defeating the clean-frame
+   skip so the UI rebuilds and re-renders unconditionally.  Toggled via gui()->set_force_redraw. */
+static bool s_force_redraw = false;
+
 /* Global frame phase: input poll + draw-list reset.  Always reads display dimensions from the
    PRIMARY context (slot 0): the OS window and its viewports belong to the default context
    regardless of which context is active for input this frame.
@@ -450,7 +454,8 @@ gui_frame_begin( f32 dt )
                                the frame has not yet reached a stable cached state
        When false: the host may skip ctx_begin / widget emit / ctx_end.  The draw list and
        tessellation from the previous frame are preserved and replayed verbatim. */
-    s_frame_dirty = io_dirty()
+    s_frame_dirty = s_force_redraw
+                 || io_dirty()
                  || s_retained.wants_redraw
                  || gui_build_any_changed();
 
@@ -1130,6 +1135,22 @@ bool
 gui_frame_dirty( void )
 {
     return s_frame_dirty;
+}
+
+/* Debug override: pin frame_dirty true every frame, defeating the retained-cache clean-frame skip
+   so the UI rebuilds and re-renders unconditionally.  Use to isolate a "did not update until input
+   moved" symptom from a genuine emit bug -- if the symptom vanishes with this on, a missing
+   wants_redraw signal (not the emit) is the culprit. */
+void
+gui_set_force_redraw( bool on )
+{
+    s_force_redraw = on;
+}
+
+bool
+gui_force_redraw( void )
+{
+    return s_force_redraw;
 }
 
 /*==============================================================================================

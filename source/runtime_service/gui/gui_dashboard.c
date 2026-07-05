@@ -413,7 +413,7 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
 {
     const f32 row_h  = gui_line_h() + 3.0f;
     f32       y      = r.y + 2.0f;
-    const f32 bars_x = r.x + 280.0f;   /* wider name + meta column before the command bars */
+    const f32 bars_x = r.x + 320.0f;   /* wider name + meta column before the command bars */
 
     for ( u32 d = 0; d < sn->dispatch_count; ++d )
     {

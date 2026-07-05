@@ -442,6 +442,10 @@ gui_checkbox( const char* label, bool* v )
     {
         *v    = !( *v );
         changed = true;
+        /* The indicator above drew the OLD *v; the new state shows on next frame's emit.  Force
+           that frame -- an isolated toggle changes no other UI, so nothing else would mark the
+           retained cache dirty and the check would not appear until the next input event. */
+        s_retained.wants_redraw = true;
     }
     return changed;
 }
@@ -508,6 +512,9 @@ gui_radio_button( const char* label, i32* v, i32 value )
     {
         *v      = value;
         changed = true;
+        /* Same one-frame-late draw as checkbox: the dot above drew the OLD selection.  Force the
+           next frame so the moved selection shows without waiting on another input event. */
+        s_retained.wants_redraw = true;
     }
     return changed;
 }

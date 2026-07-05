@@ -1127,6 +1127,14 @@ typedef struct gui_api_s
        and GPU draw commands for verbatim replay. */
     bool ( *frame_dirty )( void );
 
+    /* set_force_redraw -- debug override that pins frame_dirty() true every frame, defeating the
+       retained-cache clean-frame skip so the UI rebuilds and re-renders unconditionally.  Off by
+       default; toggle it to isolate a "did not update until input moved" bug from a real emit bug. */
+    void ( *set_force_redraw )( bool on );
+
+    /* force_redraw -- current state of the set_force_redraw override. */
+    bool ( *force_redraw )( void );
+
     /* update_volatile -- call in place of ctx_begin/emit/ctx_end on a frame where frame_dirty()
        is false, to replay every registered volatile_cb callback (see above) standalone and patch
        its geometry in place if the replay reproduces the same topology real emit recorded.  A

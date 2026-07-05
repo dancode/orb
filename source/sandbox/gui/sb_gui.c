@@ -827,12 +827,20 @@ main( int argc, char** argv )
             printf( "[sb_gui] render mode: %s\n", names[ m ] );
         }
 
+        if ( app()->key_pressed( APP_KEY_F ) )
+        {
+            bool on = !gui()->force_redraw();
+            gui()->set_force_redraw( on );
+            printf( "[sb_gui] force redraw: %s\n", on ? "on (always render)" : "off (dirty-skip)" );
+        }
+
+                
         /* C toggles Level 2 retained skip: skips tessellation on unchanged frames (hash upfront). */
         if ( app()->key_pressed( APP_KEY_C ) )
         {
             bool on = !gui()->retained_skip();
             gui()->set_retained_skip( on );
-            printf( "[sb_vulkan] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
+            printf( "[sb_gui] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
         }
 
         /* F10 toggles the pipeline dashboard: a dockable/tear-off window visualizing the render
@@ -840,7 +848,7 @@ main( int argc, char** argv )
         if ( app()->key_pressed( APP_KEY_F10 ) )
         {
             dash_open = !dash_open;
-            printf( "[sb_vulkan] pipeline dashboard: %s\n", dash_open ? "open" : "closed" );
+            printf( "[sb_gui] pipeline dashboard: %s\n", dash_open ? "open" : "closed" );
         }
 
         /* ------------------------------------------------------------------------------ */
