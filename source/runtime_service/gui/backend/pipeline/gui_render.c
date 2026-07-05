@@ -27,7 +27,7 @@
 
 // clang-format off
 /*==============================================================================================
-    Push constant layout (80 bytes; must match gui_shader.h GLSL source)
+    Push constant layout (84 bytes; must match gui_shader.h GLSL source)
 ==============================================================================================*/
 
 typedef struct
@@ -37,8 +37,9 @@ typedef struct
     u32 samp_idx;       // bindless sampler slot            4 bytes
     u32 dbg_flat;       // debug: 1 = flat color (no atlas) 4 bytes
     u32 dbg_tint;       // debug: packed RGBA8 batch tint   4 bytes
+    u32 rgba_tex;       // 1 = full-RGBA image sampling     4 bytes
 
-} gui_push_t;         // total 80 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;         // total 84 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*----------------------------------------------------------------------------------------------
     Per-frame geometry regions.
@@ -110,6 +111,7 @@ viewport_create( gui_viewport_t* vp, rhi_texture_t target, i32 win_id )
     vp->disp_w          = 0;                // drawable size set by the host before build; 0 = fall back to main
     vp->disp_h          = 0;
     vp->caption_inset   = 0.0f;             // no native shell band until one publishes it during the build
+    vp->dock_inset      = 0.0f;             // no host menu/toolbar band until one publishes it
     vp->dock_root       = GUI_DOCK_REF_NONE; // free-float until docking assigns a tree
 
     // Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame.
@@ -566,7 +568,8 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
                 .height = sy1 - sy0,
             } );
 
-            push.tex_idx = dc->tex_idx;
+            push.tex_idx  = dc->tex_idx & ~GUI_TEX_RGBA_BIT;
+            push.rgba_tex = ( dc->tex_idx & GUI_TEX_RGBA_BIT ) ? 1u : 0u;
             if ( batch_view )
                 push.dbg_tint = batch_debug_color( draw_calls );
             rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );

@@ -400,6 +400,7 @@ gui_debug_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     push.tex_idx  = font_atlas_idx();
     push.dbg_flat = 0u;   /* the overlay always renders normally, never flat/batch-tinted */
     push.dbg_tint = 0u;
+    push.rgba_tex = 0u;   /* overlay draws are all font-atlas coverage */
     rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
 
     rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){

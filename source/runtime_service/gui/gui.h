@@ -334,15 +334,15 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
 
 typedef enum
 {
-    GUI_ALIGN_LEFT    = 0,            /* horizontal: against the left edge (default)  */
-    GUI_ALIGN_HCENTER = 1 << 0,       /* horizontal: centered                         */
-    GUI_ALIGN_RIGHT   = 1 << 1,       /* horizontal: against the right edge           */
+    GUI_ALIGN_LEFT    = 0,            // horizontal: against the left edge (default) 
+    GUI_ALIGN_HCENTER = 1 << 0,       // horizontal: centered                        
+    GUI_ALIGN_RIGHT   = 1 << 1,       // horizontal: against the right edge          
 
-    GUI_ALIGN_TOP     = 0,            /* vertical: against the top edge (default)      */
-    GUI_ALIGN_VCENTER = 1 << 2,       /* vertical: centered                            */
-    GUI_ALIGN_BOTTOM  = 1 << 3,       /* vertical: against the bottom edge             */
+    GUI_ALIGN_TOP     = 0,            // vertical: against the top edge (default)    
+    GUI_ALIGN_VCENTER = 1 << 2,       // vertical: centered                          
+    GUI_ALIGN_BOTTOM  = 1 << 3,       // vertical: against the bottom edge           
 
-    GUI_ALIGN_CENTER  = GUI_ALIGN_HCENTER | GUI_ALIGN_VCENTER,   /* both axes centered */
+    GUI_ALIGN_CENTER  = GUI_ALIGN_HCENTER | GUI_ALIGN_VCENTER,   // both axes centered
 
 } gui_align_t;
 
@@ -1152,6 +1152,13 @@ typedef enum
 /* Sentinel half-extent for an unclipped text command: any real glyph sits well inside this, so
    the tessellator's clip test never triggers and the whole-run fast path is taken. */
 #define GUI_TEXT_NO_CLIP 1e30f
+
+/* High bit of a rect command's tex_idx: sample the bindless texture as a full RGBA image (the
+   texel is the color, vertex color tints) instead of the default R8-coverage model (the texel's
+   R channel is alpha, vertex color supplies RGB).  Set by image_texture / draw_texture_in for
+   scene-viewport style external textures; the render backend strips the bit into the rgba_tex
+   push constant.  Batching is unaffected: commands split on the full 32-bit tex_idx value. */
+#define GUI_TEX_RGBA_BIT 0x80000000u
 
 /* One semantic draw command.  The 4-byte header carries the command type, the index of the active
    scissor rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), and

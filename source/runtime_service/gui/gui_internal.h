@@ -553,6 +553,13 @@ typedef struct
        viewport_update always has a valid top bound regardless of build ordering. */
     f32 caption_inset;
 
+    /* Additional top band (pixels) the host reserves above the dock area -- a main menu bar, a
+       toolbar strip -- published via gui()->dockspace_inset() before dockspace_over_viewport.
+       Adds to caption_inset when the dock tree lays out.  Sticky like caption_inset: persists
+       until the host publishes a new value (0 to reclaim).  Free-floating windows are
+       unaffected -- only the dock tree's layout area shrinks. */
+    f32 dock_inset;
+
     /* Per-surface dock tree root.  GUI_DOCK_REF_NONE = free-float placement (overlapping windows,
        including the main viewport); otherwise a ref into the context dock-node pool that tiles/tabs
        the windows on this surface.  Driven by dock/ (dock.c builds it, dock_drag.c re-tiles on drag,

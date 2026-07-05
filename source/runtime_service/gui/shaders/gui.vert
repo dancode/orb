@@ -6,6 +6,7 @@ layout(push_constant) uniform PC {
     uint samp_idx;
     uint dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color (wireframe / batch view)
     uint dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
+    uint rgba_tex;   // 1 = sample tex_idx as a full RGBA image (scene viewport), not R8 coverage
 } pc;
 
 layout(location = 0) in vec2 in_pos;

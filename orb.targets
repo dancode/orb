@@ -435,6 +435,17 @@ target sb_gui
 	dep         dev_font
 	mono_dep 	render
 
+target sb_gui_editor					# game-engine editor shell over the gui library
+
+    type        exe
+    root        source/sandbox/gui_editor
+    folder      09_SANDBOX/GUI
+    unit        sb_gui_editor.c
+    dep         sys ref mod core job app
+	dep 		run rhi draw gui
+	dep         dev_font
+	mono_dep 	render
+
 # ==============================================================================
 # 09_SANDBOX -- EXAMPLE EXECUTABLE PROJECT TYPES
 # ==============================================================================
@@ -635,6 +646,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 
 	add 		sb_vulkan				# exe
 	add 		sb_gui					# gui demo
+	add 		sb_gui_editor			# game-engine editor shell
 	add 		sb_vulkan_stress		# multi-context sync stress exe
 
 

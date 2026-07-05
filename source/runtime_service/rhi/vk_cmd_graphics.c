@@ -77,10 +77,32 @@ vk_cmd_begin_rendering( rhi_cmd_t cmd,
         }
     }
 
+    /* Render area: the attachments' common extent.  Swapchain-sentinel attachments use the
+       context's swapchain extent; user textures use their own size (an offscreen target is
+       rarely swapchain-sized).  With mixed sizes Vulkan requires the render area to fit the
+       SMALLEST attachment, so take the min across everything supplied. */
+    VkExtent2D area = ctx->swapchain_extent;
+    for ( u32 i = 0; i < cc; i++ )
+    {
+        if ( color_atts[ i ].texture.id == RHI_SWAPCHAIN_COLOR )
+            continue;
+        const vk_texture_slot_t* t = &vk.textures[ color_atts[ i ].texture.id ];
+        VkExtent2D e = ( i == 0 ) ? (VkExtent2D){ t->width, t->height } : area;
+        if ( t->width  < e.width  ) e.width  = t->width;
+        if ( t->height < e.height ) e.height = t->height;
+        area = e;
+    }
+    if ( depth_att && depth_att->texture.id != RHI_SWAPCHAIN_DEPTH )
+    {
+        const vk_texture_slot_t* dt = &vk.textures[ depth_att->texture.id ];
+        if ( dt->width  < area.width  ) area.width  = dt->width;
+        if ( dt->height < area.height ) area.height = dt->height;
+    }
+
     VkRenderingInfo ri               = { 0 };
     ri.sType                         = VK_STRUCTURE_TYPE_RENDERING_INFO;
     ri.renderArea.offset             = (VkOffset2D){ 0, 0 };
-    ri.renderArea.extent             = ctx->swapchain_extent;
+    ri.renderArea.extent             = area;
     ri.layerCount                    = 1;
     ri.colorAttachmentCount          = cc;
     ri.pColorAttachments             = cc > 0 ? color_infos : NULL;

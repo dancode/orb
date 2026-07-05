@@ -87,6 +87,7 @@ void gui_window_set_open( const char* title, bool open );
 bool gui_window_is_open( const char* title );
 
 /* docking */
+void gui_dockspace_inset( gui_vp_t vp, f32 top );
 gui_dock_id_t gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags );
 gui_dock_id_t gui_dock_split( gui_dock_id_t node, gui_dir_t dir, f32 ratio, gui_dock_id_t* out_remain );
 gui_dock_id_t gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio );
@@ -310,6 +311,10 @@ gui_icon_id_t gui_find_icon( const char* name );
 gui_vec2_t gui_icon_size( gui_icon_id_t id );
 void gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col );
 void gui_draw_icon_in( gui_rect_t r, gui_icon_id_t id, u32 col );
+
+/* RGBA textures -- arbitrary bindless texture as a full-color quad (scene viewport) */
+void gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
+void gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
 
 /* symbol + shape render primitives -- Dear ImGui Render* / AddXxx family (normal pipeline, not the
    icon atlas).  Implemented in gui_symbol.c. */

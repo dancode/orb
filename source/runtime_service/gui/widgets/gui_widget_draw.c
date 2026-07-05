@@ -193,6 +193,32 @@ gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col )
     gui_draw_icon_in( r, id, col );
 }
 
+/*----------------------------------------------------------------------------------------------
+    RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
+    image) as a full-color quad.  Unlike image() (R8 icon atlas, texel = coverage), the texel IS
+    the color: GUI_TEX_RGBA_BIT on the command's tex_idx flips the fragment shader to RGBA
+    sampling, with the tint color multiplied in (0 defaults to opaque white = untinted).  The
+    caller owns the texture and its bindless registration (rhi register_texture) and must keep
+    the slot alive until the frame that last referenced it has retired.
+----------------------------------------------------------------------------------------------*/
+
+void
+gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr )
+{
+    if ( bindless_idx == 0 )
+        return;   /* 0 is the RHI empty slot -- nothing to sample */
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0, 0, 1, 1,
+                           bindless_idx | GUI_TEX_RGBA_BIT,
+                           tint_abgr ? tint_abgr : 0xFFFFFFFFu );
+}
+
+void
+gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr )
+{
+    gui_rect_t r = widget_next_rect_w( w, h );   /* reserve a w x h layout slot (like image) */
+    gui_draw_texture_in( r, bindless_idx, tint_abgr );
+}
+
 /* The public gui_render_* symbol surface (draw_check_mark / draw_arrow / draw_frame /
    draw_round_rect / ... and the set_*_style setters) lives in gui_symbol.c, beside the
    draw_* helpers it wraps. */

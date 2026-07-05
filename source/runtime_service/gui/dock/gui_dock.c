@@ -25,6 +25,17 @@
     Public API
 ----------------------------------------------------------------------------------------------*/
 
+/* Publish the host-reserved top band above viewport vp's dock area -- the height of a main menu
+   bar and/or toolbar strip the host draws itself.  The dock tree lays out below it (in addition
+   to any native caption band).  Sticky until re-published; pass 0 to reclaim the space. */
+void
+gui_dockspace_inset( gui_vp_t vp, f32 top )
+{
+    if ( vp >= g_ctx->max_viewports )
+        return;
+    g_ctx->viewports[ vp ].dock_inset = ( top > 0.0f ) ? top : 0.0f;
+}
+
 /* Ensure viewport vp hosts a dock tree, lay it out over the surface (below any native caption band),
    draw + interact the splitters and empty-leaf placeholders, and return the tree root's id.  Call
    once per frame at the TOP of the build for each dockspace viewport, before the docked windows'
@@ -50,7 +61,7 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
 
     f32 dw  = vp_w( v );
     f32 dh  = vp_h( v );
-    f32 top = v->caption_inset;
+    f32 top = v->caption_inset + v->dock_inset;
     gui_rect_t area = { 0.0f, top, dw, dh - top };
     if ( area.h < 0.0f ) area.h = 0.0f;
     dock_node_layout( root, area );

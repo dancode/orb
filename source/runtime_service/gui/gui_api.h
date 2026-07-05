@@ -1250,6 +1250,20 @@ typedef struct gui_api_s
     f32  ( *button_width  )( const char* label );
     bool ( *button_fill   )( const char* label );
 
+    /* RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
+       image) as a full-color quad; the texel is the color, tint_abgr multiplies (0 = untinted).
+       image_texture flows in the layout like image(); draw_texture_in fills a rect the caller
+       already holds.  The caller owns the texture + its bindless slot (rhi register_texture). */
+
+    void ( *image_texture   )( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
+    void ( *draw_texture_in )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
+
+    /* Host-reserved top band (pixels) above viewport vp's dock area -- the height of a main menu
+       bar / toolbar strip the host draws itself; the dock tree lays out below it.  Sticky until
+       re-published; pass 0 to reclaim.  Publish before dockspace_over_viewport in the build. */
+
+    void ( *dockspace_inset )( gui_vp_t vp, f32 top );
+
 } gui_api_t;
 
 /*============================================================================================*/

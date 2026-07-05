@@ -1,0 +1,430 @@
+/*==============================================================================================
+
+    sandbox/gui_editor/ed_viewport.c -- Scene viewport: offscreen target, orbit camera, panel.
+
+    The Scene panel displays a real offscreen render: the stub scene is drawn with draw()
+    into an RHI color texture each frame (ed_viewport_render, called by the host inside the
+    frame command list before the gui pass), and the panel shows it through the gui's
+    image_texture widget (bindless RGBA sampling).
+
+    The target tracks the panel's content size: the panel publishes want_w/h each build, and
+    ed_viewport_maintain recreates the texture once the requested size has been stable for a
+    few frames (so a live resize drag stretches the old image instead of thrashing GPU
+    allocations).  Recreation drains the device first -- in-flight frames still sample the old
+    texture, and a rare post-resize hitch beats a retire-queue here.
+
+    Included by sb_gui_editor.c (unity build).
+
+==============================================================================================*/
+// clang-format off
+
+#define ED_TARGET_MIN       16
+#define ED_TARGET_MAX       4096
+#define ED_RESIZE_SETTLE    8       /* frames the wanted size must hold before recreating */
+
+/*==============================================================================================
+    Column-major matrix helpers (Vulkan NDC: y down, z 0..1) -- base has no 3D camera math yet.
+==============================================================================================*/
+
+static void
+ed_mat_mul( f32 out[ 16 ], const f32 a[ 16 ], const f32 b[ 16 ] )   /* out = a * b */
+{
+    f32 t[ 16 ];
+    for ( int c = 0; c < 4; c++ )
+        for ( int r = 0; r < 4; r++ )
+            t[ c * 4 + r ] = a[ 0 * 4 + r ] * b[ c * 4 + 0 ]
+                           + a[ 1 * 4 + r ] * b[ c * 4 + 1 ]
+                           + a[ 2 * 4 + r ] * b[ c * 4 + 2 ]
+                           + a[ 3 * 4 + r ] * b[ c * 4 + 3 ];
+    memcpy( out, t, sizeof( t ) );
+}
+
+static void
+ed_mat_perspective( f32 out[ 16 ], f32 fov_deg, f32 aspect, f32 zn, f32 zf )
+{
+    f32 t = 1.0f / tanf( fov_deg * 0.5f * 3.14159265f / 180.0f );
+    memset( out, 0, 16 * sizeof( f32 ) );
+    out[  0 ] = t / aspect;
+    out[  5 ] = -t;                      /* Vulkan NDC y points down */
+    out[ 10 ] = zf / ( zn - zf );
+    out[ 11 ] = -1.0f;
+    out[ 14 ] = ( zn * zf ) / ( zn - zf );
+}
+
+static void
+ed_vec3_norm( f32 v[ 3 ] )
+{
+    f32 l = sqrtf( v[ 0 ] * v[ 0 ] + v[ 1 ] * v[ 1 ] + v[ 2 ] * v[ 2 ] );
+    if ( l > 1e-6f ) { v[ 0 ] /= l; v[ 1 ] /= l; v[ 2 ] /= l; }
+}
+
+static void
+ed_vec3_cross( f32 out[ 3 ], const f32 a[ 3 ], const f32 b[ 3 ] )
+{
+    out[ 0 ] = a[ 1 ] * b[ 2 ] - a[ 2 ] * b[ 1 ];
+    out[ 1 ] = a[ 2 ] * b[ 0 ] - a[ 0 ] * b[ 2 ];
+    out[ 2 ] = a[ 0 ] * b[ 1 ] - a[ 1 ] * b[ 0 ];
+}
+
+static f32
+ed_vec3_dot( const f32 a[ 3 ], const f32 b[ 3 ] )
+{
+    return a[ 0 ] * b[ 0 ] + a[ 1 ] * b[ 1 ] + a[ 2 ] * b[ 2 ];
+}
+
+static void
+ed_mat_lookat( f32 out[ 16 ], const f32 eye[ 3 ], const f32 target[ 3 ], const f32 up[ 3 ] )
+{
+    f32 f[ 3 ] = { target[ 0 ] - eye[ 0 ], target[ 1 ] - eye[ 1 ], target[ 2 ] - eye[ 2 ] };
+    ed_vec3_norm( f );
+    f32 s[ 3 ];
+    ed_vec3_cross( s, f, up );
+    ed_vec3_norm( s );
+    f32 u[ 3 ];
+    ed_vec3_cross( u, s, f );
+
+    out[  0 ] =  s[ 0 ]; out[  1 ] =  u[ 0 ]; out[  2 ] = -f[ 0 ]; out[  3 ] = 0.0f;
+    out[  4 ] =  s[ 1 ]; out[  5 ] =  u[ 1 ]; out[  6 ] = -f[ 1 ]; out[  7 ] = 0.0f;
+    out[  8 ] =  s[ 2 ]; out[  9 ] =  u[ 2 ]; out[ 10 ] = -f[ 2 ]; out[ 11 ] = 0.0f;
+    out[ 12 ] = -ed_vec3_dot( s, eye );
+    out[ 13 ] = -ed_vec3_dot( u, eye );
+    out[ 14 ] =  ed_vec3_dot( f, eye );
+    out[ 15 ] = 1.0f;
+}
+
+static void
+ed_camera_eye( const ed_camera_t* c, f32 eye[ 3 ] )
+{
+    f32 cp = cosf( c->pitch ), sp = sinf( c->pitch );
+    f32 cy = cosf( c->yaw ),   sy = sinf( c->yaw );
+    eye[ 0 ] = c->target[ 0 ] + c->dist * cp * cy;
+    eye[ 1 ] = c->target[ 1 ] + c->dist * sp;
+    eye[ 2 ] = c->target[ 2 ] + c->dist * cp * sy;
+}
+
+/*==============================================================================================
+    Offscreen target lifecycle
+==============================================================================================*/
+
+static bool
+ed_target_create( i32 w, i32 h )
+{
+    ed_target_t* t = &g_ed.target;
+
+    t->tex = rhi()->texture_create( &( rhi_texture_desc_t ){
+        .width        = (u32)w,
+        .height       = (u32)h,
+        .depth        = 1,
+        .mip_levels   = 1,
+        .array_layers = 1,
+        .format       = RHI_FORMAT_BGRA8_SRGB,     /* matches draw()'s pipeline color target */
+        .usage        = RHI_TEXTURE_USAGE_COLOR_ATTACHMENT | RHI_TEXTURE_USAGE_SAMPLED,
+        .memory       = RHI_MEMORY_GPU_ONLY,
+        .debug_name   = "ed_scene_target",
+    } );
+    if ( !rhi_handle_valid( t->tex ) )
+    {
+        ed_logf( ED_LOG_ERROR, "Scene target create failed (%dx%d)", w, h );
+        return false;
+    }
+
+    t->bindless_idx = rhi()->register_texture( t->tex );
+    if ( t->bindless_idx == 0 )
+    {
+        rhi()->texture_destroy( t->tex );
+        ed_logf( ED_LOG_ERROR, "Scene target bindless registration failed" );
+        return false;
+    }
+
+    t->w = w;
+    t->h = h;
+    t->first_frame = true;
+    return true;
+}
+
+static void
+ed_target_destroy( void )
+{
+    ed_target_t* t = &g_ed.target;
+    if ( t->bindless_idx == 0 )
+        return;
+    rhi()->device_wait_idle();      /* in-flight frames may still sample the old texture */
+    rhi()->unregister_texture( t->bindless_idx );
+    rhi()->texture_destroy( t->tex );
+    t->bindless_idx = 0;
+    t->w = t->h = 0;
+}
+
+bool
+ed_viewport_init( void )
+{
+    return true;    /* target is created lazily once the panel publishes its first size */
+}
+
+void
+ed_viewport_shutdown( void )
+{
+    ed_target_destroy();
+}
+
+/* Between frames: create the target on first size request; on a size change, wait until the
+   request settles (drag released) then swap the texture. */
+void
+ed_viewport_maintain( void )
+{
+    ed_target_t* t = &g_ed.target;
+
+    i32 w = t->want_w, h = t->want_h;
+    if ( w < ED_TARGET_MIN || h < ED_TARGET_MIN )
+        return;                                   /* panel hidden or collapsed: keep what we have */
+    if ( w > ED_TARGET_MAX ) w = ED_TARGET_MAX;
+    if ( h > ED_TARGET_MAX ) h = ED_TARGET_MAX;
+
+    if ( t->bindless_idx == 0 )
+    {
+        ed_target_create( w, h );
+        return;
+    }
+
+    if ( w == t->w && h == t->h )
+    {
+        t->stable_frames = 0;
+        return;
+    }
+
+    if ( ++t->stable_frames >= ED_RESIZE_SETTLE )
+    {
+        ed_target_destroy();
+        if ( ed_target_create( w, h ) )
+            ed_logf( ED_LOG_INFO, "Scene target resized to %dx%d", w, h );
+        t->stable_frames = 0;
+    }
+}
+
+/*==============================================================================================
+    Scene render -- draw() primitives into the offscreen target.
+
+    draw()'s solid pipeline has no depth test, so the scene painter-sorts: ground + grid
+    first, then entities back-to-front along the view direction.
+==============================================================================================*/
+
+static void
+ed_scene_grid( void )
+{
+    const f32 line [ 4 ] = { 0.28f, 0.30f, 0.34f, 1.0f };
+    const f32 axis_x[ 4 ] = { 0.55f, 0.25f, 0.25f, 1.0f };
+    const f32 axis_z[ 4 ] = { 0.25f, 0.35f, 0.60f, 1.0f };
+    const f32 slab [ 4 ] = { 0.16f, 0.17f, 0.19f, 1.0f };
+
+    draw()->box( 0.0f, -0.06f, 0.0f, 22.0f, 0.08f, 22.0f, slab );
+
+    for ( i32 i = -10; i <= 10; i++ )
+    {
+        const f32* cx = ( i == 0 ) ? axis_z : line;   /* the i==0 line along Z is the Z axis */
+        const f32* cz = ( i == 0 ) ? axis_x : line;
+        draw()->box( (f32)i, 0.0f, 0.0f, 0.03f, 0.02f, 20.0f, cx );
+        draw()->box( 0.0f, 0.0f, (f32)i, 20.0f, 0.02f, 0.03f, cz );
+    }
+}
+
+void
+ed_viewport_render( rhi_cmd_t cmd )
+{
+    ed_target_t* t = &g_ed.target;
+    if ( t->bindless_idx == 0 )
+        return;
+
+    rhi()->cmd_image_barrier( cmd, &( rhi_image_barrier_t ){
+        .texture    = t->tex,
+        .old_layout = t->first_frame ? RHI_LAYOUT_UNDEFINED : RHI_LAYOUT_SHADER_READ,
+        .new_layout = RHI_LAYOUT_COLOR_ATTACHMENT,
+    }, 1 );
+    t->first_frame = false;
+
+    rhi()->cmd_bind_bindless( cmd );
+    rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
+        .texture  = t->tex,
+        .load_op  = RHI_LOAD_OP_CLEAR,
+        .store_op = RHI_STORE_OP_STORE,
+        .clear    = { 0.09f, 0.10f, 0.12f, 1.0f },
+    }, 1, NULL );
+
+    rhi()->cmd_set_viewport( cmd, &( rhi_viewport_t ){
+        .x = 0.0f, .y = 0.0f, .width = (f32)t->w, .height = (f32)t->h,
+        .min_depth = 0.0f, .max_depth = 1.0f,
+    } );
+    rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){ .x = 0, .y = 0, .width = t->w, .height = t->h } );
+
+    /* Camera view-projection. */
+    f32 eye[ 3 ];
+    ed_camera_eye( &g_ed.cam, eye );
+    f32 up[ 3 ] = { 0.0f, 1.0f, 0.0f };
+    f32 view[ 16 ], proj[ 16 ], vp[ 16 ];
+    ed_mat_lookat( view, eye, g_ed.cam.target, up );
+    ed_mat_perspective( proj, g_ed.cam.fov_deg, (f32)t->w / (f32)t->h, 0.1f, 200.0f );
+    ed_mat_mul( vp, proj, view );
+
+    draw()->begin( cmd, vp );
+
+    ed_scene_grid();
+
+    /* Painter sort the entities: farthest along the view direction first. */
+    f32 fwd[ 3 ] = { g_ed.cam.target[ 0 ] - eye[ 0 ],
+                     g_ed.cam.target[ 1 ] - eye[ 1 ],
+                     g_ed.cam.target[ 2 ] - eye[ 2 ] };
+    ed_vec3_norm( fwd );
+
+    i32 order[ ED_MAX_ENTITIES ];
+    f32 depth[ ED_MAX_ENTITIES ];
+    i32 n = 0;
+    for ( i32 i = 0; i < ED_MAX_ENTITIES; i++ )
+    {
+        const ed_entity_t* e = &g_ed.entities[ i ];
+        if ( !e->used || !e->active )
+            continue;
+        f32 d[ 3 ] = { e->pos[ 0 ] - eye[ 0 ], e->pos[ 1 ] - eye[ 1 ], e->pos[ 2 ] - eye[ 2 ] };
+        order[ n ] = i;
+        depth[ n ] = ed_vec3_dot( fwd, d );
+        n++;
+    }
+    for ( i32 a = 1; a < n; a++ )                  /* insertion sort, descending depth */
+    {
+        i32 oi = order[ a ];
+        f32 od = depth[ a ];
+        i32 b  = a - 1;
+        while ( b >= 0 && depth[ b ] < od )
+        {
+            order[ b + 1 ] = order[ b ];
+            depth[ b + 1 ] = depth[ b ];
+            b--;
+        }
+        order[ b + 1 ] = oi;
+        depth[ b + 1 ] = od;
+    }
+
+    for ( i32 k = 0; k < n; k++ )
+    {
+        const ed_entity_t* e = &g_ed.entities[ order[ k ] ];
+        bool sel = ( order[ k ] == g_ed.selected );
+
+        f32 sx = e->scale[ 0 ], sy = e->scale[ 1 ], sz = e->scale[ 2 ];
+        if ( e->kind == ED_KIND_LIGHT )  { sx *= 0.5f; sy *= 0.5f; sz *= 0.5f; }
+        if ( e->kind == ED_KIND_CAMERA ) { sz *= 1.6f; }
+
+        /* Selection highlight: a slightly larger warm shell behind the entity box. */
+        if ( sel )
+        {
+            const f32 hl[ 4 ] = { 0.95f, 0.75f, 0.20f, 1.0f };
+            draw()->box( e->pos[ 0 ], e->pos[ 1 ], e->pos[ 2 ],
+                         sx * 1.12f, sy * 1.12f, sz * 1.12f, hl );
+        }
+
+        f32 col[ 4 ] = { e->color[ 0 ], e->color[ 1 ], e->color[ 2 ], e->color[ 3 ] };
+        if ( e->kind == ED_KIND_LIGHT )
+        {
+            col[ 0 ] *= e->intensity;  col[ 1 ] *= e->intensity;  col[ 2 ] *= e->intensity;
+        }
+        draw()->box( e->pos[ 0 ], e->pos[ 1 ], e->pos[ 2 ], sx, sy, sz, col );
+    }
+
+    draw()->end();
+    rhi()->cmd_end_rendering( cmd );
+
+    rhi()->cmd_image_barrier( cmd, &( rhi_image_barrier_t ){
+        .texture    = t->tex,
+        .old_layout = RHI_LAYOUT_COLOR_ATTACHMENT,
+        .new_layout = RHI_LAYOUT_SHADER_READ,
+    }, 1 );
+}
+
+/*==============================================================================================
+    Scene panel -- the image + orbit/pan/zoom camera input over it.
+==============================================================================================*/
+
+void
+ed_viewport_panel( void )
+{
+    if ( !gui()->window_begin( "Scene", GUI_WIN_NOSCROLL ) )
+    {
+        gui()->window_end();
+        return;
+    }
+
+    gui()->stack();
+
+    gui_vec2_t avail = gui()->content_avail();
+    i32 w = (i32)avail.x;
+    i32 h = (i32)avail.y;
+    g_ed.target.want_w = w;
+    g_ed.target.want_h = h;
+
+    if ( g_ed.target.bindless_idx && w >= ED_TARGET_MIN && h >= ED_TARGET_MIN )
+    {
+        gui_vec2_t pos = gui()->cursor_screen_pos();
+        gui_rect_t r   = { pos.x, pos.y, (f32)w, (f32)h };
+
+        gui()->image_texture( g_ed.target.bindless_idx, (f32)w, (f32)h, 0 );
+
+        /* Camera input -- press must start inside the image; drag then owns the camera until
+           release even if the cursor leaves the panel. */
+        static bool s_orbit = false, s_pan = false;
+        static f32  s_mx, s_my;
+
+        f32 mx, my;
+        gui()->get_mouse_pos( &mx, &my );
+        bool hovered = gui()->is_mouse_hovering_rect( r );
+
+        if ( hovered && gui()->is_mouse_clicked( APP_MOUSE_RIGHT  ) ) { s_orbit = true;  s_mx = mx; s_my = my; }
+        if ( hovered && gui()->is_mouse_clicked( APP_MOUSE_MIDDLE ) ) { s_pan   = true;  s_mx = mx; s_my = my; }
+        if ( !gui()->is_mouse_down( APP_MOUSE_RIGHT  ) ) s_orbit = false;
+        if ( !gui()->is_mouse_down( APP_MOUSE_MIDDLE ) ) s_pan   = false;
+
+        f32 dx = mx - s_mx, dy = my - s_my;
+        if ( s_orbit && ( dx != 0.0f || dy != 0.0f ) )
+        {
+            g_ed.cam.yaw   += dx * 0.008f;
+            g_ed.cam.pitch += dy * 0.008f;
+            if ( g_ed.cam.pitch >  1.50f ) g_ed.cam.pitch =  1.50f;
+            if ( g_ed.cam.pitch < -1.50f ) g_ed.cam.pitch = -1.50f;
+        }
+        if ( s_pan && ( dx != 0.0f || dy != 0.0f ) )
+        {
+            /* pan in the camera's screen plane, scaled with distance */
+            f32 k  = g_ed.cam.dist * 0.0016f;
+            f32 cy = cosf( g_ed.cam.yaw ), sy = sinf( g_ed.cam.yaw );
+            g_ed.cam.target[ 0 ] += ( sy * dx ) * k;
+            g_ed.cam.target[ 2 ] += ( -cy * dx ) * k;
+            g_ed.cam.target[ 1 ] += dy * k;
+        }
+        if ( s_orbit || s_pan ) { s_mx = mx; s_my = my; }
+
+        if ( hovered )
+        {
+            f32 wheel = gui()->get_mouse_wheel();
+            if ( wheel != 0.0f )
+            {
+                g_ed.cam.dist *= ( wheel > 0.0f ) ? 0.90f : 1.11f;
+                if ( g_ed.cam.dist <  2.0f )  g_ed.cam.dist = 2.0f;
+                if ( g_ed.cam.dist > 80.0f )  g_ed.cam.dist = 80.0f;
+            }
+        }
+
+        /* Overlay readout, top-left over the image. */
+        static const char* mode_names[] = { "EDIT", "PLAY", "PAUSED" };
+        char ov[ 128 ];
+        snprintf( ov, sizeof( ov ), " %s   %dx%d   RMB orbit  MMB pan  wheel zoom",
+                  mode_names[ g_ed.mode ], g_ed.target.w, g_ed.target.h );
+        gui()->draw_text_in( ( gui_rect_t ){ r.x + 4, r.y + 2, r.w - 8, gui()->line_h() },
+                             GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+                             GUI_COLOR( 0xE8, 0xE8, 0xF0, 0xC0 ), ov );
+    }
+    else
+    {
+        gui()->text_disabled( "Scene target initializing..." );
+    }
+
+    gui()->window_end();
+}
+
+// clang-format on
+/*============================================================================================*/

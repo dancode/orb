@@ -10,6 +10,7 @@ layout(push_constant) uniform PC {
     uint samp_idx;
     uint dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color (wireframe / batch view)
     uint dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
+    uint rgba_tex;   // 1 = sample tex_idx as a full RGBA image (scene viewport), not R8 coverage
 } pc;
 
 layout(location = 0) in  vec4 v_color;
@@ -57,6 +58,17 @@ void main()
     }
 
     vec4 s = texture( sampler2D( u_textures[pc.tex_idx], u_samplers[pc.samp_idx] ), v_uv );
+
+    // Full-RGBA image path (scene viewport / arbitrary bindless texture): the texel IS the
+    // color, with the vertex color acting as a tint.  The texel arrives LINEAR: _SRGB-format
+    // textures are hardware-decoded at sample time, and UNORM render targets hold linear data.
+    // Only the authored tint color needs the sRGB decode.
+    if ( pc.rgba_tex != 0u )
+    {
+        out_color = vec4( s.rgb * srgb_to_linear( v_color.rgb ), s.a * v_color.a );
+        return;
+    }
+
     // Only RGB is gamma-decoded; alpha is linear coverage. s.r is the glyph coverage
     // from the R8 atlas (1.0 for the white solid-color pixel, so non-text draws pass through).
     out_color = vec4( srgb_to_linear( v_color.rgb ), v_color.a * s.r );
