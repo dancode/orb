@@ -9,7 +9,7 @@
     The scrollable region engine (layout_push/pop_region, region_scrollbar, gui_region_t,
     scroll_clamp) is in gui_layout_region.c, included just before this file.
 
-    Child box and sub-layout lifecycle (gui_begin/child_end, gui_push/pop_layout,
+    Child box and sub-layout lifecycle (gui_child_begin/child_end, gui_push/pop_layout,
     gui_window_set_next_size_constraints) is in gui_layout_child.c, also included before
     this file.
 

@@ -16,9 +16,9 @@
 
     Most commands carry one abgr, but GUI_CMD_RECT_GRADIENT carries two and lets the GPU's
     per-vertex color interpolation blend them, so draw_gradient is an exact one-quad blend (not
-    banded).  draw_shadow's gaussian glow is still approximated with layered rings -- a future
-    multi-corner-color command (or routing the rings through gradient quads) would make it exact;
-    the public surface would not change.  Everything else is pixel-exact.
+    banded).  draw_shadow's gaussian glow is approximated with layered rings (see draw_shadow);
+    everything else here is pixel-exact.  FUTURE: a multi-corner-color command, or routing the rings
+    through gradient quads, would make the shadow exact too -- without changing the public surface.
 
     Included by gui.c immediately after gui_widget_core.c, so it sees the COL_* / ROUND_* /
     WIN_BORDER macros, col_lerp, and rect_align defined there, and every widget file below resolves
@@ -219,7 +219,7 @@ draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 color )
 
 /* Checkbox / menu indicator: the mark drawn inside the `box` when checked, switched on
    GUI_VAR_CHECK_STYLE -- a 'v' tick (default), a filled disc, or an 'X' cross.  The one place the
-   three-way style resolves, so checkbox and menu_item stay identical and a future style lands once. */
+   three-way style resolves, so checkbox and menu_item stay identical and a new style only adds here. */
 static void
 draw_check_indicator( gui_rect_t box, u32 col )
 {

@@ -682,7 +682,9 @@ typedef struct gui_context_t
     gui_table_persist_t table_pool[ GUI_TABLE_POOL_CAP ];  // per-table col widths / sort, keyed by id
 
     bool                listening;          // true: context receives hover/click/nav input this frame
-    void*               _alloc;             // heap block; NULL for the static default context (slot 0)
+    void*               _alloc;             // the single ctx_alloc_slot malloc backing this header + all
+                                            // pool arrays; freed at teardown. Non-NULL for every context,
+                                            // slot 0 included (freed at shutdown; secondaries at ctx_destroy)
 
 } gui_context_t;
 
@@ -695,7 +697,8 @@ typedef struct gui_context_t
     active slot); today one table is active at a time (gui_table.c rejects nesting).
 ==============================================================================================*/
 
-/* Per-frame active table context.  One table open at a time (no nesting yet). */
+/* Per-frame active table context.  One table active at a time (gui_table.c rejects nesting; see
+   the FUTURE note above). */
 typedef struct
 {
     gui_id_t                id;

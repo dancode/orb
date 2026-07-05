@@ -136,7 +136,7 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
    layout_resolve_tracks applies to a whole list (see gui_layout_t): > 1 fixed px, == 1 fill the
    available extent, (0,1) a fraction of it, == 0 the natural measure.  < 0 (unset) is natural
    with a fill fallback for an item that has no natural measure -- the pack-mode default.  The
-   single-value sites (pack_size, future one-shot size overrides) resolve through here, so the
+   single-value sites (pack_size_next, the one-shot cell fit_next) resolve through here, so the
    unit rule lives in exactly two functions: this scalar and the track-list resolver. */
 static f32
 unit_resolve( f32 u, f32 natural, f32 avail )
@@ -579,15 +579,6 @@ widget_next_rect_w( f32 natural_w, f32 h )
 /* The common case: fill the track cell (natural_w < 0 => no same_line preference). */
 static gui_rect_t widget_next_rect( f32 h ) { return widget_next_rect_w( -1.0f, h ); }
 
-/* Split a labeled widget row into a left-hand control rect and a right-hand label.  The label
-   keeps its natural width pinned at the row's right-of-control edge; the control takes the rest
-   of the row, never shrinking below min_control_w so it stays usable when the label is long
-   (the control then overruns under the label, matching the prior per-widget behavior).  Draws
-   the label here, vertically centered in the given color, and returns the control rect for the
-   caller to interact with and fill.  The single seam every "control + trailing label" widget
-   (slider_float, input_text, future combo / drag / color widgets) routes through, so row
-   proportions can be retuned in one place. */
-
 /* Resolve a labeled widget's cell into a label position + a control rect when a field split is
    active (field_split / field_label_*).  The label and control are two tracks laid across the cell
    by the same resolver columns use, so a field split obeys the overloaded unit rule and adapts to
@@ -626,6 +617,14 @@ field_split_resolve( gui_rect_t cell, f32 min_control_w, f32* out_label_x, f32* 
     return true;
 }
 
+/* Split a labeled widget row into a control rect and its label.  In the default (trailing-label)
+   mode the label keeps its natural width pinned at the row's right edge and the control takes the
+   rest, never shrinking below min_control_w so it stays usable when the label is long (the control
+   then overruns under the label, matching the prior per-widget behavior); in field-split mode
+   (field_split_resolve) the label and control are two resolved tracks.  Draws the label here,
+   vertically centered in the given color, and returns the control rect for the caller to interact
+   with and fill.  The single seam every "control + trailing label" widget (slider_float,
+   input_text, combo, drag_float, color_edit) routes through, so row proportions retune in one place. */
 static gui_rect_t
 widget_split_label( gui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
 {

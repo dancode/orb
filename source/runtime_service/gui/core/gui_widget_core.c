@@ -55,9 +55,9 @@
 ----------------------------------------------------------------------------------------------*/
 
 /* Each resolves through style_col (gui_style.c): the theme default with any push_style_color /
-   next_style_color override applied.  The defaults themselves live in k_col_default there; these
-   names stay so every existing draw site keeps reading COL_* while gaining override support.
-   See gui_col_t for the slots. */
+   next_style_color override applied.  The defaults themselves come from the active theme (k_themes
+   in gui_theme.c, seeded into s_style.colors); these names stay so every existing draw site keeps
+   reading COL_* while gaining override support.  See gui_col_t for the slots. */
 #define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG    )
 #define COL_CHILD_BG     style_col( GUI_COL_CHILD_BG     )
 #define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG     )

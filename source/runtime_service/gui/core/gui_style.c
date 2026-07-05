@@ -5,8 +5,9 @@
     The push-model theme override the widgets draw through, the ImGui PushStyleColor / PushStyleVar
     analogue.  Three layers resolve into the value a widget sees:
 
-        Base   -- the theme default.  Colors: a constant palette (k_col_default).  Vars: the
-                  font-derived metrics in s_style, read live so a font change updates them.
+        Base   -- the theme default.  Colors: the active theme's palette (s_style.colors, seeded
+                  from k_themes in gui_theme.c).  Vars: the font-derived metrics in s_style, read
+                  live so a font change updates them.
         Stack  -- push_style_color / _var override a slot until the matching pop (pop takes a
                   count, like ImGui); nests via a saved-previous stack.  Reset empty each frame.
         Next   -- next_style_color / _var override a slot for just the next item, consumed at the

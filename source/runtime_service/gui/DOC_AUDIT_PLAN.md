@@ -43,14 +43,40 @@ neighboring comment. A chunk rushed into paraphrase-mode makes things worse than
       Per-chunk checklist: inventory -> classify (correct/drift/stale-forward/vague/redundant/
       missing-invariant) -> verify each claim by tracing code -> fix -> build-verify unity TU ->
       stop for review.
-      - [ ] gui_internal.h
-      - [~] core/  (PILOT core/gui_ctx*.c DONE; rest of core/ pending)
+      - [x] gui_internal.h  DONE 2026-07-04.  The headline flat error fixed: `_alloc` line 685
+            "NULL for the static default context (slot 0)" -> corrected.  Traced both ends:
+            ctx_alloc_slot sets `ctx->_alloc = blk` unconditionally (gui_ctx.c:467), slot 0 goes
+            through it (gui_ctx.c:481), and BOTH teardown paths free it -- gui_frame.c:121 frees
+            s_ctx_pool[i]->_alloc for every slot at shutdown, gui_ctx_destroy frees c->_alloc
+            (gui_frame.c:1217).  `_alloc` is never NULL.  Also tightened one residual "no nesting
+            yet" (line 700) to present tense (it duplicated the FUTURE: nested-tables note already
+            added above it in Phase 2).  Rest of the header verified clean -- it was heavily audited
+            in Phase 2 (dock_root, col.label, "stay global", nested-tables FUTURE: tag all already
+            present-tense/tagged).
+      - [x] core/  DONE 2026-07-04.  (PILOT core/gui_ctx*.c done earlier; rest done now.)
             - [x] gui_ctx.c    (4 drift fixes: gui_window_t location, multi-context tense,
                                  gui_retained_t "will become" tense, slot-0 free contradiction)
             - [x] gui_ctx_id.c (clean; reclamation gate + salt verified)
             - [x] gui_ctx_io.c (clean; all accessors match)
-            - [ ] gui_anim.c gui_input.c gui_layout*.c gui_region.c gui_resize.c gui_stacks.c
-                  gui_style.c gui_symbol.c gui_theme.c gui_widget_core.c
+            - [x] gui_symbol.c      (2: draw_shadow "still...a future" -> FUTURE: tag [verified rings
+                                      at :474]; "a future style lands once" -> present rationale)
+            - [x] gui_layout_core.c (2: stale "future one-shot size overrides" -> the one-shot fit_next
+                                      [landed as cell_fit_resolve, live from grid+flow]; ORPHANED
+                                      widget_split_label header comment [separated from its fn by an
+                                      inserted fn] relocated + its widget list "future combo/drag/color"
+                                      -> present [all three land via widget_split_label callers])
+            - [x] gui_resize.c      (4: internal CONTRADICTION -- header says s_resize_* "lives here"
+                                      [true, defined :50-52], section comment said "lives in gui_window.c"
+                                      -> fixed; 3x child_begin attributed to gui_layout.c -> gui_layout_child.c
+                                      [child_begin + all resize calls live there, confirmed vs gui.c manifest])
+            - [x] gui_style.c       (1: PHANTOM symbol k_col_default -- defined NOWHERE, refactored into
+                                      the k_themes registry [dark/light]; base is s_style.colors from the
+                                      active theme, not a constant)
+            - [x] gui_widget_core.c (1: same PHANTOM k_col_default -> active theme k_themes/gui_theme.c)
+            - [x] gui_layout.c      (1: header typo "gui_begin/child_end" -> gui_child_begin/child_end)
+            - [x] gui_anim.c gui_stacks.c gui_region.c gui_theme.c gui_input.c gui_layout_region.c
+                  gui_layout_child.c  (all CLEAN -- headers/cross-refs/claims verified vs code; gui_region.c
+                  was Phase-2 done)
       - [ ] backend/pipeline/
       - [ ] backend/resource/
       - [ ] widgets/
@@ -139,4 +165,18 @@ location claim).
   header banner filled (overview + ASCII em-dash cleanup).  Comment-only; no build run.  Standout
   catch: "future dock splitter shares resize" -- splitter exists but does NOT share it, so the
   naive tense-fix would have been a fresh false claim.
+- 2026-07-04: Phase 3 chunk gui_internal.h done.  Fixed THE headline flat error (`_alloc` "NULL for
+  the static default context" -- verified non-NULL for every slot on both the alloc and both free
+  paths) + one residual "no nesting yet".  Comment-only; no build run.  Header was otherwise clean
+  (mostly pre-audited in Phase 2).  Next chunk: rest of core/ (gui_layout*.c the dense payoff).
+- 2026-07-04: Phase 3 chunk core/ done.  11 comment fixes across 6 files (see the core/ checklist
+  above).  Standout catches -- the pilot's prediction held (drift concentrates in headers/refactored-
+  file cross-refs + past-as-future framing): (1) TWO phantom-symbol refs to k_col_default, defined
+  NOWHERE, refactored into the k_themes dark/light registry -- the strongest no-keyword drift; (2) a
+  gui_resize.c internal contradiction (header "lives here" vs section "lives in gui_window.c"; code
+  defines it here); (3) an orphaned widget_split_label header comment separated from its function AND
+  a stale "future combo/drag/color" list (all three landed); (4) 3 stale child_begin file attributions
+  after the gui_layout.c -> gui_layout_child.c split.  7 core/ files verified fully clean.  Comment-only;
+  no build run.  Next chunk: backend/pipeline/ (start with the gui_emit_draw.c:41 band-axis drift
+  logged in Phase 1).
 </content>
