@@ -22,15 +22,13 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
-/* gui_window_t is defined in gui_internal.h (the shared type layer); it is embedded by value in
-   gui_context_t as the pool-full scratch fallback, and the window pool is reached through g_ctx.
-   s_build.cur_win points at a pool record so window_end can write scroll / content extent back. */
+/* s_build.cur_win points at a live gui_window_t pool record (window types in gui_internal.h; the
+   pool is reached through g_ctx) so window_end can write scroll / content extent back into it. */
 
-/* Ambient interaction state -- the one user's live hover / active / focus, persisting across
-   frames.  There is one pointer, one keyboard, one mouse, so none of this is duplicated per
-   viewport or per context: it stays a single global shared by every context.  Listening contexts
-   contribute hover / active nominations into it during their emit (multiple may listen at once).
-   Tier: ambient singular.  See ARCHITECTURE.md sec 1 (state tiers). */
+/* Ambient interaction state -- the one live hover / active / focus, persisting across frames.  One
+   pointer, one keyboard, one mouse, so none of it is per-viewport or per-context: a single global
+   shared by every context, into which listening contexts nominate hover / active during their emit.
+   Tier: ambient singular (see ARCHITECTURE.md sec 1, state tiers). */
 
 static struct
 {
@@ -80,14 +78,12 @@ static struct
 
 } s_interaction;
 
-/* True while a volatile widget callback is being replayed standalone on an idle frame -- set/
-   cleared only by gui_replay_scope_enter/_exit (widgets/gui_volatile.c; full feature description
-   there and in backend/pipeline/gui_build_volatile.c).  Declared here, alongside s_interaction, because
-   widget_behavior (gui_widget_core.c) reads it inline as ambient frame-phase state, the same tier
-   as hover_id/active_id above -- it short-circuits before any hit-test or write to
-   s_interaction/s_build, since a replay must render with whatever ambient hover/active/focus
-   state the last real frame already established, but can never acquire either state or discover
-   a fresh click; interaction is only ever resolved on real frames. */
+/* True only while a volatile-widget callback is replayed standalone on an idle frame; set/cleared
+   by gui_replay_scope_enter/_exit (widgets/gui_volatile.c).  Ambient frame-phase state, same tier as
+   hover_id/active_id: widget_behavior (gui_widget_core.c) reads it inline to short-circuit before any
+   hit-test or write to s_interaction/s_build -- a replay renders against the hover/active/focus the
+   last real frame established and can never acquire state or see a fresh click, since interaction is
+   resolved only on real frames. */
 static bool s_replay_mode;
 
 /* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as the
@@ -158,9 +154,8 @@ static struct
     bool               combo_open;          // a combo dropdown body is currently being emitted
     bool               combo_item_clicked;  // a selectable in that body was clicked this frame
 
-    /* Keyboard navigation state lives in its own subsystem struct (nav_state_t s_nav, below) so
-       the per-frame build scratch does not bloat it.  See gui_nav.c for the driver and
-       nav_item_register (gui_widget_core.c) for the per-item seam. */
+    /* Nav state is not part of this scratch: it lives in nav_state_t s_nav (a per-context member,
+       below) so the per-frame builder stays small. */
 
 } s_build;
 
@@ -174,23 +169,14 @@ u32 gui_dbg_build_viewport( void ) { return s_build.cur_viewport; }
 /*----------------------------------------------------------------------------------------------
     Keyboard navigation state (s_nav)
 
-    The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather
-    than the mouse -- plus the menu-bar state machine layered on top of it.  The type is defined
-    here; the instance is a member of the bound context (gui_context_t, below) reached via the
-    s_nav alias, apart from the ambient s_interaction / frame-scratch s_build.  gui_nav.c drives
-    it and nav_item_register (gui_widget_core.c) is the per-item seam.
-
-    `win` is the window or popup nav is scoped to, chosen each frame the way hover_win is (a popup
-    captures it while open).  Movement is resolved one frame deferred against `ref_rect`, exactly
-    like hover_win lags the cursor: the request is set at nav_new_frame, every item in `win`
-    registers itself through widget_behavior during emission, and the winner is committed at the
-    next nav_new_frame.
+    The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather than
+    the mouse -- plus the menu-bar state machine layered on it.  nav_state_t is defined in
+    gui_internal.h; the instance is the s_nav member of the bound context, reached through g_ctx, so
+    each context keeps its own cursor.  Movement resolves one frame deferred against `ref_rect`,
+    exactly as hover_win lags the cursor: the request is set at nav_new_frame, every item in the
+    scoped window registers through widget_behavior during emit, and the winner commits at the next
+    nav_new_frame.  gui_nav.c drives it; nav_item_register (gui_widget_core.c) is the per-item seam.
 ----------------------------------------------------------------------------------------------*/
-
-/* nav_state_t (the nav cursor + menu-bar state machine) is defined in gui_internal.h. */
-
-/* s_nav lives in the bound context (gui_context_t, below) and is reached through the g_ctx alias,
-   so each context keeps its own nav cursor location. */
 
 /*----------------------------------------------------------------------------------------------
     Item-flag stack
@@ -284,19 +270,11 @@ item_flags_chrome_reset( void )
 /*----------------------------------------------------------------------------------------------
     Layout-frame stack
 
-    - Every scrollable region (a window body or a child_begin box) pushes one frame.  
-    - The top frame owns the layout pen and the content column the leaf widgets emit into.
-    - The rest of the struct is the resolve context layout_pop_region needs to measure 
-      content and draw the region's scrollbars.
-    - The pen fields used to live flat in the window context; nesting moved them here.
-
-    - Memory is just the fixed array -- a frame carries only what is needed to emit widget 
-      rects and resolve scroll at pop, so a deep nesting costs nothing beyond these slots.
+    Every scrollable region (a window body or a child_begin box) pushes one frame; the top frame
+    owns the layout pen and the content column leaf widgets emit into.  The rest of the frame is the
+    resolve context layout_pop_region needs to measure content and draw the region's scrollbars.
+    Storage is just the fixed array, so a deep nesting costs nothing beyond these slots.
 ----------------------------------------------------------------------------------------------*/
-
-/* GUI_LAYOUT_DEPTH is defined in gui_internal.h. */
-
-/* layout_frame_t (one scroll-region layout frame) is defined in gui_internal.h. */
 
 static layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
 static u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
@@ -319,65 +297,34 @@ lf( void )
 /*----------------------------------------------------------------------------------------------
     Popup stack
 
-    The set of currently-open popups *is* a stack, ordered parent -> child: index 0 is the
-    top-level popup, each deeper index a popup opened while inside the one above.  This single
-    array is the source of truth for open / close, nesting, and the click-outside policy; the
-    popups themselves are rendered as ordinary windows on a reserved high z-band (see gui_popup.c).
+    The open popups form a stack, parent -> child: index 0 is the top-level popup, each deeper index
+    one opened inside the one above.  It is the source of truth for open / close, nesting, and the
+    click-outside policy; the popups themselves render as ordinary windows on a reserved high z-band
+    (gui_popup.c).  Two counters, split by lifetime:
 
-      s_popup_open_count  -- persists across frames; the live open set is [0, count).
-      s_popup_begin_count -- rebuilt each frame; the current popup nesting depth while emitting
-                             (0 at top level, 1 inside one popup_begin, ...).  popup_open writes
-                             a request at this depth; popup_begin matches its id against it.
+      s_popup_open_count  -- persists across frames (per context); the live open set is [0, count).
+      s_popup_begin_count -- rebuilt each frame; the popup nesting depth while emitting.  popup_open
+                             writes a request at this depth; popup_begin matches its id against it.
 
-    A popup is a *top-level overlay*: it is begun while a parent window is still open, but it must
-    lay out, clip, and paint independent of that parent (a context menu escapes the window's
-    bounds, paints above it, and must not disturb its layout pen).  gui_overlay_save_t snapshots
-    exactly the cross-cutting state begin/window_end mutate -- the flat window context, the
-    interaction clip, the draw sort key, and the parent's top layout frame -- so popup_end can
-    restore the parent verbatim.  The stack *counters* (layout / id / clip depth) are left intact
-    and balance naturally through the normal push/pop, so no slot is ever reused or lost. */
+    A popup is a top-level overlay begun while its parent window is still open, yet it must lay out,
+    clip, and paint independent of that parent.  gui_overlay_save_t (gui_internal.h) snapshots exactly
+    the cross-cutting state begin/window_end mutate -- the flat window context, interaction clip, draw
+    sort key, and the parent's top layout frame -- so popup_end restores the parent verbatim; the
+    stack counters balance through the normal push/pop, so no slot is reused or lost.
+----------------------------------------------------------------------------------------------*/
 
-/* gui_overlay_save_t (parent context a popup saves/restores) is defined in gui_internal.h. */
-
-/* gui_popup_t (one open popup record) is defined in gui_internal.h. */
-
-/* The open set (s_popups_open) and its live count (s_popup_open_count) are members of the bound
-   context (gui_context_t, below), reached through the g_ctx alias -- popups persist per context.
-   s_popup_begin_count is per-frame scratch (rebuilt as begin/popup_end run) and stays a plain global. */
-static u32           s_popup_begin_count;                 // current nesting depth (per frame)
+/* The open set (s_popups_open) and its count (s_popup_open_count) are per-context members reached
+   through g_ctx; s_popup_begin_count is per-frame scratch and stays a plain global. */
+static u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per frame)
 
 /*----------------------------------------------------------------------------------------------
     Keyed state pool -- persistent per-id widget state.
 
-    The single store a widget uses to keep a few bytes alive across frames, keyed by its id: a
-    region's scroll offset, a tree node's open flag, a combo's popup state.  gui_state_get hands
-    back a stable, zero-on-create pointer to `size` bytes for `id`; the GUI_STATE( T, id ) sugar
-    casts it to a typed struct.  The contract is the immediate-mode norm -- fetch your state every
-    frame you are live and the pointer is stable; an id left unfetched goes cold and its slot is
-    recycled, so there is nothing to free and nothing leaks.
-
-    Storage is an open-addressing hash table keyed by id (ids already avalanche, so id & mask is a
-    good bucket).  A lookup probes linearly from the home bucket to the first empty slot -- O(1) at
-    the low load factor a UI runs at.  A slot untouched for more than one frame is a tombstone the
-    next insert on its chain reclaims; reclamation only ever overwrites one occupied slot with
-    another, never empties one, so no probe chain is broken and no sweep or free list is needed.
-    The "more than one frame" gate (not "one or more") is deliberate: a slot seen last frame may
-    still be revisited later this frame, so only entries two+ frames cold are fair game.
+    The store a widget uses to keep a few bytes alive across frames, keyed by its id (a region's
+    scroll offset, a tree node's open flag, a combo's popup state).  It is a member of the bound
+    context's retained store (gui_retained_t); gui_state_get and the open-addressing / tombstone
+    contract live with the id system that keys it, in gui_ctx_id.c.
 ----------------------------------------------------------------------------------------------*/
-
-/* GUI_STATE_SLOTS / _MASK / _CAP are defined in gui_internal.h. */
-
-/* gui_state_slot_t (one keyed-state-pool slot) is defined in gui_internal.h. */
-
-/* ---- Per-context retained state: the keyed state pool + its frame clock (gui_retained_t) ----
-   These are grouped as gui_retained_t, the first member of gui_context_t (defined in
-   gui_internal.h).  They belong together because the clock only has meaning relative to the pool it
-   stamps -- and, more pointedly, the clock advances per context, not per app-frame: a context not
-   rebuilt on a given frame must not tick, or its live entries would read as cold and be reclaimed
-   (losing scroll / open state) while it is merely hidden.  Window / popup / combo "appearing"
-   detection keys off the same per-context clock for the same reason.  Tier: per-context retained. */
-
-/* gui_retained_t (id salt, frame clock, keyed state pool) is defined in gui_internal.h. */
 
 /*----------------------------------------------------------------------------------------------
     gui_context_t -- the bound per-context retained state ("bind and use").
@@ -388,6 +335,11 @@ static u32           s_popup_begin_count;                 // current nesting dep
     s_nav (the nav cursor location + menu mode), and the popup open-set -- so switching contexts is a
     single pointer assignment (ctx_bind): no copy, no backup/restore.
 
+    The frame clock (s_retained.frame) advances per context, at ctx_begin, NOT per app-frame: a
+    context not rebuilt on a given frame must not tick, or its live keyed-state entries would read as
+    cold and be reclaimed (losing scroll / open state) while it is merely hidden.  Window / popup /
+    combo "appearing" detection keys off the same per-context clock.
+
     Ambient state (one user: s_interaction, s_io) and frame scratch (s_build, the stacks, s_draw) are
     NOT per context -- they stay global and target whichever context is bound.  The window pool,
     viewports, popup set, and dock nodes ARE per context: members of gui_context_t reached through
@@ -395,18 +347,12 @@ static u32           s_popup_begin_count;                 // current nesting dep
     the same OS windows and render surfaces rather than owning separate ones.
 ----------------------------------------------------------------------------------------------*/
 
-/* gui_context_t (the bound per-context retained state) is defined in gui_internal.h. */
-
-/* Context pool.  Slot 0 is always the default context (bound at init; never destroyed by
-   ctx_destroy at runtime, freed only at shutdown).  Slots 1..N are secondary contexts allocated by
-   gui_ctx_create.  g_ctx is the one indirection every retained
-   access goes through; switching contexts is a single pointer assignment (ctx_bind).
-   Each context carries a `listening` flag; only listening contexts receive hover/click/nav input. */
+/* Context pool.  Slot 0 is the default context (heap-allocated and bound at init, freed only at
+   shutdown -- never torn down by ctx_destroy at runtime); slots 1..N are secondary contexts from
+   ctx_create, all sharing the same single-malloc block layout.  Each context's `listening` flag
+   gates whether it receives hover / click / nav input. */
 
 #define GUI_CTX_POOL_MAX  8       /* slot 0 = default + up to 7 secondary contexts */
-
-/* Pool of context pointers.  Slot 0 = default context (heap-allocated at init, freed at shutdown).
-   Slots 1..N are secondary contexts returned by ctx_create.  All slots use the same block layout. */
 
 static gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
 static u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
@@ -532,9 +478,9 @@ viewport_index_for_window( i32 win_id )
 static gui_id_t s_id_stack[ GUI_ID_STACK_DEPTH ];
 static u32        s_id_sp;
 
-/* id_seed, id_push, id_pop, id_hash, id_combine, gui_state_get, and GUI_STATE are defined
-   in gui_ctx_id.c (included immediately after this file).  They reference s_id_stack/s_id_sp
-   and s_retained (via g_ctx) which are defined here and visible in the unity build. */
+/* id_seed / id_push / id_pop / id_hash / id_combine and the keyed-state pool (gui_state_get,
+   GUI_STATE) are in gui_ctx_id.c, included just after this file; they operate on s_id_stack / s_id_sp
+   and s_retained (via g_ctx) defined here. */
 
 /*----------------------------------------------------------------------------------------------
     rect_hit -- true when the mouse cursor (from s_io) is inside the given rect

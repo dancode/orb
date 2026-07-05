@@ -1192,15 +1192,18 @@ typedef struct
     Limits
 ==============================================================================================*/
 
-/* 16K verts is far above what a debug UI emits per frame, and keeps vertex indices
-   well within u16 range (64K would sit right at the 65535 ceiling).  The per-frame
-   region sizes that fall out of these (VB 320 KB, IB 96 KB) are both 256-byte
-   aligned, so each frame-in-flight region stays independently addressable -- note
-   that this only matters if the VB/IB are ever moved off HOST_COHERENT memory, in
-   which case regions would need rounding up to nonCoherentAtomSize to flush apart. */
+/* 16K verts covers the busiest measured frame (all sb_gui demo windows + the pipeline
+   dashboard peak ~9K) with headroom, and keeps vertex indices well within u16 range
+   (64K would sit right at the 65535 ceiling).  The 2x index ratio suits quad-dominated
+   UI (6 idx per 4 verts = 1.5:1; AA paths/arcs stay under 2:1); the geometry that would
+   exceed it overflows a frame's tessellation, not the buffer sizing.  The per-frame
+   region sizes that fall out of these (VB 320 KB, IB 64 KB) are both 256-byte aligned,
+   so each frame-in-flight region stays independently addressable -- note that this only
+   matters if the VB/IB are ever moved off HOST_COHERENT memory, in which case regions
+   would need rounding up to nonCoherentAtomSize to flush apart. */
 
 #define GUI_MAX_VERTS      ( 16 * 1024 )
-#define GUI_MAX_IDX        ( GUI_MAX_VERTS * 3 )
+#define GUI_MAX_IDX        ( GUI_MAX_VERTS * 2 )
 #define GUI_MAX_CMDS       1024
 
 /* Command segments: one contiguous span of the command list per (z, vp) the emit path stamps, cut
