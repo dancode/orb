@@ -101,7 +101,7 @@ main( int argc, char** argv )
     gui_forward_caps_t caps = { .keyboard_nav = true, .tables = true, .docking = true };
     gui()->init_config_front( caps );
 
-    if ( !gui()->init( GUI_FONT_JETBRAINS_16 ) )
+    if ( !gui()->init( GUI_FONT_ROBOTO_16 ) ) // GUI_FONT_JETBRAINS_16
     {
         fprintf( stderr, "[sb_gui_editor] gui->init failed\n" );
         goto shutdown;

@@ -49,8 +49,10 @@ font_load_into( u32 id, const char* path )
 
 static const char* s_builtin_font_path[] = 
 {
-    [ GUI_FONT_NONE ]         = NULL,
-    [ GUI_FONT_JETBRAINS_16 ] = "assets/font/jetbrains_regular_16.orb_font",
+    [ GUI_FONT_NONE ]           = NULL,
+    [ GUI_FONT_JETBRAINS_16 ]   = "assets/font/jetbrains_regular_16.orb_font",
+    [ GUI_FONT_ROBOTO_16 ]      = "assets/font/Roboto-Regular.orb_font",
+    [ GUI_FONT_ROBOTO_BOLD_16 ] = "assets/font/Roboto-Bold.orb_font",
 };
 
 /* Load a built-in font preset into slot 0 and activate it. A no-op success for GUI_FONT_NONE.
