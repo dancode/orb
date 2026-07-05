@@ -2,18 +2,25 @@
 
     runtime_service/draw/draw_batch.c -- Per-frame CPU->GPU vertex/index ring buffer.
 
-    Creates two CPU_TO_GPU buffers (vertex + index) sized to the batch limits.
-    draw_batch_push writes geometry into them via rhi()->buffer_write and returns
-    the base offsets needed to record the draw call.
+    Creates two CPU_TO_GPU buffers (vertex + index) sized to the batch limits, with one
+    independent region per frame-in-flight: the CPU records up to RHI_MAX_FRAMES_IN_FLIGHT
+    frames ahead of the GPU, so rewriting a single region every frame would overwrite vertex
+    data the GPU is still reading for the previous frame (visible as torn/twisted geometry
+    whenever the data changes frame to frame -- e.g. a moving camera).  draw_batch_reset
+    selects the frame's region; draw_batch_push writes geometry into it via
+    rhi()->buffer_write and returns the region-relative base offsets needed to record the
+    draw call (the flush binds the buffers at the region's byte offset).
 
 ==============================================================================================*/
 
 typedef struct
 {
-    rhi_buffer_t vb;          /* CPU_TO_GPU vertex buffer */
-    rhi_buffer_t ib;          /* CPU_TO_GPU index buffer  */
-    u32          vb_count;    /* vertices written this frame */
-    u32          ib_count;    /* indices written this frame  */
+    rhi_buffer_t vb;          /* CPU_TO_GPU vertex buffer (RHI_MAX_FRAMES_IN_FLIGHT regions) */
+    rhi_buffer_t ib;          /* CPU_TO_GPU index buffer  (RHI_MAX_FRAMES_IN_FLIGHT regions) */
+    u32          vb_base;     /* first vertex of this frame's region */
+    u32          ib_base;     /* first index of this frame's region  */
+    u32          vb_count;    /* vertices written this frame (region-relative) */
+    u32          ib_count;    /* indices written this frame  (region-relative) */
 
 } draw_batch_t;
 
@@ -25,7 +32,7 @@ static bool
 draw_batch_init( draw_batch_t* b )
 {
     b->vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = DRAW_BATCH_MAX_VERTS * sizeof( draw_vertex_t ),
+        .size       = RHI_MAX_FRAMES_IN_FLIGHT * DRAW_BATCH_MAX_VERTS * sizeof( draw_vertex_t ),
         .usage      = RHI_BUFFER_USAGE_VERTEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "draw_vb",
@@ -34,7 +41,7 @@ draw_batch_init( draw_batch_t* b )
         return false;
 
     b->ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = DRAW_BATCH_MAX_IDX * sizeof( u16 ),
+        .size       = RHI_MAX_FRAMES_IN_FLIGHT * DRAW_BATCH_MAX_IDX * sizeof( u16 ),
         .usage      = RHI_BUFFER_USAGE_INDEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "draw_ib",
@@ -49,12 +56,15 @@ draw_batch_init( draw_batch_t* b )
 }
 
 /*----------------------------------------------------------------------------------------------
-    draw_batch_reset  --  call at the start of each frame before any draw_xxx calls
+    draw_batch_reset  --  call at the start of each frame before any draw_xxx calls.
+    `frame` is the frame-in-flight slot (rhi()->cmd_frame_index) selecting this frame's region.
 ----------------------------------------------------------------------------------------------*/
 
 static void
-draw_batch_reset( draw_batch_t* b )
+draw_batch_reset( draw_batch_t* b, u32 frame )
 {
+    b->vb_base  = frame * DRAW_BATCH_MAX_VERTS;
+    b->ib_base  = frame * DRAW_BATCH_MAX_IDX;
     b->vb_count = 0;
     b->ib_count = 0;
 }
@@ -80,9 +90,9 @@ draw_batch_push( draw_batch_t* b,
     *out_first_index  = b->ib_count;
 
     rhi()->buffer_write( b->vb, verts, nv * sizeof( draw_vertex_t ),
-                         b->vb_count * sizeof( draw_vertex_t ) );
+                         ( b->vb_base + b->vb_count ) * sizeof( draw_vertex_t ) );
     rhi()->buffer_write( b->ib, idxs, ni * sizeof( u16 ),
-                         b->ib_count * sizeof( u16 ) );
+                         ( b->ib_base + b->ib_count ) * sizeof( u16 ) );
 
     b->vb_count += nv;
     b->ib_count += ni;

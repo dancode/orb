@@ -64,13 +64,31 @@ draw_shutdown( void )
 ----------------------------------------------------------------------------------------------*/
 
 static void
-draw_begin( rhi_cmd_t cmd, const f32 view_proj[ 16 ] )
+draw_begin_mat( rhi_cmd_t cmd, const f32 view_proj[ 16 ], draw_mat_id_t mat )
 {
     s.cmd = cmd;
     for ( u32 i = 0; i < 16; ++i )
         s.frame_push.mvp[ i ] = view_proj[ i ];
-    draw_batch_reset( &s.batch );
+    /* Select this frame-in-flight's buffer region so writes never touch data the GPU is
+       still reading for a previous in-flight frame. */
+    draw_batch_reset( &s.batch, rhi()->cmd_frame_index( cmd ) );
     s.call_count = 0;
+    s.cur_mat    = mat;
+}
+
+/* 2D/overlay frame: no depth test; primitives paint in submission order (draws on top). */
+static void
+draw_begin( rhi_cmd_t cmd, const f32 view_proj[ 16 ] )
+{
+    draw_begin_mat( cmd, view_proj, DRAW_MAT_SOLID );
+}
+
+/* 3D frame: depth test + write.  The caller MUST have bound a DRAW_DEPTH_FORMAT depth
+   attachment to the open render pass (cmd_begin_rendering), else the draws are invalid. */
+static void
+draw_begin_depth( rhi_cmd_t cmd, const f32 view_proj[ 16 ] )
+{
+    draw_begin_mat( cmd, view_proj, DRAW_MAT_SOLID_DEPTH );
 }
 
 static void
@@ -79,9 +97,11 @@ draw_end( void )
     if ( s.call_count == 0 )
         return;
 
-    /* Bind shared buffers once; all draws index into them with first_index/vertex_offset. */
-    rhi()->cmd_bind_vertex_buffer( s.cmd, s.batch.vb, 0 );
-    rhi()->cmd_bind_index_buffer( s.cmd, s.batch.ib, 0, RHI_INDEX_TYPE_UINT16 );
+    /* Bind this frame's buffer region once; all draws index into it with the
+       region-relative first_index/vertex_offset recorded at submit time. */
+    rhi()->cmd_bind_vertex_buffer( s.cmd, s.batch.vb, s.batch.vb_base * sizeof( draw_vertex_t ) );
+    rhi()->cmd_bind_index_buffer ( s.cmd, s.batch.ib, s.batch.ib_base * sizeof( u16 ),
+                                   RHI_INDEX_TYPE_UINT16 );
 
     draw_mat_id_t cur = DRAW_MAT_COUNT; /* invalid sentinel to force first bind */
     for ( u32 i = 0; i < s.call_count; ++i )

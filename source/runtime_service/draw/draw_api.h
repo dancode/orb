@@ -32,8 +32,12 @@ typedef struct draw_api_s
     void ( *shutdown )( void );
 
     /* Set the command list and view-projection matrix for the current frame.
-       Call inside an open render pass (between cmd_begin_rendering / cmd_end_rendering). */
-    void ( *begin  )( rhi_cmd_t cmd, const f32 view_proj[ 16 ] );
+       Call inside an open render pass (between cmd_begin_rendering / cmd_end_rendering).
+       begin       -- 2D/overlay: no depth test; primitives draw on top in submission order.
+       begin_depth -- 3D: depth test + write; the open pass MUST have a DRAW_DEPTH_FORMAT
+                      depth attachment bound (see draw.h). */
+    void ( *begin       )( rhi_cmd_t cmd, const f32 view_proj[ 16 ] );
+    void ( *begin_depth )( rhi_cmd_t cmd, const f32 view_proj[ 16 ] );
 
     /* Flush all accumulated draw calls to the command list and reset internal state. */
     void ( *end    )( void );

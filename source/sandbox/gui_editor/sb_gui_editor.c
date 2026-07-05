@@ -47,9 +47,6 @@
 int
 main( int argc, char** argv )
 {
-    UNUSED( argc );
-    UNUSED( argv );
-
     /* Load modules. */
     mod_system_init();
     mod_static( sys );
@@ -113,6 +110,23 @@ main( int argc, char** argv )
 
     gui()->set_retained_skip( true );
 
+    /* Optional args:
+         -theme <name>  start with a named theme (default is the square "dark")
+         -play          enter play mode immediately (animating scene from frame one) */
+    bool start_playing = false;
+    for ( int i = 1; i < argc; i++ )
+    {
+        if ( strcmp( argv[ i ], "-theme" ) == 0 && i + 1 < argc )
+        {
+            if ( !gui()->theme_set( argv[ i + 1 ] ) )
+                fprintf( stderr, "[sb_gui_editor] unknown theme '%s'\n", argv[ i + 1 ] );
+        }
+        else if ( strcmp( argv[ i ], "-play" ) == 0 )
+        {
+            start_playing = true;
+        }
+    }
+
     vp0 = gui()->viewport_open( win );
     if ( vp0 == GUI_VP_INVALID )
     {
@@ -125,6 +139,8 @@ main( int argc, char** argv )
 
     ed_engine_init();
     ed_viewport_init();
+    if ( start_playing )
+        ed_play();
 
     printf( "[sb_gui_editor] running -- ESC to quit\n" );
     printf( "[sb_gui_editor] Scene panel: RMB orbit, MMB pan, wheel zoom\n" );
@@ -169,8 +185,14 @@ main( int argc, char** argv )
 
         gui()->frame_begin( dt );
 
-        if ( gui()->frame_dirty() )
+        /* The scene pass and target flip pair 1:1 with an emitted gui frame: the flipped
+           texture index is baked into this frame's Scene-panel quad, and a clean (retained)
+           frame must leave the previously displayed texture's content untouched. */
+        bool always_emit = true;    /* pinned on while debugging the viewport twist (C4127-safe) */
+        bool emitted     = always_emit || gui()->frame_dirty();
+        if ( emitted )
         {
+            ed_viewport_flip();
             gui()->ctx_begin( GUI_CTX_DEFAULT );
             ed_shell_build();
             gui()->ctx_end();
@@ -191,7 +213,8 @@ main( int argc, char** argv )
             rhi_cmd_t cmd = rhi()->frame_begin( ctx );
             if ( rhi_cmd_valid( cmd ) )
             {
-                ed_viewport_render( cmd );
+                if ( emitted )
+                    ed_viewport_render( cmd );
 
                 rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
                     .texture  = { .id = RHI_SWAPCHAIN_COLOR },

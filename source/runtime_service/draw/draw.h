@@ -39,10 +39,18 @@ typedef struct
 
 typedef enum
 {
-    DRAW_MAT_SOLID = 0,
+    DRAW_MAT_SOLID       = 0,   /* 2D/overlay: no depth test, no cull -- draws always on top */
+    DRAW_MAT_SOLID_DEPTH = 1,   /* 3D: depth test + write; requires a bound depth attachment */
     DRAW_MAT_COUNT,
 
 } draw_mat_id_t;
+
+/*==============================================================================================
+    Depth format used by DRAW_MAT_SOLID_DEPTH.  Callers that use begin_depth() must attach a
+    depth image of this exact format to cmd_begin_rendering (pipeline/attachment must match).
+==============================================================================================*/
+
+#define DRAW_DEPTH_FORMAT   RHI_FORMAT_D32_FLOAT
 
 /*==============================================================================================
     Batch limits

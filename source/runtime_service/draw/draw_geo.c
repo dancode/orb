@@ -51,9 +51,9 @@ static void
 geo_box( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
          f32 cx, f32 cy, f32 cz, f32 hw, f32 hh, f32 hd, const f32 rgba[ 4 ] )
 {
-    /* 8 corners:  index = (z<<2 | y<<1 | x)
-       0: (-x,-y,-z)  1: (+x,-y,-z)  2: (+x,+y,-z)  3: (-x,+y,-z)
-       4: (-x,-y,+z)  5: (+x,-y,+z)  6: (+x,+y,+z)  7: (-x,+y,+z) */
+    /* 8 corners:  index bits = (z<<2 | y<<1 | x), so x = bit0, y = bit1, z = bit2:
+       0: (-x,-y,-z)  1: (+x,-y,-z)  2: (-x,+y,-z)  3: (+x,+y,-z)
+       4: (-x,-y,+z)  5: (+x,-y,+z)  6: (-x,+y,+z)  7: (+x,+y,+z) */
     f32 x0 = cx - hw, x1 = cx + hw;
     f32 y0 = cy - hh, y1 = cy + hh;
     f32 z0 = cz - hd, z1 = cz + hd;
@@ -68,14 +68,17 @@ geo_box( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
         };
     }
 
+    /* Each face = 4 of the corners above, split into 2 triangles that share ONE diagonal
+       (so they tile the quad -- mismatched diagonals produce a criss-cross bowtie).  Wound
+       CCW as seen from outside, so backface culling would also be correct if enabled. */
     /* clang-format off */
     static const u16 s_faces[ 36 ] = {
-        4, 5, 6,  4, 6, 7,   /* +Z front */
-        1, 0, 3,  1, 3, 2,   /* -Z back  */
-        5, 1, 2,  5, 2, 6,   /* +X right */
-        0, 4, 7,  0, 7, 3,   /* -X left  */
-        7, 6, 2,  7, 2, 3,   /* +Y top   */
-        0, 1, 5,  0, 5, 4,   /* -Y bottom */
+        4, 5, 7,  4, 7, 6,   /* +Z front  (corners 4,5,6,7) */
+        1, 0, 2,  1, 2, 3,   /* -Z back   (corners 0,1,2,3) */
+        5, 1, 3,  5, 3, 7,   /* +X right  (corners 1,3,5,7) */
+        0, 4, 6,  0, 6, 2,   /* -X left   (corners 0,2,4,6) */
+        6, 7, 3,  6, 3, 2,   /* +Y top    (corners 2,3,6,7) */
+        0, 1, 5,  0, 5, 4,   /* -Y bottom (corners 0,1,4,5) */
     };
     /* clang-format on */
 

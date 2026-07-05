@@ -276,11 +276,19 @@ vk_frame_begin( i32 ctx_id )
     /* Swapchain color image: UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL */
     /* This barrier is required every frame because the swapchain image may be in a different
        layout each time (the display engine may have transitioned it to PRESENT_SRC_KHR for
-       scan-out, or it may have been left in COLOR_ATTACHMENT_OPTIMAL from the prior frame). */
+       scan-out, or it may have been left in COLOR_ATTACHMENT_OPTIMAL from the prior frame).
+
+       srcStageMask MUST be COLOR_ATTACHMENT_OUTPUT, not TOP_OF_PIPE: the submit waits the
+       image_available semaphore at COLOR_ATTACHMENT_OUTPUT (see frame_end), and a layout
+       transition only happens-after that wait if its srcStageMask chains through the same
+       stage.  With TOP_OF_PIPE the transition (a write -- UNDEFINED lets the driver discard /
+       re-initialize the image in place) can execute while the presentation engine is still
+       scanning the image out: a WRITE_AFTER_READ hazard visible as torn/garbled regions
+       wherever frame content changes quickly (sync-validation flags it on every submit). */
 
     VkImageMemoryBarrier2* color_b                   = &barriers[ barrier_count++ ];
-    color_b->sType                                   = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;    
-    color_b->srcStageMask                            = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+    color_b->sType                                   = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    color_b->srcStageMask                            = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     color_b->srcAccessMask                           = 0;
     color_b->dstStageMask                            = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     color_b->dstAccessMask                           = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;

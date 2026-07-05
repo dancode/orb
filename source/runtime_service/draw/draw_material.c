@@ -246,8 +246,12 @@ draw_material_init( draw_material_t mats[ DRAW_MAT_COUNT ] )
         { .binding = 0, .location = 1, .offset = 12, .format = RHI_VERTEX_FORMAT_FLOAT4 },
     };
 
-    /* One solid-color pipeline: no depth test, no culling, alpha blending off. */
+    /* Both pipelines share the same shaders, vertex layout, and color target; they differ
+       only in depth state.  SOLID is the 2D/overlay path (no depth, draws on top); SOLID_DEPTH
+       is the 3D path (depth test + write) and requires the caller to bind a DRAW_DEPTH_FORMAT
+       depth attachment. */
     rhi_color_target_t color_target = { .format = RHI_FORMAT_BGRA8_SRGB };
+
     mats[ DRAW_MAT_SOLID ].pipeline = rhi()->pipeline_create( &( rhi_pipeline_desc_t ){
         .vert               = vert,
         .frag               = frag,
@@ -264,11 +268,30 @@ draw_material_init( draw_material_t mats[ DRAW_MAT_COUNT ] )
         .debug_name         = "draw_solid",
     } );
 
+    mats[ DRAW_MAT_SOLID_DEPTH ].pipeline = rhi()->pipeline_create( &( rhi_pipeline_desc_t ){
+        .vert               = vert,
+        .frag               = frag,
+        .attribs            = { attribs[ 0 ], attribs[ 1 ] },
+        .attrib_count       = 2,
+        .vertex_stride      = sizeof( draw_vertex_t ),
+        .cull               = RHI_CULL_NONE,      /* depth handles occlusion; winding-independent */
+        .depth_test         = true,
+        .depth_write        = true,
+        .depth_compare      = RHI_COMPARE_LESS,   /* zero-init would be NEVER -> rejects everything */
+        .color_targets      = { color_target },
+        .color_target_count = 1,
+        .depth_format       = DRAW_DEPTH_FORMAT,
+        .push_const_size    = sizeof( draw_push_t ),
+        .debug_name         = "draw_solid_depth",
+    } );
+
     /* Shaders are only needed during pipeline creation; free immediately after. */
     rhi()->shader_destroy( frag );
     rhi()->shader_destroy( vert );
 
     if ( !rhi_handle_valid( mats[ DRAW_MAT_SOLID ].pipeline ) )
+        return false;
+    if ( !rhi_handle_valid( mats[ DRAW_MAT_SOLID_DEPTH ].pipeline ) )
         return false;
 
     return true;

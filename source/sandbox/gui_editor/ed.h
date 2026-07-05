@@ -117,14 +117,21 @@ typedef struct
 
 } ed_camera_t;
 
+/* Double-buffered offscreen target: the CPU records up to RHI_MAX_FRAMES_IN_FLIGHT frames
+   ahead, so a single texture would be rewritten by frame N+1's scene pass while frame N's gui
+   pass still samples it (visible as torn/twisted geometry whenever the view changes per
+   frame).  Frame N draws into and displays tex[cur]; cur flips every frame, so the texture
+   the in-flight previous frame samples is never the one being written. */
 typedef struct
 {
-    rhi_texture_t tex;            // offscreen color target the scene renders into
-    u32           bindless_idx;   // gui image_texture slot; 0 = not created yet
-    i32           w, h;           // current texture size
-    i32           want_w, want_h; // size the panel asked for this frame
-    i32           stable_frames;  // frames want_* has differed from w/h (resize settle counter)
-    bool          first_frame;    // next barrier uses UNDEFINED (fresh texture)
+    rhi_texture_t tex[ 2 ];           // offscreen color targets, alternated per frame
+    rhi_texture_t depth[ 2 ];         // transient depth buffers, one per color target (not sampled)
+    u32           bindless_idx[ 2 ];  // gui image_texture slots; 0 = not created yet
+    u32           cur;                // which of the two this frame renders + displays
+    bool          first_frame[ 2 ];   // next barrier uses UNDEFINED (fresh texture)
+    i32           w, h;               // current texture size (both match)
+    i32           want_w, want_h;     // size the panel asked for this frame
+    i32           stable_frames;      // frames want_* has differed from w/h (resize settle)
 
 } ed_target_t;
 
@@ -184,8 +191,9 @@ extern const i32        ed_asset_count;
 /* ed_viewport.c -- offscreen target + camera + Scene panel */
 bool ed_viewport_init( void );
 void ed_viewport_shutdown( void );
-void ed_viewport_maintain( void );             // create/resize the target; call between frames
-void ed_viewport_render( rhi_cmd_t cmd );      // offscreen scene pass; call before gui render
+void ed_viewport_maintain( void );             // create/resize the targets; call between frames
+void ed_viewport_flip( void );                 // swap write/display target; call before an emit
+void ed_viewport_render( rhi_cmd_t cmd );      // offscreen scene pass; pair 1:1 with flip+emit
 void ed_viewport_panel( void );
 
 /* ed_panels.c -- Hierarchy / Inspector / Console / Assets */

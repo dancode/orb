@@ -20,8 +20,9 @@ const draw_api_t g_draw_api_struct =
 {
     .init       = draw_init,
     .shutdown   = draw_shutdown,
-    .begin      = draw_begin,
-    .end        = draw_end,
+    .begin       = draw_begin,
+    .begin_depth = draw_begin_depth,
+    .end         = draw_end,
     .rect       = draw_rect,
     .box        = draw_box,
     .circle     = draw_circle,

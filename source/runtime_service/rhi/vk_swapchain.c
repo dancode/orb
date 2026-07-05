@@ -295,6 +295,8 @@ vk_swapchain_create( vk_context_t* ctx, VkSwapchainKHR old_swapchain )
     if ( mode_count > 8 ) mode_count = 8;
     vkGetPhysicalDeviceSurfacePresentModesKHR( vk.physical_device, ctx->surface, &mode_count, modes );
     ctx->present_mode = vk_swapchain_pick_present_mode( modes, mode_count );
+    LOG_INFO( "present mode: %s (vrr %d, vsync %d)",
+              string_VkPresentModeKHR( ctx->present_mode ), vk.has_vrr, vk.use_vsync );
 
     /* --- Determine swapchain extent --- */
 

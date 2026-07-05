@@ -21,6 +21,9 @@ static char s_default_layout[ ED_LAYOUT_MAX ];  /* the freshly-built default tre
 static bool s_have_default;
 static bool s_built;                            /* default layout carved */
 static bool s_do_save, s_do_load, s_do_reset;   /* menu requests, applied at the next safe point */
+static bool s_rounded_theme;                    /* Window > Rounded Theme toggle state */
+static bool s_do_theme;                         /* deferred: theme_set clears the style stacks,
+                                                   so apply it between builds, not mid-menu */
 
 /*==============================================================================================
     Layout persistence
@@ -114,6 +117,9 @@ ed_menu_bar( void )
         gui()->menu_item( "Inspector", NULL, &g_ed.show_inspector );
         gui()->menu_item( "Console",   NULL, &g_ed.show_console   );
         gui()->menu_item( "Assets",    NULL, &g_ed.show_assets    );
+        gui()->separator();
+        if ( gui()->menu_item( "Rounded Theme", NULL, &s_rounded_theme ) )
+            s_do_theme = true;
         gui()->menu_end();
     }
 
@@ -172,6 +178,21 @@ ed_shell_build( void )
 {
     /* Deferred layout requests from LAST frame's menu clicks -- applied here, at the top of the
        build before the dockspace and any docked window (the safe point dock_load requires). */
+    /* Seed the menu toggle from whatever theme the host started with (-theme arg). */
+    static bool s_theme_synced;
+    if ( !s_theme_synced )
+    {
+        const char* t = gui()->theme_get();
+        s_rounded_theme = ( t && strcmp( t, "rounded" ) == 0 );
+        s_theme_synced  = true;
+    }
+
+    if ( s_do_theme )
+    {
+        gui()->theme_set( s_rounded_theme ? "rounded" : "dark" );
+        ed_logf( ED_LOG_INFO, "Theme: %s", gui()->theme_get() );
+        s_do_theme = false;
+    }
     if ( s_do_save )  { ed_layout_save_file(); s_do_save = false; }
     if ( s_do_load )  { ed_layout_load_file(); s_do_load = false; }
     if ( s_do_reset )

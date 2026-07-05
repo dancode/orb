@@ -106,39 +106,70 @@ ed_camera_eye( const ed_camera_t* c, f32 eye[ 3 ] )
     Offscreen target lifecycle
 ==============================================================================================*/
 
+static void ed_target_destroy( void );   /* forward: create's failure path unwinds through it */
+
 static bool
 ed_target_create( i32 w, i32 h )
 {
     ed_target_t* t = &g_ed.target;
 
-    t->tex = rhi()->texture_create( &( rhi_texture_desc_t ){
-        .width        = (u32)w,
-        .height       = (u32)h,
-        .depth        = 1,
-        .mip_levels   = 1,
-        .array_layers = 1,
-        .format       = RHI_FORMAT_BGRA8_SRGB,     /* matches draw()'s pipeline color target */
-        .usage        = RHI_TEXTURE_USAGE_COLOR_ATTACHMENT | RHI_TEXTURE_USAGE_SAMPLED,
-        .memory       = RHI_MEMORY_GPU_ONLY,
-        .debug_name   = "ed_scene_target",
-    } );
-    if ( !rhi_handle_valid( t->tex ) )
+    for ( u32 i = 0; i < 2; i++ )
     {
-        ed_logf( ED_LOG_ERROR, "Scene target create failed (%dx%d)", w, h );
-        return false;
+        t->tex[ i ] = rhi()->texture_create( &( rhi_texture_desc_t ){
+            .width        = (u32)w,
+            .height       = (u32)h,
+            .depth        = 1,
+            .mip_levels   = 1,
+            .array_layers = 1,
+            .format       = RHI_FORMAT_BGRA8_SRGB,     /* matches draw()'s pipeline color target */
+            .usage        = RHI_TEXTURE_USAGE_COLOR_ATTACHMENT | RHI_TEXTURE_USAGE_SAMPLED,
+            .memory       = RHI_MEMORY_GPU_ONLY,
+            .debug_name   = i ? "ed_scene_target_1" : "ed_scene_target_0",
+        } );
+        if ( !rhi_handle_valid( t->tex[ i ] ) )
+        {
+            ed_logf( ED_LOG_ERROR, "Scene target create failed (%dx%d)", w, h );
+            ed_target_destroy();
+            return false;
+        }
+
+        t->bindless_idx[ i ] = rhi()->register_texture( t->tex[ i ] );
+        if ( t->bindless_idx[ i ] == 0 )
+        {
+            rhi()->texture_destroy( t->tex[ i ] );
+            t->tex[ i ] = ( rhi_texture_t ){ 0 };
+            ed_logf( ED_LOG_ERROR, "Scene target bindless registration failed" );
+            ed_target_destroy();
+            return false;
+        }
+
+        /* Transient depth buffer paired with this color target -- never sampled, never
+           bindless-registered.  One per target so two in-flight frames don't share a depth
+           image (mirrors the tex[] double-buffering flipped by ed_viewport_flip). */
+        t->depth[ i ] = rhi()->texture_create( &( rhi_texture_desc_t ){
+            .width        = (u32)w,
+            .height       = (u32)h,
+            .depth        = 1,
+            .mip_levels   = 1,
+            .array_layers = 1,
+            .format       = DRAW_DEPTH_FORMAT,
+            .usage        = RHI_TEXTURE_USAGE_DEPTH_ATTACHMENT,
+            .memory       = RHI_MEMORY_GPU_ONLY,
+            .debug_name   = i ? "ed_scene_depth_1" : "ed_scene_depth_0",
+        } );
+        if ( !rhi_handle_valid( t->depth[ i ] ) )
+        {
+            ed_logf( ED_LOG_ERROR, "Scene depth create failed (%dx%d)", w, h );
+            ed_target_destroy();
+            return false;
+        }
+
+        t->first_frame[ i ] = true;
     }
 
-    t->bindless_idx = rhi()->register_texture( t->tex );
-    if ( t->bindless_idx == 0 )
-    {
-        rhi()->texture_destroy( t->tex );
-        ed_logf( ED_LOG_ERROR, "Scene target bindless registration failed" );
-        return false;
-    }
-
-    t->w = w;
-    t->h = h;
-    t->first_frame = true;
+    t->w   = w;
+    t->h   = h;
+    t->cur = 0;
     return true;
 }
 
@@ -146,12 +177,24 @@ static void
 ed_target_destroy( void )
 {
     ed_target_t* t = &g_ed.target;
-    if ( t->bindless_idx == 0 )
+    if ( !t->bindless_idx[ 0 ] && !t->bindless_idx[ 1 ] )
         return;
-    rhi()->device_wait_idle();      /* in-flight frames may still sample the old texture */
-    rhi()->unregister_texture( t->bindless_idx );
-    rhi()->texture_destroy( t->tex );
-    t->bindless_idx = 0;
+    rhi()->device_wait_idle();      /* in-flight frames may still sample the old textures */
+    for ( u32 i = 0; i < 2; i++ )
+    {
+        if ( t->bindless_idx[ i ] )
+        {
+            rhi()->unregister_texture( t->bindless_idx[ i ] );
+            rhi()->texture_destroy( t->tex[ i ] );
+            t->bindless_idx[ i ] = 0;
+            t->tex[ i ] = ( rhi_texture_t ){ 0 };
+        }
+        if ( rhi_handle_valid( t->depth[ i ] ) )
+        {
+            rhi()->texture_destroy( t->depth[ i ] );
+            t->depth[ i ] = ( rhi_texture_t ){ 0 };
+        }
+    }
     t->w = t->h = 0;
 }
 
@@ -169,6 +212,16 @@ ed_viewport_shutdown( void )
 
 /* Between frames: create the target on first size request; on a size change, wait until the
    request settles (drag released) then swap the texture. */
+/* Flip the write/display target: the previous emitted frame's texture stays untouched for the
+   GPU frame still in flight that samples it.  Called by the host ONLY on frames that re-emit
+   the gui (paired with ed_viewport_render) -- on retained/clean frames neither runs, so the
+   displayed texture's content is never touched while referenced. */
+void
+ed_viewport_flip( void )
+{
+    g_ed.target.cur ^= 1u;
+}
+
 void
 ed_viewport_maintain( void )
 {
@@ -180,7 +233,7 @@ ed_viewport_maintain( void )
     if ( w > ED_TARGET_MAX ) w = ED_TARGET_MAX;
     if ( h > ED_TARGET_MAX ) h = ED_TARGET_MAX;
 
-    if ( t->bindless_idx == 0 )
+    if ( t->bindless_idx[ 0 ] == 0 )
     {
         ed_target_create( w, h );
         return;
@@ -204,8 +257,10 @@ ed_viewport_maintain( void )
 /*==============================================================================================
     Scene render -- draw() primitives into the offscreen target.
 
-    draw()'s solid pipeline has no depth test, so the scene painter-sorts: ground + grid
-    first, then entities back-to-front along the view direction.
+    Uses draw()->begin_depth: the offscreen pass carries its own depth buffer, so geometry
+    occludes correctly at any orbit angle with no painter sort and no winding/cull dependency.
+    (This is isolated to the viewport -- GUI and 2D draw() callers still use the depth-less
+    DRAW_MAT_SOLID path.)
 ==============================================================================================*/
 
 static void
@@ -231,23 +286,37 @@ void
 ed_viewport_render( rhi_cmd_t cmd )
 {
     ed_target_t* t = &g_ed.target;
-    if ( t->bindless_idx == 0 )
+    if ( t->bindless_idx[ 0 ] == 0 )
         return;
 
+    u32 cur = t->cur;
+
     rhi()->cmd_image_barrier( cmd, &( rhi_image_barrier_t ){
-        .texture    = t->tex,
-        .old_layout = t->first_frame ? RHI_LAYOUT_UNDEFINED : RHI_LAYOUT_SHADER_READ,
+        .texture    = t->tex[ cur ],
+        .old_layout = t->first_frame[ cur ] ? RHI_LAYOUT_UNDEFINED : RHI_LAYOUT_SHADER_READ,
         .new_layout = RHI_LAYOUT_COLOR_ATTACHMENT,
     }, 1 );
-    t->first_frame = false;
+    /* Depth is transient: cleared every pass, never sampled, never preserved -- so its prior
+       contents are irrelevant and UNDEFINED is always the correct (and cheapest) old layout. */
+    rhi()->cmd_image_barrier( cmd, &( rhi_image_barrier_t ){
+        .texture    = t->depth[ cur ],
+        .old_layout = RHI_LAYOUT_UNDEFINED,
+        .new_layout = RHI_LAYOUT_DEPTH_ATTACHMENT,
+    }, 1 );
+    t->first_frame[ cur ] = false;
 
     rhi()->cmd_bind_bindless( cmd );
     rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
-        .texture  = t->tex,
+        .texture  = t->tex[ cur ],
         .load_op  = RHI_LOAD_OP_CLEAR,
         .store_op = RHI_STORE_OP_STORE,
         .clear    = { 0.09f, 0.10f, 0.12f, 1.0f },
-    }, 1, NULL );
+    }, 1, &( rhi_depth_attachment_t ){
+        .texture     = t->depth[ cur ],
+        .load_op     = RHI_LOAD_OP_CLEAR,
+        .store_op    = RHI_STORE_OP_DISCARD,   /* depth is never read after the pass */
+        .depth_clear = 1.0f,
+    } );
 
     rhi()->cmd_set_viewport( cmd, &( rhi_viewport_t ){
         .x = 0.0f, .y = 0.0f, .width = (f32)t->w, .height = (f32)t->h,
@@ -264,59 +333,30 @@ ed_viewport_render( rhi_cmd_t cmd )
     ed_mat_perspective( proj, g_ed.cam.fov_deg, (f32)t->w / (f32)t->h, 0.1f, 200.0f );
     ed_mat_mul( vp, proj, view );
 
-    draw()->begin( cmd, vp );
+    draw()->begin_depth( cmd, vp );
 
     ed_scene_grid();
 
-    /* Painter sort the entities: farthest along the view direction first. */
-    f32 fwd[ 3 ] = { g_ed.cam.target[ 0 ] - eye[ 0 ],
-                     g_ed.cam.target[ 1 ] - eye[ 1 ],
-                     g_ed.cam.target[ 2 ] - eye[ 2 ] };
-    ed_vec3_norm( fwd );
-
-    i32 order[ ED_MAX_ENTITIES ];
-    f32 depth[ ED_MAX_ENTITIES ];
-    i32 n = 0;
+    /* With a real depth buffer, entities can be emitted in pool order -- no painter sort. */
     for ( i32 i = 0; i < ED_MAX_ENTITIES; i++ )
     {
         const ed_entity_t* e = &g_ed.entities[ i ];
         if ( !e->used || !e->active )
             continue;
-        f32 d[ 3 ] = { e->pos[ 0 ] - eye[ 0 ], e->pos[ 1 ] - eye[ 1 ], e->pos[ 2 ] - eye[ 2 ] };
-        order[ n ] = i;
-        depth[ n ] = ed_vec3_dot( fwd, d );
-        n++;
-    }
-    for ( i32 a = 1; a < n; a++ )                  /* insertion sort, descending depth */
-    {
-        i32 oi = order[ a ];
-        f32 od = depth[ a ];
-        i32 b  = a - 1;
-        while ( b >= 0 && depth[ b ] < od )
-        {
-            order[ b + 1 ] = order[ b ];
-            depth[ b + 1 ] = depth[ b ];
-            b--;
-        }
-        order[ b + 1 ] = oi;
-        depth[ b + 1 ] = od;
-    }
-
-    for ( i32 k = 0; k < n; k++ )
-    {
-        const ed_entity_t* e = &g_ed.entities[ order[ k ] ];
-        bool sel = ( order[ k ] == g_ed.selected );
+        bool sel = ( i == g_ed.selected );
 
         f32 sx = e->scale[ 0 ], sy = e->scale[ 1 ], sz = e->scale[ 2 ];
         if ( e->kind == ED_KIND_LIGHT )  { sx *= 0.5f; sy *= 0.5f; sz *= 0.5f; }
         if ( e->kind == ED_KIND_CAMERA ) { sz *= 1.6f; }
 
-        /* Selection highlight: a slightly larger warm shell behind the entity box. */
+        /* Selection cue: a warm base pad under the entity.  A concentric shell would fully
+           enclose (and with depth, occlude) the box; a footprint pad reads as "selected"
+           without hiding the object. */
         if ( sel )
         {
             const f32 hl[ 4 ] = { 0.95f, 0.75f, 0.20f, 1.0f };
-            draw()->box( e->pos[ 0 ], e->pos[ 1 ], e->pos[ 2 ],
-                         sx * 1.12f, sy * 1.12f, sz * 1.12f, hl );
+            f32 base_y = e->pos[ 1 ] - sy * 0.5f;
+            draw()->box( e->pos[ 0 ], base_y, e->pos[ 2 ], sx * 1.5f, 0.06f, sz * 1.5f, hl );
         }
 
         f32 col[ 4 ] = { e->color[ 0 ], e->color[ 1 ], e->color[ 2 ], e->color[ 3 ] };
@@ -331,7 +371,7 @@ ed_viewport_render( rhi_cmd_t cmd )
     rhi()->cmd_end_rendering( cmd );
 
     rhi()->cmd_image_barrier( cmd, &( rhi_image_barrier_t ){
-        .texture    = t->tex,
+        .texture    = t->tex[ cur ],
         .old_layout = RHI_LAYOUT_COLOR_ATTACHMENT,
         .new_layout = RHI_LAYOUT_SHADER_READ,
     }, 1 );
@@ -358,12 +398,14 @@ ed_viewport_panel( void )
     g_ed.target.want_w = w;
     g_ed.target.want_h = h;
 
-    if ( g_ed.target.bindless_idx && w >= ED_TARGET_MIN && h >= ED_TARGET_MIN )
+    if ( g_ed.target.bindless_idx[ 0 ] && w >= ED_TARGET_MIN && h >= ED_TARGET_MIN )
     {
         gui_vec2_t pos = gui()->cursor_screen_pos();
         gui_rect_t r   = { pos.x, pos.y, (f32)w, (f32)h };
 
-        gui()->image_texture( g_ed.target.bindless_idx, (f32)w, (f32)h, 0 );
+        /* Sample the texture this frame's scene pass writes (t->cur, flipped by the host on
+           emitted frames); the other one belongs to the still-in-flight previous frame. */
+        gui()->image_texture( g_ed.target.bindless_idx[ g_ed.target.cur ], (f32)w, (f32)h, 0 );
 
         /* Camera input -- press must start inside the image; drag then owns the camera until
            release even if the cursor leaves the panel. */
