@@ -22,8 +22,10 @@
     Drag-to-dock: while a FREE window is title-dragged over a dockspace on the same surface,
     dock_drag_detect (called from window_begin_ex) finds the leaf under the cursor, draws a per-node
     5-way chip overlay + a translucent preview of the region the window would take, and records the
-    chip the cursor is over.  On the release edge, dock_drag_commit (from window_end) tabs the window
-    into the leaf (center) or splits the leaf and docks it on a side -- reusing the tree edits in
+    chip the cursor is over.  Hovering the leaf's TAB BAND is a tab drop by itself (the same "merge
+    into these tabs" gesture a floating group's strip offers), no chip aim needed.  On the release
+    edge, dock_drag_commit (from window_end) tabs the window
+    into the leaf (center or strip) or splits the leaf and docks it on a side -- reusing the tree edits in
     gui_dock_core.c (via the public verbs in gui_dock.c: gui_dock_split / gui_dock_window).
     The overlay paints on a reserved z-band above everything (popups sit at 0x80000000).
 
@@ -76,12 +78,17 @@ static struct
 
 } s_dock_drag;
 
-/* Undock-by-tab-drag: a tab press pending the move threshold (mirrors s_titlebar_drag_*). */
+/* Undock-by-tab-drag: a tab press pending the move threshold (mirrors s_titlebar_drag_*).
+   node_id pins the gesture to the strip it started on: every docked node's chrome runs the
+   pending block, and the reorder-vs-undock decision reads THAT chrome's strip band -- another
+   node's chrome (whichever emits first) would test the cursor against the wrong strip and
+   tear the tab out instantly. */
 static struct
 {
-    bool       pending;
-    gui_id_t win_id;          /* window whose tab is held */
-    f32        px, py;          /* press position           */
+    bool            pending;
+    gui_id_t      win_id;     /* window whose tab is held        */
+    gui_dock_id_t node_id;    /* node whose strip owns the press */
+    f32             px, py;     /* press position                  */
 
 } s_dock_tab_drag;
 
@@ -252,11 +259,19 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
             if ( rect_hit( dock_outer_chip_rect( root->rect, (dock_zone_t)z, s, margin ) ) )
                 { outer_zone = (dock_zone_t)z; break; }
 
+    /* Tab-strip drop: the cursor over the leaf's TAB BAND is the "merge into these tabs" gesture
+       -- the same drop a floating group's strip offers -- so it tabs in directly, without having
+       to reach the center chip.  Only offered where a strip is visible (the leaf has tabs). */
+    bool strip_drop = ( outer_zone == DOCK_ZONE_NONE ) && ( leaf->tab_count > 0 )
+                   && ( s_io.mouse_y < leaf->content.y );
+
     /* Edge chips win over the inner 5-way: when the cursor is on an edge chip, that is the intent.
        A NO_SPLIT dockspace offers only the center (tab) chip. */
     i32         zone_last = no_split ? (i32)DOCK_ZONE_CENTER : (i32)DOCK_ZONE_BOTTOM;
     dock_zone_t zone      = DOCK_ZONE_NONE;
-    if ( outer_zone == DOCK_ZONE_NONE )
+    if ( strip_drop )
+        zone = DOCK_ZONE_CENTER;
+    else if ( outer_zone == DOCK_ZONE_NONE )
         for ( i32 z = DOCK_ZONE_CENTER; z <= zone_last; ++z )
             if ( rect_hit( dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g ) ) ) { zone = (dock_zone_t)z; break; }
 
@@ -283,6 +298,22 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         gui_rect_t hr   = dock_zone_region( base, (dock_zone_t)s_dock_drag.zone );
         draw_push_rect_filled ( hr.x, hr.y, hr.w, hr.h, 0, 0, 1, 1, 0, DOCK_OVERLAY_FILL );
         draw_push_rect_outline( hr.x, hr.y, hr.w, hr.h, WIN_BORDER, 0, DOCK_OVERLAY_LINE );
+    }
+
+    /* Strip drop: the hot "tab here" chip sits on the tab band itself (the float-strip visual),
+       so the gesture reads as "join these tabs" rather than pointing at the center chip. */
+    if ( strip_drop )
+    {
+        f32          sh = leaf->content.y - leaf->rect.y;
+        gui_rect_t cr = { leaf->rect.x + leaf->rect.w * 0.5f - s * 0.5f,
+                            leaf->rect.y + ( sh - s ) * 0.5f, s, s };
+        draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+        draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
+        f32 ins = cr.w * 0.28f;
+        draw_set_rounding( 0.0f );   /* small glyph box stays square */
+        draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
+                                WIN_BORDER, 0, COL_TEXT );
+        draw_set_rounding( ROUND_WIDGET );
     }
 
     for ( i32 z = DOCK_ZONE_CENTER; z <= zone_last; ++z )
@@ -520,6 +551,7 @@ dock_window_chrome( gui_dock_node_t* node )
         {
             s_dock_tab_drag.pending = true;
             s_dock_tab_drag.win_id  = node->tabs[ i ];
+            s_dock_tab_drag.node_id = node->id;
             s_dock_tab_drag.px      = s_io.mouse_x;
             s_dock_tab_drag.py      = s_io.mouse_y;
         }
@@ -575,7 +607,7 @@ dock_window_chrome( gui_dock_node_t* node )
         {
             s_dock_tab_drag.pending = false;
         }
-        else
+        else if ( s_dock_tab_drag.node_id == node->id )   /* only the pressed strip's chrome decides */
         {
             gui_id_t wid = s_dock_tab_drag.win_id;
             if ( drag_from_chrome( wid, s_dock_tab_drag.px, s_dock_tab_drag.py,
