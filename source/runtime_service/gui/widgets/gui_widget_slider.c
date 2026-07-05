@@ -1,15 +1,19 @@
 /*==============================================================================================
 
-    runtime_service/gui/widgets/gui_widget_slider.c -- Slider and drag widgets.
+    runtime_service/gui/widgets/gui_widget_slider.c -- Slider, drag, and color-edit widgets.
 
-    All widgets in this file share the drag-value interaction pattern: widget_behavior claims
-    active_id on mouse press (WIDGET_KIND_DRAG), keeping the drag bound to the widget while
+    Every value-editing control here shares the drag-value interaction pattern: widget_behavior
+    claims active_id on mouse press (WIDGET_KIND_DRAG), keeping the drag bound to the widget while
     the cursor sweeps off it.  The displayed value changes live while dragging.
 
         slider_float / slider_float_step / slider_int  -- a horizontal track with a knob;
             the cursor's fraction along the track maps directly to the value range.
-        drag_int  -- no track travel; value changes by cursor displacement from the press
-            anchor (s_drag_anchor_v), so there is no range cap and no knob.
+        drag_int / drag_float / drag_float2/3/4  -- no track travel; value changes by cursor
+            displacement from the press anchor (s_drag_anchor_v / s_drag_anchor_f), so there is
+            no range cap and no knob.  The N-component variants lay equal sub-boxes across the row.
+        color_edit3 / color_edit4  -- an inline [swatch][R/G/B(/A) drag fields] row (RGB or HSV
+            per the color-edit flags) plus a click-to-open picker popup; built from the drag-float
+            boxes above, with color_hsv_to_rgb / color_rgb_to_hsv converting the working copy.
 
     slider_render is the shared visual: track frame, fill bar, knob, and centered value text.
 

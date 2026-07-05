@@ -21,7 +21,7 @@
     nav cursor -- lights the focus ring and takes a synthesized click from an activation.
 
     Included by gui.c after gui_popup.c (so the popup stack + GUI_POPUP_Z_BASE are in scope)
-    and before gui_api.c (so gui_ctx_begin can call nav_new_frame).
+    and before gui_frame.c (so gui_ctx_begin can call nav_new_frame).
 
 ==============================================================================================*/
 // clang-format off

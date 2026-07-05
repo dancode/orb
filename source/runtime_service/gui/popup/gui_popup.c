@@ -25,7 +25,7 @@
     root draw-clip is pushed so the popup escapes the parent window's bounds.
 
     Included by gui.c after gui_widget_window.c (so window_begin_ex is in scope) and before
-    gui_api.c (so gui_ctx_begin can call popup_close_check / popup_apply_modal).
+    gui_frame.c (so gui_ctx_begin can call popup_close_check / popup_apply_modal).
 
 ==============================================================================================*/
 // clang-format off

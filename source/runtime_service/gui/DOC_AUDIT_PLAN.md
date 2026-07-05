@@ -106,9 +106,62 @@ neighboring comment. A chunk rushed into paraphrase-mode makes things worse than
             described a bit/bmp/ttf runtime split + _bmp.c/_ttf.c files that do not exist; the real
             design is a single .orb_font baked-atlas loader (font_tool/FreeType offline).  Memory
             corrected; NO code comment claimed this, so nothing in-tree to fix.
-      - [ ] widgets/
-      - [ ] window/
-      - [ ] popup/
+      - [x] widgets/  DONE 2026-07-04.  1 fix / 6 files (5 fully clean).  The lone drift was a
+            NAVIGATION GAP, not a false claim: gui_widget_slider.c's header presents a structured
+            per-widget breakdown of the file that stops at drag_int -- but the file also holds the
+            whole drag_float / drag_float2/3/4 family AND color_edit3/4 (a ~230-line color picker
+            with HSV/RGB working copy, hover tooltip, and click-to-open picker popup).  Header
+            extended to cover both families + retitled "Slider, drag, and color-edit widgets".
+            - [x] gui_widget.c        (clean; header uses an illustrative "such as" list, not an
+                                        exhaustive enumeration, so unlisted members are not drift;
+                                        cross-refs to gui_widget_window.c [window/] + gui_widget_core.c
+                                        [core/] name the right files; the checkbox/radio one-frame-late
+                                        wants_redraw rationale traces exactly)
+            - [x] gui_widget_slider.c (1: header enumeration missing drag_float* + color_edit* -- fixed)
+            - [x] gui_widget_numeric.c (clean; input_int/float/double/float2-4 all present + in order;
+                                         the last_item save/restore-around-step-buttons rationale holds)
+            - [x] gui_text_edit.c     (clean; exemplary -- undo-ring contract, mouse-capture-via-active_id
+                                        rationale, glyph-level clip note all trace.  Verified: struct is
+                                        exactly 16 bytes [fits GUI_STATE_CAP=24]; gui_clipboard_set in
+                                        gui_input.c; is_item_deactivated_after_edit accessor in gui_ctx_io.c)
+            - [x] gui_widget_draw.c gui_volatile.c  (clean; canvas/draw_text/icon placement + the
+                                        volatile-widget UI-half seam, verified vs gui_backend.h + the
+                                        FUTURE: tag on gui_volatile_end already placed in Phase 2)
+      - [x] window/  DONE 2026-07-04.  2 fixes / 2 files -- both the stale-forward-marker class,
+            both files otherwise exemplary (gui_widget_window.c is the best-documented file in gui:
+            the drag-threshold-vs-double-click rationale, merge-back hysteresis latch, popup-z-band
+            exception, and native-floater screen-coord derivation are all deep WHY prose that traces).
+            - [x] gui_window.c        (1: header cast collapse/scroll/saved-layout as "(later)" but
+                                        win->collapsed + win->scroll are LIVE record fields [used in
+                                        this file].  Verified gui_window_t holds x/y/w/h/z/viewport/
+                                        scroll/collapsed/closed/home_/restore_ etc.  Rewrote to present;
+                                        kept saved-layout-to-disk as a real FUTURE: -- confirmed only
+                                        docked windows serialize [dock/gui_dock_serialize.c], free
+                                        windows persist in-memory only.  s_resize_* attribution to
+                                        core/gui_resize.c + window_nominate_hover->gui_hover_nominate
+                                        [gui_region.c] alias both re-confirmed clean.)
+            - [x] gui_widget_window.c (1: "Phase 1: docked windows reserve no menu bar" -- stale
+                                        phase-numbered marker [docking is complete through phase 4],
+                                        same class as the table Phase-stub fixes in Phase 2.  Converted
+                                        to FUTURE: stating the real invariant -- window_begin_docked
+                                        hard-zeros menubar_rect so GUI_WIN_MENUBAR is ignored on the
+                                        docked path, while the free-float path honors it via mb_h.
+                                        Verified header's "declares no long-lived state of its own":
+                                        all drag/grip/titlebar-threshold statics live in gui_window.c.)
+      - [x] popup/  (2 fixes / 4 files -- both the SAME wrong-file cross-ref, no-keyword drift.
+                     gui_popup.c + gui_nav.c "included by gui.c ... before gui_api.c (so gui_ctx_begin
+                     can call popup_close_check / popup_apply_modal / nav_new_frame)" -- but gui_ctx_begin
+                     was MOVED into gui_frame.c during the frame_begin/ctx_begin split (defined
+                     gui_frame.c:508, the calls at :530-533); gui_api.c holds only the vtable entry
+                     .ctx_begin = gui_ctx_begin.  The binding include constraint is gui_frame.c, not
+                     gui_api.c -> fixed both.  Verified include order (popup files 178-181 precede
+                     gui_frame.c:188 and gui_api.c:192) and every load-bearing cross-ref: s_popups_open /
+                     s_popup_open_count are per-context members via g_ctx (gui_ctx.c:344), nav_item_register
+                     defined gui_widget_core.c:326 + called from widget_behavior:483, GUI_POPUP_Z_BASE =
+                     0x80000000 in gui_internal.h, s_fwd_caps.keyboard_nav gate real.  gui_widget_combo.c +
+                     gui_widget_menu.c fully clean -- exemplary WHY prose (combo was-open toggle guard,
+                     menu_close_chain modal floor, menu_bar clip-widen for hit-test, band inheritance,
+                     off-screen premeasure) all traced.)
       - [ ] dock/
       - [ ] table/
       - [ ] gui_frame.c + gui_api.*
@@ -225,4 +278,42 @@ location claim).
   a stale entry in my OWN memory (project_imgui_font_system named a bit/bmp/ttf split + _bmp/_ttf.c
   files that don't exist; real design is a single .orb_font baked-atlas loader) -- no in-tree comment
   claimed it, so nothing to fix in code.  Comment-only campaign; no build run.  Next chunk: widgets/.
+- 2026-07-04: Phase 3 chunk widgets/ done.  1 fix / 6 files (5 clean).  The chunk's one drift was a
+  NEW class for this campaign -- a navigation GAP rather than a false claim or stale tense: the
+  gui_widget_slider.c header gives a structured per-widget breakdown that was never extended when
+  the drag_float family + color_edit3/4 (a whole ~230-line color picker: HSV/RGB working copy, hover
+  tooltip, click-to-open picker popup) landed in the same file, so a reader scanning the header would
+  never learn color editing lives there.  Header extended + retitled.  Distinction that mattered:
+  gui_widget.c's header uses an illustrative "such as" prose list (not exhaustive) so its unlisted
+  members are NOT drift -- only a structured enumeration that presents itself as the file's contents
+  is on the hook.  gui_text_edit.c is the best-documented widget file (undo ring, mouse capture,
+  glyph clip all traced; struct verified 16 bytes, cross-file accessor attributions confirmed).
+  Comment-only; no build run.  Next chunk: window/.
+- 2026-07-04: Phase 3 chunk window/ done.  2 fixes / 2 files, both the stale-forward-marker class.
+  (1) gui_window.c header cast collapse / scroll / saved-layout state as "(later)" -- but collapse
+  and scroll are LIVE fields on gui_window_t used in that very file; rewrote to present tense, kept
+  only saved-layout-to-disk as a genuine FUTURE: (verified only docked windows serialize, via
+  dock/gui_dock_serialize.c; free windows persist in memory only).  (2) gui_widget_window.c's
+  "Phase 1: docked windows reserve no menu bar" -- a stale phase-numbered marker (docking is complete
+  through phase 4), the same species as the table Phase-stub markers cleaned in Phase 2; converted to
+  a FUTURE: tag stating the real invariant (window_begin_docked hard-zeros menubar_rect, so
+  GUI_WIN_MENUBAR is silently ignored on the docked path while the free-float path honors it).  Both
+  files are otherwise exemplary -- gui_widget_window.c is the best-documented file in gui (drag-vs-
+  double-click threshold, merge-back hysteresis, popup-z-band exception, native-floater screen-coord
+  derivation all deep WHY prose that traces exactly).  Comment-only; no build run.  Next chunk: popup/.
+- 2026-07-04: Phase 3 chunk popup/ done.  2 fixes / 4 files -- and both fixes were the SAME defect in
+  two files: a wrong-file cross-ref (no-keyword drift, the class from the core/ chunk).  gui_popup.c
+  and gui_nav.c both said "included by gui.c ... before gui_api.c (so gui_ctx_begin can call
+  popup_close_check / popup_apply_modal / nav_new_frame)", but gui_ctx_begin was MOVED into gui_frame.c
+  during the frame_begin/ctx_begin split (defined gui_frame.c:508; the four frame-top calls at :530-533).
+  gui_api.c now holds only the vtable entry (.ctx_begin = gui_ctx_begin), so the binding include
+  constraint is gui_frame.c, not gui_api.c -> repointed both headers.  Verified the include order
+  (popup files 178-181 precede gui_frame.c:188 and gui_api.c:192) and every load-bearing cross-ref:
+  s_popups_open / s_popup_open_count are per-context members reached via g_ctx (gui_ctx.c:344, NOT
+  plain statics -- only s_popup_begin_count is), nav_item_register is defined gui_widget_core.c:326 and
+  called from widget_behavior (:483), GUI_POPUP_Z_BASE = 0x80000000u in gui_internal.h, the
+  s_fwd_caps.keyboard_nav feature gate is real.  gui_widget_combo.c + gui_widget_menu.c are fully clean,
+  exemplary WHY prose (combo was-open toggle guard vs popup_close_check-at-frame-top, menu_close_chain's
+  modal floor, the menu_bar clip-widen so bar entries pass rect_hit, band inheritance, off-screen
+  premeasure) all traced.  Comment-only; no build run.  Next chunk: dock/.
 </content>

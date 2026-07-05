@@ -415,7 +415,8 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     draw_set_rounding( 0.0f );
     draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
 
-    /* Phase 1: docked windows reserve no menu bar. */
+    /* FUTURE: docked windows reserve no menu-bar row -- GUI_WIN_MENUBAR is ignored on the docked
+       path (the free-float path in window_begin_ex honors it via mb_h). */
     s_build.menubar_rect = ( gui_rect_t ){ win->x, win->y + title_h, win->w, 0.0f };
 
     /* Open the body over the node's content rect -- the same region machinery a free window uses. */

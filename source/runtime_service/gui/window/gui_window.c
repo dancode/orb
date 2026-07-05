@@ -4,9 +4,11 @@
 
     Windows are keyed by id_hash(title).  On first appearance the registry seeds the record
     from any queued window_set_next_pos / _size (ONCE condition), falling back to a default
-    60x60 origin and 240x320 size.  From then on this registry owns the window's position so
-    it survives across frames -- the foundation for dragging (now) and for collapse / scroll /
-    saved-layout state (later).
+    60x60 origin and 240x320 size.  From then on this registry owns the window's persistent
+    state so it survives across frames: position (dragging), size, collapse, scroll offset, and
+    the closeable-floater re-open geometry all live in the record (gui_window_t, gui.c).
+    FUTURE: per-window saved-layout to disk -- today only docked windows serialize
+    (dock/gui_dock_serialize.c); a free window's geometry persists in memory only.
 
     Drag / resize / scrollbar interaction lives in gui_widget_window.c alongside
     window_begin / window_end, where the layout dimensions (title-bar height, padding) are in
