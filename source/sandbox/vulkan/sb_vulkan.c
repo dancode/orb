@@ -482,14 +482,14 @@ main( int argc, char** argv )
         /* Frame pacing.  Default: spin at ~250 Hz (game cadence).  Idle-skip on: mirror the editor
            host -- block on OS input so a static UI costs no frames, but while any widget animates
            (any_redraw) keep running at ~60 Hz so the transition finishes before sleeping on input. */
-        // if ( idle_skip )
-        // {
-        //     if ( any_redraw )
-        //         sys_sleep_milliseconds( 16 );        /* animating: ~60fps until it settles */
-        //     else
-        //         sys_wait_for_os_events_ms( 500 );    /* idle: wake on input (500 ms safety cap) */
-        // }
-        // else
+            if ( idle_skip )
+            {
+                if ( any_redraw )
+                    sys_sleep_milliseconds( 16 );        /* animating: ~60fps until it settles */
+                else
+                    sys_wait_for_os_events_ms( 500 );    /* idle: wake on input (500 ms safety cap) */
+            }
+            else
             sys_sleep_milliseconds( 4 );
     }
 
