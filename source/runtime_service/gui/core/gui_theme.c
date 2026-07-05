@@ -35,8 +35,6 @@
     Defaults match a 12px em.
 ==============================================================================================*/
 
-/* gui_metrics_t (the layout metric record) is defined in gui_internal.h. */
-
 /* Font type size (em) used by layout_compute; updated by font_load(). */
 static u32 s_font_size = 0;
 

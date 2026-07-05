@@ -45,8 +45,6 @@ static f32 s_sb_grab_off = 0.0f;
     with no measured size.
 ----------------------------------------------------------------------------------------------*/
 
-/* gui_region_t (persistent child_begin scroll + content-size state) is defined in gui_internal.h. */
-
 static gui_region_t*
 region_get( gui_id_t id )
 {

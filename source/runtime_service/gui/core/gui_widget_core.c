@@ -277,9 +277,6 @@ draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
     Interaction state machine
 ----------------------------------------------------------------------------------------------*/
 
-/* widget_kind_t (interaction class) and widget_state_t (per-frame interaction result) are
-   defined in gui_internal.h. */
-
 /* Auto-repeat cadence for a held button (GUI_ITEM_BUTTON_REPEAT): the pause before the first
    repeat, then the interval between repeats.  Seconds; matches the familiar key-repeat feel. */
 

@@ -17,8 +17,6 @@
 #include "runtime_service/gui/gui_internal.h"   /* gui_io_t, GUI_KEY_COUNT */
 // clang-format off
 
-/* The IO snapshot type (gui_io_t) and GUI_KEY_COUNT are defined in gui_internal.h. */
-
 /* Compile-time check: GUI_KEY_COUNT must be large enough to index all app keys. */
 ORB_STATIC_ASSERT( APP_KEY_COUNT <= GUI_KEY_COUNT,
                    "GUI_KEY_COUNT too small for APP_KEY_COUNT" );
