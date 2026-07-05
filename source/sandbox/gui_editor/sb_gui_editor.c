@@ -11,8 +11,9 @@
 
     Unity build: this file is the only compilation unit; it includes the ed_* units below.
 
-    Controls (Scene panel, UE-style):  RMB look + WASD/QE fly (Shift fast, wheel = speed),
-    RMB+LMB or MMB pan, Alt+LMB orbit, Alt+RMB dolly, wheel zoom.  ESC quits.
+    Controls (Scene panel, UE-style, see ed_viewcam.h):  RMB look + WASD/QE/arrows fly
+    (Shift boost, wheel = speed), LMB drive / click to select, RMB+LMB or MMB pan,
+    Alt+LMB orbit, Alt+RMB dolly, wheel zoom.  ESC quits.
 
 ==============================================================================================*/
 
@@ -35,6 +36,7 @@
 
 /* Unity units -- order matters only in that ed_engine.c defines g_ed for the rest. */
 #include "ed_engine.c"
+#include "ed_viewcam.c"
 #include "ed_viewport.c"
 #include "ed_panels.c"
 #include "ed_shell.c"
@@ -144,7 +146,7 @@ main( int argc, char** argv )
         ed_play();
 
     printf( "[sb_gui_editor] running -- ESC to quit\n" );
-    printf( "[sb_gui_editor] Scene panel: RMB look + WASD fly, RMB+LMB/MMB pan, Alt+LMB orbit\n" );
+    printf( "[sb_gui_editor] Scene panel: RMB look + WASD fly, LMB drive/select, RMB+LMB/MMB pan, Alt+LMB orbit\n" );
 
     /* ------------------------------------------------------------------------------ */
     /* Main loop                                                                       */

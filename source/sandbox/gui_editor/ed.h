@@ -16,6 +16,7 @@
 
 #include "orb.h"
 #include "runtime_service/rhi/rhi.h"
+#include "ed_viewcam.h"
 
 // clang-format off
 
@@ -104,19 +105,8 @@ typedef enum
 } ed_mode_t;
 
 /*==============================================================================================
-    Scene camera + viewport render target
+    Scene viewport render target (camera is a viewcam_t -- see ed_viewcam.h)
 ==============================================================================================*/
-
-typedef struct
-{
-    f32  yaw;                     // radians around Y
-    f32  pitch;                   // radians; clamped shy of the poles
-    f32  dist;                    // orbit distance from target
-    f32  target[ 3 ];
-    f32  fov_deg;
-    bool pan_invert;              // flip pan axes back to grab-the-world (drag moves the scene)
-
-} ed_camera_t;
 
 /* Double-buffered offscreen target: the CPU records up to RHI_MAX_FRAMES_IN_FLIGHT frames
    ahead, so a single texture would be rewritten by frame N+1's scene pass while frame N's gui
@@ -155,7 +145,7 @@ typedef struct
     bool           log_show[ 3 ];              // per-level filter
     f64            start_time;
 
-    ed_camera_t cam;
+    viewcam_t   cam;                           // Scene viewport camera controller
     ed_target_t target;
 
     /* panel visibility (Window menu toggles) */

@@ -92,16 +92,6 @@ ed_mat_lookat( f32 out[ 16 ], const f32 eye[ 3 ], const f32 target[ 3 ], const f
     out[ 15 ] = 1.0f;
 }
 
-static void
-ed_camera_eye( const ed_camera_t* c, f32 eye[ 3 ] )
-{
-    f32 cp = cosf( c->pitch ), sp = sinf( c->pitch );
-    f32 cy = cosf( c->yaw ),   sy = sinf( c->yaw );
-    eye[ 0 ] = c->target[ 0 ] + c->dist * cp * cy;
-    eye[ 1 ] = c->target[ 1 ] + c->dist * sp;
-    eye[ 2 ] = c->target[ 2 ] + c->dist * cp * sy;
-}
-
 /*==============================================================================================
     Offscreen target lifecycle
 ==============================================================================================*/
@@ -326,7 +316,7 @@ ed_viewport_render( rhi_cmd_t cmd )
 
     /* Camera view-projection. */
     f32 eye[ 3 ];
-    ed_camera_eye( &g_ed.cam, eye );
+    viewcam_eye( &g_ed.cam, eye );
     f32 up[ 3 ] = { 0.0f, 1.0f, 0.0f };
     f32 view[ 16 ], proj[ 16 ], vp[ 16 ];
     ed_mat_lookat( view, eye, g_ed.cam.target, up );
@@ -378,7 +368,86 @@ ed_viewport_render( rhi_cmd_t cmd )
 }
 
 /*==============================================================================================
-    Scene panel -- the image + UE-style look/fly/pan/orbit camera input over it.
+    Click-select: cursor ray vs entity bounds.
+==============================================================================================*/
+
+/* Slab-test a ray against an axis-aligned box; returns the near hit distance or -1. */
+static f32
+ed_ray_aabb( const f32 ro[ 3 ], const f32 rd[ 3 ], const f32 center[ 3 ], const f32 half[ 3 ] )
+{
+    f32 tmin = 0.0f, tmax = 1e9f;
+    for ( i32 i = 0; i < 3; i++ )
+    {
+        f32 lo = center[ i ] - half[ i ], hi = center[ i ] + half[ i ];
+        if ( fabsf( rd[ i ] ) < 1e-8f )
+        {
+            if ( ro[ i ] < lo || ro[ i ] > hi )
+                return -1.0f;
+            continue;
+        }
+        f32 t0 = ( lo - ro[ i ] ) / rd[ i ];
+        f32 t1 = ( hi - ro[ i ] ) / rd[ i ];
+        if ( t0 > t1 ) { f32 t = t0; t0 = t1; t1 = t; }
+        if ( t0 > tmin ) tmin = t0;
+        if ( t1 < tmax ) tmax = t1;
+        if ( tmin > tmax )
+            return -1.0f;
+    }
+    return tmin;
+}
+
+/* Pick the nearest entity under panel-space pixel (px,py); empty space clears the selection.
+   Bounds mirror the render's per-kind scale tweaks so what you see is what you hit. */
+static void
+ed_viewport_pick( f32 px, f32 py, gui_rect_t r )
+{
+    f32 ro[ 3 ], fwd[ 3 ], right[ 3 ], up[ 3 ];
+    viewcam_eye  ( &g_ed.cam, ro );
+    viewcam_basis( &g_ed.cam, fwd, right, up );
+
+    /* Pixel -> view ray: ndc in [-1,1], scaled by the frustum half-extents at unit depth.
+       Screen y grows downward, so +ndy tilts the ray down (-up). */
+    f32 th  = tanf( g_ed.cam.fov_deg * 0.5f * 3.14159265f / 180.0f );
+    f32 ndx = ( ( px - r.x ) / r.w ) * 2.0f - 1.0f;
+    f32 ndy = ( ( py - r.y ) / r.h ) * 2.0f - 1.0f;
+    f32 kx  = ndx * th * ( r.w / r.h );
+    f32 ky  = -ndy * th;
+
+    f32 rd[ 3 ];
+    for ( i32 i = 0; i < 3; i++ )
+        rd[ i ] = fwd[ i ] + right[ i ] * kx + up[ i ] * ky;
+    ed_vec3_norm( rd );
+
+    i32 best   = -1;
+    f32 best_t = 1e9f;
+    for ( i32 i = 0; i < ED_MAX_ENTITIES; i++ )
+    {
+        const ed_entity_t* e = &g_ed.entities[ i ];
+        if ( !e->used || !e->active )
+            continue;
+
+        f32 half[ 3 ] = { e->scale[ 0 ] * 0.5f, e->scale[ 1 ] * 0.5f, e->scale[ 2 ] * 0.5f };
+        if ( e->kind == ED_KIND_LIGHT )  { half[ 0 ] *= 0.5f; half[ 1 ] *= 0.5f; half[ 2 ] *= 0.5f; }
+        if ( e->kind == ED_KIND_CAMERA ) { half[ 2 ] *= 1.6f; }
+
+        f32 t = ed_ray_aabb( ro, rd, e->pos, half );
+        if ( t >= 0.0f && t < best_t )
+        {
+            best_t = t;
+            best   = i;
+        }
+    }
+
+    if ( best != g_ed.selected )
+    {
+        g_ed.selected = best;
+        if ( best >= 0 )
+            ed_logf( ED_LOG_INFO, "Selected '%s'", g_ed.entities[ best ].name );
+    }
+}
+
+/*==============================================================================================
+    Scene panel -- the image + the viewcam controller (see ed_viewcam.h for the gesture set).
 ==============================================================================================*/
 
 void
@@ -407,151 +476,42 @@ ed_viewport_panel( void )
            emitted frames); the other one belongs to the still-in-flight previous frame. */
         gui()->image_texture( g_ed.target.bindless_idx[ g_ed.target.cur ], (f32)w, (f32)h, 0 );
 
-        /* Camera input, UE-style -- a press must start inside the image; a captured button then
-           owns the camera until release even if the cursor leaves the panel.  Buttons capture
-           independently and the gesture is re-derived each frame from what is held, so RMB
-           look upgrades to RMB+LMB pan mid-drag and back:
-
-               RMB drag             look around (eye pinned, aim turns)
-               RMB held + WASD      fly camera-relative (Q/E down/up, Shift = fast,
-                                    wheel = fly speed)
-               RMB + LMB drag       pan (track) in the view plane
-               MMB drag             pan
-               Alt + LMB drag       orbit the focus point
-               Alt + RMB drag       dolly (drag toward/away from the focus point)
-               wheel                zoom the orbit distance */
-        static bool s_cap_l = false, s_cap_r = false, s_cap_m = false;
-        static f32  s_mx, s_my;
-        static f32  s_fly_speed = 8.0f;    /* units/sec; tuned with the wheel while flying */
-
+        /* Camera input: snapshot the gui io into the viewcam controller (ed_viewcam.h owns the
+           gesture grammar and the motion feel); WASD and the arrow keys both map to the move
+           axes, Q/E to down/up.  A clean left click comes back out as the select hook. */
         f32 mx, my;
         gui()->get_mouse_pos( &mx, &my );
-        bool hovered = gui()->is_mouse_hovering_rect( r );
-        bool alt     = gui()->is_key_down( APP_KEY_LALT ) || gui()->is_key_down( APP_KEY_RALT );
-        bool was_cap = s_cap_l || s_cap_r || s_cap_m;
 
-        /* LMB only matters combined (RMB pan chord / Alt orbit), so it only captures in those
-           shapes -- a plain left click stays free for future picking.  Chords also form in
-           either order: RMB joining a held LMB adopts it into the capture. */
-        if ( hovered && gui()->is_mouse_clicked( APP_MOUSE_RIGHT ) )
-        {
-            s_cap_r = true;
-            if ( gui()->is_mouse_down( APP_MOUSE_LEFT ) ) s_cap_l = true;
-        }
-        if ( hovered && gui()->is_mouse_clicked( APP_MOUSE_LEFT ) && ( alt || s_cap_r ) )
-            s_cap_l = true;
-        if ( hovered && gui()->is_mouse_clicked( APP_MOUSE_MIDDLE ) )
-            s_cap_m = true;
-        if ( !gui()->is_mouse_down( APP_MOUSE_LEFT   ) ) s_cap_l = false;
-        if ( !gui()->is_mouse_down( APP_MOUSE_RIGHT  ) ) s_cap_r = false;
-        if ( !gui()->is_mouse_down( APP_MOUSE_MIDDLE ) ) s_cap_m = false;
-        if ( !was_cap && ( s_cap_l || s_cap_r || s_cap_m ) ) { s_mx = mx; s_my = my; }
+        viewcam_input_t vin = {
+            .dt          = g_ed.frame_dt,
+            .mouse_x     = mx,
+            .mouse_y     = my,
+            .wheel       = gui()->get_mouse_wheel(),
+            .hovered     = gui()->is_mouse_hovering_rect( r ),
+            .lmb         = gui()->is_mouse_down( APP_MOUSE_LEFT ),
+            .rmb         = gui()->is_mouse_down( APP_MOUSE_RIGHT ),
+            .mmb         = gui()->is_mouse_down( APP_MOUSE_MIDDLE ),
+            .lmb_clicked = gui()->is_mouse_clicked( APP_MOUSE_LEFT ),
+            .rmb_clicked = gui()->is_mouse_clicked( APP_MOUSE_RIGHT ),
+            .mmb_clicked = gui()->is_mouse_clicked( APP_MOUSE_MIDDLE ),
+            .alt         = gui()->is_key_down( APP_KEY_LALT )   || gui()->is_key_down( APP_KEY_RALT ),
+            .shift       = gui()->is_key_down( APP_KEY_LSHIFT ) || gui()->is_key_down( APP_KEY_RSHIFT ),
+            .key_fwd     = gui()->is_key_down( APP_KEY_W ) || gui()->is_key_down( APP_KEY_UP ),
+            .key_back    = gui()->is_key_down( APP_KEY_S ) || gui()->is_key_down( APP_KEY_DOWN ),
+            .key_left    = gui()->is_key_down( APP_KEY_A ) || gui()->is_key_down( APP_KEY_LEFT ),
+            .key_right   = gui()->is_key_down( APP_KEY_D ) || gui()->is_key_down( APP_KEY_RIGHT ),
+            .key_up      = gui()->is_key_down( APP_KEY_E ),
+            .key_down    = gui()->is_key_down( APP_KEY_Q ),
+        };
+        viewcam_update( &g_ed.cam, &vin );
 
-        /* Camera basis from the orbit parameters: off points target->eye, forward eye->target. */
-        f32 cp = cosf( g_ed.cam.pitch ), sp = sinf( g_ed.cam.pitch );
-        f32 cy = cosf( g_ed.cam.yaw ),   sy = sinf( g_ed.cam.yaw );
-        f32 off  [ 3 ] = { cp * cy, sp, cp * sy };
-        f32 fwd  [ 3 ] = { -off[ 0 ], -off[ 1 ], -off[ 2 ] };
-        f32 right[ 3 ];
-        ed_vec3_cross( right, fwd, ( f32[ 3 ] ){ 0.0f, 1.0f, 0.0f } );
-        ed_vec3_norm( right );
-        f32 upv[ 3 ];
-        ed_vec3_cross( upv, right, fwd );
-
-        f32 dx = mx - s_mx, dy = my - s_my;
-        if ( ( dx != 0.0f || dy != 0.0f ) && ( s_cap_l || s_cap_r || s_cap_m ) )
-        {
-            if ( s_cap_l && s_cap_r )
-            {
-                /* Pan: cursor-follow (drag right moves the view right), scaled with distance;
-                   pan_invert flips both axes back to grab-the-world. */
-                f32 k = g_ed.cam.dist * 0.0016f * ( g_ed.cam.pan_invert ? -1.0f : 1.0f );
-                for ( i32 i = 0; i < 3; i++ )
-                    g_ed.cam.target[ i ] += ( right[ i ] * dx - upv[ i ] * dy ) * k;
-            }
-            else if ( s_cap_r && alt )
-            {
-                /* Dolly: drag down/right backs away from the focus point. */
-                g_ed.cam.dist *= 1.0f + ( dx + dy ) * 0.003f;
-            }
-            else if ( s_cap_r )
-            {
-                /* Look around: the eye stays pinned, yaw/pitch re-aim, the focus point swings. */
-                f32 eye[ 3 ];
-                ed_camera_eye( &g_ed.cam, eye );
-                g_ed.cam.yaw   += dx * 0.005f;
-                g_ed.cam.pitch += dy * 0.005f;
-                if ( g_ed.cam.pitch >  1.50f ) g_ed.cam.pitch =  1.50f;
-                if ( g_ed.cam.pitch < -1.50f ) g_ed.cam.pitch = -1.50f;
-                f32 ncp = cosf( g_ed.cam.pitch ), nsp = sinf( g_ed.cam.pitch );
-                f32 ncy = cosf( g_ed.cam.yaw ),   nsy = sinf( g_ed.cam.yaw );
-                g_ed.cam.target[ 0 ] = eye[ 0 ] - g_ed.cam.dist * ncp * ncy;
-                g_ed.cam.target[ 1 ] = eye[ 1 ] - g_ed.cam.dist * nsp;
-                g_ed.cam.target[ 2 ] = eye[ 2 ] - g_ed.cam.dist * ncp * nsy;
-            }
-            else if ( s_cap_l && alt )
-            {
-                /* Orbit the focus point (the classic Alt-orbit). */
-                g_ed.cam.yaw   += dx * 0.008f;
-                g_ed.cam.pitch += dy * 0.008f;
-                if ( g_ed.cam.pitch >  1.50f ) g_ed.cam.pitch =  1.50f;
-                if ( g_ed.cam.pitch < -1.50f ) g_ed.cam.pitch = -1.50f;
-            }
-            else if ( s_cap_m )
-            {
-                /* Pan, same as the chord. */
-                f32 k = g_ed.cam.dist * 0.0016f * ( g_ed.cam.pan_invert ? -1.0f : 1.0f );
-                for ( i32 i = 0; i < 3; i++ )
-                    g_ed.cam.target[ i ] += ( right[ i ] * dx - upv[ i ] * dy ) * k;
-            }
-        }
-        if ( s_cap_l || s_cap_r || s_cap_m ) { s_mx = mx; s_my = my; }
-
-        /* WASD fly while RMB is held: moving the eye is moving the focus point -- the orbit
-           offset rides along unchanged. */
-        if ( s_cap_r && !alt )
-        {
-            f32 mv[ 3 ] = { 0.0f, 0.0f, 0.0f };
-            if ( gui()->is_key_down( APP_KEY_W ) ) for ( i32 i = 0; i < 3; i++ ) mv[ i ] += fwd  [ i ];
-            if ( gui()->is_key_down( APP_KEY_S ) ) for ( i32 i = 0; i < 3; i++ ) mv[ i ] -= fwd  [ i ];
-            if ( gui()->is_key_down( APP_KEY_D ) ) for ( i32 i = 0; i < 3; i++ ) mv[ i ] += right[ i ];
-            if ( gui()->is_key_down( APP_KEY_A ) ) for ( i32 i = 0; i < 3; i++ ) mv[ i ] -= right[ i ];
-            if ( gui()->is_key_down( APP_KEY_E ) ) mv[ 1 ] += 1.0f;
-            if ( gui()->is_key_down( APP_KEY_Q ) ) mv[ 1 ] -= 1.0f;
-
-            if ( mv[ 0 ] != 0.0f || mv[ 1 ] != 0.0f || mv[ 2 ] != 0.0f )
-            {
-                ed_vec3_norm( mv );
-                f32 spd = s_fly_speed;
-                if ( gui()->is_key_down( APP_KEY_LSHIFT ) || gui()->is_key_down( APP_KEY_RSHIFT ) )
-                    spd *= 4.0f;
-                for ( i32 i = 0; i < 3; i++ )
-                    g_ed.cam.target[ i ] += mv[ i ] * spd * g_ed.frame_dt;
-            }
-        }
-
-        /* Wheel: fly speed while flying, orbit-distance zoom otherwise. */
-        f32 wheel = ( hovered || s_cap_r ) ? gui()->get_mouse_wheel() : 0.0f;
-        if ( wheel != 0.0f )
-        {
-            if ( s_cap_r && !alt )
-            {
-                s_fly_speed *= ( wheel > 0.0f ) ? 1.25f : 0.80f;
-                if ( s_fly_speed <  0.5f ) s_fly_speed = 0.5f;
-                if ( s_fly_speed > 80.0f ) s_fly_speed = 80.0f;
-            }
-            else
-            {
-                g_ed.cam.dist *= ( wheel > 0.0f ) ? 0.90f : 1.11f;
-            }
-        }
-        if ( g_ed.cam.dist <  2.0f )  g_ed.cam.dist = 2.0f;
-        if ( g_ed.cam.dist > 80.0f )  g_ed.cam.dist = 80.0f;
+        if ( g_ed.cam.click )
+            ed_viewport_pick( g_ed.cam.click_x, g_ed.cam.click_y, r );
 
         /* Overlay readout, top-left over the image. */
         static const char* mode_names[] = { "EDIT", "PLAY", "PAUSED" };
         char ov[ 128 ];
-        snprintf( ov, sizeof( ov ), " %s   %dx%d   RMB look+WASD  RMB+LMB pan  Alt+LMB orbit",
+        snprintf( ov, sizeof( ov ), " %s   %dx%d   RMB look+WASD  LMB drive/select  RMB+LMB pan  Alt+LMB orbit",
                   mode_names[ g_ed.mode ], g_ed.target.w, g_ed.target.h );
         gui()->draw_text_in( ( gui_rect_t ){ r.x + 4, r.y + 2, r.w - 8, gui()->line_h() },
                              GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,

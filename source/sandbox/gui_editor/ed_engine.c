@@ -221,10 +221,7 @@ ed_engine_init( void )
     g_ed.show_hierarchy = g_ed.show_inspector = g_ed.show_console
                         = g_ed.show_assets    = g_ed.show_viewport = true;
 
-    g_ed.cam.yaw     = 0.7f;
-    g_ed.cam.pitch   = 0.5f;
-    g_ed.cam.dist    = 14.0f;
-    g_ed.cam.fov_deg = 55.0f;
+    viewcam_init( &g_ed.cam );    /* defaults already frame the demo scene */
 
     /* Demo scene: a ground slab, a ring of orbiting crates, a spinning centerpiece, lights. */
     struct { ed_kind_t kind; const char* name; f32 x, y, z; f32 s; f32 r, g, b;
