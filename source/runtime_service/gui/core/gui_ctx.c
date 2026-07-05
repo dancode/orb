@@ -22,14 +22,15 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
-/* gui_window_t is defined early in gui.c (it is embedded by value in the context below);
-   s_build.cur_win points at a pool record so window_end can write scroll_y / content_h back. */
+/* gui_window_t is defined in gui_internal.h (the shared type layer); it is embedded by value in
+   gui_context_t as the pool-full scratch fallback, and the window pool is reached through g_ctx.
+   s_build.cur_win points at a pool record so window_end can write scroll / content extent back. */
 
 /* Ambient interaction state -- the one user's live hover / active / focus, persisting across
-   frames.  There is one pointer, one keyboard, one mouse, so none of this is ever duplicated per
-   viewport: when the multi-context model lands this stays a single global the focused context is
-   bound to (an adapter), never per-context state.  Tier: ambient singular.  See the three-tier
-   note in gui.c. */
+   frames.  There is one pointer, one keyboard, one mouse, so none of this is duplicated per
+   viewport or per context: it stays a single global shared by every context.  Listening contexts
+   contribute hover / active nominations into it during their emit (multiple may listen at once).
+   Tier: ambient singular.  See ARCHITECTURE.md sec 1 (state tiers). */
 
 static struct
 {
@@ -368,15 +369,13 @@ static u32           s_popup_begin_count;                 // current nesting dep
 
 /* gui_state_slot_t (one keyed-state-pool slot) is defined in gui_internal.h. */
 
-/* ---- First slice of per-context retained state ----
-   The keyed state pool and the frame clock that ages it are the first members of what will become
-   gui_context_t.  They move together because the clock only has meaning relative to the pool it
-   stamps -- and, more pointedly, the clock must advance per context, not per app-frame: a context
-   not rebuilt on a given frame must not tick, or its live entries would read as cold and be
-   reclaimed (losing scroll / open state) while it is merely hidden.  Window / popup / combo
-   "appearing" detection keys off the same per-context clock for the same reason.  Bundling them now
-   makes the eventual lift into gui_context_t a regrouping, not a rewrite.  Tier: per-context
-   retained. */
+/* ---- Per-context retained state: the keyed state pool + its frame clock (gui_retained_t) ----
+   These are grouped as gui_retained_t, the first member of gui_context_t (defined in
+   gui_internal.h).  They belong together because the clock only has meaning relative to the pool it
+   stamps -- and, more pointedly, the clock advances per context, not per app-frame: a context not
+   rebuilt on a given frame must not tick, or its live entries would read as cold and be reclaimed
+   (losing scroll / open state) while it is merely hidden.  Window / popup / combo "appearing"
+   detection keys off the same per-context clock for the same reason.  Tier: per-context retained. */
 
 /* gui_retained_t (id salt, frame clock, keyed state pool) is defined in gui_internal.h. */
 
@@ -398,8 +397,9 @@ static u32           s_popup_begin_count;                 // current nesting dep
 
 /* gui_context_t (the bound per-context retained state) is defined in gui_internal.h. */
 
-/* Context pool.  Slot 0 is always the default context (bound at init, never freed).  Slots 1..N are
-   secondary contexts allocated by gui_ctx_create.  g_ctx is the one indirection every retained
+/* Context pool.  Slot 0 is always the default context (bound at init; never destroyed by
+   ctx_destroy at runtime, freed only at shutdown).  Slots 1..N are secondary contexts allocated by
+   gui_ctx_create.  g_ctx is the one indirection every retained
    access goes through; switching contexts is a single pointer assignment (ctx_bind).
    Each context carries a `listening` flag; only listening contexts receive hover/click/nav input. */
 
@@ -407,8 +407,9 @@ static u32           s_popup_begin_count;                 // current nesting dep
 
 /* Pool of context pointers.  Slot 0 = default context (heap-allocated at init, freed at shutdown).
    Slots 1..N are secondary contexts returned by ctx_create.  All slots use the same block layout. */
-static gui_context_t* s_ctx_pool      [ GUI_CTX_POOL_MAX ];
-static u32              s_ctx_pool_count;   /* live slot count; always >= 1 after init */
+
+static gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
+static u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
 
 static gui_context_t* g_ctx = NULL;   /* bound context */
 
