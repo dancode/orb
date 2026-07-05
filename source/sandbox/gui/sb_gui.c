@@ -843,6 +843,12 @@ main( int argc, char** argv )
             printf( "[sb_gui] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
         }
 
+        /* M toggles memory stats overlay: shows allocation sizes and usage. */
+        if ( app()->key_pressed( APP_KEY_M ) )
+        {
+            gui_print_mem_stats();
+        }       
+
         /* F10 toggles the pipeline dashboard: a dockable/tear-off window visualizing the render
         backend (slot memory maps, frames-in-flight uploads, draw batches, buffer usage). */
         if ( app()->key_pressed( APP_KEY_F10 ) )

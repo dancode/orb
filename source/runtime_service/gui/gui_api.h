@@ -55,8 +55,9 @@ typedef struct gui_api_s
     void                ( *shutdown  )( void );
     u32                 ( *font_load )( const char* path );
 
-    /* GPU resource memory currently held by gui, in bytes (buffers + atlases).
-        print_mem_stats() dumps the same breakdown to stdout. */
+    /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
+       backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
+       bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */
 
     gui_mem_stats_t     ( *mem_stats       )( void );
     void                ( *print_mem_stats )( void );

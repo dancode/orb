@@ -685,6 +685,7 @@ typedef struct gui_context_t
     void*               _alloc;             // the single ctx_alloc_slot malloc backing this header + all
                                             // pool arrays; freed at teardown. Non-NULL for every context,
                                             // slot 0 included (freed at shutdown; secondaries at ctx_destroy)
+    u32                 _alloc_size;        // byte size of the _alloc block; reported by gui_mem_stats()
 
 } gui_context_t;
 

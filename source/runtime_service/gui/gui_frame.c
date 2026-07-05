@@ -130,18 +130,84 @@ gui_shutdown( void )
 
 /*==============================================================================================
     Memory Stats
+
+    A full accounting of the gui system's resident footprint, split by where it lives (GPU device
+    memory / fixed CPU .bss / per-context CPU heap).  The backend fills its own buckets through
+    gui_render_memory (GPU buffers + the fixed backend buffers); this frontend owns the context
+    pool, so it counts the live GPU surfaces to scale the geometry buffers and sums the per-context
+    malloc blocks for the heap total.  See gui_mem_stats_t (gui.h) for the bucket meanings.
 ==============================================================================================*/
 
 gui_mem_stats_t
 gui_mem_stats( void )
 {
-    return gui_render_memory();
+    /* Count live GPU surfaces across every context (a viewport is live once it owns geometry
+       buffers) so the backend can scale the per-surface VB/IB by the true surface count -- the
+       old report assumed a single surface and undercounted every floater / secondary window. */
+    u32 live_viewports = 0;
+    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
+    {
+        gui_context_t* ctx = s_ctx_pool[ i ];
+        if ( !ctx ) continue;
+        for ( u32 v = 0; v < ctx->max_viewports; ++v )
+            if ( rhi_handle_valid( ctx->viewports[ v ].vb ) )
+                ++live_viewports;
+    }
+
+    /* Backend fills GPU + CPU .bss; frontend adds the CPU-heap context blocks and the totals. */
+    gui_mem_stats_t s = gui_render_memory( live_viewports );
+
+    /* CPU heap: one malloc block per live context (recorded at allocation as _alloc_size). */
+    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
+    {
+        gui_context_t* ctx = s_ctx_pool[ i ];
+        if ( !ctx ) continue;
+        s.cpu_context_bytes += ctx->_alloc_size;
+        ++s.context_count;
+    }
+    s.cpu_dynamic_total = s.cpu_context_bytes;
+
+    s.total_bytes = s.gpu_total + s.cpu_static_total + s.cpu_dynamic_total;
+    return s;
 }
 
+/* Dump the full breakdown to stdout as a sectioned table: GPU / CPU static / CPU heap, each with
+   its own subtotal, then the grand total.  Bytes and KiB side by side so small (font glyph tables)
+   and large (geometry buffers) buckets are both legible at a glance. */
 void
 gui_print_mem_stats( void )
 {
-    gui_render_print_memory();
+    gui_mem_stats_t s = gui_mem_stats();
+    const f32 kb = 1024.0f;
+
+    #define GUI_MEM_ROW( label, bytes ) \
+        printf( "  %-22s %10u B  (%8.1f KB)\n", (label), (u32)(bytes), (u32)(bytes) / kb )
+
+    printf( "[gui] memory usage -- full breakdown:\n" );
+
+    printf( "  -- GPU device (%u live surface%s) ------------------------\n",
+            s.viewport_count, s.viewport_count == 1u ? "" : "s" );
+    GUI_MEM_ROW( "vertex buffers",   s.gpu_vertex_bytes  );
+    GUI_MEM_ROW( "index buffers",    s.gpu_index_bytes   );
+    GUI_MEM_ROW( "font atlas texture", s.gpu_texture_bytes );
+    GUI_MEM_ROW( "  GPU subtotal",   s.gpu_total         );
+
+    printf( "  -- CPU static (.bss, fixed) ----------------------------\n" );
+    GUI_MEM_ROW( "draw command list",  s.cpu_drawlist_bytes );
+    GUI_MEM_ROW( "tessellation stage", s.cpu_tess_bytes     );
+    GUI_MEM_ROW( "retained cache",     s.cpu_cache_bytes    );
+    GUI_MEM_ROW( "font registry",      s.cpu_font_bytes     );
+    GUI_MEM_ROW( "  CPU static subtotal", s.cpu_static_total );
+
+    printf( "  -- CPU heap (%u context%s) -----------------------------\n",
+            s.context_count, s.context_count == 1u ? "" : "s" );
+    GUI_MEM_ROW( "context blocks",        s.cpu_context_bytes );
+    GUI_MEM_ROW( "  CPU heap subtotal",   s.cpu_dynamic_total );
+
+    printf( "  --------------------------------------------------------\n" );
+    GUI_MEM_ROW( "TOTAL", s.total_bytes );
+
+    #undef GUI_MEM_ROW
 }
 
 /*==============================================================================================

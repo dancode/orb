@@ -1215,15 +1215,46 @@ typedef struct
 #define GUI_MAX_CLIP_RECTS 64                   /* per-frame clip table entries; u8 index so max is 256 */
 
 /*==============================================================================================
-    GPU resource memory usage (bytes), reported by gui()->mem_stats().
+    Memory usage breakdown (bytes), reported by gui()->mem_stats().
+
+    A full accounting of what the gui system holds, split by WHERE it lives:
+
+      - GPU     : device memory -- per-viewport geometry buffers + font atlas textures.  Dynamic:
+                  created at init / viewport_open, released at shutdown / viewport_close.
+      - CPU .bss: fixed-size backend buffers baked into the image -- the draw list, the CPU
+                  tessellation staging, the retained geometry cache, the font registry.  Present
+                  for the whole run whether one window is open or fifty.
+      - CPU heap: one malloc block per live context (header + state / popup / window / viewport /
+                  dock pools).  Dynamic: grows only when a secondary context is created.
+
+    Every bucket is exact (a sizeof of the backing array, a summed malloc size, or a live-count
+    multiply of a fixed region), so the grand total is the true resident footprint -- not a
+    high-water estimate.  print_mem_stats() dumps the same breakdown as a sectioned table.
 ==============================================================================================*/
 
 typedef struct
 {
-    u32 vertex_bytes;   // vertex buffer -- all frames-in-flight regions */
-    u32 index_bytes;    // index buffer  -- all frames-in-flight regions */
-    u32 texture_bytes;  // font atlases + 1x1 white pixel                */
-    u32 total_bytes;    // sum of the above                              */
+    /* --- GPU device memory (dynamic). --- */
+    u32 gpu_vertex_bytes;   // per-viewport VB regions, summed over live surfaces x frames-in-flight
+    u32 gpu_index_bytes;    // per-viewport IB regions, summed over live surfaces x frames-in-flight
+    u32 gpu_texture_bytes;  // font atlases (each already includes its white + dash rows)
+    u32 gpu_total;          // sum of the three above
+    u32 viewport_count;     // live GPU surfaces contributing to gpu_vertex/index_bytes
+
+    /* --- CPU static memory (.bss; fixed backend buffers, resident the whole run). --- */
+    u32 cpu_drawlist_bytes; // s_draw: command list + hashes + point/segment pools + text + clip tables
+    u32 cpu_tess_bytes;     // s_tess: CPU vertex / index / GPU-command staging
+    u32 cpu_cache_bytes;    // retained cache: ping-pong slot tables + cached GPU cmds + diff records
+    u32 cpu_font_bytes;     // font registry slots (CPU glyph metrics), excluding the GPU atlas
+    u32 cpu_static_total;   // sum of the four above
+
+    /* --- CPU dynamic memory (heap; one malloc block per live context). --- */
+    u32 cpu_context_bytes;  // sum over live contexts of the single ctx block (header + all pools)
+    u32 context_count;      // live contexts contributing to cpu_context_bytes
+    u32 cpu_dynamic_total;  // heap total (== cpu_context_bytes today; named for the section subtotal)
+
+    /* --- Grand total: everything the gui system holds right now. --- */
+    u32 total_bytes;        // gpu_total + cpu_static_total + cpu_dynamic_total
 
 } gui_mem_stats_t;
 

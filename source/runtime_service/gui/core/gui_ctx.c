@@ -465,6 +465,7 @@ ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
                                 ? (gui_dock_node_t*)( blk + off_dock ) : NULL;
     ctx->max_dock_nodes       = c->max_dock_nodes;
     ctx->_alloc               = blk;
+    ctx->_alloc_size          = total;
     return ctx;
 }
 
