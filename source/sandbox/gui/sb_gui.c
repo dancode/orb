@@ -619,6 +619,64 @@ show_dragdrop_demo( bool* p_open )
 }
 
 /*============================================================================================*/
+/* Tab groups -- windows merged onto one floating frame (window_tab / title-bar drop gesture)  */
+/*============================================================================================*/
+
+static void
+tab_group_member( const char* title, const char* body, f32 seed_x )
+{
+    gui()->window_set_next_pos ( seed_x, 340.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 260.0f, 170.0f, GUI_COND_ONCE );
+    if ( gui()->window_begin( title, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text_wrapped( body );
+        gui()->textf( "tabbed: %s", gui()->window_is_docked( title ) ? "yes" : "no" );
+    }
+    gui()->window_end();
+}
+
+static void
+show_tabgroup_demo( bool* p_open )
+{
+    static const char* WIN = "Tab Groups";
+    gui()->window_set_next_size( 340.0f, 240.0f, GUI_COND_ONCE );
+    if ( !gui()->window_begin( WIN, GUI_WIN_CLOSEABLE ) )
+    {
+        if ( p_open && !gui()->window_is_open( WIN ) )
+            *p_open = false;
+        gui()->window_end();
+        return;
+    }
+
+    gui()->stack();
+    gui()->text_wrapped( "Drag one window's title bar onto another's and drop on the center chip "
+                         "to merge them into a floating tab group -- no split panes.  Drag a tab "
+                         "out of the strip to pull a window back out (the group dissolves when one "
+                         "tab remains).  Drag the strip's empty band to move the group, its edges "
+                         "to resize, tabs sideways to reorder." );
+    gui()->separator();
+
+    if ( gui()->button( "Group programmatically" ) )
+    {
+        gui()->window_tab( "Tab Beta",  "Tab Alpha" );
+        gui()->window_tab( "Tab Gamma", "Tab Alpha" );
+    }
+    if ( gui()->button( "Ungroup all" ) )
+    {
+        gui()->dock_undock( "Tab Beta" );
+        gui()->dock_undock( "Tab Gamma" );
+        gui()->dock_undock( "Tab Alpha" );
+    }
+    gui()->window_end();
+
+    tab_group_member( "Tab Alpha", "The Alpha window.  Drop another window on this title bar to grow "
+                                   "a tab group around it.", 60.0f );
+    tab_group_member( "Tab Beta",  "The Beta window.  Drag this by its title bar onto Alpha's.", 340.0f );
+    tab_group_member( "Tab Gamma", "The Gamma window.  Groups take a third tab just the same.", 620.0f );
+}
+
+/*============================================================================================*/
 /* Demo setup                                                                                  */
 /*============================================================================================*/
 
@@ -633,6 +691,7 @@ static bool show_split_win        = false;
 static bool show_hud_win          = false;
 static bool show_region_win       = false;
 static bool show_dragdrop_win     = false;
+static bool show_tabgroup_win     = false;
 static bool dash_open             = false;
 
 static void show_example_main_menu_bar()
@@ -647,6 +706,7 @@ static void show_example_main_menu_bar()
             gui()->menu_item( "HUD Overlay",    NULL, &show_hud_win );
             gui()->menu_item( "Region Demo",    NULL, &show_region_win );
             gui()->menu_item( "Drag and Drop",  NULL, &show_dragdrop_win );
+            gui()->menu_item( "Tab Groups",     NULL, &show_tabgroup_win );
             gui()->menu_end();
         }
         gui()->main_menu_bar_end();
@@ -1057,6 +1117,13 @@ main( int argc, char** argv )
             s_dragdrop_prev = show_dragdrop_win;
             if ( show_dragdrop_win )
                 show_dragdrop_demo( &show_dragdrop_win );
+
+            static bool s_tabgroup_prev = false;
+            if ( show_tabgroup_win && !s_tabgroup_prev )
+                gui()->window_set_open( "Tab Groups", true );
+            s_tabgroup_prev = show_tabgroup_win;
+            if ( show_tabgroup_win )
+                show_tabgroup_demo( &show_tabgroup_win );
 
             gui()->perf_overlay( sys_tick_seconds, perf_mode );
             gui()->state_overlay( state_mode );

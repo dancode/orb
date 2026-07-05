@@ -56,6 +56,7 @@ const gui_api_t g_gui_api_struct =
     .dock_window                        = gui_dock_window,
     .dock_undock                        = gui_dock_undock,
     .window_is_docked                   = gui_window_is_docked,
+    .window_tab                         = gui_window_tab,
     .dock_save                          = gui_dock_save,
     .dock_load                          = gui_dock_load,
     .popup_open                         = gui_popup_open,

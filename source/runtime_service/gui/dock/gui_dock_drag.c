@@ -66,6 +66,14 @@ static struct
     gui_dock_id_t target;     /* leaf node the cursor is over                */
     i32             zone;       /* dock_zone_t                                 */
 
+    /* Tab-onto-window drop (gui_dock_float.c): the cursor is over another free window's title
+       bar (float_new -- release enqueues a group creation around float_win) or an existing
+       floating group's strip (float_join -- target holds the group node, release tabs straight
+       in).  Mutually exclusive with the dockspace chips above; zone is CENTER for both. */
+    bool            float_join;
+    bool            float_new;
+    gui_id_t      float_win;
+
 } s_dock_drag;
 
 /* Undock-by-tab-drag: a tab press pending the move threshold (mirrors s_titlebar_drag_*). */
@@ -159,14 +167,69 @@ dock_zone_region( gui_rect_t r, dock_zone_t z )
 static void
 dock_drag_detect( gui_id_t win_id, gui_window_t* win )
 {
-    s_dock_drag.active = false;
-    s_dock_drag.outer  = false;
-    s_dock_drag.win_id = win_id;
-    s_dock_drag.zone   = DOCK_ZONE_NONE;
+    s_dock_drag.active     = false;
+    s_dock_drag.outer      = false;
+    s_dock_drag.win_id     = win_id;
+    s_dock_drag.zone       = DOCK_ZONE_NONE;
+    s_dock_drag.float_join = false;
+    s_dock_drag.float_new  = false;
+    s_dock_drag.float_win  = GUI_ID_NONE;
 
     u32 vp = win->viewport;
     if ( vp != s_io.mouse_viewport || vp >= g_ctx->max_viewports )
         return;
+
+    /* Chip layout: a title-bar-sized square per zone, centered in the leaf. */
+    f32 s = WIN_TITLE_H * 1.4f;
+    f32 g = 6.0f;
+
+    /* Tab-onto-window (gui_dock_float.c): another free window's title bar -- or an existing
+       floating group's strip -- under the cursor pre-empts the dockspace chips below (the strip
+       is visually above them).  One center chip on the band, previewing the whole target frame:
+       the drop tabs the dragged window onto it. */
+    {
+        gui_dock_node_t* fnode = NULL;
+        gui_id_t       fwin  = GUI_ID_NONE;
+        if ( dock_float_hit( win_id, vp, &fnode, &fwin ) )
+        {
+            gui_window_t* tw   = window_find( fwin );
+            gui_rect_t    base = fnode ? fnode->rect
+                                 : tw    ? ( gui_rect_t ){ tw->x, tw->y, tw->w, tw->h }
+                                         : ( gui_rect_t ){ 0, 0, 0, 0 };
+
+            s_dock_drag.viewport   = vp;
+            s_dock_drag.zone       = DOCK_ZONE_CENTER;
+            s_dock_drag.active     = true;
+            s_dock_drag.float_join = ( fnode != NULL );
+            s_dock_drag.float_new  = ( fnode == NULL );
+            s_dock_drag.target     = fnode ? fnode->id : GUI_DOCK_NONE;
+            s_dock_drag.float_win  = fwin;
+
+            const gui_viewport_t* v = &g_ctx->viewports[ vp ];
+            draw_set_viewport ( vp );
+            draw_set_sort_key ( DOCK_OVERLAY_Z );
+            draw_set_root_clip( vp_w( v ), vp_h( v ) );
+            draw_set_rounding ( ROUND_WIDGET );
+
+            draw_push_rect_filled ( base.x, base.y, base.w, base.h, 0, 0, 1, 1, 0, DOCK_OVERLAY_FILL );
+            draw_push_rect_outline( base.x, base.y, base.w, base.h, WIN_BORDER, 0, DOCK_OVERLAY_LINE );
+
+            /* The hot center chip with its "tab here" glyph, over the title band. */
+            gui_rect_t cr = { base.x + base.w * 0.5f - s * 0.5f, base.y + ( WIN_TITLE_H - s ) * 0.5f, s, s };
+            draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+            draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
+            f32 ins = cr.w * 0.28f;
+            draw_set_rounding( 0.0f );
+            draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
+                                    WIN_BORDER, 0, COL_TEXT );
+
+            draw_set_sort_key ( 0 );
+            draw_set_viewport ( 0 );
+            draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+            return;
+        }
+    }
+
     gui_dock_node_t* root = dock_at( g_ctx->viewports[ vp ].dock_root );
     if ( !root )
         return;
@@ -174,15 +237,14 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     if ( !leaf )
         return;
 
-    /* Chip layout: a title-bar-sized square per zone, centered in the leaf. */
-    f32 s = WIN_TITLE_H * 1.4f;
-    f32 g = 6.0f;
+    /* NO_SPLIT dockspace: tab docking only -- the center chip stands alone, no side or edge chips. */
+    bool no_split = ( g_ctx->viewports[ vp ].dock_flags & GUI_DOCKSPACE_NO_SPLIT ) != 0;
 
     /* Outer (edge) chips appear only once the root is split: when the tree is a single leaf the inner
        5-way already spans the whole surface, so an edge chip would be a redundant duplicate.  Once
        there's a split, edge chips are the ONLY way to carve a pane across it (a full-height left column
        beside a top/bottom stack, etc.) -- they target the root, not the leaf under the cursor. */
-    bool        has_outer  = ( root->split != DOCK_SPLIT_NONE );
+    bool        has_outer  = !no_split && ( root->split != DOCK_SPLIT_NONE );
     f32         margin     = s * 0.5f + 10.0f;
     dock_zone_t outer_zone = DOCK_ZONE_NONE;
     if ( has_outer )
@@ -190,10 +252,12 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
             if ( rect_hit( dock_outer_chip_rect( root->rect, (dock_zone_t)z, s, margin ) ) )
                 { outer_zone = (dock_zone_t)z; break; }
 
-    /* Edge chips win over the inner 5-way: when the cursor is on an edge chip, that is the intent. */
-    dock_zone_t zone = DOCK_ZONE_NONE;
+    /* Edge chips win over the inner 5-way: when the cursor is on an edge chip, that is the intent.
+       A NO_SPLIT dockspace offers only the center (tab) chip. */
+    i32         zone_last = no_split ? (i32)DOCK_ZONE_CENTER : (i32)DOCK_ZONE_BOTTOM;
+    dock_zone_t zone      = DOCK_ZONE_NONE;
     if ( outer_zone == DOCK_ZONE_NONE )
-        for ( i32 z = DOCK_ZONE_CENTER; z <= DOCK_ZONE_BOTTOM; ++z )
+        for ( i32 z = DOCK_ZONE_CENTER; z <= zone_last; ++z )
             if ( rect_hit( dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g ) ) ) { zone = (dock_zone_t)z; break; }
 
     bool outer = ( outer_zone != DOCK_ZONE_NONE );
@@ -221,7 +285,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         draw_push_rect_outline( hr.x, hr.y, hr.w, hr.h, WIN_BORDER, 0, DOCK_OVERLAY_LINE );
     }
 
-    for ( i32 z = DOCK_ZONE_CENTER; z <= DOCK_ZONE_BOTTOM; ++z )
+    for ( i32 z = DOCK_ZONE_CENTER; z <= zone_last; ++z )
     {
         gui_rect_t cr = dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g );
         bool         on = ( !outer && (dock_zone_t)z == zone );
@@ -269,7 +333,18 @@ dock_drag_commit( gui_id_t win_id, const char* title )
 
     if ( s_dock_drag.zone != DOCK_ZONE_NONE && title )
     {
-        if ( s_dock_drag.outer )
+        if ( s_dock_drag.float_join )
+        {
+            /* Drop on an existing floating group's strip: tab straight in (title in hand). */
+            gui_dock_window( title, s_dock_drag.target );
+        }
+        else if ( s_dock_drag.float_new )
+        {
+            /* Drop on a free window's title bar: the target's name is not in hand here, so the
+               group forms when the target next begins (dock_float_service_request). */
+            dock_float_request( s_dock_drag.float_win, win_id, title );
+        }
+        else if ( s_dock_drag.outer )
         {
             /* Edge drop: split the whole tree so the new pane spans a full viewport edge. */
             gui_dock_id_t side = gui_dock_split_root( s_dock_drag.viewport,
@@ -426,11 +501,40 @@ dock_window_chrome( gui_dock_node_t* node )
         tx += tw;
     }
 
+    /* Floating group (gui_dock_float.c): the strip's empty band doubles as the group's title-bar
+       drag surface -- a press grabs the move (widget_behavior claims active_id; the offsets keep
+       the grabbed point pinned under the cursor, applied by dock_float_resolve next frame). */
+    if ( node->floating )
+    {
+        gui_rect_t rem = { tx, y, x + w - tx, th };
+        if ( rem.w > 1.0f )
+        {
+            gui_id_t     gid = id_combine( node->id, DOCK_FLOAT_SALT );
+            widget_state_t st  = widget_behavior( gid, rem, WIDGET_KIND_BUTTON );
+            if ( st.pressed )
+            {
+                s_interaction.active_button = 0;   /* released globally when the left button lifts */
+                s_drag_off_x = s_io.mouse_x - x;
+                s_drag_off_y = s_io.mouse_y - y;
+            }
+        }
+    }
+
     /* Border frames the whole node (strip + body), square so adjacent nodes tile flush at right
        angles.  Drawn before the undock handler so it never reads `node` after a drag-out collapses
        an emptied node. */
     draw_set_rounding( 0.0f );
     draw_push_rect_outline( x, y, w, s_build.win_h, WIN_BORDER, 0, COL_BORDER );
+
+    /* Floating group: bold the hot / grabbed resize edges over the thin border, exactly like a
+       free window's window_end does (the hot mask was resolved in dock_float_resolve). */
+    if ( node->floating )
+    {
+        u8 hot_edges = ( s_interaction.active_id == id_combine( node->id, GUI_RESIZE_SALT ) )
+                     ? s_resize_edges : s_build.win_resize_hot;
+        if ( hot_edges )
+            window_draw_resize_highlight( ( gui_rect_t ){ x, y, w, s_build.win_h }, hot_edges );
+    }
 
     /* Tab drag: an armed tab press rides the generic drag machine (drag_from_chrome publishes a
        "gui.dock_tab" payload carrying the window id, so drop targets elsewhere can accept it).

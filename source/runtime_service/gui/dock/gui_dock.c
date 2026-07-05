@@ -43,13 +43,13 @@ gui_dockspace_inset( gui_vp_t vp, f32 top )
 gui_dock_id_t
 gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
 {
-    UNUSED( flags );
     if ( !s_fwd_caps.docking ) return GUI_DOCK_NONE;   /* feature boundary: gui_forward_caps_t.docking */
     if ( !s_dock_nodes ) return GUI_DOCK_NONE;   /* pool disabled for this context (max_dock_nodes == 0) */
     if ( vp >= g_ctx->max_viewports )
         return GUI_DOCK_NONE;
 
     gui_viewport_t*  v    = &g_ctx->viewports[ vp ];
+    v->dock_flags = flags;   /* re-published each frame; NO_SPLIT gates the chips + split verbs */
     gui_dock_node_t* root = dock_at( v->dock_root );
     if ( !root )
     {
@@ -117,6 +117,10 @@ gui_dock_split( gui_dock_id_t node_id, gui_dir_t dir, f32 ratio, gui_dock_id_t* 
     gui_dock_node_t* n = dock_node_find( node_id );
     if ( !n || n->split != DOCK_SPLIT_NONE )
         return GUI_DOCK_NONE;
+    if ( n->floating )
+        return GUI_DOCK_NONE;   /* a floating tab group is tabs-only by definition */
+    if ( g_ctx->viewports[ n->viewport ].dock_flags & GUI_DOCKSPACE_NO_SPLIT )
+        return GUI_DOCK_NONE;   /* tab docking only on this dockspace */
 
     gui_dock_node_t* a = dock_node_alloc( n->viewport );
     gui_dock_node_t* b = dock_node_alloc( n->viewport );
@@ -167,6 +171,8 @@ gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio )
         return GUI_DOCK_NONE;
 
     gui_viewport_t*  v    = &g_ctx->viewports[ vp ];
+    if ( v->dock_flags & GUI_DOCKSPACE_NO_SPLIT )
+        return GUI_DOCK_NONE;   /* tab docking only on this dockspace */
     gui_dock_node_t* root = dock_at( v->dock_root );
     if ( !root )
         return GUI_DOCK_NONE;

@@ -670,7 +670,13 @@ typedef enum
 
 typedef enum
 {
-    GUI_DOCKSPACE_NONE = 0,    /* default: fill the viewport, draw splitters + tab bars */
+    GUI_DOCKSPACE_NONE     = 0,        /* default: fill the viewport, draw splitters + tab bars */
+
+    /* Tab docking only: windows may tab into leaves (center drop) but never split them -- no side
+       or edge drop chips are offered and the programmatic split verbs refuse, so no splitters can
+       ever form.  The dockspace degenerates to one full-area tab group.  Sticky per viewport:
+       re-published every dockspace_over_viewport call. */
+    GUI_DOCKSPACE_NO_SPLIT = 1 << 0,
 
 } gui_dockspace_flags_t;
 

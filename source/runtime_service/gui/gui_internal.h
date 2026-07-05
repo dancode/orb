@@ -572,6 +572,10 @@ typedef struct
        dock_serialize.c saves/loads it). */
     gui_dock_ref_t dock_root;
 
+    /* Dockspace policy bits (gui_dockspace_flags_t), re-published by every dockspace_over_viewport
+       call.  NO_SPLIT restricts the tree to tab docking: no split drop chips, split verbs refuse. */
+    gui_dockspace_flags_t dock_flags;
+
 } gui_viewport_t;
 
 /*==============================================================================================
@@ -616,6 +620,14 @@ typedef struct gui_dock_node_t
 
     gui_rect_t rect;                       /* whole node box, resolved this frame               */
     gui_rect_t content;                    /* leaf body below the tab strip (active window's rect) */
+
+    /* Floating tab group (gui_dock_float.c): a leaf living OUTSIDE any viewport tree -- windows
+       tabbed onto one shared free-floating frame, no split panes.  Not reachable from dock_root,
+       so dock_node_layout never touches it: `rect` doubles as its PERSISTED geometry (moved by the
+       strip drag, sized by the edge resize), and `z` stacks it among the free windows (a tree node
+       draws at z 0 behind them).  Always DOCK_SPLIT_NONE with parent GUI_DOCK_REF_NONE. */
+    bool floating;
+    u32  z;
 
 } gui_dock_node_t;
 
@@ -791,6 +803,14 @@ static void               dock_window_chrome( gui_dock_node_t* node );
    + preview a drop target while a free window is dragged over a dockspace, and commit it on release. */
 static void dock_drag_detect( gui_id_t win_id, gui_window_t* win );
 static void dock_drag_commit( gui_id_t win_id, const char* title );
+
+/* Floating tab groups (gui_dock_float.c), called from gui_widget_window.c: resolve a floating
+   node's frame for this frame (apply strip drag / edge resize, refresh rect + content, arm the
+   resize grab -- returns the hot edge mask for s_build.win_resize_hot), and service a pending
+   group-creation request when the TARGET window next begins (the only moment both window titles
+   are in hand). */
+static u8   dock_float_resolve( gui_dock_node_t* node, gui_id_t active_win_id );
+static void dock_float_service_request( gui_id_t id, const char* title, gui_window_t* win );
 
 /* gui_popup.c is included after gui_widget.c; selectable calls this to auto-close the enclosing
    popup on click (the Dear ImGui CloseCurrentPopup default behavior). */

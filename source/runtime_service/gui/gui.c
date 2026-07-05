@@ -53,6 +53,7 @@
     window/gui_widget_window.c   -- the window as a widget: begin/window_end + chrome (resize); body is a region
 
     dock/gui_dock_core.c         -- docking: node pool, per-frame layout, splitter interaction + chrome
+    dock/gui_dock_float.c        -- floating tab groups: windows tabbed onto one free frame, no splits
     dock/gui_dock_drag.c         -- docking: mouse drag-to-dock / undock-by-tab-drag + tab-strip chrome
     dock/gui_dock.c              -- docking: public build API (dockspace_over_viewport, dock_split, ...)
     dock/gui_dock_serialize.c    -- docking: layout save/load (text blob)
@@ -175,6 +176,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 
 // Tier 3 -- window-dependent, independent of popup/
 #include "runtime_service/gui/dock/gui_dock_core.c"
+#include "runtime_service/gui/dock/gui_dock_float.c"
 #include "runtime_service/gui/dock/gui_dock_drag.c"
 #include "runtime_service/gui/dock/gui_dock.c"
 #include "runtime_service/gui/dock/gui_dock_serialize.c"

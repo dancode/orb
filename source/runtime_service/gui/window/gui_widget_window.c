@@ -359,6 +359,13 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
 {
     bool active = ( node->active_tab < node->tab_count && node->tabs[ node->active_tab ] == id );
 
+    /* Floating tab group (gui_dock_float.c): no tree lays this node out -- resolve its own frame
+       first (apply the strip drag / edge resize, refresh rect + content, arm the resize grab),
+       through the active tab only: it owns the group's interaction this frame. */
+    u8 float_hot = 0;
+    if ( node->floating && active )
+        float_hot = dock_float_resolve( node, id );
+
     /* Geometry owned by the node; mirror it onto the record so a later undock resumes here. */
     win->viewport   = node->viewport;
     win->x          = node->rect.x;
@@ -370,9 +377,10 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
 
     f32 title_h = node->rect.h - node->content.h;   /* tab strip height (= WIN_TITLE_H, node-clamped) */
 
-    /* Route to the node's surface at a low z so docked content sits behind the free-floating windows. */
+    /* Route to the node's surface: a tree node draws at a low z so docked content sits behind the
+       free-floating windows; a floating group stacks among them at its own z. */
     draw_set_window( id );                  /* cache key: docked windows share z=0 but not their id */
-    draw_set_sort_key( 0 );
+    draw_set_sort_key( node->floating ? node->z : 0 );
     draw_set_viewport( node->viewport );
     draw_set_band( ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
     s_build.cur_viewport = node->viewport;
@@ -383,7 +391,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     s_build.win_collapsed   = false;
     s_build.win_flags       = flags;
     s_build.win_title_h     = title_h;
-    s_build.win_resize_hot  = 0;
+    s_build.win_resize_hot  = float_hot;   /* 0 for a tree node; a floating group resizes like a window */
     s_build.win_grip_hot    = false;
     s_build.cur_win         = win;
     s_build.cur_dock_node   = node;
@@ -395,9 +403,23 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
         return false;   /* behind another tab -- no body, no clip; window_end early-outs */
 
     /* The active tab nominates hover over the whole node (strip + body) so its tab-strip widgets and
-       body widgets all resolve under one hover_win. */
+       body widgets all resolve under one hover_win.  A floating group competes at its own z and
+       expands the nominee rect by the outer resize band, exactly like a resizeable free window --
+       that is what keeps an edge hot as the cursor crosses just outside the border. */
     if ( !( flags & GUI_WIN_NO_INPUT ) )
-        window_nominate_hover( id, node->rect, 0u, node->viewport );
+    {
+        if ( node->floating )
+        {
+            f32 o = WIN_RESIZE_OUTER;
+            window_nominate_hover( id, ( gui_rect_t ){ node->rect.x - o, node->rect.y - o,
+                                                         node->rect.w + 2.0f * o, node->rect.h + 2.0f * o },
+                                   node->z, node->viewport );
+        }
+        else
+        {
+            window_nominate_hover( id, node->rect, 0u, node->viewport );
+        }
+    }
 
     /* Clip against the node's surface, then the node rect; the body region reuses this clip. */
     {
@@ -700,6 +722,11 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     /* Closed-viewport fallback: if this window's surface was destroyed, revert to primary. */
     if ( win->viewport > 0 && !rhi_handle_valid( g_ctx->viewports[ win->viewport ].vb ) )
         win->viewport = 0;
+
+    /* Pending tab-onto-window drop targeting THIS window (gui_dock_float.c): the group forms now,
+       while the title (its tab name) is in hand -- the dock lookup below then routes straight into
+       the docked path the same frame. */
+    dock_float_service_request( id, title, win );
 
     /* Docking: a window tabbed into a dock node is placed + chromed by the node, not free-floated.
        The whole free-float path below (drag, resize, tear-off, chrome) is bypassed for it. */

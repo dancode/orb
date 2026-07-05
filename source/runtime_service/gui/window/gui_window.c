@@ -278,9 +278,18 @@ window_raise_on_press( void )
                 break;
 
             /* A docked window is tiled by its node, not stacked: it draws in a low z band behind the
-               free-floating windows and a click must never reorder the tile.  Leave its z untouched. */
-            if ( dock_find_window_node( s_windows[ i ].id ) )
-                break;
+               free-floating windows and a click must never reorder the tile.  Leave its z untouched.
+               A FLOATING tab group stacks like a free window, though -- raise the whole group (its
+               node carries the z all its tabs draw at). */
+            {
+                gui_dock_node_t* dn = dock_find_window_node( s_windows[ i ].id );
+                if ( dn )
+                {
+                    if ( dn->floating && dn->z != s_z_counter )
+                        dn->z = ++s_z_counter;
+                    break;
+                }
+            }
 
             /* Already on top?  Don't burn a z value. */
             if ( s_windows[ i ].z != s_z_counter )

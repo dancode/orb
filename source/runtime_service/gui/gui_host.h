@@ -94,6 +94,7 @@ gui_dock_id_t gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio );
 void gui_dock_window( const char* title, gui_dock_id_t node );
 void gui_dock_undock( const char* title );
 bool gui_window_is_docked( const char* title );
+void gui_window_tab( const char* title, const char* onto_title );
 u32  gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz );
 bool gui_dock_load( gui_vp_t vp, const char* text );
 

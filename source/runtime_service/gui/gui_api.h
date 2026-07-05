@@ -299,6 +299,17 @@ typedef struct gui_api_s
     void ( *dock_undock )( const char* title );
     bool ( *window_is_docked )( const char* title );
 
+    /* Floating tab groups -- tabbing WITHOUT split panes.  window_tab() merges window `title` onto
+       window `onto_title`'s frame: a free target grows a floating tab group around itself (shared
+       frame, tab strip in place of a title bar; drag the strip's empty band to move it, its edges
+       to resize); a target already tabbed somewhere -- a group or a dockspace leaf -- just gains
+       the tab.  The same merge exists as a gesture: title-drag one free window onto another's
+       title bar and drop on the center chip.  dock_undock() pulls a window back out; a group
+       dissolves by itself once a single tab remains.  To keep a whole DOCKSPACE tabs-only
+       instead, pass GUI_DOCKSPACE_NO_SPLIT to dockspace_over_viewport: only the center (tab)
+       drop chip is offered and the split verbs above refuse. */
+    void ( *window_tab )( const char* title, const char* onto_title );
+
     /* Layout persistence.  dock_save() serializes viewport vp's dock tree into buf as a small ASCII
        blob and returns the byte count a full write needs (like snprintf -- pass a 0 bufsz to size
        first).  dock_load() rebuilds the tree from such a blob; returns false on a bad header.  The

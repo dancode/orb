@@ -160,12 +160,37 @@ dock_collapse( gui_dock_node_t* leaf )
 
 /* Remove window `wid`'s tab from `n` (if present) and collapse `n` should that empty it -- the
    shared undock step every removal path (gui_dock_window's re-dock, gui_dock_undock,
-   dock_undock_by_id) performs identically before doing anything path-specific of its own. */
+   dock_undock_by_id) performs identically before doing anything path-specific of its own.
+
+   A FLOATING group (gui_dock_float.c) has no tree to collapse; instead it dissolves once a single
+   tab remains -- a group of one is just a window, so the survivor inherits the group's frame
+   (rect and z) and returns to free-floating; the node is freed either way. */
 static void
 dock_node_remove_window( gui_dock_node_t* n, gui_id_t wid )
 {
     for ( u32 i = 0; i < n->tab_count; ++i )
         if ( n->tabs[ i ] == wid ) { dock_leaf_remove_tab( n, i ); break; }
+
+    if ( n->floating )
+    {
+        if ( n->tab_count <= 1 )
+        {
+            if ( n->tab_count == 1 )
+            {
+                gui_window_t* w = window_find( n->tabs[ 0 ] );
+                if ( w )
+                {
+                    w->viewport = n->viewport;
+                    w->x = n->rect.x;  w->y = n->rect.y;
+                    w->w = n->rect.w;  w->h = n->rect.h;
+                    w->z = n->z;   /* keep the group's place in the stacking order */
+                }
+            }
+            dock_node_free( n );
+        }
+        return;
+    }
+
     if ( n->tab_count == 0 )
         dock_collapse( n );
 }
