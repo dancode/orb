@@ -117,6 +117,12 @@ overlay_detach( void )
     s.viewport       = draw_viewport();
     s.band           = draw_band();
 
+    /* Escape the parent's ambient glyph-clip window (a table cell sets one spanning its column):
+       the overlay's text must clip to the overlay, not to the slot it was raised from -- a drag
+       preview tooltip dragged out of its source column would otherwise lose its glyphs. */
+    draw_get_text_clip( &s.text_clip_x0, &s.text_clip_x1 );
+    draw_clear_text_clip();
+
     /* Save the parent's top layout frame so its pen survives the popup's region pop. */
     s.had_parent = ( s_layout_sp > 0 );
     if ( s.had_parent )
@@ -153,6 +159,7 @@ overlay_reattach( gui_overlay_save_t s )
     draw_set_sort_key( s.sort_key );
     draw_set_viewport( s.viewport );
     draw_set_band( s.band );
+    draw_set_text_clip_x( s.text_clip_x0, s.text_clip_x1 );   /* the parent span's glyph window */
 }
 
 /*----------------------------------------------------------------------------------------------

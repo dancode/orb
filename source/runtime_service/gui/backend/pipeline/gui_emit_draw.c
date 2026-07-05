@@ -510,6 +510,16 @@ draw_clear_text_clip( void )
     s_draw.text_clip_x1 = GUI_TEXT_NO_CLIP;
 }
 
+/* Read the current window so a seam that must emit UNCLIPPED text mid-span (an overlay detached
+   from inside a table cell -- a tooltip, popup, or drag preview) can save it, clear, and restore
+   on reattach -- see overlay_detach / overlay_reattach (gui_popup.c). */
+void
+draw_get_text_clip( f32* x0, f32* x1 )
+{
+    *x0 = s_draw.text_clip_x0;
+    *x1 = s_draw.text_clip_x1;
+}
+
 static f32
 draw_clamp_rounding( f32 w, f32 h )
 {

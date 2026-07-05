@@ -109,6 +109,7 @@ void draw_set_rounding          ( f32 r );          // corner radius folded into
 f32  draw_rounding              ( void );           // current ambient radius (save/restore around a sub-element)
 void draw_set_text_clip_x       ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run
 void draw_clear_text_clip       ( void );           // restore the no-clip sentinel (unbounded text)
+void draw_get_text_clip         ( f32* x0, f32* x1 ); // read the window (saved/restored by the popup layer)
 void draw_set_sort_key          ( u32 z );          // paint order stamped on new commands (window z)
 u32  draw_sort_key              ( void );           // current sort key (saved/restored by the popup layer)
 void draw_set_viewport          ( u32 vp );         // viewport index stamped on new commands (surface routing)

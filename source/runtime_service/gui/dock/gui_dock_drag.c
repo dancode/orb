@@ -38,10 +38,10 @@
    DOCK_SPLIT_SALT in gui_dock_core.c). */
 #define DOCK_TAB_SALT   0xD0C7AB00u
 
-#define DOCK_TAB_DRAG_THRESH 12.0f                      /* px a tab must move before it undocks     */
-#define DOCK_OVERLAY_Z     0xF0000000u                  /* above the popup z-band (0x80000000)     */
-#define DOCK_OVERLAY_FILL  GUI_COLOR( 90, 160, 245,  64 )   /* translucent drop-region preview   */
-#define DOCK_OVERLAY_LINE  GUI_COLOR( 90, 160, 245, 200 )   /* its outline                       */
+#define DOCK_TAB_DRAG_THRESH    12.0f                               /* px a tab must move before it undocks     */
+#define DOCK_OVERLAY_Z          0xF0000000u                         /* above the popup z-band (0x80000000)     */
+#define DOCK_OVERLAY_FILL       GUI_COLOR( 90, 160, 245,  64 )      /* translucent drop-region preview   */
+#define DOCK_OVERLAY_LINE       GUI_COLOR( 90, 160, 245, 200 )      /* its outline                       */
 
 /* Drop zones of the per-node 5-way: the chip the cursor is over (NONE = over the node but no chip). */
 typedef enum

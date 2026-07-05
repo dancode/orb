@@ -436,6 +436,12 @@ typedef struct
     u32                    sort_key;      // s_draw.cur_z
     u32                    viewport;      // s_draw.cur_vp (target surface routing)
     u32                    band;          // s_draw.cur_band (arena band: debug UI isolation)
+
+    /* Ambient glyph-clip window (a table cell sets it for its span): cleared for the overlay --
+       its text must follow the overlay, not stay bounded to the parent's slot -- and restored
+       at reattach so the remaining cell text keeps its window. */
+    f32                    text_clip_x0;  // s_draw.text_clip_x0
+    f32                    text_clip_x1;  // s_draw.text_clip_x1
     bool                   had_parent;    // a layout region was open (parent frame valid)
     layout_frame_t         parent_frame;  // the parent's top frame, restored after the popup
 
