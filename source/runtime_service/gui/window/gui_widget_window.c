@@ -714,8 +714,15 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     /* Raise to front on every appearance: first creation and re-opens both get a fresh z
        above all currently-live windows, so no two windows ever share a z on their first
        visible frame.  Re-opened windows surface on top rather than re-using a stale z
-       that may sit below windows that were raised while they were closed. */
-    if ( appearing )
+       that may sit below windows that were raised while they were closed.
+
+       EXCEPT a popup / tooltip overlay: popup_begin (gui_popup.c) has already put win->z in the
+       reserved GUI_POPUP_Z_BASE band above this call.  Stamping a normal counter value here would
+       sink it out of that band for exactly the appearing frame -- long enough for window_is_native
+       (below) to mistake an appearing popup on an owned floater for that surface's native frame and
+       pin it to 0,0 (window_sync_native), so the popup flashes full-surface at the origin for one
+       frame before snapping to its anchor.  A z already in the popup band is left untouched. */
+    if ( appearing && win->z < GUI_POPUP_Z_BASE )
         win->z = ++s_z_counter;
 
     window_apply_next( win, appearing );

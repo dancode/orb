@@ -651,11 +651,11 @@ gui_pipeline_dashboard( bool* open )
         bool frozen = gui_dash_frozen();
         if ( gui_checkbox( "Freeze", &frozen ) )
             gui_dash_set_freeze( frozen );
-        gui_same_line( 0.0f );
+        gui_same_line( -1.0f );
         gui_checkbox( "Second band", &s_show_second_band );
-        gui_same_line( 0.0f );
+        gui_same_line( -1.0f );
         gui_checkbox( "Full range", &s_full_range );
-        gui_same_line( 0.0f );
+        gui_same_line( -1.0f );
         gui_checkbox( "Show pad", &s_show_pad );
 
         /* Panel heights derive from the live line height so text rows never clip mid-glyph. */
