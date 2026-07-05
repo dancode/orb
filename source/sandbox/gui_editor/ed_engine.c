@@ -141,6 +141,8 @@ ed_stop( void )
 void
 ed_tick( f32 dt )
 {
+    g_ed.frame_dt = dt;               /* the Scene panel's fly camera integrates against this */
+
     if ( g_ed.mode != ED_MODE_PLAY )
         return;
 

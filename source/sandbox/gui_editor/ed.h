@@ -109,11 +109,12 @@ typedef enum
 
 typedef struct
 {
-    f32 yaw;                      // radians around Y
-    f32 pitch;                    // radians; clamped shy of the poles
-    f32 dist;                     // orbit distance from target
-    f32 target[ 3 ];
-    f32 fov_deg;
+    f32  yaw;                     // radians around Y
+    f32  pitch;                   // radians; clamped shy of the poles
+    f32  dist;                    // orbit distance from target
+    f32  target[ 3 ];
+    f32  fov_deg;
+    bool pan_invert;              // flip pan axes back to grab-the-world (drag moves the scene)
 
 } ed_camera_t;
 
@@ -147,6 +148,7 @@ typedef struct
 
     ed_mode_t   mode;
     f64         sim_time;                      // advances only in PLAY
+    f32         frame_dt;                      // last frame's dt; camera fly uses it in the panel
 
     ed_log_entry_t log[ ED_LOG_MAX ];
     u32            log_count;                  // total ever logged (ring: newest = log_count-1)

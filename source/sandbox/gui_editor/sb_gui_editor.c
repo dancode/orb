@@ -11,7 +11,8 @@
 
     Unity build: this file is the only compilation unit; it includes the ed_* units below.
 
-    Controls:  RMB orbit / MMB pan / wheel zoom in the Scene panel.  ESC quits.
+    Controls (Scene panel, UE-style):  RMB look + WASD/QE fly (Shift fast, wheel = speed),
+    RMB+LMB or MMB pan, Alt+LMB orbit, Alt+RMB dolly, wheel zoom.  ESC quits.
 
 ==============================================================================================*/
 
@@ -143,7 +144,7 @@ main( int argc, char** argv )
         ed_play();
 
     printf( "[sb_gui_editor] running -- ESC to quit\n" );
-    printf( "[sb_gui_editor] Scene panel: RMB orbit, MMB pan, wheel zoom\n" );
+    printf( "[sb_gui_editor] Scene panel: RMB look + WASD fly, RMB+LMB/MMB pan, Alt+LMB orbit\n" );
 
     /* ------------------------------------------------------------------------------ */
     /* Main loop                                                                       */
