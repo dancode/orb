@@ -138,8 +138,8 @@ ref_walk_refs_one( void* instance, const ref_field_t* f, ref_ref_visitor_t visit
         return;
     }
 
-    /* Function pointers (REF_MODS_FUNCTION) and deeper chains (T**, const T*) are
-       intentionally skipped -- they are not data pointers and must not be patched. */
+    /* Function pointers (REF_MODS_FUNCTION) and deeper chains (T**) are intentionally
+       skipped -- they are not data pointers and must not be patched. */
 }
 
 static void

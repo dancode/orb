@@ -17,11 +17,39 @@
 ==============================================================================================*/
 // clang-format off
 
+/* Debug-only collision guard: field base types resolve by 32-bit name hash alone
+   (ref_field_t stores type_hash, not the name string), so two DIFFERENT type names that
+   FNV-1a-hash to the same value would silently bind fields to whichever type sits nearer
+   the bucket chain head. This check fires at type-insert time -- the moment the ambiguity
+   is created -- naming both colliding types. Comment out to disable. */
+#define REF_CHECK_HASH_COLLISIONS
+
+#ifdef REF_CHECK_HASH_COLLISIONS
+static bool ref_stricmp_eq( const char* a, const char* b );   /* defined in ref_access.c */
+#endif
+
 static void
 ref_hash_insert( uint16_t type_id )
 {
     ref_type_t* t           = &g_ref.types[ type_id ];
     uint32_t   slot        = t->name_hash & REF_TYPE_HASH_MASK;
+
+#ifdef REF_CHECK_HASH_COLLISIONS
+    /* Same 32-bit hash but a case-insensitively different name == true collision. */
+    for ( uint16_t cur = g_ref.type_hash[ slot ]; cur != REF_TYPE_INVALID; cur = g_ref.types[ cur ].next )
+    {
+        const ref_type_t* other = &g_ref.types[ cur ];
+        if ( other->name_hash == t->name_hash &&
+             !ref_stricmp_eq( ref_cstr( other->name_id ), ref_cstr( t->name_id ) ) )
+        {
+            fprintf( stderr,
+                     "ref: FATAL type name hash collision: '%s' and '%s' both hash to 0x%08x -- "
+                     "hash-only field resolution is ambiguous; rename one of the types\n",
+                     ref_cstr( t->name_id ), ref_cstr( other->name_id ), t->name_hash );
+            assert( 0 && "ref: type name hash collision -- rename one of the colliding types" );
+        }
+    }
+#endif
 
     /* Prepend this type to the front of the bucket chain. */
     t->next                = g_ref.type_hash[ slot ];
@@ -534,7 +562,7 @@ ref_register_enum( const ref_type_t* type, const ref_enum_t* enums, uint16_t cou
     if ( count > 0 )
     {
         uint16_t first = ref_alloc_enum_block( count );
-        if ( first == REF_TYPE_INVALID ) return REF_TYPE_INVALID;
+        if ( first == REF_TYPE_INVALID ) { g_ref.type_count--; return REF_TYPE_INVALID; }
         memcpy( &g_ref.enums[ first ], enums, count * sizeof( ref_enum_t ) );
 
         /* field_index/field_count reused to index into enums[] when kind == REF_KIND_ENUM.
