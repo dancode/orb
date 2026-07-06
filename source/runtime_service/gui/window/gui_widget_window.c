@@ -972,6 +972,34 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
     return window_begin_ex( id_hash( title ), title, 60.0f, 60.0f, 240.0f, 320.0f, flags );
 }
 
+/*----------------------------------------------------------------------------------------------
+    viewport_shell -- the chrome for a borderless viewport, as one self-contained emit.
+
+    The public front door for GUI_WIN_NATIVE: a frame-only shell window whose titlebar stands in
+    for the OS caption and whose border is the sizing frame, with an empty, click-through body.
+    Emitted first in the build so the caption band it publishes (caption_inset) is live for
+    everything after it -- main_menu_bar, window clamping, and the dock tree all read it.
+
+    No-op returning 0 when the viewport's OS window has its own chrome: the host calls this
+    unconditionally and selects the mode solely with APP_WIN_BORDERLESS at window_open.
+----------------------------------------------------------------------------------------------*/
+
+f32
+gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
+{
+    if ( vp >= g_ctx->max_viewports )
+        return 0.0f;
+
+    if ( !app()->window_is_borderless( g_ctx->viewports[ vp ].win_id ) )
+        return 0.0f;    /* OS-chrome window: the OS draws the frame, no shell needed */
+
+    gui_window_set_next_viewport( vp );
+    gui_window_begin( title, GUI_WIN_NATIVE | GUI_WIN_NOSCROLL | flags );
+    gui_window_end();
+
+    return g_ctx->viewports[ vp ].caption_inset;   /* published by the begin above */
+}
+
 /* Enqueue a button-triggered tear-off or merge-back into the one-shot s_vp_request slot.
    Idempotent: a single slot covers the one dragged window at a time, so the first caller wins. */
 static void

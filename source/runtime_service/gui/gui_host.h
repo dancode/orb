@@ -63,6 +63,7 @@ void        gui_ctx_set_listening( gui_ctx_t ctx, bool listen );
 gui_vp_t gui_viewport_open  ( i32 win_id );
 void       gui_viewport_close ( gui_vp_t vp );
 void       gui_viewport_resize( gui_vp_t vp, i32 w, i32 h );
+f32        gui_viewport_shell ( gui_vp_t vp, const char* title, gui_win_flags_t flags );
 
 /* gui-owned floater surfaces (window + context owned by gui) */
 gui_vp_t gui_viewport_spawn          ( const char* title, i32 x, i32 y, i32 w, i32 h );

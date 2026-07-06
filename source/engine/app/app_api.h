@@ -31,6 +31,11 @@ typedef struct app_api_s
     void*           ( *window_handle            )( win_id_t id ); /* HWND on Windows */
     bool            ( *window_is_minimized      )( win_id_t id );
 
+    /* True when the window was opened with APP_WIN_BORDERLESS (custom frame: no OS chrome, gui
+       stands in for the caption / sizing border).  Lets a chrome-drawing layer decide whether a
+       frame shell is needed without the host threading the flag through.  false on invalid id. */
+    bool            ( *window_is_borderless     )( win_id_t id );
+
     /* Client-area drawable size in pixels.  Always reflects the current size; returns 0,0
        for an invalid id.  Use this in context_open / viewport_open to avoid passing w/h
        explicitly when the window already owns those dimensions. */

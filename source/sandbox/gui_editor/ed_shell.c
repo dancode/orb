@@ -206,12 +206,17 @@ ed_shell_build( void )
         s_do_reset = false;
     }
 
-    /* Chrome first (menus own the popup ordering), then reserve its band above the dock area. */
+    /* Chrome first: the native frame shell (titlebar = OS caption on a borderless window; no-op
+       and 0 when the OS draws its own), then the menu bar (it insets below the caption band
+       itself; menus own the popup ordering), then the toolbar stacked below both.  The dock area
+       reserves only the menu + toolbar band -- the dock tree adds the caption inset on its own. */
+    f32 caption_h = gui()->viewport_shell( 0, "ORB Editor -- sb_gui_editor", GUI_WIN_NONE );
+
     ed_menu_bar();
 
     f32 menu_h    = gui()->calc_row( gui()->text_h( "A" ) ) + gui()->style_get()->widget_gap;
     f32 toolbar_h = menu_h + 6.0f;
-    ed_toolbar( menu_h, toolbar_h );
+    ed_toolbar( caption_h + menu_h, toolbar_h );
 
     gui()->dockspace_inset( 0, menu_h + toolbar_h );
     gui_dock_id_t root = gui()->dockspace_over_viewport( 0, GUI_DOCKSPACE_NONE );

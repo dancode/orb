@@ -78,12 +78,12 @@ main( int argc, char** argv )
 
     /* Main-window chrome mode -- flip this one bool to compare the two paths:
 
-         true  -- borderless (window kind 3): no Win32 chrome.  A full-surface GUI_WIN_NATIVE shell
-                  window (emitted first in the loop below) stands in as the frame: its titlebar drives
-                  OS move + the min/max/close caption buttons, its borders resize via WM_NCHITTEST.
+         true  -- borderless (window kind 3): no Win32 chrome.  gui()->viewport_shell() (emitted
+                  first in the loop below) stands in as the frame: its titlebar drives OS move +
+                  the min/max/close caption buttons, its borders resize via WM_NCHITTEST.
 
-         false -- default OS window: Win32 draws the title bar, caption buttons, and borders.  The
-                  native frame-shell is NOT emitted; the demos draw straight over the cleared surface. */
+         false -- default OS window: Win32 draws the title bar, caption buttons, and borders.
+                  viewport_shell() no-ops; the demos draw straight over the cleared surface. */
 
     const bool b_borderless = true;
 
@@ -288,12 +288,8 @@ main( int argc, char** argv )
             /* --- Default context: the main build lives in one ctx scope. --- */
             gui()->ctx_begin( GUI_CTX_DEFAULT );
 
-            /* Borderless main window: this full-surface native shell IS the OS window's frame. */
-            if ( b_borderless )
-            {
-                gui()->window_begin( "ORB -- sb_vulkan", GUI_WIN_NATIVE | GUI_WIN_NOSCROLL );
-                gui()->window_end();
-            }
+            /* Borderless main window: the shell IS the OS window's frame (no-op with OS chrome). */
+            gui()->viewport_shell( vp0, "ORB -- sb_vulkan", GUI_WIN_NONE );
 
             /* The active demo runs in the single-context path; the multi-ctx demo shows ctx2 instead. */
             if ( b_demo_window && !b_multi )

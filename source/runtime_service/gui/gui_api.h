@@ -145,11 +145,27 @@ typedef struct gui_api_s
                             rhi context; gui owns only the geometry.
        viewport_resize() -- update a viewport's drawable size.  Prefer rhi()->event() +
                             gui()->event() for automatic routing; call this directly only when
-                            explicit control is needed. */
+                            explicit control is needed.
+       viewport_shell()  -- emit the window chrome for a borderless viewport.  Every host window is
+                            one of two things: a UI window (window_begin -- a body full of widgets)
+                            or a chrome shell for the OS window itself -- this call.  It emits a
+                            frame-only GUI_WIN_NATIVE window: its titlebar IS the OS caption (title
+                            text + min/max/close buttons, drag to move, double-click to maximize),
+                            its border the OS sizing frame, and its body is empty and click-through
+                            -- every other window lives on top of it.  Call it FIRST inside
+                            ctx_begin, every frame, before any other window on that viewport.
+                            Returns the caption band height so the host can stack its own strips
+                            (menu bar, toolbar) below it -- the built-in main_menu_bar, free-window
+                            clamping, and the dock tree already inset themselves automatically.
+                            On a viewport whose OS window has its own chrome (opened without
+                            APP_WIN_BORDERLESS) it is a no-op returning 0: call it unconditionally
+                            and flip only the window_open flag to switch chrome modes.  flags may
+                            add GUI_WIN_NOTITLEBAR / NO_MINIMIZE / NO_MAXIMIZE / NORESIZE. */
 
     gui_vp_t    ( *viewport_open   )( i32 win_id );
     void        ( *viewport_close  )( gui_vp_t vp );
     void        ( *viewport_resize )( gui_vp_t vp, i32 w, i32 h );
+    f32         ( *viewport_shell  )( gui_vp_t vp, const char* title, gui_win_flags_t flags );
 
     /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
        to flush into, these own the OS window + rhi context end to end -- gui creates them on

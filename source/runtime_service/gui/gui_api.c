@@ -27,6 +27,7 @@ const gui_api_t g_gui_api_struct =
     .viewport_open                      = gui_viewport_open,
     .viewport_close                     = gui_viewport_close,
     .viewport_resize                    = gui_viewport_resize,
+    .viewport_shell                     = gui_viewport_shell,
     .viewport_spawn                     = gui_viewport_spawn,
     .viewport_update                    = gui_viewport_update,
     .viewport_render_floaters           = gui_viewport_render_floaters,

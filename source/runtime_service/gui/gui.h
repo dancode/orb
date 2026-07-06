@@ -571,7 +571,11 @@ typedef enum
        right-click and border drags are routed to native OS window actions (app()->window_start_move
        / window_title_event / window_system_menu / window_start_resize) instead of gui's in-client
        move, tear-off, collapse, and edge-resize.  The host OS window must have been opened with
-       APP_WIN_BORDERLESS.  Geometry is owned by the OS window (size follows WM_SIZE). */
+       APP_WIN_BORDERLESS.  Geometry is owned by the OS window (size follows WM_SIZE).
+
+       Hosts normally do not pass this flag directly: gui()->viewport_shell() is the front door --
+       it emits the frame-only shell (and no-ops on an OS-chrome window).  Pass NATIVE yourself
+       only to build a custom shell window. */
 
     GUI_WIN_NATIVE            = 1 << 14,
 

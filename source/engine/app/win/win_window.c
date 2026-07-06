@@ -332,6 +332,13 @@ app_window_is_minimized( win_id_t id )
     return win ? ( bool )win->state.minimized : false;
 }
 
+static bool
+app_window_is_borderless( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    return win ? win->native.enabled : false;
+}
+
 static void
 app_window_get_size( win_id_t id, i32* out_w, i32* out_h )
 {
