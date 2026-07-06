@@ -26,9 +26,12 @@ const draw_api_t g_draw_api_struct =
     .rect       = draw_rect,
     .box        = draw_box,
     .circle     = draw_circle,
-    .ortho_2d   = draw_ortho_2d,
-    .begin_pass = draw_begin_pass,
-    .end_pass   = draw_end_pass,
+    .text       = draw_text,
+    .text_width = draw_text_width,
+    .ortho_2d     = draw_ortho_2d,
+    .begin_pass    = draw_begin_pass,
+    .begin_overlay = draw_begin_overlay,
+    .end_pass      = draw_end_pass,
 };
 
 /*==============================================================================================

@@ -602,6 +602,8 @@ solution orb_editor
 solution orb_examples	
 
     out         build/proj  
+
+	add 		run
 	
 	add 		sb_example_tool
 	add 		sb_example_server			

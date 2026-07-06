@@ -174,6 +174,13 @@ bool run_host_should_quit( void );
 void run_host_sleep_debug_set( bool enabled );
 void run_host_sleep_debug_toggle( void );
 
+/* Perf HUD backend choice.  The overlay (F8-toggled, run()->frame_stats readout) draws through
+   gui when gui is live, else the draw service's bitmap font.  Force-draw makes it always use the
+   draw backend even with gui present (the gui backend yields; the host composites the draw HUD
+   over the gui frame).  Off by default; set from on_ready / on_update. */
+void host_perf_set_force_draw( bool on );
+bool host_perf_force_draw( void );
+
 /* called once per frame by the host before on_update; now_us is the integer
    microsecond tick (sys_tick_microseconds).  The clock diffs it against the previous
    stamp internally -- floats are derived here, never accumulated.  Modules must not call. */

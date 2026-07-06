@@ -85,10 +85,48 @@ draw_begin_pass( rhi_cmd_t cmd, i32 win_w, i32 win_h, const f32 clear_rgba[ 4 ] 
 }
 
 /*----------------------------------------------------------------------------------------------
+    draw_begin_overlay
+
+    Same setup as draw_begin_pass but with a LOAD (not CLEAR) color op, so the pass composites
+    ON TOP of whatever is already in the swapchain image -- the overlay case.  Use it at a
+    composite point where a scene has already been drawn (e.g. after render()->draw_scene, before
+    end_frame) to lay an HUD / debug readout over the finished frame.  Close with draw_end_pass().
+----------------------------------------------------------------------------------------------*/
+
+static void
+draw_begin_overlay( rhi_cmd_t cmd, i32 win_w, i32 win_h )
+{
+    rhi()->cmd_bind_bindless( cmd );
+
+    rhi_color_attachment_t color_att = {
+        .texture  = { .id = RHI_SWAPCHAIN_COLOR },
+        .load_op  = RHI_LOAD_OP_LOAD,
+        .store_op = RHI_STORE_OP_STORE,
+    };
+    rhi()->cmd_begin_rendering( cmd, &color_att, 1, NULL );
+
+    rhi()->cmd_set_viewport( cmd, &( rhi_viewport_t ){
+        .x = 0.0f, .y = 0.0f,
+        .width     = (f32)win_w,
+        .height    = (f32)win_h,
+        .min_depth = 0.0f,
+        .max_depth = 1.0f,
+    } );
+    rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){
+        .x = 0, .y = 0, .width = win_w, .height = win_h,
+    } );
+
+    f32 vp[ 16 ];
+    draw_ortho_2d( vp, (f32)win_w, (f32)win_h );
+    draw_begin( cmd, vp );
+}
+
+/*----------------------------------------------------------------------------------------------
     draw_end_pass
 
-    Flush all queued draw calls and close the render pass opened by draw_begin_pass().
-    s.cmd is the command list cached in draw_begin; it remains valid until frame_end().
+    Flush all queued draw calls and close the render pass opened by draw_begin_pass() or
+    draw_begin_overlay().  s.cmd is the command list cached in draw_begin; it remains valid
+    until frame_end().
 ----------------------------------------------------------------------------------------------*/
 
 static void

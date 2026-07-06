@@ -61,5 +61,19 @@ typedef enum
 #define DRAW_MAX_CALLS         1024
 #define DRAW_CIRCLE_MAX_SEGS   64
 
+/*==============================================================================================
+    Built-in 5x7 bitmap debug font (draw_font.c)
+
+    Cell metrics in source pixels (before the per-call scale multiplier).  A glyph is 5 wide x 7
+    tall; ADVANCE / LINE add one pixel of spacing between columns / rows.  At scale s a glyph
+    occupies COLS*s x ROWS*s px and the pen steps ADVANCE*s / LINE*s.
+==============================================================================================*/
+
+#define DRAW_FONT_COLS      5    /* glyph width  in source pixels */
+#define DRAW_FONT_ROWS      7    /* glyph height in source pixels */
+#define DRAW_FONT_ADVANCE   6    /* x pen step per glyph (COLS + 1 spacing) */
+#define DRAW_FONT_LINE      8    /* y pen step per line  (ROWS + 1 spacing) */
+#define DRAW_FONT_GLYPHS    95   /* printable ASCII 0x20..0x7E */
+
 /*============================================================================================*/
 #endif    // DRAW_H

@@ -54,9 +54,31 @@ typedef struct draw_api_s
     /* Full-frame 2D pass helpers.  begin_pass combines: cmd_bind_bindless,
        cmd_begin_rendering (CLEAR to clear_rgba), cmd_set_viewport, cmd_set_scissor,
        and begin() with a pixel-space ortho matrix.
-       end_pass calls end() then cmd_end_rendering.  Must be matched. */
+       end_pass calls end() then cmd_end_rendering.  Matches begin_pass or begin_overlay. */
     void ( *begin_pass )( rhi_cmd_t cmd, i32 win_w, i32 win_h, const f32 clear_rgba[ 4 ] );
     void ( *end_pass   )( void );
+
+    /* ---------------------------------------------------------------------------------------
+       APPEND-ONLY ZONE.  New vtable entries go at the END of the struct, never in the middle:
+       inserting a pointer mid-struct shifts every following slot index, and any draw consumer
+       NOT recompiled against this header (render, sandboxes -- separate build targets) then calls
+       the wrong function through its stale offsets (a garbage-arg crash, e.g. ortho_2d landing on
+       text).  Appending keeps existing slots fixed, so a stale consumer stays correct.
+       ------------------------------------------------------------------------------------- */
+
+    /* Built-in 5x7 bitmap text -- a dependency-free system font (no atlas/sampler/UV), each lit
+       pixel a solid quad through the same pipeline as rect().  For gui-less diagnostics / perf
+       HUDs.  x,y is the string's pixel TOP-LEFT; scale multiplies the 5x7 cell (1/2/3...); rgba
+       is linear [0..1].  '\n' starts a new line.  Emit between begin/end (or begin_pass) with the
+       pixel-space ortho matrix (ortho_2d / begin_pass) so x,y read as pixels.  See DRAW_FONT_*
+       metrics in draw.h.  text_width returns the widest line's pixel width for right-alignment. */
+    void ( *text       )( f32 x, f32 y, f32 scale, const f32 rgba[ 4 ], const char* str );
+    f32  ( *text_width )( f32 scale, const char* str );
+
+    /* begin_overlay -- like begin_pass but opens the pass with a LOAD (not CLEAR) color op, so it
+       composites ON TOP of the existing swapchain image -- the HUD / overlay case (use it at a
+       composite point after a scene has been drawn).  Close with end_pass. */
+    void ( *begin_overlay )( rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
 } draw_api_t;
 

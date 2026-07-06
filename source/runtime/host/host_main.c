@@ -136,10 +136,14 @@ MOD_USE_RENDER;
 MOD_USE_DRAW;
 MOD_USE_GUI;
 
-/* Host-side gui-gated debug overlays -- defined in host_gui.c, included after this unit in the
-   runtime unity build (runtime.c).  No-op when gui() is absent; emits the perf HUD into the
-   default context when its toggle key is on. */
+/* Host-side perf HUD -- defined in host_gui.c, included after this unit in the runtime unity
+   build (runtime.c).  host_perf_tick polls the toggle + folds this frame's stats (every frame);
+   host_gui_debug_frame emits the gui backend (no-op without gui); host_draw_perf_content emits
+   the draw backend inside an already-open draw pass (the gui-less fallback). */
+void host_perf_tick( void );
+bool host_perf_active( void );
 void host_gui_debug_frame( f32 dt );
+void host_draw_perf_content( i32 win_w, i32 win_h );
 
 /* sys_key_t values are pinned to app_key_t for the shared range so console-input polling
    (sys_key_pressed) and windowed input (app()->key_pressed) agree on key constants.
@@ -196,6 +200,29 @@ gui_vp_t
 run_host_vp( void )
 {
     return s_vp0;
+}
+
+/*==============================================================================================
+    Perf HUD -- draw-backend composite
+
+    Lay the bitmap-font perf HUD over the current swapchain image via a LOAD overlay pass (the
+    scene / gui frame beneath survives).  A no-op unless draw is live and the overlay is on, so
+    call sites need not re-check.  Used by the render paths as the gui-less fallback and, when
+    host_perf_force_draw() is set, on top of the gui frame too.  s_win_id gives the drawable size.
+==============================================================================================*/
+
+static void
+host_perf_composite_draw( rhi_cmd_t cmd )
+{
+    if ( !s_draw_inited || !host_perf_active() || !rhi_cmd_valid( cmd ) )
+        return;
+
+    i32 dw = 0, dh = 0;
+    app()->window_get_size( s_win_id, &dw, &dh );
+
+    draw()->begin_overlay( cmd, dw, dh );
+    host_draw_perf_content( dw, dh );
+    draw()->end_pass();
 }
 
 /*==============================================================================================
@@ -560,6 +587,12 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         i64 t_update_us = sys_tick_microseconds();
         stats.update_us = t_update_us - t_events_us;
 
+        /* -- perf HUD toggle + stats fold ------------------------------- */
+
+        /* Poll F8 and fold last frame's timings once per frame, backend-agnostic: the gui
+           backend reads this state in the emit below, the draw backend at the render composite. */
+        host_perf_tick();
+
         /* -- gui emit ---------------------------------------------------- */
 
         /* frame_begin snaps the IO state from the events drained above and returns frame_dirty:
@@ -603,28 +636,56 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- render ------------------------------------------------------ */
 
-        /* Render path A (render module present): render owns the frame; draw_scene
-           clears and draws the scene pass and closes it, then the host composites the
-           gui over the finished scene (gui()->render opens its own LOAD pass on the
-           same command list) before end_frame presents.
-           Render path B (gui only, no render): host drives the frame explicitly --
-           clear the surface, flush the gui draw list, then present. */
+        /* Three mutually exclusive paths, chosen by which services the host loaded (the same
+           k_modules[] inference as boot).  Each ends with the frame presented; skipped entirely
+           while minimized (no drawable surface).  The overlay in every path is the perf HUD --
+           gui when gui is live, otherwise draw's bitmap font (host_draw_perf_content).  Setting
+           host_perf_force_draw() flips that: the gui backend yields and the draw HUD is composited
+           on top even when gui is present (host_perf_composite_draw does it wherever gui ran).
 
+           Path A -- render present (the game path): render owns the frame.  draw_scene opens the
+             scene pass (CLEAR), draws it, and CLOSES it, leaving the frame open with no pass --
+             the composite point.  Over that finished scene each overlay opens its OWN load pass on
+             the same command list so the scene survives:
+               - gui live       -> gui()->render (the full UI, incl. its own perf overlay).
+               - no gui, or force-draw -> the draw HUD via host_perf_composite_draw (LOAD).
+             Then end_frame presents.
+
+           Path B -- gui but no render: the host drives the frame by hand -- open it, CLEAR the
+             swapchain (so gui composites over a fresh background, not last frame's image), flush
+             the gui draw list, add the draw HUD on top if force-draw is set, present.
+
+           Path C -- draw but no render and no gui (a minimal draw-only host): the host owns the
+             whole frame -- open it, draw()->begin_pass CLEARS the surface, the perf HUD paints
+             into that same pass, present.  Unlike A's overlay this is unconditional: the frame
+             must clear + present every tick even with the HUD off, or nothing reaches the screen. */
+
+        host_perf_set_force_draw( true );
+
+        bool gui_ran = ( s_gui_inited && s_vp0 != GUI_VP_INVALID );
         if ( windowed && !app()->window_is_minimized( s_win_id ) )
         {
-            if ( render() )
+            if ( render() )   /* -- path A: render owns the frame -- */
             {
                 if ( render()->begin_frame( s_ctx_id ) )
                 {
                     render()->draw_scene( s_ctx_id, dt );
 
-                    if ( s_gui_inited && s_vp0 != GUI_VP_INVALID )
-                        gui()->render( s_vp0, render()->frame_cmd( s_ctx_id ) );
+                    /* Composite over the finished scene at the open-frame/no-pass point.  gui draws
+                       the UI (and its own perf overlay); the draw HUD is the fallback when gui is
+                       absent, or an addition on top when force-draw is set. */
+                    rhi_cmd_t cmd = render()->frame_cmd( s_ctx_id );
+
+                    if ( gui_ran )
+                         gui()->render( s_vp0, cmd );
+
+                    if ( !gui_ran || host_perf_force_draw() )
+                        host_perf_composite_draw( cmd );
 
                     render()->end_frame( s_ctx_id );
                 }
             }
-            else if ( s_gui_inited && s_vp0 != GUI_VP_INVALID )
+            else if ( gui_ran ) /* -- path B: gui, no render -- */
             {
                 rhi_cmd_t cmd = rhi()->frame_begin( s_ctx_id );
                 if ( rhi_cmd_valid( cmd ) )
@@ -637,8 +698,27 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                         .clear    = { gui_clear[ 0 ], gui_clear[ 1 ], gui_clear[ 2 ], gui_clear[ 3 ] },
                     }, 1, NULL );
                     rhi()->cmd_end_rendering( cmd );
-
                     gui()->render( s_vp0, cmd );
+
+                    /* Force-draw: lay the draw HUD over the gui frame (gui suppressed its own). */
+                    if ( host_perf_force_draw() )
+                         host_perf_composite_draw( cmd );
+
+                    rhi()->frame_end( s_ctx_id );
+                }
+            }
+            else if ( s_draw_inited )   /* -- path C: draw only, no render, no gui -- */
+            {
+                /* Clear the surface and paint the perf HUD through draw's built-in font --
+                   the gui-less host's whole frame (see the path-C note in the header above). */
+                rhi_cmd_t cmd = rhi()->frame_begin( s_ctx_id );
+                if ( rhi_cmd_valid( cmd ) )
+                {
+                    i32 dw = 0, dh = 0;
+                    app()->window_get_size( s_win_id, &dw, &dh );
+                    draw()->begin_pass( cmd, dw, dh, gui_clear );
+                    host_draw_perf_content( dw, dh );
+                    draw()->end_pass();
                     rhi()->frame_end( s_ctx_id );
                 }
             }

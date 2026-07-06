@@ -24,6 +24,7 @@ MOD_USE_RHI
 #include "runtime_service/draw/draw_batch.c"
 #include "runtime_service/draw/draw_material.c"
 #include "runtime_service/draw/draw_cmd.c"
+#include "runtime_service/draw/draw_font.c"
 #include "runtime_service/draw/draw_helper.c"
 
 #ifndef DRAW_API_C_PRELUDE
