@@ -1022,15 +1022,8 @@ main( int argc, char** argv )
 
         /* ------------------------------------------------------------------------------ */
         /* Host-side debug keys.  The gui debug hotkeys (F1-F4 layers, F9 render view, F10
-           dashboard, P/O overlays, C/I skips) are handled inside gui via debug_enable above. */
-
-        /* F pins frame_dirty true, defeating the clean-frame skip (see set_force_redraw). */
-        if ( app()->key_pressed( APP_KEY_F ) )
-        {
-            bool on = !gui()->force_redraw();
-            gui()->set_force_redraw( on );
-            printf( "[sb_gui] force redraw: %s\n", on ? "on (always render)" : "off (dirty-skip)" );
-        }
+           dashboard, P/O overlays, C retained skip, F force redraw, I idle skip) are handled
+           inside gui via debug_enable above. */
 
         /* M dumps the memory stats table: allocation sizes and usage. */
         if ( app()->key_pressed( APP_KEY_M ) )

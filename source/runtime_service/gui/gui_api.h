@@ -1070,9 +1070,13 @@ typedef struct gui_api_s
                  layout; Debug builds -- consumed at event time)
          F9      render mode: normal -> wireframe -> batch tint
          F10     pipeline dashboard window (backend memory maps / uploads / batches)
-         P       perf overlay tier   (off / FPS / +timings / +render counts / +retained)
+         P       perf overlay tier   (off / FPS / +timings / +counts & lever status / +retained)
          O       state overlay tier  (off / ids / +focus,nav / +popups)
-         C       retained skip on/off (tessellation cache)
+         C       retained skip on/off -- RENDER-side cache: off re-tessellates every window's
+                 geometry every frame; the emit skip is untouched
+         F       force redraw on/off -- EMIT-side: on pins frame_dirty true so frame_begin never
+                 skips the widget emit (the "always dirty" lever, see set_force_redraw).  A host
+                 that writes set_force_redraw itself every frame owns the flag over the hotkey.
          I       idle skip on/off (frame_pace blocks on OS input when idle)
 
        The perf / state overlays and the dashboard are emitted internally, last in the default

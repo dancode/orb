@@ -193,9 +193,19 @@ main( int argc, char** argv )
 
         /* While playing, the sim mutates state the panels display every frame -- pin the gui
            dirty so the Inspector/Console track it live.  Edit mode gets the retained skip.
-           always_emit stays pinned on while debugging the viewport twist. */
+           always_emit stays pinned on while debugging the viewport twist.
+
+           Written EDGE-TRIGGERED (only when the host's requirement changes), not every frame:
+           the F debug hotkey toggles the same flag inside gui, and an unconditional per-frame
+           write here would clobber that toggle on the very next frame. */
         bool always_emit = true;
-        gui()->set_force_redraw( always_emit || g_ed.mode == ED_MODE_PLAY );
+        bool want_force  = always_emit || g_ed.mode == ED_MODE_PLAY;
+        static bool s_want_force_prev = false;
+        if ( want_force != s_want_force_prev )
+        {
+            gui()->set_force_redraw( want_force );
+            s_want_force_prev = want_force;
+        }
 
         /* ------------------------------------------------------------------------------ */
         /* GUI emit.  frame_begin returns frame_dirty; the debug overlays (P/O/F10) emit

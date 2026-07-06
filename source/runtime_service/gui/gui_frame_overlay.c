@@ -103,6 +103,27 @@ perf_render_end( f64 t0 )
         s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
 }
 
+/* Debug-lever state read by the overlay's status rows below; defined further down this file
+   (idle skip) and in gui_frame.c (force redraw) -- forward declarations, same unity TU. */
+void gui_set_force_redraw( bool on );
+bool gui_force_redraw( void );
+bool gui_idle_skip( void );
+
+/* Backing panel behind an overlay's text -- a plain filled rect emitted FIRST inside the region,
+   so it draws behind the region's own text but (region z-band) on top of every ordinary window
+   beneath it; over a busy editor UI the digits are unreadable without it.  Sized from the region's
+   persisted content measure (the same state its w/h <= 0 autosize reads, gui_region.c), so no
+   second content-size tracker is needed; the size is last frame's -- one frame of lag, and the
+   very first frame draws no backdrop (no measure exists yet). */
+static void
+overlay_backdrop( gui_id_t id, f32 x, f32 y )
+{
+    gui_scroll_link_t* scroll = GUI_STATE( gui_scroll_link_t, id );
+    if ( scroll->content_w > 0.0f && scroll->content_h > 0.0f )
+        gui_draw_rect( x, y, scroll->content_w, scroll->content_h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
+                       // GUI_COLOR( 0x10, 0x10, 0x14, 0xC8 ) );
+}
+
 static void
 gui_perf_overlay( int mode )
 {
@@ -116,14 +137,18 @@ gui_perf_overlay( int mode )
     if ( mb && mb->last_frame == g_ctx->retained.frame )
         top_y += mb->h;
 
+
+    float left_x = 8.0f;
+
     /* A root region: no chrome to hide (no window body/border to paint transparent), fixed
        top-left, hugging its content (w/h <= 0 autosize both axes).  NO_INPUT: pure text readout,
        a region is interactive by default and this one has no business entering the hover_win
        contest or eating the mouse wheel.  DEBUG_BAND: a self-measuring readout -- its own
        ever-changing digits must not count in the stats it displays or poison idle-skip. */
-    gui_region_begin( "perf_overlay", 8.0f, top_y, 0.0f, 0.0f,
+    gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
     {
+        overlay_backdrop( id_hash( "perf_overlay" ), left_x, top_y );
         gui_stack();
         /* FPS, graded by health: >=60 green, >=30 amber, else red. */
         u32 fps_col = fps >= 60.0f ? GUI_COLOR( 0x66, 0xDD, 0x55, 0xFF )
@@ -169,6 +194,18 @@ gui_perf_overlay( int mode )
                 gui_textf( "up batch  %u", rs.upload_batches );
                 gui_textf( "up bytes  %u", rs.upload_bytes   );
             }
+        }
+
+        /* Debug-lever status (mode >= 3): the emit / tessellation / pacing toggles, live, so
+           the console log is not needed to know which regime the numbers above were measured
+           in.  Each line names its hotkey.  Fixed-width states keep the footprint stable. */
+        bool show_status_rows = ( mode >= 3 );
+        if ( show_status_rows )
+        {
+            gui_new_line( 2.0f );
+            gui_textf( "emit  %s (F)", gui_force_redraw()        ? "forced  " : "on-dirty" );
+            gui_textf( "tess  %s (C)", gui_build_retained_skip() ? "cached  " : "always  " );
+            gui_textf( "pace  %s (I)", gui_idle_skip()           ? "idleskip" : "spin    " );
         }
     }
     gui_region_end();
@@ -220,6 +257,7 @@ gui_state_overlay( int mode )
        simpler than coordinating widths through a shared channel. */
     gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
     {
+        overlay_backdrop( id_hash( "state_overlay" ), 260.0f, top_y );
         gui_stack();
 
         gui_textf( "Hover   %s", dbg_id_str( s_interaction.hover_id ) );
@@ -283,11 +321,18 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
         F10     pipeline dashboard window
         P       perf overlay tier  (off / fps / +timings / +counts / +retained)
         O       state overlay tier (off / ids / +focus,nav / +popups)
-        C       retained skip (tessellation cache) on/off
+        C       retained skip (tessellation cache) on/off -- RENDER-side: off re-tessellates
+                every window every frame (geometry), emit skip is untouched
+        F       force redraw on/off -- EMIT-side: on pins frame_dirty true so frame_begin never
+                skips the widget emit (the "always dirty" lever; see set_force_redraw)
         I       idle skip (frame_pace blocks on OS input when idle) on/off
 
     Letter keys are fenced by want_capture_keyboard so typing in a text field never toggles them.
+
+    NOTE (F): a host that writes set_force_redraw itself every frame (sb_gui_editor pins it for
+    play mode / always-emit) owns the flag -- its per-frame write overrides the hotkey toggle.
 ==============================================================================================*/
+
 
 static int  s_dbg_perf_mode;     /* perf overlay tier, P cycles 0..4                        */
 static int  s_dbg_state_mode;    /* state overlay tier, O cycles 0..3                       */
@@ -338,6 +383,13 @@ debug_hotkeys( void )
         bool on = !gui_build_retained_skip();
         gui_build_set_retained_skip( on );
         printf( "[gui] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
+    }
+    if ( gui_is_key_pressed( APP_KEY_F ) )
+    {
+        bool on = !gui_force_redraw();
+        gui_set_force_redraw( on );
+        printf( "[gui] force redraw: %s\n", on ? "on (always emit, frame_dirty pinned)"
+                                               : "off (skip emit on clean frames)" );
     }
     if ( gui_is_key_pressed( APP_KEY_I ) )
     {
