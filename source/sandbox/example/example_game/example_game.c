@@ -15,6 +15,7 @@
 ==============================================================================================*/
 
 #include "orb.h"
+#include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_api.h"
 #include "runtime_modules/render/render_api.h"
 #include "runtime/runtime_host.h"
@@ -51,6 +52,7 @@ game_update( f32 dt )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
+    RUN_SERVICE( core   ),
     RUN_SERVICE( app    ),
     RUN_SERVICE( rhi    ),
     RUN_MODULE ( render ),

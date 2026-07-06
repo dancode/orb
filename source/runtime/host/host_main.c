@@ -33,18 +33,20 @@
     Frame order
     -----------
     [pump OS events]          app()->pump_events()
-    [event drain]             app()->next_event() per frame: routes to gui()->event(),
-                              handles resize (context_resize + viewport_resize) and close.
+    [event drain]             app()->next_event() per frame: rhi()->event (swapchain resize),
+                              gui()->event (input, floaters), desc->on_event (leftovers);
+                              main WIN_CLOSE goes through desc->on_close_request (veto).
     [frame clock]             run_clock_update()
     [console poll]            sys, if RUN_HOST_CONSOLE
     [job tick]                job()->tick()
-    [gui frame begin]       gui()->frame_begin + ctx_begin( DEFAULT ) -- when gui loaded
-    [host update]             desc->on_update( dt )             -- builds UI and game logic
-    [gui frame end]         gui()->ctx_end + frame_end      -- seals the build, when gui loaded
-    [gui platform sync]     gui()->viewport_update() -- when gui loaded
+    [host update]             desc->on_update( dt )     -- game logic, every frame, no widgets
+    [gui emit]                gated on gui()->frame_begin's dirty bool (retained-cache skip):
+                              ctx_begin( DEFAULT ) -> chrome shell (borderless) ->
+                              desc->on_gui( dt ) -> ctx_end; frame_end seals either way.
+    [gui platform sync]       gui()->viewport_update() -- when gui loaded
     [render]                  see Render paths below
     [hot-reload]              mod_check_reloads + flush, if RUN_HOST_HOT_RELOAD
-    [frame pacing]            sleep or editor wait
+    [frame pacing]            sleep or editor wait (gui wants_redraw keeps animations smooth)
 
     Render paths
     ------------
@@ -269,14 +271,20 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        If app was declared in k_modules, app() is non-NULL here and we
        create a window. No separate flag -- the module list is the declaration.
     */
-    const bool windowed = ( app() != NULL );
+    const bool windowed   = ( app() != NULL );
+
+    /* Borderless is honored only when gui is loaded -- gui draws the chrome shell (caption,
+       sizing borders) each frame; without it the window would have no frame at all.  A host
+       without gui always gets the plain platform window. */
+    const bool borderless = ( desc->flags & RUN_HOST_BORDERLESS ) != 0 && gui() != NULL;
 
     if ( windowed )
     {
         const i32 w = desc->window_width  > 0 ? desc->window_width  : 1280;
         const i32 h = desc->window_height > 0 ? desc->window_height : 720;
 
-        s_win_id = app()->window_open( desc->name ? desc->name : "orb", 0, 0, w, h, APP_WIN_DEFAULT );
+        s_win_id = app()->window_open( desc->name ? desc->name : "orb", 0, 0, w, h,
+                                       borderless ? APP_WIN_BORDERLESS : APP_WIN_DEFAULT );
         if ( s_win_id == APP_WIN_INVALID )
         {
             fprintf( stderr, "[host] window creation failed\n" );
@@ -321,13 +329,27 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
             if ( gui() )
             {
-                if ( !gui()->init( GUI_FONT_NONE ) )
+                /* Wire the optional gui service from the descriptor: feature caps must land
+                   before init; the frame hooks are the sys services gui cannot link itself
+                   (clock for perf/idle timing, sleep + event-wait for frame_pace) -- the host
+                   supplies them but keeps ownership of the loop and its pacing. */
+                const run_gui_desc_t* gd = desc->gui;
+
+                if ( gd && gd->caps )
+                    gui()->init_config_front( *gd->caps );
+
+                if ( !gui()->init( gd ? gd->font : GUI_FONT_NONE ) )
                 {
                     fprintf( stderr, "[host] gui init failed\n" );
                     host_shutdown();
                     return 1;
                 }
                 s_gui_inited = true;
+
+                gui()->set_frame_hooks( sys_tick_seconds, sys_sleep_milliseconds,
+                                        sys_wait_for_os_events_ms );
+                if ( gd && gd->debug )
+                    gui()->debug_enable( true );
 
                 s_vp0 = gui()->viewport_open( s_win_id );
                 if ( s_vp0 == GUI_VP_INVALID )
@@ -372,6 +394,17 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- loop -------------------------------------------------------- */
 
+    /* Main-surface clear color for the gui-composite render path; alpha 0 in the desc reads
+       as "unset" (a cleared swapchain is always opaque) -- default dark, same rule as boot. */
+    f32 gui_clear[ 4 ] = { 0.05f, 0.05f, 0.08f, 1.0f };
+    if ( desc->gui && desc->gui->clear[ 3 ] > 0.0f )
+    {
+        gui_clear[ 0 ] = desc->gui->clear[ 0 ];
+        gui_clear[ 1 ] = desc->gui->clear[ 1 ];
+        gui_clear[ 2 ] = desc->gui->clear[ 2 ];
+        gui_clear[ 3 ] = desc->gui->clear[ 3 ];
+    }
+
     f64 last_tick = sys()->tick_seconds();
 
     while ( !g_quit_requested )
@@ -384,8 +417,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         /* -- drain event ring ------------------------------------------ */
 
         /* Drain events.  rhi()->event() routes WIN_RESIZE to the matching swapchain; gui()->event()
-           updates viewport sizes and handles input (text, scroll, mouse state).  The host only
-           needs to act on WIN_CLOSE for the main window -- all floater events are consumed by gui. */
+           updates viewport sizes and handles input (text, scroll, mouse state; owned-floater
+           closes are consumed here too).  on_event taps whatever is left; any WIN_CLOSE that
+           survives is the main window's -- on_close_request may veto it (save prompts). */
 
         if ( windowed )
         {
@@ -395,9 +429,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( rhi() ) rhi()->event( &ev );
                 if ( gui() && gui()->event( &ev ) )
                     continue;
+                if ( desc->on_event && desc->on_event( &ev ) )
+                    continue;
 
                 if ( ev.type == APP_EV_WIN_CLOSE )
-                    goto loop_exit;
+                {
+                    if ( !desc->on_close_request || desc->on_close_request() )
+                        goto loop_exit;
+                }
             }
         }
 
@@ -420,30 +459,39 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( job() )
              job()->tick();
 
-        /* -- gui frame begin ------------------------------------------ */
-
-        /* frame_begin snaps the IO state (mouse/keyboard) from the events drained above and binds
-           the default context; call before any widget code, including on_update below.  The build
-           is a balanced scope -- ctx_end + frame_end seal it after on_update emits its windows. */
-
-        if ( s_gui_inited )
-        {
-            gui()->frame_begin( dt );
-            gui()->ctx_begin( GUI_CTX_DEFAULT );
-        }
-
         /* -- host update ------------------------------------------------- */
 
-        /* Sandbox logic, game bootstrap, tool work. Lives at the top of the
-           stack -- can call any loaded module API or run_host_quit(). */
+        /* Game logic, tool work -- every frame, BEFORE the gui emit so the UI reflects this
+           frame's state.  Widget calls do not belong here (the emit below may be skipped on
+           clean retained frames); they go in on_gui.  Can call any loaded module API or
+           run_host_quit(). */
 
         if ( desc->on_update )
              desc->on_update( dt );
 
-        /* Seal the gui build: close the default context, then the frame. */
+        /* -- gui emit ---------------------------------------------------- */
+
+        /* frame_begin snaps the IO state from the events drained above and returns frame_dirty:
+           false = nothing changed, the retained geometry re-presents and the whole build is
+           skipped (on_gui does not run).  On dirty frames the default context's build opens,
+           the chrome shell goes first when the window is borderless (it publishes the caption
+           band -- read it via viewport_caption_h(0)), then on_gui emits the host's windows.
+           frame_end seals the frame either way (clean frames replay volatile widgets there). */
+
         if ( s_gui_inited )
         {
-            gui()->ctx_end();
+            if ( gui()->frame_begin( dt ) )
+            {
+                gui()->ctx_begin( GUI_CTX_DEFAULT );
+
+                if ( borderless && s_vp0 != GUI_VP_INVALID )
+                    gui()->viewport_shell( s_vp0, desc->name ? desc->name : "orb", GUI_WIN_NONE );
+
+                if ( desc->on_gui )
+                     desc->on_gui( dt );
+
+                gui()->ctx_end();
+            }
             gui()->frame_end();
         }
 
@@ -483,7 +531,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                         .texture  = { .id = RHI_SWAPCHAIN_COLOR },
                         .load_op  = RHI_LOAD_OP_CLEAR,
                         .store_op = RHI_STORE_OP_STORE,
-                        .clear    = { 0.05f, 0.05f, 0.08f, 1.0f },
+                        .clear    = { gui_clear[ 0 ], gui_clear[ 1 ], gui_clear[ 2 ], gui_clear[ 3 ] },
                     }, 1, NULL );
                     rhi()->cmd_end_rendering( cmd );
 

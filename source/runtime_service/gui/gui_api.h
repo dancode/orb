@@ -55,18 +55,21 @@ typedef struct gui_api_s
     void                ( *shutdown  )( void );
     u32                 ( *font_load )( const char* path );
 
-    /* boot() -- the one-call alternative to the block above for a host whose main window IS a gui
-       surface: gui owns the window + render context end to end, exactly like its tear-off
-       floaters.  Stands up the whole stack from a single descriptor (gui_boot_desc_t, gui.h):
-       rhi()->init() (idempotent -- safe if the host already ran it), app window (borderless by
-       default, with the chrome shell then auto-emitted each frame; os_chrome opts back into the
-       stock OS frame), rhi context, init_config_front + init(font), set_frame_hooks, debug_enable,
-       and the primary viewport -- returned, or GUI_VP_INVALID with everything unwound on failure.
-       Call once after mod_init_all, before any other window opens.  shutdown() tears down what
-       boot created (context + window); rhi()->shutdown() stays with the host, last.  Pairs with
-       frame_poll / present below for the full canonical loop; a host needing manual control of
-       any stage simply keeps calling the explicit block instead -- boot is composition, not
-       replacement, and viewport_open still attaches gui to a host-owned window. */
+    /* boot() -- TEST-BED tier: the one-call alternative to the block above for sandboxes, demos,
+       and quick tools whose main window IS a gui surface -- gui owns the window + render context
+       end to end, exactly like its tear-off floaters.  Non-idiomatic for engine hosts: those run
+       through the runtime host (run_host_main), which keeps ownership of the window/loop and
+       wires gui as an optional service.  Stands up the whole stack from a single descriptor
+       (gui_boot_desc_t, gui.h): rhi()->init() (idempotent -- safe if the host already ran it),
+       app window (borderless by default, with the chrome shell then auto-emitted each frame;
+       os_chrome opts back into the stock OS frame), rhi context, init_config_front + init(font),
+       set_frame_hooks, debug_enable, and the primary viewport -- returned, or GUI_VP_INVALID
+       with everything unwound on failure.  Call once after mod_init_all, before any other window
+       opens.  shutdown() tears down what boot created (context + window); rhi()->shutdown()
+       stays with the host, last.  Pairs with frame_poll / present below for the full easy-mode
+       loop; a host needing manual control of any stage simply keeps calling the explicit block
+       instead -- boot is composition, not replacement, and viewport_open still attaches gui to a
+       host-owned window. */
 
     gui_vp_t            ( *boot )( const gui_boot_desc_t* desc );
 
@@ -139,9 +142,10 @@ typedef struct gui_api_s
     void ( *render      )( gui_vp_t vp, rhi_cmd_t cmd );
     void ( *frame_pace  )( i32 spin_sleep_ms, i32 anim_sleep_ms );
 
-    /* Canonical loop wrappers -- with boot() these shrink a host's main loop to its essence.
-       frame_poll() is loop-tier for any host (it needs only app + rhi routing); present_begin /
-       present_end are boot-tier (they render through the boot-owned context) and form a
+    /* Easy-mode loop wrappers (TEST-BED tier, same audience as boot() above -- engine hosts get
+       this loop from run_host instead).  With boot() these shrink a sandbox's main loop to its
+       essence.  frame_poll() works for any host (it needs only app + rhi routing); present_begin
+       / present_end are boot-tier (they render through the boot-owned context) and form a
        balanced pair like every other begin/end: begin's bool gates the host's own passes, end
        is called unconditionally.
 

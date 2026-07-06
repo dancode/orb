@@ -1,14 +1,19 @@
 /*==============================================================================================
 
-    gui_boot.c -- the boot-tier host front end: one-call setup and the canonical frame loop.
+    gui_boot.c -- the boot-tier host front end: one-call setup and an easy-mode frame loop.
+
+    TIER NOTE: this is a TEST-BED CONVENIENCE for sandboxes, demos, and quick tools -- hosts
+    where the UI is the whole application and setup boilerplate is pure friction.  It is
+    non-idiomatic for the engine: real hosts run through the runtime host (source/runtime,
+    run_host_main), which owns the window, the rhi context, the loop, and the pacing itself
+    and wires gui as an optional service.  Nothing here is required to use gui.
 
     gui's tear-off floaters already own their OS window + rhi context end to end
-    (viewport_spawn); the main window was the last surface still assembled by hand in every
-    host.  This file closes that gap: boot() stands up the whole stack for the main surface
-    (rhi device -> OS window -> render context -> gui init -> viewport 0), frame_poll() is the
-    canonical event pump, and present_begin()/present_end() are the canonical render/present
-    pair.  Everything composes the same public primitives a host would call itself, so the
-    explicit path (sb_vulkan) keeps working unchanged -- boot is composition, not replacement.
+    (viewport_spawn); boot() extends that to the main surface (rhi device -> OS window ->
+    render context -> gui init -> viewport 0), frame_poll() is an easy-mode event pump, and
+    present_begin()/present_end() are an easy-mode render/present pair.  Everything composes
+    the same public primitives a host would call itself, so the explicit path (sb_vulkan)
+    keeps working unchanged -- boot is composition, not replacement.
 
     Scope contract: this tier composes PUBLIC app/rhi/gui primitives only, and owns nothing
     beyond the main surface's lifecycle (window + swapchain + viewport 0 + the frame pair).

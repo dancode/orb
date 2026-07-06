@@ -649,6 +649,11 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	add 		sb_gui_editor			# game-engine editor shell
 	add 		sb_vulkan_stress		# multi-context sync stress exe
 
+	add 		sb_example_runtime		# runtime test
+	add 		sb_example_editor 		# editor test 
+	add 		sb_example_game 		# game test
+	add 		sb_example_server 		# no rendering.
+	
 
 solution orb_sandbox_engine				# developing engine libraries
 
