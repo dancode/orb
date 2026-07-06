@@ -38,11 +38,16 @@
     to build ref_type_t / ref_field_t initializers.
 ==============================================================================================*/
 
-#define REF_OFFSETOF( T, m )    ( (uint16_t)offsetof( T, m ) )
-#define REF_SIZEOF( T )         ( (uint16_t)sizeof( T ) )
+/* Compile-time range guard: ref_field_t/ref_type_t store offsets, sizes, and counts as
+   uint16_t, so any value at or past 64 KB would truncate silently. The negative array size
+   forces a compile error when the value does not fit. Proper >64KB support deferred. */
+#define REF_U16_GUARD( v )      ( sizeof( char[ ( (v) <= 0xFFFF ) ? 1 : -1 ] ) ? (uint16_t)(v) : (uint16_t)0 )
+
+#define REF_OFFSETOF( T, m )    REF_U16_GUARD( offsetof( T, m ) )
+#define REF_SIZEOF( T )         REF_U16_GUARD( sizeof( T ) )
 #define REF_ALIGNOF( T )        ( (uint8_t)_Alignof( T ) )
-#define REF_FIELD_SIZE( T, m )  ( (uint16_t)sizeof( ((T*)0)->m ) )
-#define REF_ARRAY_COUNT( a )    ( (uint16_t)( sizeof( a ) / sizeof( (a)[0] ) ) )
+#define REF_FIELD_SIZE( T, m )  REF_U16_GUARD( sizeof( ((T*)0)->m ) )
+#define REF_ARRAY_COUNT( a )    REF_U16_GUARD( sizeof( a ) / sizeof( (a)[0] ) )
 
 /*==============================================================================================
     Registration API
