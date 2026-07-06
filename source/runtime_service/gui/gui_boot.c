@@ -6,9 +6,14 @@
     (viewport_spawn); the main window was the last surface still assembled by hand in every
     host.  This file closes that gap: boot() stands up the whole stack for the main surface
     (rhi device -> OS window -> render context -> gui init -> viewport 0), frame_poll() is the
-    canonical event pump, and present_begin()/present() are the canonical render/present pair.
-    Everything composes the same public primitives a host would call itself, so the explicit
-    path (sb_vulkan) keeps working unchanged -- boot is composition, not replacement.
+    canonical event pump, and present_begin()/present_end() are the canonical render/present
+    pair.  Everything composes the same public primitives a host would call itself, so the
+    explicit path (sb_vulkan) keeps working unchanged -- boot is composition, not replacement.
+
+    Scope contract: this tier composes PUBLIC app/rhi/gui primitives only, and owns nothing
+    beyond the main surface's lifecycle (window + swapchain + viewport 0 + the frame pair).
+    Anything that is not window/surface/UI -- job ticks, hot-reload, simulation clocks,
+    networking -- belongs to the runtime host (source/runtime), never here.
 
     Included LAST in the gui.c unity (after gui_frame.c): it calls straight into the frame
     lifecycle, the viewport pool, and the window unit.  gui_frame.c reaches back through two
@@ -23,9 +28,9 @@
             if ( gui()->frame_begin( dt ) ) { ctx_begin; ...build...; ctx_end; }
             gui()->frame_end();
             rhi_cmd_t cmd;
-            if ( gui()->present_begin( &cmd ) )      -- optional: host render passes
+            if ( gui()->present_begin( &cmd ) )      -- open the frame; host render passes
                 ...record into cmd...
-            gui()->present();                        -- gui draw + present + floaters
+            gui()->present_end();                    -- gui draw + present + floaters
             gui()->frame_pace( 4, 16 );
         }
         gui()->shutdown();                           -- also tears down the boot-owned surface
@@ -200,16 +205,16 @@ gui_frame_poll( f32* out_dt )
 }
 
 /*==============================================================================================
-    present_begin / present -- the canonical render + present pair (boot-tier: needs the
+    present_begin / present_end -- the canonical render + present pair (boot-tier: needs the
     boot-owned rhi context; an attach-path host keeps writing its own render block)
 ==============================================================================================*/
 
 /* Open the main surface's frame: reconcile floaters (the safe point between build and
    present), guard minimized, begin the rhi frame, and clear the swapchain.  Returns true with
    the live command buffer so the host can record its own passes (offscreen scene renders,
-   custom draws) before present() draws the gui; false means skip them (minimized, swapchain
-   rebuild, or no boot) -- still call present() unconditionally, it presents the floaters and
-   resets this state either way. */
+   custom draws) before present_end() draws the gui; false means skip them (minimized,
+   swapchain rebuild, or no boot) -- still call present_end() unconditionally, it presents the
+   floaters and resets this state either way.  A balanced pair like every other begin/end. */
 bool
 gui_present_begin( rhi_cmd_t* out_cmd )
 {
@@ -243,13 +248,13 @@ gui_present_begin( rhi_cmd_t* out_cmd )
 }
 
 /* Close the frame: draw the gui over whatever the host recorded, present the main surface,
-   then present every owned floater.  Runs present_begin itself when the host had no passes to
-   record, so the minimal loop is just frame_poll / build / present / frame_pace. */
+   then present every owned floater.  No-op without a matching present_begin -- the pair is
+   balanced by contract; there is no hidden self-begin. */
 void
-gui_present( void )
+gui_present_end( void )
 {
     if ( !s_present.begun )
-        gui_present_begin( NULL );
+        return;
 
     if ( s_present.cmd_live )
     {

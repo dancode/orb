@@ -1054,10 +1054,12 @@ main( int argc, char** argv )
 
         gui()->frame_end();
 
-        /* Render + present: main surface (cleared to the boot color) then every owned
-           floater.  Minimized-safe; a host with its own passes would bracket them with
-           present_begin (see sb_gui_editor). */
-        gui()->present();
+        /* Render + present: a balanced pair.  present_begin opens the main surface's frame
+           (cleared to the boot color) -- its bool gates host render passes, none here (see
+           sb_gui_editor for that use); present_end draws the gui, presents, and renders every
+           owned floater.  Both minimized-safe. */
+        gui()->present_begin( NULL );
+        gui()->present_end();
 
         /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
            on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */

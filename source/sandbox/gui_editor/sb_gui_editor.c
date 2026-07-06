@@ -201,7 +201,7 @@ main( int argc, char** argv )
 
         /* ------------------------------------------------------------------------------ */
         /* Render.  present_begin opens the main surface's frame (clear included) and hands
-           out the live cmd for the offscreen scene pass; present draws the gui over it,
+           out the live cmd for the offscreen scene pass; present_end draws the gui over it,
            presents, and renders the floaters -- called unconditionally (minimized-safe).  */
 
         rhi_cmd_t cmd;
@@ -210,7 +210,7 @@ main( int argc, char** argv )
             if ( emitted && scene_render )
                 ed_viewport_render( cmd );
         }
-        gui()->present();
+        gui()->present_end();
 
         /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
            on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */

@@ -141,7 +141,9 @@ typedef struct gui_api_s
 
     /* Canonical loop wrappers -- with boot() these shrink a host's main loop to its essence.
        frame_poll() is loop-tier for any host (it needs only app + rhi routing); present_begin /
-       present are boot-tier (they render through the boot-owned context).
+       present_end are boot-tier (they render through the boot-owned context) and form a
+       balanced pair like every other begin/end: begin's bool gates the host's own passes, end
+       is called unconditionally.
 
          while ( gui()->frame_poll( &dt ) )       -- pump the OS, route events (rhi swapchain
          {                                           resize, gui input + floater lifecycle),
@@ -154,9 +156,9 @@ typedef struct gui_api_s
                                                      color); true hands out the live cmd for the
                                                      host's own passes (offscreen scenes, custom
                                                      draws under the UI).
-             gui()->present();                    -- gui draw + present + all owned floaters;
-                                                     runs present_begin itself if the host had
-                                                     no passes.  Call unconditionally.
+             gui()->present_end();                -- gui draw + present + all owned floaters.
+                                                     Call unconditionally (minimized-safe);
+                                                     no-op without a matching present_begin.
              gui()->frame_pace( 4, 16 );
          }
 
@@ -167,7 +169,7 @@ typedef struct gui_api_s
 
     bool ( *frame_poll    )( f32* out_dt );
     bool ( *present_begin )( rhi_cmd_t* out_cmd );
-    void ( *present       )( void );
+    void ( *present_end   )( void );
 
     /* Idle-skip control -- the programmatic twin of the I hotkey.  When on, frame_pace blocks on
        OS input while the UI is idle instead of spinning.  Off by default. */

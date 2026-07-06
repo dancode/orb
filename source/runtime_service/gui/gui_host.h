@@ -70,7 +70,7 @@ f32        gui_viewport_caption_h( gui_vp_t vp );
 gui_vp_t gui_boot( const gui_boot_desc_t* desc );
 bool       gui_frame_poll( f32* out_dt );
 bool       gui_present_begin( rhi_cmd_t* out_cmd );
-void       gui_present( void );
+void       gui_present_end( void );
 
 /* gui-owned floater surfaces (window + context owned by gui) */
 gui_vp_t gui_viewport_spawn          ( const char* title, i32 x, i32 y, i32 w, i32 h );
