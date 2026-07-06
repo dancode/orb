@@ -4,7 +4,9 @@
     cvar_config.c - Cvar Configuration File Management
 
     - cvar_write_config   : Writes all CVAR_ARCHIVE variables to a file.
-    - cvar_exec_config    : Executes a configuration file.
+
+    Config EXECUTION has no bespoke parser: the "exec" command (cmd.c) queues raw file text
+    into the command buffer, so every registered command works inside config files.
 
 ==============================================================================================*/
 
@@ -56,129 +58,17 @@ cvar_write_config( const char* filename, u32 type_filter )
 // clang-format on
 
 /*============================================================================================*/
-/* Execute a config file (loads and runs commands) */
-
-#define MAX_ARGS     16
-#define MAX_LINE_LEN 1024
-
-bool
-cvar_exec_config( const char* filename )
-{
-    if ( !filename )
-        return false;
-
-    FILE* f = fopen( filename, "r" );
-    if ( !f )
-    {
-        return false;   // Not an error, may not exist on first run.
-    }
-
-    /**************************************************************/
-
-    char  line_buf[ MAX_LINE_LEN ];
-    char* argv[ MAX_ARGS ];
-    int   argc;
-
-    while ( fgets( line_buf, sizeof( line_buf ), f ) )
-    {
-        char* p = line_buf;
-        argc    = 0;
-
-        // Strip trailing newline
-        line_buf[ strcspn( line_buf, "\r\n" ) ] = 0;
-
-        // Skip leading whitespace
-        while ( *p && isspace( ( unsigned char )*p ) ) p++;
-
-        // Skip comments and empty lines
-        if ( *p == '\0' || ( *p == '/' && p[ 1 ] == '/' ) )
-            continue;
-
-        // Tokenize line
-        while ( *p && argc < MAX_ARGS )
-        {
-            if ( *p == '"' )    // handle quoted string
-            {
-                p++;
-                argv[ argc++ ] = p;
-                while ( *p && *p != '"' ) p++;
-            }
-            else    // handle unquoted token
-            {
-                argv[ argc++ ] = p;
-                while ( *p && !isspace( ( unsigned char )*p ) ) p++;
-            }
-            if ( *p )
-                *p++ = '\0';    // null-terminate token
-
-            // skip whitespace to next token
-            while ( *p && isspace( ( unsigned char )*p ) ) p++;
-        }
-
-        if ( argc == 0 )
-            continue;
-
-        // Dispatch command
-        if ( cvar_str_icmp_eq( argv[ 0 ], "seta" ) )
-        {
-            cmd_seta( argc, argv );
-        }
-        else if ( cvar_str_icmp_eq( argv[ 0 ], "set" ) )
-        {
-            cmd_set( argc, argv );
-        }
-        // else: other commands could be handled here by a real command system
-        // TODO: create command system to handle more commands
-    }
-
-    fclose( f );
-    return true;
-}
-
-
-/*============================================================================================*/
-/* Load default config sequence -- Loads: default.cfg -> config.cfg -> autoexec.cfg */
+/* Load default config sequence -- default.cfg -> config.cfg -> autoexec.cfg.  Queued, not
+   executed: the files run through the command buffer on the next pump, in order (each exec
+   inserts its file's text ahead of the next queued exec).  Missing files are reported by
+   the exec command itself. */
 
 void
 cvar_load_defaults( void )
 {
-    con_printf( "\n" );
-    con_printf( "====================================================================\n" );
-    con_printf( "Loading configuration files\n" );
-    con_printf( "====================================================================\n" );
-
-    /* Load default.cfg - engine defaults */
-    if ( cvar_exec_config( "default.cfg" ) )
-    {
-        con_printf( "Loaded default configuration\n" );
-    }
-    else
-    {
-        con_printf( "Warning: default.cfg not found\n" );
-    }
-
-    /* Load config.cfg - user settings */
-    if ( cvar_exec_config( "config.cfg" ) )
-    {
-        con_printf( "Loaded user configuration\n" );
-    }
-    else
-    {
-        con_printf( "Warning: config.cfg not found (will be created on exit)\n" );
-    }
-
-    /* Load autoexec.cfg - user startup commands */
-    if ( cvar_exec_config( "autoexec.cfg" ) )
-    {
-        con_printf( "Loaded autoexec configuration\n" );
-    }
-    else
-    {
-        con_printf( "Info: autoexec.cfg not found (optional)\n" );
-    }
-
-    con_printf( "====================================================================\n" );
-    con_printf( "\n" );
+    cmd_queue( "exec default.cfg" );
+    cmd_queue( "exec config.cfg" );
+    cmd_queue( "exec autoexec.cfg" );
 }
 
 /*============================================================================================*/

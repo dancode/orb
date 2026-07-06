@@ -151,6 +151,8 @@ example_config_files( void )
     printf( "\n=== Example 5: Config Files ===\n\n" );
 
     cvar_system_init();
+    cmd_system_init();
+    cvar_register_commands();    /* config files execute through the cmd backend (seta/set) */
 
     /* Register some cvars */
     cvar_register_b( "cl_showfps", "Show FPS counter", false, CVAR_ARCHIVE );
@@ -175,15 +177,17 @@ example_config_files( void )
     printf( "com_maxfps: %s\n", cvar_get_value( "com_maxfps" ) );
     printf( "s_volume: %s\n", cvar_get_value( "s_volume" ) );
 
-    /* Load config file */
+    /* Load config file: exec queues the file's text, the pump executes it */
     printf( "\nLoading config.cfg...\n" );
 
-    cvar_exec_config( "config.cfg" );
+    cmd_queue( "exec config.cfg" );
+    cmd_pump();
 
     printf( "cl_showfps: %s\n", cvar_get_value( "cl_showfps" ) );
     printf( "com_maxfps: %s\n", cvar_get_value( "com_maxfps" ) );
     printf( "s_volume: %s\n", cvar_get_value( "s_volume" ) );
 
+    cmd_system_exit();
     cvar_system_exit();
 }
 

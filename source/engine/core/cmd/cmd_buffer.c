@@ -62,6 +62,57 @@ cmd_queue_front( const char* text )
 }
 
 /*============================================================================================*/
+/* Translate command-line arguments into buffered text: each "+command arg..." group becomes
+   one queued statement ("+set r_width 1920" -> "set r_width 1920").  Tokens before the
+   first '+' belong to the platform/launcher and are ignored.  Args containing spaces are
+   re-quoted so they survive tokenization. */
+
+void
+cmd_queue_args( int argc, char** argv )
+{
+    if ( !argv )
+        return;
+
+    char line[ CMD_LINE_LEN ];
+    u32  len = 0;
+
+    for ( int i = 1; i <= argc; ++i )
+    {
+        /* Flush the pending statement at the next '+' group or end of argv. */
+        if ( ( i == argc || argv[ i ][ 0 ] == '+' ) && len > 0 )
+        {
+            line[ len ] = '\0';
+            cmd_queue( line );
+            len = 0;
+        }
+
+        if ( i == argc )
+            break;
+
+        const char* a = argv[ i ];
+        if ( a[ 0 ] == '+' )
+            a++;                 // starts a new statement, '+' stripped
+        else if ( len == 0 )
+            continue;            // before the first '+': not ours
+
+        const bool quote = ( strchr( a, ' ' ) != NULL );
+        const u32  alen  = ( u32 )strlen( a );
+        const u32  need  = alen + ( len ? 1u : 0u ) + ( quote ? 2u : 0u );
+        if ( len + need >= CMD_LINE_LEN )
+            continue;            // overlong statement: drop the token
+
+        if ( len )
+            line[ len++ ] = ' ';
+        if ( quote )
+            line[ len++ ] = '"';
+        memcpy( line + len, a, alen );
+        len += alen;
+        if ( quote )
+            line[ len++ ] = '"';
+    }
+}
+
+/*============================================================================================*/
 /* Extract one statement from the front of the buffer into line[] (quote-aware, split on
    '\n' and ';', '//' comment runs to end of line).  Returns false when the buffer is empty. */
 

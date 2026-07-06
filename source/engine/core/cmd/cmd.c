@@ -208,6 +208,43 @@ cmd_cmd_echo( int argc, char** argv )
     con_printf( "\n" );
 }
 
+/* exec: read a config file and insert its contents ahead of pending buffered text, so the
+   file runs before the rest of the statement group that triggered it (Quake exec semantics).
+   The pump's statement extractor handles '\n', ';' and '//' comments, so raw file text
+   queues directly -- and every registered command works inside configs. */
+
+static void
+cmd_cmd_exec( int argc, char** argv )
+{
+    if ( argc < 2 )
+    {
+        con_printf( "Usage: exec <filename>\n" );
+        return;
+    }
+
+    FILE* f = fopen( argv[ 1 ], "rb" );
+    if ( !f )
+    {
+        con_printf( "exec: could not open '%s'\n", argv[ 1 ] );
+        return;
+    }
+
+    char   text[ CMD_BUF_CAP ];
+    size_t n    = fread( text, 1, sizeof( text ) - 1, f );
+    bool   over = ( fgetc( f ) != EOF );
+    fclose( f );
+
+    if ( over )
+    {
+        con_printf( "exec: '%s' exceeds %d bytes, ignored\n", argv[ 1 ], CMD_BUF_CAP - 1 );
+        return;
+    }
+
+    text[ n ] = '\0';
+    con_printf( "exec: %s\n", argv[ 1 ] );
+    cmd_queue_front( text );
+}
+
 /*==============================================================================================
 
     Lifetime
@@ -222,6 +259,7 @@ cmd_system_init( void )
     cmd_register( "help",    cmd_cmd_help, "List all console commands" );
     cmd_register( "cmdlist", cmd_cmd_help, "List all console commands" );
     cmd_register( "echo",    cmd_cmd_echo, "Print arguments to the console" );
+    cmd_register( "exec",    cmd_cmd_exec, "Execute a config file" );
 
     cmd_buffer_init();    /* buffer state + "wait" */
 }

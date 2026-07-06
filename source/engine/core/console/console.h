@@ -66,9 +66,14 @@ const char* con_line_get            ( u32 index );
     Input submission
 ==============================================================================================*/
 
-                                    /* Echo, record to history, forward to cmd_execute_string.
-                                       Returns true if a command or cvar handled it. */
+                                    /* Echo, record to history, execute IMMEDIATELY via
+                                       cmd_execute_string.  Returns true if handled. */
 bool        con_exec                ( const char* line );
+
+                                    /* Echo, record to history, QUEUE via cmd_queue -- runs at
+                                       the host loop's next cmd_pump, so wait/exec sequence
+                                       correctly.  Front ends submit through this. */
+void        con_submit              ( const char* line );
 
 /*==============================================================================================
     History

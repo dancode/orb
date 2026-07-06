@@ -87,6 +87,9 @@ void        cmd_queue               ( const char* text );
                                     /* Insert text before pending buffer contents (exec) */
 void        cmd_queue_front         ( const char* text );
 
+                                    /* Queue "+command arg..." groups from the command line */
+void        cmd_queue_args          ( int argc, char** argv );
+
                                     /* Execute buffered statements; called once per frame.
                                        Honors "wait" and CMD_PUMP_BUDGET. */
 void        cmd_pump                ( void );

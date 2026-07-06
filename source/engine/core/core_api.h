@@ -115,6 +115,7 @@ typedef struct core_api_s
     bool        ( *cmd_execute_string ) ( const char* text );
     void        ( *cmd_queue )          ( const char* text );
     void        ( *cmd_queue_front )    ( const char* text );
+    void        ( *cmd_queue_args )     ( int argc, char** argv );
     void        ( *cmd_pump )           ( void );
 
     /* developer console (view over the command backend; state lives in core) */
@@ -123,6 +124,7 @@ typedef struct core_api_s
     void        ( *con_printf )         ( const char* fmt, ... );
     void        ( *con_clear )          ( void );
     bool        ( *con_exec )           ( const char* line );
+    void        ( *con_submit )         ( const char* line );
 
     u32         ( *con_line_count )     ( void );
     const char* ( *con_line_get )       ( u32 index );

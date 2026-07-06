@@ -30,28 +30,7 @@ cvar_register_commands( void )
     cmd_register( "cvarinfo",      cmd_cvarinfo,      "Show detailed cvar information" );
     cmd_register( "apply_latched", cmd_apply_latched, "Apply latched cvar changes" );
     cmd_register( "cvar_modified", cmd_cvar_modified, "List modified cvars" );
-    cmd_register( "exec",          cmd_exec,          "Execute a config file" );
     cmd_register( "writeconfig",   cmd_writeconfig,   "Write archived cvars to a config file" );
-}
-
-/*============================================================================================*/
-/* cmd_exec - Execute a config file */
-/* Usage: exec <filename> */
-
-void
-cmd_exec( int argc, char** argv )
-{
-    if ( argc < 2 )
-    {
-        con_printf( "Usage: exec <filename>\n" );
-        con_printf( "  Executes a configuration file.\n" );
-        return;
-    }
-
-    if ( !cvar_exec_config( argv[ 1 ] ) )
-    {
-        con_printf( "Error: could not open '%s'\n", argv[ 1 ] );
-    }
 }
 
 /*==============================================================================================

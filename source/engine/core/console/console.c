@@ -145,17 +145,18 @@ con_history_get( u32 index )
 
 ==============================================================================================*/
 
-bool
-con_exec( const char* line )
+/* Shared ingest: trim, echo, record.  Returns NULL for blank input (no echo, no history). */
+
+static const char*
+con_ingest( const char* line )
 {
     if ( !line )
-        return false;
+        return NULL;
 
-    /* Ignore blank input entirely -- no echo, no history. */
     const char* scan = line;
     while ( *scan && isspace( ( unsigned char )*scan ) ) scan++;
     if ( !*scan )
-        return false;
+        return NULL;
 
     /* Flush any partial output so the echo starts on its own line. */
     if ( s_con_partial_len > 0 )
@@ -163,8 +164,22 @@ con_exec( const char* line )
 
     con_printf( "] %s\n", scan );
     con_history_push( scan );
+    return scan;
+}
 
-    return cmd_execute_string( scan );
+bool
+con_exec( const char* line )
+{
+    const char* scan = con_ingest( line );
+    return scan ? cmd_execute_string( scan ) : false;
+}
+
+void
+con_submit( const char* line )
+{
+    const char* scan = con_ingest( line );
+    if ( scan )
+        cmd_queue( scan );
 }
 
 /*==============================================================================================

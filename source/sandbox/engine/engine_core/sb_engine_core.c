@@ -80,6 +80,22 @@ core_test( void )
         cmd_pump();    // frame 2: wait elapses
         cmd_pump();    // frame 3: frame two
 
+        /* exec round trip: archive current values, change one, exec the file to restore it.
+           The file text runs through the buffer, so "seta" works like any command. */
+
+        con_exec( "writeconfig test_exec.cfg" );
+        con_exec( "s_volume 0.9" );
+        con_exec( "exec test_exec.cfg" );    // queues the file at the buffer front
+        cmd_pump();
+        con_exec( "s_volume" );              // expect 0.25 restored from the file
+
+        /* Command-line translation: "+cmd arg..." groups become queued statements. */
+
+        char* fake_argv[] = { "exe", "-launcher-noise", "+set", "user_var", "99", "+echo", "cmdline", "done" };
+        cmd_queue_args( 8, fake_argv );
+        cmd_pump();
+        con_exec( "user_var" );              // expect 99
+
         printf( "scrollback: %u lines, history: %u entries\n",
                 con_line_count(), con_history_count() );
 

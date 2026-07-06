@@ -347,20 +347,12 @@ void        cmd_writeconfig         ( int argc, char** argv );
                                     /* Write all archived cvars to a config file */
 bool        cvar_write_config       ( const char* filename, u32 type_filter );
 
-                                    /* Load and execute cvar commands from a config file */
-bool        cvar_exec_config        ( const char* filename );
-
-                                    /* Load default config sequence (default.cfg, config.cfg, autoexec.cfg) */
+                                    /* Queue default config sequence (default.cfg, config.cfg,
+                                       autoexec.cfg) through the command buffer */
 void        cvar_load_defaults      ( void );
 
                                     /* Save current config to config.cfg */
 void        cvar_save_config        ( void );
-
-//                                  /* Process command-line arguments for cvar settings (+set, +seta) */
-// int         cvar_process_args       ( int argc, char** argv, int start_index );
-
-                                    /* Console command: exec <filename> */
-void        cmd_exec                ( int argc, char** argv );
 
 /*============================================================================================*/
 #endif // CVAR_HEADER_H

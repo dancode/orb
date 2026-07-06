@@ -132,12 +132,14 @@ const core_api_t g_core_api_struct = {
     .cmd_execute_string = cmd_execute_string,
     .cmd_queue          = cmd_queue,
     .cmd_queue_front    = cmd_queue_front,
+    .cmd_queue_args     = cmd_queue_args,
     .cmd_pump           = cmd_pump,
 
     .con_print          = con_print,
     .con_printf         = con_printf,
     .con_clear          = con_clear,
     .con_exec           = con_exec,
+    .con_submit         = con_submit,
 
     .con_line_count     = con_line_count,
     .con_line_get       = con_line_get,

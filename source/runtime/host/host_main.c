@@ -38,6 +38,7 @@
                               main WIN_CLOSE goes through desc->on_close_request (veto).
     [frame clock]             run_clock_update()
     [console poll]            sys, if RUN_HOST_CONSOLE
+    [cmd pump]                cmd_pump() -- queued command text (console, exec, +cmdline)
     [job tick]                job()->tick()
     [host update]             desc->on_update( dt )     -- game logic, every frame, no widgets
     [gui emit]                gated on gui()->frame_begin's dirty bool (retained-cache skip):
@@ -192,9 +193,6 @@ load_all( const run_module_entry_t* modules )
 int
 run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 {
-    UNUSED( argc );
-    UNUSED( argv );
-
     if ( !desc || !desc->modules )
     {
         fprintf( stderr, "[host] descriptor or module list is missing\n" );
@@ -252,6 +250,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     /* Route mod and app output through core's logger now that core is live. */
     mod_set_log_fn( core_log_fn );
     app_set_log_fn( core_log_fn );
+
+    /* Queue "+command arg..." groups from the command line (+set r_width 1920 +exec dev.cfg).
+       They execute at the loop's first cmd_pump, after every module has registered. */
+    cmd_queue_args( argc, argv );
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
@@ -453,6 +455,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         if ( s_console )
             sys_console_input_poll();
+
+        /* -- command buffer pump ----------------------------------------- */
+
+        /* Drain queued command text (console submits, exec files, +cmdline args). */
+        cmd_pump();
 
         /* -- job dispatcher tick --------------------------------------- */
 

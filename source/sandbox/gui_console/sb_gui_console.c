@@ -48,6 +48,7 @@ static i32  s_history_pos    = -1;       // -1 = editing a live line, else index
 static char s_input[ CONSOLE_INPUT_MAX ];
 
 static bool s_quit           = false;    // set by the host-registered "quit" command
+static i32  s_redraw_frames  = 0;        // force-redraw window after a queued submit
 
 /*============================================================================================*/
 /* Host command -- proves front ends can extend the core registry. */
@@ -240,7 +241,8 @@ show_console( f32 display_w )
 
     if ( entered )
     {
-        core()->con_exec( s_input );
+        core()->con_submit( s_input );    /* queued: runs at the loop's next cmd_pump */
+        s_redraw_frames = 2;              /* output lands next frame; keep the emit alive */
         s_input[ 0 ]  = '\0';
         s_history_pos = -1;
         s_view_offset = 0;         /* executing snaps the view back to the live tail */
@@ -338,6 +340,23 @@ main( int argc, char** argv )
     f32 dt = 0.0f;
     while ( gui()->frame_poll( &dt ) && !s_quit )
     {
+        /* Drain queued command text (console submits, exec files). */
+        core()->cmd_pump();
+
+        /* Queued commands print the frame AFTER Enter; hold the emit open briefly so the
+           retained-cache clean-frame skip doesn't keep the new scrollback lines offscreen. */
+        if ( s_redraw_frames > 0 )
+        {
+            gui()->set_force_redraw( true );
+            if ( --s_redraw_frames == 0 )
+                s_redraw_frames = -1;    /* window just closed: clear the pin next frame */
+        }
+        else if ( s_redraw_frames < 0 )
+        {
+            gui()->set_force_redraw( false );
+            s_redraw_frames = 0;
+        }
+
         /* Quake toggle: grave opens/closes, Escape closes.  Focus is queued on open so the
            input line captures the keyboard immediately. */
         if ( app()->key_pressed( APP_KEY_GRAVE ) )
