@@ -157,6 +157,10 @@ ed_toolbar( f32 y, f32 h )
         if ( gui()->button( "Stop" ) )  ed_stop();
         gui()->disabled_end();
 
+        /* Live-viewport toggle (UE "Realtime"): on = scene pass every frame; off = the scene
+           re-renders only on interaction/change (see the scheduling note in the host loop). */
+        gui()->checkbox( "Realtime", &g_ed.realtime );
+
         static const char* mode_names[] = { "Edit", "Playing", "Paused" };
         gui()->textf( "  %s   t=%.1fs", mode_names[ g_ed.mode ], g_ed.sim_time );
 

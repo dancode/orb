@@ -191,20 +191,26 @@ main( int argc, char** argv )
         ed_tick( dt );
         ed_viewport_maintain();
 
-        /* While playing, the sim mutates state the panels display every frame -- pin the gui
-           dirty so the Inspector/Console track it live.  Edit mode gets the retained skip.
-           always_emit stays pinned on while debugging the viewport twist.
+        /* Scene-pass scheduling -- mimic a real editor viewport: run the offscreen scene pass
+           when (a) the toolbar Realtime toggle is on, (b) the sim is playing (it mutates state
+           the panels and the scene display every frame), or (c) anything the pass draws changed
+           since last frame -- camera pose, entity pool, selection, target recreate
+           (ed_scene_changed).  Camera motion self-sustains: each emitted frame advances the
+           pose, which marks the next frame changed, until the glide damps to rest.  A frame
+           that needs the scene pass must also emit the gui (the flipped texture index bakes
+           into the Scene quad), so it forces frame_dirty; everything else -- typing in a panel,
+           hovering a button -- emits without touching the scene, and a static editor goes
+           fully clean/retained.
 
-           Written EDGE-TRIGGERED (only when the host's requirement changes), not every frame:
-           the F debug hotkey toggles the same flag inside gui, and an unconditional per-frame
-           write here would clobber that toggle on the very next frame. */
-        bool always_emit = true;
-        bool want_force  = always_emit || g_ed.mode == ED_MODE_PLAY;
+           set_force_redraw is written EDGE-TRIGGERED (only when the requirement changes), not
+           every frame: the F debug hotkey toggles the same flag inside gui, and an
+           unconditional per-frame write here would clobber that toggle on the very next frame. */
+        bool scene_render = g_ed.realtime || g_ed.mode == ED_MODE_PLAY || ed_scene_changed();
         static bool s_want_force_prev = false;
-        if ( want_force != s_want_force_prev )
+        if ( scene_render != s_want_force_prev )
         {
-            gui()->set_force_redraw( want_force );
-            s_want_force_prev = want_force;
+            gui()->set_force_redraw( scene_render );
+            s_want_force_prev = scene_render;
         }
 
         /* ------------------------------------------------------------------------------ */
@@ -214,10 +220,13 @@ main( int argc, char** argv )
         bool emitted = gui()->frame_begin( dt );
         if ( emitted )
         {
-            /* The scene pass and target flip pair 1:1 with an emitted gui frame: the flipped
-               texture index is baked into this frame's Scene-panel quad, and a clean (retained)
-               frame must leave the previously displayed texture's content untouched. */
-            ed_viewport_flip();
+            /* The target flip pairs 1:1 with the scene pass, NOT with the emit: only a frame
+               that re-renders the scene may retarget the Scene quad (the flipped index bakes
+               into it here, the pass writes that texture below).  An emit without the scene
+               pass keeps the quad on the same texture -- its content is never touched while
+               displayed, and the Scene window's unchanged hash lets the gui go clean after. */
+            if ( scene_render )
+                ed_viewport_flip();
             gui()->ctx_begin( GUI_CTX_DEFAULT );
             ed_shell_build();
             gui()->ctx_end();
@@ -234,7 +243,7 @@ main( int argc, char** argv )
             rhi_cmd_t cmd = rhi()->frame_begin( ctx );
             if ( rhi_cmd_valid( cmd ) )
             {
-                if ( emitted )
+                if ( emitted && scene_render )
                     ed_viewport_render( cmd );
 
                 rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){

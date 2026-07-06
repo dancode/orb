@@ -139,6 +139,7 @@ typedef struct
     ed_mode_t   mode;
     f64         sim_time;                      // advances only in PLAY
     f32         frame_dt;                      // last frame's dt; camera fly uses it in the panel
+    bool        realtime;                      // toolbar toggle: render the scene pass every frame
 
     ed_log_entry_t log[ ED_LOG_MAX ];
     u32            log_count;                  // total ever logged (ring: newest = log_count-1)
@@ -184,6 +185,7 @@ extern const i32        ed_asset_count;
 bool ed_viewport_init( void );
 void ed_viewport_shutdown( void );
 void ed_viewport_maintain( void );             // create/resize the targets; call between frames
+bool ed_scene_changed( void );                 // anything the scene pass draws moved since last call
 void ed_viewport_flip( void );                 // swap write/display target; call before an emit
 void ed_viewport_render( rhi_cmd_t cmd );      // offscreen scene pass; pair 1:1 with flip+emit
 void ed_viewport_panel( void );

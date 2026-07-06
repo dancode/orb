@@ -202,14 +202,61 @@ ed_viewport_shutdown( void )
 
 /* Between frames: create the target on first size request; on a size change, wait until the
    request settles (drag released) then swap the texture. */
-/* Flip the write/display target: the previous emitted frame's texture stays untouched for the
-   GPU frame still in flight that samples it.  Called by the host ONLY on frames that re-emit
-   the gui (paired with ed_viewport_render) -- on retained/clean frames neither runs, so the
-   displayed texture's content is never touched while referenced. */
+/* Flip the write/display target: the previous frame's texture stays untouched for the GPU
+   frame still in flight that samples it.  Called by the host ONLY on frames that run the scene
+   pass (paired 1:1 with ed_viewport_render, inside a gui emit so the Scene quad bakes the new
+   index) -- on all other frames neither runs, the quad keeps sampling the same texture, and
+   its content is never touched while referenced.  Keeping the flip off no-scene emits also
+   keeps the Scene window's command hash stable, so the gui's retained cache can go clean. */
 void
 ed_viewport_flip( void )
 {
     g_ed.target.cur ^= 1u;
+}
+
+/* Coarse change detector for the scene pass: hash everything ed_viewport_render reads --
+   the entity pool, the selection, the camera pose, and the target identity (recreate swaps
+   bindless indices; a resize changes w/h) -- and compare against the previous call.  One hash
+   over a small pool beats instrumenting every mutation site (inspector edits, picks, menu
+   add/delete, sim ticks all land here for free).
+
+   Self-sustaining motion: the camera pose only advances inside the Scene panel's emit, so a
+   glide/fly reads as "changed" on the NEXT frame's check, which forces that frame to emit and
+   advance it again -- the chain runs until the pose stops moving (velocity damped to rest).
+   The one cost is a single frame of latency between input and the scene pass seeing it. */
+bool
+ed_scene_changed( void )
+{
+    const u8* p;
+    u32       h = 2166136261u;
+
+    #define ED_HASH( ptr, bytes )                                    \
+        for ( p = (const u8*)( ptr ); p < (const u8*)( ptr ) + ( bytes ); p++ ) \
+            h = ( h ^ *p ) * 16777619u
+
+    ED_HASH( g_ed.entities, sizeof( g_ed.entities ) );
+    ED_HASH( &g_ed.selected, sizeof( g_ed.selected ) );
+
+    /* Camera pose fields only (see ed_viewcam.h); tuning/dynamics/bookkeeping past them do
+       not affect what the pass draws. */
+    ED_HASH( &g_ed.cam.yaw,     sizeof( g_ed.cam.yaw )     );
+    ED_HASH( &g_ed.cam.pitch,   sizeof( g_ed.cam.pitch )   );
+    ED_HASH( &g_ed.cam.dist,    sizeof( g_ed.cam.dist )    );
+    ED_HASH( g_ed.cam.target,   sizeof( g_ed.cam.target )  );
+    ED_HASH( &g_ed.cam.fov_deg, sizeof( g_ed.cam.fov_deg ) );
+
+    ED_HASH( g_ed.target.bindless_idx, sizeof( g_ed.target.bindless_idx ) );
+    ED_HASH( &g_ed.target.w, sizeof( g_ed.target.w ) );
+    ED_HASH( &g_ed.target.h, sizeof( g_ed.target.h ) );
+
+    #undef ED_HASH
+
+    static u32  s_prev_hash;
+    static bool s_primed;          /* first call always reports changed */
+    bool changed = !s_primed || h != s_prev_hash;
+    s_prev_hash  = h;
+    s_primed     = true;
+    return changed;
 }
 
 void
