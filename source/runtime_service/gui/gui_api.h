@@ -1433,14 +1433,10 @@ typedef struct gui_api_s
 
 #if ( defined( BUILD_STATIC ) || defined( GUI_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     MOD_GATEWAY_STATIC( gui_api_t, gui )
-#else
-    MOD_GATEWAY_DYNAMIC( gui_api_t, gui )
-#endif
-
-#if ( defined( BUILD_STATIC ) || defined( GUI_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     #define MOD_USE_GUI    /* static build */
     #define MOD_FETCH_GUI  true
 #else
+    MOD_GATEWAY_DYNAMIC( gui_api_t, gui )
     #define MOD_USE_GUI    MOD_DEFINE_API_PTR( gui_api_t, gui )
     #define MOD_FETCH_GUI  MOD_FETCH_API( gui_api_t, gui )
 #endif

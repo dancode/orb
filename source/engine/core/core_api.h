@@ -137,12 +137,6 @@ typedef struct core_api_s
 
 /*============================================================================================*/
 
-#if defined( BUILD_STATIC ) || defined( CORE_STATIC )
-MOD_GATEWAY_STATIC( core_api_t, core )
-#else
-MOD_GATEWAY_DYNAMIC( core_api_t, core )
-#endif
-
 /*==============================================================================================
     MOD_USE_CORE   — File-scope: defines the core API pointer and the natvis g_debug_api anchor.
     MOD_FETCH_CORE — In init()/reload(): populates both in one call. Requires get_api in scope.
@@ -156,9 +150,11 @@ MOD_GATEWAY_DYNAMIC( core_api_t, core )
 ==============================================================================================*/
 
 #if defined( BUILD_STATIC ) || defined( CORE_STATIC )
+    MOD_GATEWAY_STATIC( core_api_t, core )
     #define MOD_USE_CORE    /* g_debug_api defined in engine_core; static gateway needs no ptr */
     #define MOD_FETCH_CORE  true
 #else
+    MOD_GATEWAY_DYNAMIC( core_api_t, core )
     #define MOD_USE_CORE \
         const core_api_t* g_core_api_ptr = NULL; \
         core_debug_api_t* g_debug_api    = NULL

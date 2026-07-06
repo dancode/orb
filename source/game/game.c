@@ -29,11 +29,11 @@ MOD_USE_PHYSICS;
 
 typedef struct game_state_s
 {
-    int   tick_count;
+    i32  tick_count;
 
-    int   started;
-    int   score;
-    float time_in_level;
+    bool started;
+    i32  score;
+    f32  time_in_level;
 
 } game_state_t;
 
@@ -52,9 +52,9 @@ game_on_start( void )
 {
     if ( !g_game_state )
         return;
-    g_game_state->started       = 1;
+    g_game_state->started       = true;
     g_game_state->score         = 0;
-    g_game_state->time_in_level = 0.f;
+    g_game_state->time_in_level = 0.0f;
 
     // physics()->spawn_body();
     // physics()->spawn_body();
@@ -63,7 +63,7 @@ game_on_start( void )
 }
 
 static void
-game_on_update( float dt )
+game_on_update( f32 dt )
 {
     /* would poll input and advance game state here in a real engine */
 
@@ -97,11 +97,11 @@ game_on_stop( void )
         return;
 
     audio()->stop( 1 );
-    g_game_state->started = 0;
+    g_game_state->started = false;
     LOG_INFO( "stopped (final score = %d)", g_game_state->score );
 }
 
-static int
+static i32
 game_score( void )
 {
     return g_game_state ? g_game_state->score : 0;
@@ -143,15 +143,17 @@ game_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
     g_game_state = ( game_state_t* )raw_state;
-    MOD_FETCH_CORE;
-    MOD_FETCH_RENDER;
-    MOD_FETCH_AUDIO;
-    MOD_FETCH_PHYSICS;
+
+    if ( !MOD_FETCH_CORE )    return false;
+    if ( !MOD_FETCH_RENDER )  return false;
+    if ( !MOD_FETCH_AUDIO )   return false;
+    if ( !MOD_FETCH_PHYSICS ) return false;
+
     LOG_INFO( "reloaded (score preserved = %d)", g_game_state->score );
     return true;
 }
 
-void
+static void
 game_exit( void* raw_state )
 {
     ( void )raw_state;
@@ -175,17 +177,18 @@ Game module descriptor
 mod_desc_t*
 game_get_mod_desc( void )
 {
-    static mod_desc_t api = {
-        .version    = 1,
-        .state_size = sizeof( game_state_t ),
-        .deps       = { "core", "render", "audio", "physics" },
-        .dep_count  = 4,
-        .func_api   = &g_game_api_struct,
-        .init       = game_init,
-        .exit       = game_exit,
-        .reload     = game_reload,
+    static mod_desc_t desc = {
+        .version       = 1,
+        .state_size    = sizeof( game_state_t ),
+        .func_api_size = sizeof( game_api_t ),
+        .deps          = { "core", "render", "audio", "physics" },
+        .dep_count     = 4,
+        .func_api      = &g_game_api_struct,
+        .init          = game_init,
+        .exit          = game_exit,
+        .reload        = game_reload,
     };
-    return &api;
+    return &desc;
 }
 
 MOD_DEFINE_EXPORTS( game );

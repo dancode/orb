@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    sandbox_server_main.c — DEDICATED SERVER shape.
+    example_server.c — DEDICATED SERVER shape.
 
     Headless long-running host. Hot-reload lets modules be swapped without restart.
     Console input provides the operator quit path: Q exits cleanly.

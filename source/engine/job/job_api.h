@@ -33,14 +33,10 @@ typedef struct job_api_s
 
 #if defined( BUILD_STATIC ) || defined( JOB_STATIC )
     MOD_GATEWAY_STATIC( job_api_t, job )
-#else
-    MOD_GATEWAY_DYNAMIC( job_api_t, job )
-#endif
-
-#if defined( BUILD_STATIC ) || defined( JOB_STATIC )
     #define MOD_USE_JOB
     #define MOD_FETCH_JOB  true
 #else
+    MOD_GATEWAY_DYNAMIC( job_api_t, job )
     #define MOD_USE_JOB    MOD_DEFINE_API_PTR( job_api_t, job )
     #define MOD_FETCH_JOB  MOD_FETCH_API( job_api_t, job )
 #endif

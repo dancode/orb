@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    sandbox_game_main.c -- SHIPPED GAME shape.
+    example_game.c -- SHIPPED GAME shape.
 
     Windowed, no hot-reload, no console. The only quit path is the OS window close
     button, routed through app()->pump_events() returning false. No developer
@@ -69,8 +69,9 @@ game_update( f32 dt )
     s_y += dy * SQUARE_SPEED * dt;
 
     /* Keep the square inside the surface. */
+    i32 ctx = run_host_ctx();
     i32 w = 0, h = 0;
-    if ( rhi()->context_size( 0, &w, &h ) && w > 0 && h > 0 )
+    if ( rhi()->context_size( ctx, &w, &h ) && w > 0 && h > 0 )
     {
         const f32 half = SQUARE_SIZE * 0.5f;
         if ( s_x < half )              s_x = half;
@@ -81,7 +82,7 @@ game_update( f32 dt )
 
     /* Submit this frame's scene.  draw_scene replays and clears the list. */
     const f32 white[ 4 ] = { 0.95f, 0.95f, 0.95f, 1.0f };
-    render()->submit_rect( s_x, s_y, SQUARE_SIZE, SQUARE_SIZE, white );
+    render()->submit_rect( ctx, s_x, s_y, SQUARE_SIZE, SQUARE_SIZE, white );
 }
 
 /*==============================================================================================

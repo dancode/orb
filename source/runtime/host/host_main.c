@@ -10,14 +10,14 @@
         5. mod_init_all()                             -- pass 1: load callbacks fire in dep order
                                                                  (ref frames pushed, reflection live)
                                                          pass 2: init() runs in same order
-        6. MOD_HOST_FETCH_API( render, draw, gui )  -- cache host-owned API ptrs
+        6. MOD_HOST_FETCH_API( app, rhi, render, draw, gui ) -- cache host-owned API ptrs
         7. window_open()                              -- when app is loaded (inferred from k_modules)
-           rhi->init() + context_create()             -- when rhi is loaded
+           rhi->init() + context_open()               -- when rhi is loaded
            draw->init()                               -- when draw is loaded, after rhi context
            gui->init() + viewport_open()            -- when gui is loaded, after draw init
         8. desc->on_ready()                           -- host post-init hook
         9. enter loop per desc->loop_mode
-       10. host_shutdown()                            -- single teardown path, order reversed
+       10. run_host_shutdown()                            -- single teardown path, order reversed
 
     Load is passive on purpose. mod_static_load / mod_dynamic_load only register the
     descriptor -- they fire no callbacks and run no module code. All lifecycle execution
@@ -62,10 +62,10 @@
 
     Shutdown
     --------
-    host_shutdown() is the single teardown path for both normal exit and every startup
+    run_host_shutdown() is the single teardown path for both normal exit and every startup
     failure. It checks each piece of state and tears down only what was initialized,
     in reverse order: gui -> draw -> rhi context -> rhi -> window -> console -> mod.
-    Every error path is a one-liner: log, host_shutdown(), return 1.
+    Every error path is a one-liner: log, run_host_shutdown(), return 1.
 
     Frame timing
     ------------
@@ -127,31 +127,77 @@ MOD_USE_RENDER;
 MOD_USE_DRAW;
 MOD_USE_GUI;
 
+/* sys_key_t values are pinned to app_key_t for the shared range so console-input polling
+   (sys_key_pressed) and windowed input (app()->key_pressed) agree on key constants.
+   C5287 (newer MSVC) flags the mixed-enum comparison even through the casts; comparing
+   the two tables is the whole point here, so it is silenced for this block only. */
+#ifdef _MSC_VER
+#pragma warning( push )
+#pragma warning( disable : 5287 )
+#endif
+_Static_assert( ( i32 )PLATFORM_KEY_A      == ( i32 )APP_KEY_A,      "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_Z      == ( i32 )APP_KEY_Z,      "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_0      == ( i32 )APP_KEY_0,      "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_9      == ( i32 )APP_KEY_9,      "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_F1     == ( i32 )APP_KEY_F1,     "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_F12    == ( i32 )APP_KEY_F12,    "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_ESCAPE == ( i32 )APP_KEY_ESCAPE, "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_ENTER  == ( i32 )APP_KEY_ENTER,  "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_SPACE  == ( i32 )APP_KEY_SPACE,  "sys/app key tables diverged" );
+#ifdef _MSC_VER
+#pragma warning( pop )
+#endif
+
 /*==============================================================================================
-    Host state -- tracks what has been initialized so host_shutdown() tears down exactly
+    Host state -- tracks what has been initialized so run_host_shutdown() tears down exactly
     what is live, in reverse order, whether called from a startup failure or normal exit.
 ==============================================================================================*/
 
-static win_id_t   s_win_id       = APP_WIN_INVALID;
-static i32        s_ctx_id       = RHI_CTX_INVALID;
-static gui_vp_t s_vp0          = GUI_VP_INVALID;
-static bool       s_rhi_inited   = false;
-static bool       s_draw_inited  = false;
-static bool       s_gui_inited = false;
-static bool       s_console      = false;
+static win_id_t s_win_id      = APP_WIN_INVALID;
+static i32      s_ctx_id      = RHI_CTX_INVALID;
+static gui_vp_t s_vp0         = GUI_VP_INVALID;
+static bool     s_rhi_inited  = false;
+static bool     s_draw_inited = false;
+static bool     s_gui_inited  = false;
+static bool     s_console     = false;
+
+/*==============================================================================================
+    Host-owned handles -- the alternative to hardcoding context 0 / viewport 0 in hosts.
+    Valid from on_ready onward; sentinels when the owning service is absent.
+==============================================================================================*/
+
+win_id_t
+run_host_window( void )
+{
+    return s_win_id;
+}
+
+i32
+run_host_ctx( void )
+{
+    return s_ctx_id;
+}
+
+gui_vp_t
+run_host_vp( void )
+{
+    return s_vp0;
+}
 
 /*==============================================================================================
     Shutdown -- single teardown path for both startup failures and normal exit.
     Reads host state; only tears down what is live; resets each flag after use.
 ==============================================================================================*/
 
-static void
-host_shutdown( void )
+void
+run_host_shutdown( void )
 {
     /* Reverse of startup: gui (floater contexts) -> draw (GPU buffers) ->
-       rhi context -> rhi device -> window -> console -> mod system. */
+       rhi context -> rhi device -> window -> console -> mod system.
+       Public for RUN_LOOP_NONE hosts, which tear down at their own call site;
+       the looping modes call it internally on exit. */
 
-    if ( s_gui_inited )              { gui()->shutdown();                   s_gui_inited = false; }
+    if ( s_gui_inited )                { gui()->shutdown();                     s_gui_inited   = false; }
     if ( s_draw_inited )               { draw()->shutdown();                    s_draw_inited  = false; }
     if ( s_ctx_id != RHI_CTX_INVALID ) { rhi()->context_destroy( s_ctx_id );    s_ctx_id = RHI_CTX_INVALID; }
     if ( s_rhi_inited )                { rhi()->shutdown();                     s_rhi_inited   = false; }
@@ -201,14 +247,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         return 1;
     }
 
-    /* Reset all state so host_shutdown() starts from a clean baseline. */
+    /* Reset all state so run_host_shutdown() starts from a clean baseline. */
     g_quit_requested = false;
     s_win_id         = APP_WIN_INVALID;
     s_ctx_id         = RHI_CTX_INVALID;
     s_vp0            = GUI_VP_INVALID;
     s_rhi_inited     = false;
     s_draw_inited    = false;
-    s_gui_inited   = false;
+    s_gui_inited     = false;
     s_console        = false;
 
     /* ---- boot --------------------------------------------------------- */
@@ -262,16 +308,17 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
-       MOD_HOST_FETCH_API in static builds:  no-op -- the gateway returns the linked struct directly.
-       MOD_HOST_FETCH_API in dynamic builds: populates g_*_api_ptr from the module registry.
-                                         Returns NULL when the module is absent -- headless
-                                         hosts that don't load draw or gui get NULL here,
-                                         which is fine; the guarded paths below check it.
+       This TU opts into the pointer gateway for these services in every build mode
+       (MOD_HOST_DYNAMIC_SERVICES in runtime.c), so each fetch returns NULL when the module
+       is absent from k_modules[] -- headless hosts that don't load app, draw, or gui get
+       NULL here, which is fine; the guarded paths below check it.  app's fetch is what
+       drives the windowed inference.
     */
+    MOD_HOST_FETCH_API( app    );
     MOD_HOST_FETCH_API( rhi    );
     MOD_HOST_FETCH_API( render );
     MOD_HOST_FETCH_API( draw   );
-    MOD_HOST_FETCH_API( gui  );
+    MOD_HOST_FETCH_API( gui    );
 
     /* ---- windowed path: inferred from k_modules[] -------------------- */
     /*
@@ -295,7 +342,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( s_win_id == APP_WIN_INVALID )
         {
             fprintf( stderr, "[host] window creation failed\n" );
-            host_shutdown();
+            run_host_shutdown();
             return 1;
         }
 
@@ -304,7 +351,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             if ( !rhi()->init() )
             {
                 fprintf( stderr, "[host] rhi init failed\n" );
-                host_shutdown();
+                run_host_shutdown();
                 return 1;
             }
             s_rhi_inited = true;
@@ -313,7 +360,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             if ( s_ctx_id == RHI_CTX_INVALID )
             {
                 fprintf( stderr, "[host] rhi context_open failed\n" );
-                host_shutdown();
+                run_host_shutdown();
                 return 1;
             }
 
@@ -328,7 +375,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( !draw()->init() )
                 {
                     fprintf( stderr, "[host] draw init failed\n" );
-                    host_shutdown();
+                    run_host_shutdown();
                     return 1;
                 }
                 s_draw_inited = true;
@@ -348,7 +395,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( !gui()->init( gd ? gd->font : GUI_FONT_NONE ) )
                 {
                     fprintf( stderr, "[host] gui init failed\n" );
-                    host_shutdown();
+                    run_host_shutdown();
                     return 1;
                 }
                 s_gui_inited = true;
@@ -362,7 +409,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( s_vp0 == GUI_VP_INVALID )
                 {
                     fprintf( stderr, "[host] gui viewport_open failed\n" );
-                    host_shutdown();
+                    run_host_shutdown();
                     return 1;
                 }
             }
@@ -403,7 +450,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* Main-surface clear color for the gui-composite render path; alpha 0 in the desc reads
        as "unset" (a cleared swapchain is always opaque) -- default dark, same rule as boot. */
-    f32 gui_clear[ 4 ] = { 0.05f, 0.05f, 0.08f, 1.0f };
+    f32 gui_clear[ 4 ] = { RHI_CLEAR_DEFAULT_R, RHI_CLEAR_DEFAULT_G,
+                           RHI_CLEAR_DEFAULT_B, RHI_CLEAR_DEFAULT_A };
     if ( desc->gui && desc->gui->clear[ 3 ] > 0.0f )
     {
         gui_clear[ 0 ] = desc->gui->clear[ 0 ];
@@ -588,9 +636,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- frame pacing ------------------------------------------------ */
 
-        /* Game mode: spin at the target frame rate.
+        /* Game mode: sleep out the REMAINDER of the frame budget -- frame_ms minus the time
+           this frame's work took (measured from the clock stamp above) -- so the target rate
+           holds under load instead of drifting to work + frame_ms.
            Editor mode: block until OS input arrives, capped by editor_timeout_ms
            so hot-reload checks and other periodic work still run. */
+        i32 spent_ms  = ( i32 )( ( sys()->tick_seconds() - now ) * 1000.0 );
+        i32 remain_ms = frame_ms - spent_ms;
+
         if ( editor_sleep )
         {
             /* While any animated widget is mid-transition, skip the blocking wait and run at
@@ -600,7 +653,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             if ( animating )
             {
                 if ( g_sleep_debug ) printf( "[host] anim frame    (no sleep)\n" );
-                sys()->sleep_milliseconds( frame_ms );
+                if ( remain_ms > 0 )
+                    sys()->sleep_milliseconds( remain_ms );
             }
             else
             {
@@ -609,15 +663,15 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( g_sleep_debug ) printf( "[host] editor wakeup (frame %llu)\n", (unsigned long long)run()->clock()->frame_number );
             }
         }
-        else
-            sys()->sleep_milliseconds( frame_ms );
+        else if ( remain_ms > 0 )
+            sys()->sleep_milliseconds( remain_ms );
     }
 
 loop_exit:
 
     /* ---- shutdown ---------------------------------------------------- */
 
-    host_shutdown();
+    run_host_shutdown();
     return 0;
 }
 

@@ -3,10 +3,9 @@
     sample_game.c  (compiled as sample_game.dll)
 
     Example dynamic module.  Demonstrates:
-      - pulling core / engine / render APIs through module_sys_api_t
+      - pulling core / render APIs through the module gateway macros
       - persistent state that survives hot-reloads
-      - first-load vs reload detection via a sentinel value
-      - both required DLL exports: get_mod_desc() and get_api()
+      - the required DLL export, emitted by MOD_DEFINE_EXPORTS: get_mod_desc()
 
     The module system owns all memory for game_state_t.  Never free it inside
     exit() — the system will reuse the same block on the next reload.
@@ -20,13 +19,11 @@
 
 #include "engine/core/core_api.h"
 #include "runtime_modules/render/render_api.h"
-#include "game/game_api.h"
 
 #include "sample_game.h"
 
 MOD_USE_CORE;
 MOD_USE_RENDER;
-MOD_USE_GAME;
 
 /*============================================================================================*/
 
@@ -40,12 +37,12 @@ MOD_USE_GAME;
     Persistent state  (zeroed on first load; preserved across hot-reloads)
 ==============================================================================================*/
 
-typedef struct example_game_state_s
+typedef struct sample_game_state_s
 {
-    int   score;
-    float timer;
+    i32 score;
+    f32 timer;
 
-} example_game_state_t;
+} sample_game_state_t;
 
 
 /*==============================================================================================
@@ -55,7 +52,7 @@ typedef struct example_game_state_s
 static bool
 sample_game_init( void* raw_state, get_api_fn get_api )
 {
-    example_game_state_t* s = raw_state;
+    sample_game_state_t* s = raw_state;
     UNUSED( s );
     UNUSED( get_api );
 
@@ -75,14 +72,14 @@ sample_game_init( void* raw_state, get_api_fn get_api )
 static void
 sample_game_exit( void* raw_state )
 {
-    example_game_state_t* s = raw_state;
+    sample_game_state_t* s = raw_state;
     LOG_INFO( "exit -- score: %d  timer: %.2fs", s->score, s->timer );
 }
 
 static bool
 sample_game_on_reload( void* raw_state, get_api_fn get_api )
-{    
-    example_game_state_t* s = raw_state;
+{
+    sample_game_state_t* s = raw_state;
     UNUSED( s );
     UNUSED( get_api );
 
@@ -100,7 +97,7 @@ sample_game_function( void )
     // g_core_api->log( "game function!!!" );
 }
 
-static int
+static i32
 sample_game_get_score( void )
 {
     /* In a real module this would reach into the state via a module-level pointer.
@@ -114,7 +111,7 @@ sample_game_get_score( void )
 
 typedef struct sample_game_api_s
 {
-    int ( *get_score )( void );
+    i32 ( *get_score )( void );
 
 } sample_game_api_t;
 
@@ -129,24 +126,18 @@ const sample_game_api_t g_sample_game_api_struct = {
 mod_desc_t*
 sample_game_get_mod_desc( void )
 {
-    static mod_desc_t api = {
-        .version    = 1,
-        .state_size = sizeof( example_game_state_t ),
+    static mod_desc_t desc = {
+        .version       = 1,
+        .state_size    = sizeof( sample_game_state_t ),
         .func_api_size = sizeof( sample_game_api_t ),
-        .deps       = { "core", "engine", "render" },
-        .dep_count  = 3,
-        .func_api   = (void*)&g_sample_game_api_struct,
-        .init       = sample_game_init,
-        .exit       = sample_game_exit,
-        .reload  = sample_game_on_reload,
+        .deps          = { "core", "render" },
+        .dep_count     = 2,
+        .func_api      = ( void* )&g_sample_game_api_struct,
+        .init          = sample_game_init,
+        .exit          = sample_game_exit,
+        .reload        = sample_game_on_reload,
     };
-    return &api;
-}
-
-void*
-sample_game_get_api( void )
-{
-    return ( void* )&g_sample_game_api_struct;
+    return &desc;
 }
 
 MOD_DEFINE_EXPORTS( sample_game );

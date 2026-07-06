@@ -17,15 +17,6 @@ MOD_USE_DRAW;
     Persistent state  (allocated and zeroed by the module system; preserved across reloads)
 ==============================================================================================*/
 
-/* Per-context render slot.  Indexed by ctx_id directly (ctx_id is [0..RHI_CTX_MAX)). */
-typedef struct render_ctx_slot_s
-{
-    bool               active;
-    rhi_cmd_t cmd;       /* valid between begin_frame / end_frame; RHI_CMD_INVALID otherwise */
-    rhi_color_t        clear;     /* default: dark charcoal */
-
-} render_ctx_slot_t;
-
 /* Per-frame scene submission list (0.1 minimal).  Filled by submit_rect between frames,
    replayed and cleared by draw_scene.  Replaced later by a real scene / draw-list system. */
 #define RENDER_MAX_RECTS 256
@@ -37,13 +28,23 @@ typedef struct render_rect_s
 
 } render_rect_t;
 
+/* Per-context render slot.  Indexed by ctx_id directly (ctx_id is [0..RHI_CTX_MAX)).
+   Each context owns its submission list so multi-window hosts don't cross streams. */
+typedef struct render_ctx_slot_s
+{
+    bool               active;
+    rhi_cmd_t cmd;       /* valid between begin_frame / end_frame; RHI_CMD_INVALID otherwise */
+    rhi_color_t        clear;     /* default: RHI_CLEAR_DEFAULT_* dark slate */
+
+    render_rect_t      rects[ RENDER_MAX_RECTS ];
+    i32                rect_count;
+
+} render_ctx_slot_t;
+
 typedef struct render_state_s
 {
     render_ctx_slot_t  ctx[ RHI_CTX_MAX ];
     f32                total_time;
-
-    render_rect_t      rects[ RENDER_MAX_RECTS ];
-    i32                rect_count;
 
 } render_state_t;
 
@@ -60,12 +61,13 @@ render_context_register_impl( i32 ctx_id )
         return;
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
-    s->active    = true;
-    s->cmd       = RHI_CMD_INVALID;
-    s->clear.r   = 0.08f;
-    s->clear.g   = 0.10f;
-    s->clear.b   = 0.14f;
-    s->clear.a   = 1.0f;
+    s->active     = true;
+    s->cmd        = RHI_CMD_INVALID;
+    s->rect_count = 0;
+    s->clear.r    = RHI_CLEAR_DEFAULT_R;
+    s->clear.g    = RHI_CLEAR_DEFAULT_G;
+    s->clear.b    = RHI_CLEAR_DEFAULT_B;
+    s->clear.a    = RHI_CLEAR_DEFAULT_A;
 }
 
 static void
@@ -104,12 +106,16 @@ render_begin_frame_impl( i32 ctx_id )
 }
 
 static void
-render_submit_rect_impl( f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 ] )
+render_submit_rect_impl( i32 ctx_id, f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 ] )
 {
-    if ( !g_state || g_state->rect_count >= RENDER_MAX_RECTS )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
 
-    render_rect_t* r = &g_state->rects[ g_state->rect_count++ ];
+    render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
+    if ( s->rect_count >= RENDER_MAX_RECTS )
+        return;
+
+    render_rect_t* r = &s->rects[ s->rect_count++ ];
     r->cx        = cx;
     r->cy        = cy;
     r->w         = w;
@@ -145,14 +151,14 @@ render_draw_scene_impl( i32 ctx_id, f32 dt )
     };
     rhi()->cmd_begin_rendering( s->cmd, &color_att, 1, NULL );
 
-    /* Replay this frame's submission list through the draw service, then clear it.
+    /* Replay this context's submission list through the draw service, then clear it.
        Viewport/scissor are dynamic state nothing has set on this command list yet. */
-    if ( g_state->rect_count > 0 )
+    if ( s->rect_count > 0 )
     {
         i32 w = 0, h = 0;
         if ( !rhi()->context_size( ctx_id, &w, &h ) || w <= 0 || h <= 0 )
         {
-            g_state->rect_count = 0;
+            s->rect_count = 0;
             rhi()->cmd_end_rendering( s->cmd );
             return;
         }
@@ -173,35 +179,18 @@ render_draw_scene_impl( i32 ctx_id, f32 dt )
         draw()->ortho_2d( vp, ( f32 )w, ( f32 )h );
         draw()->begin( s->cmd, vp );
 
-        for ( i32 i = 0; i < g_state->rect_count; ++i )
+        for ( i32 i = 0; i < s->rect_count; ++i )
         {
-            render_rect_t* r = &g_state->rects[ i ];
+            render_rect_t* r = &s->rects[ i ];
             draw()->rect( r->cx, r->cy, r->w, r->h, r->rgba );
         }
 
         draw()->end();
-        g_state->rect_count = 0;
+        s->rect_count = 0;
     }
 
     /* Close the scene pass -- the frame stays open for composite passes until end_frame. */
     rhi()->cmd_end_rendering( s->cmd );
-}
-
-static void
-render_draw_editor_impl( i32 ctx_id, f32 dt )
-{
-    UNUSED( dt );
-
-    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
-        return;
-
-    render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
-    if ( !s->active || !rhi_cmd_valid( s->cmd ) )
-        return;
-
-    /* TODO: ImGui render pass for editor contexts.
-       gui_api()->render( s->cmd )
-    */
 }
 
 static void
@@ -253,7 +242,6 @@ const render_api_t g_render_api_struct = {
     .context_unregister = render_context_unregister_impl,
     .begin_frame        = render_begin_frame_impl,
     .draw_scene         = render_draw_scene_impl,
-    .draw_editor        = render_draw_editor_impl,
     .end_frame          = render_end_frame_impl,
     .submit_rect        = render_submit_rect_impl,
     .set_clear_color    = render_set_clear_color_impl,

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    sandbox_editor_main.c -- EDITOR / DEV SANDBOX shape.
+    example_editor.c -- EDITOR / DEV SANDBOX shape.
 
     Windowed, hot-reloadable, console-assisted -- and the reference for driving gui() as an
     OPTIONAL SERVICE from the runtime host: the host owns the window (borderless, with the
@@ -72,20 +72,20 @@ editor_update( f32 dt )
 {
     UNUSED( dt );
 
-    if ( sys_key_pressed( APP_KEY_Q ) )
+    if ( sys_key_pressed( PLATFORM_KEY_Q ) )
     {
         printf( "[editor] Q -- quit\n" );
         run_host_quit();
         return;
     }
 
-    if ( sys_key_pressed( APP_KEY_R ) )
+    if ( sys_key_pressed( PLATFORM_KEY_R ) )
     {
         printf( "[editor] R -- reload all\n" );
         mod_reload_all();
     }
 
-    if ( sys_key_pressed( APP_KEY_D ) )
+    if ( sys_key_pressed( PLATFORM_KEY_D ) )
          run_host_sleep_debug_toggle();
 
     static bool s_realtime_prev = false;
@@ -100,11 +100,12 @@ editor_update( f32 dt )
        prove the scene-under-gui path; the real editor viewport is a later milestone. */
     if ( render() && s_show_scene )
     {
+        i32 ctx = run_host_ctx();
         i32 w = 0, h = 0;
-        if ( rhi()->context_size( 0, &w, &h ) && w > 0 && h > 0 )
+        if ( rhi()->context_size( ctx, &w, &h ) && w > 0 && h > 0 )
         {
             const f32 orange[ 4 ] = { 0.95f, 0.55f, 0.15f, 1.0f };
-            render()->submit_rect( ( f32 )w * 0.5f, ( f32 )h * 0.5f, 220.0f, 220.0f, orange );
+            render()->submit_rect( ctx, ( f32 )w * 0.5f, ( f32 )h * 0.5f, 220.0f, 220.0f, orange );
         }
     }
 }
@@ -116,7 +117,7 @@ editor_gui( f32 dt )
 {
     UNUSED( dt );
 
-    f32 caption_h = gui()->viewport_caption_h( 0 );
+    f32 caption_h = gui()->viewport_caption_h( run_host_vp() );
 
     /* Menu bar -- insets below the chrome caption on its own. */
     if ( gui()->main_menu_bar_begin() )

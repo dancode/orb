@@ -25,14 +25,10 @@ typedef struct example_api_s
 
 #if defined( BUILD_STATIC ) || defined( EXAMPLE_STATIC )
 MOD_GATEWAY_STATIC( example_api_t, example )
-#else
-MOD_GATEWAY_DYNAMIC( example_api_t, example )
-#endif
-
-#if defined( BUILD_STATIC ) || defined( EXAMPLE_STATIC )
     #define MOD_USE_EXAMPLE    /* static build */
     #define MOD_FETCH_EXAMPLE  true
 #else
+MOD_GATEWAY_DYNAMIC( example_api_t, example )
     #define MOD_USE_EXAMPLE    MOD_DEFINE_API_PTR( example_api_t, example )
     #define MOD_FETCH_EXAMPLE  MOD_FETCH_API( example_api_t, example )
 #endif

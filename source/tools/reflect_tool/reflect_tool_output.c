@@ -397,14 +397,10 @@ emit_module_api_gateway_h( FILE* fh, const char* module_name, const module_api_t
 
     fprintf( fh, "#if defined( BUILD_STATIC ) || defined( %s_STATIC )\n", upper );
     fprintf( fh, "    MOD_GATEWAY_STATIC( %s_api_t, %s )\n", module_name, module_name );
-    fprintf( fh, "#else\n" );
-    fprintf( fh, "    MOD_GATEWAY_DYNAMIC( %s_api_t, %s )\n", module_name, module_name );
-    fprintf( fh, "#endif\n\n" );
-
-    fprintf( fh, "#if defined( BUILD_STATIC ) || defined( %s_STATIC )\n", upper );
     fprintf( fh, "    #define MOD_USE_%s    /* static build */\n", upper );
     fprintf( fh, "    #define MOD_FETCH_%s  true\n", upper );
     fprintf( fh, "#else\n" );
+    fprintf( fh, "    MOD_GATEWAY_DYNAMIC( %s_api_t, %s )\n", module_name, module_name );
     fprintf( fh, "    #define MOD_USE_%s    MOD_DEFINE_API_PTR( %s_api_t, %s )\n", upper, module_name, module_name );
     fprintf( fh, "    #define MOD_FETCH_%s  MOD_FETCH_API( %s_api_t, %s )\n", upper, module_name, module_name );
     fprintf( fh, "#endif\n\n" );

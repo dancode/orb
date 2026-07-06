@@ -47,6 +47,14 @@ run_set_time_scale_impl( f32 scale )
     g_clock.time_scale = scale;
 }
 
+/* Hot-reloaded gameplay DLLs cannot link the host-exe run_host_quit() symbol directly;
+   this routes the same flag set through the run module's vtable. */
+static void
+run_request_quit_impl( void )
+{
+    run_host_quit();
+}
+
 /*==============================================================================================
     API struct
 ==============================================================================================*/
@@ -54,6 +62,7 @@ run_set_time_scale_impl( f32 scale )
 const run_api_t g_run_api_struct = {
     .clock          = run_clock_impl,
     .set_time_scale = run_set_time_scale_impl,
+    .request_quit   = run_request_quit_impl,
 };
 
 /*==============================================================================================

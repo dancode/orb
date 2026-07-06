@@ -64,14 +64,10 @@ typedef struct draw_api_s
 
 #if ( defined( BUILD_STATIC ) || defined( DRAW_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
 MOD_GATEWAY_STATIC( draw_api_t, draw )
-#else
-MOD_GATEWAY_DYNAMIC( draw_api_t, draw )
-#endif
-
-#if ( defined( BUILD_STATIC ) || defined( DRAW_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     #define MOD_USE_DRAW    /* static: gateway returns pointer to global struct directly */
     #define MOD_FETCH_DRAW  true
 #else
+MOD_GATEWAY_DYNAMIC( draw_api_t, draw )
     #define MOD_USE_DRAW    MOD_DEFINE_API_PTR( draw_api_t, draw )
     #define MOD_FETCH_DRAW  MOD_FETCH_API( draw_api_t, draw )
 #endif

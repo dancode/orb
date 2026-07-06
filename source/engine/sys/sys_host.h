@@ -283,6 +283,9 @@ void sys_datetime_local( SysDateTime* dt );
     app/window system exists.
 ==============================================================================================*/
 
+/* Value order MUST mirror app_key_t (engine/app/app.h) for the shared range -- letters,
+   digits, F-keys, then ESCAPE/ENTER/SPACE -- so the two tables agree on constants.
+   host_main.c _Static_asserts the pinning. */
 typedef enum sys_key_e
 {
     PLATFORM_KEY_NONE = 0,
@@ -299,13 +302,13 @@ typedef enum sys_key_e
     PLATFORM_KEY_4,  PLATFORM_KEY_5,  PLATFORM_KEY_6,  PLATFORM_KEY_7,
     PLATFORM_KEY_8,  PLATFORM_KEY_9,
 
-    PLATFORM_KEY_ESCAPE,
-    PLATFORM_KEY_ENTER,
-    PLATFORM_KEY_SPACE,
-
     PLATFORM_KEY_F1,  PLATFORM_KEY_F2,  PLATFORM_KEY_F3,  PLATFORM_KEY_F4,
     PLATFORM_KEY_F5,  PLATFORM_KEY_F6,  PLATFORM_KEY_F7,  PLATFORM_KEY_F8,
     PLATFORM_KEY_F9,  PLATFORM_KEY_F10, PLATFORM_KEY_F11, PLATFORM_KEY_F12,
+
+    PLATFORM_KEY_ESCAPE,
+    PLATFORM_KEY_ENTER,
+    PLATFORM_KEY_SPACE,
 
     PLATFORM_KEY_COUNT
 

@@ -83,7 +83,9 @@ enum    // RUN_HOST_FLAGS
 
 typedef enum run_loop_mode_e
 {
-    RUN_LOOP_NONE, /* host inits, then returns — caller drives ticks manually   */
+    RUN_LOOP_NONE, /* host inits, then returns with everything live — the caller
+                      drives modules at its own call site and MUST call
+                      run_host_shutdown() when done (single-shot tool calls)     */
     RUN_LOOP_ONCE, /* one full tick, then exit (tools, asset processors)        */
     RUN_LOOP_RUN,  /* run until run_host_quit() or pump_events() returns false  */
 
@@ -150,6 +152,18 @@ typedef struct run_host_desc_s
 ==============================================================================================*/
 
 int run_host_main( const run_host_desc_t* desc, int argc, char** argv );
+
+/* Teardown for RUN_LOOP_NONE hosts: run_host_main returned with everything live, the
+   caller did its work, and now releases it all (gui -> draw -> rhi -> window -> mod).
+   RUN_LOOP_ONCE / RUN_LOOP_RUN call this internally — do not call it a second time. */
+void run_host_shutdown( void );
+
+/* Host-owned handles, valid after run_host_main's init (on_ready onward).  Sentinels
+   when the owning service is absent: APP_WIN_INVALID / RHI_CTX_INVALID (-1) /
+   GUI_VP_INVALID.  Use these instead of hardcoding context 0 / viewport 0. */
+win_id_t run_host_window( void ); /* main platform window          */
+i32      run_host_ctx( void );    /* main rhi context id           */
+gui_vp_t run_host_vp( void );     /* gui viewport of the main window */
 
 /* headless quit — sets flag, checked each frame top */
 void run_host_quit( void );

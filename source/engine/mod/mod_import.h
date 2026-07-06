@@ -25,17 +25,26 @@
     Both macros emit an identical inline accessor: <name>()
     Call sites are identical in both builds: render()->begin_frame()
 
-    Example: 
-    
+    Example -- ONE conditional per API header covers the gateway AND the USE/FETCH
+    aliases; never split them into two #if blocks (the conditions drift apart):
+
         #if defined( BUILD_STATIC ) || defined( RENDER_STATIC )
             MOD_GATEWAY_STATIC( render_api_t, render )   // EXE-linked: zero cost
+            #define MOD_USE_RENDER    // static build: empty
+            #define MOD_FETCH_RENDER  true
         #else
             MOD_GATEWAY_DYNAMIC( render_api_t, render )  // DLL-linked: one pointer load
+            #define MOD_USE_RENDER    MOD_DEFINE_API_PTR( render_api_t, render )
+            #define MOD_FETCH_RENDER  MOD_FETCH_API( render_api_t, render )
         #endif
 
     BUILD_STATIC covers a full monolithic build and RENDER_STATIC covers mixed builds
-    where this module is compiled into the exe but also used from a DLL that caches 
+    where this module is compiled into the exe but also used from a DLL that caches
     a pointer fetched during init().
+
+    Host-optional services (app, rhi, draw, gui, render) add
+    `&& !defined( MOD_HOST_DYNAMIC_SERVICES )` to the condition so the runtime host TU
+    can opt into the pointer gateway (absent module == NULL accessor) in every build mode.
 
 ==============================================================================================*/
 

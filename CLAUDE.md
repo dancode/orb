@@ -117,7 +117,7 @@ Existing header sets: `mod_*`, `ref.*`, `sys.*`, `app.*`, `core.*`.
 
 ## Module System
 
-Every hot-reloadable DLL implements a `mod_api_t` descriptor.
+Every hot-reloadable DLL implements a `mod_desc_t` descriptor.
 
 ```c
 static bool render_init( void* state, get_api_fn get_api )
@@ -126,19 +126,22 @@ static bool render_init( void* state, get_api_fn get_api )
     return true;
 }
 
-static mod_api_t s_render_mod_api = {
-    .version       = 1,
-    .state_size    = sizeof( render_state_t ),
-    .func_api_size = sizeof( render_api_t ),   // must not change across hot-reload
-    .func_api      = &g_render_api_struct,
-    .deps          = { "core" },
-    .dep_count     = 1,
-    .init          = render_init,    // runs once
-    .reload        = render_reload,  // re-caches API pointers after DLL swap
-    .exit          = render_exit,
-};
+mod_desc_t* render_get_mod_desc( void )
+{
+    static mod_desc_t desc = {
+        .version       = 1,
+        .state_size    = sizeof( render_state_t ),
+        .func_api_size = sizeof( render_api_t ),   // must not change across hot-reload
+        .func_api      = &g_render_api_struct,
+        .deps          = { "core" },
+        .dep_count     = 1,
+        .init          = render_init,    // runs once
+        .reload        = render_reload,  // re-caches API pointers after DLL swap
+        .exit          = render_exit,
+    };
+    return &desc;
+}
 
-mod_api_t* render_get_mod_api( void ) { return &s_render_mod_api; }
 MOD_DEFINE_EXPORTS( render )
 ```
 
@@ -147,7 +150,7 @@ Consuming a module API:
 ```c
 MOD_DEFINE_API_PTR( render_api_t, render );          // file scope
 if ( !MOD_FETCH_API( render_api_t, render ) ) ...    // in init()/reload()
-render_api()->begin_frame( dt );                      // call site (same in both modes)
+render()->begin_frame( dt );                          // call site (same in both modes)
 ```
 
 Key invariants:

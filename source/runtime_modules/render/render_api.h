@@ -49,14 +49,14 @@ typedef struct render_api_s
        draw_scene and end_frame should be skipped when false is returned. */
     bool ( *begin_frame  )( i32 ctx_id );
     void ( *draw_scene   )( i32 ctx_id, f32 dt );
-    void ( *draw_editor  )( i32 ctx_id, f32 dt );    /* editor overlays + ImGui (stub) */
     void ( *end_frame    )( i32 ctx_id );
 
     /* ---- Scene submission (0.1 minimal) ---- */
-    /* Queue a solid rect for this frame, pixel space, centered at (cx,cy), origin top-left.
-       Submit between frames (e.g. host on_update); draw_scene replays the list through the
-       draw service and clears it.  Replaced later by a real scene / draw-list system. */
-    void ( *submit_rect )( f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 ] );
+    /* Queue a solid rect on a context for this frame, pixel space, centered at (cx,cy),
+       origin top-left.  Submit between frames (e.g. host on_update); draw_scene( ctx_id )
+       replays that context's list through the draw service and clears it.  Replaced later
+       by a real scene / draw-list system. */
+    void ( *submit_rect )( i32 ctx_id, f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 ] );
 
     /* ---- Per-context settings ---- */
     void ( *set_clear_color )( i32 ctx_id, f32 r, f32 g, f32 b, f32 a );
@@ -73,14 +73,10 @@ typedef struct render_api_s
 
 #if ( defined( BUILD_STATIC ) || defined( RENDER_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     MOD_GATEWAY_STATIC( render_api_t, render )
-#else
-    MOD_GATEWAY_DYNAMIC( render_api_t, render )
-#endif
-
-#if ( defined( BUILD_STATIC ) || defined( RENDER_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     #define MOD_USE_RENDER    /* static build */
     #define MOD_FETCH_RENDER  true
 #else
+    MOD_GATEWAY_DYNAMIC( render_api_t, render )
     #define MOD_USE_RENDER    MOD_DEFINE_API_PTR( render_api_t, render )
     #define MOD_FETCH_RENDER  MOD_FETCH_API( render_api_t, render )
 #endif

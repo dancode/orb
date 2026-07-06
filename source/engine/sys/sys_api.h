@@ -37,14 +37,10 @@ typedef struct sys_api_s
 
 #if defined( BUILD_STATIC ) || defined( SYS_STATIC )
     MOD_GATEWAY_STATIC( sys_api_t, sys )
-#else
-    MOD_GATEWAY_DYNAMIC( sys_api_t, sys )
-#endif
-
-#if defined( BUILD_STATIC ) || defined( SYS_STATIC )
     #define MOD_USE_SYS    /* static build */
     #define MOD_FETCH_SYS  true
 #else
+    MOD_GATEWAY_DYNAMIC( sys_api_t, sys )
     #define MOD_USE_SYS    MOD_DEFINE_API_PTR( sys_api_t, sys )
     #define MOD_FETCH_SYS  MOD_FETCH_API( sys_api_t, sys )
 #endif

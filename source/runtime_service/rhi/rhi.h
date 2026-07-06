@@ -428,6 +428,14 @@ typedef struct rhi_color_s
 
 } rhi_color_t;
 
+/* Engine-wide default clear color (dark slate).  The single source for every "caller did
+   not specify a clear" fallback -- host loop, gui boot/floaters, render context slots.
+   Descriptors treat alpha 0 as "unset" (a cleared swapchain is always opaque). */
+#define RHI_CLEAR_DEFAULT_R 0.05f
+#define RHI_CLEAR_DEFAULT_G 0.05f
+#define RHI_CLEAR_DEFAULT_B 0.08f
+#define RHI_CLEAR_DEFAULT_A 1.00f
+
 /*==============================================================================================
     Image layout  (for cmd_image_barrier)
 

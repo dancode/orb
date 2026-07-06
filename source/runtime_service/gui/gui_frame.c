@@ -930,7 +930,8 @@ gui_viewport_render_floaters( void )
             .texture  = { .id = RHI_SWAPCHAIN_COLOR },   /* resolves to this ctx's swapchain image */
             .load_op  = RHI_LOAD_OP_CLEAR,
             .store_op = RHI_STORE_OP_STORE,
-            .clear    = { 0.05f, 0.05f, 0.08f, 1.0f },
+            .clear    = { RHI_CLEAR_DEFAULT_R, RHI_CLEAR_DEFAULT_G,
+                          RHI_CLEAR_DEFAULT_B, RHI_CLEAR_DEFAULT_A },
         }, 1, NULL );
         rhi()->cmd_end_rendering( cmd );
 

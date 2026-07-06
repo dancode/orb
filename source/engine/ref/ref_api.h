@@ -62,14 +62,10 @@ typedef struct ref_api_s
 
 #if defined( BUILD_STATIC ) || defined( REF_STATIC )
     MOD_GATEWAY_STATIC( ref_api_t, ref )
-#else
-    MOD_GATEWAY_DYNAMIC( ref_api_t, ref )
-#endif
-
-#if defined( BUILD_STATIC ) || defined( REF_STATIC )
     #define MOD_USE_REF    /* static build — no pointer needed */
     #define MOD_FETCH_REF  true
 #else
+    MOD_GATEWAY_DYNAMIC( ref_api_t, ref )
     #define MOD_USE_REF    MOD_DEFINE_API_PTR( ref_api_t, ref )
     #define MOD_FETCH_REF  MOD_FETCH_API( ref_api_t, ref )
 #endif

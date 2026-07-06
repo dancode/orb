@@ -22,14 +22,10 @@ typedef struct editor_example_api_s
 
 #if defined( BUILD_STATIC ) || defined( EDITOR_EXAMPLE_STATIC )
 MOD_GATEWAY_STATIC( editor_example_api_t, editor_example )
-#else
-MOD_GATEWAY_DYNAMIC( editor_example_api_t, editor_example )
-#endif
-
-#if defined( BUILD_STATIC ) || defined( EDITOR_EXAMPLE_STATIC )
     #define MOD_USE_EDITOR_EXAMPLE    /* static build */
     #define MOD_FETCH_EDITOR_EXAMPLE  true
 #else
+MOD_GATEWAY_DYNAMIC( editor_example_api_t, editor_example )
     #define MOD_USE_EDITOR_EXAMPLE    MOD_DEFINE_API_PTR( editor_example_api_t, editor_example )
     #define MOD_FETCH_EDITOR_EXAMPLE  MOD_FETCH_API( editor_example_api_t, editor_example )
 #endif
