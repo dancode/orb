@@ -13,25 +13,42 @@
 #include "orb.h"
 
 /*==============================================================================================
-    Vertex layout  (28 bytes; float3 pos @ location 0, float4 color @ location 1)
+    Vertex layout  (36 bytes)
+
+    Attribute LOCATIONS are fixed by contract so the solid and textured pipelines share one
+    vertex buffer and stride:
+        location 0  pos    float3  offset 0    (all primitives)
+        location 1  color  float4  offset 12   (solid: color; textured: tint)
+        location 2  uv     float2  offset 28   (textured; 0,0 on solid primitives)
+    uv was appended at location 2 so the pre-existing solid shaders -- which read only
+    location 0 and location 1 -- are unaffected by the vertex growing.
 ==============================================================================================*/
 
 typedef struct
 {
-    f32 x, y, z;     /* world-space position */
-    f32 r, g, b, a;  /* linear RGBA */
+    f32 x, y, z;     /* world-space position       -> location 0 */
+    f32 r, g, b, a;  /* linear RGBA (tint if textured) -> location 1 */
+    f32 u, v;        /* texcoord (0,0 if untextured)   -> location 2 */
 
 } draw_vertex_t;
 
 /*==============================================================================================
-    Push constants  (64 bytes; fits within the shared 128-byte RHI pipeline layout)
+    Push constants  (both fit within the shared 128-byte RHI pipeline layout)
 ==============================================================================================*/
 
 typedef struct
 {
     f32 mvp[ 16 ]; /* column-major view-projection matrix */
 
-} draw_push_t;
+} draw_push_t;                 /* 64 bytes; DRAW_MAT_SOLID / DRAW_MAT_SOLID_DEPTH */
+
+typedef struct
+{
+    f32 mvp[ 16 ]; /* column-major view-projection matrix */
+    u32 tex_idx;   /* bindless texture slot (rhi()->register_texture) */
+    u32 samp_idx;  /* bindless sampler slot (draw()->sampler_linear / _point) */
+
+} draw_push_tex_t;             /* 72 bytes; DRAW_MAT_TEXTURED */
 
 /*==============================================================================================
     Material IDs
@@ -41,6 +58,7 @@ typedef enum
 {
     DRAW_MAT_SOLID       = 0,   /* 2D/overlay: no depth test, no cull -- draws always on top */
     DRAW_MAT_SOLID_DEPTH = 1,   /* 3D: depth test + write; requires a bound depth attachment */
+    DRAW_MAT_TEXTURED    = 2,   /* 2D: alpha-blended; samples a bindless texture, vertex color tints */
     DRAW_MAT_COUNT,
 
 } draw_mat_id_t;

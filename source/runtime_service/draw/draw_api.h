@@ -80,6 +80,24 @@ typedef struct draw_api_s
        composite point after a scene has been drawn).  Close with end_pass. */
     void ( *begin_overlay )( rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
+    /* Textured quads.  Centered at world-space (cx,cy) with size w x h.  tex_idx is a bindless
+       texture slot from rhi()->register_texture( your_texture ); samp_idx is sampler_linear()
+       or sampler_point() below.  tint modulates the sampled texel (pass 1,1,1,1 to draw the
+       texture as-is).  The textured material is alpha-blended, so image draws composite in
+       submission order.  image_uv takes an explicit source sub-rect -- (u0,v0) top-left,
+       (u1,v1) bottom-right -- for pulling one sprite out of an atlas; image samples the whole
+       texture (0,0..1,1).  Emit between begin/end (or begin_pass/overlay) like any primitive. */
+    void ( *image    )( f32 cx, f32 cy, f32 w, f32 h,
+                        u32 tex_idx, u32 samp_idx, const f32 tint[ 4 ] );
+    void ( *image_uv )( f32 cx, f32 cy, f32 w, f32 h,
+                        f32 u0, f32 v0, f32 u1, f32 v1,
+                        u32 tex_idx, u32 samp_idx, const f32 tint[ 4 ] );
+
+    /* Bindless indices of draw's own clamp-to-edge samplers, for the samp_idx argument above.
+       linear = bilinear filtering (images); point = nearest (pixel-exact / pixel art). */
+    u32  ( *sampler_linear )( void );
+    u32  ( *sampler_point  )( void );
+
 } draw_api_t;
 
 /*============================================================================================*/

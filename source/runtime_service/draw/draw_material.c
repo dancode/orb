@@ -2,11 +2,16 @@
 
     runtime_service/draw/draw_material.c -- Pipeline creation and embedded SPIR-V.
 
-    One material = one compiled rhi_pipeline_t.  All materials share:
-        vertex layout : float3 @ location 0 (pos), float4 @ location 1 (color)
-        push constants: draw_push_t (64 bytes = column-major mvp)
-        color format  : RHI_FORMAT_BGRA8_SRGB  (preferred Windows swapchain format)
-        depth format  : RHI_FORMAT_UNKNOWN      (no depth; draws always on top)
+    One material = one compiled rhi_pipeline_t.  All materials share one vertex buffer and
+    stride (draw_vertex_t, 36 bytes):
+        location 0 : float3 pos    (offset 0)
+        location 1 : float4 color  (offset 12)  -- tint on the textured path
+        location 2 : float2 uv     (offset 28)  -- consumed only by DRAW_MAT_TEXTURED
+        color format : RHI_FORMAT_BGRA8_SRGB     (preferred Windows swapchain format)
+
+    SOLID / SOLID_DEPTH read locations 0 + 1 and push draw_push_t (64 B, mvp only); the
+    solid pipelines simply omit the uv attribute (attrib_count = 2).  TEXTURED reads all
+    three, pushes draw_push_tex_t (72 B, mvp + bindless indices), and alpha-blends.
 
 ==============================================================================================*/
 
@@ -207,6 +212,213 @@ static const u32 s_frag_spirv[] =
     /* OpFunctionEnd */
     0x00010038,
 };
+/*==============================================================================================
+    Textured vertex shader SPIR-V
+
+    Compiled from draw_tex.vert with:
+        glslc --target-env=vulkan1.3 draw_tex.vert -o draw_tex.vert.spv
+    (embedded inline for now; a generated draw_shader.h is a later phase.)
+
+        version 450
+        push_constant PC { mat4 mvp; uint tex_idx; uint samp_idx; } pc;
+        location 0 in  vec3 in_pos;
+        location 1 in  vec4 in_color;
+        location 2 in  vec2 in_uv;
+        location 0 out vec4 v_color;
+        location 1 out vec2 v_uv;
+        main: gl_Position = pc.mvp * vec4(in_pos, 1.0); v_color = in_color; v_uv = in_uv;
+==============================================================================================*/
+
+static const u32 s_tex_vert_spirv[] =
+{
+    0x07230203, 0x00010600, 0x000D000B, 0x0000002D, 0x00000000, 0x00020011,
+    0x00000001, 0x0006000B, 0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E,
+    0x00000000, 0x0003000E, 0x00000000, 0x00000001, 0x000C000F, 0x00000000,
+    0x00000004, 0x6E69616D, 0x00000000, 0x0000000D, 0x00000013, 0x00000019,
+    0x00000023, 0x00000025, 0x00000029, 0x0000002B, 0x00030003, 0x00000002,
+    0x000001C2, 0x000A0004, 0x475F4C47, 0x4C474F4F, 0x70635F45, 0x74735F70,
+    0x5F656C79, 0x656E696C, 0x7269645F, 0x69746365, 0x00006576, 0x00080004,
+    0x475F4C47, 0x4C474F4F, 0x6E695F45, 0x64756C63, 0x69645F65, 0x74636572,
+    0x00657669, 0x00040005, 0x00000004, 0x6E69616D, 0x00000000, 0x00060005,
+    0x0000000B, 0x505F6C67, 0x65567265, 0x78657472, 0x00000000, 0x00060006,
+    0x0000000B, 0x00000000, 0x505F6C67, 0x7469736F, 0x006E6F69, 0x00070006,
+    0x0000000B, 0x00000001, 0x505F6C67, 0x746E696F, 0x657A6953, 0x00000000,
+    0x00070006, 0x0000000B, 0x00000002, 0x435F6C67, 0x4470696C, 0x61747369,
+    0x0065636E, 0x00070006, 0x0000000B, 0x00000003, 0x435F6C67, 0x446C6C75,
+    0x61747369, 0x0065636E, 0x00030005, 0x0000000D, 0x00000000, 0x00030005,
+    0x00000011, 0x00004350, 0x00040006, 0x00000011, 0x00000000, 0x0070766D,
+    0x00050006, 0x00000011, 0x00000001, 0x5F786574, 0x00786469, 0x00060006,
+    0x00000011, 0x00000002, 0x706D6173, 0x7864695F, 0x00000000, 0x00030005,
+    0x00000013, 0x00006370, 0x00040005, 0x00000019, 0x705F6E69, 0x0000736F,
+    0x00040005, 0x00000023, 0x6F635F76, 0x00726F6C, 0x00050005, 0x00000025,
+    0x635F6E69, 0x726F6C6F, 0x00000000, 0x00040005, 0x00000029, 0x76755F76,
+    0x00000000, 0x00040005, 0x0000002B, 0x755F6E69, 0x00000076, 0x00030047,
+    0x0000000B, 0x00000002, 0x00050048, 0x0000000B, 0x00000000, 0x0000000B,
+    0x00000000, 0x00050048, 0x0000000B, 0x00000001, 0x0000000B, 0x00000001,
+    0x00050048, 0x0000000B, 0x00000002, 0x0000000B, 0x00000003, 0x00050048,
+    0x0000000B, 0x00000003, 0x0000000B, 0x00000004, 0x00030047, 0x00000011,
+    0x00000002, 0x00040048, 0x00000011, 0x00000000, 0x00000005, 0x00050048,
+    0x00000011, 0x00000000, 0x00000007, 0x00000010, 0x00050048, 0x00000011,
+    0x00000000, 0x00000023, 0x00000000, 0x00050048, 0x00000011, 0x00000001,
+    0x00000023, 0x00000040, 0x00050048, 0x00000011, 0x00000002, 0x00000023,
+    0x00000044, 0x00040047, 0x00000019, 0x0000001E, 0x00000000, 0x00040047,
+    0x00000023, 0x0000001E, 0x00000000, 0x00040047, 0x00000025, 0x0000001E,
+    0x00000001, 0x00040047, 0x00000029, 0x0000001E, 0x00000001, 0x00040047,
+    0x0000002B, 0x0000001E, 0x00000002, 0x00020013, 0x00000002, 0x00030021,
+    0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020, 0x00040017,
+    0x00000007, 0x00000006, 0x00000004, 0x00040015, 0x00000008, 0x00000020,
+    0x00000000, 0x0004002B, 0x00000008, 0x00000009, 0x00000001, 0x0004001C,
+    0x0000000A, 0x00000006, 0x00000009, 0x0006001E, 0x0000000B, 0x00000007,
+    0x00000006, 0x0000000A, 0x0000000A, 0x00040020, 0x0000000C, 0x00000003,
+    0x0000000B, 0x0004003B, 0x0000000C, 0x0000000D, 0x00000003, 0x00040015,
+    0x0000000E, 0x00000020, 0x00000001, 0x0004002B, 0x0000000E, 0x0000000F,
+    0x00000000, 0x00040018, 0x00000010, 0x00000007, 0x00000004, 0x0005001E,
+    0x00000011, 0x00000010, 0x00000008, 0x00000008, 0x00040020, 0x00000012,
+    0x00000009, 0x00000011, 0x0004003B, 0x00000012, 0x00000013, 0x00000009,
+    0x00040020, 0x00000014, 0x00000009, 0x00000010, 0x00040017, 0x00000017,
+    0x00000006, 0x00000003, 0x00040020, 0x00000018, 0x00000001, 0x00000017,
+    0x0004003B, 0x00000018, 0x00000019, 0x00000001, 0x0004002B, 0x00000006,
+    0x0000001B, 0x3F800000, 0x00040020, 0x00000021, 0x00000003, 0x00000007,
+    0x0004003B, 0x00000021, 0x00000023, 0x00000003, 0x00040020, 0x00000024,
+    0x00000001, 0x00000007, 0x0004003B, 0x00000024, 0x00000025, 0x00000001,
+    0x00040017, 0x00000027, 0x00000006, 0x00000002, 0x00040020, 0x00000028,
+    0x00000003, 0x00000027, 0x0004003B, 0x00000028, 0x00000029, 0x00000003,
+    0x00040020, 0x0000002A, 0x00000001, 0x00000027, 0x0004003B, 0x0000002A,
+    0x0000002B, 0x00000001, 0x00050036, 0x00000002, 0x00000004, 0x00000000,
+    0x00000003, 0x000200F8, 0x00000005, 0x00050041, 0x00000014, 0x00000015,
+    0x00000013, 0x0000000F, 0x0004003D, 0x00000010, 0x00000016, 0x00000015,
+    0x0004003D, 0x00000017, 0x0000001A, 0x00000019, 0x00050051, 0x00000006,
+    0x0000001C, 0x0000001A, 0x00000000, 0x00050051, 0x00000006, 0x0000001D,
+    0x0000001A, 0x00000001, 0x00050051, 0x00000006, 0x0000001E, 0x0000001A,
+    0x00000002, 0x00070050, 0x00000007, 0x0000001F, 0x0000001C, 0x0000001D,
+    0x0000001E, 0x0000001B, 0x00050091, 0x00000007, 0x00000020, 0x00000016,
+    0x0000001F, 0x00050041, 0x00000021, 0x00000022, 0x0000000D, 0x0000000F,
+    0x0003003E, 0x00000022, 0x00000020, 0x0004003D, 0x00000007, 0x00000026,
+    0x00000025, 0x0003003E, 0x00000023, 0x00000026, 0x0004003D, 0x00000027,
+    0x0000002C, 0x0000002B, 0x0003003E, 0x00000029, 0x0000002C, 0x000100FD,
+    0x00010038,
+};
+
+/*==============================================================================================
+    Textured fragment shader SPIR-V
+
+    Compiled from draw_tex.frag with:
+        glslc --target-env=vulkan1.3 draw_tex.frag -o draw_tex.frag.spv
+
+        version 450 + GL_EXT_nonuniform_qualifier
+        set=0 binding=0 texture2D u_textures[];
+        set=0 binding=1 sampler   u_samplers[];
+        push_constant PC { mat4 mvp; uint tex_idx; uint samp_idx; } pc;
+        location 0 in  vec4 v_color;   location 1 in vec2 v_uv;   location 0 out vec4 out_color;
+        main: vec4 s = texture(sampler2D(u_textures[nonuniformEXT(tex_idx)],
+                                         u_samplers [nonuniformEXT(samp_idx)]), v_uv);
+              out_color = vec4(s.rgb * srgb_to_linear(v_color.rgb), s.a * v_color.a);
+
+    The texel arrives LINEAR (_SRGB views hardware-decode at sample time), so only the
+    authored vertex tint is srgb_to_linear'd before the modulate.
+==============================================================================================*/
+
+static const u32 s_tex_frag_spirv[] =
+{
+    0x07230203, 0x00010600, 0x000D000B, 0x0000006E, 0x00000000, 0x00020011,
+    0x00000001, 0x00020011, 0x000014B5, 0x00020011, 0x000014B6, 0x00020011,
+    0x000014BB, 0x0006000B, 0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E,
+    0x00000000, 0x0003000E, 0x00000000, 0x00000001, 0x000B000F, 0x00000004,
+    0x00000004, 0x6E69616D, 0x00000000, 0x00000036, 0x0000003B, 0x00000048,
+    0x00000054, 0x00000058, 0x0000005C, 0x00030010, 0x00000004, 0x00000007,
+    0x00030003, 0x00000002, 0x000001C2, 0x00080004, 0x455F4C47, 0x6E5F5458,
+    0x6E756E6F, 0x726F6669, 0x75715F6D, 0x66696C61, 0x00726569, 0x000A0004,
+    0x475F4C47, 0x4C474F4F, 0x70635F45, 0x74735F70, 0x5F656C79, 0x656E696C,
+    0x7269645F, 0x69746365, 0x00006576, 0x00080004, 0x475F4C47, 0x4C474F4F,
+    0x6E695F45, 0x64756C63, 0x69645F65, 0x74636572, 0x00657669, 0x00040005,
+    0x00000004, 0x6E69616D, 0x00000000, 0x00070005, 0x0000000B, 0x62677273,
+    0x5F6F745F, 0x656E696C, 0x76287261, 0x003B3366, 0x00030005, 0x0000000A,
+    0x00000063, 0x00040005, 0x00000010, 0x6F747563, 0x00006666, 0x00030005,
+    0x00000015, 0x00006F6C, 0x00030005, 0x0000001A, 0x00006968, 0x00030005,
+    0x00000032, 0x00000073, 0x00050005, 0x00000036, 0x65745F75, 0x72757478,
+    0x00007365, 0x00030005, 0x00000039, 0x00004350, 0x00040006, 0x00000039,
+    0x00000000, 0x0070766D, 0x00050006, 0x00000039, 0x00000001, 0x5F786574,
+    0x00786469, 0x00060006, 0x00000039, 0x00000002, 0x706D6173, 0x7864695F,
+    0x00000000, 0x00030005, 0x0000003B, 0x00006370, 0x00050005, 0x00000048,
+    0x61735F75, 0x656C706D, 0x00007372, 0x00040005, 0x00000054, 0x76755F76,
+    0x00000000, 0x00050005, 0x00000058, 0x5F74756F, 0x6F6C6F63, 0x00000072,
+    0x00040005, 0x0000005C, 0x6F635F76, 0x00726F6C, 0x00040005, 0x0000005D,
+    0x61726170, 0x0000006D, 0x00040047, 0x00000036, 0x00000021, 0x00000000,
+    0x00040047, 0x00000036, 0x00000022, 0x00000000, 0x00030047, 0x00000039,
+    0x00000002, 0x00040048, 0x00000039, 0x00000000, 0x00000005, 0x00050048,
+    0x00000039, 0x00000000, 0x00000007, 0x00000010, 0x00050048, 0x00000039,
+    0x00000000, 0x00000023, 0x00000000, 0x00050048, 0x00000039, 0x00000001,
+    0x00000023, 0x00000040, 0x00050048, 0x00000039, 0x00000002, 0x00000023,
+    0x00000044, 0x00030047, 0x00000041, 0x000014B4, 0x00030047, 0x00000043,
+    0x000014B4, 0x00030047, 0x00000044, 0x000014B4, 0x00040047, 0x00000048,
+    0x00000021, 0x00000001, 0x00040047, 0x00000048, 0x00000022, 0x00000000,
+    0x00030047, 0x0000004C, 0x000014B4, 0x00030047, 0x0000004E, 0x000014B4,
+    0x00030047, 0x0000004F, 0x000014B4, 0x00040047, 0x00000054, 0x0000001E,
+    0x00000001, 0x00040047, 0x00000058, 0x0000001E, 0x00000000, 0x00040047,
+    0x0000005C, 0x0000001E, 0x00000000, 0x00020013, 0x00000002, 0x00030021,
+    0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020, 0x00040017,
+    0x00000007, 0x00000006, 0x00000003, 0x00040020, 0x00000008, 0x00000007,
+    0x00000007, 0x00040021, 0x00000009, 0x00000007, 0x00000008, 0x00020014,
+    0x0000000D, 0x00040017, 0x0000000E, 0x0000000D, 0x00000003, 0x00040020,
+    0x0000000F, 0x00000007, 0x0000000E, 0x0004002B, 0x00000006, 0x00000012,
+    0x3D25AEE6, 0x0006002C, 0x00000007, 0x00000013, 0x00000012, 0x00000012,
+    0x00000012, 0x0004002B, 0x00000006, 0x00000017, 0x414EB852, 0x0004002B,
+    0x00000006, 0x0000001C, 0x3D6147AE, 0x0004002B, 0x00000006, 0x0000001F,
+    0x3F870A3D, 0x0004002B, 0x00000006, 0x00000022, 0x4019999A, 0x0006002C,
+    0x00000007, 0x00000023, 0x00000022, 0x00000022, 0x00000022, 0x0004002B,
+    0x00000006, 0x00000028, 0x00000000, 0x0004002B, 0x00000006, 0x00000029,
+    0x3F800000, 0x0006002C, 0x00000007, 0x0000002A, 0x00000028, 0x00000028,
+    0x00000028, 0x0006002C, 0x00000007, 0x0000002B, 0x00000029, 0x00000029,
+    0x00000029, 0x00040017, 0x00000030, 0x00000006, 0x00000004, 0x00040020,
+    0x00000031, 0x00000007, 0x00000030, 0x00090019, 0x00000033, 0x00000006,
+    0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000,
+    0x0003001D, 0x00000034, 0x00000033, 0x00040020, 0x00000035, 0x00000000,
+    0x00000034, 0x0004003B, 0x00000035, 0x00000036, 0x00000000, 0x00040018,
+    0x00000037, 0x00000030, 0x00000004, 0x00040015, 0x00000038, 0x00000020,
+    0x00000000, 0x0005001E, 0x00000039, 0x00000037, 0x00000038, 0x00000038,
+    0x00040020, 0x0000003A, 0x00000009, 0x00000039, 0x0004003B, 0x0000003A,
+    0x0000003B, 0x00000009, 0x00040015, 0x0000003C, 0x00000020, 0x00000001,
+    0x0004002B, 0x0000003C, 0x0000003D, 0x00000001, 0x00040020, 0x0000003E,
+    0x00000009, 0x00000038, 0x00040020, 0x00000042, 0x00000000, 0x00000033,
+    0x0002001A, 0x00000045, 0x0003001D, 0x00000046, 0x00000045, 0x00040020,
+    0x00000047, 0x00000000, 0x00000046, 0x0004003B, 0x00000047, 0x00000048,
+    0x00000000, 0x0004002B, 0x0000003C, 0x00000049, 0x00000002, 0x00040020,
+    0x0000004D, 0x00000000, 0x00000045, 0x0003001B, 0x00000050, 0x00000033,
+    0x00040017, 0x00000052, 0x00000006, 0x00000002, 0x00040020, 0x00000053,
+    0x00000001, 0x00000052, 0x0004003B, 0x00000053, 0x00000054, 0x00000001,
+    0x00040020, 0x00000057, 0x00000003, 0x00000030, 0x0004003B, 0x00000057,
+    0x00000058, 0x00000003, 0x00040020, 0x0000005B, 0x00000001, 0x00000030,
+    0x0004003B, 0x0000005B, 0x0000005C, 0x00000001, 0x0004002B, 0x00000038,
+    0x00000062, 0x00000003, 0x00040020, 0x00000063, 0x00000007, 0x00000006,
+    0x00040020, 0x00000066, 0x00000001, 0x00000006, 0x00050036, 0x00000002,
+    0x00000004, 0x00000000, 0x00000003, 0x000200F8, 0x00000005, 0x0004003B,
+    0x00000031, 0x00000032, 0x00000007, 0x0004003B, 0x00000008, 0x0000005D,
+    0x00000007, 0x00050041, 0x0000003E, 0x0000003F, 0x0000003B, 0x0000003D,
+    0x0004003D, 0x00000038, 0x00000040, 0x0000003F, 0x00040053, 0x00000038,
+    0x00000041, 0x00000040, 0x00050041, 0x00000042, 0x00000043, 0x00000036,
+    0x00000041, 0x0004003D, 0x00000033, 0x00000044, 0x00000043, 0x00050041,
+    0x0000003E, 0x0000004A, 0x0000003B, 0x00000049, 0x0004003D, 0x00000038,
+    0x0000004B, 0x0000004A, 0x00040053, 0x00000038, 0x0000004C, 0x0000004B,
+    0x00050041, 0x0000004D, 0x0000004E, 0x00000048, 0x0000004C, 0x0004003D,
+    0x00000045, 0x0000004F, 0x0000004E, 0x00050056, 0x00000050, 0x00000051,
+    0x00000044, 0x0000004F, 0x0004003D, 0x00000052, 0x00000055, 0x00000054,
+    0x00050057, 0x00000030, 0x00000056, 0x00000051, 0x00000055, 0x0003003E,
+    0x00000032, 0x00000056, 0x0004003D, 0x00000030, 0x00000059, 0x00000032,
+    0x0008004F, 0x00000007, 0x0000005A, 0x00000059, 0x00000059, 0x00000000,
+    0x00000001, 0x00000002, 0x0004003D, 0x00000030, 0x0000005E, 0x0000005C,
+    0x0008004F, 0x00000007, 0x0000005F, 0x0000005E, 0x0000005E, 0x00000000,
+    0x00000001, 0x00000002, 0x0003003E, 0x0000005D, 0x0000005F, 0x00050039,
+    0x00000007, 0x00000060, 0x0000000B, 0x0000005D, 0x00050085, 0x00000007,
+    0x00000061, 0x0000005A, 0x00000060, 0x00050041, 0x00000063, 0x00000064,
+    0x00000032, 0x00000062, 0x0004003D, 0x00000006, 0x00000065, 0x00000064,
+    0x00050041, 0x00000066, 0x00000067, 0x0000005C, 0x00000062, 0x0004003D,
+    0x00000006, 0x00000068, 0x00000067, 0x00050085, 0x00000006, 0x00000069,
+    0x00000065, 0x00000068, 0x00050051, 0x00000006, 0x0000006A, 0x00000061,
+    0x00000000, 0x00050051, 0x00000006, 0x0000006B, 0x00000061, 0x00000001,
+    0x00050051, 0x00000006, 0x0000006C, 0x00000061, 0x00000002, 0x00070050,
+    0x00000030, 0x0000006D, 0x0000006A, 0x0000006B, 0x0000006C, 0x00000069,
+    0x0003003E, 0x00000058, 0x0000006D, 0x000100FD, 0x00010038,
+};
 /* clang-format on */
 
 /*==============================================================================================
@@ -240,10 +452,13 @@ draw_material_init( draw_material_t mats[ DRAW_MAT_COUNT ] )
         return false;
     }
 
-    /* Vertex layout: float3 pos @ loc 0, float4 color @ loc 1, 28-byte stride. */
-    rhi_vertex_attrib_t attribs[ 2 ] = {
+    /* Shared vertex layout, 36-byte stride: float3 pos @ loc 0, float4 color @ loc 1,
+       float2 uv @ loc 2.  Solid pipelines bind only the first two attributes (they never
+       read uv); the textured pipeline binds all three. */
+    rhi_vertex_attrib_t attribs[ 3 ] = {
         { .binding = 0, .location = 0, .offset = 0,  .format = RHI_VERTEX_FORMAT_FLOAT3 },
         { .binding = 0, .location = 1, .offset = 12, .format = RHI_VERTEX_FORMAT_FLOAT4 },
+        { .binding = 0, .location = 2, .offset = 28, .format = RHI_VERTEX_FORMAT_FLOAT2 },
     };
 
     /* Both pipelines share the same shaders, vertex layout, and color target; they differ
@@ -285,6 +500,53 @@ draw_material_init( draw_material_t mats[ DRAW_MAT_COUNT ] )
         .debug_name         = "draw_solid_depth",
     } );
 
+    /* Textured pipeline: separate shaders (bindless sampler), all three vertex attributes,
+       and straight-alpha blending so images composite over the scene.  Push constants are
+       draw_push_tex_t (mvp + bindless indices), 72 bytes -- still inside the 128-byte layout. */
+    rhi_shader_t tex_vert = rhi()->shader_create( &( rhi_shader_desc_t ){
+        .spirv      = s_tex_vert_spirv,
+        .spirv_size = sizeof( s_tex_vert_spirv ),
+        .stage      = RHI_SHADER_STAGE_VERTEX,
+        .entry      = "main",
+        .debug_name = "draw_tex_vert",
+    } );
+    rhi_shader_t tex_frag = rhi()->shader_create( &( rhi_shader_desc_t ){
+        .spirv      = s_tex_frag_spirv,
+        .spirv_size = sizeof( s_tex_frag_spirv ),
+        .stage      = RHI_SHADER_STAGE_FRAGMENT,
+        .entry      = "main",
+        .debug_name = "draw_tex_frag",
+    } );
+    if ( rhi_handle_valid( tex_vert ) && rhi_handle_valid( tex_frag ) )
+    {
+        rhi_color_target_t blended = {
+            .format       = RHI_FORMAT_BGRA8_SRGB,
+            .blend_enable = true,
+            .src_color = RHI_BLEND_SRC_ALPHA, .dst_color = RHI_BLEND_ONE_MINUS_SRC_A,
+            .color_op  = RHI_BLEND_OP_ADD,
+            .src_alpha = RHI_BLEND_ONE,       .dst_alpha = RHI_BLEND_ONE_MINUS_SRC_A,
+            .alpha_op  = RHI_BLEND_OP_ADD,
+        };
+
+        mats[ DRAW_MAT_TEXTURED ].pipeline = rhi()->pipeline_create( &( rhi_pipeline_desc_t ){
+            .vert               = tex_vert,
+            .frag               = tex_frag,
+            .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ] },
+            .attrib_count       = 3,
+            .vertex_stride      = sizeof( draw_vertex_t ),
+            .cull               = RHI_CULL_NONE,
+            .depth_test         = false,
+            .depth_write        = false,
+            .color_targets      = { blended },
+            .color_target_count = 1,
+            .depth_format       = RHI_FORMAT_UNKNOWN,
+            .push_const_size    = sizeof( draw_push_tex_t ),
+            .debug_name         = "draw_textured",
+        } );
+    }
+    if ( rhi_handle_valid( tex_frag ) ) rhi()->shader_destroy( tex_frag );
+    if ( rhi_handle_valid( tex_vert ) ) rhi()->shader_destroy( tex_vert );
+
     /* Shaders are only needed during pipeline creation; free immediately after. */
     rhi()->shader_destroy( frag );
     rhi()->shader_destroy( vert );
@@ -292,6 +554,8 @@ draw_material_init( draw_material_t mats[ DRAW_MAT_COUNT ] )
     if ( !rhi_handle_valid( mats[ DRAW_MAT_SOLID ].pipeline ) )
         return false;
     if ( !rhi_handle_valid( mats[ DRAW_MAT_SOLID_DEPTH ].pipeline ) )
+        return false;
+    if ( !rhi_handle_valid( mats[ DRAW_MAT_TEXTURED ].pipeline ) )
         return false;
 
     return true;

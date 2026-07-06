@@ -18,6 +18,8 @@ typedef struct
     i32           vertex_offset;  /* base vertex added to each index (= base vertex in VB) */
     draw_push_t   push;
     draw_mat_id_t material;
+    u32           tex_idx;        /* DRAW_MAT_TEXTURED only: bindless texture slot */
+    u32           samp_idx;       /* DRAW_MAT_TEXTURED only: bindless sampler slot */
 
 } draw_call_t;
 
@@ -32,11 +34,20 @@ static struct
     draw_push_t     frame_push;  /* current view-projection baked into every draw */
     draw_mat_id_t   cur_mat;
 
+    /* Draw-owned bindless samplers (clamp-to-edge) for the textured path.  Textures belong
+       to the caller; draw only supplies the sampler indices passed to image()/image_uv(). */
+    rhi_sampler_t   samp_linear_h;
+    rhi_sampler_t   samp_point_h;
+    u32             samp_linear;   /* bindless index of samp_linear_h */
+    u32             samp_point;    /* bindless index of samp_point_h  */
+
 } s;
 
 /*----------------------------------------------------------------------------------------------
     draw_init / draw_shutdown
 ----------------------------------------------------------------------------------------------*/
+
+static void draw_shutdown( void );   /* forward decl: draw_init unwinds through it on failure */
 
 static bool
 draw_init( void )
@@ -48,6 +59,31 @@ draw_init( void )
          draw_batch_shutdown( &s.batch );
          return false;
     }
+
+    /* Two draw-owned samplers, both clamp-to-edge; linear for images, point for pixel-exact
+       sampling.  Registered in the bindless set so image() can reference them by index. */
+    s.samp_linear_h = rhi()->sampler_create( &( rhi_sampler_desc_t ){
+        .min_filter = RHI_FILTER_LINEAR, .mag_filter = RHI_FILTER_LINEAR,
+        .mip_filter = RHI_FILTER_LINEAR,
+        .address_u  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .address_v  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .address_w  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+    } );
+    s.samp_point_h = rhi()->sampler_create( &( rhi_sampler_desc_t ){
+        .min_filter = RHI_FILTER_NEAREST, .mag_filter = RHI_FILTER_NEAREST,
+        .mip_filter = RHI_FILTER_NEAREST,
+        .address_u  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .address_v  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .address_w  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+    } );
+    if ( !rhi_handle_valid( s.samp_linear_h ) || !rhi_handle_valid( s.samp_point_h ) )
+    {
+        draw_shutdown();
+        return false;
+    }
+    s.samp_linear = rhi()->register_sampler( s.samp_linear_h );
+    s.samp_point  = rhi()->register_sampler( s.samp_point_h );
+
     s.cur_mat = DRAW_MAT_SOLID;
     return true;
 }
@@ -55,6 +91,18 @@ draw_init( void )
 static void
 draw_shutdown( void )
 {
+    if ( rhi_handle_valid( s.samp_point_h ) )
+    {
+        rhi()->unregister_sampler( s.samp_point );
+        rhi()->sampler_destroy( s.samp_point_h );
+        s.samp_point_h = ( rhi_sampler_t ){ 0 };
+    }
+    if ( rhi_handle_valid( s.samp_linear_h ) )
+    {
+        rhi()->unregister_sampler( s.samp_linear );
+        rhi()->sampler_destroy( s.samp_linear_h );
+        s.samp_linear_h = ( rhi_sampler_t ){ 0 };
+    }
     draw_material_shutdown( s.mats );
     draw_batch_shutdown( &s.batch );
 }
@@ -114,9 +162,28 @@ draw_end( void )
         {
             cur = c->material;
             rhi()->cmd_bind_pipeline( s.cmd, s.mats[ cur ].pipeline );
+            /* The bindless descriptor set must be re-bound after every pipeline switch (RHI
+               contract).  The textured pipeline samples through it; harmless for the solid
+               ones.  Binding it here also frees callers of draw()->begin from doing so. */
+            rhi()->cmd_bind_bindless( s.cmd );
         }
 
-        rhi()->cmd_push_constants( s.cmd, &c->push, sizeof( c->push ), 0 );
+        /* Push constants sized to the bound pipeline's layout: textured carries the bindless
+           indices after the mvp, solid pushes the mvp alone. */
+        if ( c->material == DRAW_MAT_TEXTURED )
+        {
+            draw_push_tex_t p;
+            for ( u32 k = 0; k < 16; ++k )
+                p.mvp[ k ] = c->push.mvp[ k ];
+            p.tex_idx  = c->tex_idx;
+            p.samp_idx = c->samp_idx;
+            rhi()->cmd_push_constants( s.cmd, &p, sizeof( p ), 0 );
+        }
+        else
+        {
+            rhi()->cmd_push_constants( s.cmd, &c->push, sizeof( c->push ), 0 );
+        }
+
         rhi()->cmd_draw_indexed( s.cmd, &( rhi_draw_indexed_args_t ){
             .index_count    = c->index_count,
             .instance_count = 1,
@@ -147,6 +214,36 @@ draw_submit( const draw_vertex_t* verts, u32 nv, const u16* idxs, u32 ni )
         .vertex_offset = (i32)base_vertex,
         .push          = s.frame_push,
         .material      = s.cur_mat,
+    };
+}
+
+/*----------------------------------------------------------------------------------------------
+    Internal helper: push textured geometry and record a DRAW_MAT_TEXTURED call.
+
+    Independent of s.cur_mat (which tracks the begin/begin_depth solid material) -- image
+    calls carry their own material and bindless indices so they can interleave with solid
+    primitives in a single begin/end.
+----------------------------------------------------------------------------------------------*/
+
+static void
+draw_submit_tex( const draw_vertex_t* verts, u32 nv, const u16* idxs, u32 ni,
+                 u32 tex_idx, u32 samp_idx )
+{
+    if ( s.call_count >= DRAW_MAX_CALLS )
+        return;
+
+    u32 base_vertex, first_index;
+    if ( !draw_batch_push( &s.batch, verts, nv, idxs, ni, &base_vertex, &first_index ) )
+        return;
+
+    s.calls[ s.call_count++ ] = ( draw_call_t ){
+        .first_index   = first_index,
+        .index_count   = ni,
+        .vertex_offset = (i32)base_vertex,
+        .push          = s.frame_push,
+        .material      = DRAW_MAT_TEXTURED,
+        .tex_idx       = tex_idx,
+        .samp_idx      = samp_idx,
     };
 }
 
@@ -183,6 +280,33 @@ draw_circle( f32 cx, f32 cy, f32 r, u32 segs, const f32 rgba[ 4 ] )
     geo_circle( verts, idxs, &nv, &ni, cx, cy, r, segs, rgba );
     draw_submit( verts, nv, idxs, ni );
 }
+
+/*----------------------------------------------------------------------------------------------
+    Textured primitives.  tex_idx is a bindless slot from rhi()->register_texture; samp_idx
+    is one of draw_sampler_linear()/draw_sampler_point().  tint modulates the sampled texel
+    (1,1,1,1 = untinted).  Alpha-blended, so submission order matters.
+----------------------------------------------------------------------------------------------*/
+
+static void
+draw_image_uv( f32 cx, f32 cy, f32 w, f32 h,
+               f32 u0, f32 v0, f32 u1, f32 v1,
+               u32 tex_idx, u32 samp_idx, const f32 tint[ 4 ] )
+{
+    draw_vertex_t verts[ 4 ];
+    u16           idxs[ 6 ];
+    u32 nv = 0, ni = 0;
+    geo_image( verts, idxs, &nv, &ni, cx, cy, w * 0.5f, h * 0.5f, u0, v0, u1, v1, tint );
+    draw_submit_tex( verts, nv, idxs, ni, tex_idx, samp_idx );
+}
+
+static void
+draw_image( f32 cx, f32 cy, f32 w, f32 h, u32 tex_idx, u32 samp_idx, const f32 tint[ 4 ] )
+{
+    draw_image_uv( cx, cy, w, h, 0.0f, 0.0f, 1.0f, 1.0f, tex_idx, samp_idx, tint );
+}
+
+static u32 draw_sampler_linear( void ) { return s.samp_linear; }
+static u32 draw_sampler_point ( void ) { return s.samp_point;  }
 
 /*============================================================================================*/
 // clang-format on

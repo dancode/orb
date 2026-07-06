@@ -32,6 +32,10 @@ const draw_api_t g_draw_api_struct =
     .begin_pass    = draw_begin_pass,
     .begin_overlay = draw_begin_overlay,
     .end_pass      = draw_end_pass,
+    .image          = draw_image,
+    .image_uv       = draw_image_uv,
+    .sampler_linear = draw_sampler_linear,
+    .sampler_point  = draw_sampler_point,
 };
 
 /*==============================================================================================

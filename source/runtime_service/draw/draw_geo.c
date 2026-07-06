@@ -41,6 +41,33 @@ geo_rect( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
 }
 
 /*----------------------------------------------------------------------------------------------
+    geo_image  --  textured quad in the XY plane (z = 0)
+
+    Same corners and winding as geo_rect, plus a source uv sub-rect: (u0,v0) maps to the
+    top-left corner, (u1,v1) to the bottom-right.  Pass 0,0,1,1 to sample the whole texture,
+    or a sub-rect to pull one sprite out of an atlas.  tint modulates the sampled texel.
+
+    4 vertices, 6 indices (2 triangles, CCW) -- identical topology to geo_rect.
+----------------------------------------------------------------------------------------------*/
+
+static void
+geo_image( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
+           f32 cx, f32 cy, f32 hw, f32 hh,
+           f32 u0, f32 v0, f32 u1, f32 v1, const f32 tint[ 4 ] )
+{
+    verts[ 0 ] = ( draw_vertex_t ){ cx - hw, cy - hh, 0.0f, tint[0], tint[1], tint[2], tint[3], u0, v0 };
+    verts[ 1 ] = ( draw_vertex_t ){ cx + hw, cy - hh, 0.0f, tint[0], tint[1], tint[2], tint[3], u1, v0 };
+    verts[ 2 ] = ( draw_vertex_t ){ cx + hw, cy + hh, 0.0f, tint[0], tint[1], tint[2], tint[3], u1, v1 };
+    verts[ 3 ] = ( draw_vertex_t ){ cx - hw, cy + hh, 0.0f, tint[0], tint[1], tint[2], tint[3], u0, v1 };
+
+    indices[ 0 ] = 0; indices[ 1 ] = 1; indices[ 2 ] = 2;
+    indices[ 3 ] = 0; indices[ 4 ] = 2; indices[ 5 ] = 3;
+
+    *nv = 4;
+    *ni = 6;
+}
+
+/*----------------------------------------------------------------------------------------------
     geo_box  --  axis-aligned box centered at (cx, cy, cz)
 
     8 unique corner vertices shared across all 6 faces (no per-face normals; colour only).
