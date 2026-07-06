@@ -178,6 +178,33 @@ typedef void ( *gui_sleep_fn )( i32 milliseconds );
 typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 
 /*==============================================================================================
+    GUI: Boot descriptor
+
+    One-call host setup (gui()->boot): gui owns the main OS window and its render context end to
+    end -- the same lifecycle its tear-off floaters already use -- instead of the host assembling
+    window_open / context_open / init / viewport_open by hand.  Everything here is optional in the
+    sense that a field left zero keeps today's default; the struct is designed to be built as a
+    compound literal at the call site.  See boot() in gui_api.h for the full contract.
+==============================================================================================*/
+
+typedef struct
+{
+    const char*               title;      /* OS window title; doubles as the chrome shell caption  */
+    i32                       x, y;       /* window position; 0,0 = OS centers                     */
+    i32                       w, h;       /* client size; 0,0 = 50% of the desktop work area       */
+    bool                      os_chrome;  /* true = stock OS frame; false (default) = borderless
+                                             window with the gui chrome shell auto-emitted         */
+    gui_builtin_font_t        font;       /* built-in preset; GUI_FONT_NONE = caller font_load()s  */
+    const gui_forward_caps_t* caps;       /* UI-unit feature caps; NULL = GUI_FORWARD_CAPS_DEFAULT */
+    gui_clock_fn              clock;      /* frame hooks (gui links no sys) -- see set_frame_hooks */
+    gui_sleep_fn              sleep;
+    gui_wait_events_fn        wait;
+    f32                       clear[ 4 ]; /* present() clear color; alpha 0 = default dark        */
+    bool                      debug;      /* arm the debug hotkey driver (debug_enable)            */
+
+} gui_boot_desc_t;
+
+/*==============================================================================================
     GUI: Rect Algebra
 
     Rect algebra -- pure helpers for custom-draw placement (canvas() regions).  Stateless, so they

@@ -892,28 +892,30 @@ main( int argc, char** argv )
     core_log_fn( LOG_LEVEL_DEBUG, "sb_gui", "debug log: modules loaded successfully" );
 
     /* ------------------------------------------------------------------------------ */
-    /* Setup RHI + Window */
+    /* One-call setup: gui owns the main window + render context end to end (boot path).
+       os_chrome keeps the stock Win32 frame this demo has always had -- flip it off for a
+       borderless window with the gui chrome shell auto-emitted each frame.  The frame hooks
+       are the OS services gui cannot reach itself (it links only app + rhi); .debug arms
+       the gui hotkey driver (see debug_enable in gui_api.h). */
 
-    int         ret_code   = 1;
-    bool        rhi_inited = false;
-    bool        draw_inited = false;
-    bool        gui_inited  = false;
-    win_id_t    win         = APP_WIN_INVALID;
-    i32         ctx         = RHI_CTX_INVALID;
-    gui_vp_t    vp0         = GUI_VP_INVALID;
+    int      ret_code    = 1;
+    bool     draw_inited = false;
 
-    if ( !rhi()->init() ) {
-        goto shutdown;
-    }
-    rhi_inited = true;
-
-    win = app()->window_open( "sb_gui", 0, 0, 1280, 720, APP_WIN_DEFAULT );
-    if ( win == APP_WIN_INVALID ) {
-        goto shutdown;
-    }
-
-    ctx = rhi()->context_open( win );
-    if ( ctx == RHI_CTX_INVALID ) {
+    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+        .title     = "sb_gui",
+        .w         = 1280, .h = 720,
+        .os_chrome = true,
+        .font      = GUI_FONT_JETBRAINS_16,   // GUI_FONT_NONE
+        .caps      = &( gui_forward_caps_t ){ .keyboard_nav = true, .tables = false, .docking = false },
+        .clock     = sys_tick_seconds,
+        .sleep     = sys_sleep_milliseconds,
+        .wait      = sys_wait_for_os_events_ms,
+        .clear     = { 0.15f, 0.15f, 0.20f, 1.00f },
+        .debug     = true,
+    } );
+    if ( vp0 == GUI_VP_INVALID )
+    {
+        fprintf( stderr, "[sb_gui] gui->boot failed\n" );
         goto shutdown;
     }
 
@@ -926,19 +928,6 @@ main( int argc, char** argv )
         goto shutdown;
     }
     draw_inited = true;
-
-    /* ------------------------------------------------------------------------------ */
-    /* Setup GUI */
-
-    gui_forward_caps_t caps = { .keyboard_nav = true, .tables = false, .docking = false  };
-    gui()->init_config_front( caps );                        
-    
-    // GUI_FONT_NONE
-    if ( !gui()->init( GUI_FONT_JETBRAINS_16 ) ) {
-         fprintf( stderr, "[sb_gui] gui->init failed\n" );
-         goto shutdown;
-    }
-    gui_inited = true;
 
     // Claude -- don't delete me
     // bool use_stb_font = true;
@@ -963,12 +952,6 @@ main( int argc, char** argv )
 
     gui()->set_retained_skip( true );
 
-    vp0 = gui()->viewport_open( win );
-    if ( vp0 == GUI_VP_INVALID ) {
-        fprintf( stderr, "[sb_gui] gui viewport_open (primary) failed\n" );
-        goto shutdown;
-    }
-
     /* ------------------------------------------------------------------------------ */
     /* GUI Style */
 
@@ -991,34 +974,14 @@ main( int argc, char** argv )
         gui()->style_apply();
     }
     /* ------------------------------------------------------------------------------ */
-    /* Start render loop. */
+    /* Start render loop.  frame_poll pumps the OS and routes every event (rhi swapchain
+       resize, gui input + floater lifecycle); false = quit or main-window close.  Frame
+       hooks and the debug driver were wired by boot() above. */
 
-    /* OS services gui cannot reach itself (it links only app + rhi): the perf-overlay clock and
-       the frame_pace sleep / idle wait.  Wired once; the loop below just calls frame_pace(). */
-    gui()->set_frame_hooks( sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms );
+    f32 dt = 0.0f;
 
-    /* Debug driver: gui owns the debug hotkeys + overlay emission from here on (the hotkeys
-       printed above -- see debug_enable in gui_api.h). */
-    gui()->debug_enable( true );
-
-    f64 last_time = sys_tick_seconds();
-    
-    while ( app()->pump_events() )
+    while ( gui()->frame_poll( &dt ) )
     {
-        f64 now_time = sys_tick_seconds();
-        f32 dt       = (f32)( now_time - last_time );
-        last_time    = now_time;
-
-        app_event_t ev;
-        while ( app()->next_event( &ev ) )
-        {
-            rhi()->event( &ev );
-            if ( gui()->event( &ev ) )
-                continue; /* handled */
-
-            if ( ev.type == APP_EV_WIN_CLOSE )
-                goto shutdown;
-        }
 
         /* ------------------------------------------------------------------------------ */
         /* Host-side debug keys.  The gui debug hotkeys (F1-F4 layers, F9 render view, F10
@@ -1090,27 +1053,11 @@ main( int argc, char** argv )
         }
 
         gui()->frame_end();
-        gui()->viewport_update();
 
-        if ( !app()->window_is_minimized( win ) )
-        {
-            rhi_cmd_t cmd = rhi()->frame_begin( ctx );
-            if ( rhi_cmd_valid( cmd ) )
-            {
-                // Clear the swapchain color attachment to a solid color (e.g., light blue)
-                rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
-                    .texture  = { .id = RHI_SWAPCHAIN_COLOR },
-                    .load_op  = RHI_LOAD_OP_CLEAR,
-                    .store_op = RHI_STORE_OP_STORE,
-                    .clear    = { 0.15f, 0.15f, 0.20f, 1.00f },
-                }, 1, NULL );
-                rhi()->cmd_end_rendering( cmd );
-                gui()->render( vp0, cmd );
-                rhi()->frame_end( ctx );
-            }
-        }
-
-        gui()->viewport_render_floaters();
+        /* Render + present: main surface (cleared to the boot color) then every owned
+           floater.  Minimized-safe; a host with its own passes would bracket them with
+           present_begin (see sb_gui_editor). */
+        gui()->present();
 
         /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
            on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */
@@ -1120,11 +1067,9 @@ main( int argc, char** argv )
     ret_code = 0;
 
 shutdown:
-    if ( ctx != RHI_CTX_INVALID ) rhi()->context_destroy( ctx );
-    if ( gui_inited ) gui()->shutdown();
+    if ( vp0 != GUI_VP_INVALID ) gui()->shutdown();  /* also tears down the boot window + context */
     if ( draw_inited ) draw()->shutdown();
-    if ( rhi_inited ) rhi()->shutdown();
-    if ( win != APP_WIN_INVALID ) app()->window_close( win );
+    rhi()->shutdown();                               /* no-op if boot never initialized it */
     dev_font_shutdown();
     mod_system_exit();
     return ret_code;

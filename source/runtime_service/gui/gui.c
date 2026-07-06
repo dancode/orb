@@ -197,6 +197,10 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/gui_frame_overlay.c"
 #include "runtime_service/gui/gui_frame.c"
 
+// Boot-tier host front end -- one-call setup (boot) + the canonical loop (frame_poll,
+// present_begin/present).  Last: it composes the lifecycle, viewport, and window layers above.
+#include "runtime_service/gui/gui_boot.c"
+
 #ifndef GUI_API_C_PRELUDE
     #include "engine/mod/mod_export.h"
     #include "runtime_service/gui/gui_api.c"

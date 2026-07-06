@@ -55,6 +55,21 @@ typedef struct gui_api_s
     void                ( *shutdown  )( void );
     u32                 ( *font_load )( const char* path );
 
+    /* boot() -- the one-call alternative to the block above for a host whose main window IS a gui
+       surface: gui owns the window + render context end to end, exactly like its tear-off
+       floaters.  Stands up the whole stack from a single descriptor (gui_boot_desc_t, gui.h):
+       rhi()->init() (idempotent -- safe if the host already ran it), app window (borderless by
+       default, with the chrome shell then auto-emitted each frame; os_chrome opts back into the
+       stock OS frame), rhi context, init_config_front + init(font), set_frame_hooks, debug_enable,
+       and the primary viewport -- returned, or GUI_VP_INVALID with everything unwound on failure.
+       Call once after mod_init_all, before any other window opens.  shutdown() tears down what
+       boot created (context + window); rhi()->shutdown() stays with the host, last.  Pairs with
+       frame_poll / present below for the full canonical loop; a host needing manual control of
+       any stage simply keeps calling the explicit block instead -- boot is composition, not
+       replacement, and viewport_open still attaches gui to a host-owned window. */
+
+    gui_vp_t            ( *boot )( const gui_boot_desc_t* desc );
+
     /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
        backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
        bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */
@@ -124,6 +139,36 @@ typedef struct gui_api_s
     void ( *render      )( gui_vp_t vp, rhi_cmd_t cmd );
     void ( *frame_pace  )( i32 spin_sleep_ms, i32 anim_sleep_ms );
 
+    /* Canonical loop wrappers -- with boot() these shrink a host's main loop to its essence.
+       frame_poll() is loop-tier for any host (it needs only app + rhi routing); present_begin /
+       present are boot-tier (they render through the boot-owned context).
+
+         while ( gui()->frame_poll( &dt ) )       -- pump the OS, route events (rhi swapchain
+         {                                           resize, gui input + floater lifecycle),
+                                                     return dt from the boot clock hook; false on
+                                                     quit or main-window close.
+             ...frame_begin/build/frame_end...    -- unchanged (see above).
+             rhi_cmd_t cmd;
+             if ( gui()->present_begin( &cmd ) )  -- viewport_update + minimized guard + rhi
+                 ...host render passes...            frame open + swapchain clear (boot clear
+                                                     color); true hands out the live cmd for the
+                                                     host's own passes (offscreen scenes, custom
+                                                     draws under the UI).
+             gui()->present();                    -- gui draw + present + all owned floaters;
+                                                     runs present_begin itself if the host had
+                                                     no passes.  Call unconditionally.
+             gui()->frame_pace( 4, 16 );
+         }
+
+       The host keeps reading input through app()'s snapshot API (key_pressed etc.) as before --
+       frame_poll only owns the event ring.  A host that needs the loop's internals (extra
+       swapchains, custom event handling) writes the explicit loop instead; these are sugar over
+       the same public calls. */
+
+    bool ( *frame_poll    )( f32* out_dt );
+    bool ( *present_begin )( rhi_cmd_t* out_cmd );
+    void ( *present       )( void );
+
     /* Idle-skip control -- the programmatic twin of the I hotkey.  When on, frame_pace blocks on
        OS input while the UI is idle instead of spinning.  Off by default. */
     void ( *set_idle_skip )( bool on );
@@ -160,12 +205,17 @@ typedef struct gui_api_s
                             On a viewport whose OS window has its own chrome (opened without
                             APP_WIN_BORDERLESS) it is a no-op returning 0: call it unconditionally
                             and flip only the window_open flag to switch chrome modes.  flags may
-                            add GUI_WIN_NOTITLEBAR / NO_MINIMIZE / NO_MAXIMIZE / NORESIZE. */
+                            add GUI_WIN_NOTITLEBAR / NO_MINIMIZE / NO_MAXIMIZE / NORESIZE.
+       viewport_caption_h() -- the caption band height (px) a chrome shell published on this
+                            viewport; 0 for an OS-chrome window.  The query twin of
+                            viewport_shell's return, for hosts on the boot path (where the shell
+                            is emitted internally) that stack pinned strips below the caption. */
 
-    gui_vp_t    ( *viewport_open   )( i32 win_id );
-    void        ( *viewport_close  )( gui_vp_t vp );
-    void        ( *viewport_resize )( gui_vp_t vp, i32 w, i32 h );
-    f32         ( *viewport_shell  )( gui_vp_t vp, const char* title, gui_win_flags_t flags );
+    gui_vp_t    ( *viewport_open      )( i32 win_id );
+    void        ( *viewport_close     )( gui_vp_t vp );
+    void        ( *viewport_resize    )( gui_vp_t vp, i32 w, i32 h );
+    f32         ( *viewport_shell     )( gui_vp_t vp, const char* title, gui_win_flags_t flags );
+    f32         ( *viewport_caption_h )( gui_vp_t vp );
 
     /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
        to flush into, these own the OS window + rhi context end to end -- gui creates them on

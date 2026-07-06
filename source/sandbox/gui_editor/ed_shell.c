@@ -206,11 +206,12 @@ ed_shell_build( void )
         s_do_reset = false;
     }
 
-    /* Chrome first: the native frame shell (titlebar = OS caption on a borderless window; no-op
-       and 0 when the OS draws its own), then the menu bar (it insets below the caption band
-       itself; menus own the popup ordering), then the toolbar stacked below both.  The dock area
-       reserves only the menu + toolbar band -- the dock tree adds the caption inset on its own. */
-    f32 caption_h = gui()->viewport_shell( 0, "ORB Editor -- sb_gui_editor", GUI_WIN_NONE );
+    /* Chrome: the native frame shell is auto-emitted by the boot path (first in this context's
+       build), so only its caption band height is needed here -- 0 with OS chrome.  Menu bar
+       next (it insets below the caption itself; menus own the popup ordering), then the toolbar
+       stacked below both.  The dock area reserves only the menu + toolbar band -- the dock tree
+       adds the caption inset on its own. */
+    f32 caption_h = gui()->viewport_caption_h( 0 );
 
     ed_menu_bar();
 

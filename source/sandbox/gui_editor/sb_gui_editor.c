@@ -72,29 +72,32 @@ main( int argc, char** argv )
     core()->log_set_min_level( LOG_LEVEL_INFO );
 
     /* ------------------------------------------------------------------------------ */
-    /* RHI + window + draw + gui                                                       */
+    /* One-call setup: gui owns the main window + render context end to end (boot path).
+       The window is borderless with the chrome shell auto-emitted each frame; set
+       .os_chrome = true to compare against the stock Win32 frame.  The frame hooks are the
+       OS services gui cannot reach itself (it links only app + rhi); .debug arms the gui
+       hotkey driver (F1-F4 overlays, F9 render mode, F10 dashboard, P perf, O state,
+       C retained skip, I idle skip -- see debug_enable in gui_api.h). */
 
     int      ret_code    = 1;
-    bool     rhi_inited  = false;
     bool     draw_inited = false;
-    bool     gui_inited  = false;
-    win_id_t win         = APP_WIN_INVALID;
-    i32      ctx         = RHI_CTX_INVALID;
-    gui_vp_t vp0         = GUI_VP_INVALID;
 
-    if ( !rhi()->init() )
+    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+        .title = "ORB Editor -- sb_gui_editor",
+        .w     = 1600, .h = 900,
+        .font  = GUI_FONT_ROBOTO_16,        // GUI_FONT_JETBRAINS_16
+        .caps  = &( gui_forward_caps_t ){ .keyboard_nav = true, .tables = true, .docking = true },
+        .clock = sys_tick_seconds,
+        .sleep = sys_sleep_milliseconds,
+        .wait  = sys_wait_for_os_events_ms,
+        .clear = { 0.10f, 0.10f, 0.12f, 1.00f },
+        .debug = true,
+    } );
+    if ( vp0 == GUI_VP_INVALID )
+    {
+        fprintf( stderr, "[sb_gui_editor] gui->boot failed\n" );
         goto shutdown;
-    rhi_inited = true;
-
-    const bool b_borderless = true;
-
-    win = app()->window_open( "sb_gui_editor", 0, 0, 1600, 900, b_borderless ? APP_WIN_BORDERLESS : APP_WIN_DEFAULT );
-    if ( win == APP_WIN_INVALID )
-        goto shutdown;
-
-    ctx = rhi()->context_open( win );
-    if ( ctx == RHI_CTX_INVALID )
-        goto shutdown;
+    }
 
     if ( !draw()->init() )
     {
@@ -103,26 +106,7 @@ main( int argc, char** argv )
     }
     draw_inited = true;
 
-    gui_forward_caps_t caps = { .keyboard_nav = true, .tables = true, .docking = true };
-    gui()->init_config_front( caps );
-
-    if ( !gui()->init( GUI_FONT_ROBOTO_16 ) ) // GUI_FONT_JETBRAINS_16
-    {
-        fprintf( stderr, "[sb_gui_editor] gui->init failed\n" );
-        goto shutdown;
-    }
-    gui_inited = true;
-
     gui()->set_retained_skip( true );
-
-    /* OS services gui cannot reach itself (it links only app + rhi): the perf-overlay clock and
-       the frame_pace sleep / idle wait.  Wired once; the loop below just calls frame_pace(). */
-    gui()->set_frame_hooks( sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms );
-
-    /* Debug driver: gui owns the debug hotkeys + overlay emission from here on --
-       F1-F4 overlay layers, F9 render mode, F10 dashboard, P perf overlay, O state overlay,
-       C retained skip, I idle skip (see debug_enable in gui_api.h). */
-    gui()->debug_enable( true );
 
     /* Optional args:
          -theme <name>  start with a named theme (default is the square "dark")
@@ -141,13 +125,6 @@ main( int argc, char** argv )
         }
     }
 
-    vp0 = gui()->viewport_open( win );
-    if ( vp0 == GUI_VP_INVALID )
-    {
-        fprintf( stderr, "[sb_gui_editor] gui viewport_open failed\n" );
-        goto shutdown;
-    }
-
     /* ------------------------------------------------------------------------------ */
     /* Editor state                                                                   */
 
@@ -160,34 +137,20 @@ main( int argc, char** argv )
     printf( "[sb_gui_editor] Scene panel: RMB look + WASD fly, LMB drive/select, RMB+LMB/MMB pan, Alt+LMB orbit\n" );
 
     /* ------------------------------------------------------------------------------ */
-    /* Main loop                                                                      */
+    /* Main loop.  frame_poll pumps the OS and routes every event (rhi swapchain resize,
+       gui input + floater lifecycle); false = quit or main-window close.  Input still
+       reads through app()'s snapshot API as before.                                   */
 
+    f32 dt = 0.0f;
 
-    f64 last_time = sys_tick_seconds();
-
-    while ( app()->pump_events() )
+    while ( gui()->frame_poll( &dt ) )
     {
-        f64 now_time = sys_tick_seconds();
-        f32 dt       = (f32)( now_time - last_time );
-        last_time    = now_time;
-        if ( dt > 0.1f ) dt = 0.1f;     /* clamp stalls (debugger, window drag) */
-
-        app_event_t ev;
-        while ( app()->next_event( &ev ) )
-        {
-            rhi()->event( &ev );
-            if ( gui()->event( &ev ) )
-                continue;
-            if ( ev.type == APP_EV_WIN_CLOSE )
-                goto quit;
-        }
-
         if ( app()->key_pressed( APP_KEY_ESCAPE ) || g_ed.request_quit )
             goto quit;
 
         /* ------------------------------------------------------------------------------ */
 
-        app()->window_get_size( win, &g_ed.disp_w, &g_ed.disp_h );
+        app()->window_get_size( (i32)vp0, &g_ed.disp_w, &g_ed.disp_h );
 
         /* Simulation + scene-target upkeep (texture create/resize happens between frames). */
         ed_tick( dt );
@@ -235,33 +198,19 @@ main( int argc, char** argv )
         }
 
         gui()->frame_end();
-        gui()->viewport_update();
 
         /* ------------------------------------------------------------------------------ */
-        /* Render: offscreen scene pass, then swapchain clear + gui                        */
+        /* Render.  present_begin opens the main surface's frame (clear included) and hands
+           out the live cmd for the offscreen scene pass; present draws the gui over it,
+           presents, and renders the floaters -- called unconditionally (minimized-safe).  */
 
-        if ( !app()->window_is_minimized( win ) )
+        rhi_cmd_t cmd;
+        if ( gui()->present_begin( &cmd ) )
         {
-            rhi_cmd_t cmd = rhi()->frame_begin( ctx );
-            if ( rhi_cmd_valid( cmd ) )
-            {
-                if ( emitted && scene_render )
-                    ed_viewport_render( cmd );
-
-                rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
-                    .texture  = { .id = RHI_SWAPCHAIN_COLOR },
-                    .load_op  = RHI_LOAD_OP_CLEAR,
-                    .store_op = RHI_STORE_OP_STORE,
-                    .clear    = { 0.10f, 0.10f, 0.12f, 1.00f },
-                }, 1, NULL );
-                rhi()->cmd_end_rendering( cmd );
-
-                gui()->render( vp0, cmd );
-                rhi()->frame_end( ctx );
-            }
+            if ( emitted && scene_render )
+                ed_viewport_render( cmd );
         }
-
-        gui()->viewport_render_floaters();
+        gui()->present();
 
         /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
            on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */
@@ -273,11 +222,9 @@ quit:
 
 shutdown:
     ed_viewport_shutdown();
-    if ( ctx != RHI_CTX_INVALID ) rhi()->context_destroy( ctx );
-    if ( gui_inited ) gui()->shutdown();
+    if ( vp0 != GUI_VP_INVALID ) gui()->shutdown();  /* also tears down the boot window + context */
     if ( draw_inited ) draw()->shutdown();
-    if ( rhi_inited ) rhi()->shutdown();
-    if ( win != APP_WIN_INVALID ) app()->window_close( win );
+    rhi()->shutdown();                               /* no-op if boot never initialized it */
     mod_system_exit();
     return ret_code;
 }

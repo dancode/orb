@@ -26,6 +26,12 @@
 static gui_backend_caps_t s_init_caps = { .icons = true, .retained_cache = true,
                                            .render_debug = true, .stats_trace = false };
 
+/* Boot-path seams -- defined in gui_boot.c (same TU, included after this file): teardown of the
+   boot-owned window/context from gui_shutdown, and the auto chrome-shell emit at the default
+   context's ctx_begin.  Both no-op when the host did not boot(). */
+static void boot_shutdown( void );
+static void boot_shell_emit( void );
+
 /* OPTIONAL: override which backend capability layers this run compiles in.  Call before init();
    a call after init() has no effect (the backend has already latched its own copy).  Skip this
    entirely to accept GUI_CAPS_DEFAULT. */
@@ -126,6 +132,10 @@ gui_shutdown( void )
         s_ctx_pool[ i ] = NULL;
     }
     g_ctx = NULL;
+
+    /* Boot-owned surface last: the viewport GPU buffers above are gone, now release the
+       swapchain context and OS window boot() created.  No-op on the explicit path. */
+    boot_shutdown();
 }
 
 /*==============================================================================================
@@ -234,6 +244,9 @@ static bool s_force_redraw = false;
 /* Once-per-frame latch for the internal debug-overlay emit at the default context's ctx_end. */
 static bool s_overlays_emitted = false;
 
+/* Once-per-frame latch for the boot-path chrome-shell emit at the default context's ctx_begin. */
+static bool s_shell_emitted = false;
+
 /* Global frame phase: input poll + draw-list reset.  Always reads display dimensions from the
    PRIMARY context (slot 0): the OS window and its viewports belong to the default context
    regardless of which context is active for input this frame.
@@ -262,6 +275,7 @@ gui_frame_begin( f32 dt )
     s_ctx_save_sp      = 0;       /* fresh context scope stack; a leaked binding cannot survive a frame */
     s_any_redraw       = false;   /* re-accumulated at each ctx_end from that context's animations */
     s_overlays_emitted = false;   /* debug overlays emit once, at the default context's ctx_end */
+    s_shell_emitted    = false;   /* boot chrome shell emits once, at the default context's ctx_begin */
 
     gui_context_t* primary = s_ctx_pool[ 0 ];   /* default ctx always owns the OS window */
     i32 disp_w = primary->viewport_count > 0 ? primary->viewports[ 0 ].disp_w : 0;
@@ -381,6 +395,16 @@ gui_ctx_begin( gui_ctx_t ctx_handle )
     popup_apply_modal();                /* fence interaction behind an open modal (steals hover_win) */
     window_raise_on_press();            /* a press raises the hover window (takes effect this frame) */
     nav_new_frame();                    /* commit last frame's nav move + read this frame's nav keys */
+
+    /* Boot-path chrome: when boot() owns a borderless main window, its shell is emitted here --
+       first in the default context's build, so the caption band it publishes is live for every
+       window after it.  Once per frame (mirrors the s_overlays_emitted latch at ctx_end); a
+       no-op for explicit-path hosts, who emit viewport_shell themselves. */
+    if ( g_ctx == s_ctx_pool[ 0 ] && !s_shell_emitted )
+    {
+        s_shell_emitted = true;
+        boot_shell_emit();
+    }
 }
 
 /* Close the context opened by the matching ctx_begin, rebinding the context that was current before
@@ -513,6 +537,18 @@ gui_viewport_open( i32 win_id )
         g_ctx->viewport_count = (u32)win_id + 1u;
 
     return (gui_vp_t)win_id;
+}
+
+/* The caption band height (px) a chrome shell published on this viewport -- 0 for an OS-chrome
+   window or before the shell's first emit.  Hosts stack their own pinned strips (menu bar,
+   toolbar) below it; the built-in main_menu_bar, window clamping, and the dock tree already
+   inset themselves.  Sticky across frames (see gui_viewport_t.caption_inset). */
+f32
+gui_viewport_caption_h( gui_vp_t vp )
+{
+    if ( !g_ctx || vp >= g_ctx->max_viewports )
+        return 0.0f;
+    return g_ctx->viewports[ vp ].caption_inset;
 }
 
 /* Update a viewport's drawable size.  Call on OS resize BEFORE frame_begin.
