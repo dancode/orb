@@ -14,11 +14,18 @@
             for each active context:
                 render()->begin_frame( ctx_id )
                 render()->draw_scene( ctx_id, dt )
-                render()->draw_editor( ctx_id, dt )    // no-op when not an editor window
+                gui()->render( vp, render()->frame_cmd( ctx_id ) )   // optional composite
                 render()->end_frame( ctx_id )
 
         The host registers contexts with context_register before the first frame and
         unregisters them when the window is closed.
+
+    Pass ownership:
+        begin_frame acquires the frame command list; draw_scene opens the scene pass
+        (clear), draws, and CLOSES it; end_frame presents.  Between draw_scene and
+        end_frame the frame is open but no pass is -- the composite point.  Anything
+        that composites there (gui()->render opens its own LOAD pass) draws over the
+        finished scene on the same swapchain image.
 
 ==============================================================================================*/
 
@@ -53,6 +60,12 @@ typedef struct render_api_s
 
     /* ---- Per-context settings ---- */
     void ( *set_clear_color )( i32 ctx_id, f32 r, f32 g, f32 b, f32 a );
+
+    /* ---- Frame command list access ---- */
+    /* The live command list between begin_frame and end_frame; RHI_CMD_INVALID otherwise.
+       The host composite point: after draw_scene the scene pass is closed, so overlays
+       that open their own pass (gui()->render) record here before end_frame presents. */
+    rhi_cmd_t ( *frame_cmd )( i32 ctx_id );
 
 } render_api_t;
 

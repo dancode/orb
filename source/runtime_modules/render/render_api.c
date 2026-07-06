@@ -97,18 +97,9 @@ render_begin_frame_impl( i32 ctx_id )
     if ( !rhi_cmd_valid( s->cmd ) )
         return false;
 
-    /* Open the main pass against the swapchain; cleared to the slot's clear color.
-       Color-only for now: the 0.1 scene is a 2D overlay drawn through the draw service,
-       whose SOLID pipeline declares no depth attachment -- under dynamic rendering the
-       pass and pipeline must match.  The depth attachment returns with a real 3D scene
-       path (draw()->begin_depth + DRAW_DEPTH_FORMAT). */
-    rhi_color_attachment_t color_att = {
-        .texture  = { .id = RHI_SWAPCHAIN_COLOR },
-        .load_op  = RHI_LOAD_OP_CLEAR,
-        .store_op = RHI_STORE_OP_STORE,
-        .clear    = s->clear,
-    };
-    rhi()->cmd_begin_rendering( s->cmd, &color_att, 1, NULL );
+    /* The frame is open but no pass is -- draw_scene owns the scene pass (open, clear,
+       draw, close) so the host can composite overlay passes (gui()->render) on this
+       command list between draw_scene and end_frame. */
     return true;
 }
 
@@ -141,15 +132,28 @@ render_draw_scene_impl( i32 ctx_id, f32 dt )
 
     g_state->total_time += dt;
 
+    /* Open the scene pass against the swapchain; cleared to the slot's clear color.
+       Color-only for now: the 0.1 scene is a 2D overlay drawn through the draw service,
+       whose SOLID pipeline declares no depth attachment -- under dynamic rendering the
+       pass and pipeline must match.  The depth attachment returns with a real 3D scene
+       path (draw()->begin_depth + DRAW_DEPTH_FORMAT). */
+    rhi_color_attachment_t color_att = {
+        .texture  = { .id = RHI_SWAPCHAIN_COLOR },
+        .load_op  = RHI_LOAD_OP_CLEAR,
+        .store_op = RHI_STORE_OP_STORE,
+        .clear    = s->clear,
+    };
+    rhi()->cmd_begin_rendering( s->cmd, &color_att, 1, NULL );
+
     /* Replay this frame's submission list through the draw service, then clear it.
-       begin_frame already opened the pass; viewport/scissor are dynamic state that
-       nothing has set on this command list yet, so set them here. */
+       Viewport/scissor are dynamic state nothing has set on this command list yet. */
     if ( g_state->rect_count > 0 )
     {
         i32 w = 0, h = 0;
         if ( !rhi()->context_size( ctx_id, &w, &h ) || w <= 0 || h <= 0 )
         {
             g_state->rect_count = 0;
+            rhi()->cmd_end_rendering( s->cmd );
             return;
         }
 
@@ -178,6 +182,9 @@ render_draw_scene_impl( i32 ctx_id, f32 dt )
         draw()->end();
         g_state->rect_count = 0;
     }
+
+    /* Close the scene pass -- the frame stays open for composite passes until end_frame. */
+    rhi()->cmd_end_rendering( s->cmd );
 }
 
 static void
@@ -209,10 +216,19 @@ render_end_frame_impl( i32 ctx_id )
 
     if ( rhi_cmd_valid( s->cmd ) )
     {
-        rhi()->cmd_end_rendering( s->cmd );
+        /* draw_scene already closed the scene pass; just submit and present. */
         rhi()->frame_end( ctx_id );
         s->cmd = RHI_CMD_INVALID;
     }
+}
+
+static rhi_cmd_t
+render_frame_cmd_impl( i32 ctx_id )
+{
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
+        return RHI_CMD_INVALID;
+
+    return g_state->ctx[ ctx_id ].cmd;
 }
 
 static void
@@ -241,6 +257,7 @@ const render_api_t g_render_api_struct = {
     .end_frame          = render_end_frame_impl,
     .submit_rect        = render_submit_rect_impl,
     .set_clear_color    = render_set_clear_color_impl,
+    .frame_cmd          = render_frame_cmd_impl,
 };
 
 /*==============================================================================================

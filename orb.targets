@@ -496,8 +496,8 @@ target sb_example_editor
     folder      09_SANDBOX/EXAMPLE
     unit        example_editor.c
 	dep 		mod ref sys core job app
-    dep         run rhi gui
-	mono_dep	render draw
+    dep         run rhi draw gui
+	mono_dep	render
 
 target sb_example_game
 

@@ -9,6 +9,10 @@
     only on dirty frames (retained-cache skip).  Compare sb_gui / sb_gui_editor, which use
     gui()->boot -- the test-bed easy path where gui owns the main window end to end.
 
+    Also the reference for the render+gui COMPOSITE path (render path A with gui live):
+    the render module draws the scene (a rect submitted from on_update), closes its pass,
+    and the host flushes the gui over it via gui()->render( vp0, render()->frame_cmd() ).
+
     The window close button routes through on_close_request (veto point for save prompts).
     Q on the keyboard is an alternative quit for keyboard-first workflows.
 
@@ -26,7 +30,9 @@
 #include "engine/app/app_api.h"
 
 #include "runtime_service/rhi/rhi_api.h"
+#include "runtime_service/draw/draw_host.h"
 #include "runtime_service/gui/gui_api.h"
+#include "runtime_modules/render/render_api.h"
 
 #include "runtime/runtime_api.h"
 #include "runtime/runtime_host.h"
@@ -45,6 +51,7 @@ static i32  s_clicks;         /* button press counter -- interaction-driven, saf
 static bool s_check;          /* demo checkbox                                                */
 static bool s_realtime;       /* force a full emit every frame (tests set_force_redraw)       */
 static bool s_show_second;    /* second window toggle -- tear it off to test floaters         */
+static bool s_show_scene = true;    /* submit the scene rect behind the gui                   */
 
 /*==============================================================================================
     Host callbacks
@@ -86,6 +93,19 @@ editor_update( f32 dt )
     {
         gui()->set_force_redraw( s_realtime );
         s_realtime_prev = s_realtime;
+    }
+
+    /* Scene submission -- render's draw_scene draws this behind the gui composite
+       (render()->frame_cmd hand-off in run_host_main).  A static rect is enough to
+       prove the scene-under-gui path; the real editor viewport is a later milestone. */
+    if ( render() && s_show_scene )
+    {
+        i32 w = 0, h = 0;
+        if ( rhi()->context_size( 0, &w, &h ) && w > 0 && h > 0 )
+        {
+            const f32 orange[ 4 ] = { 0.95f, 0.55f, 0.15f, 1.0f };
+            render()->submit_rect( ( f32 )w * 0.5f, ( f32 )h * 0.5f, 220.0f, 220.0f, orange );
+        }
     }
 }
 
@@ -131,6 +151,7 @@ editor_gui( f32 dt )
         gui()->checkbox( "Demo checkbox", &s_check );
         gui()->checkbox( "Realtime (force redraw)", &s_realtime );
         gui()->checkbox( "Second window", &s_show_second );
+        gui()->checkbox( "Scene rect (behind gui)", &s_show_scene );
     }
     gui()->window_end();
 
@@ -164,10 +185,12 @@ editor_close_request( void )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( core ),      /* cvars, logging, memory arenas -- static      */
-    RUN_SERVICE( app  ),      /* window, OS pump                              */
-    RUN_SERVICE( rhi  ),      /* GPU backend -- static service                */
-    RUN_SERVICE( gui  ),      /* immediate mode GUI -- OPTIONAL static service */
+    RUN_SERVICE( core   ),    /* cvars, logging, memory arenas -- static       */
+    RUN_SERVICE( app    ),    /* window, OS pump                               */
+    RUN_SERVICE( rhi    ),    /* GPU backend -- static service                 */
+    RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend */
+    RUN_SERVICE( gui    ),    /* immediate mode GUI -- OPTIONAL static service */
+    RUN_MODULE ( render ),    /* scene frame owner -- gui composites over it   */
     { 0 }
 };
 

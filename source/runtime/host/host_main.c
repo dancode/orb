@@ -51,8 +51,10 @@
 
     Render paths
     ------------
-    render() present: render->begin_frame / draw_scene / end_frame.
-                      render owns gui composition (calls gui()->render inside its frame).
+    render() present: render->begin_frame / draw_scene, then the host composites
+                      gui()->render( vp0, render()->frame_cmd() ) when gui is live
+                      (draw_scene closes the scene pass; gui opens its own LOAD pass
+                      over the finished scene), then render->end_frame presents.
     render() absent, gui() present: host drives the explicit frame --
                       frame_begin / clear / gui->render / frame_end.
     gui() always:   gui->viewport_render_floaters() after the main surface (presents tear-off
@@ -524,8 +526,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- render ------------------------------------------------------ */
 
-        /* Render path A (render module present): render owns its frame and is
-           responsible for compositing gui()->render() inside draw_scene or end_frame.
+        /* Render path A (render module present): render owns the frame; draw_scene
+           clears and draws the scene pass and closes it, then the host composites the
+           gui over the finished scene (gui()->render opens its own LOAD pass on the
+           same command list) before end_frame presents.
            Render path B (gui only, no render): host drives the frame explicitly --
            clear the surface, flush the gui draw list, then present. */
 
@@ -536,6 +540,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( render()->begin_frame( s_ctx_id ) )
                 {
                     render()->draw_scene( s_ctx_id, dt );
+
+                    if ( s_gui_inited && s_vp0 != GUI_VP_INVALID )
+                        gui()->render( s_vp0, render()->frame_cmd( s_ctx_id ) );
+
                     render()->end_frame( s_ctx_id );
                 }
             }
