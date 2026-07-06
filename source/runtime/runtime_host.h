@@ -61,6 +61,7 @@
 ==============================================================================================*/
 
 #include "orb.h"
+#include "runtime/runtime.h"            /* run_clock_t / run_frame_stats_t          */
 #include "engine/app/app.h"             /* app_event_t (types only)                 */
 #include "runtime_service/gui/gui.h"    /* gui font / caps types (types only — no
                                            link dependency; gui remains optional)   */
@@ -173,8 +174,14 @@ bool run_host_should_quit( void );
 void run_host_sleep_debug_set( bool enabled );
 void run_host_sleep_debug_toggle( void );
 
-/* called once per frame by the host before on_update. Modules must not call. */
-void run_clock_update( f64 app_time, f32 dt_real );
+/* called once per frame by the host before on_update; now_us is the integer
+   microsecond tick (sys_tick_microseconds).  The clock diffs it against the previous
+   stamp internally -- floats are derived here, never accumulated.  Modules must not call. */
+void run_clock_update( u64 now_us );
+
+/* called once per frame by the host after pacing with that frame's phase timings;
+   published read-only via run()->frame_stats().  Modules must not call. */
+void run_clock_stats_submit( const run_frame_stats_t* stats );
 
 /*============================================================================================*/
 #endif /* RUNTIME_HOST_H */

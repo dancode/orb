@@ -69,11 +69,20 @@
 
     Frame timing
     ------------
-    sys()->tick_seconds() returns a stable monotonic clock from engine init.
-    The host diffs two readings to compute raw dt each frame, then hands it to
-    run_clock_update() which caps it, applies time_scale, and stamps frame_number.
-    Callbacks receive f32 dt (capped, scaled). Richer timing is available via
-    run()->clock() from any module that depends on "run".
+    The internal tick is integer microseconds -- sys_tick_microseconds(), QPC-backed,
+    monotonic from engine init.  The host stamps it once after the event drain and hands
+    it to run_clock_update(), which diffs against the previous stamp, caps, applies
+    time_scale, and stamps frame_number.  Floats (dt, app_time) are derived at that
+    boundary only; nothing float is ever accumulated.  Callbacks receive f32 dt
+    (capped, scaled); richer timing via run()->clock() from any module depending on "run".
+
+    Pacing runs against an absolute deadline accumulator (deadline_us += frame_us each
+    frame), so Sleep()'s millisecond truncation and overshoot self-correct instead of
+    drifting the period toward work + frame_ms.  A frame that overruns its whole next
+    budget resyncs the deadline forward rather than spiraling to catch up.
+
+    Per-phase timings (events, update, gui, render, work, wait, frame) are stamped
+    through the loop and published every frame via run()->frame_stats().
 
     API slot stability
     ------------------
@@ -460,10 +469,17 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         gui_clear[ 3 ] = desc->gui->clear[ 3 ];
     }
 
-    f64 last_tick = sys()->tick_seconds();
+    /* Internal tick is integer microseconds; the absolute deadline accumulator keeps
+       the average frame rate exact -- Sleep()'s truncation and overshoot self-correct
+       against it instead of drifting the period toward work + frame_ms. */
+    const i64 frame_us    = ( i64 )frame_ms * 1000;
+    i64       deadline_us = sys_tick_microseconds() + frame_us;
 
     while ( !g_quit_requested )
     {
+        run_frame_stats_t stats      = { 0 };
+        i64               t_frame_us = sys_tick_microseconds();
+
         /* -- pump OS events (windowed) ---------------------------------- */
 
         if ( windowed && !app()->pump_events() )
@@ -505,11 +521,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- frame clock ------------------------------------------------ */
 
-        f64 now     = sys()->tick_seconds();
-        f32 dt_real = ( f32 )( now - last_tick );
-        last_tick   = now;
+        i64 t_events_us = sys_tick_microseconds();
+        stats.events_us = t_events_us - t_frame_us;
 
-        run_clock_update( now, dt_real );           /* caps, scales, stamps frame_number */
+        run_clock_update( ( u64 )t_events_us ); /* diffs, caps, scales, stamps frame_number */
         f32 dt = run()->clock()->dt;            /* capped + scaled -- pass to callbacks */
 
         /* -- console key state ------------------------------------------ */
@@ -536,6 +551,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         if ( desc->on_update )
              desc->on_update( dt );
+
+        i64 t_update_us = sys_tick_microseconds();
+        stats.update_us = t_update_us - t_events_us;
 
         /* -- gui emit ---------------------------------------------------- */
 
@@ -571,6 +589,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         if ( s_gui_inited )
             gui()->viewport_update();
+
+        i64 t_gui_us = sys_tick_microseconds();
+        stats.gui_us = t_gui_us - t_update_us;
 
         /* -- render ------------------------------------------------------ */
 
@@ -621,6 +642,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( s_gui_inited )
             gui()->viewport_render_floaters();
 
+        i64 t_render_us = sys_tick_microseconds();
+        stats.render_us = t_render_us - t_gui_us;
+
         /* -- hot-reload -------------------------------------------------- */
 
         if ( hot_reload )
@@ -636,13 +660,16 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- frame pacing ------------------------------------------------ */
 
-        /* Game mode: sleep out the REMAINDER of the frame budget -- frame_ms minus the time
-           this frame's work took (measured from the clock stamp above) -- so the target rate
-           holds under load instead of drifting to work + frame_ms.
+        /* Game mode: sleep toward the absolute deadline, whole milliseconds only
+           (Sleep granularity); the deadline accumulator below absorbs truncation and
+           overshoot so the average rate holds exactly -- event pump and every other
+           phase count against the budget because the deadline is absolute.
            Editor mode: block until OS input arrives, capped by editor_timeout_ms
            so hot-reload checks and other periodic work still run. */
-        i32 spent_ms  = ( i32 )( ( sys()->tick_seconds() - now ) * 1000.0 );
-        i32 remain_ms = frame_ms - spent_ms;
+        i64 work_end_us = sys_tick_microseconds();
+        i64 remain_us   = deadline_us - work_end_us;
+
+        stats.work_us = work_end_us - t_frame_us;
 
         if ( editor_sleep )
         {
@@ -653,8 +680,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             if ( animating )
             {
                 if ( g_sleep_debug ) printf( "[host] anim frame    (no sleep)\n" );
-                if ( remain_ms > 0 )
-                    sys()->sleep_milliseconds( remain_ms );
+                if ( remain_us >= 1000 )
+                    sys()->sleep_milliseconds( ( i32 )( remain_us / 1000 ) );
             }
             else
             {
@@ -663,8 +690,20 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( g_sleep_debug ) printf( "[host] editor wakeup (frame %llu)\n", (unsigned long long)run()->clock()->frame_number );
             }
         }
-        else if ( remain_ms > 0 )
-            sys()->sleep_milliseconds( remain_ms );
+        else if ( remain_us >= 1000 )
+            sys()->sleep_milliseconds( ( i32 )( remain_us / 1000 ) );
+
+        /* Advance the deadline by exactly one period; if this frame overran the whole
+           next budget (load spike, editor wait), resync forward instead of running
+           back-to-back catch-up frames. */
+        i64 t_end_us = sys_tick_microseconds();
+        deadline_us += frame_us;
+        if ( deadline_us < t_end_us )
+             deadline_us = t_end_us + frame_us;
+
+        stats.wait_us  = t_end_us - work_end_us;
+        stats.frame_us = t_end_us - t_frame_us;
+        run_clock_stats_submit( &stats );
     }
 
 loop_exit:

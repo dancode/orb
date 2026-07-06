@@ -17,6 +17,8 @@
 typedef struct run_api_s
 {
     const run_clock_t* ( *clock )( void );  /* current frame clock (read-only)     */
+    const run_frame_stats_t* ( *frame_stats )( void ); /* last frame's per-phase
+                                               host loop timings (read-only)       */
     void ( *set_time_scale )( f32 );        /* adjust time scale from game or host */
     void ( *request_quit )( void );         /* exit the host loop at next frame top;
                                                the DLL-safe run_host_quit()        */
