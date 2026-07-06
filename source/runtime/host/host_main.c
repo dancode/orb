@@ -136,6 +136,11 @@ MOD_USE_RENDER;
 MOD_USE_DRAW;
 MOD_USE_GUI;
 
+/* Host-side gui-gated debug overlays -- defined in host_gui.c, included after this unit in the
+   runtime unity build (runtime.c).  No-op when gui() is absent; emits the perf HUD into the
+   default context when its toggle key is on. */
+void host_gui_debug_frame( f32 dt );
+
 /* sys_key_t values are pinned to app_key_t for the shared range so console-input polling
    (sys_key_pressed) and windowed input (app()->key_pressed) agree on key constants.
    C5287 (newer MSVC) flags the mixed-enum comparison even through the casts; comparing
@@ -575,6 +580,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
                 if ( desc->on_gui )
                      desc->on_gui( dt );
+
+                /* Host debug overlays last, so they draw on top of the host's own windows. */
+                host_gui_debug_frame( dt );
 
                 gui()->ctx_end();
             }

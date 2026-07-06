@@ -70,6 +70,7 @@
 #endif
 
 #include "runtime/host/host_main.c"    // The main() entry point and boot sequence.
+#include "runtime/host/host_gui.c"     // Host-side gui-gated debug overlays (perf HUD).
 
 /*==============================================================================================
     Unity API Definition
