@@ -231,13 +231,17 @@ static bool s_frame_dirty = true;   /* start true: forces a full first-frame bui
    skip so the UI rebuilds and re-renders unconditionally.  Toggled via gui()->set_force_redraw. */
 static bool s_force_redraw = false;
 
+/* Once-per-frame latch for the internal debug-overlay emit at the default context's ctx_end. */
+static bool s_overlays_emitted = false;
+
 /* Global frame phase: input poll + draw-list reset.  Always reads display dimensions from the
    PRIMARY context (slot 0): the OS window and its viewports belong to the default context
    regardless of which context is active for input this frame.
 
-   This is the global half of the frame; it binds NO context.  Open at least one context with
-   ctx_begin(GUI_CTX_DEFAULT) before emitting any window, close it with ctx_end, and seal the
-   build with frame_end.  See the FRAME CONTRACT note in gui_api.h. */
+   This is the global half of the frame; it binds NO context.  Returns true when this frame must
+   emit widgets (frame_dirty): open the context scopes and build only then, and always close with
+   frame_end -- on a clean (false) frame it replays the volatile widgets internally and render()
+   reuses the preserved geometry.  See the FRAME CONTRACT note in gui_api.h. */
 
 /* Commit any font (re)loads deferred from last frame's build at this between-frames latch.  The
    GPU atlas swap (create/upload/register + deferred destroy of the old atlas) is done here, before
@@ -252,10 +256,12 @@ gui_font_flush_deferred( void )
     return true;
 }
 
-void
+bool
 gui_frame_begin( f32 dt )
 {
-    s_ctx_save_sp = 0;   /* fresh context scope stack; a leaked binding cannot survive a frame */
+    s_ctx_save_sp      = 0;       /* fresh context scope stack; a leaked binding cannot survive a frame */
+    s_any_redraw       = false;   /* re-accumulated at each ctx_end from that context's animations */
+    s_overlays_emitted = false;   /* debug overlays emit once, at the default context's ctx_end */
 
     gui_context_t* primary = s_ctx_pool[ 0 ];   /* default ctx always owns the OS window */
     i32 disp_w = primary->viewport_count > 0 ? primary->viewports[ 0 ].disp_w : 0;
@@ -279,6 +285,12 @@ gui_frame_begin( f32 dt )
 
     /* Refresh the IO snapshot, computing s_io_dirty as a side-effect. */
     input_update( disp_w, disp_h, dt );
+
+    /* Debug hotkeys (overlay tiers, render mode, retained/idle skip) -- polled from the fresh IO
+       snapshot while debug_enable is on.  A press is itself an input change, so any mode it flips
+       lands in a frame that io_dirty already marks for a full emit. */
+    if ( gui_debug_is_enabled() )
+        debug_hotkeys();
 
     /* Frontend dirty: true when the frame must emit widgets.
          - io_dirty          : any input change this frame (mouse move/button/key/wheel/text)
@@ -333,6 +345,8 @@ gui_frame_begin( f32 dt )
 #ifdef GUI_DEBUG_OVERLAY
     gui_debug_reset();         /* clear the overlay's per-frame geometry (always) */
 #endif
+
+    return s_frame_dirty;
 }
 
 /* Per-context frame phase: bind `ctx_handle` and run a full frame init for it.  Pushes the context
@@ -371,12 +385,28 @@ gui_ctx_begin( gui_ctx_t ctx_handle )
 
 /* Close the context opened by the matching ctx_begin, rebinding the context that was current before
    it.  The symmetric partner to ctx_begin -- it removes the need to hand-restore the default with
-   ctx_bind after emitting a secondary context's windows. */
+   ctx_bind after emitting a secondary context's windows.
+
+   Two internal duties run here, while the closing context is still bound (the exact point a host
+   used to hand-place them, last in the context's build):
+     - fold this context's animation state into the frame-wide s_any_redraw for frame_pace
+     - emit the debug overlays (perf/state/dashboard) into the DEFAULT context when debug is on */
 void
 gui_ctx_end( void )
 {
     if ( s_ctx_save_sp == 0 )
         return;   /* unbalanced ctx_end -- ignore rather than underflow */
+
+    /* Once per frame: a host that re-opens the default context in the same frame must not get a
+       second (duplicate-window) overlay emit. */
+    if ( gui_debug_is_enabled() && g_ctx == s_ctx_pool[ 0 ] && !s_overlays_emitted )
+    {
+        s_overlays_emitted = true;
+        debug_overlays_emit();
+    }
+
+    /* Captured after the overlay emit so an overlay's own animation (if any) counts too. */
+    s_any_redraw |= s_retained.wants_redraw;
 
     --s_ctx_save_sp;
     u32 i = s_ctx_save_sp < GUI_CTX_STACK_DEPTH ? s_ctx_save_sp : GUI_CTX_STACK_DEPTH - 1;
@@ -386,10 +416,17 @@ gui_ctx_end( void )
 /* Seal the build: every window/context emitted this frame is now final.  The symmetric partner to
    frame_begin -- it latches the emit cost (frame_begin -> frame_end) for the perf overlay and, in
    Debug builds, asserts every ctx_begin was matched by a ctx_end.  Call once after the UI build and
-   before any render(); render consumes the sealed draw list. */
+   before any render(); render consumes the sealed draw list.  On a clean frame (frame_begin
+   returned false, no widget emit ran) it replays the registered volatile widgets against their
+   cached geometry, so a host never wires update_volatile itself. */
 void
 gui_frame_end( void )
 {
+    /* Clean frame: no emit ran, the preserved draw list will be replayed verbatim -- patch the
+       volatile widgets (gui()->volatile_cb registrations) in place so they keep animating. */
+    if ( !s_frame_dirty )
+        gui_update_volatile();
+
     /* Build cost concludes here: latch emit_ms for the perf overlay (render is timed separately). */
     perf_frame_end();
 

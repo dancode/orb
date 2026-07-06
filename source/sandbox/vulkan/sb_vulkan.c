@@ -175,8 +175,8 @@ main( int argc, char** argv )
     /* Multi-context demo: create a secondary context with game-UI sizing (small pools).
        Default context starts listening; ctx2 starts deaf.  A/S keys toggle which listens.
        Toggle b_multi_ctx to exercise the API.  Teardown is handled by gui()->shutdown(). */
-    const bool      b_multi_ctx = false;
-    gui_ctx_t     ctx2        = GUI_CTX_INVALID;
+    const bool b_multi_ctx = false;
+    gui_ctx_t  ctx2 = GUI_CTX_INVALID;
     if ( b_multi_ctx )
     {
         gui_ctx_config_t game_cfg = GUI_CTX_CONFIG_GAME_UI;
@@ -189,30 +189,20 @@ main( int argc, char** argv )
     /* Start render loop. */
 
     printf( "[sb_vulkan] running -- ESC to quit\n" );
-    printf( "[sb_vulkan] gui demos: 1-9 select, +/- step, F1-F4 debug overlay, NP. font scale\n" );
-    printf( "[sb_vulkan] P cycles the perf overlay: off -> FPS -> +timings -> +render counts\n" );
-    printf( "[sb_vulkan] O cycles the state overlay: off -> hover/active/window -> +nav -> +popups\n" );
-    printf( "[sb_vulkan] F6 cycles the render view: normal -> wireframe -> batch colors\n" );
+    printf( "[sb_vulkan] gui demos: 1-9 select, +/- step, NP. font scale\n" );
+    printf( "[sb_vulkan] gui debug hotkeys: F1-F4 overlay layers, F9 render view, F10 dashboard,\n" );
+    printf( "[sb_vulkan]                    P perf overlay, O state overlay, C retained skip, I idle skip\n" );
+
+    /* OS services gui cannot reach itself (it links only app + rhi): the perf-overlay clock and
+       the frame_pace sleep / idle wait.  Wired once; the loop below just calls frame_pace(). */
+    gui()->set_frame_hooks( sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms );
+
+    /* Debug driver: gui owns the debug hotkeys + overlay emission from here on (the hotkeys
+       printed above -- see debug_enable in gui_api.h). */
+    gui()->debug_enable( true );
 
     /* Active gui demo index (see sb_vulkan_gui.c); switched live with the keys below. */
     int active_demo = 0;
-
-    /* Perf overlay detail tier, cycled by P (0 off .. 3 counts).  The overlay itself -- timing,
-       smoothing, and draw -- is a built-in gui utility now; the host only supplies a clock and
-       the mode (see gui()->perf_overlay below). */
-    int perf_mode = 0;
-
-    /* State overlay detail tier, cycled by O (0 off .. 3 popups).  Shows hover/active/window ids
-       resolved to readable names via the debug name registry (Debug builds only). */
-    int state_mode = 0;
-
-    /* Level 1 idle skip (toggle: I).  When on, the loop blocks on OS input instead of spinning, so a
-       static UI burns no frames; wants_redraw() keeps frames flowing while a widget animation plays. */
-    bool idle_skip = false;
-
-    /* Pipeline dashboard (toggle: F10).  gui writes it back to false when the window's X is
-       clicked, so the key and the button stay in sync. */
-    bool dash_open = false;
 
     /* Main loop. */
     f64 last_time = sys_tick_seconds();
@@ -259,75 +249,21 @@ main( int argc, char** argv )
         }
 
         /* ------------------------------------------------------------------------------ */
-        /* Debug overlay layers (Debug build only): toggle each with the F1-F4 keys.
-           F1 window frames   F2 widget interaction rects   F3 resize bands   F4 clip rects. */
-
-        gui()->debug_enable( true );
-
-        /* ------------------------------------------------------------------------------ */
-        /* Perf overlay: P cycles off -> FPS -> +timings -> +render counts (mod 4).  The library
-           measures and smooths; the host only carries the tier. */
-
-        if ( app()->key_pressed( APP_KEY_P ) )
-            perf_mode = ( perf_mode + 1 ) % 5;
-
-        if ( app()->key_pressed( APP_KEY_O ) )
-            state_mode = ( state_mode + 1 ) % 4;
-
-        /* F6 cycles the debug render view: normal -> wireframe (triangle edges) -> batch (per-draw
-           color tint, so you can count batches and see where they split) -> normal. */
-        if ( app()->key_pressed( APP_KEY_F9 ) )
-        {
-            gui_render_mode_t m = ( gui()->debug_get_render_mode() + 1 ) % GUI_RENDER_MODE_COUNT;
-            gui()->debug_set_render_mode( m );
-            static const char* names[] = { "normal", "wireframe", "batch" };
-            printf( "[sb_vulkan] render mode: %s\n", names[ m ] );
-        }
-
-        /* F10 toggles the pipeline dashboard: a dockable/tear-off window visualizing the render
-           backend (slot memory maps, frames-in-flight uploads, draw batches, buffer usage). */
-        if ( app()->key_pressed( APP_KEY_F10 ) )
-        {
-            dash_open = !dash_open;
-            printf( "[sb_vulkan] pipeline dashboard: %s\n", dash_open ? "open" : "closed" );
-        }
-
-        /* I toggles Level 1 idle skip (block-on-input vs spin); see the frame-pacing section below. */
-        if ( app()->key_pressed( APP_KEY_I ) )
-        {
-            idle_skip = !idle_skip;
-            printf( "[sb_vulkan] idle skip: %s\n", idle_skip ? "on (block on input)" : "off (spin)" );
-        }
-
-        /* C toggles Level 2 retained skip: skips tessellation on unchanged frames (hash upfront). */
-        if ( app()->key_pressed( APP_KEY_C ) )
-        {
-            bool on = !gui()->retained_skip();
-            gui()->set_retained_skip( on );
-            printf( "[sb_vulkan] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
-        }
-       
-        /* ------------------------------------------------------------------------------ */
         /* Build the UI.  Every begin has a matching end -- the frame is a balanced scope:
 
-            frame_begin(dt)              -- global once-per-frame; poll input, compute dirty.
-            if ( frame_dirty() )         -- skip emit entirely on provably clean frames.
+            if ( frame_begin(dt) )       -- global once-per-frame; poll input, returns frame_dirty
+                                            (emit is skipped entirely on provably clean frames).
               ctx_begin(GUI_CTX_DEFAULT) -- bind + init the default context; emit its windows.
-              ctx_end()                    -- close it.
+              ctx_end()                    -- close it (debug overlays auto-emit here).
               ctx_begin(ctx2)              -- the secondary context (multi-ctx demo); emit its windows.
               ctx_end()
-            frame_end()                  -- seal the build (no-op on clean frames).
+            frame_end()                  -- seal the build (volatile replay on clean frames).
            Emit windows IMMEDIATELY after each ctx_begin -- it leaves that context bound, so windows
-           land in the correct pool. */
+           land in the correct pool.  Debug hotkeys (P/O/F9/F10/C/I) are handled inside gui. */
 
         const bool b_multi = ( b_multi_ctx && ctx2 != GUI_CTX_INVALID );
 
-        /* OR'd across both contexts: does any widget still need another frame (mid-animation)?  Each
-           context clears its own flag at ctx_begin and sets it during emit, so it is captured below
-           while that context is still bound, before ctx_end rebinds away. */
-
-        bool any_redraw = false;
-        gui()->frame_begin( dt );
+        bool frame_dirty = gui()->frame_begin( dt );
 
         /* 'A'/'S' switch which context receives input (multi-ctx demo; reads s_io after frame_begin).
            Runs unconditionally -- key-press events are consumed regardless of dirty state. */
@@ -347,14 +283,9 @@ main( int argc, char** argv )
 
         /* Skip widget emit entirely when input, animation, and render state are all unchanged.
            render() below will reuse the preserved tessellation from the previous clean frame. */
-        if ( gui()->frame_dirty() )
+        if ( frame_dirty )
         {
-            bool b_dbg_dirty = false;
-            if ( b_dbg_dirty ) {
-                printf( "frame dirty: dt %.3f, wants_redraw %d \n", dt, gui()->wants_redraw() );
-            }
-
-            /* --- Default context: the main build + perf overlay live in one ctx scope. --- */
+            /* --- Default context: the main build lives in one ctx scope. --- */
             gui()->ctx_begin( GUI_CTX_DEFAULT );
 
             /* Borderless main window: this full-surface native shell IS the OS window's frame. */
@@ -389,18 +320,8 @@ main( int argc, char** argv )
                 gui()->window_end();
             }
 
-            /* Pipeline dashboard (F10): the shell window emits here; its diagnostic content is
-               drawn by the backend at flush time through its own buffers.  The X button writes
-               dash_open back to false so the key toggle stays in sync. */
-            gui()->pipeline_dashboard( &dash_open );
-
-            /* Perf overlay -- last so it draws on top, inside the default context's scope and the build
-               so its own text is counted in the emit + render cost it reports.  Emit opens at frame_begin
-               and closes at frame_end; render is summed across render() below. */
-            gui()->perf_overlay( sys_tick_seconds, perf_mode );
-            gui()->state_overlay( state_mode );
-
-            any_redraw |= gui()->wants_redraw();   /* default context's animation state, still bound */
+            /* Closing the default context also auto-emits the debug overlays (perf/state/dashboard)
+               last in its build, so they draw on top and count in the cost they report. */
             gui()->ctx_end();
 
             /* --- Secondary context (multi-ctx demo): its own scope. --- */
@@ -423,11 +344,10 @@ main( int argc, char** argv )
                     }
                     gui()->window_end();
                 }
-                any_redraw |= gui()->wants_redraw();   /* ctx2 animation state, still bound */
                 gui()->ctx_end();
             }
 
-        } /* if ( frame_dirty() ) */
+        } /* if ( frame_dirty ) */
 
         gui()->frame_end();
 
@@ -478,19 +398,9 @@ main( int argc, char** argv )
 
         gui()->viewport_render_floaters();
 
-        /* ------------------------------------------------------------------------------ */
-        /* Frame pacing.  Default: spin at ~250 Hz (game cadence).  Idle-skip on: mirror the editor
-           host -- block on OS input so a static UI costs no frames, but while any widget animates
-           (any_redraw) keep running at ~60 Hz so the transition finishes before sleeping on input. */
-            if ( idle_skip )
-            {
-                if ( any_redraw )
-                    sys_sleep_milliseconds( 16 );        /* animating: ~60fps until it settles */
-                else
-                    sys_wait_for_os_events_ms( 500 );    /* idle: wake on input (500 ms safety cap) */
-            }
-            else
-            sys_sleep_milliseconds( 4 );
+        /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
+           on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */
+        gui()->frame_pace( 4, 16 );
     }
 
 shutdown:

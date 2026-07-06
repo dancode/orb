@@ -1,13 +1,18 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_frame_overlay.c -- Built-in perf / state HUD overlays.
+    runtime_service/gui/gui_frame_overlay.c -- Built-in perf / state HUD overlays + debug driver.
 
     Two hidden-chrome debug readouts drawn through the ordinary GUI pipeline, plus the frame-timing
     instrumentation the perf overlay reads.  The timing helpers (perf_frame_begin / perf_frame_end /
     perf_render_begin / perf_render_end) are the private half of this unit: they are called from the
     frame lifecycle in gui_frame.c, which is why this file is included BEFORE gui_frame.c in the
     unity build (gui.c) -- those statics must be in scope where the lifecycle brackets them.
-    gui_perf_overlay / gui_state_overlay are the public half, drawn by the host each frame.
+
+    The overlays are NOT host-called: debug_enable( true ) arms an internal hotkey driver
+    (debug_hotkeys, run from frame_begin) that cycles the overlay tiers, and the lifecycle emits
+    them into the default context at its ctx_end (debug_overlays_emit).  The host's only jobs are
+    debug_enable() and a one-time set_frame_hooks() to hand gui the OS clock / sleep / wait
+    callbacks it cannot reach itself; frame_pace() then owns the end-of-loop sleep or idle wait.
 
 ==============================================================================================*/
 // clang-format off
@@ -98,12 +103,9 @@ perf_render_end( f64 t0 )
         s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
 }
 
-void
-gui_perf_overlay( gui_clock_fn clock, int mode )
+static void
+gui_perf_overlay( int mode )
 {
-    /* Adopt the host clock so frame_begin / render can time emit + render (effective next frame). */
-    s_perf.clock = clock;
-
     if ( mode <= 0 )
         return;
 
@@ -202,7 +204,7 @@ dbg_id_str( gui_id_t id )
     return b;
 }
 
-void
+static void
 gui_state_overlay( int mode )
 {
     if ( mode <= 0 )
@@ -245,6 +247,152 @@ gui_state_overlay( int mode )
         }
     }
     gui_region_end();
+}
+
+/*==============================================================================================
+    Frame hooks -- the host OS services gui cannot reach itself
+
+    gui links only app + rhi (no sys), so the wall clock, the sleep, and the block-on-input wait
+    arrive as callbacks, set once after init().  The clock powers the perf overlay's emit/render
+    timing; sleep + wait power frame_pace() below.  Any member may be NULL: the dependent feature
+    simply switches off (no clock -> timing reads zero; no wait -> idle skip unavailable).
+==============================================================================================*/
+
+static gui_sleep_fn       s_hook_sleep;
+static gui_wait_events_fn s_hook_wait;
+
+void
+gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events )
+{
+    s_perf.clock = clock;        /* adopted by perf_frame_begin / render brackets next frame */
+    s_hook_sleep = sleep_ms;
+    s_hook_wait  = wait_events;
+}
+
+/*==============================================================================================
+    Debug driver -- hotkeys + internal overlay emission (armed by debug_enable( true ))
+
+    The debug modes that used to be host-side loop state (perf/state overlay tiers, pipeline
+    dashboard, render mode, retained/idle skip) live here, behind hotkeys read from the frame's
+    own IO snapshot.  debug_hotkeys() runs from frame_begin after input_update; the overlays are
+    emitted by debug_overlays_emit(), called from ctx_end while the DEFAULT context is still
+    bound -- last in its build, so they draw on top and their cost is counted like any widget.
+
+        F1-F5   debug overlay layers (handled at event time in gui_input.c, Debug builds)
+        F9      render mode: normal -> wireframe -> batch tint
+        F10     pipeline dashboard window
+        P       perf overlay tier  (off / fps / +timings / +counts / +retained)
+        O       state overlay tier (off / ids / +focus,nav / +popups)
+        C       retained skip (tessellation cache) on/off
+        I       idle skip (frame_pace blocks on OS input when idle) on/off
+
+    Letter keys are fenced by want_capture_keyboard so typing in a text field never toggles them.
+==============================================================================================*/
+
+static int  s_dbg_perf_mode;     /* perf overlay tier, P cycles 0..4                        */
+static int  s_dbg_state_mode;    /* state overlay tier, O cycles 0..3                       */
+static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */
+static bool s_idle_skip;         /* frame_pace: block on OS input when idle, I toggles      */
+
+/* True while any context that closed this frame still had an animation in flight -- the OR of
+   every ctx_end's wants_redraw, reset each frame_begin.  frame_pace reads it to keep pumping
+   ~60 Hz frames while a transition settles instead of blocking on input mid-animation. */
+static bool s_any_redraw;
+
+/* Programmatic idle-skip control, for hosts that want it on without the hotkey. */
+void gui_set_idle_skip( bool on ) { s_idle_skip = on; }
+bool gui_idle_skip( void )        { return s_idle_skip; }
+
+/* Poll the debug hotkeys from this frame's IO snapshot.  Called from frame_begin (after
+   input_update) only while debug_enable is on.  A hotkey press is an input event, so the frame
+   is already dirty and the new mode emits this same frame. */
+static void
+debug_hotkeys( void )
+{
+    /* Function keys are never text input -- no keyboard fence needed. */
+    if ( gui_is_key_pressed( APP_KEY_F9 ) )
+    {
+        gui_render_mode_t m = ( gui_render_get_mode() + 1 ) % GUI_RENDER_MODE_COUNT;
+        gui_render_set_mode( m );
+        static const char* names[] = { "normal", "wireframe", "batch" };
+        printf( "[gui] render mode: %s\n", names[ m ] );
+    }
+    if ( gui_is_key_pressed( APP_KEY_F10 ) )
+    {
+        s_dbg_dash_open = !s_dbg_dash_open;
+        printf( "[gui] pipeline dashboard: %s\n", s_dbg_dash_open ? "open" : "closed" );
+    }
+
+    /* Letter keys: fenced so a focused text field owns them. */
+    if ( gui_want_capture_keyboard() )
+        return;
+
+    if ( gui_is_key_pressed( APP_KEY_P ) )
+        s_dbg_perf_mode = ( s_dbg_perf_mode + 1 ) % 5;
+
+    if ( gui_is_key_pressed( APP_KEY_O ) )
+        s_dbg_state_mode = ( s_dbg_state_mode + 1 ) % 4;
+
+    if ( gui_is_key_pressed( APP_KEY_C ) )
+    {
+        bool on = !gui_build_retained_skip();
+        gui_build_set_retained_skip( on );
+        printf( "[gui] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
+    }
+    if ( gui_is_key_pressed( APP_KEY_I ) )
+    {
+        s_idle_skip = !s_idle_skip;
+        printf( "[gui] idle skip: %s\n", s_idle_skip ? "on (block on input)" : "off (spin)" );
+    }
+}
+
+/* Emit the debug overlays into the currently bound (default) context -- called from ctx_end
+   before it rebinds, so this is exactly where a host used to hand-place them: last in the
+   default context's build, drawing on top of everything it emitted. */
+static void
+debug_overlays_emit( void )
+{
+    gui_pipeline_dashboard( &s_dbg_dash_open );
+    gui_perf_overlay( s_dbg_perf_mode );
+    gui_state_overlay( s_dbg_state_mode );
+}
+
+/*==============================================================================================
+    Frame pacing -- the end-of-loop sleep, owned by gui so hosts cannot mis-wire idle skip
+
+    Call once at the bottom of the main loop, after every render.  The two parameters set the
+    host's cadence; 0 opts that sleep out entirely (no call), even while the feature is on:
+
+        spin_sleep_ms -- the default sleep between frames when idle skip is off (or unavailable).
+                         4 ~= 250 Hz game cadence; 0 = free-run at full speed.
+        anim_sleep_ms -- the sleep while idle skip is ON but a widget animation is still in
+                         flight (s_any_redraw): frames keep pumping so the transition finishes
+                         before blocking on input.  16 ~= 60 Hz; 0 = free-run until it settles.
+
+    With idle skip on (I, or set_idle_skip) and no animation in flight, the loop blocks on OS
+    input instead (500 ms safety cap), so a static UI burns no frames.  Requires the sleep / wait
+    hooks from set_frame_hooks; without them this is a no-op (the host loop just spins).
+==============================================================================================*/
+
+void
+gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
+{
+    if ( s_idle_skip && s_hook_wait )
+    {
+        if ( s_any_redraw )
+        {
+            if ( s_hook_sleep && anim_sleep_ms > 0 )
+                s_hook_sleep( anim_sleep_ms );   /* animating: pump frames until it settles */
+        }
+        else
+        {
+            s_hook_wait( 500 );                  /* idle: wake on input (500 ms safety cap) */
+        }
+    }
+    else if ( s_hook_sleep && spin_sleep_ms > 0 )
+    {
+        s_hook_sleep( spin_sleep_ms );           /* spin cadence between frames */
+    }
 }
 
 // clang-format on

@@ -67,47 +67,39 @@ typedef struct gui_api_s
        standard one-frame lag.  Feeds an FPS / performance overlay without re-deriving counts. */
     gui_render_stats_t  ( *render_stats )( void );
 
-    /* Built-in performance overlay -- a hidden-chrome, non-interactive FPS / cost readout pinned to
-       the top-left of the primary viewport.  Emit it once per frame inside the UI build (last, so it
-       draws on top); it lands in the currently bound context.  `mode` cycles the detail tier, each a
-       superset of the one below ( <= 0 draws nothing ):
+    /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are no longer emitted
+       by host code.  debug_enable( true ) arms an internal hotkey driver (P / O / F10) and gui
+       emits them itself, last in the default context's build -- see debug_enable below.  The
+       perf overlay's clock arrives once through set_frame_hooks. */
 
-           1 : FPS (color-graded green/amber/red by health)
-           2 : + gui emit + render CPU time (ms, smoothed)
-           3 : + render counts from render_stats() -- verts / tris / batches / cmds
+    /* Frame hooks -- one-time wiring (after init) of the host OS services gui cannot reach itself
+       (gui links only app + rhi, no sys):
 
-       gui owns no clock of its own, so the host passes one: `clock` is a monotonic seconds source
-       (e.g. sys()->tick_seconds).  gui adopts it here and uses it to bracket the frame -- the emit
-       clock opens at frame_begin() and closes at frame_end() (build cost); the render clock sums the
-       render() flush calls -- so the readout trails the work it describes by one frame.  Pass the
-       same callback every frame; NULL leaves timing off (mode 2 then reads zero). */
+         clock       -- monotonic seconds source (sys_tick_seconds); brackets the frame for the
+                        perf overlay's emit / render cost readouts.  NULL leaves timing at zero.
+         sleep_ms    -- thread sleep (sys_sleep_milliseconds); frame_pace's spin/animation sleep.
+         wait_events -- block until OS input or timeout (sys_wait_for_os_events_ms); enables the
+                        idle-skip path of frame_pace.  NULL disables idle skip entirely. */
 
-    void                ( *perf_overlay )( gui_clock_fn clock, int mode );
-
-    /* Built-in state overlay: hover/active/focused widget + hover window + nav cursor, resolved
-       to readable names where the id registry has one (Debug builds; Release shows hex).  Same
-       mode-tiers-in, no-clock-needed shape as perf_overlay.  0 = off. */
-    void                ( *state_overlay )( int mode );
-
-    /* Built-in pipeline dashboard: a dockable / tear-off window visualizing the render backend
-       itself -- memory maps of the vertex/index arena (per-window geometry slots, volatile
-       sub-slots, high-water marks), frames-in-flight upload spans, the dispatch-order draw
-       batches, and EMIT buffer usage.  The heavy content renders through its OWN vertex/index
-       buffers so opening it never perturbs the data shown.  Emit once per frame inside a ctx
-       scope (like perf_overlay); `open` is the host's toggle, written back to false when the
-       window's X button is clicked.  Compiled in for Debug builds (GUI_PIPELINE_DASHBOARD,
-       gui_backend.h); a no-op in Release so the slot keeps func_api_size hot-reload stable. */
-    void                ( *pipeline_dashboard )( bool* open );
+    void ( *set_frame_hooks )( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
 
     /* Frame lifecycle.  A frame is four explicit phases -- this is a multi-context system and the
        API does not hide it; even a single-context host names its one context:
 
-         frame_begin(dt)               -- global: reset draw list + snapshot app input.  Binds NO
-                                          context; call once at the top of the frame.
+         if ( frame_begin(dt) )        -- global: snapshot app input, compute frame_dirty, reset the
+         {                                draw list on dirty frames.  Binds NO context; call once at
+                                          the top of the frame.  Returns frame_dirty: emit the UI
+                                          build only when true -- on a false (clean) frame skip the
+                                          context scopes entirely; render() replays the preserved
+                                          geometry verbatim and frame_end patches the volatile
+                                          widgets (gui()->volatile_cb) internally.
            ctx_begin(GUI_CTX_DEFAULT) -- bind a context and run its per-frame init; emit its
               ... emit windows ...        windows immediately after.
-           ctx_end()                    -- close it, rebinding the previously-bound context.
+           ctx_end()                    -- close it, rebinding the previously-bound context.  Closing
+         }                                the DEFAULT context also auto-emits the debug overlays
+                                          when debug_enable is on.
          frame_end()                   -- seal the build (latches emit cost; asserts ctx balance).
+                                          Call on clean frames too -- it runs the volatile replay.
 
        frame_begin/frame_end and ctx_begin/ctx_end are balanced scopes, exactly like
        window_begin/window_end: every begin has an end, and each end restores the scope its begin
@@ -116,11 +108,26 @@ typedef struct gui_api_s
        render()    -- flush one viewport's geometry partition to GPU; opens a LOAD render pass on
                       that viewport's swapchain, emits all draw calls, and closes the pass.  Also
                       paints the debug overlay when vp is the primary (index 0).
-                      Call once per live viewport, each with the matching context cmd. */
+                      Call once per live viewport, each with the matching context cmd.
 
-    void ( *frame_begin )( f32 dt );
+       frame_pace( spin_sleep_ms, anim_sleep_ms )
+                   -- end-of-loop frame pacing; call once at the very bottom of the main loop.
+                      Default path: sleep spin_sleep_ms between frames (4 ~= 250 Hz).  With idle
+                      skip on (set_idle_skip, or the I hotkey under debug_enable): block on OS
+                      input so a static UI burns no frames, sleeping anim_sleep_ms (16 ~= 60 Hz)
+                      only while a widget animation settles.  0 opts that sleep out (no call),
+                      even while the feature is on -- free-run for that path.  A no-op until
+                      set_frame_hooks provides the sleep / wait callbacks. */
+
+    bool ( *frame_begin )( f32 dt );
     void ( *frame_end   )( void );
     void ( *render      )( gui_vp_t vp, rhi_cmd_t cmd );
+    void ( *frame_pace  )( i32 spin_sleep_ms, i32 anim_sleep_ms );
+
+    /* Idle-skip control -- the programmatic twin of the I hotkey.  When on, frame_pace blocks on
+       OS input while the UI is idle instead of spinning.  Off by default. */
+    void ( *set_idle_skip )( bool on );
+    bool ( *idle_skip     )( void );
 
     /* Viewport management.  A viewport is a render surface backed by an OS window.  One frame's build
        gathers every window's geometry into a single draw list; render() dispatches each window's
@@ -187,12 +194,14 @@ typedef struct gui_api_s
                              so emit its windows IMMEDIATELY after the call.
 
        FRAME CONTRACT:
-         frame_begin(dt)                -- once: input poll + draw-list reset; binds no context.
+         if ( frame_begin(dt) )         -- once: input poll; true = emit this frame (frame_dirty).
+         {
            ctx_begin(GUI_CTX_DEFAULT) -- bind + init the default context; emit its windows.
-           ctx_end()                    -- close it.
+           ctx_end()                    -- close it (auto-emits debug overlays when debug is on).
            ctx_begin(ctx2)              -- a second context, if any; emit its windows.
            ctx_end()
-         frame_end()                    -- seal the build.
+         }
+         frame_end()                    -- seal the build; volatile replay on clean frames.
        A single-context host runs exactly one ctx_begin(GUI_CTX_DEFAULT)/ctx_end pair. */
 
     gui_ctx_t ( *ctx_create        )( const gui_ctx_config_t* cfg );
@@ -944,8 +953,9 @@ typedef struct gui_api_s
     void ( *draw_text )( f32 x, f32 y, u32 abgr, const char* str );
 
     /* volatile_cb -- runs `fn` inline, as ordinary code, wrapped so its command range can be
-       replayed standalone on frames where the rest of the UI build is skipped (see
-       update_volatile / frame_dirty below).  `fn` calls ordinary emit functions (text, rect_filled,
+       replayed standalone on frames where the rest of the UI build is skipped (frame_begin
+       returned false; frame_end runs the replay internally -- see frame_dirty below).
+       `fn` calls ordinary emit functions (text, rect_filled,
        etc) and should bracket them with volatile_begin()/volatile_end() from inside its own body.
        `label` is hashed the same way widget_id() hashes a label -- combined with the current id
        scope, so it need only be stable and unique within its own call site, same as any other
@@ -1053,6 +1063,21 @@ typedef struct gui_api_s
     void ( *debug_set_layers )( u32 layers );
     u32  ( *debug_get_layers )( void );
 
+    /* Master debug switch.  When on, gui owns the debug hotkeys and overlay emission -- the host
+       adds nothing to its loop:
+
+         F1-F5   debug overlay layers (window frames / interaction rects / resize bands / clips /
+                 layout; Debug builds -- consumed at event time)
+         F9      render mode: normal -> wireframe -> batch tint
+         F10     pipeline dashboard window (backend memory maps / uploads / batches)
+         P       perf overlay tier   (off / FPS / +timings / +render counts / +retained)
+         O       state overlay tier  (off / ids / +focus,nav / +popups)
+         C       retained skip on/off (tessellation cache)
+         I       idle skip on/off (frame_pace blocks on OS input when idle)
+
+       The perf / state overlays and the dashboard are emitted internally, last in the default
+       context's build (at its ctx_end), so they draw on top and are counted like any widget.
+       Letter hotkeys are fenced by want_capture_keyboard, so typing never toggles them. */
     void ( *debug_enable     )( bool enable );
     bool ( *debug_is_enabled )( void );
 
@@ -1136,32 +1161,26 @@ typedef struct gui_api_s
     void         ( *set_mouse_cursor )( app_cursor_t c );
     app_cursor_t ( *get_mouse_cursor )( void );
 
-    /* wants_redraw -- true when at least one animated widget has not yet reached its target this frame.
-       The host checks this after the UI build to decide whether to skip the editor sleep: while any
-       transition is in flight, the loop must keep pumping frames to advance the animation. */
+    /* wants_redraw -- true when at least one animated widget has not yet reached its target this
+       frame (the currently bound context's flag).  frame_pace already folds this across every
+       context internally; the query remains for hosts that run their own pacing. */
     bool ( *wants_redraw )( void );
 
-    /* frame_dirty -- true when the current frame must perform a full widget emit.  Call after
-       frame_begin, before any ctx_begin.  When false: input is unchanged, no animation is in flight,
-       and last frame's render was fully retained -- the host may skip ctx_begin/emit/ctx_end and
-       call render() directly.  gui preserves the previous frame's draw list, tessellated geometry,
-       and GPU draw commands for verbatim replay. */
+    /* frame_dirty -- true when the current frame must perform a full widget emit: input changed,
+       an animation is in flight, or last frame's render found a structural change.  This is the
+       value frame_begin returns; the query remains for reads later in the frame (e.g. to pair
+       external per-emit work such as a scene-texture flip with an actual emit). */
     bool ( *frame_dirty )( void );
 
-    /* set_force_redraw -- debug override that pins frame_dirty() true every frame, defeating the
-       retained-cache clean-frame skip so the UI rebuilds and re-renders unconditionally.  Off by
-       default; toggle it to isolate a "did not update until input moved" bug from a real emit bug. */
+    /* set_force_redraw -- pins frame_dirty (and so frame_begin's return) true every frame,
+       defeating the retained-cache clean-frame skip so the UI rebuilds and re-renders
+       unconditionally.  Off by default.  Two uses: a debug lever to isolate a "did not update
+       until input moved" symptom from a real emit bug, and the legitimate live-data pin -- a host
+       whose sim mutates displayed state every frame (play mode) sets it so panels track the sim. */
     void ( *set_force_redraw )( bool on );
 
     /* force_redraw -- current state of the set_force_redraw override. */
     bool ( *force_redraw )( void );
-
-    /* update_volatile -- call in place of ctx_begin/emit/ctx_end on a frame where frame_dirty()
-       is false, to replay every registered volatile_cb callback (see above) standalone and patch
-       its geometry in place if the replay reproduces the same topology real emit recorded.  A
-       row that mismatches or whose window vanished/reordered since its last real emit is retired
-       and one more real frame is requested -- see volatile_cb's contract. */
-    void ( *update_volatile )( void );
 
     /* Tables -- a multi-column layout with self-fitting cells (one table clip, no per-cell clip) and
        optional scrolling, sortable headers, and resizable columns.  Conceptually a grid whose rows accumulate and scroll

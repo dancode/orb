@@ -167,8 +167,15 @@ typedef void ( *gui_text_cb_fn )( char* buf, u32 len, u32 bufsz, void* user );
 /* Monotonic wall-clock source (seconds), supplied by the host to the built-in perf overlay.
    gui has no timing service of its own (it is a leaf of rhi + app), so the host hands it a
    tick-seconds callback -- typically sys()->tick_seconds -- and gui uses it to measure the
-   per-frame emit (build) and render (flush) cost the overlay reports.  See perf_overlay(). */
+   per-frame emit (build) and render (flush) cost the overlay reports.  See set_frame_hooks(). */
 typedef f64 ( *gui_clock_fn )( void );
+
+/* Host OS services for end-of-frame pacing (see set_frame_hooks / frame_pace).  gui links only
+   app + rhi, so the sleep and the block-on-input wait are handed in as callbacks -- typically
+   sys_sleep_milliseconds and sys_wait_for_os_events_ms.  A NULL member disables the feature that
+   depends on it (no sleep -> frame_pace never sleeps; no wait -> idle skip unavailable). */
+typedef void ( *gui_sleep_fn )( i32 milliseconds );
+typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 
 /*==============================================================================================
     GUI: Rect Algebra

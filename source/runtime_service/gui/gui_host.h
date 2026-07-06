@@ -33,26 +33,22 @@ void gui_shutdown( void );
 gui_mem_stats_t gui_mem_stats( void );
 void gui_print_mem_stats( void );
 
-/* built-in perf overlay (FPS / emit + render cost / render counts); host supplies the clock */
-void gui_perf_overlay( gui_clock_fn clock, int mode );
-
-/* built-in state overlay (hover/active/focused/nav ids, resolved to readable names where
-   possible); always available, but names only resolve in builds with GUI_DEBUG_OVERLAY on --
-   see gui_debug_name() below. */
-void gui_state_overlay( int mode );
-
-/* built-in pipeline dashboard: a dockable/tear-off window visualizing the render backend
-   (slot memory maps, frames-in-flight uploads, draw batches, buffer usage), rendered through
-   its own vertex/index buffers.  Emit each frame inside a ctx scope, like perf_overlay;
-   Debug builds only (GUI_PIPELINE_DASHBOARD) -- a no-op stub elsewhere. */
-void gui_pipeline_dashboard( bool* open );
+/* NOTE: the built-in perf/state overlays and the pipeline dashboard are internal now -- armed by
+   gui_debug_enable( true ) and emitted behind hotkeys (P / O / F10); hosts no longer call them. */
 
 /* font */
 u32  gui_font_load( const char* path );
 
-/* frame */
-void gui_frame_begin( f32 dt );
+/* frame -- frame_begin returns frame_dirty: emit the UI build only when true.  set_frame_hooks
+   hands gui the OS clock / sleep / wait callbacks it cannot reach itself (typically
+   sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms); frame_pace is the
+   end-of-loop sleep / idle wait.  See the FRAME CONTRACT in gui_api.h. */
+void gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
+bool gui_frame_begin( f32 dt );
 void gui_frame_end( void );
+void gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms );   /* 0 opts that sleep out */
+void gui_set_idle_skip( bool on );
+bool gui_idle_skip( void );
 void gui_ctx_begin( gui_ctx_t ctx );
 void gui_ctx_end( void );
 void gui_render( gui_vp_t vp, rhi_cmd_t cmd );

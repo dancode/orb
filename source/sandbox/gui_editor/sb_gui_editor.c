@@ -113,6 +113,15 @@ main( int argc, char** argv )
 
     gui()->set_retained_skip( true );
 
+    /* OS services gui cannot reach itself (it links only app + rhi): the perf-overlay clock and
+       the frame_pace sleep / idle wait.  Wired once; the loop below just calls frame_pace(). */
+    gui()->set_frame_hooks( sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms );
+
+    /* Debug driver: gui owns the debug hotkeys + overlay emission from here on --
+       F1-F4 overlay layers, F9 render mode, F10 dashboard, P perf overlay, O state overlay,
+       C retained skip, I idle skip (see debug_enable in gui_api.h). */
+    gui()->debug_enable( true );
+
     /* Optional args:
          -theme <name>  start with a named theme (default is the square "dark")
          -play          enter play mode immediately (animating scene from frame one) */
@@ -138,7 +147,7 @@ main( int argc, char** argv )
     }
 
     /* ------------------------------------------------------------------------------ */
-    /* Editor state                                                                    */
+    /* Editor state                                                                   */
 
     ed_engine_init();
     ed_viewport_init();
@@ -149,7 +158,8 @@ main( int argc, char** argv )
     printf( "[sb_gui_editor] Scene panel: RMB look + WASD fly, LMB drive/select, RMB+LMB/MMB pan, Alt+LMB orbit\n" );
 
     /* ------------------------------------------------------------------------------ */
-    /* Main loop                                                                       */
+    /* Main loop                                                                      */
+
 
     f64 last_time = sys_tick_seconds();
 
@@ -173,6 +183,8 @@ main( int argc, char** argv )
         if ( app()->key_pressed( APP_KEY_ESCAPE ) || g_ed.request_quit )
             goto quit;
 
+        /* ------------------------------------------------------------------------------ */
+
         app()->window_get_size( win, &g_ed.disp_w, &g_ed.disp_h );
 
         /* Simulation + scene-target upkeep (texture create/resize happens between frames). */
@@ -180,29 +192,25 @@ main( int argc, char** argv )
         ed_viewport_maintain();
 
         /* While playing, the sim mutates state the panels display every frame -- pin the gui
-           dirty so the Inspector/Console track it live.  Edit mode gets the retained skip. */
-        gui()->set_force_redraw( g_ed.mode == ED_MODE_PLAY );
+           dirty so the Inspector/Console track it live.  Edit mode gets the retained skip.
+           always_emit stays pinned on while debugging the viewport twist. */
+        bool always_emit = true;
+        gui()->set_force_redraw( always_emit || g_ed.mode == ED_MODE_PLAY );
 
         /* ------------------------------------------------------------------------------ */
-        /* GUI emit                                                                        */
+        /* GUI emit.  frame_begin returns frame_dirty; the debug overlays (P/O/F10) emit
+           themselves at ctx_end, and clean frames replay volatile widgets in frame_end.  */
 
-        gui()->frame_begin( dt );
-
-        /* The scene pass and target flip pair 1:1 with an emitted gui frame: the flipped
-           texture index is baked into this frame's Scene-panel quad, and a clean (retained)
-           frame must leave the previously displayed texture's content untouched. */
-        bool always_emit = true;    /* pinned on while debugging the viewport twist (C4127-safe) */
-        bool emitted     = always_emit || gui()->frame_dirty();
+        bool emitted = gui()->frame_begin( dt );
         if ( emitted )
         {
+            /* The scene pass and target flip pair 1:1 with an emitted gui frame: the flipped
+               texture index is baked into this frame's Scene-panel quad, and a clean (retained)
+               frame must leave the previously displayed texture's content untouched. */
             ed_viewport_flip();
             gui()->ctx_begin( GUI_CTX_DEFAULT );
             ed_shell_build();
             gui()->ctx_end();
-        }
-        else
-        {
-            gui()->update_volatile();
         }
 
         gui()->frame_end();
@@ -234,7 +242,9 @@ main( int argc, char** argv )
 
         gui()->viewport_render_floaters();
 
-        sys_sleep_milliseconds( 2 );
+        /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
+           on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */
+        gui()->frame_pace( 4, 16 );
     }
 
 quit:

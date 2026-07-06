@@ -24,10 +24,11 @@
     self-measurement lag.  Hover tooltips resolve against the same snapshot the bars were drawn
     from, so they always agree.
 
-    Emit gui()->pipeline_dashboard( &open ) once per frame inside a ctx scope, like
-    perf_overlay.  Included by gui.c after the popup tier (tooltips) and before gui_frame.c.
-    Compiled out unless GUI_PIPELINE_DASHBOARD (gui_backend.h); the vtable slot stays a no-op
-    stub then so func_api_size is hot-reload stable.
+    Emitted internally (debug_overlays_emit, gui_frame_overlay.c) at the default context's
+    ctx_end while debug_enable is on; the F10 hotkey owns the open flag and the window's X
+    button writes it back to false.  Included by gui.c after the popup tier (tooltips) and
+    before gui_frame_overlay.c / gui_frame.c.  Compiled out unless GUI_PIPELINE_DASHBOARD
+    (gui_backend.h); gui_pipeline_dashboard stays a no-op stub then.
 
 ==============================================================================================*/
 // clang-format off

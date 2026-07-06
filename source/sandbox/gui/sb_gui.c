@@ -696,7 +696,6 @@ static bool show_hud_win          = false;
 static bool show_region_win       = false;
 static bool show_dragdrop_win     = false;
 static bool show_tabgroup_win     = false;
-static bool dash_open             = false;
 
 static void show_example_main_menu_bar()
 {
@@ -739,11 +738,10 @@ static void show_example_main_menu_bar()
 
 /*============================================================================================*/
 /* Volatile widget demo -- a purely cosmetic square that keeps pulsing on frames where the rest
-   of the UI build is skipped (gui()->frame_dirty() false, mouse idle, nothing else animating).
+   of the UI build is skipped (frame_begin returned false: mouse idle, nothing else animating).
    Proves the feature end to end: an ordinary gui()->rect_filled() call, wrapped in
-   gui()->volatile_cb() so it can be replayed standalone by gui()->update_volatile() (called from
-   the frame_dirty()==false branch below) with no other widget emit, no layout, no
-   re-tessellation of anything else. */
+   gui()->volatile_cb() so gui can replay it standalone on clean frames (frame_end runs the
+   replay internally) with no other widget emit, no layout, no re-tessellation of anything else. */
 
 static void
 demo_volatile_pulse_cb( bool is_replay )
@@ -995,14 +993,13 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
 
-    printf( "[sb_gui] running -- ESC to quit\n" );
-    printf( "[sb_gui] gui demos: F1-F4 debug overlay\n" );
-    printf( "[sb_gui] P cycles the perf overlay: off -> FPS -> +timings -> +render counts\n" );
-    printf( "[sb_gui] O cycles the state overlay: off -> hover/active/window -> +nav -> +popups\n" );
-    printf( "[sb_gui] F6 cycles the render view: normal -> wireframe -> batch colors\n" );
+    /* OS services gui cannot reach itself (it links only app + rhi): the perf-overlay clock and
+       the frame_pace sleep / idle wait.  Wired once; the loop below just calls frame_pace(). */
+    gui()->set_frame_hooks( sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms );
 
-    int perf_mode  = 0;
-    int state_mode = 0;
+    /* Debug driver: gui owns the debug hotkeys + overlay emission from here on (the hotkeys
+       printed above -- see debug_enable in gui_api.h). */
+    gui()->debug_enable( true );
 
     f64 last_time = sys_tick_seconds();
     
@@ -1024,27 +1021,10 @@ main( int argc, char** argv )
         }
 
         /* ------------------------------------------------------------------------------ */
-        /* Debug overlay layers (Debug build only): toggle each with the F1-F4 keys.
-           F1 window frames   F2 widget interaction rects   F3 resize bands  F4 clip rects. */
+        /* Host-side debug keys.  The gui debug hotkeys (F1-F4 layers, F9 render view, F10
+           dashboard, P/O overlays, C/I skips) are handled inside gui via debug_enable above. */
 
-        gui()->debug_enable( true );
-
-        /* Perf overlay: P cycles off -> FPS -> +timings -> +render counts (mod 4). */
-        if ( app()->key_pressed( APP_KEY_P ) )
-            perf_mode = ( perf_mode + 1 ) % 5;
-
-        if ( app()->key_pressed( APP_KEY_O ) )
-            state_mode = ( state_mode + 1 ) % 4;
-
-        /* F6 cycles the debug render view: normal -> wireframe -> batch. */
-        if ( app()->key_pressed( APP_KEY_F9 ))
-        {
-            gui_render_mode_t m = ( gui()->debug_get_render_mode() + 1 ) % GUI_RENDER_MODE_COUNT;
-            gui()->debug_set_render_mode( m );
-            static const char* names[] = { "normal", "wireframe", "batch" };
-            printf( "[sb_gui] render mode: %s\n", names[ m ] );
-        }
-
+        /* F pins frame_dirty true, defeating the clean-frame skip (see set_force_redraw). */
         if ( app()->key_pressed( APP_KEY_F ) )
         {
             bool on = !gui()->force_redraw();
@@ -1052,35 +1032,16 @@ main( int argc, char** argv )
             printf( "[sb_gui] force redraw: %s\n", on ? "on (always render)" : "off (dirty-skip)" );
         }
 
-                
-        /* C toggles Level 2 retained skip: skips tessellation on unchanged frames (hash upfront). */
-        if ( app()->key_pressed( APP_KEY_C ) )
-        {
-            bool on = !gui()->retained_skip();
-            gui()->set_retained_skip( on );
-            printf( "[sb_gui] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
-        }
-
-        /* M toggles memory stats overlay: shows allocation sizes and usage. */
+        /* M dumps the memory stats table: allocation sizes and usage. */
         if ( app()->key_pressed( APP_KEY_M ) )
         {
             gui_print_mem_stats();
-        }       
-
-        /* F10 toggles the pipeline dashboard: a dockable/tear-off window visualizing the render
-        backend (slot memory maps, frames-in-flight uploads, draw batches, buffer usage). */
-        if ( app()->key_pressed( APP_KEY_F10 ) )
-        {
-            dash_open = !dash_open;
-            printf( "[sb_gui] pipeline dashboard: %s\n", dash_open ? "open" : "closed" );
         }
 
         /* ------------------------------------------------------------------------------ */
         /* The GUI emit and render frame loop */
-           
-        gui()->frame_begin( dt );
 
-        if ( gui()->frame_dirty() )        
+        if ( gui()->frame_begin( dt ) )
         {
             gui()->ctx_begin( GUI_CTX_DEFAULT );
 
@@ -1129,22 +1090,10 @@ main( int argc, char** argv )
             if ( show_tabgroup_win )
                 show_tabgroup_demo( &show_tabgroup_win );
 
-            gui()->perf_overlay( sys_tick_seconds, perf_mode );
-            gui()->state_overlay( state_mode );
-
-            /* Pipeline dashboard (F10): the shell window emits here; its diagnostic content is
-            drawn by the backend at flush time through its own buffers.  The X button writes
-            dash_open back to false so the key toggle stays in sync. */
-            gui()->pipeline_dashboard( &dash_open );
-
-
+            /* Closing the default context also auto-emits the debug overlays (perf/state/dashboard)
+               last in its build.  Clean frames skip this whole scope; frame_end below replays the
+               registered volatile_cb callbacks (see demo_volatile_pulse_cb above) internally. */
             gui()->ctx_end();
-        }
-        else
-        {
-            /* No widget emit this frame -- just replay any registered volatile_cb callbacks
-               standalone against their cached geometry (see demo_volatile_pulse_cb above). */
-            gui()->update_volatile();
         }
 
         gui()->frame_end();
@@ -1170,7 +1119,9 @@ main( int argc, char** argv )
 
         gui()->viewport_render_floaters();
 
-        sys_sleep_milliseconds( 4 );
+        /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
+           on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */
+        gui()->frame_pace( 4, 16 );
     }
     
     ret_code = 0;

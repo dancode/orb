@@ -196,7 +196,7 @@ void                gui_build_dump_geometry( void );
         widgets/gui_volatile.c            -- UI unit: gui()->volatile_cb/_begin/_end (gui_api.h),
                                              the replay scope (layout + id), gui_replay_scope_enter/_exit.
         backend/pipeline/gui_build_volatile.c -- BUILD unit: the registry, capture at real emit, and
-                                             gui_update_volatile (wired to gui()->update_volatile).
+                                             gui_update_volatile (run internally by frame_end).
 
     Forward direction (core -> backend, the normal call direction for this header): gui_volatile_cb
     (widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
@@ -205,7 +205,7 @@ void                gui_build_dump_geometry( void );
     layout cursor position, and gui_volatile_cb_close records where they end and tags the range.
     tess_dispatch (gui_build_tess.c) then reserves the block a padded region of its window's slot
     (vertices, indices, and its own GPU commands, each with headroom past the live geometry).
-    gui_update_volatile (wired to gui()->update_volatile) is called by the host on frames where
+    gui_update_volatile is called internally by gui_frame_end on frames where
     frame_dirty() is false: it re-invokes each row's callback standalone, re-tessellates the
     result, and patches it into the reserved region -- any output that FITS the reservation is
     accepted (text may grow/shrink etc); only outgrowing it falls back to one real frame, which

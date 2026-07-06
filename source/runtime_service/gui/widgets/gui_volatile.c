@@ -4,8 +4,8 @@
 
     A "volatile" callback contains ordinary UI emit calls (text, colored rects, etc).  It runs
     inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
-    any other code, no special behavior.  On an idle frame (frame_dirty()==false), the host calls
-    gui()->update_volatile() instead of ctx_begin/emit/ctx_end; the backend (BUILD unit,
+    any other code, no special behavior.  On an idle frame (frame_begin returned false, no
+    ctx_begin/emit ran), gui_frame_end calls gui_update_volatile internally; the backend (BUILD unit,
     backend/pipeline/gui_build_volatile.c) re-invokes the same callback standalone, re-tessellates its
     output, and patches it into the padded region reserved for the block inside its window's
     cached geometry (any output that fits is accepted; only outgrowing the reservation costs a

@@ -13,11 +13,13 @@
     child_begin, push_id, push_layout) calls.
 
     Usage (host):
-        gui()->frame_begin( dt );
-        gui()->ctx_begin( GUI_CTX_DEFAULT );
-        sb_gui_demos[ active ].fn();      // draw the active demo
-        sb_gui_demo_picker( active );     // draw the picker overlay
-        gui()->ctx_end();
+        if ( gui()->frame_begin( dt ) )   // returns frame_dirty; emit only when true
+        {
+            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            sb_gui_demos[ active ].fn();      // draw the active demo
+            sb_gui_demo_picker( active );     // draw the picker overlay
+            gui()->ctx_end();
+        }
         gui()->frame_end();
         gui()->render( vp0, cmd );
 
