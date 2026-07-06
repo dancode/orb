@@ -94,6 +94,24 @@ void        cmd_queue_args          ( int argc, char** argv );
                                        Honors "wait" and CMD_PUMP_BUDGET. */
 void        cmd_pump                ( void );
 
+/*==============================================================================================
+    Key binds (key -> command string, queued through the buffer)
+==============================================================================================*/
+
+                                    /* Wire the key-name table (index-matched to the platform
+                                       key enum; must outlive the bind system).  Host calls
+                                       once at boot with app_key_names()/APP_KEY_COUNT. */
+void        cmd_bind_wire_names     ( const char* const* names, u32 count );
+
+                                    /* Feed a key edge (host event drain; filter auto-repeat).
+                                       '+cmd' binds queue +cmd/-cmd with the key appended;
+                                       plain binds queue on key down only. */
+void        cmd_bind_event          ( u32 key, bool down );
+
+                                    /* Write unbindall + bind lines to an open FILE*
+                                       (void* keeps stdio out of this header) */
+void        cmd_bind_write_config   ( void* file );
+
 // clang-format on
 /*============================================================================================*/
 #endif    // CMD_HEADER_H

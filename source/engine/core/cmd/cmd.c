@@ -262,6 +262,7 @@ cmd_system_init( void )
     cmd_register( "exec",    cmd_cmd_exec, "Execute a config file" );
 
     cmd_buffer_init();    /* buffer state + "wait" */
+    cmd_bind_init();      /* bind table + bind/unbind/unbindall/bindlist */
 }
 
 void
@@ -269,6 +270,7 @@ cmd_system_exit( void )
 {
     s_cmd_count = 0;
     cmd_buffer_exit();
+    cmd_bind_exit();
 }
 
 /*============================================================================================*/

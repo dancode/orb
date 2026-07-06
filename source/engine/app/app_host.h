@@ -27,5 +27,9 @@ mod_desc_t* app_get_mod_desc( void );
 /* Route app log output through core. Call after mod_init_all(). */
 void app_set_log_fn( log_fn_t fn );
 
+/* Key-name table index-matched to app_key_t ("a", "f5", "space", ...).  Hosts wire it
+   into the bind system at boot: cmd_bind_wire_names( app_key_names(), APP_KEY_COUNT ). */
+const char* const* app_key_names( void );
+
 /*============================================================================================*/
 #endif    // APP_HOST_H

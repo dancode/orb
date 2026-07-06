@@ -49,6 +49,9 @@ cvar_write_config( const char* filename, u32 type_filter )
         }
     }
 
+    /* Key binds persist alongside the cvars (unbindall + bind lines). */
+    cmd_bind_write_config( f );
+
     fclose( f );
     con_printf( "cvar: %u cvars written to %s\n", written, filename );
 

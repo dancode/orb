@@ -16,6 +16,21 @@ int  intern_test( void );                        // ... temporary code ...
 void test_core_cvar( int argc, char** argv );    // ... temporary code ...
 
 /*============================================================================================*/
+/* '+action' handlers for the bind round trip: down queues "+test <key>", up "-test <key>". */
+
+static void
+cmd_test_down( int argc, char** argv )
+{
+    con_printf( "+test down (key %s)\n", ( argc > 1 ) ? argv[ 1 ] : "?" );
+}
+
+static void
+cmd_test_up( int argc, char** argv )
+{
+    con_printf( "-test up   (key %s)\n", ( argc > 1 ) ? argv[ 1 ] : "?" );
+}
+
+/*============================================================================================*/
 
 void
 core_test( void )
@@ -95,6 +110,31 @@ core_test( void )
         cmd_queue_args( 8, fake_argv );
         cmd_pump();
         con_exec( "user_var" );              // expect 99
+
+        /* Binds: key -> command string, queued through the buffer.  A tiny name table
+           stands in for app_key_names() (this sandbox loads no app module). */
+
+        static const char* key_names[] = { "none", "j", "k" };
+        cmd_bind_wire_names( key_names, 3 );
+        cmd_register( "+test", cmd_test_down, "Bind test action (press)" );
+        cmd_register( "-test", cmd_test_up,   "Bind test action (release)" );
+
+        con_exec( "bind j \"echo J pressed\"" );
+        con_exec( "bind k +test" );
+        con_exec( "bindlist" );
+
+        cmd_bind_event( 1, true );           // j down  -> queues the echo
+        cmd_bind_event( 2, true );           // k down  -> queues "+test 2"
+        cmd_bind_event( 2, false );          // k up    -> queues "-test 2"
+        cmd_pump();
+
+        con_exec( "bind j" );                // query form
+        con_exec( "writeconfig test_bind.cfg" );
+        con_exec( "unbindall" );
+        con_exec( "bindlist" );              // expect 0 binds
+        con_exec( "exec test_bind.cfg" );    // restores them through the buffer
+        cmd_pump();
+        con_exec( "bindlist" );              // expect j + k back
 
         printf( "scrollback: %u lines, history: %u entries\n",
                 con_line_count(), con_history_count() );

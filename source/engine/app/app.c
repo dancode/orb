@@ -67,6 +67,7 @@
 
 #include "engine/mod/mod_export.h"
 #include "engine/app/app_host.h"
+#include "engine/app/app_key_names.c"
 
 /*==============================================================================================
     Log Sink

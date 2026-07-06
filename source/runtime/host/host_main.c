@@ -255,6 +255,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        They execute at the loop's first cmd_pump, after every module has registered. */
     cmd_queue_args( argc, argv );
 
+    /* Give the bind system app's key-name table so "bind f5 quicksave" round-trips. */
+    cmd_bind_wire_names( app_key_names(), APP_KEY_COUNT );
+
     /* ---- cache engine module APIs ------------------------------------- */
     /*
        MOD_HOST_FETCH_API in static builds:  no-op -- the gateway returns the linked struct directly.
@@ -433,6 +436,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                     continue;
                 if ( desc->on_event && desc->on_event( &ev ) )
                     continue;
+
+                /* Key edges nobody consumed reach the bind system (auto-repeat filtered:
+                   binds fire once per physical press).  Bound commands queue into the
+                   buffer and run at this frame's cmd_pump below. */
+                if ( ev.type == APP_EV_KEY_DOWN && !ev.data.key.repeat )
+                    cmd_bind_event( ( u32 )ev.data.key.key, true );
+                else if ( ev.type == APP_EV_KEY_UP )
+                    cmd_bind_event( ( u32 )ev.data.key.key, false );
 
                 if ( ev.type == APP_EV_WIN_CLOSE )
                 {
