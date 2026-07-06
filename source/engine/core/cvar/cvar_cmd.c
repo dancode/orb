@@ -19,24 +19,39 @@
 void
 cvar_register_commands( void )
 {
-    // NOTE: must init your command system before registering commands
+    // NOTE: con_init() must run before commands are registered
 
-    /* Note: These are example function signatures.
-     * Replace with your actual command registration API */
+    con_cmd_register( "set",           cmd_set,           "Set a console variable value" );
+    con_cmd_register( "seta",          cmd_seta,          "Set and archive a console variable" );
+    con_cmd_register( "toggle",        cmd_toggle,        "Toggle a boolean variable" );
+    con_cmd_register( "reset",         cmd_reset,         "Reset a variable to default" );
+    con_cmd_register( "reset_all",     cmd_reset_all,     "Reset all variables to defaults" );
+    con_cmd_register( "cvarlist",      cmd_cvarlist,      "List all console variables" );
+    con_cmd_register( "cvarinfo",      cmd_cvarinfo,      "Show detailed cvar information" );
+    con_cmd_register( "apply_latched", cmd_apply_latched, "Apply latched cvar changes" );
+    con_cmd_register( "cvar_modified", cmd_cvar_modified, "List modified cvars" );
+    con_cmd_register( "exec",          cmd_exec,          "Execute a config file" );
+    con_cmd_register( "writeconfig",   cmd_writeconfig,   "Write archived cvars to a config file" );
+}
 
-    // cmd_register( "set", cmd_set, "Set a console variable value" );
-    // cmd_register( "seta", cmd_seta, "Set and archive a console variable" );
-    // cmd_register( "toggle", cmd_toggle, "Toggle a boolean variable" );
-    // cmd_register( "reset", cmd_reset, "Reset a variable to default" );
-    // cmd_register( "reset_all", cmd_reset_all, "Reset all variables to defaults" );
-    // cmd_register( "cvarlist", cmd_cvarlist, "List all console variables" );
-    // cmd_register( "cvarinfo", cmd_cvarinfo, "Show detailed cvar information" );
-    // cmd_register( "apply_latched", cmd_apply_latched, "Apply latched cvar changes" );
-    // cmd_register( "cvar_modified", cmd_cvar_modified, "List modified cvars" );
+/*============================================================================================*/
+/* cmd_exec - Execute a config file */
+/* Usage: exec <filename> */
 
-    /* Note: Replace with your actual command registration API */
-    // cmd_register( "exec", cmd_exec, "Execute a config file" );
-    // cmd_register( "writeconfig", cmd_writeconfig, "Write config file" );
+void
+cmd_exec( int argc, char** argv )
+{
+    if ( argc < 2 )
+    {
+        con_printf( "Usage: exec <filename>\n" );
+        con_printf( "  Executes a configuration file.\n" );
+        return;
+    }
+
+    if ( !cvar_exec_config( argv[ 1 ] ) )
+    {
+        con_printf( "Error: could not open '%s'\n", argv[ 1 ] );
+    }
 }
 
 /*==============================================================================================
@@ -60,7 +75,7 @@ cmd_set_internal( const char* name, const char* value, u32 internal_flags )
         cv = cvar_register_base( name, "user created", CVAR_USR | internal_flags );
         if ( !cv )
         {
-            printf( "Error: Failed to create variable '%s'\n", name );
+            con_printf( "Error: Failed to create variable '%s'\n", name );
             return;
         }
     }
@@ -77,7 +92,7 @@ cmd_set_internal( const char* name, const char* value, u32 internal_flags )
     }
     else
     {
-        printf( "Failed to set '%s' to '%s'\n", name, value );
+        con_printf( "Failed to set '%s' to '%s'\n", name, value );
     }
 }
 
@@ -90,8 +105,8 @@ cmd_set( int argc, char** argv )
 {
     if ( argc < 3 )
     {
-        printf( "Usage: set <variable> <value>\n" );
-        printf( "  Sets a console variable to the specified value.\n" );
+        con_printf( "Usage: set <variable> <value>\n" );
+        con_printf( "  Sets a console variable to the specified value.\n" );
         return;
     }
 
@@ -109,8 +124,8 @@ cmd_seta( int argc, char** argv )
 {
     if ( argc < 3 )
     {
-        printf( "Usage: seta <variable> <value>\n" );
-        printf( "  Sets a console variable and marks it to be saved to config.\n" );
+        con_printf( "Usage: seta <variable> <value>\n" );
+        con_printf( "  Sets a console variable and marks it to be saved to config.\n" );
         return;
     }
 
@@ -129,8 +144,8 @@ cmd_toggle( int argc, char** argv )
 {
     if ( argc < 2 )
     {
-        printf( "Usage: toggle <variable>\n" );
-        printf( "  Toggles a boolean variable between 0 and 1.\n" );
+        con_printf( "Usage: toggle <variable>\n" );
+        con_printf( "  Toggles a boolean variable between 0 and 1.\n" );
         return;
     }
 
@@ -139,13 +154,13 @@ cmd_toggle( int argc, char** argv )
 
     if ( !cv )
     {
-        printf( "Error: Variable '%s' not found\n", name );
+        con_printf( "Error: Variable '%s' not found\n", name );
         return;
     }
 
     if ( !cvar_is_int( cv ) && !( cv->type & CVAR_BOOL ) )
     {
-        printf( "Error: Variable '%s' is not a boolean\n", name );
+        con_printf( "Error: Variable '%s' is not a boolean\n", name );
         return;
     }
 
@@ -164,8 +179,8 @@ cmd_reset( int argc, char** argv )
 {
     if ( argc < 2 )
     {
-        printf( "Usage: reset <variable>\n" );
-        printf( "  Resets a console variable to its default value.\n" );
+        con_printf( "Usage: reset <variable>\n" );
+        con_printf( "  Resets a console variable to its default value.\n" );
         return;
     }
 
@@ -174,13 +189,13 @@ cmd_reset( int argc, char** argv )
 
     if ( !cv )
     {
-        printf( "Error: Variable '%s' not found\n", name );
+        con_printf( "Error: Variable '%s' not found\n", name );
         return;
     }
 
     cvar_reset( cv );
 
-    printf( "Reset '%s' to default value\n", name );
+    con_printf( "Reset '%s' to default value\n", name );
     cvar_print_value( cv );
 }
 
@@ -194,9 +209,9 @@ cmd_reset_all( int argc, char** argv )
     UNUSED( argc );
     UNUSED( argv );
 
-    printf( "Resetting all cvars to default values...\n" );
+    con_printf( "Resetting all cvars to default values...\n" );
     cvar_reset_all();
-    printf( "Done.\n" );
+    con_printf( "Done.\n" );
 }
 
 /*============================================================================================*/
@@ -222,13 +237,13 @@ cmd_apply_latched( int argc, char** argv )
 
     if ( count == 0 )
     {
-        printf( "No latched cvars to apply.\n" );
+        con_printf( "No latched cvars to apply.\n" );
         return;
     }
 
-    printf( "Applying %u latched cvar(s)...\n", count );
+    con_printf( "Applying %u latched cvar(s)...\n", count );
     cvar_apply_latched();
-    printf( "Done.\n" );
+    con_printf( "Done.\n" );
 }
 
 /*============================================================================================*/
@@ -244,8 +259,8 @@ cmd_cvar_modified( int argc, char** argv )
     u32 count = 0;
     u32 total = cvar_get_count();
 
-    printf( "\nModified cvars:\n" );
-    printf( "--------------------------------------------------------------------\n" );
+    con_printf( "\nModified cvars:\n" );
+    con_printf( "--------------------------------------------------------------------\n" );
 
     for ( u32 i = 0; i < total; ++i )
     {
@@ -255,12 +270,12 @@ cmd_cvar_modified( int argc, char** argv )
 
         const char* name  = cvar_get_name( cv );
         const char* value = cvar_get_value( name );
-        printf( "  %-24s = %s\n", name, value );
+        con_printf( "  %-24s = %s\n", name, value );
         count++;
     }
 
-    printf( "--------------------------------------------------------------------\n" );
-    printf( "%u modified cvar(s)\n\n", count );
+    con_printf( "--------------------------------------------------------------------\n" );
+    con_printf( "%u modified cvar(s)\n\n", count );
 }
 
 /*============================================================================================*/
@@ -274,8 +289,8 @@ cmd_cvarinfo( int argc, char** argv )
 {
     if ( argc < 2 )
     {
-        printf( "Usage: cvarinfo <variable>\n" );
-        printf( "  Displays detailed information about a console variable.\n" );
+        con_printf( "Usage: cvarinfo <variable>\n" );
+        con_printf( "  Displays detailed information about a console variable.\n" );
         return;
     }
 
@@ -284,12 +299,12 @@ cmd_cvarinfo( int argc, char** argv )
 
     if ( !cv )
     {
-        printf( "Error: Variable '%s' not found\n", name );
+        con_printf( "Error: Variable '%s' not found\n", name );
         return;
     }
 
-    printf( "\nVariable: %s\n", cvar_get_name( cv ) );
-    printf( "Description: %s\n", cvar_get_desc( cv ) );
+    con_printf( "\nVariable: %s\n", cvar_get_name( cv ) );
+    con_printf( "Description: %s\n", cvar_get_desc( cv ) );
 
     cvar_print_value( cv );
     cvar_print_flags( cv );
@@ -297,25 +312,25 @@ cmd_cvarinfo( int argc, char** argv )
     /* Show default value */
     switch ( cv->type & CVAR_TYPE_MASK )
     {
-        case CVAR_BOOL:     printf( "  Default: %d\n", cv->b.reset ); break;
-        case CVAR_INT:      printf( "  Default: %d\n", cv->i.reset ); break;
-        case CVAR_FLOAT:    printf( "  Default: %g\n", cv->f.reset ); break;
-        case CVAR_STR:      printf( "  Default: index %u\n", cv->s.reset ); break;
+        case CVAR_BOOL:     con_printf( "  Default: %d\n", cv->b.reset ); break;
+        case CVAR_INT:      con_printf( "  Default: %d\n", cv->i.reset ); break;
+        case CVAR_FLOAT:    con_printf( "  Default: %g\n", cv->f.reset ); break;
+        case CVAR_STR:      con_printf( "  Default: index %u\n", cv->s.reset ); break;
         default: break;
     }
 
     /* Show string list options for CVAR_STR */
     if ( cv->type & CVAR_STR )
     {
-        printf( "  Options:\n" );
+        con_printf( "  Options:\n" );
         for ( u32 i = 0; i < cv->s.count; ++i )
         {
             const char* str = cvar_get_string_from_id( cv, i );
-            printf( "    [%u] %s%s\n", i, str, ( i == cv->s.value ) ? " (current)" : "" );
+            con_printf( "    [%u] %s%s\n", i, str, ( i == cv->s.value ) ? " (current)" : "" );
         }
     }
 
-    printf( "\n" );
+    con_printf( "\n" );
 }
 
 /*============================================================================================*/
@@ -329,9 +344,9 @@ cmd_cvarlist( int argc, char** argv )
     u32         count  = 0;
     u32         total  = cvar_get_count();
 
-    printf( "\n" );
-    printf( "%-24s %-12s %-10s %s\n", "Name", "Value", "Type", "Flags" );
-    printf( "--------------------------------------------------------------------\n" );
+    con_printf( "\n" );
+    con_printf( "%-24s %-12s %-10s %s\n", "Name", "Value", "Type", "Flags" );
+    con_printf( "--------------------------------------------------------------------\n" );
 
     for ( u32 i = 0; i < total; ++i )
     {
@@ -375,20 +390,20 @@ cmd_cvarlist( int argc, char** argv )
         if ( cv->type & CVAR_SERVERINFO )   strcat( flags, "S" );
         if ( cv->flag & CVAR_MODIFIED )     strcat( flags, "*" );
 
-        printf( "%-24s %-12s %-10s %s\n", name, value, type_str, flags );
+        con_printf( "%-24s %-12s %-10s %s\n", name, value, type_str, flags );
         count++;
     }
 
-    printf( "--------------------------------------------------------------------\n" );
-    printf( "%u cvars", count );
+    con_printf( "--------------------------------------------------------------------\n" );
+    con_printf( "%u cvars", count );
     if ( filter )
-        printf( " (filtered from %u total)", total );
-    printf( "\n\n" );
+        con_printf( " (filtered from %u total)", total );
+    con_printf( "\n\n" );
 
-    printf( "Flag legend:\n" );
-    printf( "  R = Read-only    A = Archived    L = Latched    C = Cheat\n" );
-    printf( "  U = UserInfo     S = ServerInfo  * = Modified\n" );
-    printf( "\n" );
+    con_printf( "Flag legend:\n" );
+    con_printf( "  R = Read-only    A = Archived    L = Latched    C = Cheat\n" );
+    con_printf( "  U = UserInfo     S = ServerInfo  * = Modified\n" );
+    con_printf( "\n" );
 }
 
 /*============================================================================================*/
@@ -402,11 +417,11 @@ cmd_writeconfig( int argc, char** argv )
 
     if ( cvar_write_config( filename, CVAR_ARCHIVE ) )
     {
-        printf( "Configuration saved to '%s'\n", filename );
+        con_printf( "Configuration saved to '%s'\n", filename );
     }
     else
     {
-        printf( "Failed to write configuration to '%s'\n", filename );
+        con_printf( "Failed to write configuration to '%s'\n", filename );
     }
 }
 

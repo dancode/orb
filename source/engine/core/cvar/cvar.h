@@ -360,10 +360,7 @@ void        cvar_save_config        ( void );
 // int         cvar_process_args       ( int argc, char** argv, int start_index );
 
                                     /* Console command: exec <filename> */
-// void        cmd_exec                ( int argc, char** argv );
-// 
-                                    /* Register config system console commands */
-void        cvar_register_commands  ( void );
+void        cmd_exec                ( int argc, char** argv );
 
 /*==============================================================================================
     Command Buffer

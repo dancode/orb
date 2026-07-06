@@ -382,6 +382,19 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
     }
 }
 
+/* Programmatic focus request (public: gui()->set_keyboard_focus).  Latched until the next
+   focusable widget passes through widget_behavior, which takes keyboard focus as if clicked.
+   Persisting across frames is deliberate: a request queued after this frame's field has
+   already emitted lands on that field next frame. */
+
+static bool s_focus_request = false;
+
+void
+gui_set_keyboard_focus( void )
+{
+    s_focus_request = true;
+}
+
 /* Unified hover/active/focus/click state machine.  Call once per widget with the
    hit rect and the desired interaction kind; the returned flags are all a widget
    needs for drawing and value updates. */
@@ -451,6 +464,14 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
 
     if ( eligible && !s_nav.highlight && rect_hit( s_build.clip_rect ) && rect_hit( r ) )
          s_interaction.hover_id = id;
+
+    /* Programmatic focus: a queued set_keyboard_focus request lands on the first focusable
+       widget emitted after it -- the keyboard twin of click-to-focus below. */
+    if ( s_focus_request && kind == WIDGET_KIND_FOCUSABLE )
+    {
+        s_focus_request          = false;
+        s_interaction.focused_id = id;
+    }
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
     if ( s_interaction.hover_id == id && s_io.mouse_pressed[ 0 ] )

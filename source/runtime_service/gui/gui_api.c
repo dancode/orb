@@ -296,6 +296,7 @@ const gui_api_t g_gui_api_struct =
     .get_time                           = gui_get_time,
     .set_mouse_cursor                   = gui_set_mouse_cursor,
     .get_mouse_cursor                   = gui_get_mouse_cursor,
+    .set_keyboard_focus                 = gui_set_keyboard_focus,
     .wants_redraw                       = gui_wants_redraw,
     .frame_dirty                        = gui_frame_dirty,
     .set_force_redraw                   = gui_set_force_redraw,

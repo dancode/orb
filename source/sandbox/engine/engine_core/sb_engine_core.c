@@ -40,7 +40,34 @@ core_test( void )
         /// test_core_cvar( argc, argv );    // <-- test cvar system
         /// cvar_system_exit();
     }
-    
+
+    if ( 1 )
+    {
+        /* Console + cvar round trip, fully headless: every con_print echoes to stdout and the
+           scrollback ring fills inside core -- no gui anywhere.  This is the same con_exec path
+           the sb_gui_console front end feeds from its input line. */
+
+        cvar_system_init();
+        con_init();
+        cvar_register_commands();
+
+        cvar_register_f( "s_volume", "Sound volume", 0.8f, 0.0f, 1.0f, CVAR_ARCHIVE );
+
+        con_exec( "help" );
+        con_exec( "s_volume" );          // bare cvar name prints its value
+        con_exec( "s_volume 0.25" );     // name + value sets
+        con_exec( "set user_var 42" );   // creates a user cvar
+        con_exec( "cvarlist" );
+        con_exec( "echo hello console" );
+        con_exec( "no_such_thing" );     // unknown command path
+
+        printf( "scrollback: %u lines, history: %u entries\n",
+                con_line_count(), con_history_count() );
+
+        con_exit();
+        cvar_system_exit();
+    }
+
 }
 
 /*============================================================================================*/

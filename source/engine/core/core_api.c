@@ -22,11 +22,15 @@ core_init( void )
     log_init();
     sid_init();
     cvar_system_init();
+    con_init();                  /* console before commands: registration prints through it */
+    cvar_register_commands();    /* set/seta/toggle/cvarlist/... into the console registry */
+    core_register_cvars();       /* core-owned cvars: version, developer, log_level */
 }
 
 void
 core_exit( void )
 {
+    con_exit();
     cvar_system_exit();
     sid_exit();
     log_exit();
@@ -92,12 +96,48 @@ const core_api_t g_core_api_struct = {
     .sid_print_stats    = sid_print_stats,
     .sid_reset_stats    = sid_reset_stats,
 
-    // .cvar_find = cvar_find,
-    // .cvar_register = cvar_register,
-    // .cvar_get_int  = cvar_get_int,
-    // .cvar_set_int  = cvar_set_int,
-    // .cvar_set_string = cvar_set_string,
-    // .cvar_get_string = cvar_get_string,
+    .cvar_register_b    = cvar_register_b,
+    .cvar_register_i    = cvar_register_i,
+    .cvar_register_f    = cvar_register_f,
+    .cvar_register_s    = cvar_register_s,
+    .cvar_register_w    = cvar_register_w,
+    .cvar_register_r    = cvar_register_r,
+
+    .cvar_find          = cvar_find,
+    .cvar_get_by_index  = cvar_get_by_index,
+    .cvar_get_count     = cvar_get_count,
+
+    .cvar_get_name      = cvar_get_name,
+    .cvar_get_desc      = cvar_get_desc,
+    .cvar_get_bool      = cvar_get_bool,
+    .cvar_get_int       = cvar_get_int,
+    .cvar_get_float     = cvar_get_float,
+    .cvar_get_string    = cvar_get_string,
+
+    .cvar_set_value     = cvar_set_value,
+    .cvar_get_value     = cvar_get_value,
+    .cvar_reset         = cvar_reset,
+
+    .cvar_callback_register   = cvar_callback_register,
+    .cvar_callback_unregister = cvar_callback_unregister,
+
+    .con_print          = con_print,
+    .con_printf         = con_printf,
+    .con_clear          = con_clear,
+    .con_exec           = con_exec,
+
+    .con_line_count     = con_line_count,
+    .con_line_get       = con_line_get,
+
+    .con_cmd_register   = con_cmd_register,
+    .con_cmd_unregister = con_cmd_unregister,
+    .con_cmd_count      = con_cmd_count,
+    .con_cmd_name       = con_cmd_name,
+    .con_cmd_desc       = con_cmd_desc,
+
+    .con_history_count  = con_history_count,
+    .con_history_get    = con_history_get,
+    .con_complete       = con_complete,
 
 };
 

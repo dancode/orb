@@ -412,6 +412,9 @@ f32  gui_get_mouse_wheel( void );
 void         gui_set_mouse_cursor( app_cursor_t c );
 app_cursor_t gui_get_mouse_cursor( void );
 
+/* focus */
+void gui_set_keyboard_focus( void );
+
 /* time */
 f32  gui_get_delta_time( void );
 f64  gui_get_time( void );

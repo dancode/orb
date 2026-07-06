@@ -1184,37 +1184,37 @@ cvar_print_value( const cvar_t* cv )
     const char* name  = cvar_get_name( cv );
     const char* value = cvar_get_value( name );
 
-    printf( "  \"%s\" is: \"%s\"", name, value );
+    con_printf( "  \"%s\" is: \"%s\"", name, value );
 
     /* Show latched value if present */
     if ( cv->flag & CVAR_LATCHED )
     {
-        printf( " (latched)" );
+        con_printf( " (latched)" );
     }
 
     /* Show type info */
     switch ( cv->type & CVAR_TYPE_MASK )
     {
-        case CVAR_BOOL: printf( " [bool]" ); break;
+        case CVAR_BOOL: con_printf( " [bool]" ); break;
         case CVAR_INT:
             if ( cv->i.min != cv->i.max ) 
-                    printf( " [int: %d..%d]", cv->i.min, cv->i.max );
-            else    printf( " [int]" );
+                    con_printf( " [int: %d..%d]", cv->i.min, cv->i.max );
+            else    con_printf( " [int]" );
             break;
 
         case CVAR_FLOAT:
             if ( cv->f.min != cv->f.max) 
-                    printf( " [float: %.2f..%.2f]", cv->f.min, cv->f.max );
-            else    printf( " [float]" );
+                    con_printf( " [float: %.2f..%.2f]", cv->f.min, cv->f.max );
+            else    con_printf( " [float]" );
             break;
 
-        case CVAR_STR: printf( " [choice: %u of %u]", cv->s.value, cv->s.count ); break;
-        case CVAR_BUF: printf( " [string]" ); break;
-        case CVAR_REF: printf( " [readonly]" ); break;
-        case CVAR_USR: printf( " [user]" ); break;
+        case CVAR_STR: con_printf( " [choice: %u of %u]", cv->s.value, cv->s.count ); break;
+        case CVAR_BUF: con_printf( " [string]" ); break;
+        case CVAR_REF: con_printf( " [readonly]" ); break;
+        case CVAR_USR: con_printf( " [user]" ); break;
     }
 
-    printf( "\n" );
+    con_printf( "\n" );
 }
 
 /*============================================================================================*/
@@ -1226,27 +1226,27 @@ cvar_print_flags( const cvar_t* cv )
     if ( !cv )
         return;
 
-    printf( "  Type:" );
+    con_printf( "  Type:" );
 
-    if ( cv->type & CVAR_ROM )        printf( " ROM" );
-    if ( cv->type & CVAR_INIT )       printf( " INIT" );
-    if ( cv->type & CVAR_LATCH )      printf( " LATCH" );
-    if ( cv->type & CVAR_CHEAT )      printf( " CHEAT" );
+    if ( cv->type & CVAR_ROM )        con_printf( " ROM" );
+    if ( cv->type & CVAR_INIT )       con_printf( " INIT" );
+    if ( cv->type & CVAR_LATCH )      con_printf( " LATCH" );
+    if ( cv->type & CVAR_CHEAT )      con_printf( " CHEAT" );
 
-    if ( cv->type & CVAR_RUNTIME )    printf( " RUNTIME" );
-    if ( cv->type & CVAR_NORESTART )  printf( " NORESTART" );
+    if ( cv->type & CVAR_RUNTIME )    con_printf( " RUNTIME" );
+    if ( cv->type & CVAR_NORESTART )  con_printf( " NORESTART" );
 
-    if ( cv->type & CVAR_ARCHIVE )    printf( " ARCHIVE" );
+    if ( cv->type & CVAR_ARCHIVE )    con_printf( " ARCHIVE" );
 
-    if ( cv->type & CVAR_DEVONLY )    printf( " DEVONLY" );
-    if ( cv->type & CVAR_HIDDEN )     printf( " HIDDEN" );
+    if ( cv->type & CVAR_DEVONLY )    con_printf( " DEVONLY" );
+    if ( cv->type & CVAR_HIDDEN )     con_printf( " HIDDEN" );
 
-    if ( cv->type & CVAR_NETSYNC )    printf( " NETSYNC" );
-    if ( cv->type & CVAR_USERINFO )   printf( " USERINFO" );
-    if ( cv->type & CVAR_SERVERINFO ) printf( " SERVERINFO" );
-    if ( cv->type & CVAR_SYSTEMINFO ) printf( " SYSTEMINFO" );
+    if ( cv->type & CVAR_NETSYNC )    con_printf( " NETSYNC" );
+    if ( cv->type & CVAR_USERINFO )   con_printf( " USERINFO" );
+    if ( cv->type & CVAR_SERVERINFO ) con_printf( " SERVERINFO" );
+    if ( cv->type & CVAR_SYSTEMINFO ) con_printf( " SYSTEMINFO" );
     
-    printf( "\n" );
+    con_printf( "\n" );
 }
 
 /*============================================================================================*/

@@ -1237,6 +1237,13 @@ typedef struct gui_api_s
     void         ( *set_mouse_cursor )( app_cursor_t c );
     app_cursor_t ( *get_mouse_cursor )( void );
 
+    /* set_keyboard_focus -- queue a programmatic focus request: the next focusable widget emitted
+       (a text input box) takes keyboard focus as if clicked.  Call just before emitting the
+       widget; the request persists across frames until a focusable widget consumes it, so a
+       request made after this frame's field lands on the same field next frame (the "refocus
+       after Enter" console pattern). */
+    void         ( *set_keyboard_focus )( void );
+
     /* wants_redraw -- true when at least one animated widget has not yet reached its target this
        frame (the currently bound context's flag).  frame_pace already folds this across every
        context internally; the query remains for hosts that run their own pacing. */

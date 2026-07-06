@@ -48,7 +48,7 @@ cvar_write_config( const char* filename, u32 type_filter )
     }
 
     fclose( f );
-    printf( "cvar: %u cvars written to %s\n", written, filename );
+    con_printf( "cvar: %u cvars written to %s\n", written, filename );
 
     return true;
 }
@@ -142,43 +142,43 @@ cvar_exec_config( const char* filename )
 void
 cvar_load_defaults( void )
 {
-    printf( "\n" );
-    printf( "====================================================================\n" );
-    printf( "Loading configuration files\n" );
-    printf( "====================================================================\n" );
+    con_printf( "\n" );
+    con_printf( "====================================================================\n" );
+    con_printf( "Loading configuration files\n" );
+    con_printf( "====================================================================\n" );
 
     /* Load default.cfg - engine defaults */
     if ( cvar_exec_config( "default.cfg" ) )
     {
-        printf( "Loaded default configuration\n" );
+        con_printf( "Loaded default configuration\n" );
     }
     else
     {
-        printf( "Warning: default.cfg not found\n" );
+        con_printf( "Warning: default.cfg not found\n" );
     }
 
     /* Load config.cfg - user settings */
     if ( cvar_exec_config( "config.cfg" ) )
     {
-        printf( "Loaded user configuration\n" );
+        con_printf( "Loaded user configuration\n" );
     }
     else
     {
-        printf( "Warning: config.cfg not found (will be created on exit)\n" );
+        con_printf( "Warning: config.cfg not found (will be created on exit)\n" );
     }
 
     /* Load autoexec.cfg - user startup commands */
     if ( cvar_exec_config( "autoexec.cfg" ) )
     {
-        printf( "Loaded autoexec configuration\n" );
+        con_printf( "Loaded autoexec configuration\n" );
     }
     else
     {
-        printf( "Info: autoexec.cfg not found (optional)\n" );
+        con_printf( "Info: autoexec.cfg not found (optional)\n" );
     }
 
-    printf( "====================================================================\n" );
-    printf( "\n" );
+    con_printf( "====================================================================\n" );
+    con_printf( "\n" );
 }
 
 /*============================================================================================*/
@@ -187,7 +187,7 @@ cvar_load_defaults( void )
 void
 cvar_save_config( void )
 {
-    printf( "Saving configuration...\n" );
+    con_printf( "Saving configuration...\n" );
     cvar_write_config( "config.cfg", CVAR_ARCHIVE );
 }
 

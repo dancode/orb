@@ -11,6 +11,8 @@
 ==============================================================================================*/
 
 #include "engine/core/core.h"
+#include "engine/core/cvar/cvar.h"
+#include "engine/core/console/console.h"
 #include "engine/mod/mod_import.h"
 
 // clang-format off
@@ -75,12 +77,51 @@ typedef struct core_api_s
     void        ( *sid_reset_stats )    ( void );
 
     /* cvar system */
-    // cvar_find_fn cvar_find;
-    // cvar_register_fn   cvar_register;
-    // cvar_get_int_fn    cvar_get_int;
-    // cvar_set_int_fn    cvar_set_int;
-    // cvar_set_string_fn cvar_set_string;
-    // cvar_get_string_fn cvar_get_string;
+
+    cvar_t*     ( *cvar_register_b )    ( const char* name, const char* desc, bool value, u32 type );
+    cvar_t*     ( *cvar_register_i )    ( const char* name, const char* desc, i32 val, i32 min, i32 max, u32 type );
+    cvar_t*     ( *cvar_register_f )    ( const char* name, const char* desc, f32 val, f32 min, f32 max, u32 type );
+    cvar_t*     ( *cvar_register_s )    ( const char* name, const char* desc, const char** values, u32 count, u32 def_index, u32 type );
+    cvar_t*     ( *cvar_register_w )    ( const char* name, const char* desc, const char* reset, u32 size, u32 type );
+    cvar_t*     ( *cvar_register_r )    ( const char* name, const char* desc, const char* value, u32 type );
+
+    cvar_t*     ( *cvar_find )          ( const char* name );
+    cvar_t*     ( *cvar_get_by_index )  ( u32 index );
+    u32         ( *cvar_get_count )     ( void );
+
+    const char* ( *cvar_get_name )      ( const cvar_t* cv );
+    const char* ( *cvar_get_desc )      ( const cvar_t* cv );
+    bool        ( *cvar_get_bool )      ( const cvar_t* cv );
+    i32         ( *cvar_get_int )       ( const cvar_t* cv );
+    f32         ( *cvar_get_float )     ( const cvar_t* cv );
+    const char* ( *cvar_get_string )    ( const cvar_t* cv );
+
+    bool        ( *cvar_set_value )     ( const char* name, const char* value );
+    const char* ( *cvar_get_value )     ( const char* name );
+    void        ( *cvar_reset )         ( cvar_t* cv );
+
+    uint16_t    ( *cvar_callback_register )   ( cvar_t* cv, cvar_callback_fn fn, i32 module_id );
+    void        ( *cvar_callback_unregister ) ( cvar_t* cv );
+
+    /* developer console (state lives in core; front ends are views over it) */
+
+    void        ( *con_print )          ( const char* text );
+    void        ( *con_printf )         ( const char* fmt, ... );
+    void        ( *con_clear )          ( void );
+    bool        ( *con_exec )           ( const char* line );
+
+    u32         ( *con_line_count )     ( void );
+    const char* ( *con_line_get )       ( u32 index );
+
+    bool        ( *con_cmd_register )   ( const char* name, con_cmd_fn fn, const char* desc );
+    void        ( *con_cmd_unregister ) ( const char* name );
+    u32         ( *con_cmd_count )      ( void );
+    const char* ( *con_cmd_name )       ( u32 index );
+    const char* ( *con_cmd_desc )       ( u32 index );
+
+    u32         ( *con_history_count )  ( void );
+    const char* ( *con_history_get )    ( u32 index );
+    u32         ( *con_complete )       ( const char* prefix, const char** out_names, u32 max );
 
 } core_api_t;
 
