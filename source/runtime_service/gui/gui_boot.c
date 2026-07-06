@@ -273,5 +273,52 @@ gui_present_end( void )
     s_present.cmd_live = false;
 }
 
+/*==============================================================================================
+    frame_pace -- the end-of-loop idle sleep (boot-tier; the last call in the loop above)
+
+    Call once at the bottom of the main loop, after present_end.  The two parameters set the
+    host's cadence; 0 opts that sleep out entirely (no call), even while the feature is on:
+
+        spin_sleep_ms -- the default sleep between frames when idle skip is off (or unavailable).
+                         4 ~= 250 Hz game cadence; 0 = free-run at full speed.
+        anim_sleep_ms -- the sleep while idle skip is ON but the UI is still SETTLING: an animation
+                         is mid-transition (s_any_redraw) OR this frame still emitted widgets
+                         (gui_frame_dirty()).  Frames keep pumping until a genuinely clean frame is
+                         produced, so a collapsed window, a snapping popup, or a click's next-frame
+                         structural change lands instead of stalling.  16 ~= 60 Hz; 0 = free-run.
+
+    With idle skip on (I, or set_idle_skip) and the UI settled, the loop blocks on OS input instead
+    (500 ms safety cap), so a static UI burns no frames.  Requires the sleep / wait hooks from
+    set_frame_hooks; without them this is a no-op (the host loop just spins).
+
+    The hooks (s_hook_sleep / s_hook_wait), s_idle_skip, and s_any_redraw live in
+    gui_frame_overlay.c / gui_frame.c -- both included before this unit, so they are in scope here.
+==============================================================================================*/
+
+void
+gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
+{
+    if ( s_idle_skip && s_hook_wait )
+    {
+        /* Keep pumping while the UI has not settled: animation in flight, or this frame still
+           emitted (retained-mode needs a follow-up frame to re-stabilize).  Block only once a
+           fully clean frame is produced -- otherwise deferred / multi-frame updates freeze until
+           the next input.  (Same gate the runtime host's editor_sleep uses.) */
+        if ( s_any_redraw || gui_frame_dirty() )
+        {
+            if ( s_hook_sleep && anim_sleep_ms > 0 )
+                s_hook_sleep( anim_sleep_ms );   /* settling: pump frames until it goes clean */
+        }
+        else
+        {
+            s_hook_wait( 500 );                  /* idle: wake on input (500 ms safety cap) */
+        }
+    }
+    else if ( s_hook_sleep && spin_sleep_ms > 0 )
+    {
+        s_hook_sleep( spin_sleep_ms );           /* spin cadence between frames */
+    }
+}
+
 // clang-format on
 /*============================================================================================*/

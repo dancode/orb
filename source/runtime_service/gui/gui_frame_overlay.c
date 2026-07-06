@@ -409,43 +409,10 @@ debug_overlays_emit( void )
     gui_state_overlay( s_dbg_state_mode );
 }
 
-/*==============================================================================================
-    Frame pacing -- the end-of-loop sleep, owned by gui so hosts cannot mis-wire idle skip
-
-    Call once at the bottom of the main loop, after every render.  The two parameters set the
-    host's cadence; 0 opts that sleep out entirely (no call), even while the feature is on:
-
-        spin_sleep_ms -- the default sleep between frames when idle skip is off (or unavailable).
-                         4 ~= 250 Hz game cadence; 0 = free-run at full speed.
-        anim_sleep_ms -- the sleep while idle skip is ON but a widget animation is still in
-                         flight (s_any_redraw): frames keep pumping so the transition finishes
-                         before blocking on input.  16 ~= 60 Hz; 0 = free-run until it settles.
-
-    With idle skip on (I, or set_idle_skip) and no animation in flight, the loop blocks on OS
-    input instead (500 ms safety cap), so a static UI burns no frames.  Requires the sleep / wait
-    hooks from set_frame_hooks; without them this is a no-op (the host loop just spins).
-==============================================================================================*/
-
-void
-gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
-{
-    if ( s_idle_skip && s_hook_wait )
-    {
-        if ( s_any_redraw )
-        {
-            if ( s_hook_sleep && anim_sleep_ms > 0 )
-                s_hook_sleep( anim_sleep_ms );   /* animating: pump frames until it settles */
-        }
-        else
-        {
-            s_hook_wait( 500 );                  /* idle: wake on input (500 ms safety cap) */
-        }
-    }
-    else if ( s_hook_sleep && spin_sleep_ms > 0 )
-    {
-        s_hook_sleep( spin_sleep_ms );           /* spin cadence between frames */
-    }
-}
+/* NOTE: gui_frame_pace() -- the end-of-loop idle sleep -- moved to gui_boot.c, the boot-tier
+   loop it belongs to.  It still reads the frame hooks (s_hook_sleep/wait) and s_idle_skip set
+   here and s_any_redraw folded in gui_frame.c; the gui.c unity includes gui_boot.c last, so
+   those statics are all in scope there. */
 
 // clang-format on
 /*============================================================================================*/
