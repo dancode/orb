@@ -86,7 +86,9 @@ main( int argc, char** argv )
         goto shutdown;
     rhi_inited = true;
 
-    win = app()->window_open( "sb_gui_editor", 0, 0, 1600, 900, APP_WIN_DEFAULT );
+    const bool b_borderless = true;
+
+    win = app()->window_open( "sb_gui_editor", 0, 0, 1600, 900, b_borderless ? APP_WIN_BORDERLESS : APP_WIN_DEFAULT );
     if ( win == APP_WIN_INVALID )
         goto shutdown;
 
