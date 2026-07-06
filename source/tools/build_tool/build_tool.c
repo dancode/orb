@@ -238,7 +238,7 @@ main( int argc, char** argv )
     bool  saw_verbose         = false;
     char* create_name         = NULL;
     char* create_dir          = NULL;
-    bool  create_dynamic      = false;
+    char* create_type         = NULL;    // "static" (default), "dynamic", or "project"
     int   j_threads           = 0;       // 0 -> auto-detect from CPU count.
 
     // --- Arg parsing (order-independent flag scan) ---
@@ -256,13 +256,10 @@ main( int argc, char** argv )
         if ( str_icmp( argv[ i ], "-gen_nm"           ) == 0 ) should_gen_nmake = true;
         if ( str_icmp( argv[ i ], "-gen_ms"           ) == 0 ) should_gen_msbuild = true;
 
-        // module creation (scaffolding)
+        // module / project creation (scaffolding)
         if ( str_icmp( argv[ i ], "-create" ) == 0 && arg_has_value( argc, argv, i ) ) { should_create = true; create_name = argv[ ++i ]; }
-        if ( str_icmp( argv[ i ], "-dir"    ) == 0 && arg_has_value( argc, argv, i ) ) { create_dir = argv[ ++i ]; }
-        if ( str_icmp( argv[ i ], "-type"   ) == 0 && arg_has_value( argc, argv, i ) )
-        {
-            if ( str_icmp( argv[ ++i ], "dynamic" ) == 0 ) create_dynamic = true;
-        }
+        if ( str_icmp( argv[ i ], "-dir"    ) == 0 && arg_has_value( argc, argv, i ) ) { create_dir  = argv[ ++i ]; }
+        if ( str_icmp( argv[ i ], "-type"   ) == 0 && arg_has_value( argc, argv, i ) ) { create_type = argv[ ++i ]; }
         
         // compile settings
         if ( str_icmp( argv[ i ], "-target" ) == 0 && arg_has_value( argc, argv, i ) ) ctx.target_name = argv[ ++i ];
@@ -347,8 +344,31 @@ main( int argc, char** argv )
 
     if ( should_create )
     {
-        if ( !create_name ) { printf( ORB_INDENT "[orb error] -create requires a module name\n" ); return 1; }
-        if ( !create_dir )  { printf( ORB_INDENT "[orb error] -create requires -dir <source/path>\n" ); return 1; }
+        if ( !create_name ) { printf( ORB_INDENT "[orb error] -create requires a name\n" ); return 1; }
+        if ( !create_valid_name( create_name ) )
+        {
+            printf( ORB_INDENT "[orb error] invalid name '%s' (use letters, digits, underscore;"
+                               " must not start with a digit)\n", create_name );
+            return 1;
+        }
+
+        // -type project: scaffold a standalone child project that builds on this engine.
+        if ( create_type && str_icmp( create_type, "project" ) == 0 )
+            return cmd_create_project( create_name, create_dir ? create_dir : create_name ) ? 0 : 1;
+
+        // -type static (default) / dynamic: scaffold an engine module header/source set.
+        bool create_dynamic = false;
+        if ( create_type )
+        {
+            if      ( str_icmp( create_type, "dynamic" ) == 0 ) create_dynamic = true;
+            else if ( str_icmp( create_type, "static"  ) != 0 )
+            {
+                printf( ORB_INDENT "[orb error] unknown -type '%s' (use static, dynamic, or project)\n",
+                        create_type );
+                return 1;
+            }
+        }
+        if ( !create_dir ) { printf( ORB_INDENT "[orb error] -create requires -dir <source/path>\n" ); return 1; }
         return cmd_create_module( create_name, create_dir, create_dynamic ) ? 0 : 1;
     }
     

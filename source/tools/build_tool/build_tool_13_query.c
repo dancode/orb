@@ -39,12 +39,14 @@ cmd_print_help( void )
     printf( ORB_INDENT "  %-28s%s\n", "-gen",                   "Regenerate all project files (NMake + MSBuild + VSCode)" );
     printf( ORB_INDENT "  %-28s%s\n", "-gen_nm",                "Regenerate NMake .sln/.vcxproj, compile_commands.json, .vscode/tasks.json." );
     printf( ORB_INDENT "  %-28s%s\n", "-gen_ms",                "Regenerate MSBuild .sln/.vcxproj only (full EDG IntelliSense)." );
-    printf( ORB_INDENT "  %-28s%s\n", "-create <name>",         "Scaffold a new module. Requires -dir; optional -type static|dynamic." );
+    printf( ORB_INDENT "  %-28s%s\n", "-create <name>",         "Scaffold a new module (-dir required) or standalone project (-type project)." );
     printf( "\n" );
 
     printf( ORB_INDENT "create options:\n" );
-    printf( ORB_INDENT "  %-28s%s\n", "-dir <source/path>",     "Output directory (e.g. source/engine/physics). Required with -create." );
-    printf( ORB_INDENT "  %-28s%s\n", "-type static|dynamic",   "Module kind (default: static). dynamic = hot-reload DLL." );
+    printf( ORB_INDENT "  %-28s%s\n", "-type <kind>",           "static (default) | dynamic (hot-reload DLL) | project (standalone game)." );
+    printf( ORB_INDENT "  %-28s%s\n", "-dir <path>",            "Output directory. Required for modules; defaults to <name> for projects." );
+    printf( ORB_INDENT "  %-28s%s\n", "",                       "Projects: run from the engine root; generates orb.targets, src/main.c," );
+    printf( ORB_INDENT "  %-28s%s\n", "",                       "bin/build_tool.bat forwarder, clean_build.bat, .orb_engine, .gitignore." );
     printf( "\n" );
 
     printf( ORB_INDENT "build options:\n" );

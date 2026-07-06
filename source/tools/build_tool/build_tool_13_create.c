@@ -1,12 +1,13 @@
 ﻿/*==============================================================================================
 
-    build_tool_13_create.c -- -create command: scaffold a new engine module.
-
-    Emits the standard header and source file set for a static or dynamic module,
-    then prints the orb.targets stanza to stdout for copy-paste registration.
+    build_tool_13_create.c -- -create command: scaffold a new engine module or child project.
 
     Usage:
         build_tool.exe -create <name> -dir <source/path> [-type static|dynamic]
+        build_tool.exe -create <name> -type project [-dir <path>]
+
+    Module scaffolding emits the standard header and source file set, then prints the
+    orb.targets stanza to stdout for copy-paste registration.
 
     Static (engine-style, like sys/core/app):
         <name>.h  <name>_api.h  <name>_host.h  <name>.c  <name>_api.c
@@ -14,15 +15,43 @@
     Dynamic (hot-reload DLL, like render/audio):
         <name>.h  <name>_api.h  <name>.c  <name>_api.c
 
+    Project scaffolding creates a complete standalone game project that builds on this
+    engine (run from the engine root; -dir defaults to <name>):
+        <dir>/orb.targets      -- 'engine' declaration + game exe target + solution
+        <dir>/src/main.c       -- copy of source/project/template_game/main.c with the
+                                  identifier 'template_game' renamed to <name>; the
+                                  template is a compiled engine target, so it cannot rot
+        <dir>/.orb_engine      -- absolute engine root (read by clean_build.bat)
+        <dir>/bin/build_tool.bat  -- forwarder to the engine's build_tool.exe
+        <dir>/clean_build.bat  -- wipe bin/ + build/ and restore the forwarder
+        <dir>/.gitignore       -- generated outputs
+
     --------------------------------------
-    
+
     Ex: build_tool.exe -create net -dir source/engine/net -type static
     Ex: build_tool.exe -create gui -dir source/runtime_modules/gui -type dynamic
+    Ex: build_tool.exe -create my_game -type project
 
 ==============================================================================================*/
 // clang-format off
 
 /* ---- String helpers ---- */
+
+/* C-identifier check shared by module and project creation: the name becomes file
+   names, include guards, function prefixes, and a target name. */
+static bool
+create_valid_name( const char* name )
+{
+    if ( !name || !name[ 0 ] ) return false;
+    if ( name[ 0 ] >= '0' && name[ 0 ] <= '9' ) return false;
+    for ( const char* p = name; *p; ++p )
+    {
+        bool ok = ( *p >= 'a' && *p <= 'z' ) || ( *p >= 'A' && *p <= 'Z' ) ||
+                  ( *p >= '0' && *p <= '9' ) || ( *p == '_' );
+        if ( !ok ) return false;
+    }
+    return true;
+}
 
 /* Copy src into buf replacing every backslash with a forward slash. */
 static void
@@ -63,7 +92,7 @@ create_open_write( const char* path )
 
 /* <name>.h -- pure types, no vtable, no function declarations. */
 static void
-create_emit_h( const char* path, const char* name, const char* NAME, const char* inc_dir )
+create_emit_h( const char* path, const char* name, const char* NAME, const char* inc_dir, bool is_static )
 {
     FILE* f = create_open_write( path );
     if ( !f ) return;
@@ -74,7 +103,10 @@ create_emit_h( const char* path, const char* name, const char* NAME, const char*
     fprintf( f, "\n" );
     fprintf( f, "    %s/%s.h -- %s module types.\n", inc_dir, name, name );
     fprintf( f, "    Include in DLL modules that use %s through the vtable (%s()->...).\n", name, name );
-    fprintf( f, "    Include %s_host.h instead for direct-call access (host, sandbox).\n", name );
+    if ( is_static )
+        fprintf( f, "    Include %s_host.h instead for direct-call access (host, sandbox).\n", name );
+    else
+        fprintf( f, "    Include %s_api.h in the module's own .c files.\n", name );
     fprintf( f, "\n" );
     fprintf( f, "==============================================================================================*/\n" );
     fprintf( f, "\n" );
@@ -211,7 +243,7 @@ create_emit_c_static( const char* path, const char* name, const char* inc_dir )
     fprintf( f, "#include \"%s/%s_host.h\"\n", inc_dir, name );
     fprintf( f, "\n" );
     fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Unity build\n" );
+    fprintf( f, "    Platform units\n" );
     fprintf( f, "==============================================================================================*/\n" );
     fprintf( f, "\n" );
     fprintf( f, "/* Platform-specific implementation files go here:\n" );
@@ -510,7 +542,7 @@ cmd_create_module( const char* name, const char* dir, bool is_dynamic )
     const char* type_label = is_dynamic ? "dynamic" : "static";
     printf( ORB_BANNER "[orb create]  %s  (%s)  in %s\n\n", name, type_label, dir );
 
-    create_emit_h    ( p_h,     name, NAME, inc_dir );
+    create_emit_h    ( p_h,     name, NAME, inc_dir, !is_dynamic );
     create_emit_api_h( p_api_h, name, NAME, inc_dir, !is_dynamic );
 
     if ( is_dynamic )
@@ -534,6 +566,261 @@ cmd_create_module( const char* name, const char* dir, bool is_dynamic )
     printf( "        root        %s\n", dir_fwd );
     printf( "        folder      TODO_FOLDER\n" );
     printf( "        unit        %s.c\n", name );
+    printf( "\n" );
+
+    return true;
+}
+
+/*==============================================================================================
+    --- Project scaffolding (-create <name> -type project) ---
+
+    Generates a complete standalone game project that builds on this engine. Must run
+    from the engine root: the generated files embed both a relative 'engine' path
+    (inside orb.targets) and the absolute engine root (.orb_engine, forwarder bat).
+==============================================================================================*/
+
+/* Build the 'engine' path for the generated orb.targets. A simple relative -dir
+   ("my_game", "projects/my_game") becomes the matching "../" chain so the project
+   stays relocatable together with the engine tree. Anything else falls back to the
+   absolute engine root. */
+static void
+create_project_engine_ref( const char* dir_fwd, const char* engine_abs, char* out, size_t size )
+{
+    if ( !platform_is_abs_path( dir_fwd ) && !strstr( dir_fwd, ".." ) )
+    {
+        size_t used = 0;
+        out[ 0 ] = '\0';
+        for ( const char* p = dir_fwd; *p && used + 4 < size; ++p )
+        {
+            /* One "../" per component; skip empty components from doubled/trailing slashes. */
+            if ( p == dir_fwd || ( p[ -1 ] == '/' && *p != '/' ) )
+                used += (size_t)snprintf( out + used, size - used, "../" );
+        }
+        if ( used > 0 ) return;
+    }
+    snprintf( out, size, "%s", engine_abs );
+}
+
+/* <dir>/orb.targets -- engine declaration, game exe target, and solution. */
+static void
+create_emit_project_targets( const char* path, const char* name, const char* NAME,
+                             const char* engine_ref )
+{
+    FILE* f = create_open_write( path );
+    if ( !f ) return;
+
+    fprintf( f, "# orb.targets -- %s\n", name );
+    fprintf( f, "#\n" );
+    fprintf( f, "# 'engine' declares the ORB installation this project builds on:\n" );
+    fprintf( f, "#   - All engine targets are available as deps and build on demand into this\n" );
+    fprintf( f, "#     project's bin/ (they are excluded from local build-all/gen/clean).\n" );
+    fprintf( f, "#   - Engine headers (engine/sys/sys.h etc.) are on the include path automatically.\n" );
+    fprintf( f, "#   - Built-in tools (build_tool, reflect_tool) resolve from the engine root.\n" );
+    fprintf( f, "#\n" );
+    fprintf( f, "# Workflow:\n" );
+    fprintf( f, "#   bin\\build_tool.bat -gen      generate VS project files (build/proj)\n" );
+    fprintf( f, "#   bin\\build_tool.bat           build (add -config Release / -monolithic as needed)\n" );
+    fprintf( f, "#   bin\\%s.exe\n", name );
+    fprintf( f, "\n" );
+    fprintf( f, "engine  %s\n", engine_ref );
+    fprintf( f, "\n" );
+    fprintf( f, "target %s\n", name );
+    fprintf( f, "\n" );
+    fprintf( f, "    type        exe\n" );
+    fprintf( f, "    root        src\n" );
+    fprintf( f, "    folder      01_%s\n", NAME );
+    fprintf( f, "    unit        main.c\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "    # Static engine libraries linked into the host exe.\n" );
+    fprintf( f, "    dep         mod ref sys core job app\n" );
+    fprintf( f, "    dep         run rhi draw\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "    # render is a hot-reload DLL. Declaring it as a dep builds render.dll into\n" );
+    fprintf( f, "    # this project's bin/ for modular builds; -monolithic links it statically.\n" );
+    fprintf( f, "    dep         render\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "solution %s\n", name );
+    fprintf( f, "\n" );
+    fprintf( f, "    out         build/proj\n" );
+    fprintf( f, "    startup     %s\n", name );
+    fprintf( f, "    add         %s\n", name );
+    fprintf( f, "\n" );
+    fprintf( f, "    # Engine targets included for source navigation and debugging.\n" );
+    fprintf( f, "    add         base sys ref mod app core job\n" );
+    fprintf( f, "    add         run rhi draw render\n" );
+
+    fclose( f );
+    printf( ORB_INDENT "  wrote  %s\n", path );
+}
+
+/* <dir>/src/main.c -- copied from the compiled template project
+   (source/project/template_game/main.c) with the identifier 'template_game' renamed
+   to the project name. The template is a real engine target built on every full
+   engine build, so the emitted code can never drift from the current API. */
+static void
+create_emit_project_main( const char* path, const char* name )
+{
+    static const char k_template[] =
+        "source" PATH_SEP "project" PATH_SEP "template_game" PATH_SEP "main.c";
+    static const char k_token[]    = "template_game";
+    const size_t      token_len    = sizeof( k_token ) - 1;
+
+    platform_mapped_file_t mf;
+    if ( !platform_map_file( k_template, &mf ) || !mf.data )
+    {
+        printf( ORB_INDENT "[orb error] project template not found: %s\n", k_template );
+        return;
+    }
+
+    FILE* f = create_open_write( path );
+    if ( !f ) { platform_unmap_file( &mf ); return; }
+
+    /* Stream the template through, renaming every token hit. CRs are dropped so a
+       CRLF checkout still emits clean text (the "w" stream re-adds them on Windows). */
+    const char* p   = mf.data;
+    const char* end = mf.data + mf.size;
+    while ( p < end )
+    {
+        if ( *p == '\r' ) { ++p; continue; }
+        if ( ( size_t )( end - p ) >= token_len && memcmp( p, k_token, token_len ) == 0 )
+        {
+            fputs( name, f );
+            p += token_len;
+            continue;
+        }
+        fputc( *p, f );
+        ++p;
+    }
+
+    platform_unmap_file( &mf );
+    fclose( f );
+    printf( ORB_INDENT "  wrote  %s\n", path );
+}
+
+/* <dir>/clean_build.bat -- wipe generated outputs and restore the forwarder.
+   Reads .orb_engine at runtime so it keeps working if the project moves. */
+static void
+create_emit_project_clean_bat( const char* path )
+{
+    FILE* f = create_open_write( path );
+    if ( !f ) return;
+
+    fprintf( f, "@echo off\n" );
+    fprintf( f, "if not exist .orb_engine (\n" );
+    fprintf( f, "    echo [orb error] .orb_engine not found. Re-run bootstrap_project.bat to restore.\n" );
+    fprintf( f, "    exit /b 1\n" );
+    fprintf( f, ")\n" );
+    fprintf( f, "set /p ENGINE_ROOT=<.orb_engine\n" );
+    fprintf( f, "if exist build rmdir /s /q build\n" );
+    fprintf( f, "if exist bin   rmdir /s /q bin\n" );
+    fprintf( f, "if not exist bin mkdir bin\n" );
+    fprintf( f, "(echo @\"%%ENGINE_ROOT%%\\bin\\build_tool.exe\" %%%%*) > bin\\build_tool.bat\n" );
+    fprintf( f, "echo [orb] clean complete. bin\\build_tool.bat restored.\n" );
+
+    fclose( f );
+    printf( ORB_INDENT "  wrote  %s\n", path );
+}
+
+/* <dir>/.gitignore -- generated outputs only; scaffolded sources stay tracked. */
+static void
+create_emit_project_gitignore( const char* path )
+{
+    FILE* f = create_open_write( path );
+    if ( !f ) return;
+
+    fprintf( f, "bin/\n" );
+    fprintf( f, "build/\n" );
+    fprintf( f, ".cache/\n" );
+    fprintf( f, ".vscode/\n" );
+    fprintf( f, ".clangd\n" );
+    fprintf( f, ".orb_engine\n" );
+    fprintf( f, "compile_commands.json\n" );
+    fprintf( f, "*.code-workspace\n" );
+
+    fclose( f );
+    printf( ORB_INDENT "  wrote  %s\n", path );
+}
+
+/* ---- Project entry point ---- */
+
+static bool
+cmd_create_project( const char* name, const char* dir )
+{
+    /* Must run from the engine root: the generated project embeds paths to it. */
+    if ( !create_file_exists( "orb.targets" ) ||
+         !create_file_exists( "source" PATH_SEP "engine" PATH_SEP "mod" PATH_SEP "mod.c" ) )
+    {
+        printf( ORB_INDENT "[orb error] -type project must run from the engine root"
+                           " (orb.targets + source/engine not found here)\n" );
+        return false;
+    }
+
+    char engine_abs[ PATH_MAX ];
+    if ( !platform_fullpath( engine_abs, ".", sizeof( engine_abs ) ) )
+    {
+        printf( ORB_INDENT "[orb error] cannot resolve the engine root path\n" );
+        return false;
+    }
+
+    char dir_fwd[ PATH_MAX ];
+    create_str_fwd( dir, dir_fwd, sizeof( dir_fwd ) );
+
+    char NAME[ 128 ];
+    str_upper( name, NAME, sizeof( NAME ) );
+
+    char engine_ref[ PATH_MAX ];
+    create_project_engine_ref( dir_fwd, engine_abs, engine_ref, sizeof( engine_ref ) );
+
+    printf( ORB_BANNER "[orb create]  %s  (project)  in %s\n", name, dir );
+    printf( ORB_INDENT "  engine  %s\n\n", engine_abs );
+
+    char sub[ PATH_MAX ];
+    snprintf( sub, sizeof( sub ), "%s%ssrc", dir, PATH_SEP );
+    ensure_dir( sub );
+    snprintf( sub, sizeof( sub ), "%s%sbin", dir, PATH_SEP );
+    ensure_dir( sub );
+
+    char path[ PATH_MAX ];
+
+    snprintf( path, sizeof( path ), "%s%sorb.targets", dir, PATH_SEP );
+    create_emit_project_targets( path, name, NAME, engine_ref );
+
+    snprintf( path, sizeof( path ), "%s%ssrc%smain.c", dir, PATH_SEP, PATH_SEP );
+    create_emit_project_main( path, name );
+
+    snprintf( path, sizeof( path ), "%s%sclean_build.bat", dir, PATH_SEP );
+    create_emit_project_clean_bat( path );
+
+    snprintf( path, sizeof( path ), "%s%s.gitignore", dir, PATH_SEP );
+    create_emit_project_gitignore( path );
+
+    /* Machine-local files: always refresh so re-running repairs a moved engine. */
+
+    snprintf( path, sizeof( path ), "%s%s.orb_engine", dir, PATH_SEP );
+    {
+        FILE* f = fopen( path, "w" );
+        if ( f ) { fprintf( f, "%s\n", engine_abs ); fclose( f ); printf( ORB_INDENT "  wrote  %s\n", path ); }
+        else       printf( ORB_INDENT "[orb error] cannot create: %s\n", path );
+    }
+
+    snprintf( path, sizeof( path ), "%s%sbin%sbuild_tool.bat", dir, PATH_SEP, PATH_SEP );
+    {
+        FILE* f = fopen( path, "w" );
+        if ( f )
+        {
+            fprintf( f, "@\"%s%sbin%sbuild_tool.exe\" %%*\n", engine_abs, PATH_SEP, PATH_SEP );
+            fclose( f );
+            printf( ORB_INDENT "  wrote  %s\n", path );
+        }
+        else printf( ORB_INDENT "[orb error] cannot create: %s\n", path );
+    }
+
+    printf( "\n" );
+    printf( ORB_BANNER "Project ready. Next steps (from %s):\n", dir );
+    printf( "\n" );
+    printf( "    bin\\build_tool.bat -gen      generate VS project files\n" );
+    printf( "    bin\\build_tool.bat           build\n" );
+    printf( "    bin\\%s.exe\n", name );
     printf( "\n" );
 
     return true;
