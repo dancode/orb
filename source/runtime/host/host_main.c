@@ -748,13 +748,26 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         if ( editor_sleep )
         {
-            /* While any animated widget is mid-transition, skip the blocking wait and run at
-               frame_ms cadence instead so the animation plays out smoothly.  Once all transitions
-               settle, wants_redraw drops false and the normal editor sleep resumes. */
-            bool animating = s_gui_inited && gui() && gui()->wants_redraw();
-            if ( animating )
+            /* Run at frame_ms cadence -- rather than blocking on OS input -- while the gui has not
+               SETTLED, then block until input.  "Not settled" is two things:
+
+                 wants_redraw : an animated widget is still mid-transition (play it out smoothly).
+                 frame_dirty  : this frame still emitted widgets.  This is the one the old
+                                wants_redraw-only gate missed.  Retained-mode gui needs a FOLLOW-UP
+                                frame after any change to re-stabilize -- a collapsed window
+                                resolving its new height, a popup snapping to its measured size, a
+                                click's structural effect landing via build_any_changed the NEXT
+                                frame.  Blocking the instant a dirty frame finished starved those
+                                follow-ups, so interactions froze until the next input nudged the
+                                loop (removing RUN_HOST_EDITOR_SLEEP hid it by never blocking).
+
+               So keep ticking until a genuinely CLEAN frame is produced (nothing left to draw),
+               then block; OS input wakes it, capped by editor_timeout_ms.  Cost is at most one
+               extra clean-check frame after interaction stops -- then it idles at zero cost. */
+            bool gui_settling = s_gui_inited && gui() && ( gui()->wants_redraw() || gui()->frame_dirty() );
+            if ( gui_settling )
             {
-                if ( g_sleep_debug ) printf( "[host] anim frame    (no sleep)\n" );
+                if ( g_sleep_debug ) printf( "[host] settle frame  (no block)\n" );
                 if ( remain_us >= 1000 )
                     sys()->sleep_milliseconds( ( i32 )( remain_us / 1000 ) );
             }

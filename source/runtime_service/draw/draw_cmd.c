@@ -70,8 +70,10 @@ draw_begin_mat( rhi_cmd_t cmd, const f32 view_proj[ 16 ], draw_mat_id_t mat )
     for ( u32 i = 0; i < 16; ++i )
         s.frame_push.mvp[ i ] = view_proj[ i ];
     /* Select this frame-in-flight's buffer region so writes never touch data the GPU is
-       still reading for a previous in-flight frame. */
-    draw_batch_reset( &s.batch, rhi()->cmd_frame_index( cmd ) );
+       still reading for a previous in-flight frame.  Within one frame this APPENDS: a second
+       begin (e.g. an overlay pass after render()->draw_scene) keeps the first pass's geometry
+       instead of rewinding over it -- see draw_batch_begin_frame. */
+    draw_batch_begin_frame( &s.batch, rhi()->cmd_frame_index( cmd ) );
     s.call_count = 0;
     s.cur_mat    = mat;
 }

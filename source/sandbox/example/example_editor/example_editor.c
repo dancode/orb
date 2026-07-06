@@ -211,7 +211,7 @@ static const run_gui_desc_t k_gui_desc = {
 static const run_host_desc_t    k_desc      = {
             .name             = "sandbox_editor",
             .flags            = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD
-                              | RUN_HOST_EDITOR_SLEEP | RUN_HOST_BORDERLESS,
+                               | RUN_HOST_EDITOR_SLEEP | RUN_HOST_BORDERLESS, 
             .loop_mode        = RUN_LOOP_RUN,
             .window_width     = 1280,
             .window_height    = 800,

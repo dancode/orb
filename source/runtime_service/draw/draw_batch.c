@@ -21,6 +21,7 @@ typedef struct
     u32          ib_base;     /* first index of this frame's region  */
     u32          vb_count;    /* vertices written this frame (region-relative) */
     u32          ib_count;    /* indices written this frame  (region-relative) */
+    u32          cur_frame;   /* frame-in-flight index the counts belong to (see reset) */
 
 } draw_batch_t;
 
@@ -52,21 +53,35 @@ draw_batch_init( draw_batch_t* b )
         return false;
     }
 
+    b->cur_frame = 0xFFFFFFFFu;   /* sentinel: the first begin always resets the cursor */
     return true;
 }
 
 /*----------------------------------------------------------------------------------------------
-    draw_batch_reset  --  call at the start of each frame before any draw_xxx calls.
-    `frame` is the frame-in-flight slot (rhi()->cmd_frame_index) selecting this frame's region.
+    draw_batch_begin_frame  --  select this frame's buffer region before any draw_xxx calls.
+    `frame` is the frame-in-flight slot (rhi()->cmd_frame_index).
+
+    The write cursor (vb_count / ib_count) is reset ONLY when `frame` differs from the region the
+    counts currently belong to -- i.e. on a genuinely new frame.  Within a SINGLE frame the host
+    may open the draw service more than once (render()->draw_scene draws the scene, then a later
+    overlay pass draws an HUD over it); a second begin must APPEND after the first pass's geometry,
+    not rewind to the region base and clobber vertex data the first pass's already-recorded draw
+    calls will read when the command buffer executes.  Consecutive frames always land on different
+    frame-in-flight slots (RHI_MAX_FRAMES_IN_FLIGHT >= 2), so a real new frame always resets.
 ----------------------------------------------------------------------------------------------*/
 
 static void
-draw_batch_reset( draw_batch_t* b, u32 frame )
+draw_batch_begin_frame( draw_batch_t* b, u32 frame )
 {
-    b->vb_base  = frame * DRAW_BATCH_MAX_VERTS;
-    b->ib_base  = frame * DRAW_BATCH_MAX_IDX;
-    b->vb_count = 0;
-    b->ib_count = 0;
+    b->vb_base = frame * DRAW_BATCH_MAX_VERTS;
+    b->ib_base = frame * DRAW_BATCH_MAX_IDX;
+
+    if ( b->cur_frame != frame )
+    {
+        b->vb_count  = 0;
+        b->ib_count  = 0;
+        b->cur_frame = frame;
+    }
 }
 
 /*----------------------------------------------------------------------------------------------
