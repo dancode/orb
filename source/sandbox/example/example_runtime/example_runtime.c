@@ -72,6 +72,7 @@
 #include "engine/app/app_api.h"
 
 #include "runtime_service/rhi/rhi_api.h"
+#include "runtime_service/draw/draw_host.h"
 
 #include "runtime_modules/render/render_api.h"
 
@@ -138,6 +139,7 @@ static const run_module_entry_t k_modules[] = {
     RUN_SERVICE( core   ),   /* cvars, logging, memory arenas — static                       */
     RUN_SERVICE( app    ),   /* windowing + input — static; presence enables windowed mode    */
     RUN_SERVICE( rhi    ),   /* Vulkan RHI — static; inits after window_open                  */
+    RUN_SERVICE( draw   ),   /* immediate primitives -- static service; render's draw backend */
     RUN_MODULE ( render ),   /* renderer front-end — DLL in dynamic builds, static otherwise  */
 
     /* Future entries (commented out until those layers exist):

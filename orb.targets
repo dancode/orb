@@ -280,7 +280,7 @@ target host_tool
     folder      08_HOST
     unit        host_tool_main.c
 	dep         mod sys ref core job app
-	mono_dep	render
+	mono_dep	render draw
 
 target host_sandbox
 
@@ -466,7 +466,7 @@ target sb_example_runtime
     folder      09_SANDBOX/EXAMPLE
     unit        example_runtime.c
 	dep 		mod ref sys core job app net 	# static engine
-    dep         run rhi          				# static runtime + services
+    dep         run rhi draw    				# static runtime + services
 	mono_dep	render
 
 target sb_example_tool
@@ -477,7 +477,7 @@ target sb_example_tool
     unit        example_tool.c
 	dep 		mod ref sys core job app
     dep         run
-	mono_dep	render rhi
+	mono_dep	render rhi draw
 
 target sb_example_server
 
@@ -487,7 +487,7 @@ target sb_example_server
     unit        example_server.c
 	dep 		mod ref sys core job app
     dep         run
-	mono_dep	render rhi example
+	mono_dep	render rhi draw example
 
 target sb_example_editor
 
@@ -497,7 +497,7 @@ target sb_example_editor
     unit        example_editor.c
 	dep 		mod ref sys core job app
     dep         run rhi gui
-	mono_dep	render
+	mono_dep	render draw
 
 target sb_example_game
 
@@ -506,7 +506,7 @@ target sb_example_game
     folder      09_SANDBOX/EXAMPLE
     unit        example_game.c
 	dep 		mod ref sys core job app
-    dep         run rhi
+    dep         run rhi draw
 	mono_dep	render
 
 
@@ -543,10 +543,11 @@ solution orb_runtime
 	# 			--- RUNTIME --- 
     add         run
 
-	# 			--- RUNTIME SERVICES --- 
+	# 			--- RUNTIME SERVICES ---
     add         rhi
+	add         draw
 	add         gui
-	
+
 	# 			--- RUNTIME MODULES --- 
     add         render audio physics
 
@@ -707,8 +708,9 @@ solution orb_all
 	add 		base
     add         sys ref mod app core job net
 	
-    add         run	
-    add         rhi	
+    add         run
+    add         rhi
+    add         draw
 
     add         render audio physics
 	

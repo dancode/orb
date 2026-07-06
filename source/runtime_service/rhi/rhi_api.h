@@ -66,6 +66,11 @@ typedef struct rhi_api_s
        explicit control is needed (stress tests, programmatic resize). */
     bool (*context_resize)( i32 ctx_id, i32 w, i32 h );
 
+    /* Returns the current render size of a context in pixels: the swapchain extent when one
+       is live, else the tracked window size.  Use it to build pixel-space projections without
+       reaching back to app() for the window.  Returns false for an invalid context. */
+    bool (*context_size)( i32 ctx_id, i32* out_w, i32* out_h );
+
     /* Forward an app_event_t from the host event ring.  Handles APP_EV_WIN_RESIZE by
        finding the context whose win_id matches and calling context_resize internally.
        Always returns false (resize events are not consumed -- gui()->event() must also

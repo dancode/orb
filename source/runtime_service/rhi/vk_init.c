@@ -296,6 +296,30 @@ vk_context_resize( i32 ctx_id, i32 width, i32 height )
 
 /*============================================================================================*/
 
+static bool
+vk_context_size( i32 ctx_id, i32* out_w, i32* out_h )
+{
+    vk_context_t* ctx = vk_ctx_get( ctx_id );
+    if ( !ctx )
+        return false;
+
+    /* Prefer the live swapchain extent (the true render size); before the first swapchain
+       exists (deferred create on a minimized window) fall back to the tracked window size. */
+    if ( ctx->swapchain != VK_NULL_HANDLE )
+    {
+        if ( out_w ) *out_w = ( i32 )ctx->swapchain_extent.width;
+        if ( out_h ) *out_h = ( i32 )ctx->swapchain_extent.height;
+    }
+    else
+    {
+        if ( out_w ) *out_w = ctx->width;
+        if ( out_h ) *out_h = ctx->height;
+    }
+    return true;
+}
+
+/*============================================================================================*/
+
 /* Route a host app_event_t into the rhi context pool.  On APP_EV_WIN_RESIZE, finds the context
    whose win_id matches and calls vk_context_resize.  Always returns false: resize events are
    informational and must also reach gui()->event() for viewport size updates. */

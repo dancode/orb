@@ -25,6 +25,7 @@ const rhi_api_t g_rhi_api_struct =
     .context_open               = vk_context_open,
     .context_destroy            = vk_context_destroy,
     .context_resize             = vk_context_resize,
+    .context_size               = vk_context_size,
     .event                      = vk_event,
 
     /* Frame */

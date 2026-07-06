@@ -45,6 +45,12 @@ typedef struct render_api_s
     void ( *draw_editor  )( i32 ctx_id, f32 dt );    /* editor overlays + ImGui (stub) */
     void ( *end_frame    )( i32 ctx_id );
 
+    /* ---- Scene submission (0.1 minimal) ---- */
+    /* Queue a solid rect for this frame, pixel space, centered at (cx,cy), origin top-left.
+       Submit between frames (e.g. host on_update); draw_scene replays the list through the
+       draw service and clears it.  Replaced later by a real scene / draw-list system. */
+    void ( *submit_rect )( f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 ] );
+
     /* ---- Per-context settings ---- */
     void ( *set_clear_color )( i32 ctx_id, f32 r, f32 g, f32 b, f32 a );
 

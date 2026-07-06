@@ -11,6 +11,7 @@
 
 MOD_USE_CORE;
 MOD_USE_RHI;
+MOD_USE_DRAW;
 
 /*==============================================================================================
     Persistent state  (allocated and zeroed by the module system; preserved across reloads)
@@ -25,10 +26,24 @@ typedef struct render_ctx_slot_s
 
 } render_ctx_slot_t;
 
+/* Per-frame scene submission list (0.1 minimal).  Filled by submit_rect between frames,
+   replayed and cleared by draw_scene.  Replaced later by a real scene / draw-list system. */
+#define RENDER_MAX_RECTS 256
+
+typedef struct render_rect_s
+{
+    f32 cx, cy, w, h;
+    f32 rgba[ 4 ];
+
+} render_rect_t;
+
 typedef struct render_state_s
 {
     render_ctx_slot_t  ctx[ RHI_CTX_MAX ];
     f32                total_time;
+
+    render_rect_t      rects[ RENDER_MAX_RECTS ];
+    i32                rect_count;
 
 } render_state_t;
 
@@ -82,22 +97,36 @@ render_begin_frame_impl( i32 ctx_id )
     if ( !rhi_cmd_valid( s->cmd ) )
         return false;
 
-    /* Open the main pass against the swapchain; cleared to the slot's clear color. */
+    /* Open the main pass against the swapchain; cleared to the slot's clear color.
+       Color-only for now: the 0.1 scene is a 2D overlay drawn through the draw service,
+       whose SOLID pipeline declares no depth attachment -- under dynamic rendering the
+       pass and pipeline must match.  The depth attachment returns with a real 3D scene
+       path (draw()->begin_depth + DRAW_DEPTH_FORMAT). */
     rhi_color_attachment_t color_att = {
         .texture  = { .id = RHI_SWAPCHAIN_COLOR },
         .load_op  = RHI_LOAD_OP_CLEAR,
         .store_op = RHI_STORE_OP_STORE,
         .clear    = s->clear,
     };
-    rhi_depth_attachment_t depth_att = {
-        .texture      = { .id = RHI_SWAPCHAIN_DEPTH },
-        .load_op      = RHI_LOAD_OP_CLEAR,
-        .store_op     = RHI_STORE_OP_DISCARD,
-        .depth_clear  = 1.0f,
-        .stencil_clear = 0,
-    };
-    rhi()->cmd_begin_rendering( s->cmd, &color_att, 1, &depth_att );
+    rhi()->cmd_begin_rendering( s->cmd, &color_att, 1, NULL );
     return true;
+}
+
+static void
+render_submit_rect_impl( f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 ] )
+{
+    if ( !g_state || g_state->rect_count >= RENDER_MAX_RECTS )
+        return;
+
+    render_rect_t* r = &g_state->rects[ g_state->rect_count++ ];
+    r->cx        = cx;
+    r->cy        = cy;
+    r->w         = w;
+    r->h         = h;
+    r->rgba[ 0 ] = rgba[ 0 ];
+    r->rgba[ 1 ] = rgba[ 1 ];
+    r->rgba[ 2 ] = rgba[ 2 ];
+    r->rgba[ 3 ] = rgba[ 3 ];
 }
 
 static void
@@ -112,10 +141,43 @@ render_draw_scene_impl( i32 ctx_id, f32 dt )
 
     g_state->total_time += dt;
 
-    /* TODO: submit scene draw calls for this context.
-       rhi()->cmd_bind_bindless( s->cmd )
-       -- iterate scene draw list, bind pipelines, push constants, draw meshes
-    */
+    /* Replay this frame's submission list through the draw service, then clear it.
+       begin_frame already opened the pass; viewport/scissor are dynamic state that
+       nothing has set on this command list yet, so set them here. */
+    if ( g_state->rect_count > 0 )
+    {
+        i32 w = 0, h = 0;
+        if ( !rhi()->context_size( ctx_id, &w, &h ) || w <= 0 || h <= 0 )
+        {
+            g_state->rect_count = 0;
+            return;
+        }
+
+        rhi()->cmd_bind_bindless( s->cmd );
+        rhi()->cmd_set_viewport( s->cmd, &( rhi_viewport_t ){
+            .x = 0.0f, .y = 0.0f,
+            .width     = ( f32 )w,
+            .height    = ( f32 )h,
+            .min_depth = 0.0f,
+            .max_depth = 1.0f,
+        } );
+        rhi()->cmd_set_scissor( s->cmd, &( rhi_rect_t ){
+            .x = 0, .y = 0, .width = w, .height = h,
+        } );
+
+        f32 vp[ 16 ];
+        draw()->ortho_2d( vp, ( f32 )w, ( f32 )h );
+        draw()->begin( s->cmd, vp );
+
+        for ( i32 i = 0; i < g_state->rect_count; ++i )
+        {
+            render_rect_t* r = &g_state->rects[ i ];
+            draw()->rect( r->cx, r->cy, r->w, r->h, r->rgba );
+        }
+
+        draw()->end();
+        g_state->rect_count = 0;
+    }
 }
 
 static void
@@ -177,6 +239,7 @@ const render_api_t g_render_api_struct = {
     .draw_scene         = render_draw_scene_impl,
     .draw_editor        = render_draw_editor_impl,
     .end_frame          = render_end_frame_impl,
+    .submit_rect        = render_submit_rect_impl,
     .set_clear_color    = render_set_clear_color_impl,
 };
 
@@ -199,6 +262,12 @@ render_init( void* raw_state, get_api_fn get_api )
         return false;
     }
 
+    if ( !MOD_FETCH_DRAW )
+    {
+        LOG_ERROR( "failed to fetch draw_api" );
+        return false;
+    }
+
     return true;
 }
 
@@ -214,6 +283,12 @@ render_reload( void* raw_state, get_api_fn get_api )
     if ( !MOD_FETCH_RHI )
     {
         LOG_ERROR( "failed to re-fetch rhi_api after reload" );
+        return false;
+    }
+
+    if ( !MOD_FETCH_DRAW )
+    {
+        LOG_ERROR( "failed to re-fetch draw_api after reload" );
         return false;
     }
 
@@ -240,8 +315,8 @@ render_get_mod_desc( void )
         .version       = 1,
         .state_size    = sizeof( render_state_t ),
         .func_api_size = sizeof( render_api_t ),
-        .deps          = { "core", "rhi" },
-        .dep_count     = 2,
+        .deps          = { "core", "rhi", "draw" },
+        .dep_count     = 3,
         .func_api      = &g_render_api_struct,
         .init          = render_init,
         .exit          = render_exit,
