@@ -82,6 +82,7 @@ static cvar_callback_fn g_function_array[ MAX_CVAR_CALLBACKS ];    // function p
 static cvar_callback_t  g_callback_table[ MAX_CVAR_CALLBACKS ];    // callback entry.
 static uint16_t         g_callback_count = 0;                      // number of used callback slots
 static uint16_t         g_free_head      = INVALID_ID;             // intrusive frreelist head
+static uint16_t         g_cbtable_free   = INVALID_ID;             // freed callback-table entries (next in function_id[0])
 
 /*============================================================================================*/
 /* Initialize callback system */
@@ -100,6 +101,7 @@ cvar_callbacks_init()
     }
     g_function_array[ MAX_CVAR_CALLBACKS - 1 ] = ( cvar_callback_fn )( uintptr_t )INVALID_ID;
     g_free_head                                = 0; /* Head points to first free slot */
+    g_cbtable_free                             = INVALID_ID;
 }
 
 /*============================================================================================*/
@@ -144,16 +146,24 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn, i32 module_id )
     if ( !cv || !fn )
         return INVALID_ID;
 
-    /* Allocate callback slot if needed */
+    /* Allocate callback slot if needed (reuse freed entries first) */
     if ( cv->callback_id == INVALID_ID )
     {
-        if ( g_callback_count >= MAX_CVAR_CALLBACKS )
+        if ( g_cbtable_free != INVALID_ID )
         {
-            fprintf( stderr, "cvar: callback table full\n" );
+            cv->callback_id = g_cbtable_free;
+            g_cbtable_free  = g_callback_table[ g_cbtable_free ].function_id[ 0 ];
+        }
+        else if ( g_callback_count < MAX_CVAR_CALLBACKS )
+        {
+            cv->callback_id = g_callback_count++;
+        }
+        else
+        {
+            con_printf( "cvar: callback table full\n" );
             return INVALID_ID;
         }
 
-        cv->callback_id = g_callback_count++;
         cv->flag |= CVAR_CALLBACK;
 
         cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
@@ -172,7 +182,7 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn, i32 module_id )
             uint16_t slot = alloc_function_slot( fn );
             if ( slot == INVALID_ID )
             {
-                fprintf( stderr, "cvar: no free callback slots available\n" );
+                con_printf( "cvar: no free callback slots available\n" );
                 return INVALID_ID;
             }
 
@@ -181,7 +191,7 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn, i32 module_id )
         }
     }
 
-    fprintf( stderr, "cvar: no room for more callbacks on '%s'\n", cvar_get_name( cv ) );
+    con_printf( "cvar: no room for more callbacks on '%s'\n", cvar_get_name( cv ) );
     return INVALID_ID;
 }
 
@@ -206,7 +216,12 @@ cvar_callback_unregister( cvar_t* cv )
         }
     }
 
-    cb->module_id   = INVALID_ID;
+    cb->module_id = INVALID_ID;
+
+    /* Return the table entry to the freelist (next-link stored in function_id[0]) */
+    cb->function_id[ 0 ] = g_cbtable_free;
+    g_cbtable_free       = cv->callback_id;
+
     cv->callback_id = INVALID_ID;
     cv->flag &= ~CVAR_CALLBACK;
 }
@@ -379,8 +394,8 @@ cvar_hash_insert( u32 cvar_index )
         hash = ( hash + 1 ) & HASH_MASK;
         if ( hash == start )
         {
-            fprintf( stderr, "hash table full while inserting cvar\n" );
-            exit( 1 );
+            log_write( LOG_LEVEL_FATAL, "cvar", "hash table full while inserting cvar" );
+            ORB_UNREACHABLE();
         }
     }
 }
@@ -476,7 +491,7 @@ cvar_promote_user_value( cvar_t* cv )
 
     if ( g_user_off == USER_STRING_INVALID_OFFSET || g_user_buck == USER_STRING_INVALID_LIST )
     {
-        fprintf( stderr, "we expected a user value to be cached\n" );
+        con_printf( "cvar: expected a user value to be cached\n" );
         return;
     }
 
@@ -525,8 +540,8 @@ cvar_register_base( const char* name, const char* desc, u32 type )
 
     if ( g_cvar_count >= MAX_CVARS )
     {
-        fprintf( stderr, "cvar: pool overflow (max %d)\n", MAX_CVARS );
-        exit( 1 );
+        log_write( LOG_LEVEL_FATAL, "cvar", "pool overflow (max %d)", MAX_CVARS );
+        ORB_UNREACHABLE();
     }
 
     cvar_t* cv = &g_cvar_pool[ g_cvar_count ];
@@ -931,7 +946,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
     /* Check protection flags */
     if ( cv->type & CVAR_ROM )
     {
-        fprintf( stderr, "cvar: '%s' is read-only\n", cvar_get_name( cv ) );
+        con_printf( "cvar: '%s' is read-only\n", cvar_get_name( cv ) );
         return false;
     }
 
@@ -939,7 +954,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
 
     const u32 type    = cv->type & CVAR_TYPE_MASK;
     bool changed = false;
-    bool success = true;
+    bool success = true;    // false = value rejected (parse error / read-only type)
 
     switch ( type )
     {
@@ -962,7 +977,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
                 else if ( cvar_str_icmp_eq( value, "false" ) || cvar_str_icmp_eq( value, "off" ) || cvar_str_icmp_eq( value, "no" ) )  { new_value = false; parsed = true; }
             }
 
-            if ( !parsed ) { break; } // Invalid bool string
+            if ( !parsed ) { success = false; break; } // Invalid bool string
 
             /* Apply new value, handle latch/modify logic */
 
@@ -983,7 +998,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
 
             // Check for conversion error.
             if ( endptr == value || *endptr != '\0' ) {
-                changed = false;
+                success = false;
                 break;
             }
 
@@ -1010,7 +1025,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
 
             // Check for conversion error.
             if ( endptr == value || *endptr != '\0' ) {
-                changed = false;
+                success = false;
                 break;
             }
 
@@ -1055,29 +1070,37 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
                 }
             }
 
-            if ( new_value != 0xFFFF && cv->s.value != new_value )
+            if ( new_value == 0xFFFF )
             {
-                const bool is_latched = ( cv->type & CVAR_LATCH );
-                u16* target = is_latched ? &cv->s.latch : &cv->s.value;
-                if ( *target != new_value )
-                {
-                    *target = new_value;
-                    cv->flag |= is_latched ? CVAR_LATCHED : CVAR_MODIFIED;
-                    changed = true;
-                }
+                success = false;    // no matching option
+                break;
+            }
+
+            const bool is_latched = ( cv->type & CVAR_LATCH );
+            u16* target = is_latched ? &cv->s.latch : &cv->s.value;
+            if ( *target != new_value )
+            {
+                *target = new_value;
+                cv->flag |= is_latched ? CVAR_LATCHED : CVAR_MODIFIED;
+                changed = true;
             }
             break;
         }
         case CVAR_BUF:
         {
-            string_pool_write( &g_cvar_string_pool, cv->w.buf, value, cv->w.size );
-            cv->flag |= CVAR_MODIFIED;
-            changed = true;
+            const char* cur = string_pool_get( &g_cvar_string_pool, cv->w.buf );
+            if ( strcmp( cur, value ) != 0 )
+            {
+                string_pool_write( &g_cvar_string_pool, cv->w.buf, value, cv->w.size );
+                cv->flag |= CVAR_MODIFIED;
+                changed = true;
+            }
             break;
         }
         case CVAR_REF:
         {
             /* read-only reference - cannot set */
+            success = false;
             break;
         }
         case CVAR_USR:

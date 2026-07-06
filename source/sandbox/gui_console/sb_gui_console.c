@@ -9,7 +9,9 @@
         Run any core host without a gui and the same console still works over stdout.
       - The grave key (` / ~) drops the console over the scene, Quake style; Escape closes it.
       - Enter executes; Up/Down recall history; Tab completes command + cvar names;
-        PageUp/PageDown scroll the scrollback.
+        the mouse wheel and PageUp/PageDown scroll the scrollback; Ctrl+Home/Ctrl+End jump to
+        the oldest line / live tail.  All keys route through gui()->set_edit_key_hook, so the
+        console sees them before the text edit and unconsumed keys edit the line as normal.
       - A test-bed window shows live cvar values read through core()-> every frame, so a
         "s_volume 0.25" typed in the console moves the bar the same frame.
 
@@ -122,6 +124,7 @@ history_recall( i32 dir )
     }
 
     snprintf( s_input, sizeof( s_input ), "%s", core()->con_history_get( ( u32 )s_history_pos ) );
+    gui()->set_edit_cursor_end();    /* buffer replaced under the caret: seat it at the end */
 }
 
 /* Tab completion over command + cvar names: a single match replaces the input, several list. */
@@ -135,12 +138,48 @@ complete_input( void )
     if ( n == 1 )
     {
         snprintf( s_input, sizeof( s_input ), "%s ", matches[ 0 ] );
+        gui()->set_edit_cursor_end();    /* completion replaced the buffer: caret to the end */
     }
     else if ( n > 1 )
     {
         core()->con_printf( "\n" );
         for ( u32 i = 0; i < n; ++i )
             core()->con_printf( "  %s\n", matches[ i ] );
+    }
+}
+
+/* Key passthrough -- the Doom 3 console key map, run by the focused input field BEFORE its
+   own editing (gui()->set_edit_key_hook).  Consumed keys never reach the text edit, so
+   Ctrl+Home jumps the scrollback while plain Home still moves the caret.  Keys arrive with
+   OS auto-repeat, so holding PageUp keeps scrolling. */
+
+static bool
+console_key_hook( u32 key, bool ctrl, bool shift, bool repeat, void* user )
+{
+    UNUSED( shift );
+    UNUSED( repeat );
+    UNUSED( user );
+
+    switch ( key )
+    {
+        case APP_KEY_UP:        history_recall( -1 );                              return true;
+        case APP_KEY_DOWN:      history_recall( +1 );                              return true;
+        case APP_KEY_TAB:       complete_input();                                  return true;
+        case APP_KEY_PAGE_UP:   s_view_offset += CONSOLE_ROWS / 2;                 return true;
+        case APP_KEY_PAGE_DOWN: s_view_offset -= CONSOLE_ROWS / 2;                 return true;
+
+        case APP_KEY_HOME:      /* Ctrl+Home: oldest line (clamped in show_console) */
+            if ( !ctrl ) return false;
+            s_view_offset = ( i32 )core()->con_line_count();
+            return true;
+
+        case APP_KEY_END:       /* Ctrl+End: back to the live tail */
+            if ( !ctrl ) return false;
+            s_view_offset = 0;
+            return true;
+
+        default:
+            return false;
     }
 }
 
@@ -154,6 +193,12 @@ show_console( f32 display_w )
     gui()->region_begin( "##console", 0.0f, 0.0f, display_w, -1.0f,
                          GUI_WIN_NOSCROLL | GUI_WIN_REGION_BG );
     gui()->stack();
+
+    /* Mouse wheel scrolls the scrollback -- while the console is open it owns the wheel,
+       Quake style.  Wheel up (positive) looks back in history. */
+    const f32 wheel = gui()->get_mouse_wheel();
+    if ( wheel != 0.0f )
+        s_view_offset += ( i32 )wheel * 3;
 
     /* Scrollback: the last CONSOLE_ROWS lines, shifted up by the view offset. */
     const i32 total = ( i32 )core()->con_line_count();
@@ -184,10 +229,12 @@ show_console( f32 display_w )
         s_focus_pending = false;
     }
 
+    /* One-shot: the hook must be re-armed each frame, just before the field it is meant for. */
+    gui()->set_edit_key_hook( console_key_hook, NULL );
+
     gui()->text( "]" );
     gui()->same_line( 0 );
     const bool entered = gui()->input_text( "##con_input", s_input, sizeof( s_input ) );
-    const bool focused = gui()->is_item_focused();
 
     strip_backticks( s_input );
 
@@ -199,18 +246,6 @@ show_console( f32 display_w )
         s_view_offset = 0;         /* executing snaps the view back to the live tail */
         s_focus_pending = true;    /* Enter dropped focus; take it back next frame */
     }
-
-    /* History / completion / scrollback keys -- read from the app snapshot, active while the
-       console is the focused surface. */
-    if ( focused || entered )
-    {
-        if ( app()->key_pressed( APP_KEY_UP ) )    history_recall( -1 );
-        if ( app()->key_pressed( APP_KEY_DOWN ) )  history_recall( +1 );
-        if ( app()->key_pressed( APP_KEY_TAB ) )   complete_input();
-    }
-
-    if ( app()->key_pressed( APP_KEY_PAGE_UP ) )   s_view_offset += CONSOLE_ROWS / 2;
-    if ( app()->key_pressed( APP_KEY_PAGE_DOWN ) ) s_view_offset -= CONSOLE_ROWS / 2;
 
     gui()->region_end();
 }

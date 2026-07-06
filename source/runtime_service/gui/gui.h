@@ -164,6 +164,13 @@ typedef struct { f32 l, r, t, b; }  gui_pad_t;
    length (excluding NUL); bufsz is the total buffer capacity. */
 typedef void ( *gui_text_cb_fn )( char* buf, u32 len, u32 bufsz, void* user );
 
+/* Key hook consulted by the FOCUSED text field before its own key handling (see
+   set_edit_key_hook).  Called once per key down this frame; key is an app_key_t value,
+   repeat is true on OS auto-repeat ticks (false on the initial press).  Return true to
+   consume: the key is cleared from the frame io, so neither the field nor any later widget
+   acts on it -- the Quake-console passthrough (history, completion, scrollback keys). */
+typedef bool ( *gui_edit_key_fn )( u32 key, bool ctrl, bool shift, bool repeat, void* user );
+
 /* Monotonic wall-clock source (seconds), supplied by the host to the built-in perf overlay.
    gui has no timing service of its own (it is a leaf of rhi + app), so the host hands it a
    tick-seconds callback -- typically sys()->tick_seconds -- and gui uses it to measure the

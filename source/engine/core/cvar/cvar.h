@@ -183,7 +183,7 @@ typedef struct cvar_s
 } cvar_t;
 
 /* ensure the struct size is maintained.*/
-// static_assert( sizeof( cvar_t ) == 32, "cvar_t must be 32 bytes" );
+ORB_STATIC_ASSERT( sizeof( cvar_t ) == 32, "cvar_t must be 32 bytes" );
 
 /*==============================================================================================
 

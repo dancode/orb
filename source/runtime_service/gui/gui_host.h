@@ -414,6 +414,8 @@ app_cursor_t gui_get_mouse_cursor( void );
 
 /* focus */
 void gui_set_keyboard_focus( void );
+void gui_set_edit_cursor_end( void );
+void gui_set_edit_key_hook( gui_edit_key_fn fn, void* user );
 
 /* time */
 f32  gui_get_delta_time( void );

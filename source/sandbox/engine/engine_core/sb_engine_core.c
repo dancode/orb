@@ -52,10 +52,17 @@ core_test( void )
         cvar_register_commands();
 
         cvar_register_f( "s_volume", "Sound volume", 0.8f, 0.0f, 1.0f, CVAR_ARCHIVE );
+        cvar_register_b( "cl_showfps", "Show FPS counter", false, 0 );
+        cvar_register_i( "com_maxfps", "Max FPS", 60, 30, 300, 0 );
+        cvar_register_r( "version", "Engine version", "ORB 0.1.0", CVAR_ROM );
 
         con_exec( "help" );
         con_exec( "s_volume" );          // bare cvar name prints its value
         con_exec( "s_volume 0.25" );     // name + value sets
+        con_exec( "s_volume banana" );   // parse failure must report, not claim success
+        con_exec( "version 2.0" );       // ROM set must be rejected
+        con_exec( "toggle cl_showfps" ); // bool toggle
+        con_exec( "toggle com_maxfps" ); // int toggle (nonzero -> 0)
         con_exec( "set user_var 42" );   // creates a user cvar
         con_exec( "cvarlist" );
         con_exec( "echo hello console" );

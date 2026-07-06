@@ -20,7 +20,7 @@ cvar_write_config( const char* filename, u32 type_filter )
     FILE* f = fopen( filename, "w" );
     if ( !f )
     {
-        fprintf( stderr, "config: could not write to '%s'\n", filename );
+        con_printf( "config: could not write to '%s'\n", filename );
         return false;
     }
 

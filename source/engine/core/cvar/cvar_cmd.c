@@ -164,8 +164,9 @@ cmd_toggle( int argc, char** argv )
         return;
     }
 
-    /* Toggle the value */
-    const char* new_value = ( cv->b.value ) ? "0" : "1";
+    /* Toggle the value (read the member that matches the actual type) */
+    const bool  on        = cvar_is_bool( cv ) ? cv->b.value : ( cv->i.value != 0 );
+    const char* new_value = on ? "0" : "1";
     cvar_set_value( name, new_value );
     cvar_print_value( cv );
 }

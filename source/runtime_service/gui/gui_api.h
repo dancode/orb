@@ -1244,6 +1244,20 @@ typedef struct gui_api_s
        after Enter" console pattern). */
     void         ( *set_keyboard_focus )( void );
 
+    /* set_edit_cursor_end -- queue a caret request: the focused text field seats its caret at the
+       end of its buffer (selection collapsed) the next time it runs.  Call after replacing the
+       field's buffer programmatically (history recall, tab completion); the request persists
+       across frames until a focused field consumes it. */
+    void         ( *set_edit_cursor_end )( void );
+
+    /* set_edit_key_hook -- register a key passthrough for the next FOCUSED text field: the hook
+       (gui_edit_key_fn, gui.h) runs before the field's own key handling for every key down this
+       frame, and a key it consumes is cleared from the frame io.  One-shot: re-register just
+       before emitting the field each frame.  This is the Quake-console seam -- history on
+       Up/Down, completion on Tab, scrollback on PgUp/PgDn/Ctrl+Home/Ctrl+End -- while every
+       unconsumed key edits the line as normal. */
+    void         ( *set_edit_key_hook )( gui_edit_key_fn fn, void* user );
+
     /* wants_redraw -- true when at least one animated widget has not yet reached its target this
        frame (the currently bound context's flag).  frame_pace already folds this across every
        context internally; the query remains for hosts that run their own pacing. */

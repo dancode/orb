@@ -277,6 +277,35 @@ undo_apply( gui_undo_buf_t* u, i32 logical_idx, char* buf, u32 bufsz,
     Enter is pressed.
 ----------------------------------------------------------------------------------------------*/
 
+/* Programmatic caret request (public: gui()->set_edit_cursor_end).  Latched until the next
+   FOCUSED field passes through input_field_edit, which seats the caret at the end of the
+   buffer with no selection.  Pairs with a programmatic buffer replacement (history recall,
+   tab completion): without it the caret stays wherever it sat in the old text. */
+
+static bool s_cursor_end_request = false;
+
+void
+gui_set_edit_cursor_end( void )
+{
+    s_cursor_end_request = true;
+}
+
+/* Key passthrough hook (public: gui()->set_edit_key_hook).  The next FOCUSED field to run
+   consumes the registration and calls the hook for every key down this frame before its own
+   key handling; a key the hook consumes is cleared from the frame io.  One-shot by design --
+   re-register just before emitting the field each frame -- so a hook can never dangle on a
+   field it was not meant for. */
+
+static gui_edit_key_fn s_key_hook      = NULL;
+static void*           s_key_hook_user = NULL;
+
+void
+gui_set_edit_key_hook( gui_edit_key_fn fn, void* user )
+{
+    s_key_hook      = fn;
+    s_key_hook_user = user;
+}
+
 static input_field_result_t
 input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32 bufsz,
                   gui_text_cb_fn on_change, void* cb_user )
@@ -297,6 +326,50 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
        frames may have shortened the string under the old positions. */
     if ( es->cursor > len ) es->cursor = (u16)len;
     if ( es->anchor > len ) es->anchor = (u16)len;
+
+    /* Key passthrough: the registered hook gets first crack at every key down this frame --
+       history recall, tab completion, scrollback jumps in a console front end.  A consumed
+       key is erased from the frame io so the field's handling below never sees it.  The hook
+       may replace the buffer (and queue set_edit_cursor_end), so length and caret are
+       recomputed afterwards; wants_redraw covers hook-side state the caller emitted before
+       this field ran (scrollback rows), or the clean-frame skip would stall the update. */
+    if ( focused && s_key_hook )
+    {
+        gui_edit_key_fn hook = s_key_hook;
+        void*           user = s_key_hook_user;
+        bool            used = false;
+        s_key_hook      = NULL;
+        s_key_hook_user = NULL;
+
+        for ( u32 k = 0; k < GUI_KEY_COUNT; ++k )
+        {
+            if ( !s_io.keys_pressed_repeat[ k ] ) continue;
+            if ( hook( k, io_ctrl(), io_shift(), !s_io.keys_pressed[ k ], user ) )
+            {
+                s_io.keys_pressed[ k ]        = false;
+                s_io.keys_pressed_repeat[ k ] = false;
+                used = true;
+            }
+        }
+
+        if ( used )
+        {
+            len = 0;
+            while ( len < bufsz - 1u && buf[ len ] ) ++len;
+            if ( es->cursor > len ) es->cursor = (u16)len;
+            if ( es->anchor > len ) es->anchor = (u16)len;
+            s_retained.wants_redraw = true;
+        }
+    }
+
+    /* A queued set_edit_cursor_end request lands on the focused field: caret to the end of
+       the (possibly replaced) buffer, selection collapsed, blink reset so the caret shows. */
+    if ( focused && s_cursor_end_request )
+    {
+        s_cursor_end_request = false;
+        es->cursor  = es->anchor = (u16)len;
+        es->blink_t = 0.0f;
+    }
 
     u32  sel_lo  = es->cursor < es->anchor ? es->cursor : es->anchor;
     u32  sel_hi  = es->cursor > es->anchor ? es->cursor : es->anchor;
@@ -515,6 +588,10 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
            filters their control codes too, but this keeps the contract explicit. */
         for ( const char* ch = ctrl ? "" : s_io.text; *ch; ++ch )
         {
+            /* Single-line field: reject control characters (tab, CR, ...) exactly like the
+               paste path above -- a consumed Tab must not leak a '\t' glyph into the buffer. */
+            if ( (u8)*ch < 0x20u || (u8)*ch == 0x7Fu ) continue;
+
             if ( has_sel )
             {
                 /* Selection replacement ends the current char group (ring[cur] already holds
