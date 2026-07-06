@@ -1,0 +1,236 @@
+/*==============================================================================================
+
+    engine/core/cmd/cmd.c
+
+    Command registry + immediate executor.  See cmd.h for the design contract.
+    Compiled inside the core unity build (core_cvar.c) after cvar.c, so cvar_* and the
+    shared cvar_str_icmp_eq helper are visible for dispatch.
+
+==============================================================================================*/
+
+/*==============================================================================================
+
+    Registry
+
+    Compact array with copied names -- unregistering swaps the tail entry down, so lookup is
+    a linear scan over live entries only.  64 commands x linear scan is well under any budget.
+
+==============================================================================================*/
+
+typedef struct cmd_entry_s
+{
+    char   name[ CMD_NAME_LEN ];    // copied at registration (hot-reload safe)
+    char   desc[ CMD_DESC_LEN ];    // copied at registration
+    cmd_fn fn;                      // handler
+
+} cmd_entry_t;
+
+static cmd_entry_t s_cmds[ CMD_CAP ];
+static u32         s_cmd_count = 0;
+
+static cmd_entry_t*
+cmd_find( const char* name )
+{
+    for ( u32 i = 0; i < s_cmd_count; ++i )
+    {
+        if ( cvar_str_icmp_eq( s_cmds[ i ].name, name ) )
+            return &s_cmds[ i ];
+    }
+    return NULL;
+}
+
+bool
+cmd_register( const char* name, cmd_fn fn, const char* desc )
+{
+    if ( !name || !name[ 0 ] || !fn )
+        return false;
+
+    if ( cmd_find( name ) )
+    {
+        con_printf( "cmd: command \"%s\" already registered\n", name );
+        return false;
+    }
+
+    if ( s_cmd_count >= CMD_CAP )
+    {
+        con_printf( "cmd: command registry full (max %d)\n", CMD_CAP );
+        return false;
+    }
+
+    cmd_entry_t* cmd = &s_cmds[ s_cmd_count++ ];
+    snprintf( cmd->name, sizeof( cmd->name ), "%s", name );
+    snprintf( cmd->desc, sizeof( cmd->desc ), "%s", desc ? desc : "" );
+    cmd->fn = fn;
+    return true;
+}
+
+void
+cmd_unregister( const char* name )
+{
+    cmd_entry_t* cmd = cmd_find( name );
+    if ( !cmd )
+        return;
+
+    *cmd = s_cmds[ --s_cmd_count ];    // swap tail down; order is not contractual
+}
+
+u32
+cmd_count( void )
+{
+    return s_cmd_count;
+}
+
+const char*
+cmd_name( u32 index )
+{
+    return ( index < s_cmd_count ) ? s_cmds[ index ].name : "";
+}
+
+const char*
+cmd_desc( u32 index )
+{
+    return ( index < s_cmd_count ) ? s_cmds[ index ].desc : "";
+}
+
+/*==============================================================================================
+
+    Execution
+
+    Tokenize one statement in place (double-quoted strings form one token), then dispatch:
+        1. registered command        -> fn( argc, argv )
+        2. cvar name alone           -> print current value
+        3. cvar name + value         -> set + print
+        4. otherwise                 -> unknown
+
+==============================================================================================*/
+
+static int
+cmd_tokenize( char* text, char** argv, int max_args )
+{
+    int argc = 0;
+
+    while ( *text && argc < max_args )
+    {
+        while ( *text && isspace( ( unsigned char )*text ) ) text++;
+        if ( !*text )
+            break;
+
+        if ( *text == '"' )
+        {
+            text++;
+            argv[ argc++ ] = text;
+            while ( *text && *text != '"' ) text++;
+        }
+        else
+        {
+            argv[ argc++ ] = text;
+            while ( *text && !isspace( ( unsigned char )*text ) ) text++;
+        }
+
+        if ( *text )
+            *text++ = '\0';
+    }
+
+    return argc;
+}
+
+bool
+cmd_execute_string( const char* text )
+{
+    if ( !text )
+        return false;
+
+    char  buf[ CMD_LINE_LEN ];
+    char* argv[ CMD_ARG_MAX ];
+    snprintf( buf, sizeof( buf ), "%s", text );
+    int argc = cmd_tokenize( buf, argv, CMD_ARG_MAX );
+    if ( argc == 0 )
+        return false;
+
+    /* 1. Registered command. */
+    cmd_entry_t* cmd = cmd_find( argv[ 0 ] );
+    if ( cmd )
+    {
+        cmd->fn( argc, argv );
+        return true;
+    }
+
+    /* 2/3. Cvar: bare name prints, name + value sets. */
+    cvar_t* cv = cvar_find( argv[ 0 ] );
+    if ( cv )
+    {
+        if ( argc == 1 )
+        {
+            cvar_print_value( cv );
+        }
+        else if ( cvar_set_value( cvar_get_name( cv ), argv[ 1 ] ) )
+        {
+            cvar_print_value( cv );
+        }
+        else
+        {
+            con_printf( "Failed to set \"%s\" to \"%s\"\n", argv[ 0 ], argv[ 1 ] );
+        }
+        return true;
+    }
+
+    con_printf( "Unknown command \"%s\"\n", argv[ 0 ] );
+    return false;
+}
+
+/*==============================================================================================
+
+    Built-in commands
+
+==============================================================================================*/
+
+static void
+cmd_cmd_help( int argc, char** argv )
+{
+    UNUSED( argc );
+    UNUSED( argv );
+
+    con_printf( "\nCommands:\n" );
+    for ( u32 i = 0; i < s_cmd_count; ++i )
+    {
+        con_printf( "  %-16s %s\n", s_cmds[ i ].name, s_cmds[ i ].desc );
+    }
+    con_printf( "\nType a cvar name to print it, \"<name> <value>\" to set it.\n\n" );
+}
+
+static void
+cmd_cmd_echo( int argc, char** argv )
+{
+    for ( int i = 1; i < argc; ++i )
+    {
+        con_printf( "%s%s", ( i > 1 ) ? " " : "", argv[ i ] );
+    }
+    con_printf( "\n" );
+}
+
+/*==============================================================================================
+
+    Lifetime
+
+==============================================================================================*/
+
+void
+cmd_system_init( void )
+{
+    s_cmd_count = 0;
+
+    cmd_register( "help",    cmd_cmd_help, "List all console commands" );
+    cmd_register( "cmdlist", cmd_cmd_help, "List all console commands" );
+    cmd_register( "echo",    cmd_cmd_echo, "Print arguments to the console" );
+
+    cmd_buffer_init();    /* buffer state + "wait" */
+}
+
+void
+cmd_system_exit( void )
+{
+    s_cmd_count = 0;
+    cmd_buffer_exit();
+}
+
+/*============================================================================================*/

@@ -12,6 +12,7 @@
 
 #include "engine/core/core.h"
 #include "engine/core/cvar/cvar.h"
+#include "engine/core/cmd/cmd.h"
 #include "engine/core/console/console.h"
 #include "engine/mod/mod_import.h"
 
@@ -103,7 +104,20 @@ typedef struct core_api_s
     uint16_t    ( *cvar_callback_register )   ( cvar_t* cv, cvar_callback_fn fn, i32 module_id );
     void        ( *cvar_callback_unregister ) ( cvar_t* cv );
 
-    /* developer console (state lives in core; front ends are views over it) */
+    /* command backend (registry + immediate execute + deferred buffer) */
+
+    bool        ( *cmd_register )       ( const char* name, cmd_fn fn, const char* desc );
+    void        ( *cmd_unregister )     ( const char* name );
+    u32         ( *cmd_count )          ( void );
+    const char* ( *cmd_name )           ( u32 index );
+    const char* ( *cmd_desc )           ( u32 index );
+
+    bool        ( *cmd_execute_string ) ( const char* text );
+    void        ( *cmd_queue )          ( const char* text );
+    void        ( *cmd_queue_front )    ( const char* text );
+    void        ( *cmd_pump )           ( void );
+
+    /* developer console (view over the command backend; state lives in core) */
 
     void        ( *con_print )          ( const char* text );
     void        ( *con_printf )         ( const char* fmt, ... );
@@ -112,12 +126,6 @@ typedef struct core_api_s
 
     u32         ( *con_line_count )     ( void );
     const char* ( *con_line_get )       ( u32 index );
-
-    bool        ( *con_cmd_register )   ( const char* name, con_cmd_fn fn, const char* desc );
-    void        ( *con_cmd_unregister ) ( const char* name );
-    u32         ( *con_cmd_count )      ( void );
-    const char* ( *con_cmd_name )       ( u32 index );
-    const char* ( *con_cmd_desc )       ( u32 index );
 
     u32         ( *con_history_count )  ( void );
     const char* ( *con_history_get )    ( u32 index );

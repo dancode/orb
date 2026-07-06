@@ -44,10 +44,11 @@ core_test( void )
     if ( 1 )
     {
         /* Console + cvar round trip, fully headless: every con_print echoes to stdout and the
-           scrollback ring fills inside core -- no gui anywhere.  This is the same con_exec path
-           the sb_gui_console front end feeds from its input line. */
+           scrollback ring fills inside core -- no gui anywhere.  con_exec is the same front-end
+           submit path sb_gui_console feeds; dispatch happens in the cmd backend. */
 
         cvar_system_init();
+        cmd_system_init();
         con_init();
         cvar_register_commands();
 
@@ -68,10 +69,22 @@ core_test( void )
         con_exec( "echo hello console" );
         con_exec( "no_such_thing" );     // unknown command path
 
+        /* Deferred buffer: any service can queue text; the host loop pumps once per frame. */
+
+        cmd_queue( "echo frame one; echo still frame one // trailing comment" );
+        cmd_queue( "wait" );
+        cmd_queue( "echo frame two" );
+        cmd_queue_front( "echo runs first" );
+
+        cmd_pump();    // frame 1: runs first / frame one x2, stops at wait
+        cmd_pump();    // frame 2: wait elapses
+        cmd_pump();    // frame 3: frame two
+
         printf( "scrollback: %u lines, history: %u entries\n",
                 con_line_count(), con_history_count() );
 
         con_exit();
+        cmd_system_exit();
         cvar_system_exit();
     }
 

@@ -74,7 +74,7 @@ register_demo_cvars( void )
     core()->cvar_register_s( "r_quality",   "Rendering quality", quality_options, 4, 2, CVAR_ARCHIVE );
     core()->cvar_register_w( "player_name", "Player display name", "orb", 32, CVAR_ARCHIVE );
 
-    core()->con_cmd_register( "quit", cmd_quit, "Exit the application" );
+    core()->cmd_register( "quit", cmd_quit, "Exit the application" );
 }
 
 /*==============================================================================================

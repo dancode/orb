@@ -22,8 +22,9 @@ core_init( void )
     log_init();
     sid_init();
     cvar_system_init();
-    con_init();                  /* console before commands: registration prints through it */
-    cvar_register_commands();    /* set/seta/toggle/cvarlist/... into the console registry */
+    cmd_system_init();           /* command backend before registrants (echo/help/wait built-ins) */
+    con_init();                  /* console view: registers clear/history into the backend */
+    cvar_register_commands();    /* set/seta/toggle/cvarlist/... into the backend registry */
     core_register_cvars();       /* core-owned cvars: version, developer, log_level */
 }
 
@@ -31,6 +32,7 @@ void
 core_exit( void )
 {
     con_exit();
+    cmd_system_exit();
     cvar_system_exit();
     sid_exit();
     log_exit();
@@ -121,6 +123,17 @@ const core_api_t g_core_api_struct = {
     .cvar_callback_register   = cvar_callback_register,
     .cvar_callback_unregister = cvar_callback_unregister,
 
+    .cmd_register       = cmd_register,
+    .cmd_unregister     = cmd_unregister,
+    .cmd_count          = cmd_count,
+    .cmd_name           = cmd_name,
+    .cmd_desc           = cmd_desc,
+
+    .cmd_execute_string = cmd_execute_string,
+    .cmd_queue          = cmd_queue,
+    .cmd_queue_front    = cmd_queue_front,
+    .cmd_pump           = cmd_pump,
+
     .con_print          = con_print,
     .con_printf         = con_printf,
     .con_clear          = con_clear,
@@ -128,12 +141,6 @@ const core_api_t g_core_api_struct = {
 
     .con_line_count     = con_line_count,
     .con_line_get       = con_line_get,
-
-    .con_cmd_register   = con_cmd_register,
-    .con_cmd_unregister = con_cmd_unregister,
-    .con_cmd_count      = con_cmd_count,
-    .con_cmd_name       = con_cmd_name,
-    .con_cmd_desc       = con_cmd_desc,
 
     .con_history_count  = con_history_count,
     .con_history_get    = con_history_get,

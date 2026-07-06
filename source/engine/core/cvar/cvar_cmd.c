@@ -19,19 +19,19 @@
 void
 cvar_register_commands( void )
 {
-    // NOTE: con_init() must run before commands are registered
+    // NOTE: cmd_system_init() must run before commands are registered
 
-    con_cmd_register( "set",           cmd_set,           "Set a console variable value" );
-    con_cmd_register( "seta",          cmd_seta,          "Set and archive a console variable" );
-    con_cmd_register( "toggle",        cmd_toggle,        "Toggle a boolean variable" );
-    con_cmd_register( "reset",         cmd_reset,         "Reset a variable to default" );
-    con_cmd_register( "reset_all",     cmd_reset_all,     "Reset all variables to defaults" );
-    con_cmd_register( "cvarlist",      cmd_cvarlist,      "List all console variables" );
-    con_cmd_register( "cvarinfo",      cmd_cvarinfo,      "Show detailed cvar information" );
-    con_cmd_register( "apply_latched", cmd_apply_latched, "Apply latched cvar changes" );
-    con_cmd_register( "cvar_modified", cmd_cvar_modified, "List modified cvars" );
-    con_cmd_register( "exec",          cmd_exec,          "Execute a config file" );
-    con_cmd_register( "writeconfig",   cmd_writeconfig,   "Write archived cvars to a config file" );
+    cmd_register( "set",           cmd_set,           "Set a console variable value" );
+    cmd_register( "seta",          cmd_seta,          "Set and archive a console variable" );
+    cmd_register( "toggle",        cmd_toggle,        "Toggle a boolean variable" );
+    cmd_register( "reset",         cmd_reset,         "Reset a variable to default" );
+    cmd_register( "reset_all",     cmd_reset_all,     "Reset all variables to defaults" );
+    cmd_register( "cvarlist",      cmd_cvarlist,      "List all console variables" );
+    cmd_register( "cvarinfo",      cmd_cvarinfo,      "Show detailed cvar information" );
+    cmd_register( "apply_latched", cmd_apply_latched, "Apply latched cvar changes" );
+    cmd_register( "cvar_modified", cmd_cvar_modified, "List modified cvars" );
+    cmd_register( "exec",          cmd_exec,          "Execute a config file" );
+    cmd_register( "writeconfig",   cmd_writeconfig,   "Write archived cvars to a config file" );
 }
 
 /*============================================================================================*/
