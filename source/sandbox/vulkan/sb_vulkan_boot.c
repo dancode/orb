@@ -238,13 +238,26 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
     char vs_path[ 640 ];
     char ps_path[ 640 ];
     sys_exe_dir( exe_dir, ( int )sizeof( exe_dir ) );
-    snprintf( vs_path, sizeof( vs_path ), "%s\\sb_tri.vs.spv", exe_dir );
-    snprintf( ps_path, sizeof( ps_path ), "%s\\sb_tri.ps.spv", exe_dir );
-    boot->dxc = sys_file_exists( vs_path ) && sys_file_exists( ps_path );
+
+    /* Cooked .oshd pair (Phase 3 proof) takes precedence over the raw .spv pair. */
+    snprintf( vs_path, sizeof( vs_path ), "%s\\sb_tri.vs.oshd", exe_dir );
+    snprintf( ps_path, sizeof( ps_path ), "%s\\sb_tri.ps.oshd", exe_dir );
+    boot->oshd = sys_file_exists( vs_path ) && sys_file_exists( ps_path );
+    if ( !boot->oshd )
+    {
+        snprintf( vs_path, sizeof( vs_path ), "%s\\sb_tri.vs.spv", exe_dir );
+        snprintf( ps_path, sizeof( ps_path ), "%s\\sb_tri.ps.spv", exe_dir );
+    }
+    boot->dxc = boot->oshd || ( sys_file_exists( vs_path ) && sys_file_exists( ps_path ) );
 
     /* Each shader stage is a separate object.  Both must succeed before the pipeline
        can be created.  On failure we clean up whichever stages already succeeded. */
-    if ( boot->dxc )
+    if ( boot->oshd )
+    {
+        printf( "[sb_vk_boot] oshd override: loading %s / %s\n", vs_path, ps_path );
+        boot->vert = rhi()->shader_load_oshd( vs_path, "tri_vert_oshd" );
+    }
+    else if ( boot->dxc )
     {
         printf( "[sb_vk_boot] dxc override: loading %s / %s\n", vs_path, ps_path );
         boot->vert = rhi()->shader_load_file( vs_path, RHI_SHADER_STAGE_VERTEX, "main", "tri_vert_dxc" );
@@ -265,7 +278,11 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
         return false;
     }
 
-    if ( boot->dxc )
+    if ( boot->oshd )
+    {
+        boot->frag = rhi()->shader_load_oshd( ps_path, "tri_frag_oshd" );
+    }
+    else if ( boot->dxc )
     {
         boot->frag = rhi()->shader_load_file( ps_path, RHI_SHADER_STAGE_FRAGMENT, "main", "tri_frag_dxc" );
     }
@@ -304,7 +321,9 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
         .color_targets      = { color_target },
         .color_target_count = 1,
         .depth_format       = RHI_FORMAT_UNKNOWN,
-        .push_const_size    = boot->dxc ? 16 : 0,  /* dxc path: ps tint = float4, 16 bytes */
+        /* .spv dxc path declares the 16-byte tint by hand; the .oshd path leaves it 0 so the
+           RHI derives it from baked reflection (Phase 3 proof -- see the pipeline_create log). */
+        .push_const_size    = ( boot->dxc && !boot->oshd ) ? 16 : 0,
         .debug_name         = "tri_pipeline",
     } );
     if ( !rhi_handle_valid( boot->pipeline ) )

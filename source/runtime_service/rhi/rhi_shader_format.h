@@ -51,7 +51,7 @@
 #define OSHD_MAGIC \
     ( ( u32 )'O' | ( ( u32 )'S' << 8 ) | ( ( u32 )'H' << 16 ) | ( ( u32 )'D' << 24 ) )
 
-#define OSHD_VERSION 1
+#define OSHD_VERSION 2
 
 /* Shader stage.  Own scale (not VkShaderStageFlagBits) so the file format does not encode a
    bitmask where exactly one value is legal. */
@@ -96,17 +96,40 @@ typedef struct oshd_input_s
 
 } oshd_input_t;
 
+/* Push constant member base type (low byte of oshd_pc_member_t.type).  STRUCT marks a
+   composite member whose data lives in the child records that follow it. */
+enum
+{
+    OSHD_TYPE_UNKNOWN = 0,
+    OSHD_TYPE_FLOAT   = 1,
+    OSHD_TYPE_INT     = 2,
+    OSHD_TYPE_UINT    = 3,
+    OSHD_TYPE_BOOL    = 4,   // std430 bool occupies 4 bytes; CPU side maps to u32
+    OSHD_TYPE_STRUCT  = 5,
+};
+
+/* type field packing: base | vector component count << 8 | matrix column count << 16.
+   A scalar is vec 1 / cols 0; float4 is FLOAT vec 4 / cols 0; float4x4 is FLOAT vec 4 /
+   cols 4 (with -Zpc the columns are the contiguous runs). */
+#define OSHD_TYPE_MAKE( base, vec, cols ) \
+    ( ( u32 )( base ) | ( ( u32 )( vec ) << 8 ) | ( ( u32 )( cols ) << 16 ) )
+#define OSHD_TYPE_BASE( t ) ( ( t ) & 0xFF )
+#define OSHD_TYPE_VEC( t )  ( ( ( t ) >> 8 ) & 0xFF )
+#define OSHD_TYPE_COLS( t ) ( ( ( t ) >> 16 ) & 0xFF )
+
 /* One push constant block member, flattened pre-order.  depth 0 = top-level member; nested
    struct members follow their parent with depth + 1.  Offsets are absolute within the block
    (exactly what the CPU struct must reproduce), so leaf members alone define the data
-   contract -- depth exists so `header` generation can rebuild the nesting. */
+   contract -- depth + type exist so `header` generation can emit real C fields. */
 typedef struct oshd_pc_member_s
 {
-    u64 name_hash;   // oshd_name_hash() of the member name
-    u32 name;        // strtab offset
-    u32 offset;      // absolute byte offset within the block
-    u32 size;        // member byte size
-    u32 depth;       // nesting depth (0 = top level)
+    u64 name_hash;    // oshd_name_hash() of the member name
+    u32 name;         // strtab offset
+    u32 offset;       // absolute byte offset within the block
+    u32 size;         // member byte size
+    u32 depth;        // nesting depth (0 = top level)
+    u32 type;         // OSHD_TYPE_MAKE packing (base / vec / cols)
+    u32 elem_count;   // array element count (product of dims); 0 = not an array
 
 } oshd_pc_member_t;
 

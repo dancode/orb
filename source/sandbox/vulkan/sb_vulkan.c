@@ -106,15 +106,18 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup Resources */
 
-    /* Boot triangle is normally skipped in favor of the gui demo, but auto-enables when the
-       shader_tool dxc override pair sits next to the exe (see sb_vulkan_boot.h for the bake
-       recipe) -- delete the .spv pair to get the gui demo back. */
-    char exe_dir[ 512 ], dxc_vs[ 640 ], dxc_ps[ 640 ];
+    /* Boot triangle is normally skipped in favor of the gui demo, but auto-enables when a
+       shader_tool override pair -- raw .spv or cooked .oshd -- sits next to the exe (see
+       sb_vulkan_boot.h for the bake recipes); delete the pairs to get the gui demo back. */
+    char exe_dir[ 512 ], dxc_vs[ 640 ], dxc_ps[ 640 ], oshd_vs[ 640 ], oshd_ps[ 640 ];
     sys_exe_dir( exe_dir, ( int )sizeof( exe_dir ) );
     snprintf( dxc_vs, sizeof( dxc_vs ), "%s\\sb_tri.vs.spv", exe_dir );
     snprintf( dxc_ps, sizeof( dxc_ps ), "%s\\sb_tri.ps.spv", exe_dir );
+    snprintf( oshd_vs, sizeof( oshd_vs ), "%s\\sb_tri.vs.oshd", exe_dir );
+    snprintf( oshd_ps, sizeof( oshd_ps ), "%s\\sb_tri.ps.oshd", exe_dir );
 
-    const bool b_use_boot = sys_file_exists( dxc_vs ) && sys_file_exists( dxc_ps );
+    const bool b_use_boot = ( sys_file_exists( dxc_vs ) && sys_file_exists( dxc_ps ) ) ||
+                            ( sys_file_exists( oshd_vs ) && sys_file_exists( oshd_ps ) );
 
     /* Initialize draw GPU resources (buffers + pipelines) now that the device is live. */
     if ( !draw()->init() )

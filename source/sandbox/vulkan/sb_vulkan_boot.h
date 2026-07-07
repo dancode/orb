@@ -12,7 +12,17 @@
         bin\shader_tool.exe compile source\tools\shader_tool\test\sb_tri.vs.hlsl -o bin\sb_tri.vs.spv -T vs_6_0
         bin\shader_tool.exe compile source\tools\shader_tool\test\sb_tri.ps.hlsl -o bin\sb_tri.ps.spv -T ps_6_0
 
-    Delete the .spv pair to fall back to the embedded orange triangle.
+    OSHD override (shader_tool Phase 3 proof): a cooked sb_tri.vs.oshd / sb_tri.ps.oshd pair
+    next to the executable takes precedence over the .spv pair.  Loaded via
+    rhi()->shader_load_oshd (stage + entry from the container) with push_const_size left 0 in
+    the pipeline desc, so the RHI derives the 16-byte tint block from baked reflection.
+    Same blue triangle -- the difference shows in the shader_load_oshd / pipeline_create log
+    lines.  Bake with:
+
+        bin\shader_tool.exe cook source\tools\shader_tool\test\sb_tri.vs.hlsl -o bin\sb_tri.vs.oshd -T vs_6_0
+        bin\shader_tool.exe cook source\tools\shader_tool\test\sb_tri.ps.hlsl -o bin\sb_tri.ps.oshd -T ps_6_0
+
+    Delete the .oshd/.spv pairs to fall back to the embedded orange triangle.
 
     Usage:
         sb_vk_boot_t boot = {0};
@@ -35,7 +45,8 @@ typedef struct
     rhi_shader_t   vert;
     rhi_shader_t   frag;
     rhi_pipeline_t pipeline;
-    bool           dxc;      /* true = shaders came from the dxc .spv override on disk */
+    bool           dxc;      /* true = shaders came from a dxc override on disk (.spv or .oshd) */
+    bool           oshd;     /* true = the override was the cooked .oshd pair (reflection path) */
 
 } sb_vk_boot_t;
 

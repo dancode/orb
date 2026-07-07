@@ -52,7 +52,10 @@ vk_shader_create( const rhi_shader_desc_t* desc )
     }
 
     vk_shader_slot_t* slot = &vk.shaders[ idx ];
-    
+
+    /* Raw SPIR-V loads carry no reflection; shader_load_oshd fills this in after create. */
+    memset( &slot->reflect, 0, sizeof( slot->reflect ) );
+
     VkShaderModuleCreateInfo ci = { 0 };
     ci.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     ci.codeSize = desc->spirv_size;
@@ -91,6 +94,7 @@ vk_shader_destroy( rhi_shader_t handle )
 
     slot->module     = VK_NULL_HANDLE;
     slot->entry[ 0 ] = '\0';
+    memset( &slot->reflect, 0, sizeof( slot->reflect ) );
 }
 
 /*============================================================================================*/

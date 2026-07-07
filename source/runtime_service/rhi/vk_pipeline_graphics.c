@@ -88,30 +88,112 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
 
     /* --- Vertex input: single interleaved binding at slot 0 --- */
 
+    /* When the shaders were loaded from cooked .oshd containers their reflection sits in the
+       shader slots.  An empty desc (attrib_count == 0) DERIVES the layout from the vertex
+       shader: attributes in location order, tightly interleaved, stride = sum of sizes.  A
+       hand-filled desc is VALIDATED instead -- every shader input must be fed by an attribute
+       of the exact format.  Raw-SPIR-V shaders have no reflection and the desc is trusted
+       unchecked, as before. */
+
+    const vk_shader_reflect_t* vr = vert_slt->reflect.has_data ? &vert_slt->reflect : NULL;
+    const vk_shader_reflect_t* fr = frag_slt->reflect.has_data ? &frag_slt->reflect : NULL;
+
     /* vertex_stride == 0 suppresses the binding for bufferless draws
        (e.g., fullscreen passes that generate positions from gl_VertexIndex). */
 
-    VkVertexInputBindingDescription vtx_binding = { 0 };
-    vtx_binding.binding   = 0;
-    vtx_binding.stride    = desc->vertex_stride;
-    vtx_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    u32 attrib_count  = desc->attrib_count;
+    u32 vertex_stride = desc->vertex_stride;
 
     VkVertexInputAttributeDescription vtx_attribs[ RHI_MAX_VERTEX_ATTRIBS ] = { 0 };
-    for ( u32 i = 0; i < desc->attrib_count; ++i )
+
+    if ( attrib_count == 0 && vr && vr->input_count > 0 )
     {
-        /* Only binding 0 is declared; multi-binding is not implemented. */
-        ORB_ASSERT( desc->attribs[ i ].binding == 0 );
-        vtx_attribs[ i ].binding  = 0;
-        vtx_attribs[ i ].location = desc->attribs[ i ].location;
-        vtx_attribs[ i ].offset   = desc->attribs[ i ].offset;
-        vtx_attribs[ i ].format   = rhi_vertex_format_to_vk( desc->attribs[ i ].format );
+        u32 offset = 0;
+        for ( u32 i = 0; i < vr->input_count; ++i )
+        {
+            vtx_attribs[ i ].binding  = 0;
+            vtx_attribs[ i ].location = vr->input_location[ i ];
+            vtx_attribs[ i ].offset   = offset;
+            vtx_attribs[ i ].format   = ( VkFormat )vr->input_format[ i ];
+            offset += vr->input_size[ i ];
+        }
+        attrib_count = vr->input_count;
+        if ( vertex_stride == 0 )
+            vertex_stride = offset;
+        LOG_INFO( "pipeline_create: '%s' derived %u vertex attribs, stride %u from reflection",
+                  desc->debug_name ? desc->debug_name : "(unnamed)", attrib_count, vertex_stride );
     }
+    else
+    {
+        for ( u32 i = 0; i < attrib_count; ++i )
+        {
+            /* Only binding 0 is declared; multi-binding is not implemented. */
+            ORB_ASSERT( desc->attribs[ i ].binding == 0 );
+            vtx_attribs[ i ].binding  = 0;
+            vtx_attribs[ i ].location = desc->attribs[ i ].location;
+            vtx_attribs[ i ].offset   = desc->attribs[ i ].offset;
+            vtx_attribs[ i ].format   = rhi_vertex_format_to_vk( desc->attribs[ i ].format );
+        }
+
+        /* Every reflected shader input must be fed; extra attributes are legal and ignored. */
+        for ( u32 i = 0; vr && i < vr->input_count; ++i )
+        {
+            bool fed = false;
+            for ( u32 j = 0; j < attrib_count && !fed; ++j )
+            {
+                if ( vtx_attribs[ j ].location != vr->input_location[ i ] )
+                    continue;
+                if ( ( u32 )vtx_attribs[ j ].format != vr->input_format[ i ] )
+                {
+                    LOG_ERROR( "pipeline_create: '%s' attrib at location %u is vkfmt %u but the "
+                               "shader expects vkfmt %u",
+                               desc->debug_name ? desc->debug_name : "(unnamed)",
+                               vr->input_location[ i ], ( u32 )vtx_attribs[ j ].format,
+                               vr->input_format[ i ] );
+                    return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
+                }
+                fed = true;
+            }
+            if ( !fed )
+            {
+                LOG_ERROR( "pipeline_create: '%s' shader input at location %u has no vertex "
+                           "attribute feeding it",
+                           desc->debug_name ? desc->debug_name : "(unnamed)",
+                           vr->input_location[ i ] );
+                return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
+            }
+        }
+    }
+
+    /* Push constants: the shared pipeline layout always spans RHI_MAX_PUSH_CONST_SIZE, so
+       desc->push_const_size is a caller contract, not GPU state -- but reflection knows the
+       real requirement, so a hand-declared size smaller than what a shader reads is refused. */
+
+    u32 pc_need = 0;
+    if ( vr && vr->pc_size > pc_need ) pc_need = vr->pc_size;
+    if ( fr && fr->pc_size > pc_need ) pc_need = fr->pc_size;
+
+    if ( ( vr || fr ) && desc->push_const_size > 0 && desc->push_const_size < pc_need )
+    {
+        LOG_ERROR( "pipeline_create: '%s' declares %u push constant bytes but the shaders read "
+                   "%u", desc->debug_name ? desc->debug_name : "(unnamed)",
+                   desc->push_const_size, pc_need );
+        return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
+    }
+    if ( ( vr || fr ) && desc->push_const_size == 0 && pc_need > 0 )
+        LOG_INFO( "pipeline_create: '%s' derived push constant size %u from reflection",
+                  desc->debug_name ? desc->debug_name : "(unnamed)", pc_need );
+
+    VkVertexInputBindingDescription vtx_binding = { 0 };
+    vtx_binding.binding   = 0;
+    vtx_binding.stride    = vertex_stride;
+    vtx_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkPipelineVertexInputStateCreateInfo vtx_input = { 0 };
     vtx_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vtx_input.vertexBindingDescriptionCount = desc->vertex_stride > 0 ? 1 : 0;
+    vtx_input.vertexBindingDescriptionCount = vertex_stride > 0 ? 1 : 0;
     vtx_input.pVertexBindingDescriptions = &vtx_binding;
-    vtx_input.vertexAttributeDescriptionCount = desc->attrib_count;
+    vtx_input.vertexAttributeDescriptionCount = attrib_count;
     vtx_input.pVertexAttributeDescriptions = vtx_attribs;
 
     /* --- Input assembly --- */

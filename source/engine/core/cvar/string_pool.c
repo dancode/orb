@@ -10,7 +10,6 @@
     * Fast linear string pool.
     * Returns offsets into the pool.
     * No per-string malloc overhead.
-    * Offsets remain valid even if pool reallocates (like vector growth).
     * Survives pool growth -- offsets stay valid across realloc (pool lives host-side).
 
 ==============================================================================================*/

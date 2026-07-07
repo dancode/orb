@@ -29,6 +29,13 @@
             a single .oshd container (rhi_shader_format.h) -- reflection tables, layout hash,
             and the SPIR-V payload.  One stage per file.
 
+        shader_tool header <file.oshd> -o <out.h> [-n name]
+            generate a C header from a cooked container: a push constant struct with real
+            field types, _Static_asserts pinning every member offset and the total size (any
+            generator misjudgment is a compile error, never silent drift), vertex input
+            location + descriptor binding #defines, and the layout hash.  -n overrides the
+            identifier base derived from the .oshd filename.
+
     Engine-wide conventions are baked into the dxc invocation so no shader or build script
     ever re-decides them:
 
@@ -42,8 +49,6 @@
 
     dxc is located through %VULKAN_SDK%\Bin\dxc.exe; there is no fallback to PATH, so the
     error message can name the one thing to fix (install / re-source the Vulkan SDK).
-
-    Later phases (SHADER_SYSTEM plan) add verbs here: `header` (generated C layout structs).
 
     Link list for this executable:
 
@@ -332,11 +337,22 @@ oshd_str( const char* strtab, u32 strtab_size, u32 off )
     return ( off < strtab_size ) ? strtab + off : "";
 }
 
-/* run_reflect_oshd -- print the same dump as the raw-SPIR-V path, but sourced from the
-   container's serialized tables.  That the two dumps match line for line is the proof that
-   cooking preserved the whole layout contract. */
-static int
-run_reflect_oshd( const char* path, const sys_file_data_t* fd )
+/* oshd_view_t -- typed section pointers into a validated .oshd mapping. */
+typedef struct oshd_view_s
+{
+    const oshd_header_t*    h;
+    const oshd_input_t*     inputs;
+    const oshd_pc_member_t* members;
+    const oshd_binding_t*   binds;
+    const char*             strtab;
+
+} oshd_view_t;
+
+/* oshd_view -- validate a loaded .oshd (version, u64 section math, strtab termination) and
+   expose the section pointers.  Prints its own diagnostic and returns false on any
+   structural problem, so callers never touch an untrusted count or offset. */
+static bool
+oshd_view( const char* path, const sys_file_data_t* fd, oshd_view_t* v )
 {
     const oshd_header_t* h = ( const oshd_header_t* )fd->data;
 
@@ -344,7 +360,7 @@ run_reflect_oshd( const char* path, const sys_file_data_t* fd )
     {
         fprintf( stderr, "shader_tool: error: %s is .oshd version %u, tool expects %u\n",
                  path, h->version, OSHD_VERSION );
-        return 1;
+        return false;
     }
 
     /* Validate the section math in u64 before trusting any count or offset. */
@@ -359,19 +375,38 @@ run_reflect_oshd( const char* path, const sys_file_data_t* fd )
     {
         fprintf( stderr, "shader_tool: error: %s is corrupt (%u bytes, sections need %llu)\n",
                  path, fd->size, ( unsigned long long )need );
-        return 1;
+        return false;
     }
 
-    const oshd_input_t*     inputs  = ( const oshd_input_t* )( h + 1 );
-    const oshd_pc_member_t* members = ( const oshd_pc_member_t* )( inputs + h->input_count );
-    const oshd_binding_t*   binds   = ( const oshd_binding_t* )( members + h->pc_member_count );
-    const char*             strtab  = ( const char* )( binds + h->binding_count );
+    v->h       = h;
+    v->inputs  = ( const oshd_input_t* )( h + 1 );
+    v->members = ( const oshd_pc_member_t* )( v->inputs + h->input_count );
+    v->binds   = ( const oshd_binding_t* )( v->members + h->pc_member_count );
+    v->strtab  = ( const char* )( v->binds + h->binding_count );
 
-    if ( strtab[ h->strtab_size - 1 ] != 0 )
+    if ( v->strtab[ h->strtab_size - 1 ] != 0 )
     {
         fprintf( stderr, "shader_tool: error: %s string table is not NUL-terminated\n", path );
-        return 1;
+        return false;
     }
+    return true;
+}
+
+/* run_reflect_oshd -- print the same dump as the raw-SPIR-V path, but sourced from the
+   container's serialized tables.  That the two dumps match line for line is the proof that
+   cooking preserved the whole layout contract. */
+static int
+run_reflect_oshd( const char* path, const sys_file_data_t* fd )
+{
+    oshd_view_t vw;
+    if ( !oshd_view( path, fd, &vw ) )
+        return 1;
+
+    const oshd_header_t*    h       = vw.h;
+    const oshd_input_t*     inputs  = vw.inputs;
+    const oshd_pc_member_t* members = vw.members;
+    const oshd_binding_t*   binds   = vw.binds;
+    const char*             strtab  = vw.strtab;
 
     printf( "shader_tool: reflect %s (.oshd v%u, %u bytes, spirv %u bytes, layout hash %016llx)\n",
             path, h->version, fd->size, h->spirv_size, ( unsigned long long )h->layout_hash );
@@ -641,6 +676,54 @@ oshd_stage_from_reflect( SpvReflectShaderStageFlagBits stage )
     }
 }
 
+/* oshd_member_type -- OSHD_TYPE_MAKE packing from a member's SpvReflect type description.
+   Matrices record row_count as the vector width (with -Zpc a column is the contiguous run)
+   and column_count as cols.  Anything unrecognizable degrades to UNKNOWN, which `header`
+   emits as a raw byte blob rather than a mistyped field. */
+static u32
+oshd_member_type( const SpvReflectBlockVariable* m )
+{
+    const SpvReflectTypeDescription* td = m->type_description;
+    if ( !td )
+        return OSHD_TYPE_UNKNOWN;
+    if ( td->type_flags & SPV_REFLECT_TYPE_FLAG_STRUCT )
+        return OSHD_TYPE_MAKE( OSHD_TYPE_STRUCT, 0, 0 );
+
+    u32 base = OSHD_TYPE_UNKNOWN;
+    if ( td->type_flags & SPV_REFLECT_TYPE_FLAG_FLOAT )
+        base = OSHD_TYPE_FLOAT;
+    else if ( td->type_flags & SPV_REFLECT_TYPE_FLAG_BOOL )
+        base = OSHD_TYPE_BOOL;
+    else if ( td->type_flags & SPV_REFLECT_TYPE_FLAG_INT )
+        base = td->traits.numeric.scalar.signedness ? OSHD_TYPE_INT : OSHD_TYPE_UINT;
+    if ( base == OSHD_TYPE_UNKNOWN )
+        return OSHD_TYPE_UNKNOWN;
+
+    u32 vec  = 1;
+    u32 cols = 0;
+    if ( td->type_flags & SPV_REFLECT_TYPE_FLAG_MATRIX )
+    {
+        vec  = td->traits.numeric.matrix.row_count;
+        cols = td->traits.numeric.matrix.column_count;
+    }
+    else if ( td->type_flags & SPV_REFLECT_TYPE_FLAG_VECTOR )
+        vec = td->traits.numeric.vector.component_count;
+
+    return OSHD_TYPE_MAKE( base, vec, cols );
+}
+
+/* oshd_member_elems -- flattened array element count (product of dims); 0 = not an array. */
+static u32
+oshd_member_elems( const SpvReflectBlockVariable* m )
+{
+    if ( m->array.dims_count == 0 )
+        return 0;
+    u32 n = 1;
+    for ( u32 i = 0; i < m->array.dims_count; ++i )
+        n *= m->array.dims[ i ];
+    return n;
+}
+
 /* pc_member_total -- pre-order record count for a block's member tree. */
 static u32
 pc_member_total( const SpvReflectBlockVariable* b )
@@ -661,11 +744,13 @@ pc_member_fill( const SpvReflectBlockVariable* b, u32 depth, oshd_pc_member_t* o
     {
         const SpvReflectBlockVariable* m   = &b->members[ i ];
         oshd_pc_member_t*              rec = &out[ ( *idx )++ ];
-        rec->name_hash = oshd_name_hash( m->name ? m->name : "" );
-        rec->name      = strtab_add( st, m->name );
-        rec->offset    = m->absolute_offset;
-        rec->size      = m->size;
-        rec->depth     = depth;
+        rec->name_hash  = oshd_name_hash( m->name ? m->name : "" );
+        rec->name       = strtab_add( st, m->name );
+        rec->offset     = m->absolute_offset;
+        rec->size       = m->size;
+        rec->depth      = depth;
+        rec->type       = oshd_member_type( m );
+        rec->elem_count = oshd_member_elems( m );
         pc_member_fill( m, depth + 1, out, idx, st );
     }
 }
@@ -762,6 +847,13 @@ run_cook( const compile_args_t* a )
         const char* bname = block->type_description && block->type_description->type_name
                               ? block->type_description->type_name
                               : block->name;
+
+        /* dxc mangles the HLSL type name ("type.PushConstant.rich_pc_t"); keep the part the
+           author wrote. */
+        if ( bname && strncmp( bname, "type.PushConstant.", 18 ) == 0 )
+            bname += 18;
+        else if ( bname && strncmp( bname, "type.", 5 ) == 0 )
+            bname += 5;
         h.pc_name        = strtab_add( &st, bname );
         h.pc_size        = block->size;
         h.pc_padded_size = block->padded_size;
@@ -823,6 +915,8 @@ run_cook( const compile_args_t* a )
             lh = fnv_u32( lh, pc_tab[ i ].offset );
             lh = fnv_u32( lh, pc_tab[ i ].size );
             lh = fnv_u32( lh, pc_tab[ i ].depth );
+            lh = fnv_u32( lh, pc_tab[ i ].type );
+            lh = fnv_u32( lh, pc_tab[ i ].elem_count );
             lh = fnv_str( lh, oshd_str( st.buf, st.size, pc_tab[ i ].name ) );
         }
         for ( u32 i = 0; i < h.binding_count; ++i )
@@ -897,6 +991,313 @@ done:
 }
 
 /*============================================================================================*/
+/*  header verb                                                                               */
+/*============================================================================================*/
+
+/* ident_sanitize -- force a string into a C identifier: [A-Za-z0-9_] pass through, anything
+   else becomes '_', a leading digit gets an underscore prefix. */
+static void
+ident_sanitize( const char* in, char* out, size_t cap )
+{
+    size_t n = 0;
+    if ( in[ 0 ] >= '0' && in[ 0 ] <= '9' && n + 1 < cap )
+        out[ n++ ] = '_';
+    for ( size_t i = 0; in[ i ] && n + 1 < cap; ++i )
+    {
+        char c    = in[ i ];
+        bool okay = ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
+                    ( c >= '0' && c <= '9' ) || c == '_';
+        out[ n++ ] = okay ? c : '_';
+    }
+    out[ n ] = 0;
+}
+
+/* ident_upper -- ASCII uppercase copy (macro prefix / include guard form). */
+static void
+ident_upper( const char* in, char* out, size_t cap )
+{
+    size_t n = 0;
+    for ( ; in[ n ] && n + 1 < cap; ++n )
+        out[ n ] = ( in[ n ] >= 'a' && in[ n ] <= 'z' ) ? in[ n ] - 'a' + 'A' : in[ n ];
+    out[ n ] = 0;
+}
+
+/* header_base_from_path -- default identifier base: the .oshd basename with the extension
+   dropped and the remaining dots sanitized ("bin/sb_tri.ps.oshd" -> "sb_tri_ps"). */
+static void
+header_base_from_path( const char* path, char* out, size_t cap )
+{
+    const char* b = path;
+    for ( const char* p = path; *p; ++p )
+        if ( *p == '/' || *p == '\\' )
+            b = p + 1;
+
+    char tmp[ 256 ];
+    snprintf( tmp, sizeof( tmp ), "%s", b );
+    char* dot = strrchr( tmp, '.' );
+    if ( dot )
+        *dot = 0;
+    ident_sanitize( tmp, out, cap );
+}
+
+/* header_member_ctype -- C scalar type + flattened element count for a member, or NULL when
+   the member must be emitted as a raw byte blob: structs, unknown types, and any type whose
+   element math does not reproduce the reflected byte size (e.g. std430 pads each element of
+   a float3[] to 16 bytes -- an f32[9] would misdeclare that, raw bytes cannot). */
+static const char*
+header_member_ctype( const oshd_pc_member_t* m, u32* out_count )
+{
+    const char* ctype = NULL;
+    switch ( OSHD_TYPE_BASE( m->type ) )
+    {
+        case OSHD_TYPE_FLOAT: ctype = "f32"; break;
+        case OSHD_TYPE_INT:   ctype = "i32"; break;
+        case OSHD_TYPE_UINT:
+        case OSHD_TYPE_BOOL:  ctype = "u32"; break;
+        default:              return NULL;
+    }
+
+    u32 cols  = OSHD_TYPE_COLS( m->type );
+    u32 elem  = m->elem_count ? m->elem_count : 1;
+    u32 count = OSHD_TYPE_VEC( m->type ) * ( cols ? cols : 1 ) * elem;
+    if ( count == 0 || count * 4 != m->size )
+        return NULL;
+
+    *out_count = count;
+    return ctype;
+}
+
+/* header_member_typestr -- HLSL-ish type string for the field comment ("float4x4", "uint",
+   "float2[8]", "struct"). */
+static void
+header_member_typestr( const oshd_pc_member_t* m, char* out, size_t cap )
+{
+    static const char* base_names[] = { "unknown", "float", "int", "uint", "bool", "struct" };
+
+    u32 base = OSHD_TYPE_BASE( m->type );
+    u32 vec  = OSHD_TYPE_VEC( m->type );
+    u32 cols = OSHD_TYPE_COLS( m->type );
+
+    size_t n = ( size_t )snprintf( out, cap, "%s",
+                                   base < ARRAY_COUNT( base_names ) ? base_names[ base ]
+                                                                    : "unknown" );
+    if ( vec > 1 && n < cap )
+        n += ( size_t )snprintf( out + n, cap - n, "%u", vec );
+    if ( cols > 0 && n < cap )
+        n += ( size_t )snprintf( out + n, cap - n, "x%u", cols );
+    if ( m->elem_count > 0 && n < cap )
+        snprintf( out + n, cap - n, "[%u]", m->elem_count );
+}
+
+#define HEADER_PC_FIELD_MAX 64
+
+/* run_header -- generate a C header from a cooked container.  The push constant struct is
+   emitted with typed fields where the type math is airtight and raw byte blobs elsewhere;
+   either way every top-level member gets an offsetof _Static_assert and the struct gets a
+   sizeof assert, so a generator misjudgment (or a re-cooked shader this header no longer
+   matches) is a compile error, never silent drift. */
+static int
+run_header( const char* src, const char* out_path, const char* name_opt )
+{
+    sys_file_data_t fd = sys_file_read_entire( src );
+    if ( !fd.ok )
+    {
+        fprintf( stderr, "shader_tool: error: could not read %s\n", src );
+        return 1;
+    }
+
+    int         rc = 1;
+    FILE*       f  = NULL;
+    oshd_view_t v;
+
+    if ( fd.size < sizeof( oshd_header_t ) ||
+         ( ( const oshd_header_t* )fd.data )->magic != OSHD_MAGIC )
+    {
+        fprintf( stderr, "shader_tool: error: %s is not a .oshd container\n", src );
+        goto done;
+    }
+    if ( !oshd_view( src, &fd, &v ) )
+        goto done;
+
+    const oshd_header_t* h = v.h;
+
+    char base[ 128 ], prefix[ 128 ];
+    if ( name_opt )
+        ident_sanitize( name_opt, base, sizeof( base ) );
+    else
+        header_base_from_path( src, base, sizeof( base ) );
+    if ( !base[ 0 ] )
+    {
+        fprintf( stderr, "shader_tool: error: empty identifier base for %s\n", src );
+        goto done;
+    }
+    ident_upper( base, prefix, sizeof( prefix ) );
+
+    f = fopen( out_path, "w" );
+    if ( !f )
+    {
+        fprintf( stderr, "shader_tool: error: could not write %s\n", out_path );
+        goto done;
+    }
+
+    const char* entry = oshd_str( v.strtab, h->strtab_size, h->entry );
+
+    fprintf( f,
+             "#ifndef %s_H\n"
+             "#define %s_H\n"
+             "/*==============================================================================================\n"
+             "\n"
+             "    Generated by `shader_tool header` from %s.  DO NOT EDIT.\n"
+             "\n"
+             "    stage %s, entry \"%s\"\n"
+             "\n"
+             "    The _Static_asserts pin every push constant member offset and the total struct size\n"
+             "    to the reflected layout: if this header and the cooked shader ever disagree, the\n"
+             "    build fails instead of the GPU reading garbage.\n"
+             "\n"
+             "==============================================================================================*/\n"
+             "\n"
+             "#include <stddef.h>\n"
+             "#include \"orb.h\"\n"
+             "\n"
+             "#define %s_LAYOUT_HASH 0x%016llxull\n"
+             "\n",
+             prefix, prefix, src, oshd_stage_name( h->stage ), entry, prefix,
+             ( unsigned long long )h->layout_hash );
+
+    /* Vertex input locations (vertex stage only -- other stages' inputs are varyings). */
+    if ( h->stage == OSHD_STAGE_VERTEX && h->input_count > 0 )
+    {
+        fprintf( f, "/* vertex input locations */\n" );
+        for ( u32 i = 0; i < h->input_count; ++i )
+        {
+            const char* nm = oshd_str( v.strtab, h->strtab_size, v.inputs[ i ].name );
+            if ( !nm[ 0 ] )
+                continue;
+            char id[ 96 ], ID[ 96 ];
+            ident_sanitize( nm, id, sizeof( id ) );
+            ident_upper( id, ID, sizeof( ID ) );
+            fprintf( f, "#define %s_IN_%s_LOCATION %u\n", prefix, ID, v.inputs[ i ].location );
+        }
+        fprintf( f, "\n" );
+    }
+
+    /* Descriptor bindings. */
+    if ( h->binding_count > 0 )
+    {
+        fprintf( f, "/* descriptor bindings */\n" );
+        for ( u32 i = 0; i < h->binding_count; ++i )
+        {
+            const char* nm = oshd_str( v.strtab, h->strtab_size, v.binds[ i ].name );
+            if ( !nm[ 0 ] )
+                continue;
+            char id[ 96 ], ID[ 96 ];
+            ident_sanitize( nm, id, sizeof( id ) );
+            ident_upper( id, ID, sizeof( ID ) );
+            fprintf( f, "#define %s_BIND_%s_SET %u\n", prefix, ID, v.binds[ i ].set );
+            fprintf( f, "#define %s_BIND_%s_BINDING %u\n", prefix, ID, v.binds[ i ].binding );
+        }
+        fprintf( f, "\n" );
+    }
+
+    /* Push constant struct + layout asserts. */
+    u32 field_count = 0;
+    if ( h->pc_size > 0 )
+    {
+        char field_name[ HEADER_PC_FIELD_MAX ][ 96 ];
+        u32  field_off[ HEADER_PC_FIELD_MAX ];
+        u32  cursor  = 0;
+        u32  pad_idx = 0;
+
+        const char* pc_name = oshd_str( v.strtab, h->strtab_size, h->pc_name );
+        fprintf( f, "/* push constant block \"%s\" -- %u bytes declared, %u reserved by dxc */\n",
+                 pc_name[ 0 ] ? pc_name : "(unnamed)", h->pc_size, h->pc_padded_size );
+        fprintf( f, "typedef struct %s_pc_s\n{\n", base );
+
+        for ( u32 i = 0; i < h->pc_member_count; ++i )
+        {
+            const oshd_pc_member_t* m = &v.members[ i ];
+            if ( m->depth != 0 )
+                continue;   /* nested members ride inside their parent's bytes */
+
+            if ( m->offset < cursor || ( u64 )m->offset + m->size > h->pc_size ||
+                 field_count >= HEADER_PC_FIELD_MAX )
+            {
+                fprintf( stderr, "shader_tool: error: %s has an unrepresentable pc layout\n",
+                         src );
+                goto done;
+            }
+            if ( m->offset > cursor )
+            {
+                fprintf( f, "    u8  _pad%u[ %u ];\n", pad_idx++, m->offset - cursor );
+                cursor = m->offset;
+            }
+
+            const char* nm = oshd_str( v.strtab, h->strtab_size, m->name );
+            char*       fn = field_name[ field_count ];
+            if ( nm[ 0 ] )
+                ident_sanitize( nm, fn, 96 );
+            else
+                snprintf( fn, 96, "_m%u", i );
+            field_off[ field_count++ ] = m->offset;
+
+            char tstr[ 64 ];
+            header_member_typestr( m, tstr, sizeof( tstr ) );
+
+            u32         count = 0;
+            const char* ctype = header_member_ctype( m, &count );
+            char        decl[ 160 ];
+            if ( ctype && count == 1 )
+                snprintf( decl, sizeof( decl ), "%s %s;", ctype, fn );
+            else if ( ctype )
+                snprintf( decl, sizeof( decl ), "%s %s[ %u ];", ctype, fn, count );
+            else
+                snprintf( decl, sizeof( decl ), "u8  %s[ %u ];", fn, m->size );
+
+            fprintf( f, "    %-28s /* offset %3u  %s%s */\n", decl, m->offset, tstr,
+                     ctype ? "" : " (raw bytes)" );
+            cursor = m->offset + m->size;
+        }
+
+        if ( cursor > h->pc_size )
+        {
+            fprintf( stderr, "shader_tool: error: %s pc members exceed the block size\n", src );
+            goto done;
+        }
+        if ( cursor < h->pc_size )
+            fprintf( f, "    u8  _pad%u[ %u ];\n", pad_idx++, h->pc_size - cursor );
+
+        fprintf( f, "\n} %s_pc_t;\n\n", base );
+        fprintf( f, "#define %s_PC_SIZE %uu\n\n", prefix, h->pc_size );
+
+        fprintf( f, "_Static_assert( sizeof( %s_pc_t ) == %u, "
+                    "\"%s_pc_t: size drift vs cooked shader\" );\n",
+                 base, h->pc_size, base );
+        for ( u32 i = 0; i < field_count; ++i )
+            fprintf( f, "_Static_assert( offsetof( %s_pc_t, %s ) == %u, "
+                        "\"%s_pc_t.%s: offset drift vs cooked shader\" );\n",
+                     base, field_name[ i ], field_off[ i ], base, field_name[ i ] );
+        fprintf( f, "\n" );
+    }
+
+    fprintf( f, "/*============================================================================================*/\n" );
+    fprintf( f, "#endif    /* %s_H */\n", prefix );
+
+    printf( "shader_tool: header %s -> %s (%s, pc %u bytes, %u fields, %u inputs, %u bindings)\n",
+            src, out_path, oshd_stage_name( h->stage ), h->pc_size, field_count,
+            h->input_count, h->binding_count );
+    rc = 0;
+
+done:
+    if ( f )
+        fclose( f );
+    if ( rc != 0 && f )
+        sys_file_delete( out_path );   /* never leave a half-written header behind */
+    sys_file_free( &fd );
+    return rc;
+}
+
+/*============================================================================================*/
 
 static int
 usage( void )
@@ -911,7 +1312,10 @@ usage( void )
              "  shader_tool cook <src.hlsl> -o <out.oshd> -T <profile> [-E entry] [-I dir] [-Zi]\n"
              "      compile + reflect + serialize into a cooked .oshd container\n"
              "  shader_tool reflect <file.spv | file.oshd>\n"
-             "      dump stage, entry, inputs, push constants, descriptor bindings\n" );
+             "      dump stage, entry, inputs, push constants, descriptor bindings\n"
+             "  shader_tool header <file.oshd> -o <out.h> [-n name]\n"
+             "      generate a C header: pc struct + _Static_asserts, input/binding defines\n"
+             "      -n name     identifier base (default: derived from the .oshd filename)\n" );
     return 1;
 }
 
@@ -969,6 +1373,29 @@ main( int argc, char** argv )
     else if ( argc >= 3 && strcmp( argv[ 1 ], "reflect" ) == 0 )
     {
         rc = run_reflect( argv[ 2 ] );
+    }
+    else if ( argc >= 3 && strcmp( argv[ 1 ], "header" ) == 0 )
+    {
+        const char* out  = NULL;
+        const char* name = NULL;
+        bool        bad  = false;
+        for ( int i = 3; i < argc; ++i )
+        {
+            if ( strcmp( argv[ i ], "-o" ) == 0 && i + 1 < argc )
+                out = argv[ ++i ];
+            else if ( strcmp( argv[ i ], "-n" ) == 0 && i + 1 < argc )
+                name = argv[ ++i ];
+            else
+            {
+                fprintf( stderr, "shader_tool: error: unknown argument %s\n", argv[ i ] );
+                bad = true;
+            }
+        }
+
+        if ( bad || !out )
+            usage();
+        else
+            rc = run_header( argv[ 2 ], out, name );
     }
     else
     {

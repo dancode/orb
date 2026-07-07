@@ -93,11 +93,27 @@ typedef struct vk_sampler_slot_s
 
 } vk_sampler_slot_t;
 
+/* Reflection captured from a cooked .oshd (rhi_shader_format.h).  Shaders loaded from raw
+   SPIR-V leave has_data false and the pipeline trusts the caller's desc unchecked, exactly
+   as before .oshd existed. */
+typedef struct vk_shader_reflect_s
+{
+    bool has_data;                                    // true only for shader_load_oshd loads
+    u32  input_count;                                 // user vertex inputs, sorted by location
+    u32  input_location[ RHI_MAX_VERTEX_ATTRIBS ];
+    u32  input_format[ RHI_MAX_VERTEX_ATTRIBS ];      // VkFormat numeric value from the cooker
+    u32  input_size[ RHI_MAX_VERTEX_ATTRIBS ];        // attribute byte size (stride derivation)
+    u32  pc_size;                                     // push constant span; 0 = no block
+    u64  layout_hash;                                 // .oshd layout fingerprint (hot reload)
+
+} vk_shader_reflect_t;
+
 typedef struct vk_shader_slot_s
 {
     VkShaderModule      module;
     rhi_shader_stage_t  stage;
     char                entry[ 32 ];    // SPIR-V entry point name; stored for pipeline create
+    vk_shader_reflect_t reflect;        // .oshd reflection; zeroed for raw SPIR-V loads
 
 } vk_shader_slot_t;
 

@@ -183,6 +183,14 @@ typedef struct rhi_api_s
     rhi_shader_t (*shader_load_memory)( const void* spirv, u32 size, rhi_shader_stage_t stage,
                                         const char* entry, const char* debug_name );
 
+    /* Reads a cooked .oshd container (rhi_shader_format.h, produced by `shader_tool cook`).
+       Stage and entry point come from the container; the baked reflection is kept with the
+       shader so pipeline_create can derive vertex input and push constant size when the
+       pipeline desc leaves them empty, and validate them when it does not.  Fails the load
+       if any descriptor binding falls outside the bindless contract (set 0: binding 0
+       sampled images, binding 1 samplers -- no UBOs/SSBOs). */
+    rhi_shader_t (*shader_load_oshd)( const char* path, const char* debug_name );
+
     /* ---- Pipeline ---- */
 
     /* Compiles and links a graphics VkPipeline using dynamic rendering (no VkRenderPass).
