@@ -37,7 +37,7 @@
 /* Virtual path of the image to display.  gui_issue.png sits at the repo root; the sandbox runs
    with the repo root as its working directory, and we mount "" -> "" (CWD) below. */
 #define IMAGE_VPATH   "gui_issue.png"
-#define IMAGE_TEX      "gui_issue.tex"   /* cooked twin: asset_tool cook gui_issue.png gui_issue.tex */
+#define IMAGE_TEX     "gui_issue.tex"   /* cooked twin: asset_tool cook gui_issue.png gui_issue.tex */
 #define PACK_ZIP      "sb_asset_pack.zip"
 #define PACK_COOK     "sb_asset_cooked.zip"   /* asset_tool-produced bundle for "pack" mode */
 
@@ -159,6 +159,7 @@ main( int argc, char** argv )
     /* Loose mode: serve the working directory verbatim (vpath == real path under CWD).
        Zip mode (Phase 5): pack the PNG into a bundle and mount that -- the asset service reads
        through core/fs, so acquire() is identical; only the backing store changes. */
+
     if ( use_zip )
     {
         if ( !build_png_zip( PACK_ZIP, IMAGE_VPATH ) )

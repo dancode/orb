@@ -4,6 +4,12 @@
 
     runtime_service/gui/backend/pipeline/gui_shader.h -- Embedded SPIR-V for the gui pipeline.
 
+    FROZEN FALLBACK.  These arrays are the zero-cook-step path: gui_render_init prefers the
+    cooked bin/shaders/gui.{vs,ps}.oshd pair (from shaders/gui.{vs,ps}.hlsl via
+    cook_shaders.bat) and uses these arrays only when that pair is absent.  New shader work
+    happens in the HLSL twins; keep this GLSL and the HLSL byte-identical in their push
+    constant block and vertex inputs.
+
     Compiled from shaders/gui.vert and shaders/gui.frag using:
         glslc --target-env=vulkan1.3 gui.vert -o gui.vert.spv
         glslc --target-env=vulkan1.3 gui.frag -o gui.frag.spv

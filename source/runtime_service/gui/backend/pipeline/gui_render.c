@@ -24,6 +24,8 @@
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   // gui_viewport_t, gui_context_t, GUI_MAX_VIEWPORTS
+#include "engine/sys/sys_host.h"                // sys_exe_dir -- probe for cooked .oshd shaders
+                                                //   (gui is a static lib: sys is always in the host)
 
 // clang-format off
 /*==============================================================================================
@@ -170,23 +172,79 @@ viewport_destroy( gui_viewport_t* vp )
     Init / shutdown -- the shared GPU resources (pipeline, font sampler, atlas).
 ==============================================================================================*/
 
-bool
-gui_render_init( void )
+/*----------------------------------------------------------------------------------------------
+    render_try_oshd_shaders -- the OPTIONAL cooked-shader path.
+
+    If cook_shaders.bat has produced bin/shaders/gui.{vs,ps}.oshd next to the exe (cooked from
+    shaders/gui.{vs,ps}.hlsl), load that pair instead of the embedded arrays -- the containers
+    carry reflection, so pipeline_create validates the vertex layout and push range against the
+    actual SPIR-V.  All-or-nothing: both files must exist and load, or the caller falls back to
+    the embedded fallback in gui_shader.h.  Absent files are NOT an error -- the cooked path is
+    additive, never a dependency (delete bin/shaders to turn it off).
+----------------------------------------------------------------------------------------------*/
+
+static bool
+render_try_oshd_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
 {
-    // Compile shaders from embedded SPIR-V.
-    rhi_shader_t vert = rhi()->shader_load_memory(
-        s_gui_vert_spirv, sizeof( s_gui_vert_spirv ),
-        RHI_SHADER_STAGE_VERTEX, "main", "gui_vert" );
+    char dir[ 512 ];
+    sys_exe_dir( dir, ( int )sizeof( dir ) );
+
+    char vs_path[ 576 ], ps_path[ 576 ];
+    snprintf( vs_path, sizeof( vs_path ), "%s/shaders/gui.vs.oshd", dir );
+    snprintf( ps_path, sizeof( ps_path ), "%s/shaders/gui.ps.oshd", dir );
+
+    /* Probe with fopen first so a missing pair stays silent (the normal fallback case);
+       shader_load_oshd would LOG_ERROR on a missing file. */
+    FILE* fv = fopen( vs_path, "rb" );
+    FILE* fp = fopen( ps_path, "rb" );
+    if ( fv ) fclose( fv );
+    if ( fp ) fclose( fp );
+    if ( !fv || !fp )
+        return false;
+
+    rhi_shader_t vert = rhi()->shader_load_oshd( vs_path, "gui_vert(oshd)" );
     if ( !rhi_handle_valid( vert ) )
         return false;
 
-    rhi_shader_t frag = rhi()->shader_load_memory(
-        s_gui_frag_spirv, sizeof( s_gui_frag_spirv ),
-        RHI_SHADER_STAGE_FRAGMENT, "main", "gui_frag" );
+    rhi_shader_t frag = rhi()->shader_load_oshd( ps_path, "gui_frag(oshd)" );
     if ( !rhi_handle_valid( frag ) )
     {
         rhi()->shader_destroy( vert );
         return false;
+    }
+
+    *out_vert = vert;
+    *out_frag = frag;
+    return true;
+}
+
+bool
+gui_render_init( void )
+{
+    /* Cooked .oshd pair when present, embedded SPIR-V otherwise (see render_try_oshd_shaders). */
+    rhi_shader_t vert = { RHI_NULL_HANDLE };
+    rhi_shader_t frag = { RHI_NULL_HANDLE };
+
+    if ( render_try_oshd_shaders( &vert, &frag ) )
+    {
+        printf( "[gui] using cooked shaders (bin/shaders/gui.{vs,ps}.oshd)\n" );
+    }
+    else
+    {
+        vert = rhi()->shader_load_memory(
+            s_gui_vert_spirv, sizeof( s_gui_vert_spirv ),
+            RHI_SHADER_STAGE_VERTEX, "main", "gui_vert" );
+        if ( !rhi_handle_valid( vert ) )
+            return false;
+
+        frag = rhi()->shader_load_memory(
+            s_gui_frag_spirv, sizeof( s_gui_frag_spirv ),
+            RHI_SHADER_STAGE_FRAGMENT, "main", "gui_frag" );
+        if ( !rhi_handle_valid( frag ) )
+        {
+            rhi()->shader_destroy( vert );
+            return false;
+        }
     }
 
     // Vertex layout: float2 pos @0, float2 uv @8, UNORM4 color @16, stride=20.

@@ -3,22 +3,22 @@
     host_main.c -- runtime host implementation.
 
     Boot sequence:
-        1. mod_system_init()                          -- registry online
-        2. ref_wire_mod_callbacks()                   -- install hooks; no code fires yet
-        3. mod_static_load( sys, ref, job, run )      -- PASSIVE: engine baseline registered
-        4. load_all( desc->modules )                  -- PASSIVE: every entry registered
-        5. mod_init_all()                             -- pass 1: load callbacks fire in dep order
-                                                                 (ref frames pushed, reflection live)
-                                                         pass 2: init() runs in same order
-        6. MOD_HOST_FETCH_API( app, rhi, render, draw, gui ) -- cache host-owned API ptrs
-        7. window_open()                              -- when app is loaded (inferred from k_modules)
-           rhi->init() + context_open()               -- when rhi is loaded
-           draw->init()                               -- when draw is loaded, after rhi context
-           gui->init() + viewport_open()            -- when gui is loaded, after draw init
-        8. desc->on_ready()                           -- host post-init hook
-        9. enter loop per desc->loop_mode
-       10. run_host_shutdown()                            -- single teardown path, order reversed
 
+        1. mod_system_init()                        -- registry online
+        2. ref_wire_mod_callbacks()                 -- install hooks; no code fires yet
+        3. mod_static_load( sys, ref, job, run )    -- PASSIVE: engine baseline registered
+        4. load_all( desc->modules )                -- PASSIVE: every entry registered
+        5. mod_init_all()                           -- pass 1: load callbacks fire in dep order (ref frames pushed, reflection live)
+                                                       pass 2: init() runs in same order
+        6. MOD_HOST_FETCH_API( app, rhi, render )   -- cache host-owned API ptrs
+        7. window_open()                            -- when app is loaded (inferred from k_modules)
+           rhi->init() + context_open()             -- when rhi is loaded
+           draw->init()                             -- when draw is loaded, after rhi context
+           gui->init() + viewport_open()            -- when gui is loaded, after draw init
+        8. desc->on_ready()                         -- host post-init hook
+        9. enter loop per desc->loop_mode
+       10. run_host_shutdown()                      -- single teardown path, order reversed
+    
     Load is passive on purpose. mod_static_load / mod_dynamic_load only register the
     descriptor -- they fire no callbacks and run no module code. All lifecycle execution
     is deferred to mod_init_all, which knows the dep order and fans out subscribers

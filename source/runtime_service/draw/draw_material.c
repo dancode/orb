@@ -27,7 +27,56 @@ typedef struct
     shaders/*.{vert,frag}.  See draw_shader.h for the glslc recipe and the exact GLSL.
 ==============================================================================================*/
 
+#include <stdio.h>                         /* snprintf / fopen -- cooked-shader probe */
+#include "engine/sys/sys_host.h"           /* sys_exe_dir -- draw is a static lib: sys is always in the host */
 #include "runtime_service/draw/draw_shader.h"
+
+/*==============================================================================================
+    Cooked-shader path (OPTIONAL) -- prefer bin/shaders/<base>.{vs,ps}.oshd next to the exe.
+
+    cook_shaders.bat cooks shaders/draw_solid.{vs,ps}.hlsl and draw_tex.{vs,ps}.hlsl through
+    shader_tool; the containers carry reflection, so pipeline_create validates the vertex
+    layout and push range against the actual SPIR-V.  All-or-nothing per pair: both stages
+    must exist and load, or the caller falls back to the embedded arrays in draw_shader.h.
+    Absent files are NOT an error -- the cooked path is additive, never a dependency (delete
+    bin/shaders to turn it off).
+==============================================================================================*/
+
+static bool
+material_try_oshd_pair( const char* base, rhi_shader_t* out_vert, rhi_shader_t* out_frag )
+{
+    char dir[ 512 ];
+    sys_exe_dir( dir, ( int )sizeof( dir ) );
+
+    char vs_path[ 576 ], ps_path[ 576 ];
+    snprintf( vs_path, sizeof( vs_path ), "%s/shaders/%s.vs.oshd", dir, base );
+    snprintf( ps_path, sizeof( ps_path ), "%s/shaders/%s.ps.oshd", dir, base );
+
+    /* Probe with fopen first so a missing pair stays silent (the normal fallback case);
+       shader_load_oshd would LOG_ERROR on a missing file. */
+    FILE* fv = fopen( vs_path, "rb" );
+    FILE* fp = fopen( ps_path, "rb" );
+    if ( fv ) fclose( fv );
+    if ( fp ) fclose( fp );
+    if ( !fv || !fp )
+        return false;
+
+    rhi_shader_t vert = rhi()->shader_load_oshd( vs_path, NULL );
+    if ( !rhi_handle_valid( vert ) )
+        return false;
+
+    rhi_shader_t frag = rhi()->shader_load_oshd( ps_path, NULL );
+    if ( !rhi_handle_valid( frag ) )
+    {
+        rhi()->shader_destroy( vert );
+        return false;
+    }
+
+    printf( "[draw] using cooked shaders (bin/shaders/%s.{vs,ps}.oshd)\n", base );
+    *out_vert = vert;
+    *out_frag = frag;
+    return true;
+}
 
 /*==============================================================================================
     draw_material_init / draw_material_shutdown
@@ -36,28 +85,34 @@ typedef struct
 static bool
 draw_material_init( draw_material_t mats[ DRAW_MAT_COUNT ] )
 {
-    /* Compile shaders from embedded SPIR-V (draw_shader.h). */
-    rhi_shader_t vert = rhi()->shader_create( &( rhi_shader_desc_t ){
-        .spirv      = s_solid_vert_spirv,
-        .spirv_size = sizeof( s_solid_vert_spirv ),
-        .stage      = RHI_SHADER_STAGE_VERTEX,
-        .entry      = "main",
-        .debug_name = "draw_solid_vert",
-    } );
-    if ( !rhi_handle_valid( vert ) )
-        return false;
+    /* Cooked .oshd pair when present, embedded SPIR-V (draw_shader.h) otherwise. */
+    rhi_shader_t vert = { RHI_NULL_HANDLE };
+    rhi_shader_t frag = { RHI_NULL_HANDLE };
 
-    rhi_shader_t frag = rhi()->shader_create( &( rhi_shader_desc_t ){
-        .spirv      = s_solid_frag_spirv,
-        .spirv_size = sizeof( s_solid_frag_spirv ),
-        .stage      = RHI_SHADER_STAGE_FRAGMENT,
-        .entry      = "main",
-        .debug_name = "draw_solid_frag",
-    } );
-    if ( !rhi_handle_valid( frag ) )
+    if ( !material_try_oshd_pair( "draw_solid", &vert, &frag ) )
     {
-        rhi()->shader_destroy( vert );
-        return false;
+        vert = rhi()->shader_create( &( rhi_shader_desc_t ){
+            .spirv      = s_solid_vert_spirv,
+            .spirv_size = sizeof( s_solid_vert_spirv ),
+            .stage      = RHI_SHADER_STAGE_VERTEX,
+            .entry      = "main",
+            .debug_name = "draw_solid_vert",
+        } );
+        if ( !rhi_handle_valid( vert ) )
+            return false;
+
+        frag = rhi()->shader_create( &( rhi_shader_desc_t ){
+            .spirv      = s_solid_frag_spirv,
+            .spirv_size = sizeof( s_solid_frag_spirv ),
+            .stage      = RHI_SHADER_STAGE_FRAGMENT,
+            .entry      = "main",
+            .debug_name = "draw_solid_frag",
+        } );
+        if ( !rhi_handle_valid( frag ) )
+        {
+            rhi()->shader_destroy( vert );
+            return false;
+        }
     }
 
     /* Shared vertex layout, 36-byte stride: float3 pos @ loc 0, float4 color @ loc 1,
@@ -111,20 +166,26 @@ draw_material_init( draw_material_t mats[ DRAW_MAT_COUNT ] )
     /* Textured pipeline: separate shaders (bindless sampler), all three vertex attributes,
        and straight-alpha blending so images composite over the scene.  Push constants are
        draw_push_tex_t (mvp + bindless indices), 72 bytes -- still inside the 128-byte layout. */
-    rhi_shader_t tex_vert = rhi()->shader_create( &( rhi_shader_desc_t ){
-        .spirv      = s_tex_vert_spirv,
-        .spirv_size = sizeof( s_tex_vert_spirv ),
-        .stage      = RHI_SHADER_STAGE_VERTEX,
-        .entry      = "main",
-        .debug_name = "draw_tex_vert",
-    } );
-    rhi_shader_t tex_frag = rhi()->shader_create( &( rhi_shader_desc_t ){
-        .spirv      = s_tex_frag_spirv,
-        .spirv_size = sizeof( s_tex_frag_spirv ),
-        .stage      = RHI_SHADER_STAGE_FRAGMENT,
-        .entry      = "main",
-        .debug_name = "draw_tex_frag",
-    } );
+    rhi_shader_t tex_vert = { RHI_NULL_HANDLE };
+    rhi_shader_t tex_frag = { RHI_NULL_HANDLE };
+
+    if ( !material_try_oshd_pair( "draw_tex", &tex_vert, &tex_frag ) )
+    {
+        tex_vert = rhi()->shader_create( &( rhi_shader_desc_t ){
+            .spirv      = s_tex_vert_spirv,
+            .spirv_size = sizeof( s_tex_vert_spirv ),
+            .stage      = RHI_SHADER_STAGE_VERTEX,
+            .entry      = "main",
+            .debug_name = "draw_tex_vert",
+        } );
+        tex_frag = rhi()->shader_create( &( rhi_shader_desc_t ){
+            .spirv      = s_tex_frag_spirv,
+            .spirv_size = sizeof( s_tex_frag_spirv ),
+            .stage      = RHI_SHADER_STAGE_FRAGMENT,
+            .entry      = "main",
+            .debug_name = "draw_tex_frag",
+        } );
+    }
     if ( rhi_handle_valid( tex_vert ) && rhi_handle_valid( tex_frag ) )
     {
         rhi_color_target_t blended = {

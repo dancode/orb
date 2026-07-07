@@ -43,9 +43,61 @@ vk_pipeline_validate( rhi_pipeline_t handle )
 }
 
 /*==============================================================================================
+    Vertex input compatibility -- attrib VkFormat vs reflected shader input VkFormat.
+
+    Exact equality is too strict: vertex fetch converts normalized/scaled integer formats to
+    float at read time, so e.g. R8G8B8A8_UNORM legally feeds a float4 input.  What must match
+    is the NUMERIC CLASS the shader sees (float vs int vs uint), and the attrib must supply at
+    least as many components as the shader reads (a wider attrib is legal; missing components
+    are not).  Only the formats the RHI can actually meet are classified -- rhi_vertex_format_t
+    on the attrib side, SpvReflect's 32-bit scalar/vector formats on the shader side; anything
+    unrecognized falls back to requiring exact equality.
+==============================================================================================*/
+
+typedef struct
+{
+    u32 cls;      // 0 = unknown, 1 = float, 2 = sint, 3 = uint
+    u32 comps;    // component count
+
+} vk_vtx_class_t;
+
+static vk_vtx_class_t
+vk_vertex_format_classify( u32 fmt )
+{
+    switch ( ( VkFormat )fmt )
+    {
+        case VK_FORMAT_R32_SFLOAT:          return ( vk_vtx_class_t ){ 1, 1 };
+        case VK_FORMAT_R32G32_SFLOAT:       return ( vk_vtx_class_t ){ 1, 2 };
+        case VK_FORMAT_R32G32B32_SFLOAT:    return ( vk_vtx_class_t ){ 1, 3 };
+        case VK_FORMAT_R32G32B32A32_SFLOAT: return ( vk_vtx_class_t ){ 1, 4 };
+        case VK_FORMAT_R8G8B8A8_UNORM:      return ( vk_vtx_class_t ){ 1, 4 };   // fetch converts to float
+        case VK_FORMAT_R32_SINT:            return ( vk_vtx_class_t ){ 2, 1 };
+        case VK_FORMAT_R32G32_SINT:         return ( vk_vtx_class_t ){ 2, 2 };
+        case VK_FORMAT_R32G32B32_SINT:      return ( vk_vtx_class_t ){ 2, 3 };
+        case VK_FORMAT_R32G32B32A32_SINT:   return ( vk_vtx_class_t ){ 2, 4 };
+        case VK_FORMAT_R32_UINT:            return ( vk_vtx_class_t ){ 3, 1 };
+        case VK_FORMAT_R32G32_UINT:         return ( vk_vtx_class_t ){ 3, 2 };
+        case VK_FORMAT_R32G32B32_UINT:      return ( vk_vtx_class_t ){ 3, 3 };
+        case VK_FORMAT_R32G32B32A32_UINT:   return ( vk_vtx_class_t ){ 3, 4 };
+        default:                            return ( vk_vtx_class_t ){ 0, 0 };
+    }
+}
+
+static bool
+vk_vertex_input_compatible( u32 attrib_fmt, u32 input_fmt )
+{
+    if ( attrib_fmt == input_fmt )
+        return true;
+
+    vk_vtx_class_t a = vk_vertex_format_classify( attrib_fmt );
+    vk_vtx_class_t s = vk_vertex_format_classify( input_fmt );
+    return a.cls != 0 && a.cls == s.cls && a.comps >= s.comps;
+}
+
+/*==============================================================================================
     Graphics PSO creation
 
-    The core factory for creating Graphics Pipeline State Objects (PSOs). 
+    The core factory for creating Graphics Pipeline State Objects (PSOs).
     In Vulkan, a PSO is a "baked" state that includes almost everything the GPU needs to
     know to execute a draw call (shader + vertex format + raster state + blend state + etc.).
 
@@ -91,9 +143,11 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
     /* When the shaders were loaded from cooked .oshd containers their reflection sits in the
        shader slots.  An empty desc (attrib_count == 0) DERIVES the layout from the vertex
        shader: attributes in location order, tightly interleaved, stride = sum of sizes.  A
-       hand-filled desc is VALIDATED instead -- every shader input must be fed by an attribute
-       of the exact format.  Raw-SPIR-V shaders have no reflection and the desc is trusted
-       unchecked, as before. */
+       hand-filled desc is VALIDATED instead -- every shader input must be fed by a COMPATIBLE
+       attribute (same numeric class and enough components; exact VkFormat equality is too
+       strict because vertex fetch legally converts, e.g. a UNORM4 attrib feeding a float4
+       input).  Raw-SPIR-V shaders have no reflection and the desc is trusted unchecked,
+       as before. */
 
     const vk_shader_reflect_t* vr = vert_slt->reflect.has_data ? &vert_slt->reflect : NULL;
     const vk_shader_reflect_t* fr = frag_slt->reflect.has_data ? &frag_slt->reflect : NULL;
@@ -143,10 +197,11 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
             {
                 if ( vtx_attribs[ j ].location != vr->input_location[ i ] )
                     continue;
-                if ( ( u32 )vtx_attribs[ j ].format != vr->input_format[ i ] )
+                if ( !vk_vertex_input_compatible( ( u32 )vtx_attribs[ j ].format,
+                                                  vr->input_format[ i ] ) )
                 {
-                    LOG_ERROR( "pipeline_create: '%s' attrib at location %u is vkfmt %u but the "
-                               "shader expects vkfmt %u",
+                    LOG_ERROR( "pipeline_create: '%s' attrib at location %u is vkfmt %u, "
+                               "incompatible with the shader's vkfmt %u",
                                desc->debug_name ? desc->debug_name : "(unnamed)",
                                vr->input_location[ i ], ( u32 )vtx_attribs[ j ].format,
                                vr->input_format[ i ] );
