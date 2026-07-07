@@ -24,6 +24,7 @@ MOD_USE_RHI;
 
 #include "runtime_service/asset/asset_registry.c"
 #include "runtime_service/asset/loaders/asset_image.c"
+#include "runtime_service/asset/loaders/asset_shader.c"
 
 #ifndef ASSET_API_C_PRELUDE
     #include "runtime_service/asset/asset_api.c"

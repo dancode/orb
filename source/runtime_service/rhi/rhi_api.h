@@ -191,6 +191,11 @@ typedef struct rhi_api_s
        sampled images, binding 1 samplers -- no UBOs/SSBOs). */
     rhi_shader_t (*shader_load_oshd)( const char* path, const char* debug_name );
 
+    /* Parses a cooked .oshd container from memory -- same contract as shader_load_oshd, for
+       callers that already hold the bytes (e.g. the asset service, whose file may live inside
+       a mounted .zip bundle).  The blob is only read during the call. */
+    rhi_shader_t (*shader_load_oshd_memory)( const void* blob, u32 size, const char* debug_name );
+
     /* ---- Pipeline ---- */
 
     /* Compiles and links a graphics VkPipeline using dynamic rendering (no VkRenderPass).

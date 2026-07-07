@@ -12,6 +12,9 @@
         asset_tool cook <src> <dst> [args...]        single job
             .ttf/.otf   -> spawn font_tool  <src> <size> <dst>   (args[0] = size_px, default 16)
             image       -> built-in .tex converter (pre-decode to RGBA8)
+            .hlsl       -> spawn shader_tool cook <src> -o <dst> -T <profile>, where the
+                           profile comes from the filename's stage tag (foo.vs.hlsl -> vs_6_0;
+                           also ps/cs/gs/hs/ds).  Untagged .hlsl fails loudly; .hlsli copies.
             other       -> built-in verbatim copy
 
         asset_tool -src <dir> -dst <dir> [-f]        incremental tree cook
@@ -118,6 +121,44 @@ ext_is_image( const char* ext )
            ext_is( ext, "gif" ) || ext_is( ext, "hdr" );
 }
 
+static bool
+ext_is_hlsl( const char* ext )
+{
+    return ext_is( ext, "hlsl" );   /* .hlsli headers are NOT dispatched; they copy verbatim */
+}
+
+/* shader_profile_from_name -- derive the dxc target profile from the stage tag the naming
+   convention embeds in the filename: foo.vs.hlsl -> vs_6_0, foo.ps.hlsl -> ps_6_0, likewise
+   cs/gs/hs/ds.  Returns false (profile untouched) when the tag is missing or unknown -- an
+   untagged .hlsl cannot be cooked and must fail loudly, not guess a stage. */
+static bool
+shader_profile_from_name( const char* src_path, char* out, size_t cap )
+{
+    /* The tag is the extension of the path with ".hlsl" stripped. */
+    const char* ext = path_ext( src_path );          /* -> "hlsl" */
+    if ( ext == src_path || ext[ -1 ] != '.' )
+        return false;
+
+    char stem[ COOK_PATH_MAX ];
+    int  stem_len = ( int )( ext - 1 - src_path );   /* chars before the ".hlsl" dot */
+    if ( stem_len <= 0 || stem_len >= ( int )sizeof( stem ) )
+        return false;
+    memcpy( stem, src_path, ( size_t )stem_len );
+    stem[ stem_len ] = 0;
+
+    const char* tag = path_ext( stem );              /* -> "vs" from "foo.vs" */
+    static const char* const tags[] = { "vs", "ps", "cs", "gs", "hs", "ds" };
+    for ( u32 i = 0; i < sizeof( tags ) / sizeof( tags[ 0 ] ); ++i )
+    {
+        if ( ext_is( tag, tags[ i ] ) )
+        {
+            snprintf( out, cap, "%s_6_0", tags[ i ] );
+            return true;
+        }
+    }
+    return false;
+}
+
 /*============================================================================================*/
 /*  Converters                                                                                */
 /*============================================================================================*/
@@ -175,6 +216,47 @@ cook_font( const char* src_path, const char* dst_path, int size_px )
     }
 
     printf( "asset_tool:   font %s -> %s (%dpx, %.0f ms)\n", src_path, dst_path, size_px,
+            res.elapsed_seconds * 1000.0 );
+    return true;
+}
+
+/* cook_shader -- spawn shader_tool to cook a stage-tagged .hlsl into an .oshd container
+   (SPIR-V + reflection tables, rhi_shader_format.h).  shader_tool lives next to asset_tool in
+   bin/ (the font_tool pattern); the dxc profile comes from the filename's stage tag, so no
+   per-shader build metadata is needed.  Note the staleness cache is per-file: editing a
+   shared .hlsli include does not re-trigger dependents -- use -f after include changes. */
+static bool
+cook_shader( const char* src_path, const char* dst_path )
+{
+    char profile[ 16 ];
+    if ( !shader_profile_from_name( src_path, profile, sizeof( profile ) ) )
+    {
+        fprintf( stderr, "asset_tool: error: %s has no stage tag -- name it foo.vs.hlsl / "
+                         "foo.ps.hlsl / foo.cs.hlsl (also gs/hs/ds)\n", src_path );
+        return false;
+    }
+
+    char exe_dir[ 512 ];
+    sys_exe_dir( exe_dir, ( int )sizeof( exe_dir ) );
+
+    char cmd[ 1536 ];
+    snprintf( cmd, sizeof( cmd ), "\"%s\\shader_tool.exe\" cook \"%s\" -o \"%s\" -T %s",
+              exe_dir, src_path, dst_path, profile );
+
+    sys_process_result_t res;
+    if ( !sys_process_run( cmd, NULL, &res ) )
+    {
+        fprintf( stderr, "asset_tool: error: could not launch shader_tool (is it built?)\n" );
+        return false;
+    }
+    if ( res.exit_code != 0 )
+    {
+        fprintf( stderr, "asset_tool: error: shader_tool exited %d for %s\n", res.exit_code,
+                 src_path );
+        return false;
+    }
+
+    printf( "asset_tool:   oshd %s -> %s (%s, %.0f ms)\n", src_path, dst_path, profile,
             res.elapsed_seconds * 1000.0 );
     return true;
 }
@@ -255,6 +337,8 @@ cook_file( const char* src_path, const char* dst_path, int font_size_px )
         return cook_font( src_path, dst_path, font_size_px );
     if ( ext_is_image( ext ) )
         return cook_image( src_path, dst_path );
+    if ( ext_is_hlsl( ext ) )
+        return cook_shader( src_path, dst_path );
     return cook_copy( src_path, dst_path ); /* everything else: verbatim copy */
 }
 
@@ -317,6 +401,8 @@ job_dst_rel( char* out, size_t cap, const char* src_rel )
         snprintf( out, cap, "%.*sorb_font", keep, src_rel );
     else if ( ext_is_image( ext ) )
         snprintf( out, cap, "%.*stex", keep, src_rel );
+    else if ( ext_is_hlsl( ext ) )
+        snprintf( out, cap, "%.*soshd", keep, src_rel );   /* stage tag survives: foo.vs.oshd */
     else
         snprintf( out, cap, "%s", src_rel );
 }
@@ -703,6 +789,8 @@ usage( void )
              "  asset_tool cook <src> <dst> [args...]   single job\n"
              "      .ttf/.otf  -> font_tool  (args[0] = size_px, default %d)\n"
              "      image      -> .tex       (pre-decoded RGBA8)\n"
+             "      .hlsl      -> shader_tool cook -> .oshd (stage tag names the profile:\n"
+             "                    foo.vs.hlsl -> vs_6_0; also ps/cs/gs/hs/ds)\n"
              "      other      -> copy\n"
              "  asset_tool -src <dir> -dst <dir> [-f]   incremental tree cook (-f = force all)\n"
              "  asset_tool pack <cooked_dir> <out.zip>  bundle a cooked tree (via its manifest)\n",

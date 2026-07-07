@@ -476,6 +476,15 @@ target sb_asset_image					# asset service Phase 3: PNG -> bindless texture -> on
     dep         sys ref mod core app
 		dep 		rhi draw asset
 
+target sb_asset_shader					# shader system Phase 5: asset_tool .hlsl cook -> .oshd asset -> hash-gated hot reload
+
+    type        exe
+    root        source/sandbox/asset
+    folder      09_SANDBOX/VULKAN
+    unit        sb_asset_shader.c
+    dep         sys ref mod core app
+    dep         rhi asset
+
 target sb_gui
 
     type        exe
@@ -731,6 +740,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 
 	add 		sb_vulkan				# exe
 	add 		sb_asset_image			# asset image loader proof
+	add 		sb_asset_shader			# shader asset + hot-reload proof
 	add 		sb_gui					# gui demo
 	add 		sb_gui_console			# quake-style dev console
 	add 		sb_gui_editor			# game-engine editor shell

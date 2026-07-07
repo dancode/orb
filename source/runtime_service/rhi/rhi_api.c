@@ -54,6 +54,7 @@ const rhi_api_t g_rhi_api_struct =
     .shader_load_file           = vk_shader_load_file,
     .shader_load_memory         = vk_shader_load_memory,
     .shader_load_oshd           = vk_shader_load_oshd,
+    .shader_load_oshd_memory    = vk_shader_load_oshd_memory,
 
     /* Pipeline */
     .pipeline_create            = vk_pipeline_create,

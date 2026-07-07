@@ -53,6 +53,12 @@ asset_mod_init( void* raw_state, get_api_fn get_api )
     static const char* const image_exts[] = ASSET_IMAGE_EXTS;
     asset_type_register( "image", image_exts, ( u32 )( sizeof( image_exts ) / sizeof( image_exts[ 0 ] ) ),
                          asset_image_load, asset_image_unload, NULL );
+
+    /* Built-in shader type: a cooked .oshd parses through the RHI's container loader
+       (loaders/asset_shader.c); get() returns asset_shader_t with the handle + layout hash. */
+    static const char* const shader_exts[] = ASSET_SHADER_EXTS;
+    asset_type_register( "shader", shader_exts, ( u32 )( sizeof( shader_exts ) / sizeof( shader_exts[ 0 ] ) ),
+                         asset_shader_load, asset_shader_unload, NULL );
     return true;
 }
 
