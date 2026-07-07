@@ -586,6 +586,15 @@ target asset_tool
     flag        is_tool
     dep         sys
 
+target shader_tool
+
+    type        exe
+    root        source/tools/shader_tool
+    folder      08_TOOL
+    unit        shader_tool.c
+    flag        is_tool
+    dep         sys
+
 # ==============================================================================
 # DEV : Development Solution Wihout Any Sandbox or Test Code
 # ==============================================================================
@@ -767,6 +776,7 @@ solution orb_build
 	add 		reflect_tool
 	add 		font_tool
 	add 		asset_tool
+	add 		shader_tool
 
 # ==============================================================================
 # FULL SOLUTION
@@ -821,6 +831,7 @@ solution orb_all
 
 	add 		font_tool
 	add 		asset_tool
+	add 		shader_tool
 
 # ==============================================================================
 # FULL SOLUTION : MONOLITHIC

@@ -8,6 +8,7 @@
 
 #include "sb_vulkan_boot.h"
 #include "runtime_service/rhi/rhi_host.h"
+#include "engine/sys/sys_host.h"
 
 // clang-format off
 /*==============================================================================================
@@ -227,28 +228,57 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
 {
     *boot = ( sb_vk_boot_t ){ 0 };
 
+    /* DXC override (shader_tool Phase 0 proof): if shader_tool-compiled SPIR-V for the boot
+       triangle sits next to the executable, load it from disk instead of the embedded arrays.
+       Proves dxc-emitted HLSL SPIR-V is compatible with the RHI's shared bindless pipeline
+       layout end-to-end.  The dxc fragment shader tints via push constant, so the triangle
+       renders BLUE on this path (vs the embedded orange).  See sb_vulkan_boot.h for the
+       bake recipe. */
+    char exe_dir[ 512 ];
+    char vs_path[ 640 ];
+    char ps_path[ 640 ];
+    sys_exe_dir( exe_dir, ( int )sizeof( exe_dir ) );
+    snprintf( vs_path, sizeof( vs_path ), "%s\\sb_tri.vs.spv", exe_dir );
+    snprintf( ps_path, sizeof( ps_path ), "%s\\sb_tri.ps.spv", exe_dir );
+    boot->dxc = sys_file_exists( vs_path ) && sys_file_exists( ps_path );
+
     /* Each shader stage is a separate object.  Both must succeed before the pipeline
        can be created.  On failure we clean up whichever stages already succeeded. */
-    boot->vert = rhi()->shader_create( &( rhi_shader_desc_t ) {
-        .spirv      = s_vert_spirv,
-        .spirv_size = sizeof( s_vert_spirv ),
-        .stage      = RHI_SHADER_STAGE_VERTEX,
-        .entry      = "main",
-        .debug_name = "tri_vert",     /* visible in Vulkan validation layers and GPU profilers */
-    } );
+    if ( boot->dxc )
+    {
+        printf( "[sb_vk_boot] dxc override: loading %s / %s\n", vs_path, ps_path );
+        boot->vert = rhi()->shader_load_file( vs_path, RHI_SHADER_STAGE_VERTEX, "main", "tri_vert_dxc" );
+    }
+    else
+    {
+        boot->vert = rhi()->shader_create( &( rhi_shader_desc_t ) {
+            .spirv      = s_vert_spirv,
+            .spirv_size = sizeof( s_vert_spirv ),
+            .stage      = RHI_SHADER_STAGE_VERTEX,
+            .entry      = "main",
+            .debug_name = "tri_vert",     /* visible in Vulkan validation layers and GPU profilers */
+        } );
+    }
     if ( !rhi_handle_valid( boot->vert ) )
     {
         fprintf( stderr, "[sb_vk_boot] shader_create(vert) failed\n" );
         return false;
     }
 
-    boot->frag = rhi()->shader_create( &( rhi_shader_desc_t ){
-        .spirv      = s_frag_spirv,
-        .spirv_size = sizeof( s_frag_spirv ),
-        .stage      = RHI_SHADER_STAGE_FRAGMENT,
-        .entry      = "main",
-        .debug_name = "tri_frag",
-    } );
+    if ( boot->dxc )
+    {
+        boot->frag = rhi()->shader_load_file( ps_path, RHI_SHADER_STAGE_FRAGMENT, "main", "tri_frag_dxc" );
+    }
+    else
+    {
+        boot->frag = rhi()->shader_create( &( rhi_shader_desc_t ){
+            .spirv      = s_frag_spirv,
+            .spirv_size = sizeof( s_frag_spirv ),
+            .stage      = RHI_SHADER_STAGE_FRAGMENT,
+            .entry      = "main",
+            .debug_name = "tri_frag",
+        } );
+    }
     if ( !rhi_handle_valid( boot->frag ) )
     {
         fprintf( stderr, "[sb_vk_boot] shader_create(frag) failed\n" );
@@ -274,7 +304,7 @@ sb_vk_boot_create( sb_vk_boot_t* boot )
         .color_targets      = { color_target },
         .color_target_count = 1,
         .depth_format       = RHI_FORMAT_UNKNOWN,
-        .push_const_size    = 0,
+        .push_const_size    = boot->dxc ? 16 : 0,  /* dxc path: ps tint = float4, 16 bytes */
         .debug_name         = "tri_pipeline",
     } );
     if ( !rhi_handle_valid( boot->pipeline ) )
@@ -362,6 +392,15 @@ sb_vk_boot_render( sb_vk_boot_t* boot, rhi_cmd_t cmd, i32 win_w, i32 win_h )
        After this point the pipeline state is fixed until cmd_bind_pipeline() is called again
        or the render pass ends. */
     rhi()->cmd_bind_pipeline( cmd, boot->pipeline );
+
+    /* DXC path: the pixel shader reads its color from a push constant (tri_pc_t in
+       sb_tri.ps.hlsl -- one float4 tint at offset 0).  Blue, so the source of the pipeline
+       is obvious at a glance next to the embedded orange triangle. */
+    if ( boot->dxc )
+    {
+        f32 tint[ 4 ] = { 0.2f, 0.4f, 1.0f, 1.0f };
+        rhi()->cmd_push_constants( cmd, tint, sizeof( tint ), 0 );
+    }
 
     /* Draw 3 vertices with no vertex buffer.  The vertex shader reads gl_VertexIndex (0,1,2)
        and computes positions from a hard-coded array; instance_count = 1 is required even

@@ -5,6 +5,15 @@
     Hardcoded single-triangle pipeline: positions in the vertex shader via gl_VertexIndex,
     solid orange-ish fragment color.  No vertex buffers, no depth attachment.
 
+    DXC override (shader_tool Phase 0 proof): if sb_tri.vs.spv / sb_tri.ps.spv sit next to
+    the executable, they are loaded instead of the embedded SPIR-V and the triangle renders
+    BLUE via a push-constant tint.  Bake them with:
+
+        bin\shader_tool.exe compile source\tools\shader_tool\test\sb_tri.vs.hlsl -o bin\sb_tri.vs.spv -T vs_6_0
+        bin\shader_tool.exe compile source\tools\shader_tool\test\sb_tri.ps.hlsl -o bin\sb_tri.ps.spv -T ps_6_0
+
+    Delete the .spv pair to fall back to the embedded orange triangle.
+
     Usage:
         sb_vk_boot_t boot = {0};
         sb_vk_boot_create( &boot );           // call once after rhi()->init()
@@ -26,6 +35,7 @@ typedef struct
     rhi_shader_t   vert;
     rhi_shader_t   frag;
     rhi_pipeline_t pipeline;
+    bool           dxc;      /* true = shaders came from the dxc .spv override on disk */
 
 } sb_vk_boot_t;
 
