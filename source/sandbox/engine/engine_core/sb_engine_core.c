@@ -207,12 +207,13 @@ fs_test( void )
    entry (loose-over-bundle by priority) while staying hot-reloadable.  Fully headless -- the
    test builds its own zip in memory with the miniz writer, so there is no committed binary. */
 
-/* Build a two-file zip (docs/readme.txt, shared.txt) in memory and write it to `path`. */
+/* Build a three-file zip (docs/readme.txt, shared.txt, late.txt) in memory, write to `path`. */
 static bool
 build_test_zip( const char* path )
 {
     const char* readme = "orb vfs phase 5 -- readme served from a zip bundle";
     const char* shared = "FROM ZIP";
+    const char* late   = "FROM ZIP LATE";
 
     mz_zip_archive za;
     memset( &za, 0, sizeof( za ) );
@@ -222,6 +223,7 @@ build_test_zip( const char* path )
     /* MZ_BEST_COMPRESSION -> the payloads are DEFLATE'd, so reads exercise the inflate path. */
     mz_zip_writer_add_mem( &za, "docs/readme.txt", readme, strlen( readme ), MZ_BEST_COMPRESSION );
     mz_zip_writer_add_mem( &za, "shared.txt", shared, strlen( shared ), MZ_BEST_COMPRESSION );
+    mz_zip_writer_add_mem( &za, "late.txt", late, strlen( late ), MZ_BEST_COMPRESSION );
 
     void*  buf = NULL;
     size_t sz  = 0;
@@ -305,6 +307,28 @@ fs_zip_test( void )
     printf( "  bundle still serves non-shadowed path: ok=%d from-zip=%d\n",
             only.ok, blob_is( &only, "orb vfs phase 5 -- readme served from a zip bundle" ) );
     fs_free( &only );
+
+    /* ---- Late shadow: a loose override dropped AFTER the path was cataloged from the bundle.
+       fs_stat re-resolves when a DIR mount sits above the cached winner, so the new file is
+       picked up on the next stat (the asset hot-reload poll rides this); deleting it falls
+       back to the bundle (evict-on-vanish). */
+    fs_blob_t pre = fs_read( "pak/late.txt" );    // catalogs the ZIP winner
+    fs_stat_t l1;
+    fs_stat( "pak/late.txt", &l1 );
+    sys_file_write_entire( "late.txt", "FROM LOOSE LATE", 15 );
+    fs_stat_t l2;
+    fs_stat( "pak/late.txt", &l2 );
+    fs_blob_t post = fs_read( "pak/late.txt" );
+    printf( "  late loose shadow: pre-from-zip=%d stat-moved=%d post-from-loose=%d\n",
+            blob_is( &pre, "FROM ZIP LATE" ), ( l1.mtime != l2.mtime ),
+            blob_is( &post, "FROM LOOSE LATE" ) );
+    fs_free( &pre );
+    fs_free( &post );
+
+    sys_file_delete( "late.txt" );
+    fs_blob_t back = fs_read( "pak/late.txt" );
+    printf( "  late shadow deleted: back-to-zip=%d\n", blob_is( &back, "FROM ZIP LATE" ) );
+    fs_free( &back );
     fs_system_exit();
 
     sys_file_delete( shadow_rel );

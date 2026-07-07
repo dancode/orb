@@ -15,9 +15,14 @@
     does not know what an image or a mesh is -- that lives one layer up in the asset service.
 
     CATALOG: a hashed vpath -> file index, used for O(1) repeat lookups and to answer "what
-    files exist".  For DIR mounts it is filled LAZILY (the OS is the source of truth, so the
-    first successful resolve caches the mapping); a ZIP mount fills it eagerly from the
-    archive's central directory.  Both feed the same fs_read/fs_exists/fs_stat path.
+    files exist".  It is filled LAZILY for every mount kind: the first successful resolve
+    caches the winning (mount, real) pair, and fs_read/fs_exists/fs_stat serve repeat lookups
+    from it.  If a cached backing vanishes (a deleted loose override), the entry is evicted
+    and the path re-resolves, so reads fall back to a lower-priority mount.  A NEW loose file
+    that shadows a cataloged path is picked up by fs_stat: when a DIR mount sits above the
+    cached winner, the stat re-resolves (this rides the asset service's hot-reload poll; a
+    pack-only mount set skips it entirely).  fs_read/fs_exists serve the cached winner until
+    a stat has refreshed the entry.  Mounting/unmounting drops the whole cache.
 
     Single-threaded: mount/read are expected on the main thread (matches the rest of core).
 
@@ -90,6 +95,8 @@ void      fs_free( fs_blob_t* blob );                     // release a blob from
 bool      fs_exists( const char* vpath );                 // true if the vpath resolves to a file
 bool      fs_stat( const char* vpath, fs_stat_t* out );   // size + mtime without reading bytes
 int       fs_glob( const char* vpat, fs_glob_fn cb, void* userdata );  // "dir/pattern" match
+                                                          // DIR mounts only; ZIP entries are
+                                                          // not enumerated (reads still work)
 
 /* Number of files currently in the catalog (introspection / tests). */
 u32       fs_file_count( void );

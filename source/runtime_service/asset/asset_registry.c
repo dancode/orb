@@ -286,7 +286,15 @@ asset_type_register( const char* name, const char* const* exts, u32 ext_count,
     t->userdata = userdata;
     snprintf( t->name, ASSET_TYPE_NAME, "%s", name ? name : "" );
 
-    u32 count = ext_count < ASSET_TYPE_EXTS ? ext_count : ASSET_TYPE_EXTS;
+    u32 count = ext_count;
+    if ( count > ASSET_TYPE_EXTS )
+    {
+        /* Loud, not silent: a dropped extension dispatches to no type and FAILs at acquire,
+           which is miserable to trace back here. */
+        LOG_WARN( "asset: type '%s' registers %u extensions, cap is %d -- extras dropped",
+                  name ? name : "?", ext_count, ASSET_TYPE_EXTS );
+        count = ASSET_TYPE_EXTS;
+    }
     for ( u32 e = 0; e < count; ++e )
     {
         /* store lowercased, ensuring a leading '.' */

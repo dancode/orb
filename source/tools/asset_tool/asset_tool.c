@@ -203,6 +203,15 @@ cook_image( const char* src_path, const char* dst_path )
         return false;
     }
 
+    /* u64 math: a huge image would wrap w*h*4 in 32 bits; the format caps payloads at u32. */
+    u64 pixel_bytes = ( u64 )w * ( u64 )h * 4;
+    if ( pixel_bytes > 0xFFFFFFFFull - sizeof( asset_tex_header_t ) )
+    {
+        stbi_image_free( pixels );
+        fprintf( stderr, "asset_tool: error: %s too large to cook (%dx%d)\n", src_path, w, h );
+        return false;
+    }
+
     asset_tex_header_t hdr = { 0 };
     hdr.magic      = ASSET_TEX_MAGIC;
     hdr.version    = ASSET_TEX_VERSION;
@@ -210,10 +219,10 @@ cook_image( const char* src_path, const char* dst_path )
     hdr.height     = ( u32 )h;
     hdr.format     = ASSET_TEX_FORMAT_RGBA8;
     hdr.mip_levels = 1;
-    hdr.data_size  = ( u32 )( w * h * 4 );
+    hdr.data_size  = ( u32 )pixel_bytes;
     hdr.flags      = 0;
 
-    u32   total = ( u32 )sizeof( hdr ) + hdr.data_size;
+    u32   total = ( u32 )( sizeof( hdr ) + pixel_bytes );
     void* buf   = malloc( total );
     if ( !buf )
     {

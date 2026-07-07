@@ -56,7 +56,7 @@ typedef struct fs_entry_s
 {
     u32  hash;                     // sid_hash_len of vpath
     u16  mount;                    // owning mount index
-    u16  used;
+    u16  used;                     // 0 empty, 1 used, 2 tombstone (evicted; keeps probe chains)
     u32  size;
     u64  mtime;
     char vpath[ FS_PATH_MAX ];     // full virtual path (catalog key)
@@ -65,7 +65,7 @@ typedef struct fs_entry_s
 } fs_entry_t;
 
 static fs_mount_t  s_mounts[ FS_MAX_MOUNTS ];
-static u32         s_mount_count;
+static u32         s_mount_count;    // LIVE mounts; slots may be sparse (iterate FS_MAX_MOUNTS)
 static fs_entry_t* s_catalog;        // FS_MAX_FILES entries, calloc'd in init
 static u32         s_catalog_count;
 
@@ -239,6 +239,28 @@ fs_entry_meta( const fs_mount_t* m, const char* real, u32* out_size, u64* out_mt
     return true;
 }
 
+/* Read the whole file behind a resolved (mount, real) pair, dispatched by mount kind.  Returns
+   a malloc'd buffer (hidden trailing NUL per the fs_blob_t contract) or NULL if the backing is
+   gone/unreadable; fills size + mtime on success. */
+static void*
+fs_read_backing( const fs_mount_t* m, const char* real, u32* out_size, u64* out_mtime )
+{
+    if ( m->kind == FS_MOUNT_ZIP )
+    {
+        void* data = fs_zip_read( m, real, out_size );
+        if ( data )
+            *out_mtime = m->zip_mtime;
+        return data;
+    }
+
+    sys_file_data_t fd = sys_file_read_entire( real );
+    if ( !fd.ok )
+        return NULL;
+    *out_size  = fd.size;
+    *out_mtime = sys_file_time( real );
+    return fd.data;
+}
+
 /*==============================================================================================
     Catalog
 ==============================================================================================*/
@@ -256,13 +278,23 @@ fs_catalog_find( const char* vpath )
     for ( u32 n = 0; n < FS_MAX_FILES; ++n )
     {
         fs_entry_t* e = &s_catalog[ i ];
-        if ( !e->used )
-            return NULL;    // empty slot: not present (lazy fill never deletes, so no tombstones)
-        if ( e->hash == hash && fs_ci_eq( e->vpath, vpath ) )
+        if ( e->used == 0 )
+            return NULL;    // empty slot ends the probe chain (tombstones keep it alive)
+        if ( e->used == 1 && e->hash == hash && fs_ci_eq( e->vpath, vpath ) )
             return e;
         i = ( i + 1 ) & mask;
     }
     return NULL;
+}
+
+/* Evict a stale entry (its backing vanished).  Tombstoned rather than emptied so probe chains
+   through this slot stay intact; fs_catalog_insert reuses tombstones. */
+static void
+fs_catalog_evict( fs_entry_t* e )
+{
+    e->used = 2;
+    if ( s_catalog_count > 0 )
+        --s_catalog_count;
 }
 
 static fs_entry_t*
@@ -280,7 +312,7 @@ fs_catalog_insert( const char* vpath, const char* real, u16 mount, u32 size, u64
     for ( u32 n = 0; n < FS_MAX_FILES; ++n )
     {
         fs_entry_t* e = &s_catalog[ i ];
-        if ( !e->used )
+        if ( e->used != 1 )    // reuse empty or tombstone (insert only runs after a failed find)
         {
             e->used  = 1;
             e->hash  = hash;
@@ -312,7 +344,7 @@ fs_resolve( const char* vpath, char* real_out )
     int               best_prio = 0;
     char              best_real[ FS_PATH_MAX ];
 
-    for ( u32 i = 0; i < s_mount_count; ++i )
+    for ( u32 i = 0; i < FS_MAX_MOUNTS; ++i )
     {
         fs_mount_t* m = &s_mounts[ i ];
         if ( !m->used || !fs_prefix_match( vpath, m->vprefix ) )
@@ -344,6 +376,25 @@ fs_resolve( const char* vpath, char* real_out )
     if ( best )
         snprintf( real_out, FS_PATH_MAX, "%s", best_real );
     return best;
+}
+
+/* True if a DIR mount other than `em` sits ABOVE the cached winner for `vpath` -- meaning a
+   loose file may have APPEARED there since the entry was cataloged (editor workflow: drop an
+   override next to a mounted pack).  Only DIR mounts can gain files in place, so this is the
+   gate for re-resolving a catalog hit; with no DIR mount above the winner (shipping: pack-only
+   mounts) it returns false and cached stats stay as cheap as before. */
+static bool
+fs_shadow_possible( const char* vpath, const fs_mount_t* em )
+{
+    for ( u32 i = 0; i < FS_MAX_MOUNTS; ++i )
+    {
+        const fs_mount_t* m = &s_mounts[ i ];
+        if ( !m->used || m == em || m->kind != FS_MOUNT_DIR )
+            continue;
+        if ( m->priority > em->priority && fs_prefix_match( vpath, m->vprefix ) )
+            return true;
+    }
+    return false;
 }
 
 /*==============================================================================================
@@ -378,7 +429,7 @@ fs_mount_free_zip( fs_mount_t* m )
 void
 fs_system_exit( void )
 {
-    for ( u32 i = 0; i < s_mount_count; ++i )
+    for ( u32 i = 0; i < FS_MAX_MOUNTS; ++i )
         fs_mount_free_zip( &s_mounts[ i ] );
 
     free( s_catalog );
@@ -420,10 +471,20 @@ fs_mount_zip_open( fs_mount_t* m, const char* zip_path )
 bool
 fs_mount( const char* vprefix, const char* real_path, int priority )
 {
-    if ( s_mount_count >= FS_MAX_MOUNTS )
+    /* Reuse the first free slot -- unmount frees slots, so mount/unmount cycles never exhaust
+       the table. */
+    fs_mount_t* m = NULL;
+    for ( u32 i = 0; i < FS_MAX_MOUNTS; ++i )
+    {
+        if ( !s_mounts[ i ].used )
+        {
+            m = &s_mounts[ i ];
+            break;
+        }
+    }
+    if ( !m )
         return false;
 
-    fs_mount_t* m = &s_mounts[ s_mount_count ];
     memset( m, 0, sizeof( *m ) );
     fs_norm_dir( m->vprefix, vprefix ? vprefix : "" );
     m->priority = priority;
@@ -443,6 +504,11 @@ fs_mount( const char* vprefix, const char* real_path, int priority )
 
     m->used = true;
     ++s_mount_count;
+
+    /* A new mount can outrank cached winners; drop the cache like unmount does (rebuilds lazily). */
+    if ( s_catalog )
+        memset( s_catalog, 0, ( size_t )FS_MAX_FILES * sizeof( fs_entry_t ) );
+    s_catalog_count = 0;
     return true;
 }
 
@@ -452,12 +518,13 @@ fs_unmount( const char* vprefix )
     char pfx[ FS_PATH_MAX ];
     fs_norm_dir( pfx, vprefix ? vprefix : "" );
 
-    for ( u32 i = 0; i < s_mount_count; ++i )
+    for ( u32 i = 0; i < FS_MAX_MOUNTS; ++i )
     {
         if ( s_mounts[ i ].used && fs_ci_eq( s_mounts[ i ].vprefix, pfx ) )
         {
             fs_mount_free_zip( &s_mounts[ i ] );    // close the archive if this was a bundle
             s_mounts[ i ].used = false;
+            --s_mount_count;
         }
     }
 
@@ -479,41 +546,38 @@ fs_read( const char* vpath_in )
     char vpath[ FS_PATH_MAX ];
     fs_norm_vpath( vpath, vpath_in );
 
+    /* `real` is an OS path for a DIR mount, or the in-archive entry name for a ZIP mount. */
     char              real[ FS_PATH_MAX ];
     fs_entry_t*       e = fs_catalog_find( vpath );
     const fs_mount_t* m = NULL;
 
-    if ( e )
-    {
-        snprintf( real, FS_PATH_MAX, "%s", e->real );
-        m = &s_mounts[ e->mount ];    // catalog entry remembers which mount (and thus kind) won
-    }
-    else if ( ( m = fs_resolve( vpath, real ) ) == NULL )
-    {
-        return blob;    // not found in any mount
-    }
-
-    /* `real` is an OS path for a DIR mount, or the in-archive entry name for a ZIP mount. */
     void* data  = NULL;
     u32   size  = 0;
     u64   mtime = 0;
-    if ( m->kind == FS_MOUNT_ZIP )
+
+    if ( e )
     {
-        data  = fs_zip_read( m, real, &size );
-        mtime = m->zip_mtime;
-    }
-    else
-    {
-        sys_file_data_t fd = sys_file_read_entire( real );
-        if ( fd.ok )
+        snprintf( real, FS_PATH_MAX, "%s", e->real );
+        m    = &s_mounts[ e->mount ];    // catalog entry remembers which mount (and thus kind) won
+        data = fs_read_backing( m, real, &size, &mtime );
+        if ( !data )
         {
-            data  = fd.data;
-            size  = fd.size;
-            mtime = sys_file_time( real );
+            /* Backing vanished (e.g. a deleted loose override): evict the stale entry and
+               re-resolve so a lower-priority mount can serve the path again. */
+            fs_catalog_evict( e );
+            e = NULL;
         }
     }
+
     if ( !data )
-        return blob;
+    {
+        m = fs_resolve( vpath, real );
+        if ( !m )
+            return blob;    // not found in any mount
+        data = fs_read_backing( m, real, &size, &mtime );
+        if ( !data )
+            return blob;
+    }
 
     blob.data = data;
     blob.size = size;
@@ -541,8 +605,17 @@ fs_exists( const char* vpath_in )
     char vpath[ FS_PATH_MAX ];
     fs_norm_vpath( vpath, vpath_in );
 
-    if ( fs_catalog_find( vpath ) )
-        return true;
+    fs_entry_t* e = fs_catalog_find( vpath );
+    if ( e )
+    {
+        /* A DIR backing is volatile (the OS owns the file) -- verify it is still there; if it
+           vanished, evict and fall through to a fresh resolve (a lower mount may still have it).
+           A ZIP entry is immutable in place, so the cached hit stands. */
+        const fs_mount_t* em = &s_mounts[ e->mount ];
+        if ( em->kind != FS_MOUNT_DIR || sys_file_exists( e->real ) )
+            return true;
+        fs_catalog_evict( e );
+    }
 
     char              real[ FS_PATH_MAX ];
     const fs_mount_t* m = fs_resolve( vpath, real );
@@ -551,7 +624,8 @@ fs_exists( const char* vpath_in )
 
     u32 size = 0;
     u64 mtime = 0;
-    fs_entry_meta( m, real, &size, &mtime );
+    if ( !fs_entry_meta( m, real, &size, &mtime ) )
+        return false;    // vanished in the resolve->stat window; do not cache zeros
     fs_catalog_insert( vpath, real, ( u16 )( m - s_mounts ), size, mtime );
     return true;
 }
@@ -569,30 +643,47 @@ fs_stat( const char* vpath_in, fs_stat_t* out )
     char vpath[ FS_PATH_MAX ];
     fs_norm_vpath( vpath, vpath_in );
 
-    /* Catalog hit.  For a DIR mount size/mtime are VOLATILE (the OS owns the file), so re-stat
-       live -- this is what makes hot-reload observable (a rewritten loose file reports a new
-       mtime); if it vanished, report a miss and let the entry go stale.  A ZIP entry is
-       immutable in place, and its cached `real` is an in-archive name (not an OS path), so
-       return the cached values as-is -- a zip-backed asset never spuriously hot-reloads. */
+    /* Catalog hit.  fs_stat is the hot-reload probe (asset()->refresh polls it per live asset),
+       so it must answer "did the world change for this path" in full:
+         - a higher-priority DIR mount may have GAINED a shadowing file -> evict + re-resolve;
+           the fresh winner's differing mtime is what the refresh poll keys on.
+         - a DIR winner's size/mtime are VOLATILE (the OS owns the file) -> re-stat live; if it
+           vanished, evict + re-resolve so a shadowed lower mount answers again.
+         - a ZIP entry is immutable in place and nothing sits above it -> cached values as-is,
+           so a zip-backed asset never spuriously hot-reloads and shipping stats stay cheap. */
     fs_entry_t* e = fs_catalog_find( vpath );
     if ( e )
     {
         const fs_mount_t* em = &s_mounts[ e->mount ];
-        if ( em->kind == FS_MOUNT_DIR )
+        if ( fs_shadow_possible( vpath, em ) )
+        {
+            fs_catalog_evict( e );
+            e = NULL;    // a new loose override may exist; re-resolve below
+        }
+        else if ( em->kind == FS_MOUNT_DIR )
         {
             u64 mtime = sys_file_time( e->real );
             if ( mtime == 0 )
-                return false;    // gone from disk; caller keeps its last-good resource
-            e->mtime = mtime;
-            e->size  = sys_file_size( e->real );
+            {
+                fs_catalog_evict( e );
+                e = NULL;    // gone from disk; re-resolve below
+            }
+            else
+            {
+                e->mtime = mtime;
+                e->size  = sys_file_size( e->real );
+            }
         }
-        if ( out )
+        if ( e )
         {
-            out->size  = e->size;
-            out->mtime = e->mtime;
-            out->ok    = true;
+            if ( out )
+            {
+                out->size  = e->size;
+                out->mtime = e->mtime;
+                out->ok    = true;
+            }
+            return true;
         }
-        return true;
     }
 
     char              real[ FS_PATH_MAX ];
@@ -602,7 +693,8 @@ fs_stat( const char* vpath_in, fs_stat_t* out )
 
     u32 size  = 0;
     u64 mtime = 0;
-    fs_entry_meta( m, real, &size, &mtime );
+    if ( !fs_entry_meta( m, real, &size, &mtime ) )
+        return false;    // vanished in the resolve->stat window; do not cache zeros
     fs_catalog_insert( vpath, real, ( u16 )( m - s_mounts ), size, mtime );
 
     if ( out )
@@ -682,7 +774,7 @@ fs_glob( const char* vpat, fs_glob_fn cb, void* userdata )
 
     fs_glob_ctx_t ctx = { vdir, cb, userdata, 0, false };
 
-    for ( u32 i = 0; i < s_mount_count && !ctx.stop; ++i )
+    for ( u32 i = 0; i < FS_MAX_MOUNTS && !ctx.stop; ++i )
     {
         fs_mount_t* m = &s_mounts[ i ];
         if ( !m->used || m->kind != FS_MOUNT_DIR || !fs_prefix_match( vdir_slash, m->vprefix ) )

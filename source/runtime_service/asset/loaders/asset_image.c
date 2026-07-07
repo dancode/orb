@@ -115,8 +115,9 @@ image_load_cooked( const char* vpath, const void* data, u32 size )
         return NULL;
     }
 
-    u64 need = ( u64 )sizeof( asset_tex_header_t ) + hdr->data_size;
-    if ( hdr->data_size != hdr->width * hdr->height * 4 || need > size )
+    u64 expect = ( u64 )hdr->width * hdr->height * 4;    // u64: a hostile header can wrap u32
+    u64 need   = ( u64 )sizeof( asset_tex_header_t ) + hdr->data_size;
+    if ( hdr->data_size != expect || need > size )
     {
         LOG_ERROR( "asset: .tex '%s' truncated/inconsistent (%ux%u, %u payload, %u file)", vpath,
                    hdr->width, hdr->height, hdr->data_size, size );
