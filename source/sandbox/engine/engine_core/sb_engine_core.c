@@ -7,10 +7,12 @@
 ==============================================================================================*/
 
 #include <stdio.h>    // printf, fprintf
+#include <string.h>   // strlen, memcmp
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/core/core_api.h"
+#include "engine/sys/sys_host.h"    // sys_file_write_entire / _delete for the fs probe
 
 int  intern_test( void );                        // ... temporary code ...
 void test_core_cvar( int argc, char** argv );    // ... temporary code ...
@@ -147,6 +149,58 @@ core_test( void )
 }
 
 /*============================================================================================*/
+/* Phase 1 proof: mount a real directory and read a file back through a virtual path.
+   Fully headless -- writes a scratch file with sys, then exercises the vfs over it. */
+
+static void
+fs_test( void )
+{
+    printf( "\n=== fs (virtual filesystem) ===\n" );
+
+    fs_system_init();
+
+    const char* probe_real = "fs_probe.tmp";                 // in the current working dir
+    const char* payload    = "orb vfs phase 1 probe\n";
+    u32         plen       = ( u32 )strlen( payload );
+
+    if ( !sys_file_write_entire( probe_real, payload, plen ) )
+    {
+        printf( "  FAIL: could not write probe file\n" );
+        fs_system_exit();
+        return;
+    }
+
+    /* Map the virtual prefix "data/" onto the current working directory. */
+    fs_mount( "data/", "", 0 );
+
+    /* exists + stat through the vpath (no bytes read yet). */
+    bool      ex = fs_exists( "data/fs_probe.tmp" );
+    fs_stat_t st;
+    fs_stat( "data/fs_probe.tmp", &st );
+    printf( "  exists=%d  stat.ok=%d size=%u (payload=%u)\n", ex, st.ok, st.size, plen );
+
+    /* read + byte-compare; the blob is NUL-terminated for convenience. */
+    fs_blob_t b     = fs_read( "data/fs_probe.tmp" );
+    bool      match = b.ok && b.size == plen && memcmp( b.data, payload, plen ) == 0;
+    printf( "  read.ok=%d size=%u match=%d\n", b.ok, b.size, match );
+    fs_free( &b );
+
+    /* second read is served from the catalog; file_count shows the cached entry. */
+    fs_blob_t b2 = fs_read( "data/fs_probe.tmp" );
+    printf( "  second read.ok=%d  catalog files=%u\n", b2.ok, fs_file_count() );
+    fs_free( &b2 );
+
+    /* a missing path resolves to nothing. */
+    printf( "  missing exists=%d\n", fs_exists( "data/does_not_exist.xyz" ) );
+
+    /* backslashes + case fold to the same file (case-insensitive vpath, Win FS). */
+    printf( "  alt-form exists=%d (Data\\FS_Probe.TMP)\n", fs_exists( "Data\\FS_Probe.TMP" ) );
+
+    sys_file_delete( probe_real );
+    fs_system_exit();
+}
+
+/*============================================================================================*/
 /* main entry point */
 
 int
@@ -155,6 +209,7 @@ main( int argc, char** argv )
     UNUSED( argc );
     UNUSED( argv );
     core_test();
+    fs_test();
     return 0;
 }
 

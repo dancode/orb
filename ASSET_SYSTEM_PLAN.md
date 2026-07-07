@@ -188,10 +188,25 @@ Phase 0 -- Filesystem primitive (sys)  [shared by both halves]   [DONE 2026-07-0
    orchestrator) is the separate COOK track below and is not required for runtime Phases
    1-4 -- runtime loads source formats directly until cooked formats exist.
 
-Phase 1 -- core/fs virtual filesystem (DIR mounts + catalog)
-   - core/fs/fs.{h,c}; wire like cvar/cmd. Mount table + file catalog + read/exists/stat/glob
-     over DIR mounts. Watch forwarding.
-   - Proof (sb_engine_core): mount a dir, read a known file through a vpath; catalog hit.
+Phase 1 -- core/fs virtual filesystem (DIR mounts + catalog)   [DONE 2026-07-06]
+   - core/fs/fs.{h,c} + core_fs.c glue (included by core.c, mirrors core_cvar.c). Wired into
+     core_api_t (8 slots: fs_mount/unmount/read/free/exists/stat/glob/file_count) and
+     core_init/exit (fs_system_init/exit).
+   - Mount table (vprefix -> real dir, priority; "" prefix matches all). Resolution: among
+     matching mounts, highest priority whose file actually exists wins (loose-over-bundle).
+   - Catalog: open-addressing hash keyed by sid_hash_len(vpath) (case-insensitive), LAZILY
+     filled on first successful resolve (OS is source of truth for DIR mounts; ZIP will fill
+     eagerly). Caps: FS_PATH_MAX 256, FS_MAX_MOUNTS 16, FS_MAX_FILES 4096. Entries cache the
+     resolved real path so repeat reads skip the mount scan.
+   - fs_read routes DIR reads through sys_file_read_entire (Phase 0). fs_free just free()s the
+     malloc'd blob. fs_glob = "vdir/pattern" split -> sys_file_glob per matching mount (flat).
+   - Watch forwarding: NOT built yet -- deferred to Phase 4 (hot-reload) where it is consumed.
+   - BUILD NOTE: core now references sys symbols, and the build tool links only DIRECT deps.
+     Every exe that statically links core must also list sys (hosts already do; sb_engine_core
+     needed `dep core sys` added).
+   - Proof (sb_engine_core fs_test): write a scratch file via sys, mount "data/" -> CWD, then
+     exists/stat/read match (22 bytes); 2nd read is a catalog hit (file_count==1); missing
+     path = not found; backslash+mixed-case vpath folds to the same file.
 
 Phase 2 -- runtime_service/asset registry (synchronous, no loaders yet)
    - New service module (three-header split, hot-reload DLL). Handle table + path hash +

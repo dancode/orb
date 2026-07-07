@@ -24,6 +24,7 @@ core_init( void )
     cvar_system_init();
     cmd_system_init();           /* command backend before registrants (echo/help/wait built-ins) */
     con_init();                  /* console view: registers clear/history into the backend */
+    fs_system_init();            /* virtual filesystem: mount table + catalog */
     cvar_register_commands();    /* set/seta/toggle/cvarlist/... into the backend registry */
     core_register_cvars();       /* core-owned cvars: version, developer, log_level */
 }
@@ -31,6 +32,7 @@ core_init( void )
 void
 core_exit( void )
 {
+    fs_system_exit();
     con_exit();
     cmd_system_exit();
     cvar_system_exit();
@@ -147,6 +149,15 @@ const core_api_t g_core_api_struct = {
     .con_history_count  = con_history_count,
     .con_history_get    = con_history_get,
     .con_complete       = con_complete,
+
+    .fs_mount           = fs_mount,
+    .fs_unmount         = fs_unmount,
+    .fs_read            = fs_read,
+    .fs_free            = fs_free,
+    .fs_exists          = fs_exists,
+    .fs_stat            = fs_stat,
+    .fs_glob            = fs_glob,
+    .fs_file_count      = fs_file_count,
 
 };
 

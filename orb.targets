@@ -349,7 +349,7 @@ target sb_engine_core
     root        source/sandbox/engine/engine_core
     folder      09_SANDBOX/ENGINE
     unit        sb_engine_core.c
-    dep         core
+    dep         core sys
 
 target sb_engine_job
 
