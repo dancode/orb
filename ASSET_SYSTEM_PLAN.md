@@ -310,11 +310,23 @@ Phase 5 -- Packaged (.zip) mounts   [DONE 2026-07-06]
 
 COOK TRACK (asset_tool) -- parallel to runtime phases; not a blocker for 1-4.
 
-Cook-A -- asset_tool as job runner
-   - Turn asset_tool from stub into: single-job CLI (cook <src> <dst>), extension->converter
-     dispatch, and sub-tool spawning (font_tool via sys_process_run). Reuse build_tool's
-     spawn/log/env primitives where sensible.
-   - Proof: asset_tool cook bar.ttf 16 produces the same .orb_font font_tool would.
+Cook-A -- asset_tool as job runner [DONE 2026-07-06]
+   - asset_tool is now a job runner (source/tools/asset_tool/asset_tool.c): CLI
+     `cook <src> <dst> [args...]` dispatches by src extension.
+       * .ttf/.otf -> spawn font_tool via sys_process_run: located next to asset_tool with
+         sys_exe_dir (both land in bin/), command line
+         `"<exedir>\font_tool.exe" "<src>" <size> "<dst>"` (paths quoted for spaces). size =
+         args[0] or default 16 (ASSET_TOOL_DEFAULT_FONT_SIZE); non-zero child exit is an error.
+       * image/other -> built-in cook_copy (read->write passthrough); this is the placeholder
+         for the .png->.tex converter that lands in Cook-C.
+     Helpers: path_ext (last dot after the last separator), ext_is (case-insensitive),
+     ext_is_font. Legacy bare `<src> <dst>` grammar dropped in favor of the `cook` verb.
+     Still links base+sys only; no engine runtime.
+   - Proof (verified): `asset_tool cook C:\Windows\Fonts\arial.ttf out.orb_font 16` spawns
+     font_tool and produces a BYTE-IDENTICAL atlas to `font_tool arial.ttf 16 out.orb_font`
+     (same MD5, 264080 bytes). Copy path round-trips identically; no-args / missing-dst print
+     usage and exit 1. NOTE: font_tool needs freetype.dll findable at runtime (now copied into
+     bin/); this is font_tool's own dependency, not asset_tool's.
 
 Cook-B -- incremental tree cook + manifest
    - -src/-dst tree scan, staleness by source hash/mtime, cook cache + emitted manifest of
