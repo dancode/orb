@@ -308,6 +308,12 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     ref_wire_mod_callbacks();
 
+    /* Wire core into the module lifecycle the same way: cvar callback registrations get
+       stamped with their owning module id, and module-owned callbacks are dropped by the
+       unload hook before a DLL is released (hot reload / unload / shutdown). */
+
+    core_wire_mod_callbacks();
+
     /* Engine baseline -- sys (clock + sleep), ref (reflection), job (scheduling), run (frame clock). */
     if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
          !mod_static_load( "ref", ref_get_mod_desc() ) ||

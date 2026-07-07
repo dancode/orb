@@ -66,12 +66,14 @@ cvar_hash( const char* s )
 #define MAX_CVAR_FUNCS_PER_CVAR 3         // Max callbacks per cvar
 #define INVALID_ID              0xFFFF    // Invalid callback ID (no callback)
 
-// Callback table linking cvars to functions.
+// Callback table linking cvars to functions. Each function slot records its owning
+// module id (from mod_current_id() at registration) so a hot-reload can drop exactly
+// the pointers that are about to dangle, even when two modules hook the same cvar.
 
 typedef struct cvar_callback_s
 {
     u16 function_id[ MAX_CVAR_FUNCS_PER_CVAR ];    // Function indices (INVALID_ID = empty)
-    u16 module_id;                                 // Owning module (INVALID_ID = unused)
+    u16 module_id[ MAX_CVAR_FUNCS_PER_CVAR ];      // Owning module per slot (INVALID_ID = host/none)
 
 } cvar_callback_t;
 
@@ -138,13 +140,30 @@ free_function_slot( uint16_t slot )
 }
 
 /*============================================================================================*/
-/* Register callback for cvar */
+/* Module id provider - injected by the host via core_wire_mod_callbacks() so core never
+   links against the mod library. NULL (tools, sandboxes without mod) means every
+   registration is host-owned (-1 -> INVALID_ID, never matched by unload sweeps). */
+
+static cvar_module_id_fn g_cvar_module_id_fn = NULL;
+
+void
+cvar_set_module_id_fn( cvar_module_id_fn fn )
+{
+    g_cvar_module_id_fn = fn;
+}
+
+/*============================================================================================*/
+/* Register callback for cvar. The owning module id is resolved automatically: inside a
+   DLL's init()/reload() this is that module's id; host code outside any lifecycle call
+   gets -1 -> INVALID_ID (never matched by unload sweeps). */
 
 uint16_t
-cvar_callback_register( cvar_t* cv, cvar_callback_fn fn, i32 module_id )
+cvar_callback_register( cvar_t* cv, cvar_callback_fn fn )
 {
     if ( !cv || !fn )
         return INVALID_ID;
+
+    const i32 module_id = g_cvar_module_id_fn ? g_cvar_module_id_fn() : -1;
 
     /* Allocate callback slot if needed (reuse freed entries first) */
     if ( cv->callback_id == INVALID_ID )
@@ -167,9 +186,12 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn, i32 module_id )
         cv->flag |= CVAR_CALLBACK;
 
         cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
-        cb->module_id       = ( u16 )module_id;
 
-        for ( int i = 0; i < MAX_CVAR_FUNCS_PER_CVAR; i++ ) cb->function_id[ i ] = INVALID_ID;
+        for ( int i = 0; i < MAX_CVAR_FUNCS_PER_CVAR; i++ )
+        {
+            cb->function_id[ i ] = INVALID_ID;
+            cb->module_id[ i ]   = INVALID_ID;
+        }
     }
 
     cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
@@ -187,6 +209,7 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn, i32 module_id )
             }
 
             cb->function_id[ i ] = slot;
+            cb->module_id[ i ]   = ( u16 )module_id;
             return cv->callback_id;
         }
     }
@@ -214,9 +237,8 @@ cvar_callback_unregister( cvar_t* cv )
             free_function_slot( fid );
             cb->function_id[ i ] = INVALID_ID;
         }
+        cb->module_id[ i ] = INVALID_ID;
     }
-
-    cb->module_id = INVALID_ID;
 
     /* Return the table entry to the freelist (next-link stored in function_id[0]) */
     cb->function_id[ 0 ] = g_cbtable_free;
@@ -248,7 +270,9 @@ cvar_callback_invoke( cvar_t* cv )
 }
 
 /*============================================================================================*/
-/* Remove all callbacks for a module (for hot reload) */
+/* Remove all callbacks owned by a module (fired by the mod system's unload hook).
+   Only the module's own function slots are freed; callbacks other modules registered
+   on the same cvar survive. The table entry is released once every slot is empty. */
 
 void
 cvar_callback_unregister_by_module( i32 module_id )
@@ -261,15 +285,38 @@ cvar_callback_unregister_by_module( i32 module_id )
         if ( !cv || cv->callback_id == INVALID_ID )
             continue;
 
-        cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
+        cvar_callback_t* cb        = &g_callback_table[ cv->callback_id ];
+        bool             any_left  = false;
 
-        /* If this cvar's callbacks belong to the module, clear it */
-        if ( cb->module_id == ( u16 )module_id )
+        for ( int k = 0; k < MAX_CVAR_FUNCS_PER_CVAR; k++ )
         {
-            cvar_callback_unregister( cv );
+            if ( cb->function_id[ k ] == INVALID_ID )
+                continue;
+
+            if ( cb->module_id[ k ] == ( u16 )module_id )
+            {
+                free_function_slot( cb->function_id[ k ] );
+                cb->function_id[ k ] = INVALID_ID;
+                cb->module_id[ k ]   = INVALID_ID;
+            }
+            else
+            {
+                any_left = true;
+            }
+        }
+
+        if ( !any_left )
+        {
+            /* Entry fully empty: return it to the freelist (next-link in function_id[0]) */
+            cb->function_id[ 0 ] = g_cbtable_free;
+            g_cbtable_free       = cv->callback_id;
+
+            cv->callback_id = INVALID_ID;
+            cv->flag &= ~CVAR_CALLBACK;
         }
     }
 }
+
 
 /*==============================================================================================
 

@@ -38,9 +38,11 @@ core_register_cvars( void )
     cvar_register_r( "version", "Engine version string", "ORB 0.1.0", CVAR_ROM );
     cvar_register_b( "developer", "Enable developer diagnostics", false, 0 );
 
-    cvar_t* cv = cvar_register_i( "log_level", "Minimum log level (0=trace 1=debug 2=info 3=warn 4=error)",
-                                  LOG_LEVEL_INFO, LOG_LEVEL_TRACE, LOG_LEVEL_ERROR, 0 );
-    cvar_callback_register( cv, core_cvar_log_level_changed, 0 );
+    cvar_t* cv = cvar_register_i( 
+        "log_level", "Minimum log level (0=trace 1=debug 2=info 3=warn 4=error)",
+        LOG_LEVEL_INFO, LOG_LEVEL_TRACE, LOG_LEVEL_ERROR, 0 );
+
+    cvar_callback_register( cv, core_cvar_log_level_changed );
 }
 
 /*============================================================================================*/

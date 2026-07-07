@@ -90,6 +90,27 @@ static char             g_last_error[ 256 ];
 static uint32_t         g_shadow_counter;  /* globally incremented per shadow copy created */
 static get_api_fn       g_api_func;        /* passed into every init() / reload() */
 
+/* Slot index of the module whose init()/exit()/reload() is currently executing on this
+   call stack; -1 outside any lifecycle call. Host systems (cvar callbacks, etc.) read it
+   via mod_current_id() to stamp registrations with their owning module. */
+static int32_t          g_current_module = -1;
+
+/* Unload hooks: host systems that cache DLL function pointers (cvar callbacks, command
+   handlers) register here once at init. Fired immediately after a module's exit() runs,
+   BEFORE any new DLL instance loads - so a hot-reload's reload() can re-register cleanly
+   under the same module id. */
+#define MAX_UNLOAD_HOOKS 8
+static mod_unload_hook_fn g_unload_hooks[ MAX_UNLOAD_HOOKS ];
+static int32_t            g_unload_hook_count;
+
+static void
+unload_hooks_fire( mod_info_t* m )
+{
+    const int32_t id = ( int32_t )( m - g_modules );
+    for ( int32_t i = 0; i < g_unload_hook_count; ++i )
+        g_unload_hooks[ i ]( id, m->name );
+}
+
 /*==============================================================================================
     Bootstrap Allocator
 
@@ -497,6 +518,9 @@ api_slot_refresh( mod_info_t* m )
 
 /*==============================================================================================
     Lifecycle Invocations  (all pass g_api_func so DLLs can call back into the system)
+
+    Each invocation brackets the call with g_current_module so host systems can resolve
+    the caller's module id via mod_current_id() during registration.
 ==============================================================================================*/
 
 static bool
@@ -504,7 +528,12 @@ call_init( mod_info_t* m )
 {
     if ( !m->mod_desc || !m->mod_desc->init )
         return true;
-    return m->mod_desc->init( m->state, g_api_func );
+
+    const int32_t prev = g_current_module;
+    g_current_module   = ( int32_t )( m - g_modules );
+    bool ok            = m->mod_desc->init( m->state, g_api_func );
+    g_current_module   = prev;
+    return ok;
 }
 
 static void
@@ -512,7 +541,11 @@ call_exit( mod_info_t* m )
 {
     if ( !m->mod_desc || !m->mod_desc->exit )
         return;
+
+    const int32_t prev = g_current_module;
+    g_current_module   = ( int32_t )( m - g_modules );
     m->mod_desc->exit( m->state );
+    g_current_module   = prev;
 }
 
 static bool
@@ -520,8 +553,15 @@ call_reload( mod_info_t* m )
 {
     if ( !m->mod_desc )
         return true;
+
     if ( m->mod_desc->reload )
-        return m->mod_desc->reload( m->state, g_api_func );
+    {
+        const int32_t prev = g_current_module;
+        g_current_module   = ( int32_t )( m - g_modules );
+        bool ok            = m->mod_desc->reload( m->state, g_api_func );
+        g_current_module   = prev;
+        return ok;
+    }
 
     ms_log( "[module] '%s' has no on_reload(), dynamic reload requires it", m->name );
     return false;
@@ -633,7 +673,14 @@ do_reload( mod_info_t* m )
     snapshot_save( m, &prev );
 
     if ( m->status == MODULE_STATUS_INITIALIZED )
+    {
         call_exit( m );
+
+        /* Old code is going away: let host systems drop cached function pointers now,
+           before the new instance's reload() re-registers under the same module id.
+           A rollback re-runs reload() on the old code, which re-registers the same way. */
+        unload_hooks_fire( m );
+    }
 
     /* Detach old handles so slot_load_dll has a clean slate to write into. */
     m->dll     = NULL;

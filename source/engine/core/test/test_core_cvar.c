@@ -94,7 +94,7 @@ example_callbacks( void )
     cvar_t* cv = cvar_register_i( "callback_test", "Test callback", 0, 0, 100, 0 );
 
     /* Register callback */
-    cvar_callback_register( cv, my_callback, 0 );
+    cvar_callback_register( cv, my_callback );
 
     /* Trigger callback by changing value */
     cvar_set_value( "callback_test", "50" );

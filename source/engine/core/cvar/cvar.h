@@ -193,14 +193,22 @@ ORB_STATIC_ASSERT( sizeof( cvar_t ) == 32, "cvar_t must be 32 bytes" );
 
 typedef void (*cvar_callback_fn)( cvar_t* cv );
 
+/* Module id provider: returns the id of the module whose lifecycle call is executing,
+   or -1 for host code. Installed by the host (core_wire_mod_callbacks in core_host.h)
+   so core itself never links against the mod library. */
+typedef i32  (*cvar_module_id_fn)( void );
+
 /*==============================================================================================
     Callback Functions
+
+    The owning module id is stamped automatically at registration time via the installed
+    cvar_module_id_fn. Modules MUST re-register their callbacks in reload() - the host's
+    mod unload hook drops every callback owned by a module before its DLL is released.
 ==============================================================================================*/
 
-// TODO:    make module id use a module specific function call.
-//          e.g. a get current module id from module system.
+void        cvar_set_module_id_fn               ( cvar_module_id_fn fn );
 
-uint16_t    cvar_callback_register              ( cvar_t* cv, cvar_callback_fn fn, i32 module_id );
+uint16_t    cvar_callback_register              ( cvar_t* cv, cvar_callback_fn fn );
 void        cvar_callback_unregister            ( cvar_t* cv );
 void        cvar_callback_unregister_by_module  ( i32 module_id );
 void        cvar_callback_invoke                ( cvar_t* cv );

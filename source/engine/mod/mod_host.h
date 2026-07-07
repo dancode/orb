@@ -162,6 +162,26 @@ void            mod_set_pre_init_cb         ( mod_event_fn fn, void* user );
 void            mod_set_post_exit_cb        ( mod_event_fn fn, void* user );
 
 /*==============================================================================================
+    Module identity and unload hooks
+
+    mod_current_id() - slot index of the module whose init()/exit()/reload() is currently
+    executing on this call stack, or -1 outside any lifecycle call. Host systems that hand
+    out registrations to module code (cvar callbacks, command handlers) call this at
+    registration time to stamp the entry with its owning module.
+
+    Unload hooks fire immediately AFTER a module's exit() runs and BEFORE any replacement
+    DLL loads - on hot reload, on explicit mod_unload(), and during mod_system_exit().
+    Subscribers drop every cached function pointer owned by module_id; the new instance's
+    reload() then re-registers under the same id. Register once at host/system init;
+    duplicate registration of the same fn is a no-op.
+==============================================================================================*/
+
+typedef void ( *mod_unload_hook_fn )( int32_t module_id, const char* name );
+
+int32_t         mod_current_id              ( void );
+bool            mod_unload_hook_register    ( mod_unload_hook_fn fn );
+
+/*==============================================================================================
     Iteration
 
     Visits every non-empty module slot in load order.  mod_visitor_fn is defined in mod_import.h.

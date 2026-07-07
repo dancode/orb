@@ -126,11 +126,13 @@ mod_system_init( void )
     memset( g_pending, 0, sizeof( g_pending ) );
     memset( g_last_error, 0, sizeof( g_last_error ) );
 
-    g_module_count   = 0;
-    g_init_count     = 0;
-    g_pending_count  = 0;
-    g_shadow_counter = 0;
-    g_api_func       = mod_get_api;
+    g_module_count     = 0;
+    g_init_count       = 0;
+    g_pending_count    = 0;
+    g_shadow_counter   = 0;
+    g_api_func         = mod_get_api;
+    g_current_module   = -1;
+    g_unload_hook_count = 0;
 
     sys_exe_dir( g_root, sizeof( g_root ) );
     ms_log( "[module] system init (root: %s)", g_root );
@@ -157,6 +159,7 @@ mod_system_exit( void )
             continue;
 
         call_exit( m );
+        unload_hooks_fire( m );
         m->status = MODULE_STATUS_LOADED;
         ms_log( "[module] exited '%s'", m->name );
     }
@@ -260,7 +263,10 @@ mod_unload( const char* name )
 
     mod_info_t* m = &g_modules[ slot ];
     if ( m->status == MODULE_STATUS_INITIALIZED )
+    {
         call_exit( m );
+        unload_hooks_fire( m );
+    }
 
     /* post_exit: fires after exit() has run, before the slot is destroyed. */
     if ( g_post_exit_fn )
@@ -502,6 +508,42 @@ mod_set_post_exit_cb( mod_event_fn fn, void* user )
 {
     g_post_exit_fn   = fn;
     g_post_exit_user = user;
+}
+
+/*==============================================================================================
+    Public: module identity and unload hooks
+==============================================================================================*/
+
+/* Slot index of the module whose init()/exit()/reload() is currently on the call stack;
+   -1 when no lifecycle call is in flight (host code, tools, sandboxes). */
+
+int32_t
+mod_current_id( void )
+{
+    return g_current_module;
+}
+
+bool
+mod_unload_hook_register( mod_unload_hook_fn fn )
+{
+    if ( !fn )
+        return false;
+
+    /* idempotent: re-registration from a host re-init is a no-op */
+    for ( int32_t i = 0; i < g_unload_hook_count; ++i )
+    {
+        if ( g_unload_hooks[ i ] == fn )
+            return true;
+    }
+
+    if ( g_unload_hook_count >= MAX_UNLOAD_HOOKS )
+    {
+        set_error( "unload hook table full (max %d)", MAX_UNLOAD_HOOKS );
+        return false;
+    }
+
+    g_unload_hooks[ g_unload_hook_count++ ] = fn;
+    return true;
 }
 
 /*==============================================================================================

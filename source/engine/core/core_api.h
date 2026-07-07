@@ -102,7 +102,8 @@ typedef struct core_api_s
     const char* ( *cvar_get_value )     ( const char* name );
     void        ( *cvar_reset )         ( cvar_t* cv );
 
-    uint16_t    ( *cvar_callback_register )   ( cvar_t* cv, cvar_callback_fn fn, i32 module_id );
+    /* owner module id is stamped automatically; re-register in reload() */
+    uint16_t    ( *cvar_callback_register )   ( cvar_t* cv, cvar_callback_fn fn );
     void        ( *cvar_callback_unregister ) ( cvar_t* cv );
 
     /* command backend (registry + immediate execute + deferred buffer) */
