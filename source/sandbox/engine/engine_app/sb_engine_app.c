@@ -252,6 +252,7 @@ typedef enum
     MODE_MOUSE_CAPTURE = 8,    /* captured bit -- click-hold and drag outside        */
     MODE_WIN_HOVER     = 9,    /* hover bit -- cursor enter / leave client area      */
     MODE_MULTI_WIN     = 10,   /* two windows, focus transfer                       */
+    MODE_RAW_MOUSE     = 11,   /* WM_INPUT raw deltas + relative mouse mode          */
 } test_mode_t;
 
 static test_mode_t     g_mode       = MODE_MENU;
@@ -298,6 +299,11 @@ mode_show_event( test_mode_t m, i32 type )
         case MODE_MOUSE_MOVE:
             return type == APP_EV_MOUSE_MOVE;
 
+        case MODE_RAW_MOUSE:
+            /* Shown deliberately: in relative mode MOUSE_MOVE must go silent while
+               the [raw] lines keep flowing -- that contrast is the test. */
+            return type == APP_EV_MOUSE_MOVE;
+
         case MODE_MOUSE_BUTTONS:
             return type == APP_EV_MOUSE_DOWN  || type == APP_EV_MOUSE_UP ||
                    type == APP_EV_MOUSE_WHEEL;
@@ -335,6 +341,7 @@ print_menu( void )
     printf( "  8  Mouse Capture             (click-hold, drag outside window)\n" );
     printf( "  9  Window Hover              (cursor enter / leave client area)\n" );
     printf( "  0  Multi-Window              (two windows, focus transfer)\n" );
+    printf( "  R  Raw Mouse                 (WM_INPUT deltas, relative mode toggle)\n" );
     printf( "\n" );
     printf( "  S  Full state snapshot  (works in any mode)\n" );
     printf( "  Q  Quit\n" );
@@ -362,6 +369,13 @@ leave_mode( test_mode_t m )
 {
     if ( m == MODE_MULTI_WIN )
         close_extra_win();
+
+    /* Never return to the menu with the cursor hidden and clipped. */
+    if ( m == MODE_RAW_MOUSE && app()->mouse_is_relative( g_main_win ) )
+    {
+        app()->mouse_relative_set( g_main_win, false );
+        printf( "[raw] relative mode OFF (left test)\n" );
+    }
 }
 
 static void
@@ -518,6 +532,23 @@ enter_mode( test_mode_t m )
             break;
         }
 
+        case MODE_RAW_MOUSE:
+            printf( "--- [R] Raw Mouse / Relative Mode -------------------------------\n" );
+            printf( "  Read:     [raw] lines print this frame's accumulated WM_INPUT deltas\n" );
+            printf( "            (hardware counts -- no pointer ballistics, no edge clamping)\n" );
+            printf( "  Try:      move the mouse -- [raw] deltas AND MOUSE_MOVE events print\n" );
+            printf( "  Try:      SPACE -- toggle relative mode: cursor hides, clips to client\n" );
+            printf( "  Try:      in relative mode, move hard -- [raw] keeps flowing with\n" );
+            printf( "            [relative] tag, MOUSE_MOVE goes SILENT (suppressed)\n" );
+            printf( "  Try:      sweep far past where the screen edge would stop the cursor --\n" );
+            printf( "            deltas never clamp (this is the FPS look-input property)\n" );
+            printf( "  Try:      Alt+Tab away in relative mode -- clip releases; back -- re-clips\n" );
+            printf( "  Try:      SPACE again -- cursor restored where it was at enable\n" );
+            printf( "  Correct:  raw deltas roughly track MOUSE_MOVE d=(..) while visible, but\n" );
+            printf( "            keep counting when the visible cursor pins at a clip edge\n" );
+            printf( "  S = full snapshot   ESC = back to menu (auto-disables relative)\n" );
+            break;
+
         default: break;
     }
 
@@ -587,6 +618,8 @@ main( int argc, char** argv )
             }
             if ( app()->key_pressed( APP_KEY_0 ) )
                 enter_mode( MODE_MULTI_WIN );
+            if ( app()->key_pressed( APP_KEY_R ) )
+                enter_mode( MODE_RAW_MOUSE );
 
             sys_sleep_milliseconds( 16 );
             continue;
@@ -607,6 +640,22 @@ main( int argc, char** argv )
         {
             app()->window_toggle_fillscreen( g_main_win );
             printf( "[fill] F key -- fillscreen toggled\n" );
+        }
+
+        if ( g_mode == MODE_RAW_MOUSE )
+        {
+            if ( app()->key_pressed( APP_KEY_SPACE ) )
+            {
+                bool rel = !app()->mouse_is_relative( g_main_win );
+                app()->mouse_relative_set( g_main_win, rel );
+                printf( "[raw] relative mode %s\n", rel ? "ON (cursor hidden + clipped)" : "OFF (cursor restored)" );
+            }
+
+            f32 dx = 0.0f, dy = 0.0f;
+            app()->mouse_raw_delta( &dx, &dy );
+            if ( dx != 0.0f || dy != 0.0f )
+                printf( "[raw] d=(%+7.1f,%+7.1f)%s\n", (double)dx, (double)dy,
+                        app()->mouse_is_relative( g_main_win ) ? "  [relative]" : "" );
         }
 
         if ( g_mode == MODE_MULTI_WIN && app()->key_pressed( APP_KEY_O ) )

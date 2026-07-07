@@ -58,6 +58,11 @@ const app_api_t g_app_api_struct = {
     .mouse_button_pressed  = app_mouse_button_pressed,
     .mouse_button_released = app_mouse_button_released,
 
+    /* Raw mouse / relative mode */
+    .mouse_relative_set = app_mouse_relative_set,
+    .mouse_is_relative  = app_mouse_is_relative,
+    .mouse_raw_delta    = app_mouse_raw_delta,
+
     /* Clipboard */
     .clipboard_set = app_clipboard_set,
 };

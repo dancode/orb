@@ -146,6 +146,18 @@ typedef struct app_window_s
 
     } native;
 
+    /* Relative mouse mode (FPS look).  While enabled the cursor is hidden and confined to the
+       client rect; motion is read through mouse_raw_delta (WM_INPUT), so this window's
+       WM_MOUSEMOVE stream is suppressed -- buttons and wheel flow normally.  Raw deltas are
+       unaffected by the clip, so no per-frame recentering is needed.  The cursor position at
+       enable is restored on disable so the pointer does not appear to jump. */
+    struct
+    {
+        bool  enabled;
+        POINT restore;    /* screen-space cursor position saved at enable */
+
+    } relative;
+
 } app_window_t;
 
 typedef struct win_pool_s

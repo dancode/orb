@@ -26,6 +26,12 @@ win_proc_mouse( app_window_t* win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
     {
         case WM_MOUSEMOVE:
             {
+                /* Relative mode: motion travels exclusively through raw WM_INPUT deltas; the
+                   clipped, hidden cursor's WM_MOUSEMOVE stream is noise -- drop it entirely
+                   (buttons and wheel still flow through the cases below). */
+                if ( win->relative.enabled )
+                    return true;
+
                 /* Capture directs all mouse input here while any button is held,
                    even when the cursor leaves the client area (e.g. viewport drag). */
                 u32 btns = MK_LBUTTON | MK_MBUTTON | MK_RBUTTON | MK_XBUTTON1 | MK_XBUTTON2;
@@ -175,8 +181,14 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
         }
             return 0; /* do NOT pass to DefWindowProcW — that would call DestroyWindow */
 
+        case WM_INPUT:
+            input_handle_raw_mouse( lp );
+            return DefWindowProcW( hwnd, msg, wp, lp ); /* WM_INPUT requires default cleanup */
+
         case WM_SETFOCUS:
             win->state.focused = 1;
+            if ( win->relative.enabled )
+                win_relative_clip( win ); /* the OS drops the clip on focus loss -- re-apply */
             {
                 app_event_t ev = win_make_event( APP_EV_WIN_FOCUS, win->id );
                 win_post_event( &ev );
@@ -187,6 +199,12 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
         {
             if ( LOWORD( lp ) == HTCLIENT )
             {
+                if ( win->relative.enabled )
+                {
+                    SetCursor( NULL ); /* relative mode: cursor hidden over the client area */
+                    return 1;
+                }
+
                 HCURSOR hcur = NULL;
                 switch ( win->cursor )
                 {
@@ -211,6 +229,8 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
         case WM_KILLFOCUS:
             win->state.focused = 0;
             input_clear_all_state();
+            if ( win->relative.enabled )
+                ClipCursor( NULL ); /* never hold the cursor hostage while unfocused */
             {
                 app_event_t ev = win_make_event( APP_EV_WIN_BLUR, win->id );
                 win_post_event( &ev );
@@ -225,6 +245,8 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
         case WM_EXITSIZEMOVE:
             win->resize_modal = false;
             win->move_modal   = false;
+            if ( win->relative.enabled && win->state.focused )
+                win_relative_clip( win ); /* window may have moved -- clip rect is stale */
             return 0;
 
         case WM_SIZE:
@@ -254,6 +276,9 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
             {
                 win->w = ( i32 )LOWORD( lp );
                 win->h = ( i32 )HIWORD( lp );
+
+                if ( win->relative.enabled && win->state.focused )
+                    win_relative_clip( win ); /* client rect changed -- re-confine */
             }
 
             app_event_t ev       = win_make_event( APP_EV_WIN_RESIZE, win->id );

@@ -50,16 +50,26 @@ _Static_assert( sizeof( app_event_t ) == 32, "app_event_t must be 32 bytes" );
 
 typedef struct app_input_s
 {
-    bool current_keys[ APP_KEY_COUNT ];
-    bool previous_keys[ APP_KEY_COUNT ];
-    bool pressed_keys[ APP_KEY_COUNT ];   /* an initial (non-repeat) key-down arrived this frame */
-    bool repeat_keys[ APP_KEY_COUNT ];    /* an OS auto-repeat key-down arrived this frame        */
+    bool current_keys   [ APP_KEY_COUNT ];
+    bool previous_keys  [ APP_KEY_COUNT ];
+    bool pressed_keys   [ APP_KEY_COUNT ];      // an initial (non-repeat) key-down arrived this frame
+    bool repeat_keys    [ APP_KEY_COUNT ];      // an OS auto-repeat key-down arrived this frame
 
-    bool current_mouse[ APP_MOUSE_BUTTON_COUNT ];
-    bool previous_mouse[ APP_MOUSE_BUTTON_COUNT ];
+    bool current_mouse  [ APP_MOUSE_BUTTON_COUNT ];
+    bool previous_mouse [ APP_MOUSE_BUTTON_COUNT ];
 
     i32  mouse_x;
     i32  mouse_y;
+
+    /* Raw mouse (WM_INPUT): hardware deltas accumulated across this frame's message drain,
+       in device counts -- no pointer ballistics, no screen-edge clamping.  f32 because a
+       high-rate mouse delivers many packets per frame and consumers scale by sensitivity.
+       Cleared by input_snapshot each frame, same lifecycle as pressed_keys. */
+    f32  raw_dx;
+    f32  raw_dy;
+    i32  raw_abs_x;      // last absolute-mode packet position (RDP / tablets), pixels
+    i32  raw_abs_y;
+    bool raw_abs_valid;
 
 } app_input_t;
 
@@ -119,6 +129,82 @@ win_post_event( const app_event_t* ev )
         return; /* ring full — drop incoming event */
     g_events.buf[ g_events.head ] = *ev;
     g_events.head                 = next;
+}
+
+/*==============================================================================================
+    Raw mouse (WM_INPUT)
+
+    Registered once at first window open; hwndTarget NULL routes WM_INPUT to whichever of
+    this thread's windows has keyboard focus.  Deltas accumulate into g_input.raw_dx/raw_dy
+    during the message drain and are read back through mouse_raw_delta -- they never enter
+    the event ring (a high-polling-rate mouse would flood the 64-slot ring with packets).
+==============================================================================================*/
+
+static void
+win_raw_mouse_register( void )
+{
+    RAWINPUTDEVICE rid = {
+        .usUsagePage = 0x01, /* generic desktop */
+        .usUsage     = 0x02, /* mouse           */
+        .dwFlags     = 0,    /* foreground only -- background input is not wanted */
+        .hwndTarget  = NULL,
+    };
+
+    if ( !RegisterRawInputDevices( &rid, 1, sizeof( rid ) ) )
+        app_log( ORB_LOG_WARN, "raw mouse registration failed (err %lu)", GetLastError() );
+}
+
+static void
+input_handle_raw_mouse( LPARAM lp )
+{
+    /* A mouse RAWINPUT always fits the fixed struct -- no variable-size query needed. */
+    RAWINPUT raw;
+    UINT     size = sizeof( raw );
+
+    if ( GetRawInputData( ( HRAWINPUT )lp, RID_INPUT, &raw, &size, sizeof( RAWINPUTHEADER ) ) == ( UINT )-1 )
+        return;
+    if ( raw.header.dwType != RIM_TYPEMOUSE )
+        return;
+
+    const RAWMOUSE* m = &raw.data.mouse;
+
+    if ( m->usFlags & MOUSE_MOVE_ABSOLUTE )
+    {
+        /* Absolute devices (RDP, tablets, some touchpads) report normalized 0..65535
+           coordinates; derive a delta by diffing consecutive packets in pixel space. */
+        bool virt = ( m->usFlags & MOUSE_VIRTUAL_DESKTOP ) != 0;
+        i32  sw   = GetSystemMetrics( virt ? SM_CXVIRTUALSCREEN : SM_CXSCREEN );
+        i32  sh   = GetSystemMetrics( virt ? SM_CYVIRTUALSCREEN : SM_CYSCREEN );
+        i32  ax   = ( i32 )( ( ( f32 )m->lLastX / 65535.0f ) * ( f32 )sw );
+        i32  ay   = ( i32 )( ( ( f32 )m->lLastY / 65535.0f ) * ( f32 )sh );
+
+        if ( g_input.raw_abs_valid )
+        {
+            g_input.raw_dx += ( f32 )( ax - g_input.raw_abs_x );
+            g_input.raw_dy += ( f32 )( ay - g_input.raw_abs_y );
+        }
+
+        g_input.raw_abs_x     = ax;
+        g_input.raw_abs_y     = ay;
+        g_input.raw_abs_valid = true;
+    }
+    else
+    {
+        g_input.raw_dx += ( f32 )m->lLastX;
+        g_input.raw_dy += ( f32 )m->lLastY;
+    }
+}
+
+/* Confine the OS cursor to `win`'s client area (relative mouse mode).  Raw deltas are
+   unaffected by the clip, so no per-frame recentering is needed -- the clip only keeps the
+   hidden cursor from wandering onto other windows or monitors. */
+static void
+win_relative_clip( app_window_t* win )
+{
+    RECT rc;
+    GetClientRect( win->hwnd, &rc );
+    MapWindowPoints( win->hwnd, NULL, ( POINT* )&rc, 2 );
+    ClipCursor( &rc );
 }
 
 /*==============================================================================================
@@ -418,6 +504,10 @@ input_snapshot( void )
 
     for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i )
         g_input.previous_mouse[ i ] = g_input.current_mouse[ i ];
+
+    /* Raw deltas re-accumulate from zero during this frame's message drain. */
+    g_input.raw_dx = 0.0f;
+    g_input.raw_dy = 0.0f;
 }
 
 /*==============================================================================================
@@ -501,6 +591,15 @@ app_mouse_button_released( app_mouse_button_t btn )
     if ( ( int )btn < 0 || ( int )btn >= APP_MOUSE_BUTTON_COUNT )
         return false;
     return !g_input.current_mouse[ btn ] && g_input.previous_mouse[ btn ];
+}
+
+static void
+app_mouse_raw_delta( f32* out_dx, f32* out_dy )
+{
+    if ( out_dx )
+        *out_dx = g_input.raw_dx;
+    if ( out_dy )
+        *out_dy = g_input.raw_dy;
 }
 
 static void

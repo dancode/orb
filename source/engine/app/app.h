@@ -266,7 +266,7 @@ typedef struct app_event_s
 {
     i32 event_id;
     i32 win_id;
-    i32 type; /* app_event_type_t */
+    i32 type;               /* app_event_type_t */
     i32 pad;
     i64 timestamp;
 

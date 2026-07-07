@@ -218,6 +218,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     if ( g_pool.main_id == APP_WIN_INVALID )
     {
         g_pool.main_id = id;
+        win_raw_mouse_register(); /* raw deltas flow from the first window on */
 #ifdef APP_WIN_FIBER
         win_fiber_init();
 #endif
@@ -265,6 +266,10 @@ app_window_close( win_id_t id )
 
     if ( win->hwnd )
     {
+        /* A window destroyed while in relative mode must not leave the desktop clipped. */
+        if ( win->relative.enabled )
+            ClipCursor( NULL );
+
         /* Clear the back-pointer before DestroyWindow so WndProc ignores
            the WM_DESTROY-triggered cleanup messages. */
         SetWindowLongPtrW( win->hwnd, GWLP_USERDATA, 0 );
@@ -316,6 +321,46 @@ app_window_set_cursor( win_id_t id, app_cursor_t cursor )
         if ( WindowFromPoint( pt ) == win->hwnd )
             PostMessageW( win->hwnd, WM_SETCURSOR, ( WPARAM )win->hwnd, MAKELPARAM( HTCLIENT, WM_MOUSEMOVE ) );
     }
+}
+
+/* Enter / leave relative mouse mode.  Enabling hides the cursor (WM_SETCURSOR path) and
+   confines it to the client rect; raw WM_INPUT deltas keep flowing regardless of the clip,
+   so there is no per-frame recentering.  Disabling releases the clip and puts the pointer
+   back where it was at enable so it does not appear to jump. */
+static void
+app_mouse_relative_set( win_id_t id, bool enabled )
+{
+    app_window_t* win = win_get( id );
+    if ( !win || win->relative.enabled == enabled )
+        return;
+
+    win->relative.enabled = enabled;
+
+    if ( enabled )
+    {
+        GetCursorPos( &win->relative.restore );
+        if ( win->state.focused )
+            win_relative_clip( win );
+        SetCursor( NULL );
+    }
+    else
+    {
+        ClipCursor( NULL );
+        SetCursorPos( win->relative.restore.x, win->relative.restore.y );
+
+        /* Restore the window's cursor immediately if the pointer is over it. */
+        POINT pt;
+        GetCursorPos( &pt );
+        if ( WindowFromPoint( pt ) == win->hwnd )
+            PostMessageW( win->hwnd, WM_SETCURSOR, ( WPARAM )win->hwnd, MAKELPARAM( HTCLIENT, WM_MOUSEMOVE ) );
+    }
+}
+
+static bool
+app_mouse_is_relative( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    return win && win->relative.enabled;
 }
 
 static void*

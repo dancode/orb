@@ -134,6 +134,21 @@ typedef struct app_api_s
     bool ( *mouse_button_pressed  )( app_mouse_button_t btn );
     bool ( *mouse_button_released )( app_mouse_button_t btn );
 
+    /* ---- Raw mouse / relative mode ---- */
+
+    /* Relative mouse mode for FPS-style look: hides the cursor and confines it to `id`'s
+       client area; read motion via mouse_raw_delta (the window's MOUSE_MOVE events are
+       suppressed while enabled -- buttons and wheel still flow).  Disabling restores the
+       pointer where it was at enable.  The clip releases on focus loss and re-applies on
+       refocus automatically. */
+    void ( *mouse_relative_set )( win_id_t id, bool enabled );
+    bool ( *mouse_is_relative  )( win_id_t id );
+
+    /* This frame's accumulated raw hardware deltas (WM_INPUT) in device counts -- no OS
+       pointer ballistics, no screen-edge clamping.  Valid every frame regardless of
+       relative mode; zero when the mouse did not move. */
+    void ( *mouse_raw_delta )( f32* out_dx, f32* out_dy );
+
     /* ---- Clipboard ---- */
 
     /* Copy NUL-terminated `text` to the OS clipboard (the outbound half: cut / copy).
