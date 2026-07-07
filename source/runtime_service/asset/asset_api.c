@@ -21,6 +21,7 @@ const asset_api_t g_asset_api_struct =
     .acquire       = asset_acquire,
     .release       = asset_release,
     .reload        = asset_reload,
+    .refresh       = asset_refresh,
     .get           = asset_get,
     .state         = asset_state,
     .valid         = asset_valid,
@@ -37,11 +38,21 @@ asset_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
 
-    /* Cache core (fs + sid + alloc); the dep "core" guarantees it is initialized first. */
+    /* Cache siblings; the deps "core"/"rhi" guarantee both are initialized first.
+       core = fs + sid + alloc (registry); rhi = texture create/upload/bindless (image loader). */
     if ( !MOD_FETCH_CORE )
+        return false;
+    if ( !MOD_FETCH_RHI )
         return false;
 
     asset_system_init();
+
+    /* Built-in image type: acquire()ing any of these extensions decodes via stb_image and
+       uploads a bindless texture (loaders/asset_image.c).  Registered here rather than by the
+       caller so images "just work"; game/editor DLLs still add their own kinds via the API. */
+    static const char* const image_exts[] = ASSET_IMAGE_EXTS;
+    asset_type_register( "image", image_exts, ( u32 )( sizeof( image_exts ) / sizeof( image_exts[ 0 ] ) ),
+                         asset_image_load, asset_image_unload, NULL );
     return true;
 }
 
@@ -49,7 +60,7 @@ static bool
 asset_mod_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
-    return MOD_FETCH_CORE;    // re-cache the sibling API pointer after a hot-swap
+    return MOD_FETCH_CORE && MOD_FETCH_RHI;    // re-cache sibling API pointers after a hot-swap
 }
 
 static void
@@ -70,8 +81,8 @@ asset_get_mod_desc( void )
         .version       = 1,
         .state_size    = 0,        /* registry state lives in file-scope globals */
         .func_api_size = sizeof( asset_api_t ),
-        .dep_count     = 1,
-        .deps          = { "core" },
+        .dep_count     = 2,
+        .deps          = { "core", "rhi" },
         .func_api      = &g_asset_api_struct,
         .init          = asset_mod_init,
         .reload        = asset_mod_reload,

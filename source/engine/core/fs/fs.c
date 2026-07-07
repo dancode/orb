@@ -349,9 +349,19 @@ fs_stat( const char* vpath_in, fs_stat_t* out )
     char vpath[ FS_PATH_MAX ];
     fs_norm_vpath( vpath, vpath_in );
 
+    /* Catalog hit: the entry caches the resolved real path, but size/mtime are VOLATILE for a
+       DIR mount (the OS owns the file), so re-stat live rather than trust the cached values --
+       this is what makes hot-reload observable (a rewritten loose file reports a new mtime).
+       If the file has since vanished, report a miss and let the cache entry go stale. */
     fs_entry_t* e = fs_catalog_find( vpath );
     if ( e )
     {
+        u64 mtime = sys_file_time( e->real );
+        if ( mtime == 0 )
+            return false;    // gone from disk; caller keeps its last-good resource
+
+        e->mtime = mtime;
+        e->size  = sys_file_size( e->real );
         if ( out )
         {
             out->size  = e->size;

@@ -22,7 +22,9 @@
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
 #include "engine/sys/sys_host.h"
+#include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
+#include "runtime_service/rhi/rhi_host.h"
 #include "runtime_service/asset/asset_host.h"
 
 /*==============================================================================================
@@ -140,6 +142,63 @@ asset_test( void )
 }
 
 /*==============================================================================================
+    Phase 4 proof -- hot-reload via mtime poll (asset()->refresh), no GPU.
+
+    Acquire a blob, prove refresh() is a no-op while the source is unchanged, then rewrite the
+    file and prove refresh() re-runs the loader in place: same id + refcount, fresh bytes.
+==============================================================================================*/
+
+static void
+asset_refresh_test( void )
+{
+    printf( "\n=== asset service (hot-reload / refresh) ===\n" );
+
+    const char* probe_real = "asset_reload.rlb";        // served through the "data/" mount below
+    const char* v1         = "reload payload VERSION ONE";
+    const char* v2         = "reload payload -- VERSION TWO (longer)";
+
+    if ( !sys_file_write_entire( probe_real, v1, ( u32 )strlen( v1 ) ) )
+    {
+        printf( "  FAIL: could not write probe file\n" );
+        return;
+    }
+    core()->fs_mount( "data/", "", 0 );
+
+    const char* exts[] = { ".rlb" };
+    asset()->type_register( "blob", exts, 1, blob_load, blob_unload, NULL );
+
+    int        loads0 = g_blob_loads;
+    asset_id_t a      = asset()->acquire( "data/asset_reload.rlb" );
+    blob_res_t* r1    = ( blob_res_t* )asset()->get( a );
+    printf( "  acquire: id={%u,%u} state=%s v1-match=%d loads=%d\n",
+            a.index, a.generation, state_name( asset()->state( a ) ),
+            r1 && strcmp( r1->bytes, v1 ) == 0, g_blob_loads - loads0 );
+
+    /* 1) unchanged source -> refresh reloads nothing. */
+    u32 n_noop = asset()->refresh();
+    printf( "  refresh (unchanged): reloaded=%u loads=%d (expect 0 / no new load)\n",
+            n_noop, g_blob_loads - loads0 );
+
+    /* 2) rewrite the source (new bytes + a guaranteed-newer mtime), then refresh reloads it in
+          place -- same id and refcount, fresh content.  Sleep past Windows' ~15ms file-time
+          granularity so the mtime is certain to differ. */
+    sys_sleep_milliseconds( 40 );
+    sys_file_write_entire( probe_real, v2, ( u32 )strlen( v2 ) );
+
+    u32         n_hot = asset()->refresh();
+    asset_id_t  a2    = a;                              // id is unchanged by an in-place reload
+    blob_res_t* r2    = ( blob_res_t* )asset()->get( a2 );
+    printf( "  refresh (rewritten): reloaded=%u loads=%d id-same=%d refcount=%d v2-match=%d\n",
+            n_hot, g_blob_loads - loads0,
+            ( a2.index == a.index && a2.generation == a.generation ),
+            asset()->refcount( a2 ), r2 && strcmp( r2->bytes, v2 ) == 0 );
+
+    asset()->release( a );
+    sys_file_delete( probe_real );
+    printf( "  final count=%u unloads accounted\n", asset()->count() );
+}
+
+/*==============================================================================================
     main
 ==============================================================================================*/
 
@@ -152,7 +211,9 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( app );
     mod_static( core );
+    mod_static( rhi );      // asset now depends on rhi (image loader); registered but not init'd here
     mod_static( asset );
 
     if ( !mod_init_all() )
@@ -163,6 +224,7 @@ main( int argc, char** argv )
     }
 
     asset_test();
+    asset_refresh_test();
 
     mod_system_exit();
     return 0;

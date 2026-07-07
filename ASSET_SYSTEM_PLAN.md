@@ -228,14 +228,48 @@ Phase 2 -- runtime_service/asset registry (synchronous, no loaders yet)   [DONE 
      backslash/case alt-form folds to same record (no reload); release unwinds refcount then
      unloads at 0; stale handle rejected by generation; missing file = FAILED but releasable.
 
-Phase 3 -- Image loader + on-screen proof
-   - loaders/asset_image.c using source/vendor/stb_image.h -> rhi texture. sb_engine_asset
-     (or extend a vulkan/gui sandbox) loads a PNG by id and draws it via draw()->image.
-   - Proof: on-screen textured quad from an acquired asset id.
+Phase 3 -- Image loader + on-screen proof   [DONE 2026-07-06]
+   - loaders/asset_image.{h,c}: built-in "image" type (auto-registered in asset_mod_init for
+     .png/.jpg/.jpeg/.bmp/.tga/.psd/.gif/.hdr). Loader = stb_image decode (STB_IMAGE_IMPLEMENTATION
+     compiled ONLY in the asset TU, STBI_NO_STDIO, forced RGBA8) -> rhi texture_create (RGBA8_UNORM,
+     SAMPLED|TRANSFER_DST, GPU_ONLY) -> upload_texture -> register_texture. Resource is a private
+     image_res_t whose FIRST member is the public asset_image_t { u32 tex_index; u32 width; height },
+     so the stored pointer doubles as the asset_image_t* returned by get(); the rhi_texture_t handle
+     stays private and is released on unload (unregister_texture + texture_destroy).
+   - Service now `dep core rhi` (loader calls rhi()); asset.c adds MOD_USE_RHI + includes the loader
+     unit; asset_mod_init/reload MOD_FETCH_RHI; mod_desc deps { "core", "rhi" }. Direct-path only
+     (cooked .tex slots in later behind an extension/header check). draw NOT a service dep -- the
+     DRAWING code (sandbox) owns draw()->image; the loader only needs rhi.
+   - BUILD NOTE (direct-dep linking again): every asset consumer now also links rhi (+ rhi's dep
+     app). Headless sb_engine_asset gained `dep rhi app` and mod_static(app/rhi) -- rhi_mod_init only
+     probes vulkan-1.dll (no device until rhi()->init()), so the blob test stays headless.
+   - Proof: new windowed sandbox sb_asset_image (source/sandbox/asset; dep sys ref mod core app rhi
+     draw asset; in orb_sandbox_vulkan). Boots the stack, mounts CWD, acquire("gui_issue.png") ->
+     get() -> draw()->image centered+aspect-fit each frame via draw()->begin_pass/end_pass. Optional
+     argv[1]=frame count for a clean headless smoke exit. Verified: RTX 3080 device up, PNG decoded
+     1656x1050 -> bindless tex_index=1 behind asset id {1,0}, 90 frames, exit 0.
 
-Phase 4 -- Hot-reload
-   - fs watch -> "path changed" -> asset service re-runs the loader for the affected id
-     (mtime compare as fallback). Proof: touch the PNG -> texture swaps live.
+Phase 4 -- Hot-reload   [DONE 2026-07-06]
+   - Mechanism = mtime-poll, caller-driven (smallest thing that swaps the PNG live; a real OS
+     file watch is deferred -- it would only gate WHICH records get re-stat'd, same reload path).
+     New vtable entry asset()->refresh(): scans every live record, fs_stat's its source, and
+     re-runs the loader IN PLACE for any whose mtime changed (also retries FAILED records so a
+     since-appeared file recovers). Id + refcount are preserved, so a caller that re-get()s sees
+     the fresh resource with no handle churn. Returns the reload count. A momentarily unreadable
+     source (editor mid-write) stats as gone and is skipped until it settles.
+   - ENABLING FIX in core/fs (this was the Phase-1 "watch forwarding not built yet" gap):
+     fs_stat cached size/mtime in the catalog, so a rewritten loose file never looked changed.
+     fs_stat now RE-STATS live on a catalog hit for DIR mounts (the entry still caches the
+     resolved real path; only size/mtime are volatile) and reports a miss if the file vanished.
+     The OS is the source of truth for DIR mounts, per fs.h -- ZIP entries (Phase 5) will keep
+     their eager catalog values.
+   - Proof A (headless, deterministic -- sb_engine_asset asset_refresh_test): acquire a blob;
+     refresh() with an unchanged source = 0 reloads / no new load; rewrite the file (+40ms sleep
+     past Windows' ~15ms file-time granularity) then refresh() = 1 reload, loads 1->2, SAME id,
+     refcount preserved, bytes now v2. Proof B (on-screen -- sb_asset_image): loop calls
+     refresh() each frame and re-get()s on a nonzero return (the old image_res_t is freed by the
+     in-place reload, so the cached pointer must be refreshed; a transient FAILED save skips the
+     draw). Edit/re-save gui_issue.png and the texture swaps live; 90-frame headless smoke green.
 
 Phase 5 -- Packaged (.zip) mounts
    - Vendor miniz (inflate). ZIP mount kind: parse central directory into the fs catalog,

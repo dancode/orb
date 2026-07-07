@@ -11,16 +11,19 @@
 
 #include "asset_api.h"
 #include "engine/core/core_api.h"
+#include "runtime_service/rhi/rhi_api.h"
 
-/* File-scope cached core API pointer used by the registry (fs_read / sid / alloc).
-   Static builds: no-op (shared global struct used directly). */
+/* File-scope cached API pointers.  core() = fs_read / sid / alloc (registry); rhi() = texture
+   create/upload/bindless (the image loader).  Static builds: no-op (shared globals used). */
 MOD_USE_CORE;
+MOD_USE_RHI;
 
 /*==============================================================================================
     Unity build
 ==============================================================================================*/
 
 #include "runtime_service/asset/asset_registry.c"
+#include "runtime_service/asset/loaders/asset_image.c"
 
 #ifndef ASSET_API_C_PRELUDE
     #include "runtime_service/asset/asset_api.c"

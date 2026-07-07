@@ -9,7 +9,7 @@
 
     Function groups (all called through the asset() vtable):
         Types  : type_register
-        Assets : acquire / release / reload
+        Assets : acquire / release / reload / refresh
         Query  : get / state / valid / refcount / count
 
 ==============================================================================================*/
@@ -46,6 +46,12 @@ typedef struct asset_api_s
     /* Re-run the loader for an id in place (hot-reload hook): unloads the current resource and
        loads fresh from disk, keeping the same id and refcount. */
     void ( *reload )( asset_id_t id );
+
+    /* Poll every live asset for a changed source file and reload the ones that changed (mtime
+       compare; also retries any that are FAILED).  Ids and refcounts are preserved, so callers
+       who re-get() see the fresh resource.  Returns how many were reloaded.  Call at a modest
+       cadence (a few times a second) -- it stats each live source. */
+    u32 ( *refresh )( void );
 
     /* The typed resource pointer if the asset is LOADED, else NULL. */
     void* ( *get )( asset_id_t id );

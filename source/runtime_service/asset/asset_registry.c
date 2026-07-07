@@ -395,6 +395,42 @@ asset_reload( asset_id_t id )
     asset_do_load( r );
 }
 
+/* Hot-reload poll: re-stat every live record's source and re-run the loader in place for any
+   whose file changed on disk (mtime differs) -- plus retry records that FAILED (e.g. the file
+   was missing and has since appeared).  The id and refcount are preserved, so the swapped
+   resource shows up behind get() with no handle churn.  Returns the number reloaded.
+
+   Caller-driven cadence (no clock dep here): a host/editor calls this a few times a second, or
+   a sandbox once a frame.  A momentarily-unreadable source (an editor mid-write) simply stats
+   as gone this tick and is left untouched until it settles.  This is the mtime-compare fallback
+   the plan names; an OS file watch could later gate which records get re-stat'd. */
+static u32
+asset_refresh( void )
+{
+    u32 reloaded = 0;
+    for ( u32 i = 0; i < ASSET_MAX; ++i )
+    {
+        asset_rec_t* r = &s_recs[ i ];
+        if ( !r->used )
+            continue;
+
+        const char* vpath = core()->sid_cstr( r->path );
+        fs_stat_t   st;
+        if ( !core()->fs_stat( vpath, &st ) )
+            continue;    // source unavailable this tick -- keep the current resource
+
+        if ( r->state != ASSET_FAILED && st.mtime == r->mtime )
+            continue;    // unchanged since load
+
+        LOG_INFO( "asset: hot-reload '%s' (mtime %llu -> %llu)", vpath,
+                  ( unsigned long long )r->mtime, ( unsigned long long )st.mtime );
+        asset_do_unload( r );
+        asset_do_load( r );    // re-stats and updates r->mtime
+        ++reloaded;
+    }
+    return reloaded;
+}
+
 static void*
 asset_get( asset_id_t id )
 {
