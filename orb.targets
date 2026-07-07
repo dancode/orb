@@ -534,6 +534,15 @@ target font_tool
     inc         third_party/freetype-2.14.3/include
     link_flag   msvc third_party/freetype-2.14.3/objs/x64/Release/freetype.lib
 
+target asset_tool
+
+    type        exe
+    root        source/tools/asset_tool
+    folder      08_TOOL
+    unit        asset_tool.c
+    flag        is_tool
+    dep         sys
+
 # ==============================================================================
 # DEV : Development Solution Wihout Any Sandbox or Test Code
 # ==============================================================================
@@ -707,6 +716,7 @@ solution orb_build
     add         build_tool
 	add 		reflect_tool
 	add 		font_tool
+	add 		asset_tool
 
 # ==============================================================================
 # FULL SOLUTION
@@ -756,6 +766,7 @@ solution orb_all
 	add 		template_game
 
 	add 		font_tool
+	add 		asset_tool
 
 # ==============================================================================
 # FULL SOLUTION : MONOLITHIC

@@ -59,6 +59,33 @@ uint64_t sys_file_time( const char* path );
 bool     sys_file_copy( const char* src, const char* dst );
 bool     sys_file_delete( const char* path );
 
+/* Whole-file read result. `data` is a malloc'd buffer with a hidden trailing NUL byte, so
+   text payloads (shaders, manifests) can be treated as a C string directly; `size` is the
+   real byte count and EXCLUDES that terminator. On failure: ok=false, data=NULL, size=0.
+   Release with sys_file_free() (safe to call on a failed result). */
+typedef struct sys_file_data_s
+{
+    void* data;
+    u32   size;
+    bool  ok;
+} sys_file_data_t;
+
+//              Read an entire file into a fresh buffer. See sys_file_data_t for ownership.
+sys_file_data_t sys_file_read_entire( const char* path );
+
+//              Free the buffer owned by a read result and zero the struct.
+void            sys_file_free( sys_file_data_t* fd );
+
+//              Overwrite (or create) `path` with `size` bytes. Returns false on any error.
+bool            sys_file_write_entire( const char* path, const void* data, u32 size );
+
+//              True if the path names an existing file (not a directory).
+bool            sys_file_exists( const char* path );
+
+//              Byte size of `path`, or 0 if missing/empty/error (use sys_file_exists to
+//              disambiguate an empty file from a missing one).
+u32             sys_file_size( const char* path );
+
 /* Callback invoked by sys_file_glob() for each matching file.
    `filename`  — bare filename only, no directory prefix; valid for the call duration.
    `full_path` — absolute path to the file; valid for the call duration.

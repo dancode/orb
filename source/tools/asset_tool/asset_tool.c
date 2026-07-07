@@ -16,32 +16,41 @@
 
 #include <stdio.h>
 #include "base/base.h"
-#include "engine/sys/sys.h"
+#include "engine/sys/sys_host.h"
 
 /*============================================================================================*/
 
-static void
+/* Phase 0: the cooker does no format transform yet -- it is a straight read -> write copy that
+   proves the shared sys whole-file primitive. The real converter dispatch (extension -> built-in
+   or spawned sub-tool such as font_tool) is the COOK track in ASSET_SYSTEM_PLAN.md. */
+
+static bool
 cook_asset( const char* src_path, const char* dst_path )
 {
-    /*
-    uint64_t           start = clock_now_ms();
+    i64             start = sys_tick_milliseconds();
 
-    file_read_result_t src   = file_read_entire( src_path );
+    sys_file_data_t src   = sys_file_read_entire( src_path );
     if ( !src.ok )
     {
         fprintf( stderr, "error: could not read %s\n", src_path );
-        return;
+        return false;
     }
 
-    // ... transform src.data ... 
+    /* ... transform src.data here once cooked formats exist ... */
 
-    file_write_entire( dst_path, src.data, src.size );
-    file_read_free( &src );
+    u32  size  = src.size; /* capture before free zeroes the result */
+    bool wrote = sys_file_write_entire( dst_path, src.data, src.size );
+    sys_file_free( &src );
 
-    uint64_t elapsed = clock_now_ms() - start;
-    printf( "cooked %s -> %s (%llu ms)\n", src_path, dst_path, elapsed );
+    if ( !wrote )
+    {
+        fprintf( stderr, "error: could not write %s\n", dst_path );
+        return false;
+    }
 
-    */
+    i64 elapsed = sys_tick_milliseconds() - start;
+    printf( "cooked %s -> %s (%u bytes, %lld ms)\n", src_path, dst_path, size, ( long long )elapsed );
+    return true;
 }
 
 /*============================================================================================*/
@@ -49,29 +58,19 @@ cook_asset( const char* src_path, const char* dst_path )
 int
 main( int argc, char** argv )
 {
-    printf( "Asset tool executed\n" );
-
     sys_tick_init();
-    i64 ticks = sys_tick_milliseconds();
-    printf( "ticks are: %llu\n", ticks );
-    sys_tick_exit();
 
     if ( argc < 3 )
     {
-        fprintf( stderr, "usage: cooker <src_dir> <dst_dir>\n" );
+        fprintf( stderr, "usage: asset_tool <src_file> <dst_file>\n" );
+        sys_tick_exit();
         return 1;
     }
 
-    /*
-    dir_walk_t walk = { 0 };
-    while ( file_dir_walk_next( argv[ 1 ], &walk ) )
-    {
-        char dst[ 512 ];
-        snprintf( dst, sizeof( dst ), "%s/%s", argv[ 2 ], walk.filename );
-        cook_asset( walk.path, dst );
-    }
-    */
-    return 0;
+    bool ok = cook_asset( argv[ 1 ], argv[ 2 ] );
+
+    sys_tick_exit();
+    return ok ? 0 : 1;
 }
 
 /*============================================================================================*/

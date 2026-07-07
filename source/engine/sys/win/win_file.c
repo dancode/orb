@@ -82,6 +82,124 @@ sys_file_delete( const char* path )
 }
 
 /*==============================================================================================
+    : Whole-file read / write
+==============================================================================================*/
+
+sys_file_data_t
+sys_file_read_entire( const char* path )
+{
+    sys_file_data_t out = { NULL, 0, false };
+
+    HANDLE h = CreateFileA( path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                            FILE_ATTRIBUTE_NORMAL, NULL );
+    if ( h == INVALID_HANDLE_VALUE )
+        return out;
+
+    LARGE_INTEGER li;
+    if ( !GetFileSizeEx( h, &li ) || li.QuadPart > 0xFFFFFFFFULL )
+    {
+        /* Reject >4 GB: the size field is u32 and asset files never approach that. */
+        CloseHandle( h );
+        return out;
+    }
+
+    u32   size = ( u32 )li.QuadPart;
+    char* buf  = ( char* )malloc( ( size_t )size + 1 ); /* +1 for the hidden NUL terminator */
+    if ( !buf )
+    {
+        CloseHandle( h );
+        return out;
+    }
+
+    /* ReadFile caps at a DWORD per call; loop to be safe for large files. */
+    u32 read_total = 0;
+    while ( read_total < size )
+    {
+        DWORD got = 0;
+        if ( !ReadFile( h, buf + read_total, size - read_total, &got, NULL ) || got == 0 )
+        {
+            free( buf );
+            CloseHandle( h );
+            return out;
+        }
+        read_total += got;
+    }
+    CloseHandle( h );
+
+    buf[ size ] = '\0'; /* convenience terminator, not counted in size */
+    out.data    = buf;
+    out.size    = size;
+    out.ok      = true;
+    return out;
+}
+
+/*============================================================================================*/
+
+void
+sys_file_free( sys_file_data_t* fd )
+{
+    if ( !fd )
+        return;
+    free( fd->data );
+    fd->data = NULL;
+    fd->size = 0;
+    fd->ok   = false;
+}
+
+/*============================================================================================*/
+
+bool
+sys_file_write_entire( const char* path, const void* data, u32 size )
+{
+    HANDLE h = CreateFileA( path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                            FILE_ATTRIBUTE_NORMAL, NULL );
+    if ( h == INVALID_HANDLE_VALUE )
+        return false;
+
+    /* An empty write is a valid truncate-to-zero. */
+    u32 written_total = 0;
+    while ( written_total < size )
+    {
+        DWORD put = 0;
+        if ( !WriteFile( h, ( const char* )data + written_total, size - written_total, &put, NULL )
+             || put == 0 )
+        {
+            CloseHandle( h );
+            return false;
+        }
+        written_total += put;
+    }
+    CloseHandle( h );
+    return true;
+}
+
+/*============================================================================================*/
+
+bool
+sys_file_exists( const char* path )
+{
+    DWORD attr = GetFileAttributesA( path );
+    return attr != INVALID_FILE_ATTRIBUTES && !( attr & FILE_ATTRIBUTE_DIRECTORY );
+}
+
+/*============================================================================================*/
+
+u32
+sys_file_size( const char* path )
+{
+    WIN32_FILE_ATTRIBUTE_DATA data;
+    if ( !GetFileAttributesExA( path, GetFileExInfoStandard, &data ) )
+        return 0;
+    if ( data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY )
+        return 0;
+
+    ULARGE_INTEGER uli;
+    uli.LowPart  = data.nFileSizeLow;
+    uli.HighPart = data.nFileSizeHigh;
+    return uli.QuadPart > 0xFFFFFFFFULL ? 0xFFFFFFFFu : ( u32 )uli.QuadPart;
+}
+
+/*==============================================================================================
     : Enumerate files matching a glob pattern
 ==============================================================================================*/
 
