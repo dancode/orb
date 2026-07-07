@@ -592,6 +592,7 @@ target shader_tool
     root        source/tools/shader_tool
     folder      08_TOOL
     unit        shader_tool.c
+    unit        shader_tool_spirv_reflect.c    # vendored SPIRV-Reflect; own TU, not shader_tool unity
     flag        is_tool
     dep         sys
 
