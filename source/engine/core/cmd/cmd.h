@@ -29,7 +29,7 @@
     Limits
 ==============================================================================================*/
 
-#define CMD_CAP             64      // max registered commands
+#define CMD_CAP             256     // max registered commands (input actions register +/- pairs)
 #define CMD_NAME_LEN        32      // bytes per command name (incl. NUL)
 #define CMD_DESC_LEN        96      // bytes per command description (incl. NUL)
 #define CMD_ARG_MAX         16      // max tokens per executed statement

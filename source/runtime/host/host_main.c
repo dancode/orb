@@ -135,6 +135,7 @@ MOD_USE_RHI;
 MOD_USE_RENDER;
 MOD_USE_DRAW;
 MOD_USE_GUI;
+MOD_USE_INPUT;
 
 /* Host-side perf HUD -- defined in host_perf.c, included after this unit in the runtime unity
    build (runtime.c).  host_perf_tick polls the toggle + folds this frame's stats (every frame);
@@ -366,6 +367,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     MOD_HOST_FETCH_API( render );
     MOD_HOST_FETCH_API( draw   );
     MOD_HOST_FETCH_API( gui    );
+    MOD_HOST_FETCH_API( input  );
 
     /* ---- windowed path: inferred from k_modules[] -------------------- */
     /*
@@ -589,6 +591,13 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* Drain queued command text (console submits, exec files, +cmdline args). */
         cmd_pump();
+
+        /* -- input action latch ------------------------------------------ */
+
+        /* AFTER the pump on purpose: +/- edges the binds queued this frame resolve into
+           this frame's pressed/released counts (the input service's ordering contract). */
+        if ( input() )
+             input()->frame( dt );
 
         /* -- job dispatcher tick --------------------------------------- */
 

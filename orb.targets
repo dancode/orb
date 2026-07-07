@@ -128,6 +128,14 @@ target asset
     unit        asset.c
     dep         core rhi
 
+target input
+
+    type        static
+    root        source/runtime_service/input
+    folder      03_RUNTIME/SERVICE
+    unit        input.c
+    dep         core app
+
 # ==============================================================================
 # 03_RUNTIME_MODULES
 # ==============================================================================
@@ -375,6 +383,14 @@ target sb_engine_job
     folder      09_SANDBOX/ENGINE
     unit        sb_engine_job.c
     dep         sys job
+
+target sb_engine_input						# input action service: binds -> +/- cmds -> action state
+
+    type        exe
+    root        source/sandbox/engine/engine_input
+    folder      09_SANDBOX/ENGINE
+    unit        sb_engine_input.c
+    dep         input core sys ref mod app
 
 
 # ==============================================================================
@@ -724,6 +740,7 @@ solution orb_sandbox_engine				# developing engine libraries
 	add         sys ref mod app core job net
 	add         rhi
 	add         asset
+	add         input
 
 	# 			--- SANDBOX : BASE --
 
@@ -734,6 +751,7 @@ solution orb_sandbox_engine				# developing engine libraries
 	add 		sb_engine_asset
 	add 		sb_engine_job
 	add 		sb_engine_app
+	add 		sb_engine_input
 
 	
 	# TOOD: engine test
@@ -766,6 +784,7 @@ solution orb_all
     add         rhi
     add         draw
     add         asset
+    add         input
 
     add         render audio physics
 	
@@ -781,8 +800,9 @@ solution orb_all
 	add 		sb_engine_asset
 	add 		sb_engine_job
 	add 		sb_engine_app
+	add 		sb_engine_input
 
-	
+
 	# 			reflection testing
 	add 		sb_reflect sb_runtime_reflect sb_runtime_gen
 	
