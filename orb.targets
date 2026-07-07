@@ -58,6 +58,7 @@ target core
     root        source/engine/core
     folder      02_ENGINE
     unit        core.c
+    unit        fs/fs_zip_miniz.c    # vendored miniz (ZIP mount reader); own TU, not core unity
     dep         sys ref
     flag        reflect host_only
 

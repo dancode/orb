@@ -271,11 +271,42 @@ Phase 4 -- Hot-reload   [DONE 2026-07-06]
      in-place reload, so the cached pointer must be refreshed; a transient FAILED save skips the
      draw). Edit/re-save gui_issue.png and the texture swaps live; 90-frame headless smoke green.
 
-Phase 5 -- Packaged (.zip) mounts
-   - Vendor miniz (inflate). ZIP mount kind: parse central directory into the fs catalog,
-     read = locate + inflate. Same fs_read interface; loose-over-bundle override already
-     handled by mount priority. Proof: same PNG served from a .zip, still hot-reloadable
-     when a loose copy shadows it.
+Phase 5 -- Packaged (.zip) mounts   [DONE 2026-07-06]
+   - Vendored miniz 3.0.2 amalgamation at source/vendor/miniz.{c,h} (+ miniz_LICENSE.txt).
+     Compiled as its OWN object (orb.targets core: second `unit fs/fs_zip_miniz.c`), NOT folded
+     into core.c's unity -- fs_zip_miniz.c sets MINIZ_NO_STDIO (shared via fs/fs_zip.h) and wraps
+     the include in #pragma warning(push,0) so miniz's own warnings don't trip the engine's /WX.
+     Archive WRITING stays enabled (tests build zips in memory; cook track will want it).
+   - ZIP mount kind in fs.c (fs_mount_kind_t DIR/ZIP, internal to fs.c -- public fs.h unchanged,
+     no API/vtable growth). fs_mount auto-detects a bundle by a ".zip" real_path: it reads the
+     whole archive via sys (sys owns disk I/O) and opens a miniz reader over the bytes with
+     mz_zip_reader_init_mem (bytes kept alive for the mount's life; freed at unmount/exit).
+   - Resolution is LAZY and zip-aware (NOT eager catalog fill) -- this is what preserves
+     loose-over-bundle: fs_resolve asks each matching mount "do you have it" (DIR = file exists;
+     ZIP = mz_zip_reader_locate_file >= 0) and the highest-priority hit wins, so a loose DIR file
+     shadows a zip entry for free. The catalog caches the winner's mount+`real` (an OS path for
+     DIR, the in-archive name for ZIP). fs_read branches on kind: ZIP = locate + file_stat +
+     extract_to_mem into a malloc'd size+1 buffer (hidden trailing NUL per fs_blob_t; freed by
+     fs_free like any blob). fs_glob skips ZIP mounts (bundle enumeration not wired this phase;
+     reads still work). Helpers: fs_has_zip_ext / fs_zip_rel / fs_zip_locate / fs_zip_meta /
+     fs_zip_read / fs_entry_meta.
+   - HOT-RELOAD interaction (Phase 4): miniz's file_stat carries no per-entry mtime, and a bundle
+     is immutable in place, so every zip entry reports the .zip's own mtime (captured at mount).
+     fs_stat's live-restat is gated to DIR mounts only (a ZIP catalog hit returns cached size/
+     mtime -- its `real` is an in-archive name, not an OS path), so a zip-backed asset never
+     spuriously hot-reloads while a loose shadow (DIR-backed) still does.
+   - Proof A (headless, deterministic -- sb_engine_core fs_zip_test): builds a two-file zip in
+     memory with the miniz writer (no committed binary), writes it out, then: mount ok; read a
+     nested DEFLATE'd entry (byte match -> inflate works); bundle serves shared.txt "FROM ZIP";
+     zip stat stable+nonzero across two calls; missing entry = not found. Then a second scenario
+     mounts the zip (prio 0) + loose CWD (prio 10): read resolves to the loose "FROM LOOSE"
+     (loose-over-bundle); the loose shadow's mtime changes after a rewrite (+40ms) = still
+     hot-reloadable; a path only in the bundle still resolves through the shadow mount.
+   - Proof B (on-screen -- sb_asset_image "zip" arg): packs gui_issue.png into a scratch
+     sb_asset_pack.zip (DEFLATE) at startup, mounts the bundle at "", and acquire()s the PNG from
+     it -- the asset service reads through core/fs, so the call is identical to loose mode; only
+     the backing changes. Verified: RTX 3080, "serving from bundle", PNG decoded 1656x1050 ->
+     bindless tex_index 1, 60-frame smoke green; scratch zip deleted at shutdown.
 
 COOK TRACK (asset_tool) -- parallel to runtime phases; not a blocker for 1-4.
 

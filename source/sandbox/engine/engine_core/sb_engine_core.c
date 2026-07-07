@@ -13,6 +13,8 @@
 #include "engine/mod/mod_host.h"
 #include "engine/core/core_api.h"
 #include "engine/sys/sys_host.h"    // sys_file_write_entire / _delete for the fs probe
+#include "engine/core/fs/fs_zip.h"  // miniz config -- must precede vendor/miniz.h
+#include "vendor/miniz.h"           // mz_zip_writer_* to build the Phase 5 test bundle in memory
 
 int  intern_test( void );                        // ... temporary code ...
 void test_core_cvar( int argc, char** argv );    // ... temporary code ...
@@ -201,6 +203,115 @@ fs_test( void )
 }
 
 /*============================================================================================*/
+/* Phase 5 proof: mount a .zip bundle and read from it, then show a loose file shadowing a zip
+   entry (loose-over-bundle by priority) while staying hot-reloadable.  Fully headless -- the
+   test builds its own zip in memory with the miniz writer, so there is no committed binary. */
+
+/* Build a two-file zip (docs/readme.txt, shared.txt) in memory and write it to `path`. */
+static bool
+build_test_zip( const char* path )
+{
+    const char* readme = "orb vfs phase 5 -- readme served from a zip bundle";
+    const char* shared = "FROM ZIP";
+
+    mz_zip_archive za;
+    memset( &za, 0, sizeof( za ) );
+    if ( !mz_zip_writer_init_heap( &za, 0, 0 ) )
+        return false;
+
+    /* MZ_BEST_COMPRESSION -> the payloads are DEFLATE'd, so reads exercise the inflate path. */
+    mz_zip_writer_add_mem( &za, "docs/readme.txt", readme, strlen( readme ), MZ_BEST_COMPRESSION );
+    mz_zip_writer_add_mem( &za, "shared.txt", shared, strlen( shared ), MZ_BEST_COMPRESSION );
+
+    void*  buf = NULL;
+    size_t sz  = 0;
+    bool   ok  = mz_zip_writer_finalize_heap_archive( &za, &buf, &sz );
+    if ( ok )
+        ok = sys_file_write_entire( path, buf, ( u32 )sz );
+
+    free( buf );    // finalize transfers ownership of the heap block to us
+    mz_zip_writer_end( &za );
+    return ok;
+}
+
+static bool
+blob_is( const fs_blob_t* b, const char* text )
+{
+    u32 n = ( u32 )strlen( text );
+    return b->ok && b->size == n && memcmp( b->data, text, n ) == 0;
+}
+
+static void
+fs_zip_test( void )
+{
+    printf( "\n=== fs (zip bundle mounts) ===\n" );
+
+    const char* zip_path   = "fs_pak.zip";
+    const char* shadow_rel = "shared.txt";   // loose file in CWD; the DIR mount "pak/"->"" serves it
+
+    if ( !build_test_zip( zip_path ) )
+    {
+        printf( "  FAIL: could not build test zip\n" );
+        return;
+    }
+
+    /* ---- Scenario A: the bundle serves its entries (central-dir parse + inflate). ---- */
+    fs_system_init();
+    printf( "  mount zip 'pak/' -> %s : %d\n", zip_path, fs_mount( "pak/", zip_path, 0 ) );
+
+    fs_blob_t rd = fs_read( "pak/docs/readme.txt" );        // nested path, deflated in the zip
+    printf( "  read pak/docs/readme.txt: ok=%d size=%u match=%d\n",
+            rd.ok, rd.size, blob_is( &rd, "orb vfs phase 5 -- readme served from a zip bundle" ) );
+    fs_free( &rd );
+
+    fs_blob_t sh = fs_read( "pak/shared.txt" );
+    printf( "  read pak/shared.txt (bundle): '%.*s' from-zip=%d\n",
+            ( int )sh.size, ( const char* )sh.data, blob_is( &sh, "FROM ZIP" ) );
+    fs_free( &sh );
+
+    /* zip entries carry the bundle's stable mtime -> two stats agree, so no spurious reload. */
+    fs_stat_t z1, z2;
+    fs_stat( "pak/docs/readme.txt", &z1 );
+    fs_stat( "pak/docs/readme.txt", &z2 );
+    printf( "  zip stat: ok=%d size=%u mtime-stable=%d nonzero=%d\n",
+            z1.ok, z1.size, ( z1.mtime == z2.mtime ), ( z1.mtime != 0 ) );
+
+    printf( "  missing zip entry exists=%d\n", fs_exists( "pak/nope.txt" ) );
+    fs_system_exit();
+
+    /* ---- Scenario B: a loose file shadows the same vpath (loose-over-bundle) and hot-reloads. ---- */
+    sys_file_write_entire( shadow_rel, "FROM LOOSE", 10 );
+
+    fs_system_init();
+    fs_mount( "pak/", zip_path, 0 );          // bundle at low priority
+    fs_mount( "pak/", "", 10 );               // loose CWD at high priority -> shadows the bundle
+
+    fs_blob_t win = fs_read( "pak/shared.txt" );
+    printf( "  read pak/shared.txt (loose shadows bundle): '%.*s' from-loose=%d\n",
+            ( int )win.size, ( const char* )win.data, blob_is( &win, "FROM LOOSE" ) );
+    fs_free( &win );
+
+    /* the shadowing loose file is DIR-backed, so fs_stat re-stats live -> still hot-reloadable. */
+    fs_stat_t s1;
+    fs_stat( "pak/shared.txt", &s1 );
+    sys_sleep_milliseconds( 40 );             // clear Windows' ~15ms file-time granularity
+    sys_file_write_entire( shadow_rel, "FROM LOOSE v2", 13 );
+    fs_stat_t s2;
+    fs_stat( "pak/shared.txt", &s2 );
+    printf( "  loose shadow hot-reloadable: mtime-changed=%d\n", ( s1.mtime != s2.mtime ) );
+
+    /* a path only in the bundle still resolves through the shadow mount. */
+    fs_blob_t only = fs_read( "pak/docs/readme.txt" );
+    printf( "  bundle still serves non-shadowed path: ok=%d from-zip=%d\n",
+            only.ok, blob_is( &only, "orb vfs phase 5 -- readme served from a zip bundle" ) );
+    fs_free( &only );
+    fs_system_exit();
+
+    sys_file_delete( shadow_rel );
+    sys_file_delete( zip_path );
+}
+
+/*============================================================================================*/
 /* main entry point */
 
 int
@@ -210,6 +321,7 @@ main( int argc, char** argv )
     UNUSED( argv );
     core_test();
     fs_test();
+    fs_zip_test();
     return 0;
 }
 

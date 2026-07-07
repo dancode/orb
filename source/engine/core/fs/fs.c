@@ -15,6 +15,8 @@
 
 #include "orb.h"
 #include "engine/core/fs/fs.h"
+#include "engine/core/fs/fs_zip.h"   /* miniz config -- must precede vendor/miniz.h */
+#include "vendor/miniz.h"            /* mz_zip_* reader (impl in fs_zip_miniz.c) */
 #include "engine/core/sid/sid.h"     /* sid_hash_len -- case-insensitive FNV-1a */
 #include "engine/sys/sys_host.h"     /* sys_file_read_entire / _exists / _size / _time / _glob */
 
@@ -22,12 +24,31 @@
     State
 ==============================================================================================*/
 
+/* A mount is either a real directory (DIR) or a .zip archive (ZIP).  Both resolve through the
+   same vprefix/priority logic; only the backing read differs.  loose-over-bundle falls out of
+   the shared priority scan -- a DIR file at higher priority shadows a ZIP entry for free. */
+typedef enum fs_mount_kind_e
+{
+    FS_MOUNT_DIR = 0,   // real names a directory on disk
+    FS_MOUNT_ZIP,       // real names a .zip; entries served via miniz
+
+} fs_mount_kind_t;
+
 typedef struct fs_mount_s
 {
-    char vprefix[ FS_PATH_MAX ];   // normalized, trailing '/' (or "" = match all)
-    char real[ FS_PATH_MAX ];      // normalized, trailing '/'
-    int  priority;
-    bool used;
+    char            vprefix[ FS_PATH_MAX ];   // normalized, trailing '/' (or "" = match all)
+    char            real[ FS_PATH_MAX ];      // DIR: dir with trailing '/'.  ZIP: the .zip path.
+    int             priority;
+    u8              kind;                     // fs_mount_kind_t
+    bool            used;
+
+    /* ZIP mounts only: the whole archive is read into memory once (sys owns disk I/O) and kept
+       alive for the mount's lifetime so the reader can extract by name on demand.  Every entry
+       reports the .zip's own mtime -- a bundle is immutable in place, so this is stable and
+       hot-reload never re-runs a loader for a zip-backed asset (a loose shadow does that). */
+    mz_zip_archive* zip;
+    void*           zip_bytes;
+    u64             zip_mtime;
 
 } fs_mount_t;
 
@@ -119,6 +140,106 @@ fs_build_real( const fs_mount_t* m, const char* vpath, char* out )
 }
 
 /*==============================================================================================
+    ZIP backing  (miniz reader over an in-memory archive)
+==============================================================================================*/
+
+/* True if `path` ends in ".zip" (case-insensitive) -- how fs_mount tells a bundle from a dir. */
+static bool
+fs_has_zip_ext( const char* path )
+{
+    size_t n = strlen( path );
+    return n >= 4 && fs_ci_eq( path + n - 4, ".zip" );
+}
+
+/* In-archive entry name for `vpath` under a ZIP mount: the vpath beyond the mount prefix, with
+   any leading slashes stripped (zip central-dir names carry no leading '/').  Written to `out`. */
+static void
+fs_zip_rel( const fs_mount_t* m, const char* vpath, char* out )
+{
+    const char* rel = vpath + strlen( m->vprefix );
+    while ( *rel == '/' )
+        ++rel;
+    snprintf( out, FS_PATH_MAX, "%s", rel );
+}
+
+/* Locate `rel` in the mount's archive; returns the file index or -1.  Case-insensitive (flags
+   0), matching the vfs's case-folding elsewhere. */
+static int
+fs_zip_locate( const fs_mount_t* m, const char* rel )
+{
+    if ( !m->zip || !rel[ 0 ] )
+        return -1;
+    return mz_zip_reader_locate_file( m->zip, rel, NULL, 0 );
+}
+
+/* Size (and the mount's stable mtime) for a ZIP entry named `rel`.  Returns false if absent. */
+static bool
+fs_zip_meta( const fs_mount_t* m, const char* rel, u32* out_size, u64* out_mtime )
+{
+    int idx = fs_zip_locate( m, rel );
+    if ( idx < 0 )
+        return false;
+
+    mz_zip_archive_file_stat st;
+    if ( !mz_zip_reader_file_stat( m->zip, ( mz_uint )idx, &st ) )
+        return false;
+
+    if ( out_size )
+        *out_size = ( u32 )st.m_uncomp_size;
+    if ( out_mtime )
+        *out_mtime = m->zip_mtime;    // per-entry time is not tracked; the bundle's is stable
+    return true;
+}
+
+/* Extract ZIP entry `rel` into a fresh malloc'd buffer (freed by fs_free like any blob).  The
+   buffer carries a hidden trailing NUL past `*out_size`, matching the fs_blob_t contract so text
+   payloads work as C strings.  Returns NULL if the entry is absent or decompression fails. */
+static void*
+fs_zip_read( const fs_mount_t* m, const char* rel, u32* out_size )
+{
+    int idx = fs_zip_locate( m, rel );
+    if ( idx < 0 )
+        return NULL;
+
+    mz_zip_archive_file_stat st;
+    if ( !mz_zip_reader_file_stat( m->zip, ( mz_uint )idx, &st ) )
+        return NULL;
+
+    size_t size = ( size_t )st.m_uncomp_size;
+    char*  buf  = ( char* )malloc( size + 1 );
+    if ( !buf )
+        return NULL;
+
+    if ( size && !mz_zip_reader_extract_to_mem( m->zip, ( mz_uint )idx, buf, size, 0 ) )
+    {
+        free( buf );
+        return NULL;
+    }
+    buf[ size ] = '\0';
+    if ( out_size )
+        *out_size = ( u32 )size;
+    return buf;
+}
+
+/* size + mtime for a resolved (mount, real) pair, dispatched by mount kind.  `real` is an OS
+   path for DIR, an in-archive name for ZIP.  Returns false if the backing is gone. */
+static bool
+fs_entry_meta( const fs_mount_t* m, const char* real, u32* out_size, u64* out_mtime )
+{
+    if ( m->kind == FS_MOUNT_ZIP )
+        return fs_zip_meta( m, real, out_size, out_mtime );
+
+    u64 mtime = sys_file_time( real );
+    if ( mtime == 0 )
+        return false;    // vanished from disk
+    if ( out_size )
+        *out_size = sys_file_size( real );
+    if ( out_mtime )
+        *out_mtime = mtime;
+    return true;
+}
+
+/*==============================================================================================
     Catalog
 ==============================================================================================*/
 
@@ -197,9 +318,20 @@ fs_resolve( const char* vpath, char* real_out )
         if ( !m->used || !fs_prefix_match( vpath, m->vprefix ) )
             continue;
 
+        /* Does this mount actually hold the file?  cand becomes the entry's "real": a real OS
+           path for a DIR mount, or the in-archive name for a ZIP mount. */
         char cand[ FS_PATH_MAX ];
-        if ( !fs_build_real( m, vpath, cand ) || !sys_file_exists( cand ) )
-            continue;
+        if ( m->kind == FS_MOUNT_ZIP )
+        {
+            fs_zip_rel( m, vpath, cand );
+            if ( fs_zip_locate( m, cand ) < 0 )
+                continue;
+        }
+        else
+        {
+            if ( !fs_build_real( m, vpath, cand ) || !sys_file_exists( cand ) )
+                continue;
+        }
 
         if ( !best || m->priority > best_prio )
         {
@@ -227,9 +359,28 @@ fs_system_init( void )
     s_catalog_count = 0;
 }
 
+/* Release a ZIP mount's reader + in-memory archive (no-op for DIR mounts). */
+static void
+fs_mount_free_zip( fs_mount_t* m )
+{
+    if ( m->kind != FS_MOUNT_ZIP )
+        return;
+    if ( m->zip )
+    {
+        mz_zip_reader_end( m->zip );
+        free( m->zip );
+        m->zip = NULL;
+    }
+    free( m->zip_bytes );
+    m->zip_bytes = NULL;
+}
+
 void
 fs_system_exit( void )
 {
+    for ( u32 i = 0; i < s_mount_count; ++i )
+        fs_mount_free_zip( &s_mounts[ i ] );
+
     free( s_catalog );
     s_catalog       = NULL;
     s_catalog_count = 0;
@@ -240,6 +391,32 @@ fs_system_exit( void )
     Mounts
 ==============================================================================================*/
 
+/* Read a .zip whole into memory (sys owns disk I/O) and open a miniz reader over it.  Fills the
+   ZIP fields of `m` and returns true, or frees whatever it took and returns false. */
+static bool
+fs_mount_zip_open( fs_mount_t* m, const char* zip_path )
+{
+    sys_file_data_t fd = sys_file_read_entire( zip_path );
+    if ( !fd.ok )
+    {
+        return false;
+    }
+
+    mz_zip_archive* za = ( mz_zip_archive* )calloc( 1, sizeof( mz_zip_archive ) );
+    if ( !za || !mz_zip_reader_init_mem( za, fd.data, fd.size, 0 ) )
+    {
+        free( za );
+        free( fd.data );
+        return false;
+    }
+
+    m->kind      = FS_MOUNT_ZIP;
+    m->zip       = za;
+    m->zip_bytes = fd.data;               // must outlive the reader (init_mem does not copy)
+    m->zip_mtime = sys_file_time( zip_path );
+    return true;
+}
+
 bool
 fs_mount( const char* vprefix, const char* real_path, int priority )
 {
@@ -247,10 +424,24 @@ fs_mount( const char* vprefix, const char* real_path, int priority )
         return false;
 
     fs_mount_t* m = &s_mounts[ s_mount_count ];
+    memset( m, 0, sizeof( *m ) );
     fs_norm_dir( m->vprefix, vprefix ? vprefix : "" );
-    fs_norm_dir( m->real, real_path ? real_path : "" );
     m->priority = priority;
-    m->used     = true;
+
+    /* A real_path ending in ".zip" is a bundle mount; anything else is a directory. */
+    if ( real_path && fs_has_zip_ext( real_path ) )
+    {
+        fs_norm_vpath( m->real, real_path );    // store the archive path verbatim (no trailing '/')
+        if ( !fs_mount_zip_open( m, real_path ) )
+            return false;                       // slot not consumed; bad/unreadable archive
+    }
+    else
+    {
+        m->kind = FS_MOUNT_DIR;
+        fs_norm_dir( m->real, real_path ? real_path : "" );
+    }
+
+    m->used = true;
     ++s_mount_count;
     return true;
 }
@@ -264,7 +455,10 @@ fs_unmount( const char* vprefix )
     for ( u32 i = 0; i < s_mount_count; ++i )
     {
         if ( s_mounts[ i ].used && fs_ci_eq( s_mounts[ i ].vprefix, pfx ) )
+        {
+            fs_mount_free_zip( &s_mounts[ i ] );    // close the archive if this was a bundle
             s_mounts[ i ].used = false;
+        }
     }
 
     /* Drop the cache; it rebuilds lazily and this avoids stale real-path entries. */
@@ -290,20 +484,43 @@ fs_read( const char* vpath_in )
     const fs_mount_t* m = NULL;
 
     if ( e )
+    {
         snprintf( real, FS_PATH_MAX, "%s", e->real );
+        m = &s_mounts[ e->mount ];    // catalog entry remembers which mount (and thus kind) won
+    }
     else if ( ( m = fs_resolve( vpath, real ) ) == NULL )
+    {
         return blob;    // not found in any mount
+    }
 
-    sys_file_data_t fd = sys_file_read_entire( real );
-    if ( !fd.ok )
+    /* `real` is an OS path for a DIR mount, or the in-archive entry name for a ZIP mount. */
+    void* data  = NULL;
+    u32   size  = 0;
+    u64   mtime = 0;
+    if ( m->kind == FS_MOUNT_ZIP )
+    {
+        data  = fs_zip_read( m, real, &size );
+        mtime = m->zip_mtime;
+    }
+    else
+    {
+        sys_file_data_t fd = sys_file_read_entire( real );
+        if ( fd.ok )
+        {
+            data  = fd.data;
+            size  = fd.size;
+            mtime = sys_file_time( real );
+        }
+    }
+    if ( !data )
         return blob;
 
-    blob.data = fd.data;
-    blob.size = fd.size;
+    blob.data = data;
+    blob.size = size;
     blob.ok   = true;
 
     if ( !e )
-        fs_catalog_insert( vpath, real, ( u16 )( m - s_mounts ), fd.size, sys_file_time( real ) );
+        fs_catalog_insert( vpath, real, ( u16 )( m - s_mounts ), size, mtime );
     return blob;
 }
 
@@ -332,7 +549,10 @@ fs_exists( const char* vpath_in )
     if ( !m )
         return false;
 
-    fs_catalog_insert( vpath, real, ( u16 )( m - s_mounts ), sys_file_size( real ), sys_file_time( real ) );
+    u32 size = 0;
+    u64 mtime = 0;
+    fs_entry_meta( m, real, &size, &mtime );
+    fs_catalog_insert( vpath, real, ( u16 )( m - s_mounts ), size, mtime );
     return true;
 }
 
@@ -349,19 +569,23 @@ fs_stat( const char* vpath_in, fs_stat_t* out )
     char vpath[ FS_PATH_MAX ];
     fs_norm_vpath( vpath, vpath_in );
 
-    /* Catalog hit: the entry caches the resolved real path, but size/mtime are VOLATILE for a
-       DIR mount (the OS owns the file), so re-stat live rather than trust the cached values --
-       this is what makes hot-reload observable (a rewritten loose file reports a new mtime).
-       If the file has since vanished, report a miss and let the cache entry go stale. */
+    /* Catalog hit.  For a DIR mount size/mtime are VOLATILE (the OS owns the file), so re-stat
+       live -- this is what makes hot-reload observable (a rewritten loose file reports a new
+       mtime); if it vanished, report a miss and let the entry go stale.  A ZIP entry is
+       immutable in place, and its cached `real` is an in-archive name (not an OS path), so
+       return the cached values as-is -- a zip-backed asset never spuriously hot-reloads. */
     fs_entry_t* e = fs_catalog_find( vpath );
     if ( e )
     {
-        u64 mtime = sys_file_time( e->real );
-        if ( mtime == 0 )
-            return false;    // gone from disk; caller keeps its last-good resource
-
-        e->mtime = mtime;
-        e->size  = sys_file_size( e->real );
+        const fs_mount_t* em = &s_mounts[ e->mount ];
+        if ( em->kind == FS_MOUNT_DIR )
+        {
+            u64 mtime = sys_file_time( e->real );
+            if ( mtime == 0 )
+                return false;    // gone from disk; caller keeps its last-good resource
+            e->mtime = mtime;
+            e->size  = sys_file_size( e->real );
+        }
         if ( out )
         {
             out->size  = e->size;
@@ -376,8 +600,9 @@ fs_stat( const char* vpath_in, fs_stat_t* out )
     if ( !m )
         return false;
 
-    u32 size  = sys_file_size( real );
-    u64 mtime = sys_file_time( real );
+    u32 size  = 0;
+    u64 mtime = 0;
+    fs_entry_meta( m, real, &size, &mtime );
     fs_catalog_insert( vpath, real, ( u16 )( m - s_mounts ), size, mtime );
 
     if ( out )
@@ -460,8 +685,8 @@ fs_glob( const char* vpat, fs_glob_fn cb, void* userdata )
     for ( u32 i = 0; i < s_mount_count && !ctx.stop; ++i )
     {
         fs_mount_t* m = &s_mounts[ i ];
-        if ( !m->used || !fs_prefix_match( vdir_slash, m->vprefix ) )
-            continue;
+        if ( !m->used || m->kind != FS_MOUNT_DIR || !fs_prefix_match( vdir_slash, m->vprefix ) )
+            continue;    // ZIP enumeration is not wired into glob this phase (reads still work)
 
         /* Real directory = mount real + (vdir beyond the mount prefix). */
         const char* rel = vdir_slash + strlen( m->vprefix );
