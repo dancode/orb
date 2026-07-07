@@ -100,6 +100,19 @@ typedef bool ( *sys_glob_fn )( const char* filename, const char* full_path, void
 
 int sys_file_glob( const char* dir, const char* pattern, sys_glob_fn cb, void* userdata );
 
+/* Recursively create `path` and any missing parent directories (like `mkdir -p`). Returns true
+   if the directory exists on return -- whether it was created now or already present. Idempotent;
+   safe to call on an existing directory. */
+
+bool sys_dir_make( const char* path );
+
+/* Recursively enumerate every file under `root`, descending into all subdirectories. Calls `cb`
+   once per file (see sys_glob_fn) with its bare name and absolute path; subdirectories are
+   traversed but never reported themselves. Stops early if `cb` returns false. Returns the total
+   number of files delivered to `cb`. */
+
+int sys_dir_walk( const char* root, sys_glob_fn cb, void* userdata );
+
 /*==============================================================================================
 
     File Watch - Directory change polling with debounced notifications

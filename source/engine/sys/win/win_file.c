@@ -237,4 +237,97 @@ sys_file_glob( const char* dir, const char* pattern, sys_glob_fn cb, void* userd
     return count;
 }
 
+/*==============================================================================================
+    : Recursive directory create (mkdir -p)
+==============================================================================================*/
+
+bool
+sys_dir_make( const char* path )
+{
+    if ( !path || !path[ 0 ] )
+        return false;
+
+    /* Work on a private, backslash-normalized copy; create each ancestor in turn. */
+    char tmp[ MAX_PATH ];
+    int  n = 0;
+    while ( path[ n ] && n < ( int )sizeof( tmp ) - 1 )
+    {
+        char c    = path[ n ];
+        tmp[ n ]  = ( c == '/' ) ? '\\' : c;
+        ++n;
+    }
+    if ( path[ n ] )   /* path did not fit */
+        return false;
+    tmp[ n ] = '\0';
+
+    for ( int i = 1; i < n; ++i )
+    {
+        if ( tmp[ i ] == '\\' )
+        {
+            tmp[ i ] = '\0';
+            /* Skip a bare drive root like "C:" -- CreateDirectory would fail on it. */
+            if ( !( tmp[ 1 ] == ':' && tmp[ 2 ] == '\0' ) )
+                CreateDirectoryA( tmp, NULL ); /* ignores ERROR_ALREADY_EXISTS */
+            tmp[ i ] = '\\';
+        }
+    }
+    CreateDirectoryA( tmp, NULL );
+
+    DWORD attr = GetFileAttributesA( tmp );
+    return attr != INVALID_FILE_ATTRIBUTES && ( attr & FILE_ATTRIBUTE_DIRECTORY );
+}
+
+/*==============================================================================================
+    : Recursive file walk
+==============================================================================================*/
+
+static int
+sys_dir_walk_rec( const char* dir, sys_glob_fn cb, void* userdata, bool* stop )
+{
+    char search[ MAX_PATH ];
+    snprintf( search, sizeof( search ), "%s\\*", dir );
+
+    WIN32_FIND_DATAA fd;
+    HANDLE           h = FindFirstFileA( search, &fd );
+    if ( h == INVALID_HANDLE_VALUE )
+        return 0;
+
+    int count = 0;
+    do {
+        /* Skip "." and ".." (and any dot-prefixed entry, matching sys_file_glob). */
+        if ( fd.cFileName[ 0 ] == '.' )
+            continue;
+
+        char full[ MAX_PATH ];
+        snprintf( full, sizeof( full ), "%s\\%s", dir, fd.cFileName );
+
+        if ( fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY )
+        {
+            count += sys_dir_walk_rec( full, cb, userdata, stop );
+            if ( *stop )
+                break;
+        }
+        else
+        {
+            ++count;
+            if ( !cb( fd.cFileName, full, userdata ) )
+            {
+                *stop = true;
+                break;
+            }
+        }
+    }
+    while ( FindNextFileA( h, &fd ) );
+
+    FindClose( h );
+    return count;
+}
+
+int
+sys_dir_walk( const char* root, sys_glob_fn cb, void* userdata )
+{
+    bool stop = false;
+    return sys_dir_walk_rec( root, cb, userdata, &stop );
+}
+
 /*============================================================================================*/

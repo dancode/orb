@@ -9,13 +9,17 @@
 
     Usage:
 
-        asset_tool cook <src> <dst> [args...]
-
+        asset_tool cook <src> <dst> [args...]        single job
             .ttf/.otf   -> spawn font_tool  <src> <size> <dst>   (args[0] = size_px, default 16)
             image/other -> built-in copy                          (cooked .tex lands in Cook-C)
 
-    Cook-A scope (ASSET_SYSTEM_PLAN.md): single-job CLI + extension dispatch + sub-tool spawn.
-    Tree scan / incremental (-src/-dst), cooked .tex, and packaging are later cook phases.
+        asset_tool -src <dir> -dst <dir> [-f]        incremental tree cook
+            Walks <dir> recursively, cooks each file into a mirrored path under -dst, skips
+            sources whose mtime is unchanged since the last run (unless -f forces a full cook),
+            and emits a cook cache + manifest under -dst.
+
+    Cook-A/B scope (ASSET_SYSTEM_PLAN.md): single-job CLI + extension dispatch + sub-tool spawn,
+    then tree scan + staleness cache + manifest. Cooked .tex and packaging are later cook phases.
 
     Tools that don't need hot-reload, a service registry, or a game loop skip the module system
     entirely and call sys directly.
@@ -23,7 +27,7 @@
     Link list for this executable:
 
         base            (headers only -- unity built in)
-        sys             (file_io, clock, process spawn -- statically linked)
+        sys             (file_io, clock, process spawn, dir walk/make -- statically linked)
 
     Nothing else. No core, no module system, no app.
 
@@ -38,6 +42,11 @@
 /*============================================================================================*/
 
 #define ASSET_TOOL_DEFAULT_FONT_SIZE 16
+
+#define COOK_PATH_MAX     512
+#define COOK_MAX_JOBS     4096
+#define COOK_CACHE_FILE   ".cook_cache"
+#define COOK_MANIFEST_FILE "cook_manifest.txt"
 
 /* path_ext -- returns a pointer to the extension (past the last '.'), or "" if none. The '.'
    must come after the last path separator so a dotted directory does not fool it. */
@@ -81,6 +90,8 @@ ext_is_font( const char* ext )
 }
 
 /*============================================================================================*/
+/*  Converters                                                                                */
+/*============================================================================================*/
 
 /* cook_copy -- built-in passthrough converter: read src, write dst verbatim. This is the
    Cook-A stand-in for the image path; the real pre-decoded .tex format is Cook-C, at which
@@ -105,7 +116,7 @@ cook_copy( const char* src_path, const char* dst_path )
         return false;
     }
 
-    printf( "asset_tool: copied %s -> %s (%u bytes)\n", src_path, dst_path, size );
+    printf( "asset_tool:   copy %s -> %s (%u bytes)\n", src_path, dst_path, size );
     return true;
 }
 
@@ -123,8 +134,6 @@ cook_font( const char* src_path, const char* dst_path, int size_px )
     snprintf( cmd, sizeof( cmd ), "\"%s\\font_tool.exe\" \"%s\" %d \"%s\"", exe_dir, src_path,
               size_px, dst_path );
 
-    printf( "asset_tool: spawn %s\n", cmd );
-
     sys_process_result_t res;
     if ( !sys_process_run( cmd, NULL, &res ) )
     {
@@ -133,45 +142,348 @@ cook_font( const char* src_path, const char* dst_path, int size_px )
     }
     if ( res.exit_code != 0 )
     {
-        fprintf( stderr, "asset_tool: error: font_tool exited %d\n", res.exit_code );
+        fprintf( stderr, "asset_tool: error: font_tool exited %d for %s\n", res.exit_code, src_path );
         return false;
     }
 
-    printf( "asset_tool: baked %s -> %s (%dpx, %.0f ms)\n", src_path, dst_path, size_px,
+    printf( "asset_tool:   font %s -> %s (%dpx, %.0f ms)\n", src_path, dst_path, size_px,
             res.elapsed_seconds * 1000.0 );
     return true;
 }
 
+/* cook_file -- dispatch one source file to a converter chosen by its extension. */
+static bool
+cook_file( const char* src_path, const char* dst_path, int font_size_px )
+{
+    const char* ext = path_ext( src_path );
+    if ( ext_is_font( ext ) )
+        return cook_font( src_path, dst_path, font_size_px );
+    return cook_copy( src_path, dst_path ); /* image and everything else: copy (Cook-A) */
+}
+
+/*============================================================================================*/
+/*  Single-job mode (Cook-A)                                                                  */
 /*============================================================================================*/
 
-/* cook_one -- dispatch a single source file to a converter chosen by its extension.
-   `args`/`arg_count` are the trailing converter-specific positional arguments (e.g. font size). */
 static bool
-cook_one( const char* src_path, const char* dst_path, char** args, int arg_count )
+cook_single( const char* src_path, const char* dst_path, char** args, int arg_count )
 {
-    i64         start = sys_tick_milliseconds();
-    const char* ext   = path_ext( src_path );
-    bool        ok;
+    i64 start   = sys_tick_milliseconds();
+    int size_px = ( arg_count > 0 ) ? atoi( args[ 0 ] ) : ASSET_TOOL_DEFAULT_FONT_SIZE;
+    if ( size_px <= 0 )
+        size_px = ASSET_TOOL_DEFAULT_FONT_SIZE;
 
+    bool ok = cook_file( src_path, dst_path, size_px );
+    if ( ok )
+        printf( "asset_tool: cook done (%lld ms)\n", ( long long )( sys_tick_milliseconds() - start ) );
+    return ok;
+}
+
+/*============================================================================================*/
+/*  Path helpers                                                                              */
+/*============================================================================================*/
+
+/* to_slashes/to_backslashes -- normalize separators in place. Manifest/cache use '/'; the OS
+   calls use '\\'. */
+static void
+path_norm( char* s, char sep )
+{
+    for ( ; *s; ++s )
+        if ( *s == '/' || *s == '\\' )
+            *s = sep;
+}
+
+/* path_parent -- copy `full` minus its last path component into `out`. */
+static void
+path_parent( char* out, size_t cap, const char* full )
+{
+    snprintf( out, cap, "%s", full );
+    for ( int i = ( int )strlen( out ) - 1; i >= 0; --i )
+    {
+        if ( out[ i ] == '\\' || out[ i ] == '/' )
+        {
+            out[ i ] = '\0';
+            return;
+        }
+    }
+    out[ 0 ] = '\0';
+}
+
+/* job_dst_rel -- map a source relative path to its cooked output relative path: fonts become
+   .orb_font, everything else keeps its name (built-in copy for now). */
+static void
+job_dst_rel( char* out, size_t cap, const char* src_rel )
+{
+    const char* ext = path_ext( src_rel );
     if ( ext_is_font( ext ) )
     {
-        int size_px = ( arg_count > 0 ) ? atoi( args[ 0 ] ) : ASSET_TOOL_DEFAULT_FONT_SIZE;
-        if ( size_px <= 0 )
-            size_px = ASSET_TOOL_DEFAULT_FONT_SIZE;
-        ok = cook_font( src_path, dst_path, size_px );
+        int keep = ( int )( ext - src_rel ); /* chars up to and including the '.' */
+        snprintf( out, cap, "%.*sorb_font", keep, src_rel );
     }
     else
     {
-        /* Image and everything else: built-in copy for Cook-A. */
-        ok = cook_copy( src_path, dst_path );
+        snprintf( out, cap, "%s", src_rel );
+    }
+}
+
+/*============================================================================================*/
+/*  Tree cook (Cook-B): scan, staleness cache, manifest                                       */
+/*============================================================================================*/
+
+typedef struct cook_job_s
+{
+    char src_full[ COOK_PATH_MAX ]; /* absolute source path (from the walk)                   */
+    char src_rel[ COOK_PATH_MAX ];  /* path relative to -src, '/'-normalized (cache key)      */
+    char dst_rel[ COOK_PATH_MAX ];  /* output path relative to -dst, cooked extension         */
+    u64  src_mtime;                 /* source last-write time                                 */
+    bool present;                   /* output exists after this run (cooked or already fresh) */
+} cook_job_t;
+
+typedef struct cache_ent_s
+{
+    char rel[ COOK_PATH_MAX ];
+    u64  mtime;
+} cache_ent_t;
+
+/* These arrays are a few MB -- live in BSS, not on the stack. */
+static cook_job_t  s_jobs[ COOK_MAX_JOBS ];
+static cache_ent_t s_cache[ COOK_MAX_JOBS ];
+
+typedef struct cook_ctx_s
+{
+    int  src_root_len; /* strlen of the (trailing-slash-stripped) source root */
+    int  job_count;
+    bool overflow;
+} cook_ctx_t;
+
+/* collect_job -- sys_dir_walk callback: record one source file as a pending job. */
+static bool
+collect_job( const char* filename, const char* full_path, void* ud )
+{
+    ( void )filename;
+    cook_ctx_t* c = ( cook_ctx_t* )ud;
+    if ( c->job_count >= COOK_MAX_JOBS )
+    {
+        c->overflow = true;
+        return false;
     }
 
-    if ( ok )
+    cook_job_t* j = &s_jobs[ c->job_count ];
+    snprintf( j->src_full, sizeof( j->src_full ), "%s", full_path );
+
+    /* src_rel = full_path with the root prefix removed, '/'-normalized. */
+    const char* rel = full_path + c->src_root_len;
+    while ( *rel == '\\' || *rel == '/' )
+        ++rel;
+    snprintf( j->src_rel, sizeof( j->src_rel ), "%s", rel );
+    path_norm( j->src_rel, '/' );
+
+    job_dst_rel( j->dst_rel, sizeof( j->dst_rel ), j->src_rel );
+    j->src_mtime = sys_file_time( full_path );
+    j->present   = false;
+    ++c->job_count;
+    return true;
+}
+
+/* cache_load -- read <dst>/.cook_cache (lines "<mtime> <src_rel>") into s_cache. */
+static int
+cache_load( const char* dst_root )
+{
+    int  count = 0;
+    char path[ COOK_PATH_MAX ];
+    snprintf( path, sizeof( path ), "%s\\%s", dst_root, COOK_CACHE_FILE );
+
+    sys_file_data_t fd = sys_file_read_entire( path );
+    if ( !fd.ok )
+        return 0; /* first run: no cache yet */
+
+    char* p = ( char* )fd.data; /* NUL-terminated by sys_file_read_entire */
+    while ( *p && count < COOK_MAX_JOBS )
     {
-        i64 elapsed = sys_tick_milliseconds() - start;
-        printf( "asset_tool: cook done (%lld ms)\n", ( long long )elapsed );
+        while ( *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' )
+            ++p;
+        if ( !*p )
+            break;
+
+        char* endp = NULL;
+        u64   m    = strtoull( p, &endp, 10 );
+        if ( endp == p ) /* malformed line: skip to next newline */
+        {
+            while ( *p && *p != '\n' )
+                ++p;
+            continue;
+        }
+        p = endp;
+        while ( *p == ' ' || *p == '\t' )
+            ++p;
+
+        char* rel = s_cache[ count ].rel;
+        int   k   = 0;
+        while ( *p && *p != '\n' && *p != '\r' && k < COOK_PATH_MAX - 1 )
+            rel[ k++ ] = *p++;
+        rel[ k ] = '\0';
+
+        if ( k > 0 )
+        {
+            s_cache[ count ].mtime = m;
+            ++count;
+        }
+        while ( *p && *p != '\n' )
+            ++p;
     }
-    return ok;
+
+    sys_file_free( &fd );
+    return count;
+}
+
+static bool
+cache_lookup( int cache_count, const char* rel, u64* out_mtime )
+{
+    for ( int i = 0; i < cache_count; ++i )
+    {
+        if ( strcmp( s_cache[ i ].rel, rel ) == 0 )
+        {
+            *out_mtime = s_cache[ i ].mtime;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Tiny growable string buffer for building the cache/manifest files (whole-file writes only). */
+typedef struct sbuf_s
+{
+    char*  p;
+    size_t len;
+    size_t cap;
+} sbuf_t;
+
+static void
+sbuf_add( sbuf_t* s, const char* str )
+{
+    size_t n = strlen( str );
+    if ( s->len + n + 1 > s->cap )
+    {
+        size_t want = ( s->len + n + 1 ) * 2;
+        char*  np   = ( char* )realloc( s->p, want );
+        if ( !np )
+            return; /* out of memory: drop the append (tool will just write less) */
+        s->p   = np;
+        s->cap = want;
+    }
+    memcpy( s->p + s->len, str, n );
+    s->len += n;
+    s->p[ s->len ] = '\0';
+}
+
+/* cook_tree -- the -src/-dst incremental tree cook. Returns process exit code. */
+static int
+cook_tree( const char* src_arg, const char* dst_arg, bool force )
+{
+    i64 start = sys_tick_milliseconds();
+
+    /* Strip trailing separators from the roots so relative-path math is exact. */
+    char src_root[ COOK_PATH_MAX ];
+    char dst_root[ COOK_PATH_MAX ];
+    snprintf( src_root, sizeof( src_root ), "%s", src_arg );
+    snprintf( dst_root, sizeof( dst_root ), "%s", dst_arg );
+    for ( int i = ( int )strlen( src_root ) - 1; i > 0 && ( src_root[ i ] == '\\' || src_root[ i ] == '/' ); --i )
+        src_root[ i ] = '\0';
+    for ( int i = ( int )strlen( dst_root ) - 1; i > 0 && ( dst_root[ i ] == '\\' || dst_root[ i ] == '/' ); --i )
+        dst_root[ i ] = '\0';
+
+    if ( !sys_dir_make( dst_root ) )
+    {
+        fprintf( stderr, "asset_tool: error: could not create dst dir %s\n", dst_root );
+        return 1;
+    }
+
+    /* 1. Scan the source tree. */
+    cook_ctx_t ctx = { ( int )strlen( src_root ), 0, false };
+    sys_dir_walk( src_root, collect_job, &ctx );
+    if ( ctx.overflow )
+        fprintf( stderr, "asset_tool: warning: more than %d source files -- truncated\n", COOK_MAX_JOBS );
+    if ( ctx.job_count == 0 )
+    {
+        fprintf( stderr, "asset_tool: warning: no source files under %s\n", src_root );
+        return 0;
+    }
+
+    /* 2. Load the previous cook cache (source mtimes recorded last run). */
+    int cache_count = cache_load( dst_root );
+
+    /* 3. Cook the stale jobs; skip the fresh ones. */
+    int cooked = 0, fresh = 0, failed = 0;
+    for ( int i = 0; i < ctx.job_count; ++i )
+    {
+        cook_job_t* j = &s_jobs[ i ];
+
+        char dst_full[ COOK_PATH_MAX ];
+        snprintf( dst_full, sizeof( dst_full ), "%s\\%s", dst_root, j->dst_rel );
+        path_norm( dst_full, '\\' );
+
+        bool stale = force;
+        if ( !stale )
+        {
+            u64  cached_mtime = 0;
+            bool have         = cache_lookup( cache_count, j->src_rel, &cached_mtime );
+            stale = !have || cached_mtime != j->src_mtime || !sys_file_exists( dst_full );
+        }
+
+        if ( !stale )
+        {
+            ++fresh;
+            j->present = true; /* output already exists and is up to date */
+            continue;
+        }
+
+        /* Make sure the mirrored output directory exists before writing into it. */
+        char parent[ COOK_PATH_MAX ];
+        path_parent( parent, sizeof( parent ), dst_full );
+        if ( parent[ 0 ] )
+            sys_dir_make( parent );
+
+        if ( cook_file( j->src_full, dst_full, ASSET_TOOL_DEFAULT_FONT_SIZE ) )
+        {
+            ++cooked;
+            j->present = true;
+        }
+        else
+        {
+            ++failed; /* leave present=false so it is retried next run (not cached) */
+        }
+    }
+
+    /* 4. Write the refreshed cache and the manifest of cooked outputs. */
+    sbuf_t cache = { 0 };
+    sbuf_t man   = { 0 };
+    sbuf_add( &man, "# asset_tool manifest -- cooked outputs relative to this directory\n" );
+    for ( int i = 0; i < ctx.job_count; ++i )
+    {
+        cook_job_t* j = &s_jobs[ i ];
+        if ( !j->present )
+            continue; /* failed cook: do not record, so it stays stale */
+
+        char line[ COOK_PATH_MAX + 32 ];
+        snprintf( line, sizeof( line ), "%llu %s\n", ( unsigned long long )j->src_mtime, j->src_rel );
+        sbuf_add( &cache, line );
+
+        snprintf( line, sizeof( line ), "%s\n", j->dst_rel );
+        sbuf_add( &man, line );
+    }
+
+    char path[ COOK_PATH_MAX ];
+    snprintf( path, sizeof( path ), "%s\\%s", dst_root, COOK_CACHE_FILE );
+    sys_file_write_entire( path, cache.p ? cache.p : "", ( u32 )cache.len );
+    snprintf( path, sizeof( path ), "%s\\%s", dst_root, COOK_MANIFEST_FILE );
+    sys_file_write_entire( path, man.p ? man.p : "", ( u32 )man.len );
+    free( cache.p );
+    free( man.p );
+
+    i64 ms = sys_tick_milliseconds() - start;
+    printf( "asset_tool: tree cook %s -> %s: %d cooked, %d up-to-date, %d failed (%d ms)\n", src_root,
+            dst_root, cooked, fresh, failed, ( int )ms );
+    return failed ? 1 : 0;
 }
 
 /*============================================================================================*/
@@ -180,9 +492,11 @@ static int
 usage( void )
 {
     fprintf( stderr,
-             "usage: asset_tool cook <src> <dst> [args...]\n"
-             "         .ttf/.otf  -> font_tool  (args[0] = size_px, default %d)\n"
-             "         image/other -> copy       (cooked .tex arrives in a later cook phase)\n",
+             "usage:\n"
+             "  asset_tool cook <src> <dst> [args...]   single job\n"
+             "      .ttf/.otf  -> font_tool  (args[0] = size_px, default %d)\n"
+             "      image/other -> copy       (cooked .tex arrives in a later cook phase)\n"
+             "  asset_tool -src <dir> -dst <dir> [-f]   incremental tree cook (-f = force all)\n",
              ASSET_TOOL_DEFAULT_FONT_SIZE );
     return 1;
 }
@@ -193,21 +507,39 @@ main( int argc, char** argv )
     sys_tick_init();
 
     int rc = 1;
+
     if ( argc >= 2 && strcmp( argv[ 1 ], "cook" ) == 0 )
     {
+        /* Single-job mode (Cook-A): cook <src> <dst> [args...] */
         if ( argc < 4 )
-        {
             usage();
-        }
         else
-        {
-            bool ok = cook_one( argv[ 2 ], argv[ 3 ], argv + 4, argc - 4 );
-            rc      = ok ? 0 : 1;
-        }
+            rc = cook_single( argv[ 2 ], argv[ 3 ], argv + 4, argc - 4 ) ? 0 : 1;
     }
     else
     {
-        usage();
+        /* Tree mode (Cook-B): -src <dir> -dst <dir> [-f] */
+        const char* src   = NULL;
+        const char* dst   = NULL;
+        bool        force = false;
+        bool        bad   = false;
+
+        for ( int i = 1; i < argc; ++i )
+        {
+            if ( strcmp( argv[ i ], "-src" ) == 0 && i + 1 < argc )
+                src = argv[ ++i ];
+            else if ( strcmp( argv[ i ], "-dst" ) == 0 && i + 1 < argc )
+                dst = argv[ ++i ];
+            else if ( strcmp( argv[ i ], "-f" ) == 0 )
+                force = true;
+            else
+                bad = true;
+        }
+
+        if ( bad || !src || !dst )
+            usage();
+        else
+            rc = cook_tree( src, dst, force );
     }
 
     sys_tick_exit();

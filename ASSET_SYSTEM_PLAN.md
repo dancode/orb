@@ -328,9 +328,30 @@ Cook-A -- asset_tool as job runner [DONE 2026-07-06]
      usage and exit 1. NOTE: font_tool needs freetype.dll findable at runtime (now copied into
      bin/); this is font_tool's own dependency, not asset_tool's.
 
-Cook-B -- incremental tree cook + manifest
-   - -src/-dst tree scan, staleness by source hash/mtime, cook cache + emitted manifest of
-     cooked outputs. Proof: second run is a no-op; touching one source re-cooks only it.
+Cook-B -- incremental tree cook + manifest [DONE 2026-07-06]
+   - New CLI mode `asset_tool -src <dir> -dst <dir> [-f]` alongside the Cook-A `cook` verb.
+     Recursively walks -src, mirrors each file into -dst at the same relative path (fonts ->
+     .orb_font, image/other -> copy), skips sources whose mtime is unchanged since the last run,
+     and writes two bookkeeping files under -dst:
+       * .cook_cache      -- lines "<src_mtime> <src_rel>"; the staleness record.
+       * cook_manifest.txt -- list of cooked output rel-paths (the entry list core/fs / packaging
+                              will consume). Only successfully-present outputs are recorded, so a
+                              failed cook stays stale and is retried next run.
+     Staleness = source mtime vs cached mtime AND output-file exists (missing output re-cooks).
+     -f forces a full re-cook. Tree-mode fonts bake at the default 16px (per-font size is a
+     future -manifest concern). Bounded to COOK_MAX_JOBS=4096 files (BSS job/cache arrays).
+   - NEW SYS PRIMITIVES (win_file.c, declared in sys_host.h; sys is Windows-only today):
+       * bool sys_dir_make(path)            -- recursive mkdir -p (idempotent); needed to mirror
+                                               the source tree's subdirs under -dst.
+       * int  sys_dir_walk(root, cb, ud)    -- recursive file enumeration (reuses sys_glob_fn;
+                                               descends all subdirs, reports files only). The
+                                               existing sys_file_glob is single-dir + skips dirs,
+                                               so it could not drive a tree walk.
+     Direct-linked like sys_file_glob (no vtable/api wiring); asset_tool still links base+sys only.
+   - Proof (verified): tree of textures/{a,b}.png + fonts/arial.ttf. RUN1 cold = 3 cooked/0 fresh
+     (mirrored subdirs created, manifest + cache written). RUN2 unchanged = 0 cooked/3 up-to-date
+     (no-op). RUN3 after touching only b.png = 1 cooked/2 up-to-date (incremental). RUN4 -f =
+     3 cooked. Full Debug build of all targets clean (sys is foundational).
 
 Cook-C -- first cooked engine format (.tex) + cooked loader path
    - Define .tex (magic+version header + pre-decoded/mip'd payload); asset_tool image
