@@ -318,11 +318,13 @@ nav_new_frame( void )
     s_nav.tab_next   = GUI_ID_NONE;
     s_nav.tab_take   = false;
 
-    /* Any mouse activity makes the mouse the active instrument: a move or a click drops
-       nav_highlight, so the nav item loses its fill (the ring stays, via nav_active) and the mouse
-       hover regains the fill.  A click additionally leaves menu-bar mode -- the user switched to
-       the mouse to drive the menus (which then track the cursor); the open popups close on their
-       own through popup_close_check. */
+    /* A move makes the mouse the active instrument: it drops nav_highlight, so the nav item loses
+       its fill (the ring stays, via nav_active) and the mouse hover regains the fill -- the ring
+       keeps marking the keyboard's last position in case the user goes back to it.  A click goes
+       further: the user has committed to the mouse, so it drops nav_active too and the ring itself
+       disappears (a later keyboard press brings it back at s_nav.id, unmoved).  A click additionally
+       leaves menu-bar mode -- the user switched to the mouse to drive the menus (which then track
+       the cursor); the open popups close on their own through popup_close_check. */
     bool mouse_moved = ( s_io.mouse_x != s_nav_mouse_x || s_io.mouse_y != s_nav_mouse_y );
     bool mouse_press = ( s_io.mouse_pressed[ 0 ] || s_io.mouse_pressed[ 1 ] || s_io.mouse_pressed[ 2 ] );
     s_nav_mouse_x = s_io.mouse_x;
@@ -330,10 +332,14 @@ nav_new_frame( void )
 
     if ( mouse_moved || mouse_press )
         s_nav.highlight = false;
-    if ( mouse_press && s_nav.bar_win != GUI_ID_NONE )
+    if ( mouse_press )
     {
-        s_nav.bar_win  = GUI_ID_NONE;
-        s_nav.in_menus = false;
+        s_nav.active = false;
+        if ( s_nav.bar_win != GUI_ID_NONE )
+        {
+            s_nav.bar_win  = GUI_ID_NONE;
+            s_nav.in_menus = false;
+        }
     }
 
     /* Menu mode self-heals: if its bar window is gone, drop out. */

@@ -398,8 +398,15 @@ gui_checkbox( const char* label, bool* v )
 {
     gui_id_t   id = widget_id( label );
 
-    /* Natural width = box + gap + label, so a same_line checkbox shrinks to fit. */
-    gui_rect_t r  = widget_next_rect_w( CHECKBOX_SZ + WIDGET_PAD + label_width( label ), WIDGET_H );
+    /* The box (CHECKBOX_SZ) is shorter than the row (WIDGET_H), so centering it vertically already
+       gives it a free top/bottom margin -- side_pad matches that same margin on the left/right so
+       the item rect (and the nav ring / hit-test that key off it) pads the box evenly on all four
+       sides instead of hugging it flush left and at the label's last glyph. */
+    f32 side_pad = ( WIDGET_H - CHECKBOX_SZ ) * 0.5f;
+
+    /* Natural width = pad + box + gap + label + pad, so a same_line checkbox shrinks to fit. */
+    gui_rect_t r  = widget_next_rect_w( 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD + label_width( label ),
+                                        WIDGET_H );
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
@@ -417,9 +424,9 @@ gui_checkbox( const char* label, bool* v )
     }
     else
     {
-        bx      = r.x;
-        label_x = bx + CHECKBOX_SZ + WIDGET_PAD;   /* default: label just right of the box */
-        label_w = ( r.x + r.w ) - label_x;         /* trails to the cell's right edge      */
+        bx      = r.x + side_pad;
+        label_x = bx + CHECKBOX_SZ + WIDGET_PAD;         /* default: label just right of the box */
+        label_w = ( r.x + r.w - side_pad ) - label_x;    /* trails to the cell's right edge      */
     }
 
     f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
@@ -470,8 +477,13 @@ gui_radio_button( const char* label, i32* v, i32 value )
 {
     gui_id_t   id = widget_id( label );
 
-    /* Natural width = disc + gap + label, so a same_line radio shrinks to fit (a group on one row). */
-    gui_rect_t r  = widget_next_rect_w( CHECKBOX_SZ + WIDGET_PAD + label_width( label ), WIDGET_H );
+    /* Same flush-vs-padded fix as checkbox: side_pad matches the free top/bottom margin the disc
+       already gets from being centred in the row, so the item rect pads it evenly on all sides. */
+    f32 side_pad = ( WIDGET_H - CHECKBOX_SZ ) * 0.5f;
+
+    /* Natural width = pad + disc + gap + label + pad, so a same_line radio shrinks to fit (a group on one row). */
+    gui_rect_t r  = widget_next_rect_w( 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD + label_width( label ),
+                                        WIDGET_H );
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
@@ -485,9 +497,9 @@ gui_radio_button( const char* label, i32* v, i32 value )
     }
     else
     {
-        bx      = r.x;
-        label_x = bx + CHECKBOX_SZ + WIDGET_PAD;   /* default: label just right of the disc */
-        label_w = ( r.x + r.w ) - label_x;         /* trails to the cell's right edge        */
+        bx      = r.x + side_pad;
+        label_x = bx + CHECKBOX_SZ + WIDGET_PAD;         /* default: label just right of the disc */
+        label_w = ( r.x + r.w - side_pad ) - label_x;    /* trails to the cell's right edge        */
     }
 
     /* Disc centred in a CHECKBOX_SZ box, vertically centred in the row. */

@@ -178,4 +178,3 @@ Include `ref.h` in DLL modules; `ref_host.h` in hosts, unity entries, sandboxes.
 - `SortIncludes: false` -- keep include order as written
 - Comments show intent concisely at each block.
 - Comments use cpp style // after fields, but c style for larger blocks.
-
