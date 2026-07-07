@@ -11,7 +11,7 @@
     * Returns offsets into the pool.
     * No per-string malloc overhead.
     * Offsets remain valid even if pool reallocates (like vector growth).
-    * Supports hot reload � since the offsets will stay valid.
+    * Survives pool growth -- offsets stay valid across realloc (pool lives host-side).
 
 ==============================================================================================*/
 /* Align value up to STRING_POOL_ALIGN boundary */
@@ -112,16 +112,17 @@ string_pool_push( string_pool_t* pool, const char* str )
     if ( !str || str[ 0 ] == '\0' )
         return 0;
 
-    u32 len    = ( u32 )strlen( str ) + 1u;
-    len        = string_pool_align_up( len );
-    pool->used = string_pool_align_up( pool->used );
+    const u32 len   = ( u32 )strlen( str ) + 1u;
+    const u32 alloc = string_pool_align_up( len );
+    pool->used      = string_pool_align_up( pool->used );
 
     /* Ensure capacity and get offset */
-    u32 offset = string_pool_ensure( pool, len );
+    u32 offset = string_pool_ensure( pool, alloc );
 
-    /* Copy string */
+    /* Copy only the string bytes; zero the alignment padding (no source over-read) */
     memcpy( pool->data + pool->used, str, len );
-    pool->used += len;
+    memset( pool->data + pool->used + len, 0, alloc - len );
+    pool->used += alloc;
 
     return offset;
 }

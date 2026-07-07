@@ -253,7 +253,7 @@ cvar_callback_invoke( cvar_t* cv )
 void
 cvar_callback_unregister_by_module( i32 module_id )
 {
-    int total_cvars = cvar_get_count(); /* You must provide this helper */
+    int total_cvars = cvar_get_count();
 
     for ( int i = 0; i < total_cvars; i++ )
     {
@@ -516,12 +516,21 @@ cvar_promote_user_value( cvar_t* cv )
 
     Register Functions
 
-==============================================================================================*/
-/* Create the cvar entry and place in hash lookup */
+    Re-registration (dll hot reload) returns the existing entry. The typed registrars
+    preserve the runtime value and skip string pool allocation in that case, so repeated
+    reloads neither stomp user changes nor leak pool space.
 
-cvar_t*
-cvar_register_base( const char* name, const char* desc, u32 type )
+==============================================================================================*/
+/* Create the cvar entry and place in hash lookup.
+   Sets *existed when the cvar was already registered with a real type (hot-reload
+   re-registration). The user-var promotion path reports existed=false so the typed
+   init still runs in full and the promoted value is applied over it. */
+
+static cvar_t*
+cvar_register_internal( const char* name, const char* desc, u32 type, bool* existed )
 {
+    *existed = false;
+
     // find existing cvar and return it (dll reload case)
     cvar_t* existing = cvar_hash_find( name );
     if ( existing )
@@ -534,7 +543,21 @@ cvar_register_base( const char* name, const char* desc, u32 type )
             existing->type = ( existing->type | type );
             existing->flag &= ~( CVAR_MODIFIED | CVAR_LATCHED );
             cvar_cache_user_value( existing );
+            return existing;
         }
+
+        // Base type changed across a reload: wipe the union and run typed init fresh.
+        // The old pool allocations (str list / buf) are orphaned; rare one-time cost.
+        if ( ( u32 )( existing->type & CVAR_TYPE_MASK ) != ( type & CVAR_TYPE_MASK ) )
+        {
+            log_write( LOG_LEVEL_WARN, "cvar", "'%s' re-registered with a different type", name );
+            existing->type = type;
+            existing->flag &= ~( CVAR_MODIFIED | CVAR_LATCHED );
+            memset( &existing->i, 0, sizeof( existing->i ) );    // .i spans the whole union
+            return existing;
+        }
+
+        *existed = true;
         return existing;
     }
 
@@ -567,12 +590,29 @@ cvar_register_base( const char* name, const char* desc, u32 type )
     return cv;
 }
 
+/* Public wrapper (user-var creation path; typed registrars use the internal form) */
+
+cvar_t*
+cvar_register_base( const char* name, const char* desc, u32 type )
+{
+    bool existed;
+    return cvar_register_internal( name, desc, type, &existed );
+}
+
 /* Register a boolean cvar */
 
 cvar_t*
 cvar_register_b( const char* name, const char* desc, bool value, u32 type )
 {
-    cvar_t* cv  = cvar_register_base( name, desc, type | CVAR_BOOL );
+    bool    existed;
+    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_BOOL, &existed );
+
+    if ( existed )
+    {
+        cv->b.reset = value;    // refresh default, keep runtime value across reload
+        return cv;
+    }
+
     cv->b.value = value;
     cv->b.latch = value;
     cv->b.reset = value;
@@ -586,7 +626,18 @@ cvar_register_b( const char* name, const char* desc, bool value, u32 type )
 cvar_t*
 cvar_register_i( const char* name, const char* desc, i32 value, i32 min, i32 max, u32 type )
 {
-    cvar_t* cv  = cvar_register_base( name, desc, type | CVAR_INT );
+    bool    existed;
+    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_INT, &existed );
+
+    if ( existed )
+    {
+        // refresh default and bounds, keep runtime value across reload
+        cv->i.reset = value;
+        cv->i.min   = min;
+        cv->i.max   = max;
+        return cv;
+    }
+
     cv->i.value = value;
     cv->i.min   = min;
     cv->i.max   = max;
@@ -601,7 +652,18 @@ cvar_register_i( const char* name, const char* desc, i32 value, i32 min, i32 max
 cvar_t*
 cvar_register_f( const char* name, const char* desc, f32 value, f32 min, f32 max, u32 type )
 {
-    cvar_t* cv  = cvar_register_base( name, desc, type | CVAR_FLOAT );
+    bool    existed;
+    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_FLOAT, &existed );
+
+    if ( existed )
+    {
+        // refresh default and bounds, keep runtime value across reload
+        cv->f.reset = value;
+        cv->f.min   = min;
+        cv->f.max   = max;
+        return cv;
+    }
+
     cv->f.value = value;
     cv->f.min   = min;
     cv->f.max   = max;
@@ -616,7 +678,12 @@ cvar_register_f( const char* name, const char* desc, f32 value, f32 min, f32 max
 cvar_t*
 cvar_register_s( const char* name, const char* desc, const char** values, u32 count, u32 def_index, u32 type )
 {
-    cvar_t* cv = cvar_register_base( name, desc, type | CVAR_STR );
+    bool    existed;
+    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_STR, &existed );
+
+    /* Reload: keep the existing option list and value; re-reserving would leak the pool */
+    if ( existed )
+        return cv;
 
     if ( !values || count == 0 )
         return cv;
@@ -662,8 +729,14 @@ cvar_register_s( const char* name, const char* desc, const char** values, u32 co
 cvar_t*
 cvar_register_w( const char* name, const char* desc, const char* reset, u32 size, u32 type )
 {
-    const i32    align_size = string_pool_align_up( size );
-    cvar_t* cv         = cvar_register_base( name, desc, type | CVAR_BUF );
+    const i32 align_size = string_pool_align_up( size );
+
+    bool    existed;
+    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_BUF, &existed );
+
+    /* Reload: keep the existing buffer and value; re-reserving would leak the pool */
+    if ( existed )
+        return cv;
 
     cv->w.reset        = ( u16 )string_pool_push( &g_cvar_string_pool, reset );
     cv->w.size         = ( u16 )align_size;
@@ -680,7 +753,12 @@ cvar_register_w( const char* name, const char* desc, const char* reset, u32 size
 cvar_t*
 cvar_register_r( const char* name, const char* desc, const char* value, u32 type )
 {
-    cvar_t* cv  = cvar_register_base( name, desc, type | CVAR_REF );
+    bool    existed;
+    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_REF, &existed );
+
+    /* Reload: keep the existing reference; re-pushing would leak the pool */
+    if ( existed )
+        return cv;
 
     cv->r.value = ( u16 )string_pool_push( &g_cvar_string_pool, value );
 
@@ -688,7 +766,7 @@ cvar_register_r( const char* name, const char* desc, const char* value, u32 type
     return cv;
 }
 
-/* Register a read-only string reference cvar */
+/* Register a user-created string cvar */
 
 cvar_t*
 cvar_register_u( const char* name, const char* value )
@@ -833,36 +911,47 @@ cvar_reset( cvar_t* cv )
     if ( !cv )
         return;
 
+    bool changed = false;
+
     switch ( cv->type & CVAR_TYPE_MASK )
     {
         case CVAR_BOOL:
+            changed     = ( cv->b.value != cv->b.reset );
             cv->b.value = cv->b.reset;
             cv->b.latch = cv->b.reset;
             break;
 
         case CVAR_INT:
+            changed     = ( cv->i.value != cv->i.reset );
             cv->i.value = cv->i.reset;
             cv->i.latch = cv->i.reset;
             break;
 
         case CVAR_FLOAT:
+            changed     = ( cv->f.value != cv->f.reset );
             cv->f.value = cv->f.reset;
             cv->f.latch = cv->f.reset;
             break;
 
         case CVAR_STR:
+            changed     = ( cv->s.value != cv->s.reset );
             cv->s.value = cv->s.reset;
             cv->s.latch = cv->s.reset;
             break;
 
         case CVAR_BUF:
-            string_pool_write( &g_cvar_string_pool, cv->w.buf, g_cvar_string_pool.data + cv->w.reset, cv->w.size );
+        {
+            const char* reset_str = g_cvar_string_pool.data + cv->w.reset;
+            changed = ( strcmp( string_pool_get( &g_cvar_string_pool, cv->w.buf ), reset_str ) != 0 );
+            string_pool_write( &g_cvar_string_pool, cv->w.buf, reset_str, cv->w.size );
             break;
+        }
 
             // CVAR_USR has no "reset" value. Freeing its current value is
             // the equivalent of "resetting" it to an empty string.
 
         case CVAR_USR:
+            changed = ( user_string_pool_get( &g_user_string_pool, cv->u.value_offset )[ 0 ] != '\0' );
             user_string_pool_free( &g_user_string_pool, cv->u.value_offset, cv->u.bucket_index );
             cv->u.value_offset = USER_STRING_INVALID_OFFSET;
             cv->u.bucket_index = USER_STRING_INVALID_LIST;
@@ -871,7 +960,7 @@ cvar_reset( cvar_t* cv )
         default: break;
     }
 
-    if ( cv->flag & CVAR_CALLBACK )
+    if ( changed && ( cv->flag & CVAR_CALLBACK ) )
         cvar_callback_invoke( cv );
 
     cv->flag &= ~( CVAR_MODIFIED | CVAR_LATCHED );
@@ -1052,8 +1141,9 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
             /* Accept numeric index or string match */
             if ( isdigit( ( unsigned char )value[ 0 ] ) )
             {
-                u32 idx = ( u32 )strtoul( value, NULL, 10 );
-                if ( idx < cv->s.count )
+                char* endptr = NULL;
+                u32   idx    = ( u32 )strtoul( value, &endptr, 10 );
+                if ( *endptr == '\0' && idx < cv->s.count )
                     new_value = ( u16 )idx;
             }
             else
@@ -1105,36 +1195,25 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
         }
         case CVAR_USR:
         {
-            /*: Use the new destructive user string pool */
-            
-            /* 1. Free the old string's buffer, if it has one */
+            /* Compare BEFORE freeing: the freelist commonly returns the same offset
+               for a same-bucket realloc, so an after-the-fact offset compare would
+               report "unchanged" for a value that did change. */
+
+            const char* cur = user_string_pool_get( &g_user_string_pool, cv->u.value_offset );
+            if ( strcmp( cur, value ) == 0 )
+                break;    // unchanged
+
+            /* Free the old string's buffer and allocate from the correct size pool */
 
             user_string_pool_free( &g_user_string_pool, cv->u.value_offset, cv->u.bucket_index );
-
-            /* 2. Allocate a new buffer from the correct size pool */
 
             u16 new_bucket;
             u16 new_offset = user_string_pool_alloc( &g_user_string_pool, value, &new_bucket );
 
-            /* 3. Store the new handle (offset and bucket) */
-
-            if ( cv->u.value_offset != new_offset )
-            {
-                cv->u.value_offset = new_offset;
-                cv->u.bucket_index = new_bucket;
-                cv->flag |= CVAR_MODIFIED;
-                changed = true;
-            }
-
-            /* Check if string content changed even if offset is same */
-
-            else if ( strcmp( user_string_pool_get( &g_user_string_pool, new_offset ), value) != 0 )
-            {
-                /* This case is unlikely (getting same offset for different string) */
-                /* but we set the flags just in case. */
-                cv->flag |= CVAR_MODIFIED;
-                changed = true;
-            }
+            cv->u.value_offset = new_offset;
+            cv->u.bucket_index = new_bucket;
+            cv->flag |= CVAR_MODIFIED;
+            changed = true;
             break;
         }
     }
@@ -1176,8 +1255,8 @@ cvar_get_value( const char* name )
     if ( !cv )
         return "";
 
-    // Use a round-robin buffer for thread-safe-ish string conversions.
-    // This allows multiple calls within a single printf, for example.
+    // Round-robin buffer so multiple calls survive within a single printf.
+    // NOT thread safe; the cvar system is single-threaded by contract.
     static char bufs[ 4 ][ 32 ];
     static int  buf_idx = 0;
     char*       buf     = bufs[ buf_idx++ & 3 ];

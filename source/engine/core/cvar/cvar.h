@@ -220,6 +220,10 @@ void        cvar_compact_user_pool  ( void );
 
 /*==============================================================================================
     Registration Functions
+
+    Safe to call again on dll hot reload: an existing cvar keeps its runtime value and
+    its string pool allocations. b/i/f refresh reset/min/max from the new arguments;
+    s/w/r keep their original list/buffer/reference.
 ==============================================================================================*/
 
                                     // Generic registration function
