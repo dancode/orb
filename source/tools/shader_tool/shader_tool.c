@@ -14,11 +14,20 @@
             -I dir      extra include directory (may repeat)
             -Zi         emit debug info into the SPIR-V
 
-        shader_tool reflect <file.spv>
+        shader_tool reflect <file.spv | file.oshd>
             Human-readable dump of what the RHI needs to agree with the shader: entry point,
             stage, vertex inputs (location/format), push constant block layout (member
-            offsets/sizes), and descriptor bindings (set/binding/type/count).  Uses the
-            vendored SPIRV-Reflect library (shader_tool_spirv_reflect.c).
+            offsets/sizes), and descriptor bindings (set/binding/type/count).  A raw .spv is
+            reflected live via the vendored SPIRV-Reflect library
+            (shader_tool_spirv_reflect.c); a cooked .oshd is dumped from its serialized
+            tables -- both paths print the same sections, which is the round-trip proof that
+            cooking loses nothing.
+
+        shader_tool cook <src.hlsl> -o <out.oshd> -T <profile> [-E entry] [-I dir] [-Zi]
+            compile + reflect + serialize in one step: dxc compiles the HLSL (same conventions
+            as `compile`), SPIRV-Reflect extracts the layout contract, and everything lands in
+            a single .oshd container (rhi_shader_format.h) -- reflection tables, layout hash,
+            and the SPIR-V payload.  One stage per file.
 
     Engine-wide conventions are baked into the dxc invocation so no shader or build script
     ever re-decides them:
@@ -34,8 +43,7 @@
     dxc is located through %VULKAN_SDK%\Bin\dxc.exe; there is no fallback to PATH, so the
     error message can name the one thing to fix (install / re-source the Vulkan SDK).
 
-    Later phases (SHADER_SYSTEM plan) add verbs here: `cook` (.oshd container = reflection
-    tables + SPIR-V) and `header` (generated C layout structs).
+    Later phases (SHADER_SYSTEM plan) add verbs here: `header` (generated C layout structs).
 
     Link list for this executable:
 
@@ -51,6 +59,7 @@
 #include <string.h>
 #include "base/base.h"
 #include "engine/sys/sys_host.h"
+#include "runtime_service/rhi/rhi_shader_format.h"
 #include "vendor/spirv_reflect.h"
 
 #define SHADER_TOOL_CMD_MAX      4096
@@ -248,6 +257,57 @@ descriptor_type_name( SpvReflectDescriptorType t )
     }
 }
 
+/* oshd_stage_name -- printable OSHD_STAGE_* value (the cooked-container twin of stage_name). */
+static const char*
+oshd_stage_name( u32 stage )
+{
+    switch ( stage )
+    {
+        case OSHD_STAGE_VERTEX:       return "vertex";
+        case OSHD_STAGE_TESS_CONTROL: return "tess_control";
+        case OSHD_STAGE_TESS_EVAL:    return "tess_eval";
+        case OSHD_STAGE_GEOMETRY:     return "geometry";
+        case OSHD_STAGE_FRAGMENT:     return "fragment";
+        case OSHD_STAGE_COMPUTE:      return "compute";
+        default:                      return "unknown";
+    }
+}
+
+/* collect_user_inputs -- enumerate a module's input variables, drop built-ins (SV_VertexID
+   and friends are internal wiring, not vertex buffer contract), and insertion-sort the
+   survivors by location so consumers see a vertex layout declaration regardless of the order
+   dxc emitted them.  Returns the user input count; *out is malloc'd (caller frees) or NULL
+   when the count is 0. */
+static u32
+collect_user_inputs( const SpvReflectShaderModule* module, SpvReflectInterfaceVariable*** out )
+{
+    u32 count = 0;
+    spvReflectEnumerateInputVariables( module, &count, NULL );
+
+    SpvReflectInterfaceVariable** inputs = NULL;
+    if ( count )
+    {
+        inputs = ( SpvReflectInterfaceVariable** )malloc( count * sizeof( *inputs ) );
+        spvReflectEnumerateInputVariables( module, &count, inputs );
+    }
+
+    u32 user_inputs = 0;
+    for ( u32 i = 0; i < count; ++i )
+        if ( inputs[ i ]->built_in < 0 )
+            inputs[ user_inputs++ ] = inputs[ i ];
+    for ( u32 i = 1; i < user_inputs; ++i )
+    {
+        SpvReflectInterfaceVariable* v = inputs[ i ];
+        u32                          j = i;
+        for ( ; j > 0 && inputs[ j - 1 ]->location > v->location; --j )
+            inputs[ j ] = inputs[ j - 1 ];
+        inputs[ j ] = v;
+    }
+
+    *out = inputs;
+    return user_inputs;
+}
+
 /* dump_block_members -- recursive member printout for a push constant (or buffer) block.
    Offsets are absolute within the block, which is exactly what the CPU-side struct must
    reproduce. */
@@ -264,7 +324,107 @@ dump_block_members( const SpvReflectBlockVariable* block, int indent )
     }
 }
 
-/* run_reflect -- load a compiled SPIR-V blob and print everything the RHI must agree with. */
+/* oshd_str -- bounds-checked string table fetch; a bad offset degrades to "" rather than
+   walking off the mapping (the table's final NUL is validated before any fetch). */
+static const char*
+oshd_str( const char* strtab, u32 strtab_size, u32 off )
+{
+    return ( off < strtab_size ) ? strtab + off : "";
+}
+
+/* run_reflect_oshd -- print the same dump as the raw-SPIR-V path, but sourced from the
+   container's serialized tables.  That the two dumps match line for line is the proof that
+   cooking preserved the whole layout contract. */
+static int
+run_reflect_oshd( const char* path, const sys_file_data_t* fd )
+{
+    const oshd_header_t* h = ( const oshd_header_t* )fd->data;
+
+    if ( h->version != OSHD_VERSION )
+    {
+        fprintf( stderr, "shader_tool: error: %s is .oshd version %u, tool expects %u\n",
+                 path, h->version, OSHD_VERSION );
+        return 1;
+    }
+
+    /* Validate the section math in u64 before trusting any count or offset. */
+    u64 need = ( u64 )sizeof( oshd_header_t )
+             + ( u64 )h->input_count * sizeof( oshd_input_t )
+             + ( u64 )h->pc_member_count * sizeof( oshd_pc_member_t )
+             + ( u64 )h->binding_count * sizeof( oshd_binding_t )
+             + ( u64 )h->strtab_size + ( u64 )h->spirv_size;
+    if ( need != ( u64 )fd->size ||
+         h->strtab_size < 4 || h->strtab_size % 4 != 0 ||
+         h->spirv_size == 0 || h->spirv_size % 4 != 0 )
+    {
+        fprintf( stderr, "shader_tool: error: %s is corrupt (%u bytes, sections need %llu)\n",
+                 path, fd->size, ( unsigned long long )need );
+        return 1;
+    }
+
+    const oshd_input_t*     inputs  = ( const oshd_input_t* )( h + 1 );
+    const oshd_pc_member_t* members = ( const oshd_pc_member_t* )( inputs + h->input_count );
+    const oshd_binding_t*   binds   = ( const oshd_binding_t* )( members + h->pc_member_count );
+    const char*             strtab  = ( const char* )( binds + h->binding_count );
+
+    if ( strtab[ h->strtab_size - 1 ] != 0 )
+    {
+        fprintf( stderr, "shader_tool: error: %s string table is not NUL-terminated\n", path );
+        return 1;
+    }
+
+    printf( "shader_tool: reflect %s (.oshd v%u, %u bytes, spirv %u bytes, layout hash %016llx)\n",
+            path, h->version, fd->size, h->spirv_size, ( unsigned long long )h->layout_hash );
+    printf( "  stage : %s\n", oshd_stage_name( h->stage ) );
+
+    const char* entry = oshd_str( strtab, h->strtab_size, h->entry );
+    printf( "  entry : %s\n", entry[ 0 ] ? entry : "(none)" );
+
+    printf( "  inputs: %u\n", h->input_count );
+    for ( u32 i = 0; i < h->input_count; ++i )
+    {
+        const oshd_input_t* v    = &inputs[ i ];
+        const char*         fmt  = format_name( ( SpvReflectFormat )v->vk_format );
+        const char*         name = oshd_str( strtab, h->strtab_size, v->name );
+        if ( fmt )
+            printf( "      [location %2u] %-8s %s\n", v->location, fmt,
+                    name[ 0 ] ? name : "(unnamed)" );
+        else
+            printf( "      [location %2u] vkfmt=%-4d %s\n", v->location, ( int )v->vk_format,
+                    name[ 0 ] ? name : "(unnamed)" );
+    }
+
+    u32 block_count = ( h->pc_size > 0 ) ? 1 : 0;
+    printf( "  push constant blocks: %u\n", block_count );
+    if ( block_count )
+    {
+        const char* bname = oshd_str( strtab, h->strtab_size, h->pc_name );
+        printf( "      block \"%s\" -- size %u, padded %u\n",
+                bname[ 0 ] ? bname : "(unnamed)", h->pc_size, h->pc_padded_size );
+        for ( u32 i = 0; i < h->pc_member_count; ++i )
+        {
+            const oshd_pc_member_t* m    = &members[ i ];
+            const char*             name = oshd_str( strtab, h->strtab_size, m->name );
+            printf( "  %*s[offset %4u, size %4u] %s\n", 4 + 4 * m->depth, "", m->offset,
+                    m->size, name[ 0 ] ? name : "(unnamed)" );
+        }
+    }
+
+    printf( "  descriptor bindings: %u\n", h->binding_count );
+    for ( u32 i = 0; i < h->binding_count; ++i )
+    {
+        const oshd_binding_t* b = &binds[ i ];
+        printf( "      [set %u, binding %u] %s x%u %s\n", b->set, b->binding,
+                descriptor_type_name( ( SpvReflectDescriptorType )b->descriptor_type ),
+                b->count, oshd_str( strtab, h->strtab_size, b->name ) );
+    }
+
+    return 0;
+}
+
+/* run_reflect -- load a compiled blob and print everything the RHI must agree with.  A
+   cooked .oshd dumps from its tables; anything else is treated as raw SPIR-V and reflected
+   live. */
 static int
 run_reflect( const char* path )
 {
@@ -274,6 +434,15 @@ run_reflect( const char* path )
         fprintf( stderr, "shader_tool: error: could not read %s\n", path );
         return 1;
     }
+
+    if ( fd.size >= sizeof( oshd_header_t ) &&
+         ( ( const oshd_header_t* )fd.data )->magic == OSHD_MAGIC )
+    {
+        int rc = run_reflect_oshd( path, &fd );
+        sys_file_free( &fd );
+        return rc;
+    }
+
     if ( fd.size == 0 || fd.size % 4 != 0 )
     {
         fprintf( stderr, "shader_tool: error: %s is not SPIR-V (%u bytes, must be a multiple of 4)\n",
@@ -296,31 +465,9 @@ run_reflect( const char* path )
     printf( "  stage : %s\n", stage_name( module.shader_stage ) );
     printf( "  entry : %s\n", module.entry_point_name ? module.entry_point_name : "(none)" );
 
-    /* Vertex inputs (built-ins like SV_VertexID are internal wiring, not vertex buffer
-       contract, so they are skipped). */
-    u32 count = 0;
-    spvReflectEnumerateInputVariables( &module, &count, NULL );
-    SpvReflectInterfaceVariable** inputs = NULL;
-    if ( count )
-    {
-        inputs = ( SpvReflectInterfaceVariable** )malloc( count * sizeof( *inputs ) );
-        spvReflectEnumerateInputVariables( &module, &count, inputs );
-    }
-
-    /* Drop built-ins, then insertion-sort the survivors by location so the dump reads like a
-       vertex layout declaration regardless of the order dxc emitted them. */
-    u32 user_inputs = 0;
-    for ( u32 i = 0; i < count; ++i )
-        if ( inputs[ i ]->built_in < 0 )
-            inputs[ user_inputs++ ] = inputs[ i ];
-    for ( u32 i = 1; i < user_inputs; ++i )
-    {
-        SpvReflectInterfaceVariable* v = inputs[ i ];
-        u32                          j = i;
-        for ( ; j > 0 && inputs[ j - 1 ]->location > v->location; --j )
-            inputs[ j ] = inputs[ j - 1 ];
-        inputs[ j ] = v;
-    }
+    /* Vertex inputs, filtered and sorted (see collect_user_inputs). */
+    SpvReflectInterfaceVariable** inputs      = NULL;
+    u32                           user_inputs = collect_user_inputs( &module, &inputs );
 
     printf( "  inputs: %u\n", user_inputs );
     for ( u32 i = 0; i < user_inputs; ++i )
@@ -338,7 +485,7 @@ run_reflect( const char* path )
 
     /* Push constant blocks: the CPU struct contract.  size = span of declared members;
        padded_size = std430-rounded size (what dxc actually reserves). */
-    count = 0;
+    u32 count = 0;
     spvReflectEnumeratePushConstantBlocks( &module, &count, NULL );
     SpvReflectBlockVariable** blocks = NULL;
     if ( count )
@@ -384,6 +531,372 @@ run_reflect( const char* path )
 }
 
 /*============================================================================================*/
+/*  cook verb                                                                                 */
+/*============================================================================================*/
+
+/* The layout hash fingerprints every field the CPU side must agree with.  FNV-1a 64,
+   accumulated in file order; strings are folded in with their terminator so adjacent names
+   cannot alias.  Only the cooker computes this -- readers just compare stored hashes. */
+
+static u64
+fnv_u32( u64 h, u32 v )
+{
+    for ( int i = 0; i < 4; ++i )
+    {
+        h ^= ( v >> ( i * 8 ) ) & 0xFF;
+        h *= 0x100000001b3ull;
+    }
+    return h;
+}
+
+static u64
+fnv_str( u64 h, const char* s )
+{
+    do
+    {
+        h ^= ( u64 )( u8 )*s;
+        h *= 0x100000001b3ull;
+    } while ( *s++ );
+    return h;
+}
+
+/* strtab_t -- string table builder.  Offset 0 is a reserved empty string so 0 always reads
+   back as "unnamed"; identical names are deduplicated by linear scan (tables are tiny). */
+#define OSHD_STRTAB_CAP ( 64 * 1024 )
+
+typedef struct strtab_s
+{
+    char* buf;
+    u32   size;
+    bool  overflow;
+
+} strtab_t;
+
+static u32
+strtab_add( strtab_t* st, const char* s )
+{
+    if ( !s || !s[ 0 ] )
+        return 0;
+
+    size_t len = strlen( s ) + 1;
+    for ( u32 off = 1; off + len <= st->size; )
+    {
+        if ( strcmp( st->buf + off, s ) == 0 )
+            return off;
+        off += ( u32 )strlen( st->buf + off ) + 1;
+    }
+
+    if ( st->size + len > OSHD_STRTAB_CAP )
+    {
+        st->overflow = true;
+        return 0;
+    }
+    u32 off = st->size;
+    memcpy( st->buf + off, s, len );
+    st->size += ( u32 )len;
+    return off;
+}
+
+/* spv_format_size -- byte size of a vertex attribute format (stride derivation).  Only the
+   32/64-bit scalar and vector families dxc emits for vertex inputs; 0 = unsupported, which
+   the cooker treats as a hard error rather than serializing a size it cannot vouch for. */
+static u32
+spv_format_size( SpvReflectFormat fmt )
+{
+    switch ( fmt )
+    {
+        case SPV_REFLECT_FORMAT_R32_SFLOAT:
+        case SPV_REFLECT_FORMAT_R32_UINT:
+        case SPV_REFLECT_FORMAT_R32_SINT:            return 4;
+        case SPV_REFLECT_FORMAT_R32G32_SFLOAT:
+        case SPV_REFLECT_FORMAT_R32G32_UINT:
+        case SPV_REFLECT_FORMAT_R32G32_SINT:         return 8;
+        case SPV_REFLECT_FORMAT_R32G32B32_SFLOAT:
+        case SPV_REFLECT_FORMAT_R32G32B32_UINT:
+        case SPV_REFLECT_FORMAT_R32G32B32_SINT:      return 12;
+        case SPV_REFLECT_FORMAT_R32G32B32A32_SFLOAT:
+        case SPV_REFLECT_FORMAT_R32G32B32A32_UINT:
+        case SPV_REFLECT_FORMAT_R32G32B32A32_SINT:   return 16;
+        case SPV_REFLECT_FORMAT_R64_SFLOAT:          return 8;
+        case SPV_REFLECT_FORMAT_R64G64_SFLOAT:       return 16;
+        case SPV_REFLECT_FORMAT_R64G64B64_SFLOAT:    return 24;
+        case SPV_REFLECT_FORMAT_R64G64B64A64_SFLOAT: return 32;
+        default:                                     return 0;
+    }
+}
+
+/* oshd_stage_from_reflect -- SpvReflect stage bit -> OSHD_STAGE_* (0 = unsupported). */
+static u32
+oshd_stage_from_reflect( SpvReflectShaderStageFlagBits stage )
+{
+    switch ( stage )
+    {
+        case SPV_REFLECT_SHADER_STAGE_VERTEX_BIT:                  return OSHD_STAGE_VERTEX;
+        case SPV_REFLECT_SHADER_STAGE_TESSELLATION_CONTROL_BIT:    return OSHD_STAGE_TESS_CONTROL;
+        case SPV_REFLECT_SHADER_STAGE_TESSELLATION_EVALUATION_BIT: return OSHD_STAGE_TESS_EVAL;
+        case SPV_REFLECT_SHADER_STAGE_GEOMETRY_BIT:                return OSHD_STAGE_GEOMETRY;
+        case SPV_REFLECT_SHADER_STAGE_FRAGMENT_BIT:                return OSHD_STAGE_FRAGMENT;
+        case SPV_REFLECT_SHADER_STAGE_COMPUTE_BIT:                 return OSHD_STAGE_COMPUTE;
+        default:                                                   return OSHD_STAGE_NONE;
+    }
+}
+
+/* pc_member_total -- pre-order record count for a block's member tree. */
+static u32
+pc_member_total( const SpvReflectBlockVariable* b )
+{
+    u32 n = 0;
+    for ( u32 i = 0; i < b->member_count; ++i )
+        n += 1 + pc_member_total( &b->members[ i ] );
+    return n;
+}
+
+/* pc_member_fill -- flatten a block's member tree pre-order into the serialized table.
+   Offsets are absolute within the block, matching what `reflect` prints. */
+static void
+pc_member_fill( const SpvReflectBlockVariable* b, u32 depth, oshd_pc_member_t* out, u32* idx,
+                strtab_t* st )
+{
+    for ( u32 i = 0; i < b->member_count; ++i )
+    {
+        const SpvReflectBlockVariable* m   = &b->members[ i ];
+        oshd_pc_member_t*              rec = &out[ ( *idx )++ ];
+        rec->name_hash = oshd_name_hash( m->name ? m->name : "" );
+        rec->name      = strtab_add( st, m->name );
+        rec->offset    = m->absolute_offset;
+        rec->size      = m->size;
+        rec->depth     = depth;
+        pc_member_fill( m, depth + 1, out, idx, st );
+    }
+}
+
+/* run_cook -- compile + reflect + serialize into a single .oshd container.  dxc writes to a
+   temp .spv next to the output (deleted on every exit path); the container is assembled in
+   one heap block and written atomically via sys_file_write_entire. */
+static int
+run_cook( const compile_args_t* a )
+{
+    char tmp[ 1024 ];
+    snprintf( tmp, sizeof( tmp ), "%s.tmp.spv", a->out );
+
+    compile_args_t ca = *a;
+    ca.out            = tmp;
+    if ( run_compile( &ca ) != 0 )
+        return 1;
+
+    int                           rc      = 1;
+    bool                          have    = false;
+    SpvReflectShaderModule        module;
+    SpvReflectInterfaceVariable** inputs  = NULL;
+    oshd_input_t*                 in_tab  = NULL;
+    oshd_pc_member_t*             pc_tab  = NULL;
+    oshd_binding_t*               bd_tab  = NULL;
+    SpvReflectDescriptorBinding** binds   = NULL;
+    u8*                           file    = NULL;
+    strtab_t                      st      = { 0 };
+
+    sys_file_data_t fd = sys_file_read_entire( tmp );
+    if ( !fd.ok || fd.size == 0 || fd.size % 4 != 0 )
+    {
+        fprintf( stderr, "shader_tool: error: could not read back %s\n", tmp );
+        goto done;
+    }
+
+    if ( spvReflectCreateShaderModule( fd.size, fd.data, &module ) != SPV_REFLECT_RESULT_SUCCESS )
+    {
+        fprintf( stderr, "shader_tool: error: SPIR-V reflection failed for %s\n", a->src );
+        goto done;
+    }
+    have = true;
+
+    oshd_header_t h = { 0 };
+    h.magic         = OSHD_MAGIC;
+    h.version       = OSHD_VERSION;
+    h.stage         = oshd_stage_from_reflect( module.shader_stage );
+    h.spirv_size    = fd.size;
+    if ( h.stage == OSHD_STAGE_NONE )
+    {
+        fprintf( stderr, "shader_tool: error: unsupported shader stage in %s\n", a->src );
+        goto done;
+    }
+
+    st.buf      = ( char* )calloc( 1, OSHD_STRTAB_CAP );
+    st.size     = 1;    /* offset 0 reserved as "" */
+    h.entry     = strtab_add( &st, module.entry_point_name );
+
+    /* Vertex inputs. */
+    h.input_count = collect_user_inputs( &module, &inputs );
+    if ( h.input_count )
+        in_tab = ( oshd_input_t* )calloc( h.input_count, sizeof( *in_tab ) );
+    for ( u32 i = 0; i < h.input_count; ++i )
+    {
+        const SpvReflectInterfaceVariable* v = inputs[ i ];
+        u32                                sz = spv_format_size( v->format );
+        if ( sz == 0 )
+        {
+            fprintf( stderr, "shader_tool: error: unsupported vertex input format %d (%s) in %s\n",
+                     ( int )v->format, v->name ? v->name : "(unnamed)", a->src );
+            goto done;
+        }
+        in_tab[ i ].location  = v->location;
+        in_tab[ i ].vk_format = ( u32 )v->format;
+        in_tab[ i ].size      = sz;
+        in_tab[ i ].name      = strtab_add( &st, v->name );
+    }
+
+    /* Push constant block (dxc permits at most one per stage; enforce it here so the header's
+       single-block fields are never ambiguous). */
+    u32 pc_count = 0;
+    spvReflectEnumeratePushConstantBlocks( &module, &pc_count, NULL );
+    if ( pc_count > 1 )
+    {
+        fprintf( stderr, "shader_tool: error: %u push constant blocks in %s (max 1)\n",
+                 pc_count, a->src );
+        goto done;
+    }
+    if ( pc_count == 1 )
+    {
+        SpvReflectBlockVariable* block = NULL;
+        spvReflectEnumeratePushConstantBlocks( &module, &pc_count, &block );
+
+        const char* bname = block->type_description && block->type_description->type_name
+                              ? block->type_description->type_name
+                              : block->name;
+        h.pc_name        = strtab_add( &st, bname );
+        h.pc_size        = block->size;
+        h.pc_padded_size = block->padded_size;
+        h.pc_member_count = pc_member_total( block );
+        if ( h.pc_member_count )
+        {
+            pc_tab  = ( oshd_pc_member_t* )calloc( h.pc_member_count, sizeof( *pc_tab ) );
+            u32 idx = 0;
+            pc_member_fill( block, 0, pc_tab, &idx, &st );
+        }
+    }
+
+    /* Descriptor bindings, as reflected. */
+    spvReflectEnumerateDescriptorBindings( &module, &h.binding_count, NULL );
+    if ( h.binding_count )
+    {
+        binds  = ( SpvReflectDescriptorBinding** )malloc( h.binding_count * sizeof( *binds ) );
+        bd_tab = ( oshd_binding_t* )calloc( h.binding_count, sizeof( *bd_tab ) );
+        spvReflectEnumerateDescriptorBindings( &module, &h.binding_count, binds );
+        for ( u32 i = 0; i < h.binding_count; ++i )
+        {
+            bd_tab[ i ].set             = binds[ i ]->set;
+            bd_tab[ i ].binding         = binds[ i ]->binding;
+            bd_tab[ i ].descriptor_type = ( u32 )binds[ i ]->descriptor_type;
+            bd_tab[ i ].count           = binds[ i ]->count;
+            bd_tab[ i ].name            = strtab_add( &st, binds[ i ]->name );
+        }
+    }
+
+    if ( st.overflow )
+    {
+        fprintf( stderr, "shader_tool: error: string table exceeds %d bytes for %s\n",
+                 OSHD_STRTAB_CAP, a->src );
+        goto done;
+    }
+
+    /* Pad the string table so the SPIR-V payload stays 4-aligned in the mapped file. */
+    while ( st.size % 4 != 0 )
+        st.buf[ st.size++ ] = 0;
+    h.strtab_size = st.size;
+
+    /* Layout hash: every CPU-visible contract field, in file order, names included. */
+    {
+        u64 lh = 0xcbf29ce484222325ull;
+        lh     = fnv_u32( lh, h.stage );
+        lh     = fnv_str( lh, oshd_str( st.buf, st.size, h.entry ) );
+        for ( u32 i = 0; i < h.input_count; ++i )
+        {
+            lh = fnv_u32( lh, in_tab[ i ].location );
+            lh = fnv_u32( lh, in_tab[ i ].vk_format );
+            lh = fnv_u32( lh, in_tab[ i ].size );
+            lh = fnv_str( lh, oshd_str( st.buf, st.size, in_tab[ i ].name ) );
+        }
+        lh = fnv_u32( lh, h.pc_size );
+        lh = fnv_u32( lh, h.pc_padded_size );
+        lh = fnv_str( lh, oshd_str( st.buf, st.size, h.pc_name ) );
+        for ( u32 i = 0; i < h.pc_member_count; ++i )
+        {
+            lh = fnv_u32( lh, pc_tab[ i ].offset );
+            lh = fnv_u32( lh, pc_tab[ i ].size );
+            lh = fnv_u32( lh, pc_tab[ i ].depth );
+            lh = fnv_str( lh, oshd_str( st.buf, st.size, pc_tab[ i ].name ) );
+        }
+        for ( u32 i = 0; i < h.binding_count; ++i )
+        {
+            lh = fnv_u32( lh, bd_tab[ i ].set );
+            lh = fnv_u32( lh, bd_tab[ i ].binding );
+            lh = fnv_u32( lh, bd_tab[ i ].descriptor_type );
+            lh = fnv_u32( lh, bd_tab[ i ].count );
+            lh = fnv_str( lh, oshd_str( st.buf, st.size, bd_tab[ i ].name ) );
+        }
+        h.layout_hash = lh;
+    }
+
+    /* Assemble and write.  Sizes are u32 in the header; the u64 total guards the sum. */
+    u64 total = ( u64 )sizeof( h )
+              + ( u64 )h.input_count * sizeof( oshd_input_t )
+              + ( u64 )h.pc_member_count * sizeof( oshd_pc_member_t )
+              + ( u64 )h.binding_count * sizeof( oshd_binding_t )
+              + ( u64 )h.strtab_size + ( u64 )h.spirv_size;
+    if ( total > 0xFFFFFFFFull )
+    {
+        fprintf( stderr, "shader_tool: error: cooked size overflows u32 for %s\n", a->src );
+        goto done;
+    }
+
+    file   = ( u8* )malloc( ( size_t )total );
+    u8* at = file;
+    memcpy( at, &h, sizeof( h ) );                                        at += sizeof( h );
+    if ( h.input_count )
+    {
+        memcpy( at, in_tab, h.input_count * sizeof( oshd_input_t ) );
+        at += h.input_count * sizeof( oshd_input_t );
+    }
+    if ( h.pc_member_count )
+    {
+        memcpy( at, pc_tab, h.pc_member_count * sizeof( oshd_pc_member_t ) );
+        at += h.pc_member_count * sizeof( oshd_pc_member_t );
+    }
+    if ( h.binding_count )
+    {
+        memcpy( at, bd_tab, h.binding_count * sizeof( oshd_binding_t ) );
+        at += h.binding_count * sizeof( oshd_binding_t );
+    }
+    memcpy( at, st.buf, h.strtab_size );                                  at += h.strtab_size;
+    memcpy( at, fd.data, h.spirv_size );                                  at += h.spirv_size;
+
+    if ( !sys_file_write_entire( a->out, file, ( u32 )total ) )
+    {
+        fprintf( stderr, "shader_tool: error: could not write %s\n", a->out );
+        goto done;
+    }
+
+    printf( "shader_tool: cook %s -> %s (%s, spirv %u bytes, %u inputs, pc %u bytes, "
+            "%u bindings, layout hash %016llx)\n",
+            a->src, a->out, oshd_stage_name( h.stage ), h.spirv_size, h.input_count, h.pc_size,
+            h.binding_count, ( unsigned long long )h.layout_hash );
+    rc = 0;
+
+done:
+    free( file );
+    free( st.buf );
+    free( bd_tab );
+    free( binds );
+    free( pc_tab );
+    free( in_tab );
+    free( inputs );
+    if ( have )
+        spvReflectDestroyShaderModule( &module );
+    sys_file_free( &fd );
+    sys_file_delete( tmp );
+    return rc;
+}
+
+/*============================================================================================*/
 
 static int
 usage( void )
@@ -395,7 +908,9 @@ usage( void )
              "      -E entry    entry point name (default \"main\")\n"
              "      -I dir      extra include directory (repeatable)\n"
              "      -Zi         embed debug info in the SPIR-V\n"
-             "  shader_tool reflect <file.spv>\n"
+             "  shader_tool cook <src.hlsl> -o <out.oshd> -T <profile> [-E entry] [-I dir] [-Zi]\n"
+             "      compile + reflect + serialize into a cooked .oshd container\n"
+             "  shader_tool reflect <file.spv | file.oshd>\n"
              "      dump stage, entry, inputs, push constants, descriptor bindings\n" );
     return 1;
 }
@@ -407,7 +922,10 @@ main( int argc, char** argv )
 
     int rc = 1;
 
-    if ( argc >= 3 && strcmp( argv[ 1 ], "compile" ) == 0 )
+    bool is_compile = argc >= 3 && strcmp( argv[ 1 ], "compile" ) == 0;
+    bool is_cook    = argc >= 3 && strcmp( argv[ 1 ], "cook" ) == 0;
+
+    if ( is_compile || is_cook )
     {
         compile_args_t a = { 0 };
         a.src   = argv[ 2 ];
@@ -446,7 +964,7 @@ main( int argc, char** argv )
         if ( bad || !a.out || !a.profile )
             usage();
         else
-            rc = run_compile( &a );
+            rc = is_cook ? run_cook( &a ) : run_compile( &a );
     }
     else if ( argc >= 3 && strcmp( argv[ 1 ], "reflect" ) == 0 )
     {
