@@ -81,6 +81,8 @@ typedef enum cvar_type_e
 
     /* System/Module Flags - for organization */
 
+    // type flags so we don't waste memory on a category flag.
+
  // CVAR_ENGINE         = BIT( 22 ),    // Engine subsystem
  // CVAR_INPUT          = BIT( 23 ),    // Input subsystem
  // CVAR_RENDER         = BIT( 24 ),    // Renderer subsystem
@@ -303,61 +305,61 @@ const char* cvar_get_value          ( const char* name );
     Cvar Output
 ==============================================================================================*/
 
-                                    /* Print cvar value to output */
+                                    // Print cvar value to output
 void        cvar_print_value        ( const cvar_t* cv );
 
-                                    /* Print cvar flags to output */
+                                    // Print cvar flags to output
 void        cvar_print_flags        ( const cvar_t* cv );
 
 /*==============================================================================================
     Cvar Commands
 ==============================================================================================*/
 
-                                    /* Register all cvar console commands */
+                                    // Register all cvar console commands
 void        cvar_register_commands  ( void );
 
-                                    /* Set a cvar value (create user var if not found) */
+                                    // Set a cvar value (create user var if not found)
 void        cmd_set                 ( int argc, char** argv );
 
-                                    /* Same as "set" but mark for archiving to config file */
+                                    // Same as "set" but mark for archiving to config file
 void        cmd_seta                ( int argc, char** argv );
 
-                                    /* Toggle a boolean cvar */
+                                    // Toggle a boolean cvar
 void        cmd_toggle              ( int argc, char** argv );
 
-                                    /* Reset a cvar to default value */
+                                    // Reset a cvar to default value
 void        cmd_reset               ( int argc, char** argv );
 
-                                    /* Reset all cvars to defaults */
+                                    // Reset all cvars to defaults
 void        cmd_reset_all           ( int argc, char** argv );
 
-                                    /* Apply all latched cvar changes */
+                                    // Apply all latched cvar changes
 void        cmd_apply_latched       ( int argc, char** argv );
 
-                                    /* List all modified cvars */
+                                    // List all modified cvars
 void        cmd_cvar_modified       ( int argc, char** argv );
 
-                                    /* Display detailed cvar information */
+                                    // Display detailed cvar information
 void        cmd_cvarinfo            ( int argc, char** argv );
 
-                                    /* List all cvars with optional filtering */
+                                    // List all cvars with optional filtering
 void        cmd_cvarlist            ( int argc, char** argv );
 
-                                    /* Console command: writeconfig [filename] */
+                                    // Console command: writeconfig [filename]
 void        cmd_writeconfig         ( int argc, char** argv );
 
 /*==============================================================================================
     Cvar Config
 ==============================================================================================*/
 
-                                    /* Write all archived cvars to a config file */
+                                    // Write all archived cvars to a config file
 bool        cvar_write_config       ( const char* filename, u32 type_filter );
 
-                                    /* Queue default config sequence (default.cfg, config.cfg,
-                                       autoexec.cfg) through the command buffer */
+                                    // Queue default config sequence (default.cfg, config.cfg,
+                                    // autoexec.cfg) through the command buffer
 void        cvar_load_defaults      ( void );
 
-                                    /* Save current config to config.cfg */
+                                    // Save current config to config.cfg
 void        cvar_save_config        ( void );
 
 /*============================================================================================*/
