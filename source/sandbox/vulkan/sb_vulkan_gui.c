@@ -1693,8 +1693,8 @@ sb_gui_demo_picker( int active )
     const int count    = sb_gui_demo_count();
     int       selected = active;                  /* unchanged unless a row is clicked */
 
-    gui()->window_set_next_pos ( 940, 20, GUI_COND_ONCE );
-    gui()->window_set_next_size( 320, 360, GUI_COND_ONCE );
+    gui()->window_set_next_pos ( 940, 48, GUI_COND_ONCE );
+    gui()->window_set_next_size( 320, 640, GUI_COND_ONCE );
     if ( gui()->window_begin( "Demos", GUI_WIN_NOCOLLAPSE ) )
     {
         gui()->stack();

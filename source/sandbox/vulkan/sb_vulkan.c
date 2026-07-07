@@ -199,11 +199,6 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Start render loop. */
 
-    printf( "[sb_vulkan] running -- ESC to quit\n" );
-    printf( "[sb_vulkan] gui demos: 1-9 select, +/- step, NP. font scale\n" );
-    printf( "[sb_vulkan] gui debug hotkeys: F1-F4 overlay layers, F9 render view, F10 dashboard,\n" );
-    printf( "[sb_vulkan]                    P perf overlay, O state overlay, C retained skip, I idle skip\n" );
-
     /* OS services gui cannot reach itself (it links only app + rhi): the perf-overlay clock and
        the frame_pace sleep / idle wait.  Wired once; the loop below just calls frame_pace(). */
     gui()->set_frame_hooks( sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms );
