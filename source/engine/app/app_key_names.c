@@ -90,4 +90,13 @@ app_key_names( void )
     return s_app_key_names;
 }
 
+/* Vtable form for services (input axis binds resolve "w"/"pad_a" without host wiring). */
+const char* const*
+app_src_names( u32* out_count )
+{
+    if ( out_count )
+        *out_count = APP_SRC_COUNT;
+    return s_app_key_names;
+}
+
 /*============================================================================================*/

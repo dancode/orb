@@ -125,6 +125,9 @@ const core_api_t g_core_api_struct = {
     .cvar_callback_register   = cvar_callback_register,
     .cvar_callback_unregister = cvar_callback_unregister,
 
+    .config_writer_add    = cvar_config_writer_add,
+    .config_writer_remove = cvar_config_writer_remove,
+
     .cmd_register       = cmd_register,
     .cmd_unregister     = cmd_unregister,
     .cmd_count          = cmd_count,

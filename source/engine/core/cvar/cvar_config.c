@@ -11,6 +11,43 @@
 ==============================================================================================*/
 
 /*============================================================================================*/
+/* Extra config-section writers -- services (input axis binds, etc.) hook in here so one
+   writeconfig round-trips everything.  Small fixed table; slots free on remove. */
+
+#define CVAR_CONFIG_WRITER_MAX 8
+
+static cvar_config_writer_fn s_config_writers[ CVAR_CONFIG_WRITER_MAX ];
+
+bool
+cvar_config_writer_add( cvar_config_writer_fn fn )
+{
+    if ( !fn )
+        return false;
+
+    for ( u32 i = 0; i < CVAR_CONFIG_WRITER_MAX; ++i )
+        if ( s_config_writers[ i ] == fn )
+            return true;    // already registered (service re-init)
+
+    for ( u32 i = 0; i < CVAR_CONFIG_WRITER_MAX; ++i )
+    {
+        if ( !s_config_writers[ i ] )
+        {
+            s_config_writers[ i ] = fn;
+            return true;
+        }
+    }
+    return false;
+}
+
+void
+cvar_config_writer_remove( cvar_config_writer_fn fn )
+{
+    for ( u32 i = 0; i < CVAR_CONFIG_WRITER_MAX; ++i )
+        if ( s_config_writers[ i ] == fn )
+            s_config_writers[ i ] = NULL;
+}
+
+/*============================================================================================*/
 /* Write all archived cvars to a config file */
 
 bool
@@ -51,6 +88,11 @@ cvar_write_config( const char* filename, u32 type_filter )
 
     /* Key binds persist alongside the cvars (unbindall + bind lines). */
     cmd_bind_write_config( f );
+
+    /* Service-registered sections (input axis binds, etc.). */
+    for ( u32 i = 0; i < CVAR_CONFIG_WRITER_MAX; ++i )
+        if ( s_config_writers[ i ] )
+            s_config_writers[ i ]( f );
 
     fclose( f );
     con_printf( "cvar: %u cvars written to %s\n", written, filename );

@@ -166,6 +166,14 @@ typedef struct app_api_s
        until changed -- pass 0,0 to stop. */
     void ( *pad_rumble )( i32 pad, f32 lo, f32 hi );
 
+    /* ---- Source names ---- */
+
+    /* The unified source-space name table ("w", "mouse1", "pad_a"), indexed by app_src_t
+       code; NULL at gap indexes.  Static data, valid for the process lifetime.  Lets a
+       service resolve config-file source names without host glue (the host separately
+       wires the same table into the core bind system). */
+    const char* const* ( *key_names )( u32* out_count );
+
     /* ---- Clipboard ---- */
 
     /* Copy NUL-terminated `text` to the OS clipboard (the outbound half: cut / copy).

@@ -68,6 +68,9 @@ const app_api_t g_app_api_struct = {
     .pad_axis      = app_pad_axis,
     .pad_rumble    = app_pad_rumble,
 
+    /* Source names */
+    .key_names = app_src_names,
+
     /* Clipboard */
     .clipboard_set = app_clipboard_set,
 };

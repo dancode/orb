@@ -20,8 +20,21 @@
                                (hold W, hit TAB -> one clean released edge, no stuck key)
         ESC                 -- quit
 
+    Phase 4 axis binds (the analog half -- table-driven, no command strings per frame):
+        W/S/A/D             -- ALSO drive the "move" AXIS2 action as a digital composite
+                               (bindaxis w move 0 1 etc.); [move] prints on change, W+D
+                               gives a diagonal, TAB gates it to (0,0) like the buttons
+        LEFT STICK          -- drives "move" too: radial deadzone + curve, sums with WASD,
+                               clamps at -1..1 (holding W plus full stick never exceeds 1)
+        MOUSE MOVEMENT      -- drives the "look" AXIS2 action from the raw delta channel
+                               ([look] prints an accumulated total, +y up, in_mouse_sens)
+        RIGHT STICK         -- also drives "look" (scaled up -- rate-style input)
+        C                   -- writeconfig test_input.cfg: proves cvars + binds + bindaxis
+                               lines all land in one file (check it next to the exe)
+
     Correct output: PRESS/RELEASE lines with per-frame counts, a state line whenever any
-    down-state changes, and after TAB a forced release while the key is still held.
+    down-state changes, [move] lines tracking the composite vector, and after TAB a forced
+    release while the key is still held.
 
 ==============================================================================================*/
 
@@ -55,6 +68,9 @@ static test_action_t s_acts[] = {
     { "jump",      INPUT_ACTION_INVALID },
     { "attack",    INPUT_ACTION_INVALID },
 };
+
+static input_action_t s_move = INPUT_ACTION_INVALID;    // AXIS2: WASD composite + left stick
+static input_action_t s_look = INPUT_ACTION_INVALID;    // AXIS2: mouse raw delta + right stick
 
 /*============================================================================================*/
 /* One line of current down-states, printed when anything changed. */
@@ -104,9 +120,12 @@ main( int argc, char** argv )
     /* Bind names for the whole unified source space (keyboard + mouse + pad). */
     cmd_bind_wire_names( app_key_names(), APP_SRC_COUNT );
 
-    /* Register actions -- this auto-registers the +name/-name console commands. */
+    /* Register actions -- BUTTONs auto-register the +name/-name console commands. */
     for ( u32 i = 0; i < ARRAY_COUNT( s_acts ); ++i )
         s_acts[ i ].id = input()->action_register( s_acts[ i ].name, INPUT_ACTION_BUTTON, CTX_GAME );
+
+    s_move = input()->action_register( "move", INPUT_ACTION_AXIS2, CTX_GAME );
+    s_look = input()->action_register( "look", INPUT_ACTION_AXIS2, CTX_GAME );
 
     /* Binds through the normal console path -- exactly what a config file would run. */
     cmd_execute_string( "bind w +forward" );
@@ -119,13 +138,25 @@ main( int argc, char** argv )
     cmd_execute_string( "bind pad_a +jump" );
     cmd_execute_string( "bind f \"echo plain bind fired\"" );
 
+    /* Axis binds: WASD digital composite + left stick into "move" (they sum and clamp);
+       mouse raw delta + scaled right stick into "look". */
+    cmd_execute_string( "bindaxis w move 0 1" );
+    cmd_execute_string( "bindaxis s move 0 -1" );
+    cmd_execute_string( "bindaxis a move -1 0" );
+    cmd_execute_string( "bindaxis d move 1 0" );
+    cmd_execute_string( "bindaxis pad_lstick move" );
+    cmd_execute_string( "bindaxis mouse look" );
+    cmd_execute_string( "bindaxis pad_rstick look 3 3" );
+
     input()->context_push( CTX_GAME );
 
     printf( "\n=== sb_engine_input: bind -> cmd -> action proof ===\n" );
     printf( "W/S/A/D+SPACE move, UP also = forward, MOUSE1 attack, PAD_A jump,\n" );
-    printf( "F plain bind, TAB toggle UI context (force-release), ESC quit\n\n" );
+    printf( "F plain bind, TAB toggle UI context (force-release), ESC quit\n" );
+    printf( "axes: WASD+left stick -> [move], mouse+right stick -> [look], C writeconfig\n\n" );
     cmd_execute_string( "bindlist" );
     cmd_execute_string( "actionlist" );
+    cmd_execute_string( "axislist" );
     printf( "\n" );
 
     bool ui_open = false;
@@ -144,6 +175,12 @@ main( int argc, char** argv )
                 if ( ev.data.key.key == APP_KEY_ESCAPE )
                 {
                     quit = true;
+                }
+                else if ( ev.data.key.key == APP_KEY_C )
+                {
+                    /* One file round-trips everything: seta cvars (in_mouse_sens...),
+                       unbindall + bind lines, then our unbindaxisall + bindaxis lines. */
+                    cmd_execute_string( "writeconfig test_input.cfg" );
                 }
                 else if ( ev.data.key.key == APP_KEY_TAB )
                 {
@@ -195,6 +232,39 @@ main( int argc, char** argv )
         }
         if ( state_changed )
             print_state_line();
+
+        /* [move] on change: WASD composite + stick, post-deadzone, clamped -1..1. */
+        {
+            static f32 pm_x = 0.0f, pm_y = 0.0f;
+
+            f32 mx, my;
+            input()->value2( s_move, &mx, &my );
+            if ( mx != pm_x || my != pm_y )
+            {
+                printf( "[move]  (%+5.2f, %+5.2f)\n", mx, my );
+                pm_x = mx;
+                pm_y = my;
+            }
+        }
+
+        /* [look] throttled: per-frame delta accumulates into a running total. */
+        {
+            static f32 acc_x = 0.0f, acc_y = 0.0f;
+            static i32 cool  = 0;
+
+            f32 lx, ly;
+            input()->value2( s_look, &lx, &ly );
+            acc_x += lx;
+            acc_y += ly;
+
+            if ( cool > 0 )
+                cool--;
+            if ( ( lx != 0.0f || ly != 0.0f ) && cool == 0 )
+            {
+                printf( "[look]  d=(%+7.2f, %+7.2f) total=(%+9.1f, %+9.1f)\n", lx, ly, acc_x, acc_y );
+                cool = 15;    // ~8 prints/sec at the 8 ms pace
+            }
+        }
 
         sys_sleep_milliseconds( 8 );
     }

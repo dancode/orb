@@ -30,6 +30,7 @@
 #define INPUT_ACTION_NAME_LEN 24     // bytes per action name incl. NUL ("+name" must fit CMD_NAME_LEN)
 #define INPUT_CONTEXT_MAX     8      // context stack depth
 #define INPUT_HELD_MAX        4      // simultaneous sources holding one button action
+#define INPUT_AXIS_BIND_MAX   64     // max axis bind table entries (bindaxis)
 
 /*==============================================================================================
     Types

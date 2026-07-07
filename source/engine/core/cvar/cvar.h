@@ -355,6 +355,15 @@ void        cmd_writeconfig         ( int argc, char** argv );
                                     // Write all archived cvars to a config file
 bool        cvar_write_config       ( const char* filename, u32 type_filter );
 
+                                    /* Extra config sections: services register a writer and
+                                       cvar_write_config calls it after the cvar + bind lines
+                                       (e.g. the input service's bindaxis lines).  The void*
+                                       is an open FILE*.  add returns false when full. */
+typedef void ( *cvar_config_writer_fn )( void* file );
+
+bool        cvar_config_writer_add    ( cvar_config_writer_fn fn );
+void        cvar_config_writer_remove ( cvar_config_writer_fn fn );
+
                                     // Queue default config sequence (default.cfg, config.cfg,
                                     // autoexec.cfg) through the command buffer
 void        cvar_load_defaults      ( void );

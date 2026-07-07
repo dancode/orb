@@ -106,6 +106,10 @@ typedef struct core_api_s
     uint16_t    ( *cvar_callback_register )   ( cvar_t* cv, cvar_callback_fn fn );
     void        ( *cvar_callback_unregister ) ( cvar_t* cv );
 
+    /* config writer hook: writeconfig appends service sections after cvars + binds */
+    bool        ( *config_writer_add )    ( cvar_config_writer_fn fn );
+    void        ( *config_writer_remove ) ( cvar_config_writer_fn fn );
+
     /* command backend (registry + immediate execute + deferred buffer) */
 
     bool        ( *cmd_register )       ( const char* name, cmd_fn fn, const char* desc );
