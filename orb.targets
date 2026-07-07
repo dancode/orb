@@ -118,7 +118,15 @@ target gui
     unit        gui.c             # UI / core unit
     unit        gui_backend.c     # render backend unit
 	dep 		rhi app
-	
+
+target asset
+
+    type        static
+    root        source/runtime_service/asset
+    folder      03_RUNTIME/SERVICE
+    unit        asset.c
+    dep         core
+
 # ==============================================================================
 # 03_RUNTIME_MODULES
 # ==============================================================================
@@ -350,6 +358,14 @@ target sb_engine_core
     folder      09_SANDBOX/ENGINE
     unit        sb_engine_core.c
     dep         core sys
+
+target sb_engine_asset
+
+    type        exe
+    root        source/sandbox/engine/engine_asset
+    folder      09_SANDBOX/ENGINE
+    unit        sb_engine_asset.c
+    dep         asset core sys ref mod
 
 target sb_engine_job
 
@@ -693,13 +709,15 @@ solution orb_sandbox_engine				# developing engine libraries
     startup     sb_runtime_gen
 
 	add         sys ref mod app core job net
+	add         asset
 
-	# 			--- SANDBOX : BASE -- 
+	# 			--- SANDBOX : BASE --
 
-    add         sb_base	
-    add         sb_engine_mod 
-	add 		sb_engine_sys 
-	add 		sb_engine_core 
+    add         sb_base
+    add         sb_engine_mod
+	add 		sb_engine_sys
+	add 		sb_engine_core
+	add 		sb_engine_asset
 	add 		sb_engine_job
 	add 		sb_engine_app
 
@@ -733,6 +751,7 @@ solution orb_all
     add         run
     add         rhi
     add         draw
+    add         asset
 
     add         render audio physics
 	
@@ -743,8 +762,9 @@ solution orb_all
     add         host_common
 	
 	add         sb_engine_mod 
-	add 		sb_engine_sys 
-	add 		sb_engine_core 
+	add 		sb_engine_sys
+	add 		sb_engine_core
+	add 		sb_engine_asset
 	add 		sb_engine_job
 	add 		sb_engine_app
 

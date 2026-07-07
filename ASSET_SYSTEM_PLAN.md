@@ -208,11 +208,25 @@ Phase 1 -- core/fs virtual filesystem (DIR mounts + catalog)   [DONE 2026-07-06]
      exists/stat/read match (22 bytes); 2nd read is a catalog hit (file_count==1); missing
      path = not found; backslash+mixed-case vpath folds to the same file.
 
-Phase 2 -- runtime_service/asset registry (synchronous, no loaders yet)
-   - New service module (three-header split, hot-reload DLL). Handle table + path hash +
-     refcount + state + type dispatch scaffolding.
-   - Proof: register a trivial "blob" type, acquire same vpath twice -> same id, refcount==2;
-     release twice -> unloaded.
+Phase 2 -- runtime_service/asset registry (synchronous, no loaders yet)   [DONE 2026-07-06]
+   - New STATIC service (three-header split asset.h/_api.h/_host.h + asset.c unity entry +
+     asset_registry.c impl + asset_api.c wiring). NOTE: services (rhi/draw/gui) are STATIC
+     libs with a mod_desc, NOT hot-reload DLLs as the plan assumed -- asset matches them
+     (type static, dep core, registered via mod_static; func_api_size = sizeof asset_api_t;
+     state in file-scope globals since a static service never hot-reloads).
+   - asset_id_t { u32 index (1-based; 0=invalid); u32 generation }. Records: sid path, hash,
+     type, state, refcount, resource, bytes, mtime, generation. Open-addressing path index
+     (sid-hash -> slot, tombstones) for O(1) dedup; sid interning of the slash-normalized,
+     case-folded vpath makes "a/B.png" == "a\\b.png" the SAME record for free.
+   - Type dispatch by extension: asset()->type_register(name, exts[], load, unload, ud) ->
+     type id; acquire picks the type from the file extension. No GPU types yet.
+   - Vtable: type_register / acquire / release / reload / get / state / valid / refcount /
+     count. Synchronous load (acquire: fs_read -> type.load -> LOADED/FAILED); LOADING + id
+     indirection reserved for a later async loader. reload() = unload+load in place.
+   - Proof (sb_engine_asset): boots sys+ref+core+asset via mod_static; blob type over a
+     scratch file; acquire x2 = same id refcount 2 loads 1 (dedup); LOADED + byte match;
+     backslash/case alt-form folds to same record (no reload); release unwinds refcount then
+     unloads at 0; stale handle rejected by generation; missing file = FAILED but releasable.
 
 Phase 3 -- Image loader + on-screen proof
    - loaders/asset_image.c using source/vendor/stb_image.h -> rhi texture. sb_engine_asset
@@ -255,8 +269,9 @@ Cook-D -- packaging
 --------------------------------------------------------------------------------
 
 1. Load model: synchronous-but-async-ready (recommended) vs threaded from day one.
-2. Whether the asset service should be a hot-reload DLL from the start (recommended, matches
-   rhi/draw/gui) vs a static lib until the API settles.
+2. RESOLVED: asset is a STATIC service. The premise (rhi/draw/gui are hot-reload DLLs) was
+   wrong -- those services are STATIC libs with a mod_desc, registered via mod_static. asset
+   matches them (type static, dep core). Loaders iterate fast via host rebuild, not DLL swap.
 3. asset_tool shape: orchestrator that spawns sub-tools like font_tool (recommended, mirrors
    build_tool) vs monolith linking all converters. (Default taken: orchestrator.)
 4. Cook timing: runtime loads source directly first, cooked formats later (recommended,
