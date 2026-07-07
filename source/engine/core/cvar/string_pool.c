@@ -222,11 +222,12 @@ user_string_pool_init( user_string_pool_t* usp )
 void
 user_string_pool_exit( user_string_pool_t* usp )
 {
-    /* free the dynamic new user string pool data */
-    if ( usp->pool.data )
+    string_pool_exit( &usp->pool );
+
+    /* Free lists point into the released pool; reset them to empty */
+    for ( int i = 0; i < USER_STRING_BUCKET_COUNT; ++i )
     {
-        free( usp->pool.data );
-        usp->pool.data = NULL;
+        usp->free_list[ i ] = USER_STRING_INVALID_LIST;
     }
 }
 

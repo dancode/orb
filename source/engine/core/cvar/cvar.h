@@ -18,7 +18,7 @@
     - A callback system for reacting to cvar changes.
     - Hot-reload safety: The system is designed to persist across dynamic library reloads.
     - A compact 32-byte `cvar_t` structure.
-    - Debug infomration is done via (Natvis) and can resolve offsets into strings for display.
+    - Debug information is done via (Natvis) and can resolve offsets into strings for display.
 
     ROADMAP
 
@@ -113,16 +113,6 @@ typedef enum cvar_flag_e
 
 } cvar_flag_t;
 
-typedef enum cvar_apply_e
-{
-    CVAR_APPLY_IMMEDIATE,               // Apply now.
-    CVAR_APPLY_RESTART,                 // Requires full engine restart
-    CVAR_APPLY_SUBSYS,                  // Requires subsystem restart (renderer/audio/etc)
-    CVAR_APPLY_CALLBACK,                // Custom logic (per-variable)
-    CVAR_APPLY_IGNORE,                  // No effect (runtime only)
-
-} cvar_apply_t;
-
 /*==============================================================================================
 
     CVar Structure - 32-byte aligned structure
@@ -208,13 +198,13 @@ typedef i32  (*cvar_module_id_fn)( void );
 
 void        cvar_set_module_id_fn               ( cvar_module_id_fn fn );
 
-uint16_t    cvar_callback_register              ( cvar_t* cv, cvar_callback_fn fn );
+u16         cvar_callback_register              ( cvar_t* cv, cvar_callback_fn fn );
 void        cvar_callback_unregister            ( cvar_t* cv );
 void        cvar_callback_unregister_by_module  ( i32 module_id );
 void        cvar_callback_invoke                ( cvar_t* cv );
 
 /*==============================================================================================
-    Initialiation Functions
+    Initialization Functions
 ==============================================================================================*/
 
                                     // Initialize the cvar system
@@ -279,6 +269,10 @@ f32         cvar_get_float          ( const cvar_t* cv );
 const char* cvar_get_string         ( const cvar_t* cv );
 const char* cvar_get_string_from_id ( const cvar_t* cv, i32 value_id );
 
+                                    // Format any cvar's value for display (numeric types
+                                    // use a transient round-robin buffer)
+const char* cvar_value_string       ( const cvar_t* cv );
+
 /*==============================================================================================
     Value Modification
 ==============================================================================================*/
@@ -296,7 +290,7 @@ void        cvar_apply_latched      ( void );
 void        cvar_clear_modified     ( void );
 
 /*==============================================================================================
-    Value Modification
+    Named Access
 ==============================================================================================*/
 
                                     // Set cvar value by name, returns success/failure
@@ -325,7 +319,7 @@ void        cvar_register_commands  ( void );
                                     /* Set a cvar value (create user var if not found) */
 void        cmd_set                 ( int argc, char** argv );
 
-                                    /* Same as "set" nit mark for archiving to config file */
+                                    /* Same as "set" but mark for archiving to config file */
 void        cmd_seta                ( int argc, char** argv );
 
                                     /* Toggle a boolean cvar */

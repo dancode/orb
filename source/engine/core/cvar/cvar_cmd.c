@@ -39,7 +39,7 @@ cvar_register_commands( void )
             var value   : set only if var exists
     set     var value   : set or create a user var if not found
     seta    var value   : CVAR_ARCHIVE saved to config
-    setu    var vlaue   : CVAR_USERINFO	sent to server in userinfo
+    setu    var value   : CVAR_USERINFO	sent to server in userinfo
     sets    var value   : CVAR_SERVERINFO advertised to clients by server
 ==============================================================================================*/
 
@@ -137,7 +137,7 @@ cmd_toggle( int argc, char** argv )
         return;
     }
 
-    if ( !cvar_is_int( cv ) && !( cv->type & CVAR_BOOL ) )
+    if ( !cvar_is_int( cv ) && !cvar_is_bool( cv ) )
     {
         con_printf( "Error: Variable '%s' is not a boolean\n", name );
         return;
@@ -249,7 +249,7 @@ cmd_cvar_modified( int argc, char** argv )
             continue;
 
         const char* name  = cvar_get_name( cv );
-        const char* value = cvar_get_value( name );
+        const char* value = cvar_value_string( cv );
         con_printf( "  %-24s = %s\n", name, value );
         count++;
     }
@@ -346,7 +346,7 @@ cmd_cvarlist( int argc, char** argv )
         if ( cv->type & CVAR_DEVONLY )
             continue;
 
-        const char* value    = cvar_get_value( name );
+        const char* value    = cvar_value_string( cv );
         const char* type_str = "unknown";
 
         switch ( cv->type & CVAR_TYPE_MASK )
@@ -407,4 +407,3 @@ cmd_writeconfig( int argc, char** argv )
 
 /*============================================================================================*/
 // clang-format on
-// clang-format off

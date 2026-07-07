@@ -43,7 +43,7 @@ cvar_write_config( const char* filename, u32 type_filter )
         if ( cv->type & type_filter )
         {
             const char* name  = cvar_get_name( cv );
-            const char* value = cvar_get_value( name );
+            const char* value = cvar_value_string( cv );
             fprintf( f, "seta %s \"%s\"\n", name, value );
             written++;
         }

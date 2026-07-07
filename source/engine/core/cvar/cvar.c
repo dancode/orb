@@ -58,7 +58,7 @@ cvar_hash( const char* s )
 
     * Supports multiple callbacks per cvar with module tracking for hot reload.
     * Cvar callbacks are called on value changes.
-    * Callbacks are refeneced by index in cvar_t.callback_id field.
+    * Callbacks are referenced by index in cvar_t.callback_id field.
 
 ==============================================================================================*/
 
@@ -82,9 +82,9 @@ typedef struct cvar_callback_s
 
 static cvar_callback_fn g_function_array[ MAX_CVAR_CALLBACKS ];    // function pointer array.
 static cvar_callback_t  g_callback_table[ MAX_CVAR_CALLBACKS ];    // callback entry.
-static uint16_t         g_callback_count = 0;                      // number of used callback slots
-static uint16_t         g_free_head      = INVALID_ID;             // intrusive frreelist head
-static uint16_t         g_cbtable_free   = INVALID_ID;             // freed callback-table entries (next in function_id[0])
+static u16              g_callback_count = 0;                      // number of used callback slots
+static u16              g_free_head      = INVALID_ID;             // intrusive freelist head
+static u16              g_cbtable_free   = INVALID_ID;             // freed callback-table entries (next in function_id[0])
 
 /*============================================================================================*/
 /* Initialize callback system */
@@ -93,10 +93,12 @@ void
 cvar_callbacks_init()
 {
     g_callback_count = 0;
-    memset( g_callback_table, INVALID_ID, sizeof( g_callback_table ) );
+
+    /* Fill every u16 with INVALID_ID (0xFFFF): memset writes byte 0xFF, intentionally */
+    memset( g_callback_table, 0xFF, sizeof( g_callback_table ) );
 
     /* Initialize intrusive free list in g_function_array */
-    for ( uint16_t i = 0; i < MAX_CVAR_CALLBACKS - 1; i++ )
+    for ( u16 i = 0; i < MAX_CVAR_CALLBACKS - 1; i++ )
     {
         /* Encode next index as pointer value */
         g_function_array[ i ] = ( cvar_callback_fn )( uintptr_t )( i + 1 );
@@ -109,16 +111,16 @@ cvar_callbacks_init()
 /*============================================================================================*/
 /* Allocate a free function slot (O(1)) */
 
-static inline uint16_t
+static inline u16
 alloc_function_slot( cvar_callback_fn fn )
 {
     if ( g_free_head == INVALID_ID )
         return INVALID_ID; /* No free slots */
 
-    uint16_t slot = g_free_head;
+    u16 slot = g_free_head;
 
     /* Pop from free list */
-    g_free_head = ( uint16_t )( uintptr_t )g_function_array[ slot ];
+    g_free_head = ( u16 )( uintptr_t )g_function_array[ slot ];
 
     /* Assign actual function */
     g_function_array[ slot ] = fn;
@@ -129,7 +131,7 @@ alloc_function_slot( cvar_callback_fn fn )
 /* Free a function slot (O(1)) */
 
 static inline void
-free_function_slot( uint16_t slot )
+free_function_slot( u16 slot )
 {
     if ( slot >= MAX_CVAR_CALLBACKS )
         return;
@@ -137,6 +139,22 @@ free_function_slot( uint16_t slot )
     /* Push this slot back into the free list */
     g_function_array[ slot ] = ( cvar_callback_fn )( uintptr_t )g_free_head;
     g_free_head              = slot;
+}
+
+/* Return a cvar's callback-table entry to the freelist (next-link stored in
+   function_id[0]) and detach it from the cvar. Caller must have freed or kept
+   every function slot first. */
+
+static void
+callback_table_release( cvar_t* cv )
+{
+    cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
+
+    cb->function_id[ 0 ] = g_cbtable_free;
+    g_cbtable_free       = cv->callback_id;
+
+    cv->callback_id = INVALID_ID;
+    cv->flag &= ~CVAR_CALLBACK;
 }
 
 /*============================================================================================*/
@@ -157,7 +175,7 @@ cvar_set_module_id_fn( cvar_module_id_fn fn )
    DLL's init()/reload() this is that module's id; host code outside any lifecycle call
    gets -1 -> INVALID_ID (never matched by unload sweeps). */
 
-uint16_t
+u16
 cvar_callback_register( cvar_t* cv, cvar_callback_fn fn )
 {
     if ( !cv || !fn )
@@ -201,7 +219,7 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn )
     {
         if ( cb->function_id[ i ] == INVALID_ID )
         {
-            uint16_t slot = alloc_function_slot( fn );
+            u16 slot = alloc_function_slot( fn );
             if ( slot == INVALID_ID )
             {
                 con_printf( "cvar: no free callback slots available\n" );
@@ -240,12 +258,7 @@ cvar_callback_unregister( cvar_t* cv )
         cb->module_id[ i ] = INVALID_ID;
     }
 
-    /* Return the table entry to the freelist (next-link stored in function_id[0]) */
-    cb->function_id[ 0 ] = g_cbtable_free;
-    g_cbtable_free       = cv->callback_id;
-
-    cv->callback_id = INVALID_ID;
-    cv->flag &= ~CVAR_CALLBACK;
+    callback_table_release( cv );
 }
 
 /*============================================================================================*/
@@ -307,12 +320,7 @@ cvar_callback_unregister_by_module( i32 module_id )
 
         if ( !any_left )
         {
-            /* Entry fully empty: return it to the freelist (next-link in function_id[0]) */
-            cb->function_id[ 0 ] = g_cbtable_free;
-            g_cbtable_free       = cv->callback_id;
-
-            cv->callback_id = INVALID_ID;
-            cv->flag &= ~CVAR_CALLBACK;
+            callback_table_release( cv );
         }
     }
 }
@@ -423,8 +431,8 @@ cvar_hash_insert( u32 cvar_index )
         }
         else if ( slot == HASH_TOMBSTONE )
         {
-            if ( first_tomb == ( u32 ) -1 )
-                first_tomb = ( int )hash;
+            if ( first_tomb == ( u32 )-1 )
+                first_tomb = hash;
         }
         else
         {
@@ -871,7 +879,7 @@ bool cvar_is_user   ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_USR 
 ==============================================================================================*/
 
 static const char*
-_cvar_pool_string( u16 offset )
+cvar_pool_string( u16 offset )
 {
     if ( offset >= g_cvar_string_pool.used )
         return "<bad offset>";
@@ -883,7 +891,7 @@ cvar_get_name( const cvar_t* cv )
 {
     if ( !cv )
         return "<null>";
-    return _cvar_pool_string( cv->name );
+    return cvar_pool_string( cv->name );
 }
 
 const char*
@@ -891,7 +899,7 @@ cvar_get_desc( const cvar_t* cv )
 {
     if ( !cv )
         return "<null>";
-    return _cvar_pool_string( cv->desc );
+    return cvar_pool_string( cv->desc );
 }
 
 bool
@@ -1203,6 +1211,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
                     if ( cvar_str_icmp_eq( s, value ) )
                     {
                         new_value = ( u16 )i;
+                        break;    // first match wins
                     }
                 }
             }
@@ -1277,7 +1286,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
 /*============================================================================================*/
 /* Set cvar value by name with string value (returns true if changed) */
 /* This is the implementation of the new 'non-creating' set function */
-/* Used fpr "var value" style assignemt */
+/* Used for "var value" style assignment */
 
 bool
 cvar_set_value( const char* name, const char* value )
@@ -1293,12 +1302,12 @@ cvar_set_value( const char* name, const char* value )
 }
 
 /*============================================================================================*/
-/* Get cvar value as string by name */
+/* Format any cvar's current value as a display string. Numeric types format into a
+   round-robin buffer; string types forward to cvar_get_string (single owner of that logic). */
 
 const char*
-cvar_get_value( const char* name )
+cvar_value_string( const cvar_t* cv )
 {
-    cvar_t* cv = cvar_find( name );
     if ( !cv )
         return "";
 
@@ -1313,12 +1322,16 @@ cvar_get_value( const char* name )
         case CVAR_BOOL:     return ( cv->b.value ? "1" : "0" );
         case CVAR_INT:      snprintf( buf, sizeof( bufs[ 0 ] ), "%d", cv->i.value ); return buf;
         case CVAR_FLOAT:    snprintf( buf, sizeof( bufs[ 0 ] ), "%g", cv->f.value ); return buf;
-        case CVAR_STR:      return cvar_get_string_from_id( cv, cv->s.value );
-        case CVAR_BUF:      return string_pool_get( &g_cvar_string_pool, cv->w.buf );
-        case CVAR_REF:      return string_pool_get( &g_cvar_string_pool, cv->r.value );
-        case CVAR_USR:      return user_string_pool_get( &g_user_string_pool, cv->u.value_offset );
-        default: return "";
+        default:            return cvar_get_string( cv );
     }
+}
+
+/* Get cvar value as string by name */
+
+const char*
+cvar_get_value( const char* name )
+{
+    return cvar_value_string( cvar_find( name ) );
 }
 
 /*============================================================================================*/
@@ -1331,7 +1344,7 @@ cvar_print_value( const cvar_t* cv )
         return;
 
     const char* name  = cvar_get_name( cv );
-    const char* value = cvar_get_value( name );
+    const char* value = cvar_value_string( cv );
 
     con_printf( "  \"%s\" is: \"%s\"", name, value );
 
