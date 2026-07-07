@@ -566,6 +566,7 @@ target asset_tool
     root        source/tools/asset_tool
     folder      08_TOOL
     unit        asset_tool.c
+    unit        asset_tool_miniz.c    # vendored miniz (ZIP pack writer); own TU, not asset_tool unity
     flag        is_tool
     dep         sys
 

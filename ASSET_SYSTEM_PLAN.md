@@ -379,9 +379,34 @@ Cook-C -- first cooked engine format (.tex) + cooked loader path  [DONE 2026-07-
      5-frame headless smoke exit 0, same tex_index as the source-decode path. Tree cook of
      src/{b.png, textures/a.png} mirrors to out/{b.tex, textures/a.tex} + manifest lists .tex.
 
-Cook-D -- packaging
+Cook-D -- packaging  [DONE 2026-07-06]
    - -pack cooked tree -> .pak/.zip that core/fs mounts. Proof: game runs from a pack with
      loose files overriding.
+   - Implemented:
+     * asset_tool builds its OWN copy of miniz (source/tools/asset_tool/asset_tool_miniz.c, a
+       second unit like core's fs_zip_miniz.c: MINIZ_NO_STDIO + #pragma warning(push,0) around
+       vendor/miniz.c) so the tool stays base+sys only -- no engine runtime, no core link. Its
+       object never meets core's separate miniz object.
+     * New verb `asset_tool pack <cooked_dir> <out.zip>`: reads <cooked_dir>/cook_manifest.txt
+       (the entry list from Cook-B, '#' comments skipped) and adds each listed output to a heap
+       zip via mz_zip_writer_add_mem, using the manifest rel-path (forward slashes) as the
+       in-archive name. Finalizes to a heap block and writes it whole through sys (no stdio in
+       miniz). .cook_cache / cook_manifest.txt are not listed in the manifest, so they are
+       naturally excluded from the bundle. DEFLATE at MZ_DEFAULT_COMPRESSION.
+     * No core/fs change: it already mounts any real_path ending in ".zip" as a read-only bundle
+       (Phase 5), and a higher-priority loose mount still shadows it -- so the pack format is
+       exactly the mount format. Output is .zip (not .pak) because that is what fs sniffs.
+   - Proof (verified): tree cook of {hero.png, textures/logo.png} -> cooked/ then
+     `asset_tool pack cooked game.zip` -> zip carries hero.tex + textures/logo.tex (subdir path
+     preserved, forward slashes), each DEFLATEd 6.9MB->55KB, entry bytes == the loose .tex
+     (header 'OTEX'), cache/manifest excluded. New sb_asset_image "pack" mode mounts an
+     asset_tool-produced sb_asset_cooked.zip at prio 0 + loose CWD at prio 10 and acquires
+     gui_issue.tex: (1) no loose twin -> served from the bundle, 1656x1050 cooked zero-decode;
+     (2) a hand-written 4x4 loose gui_issue.tex shadows it -> loader reports 4x4 (loose wins,
+     also proving the .tex reader on an arbitrary cooked file); (3) remove loose -> back to the
+     bundle. 3-frame headless smoke each, exit 0.
+
+   COOK TRACK COMPLETE (A single-job / B tree+manifest / C .tex format / D packaging).
 
 --------------------------------------------------------------------------------
 ## Open decisions

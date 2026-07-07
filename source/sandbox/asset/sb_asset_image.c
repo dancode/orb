@@ -39,6 +39,7 @@
 #define IMAGE_VPATH   "gui_issue.png"
 #define IMAGE_TEX      "gui_issue.tex"   /* cooked twin: asset_tool cook gui_issue.png gui_issue.tex */
 #define PACK_ZIP      "sb_asset_pack.zip"
+#define PACK_COOK     "sb_asset_cooked.zip"   /* asset_tool-produced bundle for "pack" mode */
 
 /* Phase 5 mode: pack the loose PNG into a .zip so the asset is served from a bundle instead of
    loose files.  Reads the loose image through sys, deflates it into a heap zip, writes it out.
@@ -72,25 +73,32 @@ int
 main( int argc, char** argv )
 {
     /* Optional numeric arg = auto-quit after N rendered frames (headless smoke test); 0/absent
-       runs interactively until ESC or the close button.  Optional "zip" arg = serve the image
-       from a .zip bundle (Phase 5) instead of loose files. */
+       runs interactively until ESC or the close button.  Backing-store arg (pick one):
+         "zip"  -- pack the source PNG into a bundle in-process and serve from it (Phase 5).
+         "tex"  -- load the cooked .tex twin from loose files, zero decode (Cook-C).
+         "pack" -- load the cooked .tex from an asset_tool-produced .zip pack (Cook-D). */
     int         max_frames = 0;
     bool        use_zip    = false;
     bool        use_tex    = false;
+    bool        use_pack   = false;
     for ( int i = 1; i < argc; ++i )
     {
         if ( strcmp( argv[ i ], "zip" ) == 0 )
             use_zip = true;
         else if ( strcmp( argv[ i ], "tex" ) == 0 )
             use_tex = true;
+        else if ( strcmp( argv[ i ], "pack" ) == 0 )
+            use_pack = true;
         else
             max_frames = atoi( argv[ i ] );
     }
 
     /* "tex" mode acquires the cooked .tex twin instead of the source PNG: the loader uploads its
        pre-decoded RGBA8 payload with zero decode (Cook-C).  Cook it first with
-       `asset_tool cook gui_issue.png gui_issue.tex`. */
-    const char* image_vpath = use_tex ? IMAGE_TEX : IMAGE_VPATH;
+       `asset_tool cook gui_issue.png gui_issue.tex`.
+       "pack" mode (Cook-D) also acquires the .tex, but from an asset_tool-produced .zip bundle
+       (see the mount block below). */
+    const char* image_vpath = ( use_tex || use_pack ) ? IMAGE_TEX : IMAGE_VPATH;
 
     /* ---- Modules ---- */
     mod_system_init();
@@ -167,6 +175,17 @@ main( int argc, char** argv )
         core()->fs_mount( "", PACK_ZIP, 0 );
         printf( "[sb_asset_image] serving from bundle %s\n", PACK_ZIP );
     }
+    else if ( use_pack )
+    {
+        /* Cook-D: serve the cooked .tex out of an asset_tool-produced pack.  The bundle mounts at
+           priority 0; CWD mounts loose at priority 10, so a loose file of the same vpath would
+           shadow the bundled one (loose-over-bundle, proven generically in fs_zip_test).  Build
+           the pack first:  asset_tool -src <srctree> -dst cooked  &&  asset_tool pack cooked <zip>
+           where <srctree> holds gui_issue.png, so the pack carries gui_issue.tex. */
+        core()->fs_mount( "", PACK_COOK, 0 );    // bundle (low priority)
+        core()->fs_mount( "", "", 10 );          // loose CWD (high priority) -- would override
+        printf( "[sb_asset_image] serving from asset_tool pack %s (loose CWD overrides)\n", PACK_COOK );
+    }
     else
     {
         core()->fs_mount( "", "", 0 );
@@ -187,8 +206,8 @@ main( int argc, char** argv )
         return 1;
     }
     printf( "[sb_asset_image] loaded '%s' (%s) -> tex_index=%u  %ux%u  (asset id {%u,%u})\n",
-            image_vpath, use_tex ? "cooked .tex" : "source decode", img->tex_index, img->width,
-            img->height, id.index, id.generation );
+            image_vpath, ( use_tex || use_pack ) ? "cooked .tex, zero decode" : "source decode",
+            img->tex_index, img->width, img->height, id.index, id.generation );
     printf( "[sb_asset_image] running -- edit/re-save the image to hot-reload; ESC to quit\n" );
     fflush( stdout );
 

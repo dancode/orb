@@ -19,8 +19,13 @@
             sources whose mtime is unchanged since the last run (unless -f forces a full cook),
             and emits a cook cache + manifest under -dst.
 
-    Cook-A/B scope (ASSET_SYSTEM_PLAN.md): single-job CLI + extension dispatch + sub-tool spawn,
-    then tree scan + staleness cache + manifest. Cooked .tex and packaging are later cook phases.
+        asset_tool pack <cooked_dir> <out.zip>       package a cooked tree
+            Bundles every output listed in <cooked_dir>/cook_manifest.txt into <out.zip>, which
+            core/fs mounts as a read-only bundle (a higher-priority loose mount still shadows it).
+
+    Cook scope (ASSET_SYSTEM_PLAN.md): single-job CLI + extension dispatch + sub-tool spawn
+    (Cook-A); tree scan + staleness cache + manifest (Cook-B); cooked .tex converter (Cook-C);
+    manifest-driven .zip packaging (Cook-D).
 
     Tools that don't need hot-reload, a service registry, or a game loop skip the module system
     entirely and call sys directly.
@@ -30,7 +35,8 @@
         base            (headers only -- unity built in)
         sys             (file_io, clock, process spawn, dir walk/make -- statically linked)
 
-    Nothing else. No core, no module system, no app.
+    Plus tool-local vendored code compiled straight in: stb_image (source decode -> .tex) and
+    miniz (ZIP pack writer, in asset_tool_miniz.c).  No core, no module system, no app.
 
 ==============================================================================================*/
 
@@ -46,6 +52,11 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_STDIO
 #include "vendor/stb_image.h"
+
+/* miniz ZIP writer for -pack (implementation in asset_tool_miniz.c). MINIZ_NO_STDIO must match
+   that TU so the declarations agree; the archive is built in a heap block and written via sys. */
+#define MINIZ_NO_STDIO
+#include "vendor/miniz.h"
 
 /*============================================================================================*/
 
@@ -562,6 +573,118 @@ cook_tree( const char* src_arg, const char* dst_arg, bool force )
 }
 
 /*============================================================================================*/
+/*  Packaging (Cook-D): bundle a cooked tree into a .zip core/fs can mount                    */
+/*============================================================================================*/
+
+/* cook_pack -- read the cook_manifest.txt in <dir> and bundle every listed cooked output into
+   <out_zip>, using the manifest rel-path as the in-archive name.  core/fs mounts a ".zip" as a
+   bundle, and a loose mount at higher priority still shadows it -- so a shipped pack can be
+   overridden file-by-file for local iteration.  The archive is built in a heap block (miniz
+   NO_STDIO) and written whole through sys, matching how the engine reads zips. */
+static int
+cook_pack( const char* dir_arg, const char* out_zip )
+{
+    i64 start = sys_tick_milliseconds();
+
+    /* Strip trailing separators from the cooked-tree root. */
+    char dir[ COOK_PATH_MAX ];
+    snprintf( dir, sizeof( dir ), "%s", dir_arg );
+    for ( int i = ( int )strlen( dir ) - 1; i > 0 && ( dir[ i ] == '\\' || dir[ i ] == '/' ); --i )
+        dir[ i ] = '\0';
+
+    /* The manifest is the entry list: one cooked output rel-path per line, '#' comments. */
+    char man_path[ COOK_PATH_MAX ];
+    snprintf( man_path, sizeof( man_path ), "%s\\%s", dir, COOK_MANIFEST_FILE );
+    sys_file_data_t man = sys_file_read_entire( man_path );
+    if ( !man.ok )
+    {
+        fprintf( stderr, "asset_tool: error: no %s in %s -- run a tree cook first\n", COOK_MANIFEST_FILE,
+                 dir );
+        return 1;
+    }
+
+    mz_zip_archive za;
+    memset( &za, 0, sizeof( za ) );
+    if ( !mz_zip_writer_init_heap( &za, 0, 0 ) )
+    {
+        fprintf( stderr, "asset_tool: error: could not init zip writer\n" );
+        sys_file_free( &man );
+        return 1;
+    }
+
+    int   packed = 0, failed = 0;
+    char* p = ( char* )man.data; /* NUL-terminated by sys_file_read_entire */
+    while ( *p )
+    {
+        while ( *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' )
+            ++p;
+        if ( !*p )
+            break;
+        if ( *p == '#' ) /* comment line */
+        {
+            while ( *p && *p != '\n' )
+                ++p;
+            continue;
+        }
+
+        char rel[ COOK_PATH_MAX ];
+        int  k = 0;
+        while ( *p && *p != '\n' && *p != '\r' && k < COOK_PATH_MAX - 1 )
+            rel[ k++ ] = *p++;
+        while ( k > 0 && ( rel[ k - 1 ] == ' ' || rel[ k - 1 ] == '\t' ) )
+            --k; /* trim trailing blanks */
+        rel[ k ] = '\0';
+        if ( k == 0 )
+            continue;
+
+        /* Read the cooked file from disk (OS separators), archive it under the manifest name
+           (forward slashes, which the manifest already stores -- zip central-dir convention). */
+        char src[ COOK_PATH_MAX ];
+        snprintf( src, sizeof( src ), "%s\\%s", dir, rel );
+        path_norm( src, '\\' );
+
+        sys_file_data_t fd = sys_file_read_entire( src );
+        if ( !fd.ok )
+        {
+            fprintf( stderr, "asset_tool: error: could not read %s (in manifest)\n", src );
+            ++failed;
+            continue;
+        }
+
+        if ( mz_zip_writer_add_mem( &za, rel, fd.data, fd.size, ( mz_uint )MZ_DEFAULT_COMPRESSION ) )
+        {
+            printf( "asset_tool:   pack %s (%u bytes)\n", rel, fd.size );
+            ++packed;
+        }
+        else
+        {
+            fprintf( stderr, "asset_tool: error: could not add %s to archive\n", rel );
+            ++failed;
+        }
+        sys_file_free( &fd );
+    }
+    sys_file_free( &man );
+
+    void*  buf = NULL;
+    size_t sz  = 0;
+    bool   ok  = mz_zip_writer_finalize_heap_archive( &za, &buf, &sz );
+    if ( ok )
+        ok = sys_file_write_entire( out_zip, buf, ( u32 )sz );
+    free( buf );                 /* finalize handed us ownership of the heap block */
+    mz_zip_writer_end( &za );
+    if ( !ok )
+    {
+        fprintf( stderr, "asset_tool: error: could not finalize/write %s\n", out_zip );
+        return 1;
+    }
+
+    i64 ms = sys_tick_milliseconds() - start;
+    printf( "asset_tool: pack %s -> %s: %d entries, %d failed, %u bytes (%d ms)\n", dir, out_zip, packed,
+            failed, ( u32 )sz, ( int )ms );
+    return failed ? 1 : 0;
+}
+
+/*============================================================================================*/
 
 static int
 usage( void )
@@ -572,7 +695,8 @@ usage( void )
              "      .ttf/.otf  -> font_tool  (args[0] = size_px, default %d)\n"
              "      image      -> .tex       (pre-decoded RGBA8)\n"
              "      other      -> copy\n"
-             "  asset_tool -src <dir> -dst <dir> [-f]   incremental tree cook (-f = force all)\n",
+             "  asset_tool -src <dir> -dst <dir> [-f]   incremental tree cook (-f = force all)\n"
+             "  asset_tool pack <cooked_dir> <out.zip>  bundle a cooked tree (via its manifest)\n",
              ASSET_TOOL_DEFAULT_FONT_SIZE );
     return 1;
 }
@@ -591,6 +715,14 @@ main( int argc, char** argv )
             usage();
         else
             rc = cook_single( argv[ 2 ], argv[ 3 ], argv + 4, argc - 4 ) ? 0 : 1;
+    }
+    else if ( argc >= 2 && strcmp( argv[ 1 ], "pack" ) == 0 )
+    {
+        /* Packaging mode (Cook-D): pack <cooked_dir> <out.zip> */
+        if ( argc < 4 )
+            usage();
+        else
+            rc = cook_pack( argv[ 2 ], argv[ 3 ] );
     }
     else
     {
