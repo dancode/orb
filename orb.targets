@@ -558,7 +558,7 @@ target sb_example_game
     folder      09_SANDBOX/EXAMPLE
     unit        example_game.c
 	dep 		mod ref sys core job app
-    dep         run rhi draw
+    dep         run rhi draw input
 	mono_dep	render
 
 
