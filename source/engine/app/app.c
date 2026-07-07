@@ -10,6 +10,7 @@
         4. mod_export.h               (mod_desc_t, get_api_fn)
         5. app.h                      (app_api_t definition + key/button enums)
         6. Platform backends          (win_input.c — input handlers and snapshot;
+                                       win_gamepad.c — XInput poll into the same arrays;
                                        win_window_proc.c — WndProc uses those handlers;
                                        win_fiber.c — fiber pump, guarded by APP_WIN_FIBER;
                                        win_window.c — pool helpers, API impls, pump_events;
@@ -180,6 +181,7 @@ typedef struct win_pool_s
 static win_pool_t g_pool = { .main_id = APP_WIN_INVALID };
 
     #include "engine/app/win/win_input.c"
+    #include "engine/app/win/win_gamepad.c"
     #include "engine/app/win/win_window_proc.c"
     #ifdef APP_WIN_FIBER
     #include "engine/app/win/win_fiber.c"

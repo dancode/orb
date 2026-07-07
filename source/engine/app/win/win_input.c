@@ -50,10 +50,13 @@ _Static_assert( sizeof( app_event_t ) == 32, "app_event_t must be 32 bytes" );
 
 typedef struct app_input_s
 {
-    bool current_keys   [ APP_KEY_COUNT ];
-    bool previous_keys  [ APP_KEY_COUNT ];
-    bool pressed_keys   [ APP_KEY_COUNT ];      // an initial (non-repeat) key-down arrived this frame
-    bool repeat_keys    [ APP_KEY_COUNT ];      // an OS auto-repeat key-down arrived this frame
+    /* Sized for the unified source space: keyboard keys at 0.., pad button codes at 144+
+       (the gamepad backend writes the same arrays, so key_down/pressed/released answer for
+       any digital source, not just app_key_t). */
+    bool current_keys   [ APP_SRC_COUNT ];
+    bool previous_keys  [ APP_SRC_COUNT ];
+    bool pressed_keys   [ APP_SRC_COUNT ];      // an initial (non-repeat) down arrived this frame
+    bool repeat_keys    [ APP_SRC_COUNT ];      // an OS auto-repeat key-down arrived this frame
 
     bool current_mouse  [ APP_MOUSE_BUTTON_COUNT ];
     bool previous_mouse [ APP_MOUSE_BUTTON_COUNT ];
@@ -482,9 +485,9 @@ input_handle_mouse_wheel( WPARAM wp, i16 x, i16 y, win_id_t win_id )
 static void
 input_clear_all_state( void )
 {
-    for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.current_keys[ i ] = false;
-    for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.pressed_keys[ i ] = false;
-    for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.repeat_keys[ i ]  = false;
+    for ( int i = 0; i < APP_SRC_COUNT; ++i ) g_input.current_keys[ i ] = false;
+    for ( int i = 0; i < APP_SRC_COUNT; ++i ) g_input.pressed_keys[ i ] = false;
+    for ( int i = 0; i < APP_SRC_COUNT; ++i ) g_input.repeat_keys[ i ]  = false;
     for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i ) g_input.current_mouse[ i ] = false;
 }
 
@@ -495,12 +498,12 @@ input_clear_all_state( void )
 static void
 input_snapshot( void )
 {
-    for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.previous_keys[ i ] = g_input.current_keys[ i ];
+    for ( int i = 0; i < APP_SRC_COUNT; ++i ) g_input.previous_keys[ i ] = g_input.current_keys[ i ];
 
     /* Clear the per-frame press flags; each WM_KEYDOWN (initial or repeat) re-sets the
        matching array during this frame's message drain, which follows this snapshot. */
-    for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.pressed_keys[ i ] = false;
-    for ( int i = 0; i < APP_KEY_COUNT; ++i ) g_input.repeat_keys[ i ]  = false;
+    for ( int i = 0; i < APP_SRC_COUNT; ++i ) g_input.pressed_keys[ i ] = false;
+    for ( int i = 0; i < APP_SRC_COUNT; ++i ) g_input.repeat_keys[ i ]  = false;
 
     for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i )
         g_input.previous_mouse[ i ] = g_input.current_mouse[ i ];
@@ -517,7 +520,7 @@ input_snapshot( void )
 static bool
 app_key_down( app_key_t key )
 {
-    if ( key <= APP_KEY_NONE || key >= APP_KEY_COUNT )
+    if ( key <= APP_KEY_NONE || ( i32 )key >= ( i32 )APP_SRC_COUNT )
         return false;
     return g_input.current_keys[ key ];
 }
@@ -525,7 +528,7 @@ app_key_down( app_key_t key )
 static bool
 app_key_pressed( app_key_t key )
 {
-    if ( key <= APP_KEY_NONE || key >= APP_KEY_COUNT )
+    if ( key <= APP_KEY_NONE || ( i32 )key >= ( i32 )APP_SRC_COUNT )
         return false;
     return g_input.pressed_keys[ key ];   /* initial press only -- OS repeats excluded */
 }
@@ -533,7 +536,7 @@ app_key_pressed( app_key_t key )
 static bool
 app_key_pressed_repeat( app_key_t key )
 {
-    if ( key <= APP_KEY_NONE || key >= APP_KEY_COUNT )
+    if ( key <= APP_KEY_NONE || ( i32 )key >= ( i32 )APP_SRC_COUNT )
         return false;
     return g_input.pressed_keys[ key ] || g_input.repeat_keys[ key ];   /* initial + OS repeats */
 }
@@ -541,7 +544,7 @@ app_key_pressed_repeat( app_key_t key )
 static bool
 app_key_released( app_key_t key )
 {
-    if ( key <= APP_KEY_NONE || key >= APP_KEY_COUNT )
+    if ( key <= APP_KEY_NONE || ( i32 )key >= ( i32 )APP_SRC_COUNT )
         return false;
     return !g_input.current_keys[ key ] && g_input.previous_keys[ key ];
 }

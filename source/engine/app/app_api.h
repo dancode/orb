@@ -149,6 +149,23 @@ typedef struct app_api_s
        relative mode; zero when the mouse did not move. */
     void ( *mouse_raw_delta )( f32* out_dx, f32* out_dy );
 
+    /* ---- Gamepad (XInput on Windows) ---- */
+
+    /* Pad BUTTONS need no dedicated queries: edges post APP_EV_KEY_DOWN/UP with APP_SRC_PAD_*
+       codes and set the same snapshot arrays as keyboard keys, so key_down( APP_SRC_PAD_A )
+       etc. answer directly (multiple pads OR together until player assignment lands in the
+       input service).  These entries cover what buttons cannot: presence, analog, rumble. */
+
+    bool ( *pad_connected )( i32 pad ); /* pad 0..APP_PAD_MAX-1 */
+
+    /* Raw normalized axis: sticks -1..1 (+right / +up), triggers 0..1.  No deadzone, no
+       curve -- filtering is input-service policy.  0 for invalid / disconnected pads. */
+    f32 ( *pad_axis )( i32 pad, app_pad_axis_t axis );
+
+    /* Motor speeds 0..1 (lo = left/low-frequency, hi = right/high-frequency).  Latches
+       until changed -- pass 0,0 to stop. */
+    void ( *pad_rumble )( i32 pad, f32 lo, f32 hi );
+
     /* ---- Clipboard ---- */
 
     /* Copy NUL-terminated `text` to the OS clipboard (the outbound half: cut / copy).

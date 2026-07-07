@@ -349,8 +349,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        They execute at the loop's first cmd_pump, after every module has registered. */
     cmd_queue_args( argc, argv );
 
-    /* Give the bind system app's key-name table so "bind f5 quicksave" round-trips. */
-    cmd_bind_wire_names( app_key_names(), APP_KEY_COUNT );
+    /* Give the bind system app's source-name table (keyboard + mouse + pad) so
+       "bind f5 quicksave" and "bind pad_a +jump" round-trip. */
+    cmd_bind_wire_names( app_key_names(), APP_SRC_COUNT );
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
@@ -540,13 +541,28 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( desc->on_event && desc->on_event( &ev ) )
                     continue;
 
-                /* Key edges nobody consumed reach the bind system (auto-repeat filtered:
-                   binds fire once per physical press).  Bound commands queue into the
-                   buffer and run at this frame's cmd_pump below. */
+                /* Digital edges nobody consumed reach the bind system (auto-repeat filtered:
+                   binds fire once per physical press).  KEY events already carry unified
+                   source codes (keyboard + pad buttons); mouse buttons translate to their
+                   APP_SRC_MOUSE* codes here, and wheel notches fire as down+up pulses on
+                   wheelup/wheeldown (a notch has no held state).  Bound commands queue into
+                   the buffer and run at this frame's cmd_pump below. */
                 if ( ev.type == APP_EV_KEY_DOWN && !ev.data.key.repeat )
                     cmd_bind_event( ( u32 )ev.data.key.key, true );
                 else if ( ev.type == APP_EV_KEY_UP )
                     cmd_bind_event( ( u32 )ev.data.key.key, false );
+                else if ( ev.type == APP_EV_MOUSE_DOWN )
+                    cmd_bind_event( ( u32 )( APP_SRC_MOUSE1 + ev.data.mouse_btn.button ), true );
+                else if ( ev.type == APP_EV_MOUSE_UP )
+                    cmd_bind_event( ( u32 )( APP_SRC_MOUSE1 + ev.data.mouse_btn.button ), false );
+                else if ( ev.type == APP_EV_MOUSE_WHEEL )
+                {
+                    /* Wheel delta is positive toward the user (scroll back/down). */
+                    const u32 src = ( ev.data.mouse_wheel.delta < 0.0f ) ? APP_SRC_WHEELUP
+                                                                         : APP_SRC_WHEELDOWN;
+                    cmd_bind_event( src, true );
+                    cmd_bind_event( src, false );
+                }
 
                 if ( ev.type == APP_EV_WIN_CLOSE )
                 {

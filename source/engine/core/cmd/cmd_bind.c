@@ -19,7 +19,7 @@
 
 ==============================================================================================*/
 
-#define CMD_BIND_KEY_MAX 128    // covers app_key_t (currently ~105) with headroom
+#define CMD_BIND_KEY_MAX 192    // covers the unified source space app_src_t (~162) with headroom
 
 static string_pool_t      s_bind_pool;                        // bind command strings
 static u16                s_bind_off[ CMD_BIND_KEY_MAX ];     // 0 = unbound (pool empty string)

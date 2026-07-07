@@ -63,6 +63,11 @@ const app_api_t g_app_api_struct = {
     .mouse_is_relative  = app_mouse_is_relative,
     .mouse_raw_delta    = app_mouse_raw_delta,
 
+    /* Gamepad */
+    .pad_connected = app_pad_connected,
+    .pad_axis      = app_pad_axis,
+    .pad_rumble    = app_pad_rumble,
+
     /* Clipboard */
     .clipboard_set = app_clipboard_set,
 };

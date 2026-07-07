@@ -116,6 +116,32 @@ key_name( i32 k )
         case APP_KEY_PAUSE:        return "PAUSE";
         case APP_KEY_PRINT_SCREEN: return "PRINT_SCREEN";
         case APP_KEY_MENU:         return "MENU";
+
+        /* Unified source space: mouse + gamepad codes ride the same KEY events. */
+        case APP_SRC_MOUSE1:         return "MOUSE1";
+        case APP_SRC_MOUSE2:         return "MOUSE2";
+        case APP_SRC_MOUSE3:         return "MOUSE3";
+        case APP_SRC_MOUSE4:         return "MOUSE4";
+        case APP_SRC_MOUSE5:         return "MOUSE5";
+        case APP_SRC_WHEELUP:        return "WHEELUP";
+        case APP_SRC_WHEELDOWN:      return "WHEELDOWN";
+        case APP_SRC_PAD_A:          return "PAD_A";
+        case APP_SRC_PAD_B:          return "PAD_B";
+        case APP_SRC_PAD_X:          return "PAD_X";
+        case APP_SRC_PAD_Y:          return "PAD_Y";
+        case APP_SRC_PAD_LB:         return "PAD_LB";
+        case APP_SRC_PAD_RB:         return "PAD_RB";
+        case APP_SRC_PAD_BACK:       return "PAD_BACK";
+        case APP_SRC_PAD_START:      return "PAD_START";
+        case APP_SRC_PAD_LS:         return "PAD_LS";
+        case APP_SRC_PAD_RS:         return "PAD_RS";
+        case APP_SRC_PAD_DPAD_UP:    return "PAD_UP";
+        case APP_SRC_PAD_DPAD_DOWN:  return "PAD_DOWN";
+        case APP_SRC_PAD_DPAD_LEFT:  return "PAD_LEFT";
+        case APP_SRC_PAD_DPAD_RIGHT: return "PAD_RIGHT";
+        case APP_SRC_PAD_LTRIGGER:   return "PAD_LTRIGGER";
+        case APP_SRC_PAD_RTRIGGER:   return "PAD_RTRIGGER";
+
         default:                   return "NONE";
     }
 }
@@ -253,6 +279,7 @@ typedef enum
     MODE_WIN_HOVER     = 9,    /* hover bit -- cursor enter / leave client area      */
     MODE_MULTI_WIN     = 10,   /* two windows, focus transfer                       */
     MODE_RAW_MOUSE     = 11,   /* WM_INPUT raw deltas + relative mouse mode          */
+    MODE_GAMEPAD       = 12,   /* XInput pads: buttons as KEY events, axes, rumble   */
 } test_mode_t;
 
 static test_mode_t     g_mode       = MODE_MENU;
@@ -304,6 +331,10 @@ mode_show_event( test_mode_t m, i32 type )
                the [raw] lines keep flowing -- that contrast is the test. */
             return type == APP_EV_MOUSE_MOVE;
 
+        case MODE_GAMEPAD:
+            /* Pad buttons arrive as ordinary KEY events carrying APP_SRC_PAD_* codes. */
+            return type == APP_EV_KEY_DOWN || type == APP_EV_KEY_UP;
+
         case MODE_MOUSE_BUTTONS:
             return type == APP_EV_MOUSE_DOWN  || type == APP_EV_MOUSE_UP ||
                    type == APP_EV_MOUSE_WHEEL;
@@ -342,6 +373,7 @@ print_menu( void )
     printf( "  9  Window Hover              (cursor enter / leave client area)\n" );
     printf( "  0  Multi-Window              (two windows, focus transfer)\n" );
     printf( "  R  Raw Mouse                 (WM_INPUT deltas, relative mode toggle)\n" );
+    printf( "  G  Gamepad                   (XInput: buttons, axes, triggers, rumble)\n" );
     printf( "\n" );
     printf( "  S  Full state snapshot  (works in any mode)\n" );
     printf( "  Q  Quit\n" );
@@ -375,6 +407,13 @@ leave_mode( test_mode_t m )
     {
         app()->mouse_relative_set( g_main_win, false );
         printf( "[raw] relative mode OFF (left test)\n" );
+    }
+
+    /* Never leave motors spinning. */
+    if ( m == MODE_GAMEPAD )
+    {
+        for ( i32 p = 0; p < APP_PAD_MAX; ++p )
+            app()->pad_rumble( p, 0.0f, 0.0f );
     }
 }
 
@@ -549,6 +588,22 @@ enter_mode( test_mode_t m )
             printf( "  S = full snapshot   ESC = back to menu (auto-disables relative)\n" );
             break;
 
+        case MODE_GAMEPAD:
+            printf( "--- [G] Gamepad (XInput) ----------------------------------------\n" );
+            printf( "  Read:     pad buttons post ordinary KEY_DOWN/KEY_UP events with\n" );
+            printf( "            PAD_* codes; [pad N] lines show analog axes (raw, no deadzone)\n" );
+            printf( "  Try:      connect / disconnect a pad -- [pad N] connected lines\n" );
+            printf( "            (disconnected slots re-scan every ~1.5s)\n" );
+            printf( "  Try:      press A/B/X/Y, bumpers, dpad, stick clicks -- one DOWN per press\n" );
+            printf( "  Try:      hold a stick off-center -- axis lines stream while deflected;\n" );
+            printf( "            note the small resting drift (raw values -- deadzone is policy)\n" );
+            printf( "  Try:      squeeze triggers slowly -- analog 0..1 in the axis line, plus\n" );
+            printf( "            PAD_LTRIGGER/RTRIGGER digital DOWN past ~25%% (hysteresis)\n" );
+            printf( "  Try:      triggers also drive rumble (left=low motor, right=high motor)\n" );
+            printf( "  Correct:  sticks read -1..1 (+right/+up), edges never repeat while held\n" );
+            printf( "  S = full snapshot   ESC = back to menu (stops rumble)\n" );
+            break;
+
         default: break;
     }
 
@@ -620,6 +675,8 @@ main( int argc, char** argv )
                 enter_mode( MODE_MULTI_WIN );
             if ( app()->key_pressed( APP_KEY_R ) )
                 enter_mode( MODE_RAW_MOUSE );
+            if ( app()->key_pressed( APP_KEY_G ) )
+                enter_mode( MODE_GAMEPAD );
 
             sys_sleep_milliseconds( 16 );
             continue;
@@ -656,6 +713,45 @@ main( int argc, char** argv )
             if ( dx != 0.0f || dy != 0.0f )
                 printf( "[raw] d=(%+7.1f,%+7.1f)%s\n", (double)dx, (double)dy,
                         app()->mouse_is_relative( g_main_win ) ? "  [relative]" : "" );
+        }
+
+        if ( g_mode == MODE_GAMEPAD )
+        {
+            static bool prev_conn[ APP_PAD_MAX ];
+
+            for ( i32 p = 0; p < APP_PAD_MAX; ++p )
+            {
+                bool conn = app()->pad_connected( p );
+                if ( conn != prev_conn[ p ] )
+                {
+                    printf( "[pad %d] %s\n", p, conn ? "connected" : "disconnected" );
+                    prev_conn[ p ] = conn;
+                }
+                if ( !conn )
+                    continue;
+
+                f32 lx = app()->pad_axis( p, APP_PAD_AXIS_LX );
+                f32 ly = app()->pad_axis( p, APP_PAD_AXIS_LY );
+                f32 rx = app()->pad_axis( p, APP_PAD_AXIS_RX );
+                f32 ry = app()->pad_axis( p, APP_PAD_AXIS_RY );
+                f32 lt = app()->pad_axis( p, APP_PAD_AXIS_LT );
+                f32 rt = app()->pad_axis( p, APP_PAD_AXIS_RT );
+
+                /* Stream axis lines only while something is meaningfully deflected --
+                   0.15 hides resting stick drift without a real deadzone (values print raw). */
+                #define AXF( v ) ( ( v ) < 0.0f ? -( v ) : ( v ) )
+                if ( AXF( lx ) > 0.15f || AXF( ly ) > 0.15f || AXF( rx ) > 0.15f ||
+                     AXF( ry ) > 0.15f || lt > 0.02f || rt > 0.02f )
+                {
+                    printf( "[pad %d] L=(%+.2f,%+.2f) R=(%+.2f,%+.2f) T=(%.2f,%.2f)\n",
+                            p, (double)lx, (double)ly, (double)rx, (double)ry,
+                            (double)lt, (double)rt );
+                }
+                #undef AXF
+
+                /* Analog triggers drive the motors: feel the 0..1 ramp directly. */
+                app()->pad_rumble( p, lt, rt );
+            }
         }
 
         if ( g_mode == MODE_MULTI_WIN && app()->key_pressed( APP_KEY_O ) )

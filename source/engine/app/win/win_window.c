@@ -446,6 +446,10 @@ app_pump_events( void )
        and state-changed deltas reflect exactly one frame of transitions. */
     input_snapshot();
 
+    /* XInput is polled, not message-driven: sample pads right after the snapshot so pad
+       edges land in the same frame window as this frame's keyboard/mouse messages. */
+    win_gamepad_poll();
+
     for ( int i = 0; i < APP_WIN_MAX; ++i )
     {
         if ( g_pool.alloc & ( 1u << i ) )

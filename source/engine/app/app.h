@@ -369,6 +369,77 @@ typedef enum app_mouse_button_e
 } app_mouse_button_t;
 
 /*==============================================================================================
+    Unified digital input source space
+
+    One flat code space so a bind "key" can be any digital input.  Keyboard keys occupy
+    0..APP_KEY_COUNT-1 (app_key_t values pass through unchanged); mouse buttons and wheel
+    pulses sit at 128+; gamepad buttons at 144+.  Pad button edges post APP_EV_KEY_DOWN /
+    APP_EV_KEY_UP carrying these codes, so they ride the same event ring, snapshot queries
+    (key_down and friends accept any source code) and bind routing as keyboard keys.
+    Names for the whole space come from app_key_names() ("mouse1", "pad_a", "wheelup").
+==============================================================================================*/
+
+/* clang-format off */
+typedef enum app_src_e
+{
+    /* 0 .. APP_KEY_COUNT-1: keyboard (app_key_t) */
+
+    APP_SRC_MOUSE1 = 128,  /* left    -- index-matched to app_mouse_button_t  */
+    APP_SRC_MOUSE2,        /* right   */
+    APP_SRC_MOUSE3,        /* middle  */
+    APP_SRC_MOUSE4,        /* back    (X1) */
+    APP_SRC_MOUSE5,        /* forward (X2) */
+    APP_SRC_WHEELUP,       /* wheel notch pulse: hosts fire down+up per notch */
+    APP_SRC_WHEELDOWN,
+
+    APP_SRC_PAD_A = 144,
+    APP_SRC_PAD_B,
+    APP_SRC_PAD_X,
+    APP_SRC_PAD_Y,
+    APP_SRC_PAD_LB,        /* left / right bumper (shoulder) */
+    APP_SRC_PAD_RB,
+    APP_SRC_PAD_BACK,      /* view / back  */
+    APP_SRC_PAD_START,     /* menu / start */
+    APP_SRC_PAD_LS,        /* stick clicks */
+    APP_SRC_PAD_RS,
+    APP_SRC_PAD_DPAD_UP,
+    APP_SRC_PAD_DPAD_DOWN,
+    APP_SRC_PAD_DPAD_LEFT,
+    APP_SRC_PAD_DPAD_RIGHT,
+
+    /* Digital-from-axis: trigger crossed the on threshold (hysteresis in the backend). */
+    APP_SRC_PAD_LTRIGGER = 160,
+    APP_SRC_PAD_RTRIGGER,
+
+    APP_SRC_COUNT
+
+} app_src_t;
+/* clang-format on */
+
+ORB_STATIC_ASSERT( APP_KEY_COUNT <= 128, "keyboard block must fit below APP_SRC_MOUSE1" );
+
+/*==============================================================================================
+    Gamepad
+==============================================================================================*/
+
+#define APP_PAD_MAX 4 /* XInput user slots */
+
+/* Analog pad axes, read via pad_axis().  Values are raw normalized hardware -- no deadzone,
+   no curve (that is input-service policy): sticks -1..1 (+right / +up), triggers 0..1. */
+typedef enum app_pad_axis_e
+{
+    APP_PAD_AXIS_LX = 0,
+    APP_PAD_AXIS_LY,
+    APP_PAD_AXIS_RX,
+    APP_PAD_AXIS_RY,
+    APP_PAD_AXIS_LT,
+    APP_PAD_AXIS_RT,
+
+    APP_PAD_AXIS_COUNT
+
+} app_pad_axis_t;
+
+/*==============================================================================================
     app_api_t — module accessor (included last; all types above are already declared)
 ==============================================================================================*/
 
