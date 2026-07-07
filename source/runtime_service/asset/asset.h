@@ -25,7 +25,7 @@
 
 #define ASSET_MAX          1024    // max concurrent asset records
 #define ASSET_TYPE_MAX     32      // max registered asset types (index 0 = reserved "none")
-#define ASSET_TYPE_EXTS    8       // max file extensions mapped to one type
+#define ASSET_TYPE_EXTS    12      // max file extensions mapped to one type
 #define ASSET_EXT_LEN      12      // bytes per extension incl. leading '.' and NUL
 #define ASSET_TYPE_NAME    32      // bytes per type name incl. NUL
 

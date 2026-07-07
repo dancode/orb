@@ -22,8 +22,12 @@
 
 #include "orb.h"
 
-/* Source formats claimed by the built-in image type (decoded via stb_image). */
-#define ASSET_IMAGE_EXTS { ".png", ".jpg", ".jpeg", ".bmp", ".tga", ".psd", ".gif", ".hdr" }
+/* Formats claimed by the built-in image type.  The source formats are decoded live via
+   stb_image; ".tex" is the cooked format (asset_tex.h) uploaded with zero decode.  The loader
+   sniffs the .tex magic regardless of extension, so a cooked file loads correctly even if it
+   still carries a source extension. */
+#define ASSET_IMAGE_EXTS \
+    { ".png", ".jpg", ".jpeg", ".bmp", ".tga", ".psd", ".gif", ".hdr", ".tex" }
 
 typedef struct asset_image_s
 {

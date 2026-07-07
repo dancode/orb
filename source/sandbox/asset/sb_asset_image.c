@@ -37,6 +37,7 @@
 /* Virtual path of the image to display.  gui_issue.png sits at the repo root; the sandbox runs
    with the repo root as its working directory, and we mount "" -> "" (CWD) below. */
 #define IMAGE_VPATH   "gui_issue.png"
+#define IMAGE_TEX      "gui_issue.tex"   /* cooked twin: asset_tool cook gui_issue.png gui_issue.tex */
 #define PACK_ZIP      "sb_asset_pack.zip"
 
 /* Phase 5 mode: pack the loose PNG into a .zip so the asset is served from a bundle instead of
@@ -73,15 +74,23 @@ main( int argc, char** argv )
     /* Optional numeric arg = auto-quit after N rendered frames (headless smoke test); 0/absent
        runs interactively until ESC or the close button.  Optional "zip" arg = serve the image
        from a .zip bundle (Phase 5) instead of loose files. */
-    int  max_frames = 0;
-    bool use_zip    = false;
+    int         max_frames = 0;
+    bool        use_zip    = false;
+    bool        use_tex    = false;
     for ( int i = 1; i < argc; ++i )
     {
         if ( strcmp( argv[ i ], "zip" ) == 0 )
             use_zip = true;
+        else if ( strcmp( argv[ i ], "tex" ) == 0 )
+            use_tex = true;
         else
             max_frames = atoi( argv[ i ] );
     }
+
+    /* "tex" mode acquires the cooked .tex twin instead of the source PNG: the loader uploads its
+       pre-decoded RGBA8 payload with zero decode (Cook-C).  Cook it first with
+       `asset_tool cook gui_issue.png gui_issue.tex`. */
+    const char* image_vpath = use_tex ? IMAGE_TEX : IMAGE_VPATH;
 
     /* ---- Modules ---- */
     mod_system_init();
@@ -163,12 +172,12 @@ main( int argc, char** argv )
         core()->fs_mount( "", "", 0 );
     }
 
-    asset_id_t     id  = asset()->acquire( IMAGE_VPATH );
+    asset_id_t     id  = asset()->acquire( image_vpath );
     asset_image_t* img = ( asset_image_t* )asset()->get( id );
     if ( !img )
     {
         fprintf( stderr, "[sb_asset_image] could not load '%s' (state=%d) -- run from the repo root\n",
-                 IMAGE_VPATH, asset()->state( id ) );
+                 image_vpath, asset()->state( id ) );
         asset()->release( id );
         draw()->shutdown();
         rhi()->context_destroy( ctx );
@@ -177,8 +186,9 @@ main( int argc, char** argv )
         mod_system_exit();
         return 1;
     }
-    printf( "[sb_asset_image] loaded '%s' -> tex_index=%u  %ux%u  (asset id {%u,%u})\n",
-            IMAGE_VPATH, img->tex_index, img->width, img->height, id.index, id.generation );
+    printf( "[sb_asset_image] loaded '%s' (%s) -> tex_index=%u  %ux%u  (asset id {%u,%u})\n",
+            image_vpath, use_tex ? "cooked .tex" : "source decode", img->tex_index, img->width,
+            img->height, id.index, id.generation );
     printf( "[sb_asset_image] running -- edit/re-save the image to hot-reload; ESC to quit\n" );
     fflush( stdout );
 

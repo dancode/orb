@@ -353,10 +353,31 @@ Cook-B -- incremental tree cook + manifest [DONE 2026-07-06]
      (no-op). RUN3 after touching only b.png = 1 cooked/2 up-to-date (incremental). RUN4 -f =
      3 cooked. Full Debug build of all targets clean (sys is foundational).
 
-Cook-C -- first cooked engine format (.tex) + cooked loader path
+Cook-C -- first cooked engine format (.tex) + cooked loader path  [DONE 2026-07-06]
    - Define .tex (magic+version header + pre-decoded/mip'd payload); asset_tool image
      converter writes it; runtime asset_image gains its cooked path. Proof: same quad from
      a .tex with zero runtime decode.
+   - Implemented:
+     * Shared format contract: source/runtime_service/asset/loaders/asset_tex.h -- 32-byte
+       header (magic 'OTEX' + version 1 + width/height/format/mip_levels/data_size/flags)
+       followed by tightly packed RGBA8. Dependency-free (just u32 from orb.h) so both the
+       tool and the engine include it. Only mip 0 / RGBA8 today; mip_levels + flags reserved.
+     * Writer (asset_tool): new cook_image() decodes a source image with stb_image (compiled
+       tool-local, STB_IMAGE_IMPLEMENTATION + STBI_NO_STDIO) to RGBA8 and writes header+pixels
+       as one whole-file buffer. cook_file dispatch = font -> font_tool, image -> .tex,
+       else -> copy. job_dst_rel maps image exts -> .tex; ext_is_image mirrors ASSET_IMAGE_EXTS
+       (minus .tex). asset_tool still links base+sys only (stb + asset_tex.h are header-only).
+     * Reader (asset_image.c): asset_image_load sniffs the 'OTEX' magic in the first 32 bytes;
+       cooked path validates version/format/size then uploads the payload with ZERO decode;
+       source path unchanged. Both converge on a shared image_upload_rgba8() helper (texture
+       create -> upload -> bindless register -> resource). ".tex" added to ASSET_IMAGE_EXTS so
+       acquire() dispatches it to the image type (also bumped ASSET_TYPE_EXTS 8 -> 12, since
+       .tex was the 9th ext and silently truncated).
+   - Proof (verified): `asset_tool cook gui_issue.png gui_issue.tex` -> 1656x1050 RGBA8, header
+     dumps OTEX/v1/fmt1/mips1, data_size 6955200 == w*h*4, file 6955232 == 32+payload. New
+     sb_asset_image "tex" mode acquires the .tex twin: renders the identical 1656x1050 quad,
+     5-frame headless smoke exit 0, same tex_index as the source-decode path. Tree cook of
+     src/{b.png, textures/a.png} mirrors to out/{b.tex, textures/a.tex} + manifest lists .tex.
 
 Cook-D -- packaging
    - -pack cooked tree -> .pak/.zip that core/fs mounts. Proof: game runs from a pack with

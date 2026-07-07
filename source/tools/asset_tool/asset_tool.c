@@ -11,7 +11,8 @@
 
         asset_tool cook <src> <dst> [args...]        single job
             .ttf/.otf   -> spawn font_tool  <src> <size> <dst>   (args[0] = size_px, default 16)
-            image/other -> built-in copy                          (cooked .tex lands in Cook-C)
+            image       -> built-in .tex converter (pre-decode to RGBA8)
+            other       -> built-in verbatim copy
 
         asset_tool -src <dir> -dst <dir> [-f]        incremental tree cook
             Walks <dir> recursively, cooks each file into a mirrored path under -dst, skips
@@ -38,6 +39,13 @@
 #include <string.h>
 #include "base/base.h"
 #include "engine/sys/sys_host.h"
+#include "runtime_service/asset/loaders/asset_tex.h"
+
+/* stb_image: memory-only decode. The converter uses it to pre-decode a source image to RGBA8
+   before writing the cooked .tex payload. Implementation compiled right here (tool-local). */
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_NO_STDIO
+#include "vendor/stb_image.h"
 
 /*============================================================================================*/
 
@@ -89,13 +97,22 @@ ext_is_font( const char* ext )
     return ext_is( ext, "ttf" ) || ext_is( ext, "otf" );
 }
 
+/* Source image formats the built-in converter pre-decodes into a cooked .tex. Mirrors
+   ASSET_IMAGE_EXTS on the runtime side (minus ".tex", which is the output, not an input). */
+static bool
+ext_is_image( const char* ext )
+{
+    return ext_is( ext, "png" ) || ext_is( ext, "jpg" ) || ext_is( ext, "jpeg" ) ||
+           ext_is( ext, "bmp" ) || ext_is( ext, "tga" ) || ext_is( ext, "psd" ) ||
+           ext_is( ext, "gif" ) || ext_is( ext, "hdr" );
+}
+
 /*============================================================================================*/
 /*  Converters                                                                                */
 /*============================================================================================*/
 
-/* cook_copy -- built-in passthrough converter: read src, write dst verbatim. This is the
-   Cook-A stand-in for the image path; the real pre-decoded .tex format is Cook-C, at which
-   point this becomes the .png -> .tex converter. */
+/* cook_copy -- built-in passthrough converter: read src, write dst verbatim. Used for formats
+   with no dedicated cooker yet (everything that is not a font or a source image). */
 static bool
 cook_copy( const char* src_path, const char* dst_path )
 {
@@ -151,6 +168,64 @@ cook_font( const char* src_path, const char* dst_path, int size_px )
     return true;
 }
 
+/* cook_image -- pre-decode a source image to RGBA8 and write the cooked .tex (asset_tex.h):
+   a fixed header followed by the tightly packed pixel payload. The runtime loader then uploads
+   it with zero decode. Header + pixels are written as one buffer (sys does whole-file writes). */
+static bool
+cook_image( const char* src_path, const char* dst_path )
+{
+    sys_file_data_t src = sys_file_read_entire( src_path );
+    if ( !src.ok )
+    {
+        fprintf( stderr, "asset_tool: error: could not read %s\n", src_path );
+        return false;
+    }
+
+    int      w = 0, h = 0, comp = 0;
+    stbi_uc* pixels =
+        stbi_load_from_memory( ( const stbi_uc* )src.data, ( int )src.size, &w, &h, &comp, STBI_rgb_alpha );
+    sys_file_free( &src );
+    if ( !pixels )
+    {
+        fprintf( stderr, "asset_tool: error: image decode failed for %s: %s\n", src_path,
+                 stbi_failure_reason() );
+        return false;
+    }
+
+    asset_tex_header_t hdr = { 0 };
+    hdr.magic      = ASSET_TEX_MAGIC;
+    hdr.version    = ASSET_TEX_VERSION;
+    hdr.width      = ( u32 )w;
+    hdr.height     = ( u32 )h;
+    hdr.format     = ASSET_TEX_FORMAT_RGBA8;
+    hdr.mip_levels = 1;
+    hdr.data_size  = ( u32 )( w * h * 4 );
+    hdr.flags      = 0;
+
+    u32   total = ( u32 )sizeof( hdr ) + hdr.data_size;
+    void* buf   = malloc( total );
+    if ( !buf )
+    {
+        stbi_image_free( pixels );
+        fprintf( stderr, "asset_tool: error: out of memory cooking %s\n", src_path );
+        return false;
+    }
+    memcpy( buf, &hdr, sizeof( hdr ) );
+    memcpy( ( u8* )buf + sizeof( hdr ), pixels, hdr.data_size );
+    stbi_image_free( pixels );
+
+    bool wrote = sys_file_write_entire( dst_path, buf, total );
+    free( buf );
+    if ( !wrote )
+    {
+        fprintf( stderr, "asset_tool: error: could not write %s\n", dst_path );
+        return false;
+    }
+
+    printf( "asset_tool:   tex  %s -> %s (%dx%d RGBA8, %u bytes)\n", src_path, dst_path, w, h, total );
+    return true;
+}
+
 /* cook_file -- dispatch one source file to a converter chosen by its extension. */
 static bool
 cook_file( const char* src_path, const char* dst_path, int font_size_px )
@@ -158,7 +233,9 @@ cook_file( const char* src_path, const char* dst_path, int font_size_px )
     const char* ext = path_ext( src_path );
     if ( ext_is_font( ext ) )
         return cook_font( src_path, dst_path, font_size_px );
-    return cook_copy( src_path, dst_path ); /* image and everything else: copy (Cook-A) */
+    if ( ext_is_image( ext ) )
+        return cook_image( src_path, dst_path );
+    return cook_copy( src_path, dst_path ); /* everything else: verbatim copy */
 }
 
 /*============================================================================================*/
@@ -210,20 +287,18 @@ path_parent( char* out, size_t cap, const char* full )
 }
 
 /* job_dst_rel -- map a source relative path to its cooked output relative path: fonts become
-   .orb_font, everything else keeps its name (built-in copy for now). */
+   .orb_font, source images become .tex, everything else keeps its name (verbatim copy). */
 static void
 job_dst_rel( char* out, size_t cap, const char* src_rel )
 {
-    const char* ext = path_ext( src_rel );
+    const char* ext  = path_ext( src_rel );
+    int         keep = ( int )( ext - src_rel ); /* chars up to and including the '.' */
     if ( ext_is_font( ext ) )
-    {
-        int keep = ( int )( ext - src_rel ); /* chars up to and including the '.' */
         snprintf( out, cap, "%.*sorb_font", keep, src_rel );
-    }
+    else if ( ext_is_image( ext ) )
+        snprintf( out, cap, "%.*stex", keep, src_rel );
     else
-    {
         snprintf( out, cap, "%s", src_rel );
-    }
 }
 
 /*============================================================================================*/
@@ -495,7 +570,8 @@ usage( void )
              "usage:\n"
              "  asset_tool cook <src> <dst> [args...]   single job\n"
              "      .ttf/.otf  -> font_tool  (args[0] = size_px, default %d)\n"
-             "      image/other -> copy       (cooked .tex arrives in a later cook phase)\n"
+             "      image      -> .tex       (pre-decoded RGBA8)\n"
+             "      other      -> copy\n"
              "  asset_tool -src <dir> -dst <dir> [-f]   incremental tree cook (-f = force all)\n",
              ASSET_TOOL_DEFAULT_FONT_SIZE );
     return 1;
