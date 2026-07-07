@@ -158,6 +158,20 @@ nav_commit_prev( void )
         s_nav.ref_rect = s_nav.move_rect;
         s_nav.id_seen  = true;
     }
+    /* Left/Right with no row-mate (nav_score_dir rejected everything -- ran off the start/end of the
+       row): continue in reading order instead of guessing spatially, the same wrap a text cursor makes
+       running off one line onto the next -- Left is "the previous widget," Right is "the next widget,"
+       via the same tab_prev/tab_next this frame's emission already tracked for Tab itself. */
+    else if ( s_nav.move_dir == GUI_DIR_LEFT && s_nav.tab_prev != GUI_ID_NONE )
+    {
+        s_nav.id      = s_nav.tab_prev;
+        s_nav.id_seen = true;
+    }
+    else if ( s_nav.move_dir == GUI_DIR_RIGHT && s_nav.tab_next != GUI_ID_NONE )
+    {
+        s_nav.id      = s_nav.tab_next;
+        s_nav.id_seen = true;
+    }
     /* Tab winner (emission order; wraps through the first item). */
     else if ( s_nav.tab != 0 )
     {

@@ -408,17 +408,23 @@ gui_checkbox( const char* label, bool* v )
     gui_rect_t r  = widget_next_rect_w( 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD + label_width( label ),
                                         WIDGET_H );
 
-    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
-
     /* Field split mode aligns with the other labeled widgets: the label takes its track and the
        box sits at the start of the control track.  Default mode keeps the box on the left with the
-       label trailing it.  The box only needs CHECKBOX_SZ of the control track. */
+       label trailing it.  The box only needs CHECKBOX_SZ of the control track.
+
+       Resolved BEFORE widget_behavior so the hit/nav rect can match input_text / slider_float: those
+       route through widget_split_label, which hands widget_behavior the control track alone, starting
+       after the label gutter.  Handing widget_behavior the full (label-gutter-including, left-seated)
+       cell here instead would put this widget's nav rect at a different X than every other field in
+       the same form -- e.g. a checkbox at column 0 next to input/slider fields starting at column 90 --
+       so directional nav (which keys off cross-axis overlap) would treat them as different columns. */
 
     f32         label_x, label_w;
     gui_rect_t  control;
     f32         bx;
+    bool        split = field_split_resolve( r, CHECKBOX_SZ, &label_x, &label_w, &control );
 
-    if ( field_split_resolve( r, CHECKBOX_SZ, &label_x, &label_w, &control ) )
+    if ( split )
     {
         bx = control.x;
     }
@@ -428,6 +434,8 @@ gui_checkbox( const char* label, bool* v )
         label_x = bx + CHECKBOX_SZ + WIDGET_PAD;         /* default: label just right of the box */
         label_w = ( r.x + r.w - side_pad ) - label_x;    /* trails to the cell's right edge      */
     }
+
+    widget_state_t st = widget_behavior( id, split ? control : r, WIDGET_KIND_BUTTON );
 
     f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
     draw_push_rect_filled( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, widget_bg_color( st ) );
@@ -485,13 +493,16 @@ gui_radio_button( const char* label, i32* v, i32 value )
     gui_rect_t r  = widget_next_rect_w( 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD + label_width( label ),
                                         WIDGET_H );
 
-    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
-
-    /* Same label/control split as checkbox: the disc sits at the start of the control track. */
+    /* Same label/control split as checkbox, resolved BEFORE widget_behavior for the same reason: so
+       the hit/nav rect starts at the control track (matching input_text / slider_float) instead of
+       the cell's left edge, which would otherwise put this widget's nav rect at a different X than
+       the other fields in the same form. */
     f32          label_x, label_w;
     gui_rect_t control;
     f32          bx;
-    if ( field_split_resolve( r, CHECKBOX_SZ, &label_x, &label_w, &control ) )
+    bool         split = field_split_resolve( r, CHECKBOX_SZ, &label_x, &label_w, &control );
+
+    if ( split )
     {
         bx = control.x;
     }
@@ -501,6 +512,8 @@ gui_radio_button( const char* label, i32* v, i32 value )
         label_x = bx + CHECKBOX_SZ + WIDGET_PAD;         /* default: label just right of the disc */
         label_w = ( r.x + r.w - side_pad ) - label_x;    /* trails to the cell's right edge        */
     }
+
+    widget_state_t st = widget_behavior( id, split ? control : r, WIDGET_KIND_BUTTON );
 
     /* Disc centred in a CHECKBOX_SZ box, vertically centred in the row. */
     f32 by  = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;

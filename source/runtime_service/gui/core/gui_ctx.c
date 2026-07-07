@@ -498,33 +498,75 @@ rect_hit( gui_rect_t r )
 
 /*----------------------------------------------------------------------------------------------
     nav_score_dir -- directional-move cost from the current nav item (cur) to a candidate (cand)
-    along `dir`.  The Dear ImGui nav scorer in its simplest center-to-center form: project the
-    displacement onto the move axis (primary) and the perpendicular axis (secondary); a candidate
-    not on the correct side is rejected, and the rest are ranked by primary distance plus a weighted
-    perpendicular penalty so the item most directly ahead wins.  Reads only rects, so it is agnostic
-    to the layout mode that produced them.  Lower is better; a large value means "rejected".
+    along `dir`.  Up/Down and Left/Right are NOT mirrors of each other here, because "the next row"
+    and "the next column" are not equally reliable concepts in a form: a row is a real, tight
+    grouping (every widget on it shares one Y band), but nothing guarantees two widgets are in the
+    "same column" -- a checkbox's control track and a slider's can legitimately sit at different X
+    even one row apart.  So:
+
+      Up/Down:    no cross-axis gate at all -- the nearest row wins outright, full stop, whatever its
+                  X happens to be.  Cross axis (X) only breaks a tie between candidates on the exact
+                  same row (e.g. a same_line group), via NAV_TIE_EPS, a weight small enough to never
+                  outrank a genuine primary-axis difference.  A cross-axis requirement here leaves a
+                  real widget on the very next row unreachable whenever its control track doesn't
+                  happen to overlap cur's -- bumping a wall that isn't actually there.
+      Left/Right: cross-axis (Y) overlap is REQUIRED -- a candidate not on cur's row is rejected
+                  outright, no fallback, no matter how close it looks in raw distance.  Without this,
+                  Right from a title bar button can leap into the window body because some unrelated
+                  content widget has a smaller raw X distance than the real next title-bar button, and
+                  Left run off the start of a row can snap to whatever happens to have the smallest X
+                  anywhere in the window (e.g. a collapse button up in the title bar), which reads as
+                  a wild vertical jump instead of a horizontal move.  When nothing on the row qualifies,
+                  this function rejects every candidate and nav_commit_prev (gui_nav.c) falls back to
+                  the reading-order neighbor (tab_prev / tab_next) instead -- "run off this line" reads
+                  as "continue on the previous/next line," the same wrap a text cursor makes, rather
+                  than a spatial guess.
+
+    A candidate not on the correct side of the move axis is always rejected. Reads only rects, so it
+    is agnostic to the layout mode that produced them. Lower is better; a large value means "rejected".
 ----------------------------------------------------------------------------------------------*/
 
-#define NAV_SCORE_REJECT 3.0e38f    /* effectively +inf -- candidate is not in the move direction */
+#define NAV_SCORE_REJECT 3.0e38f    /* effectively +inf -- candidate is not a valid target for this move */
+#define NAV_TIE_EPS      1.0e-3f    /* negligible weight: only breaks a tie between candidates on the same row/column */
+
+/* Gap between two 1-D ranges: 0 when they overlap, else the distance separating them. */
+static f32
+nav_range_gap( f32 a0, f32 a1, f32 b0, f32 b1 )
+{
+    if ( b0 > a1 ) return b0 - a1;
+    if ( a0 > b1 ) return a0 - b1;
+    return 0.0f;
+}
 
 static f32
 nav_score_dir( gui_rect_t cur, gui_rect_t cand, gui_dir_t dir )
 {
     f32 ccx = cur.x  + cur.w  * 0.5f, ccy = cur.y  + cur.h  * 0.5f;
     f32 ncx = cand.x + cand.w * 0.5f, ncy = cand.y + cand.h * 0.5f;
-    f32 dx  = ncx - ccx, dy = ncy - ccy;
+    f32 dy  = ncy - ccy, dx = ncx - ccx;
 
-    f32 prim, secd;   /* primary = distance along the axis; secondary = perpendicular offset */
-    switch ( dir )
+    if ( dir == GUI_DIR_UP || dir == GUI_DIR_DOWN )
     {
-        case GUI_DIR_UP:    prim = -dy; secd = dx < 0 ? -dx : dx; break;
-        case GUI_DIR_DOWN:  prim =  dy; secd = dx < 0 ? -dx : dx; break;
-        case GUI_DIR_LEFT:  prim = -dx; secd = dy < 0 ? -dy : dy; break;
-        case GUI_DIR_RIGHT: prim =  dx; secd = dy < 0 ? -dy : dy; break;
-        default:              return NAV_SCORE_REJECT;
+        f32 prim = ( dir == GUI_DIR_UP ) ? -dy : dy;
+        if ( prim <= 0.0f ) return NAV_SCORE_REJECT;   /* behind / abreast -- not in this direction */
+
+        f32 cross = ( dx < 0.0f ) ? -dx : dx;
+        return prim + cross * NAV_TIE_EPS;   /* nearest row wins outright; X only breaks a same-row tie */
     }
-    if ( prim <= 0.0f ) return NAV_SCORE_REJECT;   /* behind / abreast -- not in this direction */
-    return prim + secd * 2.0f;                     /* weight misalignment so straight-ahead wins */
+
+    if ( dir == GUI_DIR_LEFT || dir == GUI_DIR_RIGHT )
+    {
+        f32 prim = ( dir == GUI_DIR_LEFT ) ? -dx : dx;
+        if ( prim <= 0.0f ) return NAV_SCORE_REJECT;
+
+        f32 gap = nav_range_gap( cur.y, cur.y + cur.h, cand.y, cand.y + cand.h );
+        if ( gap > 0.0f ) return NAV_SCORE_REJECT;   /* not on this row -- let the Tab-order fallback handle it */
+
+        f32 cross = ( dy < 0.0f ) ? -dy : dy;
+        return prim + cross * NAV_TIE_EPS;
+    }
+
+    return NAV_SCORE_REJECT;
 }
 
 /*----------------------------------------------------------------------------------------------
