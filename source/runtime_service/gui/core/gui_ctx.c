@@ -497,72 +497,113 @@ rect_hit( gui_rect_t r )
    unity includes, so gui_emit_draw.c can use it for clip intersection too. */
 
 /*----------------------------------------------------------------------------------------------
+    nav_range_gap -- how far apart two 1-D intervals [a0,a1] and [b0,b1] are.
+
+    0 when they overlap (share any span at all), otherwise the distance between the nearest pair
+    of edges.  This is the one building block both axes of nav_score_dir are built from: it answers
+    "is B actually beside/ahead of A, or does it just happen to have a nearby center" using the
+    full extent of both rects rather than a single point.
+----------------------------------------------------------------------------------------------*/
+static f32
+nav_range_gap( f32 a0, f32 a1, f32 b0, f32 b1 )
+{
+    if ( b0 > a1 ) return b0 - a1;   /* B starts after A ends -- gap is the space between them */
+    if ( a0 > b1 ) return a0 - b1;   /* B ends before A starts -- gap the other way            */
+    return 0.0f;                     /* the intervals share some span -- no gap                */
+}
+
+/*----------------------------------------------------------------------------------------------
     nav_score_dir -- directional-move cost from the current nav item (cur) to a candidate (cand)
-    along `dir`.  Up/Down and Left/Right are NOT mirrors of each other here, because "the next row"
-    and "the next column" are not equally reliable concepts in a form: a row is a real, tight
-    grouping (every widget on it shares one Y band), but nothing guarantees two widgets are in the
-    "same column" -- a checkbox's control track and a slider's can legitimately sit at different X
-    even one row apart.  So:
+    along `dir`.  Lower wins; NAV_SCORE_REJECT means "not a valid target for this move at all."
 
-      Up/Down:    no cross-axis gate at all -- the nearest row wins outright, full stop, whatever its
-                  X happens to be.  Cross axis (X) only breaks a tie between candidates on the exact
-                  same row (e.g. a same_line group), via NAV_TIE_EPS, a weight small enough to never
-                  outrank a genuine primary-axis difference.  A cross-axis requirement here leaves a
-                  real widget on the very next row unreachable whenever its control track doesn't
-                  happen to overlap cur's -- bumping a wall that isn't actually there.
-      Left/Right: cross-axis (Y) overlap is REQUIRED -- a candidate not on cur's row is rejected
-                  outright, no fallback, no matter how close it looks in raw distance.  Without this,
-                  Right from a title bar button can leap into the window body because some unrelated
-                  content widget has a smaller raw X distance than the real next title-bar button, and
-                  Left run off the start of a row can snap to whatever happens to have the smallest X
-                  anywhere in the window (e.g. a collapse button up in the title bar), which reads as
-                  a wild vertical jump instead of a horizontal move.  When nothing on the row qualifies,
-                  this function rejects every candidate and nav_commit_prev (gui_nav.c) falls back to
-                  the reading-order neighbor (tab_prev / tab_next) instead -- "run off this line" reads
-                  as "continue on the previous/next line," the same wrap a text cursor makes, rather
-                  than a spatial guess.
+    THE CORE IDEA -- EDGES, NOT CENTERS.  Both the along-axis distance ("how far ahead is it") and
+    the cross-axis check ("is it actually in my row/column") are measured edge-to-edge via
+    nav_range_gap, never by comparing the two rects' center points.  Center-to-center distance was
+    tried first and repeatedly produced wrong answers for anything that isn't a small, row-sized
+    widget:
 
-    A candidate not on the correct side of the move axis is always rejected. Reads only rects, so it
-    is agnostic to the layout mode that produced them. Lower is better; a large value means "rejected".
+      - A vertical scrollbar's track spans the FULL HEIGHT of its list, so its center sits in the
+        middle of the visible rows.  Under center-to-center scoring, whichever row happens to be
+        nearest that midpoint can score CLOSER to "Down" than the very next row actually is, and the
+        cursor jumps sideways onto the scrollbar mid-scroll.  Edge-based scoring fixes this for free:
+        the scrollbar's rect overlaps cur's row in Y (its top is above every row and its bottom is
+        below every row), so the edge-to-edge gap along the move axis is 0 or negative -- it is
+        REJECTED outright as "not ahead of me," the same way any other widget straddling cur's own
+        position would be. A tall, page-spanning widget is never "the next row"; only something that
+        starts after cur's own extent ends can be.
+      - The same logic is why the cross-axis checks below use nav_range_gap instead of center
+        distance: a checkbox seated flush left and a full-width slider on the row below it have very
+        different centers but their EXTENTS overlap (the checkbox's span is a subset of the slider's),
+        so the gap is correctly 0 -- they read as aligned regardless of how far apart their centers are.
+
+    Up/Down and Left/Right are still not mirrors of each other, because "the next row" and "the next
+    column" are not equally reliable concepts in a form: a row is a real, tight grouping (every
+    widget on it shares one Y band), but nothing guarantees two widgets are in the "same column" --
+    a checkbox's control track and a slider's can legitimately sit at different X even one row apart.
+
+      Up/Down:    no cross-axis requirement -- the nearest row (by edge gap) wins outright, full
+                  stop, whatever its X happens to be.  Cross axis (X) only breaks a tie between
+                  candidates that land in the exact same row (e.g. a same_line group), and even there
+                  it is measured as a range gap (0 for any X overlap) via NAV_TIE_EPS, a weight small
+                  enough to never outrank a genuine along-axis difference.  Requiring X overlap here
+                  would leave a real widget on the very next row unreachable whenever its control
+                  track doesn't happen to overlap cur's -- bumping a wall that isn't actually there.
+      Left/Right: cross-axis (Y) overlap is REQUIRED -- a candidate not sharing any Y with cur is
+                  rejected outright, no fallback, no matter how close it looks in raw distance.
+                  Without this, Right from a title bar button can leap into the window body because
+                  some unrelated content widget has a smaller raw X distance than the real next
+                  title-bar button, and Left run off the start of a row can snap to whatever has the
+                  smallest X anywhere in the window (e.g. a collapse button up in the title bar) --
+                  reading as a wild vertical jump instead of a horizontal move.  When nothing on the
+                  row qualifies, this function rejects every candidate and nav_commit_prev (gui_nav.c)
+                  falls back to the reading-order neighbor (tab_prev / tab_next) instead -- "run off
+                  this line" reads as "continue on the previous/next line," the same wrap a text
+                  cursor makes, rather than a spatial guess.
+
+    Reads only rects, so it is agnostic to the layout mode that produced them.
 ----------------------------------------------------------------------------------------------*/
 
 #define NAV_SCORE_REJECT 3.0e38f    /* effectively +inf -- candidate is not a valid target for this move */
 #define NAV_TIE_EPS      1.0e-3f    /* negligible weight: only breaks a tie between candidates on the same row/column */
 
-/* Gap between two 1-D ranges: 0 when they overlap, else the distance separating them. */
-static f32
-nav_range_gap( f32 a0, f32 a1, f32 b0, f32 b1 )
-{
-    if ( b0 > a1 ) return b0 - a1;
-    if ( a0 > b1 ) return a0 - b1;
-    return 0.0f;
-}
-
 static f32
 nav_score_dir( gui_rect_t cur, gui_rect_t cand, gui_dir_t dir )
 {
-    f32 ccx = cur.x  + cur.w  * 0.5f, ccy = cur.y  + cur.h  * 0.5f;
-    f32 ncx = cand.x + cand.w * 0.5f, ncy = cand.y + cand.h * 0.5f;
-    f32 dy  = ncy - ccy, dx = ncx - ccx;
-
     if ( dir == GUI_DIR_UP || dir == GUI_DIR_DOWN )
     {
-        f32 prim = ( dir == GUI_DIR_UP ) ? -dy : dy;
-        if ( prim <= 0.0f ) return NAV_SCORE_REJECT;   /* behind / abreast -- not in this direction */
+        /* Along-axis distance is the gap between cur's near edge and cand's near edge, not their
+           centers -- see the nav_range_gap block above for why this specifically excludes a
+           full-height scrollbar (or any widget whose extent straddles cur's own position) from ever
+           reading as "the next row." <= 0 means cand overlaps cur's own Y extent or sits behind it. */
+        f32 prim = ( dir == GUI_DIR_UP ) ? ( cur.y - ( cand.y + cand.h ) )
+                                          : ( cand.y - ( cur.y + cur.h ) );
+        if ( prim <= 0.0f ) return NAV_SCORE_REJECT;
 
-        f32 cross = ( dx < 0.0f ) ? -dx : dx;
-        return prim + cross * NAV_TIE_EPS;   /* nearest row wins outright; X only breaks a same-row tie */
+        /* Tie-break only: 0 when the candidate shares any X with cur (prefer alignment), else the
+           X gap -- weighted down to NAV_TIE_EPS so it can only decide between candidates that landed
+           on (near enough) the same row, never override a real along-axis difference. */
+        f32 cross = nav_range_gap( cur.x, cur.x + cur.w, cand.x, cand.x + cand.w );
+        return prim + cross * NAV_TIE_EPS;
     }
 
     if ( dir == GUI_DIR_LEFT || dir == GUI_DIR_RIGHT )
     {
-        f32 prim = ( dir == GUI_DIR_LEFT ) ? -dx : dx;
+        f32 prim = ( dir == GUI_DIR_LEFT ) ? ( cur.x - ( cand.x + cand.w ) )
+                                            : ( cand.x - ( cur.x + cur.w ) );
         if ( prim <= 0.0f ) return NAV_SCORE_REJECT;
 
-        f32 gap = nav_range_gap( cur.y, cur.y + cur.h, cand.y, cand.y + cand.h );
-        if ( gap > 0.0f ) return NAV_SCORE_REJECT;   /* not on this row -- let the Tab-order fallback handle it */
+        /* Hard row-membership gate: reject anything that doesn't share Y with cur at all, rather
+           than letting a merely-closer-in-X widget from a different row win (see the function
+           comment's title-bar example). No fallback here on purpose -- nav_commit_prev picks up a
+           full reject with the Tab-order neighbor instead of guessing spatially. */
+        if ( nav_range_gap( cur.y, cur.y + cur.h, cand.y, cand.y + cand.h ) > 0.0f )
+            return NAV_SCORE_REJECT;
 
-        f32 cross = ( dy < 0.0f ) ? -dy : dy;
+        /* Tie-break only, for the rare case of multiple same-row candidates at (near enough) the
+           same X (e.g. differing row heights within one same_line group): prefer the one whose
+           center sits closest to cur's own row center. */
+        f32 ccy = cur.y + cur.h * 0.5f, ncy = cand.y + cand.h * 0.5f;
+        f32 cross = ( ncy < ccy ) ? ( ccy - ncy ) : ( ncy - ccy );
         return prim + cross * NAV_TIE_EPS;
     }
 

@@ -146,6 +146,15 @@ nav_cycle_window( i32 dir )
 
 /*----------------------------------------------------------------------------------------------
     nav_commit_prev -- apply the move resolved by last frame's emission into nav_id.
+
+    Checked in priority order, first match wins:
+      1. A directional move (arrow key) found a real spatial neighbor (nav_score_dir, gui_ctx.c) --
+         adopt it and carry its rect forward as the next scoring origin.
+      2. A directional move along Left/Right found NO spatial neighbor on the current row -- fall
+         back to the reading-order neighbor (Tab's own tab_prev/tab_next) instead of guessing.
+      3. An explicit Tab / Shift+Tab request -- walk emission order, wrapping through the first item.
+      4. Neither -- nav_id is left untouched; see the recovery clause at the bottom for the one case
+         where it still changes (the cursor item vanished from this window entirely).
 ----------------------------------------------------------------------------------------------*/
 
 static void
