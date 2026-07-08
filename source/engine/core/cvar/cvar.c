@@ -497,15 +497,15 @@ cvar_hash_insert( u32 cvar_index )
 
 /*==============================================================================================
 
-    Cvar Priority System
+    Priority Guard
 
-    An ambient priority applied to "set"/"seta"/bare-name sets that don't specify one 
-    explicitly (defaults to CVAR_PRI_USER). 
-    
-    cvar_load_defaults pushes CVAR_PRI_DEFAULT/CONFIG/AUTOEXEC around each boot config 
-    file's queued text; pop restores the previous ambient value.
-    
-    Small fixed stack -- push/pop must balance within CVAR_PRI_STACK_DEPTH.
+    Enabled by default: a lower-priority "set" can't stomp a value a higher-priority one
+    already set (see cvar_set_value_internal in Named Access, below, for the actual check).
+
+    Also owns the ambient priority applied to "set"/"seta"/bare-name sets that don't specify
+    one explicitly (defaults to CVAR_PRI_USER). cvar_load_defaults pushes CVAR_PRI_DEFAULT/
+    CONFIG/AUTOEXEC around each boot config file's queued text; pop restores the previous
+    ambient value. Small fixed stack -- push/pop must balance within CVAR_PRI_STACK_DEPTH.
 
 ==============================================================================================*/
 
@@ -1094,6 +1094,30 @@ cvar_get_string( const cvar_t* cv )
     }
 }
 
+/* Format any cvar's current value as a display string. Numeric types format into a
+   round-robin buffer; string types forward to cvar_get_string (single owner of that logic). */
+
+const char*
+cvar_value_string( const cvar_t* cv )
+{
+    if ( !cv )
+        return "";
+
+    // Round-robin buffer so multiple calls survive within a single printf.
+    // NOT thread safe; the cvar system is single-threaded by contract.
+    static char bufs[ 4 ][ 32 ];
+    static int  buf_idx = 0;
+    char*       buf     = bufs[ buf_idx++ & 3 ];
+
+    switch ( cv->type )
+    {
+        case CVAR_BOOL:     return ( cv->b.value ? "1" : "0" );
+        case CVAR_INT:      snprintf( buf, sizeof( bufs[ 0 ] ), "%d", cv->i.value ); return buf;
+        case CVAR_FLOAT:    snprintf( buf, sizeof( bufs[ 0 ] ), "%g", cv->f.value ); return buf;
+        default:            return cvar_get_string( cv );
+    }
+}
+
 /*==============================================================================================
 
     Value Modification
@@ -1183,8 +1207,6 @@ cvar_reset_all( void )
     }
 }
 
-/*============================================================================================*/
-
 /* Apply all latched cvar values */
 
 void
@@ -1226,7 +1248,17 @@ cvar_clear_modified( void )
     }
 }
 
-/*============================================================================================*/
+/*==============================================================================================
+
+    Named Access
+
+    Set/get a cvar by name or by pointer, priority-gated through cvar_set_value_internal
+    (see the Priority Guard section above for what gates a set and what tags an unspecified
+    one). This is the layer cmd.c's "set"/"seta"/bare-name dispatch and cvar_load_defaults'
+    config exec both go through.
+
+==============================================================================================*/
+
 /* Internal function that contains all the 'set' logic. */
 
 static bool
@@ -1479,31 +1511,6 @@ cvar_set_pri( cvar_t* cv, const char* value, cvar_priority_t priority )
     return cvar_set_value_internal( cv, value, priority );
 }
 
-/*============================================================================================*/
-/* Format any cvar's current value as a display string. Numeric types format into a
-   round-robin buffer; string types forward to cvar_get_string (single owner of that logic). */
-
-const char*
-cvar_value_string( const cvar_t* cv )
-{
-    if ( !cv )
-        return "";
-
-    // Round-robin buffer so multiple calls survive within a single printf.
-    // NOT thread safe; the cvar system is single-threaded by contract.
-    static char bufs[ 4 ][ 32 ];
-    static int  buf_idx = 0;
-    char*       buf     = bufs[ buf_idx++ & 3 ];
-
-    switch ( cv->type )
-    {
-        case CVAR_BOOL:     return ( cv->b.value ? "1" : "0" );
-        case CVAR_INT:      snprintf( buf, sizeof( bufs[ 0 ] ), "%d", cv->i.value ); return buf;
-        case CVAR_FLOAT:    snprintf( buf, sizeof( bufs[ 0 ] ), "%g", cv->f.value ); return buf;
-        default:            return cvar_get_string( cv );
-    }
-}
-
 /* Get cvar value as string by name */
 
 const char*
@@ -1512,7 +1519,12 @@ cvar_get_value( const char* name )
     return cvar_value_string( cvar_find( name ) );
 }
 
-/*============================================================================================*/
+/*==============================================================================================
+
+    Cvar Output
+
+==============================================================================================*/
+
 /* Print cvar value with type info */
 
 void
