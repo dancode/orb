@@ -266,6 +266,7 @@ gui_pack( gui_pack_dir_t dir )
     f->line_main = f->line_origin;
     f->line_ext  = 0.0f;
     f->line_open = true;
+    f->nav_line  = ++s_build.nav_line_seq;   /* the run's first line is a fresh nav line */
 }
 
 /* bar -- horizontal pack: items left to right (the toolbar). */
@@ -297,6 +298,7 @@ gui_pack_nextline( void )
     f->line_main  = f->line_origin;
     f->line_ext   = 0.0f;
     f->line_open  = true;
+    f->nav_line   = ++s_build.nav_line_seq;   /* the broken-to line is a fresh nav line */
     f->prev_item  = ( gui_rect_t ){ 0 };
 }
 

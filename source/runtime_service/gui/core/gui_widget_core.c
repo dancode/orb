@@ -311,42 +311,95 @@ widget_repeat_tick( bool pressed )
 
 /* Keyboard-nav per-item seam.  Called from widget_behavior for every item that belongs to the nav
    window (s_build.win_id == s_nav.win), the keyboard mirror of the hover hit-test above.  It does
-   four things, all reading/writing the nav accumulator in s_nav (committed at the next nav_new_frame,
-   gui_nav.c): records this frame's rect for the current nav item, tracks emission order for Tab,
-   scores the item as a directional-move candidate, and -- for the current nav item -- lights the
-   focus ring and synthesizes a click from an Enter/Space activation so every widget activates from
-   the keyboard with no per-widget code, exactly as a mouse click flows through st.clicked. */
+   three things: records the item into the frame's nav list (with the structural region/line stamp
+   the layout engine latched when it placed it -- gui_nav.c resolves the next move as index math
+   over this list), notes whether the nav cursor was seen, and -- for the current nav item --
+   lights the focus ring and synthesizes a click from an Enter/Space activation so every widget
+   activates from the keyboard with no per-widget code, exactly as a mouse click flows through
+   st.clicked. */
 
 #define NAV_RING 2.0f    /* focus-ring inset outside the item rect so the item's own fill spares it */
+
+/* Bring the nav cursor's rect into view -- the keyboard analogue of the wheel.  Runs once, on the
+   frame the cursor was adopted (s_nav.scroll_chase), for the layout-placed cursor item: walk the
+   open region stack innermost-out and nudge each region's scroll so the item is visible, correcting
+   the rect level by level so an item deep in a nested child pulls every ancestor into line.  Like
+   the wheel, the new offset only reaches the screen next frame (this frame's pen already used the
+   old one), so wants_redraw forces the follow-up frame that shows it. */
+static void
+nav_scroll_chase( gui_rect_t r )
+{
+    const f32 pad = NAV_RING + 2.0f;   /* breathing room so the ring lands clear of the view edge */
+
+    u32 top = ( s_layout_sp <= GUI_LAYOUT_DEPTH ) ? s_layout_sp : GUI_LAYOUT_DEPTH;
+    for ( i32 i = (i32)top - 1; i >= 0; --i )
+    {
+        layout_frame_t* f = &s_layout_stack[ i ];
+        if ( f->flags & GUI_WIN_NOSCROLL ) continue;
+
+        f32 vx0 = f->outer.x + WIN_BORDER;   /* view box: the same gutter-adjusted extents the */
+        f32 vy0 = f->outer.y;                /* region's own scrollbars are sized against      */
+
+        /* Overshoot per axis: pull the near edge in (top-aligning an item taller than the view),
+           else the far edge.  Clamped into the scroll range measured last frame, so a chase can
+           never scroll past the content -- the same clamp the wheel applies. */
+        f32 dy = 0.0f;
+        if ( r.h > f->view_h - 2.0f * pad || r.y < vy0 + pad )
+            dy = r.y - ( vy0 + pad );
+        else if ( r.y + r.h > vy0 + f->view_h - pad )
+            dy = ( r.y + r.h ) - ( vy0 + f->view_h - pad );
+
+        f32 max_y  = f->scroll->content_h - f->view_h;
+        if ( max_y < 0.0f ) max_y = 0.0f;
+        f32 want_y = clampf( f->scroll->scroll_y + dy, 0.0f, max_y );
+        dy = want_y - f->scroll->scroll_y;
+
+        f32 dx = 0.0f;
+        if ( r.w > f->view_w - 2.0f * pad || r.x < vx0 + pad )
+            dx = r.x - ( vx0 + pad );
+        else if ( r.x + r.w > vx0 + f->view_w - pad )
+            dx = ( r.x + r.w ) - ( vx0 + f->view_w - pad );
+
+        f32 max_x  = f->scroll->content_w - f->view_w;
+        if ( max_x < 0.0f ) max_x = 0.0f;
+        f32 want_x = clampf( f->scroll->scroll_x + dx, 0.0f, max_x );
+        dx = want_x - f->scroll->scroll_x;
+
+        if ( dy != 0.0f || dx != 0.0f )
+        {
+            f->scroll->scroll_y = want_y;
+            f->scroll->scroll_x = want_x;
+            r.y -= dy;   /* where the item lands next frame -- the ancestors check that position */
+            r.x -= dx;
+            s_retained.wants_redraw = true;
+        }
+    }
+}
 
 static void
 nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t kind )
 {
     bool is_cur = ( id == s_nav.id );
     if ( is_cur )
+        s_nav.id_seen = true;
+
+    /* Append to the nav item list (emission order == Tab order).  A layout-placed item carries
+       the region/line coordinate widget_next_rect_w latched; anything interacting without a
+       layout cell -- title-bar buttons, scrollbars, dock tabs -- lists as chrome: Tab still
+       reaches it, but directional moves skip it, so arrows never land on chrome. */
+
+    bool placed = s_build.nav_item_placed;
+    if ( placed && s_nav.first_item == GUI_ID_NONE )
+        s_nav.first_item = id;   /* first-focus / recovery landing spot */
+
+    if ( s_nav.item_count < GUI_NAV_ITEMS_MAX )
     {
-        s_nav.id_seen   = true;
-        s_nav.self_rect = r;
-    }
-
-    /* Tab walks emission order (reading order here): first item, the predecessor of the current
-       item, and the item right after it. */
-
-    if ( s_nav.tab_first == GUI_ID_NONE ) s_nav.tab_first = id;
-    if ( s_nav.tab_take ) { s_nav.tab_next = id; s_nav.tab_take = false; }
-    if ( is_cur )                    s_nav.tab_take = true;                 /* next item becomes tab_next */
-    else if ( !s_nav.id_seen )   s_nav.tab_prev = id;                       /* last one before the current */
-
-    /* Directional move: score against last frame's nav_ref_rect (the deferred resolve). */
-    if ( s_nav.move_dir >= 0 && !is_cur )
-    {
-        f32 sc = nav_score_dir( s_nav.ref_rect, r, (gui_dir_t)s_nav.move_dir );
-        if ( sc < s_nav.move_score )
-        {
-            s_nav.move_score = sc;
-            s_nav.move_best  = id;
-            s_nav.move_rect  = r;
-        }
+        gui_nav_item_t* it = &s_nav.items[ s_nav.item_count++ ];
+        it->id     = id;
+        it->rect   = r;
+        it->region = placed ? s_build.nav_item_region : 0;
+        it->line   = placed ? s_build.nav_item_line   : 0;
+        it->chrome = !placed;
     }
 
     /* Current item: draw the outline ring whenever a nav cursor exists (even in mouse mode, so it
@@ -357,6 +410,15 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
 
     if ( is_cur && s_nav.active )
     {
+        /* Fresh adoption: scroll the item into view (once).  Only a placed item chases -- its
+           region stack is the one open right now; chrome sits outside the scrolling content. */
+        if ( s_nav.scroll_chase )
+        {
+            s_nav.scroll_chase = false;
+            if ( placed )
+                nav_scroll_chase( r );
+        }
+
         draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
                                 r.w + 2.0f * NAV_RING, r.h + 2.0f * NAV_RING,
                                 WIN_BORDER, 0, COL_NAV );

@@ -198,11 +198,32 @@ typedef struct gui_window_t
     member of the bound context (gui_context_t), reached through the s_nav alias.
 ==============================================================================================*/
 
+/* One entry of the per-frame nav item list.  Every item of the nav window records itself here
+   (emission order) as it passes through widget_behavior; the resolvers in gui_nav.c consume the
+   list at the NEXT nav_new_frame, so a move steps over last frame's items -- the same one-frame
+   deferral hover_win uses.  region/line are the structural coordinate the layout engine stamped
+   when it placed the item (widget_next_rect_w), so moves are index math over real rows, not a
+   spatial guess over rects; the rect remains only for the goal-column pick. */
+
+typedef struct
+{
+    gui_id_t   id;       // widget id
+    gui_rect_t rect;     // screen rect as emitted (goal-column pick + ring)
+    u32        region;   // region sequence that placed it (a window body / child / strip region)
+    u32        line;     // line sequence within the frame -- monotonic, so order == reading order
+    bool       chrome;   // not layout-placed (title button, scrollbar, dock tab): Tab-only
+
+} gui_nav_item_t;
+
+/* List capacity.  Every emitted item of the nav window registers -- including rows scrolled out
+   of view (they still emit; only their draw is clipped) -- so this bounds the navigable item
+   count of one window; overflow items simply drop off the keyboard map for that frame. */
+#define GUI_NAV_ITEMS_MAX 1024
+
 typedef struct
 {
     gui_id_t    id;            // the highlighted item (keyboard cursor); persists across frames
     gui_id_t    win;           // window/popup nav is scoped to (the hover_win analogue)
-    gui_rect_t  ref_rect;      // id's rect last frame -- the directional scoring origin
 
     /* Explicit nav target window (gui_window_set_nav / Ctrl+Tab).  0 means "follow the
        front-most normal window", so nav has a sensible default with no caller setup. */
@@ -223,14 +244,24 @@ typedef struct
     bool        activate;      // Enter/Space -> fire id like a click this frame
 
     bool        id_seen;       // id was emitted in win this frame (else it went stale)
-    gui_id_t    move_best;     // best-scored directional candidate this frame
-    f32         move_score;    // its score (lower is better; reset to a large value each frame)
-    gui_rect_t  move_rect;     // its rect -> next frame's ref_rect
-    gui_rect_t  self_rect;     // id's own rect captured this frame (keeps ref_rect fresh)
-    gui_id_t    tab_first;     // first eligible item this frame (Tab wrap + first-focus)
-    gui_id_t    tab_prev;      // item emitted just before id (Shift+Tab target)
-    gui_id_t    tab_next;      // item emitted just after id (Tab target)
-    bool        tab_take;      // the item just registered was id -> grab the next as tab_next
+    gui_id_t    first_item;    // first layout-placed item this frame (first-focus / recovery)
+
+    /* Goal column: the remembered x a run of Up/Down steers by, so vertical travel through rows
+       of differing shapes does not drift sideways (the text-editor goal-column behavior).  Set
+       lazily from the cursor item when a vertical run starts; any other adoption (horizontal
+       move, Tab, click) clears it so the next run re-anchors. */
+    f32         goal_x;
+    bool        goal_set;
+
+    /* Scroll-to-view request: set when a resolver adopts a new cursor item, consumed by
+       nav_item_register when that item registers -- if its rect sits outside its region's view,
+       the region (and its ancestors) scroll it into view (nav_scroll_chase, gui_widget_core.c).
+       One-shot per adoption so the chase never fights the wheel or a scrollbar drag. */
+    bool        scroll_chase;
+
+    /* The nav item list -- built during emission, resolved at the next nav_new_frame. */
+    gui_nav_item_t items[ GUI_NAV_ITEMS_MAX ];
+    u32            item_count;
 
     /* Menu-bar navigation -- a small state machine layered on the nav cursor + popup stack, entered
        by Alt (toggle) or an Alt+letter mnemonic.  While active, nav lives either on the bar entries
@@ -350,6 +381,15 @@ typedef struct
 
     u8              pack_dir;           // gui_pack_dir_t: 0 horizontal (bar), 1 vertical (strip)
     f32             pack_size_next;     // pending main-axis size unit; < 0 = unset (natural)
+
+    /* Keyboard-nav structural coordinate (see gui_nav_item_t).  nav_region is dispensed once per
+       region open (layout_seed_content); nav_line is re-dispensed from the frame-global counter
+       every time a line opens -- a flow row, a pack line, a grid row, a pen jump -- so every
+       placed item carries "which row of which container" with no per-widget code. */
+
+    u32             nav_region;         // this region's sequence number (frame-global dispenser)
+    u32             nav_line;           // line sequence the next placement stamps
+    bool            nav_line_pin;       // an imperative host (table) owns nav_line: opens reuse it
 
     /* Resolve context, set at push and read at pop. */
 
@@ -739,9 +779,10 @@ typedef struct
 
     /* Iteration state. */
     i32                     cur_col;       // -1 before first table_next_column this row
-    i32                     cur_row;       // -1 before first table_next_row            
-    f32                     row_top;       // screen-space top of the current row       
-    f32                     row_h;         // current row height in pixels              
+    i32                     cur_row;       // -1 before first table_next_row
+    f32                     row_top;       // screen-space top of the current row
+    f32                     row_h;         // current row height in pixels
+    u32                     nav_row_line;  // nav line the whole row shares (keyboard row = table row)
 
     gui_rect_t              outer_rect;    // full table box in screen space             
     gui_rect_t              body_rect;     // content area inside the opened region      

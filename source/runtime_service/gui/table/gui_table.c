@@ -569,6 +569,10 @@ gui_table_next_row( f32 min_h )
     t->row_h    = h;
     t->row_top  = lf()->content_y;
 
+    /* One nav line for the whole row (table_next_column pins it over its per-column pen jumps),
+       so the keyboard sees the table as rows of cells: Up/Down step rows, Left/Right the cells. */
+    t->nav_row_line = ++s_build.nav_line_seq;
+
     /* Table fills are always square -- a rounded fill under the rectangular table scissor would
        leave a gap at each rounded corner that content behind shows through.  Save the ambient
        radius, force square for the chrome below, and restore so cell widgets keep their rounding. */
@@ -623,6 +627,11 @@ gui_table_next_column( void )
     f->content_w  = iw;
     f->cellx[ 0 ] = ix;
     f->cellw[ 0 ] = iw;
+
+    /* Pin the row's nav line over the per-column pen jumps: left to itself each cell's placement
+       would open (and dispense) a fresh line, splitting one visual row into many keyboard rows. */
+    f->nav_line_pin = true;
+    f->nav_line     = t->nav_row_line;
 
     /* Bound text drawn into this cell to its visible window: the cell's inset rect, clamped to the
        table viewport box.  A column scrolled partway off the edge then cuts its glyphs cleanly at

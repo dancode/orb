@@ -134,6 +134,18 @@ static struct
     gui_rect_t clip_rect;   // active interaction clip -- widget hover is gated by it
     bool         wheel_used;  // a region consumed the wheel this frame (innermost wins)
 
+    /* Keyboard-nav structural stamp.  widget_next_rect_w latches the placing region's coordinate
+       here as it hands out each cell; widget_behavior copies it into the nav item list.  The
+       stamp stays latched across the several behavior calls one cell can make (a numeric's
+       sub-fields are same-line siblings), and item_flags_chrome_reset drops it at every chrome
+       seam -- so "was this item placed by the layout engine" is exactly the body/chrome split. */
+
+    u32  nav_region_seq;    // per-frame region dispenser (layout_seed_content takes the next)
+    u32  nav_line_seq;      // per-frame line dispenser (a line-open takes the next)
+    u32  nav_item_region;   // stamp: region that placed the item being emitted
+    u32  nav_item_line;     // stamp: its line sequence
+    bool nav_item_placed;   // stamp is live (false => the next behavior call is chrome)
+
     /* Item flags -- the push-model behavior set a widget reads at emit time (see gui_item_flags_t).
        item_flags is the merged top of the push/pop stack; next_set / next_val are the one-shot
        override for the next widget (which bits it controls + their values); cur_item_flags is the
@@ -172,10 +184,11 @@ u32 gui_dbg_build_viewport( void ) { return s_build.cur_viewport; }
     The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather than
     the mouse -- plus the menu-bar state machine layered on it.  nav_state_t is defined in
     gui_internal.h; the instance is the s_nav member of the bound context, reached through g_ctx, so
-    each context keeps its own cursor.  Movement resolves one frame deferred against `ref_rect`,
-    exactly as hover_win lags the cursor: the request is set at nav_new_frame, every item in the
-    scoped window registers through widget_behavior during emit, and the winner commits at the next
-    nav_new_frame.  gui_nav.c drives it; nav_item_register (gui_widget_core.c) is the per-item seam.
+    each context keeps its own cursor.  Movement is structural, not spatial: every item of the
+    scoped window records itself into the nav item list as it emits (with the region + line the
+    layout engine stamped when it placed it), and the next nav_new_frame resolves a move as index
+    math over that list -- one frame deferred, exactly as hover_win lags the cursor.  gui_nav.c
+    drives it; nav_item_register (gui_widget_core.c) is the per-item seam.
 ----------------------------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------------------------
@@ -259,7 +272,9 @@ item_flags_resolve( void )
 static void
 item_flags_chrome_reset( void )
 {
-    s_build.cur_item_flags = GUI_ITEM_NONE;
+    s_build.cur_item_flags  = GUI_ITEM_NONE;
+    s_build.nav_item_placed = false;   /* chrome is not an item to keyboard nav either: whatever
+                                          interacts past this seam lists as chrome (Tab-only) */
     draw_set_alpha( 1.0f );
     style_chrome_reset();   /* drop lingering next_style_* overrides; keep the push/pop stack */
     /* Chrome (window / child / dock backgrounds, title bars, borders) defaults to the window radius,
@@ -496,119 +511,8 @@ rect_hit( gui_rect_t r )
 /* rect_intersect (rect overlap) is a shared geometry helper defined in gui.c, ahead of the
    unity includes, so gui_emit_draw.c can use it for clip intersection too. */
 
-/*----------------------------------------------------------------------------------------------
-    nav_range_gap -- how far apart two 1-D intervals [a0,a1] and [b0,b1] are.
-
-    0 when they overlap (share any span at all), otherwise the distance between the nearest pair
-    of edges.  This is the one building block both axes of nav_score_dir are built from: it answers
-    "is B actually beside/ahead of A, or does it just happen to have a nearby center" using the
-    full extent of both rects rather than a single point.
-----------------------------------------------------------------------------------------------*/
-static f32
-nav_range_gap( f32 a0, f32 a1, f32 b0, f32 b1 )
-{
-    if ( b0 > a1 ) return b0 - a1;   /* B starts after A ends -- gap is the space between them */
-    if ( a0 > b1 ) return a0 - b1;   /* B ends before A starts -- gap the other way            */
-    return 0.0f;                     /* the intervals share some span -- no gap                */
-}
-
-/*----------------------------------------------------------------------------------------------
-    nav_score_dir -- directional-move cost from the current nav item (cur) to a candidate (cand)
-    along `dir`.  Lower wins; NAV_SCORE_REJECT means "not a valid target for this move at all."
-
-    THE CORE IDEA -- EDGES, NOT CENTERS.  Both the along-axis distance ("how far ahead is it") and
-    the cross-axis check ("is it actually in my row/column") are measured edge-to-edge via
-    nav_range_gap, never by comparing the two rects' center points.  Center-to-center distance was
-    tried first and repeatedly produced wrong answers for anything that isn't a small, row-sized
-    widget:
-
-      - A vertical scrollbar's track spans the FULL HEIGHT of its list, so its center sits in the
-        middle of the visible rows.  Under center-to-center scoring, whichever row happens to be
-        nearest that midpoint can score CLOSER to "Down" than the very next row actually is, and the
-        cursor jumps sideways onto the scrollbar mid-scroll.  Edge-based scoring fixes this for free:
-        the scrollbar's rect overlaps cur's row in Y (its top is above every row and its bottom is
-        below every row), so the edge-to-edge gap along the move axis is 0 or negative -- it is
-        REJECTED outright as "not ahead of me," the same way any other widget straddling cur's own
-        position would be. A tall, page-spanning widget is never "the next row"; only something that
-        starts after cur's own extent ends can be.
-      - The same logic is why the cross-axis checks below use nav_range_gap instead of center
-        distance: a checkbox seated flush left and a full-width slider on the row below it have very
-        different centers but their EXTENTS overlap (the checkbox's span is a subset of the slider's),
-        so the gap is correctly 0 -- they read as aligned regardless of how far apart their centers are.
-
-    Up/Down and Left/Right are still not mirrors of each other, because "the next row" and "the next
-    column" are not equally reliable concepts in a form: a row is a real, tight grouping (every
-    widget on it shares one Y band), but nothing guarantees two widgets are in the "same column" --
-    a checkbox's control track and a slider's can legitimately sit at different X even one row apart.
-
-      Up/Down:    no cross-axis requirement -- the nearest row (by edge gap) wins outright, full
-                  stop, whatever its X happens to be.  Cross axis (X) only breaks a tie between
-                  candidates that land in the exact same row (e.g. a same_line group), and even there
-                  it is measured as a range gap (0 for any X overlap) via NAV_TIE_EPS, a weight small
-                  enough to never outrank a genuine along-axis difference.  Requiring X overlap here
-                  would leave a real widget on the very next row unreachable whenever its control
-                  track doesn't happen to overlap cur's -- bumping a wall that isn't actually there.
-      Left/Right: cross-axis (Y) overlap is REQUIRED -- a candidate not sharing any Y with cur is
-                  rejected outright, no fallback, no matter how close it looks in raw distance.
-                  Without this, Right from a title bar button can leap into the window body because
-                  some unrelated content widget has a smaller raw X distance than the real next
-                  title-bar button, and Left run off the start of a row can snap to whatever has the
-                  smallest X anywhere in the window (e.g. a collapse button up in the title bar) --
-                  reading as a wild vertical jump instead of a horizontal move.  When nothing on the
-                  row qualifies, this function rejects every candidate and nav_commit_prev (gui_nav.c)
-                  falls back to the reading-order neighbor (tab_prev / tab_next) instead -- "run off
-                  this line" reads as "continue on the previous/next line," the same wrap a text
-                  cursor makes, rather than a spatial guess.
-
-    Reads only rects, so it is agnostic to the layout mode that produced them.
-----------------------------------------------------------------------------------------------*/
-
-#define NAV_SCORE_REJECT 3.0e38f    /* effectively +inf -- candidate is not a valid target for this move */
-#define NAV_TIE_EPS      1.0e-3f    /* negligible weight: only breaks a tie between candidates on the same row/column */
-
-static f32
-nav_score_dir( gui_rect_t cur, gui_rect_t cand, gui_dir_t dir )
-{
-    if ( dir == GUI_DIR_UP || dir == GUI_DIR_DOWN )
-    {
-        /* Along-axis distance is the gap between cur's near edge and cand's near edge, not their
-           centers -- see the nav_range_gap block above for why this specifically excludes a
-           full-height scrollbar (or any widget whose extent straddles cur's own position) from ever
-           reading as "the next row." <= 0 means cand overlaps cur's own Y extent or sits behind it. */
-        f32 prim = ( dir == GUI_DIR_UP ) ? ( cur.y - ( cand.y + cand.h ) )
-                                          : ( cand.y - ( cur.y + cur.h ) );
-        if ( prim <= 0.0f ) return NAV_SCORE_REJECT;
-
-        /* Tie-break only: 0 when the candidate shares any X with cur (prefer alignment), else the
-           X gap -- weighted down to NAV_TIE_EPS so it can only decide between candidates that landed
-           on (near enough) the same row, never override a real along-axis difference. */
-        f32 cross = nav_range_gap( cur.x, cur.x + cur.w, cand.x, cand.x + cand.w );
-        return prim + cross * NAV_TIE_EPS;
-    }
-
-    if ( dir == GUI_DIR_LEFT || dir == GUI_DIR_RIGHT )
-    {
-        f32 prim = ( dir == GUI_DIR_LEFT ) ? ( cur.x - ( cand.x + cand.w ) )
-                                            : ( cand.x - ( cur.x + cur.w ) );
-        if ( prim <= 0.0f ) return NAV_SCORE_REJECT;
-
-        /* Hard row-membership gate: reject anything that doesn't share Y with cur at all, rather
-           than letting a merely-closer-in-X widget from a different row win (see the function
-           comment's title-bar example). No fallback here on purpose -- nav_commit_prev picks up a
-           full reject with the Tab-order neighbor instead of guessing spatially. */
-        if ( nav_range_gap( cur.y, cur.y + cur.h, cand.y, cand.y + cand.h ) > 0.0f )
-            return NAV_SCORE_REJECT;
-
-        /* Tie-break only, for the rare case of multiple same-row candidates at (near enough) the
-           same X (e.g. differing row heights within one same_line group): prefer the one whose
-           center sits closest to cur's own row center. */
-        f32 ccy = cur.y + cur.h * 0.5f, ncy = cand.y + cand.h * 0.5f;
-        f32 cross = ( ncy < ccy ) ? ( ccy - ncy ) : ( ncy - ccy );
-        return prim + cross * NAV_TIE_EPS;
-    }
-
-    return NAV_SCORE_REJECT;
-}
+/* Directional moves are resolved structurally over the nav item list (gui_nav.c), not scored
+   over rects -- the geometric scorer that lived here (nav_score_dir) is gone with it. */
 
 /*----------------------------------------------------------------------------------------------
     Hardware cursor
@@ -733,6 +637,11 @@ ctx_new_frame( void )
     s_id_sp               = 0;       /* fresh id-scope stack; regions/push_id reseed it */
     s_build.wheel_used    = false;
     s_build.cur_viewport  = 0;       /* ambient viewport resets to primary each frame */
+
+    /* Fresh nav-stamp dispensers; nothing is placed until a layout cell is handed out. */
+    s_build.nav_region_seq  = 0;
+    s_build.nav_line_seq    = 0;
+    s_build.nav_item_placed = false;
 
     /* Popup nesting depth is rebuilt as popup_begin / popup_end run; the open set persists. */
     s_popup_begin_count = 0;

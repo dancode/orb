@@ -3,22 +3,32 @@
     runtime_service/gui/popup/gui_nav.c -- Keyboard navigation driver.
 
     The per-frame brain behind the nav cursor (s_nav.id, the persistent keyboard analogue of
-    hover_id).  Three jobs, run once per frame from gui_ctx_begin after the popup state settles:
+    hover_id).  Run once per frame from gui_ctx_begin after the popup state settles:
 
-      1. Commit the move resolved during the previous frame's emission (nav_commit_prev).  The
-         directional / Tab winner the items scored into the accumulator becomes the new nav_id --
-         the one-frame-deferred resolve, the same shape hover_win uses (a request this frame, the
-         geometry known only as items emit, the result applied next frame).
-      2. Translate this frame's keys into a fresh request: arrows -> a directional move, Tab ->
-         a linear move, Enter/Space -> activate, Esc/Left -> close a popup level, Ctrl+Tab ->
+      1. Translate this frame's keys into a request: arrows -> a directional move, Tab -> a
+         linear move, Enter/Space -> activate, Esc/Left -> close a popup level, Ctrl+Tab ->
          cycle the nav window, Alt -> enter the main menu bar.
+      2. Resolve the move STRUCTURALLY against the nav item list built during last frame's
+         emission (nav_finish): every item of the nav window recorded itself in emission order,
+         stamped with the region + line the layout engine placed it in.  Left/Right walk the
+         items of the current line ordinally and stop at its ends; Up/Down choose the target
+         line by band geometry over those structural lines (nearest beyond the cursor's row,
+         goal column breaking near-ties between parallel regions) and land under the remembered
+         goal column; Tab walks the whole list.  Geometry only ever compares whole lines the
+         layout engine really built -- never free rects -- so within a region the adjacent row
+         always wins and Up exactly undoes Down.  (The list is one frame old, the same deferral
+         hover_win runs on; the resolve itself happens on the keypress frame.)  An adoption arms
+         the scroll chase: a cursor landing outside its region's view scrolls into it
+         (nav_scroll_chase, gui_widget_core.c).
       3. Choose nav_win (nav_choose_window): the top open popup if any (popups capture nav exactly
          as popup_apply_modal steals hover_win), else the explicit target window, else the
          front-most normal window.
 
     The per-item half lives in nav_item_register (gui_widget_core.c), called from widget_behavior:
-    each item in nav_win records its rect, scores itself as a move candidate, and -- if it is the
-    nav cursor -- lights the focus ring and takes a synthesized click from an activation.
+    each item in nav_win appends itself to the list and -- if it is the nav cursor -- lights the
+    focus ring and takes a synthesized click from an activation.  Chrome (title-bar buttons,
+    scrollbars, dock tabs: anything not placed by a layout cell) lists as Tab-only; arrows
+    never land on it.
 
     Included by gui.c after gui_popup.c (so the popup stack + GUI_POPUP_Z_BASE are in scope)
     and before gui_frame.c (so gui_ctx_begin can call nav_new_frame).
@@ -145,61 +155,186 @@ nav_cycle_window( i32 dir )
 }
 
 /*----------------------------------------------------------------------------------------------
-    nav_commit_prev -- apply the move resolved by last frame's emission into nav_id.
-
-    Checked in priority order, first match wins:
-      1. A directional move (arrow key) found a real spatial neighbor (nav_score_dir, gui_ctx.c) --
-         adopt it and carry its rect forward as the next scoring origin.
-      2. A directional move along Left/Right found NO spatial neighbor on the current row -- fall
-         back to the reading-order neighbor (Tab's own tab_prev/tab_next) instead of guessing.
-      3. An explicit Tab / Shift+Tab request -- walk emission order, wrapping through the first item.
-      4. Neither -- nav_id is left untouched; see the recovery clause at the bottom for the one case
-         where it still changes (the cursor item vanished from this window entirely).
+    Nav list resolvers -- structural movement over the item list built during last frame's
+    emission (see the file header).  All of them run at request time from nav_finish, mutate
+    s_nav.id, and leave the request fields (move_dir / activate) live for the emission-time
+    consumers (menu_begin's Right-opens-submenu, the activation in nav_item_register).
 ----------------------------------------------------------------------------------------------*/
 
-static void
-nav_commit_prev( void )
+/* Index of id in the list, or -1.  Linear: the list is small and resolved once per keypress. */
+static i32
+nav_list_find( gui_id_t id )
 {
-    /* Directional winner -> adopt it and carry its rect as the next scoring origin. */
-    if ( s_nav.move_dir >= 0 && s_nav.move_best != GUI_ID_NONE )
+    if ( id == GUI_ID_NONE ) return -1;
+    for ( u32 i = 0; i < s_nav.item_count; ++i )
+        if ( s_nav.items[ i ].id == id )
+            return (i32)i;
+    return -1;
+}
+
+/* Adopt items[i] as the nav cursor.  A vertical step keeps the goal column (so a run of Up/Down
+   holds its lane); any other adoption clears it -- the next vertical run re-anchors at the item.
+   Every adoption arms the scroll chase: if the item sits outside its region's view when it
+   registers, the region scrolls it in (nav_scroll_chase). */
+static void
+nav_adopt( i32 i, bool vertical )
+{
+    s_nav.id           = s_nav.items[ i ].id;
+    s_nav.scroll_chase = true;
+    if ( !vertical )
+        s_nav.goal_set = false;
+}
+
+/* Tab / Shift+Tab: the next / previous item in emission order, wrapping.  Walks the whole list --
+   chrome included, so title-bar buttons and scrollless chrome stay keyboard-reachable. */
+static void
+nav_resolve_tab( void )
+{
+    i32 n = (i32)s_nav.item_count;
+    if ( n == 0 ) return;
+
+    i32 cur = nav_list_find( s_nav.id );
+    i32 next;
+    if ( cur < 0 )
+        next = ( s_nav.tab > 0 ) ? 0 : n - 1;
+    else
     {
-        s_nav.id       = s_nav.move_best;
-        s_nav.ref_rect = s_nav.move_rect;
-        s_nav.id_seen  = true;
+        next = cur + ( ( s_nav.tab > 0 ) ? 1 : -1 );
+        if ( next < 0 )  next = n - 1;
+        if ( next >= n ) next = 0;
     }
-    /* Left/Right with no row-mate (nav_score_dir rejected everything -- ran off the start/end of the
-       row): continue in reading order instead of guessing spatially, the same wrap a text cursor makes
-       running off one line onto the next -- Left is "the previous widget," Right is "the next widget,"
-       via the same tab_prev/tab_next this frame's emission already tracked for Tab itself. */
-    else if ( s_nav.move_dir == GUI_DIR_LEFT && s_nav.tab_prev != GUI_ID_NONE )
+    nav_adopt( next, false );
+}
+
+/* The item on line (region, line) whose x-span sits best under the goal column: a span containing
+   it wins (distance 0), else the nearest edge.  Returns a list index, or -1 for an empty line. */
+static i32
+nav_line_pick( u32 region, u32 line, f32 goal )
+{
+    i32 best   = -1;
+    f32 best_d = 0.0f;
+    for ( u32 i = 0; i < s_nav.item_count; ++i )
     {
-        s_nav.id      = s_nav.tab_prev;
-        s_nav.id_seen = true;
+        const gui_nav_item_t* it = &s_nav.items[ i ];
+        if ( it->chrome || it->region != region || it->line != line ) continue;
+
+        f32 x0 = it->rect.x, x1 = it->rect.x + it->rect.w;
+        f32 d  = ( goal < x0 ) ? ( x0 - goal ) : ( ( goal > x1 ) ? ( goal - x1 ) : 0.0f );
+        if ( best < 0 || d < best_d ) { best = (i32)i; best_d = d; }
     }
-    else if ( s_nav.move_dir == GUI_DIR_RIGHT && s_nav.tab_next != GUI_ID_NONE )
+    return best;
+}
+
+/* Near-tie window for the vertical line choice: two candidate lines whose edge gaps differ by
+   less than this read as "the same row" (parallel regions never align to the pixel), and the
+   goal column decides between them instead of the raw gap. */
+#define NAV_GAP_TIE  8.0f
+
+/* Band slack: a candidate line must start at or past the cursor line's far edge to count as
+   "beyond" it; one pixel of tolerance absorbs rounding so rows that butt exactly still qualify. */
+#define NAV_BAND_EPS 1.0f
+
+/* Directional move.  Left/Right are ordinal: the neighboring placed item on the same line, and a
+   line end is a wall -- a horizontal move can never read as a vertical jump.  Up/Down choose the
+   target LINE geometrically over the structural lines the layout engine built: every line whose
+   y band sits strictly beyond the cursor line's competes by edge gap, with the goal column
+   breaking near-ties -- so within one region the adjacent row always wins (rows stack; the gap is
+   decisive and Down then Up returns to the start), a child's rows slot in where the child
+   visually sits, and side-by-side regions whose rows share heights resolve to the region the
+   goal column is over rather than whichever emitted later.  The landing item within the target
+   line is the goal-column pick. */
+static void
+nav_resolve_move( void )
+{
+    if ( s_nav.item_count == 0 ) return;
+
+    /* No cursor in the list (fresh engage, stale id, cursor parked on chrome by a click): land on
+       the first placed item rather than stepping from nowhere. */
+    i32 cur = nav_list_find( s_nav.id );
+    if ( cur >= 0 && s_nav.items[ cur ].chrome ) cur = -1;
+    if ( cur < 0 )
     {
-        s_nav.id      = s_nav.tab_next;
-        s_nav.id_seen = true;
-    }
-    /* Tab winner (emission order; wraps through the first item). */
-    else if ( s_nav.tab != 0 )
-    {
-        gui_id_t t = ( s_nav.tab > 0 )
-            ? ( s_nav.tab_next != GUI_ID_NONE ? s_nav.tab_next : s_nav.tab_first )
-            : ( s_nav.tab_prev != GUI_ID_NONE ? s_nav.tab_prev : s_nav.tab_first );
-        if ( t != GUI_ID_NONE ) s_nav.id = t;
+        for ( u32 i = 0; i < s_nav.item_count; ++i )
+            if ( !s_nav.items[ i ].chrome ) { nav_adopt( (i32)i, false ); return; }
+        return;
     }
 
-    /* No directional move this commit: keep the scoring origin pinned to where the cursor item
-       actually sat this past frame (it may have scrolled / the window moved). */
-    if ( s_nav.move_dir < 0 && s_nav.id_seen )
-        s_nav.ref_rect = s_nav.self_rect;
+    const gui_nav_item_t c = s_nav.items[ cur ];   /* adoption rewrites s_nav.id only; copy for clarity */
 
-    /* First-focus / recovery: nav is engaged but its cursor item was not emitted (window just
-       focused, popup opened, list shrank) -- land on the first eligible item in nav_win. */
-    if ( s_nav.active && !s_nav.id_seen && s_nav.move_best == GUI_ID_NONE
-         && s_nav.tab_first != GUI_ID_NONE )
-        s_nav.id = s_nav.tab_first;
+    if ( s_nav.move_dir == GUI_DIR_LEFT || s_nav.move_dir == GUI_DIR_RIGHT )
+    {
+        i32 step = ( s_nav.move_dir == GUI_DIR_LEFT ) ? -1 : 1;
+        for ( i32 i = cur + step; i >= 0 && i < (i32)s_nav.item_count; i += step )
+        {
+            if ( s_nav.items[ i ].chrome ) continue;
+            if ( s_nav.items[ i ].region != c.region || s_nav.items[ i ].line != c.line )
+                break;                       /* ran off the line -- wall */
+            nav_adopt( i, false );
+            return;
+        }
+        return;
+    }
+
+    /* Vertical: anchor the goal column on the first step of a run. */
+    bool down = ( s_nav.move_dir == GUI_DIR_DOWN );
+
+    if ( !s_nav.goal_set )
+    {
+        s_nav.goal_x   = c.rect.x + c.rect.w * 0.5f;
+        s_nav.goal_set = true;
+    }
+
+    /* The cursor line's y band -- the union of its items' extents, so a short label and a tall
+       control on one row read as one band and neither can be "beyond" its own row. */
+    f32 band_y0 = c.rect.y, band_y1 = c.rect.y + c.rect.h;
+    for ( u32 i = 0; i < s_nav.item_count; ++i )
+    {
+        const gui_nav_item_t* it = &s_nav.items[ i ];
+        if ( it->chrome || it->region != c.region || it->line != c.line ) continue;
+        if ( it->rect.y < band_y0 )              band_y0 = it->rect.y;
+        if ( it->rect.y + it->rect.h > band_y1 ) band_y1 = it->rect.y + it->rect.h;
+    }
+
+    /* Target line: every placed item strictly beyond the band competes for its line by edge gap;
+       within the near-tie window the goal-column x-overlap decides (see NAV_GAP_TIE above). */
+    u32  t_region = 0, t_line = 0;
+    f32  t_gap    = 0.0f;
+    bool t_ov     = false;
+    bool found    = false;
+    for ( u32 i = 0; i < s_nav.item_count; ++i )
+    {
+        const gui_nav_item_t* it = &s_nav.items[ i ];
+        if ( it->chrome ) continue;
+        if ( it->region == c.region && it->line == c.line ) continue;   /* our own line */
+
+        f32 iy0 = it->rect.y, iy1 = it->rect.y + it->rect.h;
+        f32 gap;
+        if ( down ) { if ( iy0 < band_y1 - NAV_BAND_EPS ) continue; gap = iy0 - band_y1; }
+        else        { if ( iy1 > band_y0 + NAV_BAND_EPS ) continue; gap = band_y0 - iy1; }
+        if ( gap < 0.0f ) gap = 0.0f;
+
+        bool ov = ( s_nav.goal_x >= it->rect.x && s_nav.goal_x <= it->rect.x + it->rect.w );
+
+        bool better;
+        if      ( !found )                       better = true;
+        else if ( gap < t_gap - NAV_GAP_TIE )    better = true;           /* clearly nearer  */
+        else if ( gap > t_gap + NAV_GAP_TIE )    better = false;          /* clearly farther */
+        else if ( ov != t_ov )                   better = ov;             /* near-tie: goal column */
+        else                                     better = ( gap < t_gap );
+        if ( better )
+        {
+            t_region = it->region;
+            t_line   = it->line;
+            t_gap    = gap;
+            t_ov     = ov;
+            found    = true;
+        }
+    }
+    if ( !found ) return;   /* nothing beyond -- first / last line of the window, a wall */
+
+    i32 pick = nav_line_pick( t_region, t_line, s_nav.goal_x );
+    if ( pick >= 0 )
+        nav_adopt( pick, true );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -255,16 +390,17 @@ nav_menu_ascend_to_bar( void )
     s_nav.move_dir = -1;                  /* consume the move that triggered the ascend */
 }
 
-/* Bar/menu key handling while in menu-bar mode.  `first_prev` is last frame's first emitted item,
-   used to detect "Up at the top of a dropdown".  Left/Right at the bar fall through to the scorer
-   (the bar is horizontal), and Right inside a menu is handled by menu_begin (open submenu). */
+/* Bar/menu key handling while in menu-bar mode.  `first_prev` is last frame's first placed item,
+   used to detect "Up at the top of a dropdown".  Left/Right at the bar fall through to the list
+   resolver (the bar entries share one line), and Right inside a menu is handled by menu_begin
+   (open submenu). */
 static void
 nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
 {
     if ( !s_nav.in_menus )
     {
         /* On the bar: the highlighted entry drops its menu (menu_begin).  Down / Enter descend into
-           it; Esc leaves menu mode.  Left/Right stay as a directional move for the scorer. */
+           it; Esc leaves menu mode.  Left/Right stay as a directional move for the list resolver. */
         if ( down || s_nav.activate )
         {
             if ( s_popup_open_count > 0 )      /* a menu is dropped -> step into it */
@@ -304,13 +440,32 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
             }
             s_nav.move_dir = -1;
         }
-        /* Down / Up (mid-list) move via the scorer; Right opens a submenu in menu_begin; Enter
-           activates through the synthesized click. */
+        /* Down / Up (mid-list) move via the list resolver; Right opens a submenu in menu_begin;
+           Enter activates through the synthesized click. */
     }
 }
 
 /*----------------------------------------------------------------------------------------------
-    nav_new_frame -- the driver: commit, read keys into a fresh request, choose nav_win.
+    nav_finish -- the shared tail of nav_new_frame: resolve this frame's surviving move request
+    against last frame's item list (the menu / popup handlers above it may have consumed the move
+    first), then open a fresh list for the emission about to run and scope nav to its window.
+    Every exit path of nav_new_frame funnels through here so the list always resets exactly once.
+----------------------------------------------------------------------------------------------*/
+
+static void
+nav_finish( void )
+{
+    if ( s_nav.tab != 0 )
+        nav_resolve_tab();
+    else if ( s_nav.move_dir >= 0 )
+        nav_resolve_move();
+
+    s_nav.item_count = 0;   /* fresh list; this frame's items append during emission */
+    nav_choose_window();
+}
+
+/*----------------------------------------------------------------------------------------------
+    nav_new_frame -- the driver: recover, read keys into a request, resolve, choose nav_win.
     Called from gui_ctx_begin after popup_close_check / popup_apply_modal / window_raise_on_press.
 ----------------------------------------------------------------------------------------------*/
 
@@ -321,25 +476,31 @@ nav_new_frame( void )
                                                   s_nav.win stays GUI_ID_NONE, so nav_item_register
                                                   never matches a window and mouse input is untouched */
 
-    nav_commit_prev();
+    /* One-shot: only an adoption made THIS frame (recovery below, or a resolver in nav_finish)
+       chases the cursor into view during the emission that follows. */
+    s_nav.scroll_chase = false;
 
-    /* Last frame's first emitted item -- captured before the reset for the "Up at the top of a
+    /* First-focus / recovery: nav is engaged but its cursor item was not emitted last frame
+       (window just focused, popup opened, list shrank) -- land on the first placed item that was. */
+    if ( s_nav.active && !s_nav.id_seen && s_nav.first_item != GUI_ID_NONE )
+    {
+        s_nav.id           = s_nav.first_item;
+        s_nav.goal_set     = false;
+        s_nav.scroll_chase = true;
+    }
+
+    /* Last frame's first placed item -- captured before the reset for the "Up at the top of a
        dropdown returns to the bar" test. */
-    gui_id_t first_prev = s_nav.tab_first;
+    gui_id_t first_prev = s_nav.first_item;
 
-    /* Reset the per-frame request + scoring accumulator (kept intact until here so the commit
-       above could read last frame's result). */
+    /* Reset the per-frame request + registration bookkeeping.  The item list itself stays intact:
+       this frame's keys resolve against it in nav_finish, which then opens the fresh list. */
     s_nav.move_dir   = -1;
     s_nav.tab        = 0;
     s_nav.activate   = false;
     s_nav.mnemonic   = 0;
-    s_nav.move_best  = GUI_ID_NONE;
-    s_nav.move_score = NAV_SCORE_REJECT;
     s_nav.id_seen    = false;
-    s_nav.tab_first  = GUI_ID_NONE;
-    s_nav.tab_prev   = GUI_ID_NONE;
-    s_nav.tab_next   = GUI_ID_NONE;
-    s_nav.tab_take   = false;
+    s_nav.first_item = GUI_ID_NONE;
 
     /* A move makes the mouse the active instrument: it drops nav_highlight, so the nav item loses
        its fill (the ring stays, via nav_active) and the mouse hover regains the fill -- the ring
@@ -378,7 +539,7 @@ nav_new_frame( void )
        which releases focus on Enter/Esc -- gui_text_edit.c). */
     if ( s_interaction.focused_id != GUI_ID_NONE )
     {
-        nav_choose_window();
+        nav_finish();
         return;
     }
 
@@ -390,7 +551,7 @@ nav_new_frame( void )
     if ( ctrl && s_io.keys_pressed[ APP_KEY_TAB ] )
     {
         nav_cycle_window( shift ? -1 : +1 );
-        nav_choose_window();
+        nav_finish();
         return;
     }
 
@@ -476,7 +637,7 @@ nav_new_frame( void )
         }
     }
 
-    nav_choose_window();
+    nav_finish();
 }
 
 /*----------------------------------------------------------------------------------------------

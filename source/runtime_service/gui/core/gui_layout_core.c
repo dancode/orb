@@ -294,10 +294,11 @@ layout_modifiers_reset( layout_frame_t* f )
 static void
 layout_clear( layout_frame_t* f )
 {
-    f->mode        = GUI_MODE_NONE;
-    f->lay_ncols   = 0;             /* no template -- first header resolves one */
-    f->lay_row_h   = 0.0f;
-    f->gap_pending = false;         /* fresh region: the first line opens flush at the pen */
+    f->mode         = GUI_MODE_NONE;
+    f->lay_ncols    = 0;            /* no template -- first header resolves one */
+    f->lay_row_h    = 0.0f;
+    f->gap_pending  = false;        /* fresh region: the first line opens flush at the pen */
+    f->nav_line_pin = false;        /* fresh content: nav lines dispense normally again */
     layout_modifiers_reset( f );
     layout_template_reset( f );
 }
@@ -338,6 +339,11 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     f->content_max_x = f->content_x;   /* seed the highwater at the origin corner -> an empty */
     f->content_max_y = f->content_y;   /* body measures 0 on both axes (premeasure sentinel)  */
     f->content_y_max = f->outer.y + f->outer.h - pad.b - f->sb_h;
+
+    /* Fresh nav coordinate: this content column is one container to the keyboard (a window body,
+       a child box, a re-inset pad).  The first line dispenses when the first line opens. */
+    f->nav_region = ++s_build.nav_region_seq;
+    f->nav_line   = 0;
 
     layout_clear( f );   /* content re-seeded -> the template opens undeclared; declare a header */
 }
@@ -410,6 +416,8 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
     if ( grid_h < 0.0f ) grid_h = 0.0f;
     layout_resolve_tracks( tracks, f->lay_nrows, grid_top, grid_h, f->lay_gap_y,
                            f->rowy, f->rowh );
+
+    f->nav_line = ++s_build.nav_line_seq;   /* grid row 0 opens as a fresh nav line */
 }
 
 /* Resolve one cell's horizontal box -- the fit-then-align sequence every cell placement (flow or
@@ -447,7 +455,12 @@ grid_next_rect( layout_frame_t* f, f32 natural_w )
     u32        c  = f->col, rr = f->row;
     gui_rect_t r  = cell_fit_resolve( f, f->cellx[ c ], f->cellw[ c ], natural_w, f->rowy[ rr ], f->rowh[ rr ] );
 
-    if ( ++f->col >= f->lay_ncols ) { f->col = 0; ++f->row; }   /* next slot, row-major */
+    if ( ++f->col >= f->lay_ncols )   /* next slot, row-major; a new row is a new nav line */
+    {
+        f->col = 0;
+        ++f->row;
+        f->nav_line = ++s_build.nav_line_seq;
+    }
     return r;
 }
 
@@ -462,6 +475,13 @@ static gui_rect_t
 line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
 {
     bool horiz = ( f->mode != GUI_MODE_PACK ) || ( f->pack_dir == GUI_PACK_HORIZONTAL );
+
+    /* Nav line: a placement onto a closed line opens a new one; a strip (vertical pack) runs its
+       items down the cross axis, so to the keyboard each item is its own line -- Up/Down step
+       them -- while a bar / same_line continuation keeps every item on the one it reopened.
+       A pinned line (a table cell: the host stamped the whole row's) is never re-dispensed. */
+    if ( !f->nav_line_pin && ( !f->line_open || !horiz ) )
+        f->nav_line = ++s_build.nav_line_seq;
 
     f->line_open = true;   /* self-heal: a pen placement always continues the current line */
 
@@ -508,6 +528,8 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
         f->line_cross = layout_next_y( f );     /* the gap owed above is applied here */
         f->line_ext   = ( f->lay_row_h > 0.0f ) ? f->lay_row_h : h;
         f->line_open  = true;
+        if ( !f->nav_line_pin )                     /* a fresh flow row is a fresh nav line -- */
+            f->nav_line = ++s_build.nav_line_seq;   /* unless a table pinned the row's        */
     }
 
     u32        c = f->col;
@@ -571,6 +593,14 @@ widget_next_rect_w( f32 natural_w, f32 h )
     {
         r = line_place_cell( f, natural_w, h );    /* the next template cell */
     }
+
+    /* Latch the item's structural nav coordinate for widget_behavior: which region and line the
+       cell belongs to.  Latched (not one-shot) on purpose -- a widget that interacts in several
+       parts from one cell (a numeric's sub-fields) lists each part as a same-line sibling.
+       item_flags_chrome_reset drops it at the chrome seams. */
+    s_build.nav_item_region = f->nav_region;
+    s_build.nav_item_line   = f->nav_line;
+    s_build.nav_item_placed = true;
 
     DBG_LAYOUT( r );
     return r;
