@@ -44,6 +44,18 @@ cmd_alias_exists( const char* name )
     return alias_find( name ) != NULL;
 }
 
+u32
+cmd_alias_count( void )
+{
+    return s_alias_count;
+}
+
+const char*
+cmd_alias_name( u32 index )
+{
+    return ( index < s_alias_count ) ? s_aliases[ index ].name : "";
+}
+
 const char*
 cmd_alias_value( const char* name )
 {

@@ -294,6 +294,9 @@ cmd_cvarinfo( int argc, char** argv )
         case CVAR_INT:      con_printf( "  Default: %d\n", cv->i.reset ); break;
         case CVAR_FLOAT:    con_printf( "  Default: %g\n", cv->f.reset ); break;
         case CVAR_STR:      con_printf( "  Default: %s\n", cvar_get_string_from_id( cv, cv->s.reset ) ); break;
+        case CVAR_BUF:      con_printf( "  Default: %s\n", string_pool_get( &g_cvar_string_pool, cv->w.reset ) ); break;
+        case CVAR_REF:      con_printf( "  Default: %s (read-only)\n", string_pool_get( &g_cvar_string_pool, cv->r.value ) ); break;
+        // CVAR_USR has no reset value (see cvar_reset) -- nothing to show.
         default: break;
     }
 

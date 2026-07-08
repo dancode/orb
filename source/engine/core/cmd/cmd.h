@@ -141,6 +141,10 @@ void        cmd_write_quoted        ( void* file, const char* str );
                                     /* True if a command alias with this name exists */
 bool        cmd_alias_exists        ( const char* name );
 
+                                    /* Defined alias count / name by index (tab-completion) */
+u32         cmd_alias_count         ( void );
+const char* cmd_alias_name          ( u32 index );
+
                                     /* Alias body text, or NULL if `name` is not an alias.
                                        Last resolution step in cmd_execute_string, after
                                        registered commands and cvars. */

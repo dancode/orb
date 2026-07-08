@@ -219,6 +219,14 @@ con_complete( const char* prefix, const char** out_names, u32 max )
             out_names[ n++ ] = name;
     }
 
+    const u32 alias_total = cmd_alias_count();
+    for ( u32 i = 0; i < alias_total && n < max; ++i )
+    {
+        const char* name = cmd_alias_name( i );
+        if ( cvar_str_icmp_prefix( name, prefix ) )
+            out_names[ n++ ] = name;
+    }
+
     return n;
 }
 
