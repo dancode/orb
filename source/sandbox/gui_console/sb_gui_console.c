@@ -191,7 +191,20 @@ console_key_hook( u32 key, bool ctrl, bool shift, bool repeat, void* user )
 static void
 show_console( f32 display_w )
 {
-    gui()->region_begin( "##console", 0.0f, 0.0f, display_w, -1.0f,
+    /* Two fixed-rect regions instead of one stacked column: the scrollback's row count and
+       indicator widget never change, but if they ever did, a shared stack would shove the
+       input line below by however much the scrollback grew or shrank.  Pinning the input
+       region's y to a constant (hist_h) makes it immune to anything the scrollback region
+       emits -- it can only move if hist_h itself changes. */
+    /* gui()->text() rows are only font_char_h() tall (text_h of a single line), but separator /
+       separator_text / input_text reserve a full padded WIDGET_H row (calc_row adds that
+       padding back in) -- line_h() alone under-sizes those rows and clips them. */
+    const f32 text_row_h   = gui()->text_h( " " );
+    const f32 widget_row_h = gui()->calc_row( text_row_h );
+    const f32 hist_h       = text_row_h * CONSOLE_ROWS + widget_row_h;    // rows + indicator row
+    const f32 input_h      = widget_row_h;
+
+    gui()->region_begin( "##console_scrollback", 0.0f, 0.0f, display_w, hist_h,
                          GUI_WIN_NOSCROLL | GUI_WIN_REGION_BG );
     gui()->stack();
 
@@ -219,14 +232,22 @@ show_console( f32 display_w )
 
     /* separator_text and separator both consume the same WIDGET_H cell (unlike text_disabled,
        which is only font_char_h() tall) -- switching between them here keeps this row's height
-       constant across scroll states, so the input line below never shifts as you scroll. */
+       constant across scroll states. */
     if ( s_view_offset > 0 )
         gui()->separator_text( "^ ^ ^  (PageDown for live tail)  ^ ^ ^" );
     else
         gui()->separator();
 
-    /* Input line.  set_keyboard_focus queues focus for the next focusable widget: on open it
-       was requested last frame, after Enter it is requested below for the coming frame. */
+    gui()->region_end();
+
+    /* Input line: its own region, pinned at hist_h -- a constant, not the scrollback's
+       emitted content height. */
+    gui()->region_begin( "##console_input", 0.0f, hist_h, display_w, input_h,
+                         GUI_WIN_NOSCROLL | GUI_WIN_REGION_BG );
+    gui()->stack();
+
+    /* set_keyboard_focus queues focus for the next focusable widget: on open it was requested
+       last frame, after Enter it is requested below for the coming frame. */
     if ( s_focus_pending )
     {
         gui()->set_keyboard_focus();
