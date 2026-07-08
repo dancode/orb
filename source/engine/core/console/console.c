@@ -8,7 +8,6 @@
     cvar_* / cmd_* declarations are visible.
 
 ==============================================================================================*/
-
 /*==============================================================================================
 
     Scrollback
@@ -174,6 +173,11 @@ con_ingest( const char* line )
 bool
 con_exec( const char* line )
 {
+    // Bypasses the deferred command buffer entirely for a registered command or cvar
+    // get/set -- runs right here.  An alias or "exec" is the one exception: its body
+    // still goes through cmd_queue_front, so it only runs once something later calls
+    // cmd_pump.  See the con_exec contract note in console.h before relying on this
+    // for anything beyond a single command or cvar.
     const char* scan = con_ingest( line );
     return scan ? cmd_execute_string( scan ) : false;
 }

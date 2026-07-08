@@ -342,4 +342,5 @@ cvar_register_u( const char* name, const char* value )
     return cv;
 }
 
+/*============================================================================================*/
 // clang-format on

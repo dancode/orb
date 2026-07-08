@@ -66,8 +66,15 @@ const char* con_line_get            ( u32 index );
     Input submission
 ==============================================================================================*/
 
-                                    /* Echo, record to history, execute IMMEDIATELY via
-                                       cmd_execute_string.  Returns true if handled. */
+                                    /* Echo, record to history, dispatch ONE statement via
+                                       cmd_execute_string: no ';' splitting, no "wait", and it
+                                       never touches the deferred command buffer -- a registered
+                                       command runs its fn right here, a cvar get/set applies
+                                       right here.  The one exception is an alias or "exec": that
+                                       still goes through cmd_queue_front, so its body only runs
+                                       once something later calls cmd_pump.  Front ends that need
+                                       arbitrary input (aliases included) to actually run should
+                                       use con_submit instead.  Returns true if handled. */
 bool        con_exec                ( const char* line );
 
                                     /* Echo, record to history, QUEUE via cmd_queue -- runs at
