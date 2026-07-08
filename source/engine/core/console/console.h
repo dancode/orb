@@ -62,6 +62,19 @@ u32         con_line_count          ( void );
                                     /* Retained line by index; 0 = oldest retained */
 const char* con_line_get            ( u32 index );
 
+                                    /* Ever-incrementing count of lines committed since startup
+                                       (NOT capped at CON_LINE_CAP, NOT a con_line_get index).
+                                       A front end that appends rather than redrawing from
+                                       scratch each poll -- log tail, network console, editor
+                                       output panel -- stashes this value and diffs against it
+                                       later to find how many lines are genuinely new, since
+                                       con_line_count() alone can't distinguish "still full at
+                                       the cap" from "the ring wrapped and dropped old lines".
+                                       con_clear() resets this to 0 along with the scrollback,
+                                       so a diffing front end must treat a decrease as "cleared,
+                                       resync" rather than subtracting (which would underflow). */
+u32         con_line_total          ( void );
+
 /*==============================================================================================
     Input submission
 ==============================================================================================*/

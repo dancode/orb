@@ -148,6 +148,7 @@ const core_api_t g_core_api_struct = {
 
     .con_line_count     = con_line_count,
     .con_line_get       = con_line_get,
+    .con_line_total     = con_line_total,
 
     .con_history_count  = con_history_count,
     .con_history_get    = con_history_get,

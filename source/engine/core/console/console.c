@@ -88,6 +88,12 @@ con_line_count( void )
     return ( s_con_line_total < CON_LINE_CAP ) ? s_con_line_total : CON_LINE_CAP;
 }
 
+u32
+con_line_total( void )
+{
+    return s_con_line_total;
+}
+
 const char*
 con_line_get( u32 index )
 {
