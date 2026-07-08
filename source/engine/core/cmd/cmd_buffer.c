@@ -13,6 +13,22 @@ static char s_cmd_text[ CMD_BUF_CAP ];    // pending command text
 static u32  s_cmd_len  = 0;               // bytes pending
 static u32  s_cmd_wait = 0;               // frames to defer before pumping resumes
 
+#define CMD_EXEC_MAX_PER_PUMP 16          // guards a self-referential "exec" from looping all frame
+static u32 s_exec_calls = 0;              // "exec" invocations this pump cycle; reset in cmd_pump
+
+/* Called by cmd_cmd_exec before it opens a file.  There's no true call-stack recursion here
+   (exec queues text and returns; the requeued statement fires on a later pump iteration), so
+   this bounds repeated exec-of-exec within one frame instead of a depth. */
+
+static bool
+cmd_exec_budget_take( void )
+{
+    if ( s_exec_calls >= CMD_EXEC_MAX_PER_PUMP )
+        return false;
+    s_exec_calls++;
+    return true;
+}
+
 /*============================================================================================*/
 /* Append text to the end of the buffer; a '\n' terminator is added if missing. */
 
@@ -95,9 +111,13 @@ cmd_queue_args( int argc, char** argv )
         else if ( len == 0 )
             continue;            // before the first '+': not ours
 
-        const bool quote = ( strchr( a, ' ' ) != NULL );
+        /* Quote if the token has a space, or a '"'/'\\' that would otherwise confuse
+           cmd_tokenize (e.g. a leading '"' would be misread as starting a quoted token). */
+        const bool quote = ( strpbrk( a, " \"\\" ) != NULL );
         const u32  alen  = ( u32 )strlen( a );
-        const u32  need  = alen + ( len ? 1u : 0u ) + ( quote ? 2u : 0u );
+
+        /* Reserve worst case: every byte could need a backslash escape, plus separator/quotes. */
+        const u32 need = ( quote ? alen * 2 : alen ) + ( len ? 1u : 0u ) + ( quote ? 2u : 0u );
         if ( len + need >= CMD_LINE_LEN )
             continue;            // overlong statement: drop the token
 
@@ -105,8 +125,16 @@ cmd_queue_args( int argc, char** argv )
             line[ len++ ] = ' ';
         if ( quote )
             line[ len++ ] = '"';
-        memcpy( line + len, a, alen );
-        len += alen;
+
+        /* Escape '"' and '\\' the same way cmd_write_quoted does, so the token round-trips
+           through cmd_tokenize exactly. */
+        for ( const char* p = a; *p; ++p )
+        {
+            if ( quote && ( *p == '"' || *p == '\\' ) )
+                line[ len++ ] = '\\';
+            line[ len++ ] = *p;
+        }
+
         if ( quote )
             line[ len++ ] = '"';
     }
@@ -159,7 +187,10 @@ cmd_buffer_extract( char* line, u32 line_size )
 
     u32 copy = stmt_end;
     if ( copy >= line_size )
+    {
+        con_printf( "cmd: statement exceeds %u bytes, truncated\n", line_size - 1 );
         copy = line_size - 1;    // overlong statements truncate
+    }
 
     memcpy( line, s_cmd_text, copy );
     line[ copy ] = '\0';
@@ -182,6 +213,8 @@ cmd_pump( void )
         s_cmd_wait--;
         return;
     }
+
+    s_exec_calls = 0;    // fresh exec allowance for this pump cycle
 
     char line[ CMD_LINE_LEN ];
 
@@ -226,8 +259,9 @@ cmd_cmd_wait( int argc, char** argv )
 static void
 cmd_buffer_init( void )
 {
-    s_cmd_len  = 0;
-    s_cmd_wait = 0;
+    s_cmd_len    = 0;
+    s_cmd_wait   = 0;
+    s_exec_calls = 0;
     cmd_register( "wait", cmd_cmd_wait, "Suspend buffered commands for N frames" );
 }
 

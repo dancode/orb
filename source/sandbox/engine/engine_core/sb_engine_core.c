@@ -153,6 +153,11 @@ core_test( void )
         con_exec( "hi" );                    // expect "Unknown command"
         con_exec( "unalias hi" );            // expect "not aliased"
 
+        /* Self-referential exec: must trip the per-pump budget with one clear message,
+           not spend the frame re-opening the file hundreds of times. */
+        con_exec( "exec test_selfref.cfg" );
+        cmd_pump();
+
         printf( "scrollback: %u lines, history: %u entries\n",
                 con_line_count(), con_history_count() );
 

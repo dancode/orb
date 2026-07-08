@@ -158,6 +158,12 @@ cmd_tokenize( char* text, char** argv, int max_args )
             *text++ = '\0';
     }
 
+    /* Hit the arg cap with real text still unparsed (not just trailing whitespace)? Warn --
+       those tokens are silently dropped rather than passed to the handler. */
+    while ( *text && isspace( ( unsigned char )*text ) ) text++;
+    if ( *text )
+        con_printf( "cmd: statement has more than %d tokens, extra arguments dropped\n", max_args );
+
     return argc;
 }
 
@@ -275,6 +281,13 @@ cmd_cmd_exec( int argc, char** argv )
     if ( argc < 2 )
     {
         con_printf( "Usage: exec <filename>\n" );
+        return;
+    }
+
+    if ( !cmd_exec_budget_take() )
+    {
+        con_printf( "exec: exceeded %d execs this frame, refusing '%s' (self-referential config?)\n",
+                    CMD_EXEC_MAX_PER_PUMP, argv[ 1 ] );
         return;
     }
 
