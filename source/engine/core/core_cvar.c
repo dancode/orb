@@ -6,18 +6,26 @@
 
 #include "engine/core/cvar/string_pool.h"
 #include "engine/core/cvar/string_pool.c"
+
 #include "engine/core/cvar/cvar.h"
-#include "engine/core/console/console.h"
-#include "engine/core/cmd/cmd.h"
+#include "engine/core/cvar/cvar_hash.c"
+#include "engine/core/cvar/cvar_priority.c"
 #include "engine/core/cvar/cvar_callback.c"
+#include "engine/core/cvar/cvar_register.c"
 #include "engine/core/cvar/cvar.c"
+#include "engine/core/cvar/cvar_cmd.c"
+
+#include "engine/core/cmd/cmd.h"
 #include "engine/core/cmd/cmd_buffer.c"
 #include "engine/core/cmd/cmd_bind.c"
 #include "engine/core/cmd/cmd_alias.c"
 #include "engine/core/cmd/cmd.c"
-#include "engine/core/cvar/cvar_cmd.c"
+
 #include "engine/core/cvar/cvar_config.c"
+
+#include "engine/core/console/console.h"
 #include "engine/core/console/console.c"
+
 #include "engine/core/test/test_core_cvar.c"
 
 /*==============================================================================================
