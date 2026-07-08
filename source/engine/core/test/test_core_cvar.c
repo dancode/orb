@@ -132,7 +132,7 @@ example_latched_cvars( void )
     printf( "Value after setting to 5 (latched): %s\n", cvar_get_value( "r_mode" ) );
 
     /* Value hasn't changed yet */
-    printf( "Is latched? %s\n", ( cv->flag & CVAR_LATCHED ) ? "yes" : "no" );
+    printf( "Is latched? %s\n", ( cv->mods & CVAR_LATCHED ) ? "yes" : "no" );
 
     /* Apply latched changes */
     cvar_apply_latched();

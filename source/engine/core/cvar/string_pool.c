@@ -62,7 +62,11 @@ string_pool_exit( string_pool_t* pool )
 }
 
 /*============================================================================================*/
-/* Ensure pool has capacity for allocation, returns current used offset */
+/* Ensure pool has capacity for allocation, returns the offset the allocation will start at
+   (i.e. pool->used as of the call, BEFORE any growth). Growth only touches pool->data/capacity
+   -- pool->used is the caller's to advance once it has written its bytes at the returned
+   offset. Callers must read the returned offset, not re-read pool->used afterward, and must
+   align pool->used themselves before calling if they need an aligned allocation. */
 
 u32
 string_pool_ensure( string_pool_t* pool, u32 alloc_size )
@@ -132,6 +136,10 @@ string_pool_push( string_pool_t* pool, const char* str )
 u32
 string_pool_reserve( string_pool_t* pool, u32 size )
 {
+    /* Align entry point the same way string_pool_push does -- callers may interleave
+       push/reserve, so reserve cannot assume pool->used already sits on a boundary. */
+    pool->used = string_pool_align_up( pool->used );
+
     u32 offset = string_pool_ensure( pool, size );
     memset( pool->data + pool->used, 0, size );
     pool->used += size;

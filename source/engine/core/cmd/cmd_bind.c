@@ -116,7 +116,9 @@ cmd_bind_write_config( void* file )
             continue;
 
         const char* str = string_pool_get( &s_bind_pool, s_bind_off[ key ] );
-        fprintf( f, "bind %s \"%s\"\n", bind_key_name( key, num, sizeof( num ) ), str );
+        fprintf( f, "bind %s \"", bind_key_name( key, num, sizeof( num ) ) );
+        cmd_write_quoted( f, str );
+        fprintf( f, "\"\n" );
     }
 }
 

@@ -39,7 +39,8 @@
 
 typedef enum cvar_type_e
 {
-    /* Data Types - mutually exclusive base types */
+    /* Data Types - mutually exclusive base types. Stored directly (no mask needed);
+       compare with `cv->type == CVAR_BOOL`, not a bitwise AND. */
 
     CVAR_NONE           = 0,            // No type assigned
 
@@ -51,54 +52,53 @@ typedef enum cvar_type_e
     CVAR_REF            = BIT( 5 ),     // Read-only string reference
     CVAR_USR            = BIT( 6 ),     // User-created variable (via console)
 
+} cvar_type_t;
+
+/*==============================================================================================
+
+    Cvar Behavior Flags - Protection / lifetime / visibility / network. Independent of
+    cvar_type_t; stored in its own u16 field so it never overlaps the type discriminant.
+
+==============================================================================================*/
+
+typedef enum cvar_type_flag_e
+{
     /* Protection / Safety Flags */
 
-    CVAR_ROM            = BIT( 7 ),     // Read-Only Memory. Cannot be changed by the user.
-    CVAR_INIT           = BIT( 8 ),     // Can only be set from the command-line or startup .cfg.
-    CVAR_LATCH          = BIT( 9 ),     // Value is only applied after a specific event (e.g., restart).
-    CVAR_CHEAT          = BIT( 10 ),    // Can only be changed if cheats are enabled.
+    CVAR_ROM            = BIT( 0 ),     // Read-Only Memory. Cannot be changed by the user.
+    CVAR_INIT           = BIT( 1 ),     // Can only be set from the command-line or startup .cfg.
+    CVAR_LATCH          = BIT( 2 ),     // Value is only applied after a specific event (e.g., restart).
+    CVAR_CHEAT          = BIT( 3 ),     // Can only be changed if cheats are enabled.
 
- // CVAR_SANDBOXED      = BIT( 11 ),    // Isolated from write access by untrusted modules/scripts
- // CVAR_PROTECTED      = BIT( 12 ),    // Requires elevated permission / developer mode.
+ // CVAR_SANDBOXED      = BIT( 4 ),     // Isolated from write access by untrusted modules/scripts
+ // CVAR_PROTECTED      = BIT( 5 ),     // Requires elevated permission / developer mode.
 
     /* Lifetime Flags */
 
-    CVAR_RUNTIME        = BIT( 13 ),    // Not persisted, always cleared on restart (timescale, com_frametime)
-    CVAR_NORESTART      = BIT( 14 ),    // Value is protected from being reset on a restart.
-    CVAR_ARCHIVE        = BIT( 15 ),    // Saved to configuration files (e.g., config.cfg).
+    CVAR_RUNTIME        = BIT( 6 ),     // Not persisted, always cleared on restart (timescale, com_frametime)
+    CVAR_NORESTART      = BIT( 7 ),     // Value is protected from being reset on a restart.
+    CVAR_ARCHIVE        = BIT( 8 ),     // Saved to configuration files (e.g., config.cfg).
 
     /* Visibility Flags */
 
-    CVAR_DEVONLY        = BIT( 16 ),    // Hidden from retail/release builds.
-    CVAR_HIDDEN         = BIT( 17 ),    // Hidden from console auto-completion and `cvarlist`.
+    CVAR_DEVONLY        = BIT( 9 ),     // Hidden from retail/release builds.
+    CVAR_HIDDEN         = BIT( 10 ),    // Hidden from console auto-completion and `cvarlist`.
 
     /* Network Flags - for multiplayer synchronization */
 
-    CVAR_NETSYNC        = BIT( 18 ),    // This cvar needs to be synchronized between server and clients.
-    CVAR_USERINFO       = BIT( 19 ),    // Client info sent to the server on connect (e.g., name, skin).
-    CVAR_SERVERINFO     = BIT( 20 ),    // Server info sent to clients on connect (e.g., mapname, hostname).
-    CVAR_SYSTEMINFO     = BIT( 21 ),    // Server forces this value on all clients.
+    CVAR_NETSYNC        = BIT( 11 ),    // This cvar needs to be synchronized between server and clients.
+    CVAR_USERINFO       = BIT( 12 ),    // Client info sent to the server on connect (e.g., name, skin).
+    CVAR_SERVERINFO     = BIT( 13 ),    // Server info sent to clients on connect (e.g., mapname, hostname).
+    CVAR_SYSTEMINFO     = BIT( 14 ),    // Server forces this value on all clients.
 
-    /* System/Module Flags - for organization */
+    // BIT( 15 ) is the last bit that fits the u16 `flags` field - keep this enum at or under it.
 
-    // type flags so we don't waste memory on a category flag.
+} cvar_type_flag_t;
 
- // CVAR_ENGINE         = BIT( 22 ),    // Engine subsystem
- // CVAR_INPUT          = BIT( 23 ),    // Input subsystem
- // CVAR_RENDER         = BIT( 24 ),    // Renderer subsystem
- // CVAR_SOUND          = BIT( 25 ),    // Sound subsystem
- // CVAR_GUI            = BIT( 26 ),    // GUI subsystem
- // CVAR_TOOL           = BIT( 27 ),    // Tool subsystem
- // CVAR_GAME           = BIT( 28 ),    // Game logic subsystem
-
-} cvar_type_t;
-
-#define CVAR_TYPE_MASK ( CVAR_BOOL | CVAR_INT | CVAR_FLOAT | CVAR_STR | CVAR_BUF | CVAR_REF | CVAR_USR )
 #define CVAR_PROT_MASK ( CVAR_INIT | CVAR_ROM | CVAR_LATCH | CVAR_CHEAT )
 #define CVAR_LIFE_MASK ( CVAR_RUNTIME | CVAR_NORESTART | CVAR_ARCHIVE )
 #define CVAR_VIS_MASK  ( CVAR_DEVONLY | CVAR_HIDDEN )
 #define CVAR_NET_MASK  ( CVAR_NETSYNC | CVAR_USERINFO | CVAR_SERVERINFO | CVAR_SYSTEMINFO )
-#define CVAR_ALL       ( CVAR_TYPE_MASK | CVAR_PROT_MASK | CVAR_LIFE_MASK | CVAR_VIS_MASK | CVAR_NET_MASK )
 
 /*==============================================================================================
 
@@ -106,14 +106,14 @@ typedef enum cvar_type_e
 
 ==============================================================================================*/
 
-typedef enum cvar_flag_e
+typedef enum cvar_mod_e
 {
     CVAR_MODIFIED       = BIT( 0 ),     // Set when the cvar's value has been changed.
     CVAR_LATCHED        = BIT( 1 ),     // Has a value currently latched.
     CVAR_CALLBACK       = BIT( 2 ),     // Has a callback function that triggers on change.
     CVAR_USER_CREATED   = BIT( 3 ),     // Was at one point a user created variable.
 
-} cvar_flag_t;
+} cvar_mod_t;
 
 /*==============================================================================================
 
@@ -127,12 +127,13 @@ typedef enum cvar_flag_e
 ORB_ALIGNAS(8)                 // Ensure 8-byte alignment for performance
 typedef struct cvar_s
 {
+    u8          type;           // Base data type (cvar_type_t)
+    u8          mods;           // Runtime modification state (cvar_mod_t)
+    u16         flags;          // Behavior flags (cvar_type_flag_t)
+
     u16         name;           // String pool offset to variable name
     u16         desc;           // String pool offset to description
-    u16         flag;           // Runtime modification flags (cvar_flags_t)
     u16         callback_id;    // Callback index; 0xFFFF = none.
-
-    cvar_type_t type;           // Bitmask of flags from `cvar_type_t`.
 
     union
     {
@@ -226,16 +227,17 @@ void        cvar_compact_user_pool  ( void );
     s/w/r keep their original list/buffer/reference.
 ==============================================================================================*/
 
-                                    // Generic registration function
-cvar_t*     cvar_register_base      ( const char* name, const char* desc, u32 type );
+                                    // Generic registration function (always registers CVAR_USR)
+cvar_t*     cvar_register_base      ( const char* name, const char* desc, u32 flags );
 
-                                    // Type-specific registration functions
-cvar_t*     cvar_register_b         ( const char* name, const char* desc, bool value, u32 type );
-cvar_t*     cvar_register_i         ( const char* name, const char* desc, i32 val, i32 min, i32 max, u32 type );
-cvar_t*     cvar_register_f         ( const char* name, const char* desc, f32 val, f32 min, f32 max, u32 type );
-cvar_t*     cvar_register_s         ( const char* name, const char* desc, const char** values, u32 count, u32 def_index, u32 type );
-cvar_t*     cvar_register_w         ( const char* name, const char* desc, const char* reset, u32 size, u32 type );
-cvar_t*     cvar_register_r         ( const char* name, const char* desc, const char* value, u32 type );
+                                    // Type-specific registration functions; `flags` are
+                                    // cvar_type_flag_t bits only, the base type is implicit.
+cvar_t*     cvar_register_b         ( const char* name, const char* desc, bool value, u32 flags );
+cvar_t*     cvar_register_i         ( const char* name, const char* desc, i32 val, i32 min, i32 max, u32 flags );
+cvar_t*     cvar_register_f         ( const char* name, const char* desc, f32 val, f32 min, f32 max, u32 flags );
+cvar_t*     cvar_register_s         ( const char* name, const char* desc, const char** values, u32 count, u32 def_index, u32 flags );
+cvar_t*     cvar_register_w         ( const char* name, const char* desc, const char* reset, u32 size, u32 flags );
+cvar_t*     cvar_register_r         ( const char* name, const char* desc, const char* value, u32 flags );
 cvar_t*     cvar_register_u         ( const char* name, const char* value );
 
 /*==============================================================================================

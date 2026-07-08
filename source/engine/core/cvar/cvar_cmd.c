@@ -61,7 +61,7 @@ cmd_set_internal( const char* name, const char* value, u32 internal_flags )
     else
     {
         /* Mark existing cvar for archiving */
-        cv->type |= internal_flags;
+        cv->flags |= internal_flags;
     }
 
     /* Set the value */
@@ -211,7 +211,7 @@ cmd_apply_latched( int argc, char** argv )
     for ( u32 i = 0; i < total; ++i )
     {
         cvar_t* cv = cvar_get_by_index( i );
-        if ( cv && ( cv->flag & CVAR_LATCHED ) )
+        if ( cv && ( cv->mods & CVAR_LATCHED ) )
             count++;
     }
 
@@ -245,7 +245,7 @@ cmd_cvar_modified( int argc, char** argv )
     for ( u32 i = 0; i < total; ++i )
     {
         cvar_t* cv = cvar_get_by_index( i );
-        if ( !cv || !( cv->flag & CVAR_MODIFIED ) )
+        if ( !cv || !( cv->mods & CVAR_MODIFIED ) )
             continue;
 
         const char* name  = cvar_get_name( cv );
@@ -290,7 +290,7 @@ cmd_cvarinfo( int argc, char** argv )
     cvar_print_flags( cv );
 
     /* Show default value */
-    switch ( cv->type & CVAR_TYPE_MASK )
+    switch ( cv->type )
     {
         case CVAR_BOOL:     con_printf( "  Default: %d\n", cv->b.reset ); break;
         case CVAR_INT:      con_printf( "  Default: %d\n", cv->i.reset ); break;
@@ -300,7 +300,7 @@ cmd_cvarinfo( int argc, char** argv )
     }
 
     /* Show string list options for CVAR_STR */
-    if ( cv->type & CVAR_STR )
+    if ( cv->type == CVAR_STR )
     {
         con_printf( "  Options:\n" );
         for ( u32 i = 0; i < cv->s.count; ++i )
@@ -341,15 +341,15 @@ cmd_cvarlist( int argc, char** argv )
             continue;
 
         /* Skip hidden variables in release builds */
-        if ( cv->type & CVAR_HIDDEN )
+        if ( cv->flags & CVAR_HIDDEN )
             continue;
-        if ( cv->type & CVAR_DEVONLY )
+        if ( cv->flags & CVAR_DEVONLY )
             continue;
 
         const char* value    = cvar_value_string( cv );
         const char* type_str = "unknown";
 
-        switch ( cv->type & CVAR_TYPE_MASK )
+        switch ( cv->type )
         {
             case CVAR_BOOL:     type_str = "bool"; break;
             case CVAR_INT:      type_str = "int"; break;
@@ -362,13 +362,13 @@ cmd_cvarlist( int argc, char** argv )
 
         /* Build flags string */
         char flags[ 64 ] = "";
-        if ( cv->type & CVAR_ROM )          strcat( flags, "R" );
-        if ( cv->type & CVAR_ARCHIVE )      strcat( flags, "A" );
-        if ( cv->type & CVAR_LATCH )        strcat( flags, "L" );
-        if ( cv->type & CVAR_CHEAT )        strcat( flags, "C" );
-        if ( cv->type & CVAR_USERINFO )     strcat( flags, "U" );
-        if ( cv->type & CVAR_SERVERINFO )   strcat( flags, "S" );
-        if ( cv->flag & CVAR_MODIFIED )     strcat( flags, "*" );
+        if ( cv->flags & CVAR_ROM )          strcat( flags, "R" );
+        if ( cv->flags & CVAR_ARCHIVE )      strcat( flags, "A" );
+        if ( cv->flags & CVAR_LATCH )        strcat( flags, "L" );
+        if ( cv->flags & CVAR_CHEAT )        strcat( flags, "C" );
+        if ( cv->flags & CVAR_USERINFO )     strcat( flags, "U" );
+        if ( cv->flags & CVAR_SERVERINFO )   strcat( flags, "S" );
+        if ( cv->mods & CVAR_MODIFIED )     strcat( flags, "*" );
 
         con_printf( "%-24s %-12s %-10s %s\n", name, value, type_str, flags );
         count++;

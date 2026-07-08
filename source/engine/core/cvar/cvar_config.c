@@ -74,14 +74,16 @@ cvar_write_config( const char* filename, u32 type_filter )
         cvar_t* cv = cvar_get_by_index( i );
 
         if ( !cv )                      continue;
-        if ( cv->type & CVAR_ROM )      continue;
-        if ( cv->type & CVAR_INIT )     continue;
-        if ( cv->type & CVAR_RUNTIME )  continue;
-        if ( cv->type & type_filter )
+        if ( cv->flags & CVAR_ROM )     continue;
+        if ( cv->flags & CVAR_INIT )    continue;
+        if ( cv->flags & CVAR_RUNTIME ) continue;
+        if ( cv->flags & type_filter )
         {
             const char* name  = cvar_get_name( cv );
             const char* value = cvar_value_string( cv );
-            fprintf( f, "seta %s \"%s\"\n", name, value );
+            fprintf( f, "seta %s \"", name );
+            cmd_write_quoted( f, value );
+            fprintf( f, "\"\n" );
             written++;
         }
     }

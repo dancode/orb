@@ -223,7 +223,7 @@ con_complete( const char* prefix, const char** out_names, u32 max )
     for ( u32 i = 0; i < cvar_total && n < max; ++i )
     {
         cvar_t* cv = cvar_get_by_index( i );
-        if ( !cv || ( cv->type & CVAR_HIDDEN ) )
+        if ( !cv || ( cv->flags & CVAR_HIDDEN ) )
             continue;
 
         const char* name = cvar_get_name( cv );

@@ -112,6 +112,12 @@ void        cmd_bind_event          ( u32 key, bool down );
                                        (void* keeps stdio out of this header) */
 void        cmd_bind_write_config   ( void* file );
 
+                                    /* Write str to an open FILE* as a double-quoted token,
+                                       backslash-escaping '"' and '\\' so cmd_tokenize can
+                                       round-trip it exactly (void* keeps stdio out of this
+                                       header). Does not write the surrounding quotes. */
+void        cmd_write_quoted        ( void* file, const char* str );
+
 // clang-format on
 /*============================================================================================*/
 #endif    // CMD_HEADER_H

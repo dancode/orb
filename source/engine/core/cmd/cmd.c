@@ -118,8 +118,23 @@ cmd_tokenize( char* text, char** argv, int max_args )
         if ( *text == '"' )
         {
             text++;
-            argv[ argc++ ] = text;
-            while ( *text && *text != '"' ) text++;
+            char* dst = text;
+            argv[ argc++ ] = dst;
+
+            /* Unescape \" and \\ in place; token may end up shorter than its quoted span. */
+            while ( *text && *text != '"' )
+            {
+                if ( text[ 0 ] == '\\' && ( text[ 1 ] == '"' || text[ 1 ] == '\\' ) )
+                {
+                    *dst++ = text[ 1 ];
+                    text += 2;
+                }
+                else
+                {
+                    *dst++ = *text++;
+                }
+            }
+            *dst = '\0';
         }
         else
         {
@@ -132,6 +147,26 @@ cmd_tokenize( char* text, char** argv, int max_args )
     }
 
     return argc;
+}
+
+/*============================================================================================*/
+/* Write side of cmd_tokenize's quote handling -- escapes '"' and '\\' so the value round-trips
+   through a config file exactly. Caller writes the surrounding quotes. */
+
+void
+cmd_write_quoted( void* file, const char* str )
+{
+    FILE* f = ( FILE* )file;
+
+    if ( !str )
+        return;
+
+    for ( const char* p = str; *p; ++p )
+    {
+        if ( *p == '"' || *p == '\\' )
+            fputc( '\\', f );
+        fputc( *p, f );
+    }
 }
 
 bool

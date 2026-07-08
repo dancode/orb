@@ -154,7 +154,7 @@ callback_table_release( cvar_t* cv )
     g_cbtable_free       = cv->callback_id;
 
     cv->callback_id = INVALID_ID;
-    cv->flag &= ~CVAR_CALLBACK;
+    cv->mods &= ~CVAR_CALLBACK;
 }
 
 /*============================================================================================*/
@@ -201,7 +201,7 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn )
             return INVALID_ID;
         }
 
-        cv->flag |= CVAR_CALLBACK;
+        cv->mods |= CVAR_CALLBACK;
 
         cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
 
@@ -492,7 +492,7 @@ cvar_compact_user_pool( void )
     for ( u32 i = 0; i < g_cvar_count; i++ )
     {
         cvar_t* cv = &g_cvar_pool[ i ];
-        if ( ( cv->type & CVAR_TYPE_MASK ) == CVAR_USR )
+        if ( cv->type == CVAR_USR )
         {
             const char* str = user_string_pool_get( &g_user_string_pool, cv->u.value_offset );
             if ( str )
@@ -519,30 +519,33 @@ cvar_compact_user_pool( void )
 
 ==============================================================================================*/
 
-static u16 g_user_off  = USER_STRING_INVALID_OFFSET;
-static u16 g_user_buck = USER_STRING_INVALID_LIST;
+static u16  g_user_off             = USER_STRING_INVALID_OFFSET;
+static u16  g_user_buck            = USER_STRING_INVALID_LIST;
+static bool g_user_promote_pending = false;
 
 static void
 cvar_cache_user_value( cvar_t* cv )
 {
     // Cache user value info for later promotion since it is about to be removed
     // and we need to preserve the string value whos offset as stored in the cvar data.
+    // Must run while cv->type is still CVAR_USR (cvar_register_internal overwrites it
+    // with the real type right after calling this).
 
-    if ( cv->type & CVAR_USR )
+    if ( cv->type == CVAR_USR )
     {
-        g_user_off  = cv->u.value_offset;
-        g_user_buck = cv->u.bucket_index;
+        g_user_off             = cv->u.value_offset;
+        g_user_buck            = cv->u.bucket_index;
+        g_user_promote_pending = true;
     }
 }
 
 static void
 cvar_promote_user_value( cvar_t* cv )
 {
-    if ( !( cv->type & CVAR_USR ) )
+    if ( !g_user_promote_pending )
         return;
 
-    // Remove user-created flag
-    cv->type &= ~CVAR_USR;
+    g_user_promote_pending = false;
 
     if ( g_user_off == USER_STRING_INVALID_OFFSET || g_user_buck == USER_STRING_INVALID_LIST )
     {
@@ -582,7 +585,7 @@ cvar_promote_user_value( cvar_t* cv )
    init still runs in full and the promoted value is applied over it. */
 
 static cvar_t*
-cvar_register_internal( const char* name, const char* desc, u32 type, bool* existed )
+cvar_register_internal( const char* name, const char* desc, cvar_type_t base_type, u32 flags, bool* existed )
 {
     *existed = false;
 
@@ -590,24 +593,26 @@ cvar_register_internal( const char* name, const char* desc, u32 type, bool* exis
     cvar_t* existing = cvar_hash_find( name );
     if ( existing )
     {
-        // If a user var already existed, merge and clear user-created type
-        if ( existing->type & CVAR_USR )
+        // If a user var already existed, promote it to the real type
+        if ( existing->type == CVAR_USR )
         {
             // Update metadata
             existing->desc = ( u16 )string_pool_push( &g_cvar_string_pool, desc ? desc : "" );
-            existing->type = ( existing->type | type );
-            existing->flag &= ~( CVAR_MODIFIED | CVAR_LATCHED );
-            cvar_cache_user_value( existing );
+            cvar_cache_user_value( existing );    // must run before type is overwritten below
+            existing->type  = base_type;
+            existing->flags = ( u16 )flags;
+            existing->mods  &= ~( CVAR_MODIFIED | CVAR_LATCHED );
             return existing;
         }
 
         // Base type changed across a reload: wipe the union and run typed init fresh.
         // The old pool allocations (str list / buf) are orphaned; rare one-time cost.
-        if ( ( u32 )( existing->type & CVAR_TYPE_MASK ) != ( type & CVAR_TYPE_MASK ) )
+        if ( existing->type != base_type )
         {
             log_write( LOG_LEVEL_WARN, "cvar", "'%s' re-registered with a different type", name );
-            existing->type = type;
-            existing->flag &= ~( CVAR_MODIFIED | CVAR_LATCHED );
+            existing->type  = base_type;
+            existing->flags = ( u16 )flags;
+            existing->mods  &= ~( CVAR_MODIFIED | CVAR_LATCHED );
             memset( &existing->i, 0, sizeof( existing->i ) );    // .i spans the whole union
             return existing;
         }
@@ -627,16 +632,17 @@ cvar_register_internal( const char* name, const char* desc, u32 type, bool* exis
 
     cv->name        = ( u16 )string_pool_push( &g_cvar_string_pool, name );
     cv->desc        = ( u16 )string_pool_push( &g_cvar_string_pool, desc );
-    cv->type        = type;
-    cv->flag        = 0;
+    cv->type        = base_type;
+    cv->flags       = ( u16 )flags;
+    cv->mods         = 0;
     cv->callback_id = INVALID_ID;
 
     /* CVAR_USR must be initialized to valid 'empty' values */
-    if ( type & CVAR_USR )
+    if ( base_type == CVAR_USR )
     {
         cv->u.value_offset = USER_STRING_INVALID_OFFSET;
         cv->u.bucket_index = USER_STRING_INVALID_LIST;
-        cv->flag           = CVAR_USER_CREATED;
+        cv->mods             = CVAR_USER_CREATED;
     }
 
     cvar_hash_insert( g_cvar_count );
@@ -648,19 +654,19 @@ cvar_register_internal( const char* name, const char* desc, u32 type, bool* exis
 /* Public wrapper (user-var creation path; typed registrars use the internal form) */
 
 cvar_t*
-cvar_register_base( const char* name, const char* desc, u32 type )
+cvar_register_base( const char* name, const char* desc, u32 flags )
 {
     bool existed;
-    return cvar_register_internal( name, desc, type, &existed );
+    return cvar_register_internal( name, desc, CVAR_USR, flags, &existed );
 }
 
 /* Register a boolean cvar */
 
 cvar_t*
-cvar_register_b( const char* name, const char* desc, bool value, u32 type )
+cvar_register_b( const char* name, const char* desc, bool value, u32 flags )
 {
     bool    existed;
-    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_BOOL, &existed );
+    cvar_t* cv = cvar_register_internal( name, desc, CVAR_BOOL, flags, &existed );
 
     if ( existed )
     {
@@ -679,10 +685,10 @@ cvar_register_b( const char* name, const char* desc, bool value, u32 type )
 /* Register an integer cvar with optional min/max bounds (set max=0 for no bounds) */
 
 cvar_t*
-cvar_register_i( const char* name, const char* desc, i32 value, i32 min, i32 max, u32 type )
+cvar_register_i( const char* name, const char* desc, i32 value, i32 min, i32 max, u32 flags )
 {
     bool    existed;
-    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_INT, &existed );
+    cvar_t* cv = cvar_register_internal( name, desc, CVAR_INT, flags, &existed );
 
     if ( existed )
     {
@@ -705,10 +711,10 @@ cvar_register_i( const char* name, const char* desc, i32 value, i32 min, i32 max
 /* Register a float cvar with optional min/max bounds (set max=0 for no bounds) */
 
 cvar_t*
-cvar_register_f( const char* name, const char* desc, f32 value, f32 min, f32 max, u32 type )
+cvar_register_f( const char* name, const char* desc, f32 value, f32 min, f32 max, u32 flags )
 {
     bool    existed;
-    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_FLOAT, &existed );
+    cvar_t* cv = cvar_register_internal( name, desc, CVAR_FLOAT, flags, &existed );
 
     if ( existed )
     {
@@ -731,10 +737,10 @@ cvar_register_f( const char* name, const char* desc, f32 value, f32 min, f32 max
 /* Register a string list cvar (select from predefined options by index) */
 
 cvar_t*
-cvar_register_s( const char* name, const char* desc, const char** values, u32 count, u32 def_index, u32 type )
+cvar_register_s( const char* name, const char* desc, const char** values, u32 count, u32 def_index, u32 flags )
 {
     bool    existed;
-    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_STR, &existed );
+    cvar_t* cv = cvar_register_internal( name, desc, CVAR_STR, flags, &existed );
 
     /* Reload: keep the existing option list and value; re-reserving would leak the pool */
     if ( existed )
@@ -782,12 +788,12 @@ cvar_register_s( const char* name, const char* desc, const char** values, u32 co
 /* Register a writable string buffer cvar with fixed size */
 
 cvar_t*
-cvar_register_w( const char* name, const char* desc, const char* reset, u32 size, u32 type )
+cvar_register_w( const char* name, const char* desc, const char* reset, u32 size, u32 flags )
 {
     const i32 align_size = string_pool_align_up( size );
 
     bool    existed;
-    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_BUF, &existed );
+    cvar_t* cv = cvar_register_internal( name, desc, CVAR_BUF, flags, &existed );
 
     /* Reload: keep the existing buffer and value; re-reserving would leak the pool */
     if ( existed )
@@ -806,10 +812,10 @@ cvar_register_w( const char* name, const char* desc, const char* reset, u32 size
 /* Register a read-only string reference cvar */
 
 cvar_t*
-cvar_register_r( const char* name, const char* desc, const char* value, u32 type )
+cvar_register_r( const char* name, const char* desc, const char* value, u32 flags )
 {
     bool    existed;
-    cvar_t* cv = cvar_register_internal( name, desc, type | CVAR_REF, &existed );
+    cvar_t* cv = cvar_register_internal( name, desc, CVAR_REF, flags, &existed );
 
     /* Reload: keep the existing reference; re-pushing would leak the pool */
     if ( existed )
@@ -826,7 +832,7 @@ cvar_register_r( const char* name, const char* desc, const char* value, u32 type
 cvar_t*
 cvar_register_u( const char* name, const char* value )
 {
-    cvar_t* cv = cvar_register_base( name, NULL, CVAR_USR );
+    cvar_t* cv = cvar_register_base( name, NULL, 0 );
     cvar_set_value( name, value );
     return cv;
 }
@@ -864,13 +870,13 @@ cvar_get_count( void )
 
 ==============================================================================================*/
 
-bool cvar_is_bool   ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_BOOL ));  }
-bool cvar_is_int    ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_INT ));   }
-bool cvar_is_float  ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_FLOAT )); }
-bool cvar_is_str    ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_STR ));   }
-bool cvar_is_buf    ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_BUF ));   }
-bool cvar_is_ref    ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_REF ));   }
-bool cvar_is_user   ( const cvar_t* cv ) { return ( cv && ( cv->type & CVAR_USR ));   }
+bool cvar_is_bool   ( const cvar_t* cv ) { return ( cv && cv->type == CVAR_BOOL );  }
+bool cvar_is_int    ( const cvar_t* cv ) { return ( cv && cv->type == CVAR_INT );   }
+bool cvar_is_float  ( const cvar_t* cv ) { return ( cv && cv->type == CVAR_FLOAT ); }
+bool cvar_is_str    ( const cvar_t* cv ) { return ( cv && cv->type == CVAR_STR );   }
+bool cvar_is_buf    ( const cvar_t* cv ) { return ( cv && cv->type == CVAR_BUF );   }
+bool cvar_is_ref    ( const cvar_t* cv ) { return ( cv && cv->type == CVAR_REF );   }
+bool cvar_is_user   ( const cvar_t* cv ) { return ( cv && cv->type == CVAR_USR );   }
 
 /*==============================================================================================
 
@@ -926,7 +932,7 @@ cvar_get_float( const cvar_t* cv )
 const char*
 cvar_get_string_from_id( const cvar_t* cv, i32 value_id )
 {
-    if ( !cv || !( cv->type & CVAR_STR ) )
+    if ( !cv || cv->type != CVAR_STR )
         return "";
 
     if ( cv->s.count == 0 )
@@ -942,7 +948,7 @@ cvar_get_string( const cvar_t* cv )
     if ( !cv )
         return "";
 
-    switch ( cv->type & CVAR_TYPE_MASK )
+    switch ( cv->type )
     {
         case CVAR_STR: return cvar_get_string_from_id( cv, cv->s.value );
         case CVAR_BUF: return string_pool_get( &g_cvar_string_pool, cv->w.buf );
@@ -968,7 +974,7 @@ cvar_reset( cvar_t* cv )
 
     bool changed = false;
 
-    switch ( cv->type & CVAR_TYPE_MASK )
+    switch ( cv->type )
     {
         case CVAR_BOOL:
             changed     = ( cv->b.value != cv->b.reset );
@@ -1015,10 +1021,10 @@ cvar_reset( cvar_t* cv )
         default: break;
     }
 
-    if ( changed && ( cv->flag & CVAR_CALLBACK ) )
+    if ( changed && ( cv->mods & CVAR_CALLBACK ) )
         cvar_callback_invoke( cv );
 
-    cv->flag &= ~( CVAR_MODIFIED | CVAR_LATCHED );
+    cv->mods &= ~( CVAR_MODIFIED | CVAR_LATCHED );
 }
 
 /* Reset all cvars to default values */
@@ -1031,7 +1037,7 @@ cvar_reset_all( void )
         cvar_t* cv = &g_cvar_pool[ i ];
 
         /* Skip CVAR_NORESTART variables */
-        if ( cv->type & CVAR_NORESTART )
+        if ( cv->flags & CVAR_NORESTART )
             continue;
 
         cvar_reset( cv );
@@ -1049,10 +1055,10 @@ cvar_apply_latched( void )
     {
         cvar_t* cv = &g_cvar_pool[ i ];
 
-        if ( !( cv->flag & CVAR_LATCHED ))
+        if ( !( cv->mods & CVAR_LATCHED ))
             continue;
 
-        switch ( cv->type & CVAR_TYPE_MASK )
+        switch ( cv->type )
         {
             case CVAR_BOOL:     cv->b.value = cv->b.latch; break;
             case CVAR_INT:      cv->i.value = cv->i.latch; break;
@@ -1062,10 +1068,10 @@ cvar_apply_latched( void )
             default: break;
         }
 
-        cv->flag &= ~CVAR_LATCHED;
-        cv->flag |= CVAR_MODIFIED;
+        cv->mods &= ~CVAR_LATCHED;
+        cv->mods |= CVAR_MODIFIED;
 
-        if ( cv->flag & CVAR_CALLBACK )
+        if ( cv->mods & CVAR_CALLBACK )
             cvar_callback_invoke( cv );
     }
 }
@@ -1077,7 +1083,7 @@ cvar_clear_modified( void )
 {
     for ( u32 i = 0; i < g_cvar_count; ++i )
     {
-        g_cvar_pool[ i ].flag &= ~CVAR_MODIFIED;
+        g_cvar_pool[ i ].mods &= ~CVAR_MODIFIED;
     }
 }
 
@@ -1088,7 +1094,7 @@ static bool
 cvar_set_value_internal( cvar_t* cv, const char* value )
 {
     /* Check protection flags */
-    if ( cv->type & CVAR_ROM )
+    if ( cv->flags & CVAR_ROM )
     {
         con_printf( "cvar: '%s' is read-only\n", cvar_get_name( cv ) );
         return false;
@@ -1096,7 +1102,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
 
     /* TODO: Check CVAR_INIT, CVAR_CHEAT flags based on system state */
 
-    const u32 type    = cv->type & CVAR_TYPE_MASK;
+    const cvar_type_t type = cv->type;
     bool changed = false;
     bool success = true;    // false = value rejected (parse error / read-only type)
 
@@ -1125,12 +1131,12 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
 
             /* Apply new value, handle latch/modify logic */
 
-            const bool is_latched = ( cv->type & CVAR_LATCH );
+            const bool is_latched = ( cv->flags & CVAR_LATCH );
             bool* target = is_latched ? &cv->b.latch : &cv->b.value;
             if ( *target != new_value )
             {
                 *target = new_value;
-                cv->flag |= is_latched ? CVAR_LATCHED : CVAR_MODIFIED;
+                cv->mods |= is_latched ? CVAR_LATCHED : CVAR_MODIFIED;
                 changed = true;
             }
             break;
@@ -1152,12 +1158,12 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
                 if ( new_value > cv->i.max ) new_value = cv->i.max;
             }
             
-            const bool is_latched = ( cv->type & CVAR_LATCH );
+            const bool is_latched = ( cv->flags & CVAR_LATCH );
             i32* target = is_latched ? &cv->i.latch : &cv->i.value;
             if ( *target != new_value )
             {
                 *target = new_value;
-                cv->flag |= is_latched ? CVAR_LATCHED : CVAR_MODIFIED;
+                cv->mods |= is_latched ? CVAR_LATCHED : CVAR_MODIFIED;
                 changed = true;
             }
             break;
@@ -1179,12 +1185,12 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
                 if ( new_value > cv->f.max ) new_value = cv->f.max;
             }
 
-            const bool is_latched = ( cv->type & CVAR_LATCH );
+            const bool is_latched = ( cv->flags & CVAR_LATCH );
             f32* target = is_latched ? &cv->f.latch : &cv->f.value;
             if ( *target != new_value )
             {
                 *target = new_value;
-                cv->flag |= is_latched ? CVAR_LATCHED : CVAR_MODIFIED;
+                cv->mods |= is_latched ? CVAR_LATCHED : CVAR_MODIFIED;
                 changed = true;
             }
             break;
@@ -1222,12 +1228,12 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
                 break;
             }
 
-            const bool is_latched = ( cv->type & CVAR_LATCH );
+            const bool is_latched = ( cv->flags & CVAR_LATCH );
             u16* target = is_latched ? &cv->s.latch : &cv->s.value;
             if ( *target != new_value )
             {
                 *target = new_value;
-                cv->flag |= is_latched ? CVAR_LATCHED : CVAR_MODIFIED;
+                cv->mods |= is_latched ? CVAR_LATCHED : CVAR_MODIFIED;
                 changed = true;
             }
             break;
@@ -1238,7 +1244,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
             if ( strcmp( cur, value ) != 0 )
             {
                 string_pool_write( &g_cvar_string_pool, cv->w.buf, value, cv->w.size );
-                cv->flag |= CVAR_MODIFIED;
+                cv->mods |= CVAR_MODIFIED;
                 changed = true;
             }
             break;
@@ -1268,14 +1274,14 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
 
             cv->u.value_offset = new_offset;
             cv->u.bucket_index = new_bucket;
-            cv->flag |= CVAR_MODIFIED;
+            cv->mods |= CVAR_MODIFIED;
             changed = true;
             break;
         }
     }
 
     // Invoke callbacks if value changed
-    if ( changed && ( cv->flag & CVAR_CALLBACK ) )
+    if ( changed && ( cv->mods & CVAR_CALLBACK ) )
     {
         cvar_callback_invoke( cv );
     }
@@ -1317,7 +1323,7 @@ cvar_value_string( const cvar_t* cv )
     static int  buf_idx = 0;
     char*       buf     = bufs[ buf_idx++ & 3 ];
 
-    switch ( cv->type & CVAR_TYPE_MASK )
+    switch ( cv->type )
     {
         case CVAR_BOOL:     return ( cv->b.value ? "1" : "0" );
         case CVAR_INT:      snprintf( buf, sizeof( bufs[ 0 ] ), "%d", cv->i.value ); return buf;
@@ -1349,13 +1355,13 @@ cvar_print_value( const cvar_t* cv )
     con_printf( "  \"%s\" is: \"%s\"", name, value );
 
     /* Show latched value if present */
-    if ( cv->flag & CVAR_LATCHED )
+    if ( cv->mods & CVAR_LATCHED )
     {
         con_printf( " (latched)" );
     }
 
     /* Show type info */
-    switch ( cv->type & CVAR_TYPE_MASK )
+    switch ( cv->type )
     {
         case CVAR_BOOL: con_printf( " [bool]" ); break;
         case CVAR_INT:
@@ -1390,23 +1396,23 @@ cvar_print_flags( const cvar_t* cv )
 
     con_printf( "  Type:" );
 
-    if ( cv->type & CVAR_ROM )        con_printf( " ROM" );
-    if ( cv->type & CVAR_INIT )       con_printf( " INIT" );
-    if ( cv->type & CVAR_LATCH )      con_printf( " LATCH" );
-    if ( cv->type & CVAR_CHEAT )      con_printf( " CHEAT" );
+    if ( cv->flags & CVAR_ROM )        con_printf( " ROM" );
+    if ( cv->flags & CVAR_INIT )       con_printf( " INIT" );
+    if ( cv->flags & CVAR_LATCH )      con_printf( " LATCH" );
+    if ( cv->flags & CVAR_CHEAT )      con_printf( " CHEAT" );
 
-    if ( cv->type & CVAR_RUNTIME )    con_printf( " RUNTIME" );
-    if ( cv->type & CVAR_NORESTART )  con_printf( " NORESTART" );
+    if ( cv->flags & CVAR_RUNTIME )    con_printf( " RUNTIME" );
+    if ( cv->flags & CVAR_NORESTART )  con_printf( " NORESTART" );
 
-    if ( cv->type & CVAR_ARCHIVE )    con_printf( " ARCHIVE" );
+    if ( cv->flags & CVAR_ARCHIVE )    con_printf( " ARCHIVE" );
 
-    if ( cv->type & CVAR_DEVONLY )    con_printf( " DEVONLY" );
-    if ( cv->type & CVAR_HIDDEN )     con_printf( " HIDDEN" );
+    if ( cv->flags & CVAR_DEVONLY )    con_printf( " DEVONLY" );
+    if ( cv->flags & CVAR_HIDDEN )     con_printf( " HIDDEN" );
 
-    if ( cv->type & CVAR_NETSYNC )    con_printf( " NETSYNC" );
-    if ( cv->type & CVAR_USERINFO )   con_printf( " USERINFO" );
-    if ( cv->type & CVAR_SERVERINFO ) con_printf( " SERVERINFO" );
-    if ( cv->type & CVAR_SYSTEMINFO ) con_printf( " SYSTEMINFO" );
+    if ( cv->flags & CVAR_NETSYNC )    con_printf( " NETSYNC" );
+    if ( cv->flags & CVAR_USERINFO )   con_printf( " USERINFO" );
+    if ( cv->flags & CVAR_SERVERINFO ) con_printf( " SERVERINFO" );
+    if ( cv->flags & CVAR_SYSTEMINFO ) con_printf( " SYSTEMINFO" );
     
     con_printf( "\n" );
 }
