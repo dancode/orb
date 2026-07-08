@@ -221,6 +221,15 @@ cmd_execute_string( const char* text )
         return true;
     }
 
+    /* 4. Alias: queue its body ahead of any pending buffer text (exec-style insertion), so a
+       ';'-joined multi-statement body executes as its own group before the rest resumes. */
+    const char* alias_value = cmd_alias_value( argv[ 0 ] );
+    if ( alias_value )
+    {
+        cmd_queue_front( alias_value );
+        return true;
+    }
+
     con_printf( "Unknown command \"%s\"\n", argv[ 0 ] );
     return false;
 }
@@ -310,6 +319,7 @@ cmd_system_init( void )
 
     cmd_buffer_init();    /* buffer state + "wait" */
     cmd_bind_init();      /* bind table + bind/unbind/unbindall/bindlist */
+    cmd_alias_init();     /* alias table + alias/unalias/unaliasall */
 }
 
 void
@@ -318,6 +328,7 @@ cmd_system_exit( void )
     s_cmd_count = 0;
     cmd_buffer_exit();
     cmd_bind_exit();
+    cmd_alias_exit();
 }
 
 /*============================================================================================*/

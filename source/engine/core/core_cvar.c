@@ -12,6 +12,7 @@
 #include "engine/core/cvar/cvar.c"
 #include "engine/core/cmd/cmd_buffer.c"
 #include "engine/core/cmd/cmd_bind.c"
+#include "engine/core/cmd/cmd_alias.c"
 #include "engine/core/cmd/cmd.c"
 #include "engine/core/cvar/cvar_cmd.c"
 #include "engine/core/cvar/cvar_config.c"

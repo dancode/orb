@@ -140,6 +140,19 @@ core_test( void )
         cmd_pump();
         con_exec( "bindlist" );              // expect j + k back
 
+        /* Aliases: name -> command string, expanded through the buffer at dispatch time. */
+
+        con_exec( "alias hi \"echo hello ; echo world\"" );
+        con_exec( "alias" );                 // list: expect "hi"
+        con_exec( "hi" );                    // queues the body, doesn't run inline
+        cmd_pump();                          // now "echo hello" / "echo world" fire
+
+        con_exec( "alias set banana" );      // must refuse: "set" is a real command
+        con_exec( "alias s_volume 1" );      // must refuse: "s_volume" is a cvar
+        con_exec( "unalias hi" );
+        con_exec( "hi" );                    // expect "Unknown command"
+        con_exec( "unalias hi" );            // expect "not aliased"
+
         printf( "scrollback: %u lines, history: %u entries\n",
                 con_line_count(), con_history_count() );
 

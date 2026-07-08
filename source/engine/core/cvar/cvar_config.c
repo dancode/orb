@@ -91,6 +91,9 @@ cvar_write_config( const char* filename, u32 type_filter )
     /* Key binds persist alongside the cvars (unbindall + bind lines). */
     cmd_bind_write_config( f );
 
+    /* Aliases persist alongside the cvars (alias lines). */
+    cmd_alias_write_config( f );
+
     /* Service-registered sections (input axis binds, etc.). */
     for ( u32 i = 0; i < CVAR_CONFIG_WRITER_MAX; ++i )
         if ( s_config_writers[ i ] )

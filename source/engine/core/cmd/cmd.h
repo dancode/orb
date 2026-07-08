@@ -17,11 +17,14 @@
       hot-reloaded DLL registering commands cannot leave dangling pointers.
     - Execute:   cmd_execute_string tokenizes one statement (quoted strings supported) and
       dispatches: registered command first, then cvar get ("name") / set ("name value"),
-      else unknown.
-    - Buffer:    single text buffer.  cmd_queue appends, cmd_queue_front inserts (exec
-      semantics: file contents run before the rest of the pending text).  cmd_pump extracts
-      statements split on '\n' and ';' (quote-aware, '//' comments) and executes them,
+      then alias expansion, else unknown.
+    - Buffer:    single text buffer.  cmd_queue appends, cmd_queue_front inserts (exec/alias
+      semantics: file/alias contents run before the rest of the pending text).  cmd_pump
+      extracts statements split on '\n' and ';' (quote-aware, '//' comments) and executes them,
       honoring the "wait" command and a per-frame budget.
+    - Aliases:   name -> command string (cmd_alias.c).  Checked last in cmd_execute_string so
+      an alias can never shadow a real command or cvar; "alias"/"unalias"/"unaliasall" manage
+      the table, matching the bind/unbind/unbindall shape below.
 
 ==============================================================================================*/
 
@@ -36,6 +39,7 @@
 #define CMD_LINE_LEN        1024    // max bytes per executed statement (incl. NUL)
 #define CMD_BUF_CAP         8192    // deferred command text buffer size
 #define CMD_PUMP_BUDGET     1024    // max statements per pump (runaway guard)
+#define CMD_ALIAS_CAP       64      // max user-defined aliases
 
 /*==============================================================================================
     Command handler
@@ -120,6 +124,23 @@ void        cmd_bind_write_config   ( void* file );
                                        round-trip it exactly (void* keeps stdio out of this
                                        header). Does not write the surrounding quotes. */
 void        cmd_write_quoted        ( void* file, const char* str );
+
+/*==============================================================================================
+    Aliases (name -> command string, expanded through the buffer)
+==============================================================================================*/
+
+                                    /* True if a command alias with this name exists */
+bool        cmd_alias_exists        ( const char* name );
+
+                                    /* Alias body text, or NULL if `name` is not an alias.
+                                       Last resolution step in cmd_execute_string, after
+                                       registered commands and cvars. */
+const char* cmd_alias_value         ( const char* name );
+
+                                    /* Write "alias <name> <value>" lines for every defined
+                                       alias to an open FILE* (void* keeps stdio out of this
+                                       header, same convention as cmd_bind_write_config) */
+void        cmd_alias_write_config  ( void* file );
 
 // clang-format on
 /*============================================================================================*/
