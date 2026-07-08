@@ -1043,6 +1043,9 @@ cvar_reset( cvar_t* cv )
         cvar_callback_invoke( cv );
 
     cv->mods &= ~( CVAR_MODIFIED | CVAR_LATCHED );
+
+    // Back at the code default -- a lower-priority source is free to set it again.
+    cv->priority = CVAR_PRI_CODE;
 }
 
 /* Reset all cvars to default values */
@@ -1106,15 +1109,40 @@ cvar_clear_modified( void )
 }
 
 /*============================================================================================*/
+/* Priority guard: on by default, a lower-priority source can't stomp a value that was set
+   by a higher-priority one. Off, every set applies immediately (last write wins) -- useful
+   for debugging which code path is overwriting a cvar. */
+
+static bool g_cvar_priority_guard = true;
+
+void
+cvar_set_priority_guard( bool enabled )
+{
+    g_cvar_priority_guard = enabled;
+}
+
+bool
+cvar_get_priority_guard( void )
+{
+    return g_cvar_priority_guard;
+}
+
+/*============================================================================================*/
 /* Internal function that contains all the 'set' logic. */
 
 static bool
-cvar_set_value_internal( cvar_t* cv, const char* value )
+cvar_set_value_internal( cvar_t* cv, const char* value, cvar_priority_t priority )
 {
     /* Check protection flags */
     if ( cv->flags & CVAR_ROM )
     {
         con_printf( "cvar: '%s' is read-only\n", cvar_get_name( cv ) );
+        return false;
+    }
+
+    if ( g_cvar_priority_guard && priority < ( cvar_priority_t )cv->priority )
+    {
+        con_printf( "cvar: '%s' was set by a higher-priority source, ignoring\n", cvar_get_name( cv ) );
         return false;
     }
 
@@ -1298,6 +1326,12 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
         }
     }
 
+    // Record who last successfully set this cvar, even if the value didn't change (e.g. the
+    // console re-setting an already-current value) -- a later lower-priority source must
+    // still be blocked from stomping it.
+    if ( success )
+        cv->priority = ( u8 )priority;
+
     // Invoke callbacks if value changed
     if ( changed && ( cv->mods & CVAR_CALLBACK ) )
     {
@@ -1315,6 +1349,12 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
 bool
 cvar_set_value( const char* name, const char* value )
 {
+    return cvar_set_value_pri( name, value, CVAR_PRI_USER );
+}
+
+bool
+cvar_set_value_pri( const char* name, const char* value, cvar_priority_t priority )
+{
     if ( !name || !value )
         return false;
 
@@ -1322,16 +1362,22 @@ cvar_set_value( const char* name, const char* value )
     if ( !cv )
         return false; /* Does not create, just returns false */
 
-    return cvar_set_value_internal( cv, value );
+    return cvar_set_value_internal( cv, value, priority );
 }
 
 bool
 cvar_set( cvar_t* cv, const char* value )
 {
+    return cvar_set_pri( cv, value, CVAR_PRI_USER );
+}
+
+bool
+cvar_set_pri( cvar_t* cv, const char* value, cvar_priority_t priority )
+{
     if ( !cv || !value )
         return false;
 
-    return cvar_set_value_internal( cv, value );
+    return cvar_set_value_internal( cv, value, priority );
 }
 
 /*============================================================================================*/

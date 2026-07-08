@@ -123,6 +123,28 @@ typedef enum cvar_mod_e
 
 /*==============================================================================================
 
+    Cvar Priority - who last set the value (Doom3-style origin tag), also used to gate
+    against lower-priority sources stomping a higher-priority one (Unreal-style ECVF_SetBy*).
+    Stored directly, not a bitmask; compare/assign as a plain ordered value.
+
+==============================================================================================*/
+
+typedef enum cvar_priority_e
+{
+    CVAR_PRI_CODE   = 0,    // Engine/game code (registration default, explicit code writes)
+
+    CVAR_PRI_USER   = 1,    // set/seta from the console, a queued config file (default.cfg,
+                            // config.cfg, autoexec.cfg), or a user-created variable.
+                            // TODO: split into CVAR_PRI_CONFIG / CVAR_PRI_CONSOLE once cmd.c
+                            // tracks whether the active command came from an exec'd file vs.
+                            // live input -- today both paths are indistinguishable.
+
+    CVAR_PRI_FORCE  = 2,    // Always applies, guard or no guard (admin/cheat-enforcement code).
+
+} cvar_priority_t;
+
+/*==============================================================================================
+
     CVar Structure - 32-byte aligned structure
 
     All strings stored as u16 offsets into string pool for hot-reload safety.
@@ -140,7 +162,7 @@ typedef struct cvar_s
     u16         name;           // String pool offset to variable name
     u16         desc;           // String pool offset to description
     u8          callback_id;    // Callback index; 0xFF = none. (matches the internal u8 callback table)
-    u8          pad;            // Padding for alignment.
+    u8          priority;       // Who last set the value (cvar_priority_t); guards against stomps
 
     union
     {
@@ -306,12 +328,23 @@ void        cvar_clear_modified     ( void );
     Named Access
 ==============================================================================================*/
 
-                                    // Set cvar value by name, returns success/failure
+                                    // Set cvar value by name, returns success/failure.
+                                    // Priority defaults to CVAR_PRI_USER; use the _pri variant
+                                    // to set on behalf of a specific source.
 bool        cvar_set_value          ( const char* name, const char* value );
+bool        cvar_set_value_pri      ( const char* name, const char* value, cvar_priority_t priority );
 
                                     // Set cvar value directly; skips the name hash lookup for
                                     // callers that already hold the cvar_t*.
 bool        cvar_set                ( cvar_t* cv, const char* value );
+bool        cvar_set_pri            ( cvar_t* cv, const char* value, cvar_priority_t priority );
+
+                                    // Enable/disable the priority guard. On (default): a set from
+                                    // a lower-priority source than the cvar's current priority is
+                                    // rejected. Off: every set applies immediately (last write wins),
+                                    // useful for debugging which code path is stomping a value.
+void        cvar_set_priority_guard ( bool enabled );
+bool        cvar_get_priority_guard ( void );
 
                                     // Get cvar string value by name.
 const char* cvar_get_value          ( const char* name );
