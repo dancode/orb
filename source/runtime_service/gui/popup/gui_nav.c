@@ -83,7 +83,8 @@ nav_choose_window( void )
 
     /* No popup: the explicit target if it is still a live window, else the front-most normal
        window by z.  Popup-band records (a closed popup's stale high z) are skipped so they never
-       masquerade as the front-most window. */
+       masquerade as the front-most window, and so is a GUI_WIN_NATIVE frame-only shell -- it has
+       no body items, so defaulting nav onto it would strand the keyboard on bare chrome. */
     gui_id_t front = GUI_ID_NONE;
     u32        frontz = 0;
     bool       have_explicit = false;
@@ -91,6 +92,7 @@ nav_choose_window( void )
     {
         if ( s_windows[ i ].z >= GUI_POPUP_Z_BASE ) continue;
         if ( s_windows[ i ].id == s_nav.explicit_win ) have_explicit = true;
+        if ( s_windows[ i ].flags & GUI_WIN_NATIVE ) continue;
         if ( s_windows[ i ].z >= frontz ) { frontz = s_windows[ i ].z; front = s_windows[ i ].id; }
     }
     s_nav.win = have_explicit ? s_nav.explicit_win : front;
@@ -103,6 +105,23 @@ nav_choose_window( void )
     the highest), so repeated Ctrl+Tab walks the window stack.  The chosen window is raised to the
     front so it is visible and usable, and nav_id is cleared so the first item takes focus.
 ----------------------------------------------------------------------------------------------*/
+
+/* A window Ctrl+Tab never lands on: a popup-band record, a GUI_WIN_NATIVE frame-only shell (bare
+   chrome, no body), or a docked window hidden behind another tab -- cycling only visits what is
+   visible; the hidden tabs of a node are reached locally, through its visible tab's chrome lane
+   (F6, then Left/Right along the strip). */
+static bool
+nav_cycle_skip( const gui_window_t* w )
+{
+    if ( w->z >= GUI_POPUP_Z_BASE )       return true;
+    if ( w->flags & GUI_WIN_NATIVE )      return true;
+
+    gui_dock_node_t* dn = dock_find_window_node( w->id );
+    if ( dn && !( dn->active_tab < dn->tab_count && dn->tabs[ dn->active_tab ] == w->id ) )
+        return true;   /* docked but behind another tab -- not visible */
+
+    return false;
+}
 
 static void
 nav_cycle_window( i32 dir )
@@ -120,13 +139,15 @@ nav_cycle_window( i32 dir )
             if ( s_windows[ i ].z < GUI_POPUP_Z_BASE && s_windows[ i ].z >= curz )
                 curz = s_windows[ i ].z;
 
-    /* Nearest window strictly past curz in the requested direction. */
+    /* Nearest visible window strictly past curz in the requested direction (see nav_cycle_skip).
+       Docked windows cycle too: their record z is stale for drawing (the node draws them) but
+       still orders them here. */
     gui_id_t pick  = GUI_ID_NONE;
     u32        pickz = ( dir > 0 ) ? 0xFFFFFFFFu : 0u;
     for ( u32 i = 0; i < s_window_count; ++i )
     {
         u32 z = s_windows[ i ].z;
-        if ( z >= GUI_POPUP_Z_BASE ) continue;
+        if ( nav_cycle_skip( &s_windows[ i ] ) ) continue;
         if ( dir > 0 ) { if ( z > curz && z < pickz ) { pickz = z; pick = s_windows[ i ].id; } }
         else           { if ( z < curz && z > pickz ) { pickz = z; pick = s_windows[ i ].id; } }
     }
@@ -138,7 +159,7 @@ nav_cycle_window( i32 dir )
         for ( u32 i = 0; i < s_window_count; ++i )
         {
             u32 z = s_windows[ i ].z;
-            if ( z >= GUI_POPUP_Z_BASE ) continue;
+            if ( nav_cycle_skip( &s_windows[ i ] ) ) continue;
             if ( dir > 0 ) { if ( z <= wrapz ) { wrapz = z; pick = s_windows[ i ].id; } }
             else           { if ( z >= wrapz ) { wrapz = z; pick = s_windows[ i ].id; } }
         }
@@ -150,6 +171,13 @@ nav_cycle_window( i32 dir )
     for ( u32 i = 0; i < s_window_count; ++i )
         if ( s_windows[ i ].id == pick && s_windows[ i ].z != s_z_counter )
             s_windows[ i ].z = ++s_z_counter;
+
+    /* A floating tab group raises with its picked (visible) tab so the group surfaces. */
+    {
+        gui_dock_node_t* dn = dock_find_window_node( pick );
+        if ( dn && dn->floating && dn->z != s_z_counter )
+            dn->z = ++s_z_counter;
+    }
 
     s_nav.explicit_win = pick;
     s_nav.id     = GUI_ID_NONE;
@@ -283,6 +311,89 @@ nav_line_pick( u32 region, u32 line, f32 goal )
 /* Band slack: a candidate line must start at or past the cursor line's far edge to count as
    "beyond" it; one pixel of tolerance absorbs rounding so rows that butt exactly still qualify. */
 #define NAV_BAND_EPS 1.0f
+
+/* Home / End: the first / last placed item of the cursor's region (list order == reading order).
+   No cursor yet means the whole body: its first / last placed item. */
+static void
+nav_resolve_home( void )
+{
+    i32  cur        = nav_list_find( s_nav.id );
+    bool use_region = ( cur >= 0 && !s_nav.items[ cur ].chrome );
+    u32  region     = use_region ? s_nav.items[ cur ].region : 0;
+
+    i32 pick = -1;
+    for ( u32 i = 0; i < s_nav.item_count; ++i )
+    {
+        const gui_nav_item_t* it = &s_nav.items[ i ];
+        if ( it->chrome ) continue;
+        if ( use_region && it->region != region ) continue;
+        pick = (i32)i;
+        if ( s_nav.home < 0 ) break;   /* Home: the first hit; End keeps scanning to the last */
+    }
+    if ( pick >= 0 )
+        nav_adopt( pick, false );
+}
+
+/* PageUp / PageDown: a vertical hop of one view height, holding the goal column like Up/Down.
+   The target is the line (same region -- paging never leaps into a side panel) whose y band lands
+   nearest one page from the cursor in the requested direction; when the region has less than a
+   page left the nearest-to-target rule degrades to its first / last line, so paging clamps at the
+   ends by construction.  The page span approximates the region view with the nav window's height
+   (right for the common full-window list; a nested child just over-steps and clamps). */
+static void
+nav_resolve_page( void )
+{
+    if ( s_nav.item_count == 0 ) return;
+
+    i32 cur = nav_list_find( s_nav.id );
+    if ( cur < 0 )
+    {
+        for ( u32 i = 0; i < s_nav.item_count; ++i )
+            if ( !s_nav.items[ i ].chrome ) { nav_adopt( (i32)i, false ); return; }
+        return;
+    }
+    if ( s_nav.items[ cur ].chrome ) return;
+    const gui_nav_item_t c = s_nav.items[ cur ];
+
+    f32 page = 0.0f;
+    for ( u32 i = 0; i < s_window_count; ++i )
+        if ( s_windows[ i ].id == s_nav.win ) { page = s_windows[ i ].h; break; }
+    if ( page <= 0.0f ) page = 10.0f * WIDGET_H;
+
+    if ( !s_nav.goal_set )
+    {
+        s_nav.goal_x   = c.rect.x + c.rect.w * 0.5f;
+        s_nav.goal_set = true;
+    }
+
+    bool down   = ( s_nav.page > 0 );
+    f32  cy     = c.rect.y + c.rect.h * 0.5f;
+    f32  want   = cy + ( down ? page : -page );
+    u32  t_line = 0;
+    f32  t_d    = 0.0f;
+    bool found  = false;
+    for ( u32 i = 0; i < s_nav.item_count; ++i )
+    {
+        const gui_nav_item_t* it = &s_nav.items[ i ];
+        if ( it->chrome || it->region != c.region || it->line == c.line ) continue;
+
+        f32 iy = it->rect.y + it->rect.h * 0.5f;
+        if ( down ? ( iy <= cy ) : ( iy >= cy ) ) continue;   /* wrong side of the cursor */
+
+        f32 d = ( iy > want ) ? ( iy - want ) : ( want - iy );
+        if ( !found || d < t_d )
+        {
+            t_line = it->line;
+            t_d    = d;
+            found  = true;
+        }
+    }
+    if ( !found ) return;   /* already on the region's first / last line -- a wall */
+
+    i32 pick = nav_line_pick( c.region, t_line, s_nav.goal_x );
+    if ( pick >= 0 )
+        nav_adopt( pick, true );
+}
 
 /* Directional move.  Left/Right are ordinal: the neighboring placed item on the same line, and a
    line end is a wall -- a horizontal move can never read as a vertical jump.  Up/Down choose the
@@ -540,6 +651,10 @@ nav_finish( void )
         nav_resolve_lane();
     else if ( s_nav.tab != 0 )
         nav_resolve_tab();
+    else if ( s_nav.page != 0 )
+        nav_resolve_page();
+    else if ( s_nav.home != 0 )
+        nav_resolve_home();
     else if ( s_nav.move_dir >= 0 )
         nav_resolve_move();
 
@@ -563,6 +678,11 @@ nav_new_frame( void )
        chases the cursor into view during the emission that follows. */
     s_nav.scroll_chase = false;
 
+    /* Value-edit self-heal: the captured widget stopped emitting (window closed, tab switched) --
+       drop the capture so the keyboard is not fenced on a ghost. */
+    if ( s_nav.edit_id != GUI_ID_NONE && !s_nav.id_seen )
+        s_nav.edit_id = GUI_ID_NONE;
+
     /* First-focus / recovery: nav is engaged but its cursor item was not emitted last frame
        (window just focused, popup opened, list shrank) -- land on the first placed item that was. */
     if ( s_nav.active && !s_nav.id_seen && s_nav.first_item != GUI_ID_NONE )
@@ -580,8 +700,11 @@ nav_new_frame( void )
        this frame's keys resolve against it in nav_finish, which then opens the fresh list. */
     s_nav.move_dir   = -1;
     s_nav.tab        = 0;
+    s_nav.page       = 0;
+    s_nav.home       = 0;
     s_nav.activate   = false;
     s_nav.lane       = false;
+    s_nav.edit_dir   = 0;
     s_nav.mnemonic   = 0;
     s_nav.id_seen    = false;
     s_nav.first_item = GUI_ID_NONE;
@@ -602,12 +725,28 @@ nav_new_frame( void )
         s_nav.highlight = false;
     if ( mouse_press )
     {
-        s_nav.active = false;
+        s_nav.active  = false;
+        s_nav.edit_id = GUI_ID_NONE;   /* the mouse takes over -- release the value-edit capture */
         if ( s_nav.bar_win != GUI_ID_NONE )
         {
             s_nav.bar_win  = GUI_ID_NONE;
             s_nav.in_menus = false;
         }
+
+        /* Click-to-focus: the clicked window becomes the explicit nav target, so the keyboard
+           resumes where the mouse last worked.  This is what lets a DOCKED window take nav at
+           all -- a click never raises a tile's z (window_raise_on_press leaves it tiled), so the
+           front-most-by-z default can never reach it.  Popup-band records keep their own capture
+           (nav_choose_window) and a frame-only native shell never takes the keyboard. */
+        if ( s_interaction.hover_win != GUI_ID_NONE )
+            for ( u32 i = 0; i < s_window_count; ++i )
+                if ( s_windows[ i ].id == s_interaction.hover_win )
+                {
+                    if ( s_windows[ i ].z < GUI_POPUP_Z_BASE
+                         && !( s_windows[ i ].flags & GUI_WIN_NATIVE ) )
+                        s_nav.explicit_win = s_windows[ i ].id;
+                    break;
+                }
     }
 
     /* Menu mode self-heals: if its bar window is gone, drop out. */
@@ -623,6 +762,33 @@ nav_new_frame( void )
        which releases focus on Enter/Esc -- gui_text_edit.c). */
     if ( s_interaction.focused_id != GUI_ID_NONE )
     {
+        nav_finish();
+        return;
+    }
+
+    /* A captured DRAG widget (slider / drag-box value edit) owns the keyboard the same way:
+       Left/Right (repeat) step its value -- published as edit_dir, applied by the widget through
+       widget_state_t.nav_adjust -- and Enter/Space/Esc release; every other nav key is fenced so
+       Up/Down can never yank the cursor off a widget mid-edit. */
+    if ( s_nav.edit_id != GUI_ID_NONE )
+    {
+        if ( s_io.keys_pressed[ APP_KEY_ENTER ] || s_io.keys_pressed[ APP_KEY_SPACE ]
+             || s_io.keys_pressed[ APP_KEY_ESCAPE ] )
+        {
+            s_nav.edit_id = GUI_ID_NONE;
+            s_io.keys_pressed[ APP_KEY_ENTER ] = false;   /* the release must not re-activate */
+            s_io.keys_pressed[ APP_KEY_SPACE ] = false;
+        }
+        else
+        {
+            if ( s_io.keys_pressed_repeat[ APP_KEY_LEFT  ] ) s_nav.edit_dir = -1;
+            if ( s_io.keys_pressed_repeat[ APP_KEY_RIGHT ] ) s_nav.edit_dir = +1;
+            if ( s_nav.edit_dir != 0 )
+            {
+                s_nav.active    = true;   /* stepping keeps the keyboard the active instrument */
+                s_nav.highlight = true;
+            }
+        }
         nav_finish();
         return;
     }
@@ -688,6 +854,18 @@ nav_new_frame( void )
     bool tab = s_io.keys_pressed_repeat[ APP_KEY_TAB ];
     if ( tab ) s_nav.tab = shift ? -1 : +1;
 
+    /* Page keys: the scrollbar's keyboard face.  Page hops one view height (repeat, for holding
+       through a long list); Home/End jump to the region's first / last item.  The scroll chase
+       then brings the landing into view, so these read as page-scrolling with a cursor. */
+    bool pgup = s_io.keys_pressed_repeat[ APP_KEY_PAGE_UP   ];
+    bool pgdn = s_io.keys_pressed_repeat[ APP_KEY_PAGE_DOWN ];
+    bool home = s_io.keys_pressed[ APP_KEY_HOME ];
+    bool end  = s_io.keys_pressed[ APP_KEY_END  ];
+    if ( pgup ) s_nav.page = -1;
+    if ( pgdn ) s_nav.page = +1;
+    if ( home ) s_nav.home = -1;
+    if ( end  ) s_nav.home = +1;
+
     bool act = s_io.keys_pressed[ APP_KEY_ENTER ] || s_io.keys_pressed[ APP_KEY_SPACE ];
     if ( act ) s_nav.activate = true;
 
@@ -698,7 +876,7 @@ nav_new_frame( void )
 
     /* Any nav key makes the keyboard the active instrument: show the ring (nav_active) AND the fill
        (nav_highlight), and suppress mouse hover until the mouse moves again. */
-    if ( up || down || left || right || tab || act || lane )
+    if ( up || down || left || right || tab || act || lane || pgup || pgdn || home || end )
     {
         s_nav.active    = true;
         s_nav.highlight = true;

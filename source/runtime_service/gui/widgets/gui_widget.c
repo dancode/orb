@@ -404,8 +404,14 @@ gui_checkbox( const char* label, bool* v )
        sides instead of hugging it flush left and at the label's last glyph. */
     f32 side_pad = ( WIDGET_H - CHECKBOX_SZ ) * 0.5f;
 
-    /* Natural width = pad + box + gap + label + pad, so a same_line checkbox shrinks to fit. */
-    gui_rect_t r  = widget_next_rect_w( 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD + label_width( label ),
+    /* Natural width = pad + box + gap + label + pad, so a same_line checkbox shrinks to fit.
+       Under a field split the cell must NOT shrink: the split resolves its label + control tracks
+       over the cell, so a hugged cell collapses the control track to the CHECKBOX_SZ floor and the
+       nav/hit rect shrinks to the bare box instead of spanning the field like input/slider rows. */
+    bool       split_on = ( lf()->lay_field_side != 0 );
+    gui_rect_t r  = widget_next_rect_w( split_on ? -1.0f
+                                                 : 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD
+                                                       + label_width( label ),
                                         WIDGET_H );
 
     /* Field split mode aligns with the other labeled widgets: the label takes its track and the
@@ -489,8 +495,13 @@ gui_radio_button( const char* label, i32* v, i32 value )
        already gets from being centred in the row, so the item rect pads it evenly on all sides. */
     f32 side_pad = ( WIDGET_H - CHECKBOX_SZ ) * 0.5f;
 
-    /* Natural width = pad + disc + gap + label + pad, so a same_line radio shrinks to fit (a group on one row). */
-    gui_rect_t r  = widget_next_rect_w( 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD + label_width( label ),
+    /* Natural width = pad + disc + gap + label + pad, so a same_line radio shrinks to fit (a group
+       on one row).  Under a field split the cell must not shrink -- same rule as checkbox: the
+       split needs the full cell or its control track collapses to the floor. */
+    bool       split_on = ( lf()->lay_field_side != 0 );
+    gui_rect_t r  = widget_next_rect_w( split_on ? -1.0f
+                                                 : 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD
+                                                       + label_width( label ),
                                         WIDGET_H );
 
     /* Same label/control split as checkbox, resolved BEFORE widget_behavior for the same reason: so

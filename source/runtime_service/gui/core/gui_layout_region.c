@@ -228,10 +228,15 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
        chrome it draws last overpaints content that scrolled under the title bar. */
     if ( own_clip )
     {
-        gui_rect_t clip = { outer.x + WIN_BORDER, outer.y, view_w, view_h };
+        /* Bound the box by the parent's interaction clip, not just the enclosing draw clip: the
+           window's draw clip spans the whole window (so the chrome overpaint trick works for the
+           body), but a child box scrolled up must scissor at the body seam -- its rows never
+           paint across the title bar.  Draw clip and hit-test clip are then the same rect. */
+        gui_rect_t clip = rect_intersect( ( gui_rect_t ){ outer.x + WIN_BORDER, outer.y, view_w, view_h },
+                                          f->parent_clip );
         draw_push_clip_rect( clip.x, clip.y, clip.w, clip.h );
         f->pushed_clip = true;
-        s_build.clip_rect = rect_intersect( f->parent_clip, clip );   /* hit-test clip = the box */
+        s_build.clip_rect = clip;
     }
     else
     {

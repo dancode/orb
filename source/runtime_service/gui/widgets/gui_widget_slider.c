@@ -113,6 +113,21 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
         }
     }
 
+    /* Keyboard value edit (activation captured this slider -- st.nav_adjust): each Left/Right
+       repeat steps one increment, the quantize step when set, else 1% of the range. */
+    if ( st.nav_adjust != 0 )
+    {
+        f32 stp = ( step > 0.0f ) ? step : ( hi - lo ) * 0.01f;
+        f32 nv  = *v + (f32)st.nav_adjust * stp;
+        if ( nv < lo ) nv = lo;
+        if ( nv > hi ) nv = hi;
+        if ( nv != *v )
+        {
+            *v      = nv;
+            changed = true;
+        }
+    }
+
     f32  t_cur = ( hi > lo ) ? ( ( *v - lo ) / ( hi - lo ) ) : 0.0f;
     char buf[ 32 ];
     snprintf( buf, sizeof( buf ), "%.3f", *v );
@@ -141,6 +156,19 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     {
         f32 t  = saturate( ( s_io.mouse_x - track_r.x ) / track_r.w );
         i32 nv = lo + (i32)floorf( t * (f32)( hi - lo ) + 0.5f );    /* nearest whole step */
+        if ( nv < lo ) nv = lo;
+        if ( nv > hi ) nv = hi;
+        if ( nv != *v )
+        {
+            *v      = nv;
+            changed = true;
+        }
+    }
+
+    /* Keyboard value edit: one whole step per Left/Right repeat. */
+    if ( st.nav_adjust != 0 )
+    {
+        i32 nv = *v + st.nav_adjust;
         if ( nv < lo ) nv = lo;
         if ( nv > hi ) nv = hi;
         if ( nv != *v )
@@ -189,6 +217,20 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
     {
         f32 acc = (f32)s_drag_anchor_v + ( s_io.mouse_x - s_click_x[ 0 ] ) * v_speed;
         i32 nv  = (i32)floorf( acc + 0.5f );
+        if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
+        if ( nv != *v )
+        {
+            *v      = nv;
+            changed = true;
+        }
+    }
+
+    /* Keyboard value edit: at least one whole unit per Left/Right repeat (a v_speed below 1 would
+       otherwise round away to no change). */
+    if ( st.nav_adjust != 0 )
+    {
+        i32 stp = ( v_speed > 1.0f ) ? (i32)( v_speed + 0.5f ) : 1;
+        i32 nv  = *v + st.nav_adjust * stp;
         if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
         if ( nv != *v )
         {
@@ -253,6 +295,18 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
     if ( st.active )
     {
         f32 nv = s_drag_anchor_f + ( s_io.mouse_x - s_click_x[ 0 ] ) * v_speed;
+        if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
+        if ( nv != *v )
+        {
+            *v      = nv;
+            changed = true;
+        }
+    }
+
+    /* Keyboard value edit: one v_speed unit (one pixel of drag) per Left/Right repeat. */
+    if ( st.nav_adjust != 0 )
+    {
+        f32 nv = *v + (f32)st.nav_adjust * v_speed;
         if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
         if ( nv != *v )
         {

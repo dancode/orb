@@ -452,14 +452,21 @@ grid_next_rect( layout_frame_t* f, f32 natural_w )
 {
     if ( f->row >= f->lay_nrows ) f->row = f->lay_nrows - 1;   /* clamp overflow to the last row */
 
-    u32        c  = f->col, rr = f->row;
+    u32 c = f->col, rr = f->row;
+
+    /* A fresh row's nav line is dispensed HERE, on its first cell, not at the row advance below:
+       widget_next_rect_w latches the stamp after this returns, so an advance-time dispense would
+       hand the LAST cell of each row the next row's line -- walling Left/Right one short of the
+       edge.  Row 0's line comes from layout_set_grid at install. */
+    if ( c == 0 && rr > 0 )
+        f->nav_line = ++s_build.nav_line_seq;
+
     gui_rect_t r  = cell_fit_resolve( f, f->cellx[ c ], f->cellw[ c ], natural_w, f->rowy[ rr ], f->rowh[ rr ] );
 
-    if ( ++f->col >= f->lay_ncols )   /* next slot, row-major; a new row is a new nav line */
+    if ( ++f->col >= f->lay_ncols )   /* next slot, row-major */
     {
         f->col = 0;
         ++f->row;
-        f->nav_line = ++s_build.nav_line_seq;
     }
     return r;
 }

@@ -429,9 +429,19 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
             st->nav = true;
             if ( s_nav.activate )
             {
-                st->pressed = st->clicked = true;
-                if ( kind == WIDGET_KIND_FOCUSABLE )
-                    s_interaction.focused_id = id;      /* Enter on an input box -> enter text capture */
+                if ( kind == WIDGET_KIND_DRAG )
+                {
+                    /* A value widget (slider, drag box) does not click -- activation captures it
+                       for keyboard editing: Left/Right then step the value (st->nav_adjust below)
+                       until Enter/Space/Esc or a mouse press releases (gui_nav.c). */
+                    s_nav.edit_id = id;
+                }
+                else
+                {
+                    st->pressed = st->clicked = true;
+                    if ( kind == WIDGET_KIND_FOCUSABLE )
+                        s_interaction.focused_id = id;  /* Enter on an input box -> enter text capture */
+                }
 
                 /* Consume the activating keys + any text so the item just focused does not also see
                    this frame's Enter (instant blur) or type the activating Space. */
@@ -441,6 +451,14 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
                 s_io.keys_pressed[ APP_KEY_SPACE ] = false;
                 s_io.text[ 0 ] = '\0';
             }
+        }
+
+        /* Captured for value edit: keep the fill on (even if a mouse move dropped nav_highlight)
+           and hand the widget this frame's arrow step to apply to its value. */
+        if ( s_nav.edit_id == id )
+        {
+            st->nav        = true;
+            st->nav_adjust = s_nav.edit_dir;
         }
     }
 }

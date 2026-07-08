@@ -119,6 +119,7 @@ typedef struct
     bool clicked;   // press + release completed with the cursor still over
     bool focused;   // widget owns keyboard input (focusable widgets)
     bool nav;       // widget is the keyboard-nav cursor, highlighted
+    i32  nav_adjust;// keyboard value edit: -1 / +1 arrow step this frame (captured DRAG widgets)
 
 } widget_state_t;
 
@@ -241,8 +242,16 @@ typedef struct
 
     i32         move_dir;      // directional request this frame (gui_dir_t, or -1 for none)
     i32         tab;           // Tab linear move: +1 forward, -1 back, 0 none
+    i32         page;          // PageUp/PageDown: -1 / +1 -- vertical hop by one view height
+    i32         home;          // Home/End: -1 / +1 -- first / last item of the cursor's region
     bool        activate;      // Enter/Space -> fire id like a click this frame
     bool        lane;          // F6 -> hop between the body and the chrome strip this frame
+
+    /* Keyboard value edit: activating a DRAG widget (slider, drag box) captures it -- the drag
+       twin of focused_id text capture.  While captured, Left/Right step the value through
+       widget_state_t.nav_adjust and Enter/Space/Esc (or a mouse press) release. */
+    gui_id_t    edit_id;       // DRAG widget captured for keyboard value edit; 0 = none
+    i32         edit_dir;      // value-edit arrow step this frame: -1 / +1 / 0
 
     bool        id_seen;       // id was emitted in win this frame (else it went stale)
     gui_id_t    first_item;    // first layout-placed item this frame (first-focus / recovery)
