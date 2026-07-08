@@ -50,9 +50,13 @@ con_print( const char* text )
         {
             con_commit_line();
         }
-        else if ( s_con_partial_len < CON_LINE_LEN - 1 )
+        else
         {
-            s_con_partial[ s_con_partial_len++ ] = *p;    // overlong lines truncate
+            // Soft-wrap at the line-length limit instead of dropping the overflow, so
+            // scrollback never loses text that stdout still shows in full.
+            if ( s_con_partial_len >= CON_LINE_LEN - 1 )
+                con_commit_line();
+            s_con_partial[ s_con_partial_len++ ] = *p;
         }
     }
 }

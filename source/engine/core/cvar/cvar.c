@@ -560,7 +560,7 @@ cvar_promote_user_value( cvar_t* cv )
     if ( val_str && val_str[ 0 ] )
     {
         // Use central value parser to assign correctly
-        cvar_set_value( string_pool_get( &g_cvar_string_pool, cv->name ), val_str );
+        cvar_set( cv, val_str );
     }
 
     // Free user-pool allocation
@@ -843,7 +843,7 @@ cvar_t*
 cvar_register_u( const char* name, const char* value )
 {
     cvar_t* cv = cvar_register_base( name, NULL, 0 );
-    cvar_set_value( name, value );
+    cvar_set( cv, value );
     return cv;
 }
 
@@ -1313,6 +1313,15 @@ cvar_set_value( const char* name, const char* value )
     cvar_t* cv = cvar_find( name );
     if ( !cv )
         return false; /* Does not create, just returns false */
+
+    return cvar_set_value_internal( cv, value );
+}
+
+bool
+cvar_set( cvar_t* cv, const char* value )
+{
+    if ( !cv || !value )
+        return false;
 
     return cvar_set_value_internal( cv, value );
 }

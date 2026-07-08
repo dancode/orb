@@ -308,6 +308,10 @@ void        cvar_clear_modified     ( void );
                                     // Set cvar value by name, returns success/failure
 bool        cvar_set_value          ( const char* name, const char* value );
 
+                                    // Set cvar value directly; skips the name hash lookup for
+                                    // callers that already hold the cvar_t*.
+bool        cvar_set                ( cvar_t* cv, const char* value );
+
                                     // Get cvar string value by name.
 const char* cvar_get_value          ( const char* name );
 

@@ -198,7 +198,7 @@ cmd_execute_string( const char* text )
         {
             cvar_print_value( cv );
         }
-        else if ( cvar_set_value( cvar_get_name( cv ), argv[ 1 ] ) )
+        else if ( cvar_set( cv, argv[ 1 ] ) )
         {
             cvar_print_value( cv );
         }
