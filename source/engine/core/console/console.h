@@ -14,7 +14,13 @@
     end at all: every con_print also echoes to stdout.
 
     - Scrollback: fixed ring of lines.  con_print/con_printf assemble partial writes into
-      lines (printf-style multi-call lines stay one line) and commit on '\n'.
+      lines (printf-style multi-call lines stay one line) and commit on '\n'.  Each line also
+      carries a log_level_t tag (con_line_level) a front end pivots on to hide/show or color
+      by severity/kind: interactive command echo/results are always LOG_LEVEL_CONSOLE, while
+      ambient engine log entries (LOG_WARN/LOG_ERROR/... from any subsystem) are pulled in
+      separately -- at or above con_set_log_filter's floor -- so a burst of ambient logging
+      can't evict recent command output from the console's own (much smaller) ring before a
+      front end reads it.  See core.h for the shared log_level_t vocabulary.
     - History: executed lines kept in a ring for front-end up/down recall.
     - Completion: prefix match over backend command names + visible cvar names.
 
@@ -61,6 +67,19 @@ u32         con_line_count          ( void );
 
                                     /* Retained line by index; 0 = oldest retained */
 const char* con_line_get            ( u32 index );
+
+                                    /* Severity/kind tag for the line at index (same indexing
+                                       as con_line_get).  LOG_LEVEL_CONSOLE for interactive
+                                       command echo/results; the entry's real level for ambient
+                                       log lines pulled in via con_set_log_filter's sink. */
+log_level_t con_line_level           ( u32 index );
+
+                                    /* Minimum log_level_t an ambient engine log entry must
+                                       meet to be pulled into the scrollback (default WARN).
+                                       Interactive command I/O is unaffected -- it is always
+                                       retained regardless of this floor. Does not affect what
+                                       reaches the global log ring or its other sinks. */
+void        con_set_log_filter      ( log_level_t floor );
 
                                     /* Ever-incrementing count of lines committed since startup
                                        (NOT capped at CON_LINE_CAP, NOT a con_line_get index).

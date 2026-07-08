@@ -16,23 +16,54 @@
     output line from several con_printf calls, so text only becomes a line on '\n'.  Every
     write also echoes to stdout -- the console is fully usable with no front end attached.
 
+    Each line also carries a log_level_t tag (s_con_levels) a front end pivots on to hide/show
+    or color by severity/kind.  con_print/con_printf -- direct interactive I/O, command echo
+    and cmd/cvar results -- always tag LOG_LEVEL_CONSOLE, so a rendering filter can show
+    interactive output unconditionally regardless of where its severity floor is set.  Ambient
+    engine log entries (LOG_WARN/LOG_ERROR/... from any subsystem) arrive separately through
+    con_log_sink below, tagged with their real level.  The two paths write into the same ring
+    but are otherwise independent: the ring's retention budget is sized for a console session,
+    not engine-wide log volume, and the sink only forwards entries at or above s_con_log_floor
+    so a burst of ambient logging can't evict recent command output before it's read.
+
 ==============================================================================================*/
 
-static char s_con_lines[ CON_LINE_CAP ][ CON_LINE_LEN ];    // scrollback ring storage
-static u32  s_con_line_total = 0;                           // lines committed since startup
-static char s_con_partial[ CON_LINE_LEN ];                  // pending text awaiting '\n'
-static u32  s_con_partial_len = 0;                          // bytes accumulated in partial
+static char        s_con_lines[ CON_LINE_CAP ][ CON_LINE_LEN ];    // scrollback ring storage
+static log_level_t s_con_levels[ CON_LINE_CAP ];                   // per-line severity/kind tag
+static u32         s_con_line_total = 0;                           // lines committed since startup
+static char        s_con_partial[ CON_LINE_LEN ];                  // pending text awaiting '\n'
+static u32         s_con_partial_len = 0;                          // bytes accumulated in partial
 
-/* Commit the accumulated partial as one scrollback line. */
+/* Commit the accumulated partial as one scrollback line, tagged with a severity/kind level. */
 
 static void
-con_commit_line( void )
+con_commit_line( log_level_t level )
 {
-    char* dst = s_con_lines[ s_con_line_total % CON_LINE_CAP ];
+    const u32 slot = s_con_line_total % CON_LINE_CAP;
+    char*     dst  = s_con_lines[ slot ];
     memcpy( dst, s_con_partial, s_con_partial_len );
     dst[ s_con_partial_len ] = '\0';
+    s_con_levels[ slot ] = level;
     s_con_line_total++;
     s_con_partial_len = 0;
+}
+
+/* Store one already-complete line (no '\n' accumulation) -- used by con_log_sink so a log
+   entry arriving mid-way through an interactive partial line can never corrupt it. */
+
+static void
+con_store_line( log_level_t level, const char* text )
+{
+    u32 len = ( u32 )strlen( text );
+    if ( len > CON_LINE_LEN - 1 )
+        len = CON_LINE_LEN - 1;
+
+    const u32 slot = s_con_line_total % CON_LINE_CAP;
+    char*     dst  = s_con_lines[ slot ];
+    memcpy( dst, text, len );
+    dst[ len ] = '\0';
+    s_con_levels[ slot ] = level;
+    s_con_line_total++;
 }
 
 void
@@ -47,14 +78,14 @@ con_print( const char* text )
     {
         if ( *p == '\n' )
         {
-            con_commit_line();
+            con_commit_line( LOG_LEVEL_CONSOLE );
         }
         else
         {
             // Soft-wrap at the line-length limit instead of dropping the overflow, so
             // scrollback never loses text that stdout still shows in full.
             if ( s_con_partial_len >= CON_LINE_LEN - 1 )
-                con_commit_line();
+                con_commit_line( LOG_LEVEL_CONSOLE );
             s_con_partial[ s_con_partial_len++ ] = *p;
         }
     }
@@ -103,6 +134,54 @@ con_line_get( u32 index )
 
     const u32 first = s_con_line_total - count;    // oldest retained line
     return s_con_lines[ ( first + index ) % CON_LINE_CAP ];
+}
+
+log_level_t
+con_line_level( u32 index )
+{
+    const u32 count = con_line_count();
+    if ( index >= count )
+        return LOG_LEVEL_CONSOLE;
+
+    const u32 first = s_con_line_total - count;    // oldest retained line
+    return s_con_levels[ ( first + index ) % CON_LINE_CAP ];
+}
+
+/*==============================================================================================
+
+    Ambient log intake
+
+    Ambient engine log entries (LOG_WARN/LOG_ERROR/... from any subsystem, not console I/O)
+    are pulled into the scrollback through this sink rather than console.c reaching into the
+    log ring itself -- registered in con_init, removed in con_exit.  Only entries at or above
+    s_con_log_floor are forwarded: the global log ring already absorbs full engine volume, but
+    letting all of that volume into the console's own bounded ring would let ambient spam evict
+    recent command output before it's read.  What's retained is still filterable for display
+    by s_con_levels -- this floor only bounds what enters the ring at all.
+
+==============================================================================================*/
+
+static log_level_t s_con_log_floor = LOG_LEVEL_WARN;
+
+void
+con_set_log_filter( log_level_t floor )
+{
+    s_con_log_floor = floor;
+}
+
+static void
+con_log_sink( const log_entry_t* entry, void* userdata )
+{
+    UNUSED( userdata );
+
+    if ( entry->level == LOG_LEVEL_LINE )
+        return;    // stdout-only separator, not scrollback content
+    if ( ( int )entry->level < ( int )s_con_log_floor )
+        return;
+
+    char line[ CON_LINE_LEN ];
+    snprintf( line, sizeof( line ), "[%s] %s", entry->channel ? entry->channel : "?", entry->msg );
+    con_store_line( entry->level, line );
 }
 
 /*==============================================================================================
@@ -278,11 +357,13 @@ con_init( void )
 {
     cmd_register( "clear",   con_cmd_clear,   "Clear console scrollback" );
     cmd_register( "history", con_cmd_history, "Show input history" );
+    log_add_sink( con_log_sink, NULL );
 }
 
 void
 con_exit( void )
 {
+    log_remove_sink( con_log_sink );
     s_con_line_total    = 0;
     s_con_partial_len   = 0;
     s_con_history_total = 0;

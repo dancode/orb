@@ -25,8 +25,10 @@ typedef enum log_level_e
     LOG_LEVEL_INFO  = ORB_LOG_INFO,     // significant one-time events
     LOG_LEVEL_WARN  = ORB_LOG_WARN,     // recoverable issues
     LOG_LEVEL_ERROR = ORB_LOG_ERROR,    // non-fatal errors
-    LOG_LEVEL_FATAL = ORB_LOG_FATAL,    // fatal error that should trigger a breakpoint;
-    LOG_LEVEL_LINE  = 0xFF,             // visual separator; filtered and stored at INFO level
+    LOG_LEVEL_FATAL   = ORB_LOG_FATAL,  // fatal error that should trigger a breakpoint;
+    LOG_LEVEL_CONSOLE = 0xFE,           // direct interactive console I/O (command echo/results);
+                                        // never passed to log_write, tags console.c's own ring
+    LOG_LEVEL_LINE    = 0xFF,           // visual separator; filtered and stored at INFO level
 
 } log_level_t;
 

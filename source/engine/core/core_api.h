@@ -134,6 +134,8 @@ typedef struct core_api_s
 
     u32         ( *con_line_count )     ( void );
     const char* ( *con_line_get )       ( u32 index );
+    log_level_t ( *con_line_level )     ( u32 index );
+    void        ( *con_set_log_filter ) ( log_level_t floor );
     u32         ( *con_line_total )     ( void );
 
     u32         ( *con_history_count )  ( void );
