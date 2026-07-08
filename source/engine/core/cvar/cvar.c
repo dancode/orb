@@ -6,6 +6,7 @@
 
 ==============================================================================================*/
 
+// clang-format off
 /* Case-insensitive string compare helper */
 
 static bool
@@ -65,13 +66,6 @@ cvar_str_icmp_find( const char* haystack, const char* needle )
     return false;
 }
 
-// clang-format off
-/*==============================================================================================
-
-    Utility Functions
-
-==============================================================================================*/
-
 static u32
 cvar_hash( const char* s )
 {
@@ -106,7 +100,7 @@ cvar_hash( const char* s )
 #define MAX_CVAR_CALLBACKS      128       // Max global callbacks
 #define MAX_CVAR_FUNCS_PER_CVAR 3         // Max callbacks per cvar
 
-// Single sentinel for every callback-related id: cv->callback_id, the per-cvar id type. 
+// A single sentinel for every callback-related id: cv->callback_id, the per-cvar id type. 
 // function_id/module_id slots, and both freelist heads are all u8, so one 0xFF covers all of them.
 
 #define CVAR_CB_NONE            0xFF
