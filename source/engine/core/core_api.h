@@ -103,7 +103,7 @@ typedef struct core_api_s
     void        ( *cvar_reset )         ( cvar_t* cv );
 
     /* owner module id is stamped automatically; re-register in reload() */
-    uint16_t    ( *cvar_callback_register )   ( cvar_t* cv, cvar_callback_fn fn );
+    uint8_t     ( *cvar_callback_register )   ( cvar_t* cv, cvar_callback_fn fn );
     void        ( *cvar_callback_unregister ) ( cvar_t* cv );
 
     /* config writer hook: writeconfig appends service sections after cvars + binds */

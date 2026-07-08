@@ -139,7 +139,8 @@ typedef struct cvar_s
 
     u16         name;           // String pool offset to variable name
     u16         desc;           // String pool offset to description
-    u16         callback_id;    // Callback index; 0xFFFF = none.
+    u8          callback_id;    // Callback index; 0xFF = none. (matches the internal u8 callback table)
+    u8          pad;            // Padding for alignment.
 
     union
     {
@@ -207,7 +208,7 @@ typedef i32  (*cvar_module_id_fn)( void );
 
 void        cvar_set_module_id_fn               ( cvar_module_id_fn fn );
 
-u16         cvar_callback_register              ( cvar_t* cv, cvar_callback_fn fn );
+u8          cvar_callback_register              ( cvar_t* cv, cvar_callback_fn fn );
 void        cvar_callback_unregister            ( cvar_t* cv );
 void        cvar_callback_unregister_by_module  ( i32 module_id );
 void        cvar_callback_invoke                ( cvar_t* cv );
