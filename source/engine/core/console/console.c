@@ -192,22 +192,6 @@ con_submit( const char* line )
 
 ==============================================================================================*/
 
-static bool
-con_prefix_match( const char* name, const char* prefix )
-{
-    while ( *prefix )
-    {
-        char cn = *name, cp = *prefix;
-        if ( cn >= 'A' && cn <= 'Z' ) cn = cn + ( 'a' - 'A' );
-        if ( cp >= 'A' && cp <= 'Z' ) cp = cp + ( 'a' - 'A' );
-        if ( cn != cp )
-            return false;
-        ++name;
-        ++prefix;
-    }
-    return true;
-}
-
 u32
 con_complete( const char* prefix, const char** out_names, u32 max )
 {
@@ -219,7 +203,7 @@ con_complete( const char* prefix, const char** out_names, u32 max )
     const u32 cmd_total = cmd_count();
     for ( u32 i = 0; i < cmd_total && n < max; ++i )
     {
-        if ( con_prefix_match( cmd_name( i ), prefix ) )
+        if ( cvar_str_icmp_prefix( cmd_name( i ), prefix ) )
             out_names[ n++ ] = cmd_name( i );
     }
 
@@ -231,7 +215,7 @@ con_complete( const char* prefix, const char** out_names, u32 max )
             continue;
 
         const char* name = cvar_get_name( cv );
-        if ( con_prefix_match( name, prefix ) )
+        if ( cvar_str_icmp_prefix( name, prefix ) )
             out_names[ n++ ] = name;
     }
 

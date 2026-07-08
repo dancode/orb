@@ -154,20 +154,10 @@ cmd_cmd_bind( int argc, char** argv )
         return;
     }
 
-    /* Join remaining args back into one command string ("bind f toggle r_wireframe"). */
+    /* Join remaining args back into one command string ("bind f toggle r_wireframe"),
+       shared with cmd_cmd_alias. */
     char line[ CMD_LINE_LEN ];
-    u32  len = 0;
-    for ( int i = 2; i < argc; ++i )
-    {
-        const u32 alen = ( u32 )strlen( argv[ i ] );
-        if ( len + alen + 2 >= sizeof( line ) )
-            break;
-        if ( len )
-            line[ len++ ] = ' ';
-        memcpy( line + len, argv[ i ], alen );
-        len += alen;
-    }
-    line[ len ] = '\0';
+    cmd_join_args( line, sizeof( line ), argv, 2, argc );
 
     s_bind_off[ key ] = ( u16 )string_pool_push( &s_bind_pool, line );
 }

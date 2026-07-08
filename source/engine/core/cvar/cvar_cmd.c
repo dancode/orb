@@ -312,33 +312,6 @@ cmd_cvarinfo( int argc, char** argv )
 }
 
 /*============================================================================================*/
-/* Case-insensitive substring search, matching the case-insensitivity of cvar lookup/set. */
-
-static bool
-cvar_cmd_istrstr( const char* haystack, const char* needle )
-{
-    const size_t needle_len = strlen( needle );
-    if ( needle_len == 0 )
-        return true;
-
-    for ( const char* h = haystack; *h; ++h )
-    {
-        size_t i = 0;
-        for ( ; i < needle_len && h[ i ]; ++i )
-        {
-            char ch = h[ i ], cn = needle[ i ];
-            if ( ch >= 'A' && ch <= 'Z' ) ch = ch + ( 'a' - 'A' );
-            if ( cn >= 'A' && cn <= 'Z' ) cn = cn + ( 'a' - 'A' );
-            if ( ch != cn )
-                break;
-        }
-        if ( i == needle_len )
-            return true;
-    }
-    return false;
-}
-
-/*============================================================================================*/
 /* cmd_cvarlist - List all cvars with optional filtering */
 /* Usage: cvarlist [filter] */
 
@@ -362,7 +335,7 @@ cmd_cvarlist( int argc, char** argv )
         const char* name = cvar_get_name( cv );
 
         /* Apply filter (case-insensitive, matching cvar lookup/set) */
-        if ( filter && !cvar_cmd_istrstr( name, filter ) )
+        if ( filter && !cvar_str_icmp_find( name, filter ) )
             continue;
 
         /* Skip hidden variables in release builds */

@@ -102,6 +102,15 @@ void        cmd_queue_args          ( int argc, char** argv );
 void        cmd_pump                ( void );
 
 /*==============================================================================================
+    Shared helpers (bind + alias)
+==============================================================================================*/
+
+                                    /* Join argv[start..argc) into one space-separated line in
+                                       `out` (truncates rather than overflows out_cap). Shared by
+                                       "alias name a b c" and "bind key a b c" reconstruction. */
+u32         cmd_join_args           ( char* out, u32 out_cap, char** argv, int start, int argc );
+
+/*==============================================================================================
     Key binds (key -> command string, queued through the buffer)
 ==============================================================================================*/
 

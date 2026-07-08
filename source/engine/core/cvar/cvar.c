@@ -29,6 +29,42 @@ cvar_str_icmp_eq( const char* a, const char* b )
     return *a == *b;
 }
 
+/* Case-insensitive: does `name` start with `prefix`? Stops at the end of `prefix`, so `name`
+   may be longer (e.g. tab-completion matching a registry name against a typed prefix). */
+
+static bool
+cvar_str_icmp_prefix( const char* name, const char* prefix )
+{
+    while ( *prefix )
+    {
+        char cn = *name, cp = *prefix;
+        if ( cn >= 'A' && cn <= 'Z' ) cn = cn + ( 'a' - 'A' );
+        if ( cp >= 'A' && cp <= 'Z' ) cp = cp + ( 'a' - 'A' );
+        if ( cn != cp )
+            return false;
+        ++name;
+        ++prefix;
+    }
+    return true;
+}
+
+/* Case-insensitive: does `needle` occur anywhere in `haystack`? Built on cvar_str_icmp_prefix
+   tried at every starting offset (haystack/needle are short console strings, so this is cheap). */
+
+static bool
+cvar_str_icmp_find( const char* haystack, const char* needle )
+{
+    if ( !*needle )
+        return true;
+
+    for ( const char* h = haystack; *h; ++h )
+    {
+        if ( cvar_str_icmp_prefix( h, needle ) )
+            return true;
+    }
+    return false;
+}
+
 // clang-format off
 /*==============================================================================================
 

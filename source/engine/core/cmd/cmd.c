@@ -187,6 +187,29 @@ cmd_write_quoted( void* file, const char* str )
     }
 }
 
+/*============================================================================================*/
+/* Join argv[start..argc) into one space-separated line, truncating rather than overflowing
+   out_cap. Shared by cmd_cmd_alias and cmd_cmd_bind, which both rebuild a command string from
+   the trailing arguments of "alias <name> ..." / "bind <key> ...". */
+
+u32
+cmd_join_args( char* out, u32 out_cap, char** argv, int start, int argc )
+{
+    u32 len = 0;
+    for ( int i = start; i < argc; ++i )
+    {
+        const u32 alen = ( u32 )strlen( argv[ i ] );
+        if ( len + alen + 2 >= out_cap )
+            break;
+        if ( len )
+            out[ len++ ] = ' ';
+        memcpy( out + len, argv[ i ], alen );
+        len += alen;
+    }
+    out[ len ] = '\0';
+    return len;
+}
+
 bool
 cmd_execute_string( const char* text )
 {
