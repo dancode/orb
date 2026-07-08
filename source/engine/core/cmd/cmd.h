@@ -61,6 +61,9 @@ void        cmd_system_exit         ( void );
                                     /* Register a command; name/desc are copied. false = full/dup */
 bool        cmd_register            ( const char* name, cmd_fn fn, const char* desc );
 
+                                    /* True if a command with this name is registered */
+bool        cmd_exists              ( const char* name );
+
                                     /* Remove a command by name */
 void        cmd_unregister          ( const char* name );
 

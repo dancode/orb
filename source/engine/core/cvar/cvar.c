@@ -632,6 +632,14 @@ cvar_register_internal( const char* name, const char* desc, cvar_type_t base_typ
         return existing;
     }
 
+    if ( cmd_exists( name ) )
+    {
+        // Not fatal: typed registrars dereference the returned pointer unconditionally, so
+        // rejecting here would crash every call site. Warn instead -- the cvar is registered
+        // but cmd_execute_string dispatches the command first, shadowing it.
+        log_write( LOG_LEVEL_WARN, "cvar", "'%s' collides with a registered command; cvar is shadowed", name );
+    }
+
     if ( g_cvar_count >= MAX_CVARS )
     {
         log_write( LOG_LEVEL_FATAL, "cvar", "pool overflow (max %d)", MAX_CVARS );

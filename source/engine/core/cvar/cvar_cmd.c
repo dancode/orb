@@ -376,13 +376,13 @@ cmd_cvarlist( int argc, char** argv )
 
         switch ( cv->type )
         {
-            case CVAR_BOOL:     type_str = "bool"; break;
-            case CVAR_INT:      type_str = "int"; break;
-            case CVAR_FLOAT:    type_str = "float"; break;
+            case CVAR_BOOL:     type_str = "bool";   break;
+            case CVAR_INT:      type_str = "int";    break;
+            case CVAR_FLOAT:    type_str = "float";  break;
             case CVAR_STR:      type_str = "choice"; break;
             case CVAR_BUF:      type_str = "string"; break;
-            case CVAR_REF:      type_str = "ref"; break;
-            case CVAR_USR:      type_str = "user"; break;
+            case CVAR_REF:      type_str = "ref";    break;
+            case CVAR_USR:      type_str = "user";   break;
         }
 
         /* Build flags string */
@@ -393,7 +393,7 @@ cmd_cvarlist( int argc, char** argv )
         if ( cv->flags & CVAR_CHEAT )        strcat( flags, "C" );
         if ( cv->flags & CVAR_USERINFO )     strcat( flags, "U" );
         if ( cv->flags & CVAR_SERVERINFO )   strcat( flags, "S" );
-        if ( cv->mods & CVAR_MODIFIED )     strcat( flags, "*" );
+        if ( cv->mods & CVAR_MODIFIED )      strcat( flags, "*" );
 
         con_printf( "%-24s %-12s %-10s %s\n", name, value, type_str, flags );
         count++;

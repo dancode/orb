@@ -40,6 +40,12 @@ cmd_find( const char* name )
 }
 
 bool
+cmd_exists( const char* name )
+{
+    return cmd_find( name ) != NULL;
+}
+
+bool
 cmd_register( const char* name, cmd_fn fn, const char* desc )
 {
     if ( !name || !name[ 0 ] || !fn )
@@ -48,6 +54,12 @@ cmd_register( const char* name, cmd_fn fn, const char* desc )
     if ( cmd_find( name ) )
     {
         con_printf( "cmd: command \"%s\" already registered\n", name );
+        return false;
+    }
+
+    if ( cvar_find( name ) )
+    {
+        con_printf( "cmd: \"%s\" is already a cvar, refusing to register command\n", name );
         return false;
     }
 

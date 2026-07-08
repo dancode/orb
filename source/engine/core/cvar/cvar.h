@@ -339,10 +339,9 @@ bool        cvar_set_value_pri      ( const char* name, const char* value, cvar_
 bool        cvar_set                ( cvar_t* cv, const char* value );
 bool        cvar_set_pri            ( cvar_t* cv, const char* value, cvar_priority_t priority );
 
-                                    // Enable/disable the priority guard. On (default): a set from
-                                    // a lower-priority source than the cvar's current priority is
-                                    // rejected. Off: every set applies immediately (last write wins),
-                                    // useful for debugging which code path is stomping a value.
+                                    // Enabled (default): a lower-priority "set" source than the
+                                    // cvar's current priority is rejected. 
+                                    // Disabled: every set applies immediately (last write wins).
 void        cvar_set_priority_guard ( bool enabled );
 bool        cvar_get_priority_guard ( void );
 
@@ -403,10 +402,10 @@ void        cmd_writeconfig         ( int argc, char** argv );
                                     // Write all archived cvars to a config file
 bool        cvar_write_config       ( const char* filename, u32 type_filter );
 
-                                    /* Extra config sections: services register a writer and
-                                       cvar_write_config calls it after the cvar + bind lines
-                                       (e.g. the input service's bindaxis lines).  The void*
-                                       is an open FILE*.  add returns false when full. */
+/* Extra config sections: services register a writer and cvar_write_config calls it
+   after the cvar + bind lines (e.g. the input service's bindaxis lines).  
+   The void* is an open FILE*. Add returns false when full. */
+
 typedef void ( *cvar_config_writer_fn )( void* file );
 
 bool        cvar_config_writer_add    ( cvar_config_writer_fn fn );
