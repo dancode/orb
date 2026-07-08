@@ -41,7 +41,7 @@ string_pool_init( string_pool_t* pool )
     /* create empty string at offset 0 */
     string_pool_ensure( pool, string_pool_align_up( STRING_POOL_ALIGN ) );
     if ( pool->data )
-        pool->data[ pool->used ] = '\0';
+         pool->data[ pool->used ] = '\0';
 
     pool->used += string_pool_align_up( STRING_POOL_ALIGN );
 }

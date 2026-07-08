@@ -58,17 +58,18 @@ cvar_hash( const char* s )
 
     * Supports multiple callbacks per cvar with module tracking for hot reload.
     * Cvar callbacks are called on value changes.
-    * Callbacks are referenced by index in cvar_t.callback_id field.
+    * Callbacks are referenced by id if a cvar has any (cvar.callback_id field)
+
+    * Callback table linking cvars to functions. 
+    * Each function slot records its owning module id (from mod_current_id() at registration) 
+    * Hot-reload can drop exactly the pointers that are about to dangle, 
+    * Multiple modules can hook the same cvar.
 
 ==============================================================================================*/
 
 #define MAX_CVAR_CALLBACKS      128       // Max global callbacks
 #define MAX_CVAR_FUNCS_PER_CVAR 3         // Max callbacks per cvar
 #define INVALID_ID              0xFFFF    // Invalid callback ID (no callback)
-
-// Callback table linking cvars to functions. Each function slot records its owning
-// module id (from mod_current_id() at registration) so a hot-reload can drop exactly
-// the pointers that are about to dangle, even when two modules hook the same cvar.
 
 typedef struct cvar_callback_s
 {
@@ -80,11 +81,11 @@ typedef struct cvar_callback_s
 // The function pointer array stores a pointer-sized encoded "next free index",
 // instead of a function pointer when slot is free.
 
-static cvar_callback_fn g_function_array[ MAX_CVAR_CALLBACKS ];    // function pointer array.
-static cvar_callback_t  g_callback_table[ MAX_CVAR_CALLBACKS ];    // callback entry.
-static u16              g_callback_count = 0;                      // number of used callback slots
-static u16              g_free_head      = INVALID_ID;             // intrusive freelist head
-static u16              g_cbtable_free   = INVALID_ID;             // freed callback-table entries (next in function_id[0])
+static cvar_callback_fn g_function_array[ MAX_CVAR_CALLBACKS ]; // function pointer array.
+static cvar_callback_t  g_callback_table[ MAX_CVAR_CALLBACKS ]; // callback entry.
+static u16              g_callback_count     = 0;               // number of used callback slots
+static u16              g_function_free_head = INVALID_ID;      // free function pointer storage.
+static u16              g_callback_free_head = INVALID_ID;      // freed callback-table entries (next in function_id[0])
 
 /*============================================================================================*/
 /* Initialize callback system */
@@ -104,8 +105,8 @@ cvar_callbacks_init()
         g_function_array[ i ] = ( cvar_callback_fn )( uintptr_t )( i + 1 );
     }
     g_function_array[ MAX_CVAR_CALLBACKS - 1 ] = ( cvar_callback_fn )( uintptr_t )INVALID_ID;
-    g_free_head                                = 0; /* Head points to first free slot */
-    g_cbtable_free                             = INVALID_ID;
+    g_function_free_head                                = 0; /* Head points to first free slot */
+    g_callback_free_head                             = INVALID_ID;
 }
 
 /*============================================================================================*/
@@ -114,13 +115,13 @@ cvar_callbacks_init()
 static inline u16
 alloc_function_slot( cvar_callback_fn fn )
 {
-    if ( g_free_head == INVALID_ID )
+    if ( g_function_free_head == INVALID_ID )
         return INVALID_ID; /* No free slots */
 
-    u16 slot = g_free_head;
+    u16 slot = g_function_free_head;
 
     /* Pop from free list */
-    g_free_head = ( u16 )( uintptr_t )g_function_array[ slot ];
+    g_function_free_head = ( u16 )( uintptr_t )g_function_array[ slot ];
 
     /* Assign actual function */
     g_function_array[ slot ] = fn;
@@ -137,8 +138,8 @@ free_function_slot( u16 slot )
         return;
 
     /* Push this slot back into the free list */
-    g_function_array[ slot ] = ( cvar_callback_fn )( uintptr_t )g_free_head;
-    g_free_head              = slot;
+    g_function_array[ slot ] = ( cvar_callback_fn )( uintptr_t )g_function_free_head;
+    g_function_free_head              = slot;
 }
 
 /* Return a cvar's callback-table entry to the freelist (next-link stored in
@@ -150,8 +151,8 @@ callback_table_release( cvar_t* cv )
 {
     cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
 
-    cb->function_id[ 0 ] = g_cbtable_free;
-    g_cbtable_free       = cv->callback_id;
+    cb->function_id[ 0 ] = g_callback_free_head;
+    g_callback_free_head       = cv->callback_id;
 
     cv->callback_id = INVALID_ID;
     cv->mods &= ~CVAR_CALLBACK;
@@ -186,10 +187,10 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn )
     /* Allocate callback slot if needed (reuse freed entries first) */
     if ( cv->callback_id == INVALID_ID )
     {
-        if ( g_cbtable_free != INVALID_ID )
+        if ( g_callback_free_head != INVALID_ID )
         {
-            cv->callback_id = g_cbtable_free;
-            g_cbtable_free  = g_callback_table[ g_cbtable_free ].function_id[ 0 ];
+            cv->callback_id = g_callback_free_head;
+            g_callback_free_head  = g_callback_table[ g_callback_free_head ].function_id[ 0 ];
         }
         else if ( g_callback_count < MAX_CVAR_CALLBACKS )
         {
@@ -338,12 +339,12 @@ cvar_callback_unregister_by_module( i32 module_id )
 
 ==============================================================================================*/
 
-#define MAX_CVARS      256                  // Maximum registered cvars
-#define HASH_SIZE      512                  // Hash table size (power of 2)
-#define HASH_MASK      ( HASH_SIZE - 1 )    // Bit mask for hash
+#define MAX_CVARS      256                      // Maximum registered cvars
+#define HASH_SIZE      512                      // Hash table size (power of 2)
+#define HASH_MASK      ( HASH_SIZE - 1 )        // Bit mask for hash
 
-#define HASH_EMPTY     ( ( u16 )0xFFFF )    // Empty slot sentinel
-#define HASH_TOMBSTONE ( ( u16 )0xFFFE )    // Deleted slot sentinel
+#define HASH_EMPTY     ( ( u16 )0xFFFF )        // Empty slot sentinel
+#define HASH_TOMBSTONE ( ( u16 )0xFFFE )        // Deleted slot sentinel
 
 static u32    g_cvar_count = 0;                 // Number of registered cvars
 static cvar_t g_cvar_pool[ MAX_CVARS ];         // Fixed cvar array
