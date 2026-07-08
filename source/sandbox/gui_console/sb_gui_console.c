@@ -217,8 +217,11 @@ show_console( f32 display_w )
         gui()->text( ( idx >= 0 ) ? core()->con_line_get( ( u32 )idx ) : " " );
     }
 
+    /* separator_text and separator both consume the same WIDGET_H cell (unlike text_disabled,
+       which is only font_char_h() tall) -- switching between them here keeps this row's height
+       constant across scroll states, so the input line below never shifts as you scroll. */
     if ( s_view_offset > 0 )
-        gui()->text_disabled( "^ ^ ^  (PageDown for live tail)  ^ ^ ^" );
+        gui()->separator_text( "^ ^ ^  (PageDown for live tail)  ^ ^ ^" );
     else
         gui()->separator();
 
