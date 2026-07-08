@@ -16,7 +16,7 @@ static u32  s_cmd_wait = 0;               // frames to defer before pumping resu
 #define CMD_EXEC_MAX_PER_PUMP 16          // guards a self-referential "exec" from looping all frame
 static u32 s_exec_calls = 0;              // "exec" invocations this pump cycle; reset in cmd_pump
 
-/* Called by cmd_cmd_exec before it opens a file.  There's no true call-stack recursion here
+/* Called by cmd_exec before it opens a file.  There's no true call-stack recursion here
    (exec queues text and returns; the requeued statement fires on a later pump iteration), so
    this bounds repeated exec-of-exec within one frame instead of a depth. */
 

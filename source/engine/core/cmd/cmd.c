@@ -270,7 +270,7 @@ cmd_execute_string( const char* text )
 ==============================================================================================*/
 
 static void
-cmd_cmd_help( int argc, char** argv )
+cmd_list( int argc, char** argv )
 {
     UNUSED( argc );
     UNUSED( argv );
@@ -284,7 +284,7 @@ cmd_cmd_help( int argc, char** argv )
 }
 
 static void
-cmd_cmd_echo( int argc, char** argv )
+cmd_echo( int argc, char** argv )
 {
     for ( int i = 1; i < argc; ++i )
     {
@@ -299,7 +299,7 @@ cmd_cmd_echo( int argc, char** argv )
    queues directly -- and every registered command works inside configs. */
 
 static void
-cmd_cmd_exec( int argc, char** argv )
+cmd_exec( int argc, char** argv )
 {
     if ( argc < 2 )
     {
@@ -347,11 +347,9 @@ void
 cmd_system_init( void )
 {
     s_cmd_count = 0;
-
-    cmd_register( "help",    cmd_cmd_help, "List all console commands" );
-    cmd_register( "cmdlist", cmd_cmd_help, "List all console commands" );
-    cmd_register( "echo",    cmd_cmd_echo, "Print arguments to the console" );
-    cmd_register( "exec",    cmd_cmd_exec, "Execute a config file" );
+    cmd_register( "cmdlist", cmd_list,  "List all console commands" );
+    cmd_register( "echo",    cmd_echo,  "Print arguments to the console" );
+    cmd_register( "exec",    cmd_exec,  "Execute a config file" );
 
     cmd_buffer_init();    /* buffer state + "wait" */
     cmd_bind_init();      /* bind table + bind/unbind/unbindall/bindlist */
