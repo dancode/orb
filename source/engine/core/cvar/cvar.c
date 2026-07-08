@@ -79,6 +79,8 @@ ORB_STATIC_ASSERT( MAX_CVAR_CALLBACKS < CVAR_CB_NONE, "MAX_CVAR_CALLBACKS must l
 
 typedef struct cvar_callback_s
 {
+    /* The first entry of funcion_id[0] is used as a freelist link for callback struct array */
+
     u8 function_id  [ MAX_CVAR_FUNCS_PER_CVAR ];    // Function indices (CB_NONE = empty)
     u8 module_id    [ MAX_CVAR_FUNCS_PER_CVAR ];    // Owning module per slot (CB_NONE = host/none)
 
@@ -101,8 +103,7 @@ cvar_callbacks_init()
 {
     g_callback_count = 0;
 
-    /* function_id/module_id are u8, so a raw byte fill sets every slot to CB_NONE (0xFF)
-       in one pass. */
+    /* Clear all to invalid callback */
     memset( g_callback_table, 0xFF, sizeof( g_callback_table ) );
 
     /* Initialize intrusive free list in g_function_array */
@@ -136,6 +137,7 @@ alloc_function_slot( cvar_callback_fn fn )
     return slot;
 }
 
+/*============================================================================================*/
 /* Free a function slot (O(1)) */
 
 static inline void
@@ -147,22 +149,6 @@ free_function_slot( u8 slot )
     /* Push this slot back into the free list */
     g_function_array[ slot ] = ( cvar_callback_fn )( uintptr_t )g_function_free_head;
     g_function_free_head     = slot;
-}
-
-/* Return a cvar's callback-table entry to the freelist (next-link stored in
-   function_id[0]) and detach it from the cvar. Caller must have freed or kept
-   every function slot first. */
-
-static void
-callback_table_release( cvar_t* cv )
-{
-    cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
-
-    cb->function_id[ 0 ] = g_callback_free_head;
-    g_callback_free_head = cv->callback_id;
-
-    cv->callback_id = CVAR_CB_NONE;
-    cv->mods &= ~CVAR_CALLBACK;
 }
 
 /*============================================================================================*/
@@ -245,6 +231,44 @@ cvar_callback_register( cvar_t* cv, cvar_callback_fn fn )
 }
 
 /*============================================================================================*/
+/* Invoke all callbacks for cvar */
+
+void
+cvar_callback_invoke( cvar_t* cv )
+{
+    if ( !cv || cv->callback_id == CVAR_CB_NONE )
+        return;
+
+    cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
+
+    for ( int i = 0; i < MAX_CVAR_FUNCS_PER_CVAR; i++ )
+    {
+        u8 fid = cb->function_id[ i ];
+        if ( fid != CVAR_CB_NONE && g_function_array[ fid ] )
+        {
+            g_function_array[ fid ]( cv );
+        }
+    }
+}
+
+/*============================================================================================*/
+/* Utility function called by cvar_callback_unregister() and cvar_callback_unregister_by_module()
+   Re-link the callback data into the freelist. */
+
+static void
+callback_table_release( cvar_t* cv )
+{
+    cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
+
+    /* The first member of the callback_t struct (function_id[ 0 ]) acts as freelist entry */
+    cb->function_id[ 0 ] = g_callback_free_head;
+    g_callback_free_head = cv->callback_id;
+
+    cv->callback_id = CVAR_CB_NONE;
+    cv->mods &= ~CVAR_CALLBACK;
+}
+
+/*============================================================================================*/
 /* Clear all callbacks associated with a single cvar */
 
 void
@@ -267,27 +291,6 @@ cvar_callback_unregister( cvar_t* cv )
     }
 
     callback_table_release( cv );
-}
-
-/*============================================================================================*/
-/* Invoke all callbacks for cvar */
-
-void
-cvar_callback_invoke( cvar_t* cv )
-{
-    if ( !cv || cv->callback_id == CVAR_CB_NONE )
-        return;
-
-    cvar_callback_t* cb = &g_callback_table[ cv->callback_id ];
-
-    for ( int i = 0; i < MAX_CVAR_FUNCS_PER_CVAR; i++ )
-    {
-        u8 fid = cb->function_id[ i ];
-        if ( fid != CVAR_CB_NONE && g_function_array[ fid ] )
-        {
-            g_function_array[ fid ]( cv );
-        }
-    }
 }
 
 /*============================================================================================*/
