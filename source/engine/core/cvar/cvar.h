@@ -131,15 +131,20 @@ typedef enum cvar_mod_e
 
 typedef enum cvar_priority_e
 {
-    CVAR_PRI_CODE   = 0,    // Engine/game code (registration default, explicit code writes)
+    CVAR_PRI_CODE     = 0,    // Engine/game code (registration default, explicit code writes)
 
-    CVAR_PRI_USER   = 1,    // set/seta from the console, a queued config file (default.cfg,
-                            // config.cfg, autoexec.cfg), or a user-created variable.
-                            // TODO: split into CVAR_PRI_CONFIG / CVAR_PRI_CONSOLE once cmd.c
-                            // tracks whether the active command came from an exec'd file vs.
-                            // live input -- today both paths are indistinguishable.
+    CVAR_PRI_DEFAULT  = 1,    // Loaded from default.cfg (engine/game baseline).
+    CVAR_PRI_CONFIG   = 2,    // Loaded from config.cfg (saved user settings).
+    CVAR_PRI_AUTOEXEC = 3,    // Loaded from autoexec.cfg (user session overrides).
 
-    CVAR_PRI_FORCE  = 2,    // Always applies, guard or no guard (admin/cheat-enforcement code).
+    CVAR_PRI_USER     = 4,    // Live console input, command-line +args, an on-demand "exec" run
+                              // from either of those, or a user-created variable. cmd.c tags
+                              // the ambient source priority (see cvar_source_priority_push/pop
+                              // in cvar_config.c); only the three named boot configs above push
+                              // a lower tier -- an "exec" run at the console or from within one
+                              // of those files inherits the priority already in effect.
+
+    CVAR_PRI_FORCE    = 5,    // Always applies, guard or no guard (admin/cheat-enforcement code).
 
 } cvar_priority_t;
 
@@ -325,6 +330,27 @@ void        cvar_apply_latched      ( void );
 void        cvar_clear_modified     ( void );
 
 /*==============================================================================================
+    Priority Guard
+==============================================================================================*/
+
+                                    // Enabled (default): a lower-priority "set" source than the
+                                    // cvar's current priority is rejected.
+                                    // Disabled: every set applies immediately (last write wins).
+void        cvar_set_priority_guard ( bool enabled );
+bool        cvar_get_priority_guard ( void );
+
+                                    // Ambient priority applied to "set"/"seta"/bare-name sets
+                                    // that don't specify one explicitly (defaults to CVAR_PRI_USER).
+                                    // cvar_load_defaults pushes CVAR_PRI_DEFAULT/CONFIG/AUTOEXEC
+                                    // around each boot config file's queued text; pop restores the
+                                    // previous ambient value. Small fixed stack -- push/pop must
+                                    // balance within CVAR_PRI_STACK_DEPTH.
+
+void            cvar_source_priority_push ( cvar_priority_t priority );
+void            cvar_source_priority_pop  ( void );
+cvar_priority_t cvar_source_priority      ( void );
+
+/*==============================================================================================
     Named Access
 ==============================================================================================*/
 
@@ -338,12 +364,6 @@ bool        cvar_set_value_pri      ( const char* name, const char* value, cvar_
                                     // callers that already hold the cvar_t*.
 bool        cvar_set                ( cvar_t* cv, const char* value );
 bool        cvar_set_pri            ( cvar_t* cv, const char* value, cvar_priority_t priority );
-
-                                    // Enabled (default): a lower-priority "set" source than the
-                                    // cvar's current priority is rejected. 
-                                    // Disabled: every set applies immediately (last write wins).
-void        cvar_set_priority_guard ( bool enabled );
-bool        cvar_get_priority_guard ( void );
 
                                     // Get cvar string value by name.
 const char* cvar_get_value          ( const char* name );

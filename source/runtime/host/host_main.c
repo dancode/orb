@@ -346,8 +346,12 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     mod_set_log_fn( core_log_fn );
     app_set_log_fn( core_log_fn );
 
-    /* Queue "+command arg..." groups from the command line (+set r_width 1920 +exec dev.cfg).
-       They execute at the loop's first cmd_pump, after every module has registered. */
+    /* Queue default.cfg -> config.cfg -> autoexec.cfg, then "+command arg..." groups from the
+       command line (+set r_width 1920 +exec dev.cfg). They execute at the loop's first cmd_pump,
+       after every module has registered. Priority tags (see cvar_load_defaults) make the queue
+       order informational, not load-bearing -- command-line args are CVAR_PRI_USER, so they win
+       over the configs even though those are also queued this frame. */
+    cvar_load_defaults();
     cmd_queue_args( argc, argv );
 
     /* Give the bind system app's source-name table (keyboard + mouse + pad) so
