@@ -7,7 +7,7 @@
 
       1. Translate this frame's keys into a request: arrows -> a directional move, Tab -> a
          linear move, Enter/Space -> activate, Esc/Left -> close a popup level, Ctrl+Tab ->
-         cycle the nav window, Alt -> enter the main menu bar.
+         cycle the nav window, F6 -> hop lanes (body <-> chrome), Alt -> enter the main menu bar.
       2. Resolve the move STRUCTURALLY against the nav item list built during last frame's
          emission (nav_finish): every item of the nav window recorded itself in emission order,
          stamped with the region + line the layout engine placed it in.  Left/Right walk the
@@ -27,8 +27,10 @@
     The per-item half lives in nav_item_register (gui_widget_core.c), called from widget_behavior:
     each item in nav_win appends itself to the list and -- if it is the nav cursor -- lights the
     focus ring and takes a synthesized click from an activation.  Chrome (title-bar buttons,
-    scrollbars, dock tabs: anything not placed by a layout cell) lists as Tab-only; arrows
-    never land on it.
+    dock tabs: anything not placed by a layout cell) forms its own lane: F6 hops between the
+    body and the chrome strip (and back to the remembered body item), Left/Right walk the strip
+    by position, Down drops back into the body.  Tab and the body arrows never touch chrome.
+    Scrollbars and drag strips are no keyboard targets at all (s_build.nav_skip).
 
     Included by gui.c after gui_popup.c (so the popup stack + GUI_POPUP_Z_BASE are in scope)
     and before gui_frame.c (so gui_ctx_begin can call nav_new_frame).
@@ -185,25 +187,73 @@ nav_adopt( i32 i, bool vertical )
         s_nav.goal_set = false;
 }
 
-/* Tab / Shift+Tab: the next / previous item in emission order, wrapping.  Walks the whole list --
-   chrome included, so title-bar buttons and scrollless chrome stay keyboard-reachable. */
+/* Tab / Shift+Tab: the next / previous placed item in emission order, wrapping.  Body lane only:
+   chrome is the F6 lane's, so Tab from a title-bar button steps back into the content.  The scan
+   is bounded by the list length, so an all-chrome frame simply leaves the cursor alone. */
 static void
 nav_resolve_tab( void )
 {
     i32 n = (i32)s_nav.item_count;
     if ( n == 0 ) return;
 
-    i32 cur = nav_list_find( s_nav.id );
-    i32 next;
-    if ( cur < 0 )
-        next = ( s_nav.tab > 0 ) ? 0 : n - 1;
-    else
+    i32 step = ( s_nav.tab > 0 ) ? 1 : -1;
+    i32 i    = nav_list_find( s_nav.id );
+    for ( i32 k = 0; k < n; ++k )
     {
-        next = cur + ( ( s_nav.tab > 0 ) ? 1 : -1 );
-        if ( next < 0 )  next = n - 1;
-        if ( next >= n ) next = 0;
+        if ( i < 0 )
+            i = ( step > 0 ) ? 0 : n - 1;   /* no cursor: enter the list at the near end */
+        else
+        {
+            i += step;
+            if ( i < 0 )  i = n - 1;
+            if ( i >= n ) i = 0;
+        }
+        if ( !s_nav.items[ i ].chrome )
+        {
+            nav_adopt( i, false );
+            return;
+        }
     }
-    nav_adopt( next, false );
+}
+
+/* Land back in the body lane: the remembered return point if it is still a live placed item,
+   else the first placed item -- the same landing rule as recovery. */
+static void
+nav_lane_body( void )
+{
+    i32 i = nav_list_find( s_nav.body_id );
+    if ( i >= 0 && !s_nav.items[ i ].chrome )
+    {
+        nav_adopt( i, false );
+        return;
+    }
+    for ( u32 k = 0; k < s_nav.item_count; ++k )
+        if ( !s_nav.items[ k ].chrome )
+        {
+            nav_adopt( (i32)k, false );
+            return;
+        }
+}
+
+/* F6: hop between the body and the chrome strip.  From the body (or from nowhere) the first
+   chrome item takes the cursor and the body position is remembered; from chrome the cursor
+   returns to that body position.  No chrome this frame means no hop -- the cursor stays put. */
+static void
+nav_resolve_lane( void )
+{
+    i32 cur = nav_list_find( s_nav.id );
+    if ( cur >= 0 && s_nav.items[ cur ].chrome )
+    {
+        nav_lane_body();
+        return;
+    }
+    for ( u32 k = 0; k < s_nav.item_count; ++k )
+        if ( s_nav.items[ k ].chrome )
+        {
+            s_nav.body_id = s_nav.id;
+            nav_adopt( (i32)k, false );
+            return;
+        }
 }
 
 /* The item on line (region, line) whose x-span sits best under the goal column: a span containing
@@ -248,14 +298,45 @@ nav_resolve_move( void )
 {
     if ( s_nav.item_count == 0 ) return;
 
-    /* No cursor in the list (fresh engage, stale id, cursor parked on chrome by a click): land on
-       the first placed item rather than stepping from nowhere. */
+    /* No cursor in the list (fresh engage, stale id): land on the first placed item rather than
+       stepping from nowhere. */
     i32 cur = nav_list_find( s_nav.id );
-    if ( cur >= 0 && s_nav.items[ cur ].chrome ) cur = -1;
     if ( cur < 0 )
     {
         for ( u32 i = 0; i < s_nav.item_count; ++i )
             if ( !s_nav.items[ i ].chrome ) { nav_adopt( (i32)i, false ); return; }
+        return;
+    }
+
+    /* Chrome lane: the cursor sits on a chrome item (F6, or a click on a title-bar button).
+       Left/Right step to the nearest chrome item by position -- emission order is wrong here
+       (the close button emits before the detach box but sits right of it), and the strip is
+       one visual band, so geometry IS its order.  Down drops back into the body; Up and the
+       strip ends are walls. */
+    if ( s_nav.items[ cur ].chrome )
+    {
+        if ( s_nav.move_dir == GUI_DIR_LEFT || s_nav.move_dir == GUI_DIR_RIGHT )
+        {
+            bool right  = ( s_nav.move_dir == GUI_DIR_RIGHT );
+            f32  cx     = s_nav.items[ cur ].rect.x + s_nav.items[ cur ].rect.w * 0.5f;
+            i32  best   = -1;
+            f32  best_d = 0.0f;
+            for ( u32 i = 0; i < s_nav.item_count; ++i )
+            {
+                const gui_nav_item_t* it = &s_nav.items[ i ];
+                if ( !it->chrome || (i32)i == cur ) continue;
+                f32 ix = it->rect.x + it->rect.w * 0.5f;
+                f32 d  = right ? ( ix - cx ) : ( cx - ix );
+                if ( d <= 0.0f ) continue;                    /* not on the requested side */
+                if ( best < 0 || d < best_d ) { best = (i32)i; best_d = d; }
+            }
+            if ( best >= 0 )
+                nav_adopt( best, false );
+        }
+        else if ( s_nav.move_dir == GUI_DIR_DOWN )
+        {
+            nav_lane_body();
+        }
         return;
     }
 
@@ -455,7 +536,9 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
 static void
 nav_finish( void )
 {
-    if ( s_nav.tab != 0 )
+    if ( s_nav.lane )
+        nav_resolve_lane();
+    else if ( s_nav.tab != 0 )
         nav_resolve_tab();
     else if ( s_nav.move_dir >= 0 )
         nav_resolve_move();
@@ -498,6 +581,7 @@ nav_new_frame( void )
     s_nav.move_dir   = -1;
     s_nav.tab        = 0;
     s_nav.activate   = false;
+    s_nav.lane       = false;
     s_nav.mnemonic   = 0;
     s_nav.id_seen    = false;
     s_nav.first_item = GUI_ID_NONE;
@@ -607,9 +691,14 @@ nav_new_frame( void )
     bool act = s_io.keys_pressed[ APP_KEY_ENTER ] || s_io.keys_pressed[ APP_KEY_SPACE ];
     if ( act ) s_nav.activate = true;
 
+    /* F6 hops between the body and the chrome strip (title-bar buttons, dock tabs) -- the pane-
+       cycle key.  Not while the menu bar owns nav: its bar entries are the chrome there. */
+    bool lane = s_io.keys_pressed[ APP_KEY_F6 ] && s_nav.bar_win == GUI_ID_NONE;
+    if ( lane ) s_nav.lane = true;
+
     /* Any nav key makes the keyboard the active instrument: show the ring (nav_active) AND the fill
        (nav_highlight), and suppress mouse hover until the mouse moves again. */
-    if ( up || down || left || right || tab || act )
+    if ( up || down || left || right || tab || act || lane )
     {
         s_nav.active    = true;
         s_nav.highlight = true;

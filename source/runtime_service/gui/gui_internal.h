@@ -211,7 +211,7 @@ typedef struct
     gui_rect_t rect;     // screen rect as emitted (goal-column pick + ring)
     u32        region;   // region sequence that placed it (a window body / child / strip region)
     u32        line;     // line sequence within the frame -- monotonic, so order == reading order
-    bool       chrome;   // not layout-placed (title button, scrollbar, dock tab): Tab-only
+    bool       chrome;   // not layout-placed (title button, dock tab): the F6 chrome lane
 
 } gui_nav_item_t;
 
@@ -242,9 +242,11 @@ typedef struct
     i32         move_dir;      // directional request this frame (gui_dir_t, or -1 for none)
     i32         tab;           // Tab linear move: +1 forward, -1 back, 0 none
     bool        activate;      // Enter/Space -> fire id like a click this frame
+    bool        lane;          // F6 -> hop between the body and the chrome strip this frame
 
     bool        id_seen;       // id was emitted in win this frame (else it went stale)
     gui_id_t    first_item;    // first layout-placed item this frame (first-focus / recovery)
+    gui_id_t    body_id;       // body cursor to land back on when F6 leaves the chrome lane
 
     /* Goal column: the remembered x a run of Up/Down steers by, so vertical travel through rows
        of differing shapes does not drift sideways (the text-editor goal-column behavior).  Set

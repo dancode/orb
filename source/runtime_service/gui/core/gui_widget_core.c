@@ -385,8 +385,9 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
 
     /* Append to the nav item list (emission order == Tab order).  A layout-placed item carries
        the region/line coordinate widget_next_rect_w latched; anything interacting without a
-       layout cell -- title-bar buttons, scrollbars, dock tabs -- lists as chrome: Tab still
-       reaches it, but directional moves skip it, so arrows never land on chrome. */
+       layout cell -- title-bar buttons, dock tabs -- lists as chrome, the F6 lane: Tab and the
+       body arrows skip it, F6 hops onto the strip and Left/Right walk it (gui_nav.c).
+       Scrollbars and drag strips never reach here at all (s_build.nav_skip). */
 
     bool placed = s_build.nav_item_placed;
     if ( placed && s_nav.first_item == GUI_ID_NONE )
@@ -472,6 +473,12 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
 
     s_build.last_item_id   = id;
     s_build.last_item_rect = r;             /* item-query getters read this for "the widget just emitted" */
+
+    /* Consume the one-shot nav opt-out here, before any early-out below can leak it onto the
+       next widget.  A flagged item (scrollbar, drag strip) still interacts normally with the
+       mouse; it just never registers as a keyboard target. */
+    bool nav_skip    = s_build.nav_skip;
+    s_build.nav_skip = false;
 
     /* Disabled item: inert this frame -- no hover, active, focus, or click.  Returning the zeroed
        state here is the one place that suppresses interaction for every widget, the behavioral half
@@ -559,7 +566,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
        cursor, takes a synthesized click from an Enter/Space activation -- the keyboard mirror of
        the mouse hit-test above, through the same one seam every widget already passes through. */
 
-    if ( s_build.win_id == s_nav.win )
+    if ( s_build.win_id == s_nav.win && !nav_skip )
         nav_item_register( id, r, &st, kind );
 
     /* Auto-repeat (GUI_ITEM_BUTTON_REPEAT): while held with the cursor still over it, fire on the

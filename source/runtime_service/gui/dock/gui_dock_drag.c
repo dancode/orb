@@ -568,6 +568,7 @@ dock_window_chrome( gui_dock_node_t* node )
         if ( rem.w > 1.0f )
         {
             gui_id_t     gid = id_combine( node->id, DOCK_FLOAT_SALT );
+            s_build.nav_skip = true;   /* pure drag surface -- never a keyboard target */
             widget_state_t st  = widget_behavior( gid, rem, WIDGET_KIND_BUTTON );
             if ( st.pressed )
             {

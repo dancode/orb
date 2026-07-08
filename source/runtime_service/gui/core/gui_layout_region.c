@@ -98,6 +98,9 @@ region_scrollbar( gui_id_t id, gui_rect_t track, bool vertical,
     f32 t_cur    = ( max_scroll > 0.0f ) ? *scroll / max_scroll : 0.0f;
     f32 knob_off = track_org + t_cur * travel;
 
+    /* A scrollbar is mouse-only: keyboard scrolling is the nav cursor's scroll chase, so the bar
+       never lists as a keyboard target (neither Tab nor the chrome lane). */
+    s_build.nav_skip = true;
     widget_state_t st = widget_behavior( id, track, WIDGET_KIND_DRAG );
 
     /* On the press frame, decide whether the cursor landed on the knob (drag from the grabbed

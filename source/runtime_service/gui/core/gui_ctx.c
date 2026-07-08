@@ -145,6 +145,8 @@ static struct
     u32  nav_item_region;   // stamp: region that placed the item being emitted
     u32  nav_item_line;     // stamp: its line sequence
     bool nav_item_placed;   // stamp is live (false => the next behavior call is chrome)
+    bool nav_skip;          // one-shot: the next behavior call is no keyboard target at all
+                            // (scrollbar, drag strip) -- consumed by widget_behavior
 
     /* Item flags -- the push-model behavior set a widget reads at emit time (see gui_item_flags_t).
        item_flags is the merged top of the push/pop stack; next_set / next_val are the one-shot
@@ -274,7 +276,7 @@ item_flags_chrome_reset( void )
 {
     s_build.cur_item_flags  = GUI_ITEM_NONE;
     s_build.nav_item_placed = false;   /* chrome is not an item to keyboard nav either: whatever
-                                          interacts past this seam lists as chrome (Tab-only) */
+                                          interacts past this seam lists in the F6 chrome lane */
     draw_set_alpha( 1.0f );
     style_chrome_reset();   /* drop lingering next_style_* overrides; keep the push/pop stack */
     /* Chrome (window / child / dock backgrounds, title bars, borders) defaults to the window radius,
@@ -642,6 +644,7 @@ ctx_new_frame( void )
     s_build.nav_region_seq  = 0;
     s_build.nav_line_seq    = 0;
     s_build.nav_item_placed = false;
+    s_build.nav_skip        = false;
 
     /* Popup nesting depth is rebuilt as popup_begin / popup_end run; the open set persists. */
     s_popup_begin_count = 0;
