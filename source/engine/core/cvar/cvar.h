@@ -61,7 +61,7 @@ typedef enum cvar_type_e
 
 ==============================================================================================*/
 
-typedef enum cvar_type_flag_e
+typedef enum cvar_flag_e
 {
     /* Protection / Safety Flags */
 
@@ -91,9 +91,15 @@ typedef enum cvar_type_flag_e
     CVAR_SERVERINFO     = BIT( 13 ),    // Server info sent to clients on connect (e.g., mapname, hostname).
     CVAR_SYSTEMINFO     = BIT( 14 ),    // Server forces this value on all clients.
 
-    // BIT( 15 ) is the last bit that fits the u16 `flags` field - keep this enum at or under it.
+    /* Value Constraint Flag */
 
-} cvar_type_flag_t;
+    CVAR_BOUNDED        = BIT( 15 ),    // int/float min/max are real clamp bounds, not just unused
+                                        // storage. Set automatically when min != max; pass this
+                                        // explicitly (OR'd into flags) to clamp to a single value
+                                        // (min == max). Without it, equal min/max means unbounded.
+                                        // BIT( 15 ) is the last bit that fits the u16 `flags` field.
+
+} cvar_flag_t;
 
 #define CVAR_PROT_MASK ( CVAR_INIT | CVAR_ROM | CVAR_LATCH | CVAR_CHEAT )
 #define CVAR_LIFE_MASK ( CVAR_RUNTIME | CVAR_NORESTART | CVAR_ARCHIVE )
@@ -233,6 +239,8 @@ cvar_t*     cvar_register_base      ( const char* name, const char* desc, u32 fl
                                     // Type-specific registration functions; `flags` are
                                     // cvar_type_flag_t bits only, the base type is implicit.
 cvar_t*     cvar_register_b         ( const char* name, const char* desc, bool value, u32 flags );
+                                    // min == max means unbounded, unless CVAR_BOUNDED is OR'd
+                                    // into `flags` (needed to clamp to a single value).
 cvar_t*     cvar_register_i         ( const char* name, const char* desc, i32 val, i32 min, i32 max, u32 flags );
 cvar_t*     cvar_register_f         ( const char* name, const char* desc, f32 val, f32 min, f32 max, u32 flags );
 cvar_t*     cvar_register_s         ( const char* name, const char* desc, const char** values, u32 count, u32 def_index, u32 flags );

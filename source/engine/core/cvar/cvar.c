@@ -682,13 +682,18 @@ cvar_register_b( const char* name, const char* desc, bool value, u32 flags )
     return cv;
 }
 
-/* Register an integer cvar with optional min/max bounds (set max=0 for no bounds) */
+/* Register an integer cvar with optional min/max bounds. min == max means unbounded unless
+   the caller OR's CVAR_BOUNDED into `flags` (needed to clamp to a single value). */
 
 cvar_t*
 cvar_register_i( const char* name, const char* desc, i32 value, i32 min, i32 max, u32 flags )
 {
     bool    existed;
     cvar_t* cv = cvar_register_internal( name, desc, CVAR_INT, flags, &existed );
+    if ( min != max || ( flags & CVAR_BOUNDED ) )
+        cv->flags |= CVAR_BOUNDED;
+    else
+        cv->flags &= ~CVAR_BOUNDED;
 
     if ( existed )
     {
@@ -708,13 +713,18 @@ cvar_register_i( const char* name, const char* desc, i32 value, i32 min, i32 max
     return cv;
 }
 
-/* Register a float cvar with optional min/max bounds (set max=0 for no bounds) */
+/* Register a float cvar with optional min/max bounds. min == max means unbounded unless
+   the caller OR's CVAR_BOUNDED into `flags` (needed to clamp to a single value). */
 
 cvar_t*
 cvar_register_f( const char* name, const char* desc, f32 value, f32 min, f32 max, u32 flags )
 {
     bool    existed;
     cvar_t* cv = cvar_register_internal( name, desc, CVAR_FLOAT, flags, &existed );
+    if ( min != max || ( flags & CVAR_BOUNDED ) )
+        cv->flags |= CVAR_BOUNDED;
+    else
+        cv->flags &= ~CVAR_BOUNDED;
 
     if ( existed )
     {
@@ -1152,7 +1162,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
                 break;
             }
 
-            if ( cv->i.min != cv->i.max )
+            if ( cv->flags & CVAR_BOUNDED )
             {
                 if ( new_value < cv->i.min ) new_value = cv->i.min;
                 if ( new_value > cv->i.max ) new_value = cv->i.max;
@@ -1179,7 +1189,7 @@ cvar_set_value_internal( cvar_t* cv, const char* value )
                 break;
             }
 
-            if ( cv->f.min != cv->f.max )
+            if ( cv->flags & CVAR_BOUNDED )
             {
                 if ( new_value < cv->f.min ) new_value = cv->f.min;
                 if ( new_value > cv->f.max ) new_value = cv->f.max;
@@ -1365,13 +1375,13 @@ cvar_print_value( const cvar_t* cv )
     {
         case CVAR_BOOL: con_printf( " [bool]" ); break;
         case CVAR_INT:
-            if ( cv->i.min != cv->i.max ) 
+            if ( cv->flags & CVAR_BOUNDED )
                     con_printf( " [int: %d..%d]", cv->i.min, cv->i.max );
             else    con_printf( " [int]" );
             break;
 
         case CVAR_FLOAT:
-            if ( cv->f.min != cv->f.max) 
+            if ( cv->flags & CVAR_BOUNDED )
                     con_printf( " [float: %.2f..%.2f]", cv->f.min, cv->f.max );
             else    con_printf( " [float]" );
             break;

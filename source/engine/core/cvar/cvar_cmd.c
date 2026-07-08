@@ -58,15 +58,13 @@ cmd_set_internal( const char* name, const char* value, u32 internal_flags )
             return;
         }
     }
-    else
-    {
-        /* Mark existing cvar for archiving */
-        cv->flags |= internal_flags;
-    }
 
-    /* Set the value */
+    /* Set the value. Only brand the cvar with internal_flags (e.g. CVAR_ARCHIVE) once the
+       set actually took effect -- otherwise a rejected set (CVAR_ROM, bad value) would leave
+       a side effect behind even though nothing changed. */
     if ( cvar_set_value( name, value ) )
     {
+        cv->flags |= internal_flags;
         cvar_print_value( cv );
     }
     else
