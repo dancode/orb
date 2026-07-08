@@ -9,6 +9,7 @@
 #include "engine/core/cvar/cvar.h"
 #include "engine/core/console/console.h"
 #include "engine/core/cmd/cmd.h"
+#include "engine/core/cvar/cvar_callback.c"
 #include "engine/core/cvar/cvar.c"
 #include "engine/core/cmd/cmd_buffer.c"
 #include "engine/core/cmd/cmd_bind.c"
