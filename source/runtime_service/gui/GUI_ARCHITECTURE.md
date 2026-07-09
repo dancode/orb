@@ -151,7 +151,11 @@ Other flow verbs: `same_line(spacing)` / `stack_same_line` (one-shot pen placeme
 the previous item's line), `indent()/unindent()` (shift content column, reflow; flow only),
 `empty(w,h)` (reserve a block, the Dummy analogue), `new_line`, `separator_text`.
 
-Metrics: `line_h`, `text_w(s)`, `calc_row(content_h)`, `calc_col(content_w)`,
+Metrics: grid-first sizing is the standard vocabulary -- `u(n)` (quanta to px), `rows_h(n)`,
+`row_gap()`, plus the `scale_push/scale_pop/scale_row` density ramp. The raw px / font
+calculators carry an `adv_` prefix and are escape hatches for content-fit sizing:
+`adv_line_h`, `adv_text_w(s)`, `adv_text_h(s)`, `adv_calc_row(content_h)`,
+`adv_calc_col(content_w)`, `adv_h_min`, `adv_w_min`. Placement queries stay unprefixed:
 `content_avail()`, `cursor_screen_pos()`.
 
 ### Containers

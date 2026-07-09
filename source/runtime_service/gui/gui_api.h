@@ -491,6 +491,11 @@ typedef struct gui_api_s
 
     bool ( *main_menu_bar_begin )( void );
     void ( *main_menu_bar_end   )( void );
+
+    /* main_menu_bar_h() -- the band height main_menu_bar_begin occupies (theme-derived).  Use it
+       to stack host strips (toolbars, dockspace_inset) below the bar instead of re-deriving the
+       height from font metrics -- it stays truthful when the theme or scale ramp retunes. */
+    f32  ( *main_menu_bar_h     )( void );
     bool ( *menu_bar_begin      )( void );
     void ( *menu_bar_end        )( void );
     bool ( *menu_begin )( const char* label );
@@ -664,27 +669,13 @@ typedef struct gui_api_s
        draw_* / path_* calls.  It flows like any widget and the window clips it. */
     gui_rect_t ( *canvas )( f32 height );
 
-    /* Layout metrics -- theme-derived sizes for pre-computing fixed row / column dimensions.
-       line_h / text_w / text_h are the raw font metrics (text_h is the laid-out, '\n'-aware height,
-       the scalar of text_size().y); h_min / w_min are the standard margin a row /
-       cell adds around its content (the "size without content"); calc_row / calc_col add that
-       margin to a content pixel size, giving a fixed dimension that fits content plus margin:
+    /* Layout metrics.  The standard vocabulary is grid-first -- author sizes in quanta and row
+       counts, not pixels:
 
-           gui()->row( gui()->calc_row( 128 ) );             // a row sized for a 128px image
-           f32 w = gui()->calc_col( gui()->text_w("Name") ); // a column sized to a label */
-
-    /* u( n ) -- n grid quanta in pixels (the theme's grid_quantum lattice, 4 by default): the
+       u( n ) -- n grid quanta in pixels (the theme's grid_quantum lattice, 4 by default): the
        unit-first spelling for any authored px size (tracks, row heights, child sizes), so
        geometry stays on the theme lattice and retunes with it.  q <= 1 degenerates to raw px. */
     f32 ( *u        )( f32 n );
-
-    f32 ( *line_h   )( void );
-    f32 ( *text_w   )( const char* s );
-    f32 ( *text_h   )( const char* s );
-    f32 ( *h_min    )( void );
-    f32 ( *w_min    )( void );
-    f32 ( *calc_row )( f32 content_h );
-    f32 ( *calc_col )( f32 content_w );
 
     /* row_gap() -- the vertical gap the flow places between consecutive rows, and the top/bottom
        pad a window body / child opens with.  Owed once above the first row, once below the last,
@@ -692,8 +683,27 @@ typedef struct gui_api_s
     f32 ( *row_gap  )( void );
 
     /* rows_h( n ) -- fixed box height for n uniform WIDGET_H rows stacked with the default
-       pad/gap (a fixed-size list of buttons/fields, a popup sized to its item count). */
+       pad/gap (a fixed-size list of buttons/fields, a popup sized to its item count).  Reads
+       through the style stack, so inside a scale_push scope it speaks that step's metrics. */
     f32 ( *rows_h   )( u32 n );
+
+    /* adv_ metrics -- the raw px / font calculators underneath the grid vocabulary.  Escape
+       hatches: reach for them only when content-fit sizing cannot be said in quanta / row counts.
+       adv_line_h / adv_text_w / adv_text_h are the raw font metrics (adv_text_h is the laid-out,
+       '\n'-aware height, the scalar of text_size().y); adv_h_min / adv_w_min are the standard
+       margin a row / cell adds around its content (the "size without content"); adv_calc_row /
+       adv_calc_col add that margin to a content pixel size, giving a fixed dimension that fits
+       content plus margin:
+
+           gui()->row( gui()->adv_calc_row( 128 ) );                 // a row sized for a 128px image
+           f32 w = gui()->adv_calc_col( gui()->adv_text_w("Name") ); // a column sized to a label */
+    f32 ( *adv_line_h   )( void );
+    f32 ( *adv_text_w   )( const char* s );
+    f32 ( *adv_text_h   )( const char* s );
+    f32 ( *adv_h_min    )( void );
+    f32 ( *adv_w_min    )( void );
+    f32 ( *adv_calc_row )( f32 content_h );
+    f32 ( *adv_calc_col )( f32 content_w );
 
     /* content_avail() -- remaining free space in the current region from the layout pen: the width
        a flex widget would fill and the height left before the region bottom.  The ImGui

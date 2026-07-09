@@ -128,6 +128,7 @@ const gui_drag_payload_t* gui_drag_payload_peek( void );
 /* menu */
 bool gui_main_menu_bar_begin( void );
 void gui_main_menu_bar_end( void );
+f32  gui_main_menu_bar_h( void );
 bool gui_menu_bar_begin( void );
 void gui_menu_bar_end( void );
 bool gui_menu_begin( const char* label );
@@ -195,17 +196,19 @@ void gui_separator( void );
 /* layout - blank space canvas */
 gui_rect_t gui_canvas( f32 height );
 
-/* layout - formatting helpers */
+/* layout - grid-first sizing (the standard vocabulary: quanta and row counts) */
 f32 gui_u( f32 n );
-f32 gui_line_h( void );
-f32 gui_text_w( const char* s );
-f32 gui_text_h( const char* s );
-f32 gui_h_min( void );
-f32 gui_w_min( void );
-f32 gui_calc_row( f32 content_h );
-f32 gui_calc_col( f32 content_w );
 f32 gui_row_gap( void );
 f32 gui_rows_h( u32 n );
+
+/* layout - adv_ raw px / font calculators (escape hatches for content-fit sizing) */
+f32 gui_adv_line_h( void );
+f32 gui_adv_text_w( const char* s );
+f32 gui_adv_text_h( const char* s );
+f32 gui_adv_h_min( void );
+f32 gui_adv_w_min( void );
+f32 gui_adv_calc_row( f32 content_h );
+f32 gui_adv_calc_col( f32 content_w );
 gui_vec2_t gui_content_avail( void );
 gui_vec2_t gui_cursor_screen_pos( void );
 gui_rect_t gui_content_rect( void );

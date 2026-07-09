@@ -389,7 +389,7 @@ demo_child_list( void )
         gui()->drag_int( "Lines Count",     &draw_lines, 0.2f, 0,  30, "%d" );
         gui()->drag_int( "Max (in lines)",  &max_lines,  0.2f, 1,  20, "%d" );
 
-        f32 line = gui()->line_h() + gui()->h_min();   /* one row plus its standard margin */
+        f32 line = gui()->adv_calc_row( gui()->adv_line_h() );   /* one text row plus its standard margin */
         gui()->window_set_next_size_constraints( 0.0f, line, 0.0f, line * (f32)max_lines );
         if ( gui()->child_begin( "constrained", 0, 0, GUI_WIN_NONE ) )
         {
@@ -989,7 +989,7 @@ demo_lines( void )
                label column off that row's right.  The line fills what is left, the tag aligns in the
                column -- no absolute offsets, so nothing can spill the border. */
             gui_rect_t area = gui_rect_pad( r, 12.0f );
-            f32          lblw = gui()->text_w( "16 px" ) + 12.0f;
+            f32          lblw = gui()->adv_text_w( "16 px" ) + 12.0f;
             for ( int t = 1; t <= 6; ++t )
             {
                 gui_rect_t row = gui_rect_cut_top( &area, 24.0f );
@@ -1028,7 +1028,7 @@ demo_lines( void )
 
             /* Caption: reserve a top strip (so the layout is stable whether or not it draws) and
                right-align the text in it -- the spill is impossible, the rect owns the right edge. */
-            gui_rect_t cap = gui_rect_cut_top( &area, gui()->line_h() );
+            gui_rect_t cap = gui_rect_cut_top( &area, gui()->adv_line_h() );
             if ( show_guides )
                 gui()->draw_text_in( cap, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER,
                                        LINE_PATH, "white = ideal path" );
@@ -1038,7 +1038,7 @@ demo_lines( void )
             f32 label_w = 0.0f;
             for ( int i = 0; i < 4; ++i )
             {
-                f32 w = gui()->text_w( align_names[ i ] );
+                f32 w = gui()->adv_text_w( align_names[ i ] );
                 if ( w > label_w ) label_w = w;
             }
             gui_rect_t labels = gui_rect_cut_left( &area, label_w + 12.0f );
@@ -1050,7 +1050,7 @@ demo_lines( void )
                 if ( show_guides )
                     gui()->draw_line( area.x, ly, area.x + area.w, ly, 1.0f, LINE_PATH );
 
-                gui_rect_t lbl = { labels.x, ly - gui()->line_h() * 0.5f, labels.w, gui()->line_h() };
+                gui_rect_t lbl = { labels.x, ly - gui()->adv_line_h() * 0.5f, labels.w, gui()->adv_line_h() };
                 gui()->draw_text_in( lbl, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
                                        i == align_idx ? LINE_CYAN : LINE_INK, align_names[ i ] );
             }

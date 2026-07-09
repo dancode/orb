@@ -246,10 +246,19 @@ gui_menu_end( void )
     main_menu_bar_begin / main_menu_bar_end -- a helper window pinned across the top of the display.
 ----------------------------------------------------------------------------------------------*/
 
+/* The bar's band height, published so hosts can stack their own strips (toolbar, dockspace
+   inset) below it without re-deriving the sum from font metrics.  Must match the size
+   main_menu_bar_begin requests below. */
+f32
+gui_main_menu_bar_h( void )
+{
+    return WIDGET_H + WIDGET_GAP;
+}
+
 bool
 gui_main_menu_bar_begin( void )
 {
-    f32 h = WIDGET_H + WIDGET_GAP;
+    f32 h = gui_main_menu_bar_h();
 
     /* Sit just below the host's native caption band (caption_inset), not at the very top: a
        borderless shell owns the caption strip for the OS move/resize gesture, and a bar painted

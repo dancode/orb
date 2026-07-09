@@ -316,13 +316,19 @@ gui_pad( gui_pad_t p )
 /*----------------------------------------------------------------------------------------------
     Layout metrics -- theme-derived sizes for pre-computing fixed row / column dimensions.
 
-    line_h / text_w are the raw font metrics a caller cannot compute itself.  h_min / w_min are
-    the standard margin a row / cell puts around its content -- the "size without content".
-    calc_row / calc_col add that margin to a content pixel size, giving a fixed dimension that
-    fits the content plus breathing room:
+    The standard vocabulary is grid-first: u( n ) for authored sizes, rows_h( n ) / row_gap()
+    for count-based box heights, scale_push / scale_row for the density ramp.  Those speak in
+    quanta and row counts and stay on the theme lattice by construction.
 
-        gui()->row( gui()->calc_row( 128 ) );          // a row sized for a 128px image
-        f32 w = gui()->calc_col( gui()->text_w("X") ); // a column sized to a label
+    The adv_ helpers below are the raw px / font calculators underneath -- escape hatches for
+    content-fit sizing the grid vocabulary cannot express (a row hugging an image, a column
+    hugging a measured label).  adv_line_h / adv_text_w are the raw font metrics a caller cannot
+    compute itself.  adv_h_min / adv_w_min are the standard margin a row / cell puts around its
+    content -- the "size without content".  adv_calc_row / adv_calc_col add that margin to a
+    content pixel size, giving a fixed dimension that fits the content plus breathing room:
+
+        gui()->row( gui()->adv_calc_row( 128 ) );              // a row sized for a 128px image
+        f32 w = gui()->adv_calc_col( gui()->adv_text_w("X") ); // a column sized to a label
 ----------------------------------------------------------------------------------------------*/
 
 /* u -- n grid quanta in pixels (grid_quantum, the theme's px lattice; 4 by default).  The
@@ -343,27 +349,27 @@ gui_u( f32 n )
 }
 
 /* Height of one line of text in the active font. */
-f32 gui_line_h( void ) { return font_line_h(); }
+f32 gui_adv_line_h( void ) { return font_line_h(); }
 
 /* Pixel width of a string in the active font (whole string, no "##" handling). */
-f32 gui_text_w( const char* s ) { return font_text_w( s ); }
+f32 gui_adv_text_w( const char* s ) { return font_text_w( s ); }
 
-/* Standard vertical margin a row adds around its content (so calc_row( char_h ) == one row). */
-f32 gui_h_min( void ) { f32 m = WIDGET_H - font_char_h(); return m > 0.0f ? m : 0.0f; }
+/* Standard vertical margin a row adds around its content (so adv_calc_row( char_h ) == one row). */
+f32 gui_adv_h_min( void ) { f32 m = WIDGET_H - font_char_h(); return m > 0.0f ? m : 0.0f; }
 
 /* Standard horizontal margin a cell adds around its content (a left + right content inset). */
-f32 gui_w_min( void ) { return 2.0f * WIDGET_PAD; }
+f32 gui_adv_w_min( void ) { return 2.0f * WIDGET_PAD; }
 
 /* Vertical gap the flow places between consecutive rows in a region -- also the top/bottom pad a
    window body / child opens with (REGION_PAD_DEFAULT).  A caller stacking N flow rows to
    precompute a fixed box height (a child_begin sized to hold an exact row count, say) owes this
    once above the first row and once below the last, plus once between every pair of rows --
-   line_h() alone is a font metric and knows nothing about it. */
+   adv_line_h() alone is a font metric and knows nothing about it. */
 f32 gui_row_gap( void ) { return WIDGET_GAP; }
 
 /* Fixed row height / column width that fits content_* pixels plus the standard margin. */
-f32 gui_calc_row( f32 content_h ) { return content_h + gui_h_min(); }
-f32 gui_calc_col( f32 content_w ) { return content_w + gui_w_min(); }
+f32 gui_adv_calc_row( f32 content_h ) { return content_h + gui_adv_h_min(); }
+f32 gui_adv_calc_col( f32 content_w ) { return content_w + gui_adv_w_min(); }
 
 /* Fixed box height for n uniform WIDGET_H rows stacked in a region with the default pad/gap
    (REGION_PAD_DEFAULT top/bottom, row_gap() between) -- the everyday case (a fixed list of

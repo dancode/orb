@@ -96,7 +96,7 @@ static void
 dash_text( f32 x, f32 y, f32 max_x, u32 abgr, const char* str )
 {
     if ( max_x - x < 4.0f ) return;
-    gui_draw_text_clipped( ( gui_rect_t ){ x, y, max_x - x, gui_line_h() },
+    gui_draw_text_clipped( ( gui_rect_t ){ x, y, max_x - x, font_line_h() },
                            GUI_ALIGN_LEFT, abgr, str );
 }
 
@@ -185,7 +185,7 @@ dash_tip_at( gui_rect_t r )
 static void
 dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
 {
-    const f32 lh  = gui_line_h();
+    const f32 lh  = font_line_h();
     const u32 cap = vb_axis ? GUI_MAX_VERTS : GUI_MAX_IDX;
 
     /* Header + arena scale honor the "Second band" toggle.  OFF (default): every figure -- used,
@@ -412,7 +412,7 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
 static void
 dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
 {
-    const f32 row_h  = gui_line_h() + 3.0f;
+    const f32 row_h  = font_line_h() + 3.0f;
     f32       y      = r.y + 2.0f;
     const f32 bars_x = r.x + 320.0f;   /* wider name + meta column before the command bars */
 
@@ -524,7 +524,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
         { "draws", inc ? sn->tess_cmds  : sn->tess_cmds - sn->tess_cmds_dbg,   GUI_MAX_CMDS,       0                           },
     };
     const u32 n     = sizeof( rows ) / sizeof( rows[ 0 ] );
-    const f32 lh    = gui_line_h();
+    const f32 lh    = font_line_h();
     const f32 row_h = ( r.h - lh - 4.0f ) / (f32)n;
     const f32 bar_x = r.x + 84.0f;    /* label column + a clear gap before the bars */
     const f32 val_w = 132.0f;         /* value column: fits a full "NNNNN / NNNNN" with no ellipsis */
@@ -566,7 +566,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
 static void
 dash_panel_volatile( gui_rect_t r, const dash_snapshot_t* sn )
 {
-    const f32 row_h = gui_line_h() + 2.0f;
+    const f32 row_h = font_line_h() + 2.0f;
     f32       y     = r.y + 2.0f;
 
     if ( sn->vol_count == 0 )
@@ -634,7 +634,7 @@ static void
 dash_panel_stats( gui_rect_t r, const dash_snapshot_t* sn )
 {
     const gui_render_stats_t* st = &sn->stats;
-    const f32                 lh = gui_line_h();
+    const f32                 lh = font_line_h();
     bool                      fz = gui_dash_frozen();
 
     dash_textf( r.x + 2.0f, r.y, r.x + r.w, DASH_COL_TEXT,
@@ -705,7 +705,7 @@ gui_pipeline_dashboard( bool* open )
         gui_checkbox( "Show pad", &s_show_pad );
 
         /* Panel heights derive from the live line height so text rows never clip mid-glyph. */
-        f32 lh = gui_line_h();
+        f32 lh = font_line_h();
 
         dash_shell_panel( "Vertex arena (slot memory map)", lh + 58.0f,                  dash_panel_vbmap    );
         dash_shell_panel( "Index arena (slot memory map)",  lh + 58.0f,                  dash_panel_ibmap    );

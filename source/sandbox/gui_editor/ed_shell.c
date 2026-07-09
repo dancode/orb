@@ -215,7 +215,7 @@ ed_shell_build( void )
 
     ed_menu_bar();
 
-    f32 menu_h    = gui()->calc_row( gui()->text_h( "A" ) ) + gui()->style_get()->widget_gap;
+    f32 menu_h    = gui()->main_menu_bar_h();
     f32 toolbar_h = menu_h + 6.0f;
     ed_toolbar( caption_h + menu_h, toolbar_h );
 
