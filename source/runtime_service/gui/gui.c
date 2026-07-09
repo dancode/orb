@@ -61,7 +61,7 @@
     4_window/       -- host structure: persisted window record + window-as-widget chrome.
                        First real optional boundary -- a canvas/HUD-only embedding can skip it.
     4_popup/        -- host structure, window-dependent overlay stack: popups/tooltips/combo/
-                       menus/nav all share the open-popup stack (s_popups_open).
+                       menus/nav all share the open-popup stack (g_ctx->popups_open).
     4_dock/         -- host structure, window-dependent, independent of 4_popup/: dock-node
                        tree + splitters.
     4_table/        -- host structure, independent optional feature: needs tiers 0-2 only,
@@ -122,6 +122,7 @@
     4_table/gui_table.c            -- table layout: multi-column rows, self-fitting cells, one table clip (needs tiers 0-2 only)
 
     4_window/gui_window.c          -- window gesture policy state: drag mode, merge-back latch, raise-on-press
+    4_window/gui_window_native.c   -- native-borderless windows: identity test, caption buttons, OS-frame sync
     4_window/gui_widget_window.c   -- the window as a widget: begin/window_end + chrome (resize); body is a region
 
     4_dock/gui_dock_core.c         -- docking: node pool, per-frame layout, splitter interaction + chrome
@@ -261,6 +262,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 
 // Tier 4 -- window subsystem (first real optional boundary; holds the future 1_surface/ record)
 #include "runtime_service/gui/4_window/gui_window.c"
+#include "runtime_service/gui/4_window/gui_window_native.c"
 #include "runtime_service/gui/4_window/gui_widget_window.c"
 
 // Tier 4 -- window-dependent, independent of 4_popup/
@@ -270,7 +272,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/4_dock/gui_dock.c"
 #include "runtime_service/gui/4_dock/gui_dock_serialize.c"
 
-// Tier 4 -- window-dependent overlay stack (popup/nav/combo/menu share s_popups_open)
+// Tier 4 -- window-dependent overlay stack (popup/nav/combo/menu share g_ctx->popups_open)
 #include "runtime_service/gui/4_popup/gui_popup.c"
 #include "runtime_service/gui/4_popup/gui_nav.c"
 #include "runtime_service/gui/4_popup/gui_widget_combo.c"

@@ -145,7 +145,7 @@ gui_perf_overlay( int mode )
        a region is interactive by default and this one has no business entering the hover_win
        contest or eating the mouse wheel.  DEBUG_BAND: a self-measuring readout -- its own
        ever-changing digits must not count in the stats it displays or poison idle-skip. */
-    gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f,
+    gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f, GUI_REGION_MID,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
     {
         overlay_backdrop( id_hash( "perf_overlay" ), left_x, top_y );
@@ -255,7 +255,8 @@ gui_state_overlay( int mode )
     /* Fixed offset to the right of perf_overlay's top-left HUD so both can be shown at once
        without overlap -- perf_overlay hugs its content and stays narrow, so a flat offset is
        simpler than coordinating widths through a shared channel. */
-    gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
+    gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_REGION_MID,
+                      GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
     {
         overlay_backdrop( id_hash( "state_overlay" ), 260.0f, top_y );
         gui_stack();
@@ -269,8 +270,8 @@ gui_state_overlay( int mode )
         {
             gui_new_line( 2.0f );
             gui_textf( "Focused %s", dbg_id_str( s_interaction.focused_id ) );
-            gui_textf( "Nav id  %s", dbg_id_str( s_nav.id ) );
-            gui_textf( "Nav win %s", dbg_id_str( s_nav.win ) );
+            gui_textf( "Nav id  %s", dbg_id_str( g_ctx->nav.id ) );
+            gui_textf( "Nav win %s", dbg_id_str( g_ctx->nav.win ) );
             gui_textf( "Mouse   %6.1f, %6.1f", s_io.mouse_x, s_io.mouse_y );
         }
 
@@ -278,9 +279,9 @@ gui_state_overlay( int mode )
         if ( show_popup_rows )
         {
             gui_new_line( 2.0f );
-            gui_textf( "Popups  %u", s_popup_open_count );
-            if ( s_popup_open_count )
-                gui_textf( "Top pop %s", dbg_id_str( s_popups_open[ s_popup_open_count - 1u ].id ) );
+            gui_textf( "Popups  %u", g_ctx->popup_open_count );
+            if ( g_ctx->popup_open_count )
+                gui_textf( "Top pop %s", dbg_id_str( g_ctx->popups_open[ g_ctx->popup_open_count - 1u ].id ) );
             gui_textf( "Ctx salt 0x%08X", g_ctx->retained.id_salt );
         }
     }

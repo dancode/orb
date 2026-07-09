@@ -487,7 +487,7 @@ table_header_interact( gui_table_t* t )
 
         gui_id_t     hid = id_combine( t->id, (gui_id_t)( i + 1 ) );
         gui_rect_t   cr  = { t->col_x[ i ], hy, t->col_w[ i ], hh };
-        widget_state_t st  = widget_behavior( hid, cr, WIDGET_KIND_BUTTON );
+        gui_item_state_t st  = widget_behavior( hid, cr, WIDGET_KIND_BUTTON );
 
         if ( !no_sort && st.hover )  t->hdr_hot = (i8)i;
         if ( !no_sort && st.active ) t->hdr_act = (i8)i;

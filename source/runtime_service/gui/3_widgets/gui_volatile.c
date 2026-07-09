@@ -80,7 +80,7 @@ gui_volatile_begin( void )
     ORB_ASSERT( s_build.item_flags == GUI_ITEM_NONE
              && "gui_volatile_cb: callback runs under an ambient begin_disabled() scope -- "
                 "not reproduced on idle-frame replay" );
-    ORB_ASSERT( s_col_sp == 0 && s_var_sp == 0
+    ORB_ASSERT( s_col_stack.sp == 0 && s_var_stack.sp == 0
              && "gui_volatile_cb: callback runs under an ambient push_style_color/var() scope -- "
                 "not reproduced on idle-frame replay" );
 
@@ -152,7 +152,7 @@ gui_replay_scope_exit( bool force_redraw )
     id_pop();
     s_replay_mode = false;
     if ( force_redraw )
-        s_retained.wants_redraw = true;
+        g_ctx->retained.wants_redraw = true;
 }
 
 // clang-format on

@@ -35,9 +35,10 @@
 /* Close button (title-bar right edge, outermost): a distinct stable per-window widget id. */
 #define GUI_CLOSE_SALT      0xC105E00Du
 
-/* Native caption buttons (min / max / close / pop-in): one base salt offset by the button kind so
-   each gets a distinct, stable per-window widget id (see native_caption_buttons below). */
-#define GUI_NATIVE_BTN_SALT 0xCA9710B0u
+/* The native-borderless (GUI_WIN_NATIVE) machinery -- window_is_native / window_native_id, the
+   caption-button layout + glyphs, window_sync_native, vp_request_button, and the caption strip
+   window_end calls (native_caption_chrome) -- lives in gui_window_native.c, included just
+   before this file. */
 
 /* GUI_RESIZE_SALT, the GUI_RESIZE_* edge bits, the WIN_RESIZE_* grab-band constants, and the
    record-agnostic resize helpers (window_resize_hit, draw_resize_highlight, resize_grab,
@@ -112,164 +113,6 @@ static f32 window_min_w( void ) { return WIN_TITLE_H * 4.0f; }
 /* Smallest height: always keeps the title bar fully visible plus one widget row of body, so
    a resize never eats into the title bar vertically.  title_h is 0 for a NOTITLEBAR window. */
 static f32 window_min_h( f32 title_h ) { return title_h + WIDGET_H + WIN_BORDER; }
-
-/*----------------------------------------------------------------------------------------------
-    Native-borderless windows (GUI_WIN_NATIVE)
-
-    A native window IS its host OS window: its titlebar stands in for the Win32 caption and its
-    border for the sizing frame.  gui does NOT hit-test or forward gestures -- it just publishes
-    the frame layout (caption band + resize border) to the app each frame; the OS then drives move,
-    resize, Aero Snap, double-click-maximize and the system menu itself through WM_NCHITTEST.  So
-    the gui side only pins geometry, draws chrome, and calls window_set_native_frame.
-----------------------------------------------------------------------------------------------*/
-
-/* OS window hosting this window's viewport surface (-1 / APP_WIN_INVALID if unassociated). */
-static win_id_t window_native_id( const gui_window_t* win )
-{
-    return ( win_id_t )g_ctx->viewports[ win->viewport ].win_id;
-}
-
-/* A window is native when it solely occupies an gui-owned OS window: flagged explicitly (a
-   borderless main window) or living on an owned floater (a detached panel -- "detach = native").
-   A panel on the main viewport (0, never owned) is not native unless flagged.  window_begin and
-   window_end both gate on this, so it must be derived the same way in both. */
-static bool window_is_native( const gui_window_t* win, gui_win_flags_t flags )
-{
-    /* A popup / tooltip overlay is never the OS frame, even when it inherits an owned floater's
-       viewport: it is an anchored, auto-sized overlay on that surface, not the surface itself.
-       win->overlay is stamped before window_begin_ex runs, so the test is live here -- without
-       it a menu opened from a detached floater would be pinned to (0,0) at full surface size by
-       the native branch below instead of dropping under its button. */
-    if ( win && win->overlay )
-        return false;
-
-    return ( flags & GUI_WIN_NATIVE ) != 0
-        || ( win && win->viewport != 0 && g_ctx->viewports[ win->viewport ].owned );
-}
-
-/*----------------------------------------------------------------------------------------------
-    Native caption buttons
-
-    The OS owns a native window's caption band (HTCAPTION), so its titlebar buttons cannot be
-    ordinary gui widgets unless their rects are punched out as HTCLIENT "holes".  This one
-    layout function feeds both halves of that: window_begin publishes the rects as holes (via
-    window_set_native_frame) so the OS lets clicks through, and window_end draws the glyphs and
-    runs widget_behavior on the same rects.  Computing the layout in one place keeps the holes
-    exactly aligned with the drawn buttons.
-
-    Buttons are title-bar-height squares laid out right-to-left from the bar's right edge:
-    minimize, maximize/restore, then a primary action -- close for the main window, pop-in (merge
-    back into the main surface) for a detached floater.  GUI_WIN_NO_MINIMIZE / NO_MAXIMIZE drop the
-    matching button per-window (the primary is never dropped); the layout closes up around the gap.
-----------------------------------------------------------------------------------------------*/
-
-typedef enum
-{
-    NATIVE_BTN_MINIMIZE = 0,
-    NATIVE_BTN_MAXIMIZE,        /* maximize, or restore when already maximized */
-    NATIVE_BTN_CLOSE,           /* main window: request graceful close (quit)  */
-    NATIVE_BTN_POPIN,           /* floater: merge back into the main surface    */
-
-} native_btn_kind_t;
-
-#define NATIVE_BTN_MAX 4
-
-typedef struct
-{
-    gui_rect_t      r;
-    native_btn_kind_t kind;
-
-} native_btn_t;
-
-/* Fill `out` with this native window's caption buttons; returns the count (0 when no title bar).
-   The primary (rightmost) button is pop-in for a floater (owned viewport) or close for the main
-   window, and is always present.  Minimize / maximize are each suppressed by the matching NO_* flag,
-   so the set the OS hit-tests against (the holes window_begin publishes) and the set window_end draws
-   stay identical -- both call here with the same flags.  out[count-1] is the leftmost button -- its x
-   bounds the title text. */
-static i32
-native_caption_buttons( const gui_window_t* win, gui_win_flags_t flags,
-                        f32 win_x, f32 win_y, f32 win_w, f32 title_h,
-                        native_btn_t out[ NATIVE_BTN_MAX ] )
-{
-    if ( title_h <= 0.0f )
-        return 0;
-
-    bool              floater = win && win->viewport != 0;   /* detached: pop back in, not close */
-    native_btn_kind_t primary = floater ? NATIVE_BTN_POPIN : NATIVE_BTN_CLOSE;
-
-    f32 x = win_x + win_w;   /* march leftward from the right edge */
-    i32 n = 0;
-
-    /* A CLOSEABLE floater gets a close (X) as the outermost button, in addition to its pop-in
-       primary -- closing hides the window (and frees its OS surface) while pop-in merges it back
-       into the main surface.  The main window's primary is already close, so the flag adds nothing
-       there. */
-    if ( floater && ( flags & GUI_WIN_CLOSEABLE ) )
-    {
-        x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_CLOSE };
-    }
-
-    x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, primary };
-    if ( !( flags & GUI_WIN_NO_MAXIMIZE ) )
-    {
-        x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_MAXIMIZE };
-    }
-    if ( !( flags & GUI_WIN_NO_MINIMIZE ) )
-    {
-        x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_MINIMIZE };
-    }
-    return n;
-}
-
-/* Draw the glyph for one caption button, centered in its square: a minimize bar, a maximize box
-   (two offset boxes when already maximized = restore), a close X, or a filled pop-in box. */
-static void
-native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32 col )
-{
-    f32 cx = r.x + r.w * 0.5f;
-    f32 cy = r.y + r.h * 0.5f;
-    f32 s  = floorf( r.h * 0.18f );   /* glyph half-extent */
-    f32 t  = WIN_BORDER;
-
-    /* The glyph boxes are small line art -- draw them square so the frame radius cannot bend a
-       maximize/restore box into a circle. */
-    f32 save_round = draw_rounding();
-    draw_set_rounding( 0.0f );
-
-    switch ( kind )
-    {
-        case NATIVE_BTN_MINIMIZE:
-            gui_draw_line( cx - s, cy, cx + s, cy, t, col );
-            break;
-
-        case NATIVE_BTN_MAXIMIZE:
-            if ( maximized )
-            {
-                /* Restore: two overlapping boxes, a back one up-right and a front one down-left. */
-                f32 o = floorf( s * 0.5f );
-                draw_push_rect_outline( cx - s + o, cy - s - o, 2.0f * s, 2.0f * s, t, 0, col );
-                draw_push_rect_outline( cx - s - o, cy - s + o, 2.0f * s, 2.0f * s, t, 0, col );
-            }
-            else
-            {
-                draw_push_rect_outline( cx - s, cy - s, 2.0f * s, 2.0f * s, t, 0, col );
-            }
-            break;
-
-        case NATIVE_BTN_CLOSE:
-            draw_close_x( r, col );
-            break;
-
-        case NATIVE_BTN_POPIN:
-            /* Filled box: a docked target the floating panel snaps back into (mirrors the old
-               detach glyph, where a filled box meant "floating -- click to dock back in"). */
-            draw_push_rect_filled( cx - s, cy - s, 2.0f * s, 2.0f * s, 0, 0, 1, 1, 0, col );
-            break;
-    }
-
-    draw_set_rounding( save_round );
-}
 
 /*----------------------------------------------------------------------------------------------
     Auto-resize
@@ -374,7 +217,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     win->w          = node->rect.w;
     win->h          = node->rect.h;
     win->collapsed  = false;
-    win->last_frame = s_retained.frame;
+    win->last_frame = g_ctx->retained.frame;
 
     f32 title_h = node->rect.h - node->content.h;   /* tab strip height (= WIN_TITLE_H, node-clamped) */
 
@@ -394,7 +237,6 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     s_build.win.flags       = flags;
     s_build.win.title_h     = title_h;
     s_scope.resize_hot      = float_hot;   /* 0 for a tree node; a floating group resizes like a window */
-    s_scope.grip_hot        = false;
     s_build.win.rec         = win;
     s_build.win.dock_node   = node;
     s_build.win.dock_active = active;
@@ -458,40 +300,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     / window_fit_size already are above.
 ----------------------------------------------------------------------------------------------*/
 
-/* Sync a native window's geometry to its OS-owned surface and publish the frame layout (caption
-   band + resize border) to app() -- the OS drives move/resize/Aero-snap through WM_NCHITTEST, gui
-   just pins geometry and tells it where the grab bands are.  Also tracks RESTORE geometry for a
-   CLOSEABLE floater so closing it captures the right state: win->w/h are the maximized size while
-   maximized, so sample the home position and restore size only on restored frames; record the
-   maximized state either way so re-open can re-maximize while still holding the previous normal
-   size to restore back to. */
-static void
-window_sync_native( gui_window_t* win, gui_win_flags_t flags )
-{
-    const gui_viewport_t* vp = &g_ctx->viewports[ win->viewport ];
-    win->x = 0.0f;
-    win->y = 0.0f;
-    if ( vp->disp_w > 0 ) win->w = ( f32 )vp->disp_w;
-    if ( vp->disp_h > 0 ) win->h = ( f32 )vp->disp_h;
-
-    i32 border = ( flags & GUI_WIN_NORESIZE ) ? 0 : ( i32 )WIN_RESIZE_OUTER;
-    app()->window_set_native_frame( window_native_id( win ), true, border );
-
-    i32 caption = ( flags & GUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
-    g_ctx->viewports[ win->viewport ].caption_inset = ( f32 )caption;
-
-    if ( win->viewport != 0 && ( flags & GUI_WIN_CLOSEABLE ) )
-    {
-        win_id_t os = window_native_id( win );
-        win->reopen_maximized = app()->window_state( os ).maximized != 0;
-        if ( !win->reopen_maximized )
-        {
-            app()->window_get_pos( os, &win->home_x, &win->home_y );
-            win->restore_w = win->w;
-            win->restore_h = win->h;
-        }
-    }
-}
+/* window_sync_native (the native geometry pin + frame publish) lives in gui_window_native.c. */
 
 /* Apply an in-progress title-bar drag: this window holds active_id while the button is down.
    On the main surface the panel slides within it (win->x/y).  On a floater the panel fills the
@@ -612,10 +421,10 @@ window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title,
 /* Resolve this frame's edge-resize / autosize-grip hover-and-grab, before any widget can claim the
    press.  The edge protocol (hover gate, grab band, grab on press, directional cursor) is the
    resize_item service (2_interact/gui_resize.c) -- owner_win is the window's OWN id, since this
-   resolves before s_build.win.id is stamped.  Sets s_scope.resize_hot / grip_hot (read by
-   widget_behavior + window_end's highlight); the grip triangle promotes R+B into the highlight
-   mask but not the cursor.  Returns the PRE-grip-promotion resize_hot mask -- the debug overlay's
-   outer-band capture wants only the true edge hit, not the grip's R+B promotion. */
+   resolves before s_build.win.id is stamped.  Sets s_scope.resize_hot (read by widget_behavior +
+   window_end's highlight); a hot autosize grip joins the mask as GUI_RESIZE_GRIP with the R+B
+   edge bits promoted alongside it, but never drives the cursor.  Returns the PRE-grip-promotion
+   mask -- the debug overlay's outer-band capture wants only the true edge hit. */
 static u8
 window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags,
                            gui_rect_t disp_r, bool collapsed, bool resizeable, gui_id_t resize_id )
@@ -641,13 +450,12 @@ window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags
         gui_rect_t gr = { win->x + win->w - g, win->y + disp_r.h - g, g, g };
         grip_hot = rect_hit( gr );
     }
-    s_scope.grip_hot = grip_hot;   /* read by widget_behavior to defer the corner to the grip */
 
-    /* Grip triangle and the R+B corner always highlight together: if the grip is hot, promote the
-       R+B edge bits so the border highlight follows; the reverse (R+B edges -> triangle) runs in
-       window_end where hot_edges is resolved. */
+    /* A hot grip joins the resize mask (GRIP suppresses widget hover like an edge; the R+B edge
+       bits are promoted with it so the border highlight follows the triangle -- the reverse,
+       R+B edges -> triangle, runs in window_end where hot_edges is resolved). */
     if ( grip_hot )
-        s_scope.resize_hot |= GUI_RESIZE_R | GUI_RESIZE_B;
+        s_scope.resize_hot |= GUI_RESIZE_GRIP | GUI_RESIZE_R | GUI_RESIZE_B;
 
     /* The cursor was already driven inside resize_item, from the PRE-grip-promotion mask: the grip
        square alone (no true edge hit) keeps the regular arrow, since the diagonal resize cursor's
@@ -696,9 +504,9 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        the tear-off request -- the title is in hand here, which viewport_update needs to label
        the OS window.  Stay hidden this one frame until the surface exists so it never flashes on the
        main surface at (0,0); last_frame IS stamped so the fresh floater is not read as abandoned. */
-    if ( win->reopen_floater && win->viewport == 0 && !s_vp_request.active )
+    if ( win->reopen.floater && win->viewport == 0 && !s_vp_request.active )
     {
-        win->reopen_floater   = false;
+        win->reopen.floater   = false;
         s_vp_request.active   = true;
         s_vp_request.by_drag  = false;
         s_vp_request.win_id   = id;
@@ -706,7 +514,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         s_vp_request.title    = title;
         s_vp_request.has_home = true;   /* spawn reads restore geometry + maximized from the record */
 
-        win->last_frame      = s_retained.frame;
+        win->last_frame      = g_ctx->retained.frame;
         s_build.win.hidden   = true;
         s_build.win.dock_node = NULL;
         return false;
@@ -715,7 +523,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     /* Already restored on a surface of its own: clear any stale re-open flag (e.g. the floater was
        re-opened within the teardown grace window, before its viewport reverted). */
     if ( win->viewport != 0 )
-        win->reopen_floater = false;
+        win->reopen.floater = false;
 
     /* Closed-viewport fallback: if this window's surface was destroyed, revert to primary. */
     if ( win->viewport > 0 && !rhi_handle_valid( g_ctx->viewports[ win->viewport ].vb ) )
@@ -736,7 +544,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        resize, and autosize act on the geometry, so a ONCE / APPEARING seed becomes the incoming
        state the user then interacts with.  `appearing` is the first begin (last_frame 0) or the
        first begin after a frame of absence -- it renews the one-shot APPEARING permission. */
-    bool appearing = ( win->last_frame == 0u ) || ( win->last_frame != s_retained.frame - 1u );
+    bool appearing = ( win->last_frame == 0u ) || ( win->last_frame != g_ctx->retained.frame - 1u );
 
     /* Raise to front on every appearance: first creation and re-opens both get a fresh z
        above all currently-live windows, so no two windows ever share a z on their first
@@ -751,7 +559,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         win->z = surface_z_raise( win->z );
 
     window_apply_next( win, appearing );
-    win->last_frame = s_retained.frame;
+    win->last_frame = g_ctx->retained.frame;
 
     /* NOTITLEBAR removes the bar entirely (title_h 0); content then starts at the top edge.
        Collapsing lives on the title bar, so NOTITLEBAR and NOCOLLAPSE both pin the window
@@ -997,19 +805,6 @@ gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
     return g_ctx->viewports[ vp ].caption_inset;   /* published by the begin above */
 }
 
-/* Enqueue a button-triggered tear-off or merge-back into the one-shot s_vp_request slot.
-   Idempotent: a single slot covers the one dragged window at a time, so the first caller wins. */
-static void
-vp_request_button( gui_window_t* win )
-{
-    if ( s_vp_request.active ) return;
-    s_vp_request.active  = true;
-    s_vp_request.by_drag = false;
-    s_vp_request.win_id  = s_build.win.id;
-    s_vp_request.from_vp = win ? win->viewport : 0u;
-    s_vp_request.title   = s_build.win.title;
-}
-
 void
 gui_window_end( void )
 {
@@ -1086,11 +881,11 @@ gui_window_end( void )
         {
             gui_rect_t   arrow_r  = { s_build.win.x, s_build.win.y, title_h, title_h };
             gui_id_t     arrow_id = id_combine( s_build.win.id, GUI_COLLAPSE_SALT );
-            widget_state_t arrow_st = widget_behavior( arrow_id, arrow_r, WIDGET_KIND_BUTTON );
+            gui_item_state_t arrow_st = widget_behavior( arrow_id, arrow_r, WIDGET_KIND_BUTTON );
             if ( arrow_st.clicked )
             {
                 win->collapsed = !win->collapsed;
-                s_retained.wants_redraw = true;  /* toggle takes effect next frame; force one more build */
+                g_ctx->retained.wants_redraw = true;  /* toggle takes effect next frame; force one more build */
             }
             draw_collapse_arrow( arrow_r, s_build.win.collapsed, arrow_st.hover ? COL_TEXT : COL_TEXT_DIM );
             text_x = s_build.win.x + title_h;   /* title follows the arrow square */
@@ -1105,7 +900,7 @@ gui_window_end( void )
                  && rect_hit( bar_r ) )
             {
                 win->collapsed = !win->collapsed;
-                s_retained.wants_redraw = true;
+                g_ctx->retained.wants_redraw = true;
             }
         }
 
@@ -1125,7 +920,7 @@ gui_window_end( void )
             btn_x -= title_h;
             gui_rect_t   cl_r  = { btn_x, s_build.win.y, title_h, title_h };
             gui_id_t     cl_id = id_combine( s_build.win.id, GUI_CLOSE_SALT );
-            widget_state_t cl_st = widget_behavior( cl_id, cl_r, WIDGET_KIND_BUTTON );
+            gui_item_state_t cl_st = widget_behavior( cl_id, cl_r, WIDGET_KIND_BUTTON );
 
             /* Hover/press background so the control reads as clickable (the glyph stays square). */
             if ( cl_st.hover || cl_st.active )
@@ -1138,7 +933,7 @@ gui_window_end( void )
             if ( cl_st.clicked && win )
             {
                 win->closed = true;
-                s_retained.wants_redraw = true;  /* close takes effect next frame; force one more build */
+                g_ctx->retained.wants_redraw = true;  /* close takes effect next frame; force one more build */
             }
 
             right_limit = cl_r.x - WIDGET_PAD;
@@ -1155,7 +950,7 @@ gui_window_end( void )
             btn_x -= title_h;
             gui_rect_t   det_r  = { btn_x, s_build.win.y, title_h, title_h };
             gui_id_t     det_id = id_combine( s_build.win.id, GUI_DETACH_SALT );
-            widget_state_t det_st = widget_behavior( det_id, det_r, WIDGET_KIND_BUTTON );
+            gui_item_state_t det_st = widget_behavior( det_id, det_r, WIDGET_KIND_BUTTON );
             if ( det_st.clicked )
                 vp_request_button( win );   /* 0 = main surface -> tear off; else floater -> merge back */
 
@@ -1179,62 +974,9 @@ gui_window_end( void )
 
         /* Native caption buttons (min / max / close / pop-in): a native window's titlebar IS the OS
            caption, so its collapse arrow, detach button and gui drag-grab are all suppressed above
-           -- instead it gets OS-window controls.  window_begin published these exact rects as
-           HTCLIENT holes, so a click here reaches gui rather than starting an OS move.  The buttons
-           run right-to-left from the bar's right edge; the title text stops at the leftmost one. */
+           -- instead it gets OS-window controls (native_caption_chrome, gui_window_native.c). */
         if ( native )
-        {
-            win_id_t     os   = window_native_id( win );
-            bool         zoom = app()->window_state( os ).maximized != 0;
-            native_btn_t btns[ NATIVE_BTN_MAX ];
-            i32          nb   = native_caption_buttons( win, s_build.win.flags, s_build.win.x, s_build.win.y,
-                                                        s_build.win.w, title_h, btns );
-
-            for ( i32 i = 0; i < nb; ++i )
-            {
-                gui_rect_t   br  = btns[ i ].r;
-                gui_id_t     bid = id_combine( s_build.win.id,
-                                                 GUI_NATIVE_BTN_SALT + ( u32 )btns[ i ].kind );
-                widget_state_t bs  = widget_behavior( bid, br, WIDGET_KIND_BUTTON );
-
-                /* Hover/press background so the control reads as clickable -- a control frame, so it
-                   takes the widget radius (the glyph itself squares off in native_btn_draw_glyph). */
-                if ( bs.hover || bs.active )
-                {
-                    draw_set_rounding( ROUND_WIDGET );
-                    draw_push_rect_filled( br.x, br.y, br.w, br.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
-                }
-
-                native_btn_draw_glyph( btns[ i ].kind, br, zoom, bs.hover ? COL_TEXT : COL_TEXT_DIM );
-
-                if ( bs.clicked )
-                {
-                    switch ( btns[ i ].kind )
-                    {
-                        case NATIVE_BTN_MINIMIZE: app()->window_minimize( os );        break;
-                        case NATIVE_BTN_MAXIMIZE: app()->window_toggle_maximize( os );  break;
-                        case NATIVE_BTN_CLOSE:
-                            /* A floater's close hides the CLOSEABLE window and sets reopen_floater;
-                               the abandoned-teardown frees this OS surface next frame, and the next
-                               begin re-spawns it from the restore geometry tracked in window_begin
-                               (so a maximized floater re-opens maximized).  The main window's close
-                               is the graceful application quit. */
-                            if ( win && win->viewport != 0 )
-                            {
-                                win->reopen_floater = true;
-                                win->closed         = true;
-                            }
-                            else
-                                app()->window_request_close( os );
-                            break;
-                        case NATIVE_BTN_POPIN: vp_request_button( win ); break;
-                    }
-                }
-            }
-
-            if ( nb > 0 )
-                right_limit = btns[ nb - 1 ].r.x - WIDGET_PAD;   /* leftmost button bounds the title */
-        }
+            right_limit = native_caption_chrome( win, title_h, right_limit );
 
         /* Title text, fitted to the room between the arrow square and the detach button (or the
            bar's right edge) so a narrow (shrunk) window ellipsizes the title instead of bleeding

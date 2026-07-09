@@ -48,30 +48,30 @@
 static gui_dock_ref_t
 dock_ref( gui_dock_node_t* n )
 {
-    return n ? (gui_dock_ref_t)( n - s_dock_nodes ) : GUI_DOCK_REF_NONE;
+    return n ? (gui_dock_ref_t)( n - g_ctx->dock_nodes ) : GUI_DOCK_REF_NONE;
 }
 
 static gui_dock_node_t*
 dock_at( gui_dock_ref_t ref )
 {
-    return ( ref == GUI_DOCK_REF_NONE ) ? NULL : &s_dock_nodes[ ref ];
+    return ( ref == GUI_DOCK_REF_NONE ) ? NULL : &g_ctx->dock_nodes[ ref ];
 }
 
 static gui_dock_node_t*
 dock_node_alloc( u32 viewport )
 {
-    if ( !s_dock_nodes ) return NULL;   /* docking disabled for this context */
+    if ( !g_ctx->dock_nodes ) return NULL;   /* docking disabled for this context */
     gui_dock_node_t* n = NULL;
-    for ( u32 i = 0; i < s_dock_node_count; ++i )      /* reuse a freed hole first */
-        if ( s_dock_nodes[ i ].id == 0 ) { n = &s_dock_nodes[ i ]; break; }
+    for ( u32 i = 0; i < g_ctx->dock_node_count; ++i )      /* reuse a freed hole first */
+        if ( g_ctx->dock_nodes[ i ].id == 0 ) { n = &g_ctx->dock_nodes[ i ]; break; }
     if ( !n )
     {
-        if ( s_dock_node_count >= g_ctx->max_dock_nodes )
+        if ( g_ctx->dock_node_count >= g_ctx->max_dock_nodes )
             return NULL;
-        n = &s_dock_nodes[ s_dock_node_count++ ];
+        n = &g_ctx->dock_nodes[ g_ctx->dock_node_count++ ];
     }
     memset( n, 0, sizeof *n );
-    n->id       = ++s_dock_id_seq;   /* monotonic; never 0 */
+    n->id       = ++g_ctx->dock_id_seq;   /* monotonic; never 0 */
     n->viewport = viewport;
     n->ratio    = 0.5f;
     /* GUI_DOCK_REF_NONE is 0xFFFF, not 0 -- index 0 is a real pool slot -- so the memset above does
@@ -92,9 +92,9 @@ static gui_dock_node_t*
 dock_node_find( gui_dock_id_t id )
 {
     if ( !id ) return NULL;
-    for ( u32 i = 0; i < s_dock_node_count; ++i )
-        if ( s_dock_nodes[ i ].id == id )
-            return &s_dock_nodes[ i ];
+    for ( u32 i = 0; i < g_ctx->dock_node_count; ++i )
+        if ( g_ctx->dock_nodes[ i ].id == id )
+            return &g_ctx->dock_nodes[ i ];
     return NULL;
 }
 
@@ -104,9 +104,9 @@ static gui_dock_node_t*
 dock_find_window_node( gui_id_t win )
 {
     if ( !win ) return NULL;
-    for ( u32 i = 0; i < s_dock_node_count; ++i )
+    for ( u32 i = 0; i < g_ctx->dock_node_count; ++i )
     {
-        gui_dock_node_t* n = &s_dock_nodes[ i ];
+        gui_dock_node_t* n = &g_ctx->dock_nodes[ i ];
         if ( n->id == 0 || n->split != DOCK_SPLIT_NONE )
             continue;
         for ( u32 t = 0; t < n->tab_count; ++t )

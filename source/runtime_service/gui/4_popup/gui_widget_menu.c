@@ -25,7 +25,7 @@
                              over s_build.win.menubar_rect, drawn outside the body's scrolling flow).
 
     Included by gui.c after gui_widget_combo.c, so the popup internals (popup_open_id,
-    popup_is_open_id, popup_set_anchor, popup_begin_common_id, the s_popups_open stack, the
+    popup_is_open_id, popup_set_anchor, popup_begin_common_id, the g_ctx->popups_open stack, the
     GUI_POPUP_* constants), the region push/pop helpers, and every widget / layout primitive are
     all in scope.
 
@@ -56,9 +56,9 @@ static void
 menu_close_chain( void )
 {
     u32 floor = 0;
-    for ( u32 i = 0; i < s_popup_open_count; ++i )
-        if ( s_popups_open[ i ].modal ) floor = i + 1u;
-    s_popup_open_count = floor;
+    for ( u32 i = 0; i < g_ctx->popup_open_count; ++i )
+        if ( g_ctx->popups_open[ i ].modal ) floor = i + 1u;
+    g_ctx->popup_open_count = floor;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -71,13 +71,13 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
     gui_id_t   id = widget_id( label );
     gui_rect_t r  = widget_next_rect( WIDGET_H );
 
-    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
     /* Pointing at a leaf row -- by mouse or by the nav cursor -- collapses any submenu open at this
        depth, so moving off a sibling menu_begin onto a plain item closes that submenu: the menu
        reads as one active path under either input. */
-    if ( ( st.hover || st.nav ) && s_popup_open_count > s_popup_begin_count )
-        s_popup_open_count = s_popup_begin_count;
+    if ( ( st.hover || st.nav ) && g_ctx->popup_open_count > s_popup_begin_count )
+        g_ctx->popup_open_count = s_popup_begin_count;
 
     /* Row highlight on hover / nav (active tint while pressed). */
     if ( st.hover || st.nav )
@@ -155,19 +155,19 @@ gui_menu_begin( const char* label )
         anchor_y = box.y;
     }
 
-    widget_state_t st = widget_behavior( id, box, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, box, WIDGET_KIND_BUTTON );
 
     gui_menu_state_t* ms = GUI_STATE( gui_menu_state_t, id );
-    bool was_open     = ( ms->open_frame + 1u == s_retained.frame );
+    bool was_open     = ( ms->open_frame + 1u == g_ctx->retained.frame );
     bool this_open    = popup_is_open_id( pid );
-    bool sibling_open = ( s_popup_open_count > s_popup_begin_count );
+    bool sibling_open = ( g_ctx->popup_open_count > s_popup_begin_count );
 
     /* Open policy.  Bar: a click toggles (a click while open closes -- guarded by was_open since
        popup_close_check already dropped it at frame top), and once any bar menu is open, hovering a
        sibling switches to it.  Menu: hovering or clicking a row opens its submenu.  A popup_open_id
        at this depth replaces whatever sibling was open and truncates anything deeper, so switching
        is automatic. */
-    /* Keyboard reflexes layered onto the mouse ones (driven by the menu-bar nav state in s_nav):
+    /* Keyboard reflexes layered onto the mouse ones (driven by the menu-bar nav state in g_ctx->nav):
 
          bar_nav -- in menu-bar mode, the nav-highlighted bar entry drops its menu, so Left/Right
                     traversal of the bar shows each menu in turn (the existing && !this_open guard
@@ -176,21 +176,21 @@ gui_menu_begin( const char* label )
                     and consume the request (issue: Alt+F opens File).
          nav_right -- inside a menu, a Right move on a submenu row opens it; nav descends next frame
                     as the new popup becomes the top one and captures nav. */
-    bool bar_nav = in_bar && st.nav && s_nav.bar_win == s_build.win.id && !s_nav.in_menus;
+    bool bar_nav = in_bar && st.nav && g_ctx->nav.bar_win == s_build.win.id && !g_ctx->nav.in_menus;
 
     u8   lead = ( label[ 0 ] != '#' )
               ? (u8)( ( label[ 0 ] >= 'a' && label[ 0 ] <= 'z' ) ? label[ 0 ] - 32 : label[ 0 ] )
               : 0u;
-    bool mnem = in_bar && s_nav.mnemonic != 0 && lead == s_nav.mnemonic;
+    bool mnem = in_bar && g_ctx->nav.mnemonic != 0 && lead == g_ctx->nav.mnemonic;
     if ( mnem )
     {
-        s_nav.id       = id;                 /* highlight this entry from next frame on */
-        s_nav.bar_win  = s_build.win.id;       /* drive this window's bar */
-        s_nav.in_menus = false;
-        s_nav.mnemonic = 0;                  /* consume */
+        g_ctx->nav.id       = id;                 /* highlight this entry from next frame on */
+        g_ctx->nav.bar_win  = s_build.win.id;       /* drive this window's bar */
+        g_ctx->nav.in_menus = false;
+        g_ctx->nav.mnemonic = 0;                  /* consume */
     }
 
-    bool nav_right = ( st.nav && s_nav.move_dir == GUI_DIR_RIGHT );
+    bool nav_right = ( st.nav && g_ctx->nav.move_dir == GUI_DIR_RIGHT );
 
     bool do_open;
     if ( in_bar )
@@ -230,7 +230,7 @@ gui_menu_begin( const char* label )
                                       false, 0.0f, 0.0f );
     if ( vis )
     {
-        ms->open_frame = s_retained.frame;   /* body emitted this frame -> "open" next frame */
+        ms->open_frame = g_ctx->retained.frame;   /* body emitted this frame -> "open" next frame */
         gui_stack();                      /* a menu body is a vertical list */
     }
     return vis;

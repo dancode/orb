@@ -18,7 +18,7 @@
     (a "no sort" is 0, not -1), since a reclaimed or fresh slot always starts zeroed.
 
     Included by gui.c after 0_foundation/gui_id.c (the identity service that mints the keys) --
-    g_ctx / s_retained come from 0_foundation/gui_ctx.c above both.
+    g_ctx / g_ctx->retained come from 0_foundation/gui_ctx.c above both.
 
 ==============================================================================================*/
 // clang-format off
@@ -46,7 +46,7 @@ state_probe( u8* base, u32 stride, u32 count, u32 mask, gui_id_t id )
 
         if ( h->id == id )                           /* live hit: restamp and hand back the storage */
         {
-            h->seen_frame = s_retained.frame;
+            h->seen_frame = g_ctx->retained.frame;
             return p + sizeof( gui_state_hdr_t );
         }
         if ( h->id == GUI_ID_NONE )                  /* empty ends the probe: id is absent */
@@ -54,7 +54,7 @@ state_probe( u8* base, u32 stride, u32 count, u32 mask, gui_id_t id )
             dst = reuse ? reuse : p;                 /* reclaim a tombstone if we passed one, else grow */
             break;
         }
-        if ( !reuse && s_retained.frame - h->seen_frame > 1u )
+        if ( !reuse && g_ctx->retained.frame - h->seen_frame > 1u )
             reuse = p;                               /* two+ frames cold -> reclaimable in place */
     }
 
@@ -62,7 +62,7 @@ state_probe( u8* base, u32 stride, u32 count, u32 mask, gui_id_t id )
 
     gui_state_hdr_t* h = (gui_state_hdr_t*)dst;
     h->id         = id;
-    h->seen_frame = s_retained.frame;
+    h->seen_frame = g_ctx->retained.frame;
     memset( dst + sizeof( gui_state_hdr_t ), 0, stride - sizeof( gui_state_hdr_t ) );
     return dst + sizeof( gui_state_hdr_t );
 }
@@ -76,11 +76,11 @@ gui_state_get( gui_id_t id, u32 size )
     if ( id == GUI_ID_NONE ) id = 1u;             /* never key on the empty sentinel */
 
     if ( size <= GUI_STATE_CAP )
-        return state_probe( (u8*)s_retained.state, (u32)sizeof( gui_state_slot_t ),
-                            s_retained.state_count, s_retained.state_mask, id );
+        return state_probe( (u8*)g_ctx->retained.state, (u32)sizeof( gui_state_slot_t ),
+                            g_ctx->retained.state_count, g_ctx->retained.state_mask, id );
 
-    return state_probe( (u8*)s_retained.state_big, (u32)sizeof( gui_state_big_slot_t ),
-                        GUI_STATE_BIG_SLOTS, s_retained.big_mask, id );
+    return state_probe( (u8*)g_ctx->retained.state_big, (u32)sizeof( gui_state_big_slot_t ),
+                        GUI_STATE_BIG_SLOTS, g_ctx->retained.big_mask, id );
 }
 
 /* Typed sugar: a zero-on-create T* persisted by id.  sizeof(T) must be <= GUI_STATE_BIG_CAP. */
@@ -94,10 +94,10 @@ static const void*
 gui_state_peek( gui_id_t id )
 {
     if ( id == GUI_ID_NONE ) id = 1u;
-    u32 bucket = id & s_retained.state_mask;
-    for ( u32 i = 0; i < s_retained.state_count; ++i )
+    u32 bucket = id & g_ctx->retained.state_mask;
+    for ( u32 i = 0; i < g_ctx->retained.state_count; ++i )
     {
-        const gui_state_slot_t* s = &s_retained.state[ ( bucket + i ) & s_retained.state_mask ];
+        const gui_state_slot_t* s = &g_ctx->retained.state[ ( bucket + i ) & g_ctx->retained.state_mask ];
         if ( s->id == id          ) return s->data;
         if ( s->id == GUI_ID_NONE ) return NULL;   /* empty slot ends the chain */
     }

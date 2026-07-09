@@ -27,7 +27,7 @@
 /* Draw a slider's track, the fill bar up to t (0..1), the knob, and -- unless GUI_ITEM_NO_VALUE_TEXT
    is set -- value_text centered on top, fitted to the inner width. */
 static void
-slider_render( gui_rect_t track_r, widget_state_t st, f32 t, const char* value_text )
+slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value_text )
 {
     t = saturate( t );
 
@@ -94,7 +94,7 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
     /* Track takes the left portion; the label sits at the right.  The min track width keeps the
        knob travel usable when the label is long. */
     gui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
-    widget_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
+    gui_item_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
 
     /* Drag: map the cursor's track fraction to a value, snapping to the step grid when asked. */
     bool changed = false;
@@ -149,7 +149,7 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     gui_rect_t r  = widget_next_rect( WIDGET_H );
 
     gui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
-    widget_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
+    gui_item_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
 
     bool changed = false;
     if ( st.active )
@@ -207,7 +207,7 @@ static i32 s_drag_anchor_v;
 static bool
 drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format )
 {
-    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_DRAG );
+    gui_item_state_t st = widget_behavior( id, box_r, WIDGET_KIND_DRAG );
 
     if ( st.pressed )
         s_drag_anchor_v = *v;
@@ -285,7 +285,7 @@ static bool
 drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
                 f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
 {
-    widget_state_t st = widget_behavior( id, box_r, WIDGET_KIND_DRAG );
+    gui_item_state_t st = widget_behavior( id, box_r, WIDGET_KIND_DRAG );
 
     /* Capture the value at the grab, then re-derive from the anchor each frame (drift-free). */
     if ( st.pressed )
@@ -464,7 +464,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
 
     /* Clickable color square -- placed first for fast visual identification. */
     gui_rect_t preview_r = { ctrl.x, ctrl.y, preview_w, ctrl.h };
-    widget_state_t pst = widget_behavior( id_combine( id, 1u ), preview_r, WIDGET_KIND_BUTTON );
+    gui_item_state_t pst = widget_behavior( id_combine( id, 1u ), preview_r, WIDGET_KIND_BUTTON );
     {
         f32 sv = draw_rounding();
         draw_set_rounding( 2.0f );

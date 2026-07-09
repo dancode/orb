@@ -19,10 +19,10 @@
     slot in the window pool, no drag/resize/4_dock/native path, no title, no background fill.
 
     Root-level only: paints on viewport 0 (the main surface); FUTURE: routing a region to a
-    non-main viewport.  z tier defaults to a fixed
-    band above ordinary windows and below the popup band (GUI_WIN_REGION_BG / _FG override it --
-    see below), and it competes for hover_win in the same z contest windows and popups use, so it
-    is interactive by default (opt out with GUI_WIN_NO_INPUT, same flag a window honors).
+    non-main viewport.  The z tier is the caller's three-way choice (gui_region_tier_t: MID over
+    windows / under popups, BG, FG), and it competes for hover_win in the same z contest windows
+    and popups use, so it is interactive by default (opt out with GUI_WIN_NO_INPUT, same flag a
+    window honors).
 
     A region enters the same hover_win contest a window does through the surface service
     (surface_hover_nominate, 1_surface/gui_surface.c) -- occlusion is a tier-1 concern shared
@@ -48,7 +48,8 @@ region_root_scroll_get( gui_id_t id )
 }
 
 bool
-gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_win_flags_t flags )
+gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
+                  gui_win_flags_t flags )
 {
     gui_id_t            id     = id_hash( id_str );
     gui_scroll_link_t*  scroll = region_root_scroll_get( id );
@@ -67,11 +68,10 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_win_flags_
 
     gui_rect_t box = { x, y, w, h };
 
-    /* z tier: GUI_WIN_REGION_BG / _FG override the default mid-band; mutually exclusive, BG
-       wins if both are set. */
-    u32 z = GUI_REGION_Z;
-    if ( flags & GUI_WIN_REGION_BG )      z = GUI_REGION_BG_Z;
-    else if ( flags & GUI_WIN_REGION_FG ) z = GUI_REGION_FG_Z;
+    /* z tier: the caller's three-way choice (gui_region_tier_t) maps onto the band map. */
+    u32 z = ( tier == GUI_REGION_BG ) ? GUI_REGION_BG_Z
+          : ( tier == GUI_REGION_FG ) ? GUI_REGION_FG_Z
+          :                             GUI_REGION_Z;
 
     /* Stamp the draw state a window would: a stable id for the retained-cache key, this region's
        z tier, the main surface (a root region paints only on viewport 0; FUTURE: other viewports), and its

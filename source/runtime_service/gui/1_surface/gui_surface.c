@@ -11,8 +11,8 @@
     is 4_window/ policy layered on these services.
 
     Following the house pattern, the records themselves live in gui_context_t
-    (0_foundation/gui_ctx.c owns storage + frame turnover: the window pool s_windows /
-    s_window_count / s_window_scratch, the dispenser s_z_counter, and the hover nominee
+    (0_foundation/gui_ctx.c owns storage + frame turnover: the window pool g_ctx->windows /
+    g_ctx->window_count / g_ctx->window_scratch, the dispenser g_ctx->z_counter, and the hover nominee
     fields in s_interaction, promoted to hover_win at frame turnover); this file owns their
     behavior.  The OS half of the surface story -- the viewport records (gui_viewport_t) and
     their open/close lifecycle -- stays with the context and the conductor (gui_frame.c),
@@ -32,16 +32,16 @@
 static gui_window_t*
 window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
 {
-    for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].id == id )
-            return &s_windows[ i ];
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
+        if ( g_ctx->windows[ i ].id == id )
+            return &g_ctx->windows[ i ];
 
     /* First time seen: seed from the caller's initial geometry.  z is left 0 here;
        window_begin_ex stamps a fresh z on every appearance (first frame and re-opens),
        so new and re-opened windows always land on top with no two starting at the same z. */
-    gui_window_t* win = ( s_window_count < g_ctx->max_windows )
-                        ? &s_windows[ s_window_count++ ]
-                        : &s_window_scratch;   /* table full: transient, not persisted */
+    gui_window_t* win = ( g_ctx->window_count < g_ctx->max_windows )
+                        ? &g_ctx->windows[ g_ctx->window_count++ ]
+                        : &g_ctx->window_scratch;   /* table full: transient, not persisted */
     win->id        = id;
     win->x         = x;
     win->y         = y;
@@ -52,8 +52,8 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->overlay   = false;   /* a normal window until the popup layer stamps otherwise */
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
     win->closed    = false;   /* a freshly seen window starts open                */
-    win->reopen_floater   = false;   /* not a re-opening floater until one is closed */
-    win->reopen_maximized = false;
+    win->reopen.floater   = false;   /* not a re-opening floater until one is closed */
+    win->reopen.maximized = false;
 
     /* Next-window state for a fresh window: never begun (so the first begin is "appearing"), and
        ONCE / ALWAYS permitted but APPEARING withheld -- window_begin grants APPEARING only on the
@@ -73,9 +73,9 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
 static gui_window_t*
 window_find( gui_id_t id )
 {
-    for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].id == id )
-            return &s_windows[ i ];
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
+        if ( g_ctx->windows[ i ].id == id )
+            return &g_ctx->windows[ i ];
     return NULL;
 }
 
@@ -202,11 +202,11 @@ window_apply_next( gui_window_t* win, bool appearing )
 
     Returns the z the entity should hold: a fresh top-of-stack value, or its own z unchanged
     when it is already the most recently raised (no value is burned re-raising the top).  The
-    dispenser (s_z_counter) is monotonic and shared by windows, floating dock groups, and
+    dispenser (g_ctx->z_counter) is monotonic and shared by windows, floating dock groups, and
     appearing windows alike, so every raise lands strictly above everything raised before it.
     This tier is the ONLY author of z values: 4_window/4_dock raise through this verb, and the
     popup layer stamps the overlay band through surface_z_overlay below -- nothing outside this
-    file touches s_z_counter or the band constants raw.
+    file touches g_ctx->z_counter or the band constants raw.
 ----------------------------------------------------------------------------------------------*/
 
 static u32
@@ -216,7 +216,7 @@ surface_z_raise( u32 z )
        it is never "already top": always dispense (the counter's first value is 1).  A NONZERO z
        equal to the counter is the unique most-recently-raised holder (dispensed values are held
        by one entity at a time), so only then is the re-raise skipped. */
-    return ( z != 0u && z == s_z_counter ) ? z : ++s_z_counter;
+    return ( z != 0u && z == g_ctx->z_counter ) ? z : ++g_ctx->z_counter;
 }
 
 /* z for an overlay-band occupant at `depth`: popups stack parent -> child, the tooltip sits at
@@ -285,7 +285,7 @@ static struct
 
     bool        has_home;   /* re-open of a closed floater: the spawn reads RESTORE geometry +    */
                             /* maximized state from the window record (home_*, restore_*,         */
-                            /* reopen_maximized) instead of the cursor / main-relative default.   */
+                            /* reopen.maximized) instead of the cursor / main-relative default.   */
 } s_vp_request;
 
 /*----------------------------------------------------------------------------------------------

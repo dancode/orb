@@ -122,17 +122,17 @@ dock_float_hit( gui_id_t drag_id, u32 vp, gui_dock_node_t** out_node, gui_id_t* 
 {
     *out_node = NULL;
     *out_win  = GUI_ID_NONE;
-    if ( !s_dock_nodes )
+    if ( !g_ctx->dock_nodes )
         return false;   /* pool disabled -- no groups can form */
 
     u32  best_z = 0;
     bool found  = false;
-    for ( u32 i = 0; i < s_window_count; ++i )
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
     {
-        gui_window_t* w = &s_windows[ i ];
+        gui_window_t* w = &g_ctx->windows[ i ];
         if ( w->id == GUI_ID_NONE || w->id == drag_id ) continue;
         if ( w->viewport != vp || w->closed )             continue;
-        if ( w->last_frame + 1 < s_retained.frame )       continue;   /* not begun this frame */
+        if ( w->last_frame + 1 < g_ctx->retained.frame )       continue;   /* not begun this frame */
         if ( w->overlay )                   continue;   /* popup / tooltip overlay */
         if ( w->flags & ( GUI_WIN_NATIVE | GUI_WIN_NO_INPUT | GUI_WIN_NOMOVE
                           | GUI_WIN_NO_TAB_TARGET ) )     continue;   /* opted out of hosting tabs */
@@ -175,7 +175,7 @@ static void
 dock_float_request( gui_id_t target_win, gui_id_t dragged, const char* dragged_title )
 {
     s_dock_float_req.active  = true;
-    s_dock_float_req.frame   = s_retained.frame;
+    s_dock_float_req.frame   = g_ctx->retained.frame;
     s_dock_float_req.target  = target_win;
     s_dock_float_req.dragged = dragged;
 
@@ -194,7 +194,7 @@ dock_float_service_request( gui_id_t id, const char* title, gui_window_t* win )
     if ( !s_dock_float_req.active || s_dock_float_req.target != id )
         return;
     s_dock_float_req.active = false;
-    if ( !title || s_retained.frame > s_dock_float_req.frame + 2 )
+    if ( !title || g_ctx->retained.frame > s_dock_float_req.frame + 2 )
         return;   /* untitled target, or the target skipped frames -- drop the stale request */
 
     /* The target may have been tabbed somewhere itself since the commit -- then just join it. */
@@ -296,7 +296,7 @@ gui_window_tab( const char* title, const char* onto_title )
 {
     if ( !title || !onto_title )
         return;
-    if ( !s_fwd_caps.docking || !s_dock_nodes )
+    if ( !s_fwd_caps.docking || !g_ctx->dock_nodes )
         return;   /* feature boundary: tab groups ride the dock-node pool */
 
     gui_id_t wid = id_hash( title );

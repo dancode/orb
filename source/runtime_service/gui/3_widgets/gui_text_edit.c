@@ -12,7 +12,7 @@
     The persisted per-id edit state (cursor, anchor, scroll, blink) lives in the keyed state
     pool (gui_ctx.c); gui_clipboard_set is in 0_foundation/gui_io.c.
 
-    Included by gui.c after gui_widget_core.c so widget_state_t, text_center_y, the COL_*
+    Included by gui.c after gui_widget_core.c so gui_item_state_t, text_center_y, the COL_*
     palette, WIDGET_PAD / WIN_BORDER, and the draw + font helpers are all in scope.
 
 ==============================================================================================*/
@@ -307,7 +307,7 @@ gui_set_edit_key_hook( gui_edit_key_fn fn, void* user )
 }
 
 static input_field_result_t
-input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32 bufsz,
+input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u32 bufsz,
                   gui_text_cb_fn on_change, void* cb_user )
 {
     gui_edit_state_t*  es      = GUI_STATE( gui_edit_state_t, id );
@@ -358,7 +358,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
             while ( len < bufsz - 1u && buf[ len ] ) ++len;
             if ( es->cursor > len ) es->cursor = (u16)len;
             if ( es->anchor > len ) es->anchor = (u16)len;
-            s_retained.wants_redraw = true;
+            g_ctx->retained.wants_redraw = true;
         }
     }
 

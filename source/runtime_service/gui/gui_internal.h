@@ -43,7 +43,6 @@
 #define GUI_DEFAULT_MAX_WINDOWS     32      // default persisted window pool
 #define GUI_DEFAULT_POPUP_DEPTH     8       // default max nested popups
 #define GUI_DEFAULT_STATE_SLOTS     512     // default keyed state pool capacity (power of two)
-#define GUI_DEFAULT_MAX_VIEWPORTS   4       // default render surfaces
 #define GUI_DEFAULT_DOCK_NODES      48      // default dock-tree nodes
 
 /* Non-per-context capacities -- these size non-context structs and stay as fixed constants. */
@@ -62,11 +61,15 @@
 #define GUI_STATE_BIG_CAP           96      // big-class payload bytes (max tenant: gui_table_persist_t)
 #define GUI_STATE_BIG_SLOTS         32      // big-class capacity, power of two (tables are the main tenant)
 
-/* GPU buffer region sizing uses a fixed viewport count (allocated once at init before any config).
-   This is NOT the per-context runtime limit -- that is g_ctx->max_viewports.
-   Must match APP_WIN_MAX / RHI_CTX_MAX. */
+/* Render-surface ceiling: one gui viewport rides one OS window + one rhi context, so the pool
+   default, the per-context cap, and the GPU buffer regions (allocated once at init, before any
+   config) are all sized by the platform pair -- derived, not repeated.  The per-context runtime
+   limit is still g_ctx->max_viewports. */
 
-#define GUI_MAX_VIEWPORTS 4                 // GPU buffer region count; matches APP_WIN_MAX / RHI_CTX_MAX
+#define GUI_MAX_VIEWPORTS APP_WIN_MAX       // one viewport per OS window / rhi context
+
+ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
+                   "a gui viewport pairs an OS window with an rhi context; the maxes must agree" );
 
 /*==============================================================================================
     Input snapshot (0_foundation/gui_io.c)
@@ -99,12 +102,10 @@ typedef struct
 /*==============================================================================================
     Widget interaction (gui_widget_core.c)
 
-    The interaction class picked at the call site and the resolved per-frame result every widget
-    drives its visuals from.  widget_behavior is the producer; every widget file consumes both.
-==============================================================================================*/
-
-/* Interaction class for a widget, selected at the call site.  Only the press-time
-   behavior differs between widgets; everything else (hover/active/click) is uniform. */
+    The interaction class picked at the call site.  Only the press-time behavior differs between
+    widgets; everything else (hover/active/click) is uniform.  widget_behavior's per-frame result
+    is the PUBLIC gui_item_state_t (gui.h) -- stock widgets and gui()->item() callers read the
+    same record, so a custom widget is built on exactly the substrate the built-ins use. */
 
 typedef enum
 {
@@ -113,21 +114,6 @@ typedef enum
     WIDGET_KIND_FOCUSABLE = 2,   // press also claims keyboard focus
 
 } widget_kind_t;
-
-/* Result of one frame of interaction for a widget.  Every widget drives its
-   visuals and value changes from these flags instead of touching s_interaction directly. */
-
-typedef struct
-{
-    bool hover;     // cursor is over the widget this frame
-    bool active;    // primary button held with this widget as the target
-    bool pressed;   // primary button went down on the widget this frame
-    bool clicked;   // press + release completed with the cursor still over
-    bool focused;   // widget owns keyboard input (focusable widgets)
-    bool nav;       // widget is the keyboard-nav cursor, highlighted
-    i32  nav_adjust;// keyboard value edit: -1 / +1 arrow step this frame (captured DRAG widgets)
-
-} widget_state_t;
 
 /*==============================================================================================
     Scroll link (2_compose/gui_layout_region.c)
@@ -172,17 +158,17 @@ typedef struct gui_window_t
     bool       closed;          // CLOSEABLE: hidden by the X until re-opened
 
     /* Re-open of a CLOSEABLE floater: closing it lets the abandoned-teardown free its OS window,
-       reverting this record to viewport 0.  reopen_floater remembers it was a floater so the next
-       begin re-spawns it.  The geometry is the floater's RESTORE (normal) state, sampled every
-       frame it is not maximized -- so a floater closed while maximized re-opens maximized yet still
-       restores to its previous normal size.  home_x/home_y are the restore client-corner screen
-       position; restore_w/restore_h the restore size; reopen_maximized re-maximizes on re-spawn.*/
-
-    bool       reopen_floater;          // re-spawn as a floater on the next begin            
-    bool       reopen_maximized;        // floater was maximized -- re-maximize after re-spawn
-
-    i32        home_x, home_y;          // saved restore (normal) client-corner screen pos    
-    f32        restore_w, restore_h;    // saved restore (normal) size
+       reverting this record to viewport 0.  `floater` remembers it was one so the next begin
+       re-spawns it.  The geometry is the floater's RESTORE (normal) state, sampled every frame it
+       is not maximized -- so a floater closed while maximized re-opens maximized yet still
+       restores to its previous normal size. */
+    struct
+    {
+        bool floater;          // re-spawn as a floater on the next begin
+        bool maximized;        // floater was maximized -- re-maximize after re-spawn
+        i32  home_x, home_y;   // saved restore (normal) client-corner screen pos
+        f32  w, h;             // saved restore (normal) size
+    } reopen;
 
     gui_win_flags_t flags;              // behavior flags supplied to window_begin
 
@@ -200,8 +186,8 @@ typedef struct gui_window_t
     Keyboard navigation state (driver in gui_nav.c)
 
     The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather
-    than the mouse -- plus the menu-bar state machine layered on top of it.  The instance is a
-    member of the bound context (gui_context_t), reached through the s_nav alias.
+    than the mouse -- plus the menu-bar state machine layered on top of it.  The instance is the
+    bound context's nav member (g_ctx->nav), so each context keeps its own cursor.
 ==============================================================================================*/
 
 /* One entry of the per-frame nav item list.  Every item of the nav window records itself here
@@ -254,7 +240,7 @@ typedef struct
 
     /* Keyboard value edit: activating a DRAG widget (slider, drag box) captures it -- the drag
        twin of focused_id text capture.  While captured, Left/Right step the value through
-       widget_state_t.nav_adjust and Enter/Space/Esc (or a mouse press) release. */
+       gui_item_state_t.nav_adjust and Enter/Space/Esc (or a mouse press) release. */
     gui_id_t    edit_id;       // DRAG widget captured for keyboard value edit; 0 = none
     i32         edit_dir;      // value-edit arrow step this frame: -1 / +1 / 0
 
@@ -528,29 +514,37 @@ typedef struct
 typedef struct
 {
     /* scope -- stamped at the window/child/popup/table seams */
-    gui_id_t   win;          // scope owner: hover domain (vs hover_win) and nav domain (vs s_nav.win)
+    gui_id_t   win;          // scope owner: hover domain (vs hover_win) and nav domain (vs g_ctx->nav.win)
     gui_rect_t clip;         // active interaction clip -- widget hover is gated by it
-    u8         resize_hot;   // window resize edges hot this frame -- suppresses widget hover
-    bool       grip_hot;     // cursor over the CAN_AUTOSIZE grip -- suppresses widget hover
+    u8         resize_hot;   // resize chrome hot this frame (GUI_RESIZE_* edge bits, plus
+                             //   GUI_RESIZE_GRIP for the CAN_AUTOSIZE corner) -- any bit set
+                             //   suppresses widget hover so the chrome owns the cursor
 
-    /* item -- latched at the emit seam (widget_next_rect_w), dropped at the chrome seams.
-       The nav stamp is the placing region's structural coordinate: it stays latched across the
-       several behavior calls one cell can make (a numeric's sub-fields are same-line siblings),
-       and item_flags_chrome_reset drops nav_placed at every chrome seam -- so "was this item
-       placed by the layout engine" is exactly the body/chrome split. */
+    /* item -- latched at the emit seam (widget_next_rect_w), dropped at the chrome seams. */
     gui_item_flags_t flags;  // flags resolved for the item being emitted (item_flags_resolve)
-    u32   nav_region;        // stamp: region that placed the item being emitted
-    u32   nav_line;          // stamp: its line sequence
-    bool  nav_placed;        // stamp is live (false => the next behavior call is chrome)
-    bool  nav_skip;          // one-shot: the next behavior call is no keyboard target at all
-                             // (scrollbar, drag strip) -- consumed by widget_behavior
+
+    /* The nav structural coordinate passes through three roles on its way here: the frame-global
+       DISPENSERS (s_build.nav_region_seq / nav_line_seq) mint sequence numbers, the open region's
+       layout frame carries its live COORDINATE (layout_frame_t.nav_region / nav_line), and this
+       group is the per-item STAMP the emit seam latches from the frame.  Latched, not one-shot:
+       it stays across the several behavior calls one cell can make (a numeric's sub-fields are
+       same-line siblings); item_flags_chrome_reset drops `placed` at every chrome seam -- so
+       "was this item placed by the layout engine" is exactly the body/chrome split. */
+    struct
+    {
+        u32  region;         // stamp: region that placed the item being emitted
+        u32  line;           // stamp: its line sequence
+        bool placed;         // stamp is live (false => the next behavior call is chrome)
+        bool skip;           // one-shot: the next behavior call is no keyboard target at all
+                             //   (scrollbar, drag strip) -- consumed by widget_behavior
+    } nav;
 
     /* result -- published by widget_behavior for the most recent item (the Dear ImGui IsItem*
        model): the item-query readers report on "the widget just emitted" with no per-widget
        bookkeeping, the same anchor context menus / tooltips / drag sources hang from. */
     gui_id_t       last_id;      // id of the most recent widget emitted
     gui_rect_t     last_rect;    // its screen rect
-    widget_state_t last_status;  // its resolved hover / active / clicked / focused / nav flags
+    gui_item_state_t last_status;  // its resolved hover / active / clicked / focused / nav flags
 
 } gui_scope_t;
 
@@ -806,7 +800,7 @@ typedef struct gui_dock_node_t
 
     A context is the emission session the code binds once and emits ALL its windows into; it owns
     the state that must persist between frames for that UI.  Every retained access resolves through
-    g_ctx via the aliases in gui_ctx.c -- s_retained, s_nav, the popup open-set -- so switching
+    g_ctx via the aliases in gui_ctx.c -- g_ctx->retained, g_ctx->nav, the popup open-set -- so switching
     contexts is a single pointer assignment (ctx_bind): no copy, no backup/restore.
 
     Ambient state (s_interaction) and frame scratch (s_build, the stacks, s_draw) stay global by design
@@ -903,11 +897,14 @@ static void scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertica
 
 /* Edge bits shared by the edge-resize service (2_interact/gui_resize.c: hit test, grab, apply),
    its highlight painter (2_present/gui_widget_core.c: draw_resize_highlight), and the tier-4
-   consumers.  Combined on a corner grab (e.g. R|B). */
-#define GUI_RESIZE_L  ( 1u << 0 )
-#define GUI_RESIZE_R  ( 1u << 1 )
-#define GUI_RESIZE_T  ( 1u << 2 )
-#define GUI_RESIZE_B  ( 1u << 3 )
+   consumers.  Combined on a corner grab (e.g. R|B).  GRIP is the CAN_AUTOSIZE corner triangle --
+   a resize affordance like the edges, carried in the same s_scope.resize_hot mask (the highlight
+   painter ignores it; the R|B edge bits are promoted alongside it so the corner still bolds). */
+#define GUI_RESIZE_L     ( 1u << 0 )
+#define GUI_RESIZE_R     ( 1u << 1 )
+#define GUI_RESIZE_T     ( 1u << 2 )
+#define GUI_RESIZE_B     ( 1u << 3 )
+#define GUI_RESIZE_GRIP  ( 1u << 4 )
 
 /*==============================================================================================
     Shared stateless helpers

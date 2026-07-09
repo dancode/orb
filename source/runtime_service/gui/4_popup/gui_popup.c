@@ -4,7 +4,7 @@
 
     A popup is a transient window rendered on top of everything that auto-closes on an outside
     click (regular) or blocks input + dims the background (modal).  The popup layer is thin: the
-    open set is a stack (s_popups_open in gui_ctx.c), and rendering is delegated wholesale to the
+    open set is a stack (g_ctx->popups_open in gui_ctx.c), and rendering is delegated wholesale to the
     window path (window_begin_ex / window_end).  Occlusion, z-sort, clipping, scroll, and chrome
     all come from the window machinery unchanged.
 
@@ -153,16 +153,16 @@ popup_open_id( gui_id_t id, f32 ax, f32 ay )
     u32 depth = s_popup_begin_count;
     if ( depth >= g_ctx->popup_depth ) return;
 
-    gui_popup_t* p = &s_popups_open[ depth ];
+    gui_popup_t* p = &g_ctx->popups_open[ depth ];
     p->id          = id;
     p->modal       = false;                 /* decided at begin; default until then */
     p->anchor_x    = ax;
     p->anchor_y    = ay;
-    p->open_frame  = s_retained.frame;
-    p->begun_frame = s_retained.frame;       /* guard the stale-close until begin runs */
+    p->open_frame  = g_ctx->retained.frame;
+    p->begun_frame = g_ctx->retained.frame;       /* guard the stale-close until begin runs */
     p->rect        = ( gui_rect_t ){ 0 };
 
-    s_popup_open_count = depth + 1u;        /* opening closes anything deeper */
+    g_ctx->popup_open_count = depth + 1u;        /* opening closes anything deeper */
 }
 
 void
@@ -178,8 +178,8 @@ gui_popup_open( const char* str )
 static bool
 popup_is_open_id( gui_id_t id )
 {
-    for ( u32 i = 0; i < s_popup_open_count; ++i )
-        if ( s_popups_open[ i ].id == id ) return true;
+    for ( u32 i = 0; i < g_ctx->popup_open_count; ++i )
+        if ( g_ctx->popups_open[ i ].id == id ) return true;
     return false;
 }
 
@@ -194,11 +194,11 @@ gui_popup_is_open( const char* str )
 static void
 popup_set_anchor( gui_id_t id, f32 ax, f32 ay )
 {
-    for ( u32 i = 0; i < s_popup_open_count; ++i )
-        if ( s_popups_open[ i ].id == id )
+    for ( u32 i = 0; i < g_ctx->popup_open_count; ++i )
+        if ( g_ctx->popups_open[ i ].id == id )
         {
-            s_popups_open[ i ].anchor_x = ax;
-            s_popups_open[ i ].anchor_y = ay;
+            g_ctx->popups_open[ i ].anchor_x = ax;
+            g_ctx->popups_open[ i ].anchor_y = ay;
             return;
         }
 }
@@ -225,13 +225,13 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
         flags |= GUI_WIN_DEBUG_BAND;
 
     /* Open at this depth?  The early-out that makes a closed popup free. */
-    if ( depth >= g_ctx->popup_depth || s_popup_open_count <= depth
-         || s_popups_open[ depth ].id != id )
+    if ( depth >= g_ctx->popup_depth || g_ctx->popup_open_count <= depth
+         || g_ctx->popups_open[ depth ].id != id )
         return false;
 
-    gui_popup_t* p = &s_popups_open[ depth ];
+    gui_popup_t* p = &g_ctx->popups_open[ depth ];
     p->modal       = modal;
-    p->begun_frame = s_retained.frame;
+    p->begun_frame = g_ctx->retained.frame;
 
     /* The popup's window record; stamp the overlay type + its band z (depth-stacked) every frame. */
     gui_window_t* win = window_get( id, p->anchor_x, p->anchor_y,
@@ -343,7 +343,7 @@ gui_popup_end( void )
 
     u32 depth = s_popup_begin_count - 1u;
     gui_window_end();                     /* finalize the popup window (pops its own clip) */
-    overlay_reattach( s_popups_open[ depth ].saved );
+    overlay_reattach( g_ctx->popups_open[ depth ].saved );
     --s_popup_begin_count;
 }
 
@@ -357,8 +357,8 @@ gui_popup_end( void )
 void
 gui_popup_close_current( void )
 {
-    if ( s_popup_begin_count && s_popup_open_count >= s_popup_begin_count )
-        s_popup_open_count = s_popup_begin_count - 1u;
+    if ( s_popup_begin_count && g_ctx->popup_open_count >= s_popup_begin_count )
+        g_ctx->popup_open_count = s_popup_begin_count - 1u;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -498,7 +498,7 @@ gui_help_marker( const char* text )
     gui_rect_t   tr = rect_align( r, mw, mh, lf()->mod.align );
 
     /* Hoverable but inert: the returned click is ignored, only st.hover drives the brighten. */
-    widget_state_t st = widget_behavior( id, tr, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, tr, WIDGET_KIND_BUTTON );
     draw_push_text( tr.x, tr.y, st.hover ? COL_TEXT : COL_TEXT_DIM, mark );
     widget_track_width( tr.x + mw );
 
@@ -521,26 +521,26 @@ gui_help_marker( const char* text )
 static void
 popup_close_check( void )
 {
-    if ( !s_popup_open_count ) return;
+    if ( !g_ctx->popup_open_count ) return;
 
     /* Stale-close: not begun last frame nor this one (begun_frame + 1 < frame_counter). */
-    while ( s_popup_open_count
-            && s_popups_open[ s_popup_open_count - 1u ].begun_frame + 1u < s_retained.frame )
-        --s_popup_open_count;
+    while ( g_ctx->popup_open_count
+            && g_ctx->popups_open[ g_ctx->popup_open_count - 1u ].begun_frame + 1u < g_ctx->retained.frame )
+        --g_ctx->popup_open_count;
 
-    if ( !s_popup_open_count ) return;
+    if ( !g_ctx->popup_open_count ) return;
     if ( !s_io.mouse_pressed[ 0 ] && !s_io.mouse_pressed[ 1 ] ) return;
 
     /* The topmost modal pins [0, floor) open -- nothing at or below it auto-closes. */
     u32 floor = 0;
-    for ( u32 i = 0; i < s_popup_open_count; ++i )
-        if ( s_popups_open[ i ].modal ) floor = i + 1u;
+    for ( u32 i = 0; i < g_ctx->popup_open_count; ++i )
+        if ( g_ctx->popups_open[ i ].modal ) floor = i + 1u;
 
     u32 keep = floor;
-    for ( u32 i = s_popup_open_count; i-- > floor; )
-        if ( rect_hit( s_popups_open[ i ].rect ) ) { keep = i + 1u; break; }
+    for ( u32 i = g_ctx->popup_open_count; i-- > floor; )
+        if ( rect_hit( g_ctx->popups_open[ i ].rect ) ) { keep = i + 1u; break; }
 
-    s_popup_open_count = keep;
+    g_ctx->popup_open_count = keep;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -556,16 +556,16 @@ static void
 popup_apply_modal( void )
 {
     i32 m = -1;
-    for ( u32 i = 0; i < s_popup_open_count; ++i )
-        if ( s_popups_open[ i ].modal ) m = (i32)i;
+    for ( u32 i = 0; i < g_ctx->popup_open_count; ++i )
+        if ( g_ctx->popups_open[ i ].modal ) m = (i32)i;
     if ( m < 0 ) return;
 
     /* Allow the modal and any deeper (later-opened, on-top) popup to keep interacting. */
     gui_id_t hw = s_interaction.hover_win;
-    for ( u32 i = (u32)m; i < s_popup_open_count; ++i )
-        if ( s_popups_open[ i ].id == hw ) return;
+    for ( u32 i = (u32)m; i < g_ctx->popup_open_count; ++i )
+        if ( g_ctx->popups_open[ i ].id == hw ) return;
 
-    s_interaction.hover_win = s_popups_open[ m ].id;
+    s_interaction.hover_win = g_ctx->popups_open[ m ].id;
 }
 
 // clang-format on

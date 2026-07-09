@@ -13,7 +13,7 @@
     really a widget / window drag.
 
     Included by gui.c in the 5_user/ tier (last of the tiers); reads s_interaction, s_build,
-    s_nav, s_popup_open_count, rect_hit (0_foundation/gui_ctx.c) and s_io (0_foundation/gui_io.c), all in
+    g_ctx->nav, g_ctx->popup_open_count, rect_hit (0_foundation/gui_ctx.c) and s_io (0_foundation/gui_io.c), all in
     scope far above.  Internal readers (the frame overlay's hotkeys, the dashboard's hover
     check) are deliberate dogfooding through the gui_host.h declarations.
 
@@ -35,8 +35,8 @@ gui_want_capture_mouse( void )
 bool
 gui_want_capture_keyboard( void )
 {
-    return s_interaction.focused_id != GUI_ID_NONE || s_nav.highlight
-        || s_popup_open_count > 0 || s_nav.bar_win != GUI_ID_NONE;
+    return s_interaction.focused_id != GUI_ID_NONE || g_ctx->nav.highlight
+        || g_ctx->popup_open_count > 0 || g_ctx->nav.bar_win != GUI_ID_NONE;
 }
 
 /* True when the cursor is over rect r and r is actually interactable: it lies in the front-most

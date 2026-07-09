@@ -448,7 +448,8 @@ show_region_demo( void )
     };
     static int slot = 0;
 
-    gui()->region_begin( "Region Demo", spots[ slot ].x, spots[ slot ].y, 260.0f, 160.0f, GUI_WIN_NOSCROLL | GUI_WIN_REGION_BG );
+    gui()->region_begin( "Region Demo", spots[ slot ].x, spots[ slot ].y, 260.0f, 160.0f,
+                         GUI_REGION_BG, GUI_WIN_NOSCROLL );
         gui()->stack();
         gui()->text( "A region: fixed rect, no window chrome." );
         gui()->textf( "pos %.0f, %.0f", spots[ slot ].x, spots[ slot ].y );

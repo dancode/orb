@@ -317,7 +317,7 @@ gui_frame_begin( f32 dt )
        tessellation from the previous frame are preserved and replayed verbatim. */
     s_frame_dirty = s_force_redraw
                  || io_dirty()
-                 || s_retained.wants_redraw
+                 || g_ctx->retained.wants_redraw
                  || gui_build_any_changed();
 
     /* Debug overlay capture runs every emit, so any active layer forces a full build. */
@@ -389,7 +389,7 @@ gui_ctx_begin( gui_ctx_t ctx_handle )
     gui_context_t* c = s_ctx_pool[ ctx_handle ];
     ctx_bind( c );
 
-    s_retained.wants_redraw = false;    /* cleared before the build; set again by any animating widget */
+    g_ctx->retained.wants_redraw = false;    /* cleared before the build; set again by any animating widget */
     ctx_new_frame();                    /* per-context scratch reset + frame clock bump (no global interaction touch) */
     popup_close_check();                /* stale-close + click-outside, BEFORE any user popup_open */
     popup_apply_modal();                /* fence interaction behind an open modal (steals hover_win) */
@@ -430,7 +430,7 @@ gui_ctx_end( void )
     }
 
     /* Captured after the overlay emit so an overlay's own animation (if any) counts too. */
-    s_any_redraw |= s_retained.wants_redraw;
+    s_any_redraw |= g_ctx->retained.wants_redraw;
 
     --s_ctx_save_sp;
     u32 i = s_ctx_save_sp < GUI_CTX_STACK_DEPTH ? s_ctx_save_sp : GUI_CTX_STACK_DEPTH - 1;
@@ -574,9 +574,9 @@ gui_viewport_close( gui_vp_t vp )
     viewport_destroy( &g_ctx->viewports[ vp ] );
 
     /* Migrate any windows on this surface back to the primary. */
-    for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].viewport == vp )
-            s_windows[ i ].viewport = 0;
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
+        if ( g_ctx->windows[ i ].viewport == vp )
+            g_ctx->windows[ i ].viewport = 0;
 
     /* Trim the high-water viewport count when the closed slot was at the top. */
     while ( g_ctx->viewport_count > 0 && !rhi_handle_valid( g_ctx->viewports[ g_ctx->viewport_count - 1 ].vb ) ) 
@@ -752,8 +752,8 @@ gui_viewport_update( void )
             else if ( has_home )
             {
                 /* Re-opening a closed floater: land at the saved RESTORE (normal) position. */
-                sx = win->home_x;
-                sy = win->home_y;
+                sx = win->reopen.home_x;
+                sy = win->reopen.home_y;
             }
             else
             {
@@ -765,8 +765,8 @@ gui_viewport_update( void )
 
             /* Re-open spawns at the saved restore size so the OS restore rect is the previous normal
                size; a plain tear-off spawns at the window's current size. */
-            i32 sw = has_home ? (i32)win->restore_w : (i32)win->w;
-            i32 sh = has_home ? (i32)win->restore_h : (i32)win->h;
+            i32 sw = has_home ? (i32)win->reopen.w : (i32)win->w;
+            i32 sh = has_home ? (i32)win->reopen.h : (i32)win->h;
 
             gui_vp_t vp = viewport_spawn( s_vp_request.title ? s_vp_request.title : "panel",
                                             sx, sy, sw, sh, s_vp_request.by_drag );
@@ -780,7 +780,7 @@ gui_viewport_update( void )
 
                 /* Re-maximize a floater that was closed maximized: spawned at the restore rect first
                    (above), so the OS restore target becomes the previous normal size. */
-                if ( has_home && win->reopen_maximized )
+                if ( has_home && win->reopen.maximized )
                     app()->window_maximize( g_ctx->viewports[ vp ].win_id );
             }
         }
@@ -847,8 +847,8 @@ gui_viewport_update( void )
             }
 
             bool empty = true;
-            for ( u32 w = 0; w < s_window_count; ++w )
-                if ( s_windows[ w ].viewport == fvp ) { empty = false; break; }
+            for ( u32 w = 0; w < g_ctx->window_count; ++w )
+                if ( g_ctx->windows[ w ].viewport == fvp ) { empty = false; break; }
             if ( empty && fvp > 0 && fvp < g_ctx->max_viewports && g_ctx->viewports[ fvp ].owned )
                 viewport_destroy( &g_ctx->viewports[ fvp ] );
         }
@@ -867,7 +867,7 @@ gui_viewport_update( void )
                           bound at all.  One frame of grace tolerates a transient single-frame hide.
 
        This runs after step (1), so a window just torn off / merged this frame already carries
-       last_frame == s_retained.frame on its new surface and never reads as abandoned. */
+       last_frame == g_ctx->retained.frame on its new surface and never reads as abandoned. */
     for ( u32 i = 1; i < g_ctx->viewport_count; ++i )
     {
         gui_viewport_t* vp = &g_ctx->viewports[ i ];
@@ -880,14 +880,14 @@ gui_viewport_update( void )
             /* Freshest emit among windows bound to this surface; no bound window stays abandoned. */
             u32  max_lf = 0u;
             bool any    = false;
-            for ( u32 w = 0; w < s_window_count; ++w )
-                if ( s_windows[ w ].viewport == i )
+            for ( u32 w = 0; w < g_ctx->window_count; ++w )
+                if ( g_ctx->windows[ w ].viewport == i )
                 {
                     any = true;
-                    if ( s_windows[ w ].last_frame > max_lf )
-                        max_lf = s_windows[ w ].last_frame;
+                    if ( g_ctx->windows[ w ].last_frame > max_lf )
+                        max_lf = g_ctx->windows[ w ].last_frame;
                 }
-            abandoned = !any || ( max_lf + 1u < s_retained.frame );
+            abandoned = !any || ( max_lf + 1u < g_ctx->retained.frame );
         }
 
         if ( !( vp->pending_close || abandoned ) )
@@ -896,9 +896,9 @@ gui_viewport_update( void )
         /* Windows assigned to this surface revert to the primary, then free the surface
            (viewport_destroy drains the GPU, frees buffers, destroys the ctx, closes the window).
            Reverting lets a panel re-emitted later reappear in the main window. */
-        for ( u32 w = 0; w < s_window_count; ++w )
-            if ( s_windows[ w ].viewport == i )
-                s_windows[ w ].viewport = 0;
+        for ( u32 w = 0; w < g_ctx->window_count; ++w )
+            if ( g_ctx->windows[ w ].viewport == i )
+                g_ctx->windows[ w ].viewport = 0;
         viewport_destroy( vp );
     }
 
@@ -1043,7 +1043,7 @@ gui_pop_clip( void )
 bool
 gui_wants_redraw( void )
 {
-    return s_retained.wants_redraw;
+    return g_ctx->retained.wants_redraw;
 }
 
 /* True when the current frame must perform a full widget emit.  Computed in frame_begin as the OR
@@ -1099,7 +1099,7 @@ gui_ctx_create( const gui_ctx_config_t* cfg )
     if ( !c.max_windows   ) c.max_windows   = GUI_DEFAULT_MAX_WINDOWS;
     if ( !c.state_slots   ) c.state_slots   = GUI_DEFAULT_STATE_SLOTS;
     if ( !c.popup_depth   ) c.popup_depth   = GUI_DEFAULT_POPUP_DEPTH;
-    if ( !c.max_viewports ) c.max_viewports = GUI_DEFAULT_MAX_VIEWPORTS;
+    if ( !c.max_viewports ) c.max_viewports = GUI_MAX_VIEWPORTS;
 
     /* state_slots must be a power of two for the hash mask to work. */
     u32 slots = c.state_slots;

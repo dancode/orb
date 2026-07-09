@@ -23,12 +23,8 @@
 gui_item_state_t
 gui_item( const char* id_str, gui_rect_t r )
 {
-    gui_id_t       id = widget_id( id_str );
-    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
-    return ( gui_item_state_t ){ .hover   = st.hover,
-                                 .active  = st.active,
-                                 .pressed = st.pressed,
-                                 .clicked = st.clicked };
+    /* widget_behavior's result IS the public state record -- no translation layer. */
+    return widget_behavior( widget_id( id_str ), r, WIDGET_KIND_BUTTON );
 }
 
 bool

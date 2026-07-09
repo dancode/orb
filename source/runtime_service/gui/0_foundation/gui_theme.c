@@ -315,7 +315,7 @@ gui_theme_reset( void )
        Whichever call activates the first font (gui_init's built-in preset, or the caller's own
        font_load) triggers gui_style_apply() again and scales s_style_base for real at that point. */
     gui_style_apply();  /* rescale s_style from s_style_base */
-    style_new_frame();  /* reseed s_col[]/s_var[] from s_style, clear all push stacks */
+    style_new_frame();  /* reseed the working slot set from s_style, clear all push stacks */
 }
 
 /* Snap a scaled metric onto the grid lattice: nearest multiple of q, floored at one quantum so

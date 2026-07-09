@@ -533,7 +533,7 @@ dock_window_chrome( gui_dock_node_t* node )
         bool         is_active = ( i == node->active_tab );
 
         gui_id_t     tid = id_combine( node->id, DOCK_TAB_SALT + i );
-        widget_state_t st  = widget_behavior( tid, tr, WIDGET_KIND_BUTTON );
+        gui_item_state_t st  = widget_behavior( tid, tr, WIDGET_KIND_BUTTON );
 
         /* Active tab takes the body colour so it reads as joined to the content below; the rest stay
            on the title band, lifting to the hover colour under the cursor. */
@@ -551,7 +551,7 @@ dock_window_chrome( gui_dock_node_t* node )
             /* The tab switch also moves keyboard focus: click-to-focus (gui_nav.c) latched the OLD
                active window (it owned hover), which stops emitting the moment this tab takes over --
                retarget nav at the window actually coming to the front. */
-            s_nav.explicit_win = node->tabs[ i ];
+            g_ctx->nav.explicit_win = node->tabs[ i ];
         }
 
         /* Press arms an undock-by-drag: the move threshold below decides click (select) vs drag-out. */
@@ -577,8 +577,8 @@ dock_window_chrome( gui_dock_node_t* node )
         if ( rem.w > 1.0f )
         {
             gui_id_t     gid = id_combine( node->id, DOCK_FLOAT_SALT );
-            s_scope.nav_skip = true;   /* pure drag surface -- never a keyboard target */
-            widget_state_t st  = widget_behavior( gid, rem, WIDGET_KIND_BUTTON );
+            s_scope.nav.skip = true;   /* pure drag surface -- never a keyboard target */
+            gui_item_state_t st  = widget_behavior( gid, rem, WIDGET_KIND_BUTTON );
             if ( st.pressed )
                 move_grab( gid, 0, x, y );   /* released globally when the left button lifts */
         }

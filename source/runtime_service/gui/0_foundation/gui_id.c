@@ -15,7 +15,7 @@
     The keyed per-widget state pool that these ids address is the companion service in
     0_foundation/gui_state.c, included immediately after this file.
 
-    Included by gui.c after 0_foundation/gui_ctx.c, which defines g_ctx (needed for s_retained /
+    Included by gui.c after 0_foundation/gui_ctx.c, which defines g_ctx (needed for g_ctx->retained /
     gui_context_t) and the id-stack variables (s_id_stack[], s_id_sp) referenced below.
 
 ==============================================================================================*/
@@ -29,9 +29,9 @@ static gui_id_t
 id_hash( const char* str )
 {
     /* Seed FNV-1a with the context's id salt so the same string hashes to a distinct id per context.
-       s_retained.id_salt is 0 for the default context -> the standard 0x811C9DC5 basis -> ids are
+       g_ctx->retained.id_salt is 0 for the default context -> the standard 0x811C9DC5 basis -> ids are
        byte-identical to the unsalted hash, so single-context behavior is unchanged. */
-    u32 h = 0x811C9DC5u ^ s_retained.id_salt;
+    u32 h = 0x811C9DC5u ^ g_ctx->retained.id_salt;
     for ( ; *str; ++str )
         h = ( h ^ (u8)*str ) * 0x01000193u;
     return h ? h : 1u;    /* never return GUI_ID_NONE (0) */

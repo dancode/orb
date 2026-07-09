@@ -66,68 +66,50 @@ style_var_base( gui_style_var_t v )
 }
 
 /*----------------------------------------------------------------------------------------------
-    State
+    State -- ONE slot space, one mechanism.
 
-    Working set: the base with the push/pop stack applied, the value an unscoped read returns.
-    Stack: saved (slot, previous) pairs so pop restores regardless of which slots a push touched.
+    Colors and vars are the same machine over different value types, so they share one slot
+    space: colors occupy [0, GUI_COL_COUNT), vars [GUI_COL_COUNT, STYLE_SLOT_COUNT) with their
+    f32 carried as raw bits.  The typed accessors below are the only place the ranges are mapped.
+
+    Working set: the base with the push/pop stacks applied -- the value an unscoped read returns.
+    Stacks: saved (slot, previous) pairs so pop restores regardless of which slots a push
+    touched.  TWO stacks, one per public pop verb: pop_style_color and pop_style_var each pop
+    their own pushes, so an interleaved push_color / push_var sequence unwinds correctly (the
+    same reason Dear ImGui keeps two).
     Next-item layers: a small list of (slot, value) overrides, `next` filled by next_style_* and
     promoted to `item` (the active per-widget override) at the resolve seam, then cleared.  Both
-    are tiny lists -- at most COUNT entries, usually zero -- so a read scans only what is active.
+    are tiny lists -- usually empty -- so a read scans only what is active.
 ----------------------------------------------------------------------------------------------*/
 
 #define GUI_STYLE_STACK_DEPTH 32
+#define STYLE_VAR_BASE        GUI_COL_COUNT                    /* var slot range starts here */
+#define STYLE_SLOT_COUNT      ( GUI_COL_COUNT + GUI_VAR_COUNT )
 
-/* Stack + override entry types (named so the compound literals avoid the typeof extension). */
+/* f32 <-> raw bits, so one u32 slot space carries both value types. */
+static inline u32 style_f32_bits( f32 f ) { union { f32 f; u32 u; } c = { .f = f }; return c.u; }
+static inline f32 style_bits_f32( u32 u ) { union { f32 f; u32 u; } c = { .u = u }; return c.f; }
 
-typedef struct { u8 slot; u32 prev; } col_save_t;   // push/pop restore pair
-typedef struct { u8 slot; u32 val;  } col_ov_t;     // next-item override
-typedef struct { u8 slot; f32 prev; } var_save_t;
-typedef struct { u8 slot; f32 val;  } var_ov_t;
+typedef struct { u16 slot; u32 val; } style_pair_t;   // stack restore pair / next-item override
 
-/* Colors */
-static u32        s_col[ GUI_COL_COUNT ];                   // working set (base + stack)
-static col_save_t s_col_stack[ GUI_STYLE_STACK_DEPTH ];
-static u32        s_col_sp;                                 // stack pointer (count of pushes, not index)
+typedef struct
+{
+    style_pair_t save[ GUI_STYLE_STACK_DEPTH ];
+    u32          sp;                                  // count of pushes, not index
 
-static col_ov_t   s_col_next[ GUI_COL_COUNT ];              // next-item pending
-static u32        s_col_next_n;                             // count of pending next-item overrides
-static col_ov_t   s_col_item[ GUI_COL_COUNT ];              // active for current item
-static u32        s_col_item_n;
+} style_stack_t;
 
-/* Vars (f32) */
-static f32        s_var[ GUI_VAR_COUNT ];                   // working set (base + stack)
-static var_save_t s_var_stack[ GUI_STYLE_STACK_DEPTH ];
-static u32        s_var_sp;
+static u32           s_slot[ STYLE_SLOT_COUNT ];      // working set (base + stacks)
+static style_stack_t s_col_stack;                     // push_style_color's stack
+static style_stack_t s_var_stack;                     // push_style_var's stack
 
-static var_ov_t   s_var_next[ GUI_VAR_COUNT ];              // next-item pending
-static u32        s_var_next_n;
-static var_ov_t   s_var_item[ GUI_VAR_COUNT ];              // active for current item
-static u32        s_var_item_n;
+static style_pair_t  s_next[ STYLE_SLOT_COUNT ];      // next-item pending
+static u32           s_next_n;
+static style_pair_t  s_item[ STYLE_SLOT_COUNT ];      // active for the current item
+static u32           s_item_n;
 
 /*----------------------------------------------------------------------------------------------
-    Accessors -- what every COL_* / metric macro resolves to.  The per-item override (if the slot
-    has one this widget) wins; otherwise the working set (base + push/pop).  The item list is
-    scanned linearly: it is empty on the common path and never longer than a couple of entries.
-----------------------------------------------------------------------------------------------*/
-
-static u32
-style_col( gui_col_t slot )
-{
-    for ( u32 i = 0; i < s_col_item_n; ++i )
-        if ( s_col_item[ i ].slot == (u8)slot ) return s_col_item[ i ].val;
-    return s_col[ slot ];
-}
-
-static f32
-style_var( gui_style_var_t slot )
-{
-    for ( u32 i = 0; i < s_var_item_n; ++i )
-        if ( s_var_item[ i ].slot == (u8)slot ) return s_var_item[ i ].val;
-    return s_var[ slot ];
-}
-
-/*----------------------------------------------------------------------------------------------
-    Push / pop / next -- the operations the public API wraps.
+    The mechanism -- read / push / pop / next over the one slot space.
 
     Over-deep pushes: the value is still written to the working set (so the UI renders correctly
     in all builds), and sp is still counted so push/pop stay paired.  The save record is only
@@ -137,69 +119,74 @@ style_var( gui_style_var_t slot )
     restore.  pop takes a count, like ImGui.
 ----------------------------------------------------------------------------------------------*/
 
-static void
-style_push_color( gui_col_t slot, u32 abgr )
+/* The value a widget sees: the per-item override (if the slot has one this widget) wins;
+   otherwise the working set (base + push/pop).  This is what every COL_* / metric macro
+   ultimately resolves to. */
+static u32
+style_read( u32 slot )
 {
-    if ( slot >= GUI_COL_COUNT ) return;
-    ORB_ASSERT( s_col_sp < GUI_STYLE_STACK_DEPTH && "style_push_color: stack overflow -- mismatched push/pop" );
-    if ( s_col_sp < GUI_STYLE_STACK_DEPTH )
-        s_col_stack[ s_col_sp ] = ( col_save_t ){ (u8)slot, s_col[ slot ] };
-    ++s_col_sp;
-    s_col[ slot ] = abgr;
+    for ( u32 i = 0; i < s_item_n; ++i )
+        if ( s_item[ i ].slot == (u16)slot ) return s_item[ i ].val;
+    return s_slot[ slot ];
 }
 
 static void
-style_pop_color( u32 count )
+style_push( style_stack_t* st, u32 slot, u32 val )
 {
-    while ( count-- && s_col_sp )
+    ORB_ASSERT( st->sp < GUI_STYLE_STACK_DEPTH && "style push: stack overflow -- mismatched push/pop" );
+    if ( st->sp < GUI_STYLE_STACK_DEPTH )
+        st->save[ st->sp ] = ( style_pair_t ){ (u16)slot, s_slot[ slot ] };
+    ++st->sp;
+    s_slot[ slot ] = val;
+}
+
+static void
+style_pop( style_stack_t* st, u32 count )
+{
+    while ( count-- && st->sp )
     {
-        --s_col_sp;
-        if ( s_col_sp < GUI_STYLE_STACK_DEPTH )
-            s_col[ s_col_stack[ s_col_sp ].slot ] = s_col_stack[ s_col_sp ].prev;
+        --st->sp;
+        if ( st->sp < GUI_STYLE_STACK_DEPTH )
+            s_slot[ st->save[ st->sp ].slot ] = st->save[ st->sp ].val;
     }
 }
 
+/* Queue a next-item override; replaces a pending entry for the same slot rather than stacking
+   duplicates.  Consumed (promoted to the item layer) at the per-item resolve seam -- no pop. */
 static void
-style_next_color( gui_col_t slot, u32 abgr )
+style_next( u32 slot, u32 val )
 {
-    if ( slot >= GUI_COL_COUNT ) return;
-    /* Replace a pending entry for the same slot rather than stacking duplicates. */
-    for ( u32 i = 0; i < s_col_next_n; ++i )
-        if ( s_col_next[ i ].slot == (u8)slot ) { s_col_next[ i ].val = abgr; return; }
-    if ( s_col_next_n < GUI_COL_COUNT )
-        s_col_next[ s_col_next_n++ ] = ( col_ov_t ){ (u8)slot, abgr };
+    for ( u32 i = 0; i < s_next_n; ++i )
+        if ( s_next[ i ].slot == (u16)slot ) { s_next[ i ].val = val; return; }
+    if ( s_next_n < STYLE_SLOT_COUNT )
+        s_next[ s_next_n++ ] = ( style_pair_t ){ (u16)slot, val };
 }
 
-static void
-style_push_var( gui_style_var_t slot, f32 value )
-{
-    if ( slot >= GUI_VAR_COUNT ) return;
-    ORB_ASSERT( s_var_sp < GUI_STYLE_STACK_DEPTH && "style_push_var: stack overflow -- mismatched push/pop" );
-    if ( s_var_sp < GUI_STYLE_STACK_DEPTH )
-        s_var_stack[ s_var_sp ] = ( var_save_t ){ (u8)slot, s_var[ slot ] };
-    ++s_var_sp;
-    s_var[ slot ] = value;
-}
+/*----------------------------------------------------------------------------------------------
+    Typed faces -- the color / var range mapping, in one place each.
+----------------------------------------------------------------------------------------------*/
 
-static void
-style_pop_var( u32 count )
-{
-    while ( count-- && s_var_sp )
-    {
-        --s_var_sp;
-        if ( s_var_sp < GUI_STYLE_STACK_DEPTH )
-            s_var[ s_var_stack[ s_var_sp ].slot ] = s_var_stack[ s_var_sp ].prev;
-    }
-}
+static u32 style_col( gui_col_t slot )       { return style_read( (u32)slot ); }
+static f32 style_var( gui_style_var_t slot ) { return style_bits_f32( style_read( STYLE_VAR_BASE + (u32)slot ) ); }
 
-static void
-style_next_var( gui_style_var_t slot, f32 value )
+static void style_push_color( gui_col_t slot, u32 abgr )
 {
-    if ( slot >= GUI_VAR_COUNT ) return;
-    for ( u32 i = 0; i < s_var_next_n; ++i )
-        if ( s_var_next[ i ].slot == (u8)slot ) { s_var_next[ i ].val = value; return; }
-    if ( s_var_next_n < GUI_VAR_COUNT )
-        s_var_next[ s_var_next_n++ ] = ( var_ov_t ){ (u8)slot, value };
+    if ( slot < GUI_COL_COUNT ) style_push( &s_col_stack, (u32)slot, abgr );
+}
+static void style_push_var( gui_style_var_t slot, f32 value )
+{
+    if ( slot < GUI_VAR_COUNT ) style_push( &s_var_stack, STYLE_VAR_BASE + (u32)slot, style_f32_bits( value ) );
+}
+static void style_pop_color( u32 count ) { style_pop( &s_col_stack, count ); }
+static void style_pop_var  ( u32 count ) { style_pop( &s_var_stack, count ); }
+
+static void style_next_color( gui_col_t slot, u32 abgr )
+{
+    if ( slot < GUI_COL_COUNT ) style_next( (u32)slot, abgr );
+}
+static void style_next_var( gui_style_var_t slot, f32 value )
+{
+    if ( slot < GUI_VAR_COUNT ) style_next( STYLE_VAR_BASE + (u32)slot, style_f32_bits( value ) );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -213,25 +200,20 @@ style_next_var( gui_style_var_t slot, f32 value )
 static void
 style_item_commit( void )
 {
-    s_col_item_n = s_col_next_n;
-    for ( u32 i = 0; i < s_col_next_n; ++i ) s_col_item[ i ] = s_col_next[ i ];
-    s_col_next_n = 0;
-
-    s_var_item_n = s_var_next_n;
-    for ( u32 i = 0; i < s_var_next_n; ++i ) s_var_item[ i ] = s_var_next[ i ];
-    s_var_next_n = 0;
+    s_item_n = s_next_n;
+    for ( u32 i = 0; i < s_next_n; ++i ) s_item[ i ] = s_next[ i ];
+    s_next_n = 0;
 }
 
 /* Drop the active per-item overrides before chrome draws.  Chrome (borders, scrollbars, titlebars)
    does not pass through the item seam, so without this it would inherit a lingering next-* override
-   from the last body widget.  The push/pop stack is intentionally left intact -- a push that
+   from the last body widget.  The push/pop stacks are intentionally left intact -- a push that
    brackets a window_begin / child_begin still applies to the chrome inside it, like ImGui. */
 
 static void
 style_chrome_reset( void )
 {
-    s_col_item_n = 0;
-    s_var_item_n = 0;
+    s_item_n = 0;
 }
 
 /* Reset the per-frame style state: re-seed the working set from the base (so an unbalanced push
@@ -241,12 +223,13 @@ style_chrome_reset( void )
 static void
 style_new_frame( void )
 {
-    for ( u32 i = 0; i < GUI_COL_COUNT; ++i ) s_col[ i ] = s_style.colors[ i ];
-    for ( u32 i = 0; i < GUI_VAR_COUNT; ++i ) s_var[ i ] = style_var_base( (gui_style_var_t)i );
+    for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
+        s_slot[ i ] = s_style.colors[ i ];
+    for ( u32 i = 0; i < GUI_VAR_COUNT; ++i )
+        s_slot[ STYLE_VAR_BASE + i ] = style_f32_bits( style_var_base( (gui_style_var_t)i ) );
 
-    s_col_sp = s_var_sp = 0;
-    s_col_next_n = s_col_item_n = 0;
-    s_var_next_n = s_var_item_n = 0;
+    s_col_stack.sp = s_var_stack.sp = 0;
+    s_next_n = s_item_n = 0;
 }
 
 // clang-format on

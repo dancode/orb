@@ -128,7 +128,7 @@ static struct
     bool               combo_open;          // a combo dropdown body is currently being emitted
     bool               combo_item_clicked;  // a selectable in that body was clicked this frame
 
-    /* Nav state is not part of this scratch: it lives in nav_state_t s_nav (a per-context member,
+    /* Nav state is not part of this scratch: it lives in nav_state_t g_ctx->nav (a per-context member,
        below) so the per-frame builder stays small. */
 
 } s_build;
@@ -149,11 +149,11 @@ u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
 #endif
 
 /*----------------------------------------------------------------------------------------------
-    Keyboard navigation state (s_nav)
+    Keyboard navigation state (g_ctx->nav)
 
     The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather than
     the mouse -- plus the menu-bar state machine layered on it.  nav_state_t is defined in
-    gui_internal.h; the instance is the s_nav member of the bound context, reached through g_ctx, so
+    gui_internal.h; the instance is the g_ctx->nav member of the bound context, reached through g_ctx, so
     each context keeps its own cursor.  Movement is structural, not spatial: every item of the
     scoped window records itself into the nav item list as it emits (with the region + line the
     layout engine stamped when it placed it), and the next nav_new_frame resolves a move as index
@@ -243,7 +243,7 @@ static void
 item_flags_chrome_reset( void )
 {
     s_scope.flags  = GUI_ITEM_NONE;
-    s_scope.nav_placed = false;   /* chrome is not an item to keyboard nav either: whatever
+    s_scope.nav.placed = false;   /* chrome is not an item to keyboard nav either: whatever
                                           interacts past this seam lists in the F6 chrome lane */
     draw_set_alpha( 1.0f );
     style_chrome_reset();   /* drop lingering next_style_* overrides; keep the push/pop stack */
@@ -287,7 +287,7 @@ lf( void )
     click-outside policy; the popups themselves render as ordinary windows on a reserved high z-band
     (gui_popup.c).  Two counters, split by lifetime:
 
-      s_popup_open_count  -- persists across frames (per context); the live open set is [0, count).
+      g_ctx->popup_open_count  -- persists across frames (per context); the live open set is [0, count).
       s_popup_begin_count -- rebuilt each frame; the popup nesting depth while emitting.  popup_open
                              writes a request at this depth; popup_begin matches its id against it.
 
@@ -298,7 +298,7 @@ lf( void )
     balance through the normal push/pop, so no slot is reused or lost.
 ----------------------------------------------------------------------------------------------*/
 
-/* The open set (s_popups_open) and its count (s_popup_open_count) are per-context members reached
+/* The open set (g_ctx->popups_open) and its count (g_ctx->popup_open_count) are per-context members reached
    through g_ctx; s_popup_begin_count is per-frame scratch and stays a plain global. */
 static u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per frame)
 
@@ -315,21 +315,21 @@ static u32           s_popup_begin_count;   // current popup nesting depth (rebu
     gui_context_t -- the bound per-context retained state ("bind and use").
 
     A context is the emission session the code binds once and emits ALL its windows into; it owns the
-    state that must persist between frames for that UI.  Every retained access in the module resolves
-    through g_ctx via the aliases below -- s_retained (id salt + frame clock + keyed state pool),
-    s_nav (the nav cursor location + menu mode), and the popup open-set -- so switching contexts is a
-    single pointer assignment (ctx_bind): no copy, no backup/restore.
+    state that must persist between frames for that UI.  Every retained access in the module spells
+    the bound context out -- g_ctx->retained (id salt + frame clock + keyed state pool), g_ctx->nav
+    (the nav cursor location + menu mode), the popup open-set, the window / viewport / dock pools --
+    so per-context state is visibly distinct from the global s_* scratch at every call site, and
+    switching contexts is a single pointer assignment (ctx_bind): no copy, no backup/restore.
 
-    The frame clock (s_retained.frame) advances per context, at ctx_begin, NOT per app-frame: a
+    The frame clock (g_ctx->retained.frame) advances per context, at ctx_begin, NOT per app-frame: a
     context not rebuilt on a given frame must not tick, or its live keyed-state entries would read as
     cold and be reclaimed (losing scroll / open state) while it is merely hidden.  Window / popup /
     combo "appearing" detection keys off the same per-context clock.
 
     Ambient state (one user: s_interaction, s_io) and frame scratch (s_build, the stacks, s_draw) are
-    NOT per context -- they stay global and target whichever context is bound.  The window pool,
-    viewports, popup set, and dock nodes ARE per context: members of gui_context_t reached through
-    the aliases below.  The primary context (slot 0) owns the OS windows; secondary contexts share
-    the same OS windows and render surfaces rather than owning separate ones.
+    NOT per context -- they stay global and target whichever context is bound.  The primary context
+    (slot 0) owns the OS windows; secondary contexts share the same OS windows and render surfaces
+    rather than owning separate ones.
 ----------------------------------------------------------------------------------------------*/
 
 /* Context pool.  Slot 0 is the default context (heap-allocated and bound at init, freed only at
@@ -343,19 +343,6 @@ static gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
 static u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
 
 static gui_context_t* g_ctx = NULL;   /* bound context */
-
-
-#define s_retained         ( g_ctx->retained )
-#define s_nav              ( g_ctx->nav )
-#define s_popups_open      ( g_ctx->popups_open )
-#define s_popup_open_count ( g_ctx->popup_open_count )
-#define s_windows          ( g_ctx->windows )
-#define s_window_count     ( g_ctx->window_count )
-#define s_window_scratch   ( g_ctx->window_scratch )
-#define s_z_counter        ( g_ctx->z_counter )
-#define s_dock_nodes       ( g_ctx->dock_nodes )
-#define s_dock_node_count  ( g_ctx->dock_node_count )
-#define s_dock_id_seq      ( g_ctx->dock_id_seq )
 
 /* Single-malloc layout for one context block.  The header (gui_context_t) sits at offset 0;
    all pool arrays follow at ALIGN8 boundaries.  Caller sets `listening` and wires s_ctx_pool. */
@@ -469,7 +456,7 @@ static u32        s_id_sp;
 
 /* id_seed / id_push / id_pop / id_hash / id_combine and the keyed-state pool (gui_state_get,
    GUI_STATE) are in 0_foundation/gui_id.c + 0_foundation/gui_state.c, included just after this file. they operate on s_id_stack / s_id_sp
-   and s_retained (via g_ctx) defined here. */
+   and g_ctx->retained (via g_ctx) defined here. */
 
 /*----------------------------------------------------------------------------------------------
     rect_hit -- true when the mouse cursor (from s_io) is inside the given rect
@@ -603,7 +590,7 @@ ctx_new_frame( void )
        a frame that emits none) reports false rather than reading a stale rect / status. */
     s_scope.last_id     = GUI_ID_NONE;
     s_scope.last_rect   = ( gui_rect_t ){ 0 };
-    s_scope.last_status = ( widget_state_t ){ 0 };
+    s_scope.last_status = ( gui_item_state_t ){ 0 };
 
     /* Fresh layout stack each frame; no region is open until a window_begin/child_begin.
        The interaction clip starts at the full display, and the wheel is unclaimed. */
@@ -615,8 +602,8 @@ ctx_new_frame( void )
     /* Fresh nav-stamp dispensers; nothing is placed until a layout cell is handed out. */
     s_build.nav_region_seq  = 0;
     s_build.nav_line_seq    = 0;
-    s_scope.nav_placed = false;
-    s_scope.nav_skip        = false;
+    s_scope.nav.placed = false;
+    s_scope.nav.skip        = false;
 
     /* Popup nesting depth is rebuilt as popup_begin / popup_end run; the open set persists. */
     s_popup_begin_count = 0;
@@ -635,12 +622,12 @@ ctx_new_frame( void )
     /* Fresh style stacks each frame: working set re-seeded from the theme, stacks + next cleared. */
     style_new_frame();
     s_scope.clip = ( gui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
-    ++s_retained.frame;
+    ++g_ctx->retained.frame;
 }
 
 /* Public IO accessors (gui_want_capture_*, gui_is_key_*, gui_is_mouse_*, gui_get_*)
    are defined in 5_user/gui_query.c, included in the 5_user/ tier below.
-   They read s_interaction, s_nav, s_popup_open_count, s_build, s_io, and rect_hit --
+   They read s_interaction, g_ctx->nav, g_ctx->popup_open_count, s_build, s_io, and rect_hit --
    all visible in the unity build at that point. */
 
 /*----------------------------------------------------------------------------------------------

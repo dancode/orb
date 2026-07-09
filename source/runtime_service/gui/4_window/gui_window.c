@@ -68,12 +68,12 @@ window_raise_on_press( void )
          || s_interaction.hover_win == GUI_ID_NONE )
         return;
 
-    for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].id == s_interaction.hover_win )
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
+        if ( g_ctx->windows[ i ].id == s_interaction.hover_win )
         {
             /* A frame-only native shell (GUI_WIN_NATIVE) is the borderless viewport's backdrop
                frame: it must stay behind the windows living inside it, so it never raises. */
-            if ( s_windows[ i ].flags & GUI_WIN_NATIVE )
+            if ( g_ctx->windows[ i ].flags & GUI_WIN_NATIVE )
                 break;
 
             /* A docked window is tiled by its node, not stacked: it draws in a low z band behind the
@@ -81,7 +81,7 @@ window_raise_on_press( void )
                A FLOATING tab group stacks like a free window, though -- raise the whole group (its
                node carries the z all its tabs draw at). */
             {
-                gui_dock_node_t* dn = dock_find_window_node( s_windows[ i ].id );
+                gui_dock_node_t* dn = dock_find_window_node( g_ctx->windows[ i ].id );
                 if ( dn )
                 {
                     if ( dn->floating )
@@ -90,7 +90,7 @@ window_raise_on_press( void )
                 }
             }
 
-            s_windows[ i ].z = surface_z_raise( s_windows[ i ].z );
+            g_ctx->windows[ i ].z = surface_z_raise( g_ctx->windows[ i ].z );
             break;
         }
 }

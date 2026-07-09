@@ -272,7 +272,7 @@ layout_pop_region( void )
            update stalls until some unrelated input arrives -- every other notch appears to do
            nothing, since it is showing the previous notch's result.  Same fix as the collapse /
            close toggles above: force the guaranteed follow-up frame that flushes it. */
-        s_retained.wants_redraw = true;
+        g_ctx->retained.wants_redraw = true;
 
         s_build.wheel_used = true;
     }

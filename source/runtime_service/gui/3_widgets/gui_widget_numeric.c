@@ -45,7 +45,7 @@ num_format( char* buf, u32 cap, const char* fmt, double val, bool is_int )
    Seeds the scratch on focus gain; edits it while focused; parses on Enter or focus loss.
    Returns true and writes *out only when a value commit happens. */
 static bool
-input_num_field( gui_id_t id, gui_rect_t box_r, widget_state_t st,
+input_num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
                  const char* fmt, bool is_int, double cur, double* out )
 {
     bool committed = false;
@@ -103,7 +103,7 @@ input_num_field( gui_id_t id, gui_rect_t box_r, widget_state_t st,
 static bool
 num_step_button( gui_id_t id, gui_rect_t r, bool is_minus )
 {
-    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
     draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0, 0, 1, 1, 0, widget_bg_color( st ) );
     draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER );
     const char* sym = is_minus ? "-" : "+";
@@ -127,7 +127,7 @@ input_scalar( const char* label, double cur, double* out,
     gui_rect_t ctrl = widget_split_label( r, label, min_ctrl, COL_TEXT_DIM );
 
     gui_rect_t   box_r = { ctrl.x, ctrl.y, ctrl.w - btn_w, ctrl.h };
-    widget_state_t st    = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
+    gui_item_state_t st    = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
 
     bool   changed = input_num_field( id, box_r, st, fmt, is_int, cur, out );
     double base    = changed ? *out : cur;
@@ -145,7 +145,7 @@ input_scalar( const char* label, double cur, double* out,
            final step button.  Step buttons call widget_behavior directly and would overwrite it. */
         gui_id_t       saved_id     = s_scope.last_id;
         gui_rect_t     saved_rect   = s_scope.last_rect;
-        widget_state_t saved_status = s_scope.last_status;
+        gui_item_state_t saved_status = s_scope.last_status;
 
         /* Step buttons call widget_behavior directly (no cell emit), bypassing item_flags_resolve.
            Set BUTTON_REPEAT on s_scope.flags for the pair, then restore so callers are unaffected. */
@@ -210,7 +210,7 @@ input_float_n( const char* label, f32* v, u32 n, const char* fmt )
         f32 x1 = ctrl.x + (f32)(i + 1u) * ctrl.w / (f32)n;
         gui_rect_t sub  = { floorf( x0 ), ctrl.y, floorf( x1 ) - floorf( x0 ), ctrl.h };
         gui_id_t   sid  = id_combine( id, i + 1u );
-        widget_state_t st = widget_behavior( sid, sub, WIDGET_KIND_FOCUSABLE );
+        gui_item_state_t st = widget_behavior( sid, sub, WIDGET_KIND_FOCUSABLE );
 
         double out;
         if ( input_num_field( sid, sub, st, fmt, false, (double)v[ i ], &out ) )

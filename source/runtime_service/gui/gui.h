@@ -425,13 +425,13 @@ gui_anchor_box( gui_rect_t area, f32 w, f32 h, gui_align_t align, gui_pad_t m )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Custom-item interaction state (5_user/gui_behavior.c)
+    Item interaction state
 
-    The result of gui()->item( id, rect ): the shared widget interaction state machine run over
-    a rect the CALLER derived, reported as plain flags.  This is the behavior half of the
-    user-UI substrate -- a user widget takes a rect (canvas cut, split/carve, own math), asks
-    for behavior, and draws its own presentation from these flags, exactly as the stock widgets
-    do internally.  invisible_button( id, r ) is this reduced to its click bit.
+    One frame of interaction for one item -- the result of the shared widget interaction state
+    machine, whether run internally for a stock widget or over a caller rect via gui()->item().
+    A user widget takes a rect (canvas cut, split/carve, own math), asks for behavior, and draws
+    its own presentation from these flags, exactly as the stock widgets do internally.
+    invisible_button( id, r ) is this reduced to its click bit.
 ----------------------------------------------------------------------------------------------*/
 
 typedef struct gui_item_state_t
@@ -440,6 +440,9 @@ typedef struct gui_item_state_t
     bool active;     // primary button held with this item captured (dragging / holding)
     bool pressed;    // primary button went down on the item this frame
     bool clicked;    // press + release completed with the cursor still over ("fired")
+    bool focused;    // item owns keyboard input (focusable items: text / value fields)
+    bool nav;        // item is the keyboard-nav cursor while the keyboard is active (fill state)
+    i32  nav_adjust; // keyboard value edit: -1 / +1 arrow step this frame (captured drag items)
 
 } gui_item_state_t;
 
@@ -677,24 +680,6 @@ typedef enum
 
     GUI_WIN_NO_CLIP           = 1 << 21,   /* child: do not push a clip rect */
 
-    /* region_begin only: z-tier override.  A region normally paints/nominates hover at a fixed
-       band above every ordinary window and below every popup (GUI_REGION_Z) -- these two bits
-       replace that band with the opposite extremes, still competing in the same z contest as
-       windows and popups (whichever z wins, wins draw order and hover this frame):
-
-       REGION_BG -- lowest tier (ties the docked/base window floor).  A background element that
-                    only receives hover when nothing else (no raised window) covers it -- e.g. a
-                    desk-level widget that must not steal clicks from anything on top of it.
-       REGION_FG -- highest tier (above every popup depth).  Always wins draw order and hover,
-                    even over an open menu/combo/modal -- e.g. a always-on-top HUD button that
-                    must remain clickable no matter what else is open.
-
-       Mutually exclusive; REGION_BG is checked first if both are set.  Neither bit means the
-       default mid-band behavior. */
-
-    GUI_WIN_REGION_BG         = 1 << 22,   /* region: background z tier -- loses to any raised window */
-    GUI_WIN_REGION_FG         = 1 << 23,   /* region: foreground z tier -- wins over every popup */
-
     /* Arena band: routes this window's (or region's) retained geometry into the debug band of
        the shared vertex/index arena.  Debug-band windows pack AFTER every main-band slot, are
        excluded from the render stats they may themselves display, and never raise any_changed /
@@ -729,6 +714,29 @@ typedef enum
                            GUI_WIN_ALWAYS_AUTOSIZE | GUI_WIN_NO_DETACH | GUI_WIN_NO_INPUT,
 
 } gui_win_flags_t;
+
+/*----------------------------------------------------------------------------------------------
+    Region z tier (region_begin) -- where a root region sits in the one z contest windows and
+    popups compete in (whichever z wins, wins draw order and hover that frame).  A three-way
+    choice, so it is a parameter rather than flag bits.
+
+    MID -- the default: a fixed band above every ordinary window and below every popup, so a HUD
+           element draws over normal windows but under a menu / combo / modal.
+    BG  -- lowest tier (ties the docked/base window floor).  A background element that only
+           receives hover when nothing else (no raised window) covers it -- e.g. a desk-level
+           widget that must not steal clicks from anything on top of it.
+    FG  -- highest tier (above every popup depth).  Always wins draw order and hover, even over
+           an open menu/combo/modal -- e.g. an always-on-top HUD button that must remain
+           clickable no matter what else is open.
+----------------------------------------------------------------------------------------------*/
+
+typedef enum
+{
+    GUI_REGION_MID = 0,     /* default band: over windows, under popups */
+    GUI_REGION_BG,          /* background: loses to any raised window   */
+    GUI_REGION_FG,          /* foreground: wins over every popup        */
+
+} gui_region_tier_t;
 
 /*==============================================================================================
     Dockspace flags

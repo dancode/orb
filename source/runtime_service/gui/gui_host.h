@@ -143,7 +143,8 @@ void gui_push_layout_overlay( gui_rect_t rect );
 void gui_pop_layout( void );
 
 /* root region -- a fixed-rect layout primitive with no window chrome */
-bool gui_region_begin( const char* id, f32 x, f32 y, f32 w, f32 h, gui_win_flags_t flags );
+bool gui_region_begin( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
+                       gui_win_flags_t flags );
 void gui_region_end( void );
 
 /* layout */

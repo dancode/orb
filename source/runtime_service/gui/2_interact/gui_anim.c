@@ -48,7 +48,7 @@ gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed )
     current += ( target - current ) * ( 1.0f - expf( -speed * dt ) );
 
     GUI_STATE( gui_anim_f32_t, anim_id )->current = current;
-    s_retained.wants_redraw = true;
+    g_ctx->retained.wants_redraw = true;
     return current;
 }
 

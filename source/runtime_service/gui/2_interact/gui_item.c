@@ -71,7 +71,7 @@ widget_repeat_tick( bool pressed )
 }
 
 /* Keyboard-nav per-item seam.  Called from widget_behavior for every item that belongs to the nav
-   window (s_scope.win == s_nav.win), the keyboard mirror of the hover hit-test above.  It does
+   window (s_scope.win == g_ctx->nav.win), the keyboard mirror of the hover hit-test above.  It does
    three things: records the item into the frame's nav list (with the structural region/line stamp
    the layout engine latched when it placed it -- gui_nav.c resolves the next move as index math
    over this list), notes whether the nav cursor was seen, and -- for the current nav item --
@@ -80,7 +80,7 @@ widget_repeat_tick( bool pressed )
    st.clicked. */
 
 /* Bring the nav cursor's rect into view -- the keyboard analogue of the wheel.  Runs once, on the
-   frame the cursor was adopted (s_nav.scroll_chase), for the layout-placed cursor item: walk the
+   frame the cursor was adopted (g_ctx->nav.scroll_chase), for the layout-placed cursor item: walk the
    open region stack innermost-out and nudge each region's scroll so the item is visible, correcting
    the rect level by level so an item deep in a nested child pulls every ancestor into line.  Like
    the wheel, the new offset only reaches the screen next frame (this frame's pen already used the
@@ -130,35 +130,35 @@ nav_scroll_chase( gui_rect_t r )
             f->scroll->scroll_x = want_x;
             r.y -= dy;   /* where the item lands next frame -- the ancestors check that position */
             r.x -= dx;
-            s_retained.wants_redraw = true;
+            g_ctx->retained.wants_redraw = true;
         }
     }
 }
 
 static void
-nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t kind )
+nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, widget_kind_t kind )
 {
-    bool is_cur = ( id == s_nav.id );
+    bool is_cur = ( id == g_ctx->nav.id );
     if ( is_cur )
-        s_nav.id_seen = true;
+        g_ctx->nav.id_seen = true;
 
     /* Append to the nav item list (emission order == Tab order).  A layout-placed item carries
        the region/line coordinate widget_next_rect_w latched; anything interacting without a
        layout cell -- title-bar buttons, dock tabs -- lists as chrome, the F6 lane: Tab and the
        body arrows skip it, F6 hops onto the strip and Left/Right walk it (gui_nav.c).
-       Scrollbars and drag strips never reach here at all (s_scope.nav_skip). */
+       Scrollbars and drag strips never reach here at all (s_scope.nav.skip). */
 
-    bool placed = s_scope.nav_placed;
-    if ( placed && s_nav.first_item == GUI_ID_NONE )
-        s_nav.first_item = id;   /* first-focus / recovery landing spot */
+    bool placed = s_scope.nav.placed;
+    if ( placed && g_ctx->nav.first_item == GUI_ID_NONE )
+        g_ctx->nav.first_item = id;   /* first-focus / recovery landing spot */
 
-    if ( s_nav.item_count < GUI_NAV_ITEMS_MAX )
+    if ( g_ctx->nav.item_count < GUI_NAV_ITEMS_MAX )
     {
-        gui_nav_item_t* it = &s_nav.items[ s_nav.item_count++ ];
+        gui_nav_item_t* it = &g_ctx->nav.items[ g_ctx->nav.item_count++ ];
         it->id     = id;
         it->rect   = r;
-        it->region = placed ? s_scope.nav_region : 0;
-        it->line   = placed ? s_scope.nav_line   : 0;
+        it->region = placed ? s_scope.nav.region : 0;
+        it->line   = placed ? s_scope.nav.line   : 0;
         it->chrome = !placed;
     }
 
@@ -175,30 +175,30 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
        2_present/gui_widget_core.c; behavior only picks the moment.  Do not add style reads or
        raw draws to this tier. */
 
-    if ( is_cur && s_nav.active )
+    if ( is_cur && g_ctx->nav.active )
     {
         /* Fresh adoption: scroll the item into view (once).  Only a placed item chases -- its
            region stack is the one open right now; chrome sits outside the scrolling content. */
-        if ( s_nav.scroll_chase )
+        if ( g_ctx->nav.scroll_chase )
         {
-            s_nav.scroll_chase = false;
+            g_ctx->nav.scroll_chase = false;
             if ( placed )
                 nav_scroll_chase( r );
         }
 
         draw_nav_ring( r );
 
-        if ( s_nav.highlight )
+        if ( g_ctx->nav.highlight )
         {
             st->nav = true;
-            if ( s_nav.activate )
+            if ( g_ctx->nav.activate )
             {
                 if ( kind == WIDGET_KIND_DRAG )
                 {
                     /* A value widget (slider, drag box) does not click -- activation captures it
                        for keyboard editing: Left/Right then step the value (st->nav_adjust below)
                        until Enter/Space/Esc or a mouse press releases (gui_nav.c). */
-                    s_nav.edit_id = id;
+                    g_ctx->nav.edit_id = id;
                 }
                 else
                 {
@@ -210,7 +210,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
                 /* Consume the activating keys + any text so the item just focused does not also see
                    this frame's Enter (instant blur) or type the activating Space. */
 
-                s_nav.activate = false;
+                g_ctx->nav.activate = false;
                 s_io.keys_pressed[ APP_KEY_ENTER ] = false;
                 s_io.keys_pressed[ APP_KEY_SPACE ] = false;
                 s_io.text[ 0 ] = '\0';
@@ -219,10 +219,10 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
 
         /* Captured for value edit: keep the fill on (even if a mouse move dropped nav_highlight)
            and hand the widget this frame's arrow step to apply to its value. */
-        if ( s_nav.edit_id == id )
+        if ( g_ctx->nav.edit_id == id )
         {
             st->nav        = true;
-            st->nav_adjust = s_nav.edit_dir;
+            st->nav_adjust = g_ctx->nav.edit_dir;
         }
     }
 }
@@ -253,10 +253,10 @@ item_focus_release( void )
    hit rect and the desired interaction kind; the returned flags are all a widget
    needs for drawing and value updates. */
 
-static widget_state_t
+static gui_item_state_t
 widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
 {
-    widget_state_t st = { 0 };
+    gui_item_state_t st = { 0 };
 
     /* Latch the most recent item id for context menus / tooltips (popup_context_item_begin,
        set_item_tooltip).  Done before the disabled early-out so a disabled widget still counts
@@ -268,8 +268,8 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
     /* Consume the one-shot nav opt-out here, before any early-out below can leak it onto the
        next widget.  A flagged item (scrollbar, drag strip) still interacts normally with the
        mouse; it just never registers as a keyboard target. */
-    bool nav_skip    = s_scope.nav_skip;
-    s_scope.nav_skip = false;
+    bool nav_skip    = s_scope.nav.skip;
+    s_scope.nav.skip = false;
 
     /* Disabled item: inert this frame -- no hover, active, focus, or click.  Returning the zeroed
        state here is the one place that suppresses interaction for every widget, the behavioral half
@@ -315,14 +315,14 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
 
     bool can_hover = ( s_interaction.active_id == GUI_ID_NONE || s_interaction.active_id == id );
     bool win_hover = ( s_scope.win == s_interaction.hover_win );
-    bool eligible  = can_hover && win_hover && !s_scope.resize_hot && !s_scope.grip_hot;
+    bool eligible  = can_hover && win_hover && !s_scope.resize_hot;
 
     /* While the keyboard is the active nav instrument (nav_highlight), the mouse does not set hover:
        the fill is mutually exclusive, so a mouse-hovered item never fills alongside the nav item
        (the nav ring still shows its location).  A mouse move or click drops nav_highlight
        (gui_nav.c), re-enabling hover that same frame. */
 
-    if ( eligible && !s_nav.highlight && rect_hit( s_scope.clip ) && rect_hit( r ) )
+    if ( eligible && !g_ctx->nav.highlight && rect_hit( s_scope.clip ) && rect_hit( r ) )
          s_interaction.hover_id = id;
 
     /* Programmatic focus: a queued set_keyboard_focus request lands on the first focusable
@@ -344,8 +344,8 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
         /* Keep the nav ring synced to the last interacted item: a click moves the cursor here, so
            resuming the keyboard later continues from what was clicked (only once a ring exists). */
 
-        if ( s_nav.active )
-            s_nav.id = id;
+        if ( g_ctx->nav.active )
+            g_ctx->nav.id = id;
     }
 
     st.hover   = ( s_interaction.hover_id == id );
@@ -357,7 +357,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
        cursor, takes a synthesized click from an Enter/Space activation -- the keyboard mirror of
        the mouse hit-test above, through the same one seam every widget already passes through. */
 
-    if ( s_scope.win == s_nav.win && !nav_skip )
+    if ( s_scope.win == g_ctx->nav.win && !nav_skip )
         nav_item_register( id, r, &st, kind );
 
     /* Auto-repeat (GUI_ITEM_BUTTON_REPEAT): while held with the cursor still over it, fire on the

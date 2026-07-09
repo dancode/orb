@@ -2,7 +2,7 @@
 
     runtime_service/gui/4_popup/gui_nav.c -- Keyboard navigation driver.
 
-    The per-frame brain behind the nav cursor (s_nav.id, the persistent keyboard analogue of
+    The per-frame brain behind the nav cursor (g_ctx->nav.id, the persistent keyboard analogue of
     hover_id).  Run once per frame from gui_ctx_begin after the popup state settles:
 
       1. Translate this frame's keys into a request: arrows -> a directional move, Tab -> a
@@ -30,9 +30,9 @@
     dock tabs: anything not placed by a layout cell) forms its own lane: F6 hops between the
     body and the chrome strip (and back to the remembered body item), Left/Right walk the strip
     by position, Down drops back into the body.  Tab and the body arrows never touch chrome.
-    Scrollbars and drag strips are no keyboard targets at all (s_scope.nav_skip).
+    Scrollbars and drag strips are no keyboard targets at all (s_scope.nav.skip).
 
-    Included by gui.c after gui_popup.c (so the popup stack + GUI_POPUP_Z_BASE are in scope)
+    Included by gui.c after gui_popup.c (so the popup stack is in scope)
     and before gui_frame.c (so gui_ctx_begin can call nav_new_frame).
 
 ==============================================================================================*/
@@ -42,7 +42,7 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
-/* The explicit nav target window (window_set_nav / Ctrl+Tab / Alt) lives in s_nav.explicit_win
+/* The explicit nav target window (window_set_nav / Ctrl+Tab / Alt) lives in g_ctx->nav.explicit_win
    (gui_internal.h) -- per-context, so two bound contexts never stomp each other's nav target.
    0 means "follow the front-most normal window", so nav has a sensible default with no caller
    setup. */
@@ -65,19 +65,19 @@ nav_choose_window( void )
     /* Menu-bar mode (Alt / mnemonic): nav lives on the bar window while on the entries, or on the
        top open popup once descended into the menus -- so Left/Right traverse the bar and Up/Down
        walk the open menu, both through the one nav cursor. */
-    if ( s_nav.bar_win != GUI_ID_NONE )
+    if ( g_ctx->nav.bar_win != GUI_ID_NONE )
     {
-        s_nav.win = ( s_nav.in_menus && s_popup_open_count > 0 )
-                      ? s_popups_open[ s_popup_open_count - 1u ].id
-                      : s_nav.bar_win;
+        g_ctx->nav.win = ( g_ctx->nav.in_menus && g_ctx->popup_open_count > 0 )
+                      ? g_ctx->popups_open[ g_ctx->popup_open_count - 1u ].id
+                      : g_ctx->nav.bar_win;
         return;
     }
 
     /* A popup owns nav while open (the front-most one), mirroring popup_apply_modal stealing
        hover_win -- so mouse-opened menus, combos, and context menus capture the arrows too. */
-    if ( s_popup_open_count > 0 )
+    if ( g_ctx->popup_open_count > 0 )
     {
-        s_nav.win = s_popups_open[ s_popup_open_count - 1u ].id;
+        g_ctx->nav.win = g_ctx->popups_open[ g_ctx->popup_open_count - 1u ].id;
         return;
     }
 
@@ -89,14 +89,14 @@ nav_choose_window( void )
     gui_id_t front = GUI_ID_NONE;
     u32        frontz = 0;
     bool       have_explicit = false;
-    for ( u32 i = 0; i < s_window_count; ++i )
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
     {
-        if ( s_windows[ i ].overlay ) continue;
-        if ( s_windows[ i ].id == s_nav.explicit_win ) have_explicit = true;
-        if ( s_windows[ i ].flags & GUI_WIN_NATIVE ) continue;
-        if ( s_windows[ i ].z >= frontz ) { frontz = s_windows[ i ].z; front = s_windows[ i ].id; }
+        if ( g_ctx->windows[ i ].overlay ) continue;
+        if ( g_ctx->windows[ i ].id == g_ctx->nav.explicit_win ) have_explicit = true;
+        if ( g_ctx->windows[ i ].flags & GUI_WIN_NATIVE ) continue;
+        if ( g_ctx->windows[ i ].z >= frontz ) { frontz = g_ctx->windows[ i ].z; front = g_ctx->windows[ i ].id; }
     }
-    s_nav.win = have_explicit ? s_nav.explicit_win : front;
+    g_ctx->nav.win = have_explicit ? g_ctx->nav.explicit_win : front;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -130,48 +130,48 @@ nav_cycle_window( i32 dir )
     /* Current reference z: the explicit target if live, else the front-most normal window. */
     u32  curz  = 0;
     bool found = false;
-    for ( u32 i = 0; i < s_window_count; ++i )
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
     {
-        if ( s_windows[ i ].overlay ) continue;
-        if ( s_windows[ i ].id == s_nav.explicit_win ) { curz = s_windows[ i ].z; found = true; }
+        if ( g_ctx->windows[ i ].overlay ) continue;
+        if ( g_ctx->windows[ i ].id == g_ctx->nav.explicit_win ) { curz = g_ctx->windows[ i ].z; found = true; }
     }
     if ( !found )
-        for ( u32 i = 0; i < s_window_count; ++i )
-            if ( !s_windows[ i ].overlay && s_windows[ i ].z >= curz )
-                curz = s_windows[ i ].z;
+        for ( u32 i = 0; i < g_ctx->window_count; ++i )
+            if ( !g_ctx->windows[ i ].overlay && g_ctx->windows[ i ].z >= curz )
+                curz = g_ctx->windows[ i ].z;
 
     /* Nearest visible window strictly past curz in the requested direction (see nav_cycle_skip).
        Docked windows cycle too: their record z is stale for drawing (the node draws them) but
        still orders them here. */
     gui_id_t pick  = GUI_ID_NONE;
     u32        pickz = ( dir > 0 ) ? 0xFFFFFFFFu : 0u;
-    for ( u32 i = 0; i < s_window_count; ++i )
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
     {
-        u32 z = s_windows[ i ].z;
-        if ( nav_cycle_skip( &s_windows[ i ] ) ) continue;
-        if ( dir > 0 ) { if ( z > curz && z < pickz ) { pickz = z; pick = s_windows[ i ].id; } }
-        else           { if ( z < curz && z > pickz ) { pickz = z; pick = s_windows[ i ].id; } }
+        u32 z = g_ctx->windows[ i ].z;
+        if ( nav_cycle_skip( &g_ctx->windows[ i ] ) ) continue;
+        if ( dir > 0 ) { if ( z > curz && z < pickz ) { pickz = z; pick = g_ctx->windows[ i ].id; } }
+        else           { if ( z < curz && z > pickz ) { pickz = z; pick = g_ctx->windows[ i ].id; } }
     }
 
     /* None past it -- wrap to the extreme opposite end (lowest for forward, highest for back). */
     if ( pick == GUI_ID_NONE )
     {
         u32 wrapz = ( dir > 0 ) ? 0xFFFFFFFFu : 0u;
-        for ( u32 i = 0; i < s_window_count; ++i )
+        for ( u32 i = 0; i < g_ctx->window_count; ++i )
         {
-            u32 z = s_windows[ i ].z;
-            if ( nav_cycle_skip( &s_windows[ i ] ) ) continue;
-            if ( dir > 0 ) { if ( z <= wrapz ) { wrapz = z; pick = s_windows[ i ].id; } }
-            else           { if ( z >= wrapz ) { wrapz = z; pick = s_windows[ i ].id; } }
+            u32 z = g_ctx->windows[ i ].z;
+            if ( nav_cycle_skip( &g_ctx->windows[ i ] ) ) continue;
+            if ( dir > 0 ) { if ( z <= wrapz ) { wrapz = z; pick = g_ctx->windows[ i ].id; } }
+            else           { if ( z >= wrapz ) { wrapz = z; pick = g_ctx->windows[ i ].id; } }
         }
     }
 
     if ( pick == GUI_ID_NONE ) return;
 
     /* Adopt + raise the picked window; first item takes focus next frame. */
-    for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].id == pick )
-            s_windows[ i ].z = surface_z_raise( s_windows[ i ].z );
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
+        if ( g_ctx->windows[ i ].id == pick )
+            g_ctx->windows[ i ].z = surface_z_raise( g_ctx->windows[ i ].z );
 
     /* A floating tab group raises with its picked (visible) tab so the group surfaces. */
     {
@@ -180,15 +180,15 @@ nav_cycle_window( i32 dir )
             dn->z = surface_z_raise( dn->z );
     }
 
-    s_nav.explicit_win = pick;
-    s_nav.id     = GUI_ID_NONE;
-    s_nav.active = true;
+    g_ctx->nav.explicit_win = pick;
+    g_ctx->nav.id     = GUI_ID_NONE;
+    g_ctx->nav.active = true;
 }
 
 /*----------------------------------------------------------------------------------------------
     Nav list resolvers -- structural movement over the item list built during last frame's
     emission (see the file header).  All of them run at request time from nav_finish, mutate
-    s_nav.id, and leave the request fields (move_dir / activate) live for the emission-time
+    g_ctx->nav.id, and leave the request fields (move_dir / activate) live for the emission-time
     consumers (menu_begin's Right-opens-submenu, the activation in nav_item_register).
 ----------------------------------------------------------------------------------------------*/
 
@@ -197,8 +197,8 @@ static i32
 nav_list_find( gui_id_t id )
 {
     if ( id == GUI_ID_NONE ) return -1;
-    for ( u32 i = 0; i < s_nav.item_count; ++i )
-        if ( s_nav.items[ i ].id == id )
+    for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
+        if ( g_ctx->nav.items[ i ].id == id )
             return (i32)i;
     return -1;
 }
@@ -210,10 +210,10 @@ nav_list_find( gui_id_t id )
 static void
 nav_adopt( i32 i, bool vertical )
 {
-    s_nav.id           = s_nav.items[ i ].id;
-    s_nav.scroll_chase = true;
+    g_ctx->nav.id           = g_ctx->nav.items[ i ].id;
+    g_ctx->nav.scroll_chase = true;
     if ( !vertical )
-        s_nav.goal_set = false;
+        g_ctx->nav.goal_set = false;
 }
 
 /* Tab / Shift+Tab: the next / previous placed item in emission order, wrapping.  Body lane only:
@@ -222,11 +222,11 @@ nav_adopt( i32 i, bool vertical )
 static void
 nav_resolve_tab( void )
 {
-    i32 n = (i32)s_nav.item_count;
+    i32 n = (i32)g_ctx->nav.item_count;
     if ( n == 0 ) return;
 
-    i32 step = ( s_nav.tab > 0 ) ? 1 : -1;
-    i32 i    = nav_list_find( s_nav.id );
+    i32 step = ( g_ctx->nav.tab > 0 ) ? 1 : -1;
+    i32 i    = nav_list_find( g_ctx->nav.id );
     for ( i32 k = 0; k < n; ++k )
     {
         if ( i < 0 )
@@ -237,7 +237,7 @@ nav_resolve_tab( void )
             if ( i < 0 )  i = n - 1;
             if ( i >= n ) i = 0;
         }
-        if ( !s_nav.items[ i ].chrome )
+        if ( !g_ctx->nav.items[ i ].chrome )
         {
             nav_adopt( i, false );
             return;
@@ -250,14 +250,14 @@ nav_resolve_tab( void )
 static void
 nav_lane_body( void )
 {
-    i32 i = nav_list_find( s_nav.body_id );
-    if ( i >= 0 && !s_nav.items[ i ].chrome )
+    i32 i = nav_list_find( g_ctx->nav.body_id );
+    if ( i >= 0 && !g_ctx->nav.items[ i ].chrome )
     {
         nav_adopt( i, false );
         return;
     }
-    for ( u32 k = 0; k < s_nav.item_count; ++k )
-        if ( !s_nav.items[ k ].chrome )
+    for ( u32 k = 0; k < g_ctx->nav.item_count; ++k )
+        if ( !g_ctx->nav.items[ k ].chrome )
         {
             nav_adopt( (i32)k, false );
             return;
@@ -270,16 +270,16 @@ nav_lane_body( void )
 static void
 nav_resolve_lane( void )
 {
-    i32 cur = nav_list_find( s_nav.id );
-    if ( cur >= 0 && s_nav.items[ cur ].chrome )
+    i32 cur = nav_list_find( g_ctx->nav.id );
+    if ( cur >= 0 && g_ctx->nav.items[ cur ].chrome )
     {
         nav_lane_body();
         return;
     }
-    for ( u32 k = 0; k < s_nav.item_count; ++k )
-        if ( s_nav.items[ k ].chrome )
+    for ( u32 k = 0; k < g_ctx->nav.item_count; ++k )
+        if ( g_ctx->nav.items[ k ].chrome )
         {
-            s_nav.body_id = s_nav.id;
+            g_ctx->nav.body_id = g_ctx->nav.id;
             nav_adopt( (i32)k, false );
             return;
         }
@@ -292,9 +292,9 @@ nav_line_pick( u32 region, u32 line, f32 goal )
 {
     i32 best   = -1;
     f32 best_d = 0.0f;
-    for ( u32 i = 0; i < s_nav.item_count; ++i )
+    for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
     {
-        const gui_nav_item_t* it = &s_nav.items[ i ];
+        const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
         if ( it->chrome || it->region != region || it->line != line ) continue;
 
         f32 x0 = it->rect.x, x1 = it->rect.x + it->rect.w;
@@ -318,18 +318,18 @@ nav_line_pick( u32 region, u32 line, f32 goal )
 static void
 nav_resolve_home( void )
 {
-    i32  cur        = nav_list_find( s_nav.id );
-    bool use_region = ( cur >= 0 && !s_nav.items[ cur ].chrome );
-    u32  region     = use_region ? s_nav.items[ cur ].region : 0;
+    i32  cur        = nav_list_find( g_ctx->nav.id );
+    bool use_region = ( cur >= 0 && !g_ctx->nav.items[ cur ].chrome );
+    u32  region     = use_region ? g_ctx->nav.items[ cur ].region : 0;
 
     i32 pick = -1;
-    for ( u32 i = 0; i < s_nav.item_count; ++i )
+    for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
     {
-        const gui_nav_item_t* it = &s_nav.items[ i ];
+        const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
         if ( it->chrome ) continue;
         if ( use_region && it->region != region ) continue;
         pick = (i32)i;
-        if ( s_nav.home < 0 ) break;   /* Home: the first hit; End keeps scanning to the last */
+        if ( g_ctx->nav.home < 0 ) break;   /* Home: the first hit; End keeps scanning to the last */
     }
     if ( pick >= 0 )
         nav_adopt( pick, false );
@@ -344,38 +344,38 @@ nav_resolve_home( void )
 static void
 nav_resolve_page( void )
 {
-    if ( s_nav.item_count == 0 ) return;
+    if ( g_ctx->nav.item_count == 0 ) return;
 
-    i32 cur = nav_list_find( s_nav.id );
+    i32 cur = nav_list_find( g_ctx->nav.id );
     if ( cur < 0 )
     {
-        for ( u32 i = 0; i < s_nav.item_count; ++i )
-            if ( !s_nav.items[ i ].chrome ) { nav_adopt( (i32)i, false ); return; }
+        for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
+            if ( !g_ctx->nav.items[ i ].chrome ) { nav_adopt( (i32)i, false ); return; }
         return;
     }
-    if ( s_nav.items[ cur ].chrome ) return;
-    const gui_nav_item_t c = s_nav.items[ cur ];
+    if ( g_ctx->nav.items[ cur ].chrome ) return;
+    const gui_nav_item_t c = g_ctx->nav.items[ cur ];
 
     f32 page = 0.0f;
-    for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].id == s_nav.win ) { page = s_windows[ i ].h; break; }
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
+        if ( g_ctx->windows[ i ].id == g_ctx->nav.win ) { page = g_ctx->windows[ i ].h; break; }
     if ( page <= 0.0f ) page = 10.0f * WIDGET_H;
 
-    if ( !s_nav.goal_set )
+    if ( !g_ctx->nav.goal_set )
     {
-        s_nav.goal_x   = c.rect.x + c.rect.w * 0.5f;
-        s_nav.goal_set = true;
+        g_ctx->nav.goal_x   = c.rect.x + c.rect.w * 0.5f;
+        g_ctx->nav.goal_set = true;
     }
 
-    bool down   = ( s_nav.page > 0 );
+    bool down   = ( g_ctx->nav.page > 0 );
     f32  cy     = c.rect.y + c.rect.h * 0.5f;
     f32  want   = cy + ( down ? page : -page );
     u32  t_line = 0;
     f32  t_d    = 0.0f;
     bool found  = false;
-    for ( u32 i = 0; i < s_nav.item_count; ++i )
+    for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
     {
-        const gui_nav_item_t* it = &s_nav.items[ i ];
+        const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
         if ( it->chrome || it->region != c.region || it->line == c.line ) continue;
 
         f32 iy = it->rect.y + it->rect.h * 0.5f;
@@ -391,7 +391,7 @@ nav_resolve_page( void )
     }
     if ( !found ) return;   /* already on the region's first / last line -- a wall */
 
-    i32 pick = nav_line_pick( c.region, t_line, s_nav.goal_x );
+    i32 pick = nav_line_pick( c.region, t_line, g_ctx->nav.goal_x );
     if ( pick >= 0 )
         nav_adopt( pick, true );
 }
@@ -408,15 +408,15 @@ nav_resolve_page( void )
 static void
 nav_resolve_move( void )
 {
-    if ( s_nav.item_count == 0 ) return;
+    if ( g_ctx->nav.item_count == 0 ) return;
 
     /* No cursor in the list (fresh engage, stale id): land on the first placed item rather than
        stepping from nowhere. */
-    i32 cur = nav_list_find( s_nav.id );
+    i32 cur = nav_list_find( g_ctx->nav.id );
     if ( cur < 0 )
     {
-        for ( u32 i = 0; i < s_nav.item_count; ++i )
-            if ( !s_nav.items[ i ].chrome ) { nav_adopt( (i32)i, false ); return; }
+        for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
+            if ( !g_ctx->nav.items[ i ].chrome ) { nav_adopt( (i32)i, false ); return; }
         return;
     }
 
@@ -425,17 +425,17 @@ nav_resolve_move( void )
        (the close button emits before the detach box but sits right of it), and the strip is
        one visual band, so geometry IS its order.  Down drops back into the body; Up and the
        strip ends are walls. */
-    if ( s_nav.items[ cur ].chrome )
+    if ( g_ctx->nav.items[ cur ].chrome )
     {
-        if ( s_nav.move_dir == GUI_DIR_LEFT || s_nav.move_dir == GUI_DIR_RIGHT )
+        if ( g_ctx->nav.move_dir == GUI_DIR_LEFT || g_ctx->nav.move_dir == GUI_DIR_RIGHT )
         {
-            bool right  = ( s_nav.move_dir == GUI_DIR_RIGHT );
-            f32  cx     = s_nav.items[ cur ].rect.x + s_nav.items[ cur ].rect.w * 0.5f;
+            bool right  = ( g_ctx->nav.move_dir == GUI_DIR_RIGHT );
+            f32  cx     = g_ctx->nav.items[ cur ].rect.x + g_ctx->nav.items[ cur ].rect.w * 0.5f;
             i32  best   = -1;
             f32  best_d = 0.0f;
-            for ( u32 i = 0; i < s_nav.item_count; ++i )
+            for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
             {
-                const gui_nav_item_t* it = &s_nav.items[ i ];
+                const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
                 if ( !it->chrome || (i32)i == cur ) continue;
                 f32 ix = it->rect.x + it->rect.w * 0.5f;
                 f32 d  = right ? ( ix - cx ) : ( cx - ix );
@@ -445,22 +445,22 @@ nav_resolve_move( void )
             if ( best >= 0 )
                 nav_adopt( best, false );
         }
-        else if ( s_nav.move_dir == GUI_DIR_DOWN )
+        else if ( g_ctx->nav.move_dir == GUI_DIR_DOWN )
         {
             nav_lane_body();
         }
         return;
     }
 
-    const gui_nav_item_t c = s_nav.items[ cur ];   /* adoption rewrites s_nav.id only; copy for clarity */
+    const gui_nav_item_t c = g_ctx->nav.items[ cur ];   /* adoption rewrites g_ctx->nav.id only; copy for clarity */
 
-    if ( s_nav.move_dir == GUI_DIR_LEFT || s_nav.move_dir == GUI_DIR_RIGHT )
+    if ( g_ctx->nav.move_dir == GUI_DIR_LEFT || g_ctx->nav.move_dir == GUI_DIR_RIGHT )
     {
-        i32 step = ( s_nav.move_dir == GUI_DIR_LEFT ) ? -1 : 1;
-        for ( i32 i = cur + step; i >= 0 && i < (i32)s_nav.item_count; i += step )
+        i32 step = ( g_ctx->nav.move_dir == GUI_DIR_LEFT ) ? -1 : 1;
+        for ( i32 i = cur + step; i >= 0 && i < (i32)g_ctx->nav.item_count; i += step )
         {
-            if ( s_nav.items[ i ].chrome ) continue;
-            if ( s_nav.items[ i ].region != c.region || s_nav.items[ i ].line != c.line )
+            if ( g_ctx->nav.items[ i ].chrome ) continue;
+            if ( g_ctx->nav.items[ i ].region != c.region || g_ctx->nav.items[ i ].line != c.line )
                 break;                       /* ran off the line -- wall */
             nav_adopt( i, false );
             return;
@@ -469,20 +469,20 @@ nav_resolve_move( void )
     }
 
     /* Vertical: anchor the goal column on the first step of a run. */
-    bool down = ( s_nav.move_dir == GUI_DIR_DOWN );
+    bool down = ( g_ctx->nav.move_dir == GUI_DIR_DOWN );
 
-    if ( !s_nav.goal_set )
+    if ( !g_ctx->nav.goal_set )
     {
-        s_nav.goal_x   = c.rect.x + c.rect.w * 0.5f;
-        s_nav.goal_set = true;
+        g_ctx->nav.goal_x   = c.rect.x + c.rect.w * 0.5f;
+        g_ctx->nav.goal_set = true;
     }
 
     /* The cursor line's y band -- the union of its items' extents, so a short label and a tall
        control on one row read as one band and neither can be "beyond" its own row. */
     f32 band_y0 = c.rect.y, band_y1 = c.rect.y + c.rect.h;
-    for ( u32 i = 0; i < s_nav.item_count; ++i )
+    for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
     {
-        const gui_nav_item_t* it = &s_nav.items[ i ];
+        const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
         if ( it->chrome || it->region != c.region || it->line != c.line ) continue;
         if ( it->rect.y < band_y0 )              band_y0 = it->rect.y;
         if ( it->rect.y + it->rect.h > band_y1 ) band_y1 = it->rect.y + it->rect.h;
@@ -494,9 +494,9 @@ nav_resolve_move( void )
     f32  t_gap    = 0.0f;
     bool t_ov     = false;
     bool found    = false;
-    for ( u32 i = 0; i < s_nav.item_count; ++i )
+    for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
     {
-        const gui_nav_item_t* it = &s_nav.items[ i ];
+        const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
         if ( it->chrome ) continue;
         if ( it->region == c.region && it->line == c.line ) continue;   /* our own line */
 
@@ -506,7 +506,7 @@ nav_resolve_move( void )
         else        { if ( iy1 > band_y0 + NAV_BAND_EPS ) continue; gap = band_y0 - iy1; }
         if ( gap < 0.0f ) gap = 0.0f;
 
-        bool ov = ( s_nav.goal_x >= it->rect.x && s_nav.goal_x <= it->rect.x + it->rect.w );
+        bool ov = ( g_ctx->nav.goal_x >= it->rect.x && g_ctx->nav.goal_x <= it->rect.x + it->rect.w );
 
         bool better;
         if      ( !found )                       better = true;
@@ -525,7 +525,7 @@ nav_resolve_move( void )
     }
     if ( !found ) return;   /* nothing beyond -- first / last line of the window, a wall */
 
-    i32 pick = nav_line_pick( t_region, t_line, s_nav.goal_x );
+    i32 pick = nav_line_pick( t_region, t_line, g_ctx->nav.goal_x );
     if ( pick >= 0 )
         nav_adopt( pick, true );
 }
@@ -540,8 +540,8 @@ static gui_id_t
 nav_main_bar_win( void )
 {
     gui_id_t mb = id_hash( "##MainMenuBar" );
-    for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].id == mb )
+    for ( u32 i = 0; i < g_ctx->window_count; ++i )
+        if ( g_ctx->windows[ i ].id == mb )
             return mb;
     return GUI_ID_NONE;
 }
@@ -551,26 +551,26 @@ nav_main_bar_win( void )
 static void
 nav_menu_enter( gui_id_t bar )
 {
-    s_nav.prev_win   = s_nav.explicit_win;
-    s_nav.prev_id    = s_nav.id;    /* remember the focus to toggle back to */
-    s_nav.bar_win    = bar;
-    s_nav.in_menus   = false;
-    s_nav.menu_owner = GUI_ID_NONE;
-    s_nav.id         = GUI_ID_NONE;   /* first bar entry takes focus */
-    s_nav.active     = true;
-    s_nav.highlight  = true;            /* Alt makes the keyboard the active instrument */
+    g_ctx->nav.prev_win   = g_ctx->nav.explicit_win;
+    g_ctx->nav.prev_id    = g_ctx->nav.id;    /* remember the focus to toggle back to */
+    g_ctx->nav.bar_win    = bar;
+    g_ctx->nav.in_menus   = false;
+    g_ctx->nav.menu_owner = GUI_ID_NONE;
+    g_ctx->nav.id         = GUI_ID_NONE;   /* first bar entry takes focus */
+    g_ctx->nav.active     = true;
+    g_ctx->nav.highlight  = true;            /* Alt makes the keyboard the active instrument */
 }
 
 /* Leave menu-bar mode: close the menu popups and restore nav to exactly where it was before Alt. */
 static void
 nav_menu_exit( void )
 {
-    s_popup_open_count   = 0;                 /* drop the open menus */
-    s_nav.bar_win    = GUI_ID_NONE;
-    s_nav.in_menus   = false;
-    s_nav.menu_owner = GUI_ID_NONE;
-    s_nav.explicit_win   = s_nav.prev_win;
-    s_nav.id         = s_nav.prev_id;   /* back to the last focus location */
+    g_ctx->popup_open_count   = 0;                 /* drop the open menus */
+    g_ctx->nav.bar_win    = GUI_ID_NONE;
+    g_ctx->nav.in_menus   = false;
+    g_ctx->nav.menu_owner = GUI_ID_NONE;
+    g_ctx->nav.explicit_win   = g_ctx->nav.prev_win;
+    g_ctx->nav.id         = g_ctx->nav.prev_id;   /* back to the last focus location */
 }
 
 /* Ascend from the open menus back to the bar entry that owns them (the close / Up-to-bar return),
@@ -578,9 +578,9 @@ nav_menu_exit( void )
 static void
 nav_menu_ascend_to_bar( void )
 {
-    s_nav.in_menus = false;
-    s_nav.id       = s_nav.menu_owner;
-    s_nav.move_dir = -1;                  /* consume the move that triggered the ascend */
+    g_ctx->nav.in_menus = false;
+    g_ctx->nav.id       = g_ctx->nav.menu_owner;
+    g_ctx->nav.move_dir = -1;                  /* consume the move that triggered the ascend */
 }
 
 /* Bar/menu key handling while in menu-bar mode.  `first_prev` is last frame's first placed item,
@@ -590,20 +590,20 @@ nav_menu_ascend_to_bar( void )
 static void
 nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
 {
-    if ( !s_nav.in_menus )
+    if ( !g_ctx->nav.in_menus )
     {
         /* On the bar: the highlighted entry drops its menu (menu_begin).  Down / Enter descend into
            it; Esc leaves menu mode.  Left/Right stay as a directional move for the list resolver. */
-        if ( down || s_nav.activate )
+        if ( down || g_ctx->nav.activate )
         {
-            if ( s_popup_open_count > 0 )      /* a menu is dropped -> step into it */
+            if ( g_ctx->popup_open_count > 0 )      /* a menu is dropped -> step into it */
             {
-                s_nav.menu_owner = s_nav.id;
-                s_nav.in_menus   = true;
-                s_nav.id         = GUI_ID_NONE;   /* first item */
+                g_ctx->nav.menu_owner = g_ctx->nav.id;
+                g_ctx->nav.in_menus   = true;
+                g_ctx->nav.id         = GUI_ID_NONE;   /* first item */
             }
-            s_nav.move_dir = -1;
-            s_nav.activate = false;        /* do not also "click" (toggle-close) the bar entry */
+            g_ctx->nav.move_dir = -1;
+            g_ctx->nav.activate = false;        /* do not also "click" (toggle-close) the bar entry */
         }
         else if ( esc )
         {
@@ -614,9 +614,9 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
     {
         /* Inside the menus.  Up at the first item of a top-level menu returns to the bar; Left /
            Esc close one level, ascending to the owning bar entry at the top level. */
-        u32 depth = s_popup_open_count;
+        u32 depth = g_ctx->popup_open_count;
 
-        if ( up && depth <= 1 && first_prev != GUI_ID_NONE && s_nav.id == first_prev )
+        if ( up && depth <= 1 && first_prev != GUI_ID_NONE && g_ctx->nav.id == first_prev )
         {
             nav_menu_ascend_to_bar();
         }
@@ -624,14 +624,14 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
         {
             if ( depth >= 2 )                  /* close a submenu, back to its parent menu */
             {
-                --s_popup_open_count;
-                s_nav.id = GUI_ID_NONE;
+                --g_ctx->popup_open_count;
+                g_ctx->nav.id = GUI_ID_NONE;
             }
             else                               /* top level: back to the owning bar entry */
             {
                 nav_menu_ascend_to_bar();
             }
-            s_nav.move_dir = -1;
+            g_ctx->nav.move_dir = -1;
         }
         /* Down / Up (mid-list) move via the list resolver; Right opens a submenu in menu_begin;
            Enter activates through the synthesized click. */
@@ -648,18 +648,18 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
 static void
 nav_finish( void )
 {
-    if ( s_nav.lane )
+    if ( g_ctx->nav.lane )
         nav_resolve_lane();
-    else if ( s_nav.tab != 0 )
+    else if ( g_ctx->nav.tab != 0 )
         nav_resolve_tab();
-    else if ( s_nav.page != 0 )
+    else if ( g_ctx->nav.page != 0 )
         nav_resolve_page();
-    else if ( s_nav.home != 0 )
+    else if ( g_ctx->nav.home != 0 )
         nav_resolve_home();
-    else if ( s_nav.move_dir >= 0 )
+    else if ( g_ctx->nav.move_dir >= 0 )
         nav_resolve_move();
 
-    s_nav.item_count = 0;   /* fresh list; this frame's items append during emission */
+    g_ctx->nav.item_count = 0;   /* fresh list; this frame's items append during emission */
     nav_choose_window();
 }
 
@@ -672,49 +672,49 @@ static void
 nav_new_frame( void )
 {
     if ( !s_fwd_caps.keyboard_nav ) return;   /* feature boundary: gui_forward_caps_t.keyboard_nav;
-                                                  s_nav.win stays GUI_ID_NONE, so nav_item_register
+                                                  g_ctx->nav.win stays GUI_ID_NONE, so nav_item_register
                                                   never matches a window and mouse input is untouched */
 
     /* One-shot: only an adoption made THIS frame (recovery below, or a resolver in nav_finish)
        chases the cursor into view during the emission that follows. */
-    s_nav.scroll_chase = false;
+    g_ctx->nav.scroll_chase = false;
 
     /* Value-edit self-heal: the captured widget stopped emitting (window closed, tab switched) --
        drop the capture so the keyboard is not fenced on a ghost. */
-    if ( s_nav.edit_id != GUI_ID_NONE && !s_nav.id_seen )
-        s_nav.edit_id = GUI_ID_NONE;
+    if ( g_ctx->nav.edit_id != GUI_ID_NONE && !g_ctx->nav.id_seen )
+        g_ctx->nav.edit_id = GUI_ID_NONE;
 
     /* First-focus / recovery: nav is engaged but its cursor item was not emitted last frame
        (window just focused, popup opened, list shrank) -- land on the first placed item that was. */
-    if ( s_nav.active && !s_nav.id_seen && s_nav.first_item != GUI_ID_NONE )
+    if ( g_ctx->nav.active && !g_ctx->nav.id_seen && g_ctx->nav.first_item != GUI_ID_NONE )
     {
-        s_nav.id           = s_nav.first_item;
-        s_nav.goal_set     = false;
-        s_nav.scroll_chase = true;
+        g_ctx->nav.id           = g_ctx->nav.first_item;
+        g_ctx->nav.goal_set     = false;
+        g_ctx->nav.scroll_chase = true;
     }
 
     /* Last frame's first placed item -- captured before the reset for the "Up at the top of a
        dropdown returns to the bar" test. */
-    gui_id_t first_prev = s_nav.first_item;
+    gui_id_t first_prev = g_ctx->nav.first_item;
 
     /* Reset the per-frame request + registration bookkeeping.  The item list itself stays intact:
        this frame's keys resolve against it in nav_finish, which then opens the fresh list. */
-    s_nav.move_dir   = -1;
-    s_nav.tab        = 0;
-    s_nav.page       = 0;
-    s_nav.home       = 0;
-    s_nav.activate   = false;
-    s_nav.lane       = false;
-    s_nav.edit_dir   = 0;
-    s_nav.mnemonic   = 0;
-    s_nav.id_seen    = false;
-    s_nav.first_item = GUI_ID_NONE;
+    g_ctx->nav.move_dir   = -1;
+    g_ctx->nav.tab        = 0;
+    g_ctx->nav.page       = 0;
+    g_ctx->nav.home       = 0;
+    g_ctx->nav.activate   = false;
+    g_ctx->nav.lane       = false;
+    g_ctx->nav.edit_dir   = 0;
+    g_ctx->nav.mnemonic   = 0;
+    g_ctx->nav.id_seen    = false;
+    g_ctx->nav.first_item = GUI_ID_NONE;
 
     /* A move makes the mouse the active instrument: it drops nav_highlight, so the nav item loses
        its fill (the ring stays, via nav_active) and the mouse hover regains the fill -- the ring
        keeps marking the keyboard's last position in case the user goes back to it.  A click goes
        further: the user has committed to the mouse, so it drops nav_active too and the ring itself
-       disappears (a later keyboard press brings it back at s_nav.id, unmoved).  A click additionally
+       disappears (a later keyboard press brings it back at g_ctx->nav.id, unmoved).  A click additionally
        leaves menu-bar mode -- the user switched to the mouse to drive the menus (which then track
        the cursor); the open popups close on their own through popup_close_check. */
     bool mouse_moved = ( s_io.mouse_x != s_nav_mouse_x || s_io.mouse_y != s_nav_mouse_y );
@@ -723,15 +723,15 @@ nav_new_frame( void )
     s_nav_mouse_y = s_io.mouse_y;
 
     if ( mouse_moved || mouse_press )
-        s_nav.highlight = false;
+        g_ctx->nav.highlight = false;
     if ( mouse_press )
     {
-        s_nav.active  = false;
-        s_nav.edit_id = GUI_ID_NONE;   /* the mouse takes over -- release the value-edit capture */
-        if ( s_nav.bar_win != GUI_ID_NONE )
+        g_ctx->nav.active  = false;
+        g_ctx->nav.edit_id = GUI_ID_NONE;   /* the mouse takes over -- release the value-edit capture */
+        if ( g_ctx->nav.bar_win != GUI_ID_NONE )
         {
-            s_nav.bar_win  = GUI_ID_NONE;
-            s_nav.in_menus = false;
+            g_ctx->nav.bar_win  = GUI_ID_NONE;
+            g_ctx->nav.in_menus = false;
         }
 
         /* Click-to-focus: the clicked window becomes the explicit nav target, so the keyboard
@@ -740,22 +740,22 @@ nav_new_frame( void )
            front-most-by-z default can never reach it.  Popup-band records keep their own capture
            (nav_choose_window) and a frame-only native shell never takes the keyboard. */
         if ( s_interaction.hover_win != GUI_ID_NONE )
-            for ( u32 i = 0; i < s_window_count; ++i )
-                if ( s_windows[ i ].id == s_interaction.hover_win )
+            for ( u32 i = 0; i < g_ctx->window_count; ++i )
+                if ( g_ctx->windows[ i ].id == s_interaction.hover_win )
                 {
-                    if ( !s_windows[ i ].overlay
-                         && !( s_windows[ i ].flags & GUI_WIN_NATIVE ) )
-                        s_nav.explicit_win = s_windows[ i ].id;
+                    if ( !g_ctx->windows[ i ].overlay
+                         && !( g_ctx->windows[ i ].flags & GUI_WIN_NATIVE ) )
+                        g_ctx->nav.explicit_win = g_ctx->windows[ i ].id;
                     break;
                 }
     }
 
     /* Menu mode self-heals: if its bar window is gone, drop out. */
-    if ( s_nav.bar_win != GUI_ID_NONE )
+    if ( g_ctx->nav.bar_win != GUI_ID_NONE )
     {
         bool alive = false;
-        for ( u32 i = 0; i < s_window_count; ++i )
-            if ( s_windows[ i ].id == s_nav.bar_win ) { alive = true; break; }
+        for ( u32 i = 0; i < g_ctx->window_count; ++i )
+            if ( g_ctx->windows[ i ].id == g_ctx->nav.bar_win ) { alive = true; break; }
         if ( !alive ) nav_menu_exit();
     }
 
@@ -769,25 +769,25 @@ nav_new_frame( void )
 
     /* A captured DRAG widget (slider / drag-box value edit) owns the keyboard the same way:
        Left/Right (repeat) step its value -- published as edit_dir, applied by the widget through
-       widget_state_t.nav_adjust -- and Enter/Space/Esc release; every other nav key is fenced so
+       gui_item_state_t.nav_adjust -- and Enter/Space/Esc release; every other nav key is fenced so
        Up/Down can never yank the cursor off a widget mid-edit. */
-    if ( s_nav.edit_id != GUI_ID_NONE )
+    if ( g_ctx->nav.edit_id != GUI_ID_NONE )
     {
         if ( s_io.keys_pressed[ APP_KEY_ENTER ] || s_io.keys_pressed[ APP_KEY_SPACE ]
              || s_io.keys_pressed[ APP_KEY_ESCAPE ] )
         {
-            s_nav.edit_id = GUI_ID_NONE;
+            g_ctx->nav.edit_id = GUI_ID_NONE;
             s_io.keys_pressed[ APP_KEY_ENTER ] = false;   /* the release must not re-activate */
             s_io.keys_pressed[ APP_KEY_SPACE ] = false;
         }
         else
         {
-            if ( s_io.keys_pressed_repeat[ APP_KEY_LEFT  ] ) s_nav.edit_dir = -1;
-            if ( s_io.keys_pressed_repeat[ APP_KEY_RIGHT ] ) s_nav.edit_dir = +1;
-            if ( s_nav.edit_dir != 0 )
+            if ( s_io.keys_pressed_repeat[ APP_KEY_LEFT  ] ) g_ctx->nav.edit_dir = -1;
+            if ( s_io.keys_pressed_repeat[ APP_KEY_RIGHT ] ) g_ctx->nav.edit_dir = +1;
+            if ( g_ctx->nav.edit_dir != 0 )
             {
-                s_nav.active    = true;   /* stepping keeps the keyboard the active instrument */
-                s_nav.highlight = true;
+                g_ctx->nav.active    = true;   /* stepping keeps the keyboard the active instrument */
+                g_ctx->nav.highlight = true;
             }
         }
         nav_finish();
@@ -816,11 +816,11 @@ nav_new_frame( void )
         for ( u32 c = 0; c < 26u; ++c )
             if ( s_io.keys_pressed[ APP_KEY_A + c ] )
             {
-                s_nav.mnemonic  = (u8)( 'A' + c );  /* menu_begin matches + opens the entry */
+                g_ctx->nav.mnemonic  = (u8)( 'A' + c );  /* menu_begin matches + opens the entry */
                 s_nav_alt_used      = true;
-                s_nav.active    = true;
-                s_nav.highlight = true;
-                if ( s_nav.bar_win == GUI_ID_NONE )
+                g_ctx->nav.active    = true;
+                g_ctx->nav.highlight = true;
+                if ( g_ctx->nav.bar_win == GUI_ID_NONE )
                 {
                     gui_id_t mb = nav_main_bar_win();
                     if ( mb != GUI_ID_NONE ) nav_menu_enter( mb );
@@ -831,7 +831,7 @@ nav_new_frame( void )
     if ( ( s_io.keys_released[ APP_KEY_LALT ] || s_io.keys_released[ APP_KEY_RALT ] )
          && !s_nav_alt_used )
     {
-        if ( s_nav.bar_win != GUI_ID_NONE )
+        if ( g_ctx->nav.bar_win != GUI_ID_NONE )
             nav_menu_exit();                      /* toggle out -> restore the prior focus */
         else
         {
@@ -847,13 +847,13 @@ nav_new_frame( void )
     bool right = s_io.keys_pressed_repeat[ APP_KEY_RIGHT ];
     bool esc   = s_io.keys_pressed[ APP_KEY_ESCAPE ];
 
-    if ( up    ) s_nav.move_dir = GUI_DIR_UP;
-    if ( down  ) s_nav.move_dir = GUI_DIR_DOWN;
-    if ( left  ) s_nav.move_dir = GUI_DIR_LEFT;
-    if ( right ) s_nav.move_dir = GUI_DIR_RIGHT;
+    if ( up    ) g_ctx->nav.move_dir = GUI_DIR_UP;
+    if ( down  ) g_ctx->nav.move_dir = GUI_DIR_DOWN;
+    if ( left  ) g_ctx->nav.move_dir = GUI_DIR_LEFT;
+    if ( right ) g_ctx->nav.move_dir = GUI_DIR_RIGHT;
 
     bool tab = s_io.keys_pressed_repeat[ APP_KEY_TAB ];
-    if ( tab ) s_nav.tab = shift ? -1 : +1;
+    if ( tab ) g_ctx->nav.tab = shift ? -1 : +1;
 
     /* Page keys: the scrollbar's keyboard face.  Page hops one view height (repeat, for holding
        through a long list); Home/End jump to the region's first / last item.  The scroll chase
@@ -862,46 +862,46 @@ nav_new_frame( void )
     bool pgdn = s_io.keys_pressed_repeat[ APP_KEY_PAGE_DOWN ];
     bool home = s_io.keys_pressed[ APP_KEY_HOME ];
     bool end  = s_io.keys_pressed[ APP_KEY_END  ];
-    if ( pgup ) s_nav.page = -1;
-    if ( pgdn ) s_nav.page = +1;
-    if ( home ) s_nav.home = -1;
-    if ( end  ) s_nav.home = +1;
+    if ( pgup ) g_ctx->nav.page = -1;
+    if ( pgdn ) g_ctx->nav.page = +1;
+    if ( home ) g_ctx->nav.home = -1;
+    if ( end  ) g_ctx->nav.home = +1;
 
     bool act = s_io.keys_pressed[ APP_KEY_ENTER ] || s_io.keys_pressed[ APP_KEY_SPACE ];
-    if ( act ) s_nav.activate = true;
+    if ( act ) g_ctx->nav.activate = true;
 
     /* F6 hops between the body and the chrome strip (title-bar buttons, dock tabs) -- the pane-
        cycle key.  Not while the menu bar owns nav: its bar entries are the chrome there. */
-    bool lane = s_io.keys_pressed[ APP_KEY_F6 ] && s_nav.bar_win == GUI_ID_NONE;
-    if ( lane ) s_nav.lane = true;
+    bool lane = s_io.keys_pressed[ APP_KEY_F6 ] && g_ctx->nav.bar_win == GUI_ID_NONE;
+    if ( lane ) g_ctx->nav.lane = true;
 
     /* Any nav key makes the keyboard the active instrument: show the ring (nav_active) AND the fill
        (nav_highlight), and suppress mouse hover until the mouse moves again. */
     if ( up || down || left || right || tab || act || lane || pgup || pgdn || home || end )
     {
-        s_nav.active    = true;
-        s_nav.highlight = true;
+        g_ctx->nav.active    = true;
+        g_ctx->nav.highlight = true;
     }
 
     /* Menu-bar mode owns the bar/menu keys (traverse, descend, ascend-to-owner, Up-to-bar). */
-    if ( s_nav.bar_win != GUI_ID_NONE )
+    if ( g_ctx->nav.bar_win != GUI_ID_NONE )
     {
         nav_menu_keys( down, up, left, esc, first_prev );
     }
     /* Generic popup keyboard (mouse-opened menus, combos, context menus): Esc closes the top level,
        Left closes a submenu back to its parent. */
-    else if ( s_popup_open_count > 0 )
+    else if ( g_ctx->popup_open_count > 0 )
     {
         if ( esc )
         {
-            --s_popup_open_count;
-            s_nav.id = GUI_ID_NONE;
+            --g_ctx->popup_open_count;
+            g_ctx->nav.id = GUI_ID_NONE;
         }
-        else if ( s_nav.move_dir == GUI_DIR_LEFT && s_popup_open_count >= 2 )
+        else if ( g_ctx->nav.move_dir == GUI_DIR_LEFT && g_ctx->popup_open_count >= 2 )
         {
-            --s_popup_open_count;
-            s_nav.move_dir = -1;
-            s_nav.id       = GUI_ID_NONE;
+            --g_ctx->popup_open_count;
+            g_ctx->nav.move_dir = -1;
+            g_ctx->nav.id       = GUI_ID_NONE;
         }
     }
 
@@ -915,10 +915,10 @@ nav_new_frame( void )
 void
 gui_window_set_nav( const char* title )
 {
-    s_nav.explicit_win  = title ? id_hash( title ) : GUI_ID_NONE;
-    s_nav.id        = GUI_ID_NONE;   /* first item of the new window takes focus */
-    s_nav.active    = true;
-    s_nav.highlight = true;
+    g_ctx->nav.explicit_win  = title ? id_hash( title ) : GUI_ID_NONE;
+    g_ctx->nav.id        = GUI_ID_NONE;   /* first item of the new window takes focus */
+    g_ctx->nav.active    = true;
+    g_ctx->nav.highlight = true;
 }
 
 // clang-format on

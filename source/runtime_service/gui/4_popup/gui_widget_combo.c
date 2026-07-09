@@ -73,7 +73,7 @@ gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t
        arrow plus a little preview text when the cell is squeezed. */
     gui_rect_t box = widget_split_label( row, label, WIDGET_H + font_char_h() * 2.0f, COL_TEXT_DIM );
 
-    widget_state_t st = widget_behavior( id, box, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, box, WIDGET_KIND_BUTTON );
 
     /* The dropdown is a popup keyed off the combo's widget id, so it inherits the id scope + the
        "###" grammar and never collides with a same-titled combo elsewhere. */
@@ -83,7 +83,7 @@ gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t
     /* Toggle on click.  A click while open is the dismiss gesture: popup_close_check (frame top)
        has already closed the dropdown as a click outside it, so only open when the body did NOT
        emit last frame -- otherwise the one click would close then immediately reopen it. */
-    bool was_open = ( cs->open_frame + 1u == s_retained.frame );
+    bool was_open = ( cs->open_frame + 1u == g_ctx->retained.frame );
     if ( st.clicked && !was_open )
         popup_open_id( pid, box.x, box.y + box.h );
 
@@ -127,7 +127,7 @@ gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t
 
     if ( vis )
     {
-        cs->open_frame   = s_retained.frame;   /* body emitted this frame -> "open" next frame */
+        cs->open_frame   = g_ctx->retained.frame;   /* body emitted this frame -> "open" next frame */
         s_build.combo_open = true;              /* a row clicked here dismisses the combo */
 
         gui_stack();                        /* the dropdown body is a vertical list */

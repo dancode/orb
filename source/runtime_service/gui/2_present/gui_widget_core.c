@@ -18,7 +18,7 @@
     (4_window/gui_window.c).
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   /* widget_kind_t, widget_state_t */
+#include "runtime_service/gui/gui_internal.h"   /* widget_kind_t, gui_item_state_t */
 // clang-format off
 
 /*----------------------------------------------------------------------------------------------
@@ -285,7 +285,7 @@ draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
    framed control, not just buttons. */
 
 static u32
-frame_bg_color( widget_state_t st, u32 idle_color_enum )
+frame_bg_color( gui_item_state_t st, u32 idle_color_enum )
 {
     if ( st.active )            return COL_WIDGET_ACT;
     if ( st.hover || st.nav )   return COL_WIDGET_HOT;   /* nav cursor lights the body like a hover */
@@ -294,7 +294,7 @@ frame_bg_color( widget_state_t st, u32 idle_color_enum )
 
 /* Background color for a pushbutton / knob style widget: frame_bg_color with the plain widget
    background as the idle base. */
-static u32 widget_bg_color( widget_state_t st )
+static u32 widget_bg_color( gui_item_state_t st )
 {
     return frame_bg_color( st, COL_WIDGET_BG );
 }
@@ -310,7 +310,7 @@ typedef struct { f32 t_hot; f32 t_active; } gui_hover_anim_t;
 #define ANIM_TAG_BG  0xA501u   /* id_combine salt; keeps this slot distinct from all other per-widget state */
 
 static u32
-widget_bg_color_anim( gui_id_t id, widget_state_t st )
+widget_bg_color_anim( gui_id_t id, gui_item_state_t st )
 {
     gui_id_t                anim_id    = id_combine( id, ANIM_TAG_BG );
     bool                      needs_anim = st.hover || st.nav || st.active;
@@ -340,7 +340,7 @@ widget_bg_color_anim( gui_id_t id, widget_state_t st )
         gui_hover_anim_t* s = GUI_STATE( gui_hover_anim_t, anim_id );
         s->t_hot    = new_hot;
         s->t_active = new_act;
-        if ( !settled ) s_retained.wants_redraw = true;
+        if ( !settled ) g_ctx->retained.wants_redraw = true;
     }
     /* settled && !needs_anim: do not stamp -- slot evicts via seen_frame within 1-2 frames. */
 

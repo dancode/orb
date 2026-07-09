@@ -90,10 +90,10 @@ gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz )
 static void
 dock_free_viewport_tree( u32 vp )
 {
-    for ( u32 i = 0; i < s_dock_node_count; ++i )
-        if ( s_dock_nodes[ i ].id != 0 && s_dock_nodes[ i ].viewport == vp
-             && !s_dock_nodes[ i ].floating )
-            dock_node_free( &s_dock_nodes[ i ] );
+    for ( u32 i = 0; i < g_ctx->dock_node_count; ++i )
+        if ( g_ctx->dock_nodes[ i ].id != 0 && g_ctx->dock_nodes[ i ].viewport == vp
+             && !g_ctx->dock_nodes[ i ].floating )
+            dock_node_free( &g_ctx->dock_nodes[ i ] );
     g_ctx->viewports[ vp ].dock_root = GUI_DOCK_REF_NONE;
 }
 
