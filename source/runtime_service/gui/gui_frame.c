@@ -743,9 +743,11 @@ gui_viewport_update( void )
             if ( s_vp_request.by_drag )
             {
                 i32 cx = 0, cy = 0;
+                f32 gox = 0.0f, goy = 0.0f;
                 app()->mouse_position_screen( &cx, &cy );
-                sx = cx - (i32)s_drag_off_x;
-                sy = cy - (i32)s_drag_off_y;
+                move_grab_offset( &gox, &goy );
+                sx = cx - (i32)gox;
+                sy = cy - (i32)goy;
             }
             else if ( has_home )
             {
@@ -813,8 +815,10 @@ gui_viewport_update( void )
 
             if ( s_vp_request.by_drag )
             {
-                win->x = s_io.mouse_x - s_drag_off_x;
-                win->y = s_io.mouse_y - s_drag_off_y;
+                f32 gox = 0.0f, goy = 0.0f;
+                move_grab_offset( &gox, &goy );
+                win->x = s_io.mouse_x - gox;
+                win->y = s_io.mouse_y - goy;
             }
             else
             {

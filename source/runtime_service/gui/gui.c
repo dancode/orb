@@ -30,11 +30,16 @@
                        (line_size/gap/pad/quantum/scales) into rects.  Track resolver, regions,
                        children, the public layout verbs + sz_ sizing family.
     2_interact/     -- behavior: widget-agnostic interaction services -- the standard item
-                       protocol (widget_behavior), drag threshold + payload, edge-resize
-                       mechanism, animation stepping.  Each serves a capability (exclusivity,
-                       clicks, tracking) over (id, rect); none knows a widget, and none reads a
-                       style value or paints -- system adornments (nav ring, drop ring, hot
-                       edges) are invoked from here but painted by 2_present/ helpers.
+                       protocol (widget_behavior), bare chrome grab (grab_item), drag threshold +
+                       payload, move-drag + deferred-press (move_grab/move_track, press_defer_*),
+                       edge-resize mechanism (resize_item), animation stepping.  Each serves a
+                       capability (exclusivity, clicks, tracking) over (id, rect); none knows a
+                       widget, and none reads a style value or paints -- system adornments (nav
+                       ring, drop ring, hot edges) are invoked from here but painted by 2_present/
+                       helpers.  This tier is the ONLY writer of the s_interaction arbitration
+                       fields (hover/active/focus): higher tiers claim through these verbs and
+                       read the record for gating, never write it raw (one exception: the popup
+                       modal hover fence, gui_popup.c).
     2_present/      -- presentation: the shared paint primitives -- COL_* palette, widget
                        macros, label grammar, text-fit, symbol/shape draws.  Consumes
                        rect + state + skin; never asks behavior, state is a parameter.
@@ -82,8 +87,9 @@
     2_compose/gui_region.c         -- root-level region: a fixed-rect layout primitive, no window chrome
     2_compose/gui_layout.c         -- public layout API verbs + sz_ sizing: gui_layout, gui_stack, gui_cols
 
-    2_interact/gui_item.c          -- the standard item protocol: widget_behavior, nav registration, repeat
+    2_interact/gui_item.c          -- the standard item protocol: widget_behavior, grab_item, nav registration, repeat
     2_interact/gui_drag.c          -- drag service: threshold machine + typed payload transfer (source/target)
+    2_interact/gui_move.c          -- move-drag protocol (move_grab/move_track) + deferred-press latch (press_defer_*)
     2_interact/gui_resize.c        -- edge-resize mechanism: resize_item protocol, hit-test, grab, edge apply
     2_interact/gui_anim.c          -- animation stepping service: gui_anim_f32
 
@@ -209,6 +215,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/2_present/gui_widget_core.c"
 #include "runtime_service/gui/2_interact/gui_item.c"
 #include "runtime_service/gui/2_interact/gui_drag.c"
+#include "runtime_service/gui/2_interact/gui_move.c"
 #include "runtime_service/gui/2_present/gui_symbol.c"
 #include "runtime_service/gui/2_interact/gui_resize.c"
 

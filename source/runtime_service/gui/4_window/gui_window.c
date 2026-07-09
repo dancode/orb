@@ -29,11 +29,11 @@
    the z dispenser s_z_counter -- are members of gui_context_t (gui_ctx.c), reached here through
    the g_ctx aliases; the pool is per-context retained.  This file owns only their behavior. */
 
-/* Drag configuration + in-flight drag offset (mouse - window pos at grab time).
-   The window currently being dragged is tracked via s_interaction.active_id == window id. */
+/* Drag configuration.  The window currently being dragged is tracked via active_id == window id;
+   the in-flight grab offset lives with the move-drag service (2_interact/gui_move.c) -- windows
+   grab through move_grab and follow the cursor through move_track. */
 
 static gui_win_drag_t     s_win_drag_mode = GUI_WIN_DRAG_TITLEBAR;
-static f32                  s_drag_off_x, s_drag_off_y;
 
 /* Merge-back edge latch.  A floater merges back into the main surface only on a genuine ENTER --
    the cursor crossing from outside the main window into it.  Without this, a floater spawned over
@@ -44,27 +44,10 @@ static f32                  s_drag_off_x, s_drag_off_y;
 static gui_id_t           s_vp_drag_id = GUI_ID_NONE;
 static bool                 s_vp_merge_armed;
 
-/* Native title-bar drag-threshold state: records a pending title-bar press until the cursor
-   moves far enough to commit it as a drag (vs. a click or a double-click).  Prevents the OS
-   modal move loop (frame_only) or active_id set (floater) from triggering on click-1 of a
-   double-click attempt, which would swallow click-2 before gui can test mouse_double. */
-#define TITLEBAR_DRAG_THRESH 4.0f
-static bool       s_titlebar_drag_pending;
-static bool       s_titlebar_drag_os;     /* true: dispatch to OS (frame_only); false: gui drag (floater) */
-static win_id_t   s_titlebar_drag_os_id;  /* OS win_id for frame_only dispatch */
-static gui_id_t s_titlebar_drag_gui;  /* gui window id -- guards threshold check to the right window */
-static f32        s_titlebar_drag_px;
-static f32        s_titlebar_drag_py;
-
-/* Autosize-grip drag-threshold state: same problem as the title bar above, but for the
-   CAN_AUTOSIZE corner grip -- an immediate resize_grab on press-1 would set active_id and
-   absorb press-2 before mouse_double can be tested, making the double-click-to-fit gesture
-   need several tries. Reuses TITLEBAR_DRAG_THRESH; the pending press only commits to a resize
-   once the cursor has actually moved. */
-static bool       s_grip_drag_pending;
-static gui_id_t s_grip_drag_gui;
-static f32        s_grip_drag_px;
-static f32        s_grip_drag_py;
+/* Click-vs-drag disambiguation for the native title bar and the CAN_AUTOSIZE corner grip --
+   both own a double-click, so committing on press-1 would swallow press-2 before mouse_double
+   can be tested.  The threshold latch is the deferred-press service (2_interact/gui_move.c):
+   the press site arms press_defer_arm and its window_end polls press_defer_crossed each frame. */
 
 /* In-flight edge resize.  The window being resized holds active_id == (id ^ RESIZE_SALT).
    The s_resize_* in-flight state (edges, offsets, far-edge pins) is owned by the shared

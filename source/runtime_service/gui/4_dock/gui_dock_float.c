@@ -242,11 +242,7 @@ dock_float_resolve( gui_dock_node_t* node, gui_id_t active_win_id )
     gui_id_t rid = id_combine( node->id, GUI_RESIZE_SALT );    /* edge resize grab */
 
     /* In-flight strip drag: the grabbed strip point stays pinned under the cursor. */
-    if ( s_interaction.active_id == gid )
-    {
-        node->rect.x = s_io.mouse_x - s_drag_off_x;
-        node->rect.y = s_io.mouse_y - s_drag_off_y;
-    }
+    move_track( gid, s_io.mouse_x, s_io.mouse_y, &node->rect.x, &node->rect.y );
 
     /* In-flight edge resize: shared raw edge math + the window min-size policy (a moving edge
        stops against the pinned far edge). */
@@ -276,23 +272,13 @@ dock_float_resolve( gui_dock_node_t* node, gui_id_t active_win_id )
     node->content = ( gui_rect_t ){ node->rect.x, node->rect.y + th,
                                       node->rect.w, node->rect.h - th };
 
-    /* Resize hover-and-grab, gated on hover_win == the active tab (the group's hover nominee) --
-       the same shape as window_resolve_resize_hot, minus the autosize grip a group never has. */
-    u8 hot = 0;
-    if ( s_interaction.hover_win == active_win_id
-         && ( s_interaction.active_id == GUI_ID_NONE || s_interaction.active_id == rid ) )
-    {
-        hot = window_resize_hit( node->rect, false );
-        if ( hot && s_interaction.active_id == GUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
-            resize_grab( node->id, node->rect, hot );
-    }
-
-    /* Directional hardware cursor while an edge is hot or the resize is in flight. */
-    {
-        u8 ce = ( s_interaction.active_id == rid ) ? s_resize_edges : hot;
-        if ( ce )
-            set_mouse_cursor( resize_cursor_for_edges( ce ) );
-    }
+    /* Resize hover-and-grab through the resize_item protocol, with hover gated on the active tab
+       (the group's hover nominee) -- the same shape as window_resolve_resize_hot, minus the
+       autosize grip a group never has.  The service also drives the directional cursor. */
+    bool dragging = false;
+    u8   hot      = resize_item( node->id, active_win_id, node->rect,
+                                 GUI_RESIZE_L | GUI_RESIZE_R | GUI_RESIZE_T | GUI_RESIZE_B,
+                                 false, &dragging );
     return hot;
 }
 

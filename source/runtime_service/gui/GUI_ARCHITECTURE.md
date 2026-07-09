@@ -28,11 +28,17 @@ The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one co
   interaction SERVICES over the 0_foundation/ utilities (identity `0_foundation/gui_id.c`,
   keyed state tracking `0_foundation/gui_state.c`, the io snapshot `0_foundation/gui_io.c`;
   the public readers over it are `5_user/gui_query.c`) -- the drag threshold machine + payload
-  transfer (`gui_drag.c`), the edge-resize mechanism (`gui_resize.c`), animation stepping
-  (`gui_anim.c`), and the standard item protocol (`gui_item.c`: `widget_behavior`, the default
-  composition every stock widget runs). Each service knows a capability (exclusivity, clicks, tracking) over
-  (id, rect); none knows a slider. Consumes finished rects, produces interaction state
-  (`hover`/`active`/`pressed`/`clicked`). Style is invisible below this line -- a service never
+  transfer (`gui_drag.c`), the move-drag protocol + deferred-press latch (`gui_move.c`:
+  `move_grab`/`move_track`, `press_defer_*`), the edge-resize mechanism (`gui_resize.c`:
+  `resize_item`), and the standard item protocol (`gui_item.c`: `widget_behavior`, the default
+  composition every stock widget runs, plus `grab_item`, the bare grab for hot chrome that is
+  not a widget -- a dock splitter gutter, a table column boundary). Each service knows a
+  capability (exclusivity, clicks, tracking) over (id, rect); none knows a slider. Consumes
+  finished rects, produces interaction state (`hover`/`active`/`pressed`/`clicked`). This tier
+  is the ONLY writer of the `s_interaction` arbitration fields: the window/dock/table hosts
+  claim hover/active/focus exclusively through these verbs and read the record for gating,
+  never write it raw (one documented exception: the popup modal hover fence in `gui_popup.c`).
+  Style is invisible below this line -- a service never
   reads a metric or color to make a decision, and never paints: the system adornments
   (nav focus ring, drag accept ring, hot resize edges) are invoked from behavior at the
   protocol point but painted by present-tier helpers (`draw_nav_ring` / `draw_drop_ring` /

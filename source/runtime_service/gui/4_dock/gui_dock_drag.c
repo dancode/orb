@@ -33,7 +33,8 @@
     publishing a "gui.dock_tab" payload.  While the cursor stays inside the strip band the drag
     REORDERS the tabs live (dock_strip_reorder); leaving the band vertically UNDOCKS -- pops that
     window out of its node into a free window that follows the cursor -- handled inside
-    dock_window_chrome below, reusing the window-drag statics (s_drag_off_*, s_z_counter).
+    dock_window_chrome below, grabbed through move_grab (2_interact/gui_move.c) so the free
+    window-drag apply carries it from next frame.
 ----------------------------------------------------------------------------------------------*/
 
 /* Tab salt: each tab gets a stable per-node widget id distinct from the windows + splitter (see
@@ -78,7 +79,8 @@ static struct
 
 } s_dock_drag;
 
-/* Undock-by-tab-drag: a tab press pending the move threshold (mirrors s_titlebar_drag_*).
+/* Undock-by-tab-drag: a tab press pending the move threshold (same click-vs-drag idea as the
+   press_defer latch, but carrying its own payload and threshold).
    node_id pins the gesture to the strip it started on: every docked node's chrome runs the
    pending block, and the reorder-vs-undock decision reads THAT chrome's strip band -- another
    node's chrome (whichever emits first) would test the cursor against the wrong strip and
@@ -566,8 +568,9 @@ dock_window_chrome( gui_dock_node_t* node )
     }
 
     /* Floating group (gui_dock_float.c): the strip's empty band doubles as the group's title-bar
-       drag surface -- a press grabs the move (widget_behavior claims active_id; the offsets keep
-       the grabbed point pinned under the cursor, applied by dock_float_resolve next frame). */
+       drag surface -- a press grabs the move (widget_behavior claims the press; move_grab records
+       the offsets that keep the grabbed point pinned under the cursor, applied by
+       dock_float_resolve's move_track next frame). */
     if ( node->floating )
     {
         gui_rect_t rem = { tx, y, x + w - tx, th };
@@ -577,11 +580,7 @@ dock_window_chrome( gui_dock_node_t* node )
             s_build.nav_skip = true;   /* pure drag surface -- never a keyboard target */
             widget_state_t st  = widget_behavior( gid, rem, WIDGET_KIND_BUTTON );
             if ( st.pressed )
-            {
-                s_interaction.active_button = 0;   /* released globally when the left button lifts */
-                s_drag_off_x = s_io.mouse_x - x;
-                s_drag_off_y = s_io.mouse_y - y;
-            }
+                move_grab( gid, 0, x, y );   /* released globally when the left button lifts */
         }
     }
 
@@ -606,7 +605,7 @@ dock_window_chrome( gui_dock_node_t* node )
        Once live, the cursor position decides the gesture each frame: inside the strip band it
        REORDERS the tabs (dock_strip_reorder above); leaving the band vertically past the
        threshold UNDOCKS -- the window pops out into a free window that follows the cursor,
-       reusing the window-drag statics so the free drag-apply in window_begin_ex carries the move
+       grabbed through move_grab so the free drag-apply in window_begin_ex carries the move
        from next frame.  Released without moving was a tab click (st.clicked already selected it). */
     if ( s_dock_tab_drag.pending )
     {
@@ -638,12 +637,9 @@ dock_window_chrome( gui_dock_node_t* node )
                     {
                         win->viewport = vp;              /* float on the surface it was docked on */
                         win->z        = ++s_z_counter;   /* raise above the tiles                 */
-                        s_drag_off_x  = WIN_TITLE_H;      /* grab near the title's left edge       */
-                        s_drag_off_y  = WIN_TITLE_H * 0.5f;
-                        win->x        = s_io.mouse_x - s_drag_off_x;
-                        win->y        = s_io.mouse_y - s_drag_off_y;
-                        s_interaction.active_id     = wid;  /* continue as a free window drag      */
-                        s_interaction.active_button = 0;
+                        win->x        = s_io.mouse_x - WIN_TITLE_H;         /* grab near the      */
+                        win->y        = s_io.mouse_y - WIN_TITLE_H * 0.5f;  /* title's left edge  */
+                        move_grab( wid, 0, win->x, win->y );  /* continue as a free window drag   */
                     }
                 }
             }

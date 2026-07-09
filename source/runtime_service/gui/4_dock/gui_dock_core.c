@@ -325,20 +325,12 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
     else
         sr = ( gui_rect_t ){ r.x, dock_at( n->child[ 1 ] )->rect.y - thick, r.w, thick };
 
+    /* Bare grab through grab_item (2_interact/gui_item.c); the hover-domain gate is this
+       splitter's own: the gutter sits over no window on its viewport (see the section note). */
     gui_id_t sid    = id_combine( n->id, DOCK_SPLIT_SALT );
-    bool       active = ( s_interaction.active_id == sid );
-    bool       hot    = false;
-
-    if ( s_io.mouse_viewport == vp && s_interaction.active_id == GUI_ID_NONE
-         && s_interaction.hover_win == GUI_ID_NONE && rect_hit( sr ) )
-    {
-        hot = true;
-        if ( s_io.mouse_pressed[ 0 ] )
-        {
-            s_interaction.active_id     = sid;
-            s_interaction.active_button = 0;   /* released globally when the left button lifts */
-        }
-    }
+    bool       active = false;
+    bool       gate   = ( s_io.mouse_viewport == vp && s_interaction.hover_win == GUI_ID_NONE );
+    bool       hot    = grab_item( sid, sr, gate, &active );
 
     if ( active )
     {

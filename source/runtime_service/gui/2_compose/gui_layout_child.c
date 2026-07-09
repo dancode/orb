@@ -151,7 +151,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     {
         u8   allow    = (u8)( ( resize_x ? GUI_RESIZE_R : 0u ) | ( resize_y ? GUI_RESIZE_B : 0u ) );
         bool dragging = false;
-        resize_hot = resize_item( id, box, allow, false, &dragging );
+        resize_hot = resize_item( id, s_build.win_id, box, allow, false, &dragging );
 
         if ( dragging )
         {

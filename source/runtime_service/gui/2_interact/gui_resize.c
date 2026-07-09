@@ -3,10 +3,10 @@
     runtime_service/gui/2_interact/gui_resize.c -- Shared edge-resize geometry.
 
     The record-agnostic mechanism behind every draggable edge in the UI: the grab-band hit test,
-    the press-time anchor record, and the raw cursor-to-edge apply.  Each
-    touches only a rect and the cursor, so a window (gui_widget_window.c) and a resizeable
-    child_begin (gui_layout_child.c) share one resize feel from here (the dock splitter has its own
-    drag path in 4_dock/, not this mechanism).
+    the press-time anchor record, and the raw cursor-to-edge apply.  Each touches only a rect and
+    the cursor, so a window (gui_widget_window.c), a resizeable child_begin (gui_layout_child.c),
+    and a floating dock group (gui_dock_float.c) share one resize feel from here (the dock
+    splitter is a gutter grab in 4_dock/, not this mechanism).
 
     Split is mechanism vs policy: this records the anchors and maps the cursor onto the edges; the
     caller layers its own size policy on the result (a window pins + clamps to its min, a child
@@ -122,17 +122,20 @@ resize_apply_edges( gui_rect_t* r, u8 edges )
    rect owner calls once per frame, before its body widgets.  While this id's drag is in flight
    it reports the dragged edges (the caller maps them through resize_apply_edges and layers its
    own clamp / persist policy); otherwise it hit-tests the grab band, arms the grab on press,
-   and shows the directional cursor.  `allow` masks the edges this caller exposes; `pin_v`
-   drops the vertical pair (a collapsed window).  Returns the edges live this frame -- dragged
-   when *dragging, else hot -- and 0 while another widget owns the interaction or the owning
-   window is not hovered. */
+   and shows the directional cursor.  `owner_win` is the hover-domain gate: the window whose
+   hover makes these edges reachable (a child passes its enclosing s_build.win_id; a window
+   passes its own id -- it resolves before s_build.win_id is stamped; a floating dock group
+   passes its active tab, the group's hover nominee).  `allow` masks the edges this caller
+   exposes; `pin_v` drops the vertical pair (a collapsed window).  Returns the edges live this
+   frame -- dragged when *dragging, else hot -- and 0 while another widget owns the interaction
+   or the owning window is not hovered. */
 static u8
-resize_item( gui_id_t id, gui_rect_t box, u8 allow, bool pin_v, bool* dragging )
+resize_item( gui_id_t id, gui_id_t owner_win, gui_rect_t box, u8 allow, bool pin_v, bool* dragging )
 {
     gui_id_t resize_id = id_combine( id, GUI_RESIZE_SALT );
 
     *dragging = false;
-    if ( s_build.win_id != s_interaction.hover_win )
+    if ( owner_win != s_interaction.hover_win )
         return 0;
     if ( s_interaction.active_id != GUI_ID_NONE && s_interaction.active_id != resize_id )
         return 0;

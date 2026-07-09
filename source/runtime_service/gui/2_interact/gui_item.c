@@ -383,6 +383,28 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
     return st;
 }
 
+/* One frame of a bare grab protocol over (id, r): the behavior seam for hot chrome that is not
+   a widget -- a dock splitter gutter, a table column boundary.  No hover_id, no focus, no nav;
+   just "hot while the cursor sits on r, claim active_id on press".  `gate` is the caller's
+   hover-domain test, since this chrome lives in different domains (a splitter gutter sits over
+   no window: hover_win == NONE on its viewport; a table boundary: its window front-most) --
+   arbitration stays here, the domain is policy.  The grab claims the left button, released
+   globally when it lifts.  Returns hot; *active reports this id's in-flight grab (true from
+   the press frame on). */
+static bool
+grab_item( gui_id_t id, gui_rect_t r, bool gate, bool* active )
+{
+    *active  = ( s_interaction.active_id == id );
+    bool hot = gate && s_interaction.active_id == GUI_ID_NONE && rect_hit( r );
+    if ( hot && s_io.mouse_pressed[ 0 ] )
+    {
+        s_interaction.active_id     = id;
+        s_interaction.active_button = 0;
+        *active = true;
+    }
+    return hot;
+}
+
 
 // clang-format on
 /*============================================================================================*/

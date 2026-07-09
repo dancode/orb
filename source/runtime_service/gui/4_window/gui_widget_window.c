@@ -507,16 +507,16 @@ window_apply_drag( gui_window_t* win, gui_id_t id )
 
     if ( win->viewport == 0 )
     {
-        win->x = s_io.mouse_x - s_drag_off_x;
-        win->y = s_io.mouse_y - s_drag_off_y;
+        move_track( id, s_io.mouse_x, s_io.mouse_y, &win->x, &win->y );
         window_clamp( win );
     }
     else
     {
         i32 cx = 0, cy = 0;
+        f32 nx = 0.0f, ny = 0.0f;
         app()->mouse_position_screen( &cx, &cy );
-        app()->window_set_pos( g_ctx->viewports[ win->viewport ].win_id,
-                               cx - (i32)s_drag_off_x, cy - (i32)s_drag_off_y );
+        move_track( id, (f32)cx, (f32)cy, &nx, &ny );
+        app()->window_set_pos( g_ctx->viewports[ win->viewport ].win_id, (i32)nx, (i32)ny );
         win->x = 0.0f;
         win->y = 0.0f;
     }
@@ -609,23 +609,22 @@ window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title,
 }
 
 /* Resolve this frame's edge-resize / autosize-grip hover-and-grab, before any widget can claim the
-   press.  Sets s_build.win_resize_hot / win_grip_hot (read by widget_behavior + window_end's
-   highlight) and drives the hardware cursor (the directional resize shape while an edge is hot,
-   including when the grip triangle promoted R+B, or while a resize drag is in flight).  Returns the
-   PRE-grip-promotion resize_hot mask -- the debug overlay's outer-band capture wants only the true
-   edge hit, not the grip's R+B promotion. */
+   press.  The edge protocol (hover gate, grab band, grab on press, directional cursor) is the
+   resize_item service (2_interact/gui_resize.c) -- owner_win is the window's OWN id, since this
+   resolves before s_build.win_id is stamped.  Sets s_build.win_resize_hot / win_grip_hot (read by
+   widget_behavior + window_end's highlight); the grip triangle promotes R+B into the highlight
+   mask but not the cursor.  Returns the PRE-grip-promotion resize_hot mask -- the debug overlay's
+   outer-band capture wants only the true edge hit, not the grip's R+B promotion. */
 static u8
 window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags,
                            gui_rect_t disp_r, bool collapsed, bool resizeable, gui_id_t resize_id )
 {
-    u8 resize_hot = 0;
-    if ( resizeable && s_interaction.hover_win == id
-         && ( s_interaction.active_id == GUI_ID_NONE || s_interaction.active_id == resize_id ) )
-    {
-        resize_hot = window_resize_hit( disp_r, collapsed );
-        if ( resize_hot && s_interaction.active_id == GUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
-            resize_grab( id, ( gui_rect_t ){ win->x, win->y, win->w, win->h }, resize_hot );
-    }
+    u8   resize_hot = 0;
+    bool dragging   = false;
+    if ( resizeable )
+        resize_hot = resize_item( id, id, disp_r,
+                                  GUI_RESIZE_L | GUI_RESIZE_R | GUI_RESIZE_T | GUI_RESIZE_B,
+                                  collapsed, &dragging );
     s_build.win_resize_hot = resize_hot;   /* read by widget_behavior + window_end's highlight */
 
     /* CAN_AUTOSIZE size-grip: reserve the bottom-right corner ahead of the body's scrollbars the
@@ -649,15 +648,12 @@ window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags
     if ( grip_hot )
         s_build.win_resize_hot |= GUI_RESIZE_R | GUI_RESIZE_B;
 
-    /* Cursor uses the PRE-grip-promotion mask: the grip square alone (no true edge hit) keeps the
-       regular arrow, since the diagonal resize cursor's off-center hotspot makes it hard to see
-       exactly where a double-click will land on the small triangle.  A true edge-band hit --
-       including the corner where the band overlaps the grip -- still shows the resize cursor. */
-    {
-        u8 ce = ( s_interaction.active_id == resize_id ) ? s_resize_edges : resize_hot;
-        if ( ce )
-            set_mouse_cursor( resize_cursor_for_edges( ce ) );
-    }
+    /* The cursor was already driven inside resize_item, from the PRE-grip-promotion mask: the grip
+       square alone (no true edge hit) keeps the regular arrow, since the diagonal resize cursor's
+       off-center hotspot makes it hard to see exactly where a double-click will land on the small
+       triangle.  A true edge-band hit -- including the corner where the band overlaps the grip --
+       still shows the resize cursor. */
+    (void)dragging;
 
     return resize_hot;
 }
@@ -1274,11 +1270,11 @@ gui_window_end( void )
        layout_pop_region).  Only one of the two fires per press, and the double-click never starts a
        drag.  The grip resizes regardless of NORESIZE -- it is the window's own explicit handle.
 
-       Press-1 is deferred behind a drag threshold (s_grip_drag_pending, same mechanism as the
-       native title bar below): grabbing the resize immediately on press-1 would set active_id and
-       swallow press-2 before mouse_double can be tested, so every double-click attempt needed
-       several tries. Only committing once the cursor actually moves keeps the grip's hit rect
-       stationary through a stationary click, so press-2 lands on it. */
+       Press-1 is deferred behind the press_defer latch (2_interact/gui_move.c, same service as the
+       native title bar below), keyed by resize_id: grabbing the resize immediately on press-1 would
+       set active_id and swallow press-2 before mouse_double can be tested, so every double-click
+       attempt needed several tries. Only committing once the cursor actually moves keeps the grip's
+       hit rect stationary through a stationary click, so press-2 lands on it. */
     if ( ( s_build.win_flags & GUI_WIN_CAN_AUTOSIZE ) && !s_build.win_collapsed && win )
     {
         f32          g         = WIDGET_H;           /* grip leg length */
@@ -1295,7 +1291,7 @@ gui_window_end( void )
         {
             if ( s_io.mouse_double[ 0 ] )
             {
-                s_grip_drag_pending = false;
+                press_defer_cancel();
                 bool collapsible = ( s_build.win_title_h > 0.0f ) && !( s_build.win_flags & GUI_WIN_NOCOLLAPSE );
                 f32  grip_mb_h   = ( s_build.win_flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
                 f32  max_w, max_h;
@@ -1308,36 +1304,19 @@ gui_window_end( void )
             }
             else if ( s_io.mouse_pressed[ 0 ] )
             {
-                s_grip_drag_pending = true;
-                s_grip_drag_gui     = s_build.win_id;
-                s_grip_drag_px      = s_io.mouse_x;
-                s_grip_drag_py      = s_io.mouse_y;
+                press_defer_arm( resize_id );
             }
         }
 
-        /* Advance / commit the pending grip press outside the hot gate, so the cursor sliding off
-           the small grip rect mid-press does not strand the drag -- mirrors the title-bar
-           threshold below. Released without crossing the threshold: it was a (potential first)
-           click, not a drag -- active_id is never touched, leaving the grip in place for press-2. */
-        if ( s_grip_drag_pending && s_grip_drag_gui == s_build.win_id )
+        /* Poll the pending grip press outside the hot gate, so the cursor sliding off the small
+           grip rect mid-press does not strand the drag -- mirrors the title-bar poll below.
+           Released without crossing the threshold: the latch clears silently, it was a (potential
+           first) click -- active_id is never touched, leaving the grip in place for press-2. */
+        if ( press_defer_crossed( resize_id ) )
         {
-            if ( !s_io.mouse_down[ 0 ] )
-            {
-                s_grip_drag_pending = false;
-            }
-            else
-            {
-                f32 dx = s_io.mouse_x - s_grip_drag_px;
-                f32 dy = s_io.mouse_y - s_grip_drag_py;
-                bool moved_past_drag_thresh = ( dx * dx + dy * dy ) >= ( TITLEBAR_DRAG_THRESH * TITLEBAR_DRAG_THRESH );
-                if ( moved_past_drag_thresh )
-                {
-                    s_grip_drag_pending = false;
-                    resize_grab( s_build.win_id, ( gui_rect_t ){ win->x, win->y, win->w, win->h },
-                                 GUI_RESIZE_R | GUI_RESIZE_B );
-                    resizing = true;
-                }
-            }
+            resize_grab( s_build.win_id, ( gui_rect_t ){ win->x, win->y, win->w, win->h },
+                         GUI_RESIZE_R | GUI_RESIZE_B );
+            resizing = true;
         }
 
         /* Filled right-angle triangle, lit while hovered or actively resizing. */
@@ -1389,17 +1368,12 @@ gui_window_end( void )
             {
                 if ( s_io.mouse_double[ 0 ] )
                 {
-                    s_titlebar_drag_pending = false;
+                    press_defer_cancel();
                     app()->window_title_event( os );
                 }
                 else if ( s_io.mouse_pressed[ 0 ] )
                 {
-                    s_titlebar_drag_pending = true;
-                    s_titlebar_drag_os      = frame_only;
-                    s_titlebar_drag_os_id   = os;
-                    s_titlebar_drag_gui   = s_build.win_id;
-                    s_titlebar_drag_px      = s_io.mouse_x;
-                    s_titlebar_drag_py      = s_io.mouse_y;
+                    press_defer_arm( s_build.win_id );
                 }
             }
             if ( frame_only && s_io.mouse_pressed[ 1 ]
@@ -1408,12 +1382,7 @@ gui_window_end( void )
 
             /* Middle button: immediate grab for floaters (middle has no double-click concern). */
             if ( !frame_only && s_io.mouse_pressed[ 2 ] )
-            {
-                s_interaction.active_id     = s_build.win_id;
-                s_interaction.active_button = 2;
-                s_drag_off_x = s_io.mouse_x - s_build.win_x;
-                s_drag_off_y = s_io.mouse_y - s_build.win_y;
-            }
+                move_grab( s_build.win_id, 2, s_build.win_x, s_build.win_y );
         }
         else
         {
@@ -1424,58 +1393,38 @@ gui_window_end( void )
             bool mid_grab  = s_io.mouse_pressed[ 2 ];
 
             if ( left_grab || mid_grab )
-            {
-                s_interaction.active_id     = s_build.win_id;
-                s_interaction.active_button = mid_grab ? 2 : 0;
-                s_drag_off_x        = s_io.mouse_x - s_build.win_x;
-                s_drag_off_y        = s_io.mouse_y - s_build.win_y;
-            }
+                move_grab( s_build.win_id, mid_grab ? 2 : 0, s_build.win_x, s_build.win_y );
         }
     }
 
-    /* Native title-bar threshold: advance or commit outside the hover / active_id gate so
-       dragging off the title bar does not stall an in-flight drag.  Only acts on the window
-       that armed the pending state. */
-    if ( s_titlebar_drag_pending && s_titlebar_drag_gui == s_build.win_id )
+    /* Native title-bar poll: commit or clear the pending press outside the hover / active_id
+       gate so dragging off the title bar does not stall an in-flight drag.  Keyed by this
+       window's id, so only the arming window acts; frame_only picks the same dispatch the arm
+       site saw (flags do not change mid-gesture). */
+    if ( press_defer_crossed( s_build.win_id ) )
     {
-        if ( !s_io.mouse_down[ 0 ] )
+        win_id_t os = window_native_id( win );
+        if ( frame_only )
         {
-            s_titlebar_drag_pending = false;   /* button released without dragging -- was a click */
+            app()->window_start_move( os );
         }
         else
         {
-            f32 dx = s_io.mouse_x - s_titlebar_drag_px;
-            f32 dy = s_io.mouse_y - s_titlebar_drag_py;
-            bool moved_past_drag_thresh = ( dx * dx + dy * dy ) >= ( TITLEBAR_DRAG_THRESH * TITLEBAR_DRAG_THRESH );
-            if ( moved_past_drag_thresh )
+            /* Floater: commit to gui drag; window_begin applies via window_set_pos.
+               If the floater is maximized, restore it first -- dragging a maximized OS
+               window while calling window_set_pos leaves it in a bad state and produces
+               a stale-chrome white bar across the titlebar.  Grab with a synthetic origin
+               so the cursor lands at a natural title-bar position on the restored window
+               (the maximized-viewport-local offsets would snap it to screen origin). */
+            if ( app()->window_state( os ).maximized )
             {
-                s_titlebar_drag_pending = false;
-                if ( s_titlebar_drag_os )
-                {
-                    app()->window_start_move( s_titlebar_drag_os_id );
-                }
-                else
-                {
-                    /* Floater: commit to gui drag; window_begin applies via window_set_pos.
-                       If the floater is maximized, restore it first -- dragging a maximized OS
-                       window while calling window_set_pos leaves it in a bad state and produces
-                       a stale-chrome white bar across the titlebar.  Re-anchor the grab offset
-                       so the cursor lands at a natural title-bar position on the restored window
-                       (the maximized-viewport-local offsets would snap it to screen origin). */
-                    if ( app()->window_state( s_titlebar_drag_os_id ).maximized )
-                    {
-                        app()->window_restore( s_titlebar_drag_os_id );
-                        s_drag_off_x = s_build.win_title_h;
-                        s_drag_off_y = s_build.win_title_h * 0.5f;
-                    }
-                    else
-                    {
-                        s_drag_off_x = s_io.mouse_x - s_build.win_x;
-                        s_drag_off_y = s_io.mouse_y - s_build.win_y;
-                    }
-                    s_interaction.active_id     = s_build.win_id;
-                    s_interaction.active_button = 0;
-                }
+                app()->window_restore( os );
+                move_grab( s_build.win_id, 0, s_io.mouse_x - s_build.win_title_h,
+                           s_io.mouse_y - s_build.win_title_h * 0.5f );
+            }
+            else
+            {
+                move_grab( s_build.win_id, 0, s_build.win_x, s_build.win_y );
             }
         }
     }

@@ -156,20 +156,12 @@ table_resize_interact( gui_table_t* t )
         gui_rect_t hr  = { bx - thick * 0.5f, t->outer_rect.y, thick, t->outer_rect.h };
         gui_id_t   rid = id_combine( t->id, (gui_id_t)( 0x5200u + i ) );
 
-        bool active = ( s_interaction.active_id == rid );
-
-        /* Hot when free + front-most and the cursor is over the band; grab claims the active id and
-           the left button (released globally when it lifts, like the dock splitter). */
-        if ( front && s_interaction.active_id == GUI_ID_NONE && rect_hit( hr ) )
-        {
+        /* Hot when free + front-most and the cursor is over the band; the grab is the bare
+           grab_item protocol (2_interact/gui_item.c), claiming the left button (released
+           globally when it lifts, like the dock splitter). */
+        bool active = false;
+        if ( grab_item( rid, hr, front, &active ) )
             t->resize_hot = (i8)i;
-            if ( s_io.mouse_pressed[ 0 ] )
-            {
-                s_interaction.active_id     = rid;
-                s_interaction.active_button = 0;
-                active                      = true;
-            }
-        }
 
         if ( active )
         {
