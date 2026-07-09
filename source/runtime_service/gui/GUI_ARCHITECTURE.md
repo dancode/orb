@@ -38,6 +38,13 @@ The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one co
   is the ONLY writer of the `s_interaction` arbitration fields: the window/dock/table hosts
   claim hover/active/focus exclusively through these verbs and read the record for gating,
   never write it raw (one documented exception: the popup modal hover fence in `gui_popup.c`).
+  Behavior's only inputs beyond (id, rect) are the interaction scope (`s_scope`,
+  `0_foundation/gui_ctx.c`): the owner window, the interaction clip, the chrome hover
+  suppression, and the per-item flag/nav stamps -- placed there by composition at its seams
+  (window/child/popup/table begin, the emit seam `widget_next_rect_w`).  Behavior never reads
+  the composer scratch (`s_build`); the scope record IS the composition->behavior contract,
+  and behavior publishes its per-item result back into it (`s_scope.last_*`, read by the
+  `is_item_*` queries and the context-menu / drag anchors).
   Style is invisible below this line -- a service never
   reads a metric or color to make a decision, and never paints: the system adornments
   (nav focus ring, drag accept ring, hot resize edges) are invoked from behavior at the

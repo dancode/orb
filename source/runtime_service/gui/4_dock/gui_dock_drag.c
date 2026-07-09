@@ -577,7 +577,7 @@ dock_window_chrome( gui_dock_node_t* node )
         if ( rem.w > 1.0f )
         {
             gui_id_t     gid = id_combine( node->id, DOCK_FLOAT_SALT );
-            s_build.nav_skip = true;   /* pure drag surface -- never a keyboard target */
+            s_scope.nav_skip = true;   /* pure drag surface -- never a keyboard target */
             widget_state_t st  = widget_behavior( gid, rem, WIDGET_KIND_BUTTON );
             if ( st.pressed )
                 move_grab( gid, 0, x, y );   /* released globally when the left button lifts */
@@ -595,7 +595,7 @@ dock_window_chrome( gui_dock_node_t* node )
     if ( node->floating )
     {
         u8 hot_edges = ( s_interaction.active_id == id_combine( node->id, GUI_RESIZE_SALT ) )
-                     ? s_resize_edges : s_build.win_resize_hot;
+                     ? s_resize_edges : s_scope.resize_hot;
         if ( hot_edges )
             draw_resize_highlight( ( gui_rect_t ){ x, y, w, s_build.win_h }, hot_edges );
     }

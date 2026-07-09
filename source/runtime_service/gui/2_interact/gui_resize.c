@@ -123,8 +123,8 @@ resize_apply_edges( gui_rect_t* r, u8 edges )
    it reports the dragged edges (the caller maps them through resize_apply_edges and layers its
    own clamp / persist policy); otherwise it hit-tests the grab band, arms the grab on press,
    and shows the directional cursor.  `owner_win` is the hover-domain gate: the window whose
-   hover makes these edges reachable (a child passes its enclosing s_build.win_id; a window
-   passes its own id -- it resolves before s_build.win_id is stamped; a floating dock group
+   hover makes these edges reachable (a child passes its enclosing scope owner, s_scope.win; a
+   window passes its own id -- it resolves before the scope is stamped; a floating dock group
    passes its active tab, the group's hover nominee).  `allow` masks the edges this caller
    exposes; `pin_v` drops the vertical pair (a collapsed window).  Returns the edges live this
    frame -- dragged when *dragging, else hot -- and 0 while another widget owns the interaction

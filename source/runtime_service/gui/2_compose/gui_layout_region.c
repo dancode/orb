@@ -105,7 +105,7 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     f->outer      = outer;
     f->flags      = flags;
     f->scroll      = scroll;
-    f->parent_clip = s_build.clip_rect;
+    f->parent_clip = s_scope.clip;
 
     /* Seed the id scope with this region's id, so leaf widgets combine their label against it
        (identical labels in different regions never collide).  id_restore unwinds the scope -- and
@@ -171,17 +171,17 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
                                           f->parent_clip );
         draw_push_clip_rect( clip.x, clip.y, clip.w, clip.h );
         f->pushed_clip = true;
-        s_build.clip_rect = clip;
+        s_scope.clip = clip;
     }
     else
     {
         f->pushed_clip  = false;
         /* No draw clip pushed; the window's single outer clip stays live so the chrome drawn last
            in window_end can overpaint content that scrolled under the title bar.  But for hit-
-           testing, narrow clip_rect to this region's outer rect so a widget scrolled under the
+           testing, narrow the scope clip to this region's outer rect so a widget scrolled under the
            title bar cannot be clicked through it.  layout_pop_region restores parent_clip so the
            scrollbars (drawn after the restore) hit-test against the full window rect. */
-        s_build.clip_rect = rect_intersect( f->parent_clip, outer );
+        s_scope.clip = rect_intersect( f->parent_clip, outer );
     }
 }
 
@@ -229,7 +229,7 @@ layout_pop_region( void )
        interaction clip either way, so the bars (in the gutter, outside a child's box) hit-test. */
     if ( f->pushed_clip )
         draw_pop_clip_rect();
-    s_build.clip_rect = f->parent_clip;
+    s_scope.clip = f->parent_clip;
 
     /* Bars: inset by the border, in the reserved gutters, clear of the corner.  Compose ends at
        the track rect -- the widget (3_widgets/gui_scrollbar.c) owns the grab and the paint. */

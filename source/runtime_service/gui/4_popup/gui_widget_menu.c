@@ -310,15 +310,15 @@ gui_menu_bar_begin( void )
     /* Save the body pen: the strip is drawn outside the body flow, so the body resumes from here. */
     s_menubar_saved_cursor = lf()->content_y;
 
-    /* The strip sits ABOVE the body region that is currently on the stack, so the live clip_rect
+    /* The strip sits ABOVE the body region that is currently on the stack, so the live interaction clip (s_scope.clip)
        (the body's, which starts below the strip) excludes it entirely.  layout_push_region with
        own_clip false narrows the new region's hit-test clip to parent_clip & outer; left as-is the
        intersection with the body clip would be empty and every entry would fail rect_hit -- the
        mouse could never hover the bar (only keyboard nav, which skips the clip test, reached it).
        Point the parent clip at the whole window rect for the push so the strip's hit-test clip
        resolves to the strip itself, then restore the body clip in menu_bar_end. */
-    s_menubar_saved_clip = s_build.clip_rect;
-    s_build.clip_rect = ( gui_rect_t ){ s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_h };
+    s_menubar_saved_clip = s_scope.clip;
+    s_scope.clip = ( gui_rect_t ){ s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_h };
 
     s_menubar_sink = ( gui_scroll_link_t ){ 0 };
     layout_push_region( id_combine( s_build.win_id, GUI_MENUBAR_SALT ), bar,
@@ -336,7 +336,7 @@ gui_menu_bar_end( void )
         return;
 
     layout_pop_region();
-    s_build.clip_rect = s_menubar_saved_clip;   /* restore the body hit-test clip (pop left it at the window rect) */
+    s_scope.clip = s_menubar_saved_clip;   /* restore the body hit-test clip (pop left it at the window rect) */
 
     /* Undo the strip pop's body-pen advance: the strip lives outside the body flow, so the body
        resumes exactly where it stood -- pen authoritative (no gap owed), and the strip box must

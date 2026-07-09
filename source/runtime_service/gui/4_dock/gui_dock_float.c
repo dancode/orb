@@ -215,7 +215,7 @@ dock_float_service_request( gui_id_t id, const char* title, gui_window_t* win )
     Called by window_begin_docked for the group's ACTIVE tab, before any geometry is read: apply
     the in-flight strip drag / edge resize onto node->rect, keep the strip reachable, refresh the
     content rect, and resolve this frame's resize hover-and-grab (returned for
-    s_build.win_resize_hot, so widgets defer to a hot edge exactly as in a free window).
+    s_scope.resize_hot, so widgets defer to a hot edge exactly as in a free window).
 ----------------------------------------------------------------------------------------------*/
 
 /* Keep the group reachable, mirroring window_clamp: the strip may not slide under the host's

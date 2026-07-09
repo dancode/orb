@@ -420,16 +420,16 @@ typedef struct
 
     gui_scroll_link_t* scroll;
 
-    gui_rect_t      parent_clip;        // s_build.clip_rect to restore at pop
+    gui_rect_t      parent_clip;        // s_scope.clip to restore at pop
     u32             id_restore;         // id-scope depth to restore at pop (see id stack below)
 
     /* Child edge-resize (child_begin CHILD_RESIZE_*): the armed/hot edges of this child's border
-       and the s_build.win_resize_hot to restore at child_end.  child_begin sets both (0 for a
+       and the s_scope.resize_hot to restore at child_end.  child_begin sets both (0 for a
        non-resizeable child); child_end bolds child_resize_edge and restores the saved hot, so a
        hot edge suppresses body widgets only while inside this child, never its siblings. */
 
     u8              child_resize_edge;       // hot/armed resize edges for this child (0 = none)
-    u8              child_resize_saved_hot;  // s_build.win_resize_hot to restore at child_end
+    u8              child_resize_saved_hot;  // s_scope.resize_hot to restore at child_end
 
 } layout_frame_t;
 
@@ -469,17 +469,19 @@ typedef struct { f32 left_h; f32 right_h; } gui_split_entry_t;
 
 typedef struct
 {
-    /* Flat window context (s_build) the popup's window_begin clobbers. */
+    /* Flat window context (s_build) + interaction scope (s_scope) the popup's window_begin
+       clobbers.  The scope owner needs no field of its own: it is stamped alongside win_id
+       everywhere, so reattach restores both from win_id. */
     gui_id_t             win_id;
     const char*            win_title;
     bool                   win_collapsed;
     gui_win_flags_t      win_flags;
     f32                    win_title_h;
-    u8                     win_resize_hot;
-    bool                   win_grip_hot;
+    u8                     resize_hot;    // s_scope.resize_hot (chrome hover suppression)
+    bool                   grip_hot;      // s_scope.grip_hot
     struct gui_window_t* cur_win;
     f32                    win_x, win_y, win_w, win_h;
-    gui_rect_t           clip_rect;     // s_build.clip_rect (interaction clip)
+    gui_rect_t           clip;          // s_scope.clip (interaction clip)
 
     /* Draw cursor + the parent's top layout frame. */
 
@@ -819,7 +821,7 @@ typedef struct
        Cleared by table_get_sort_specs.  Automatically false each new frame (s_tab memset). */
     bool                    sort_dirty;
 
-    /* s_build.clip_rect on entry, restored when the one table clip is popped in table_end. */
+    /* s_scope.clip on entry, restored when the one table clip is popped in table_end. */
     gui_rect_t              saved_clip;
 
     gui_table_persist_t*    persist;
@@ -858,7 +860,7 @@ static void dock_drag_commit( gui_id_t win_id, const char* title );
 
 /* Floating tab groups (gui_dock_float.c), called from gui_widget_window.c: resolve a floating
    node's frame for this frame (apply strip drag / edge resize, refresh rect + content, arm the
-   resize grab -- returns the hot edge mask for s_build.win_resize_hot), and service a pending
+   resize grab -- returns the hot edge mask for s_scope.resize_hot), and service a pending
    group-creation request when the TARGET window next begins (the only moment both window titles
    are in hand). */
 static u8   dock_float_resolve( gui_dock_node_t* node, gui_id_t active_win_id );

@@ -111,12 +111,12 @@ drag_from_chrome( gui_id_t id, f32 press_x, f32 press_y,
 bool
 gui_drag_source_begin( gui_drag_flags_t flags )
 {
-    gui_id_t id = s_build.last_item_id;
+    gui_id_t id = s_scope.last_id;
     if ( id == GUI_ID_NONE )
         return false;
 
     /* Arm on the press; the move threshold decides click vs drag (like the dock tab tear-off). */
-    if ( s_build.last_item_status.pressed && s_drag.source_id == GUI_ID_NONE )
+    if ( s_scope.last_status.pressed && s_drag.source_id == GUI_ID_NONE )
     {
         s_drag.arm_id = id;
         s_drag.arm_x  = s_io.mouse_x;
@@ -179,17 +179,17 @@ gui_drag_target_begin( void )
     if ( s_drag.source_id == GUI_ID_NONE || !s_drag.has_payload )
         return false;
 
-    gui_id_t id = s_build.last_item_id;
+    gui_id_t id = s_scope.last_id;
     if ( id == GUI_ID_NONE || id == s_drag.source_id )
         return false;   /* an item never drops onto itself */
 
-    if ( s_build.win_id != s_interaction.hover_win )
+    if ( s_scope.win != s_interaction.hover_win )
         return false;
-    if ( !rect_hit( s_build.clip_rect ) || !rect_hit( s_build.last_item_rect ) )
+    if ( !rect_hit( s_scope.clip ) || !rect_hit( s_scope.last_rect ) )
         return false;
 
     s_drag.target_open = true;
-    s_drag.target_rect = s_build.last_item_rect;
+    s_drag.target_rect = s_scope.last_rect;
     return true;
 }
 

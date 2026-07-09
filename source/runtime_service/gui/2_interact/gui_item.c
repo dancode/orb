@@ -21,7 +21,11 @@
     services, not from a flag on this function.
 
     The ownership state itself (s_interaction) lives in 0_foundation/gui_ctx.c -- the context owns the
-    record; this file is the service that arbitrates it.
+    record; this file is the service that arbitrates it.  Everything behavior consumes about
+    "where is this item emitting" comes from the interaction scope (s_scope, same file): the
+    owner window, the interaction clip, the chrome suppression, and the per-item flag/nav stamps,
+    all placed there by composition at its seams.  Behavior never reads the composer scratch
+    (s_build) -- the scope record IS the composition->behavior contract.
 
     LAYERING NOTE: nav_item_register invokes the present-tier focus ring (draw_nav_ring,
     2_present/gui_widget_core.c) -- behavior decides WHEN the system adornment paints; the paint
@@ -67,7 +71,7 @@ widget_repeat_tick( bool pressed )
 }
 
 /* Keyboard-nav per-item seam.  Called from widget_behavior for every item that belongs to the nav
-   window (s_build.win_id == s_nav.win), the keyboard mirror of the hover hit-test above.  It does
+   window (s_scope.win == s_nav.win), the keyboard mirror of the hover hit-test above.  It does
    three things: records the item into the frame's nav list (with the structural region/line stamp
    the layout engine latched when it placed it -- gui_nav.c resolves the next move as index math
    over this list), notes whether the nav cursor was seen, and -- for the current nav item --
@@ -142,9 +146,9 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
        the region/line coordinate widget_next_rect_w latched; anything interacting without a
        layout cell -- title-bar buttons, dock tabs -- lists as chrome, the F6 lane: Tab and the
        body arrows skip it, F6 hops onto the strip and Left/Right walk it (gui_nav.c).
-       Scrollbars and drag strips never reach here at all (s_build.nav_skip). */
+       Scrollbars and drag strips never reach here at all (s_scope.nav_skip). */
 
-    bool placed = s_build.nav_item_placed;
+    bool placed = s_scope.nav_placed;
     if ( placed && s_nav.first_item == GUI_ID_NONE )
         s_nav.first_item = id;   /* first-focus / recovery landing spot */
 
@@ -153,8 +157,8 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
         gui_nav_item_t* it = &s_nav.items[ s_nav.item_count++ ];
         it->id     = id;
         it->rect   = r;
-        it->region = placed ? s_build.nav_item_region : 0;
-        it->line   = placed ? s_build.nav_item_line   : 0;
+        it->region = placed ? s_scope.nav_region : 0;
+        it->line   = placed ? s_scope.nav_line   : 0;
         it->chrome = !placed;
     }
 
@@ -258,38 +262,38 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
        set_item_tooltip).  Done before the disabled early-out so a disabled widget still counts
        as the last item -- the anchor is "what was just emitted", regardless of its state. */
 
-    s_build.last_item_id   = id;
-    s_build.last_item_rect = r;             /* item-query getters read this for "the widget just emitted" */
+    s_scope.last_id   = id;
+    s_scope.last_rect = r;             /* item-query getters read this for "the widget just emitted" */
 
     /* Consume the one-shot nav opt-out here, before any early-out below can leak it onto the
        next widget.  A flagged item (scrollbar, drag strip) still interacts normally with the
        mouse; it just never registers as a keyboard target. */
-    bool nav_skip    = s_build.nav_skip;
-    s_build.nav_skip = false;
+    bool nav_skip    = s_scope.nav_skip;
+    s_scope.nav_skip = false;
 
     /* Disabled item: inert this frame -- no hover, active, focus, or click.  Returning the zeroed
        state here is the one place that suppresses interaction for every widget, the behavioral half
        of GUI_ITEM_DISABLED (the visual dim is the draw list's global alpha, set at resolve).  The
        flags were latched by widget_next_rect_w just before this call. */
-    if ( s_build.cur_item_flags & GUI_ITEM_DISABLED )
+    if ( s_scope.flags & GUI_ITEM_DISABLED )
     {
-        s_build.last_item_status = st;      /* a disabled item is still the last item, reported inert */
+        s_scope.last_status = st;      /* a disabled item is still the last item, reported inert */
         return st;
     }
 
     /* Deaf context: not listening this frame -- render but return inert state.
-       last_item_id/rect are latched above so item-query calls still work. */
+       last_id/rect are latched above so item-query calls still work. */
 
     if ( !g_ctx->listening )
     {
-        s_build.last_item_status = st;
+        s_scope.last_status = st;
         return st;
     }
 
     /* Volatile-callback replay -- full feature in 3_widgets/gui_volatile.c and
        backend/pipeline/gui_build_volatile.c; s_replay_mode itself is declared in gui_ctx.c.  Report the
-       ambient hover/active/focused state as-is, but never touch it and never hit-test -- s_build
-       (win_id, cur_item_flags, win_resize_hot, ...) is only meaningful between a real
+       ambient hover/active/focused state as-is, but never touch it and never hit-test -- the
+       interaction scope (s_scope: win, clip, flags, ...) is only meaningful between a real
        window_begin/window_end, and a replay runs outside that entirely. */
     if ( s_replay_mode )
     {
@@ -310,15 +314,15 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
        directly, so a drag stays live while the cursor sweeps over inert neighbours. */
 
     bool can_hover = ( s_interaction.active_id == GUI_ID_NONE || s_interaction.active_id == id );
-    bool win_hover = ( s_build.win_id == s_interaction.hover_win );
-    bool eligible  = can_hover && win_hover && !s_build.win_resize_hot && !s_build.win_grip_hot;
+    bool win_hover = ( s_scope.win == s_interaction.hover_win );
+    bool eligible  = can_hover && win_hover && !s_scope.resize_hot && !s_scope.grip_hot;
 
     /* While the keyboard is the active nav instrument (nav_highlight), the mouse does not set hover:
        the fill is mutually exclusive, so a mouse-hovered item never fills alongside the nav item
        (the nav ring still shows its location).  A mouse move or click drops nav_highlight
        (gui_nav.c), re-enabling hover that same frame. */
 
-    if ( eligible && !s_nav.highlight && rect_hit( s_build.clip_rect ) && rect_hit( r ) )
+    if ( eligible && !s_nav.highlight && rect_hit( s_scope.clip ) && rect_hit( r ) )
          s_interaction.hover_id = id;
 
     /* Programmatic focus: a queued set_keyboard_focus request lands on the first focusable
@@ -353,14 +357,14 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
        cursor, takes a synthesized click from an Enter/Space activation -- the keyboard mirror of
        the mouse hit-test above, through the same one seam every widget already passes through. */
 
-    if ( s_build.win_id == s_nav.win && !nav_skip )
+    if ( s_scope.win == s_nav.win && !nav_skip )
         nav_item_register( id, r, &st, kind );
 
     /* Auto-repeat (GUI_ITEM_BUTTON_REPEAT): while held with the cursor still over it, fire on the
        press then repeatedly on the timed cadence -- replacing the release-click for this widget.
        Gated on the cursor being over it so sliding off pauses the repeat, like a real spin button. */
 
-    if ( ( s_build.cur_item_flags & GUI_ITEM_BUTTON_REPEAT ) && st.active && s_interaction.hover_id == id )
+    if ( ( s_scope.flags & GUI_ITEM_BUTTON_REPEAT ) && st.active && s_interaction.hover_id == id )
         st.clicked = widget_repeat_tick( st.pressed );
 
     /* Debug overlay: every interactive widget passes through here, so this one site captures
@@ -372,14 +376,14 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
 #ifdef GUI_DEBUG_OVERLAY
     {
         if ( eligible ) {
-            gui_rect_t vis = rect_intersect( r, s_build.clip_rect );
+            gui_rect_t vis = rect_intersect( r, s_scope.clip );
             if ( vis.w > 0.0f && vis.h > 0.0f )
                  DBG_WIDGET( id, vis, st.hover, st.active );
         }
     }
 #endif
 
-    s_build.last_item_status = st;   /* publish the resolved state for the item-query readers */
+    s_scope.last_status = st;   /* publish the resolved state for the item-query readers */
     return st;
 }
 

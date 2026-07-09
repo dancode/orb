@@ -151,7 +151,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     {
         u8   allow    = (u8)( ( resize_x ? GUI_RESIZE_R : 0u ) | ( resize_y ? GUI_RESIZE_B : 0u ) );
         bool dragging = false;
-        resize_hot = resize_item( id, s_build.win_id, box, allow, false, &dragging );
+        resize_hot = resize_item( id, s_scope.win, box, allow, false, &dragging );
 
         if ( dragging )
         {
@@ -191,8 +191,8 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
        cursor drifts off).  child_end restores the saved hot, so siblings below are unaffected. */
     layout_frame_t* f         = lf();
     f->child_resize_edge      = resize_hot;   /* live edges: dragged mid-drag, else hot under cursor */
-    f->child_resize_saved_hot = s_build.win_resize_hot;
-    if ( f->child_resize_edge ) s_build.win_resize_hot = f->child_resize_edge;
+    f->child_resize_saved_hot = s_scope.resize_hot;
+    if ( f->child_resize_edge ) s_scope.resize_hot = f->child_resize_edge;
 
     /* No collapse concept for a child: always returns true, always pair with child_end. */
     return true;
@@ -212,7 +212,7 @@ gui_child_end( void )
 
     layout_pop_region();
 
-    s_build.win_resize_hot = saved;   /* lift the body-widget suppression this child raised */
+    s_scope.resize_hot = saved;   /* lift the body-widget suppression this child raised */
 
     draw_child_border( box );
 
@@ -261,7 +261,7 @@ sublayout_open( gui_rect_t cell )
     f->region_id   = GUI_ID_NONE;
     f->outer       = cell;
     f->flags       = GUI_WIN_NOSCROLL;
-    f->parent_clip = s_build.clip_rect;
+    f->parent_clip = s_scope.clip;
     f->pushed_clip = false;
     f->id_restore  = s_id_sp;
 
@@ -302,7 +302,7 @@ gui_pop_layout( void )
 {
     layout_frame_t* f = lf();
     s_id_sp         = f->id_restore;         /* unwind any push_id the body left open */
-    s_build.clip_rect = f->parent_clip;      /* unchanged, but symmetric with push */
+    s_scope.clip = f->parent_clip;      /* unchanged, but symmetric with push */
     if ( s_layout_sp ) --s_layout_sp;        /* parent already advanced at push -- nothing more */
 }
 
@@ -354,7 +354,7 @@ split_pop_panel( void )
     f32 h = f->content_max_y - f->origin_y;
     if ( h < 0.0f ) h = 0.0f;
     s_id_sp           = f->id_restore;
-    s_build.clip_rect = f->parent_clip;
+    s_scope.clip = f->parent_clip;
     if ( s_layout_sp ) --s_layout_sp;
     return h;
 }

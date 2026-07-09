@@ -686,7 +686,7 @@ gui_selectable( const char* label, bool* selected )
            Suppressed by GUI_ITEM_NO_CLOSE_POPUP for callers that need the popup to stay open
            (e.g. a multi-select list inside a persistent popup). */
         if ( s_popup_begin_count > 0
-             && !( s_build.cur_item_flags & GUI_ITEM_NO_CLOSE_POPUP ) )
+             && !( s_scope.flags & GUI_ITEM_NO_CLOSE_POPUP ) )
             gui_popup_close_current();
     }
 

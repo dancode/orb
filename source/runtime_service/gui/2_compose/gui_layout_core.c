@@ -653,9 +653,9 @@ widget_next_rect_w( f32 natural_w, f32 h )
        cell belongs to.  Latched (not one-shot) on purpose -- a widget that interacts in several
        parts from one cell (a numeric's sub-fields) lists each part as a same-line sibling.
        item_flags_chrome_reset drops it at the chrome seams. */
-    s_build.nav_item_region = f->nav_region;
-    s_build.nav_item_line   = f->nav_line;
-    s_build.nav_item_placed = true;
+    s_scope.nav_region = f->nav_region;
+    s_scope.nav_line   = f->nav_line;
+    s_scope.nav_placed = true;
 
     DBG_LAYOUT( r );
     return r;

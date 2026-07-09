@@ -30,7 +30,7 @@
     dock tabs: anything not placed by a layout cell) forms its own lane: F6 hops between the
     body and the chrome strip (and back to the remembered body item), Left/Right walk the strip
     by position, Down drops back into the body.  Tab and the body arrows never touch chrome.
-    Scrollbars and drag strips are no keyboard targets at all (s_build.nav_skip).
+    Scrollbars and drag strips are no keyboard targets at all (s_scope.nav_skip).
 
     Included by gui.c after gui_popup.c (so the popup stack + GUI_POPUP_Z_BASE are in scope)
     and before gui_frame.c (so gui_ctx_begin can call nav_new_frame).

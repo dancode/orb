@@ -47,15 +47,15 @@ bool
 gui_is_mouse_hovering_rect( gui_rect_t r )
 {
     bool can_hover = ( s_interaction.active_id == GUI_ID_NONE );
-    bool win_hover = ( s_build.win_id == s_interaction.hover_win );
-    return can_hover && win_hover && rect_hit( s_build.clip_rect ) && rect_hit( r );
+    bool win_hover = ( s_scope.win == s_interaction.hover_win );
+    return can_hover && win_hover && rect_hit( s_scope.clip ) && rect_hit( r );
 }
 
 /*----------------------------------------------------------------------------------------------
     Last-item introspection (the Dear ImGui IsItem* family).
 
     Every reader reports on "the widget just emitted" -- the item whose rect and interaction state
-    widget_behavior latched into s_build.last_item_* (2_interact/gui_item.c).  Call immediately after a
+    widget_behavior latched into s_scope.last_* (2_interact/gui_item.c).  Call immediately after a
     widget, the way set_item_tooltip / popup_context_item_begin already bind to the previous item:
 
         gui()->button( "Save" );
@@ -67,16 +67,16 @@ gui_is_mouse_hovering_rect( gui_rect_t r )
     active, deactivated the frame it lets go -- the natural seam for "commit on release" handling.
 ----------------------------------------------------------------------------------------------*/
 
-bool gui_is_item_hovered ( void ) { return s_build.last_item_status.hover;   }
-bool gui_is_item_active  ( void ) { return s_build.last_item_status.active;  }
-bool gui_is_item_clicked ( void ) { return s_build.last_item_status.clicked; }
-bool gui_is_item_focused ( void ) { return s_build.last_item_status.focused; }
+bool gui_is_item_hovered ( void ) { return s_scope.last_status.hover;   }
+bool gui_is_item_active  ( void ) { return s_scope.last_status.active;  }
+bool gui_is_item_clicked ( void ) { return s_scope.last_status.clicked; }
+bool gui_is_item_focused ( void ) { return s_scope.last_status.focused; }
 
 /* True the frame the last item first became active (press / nav-activate), false while it stays held. */
 bool
 gui_is_item_activated( void )
 {
-    gui_id_t id = s_build.last_item_id;
+    gui_id_t id = s_scope.last_id;
     return id != GUI_ID_NONE && s_interaction.active_id == id && s_interaction.active_id_prev != id;
 }
 
@@ -84,7 +84,7 @@ gui_is_item_activated( void )
 bool
 gui_is_item_deactivated( void )
 {
-    gui_id_t id = s_build.last_item_id;
+    gui_id_t id = s_scope.last_id;
     return id != GUI_ID_NONE && s_interaction.active_id != id && s_interaction.active_id_prev == id;
 }
 
@@ -95,7 +95,7 @@ gui_is_item_deactivated( void )
 bool
 gui_is_item_deactivated_after_edit( void )
 {
-    gui_id_t id = s_build.last_item_id;
+    gui_id_t id = s_scope.last_id;
     return id != GUI_ID_NONE && id == s_interaction.focus_ended_id && s_interaction.focus_ended_edited;
 }
 
@@ -103,13 +103,13 @@ gui_is_item_deactivated_after_edit( void )
 bool
 gui_is_item_visible( void )
 {
-    gui_rect_t v = rect_intersect( s_build.last_item_rect, s_build.clip_rect );
+    gui_rect_t v = rect_intersect( s_scope.last_rect, s_scope.clip );
     return v.w > 0.0f && v.h > 0.0f;
 }
 
 /* The last item's screen rect (the GetItemRectMin/Max/Size trio in one rect-centric accessor):
    anchor custom draw to a widget just emitted, or measure it. */
-gui_rect_t gui_get_item_rect( void ) { return s_build.last_item_rect; }
+gui_rect_t gui_get_item_rect( void ) { return s_scope.last_rect; }
 
 /* Per-key state from the frame snapshot.  An out-of-range key reads as up; the public app_key_t
    range is bounded by APP_KEY_COUNT <= GUI_KEY_COUNT (asserted in 0_foundation/gui_io.c).  is_key_pressed

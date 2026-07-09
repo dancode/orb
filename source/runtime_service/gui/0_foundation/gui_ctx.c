@@ -94,15 +94,6 @@ static bool s_replay_mode;
 
 static struct
 {
-    gui_id_t  last_item_id;   // id of the most recent widget emitted -- context-menu / tooltip anchor
-
-    /* Last-item introspection (the Dear ImGui IsItem* model).  widget_behavior latches the rect and
-       the resolved interaction state of each emitted item here, so the item-query readers
-       (5_user/gui_query.c) report on "the widget just emitted" with no per-widget bookkeeping -- the same
-       anchor last_item_id already provides for context menus / tooltips, widened to the full result. */
-    gui_rect_t   last_item_rect;     // screen rect of the most recent widget
-    widget_state_t last_item_status; // its resolved hover / active / clicked / focused / nav flags
-
     u32         cur_viewport;       // ambient viewport for new-window inheritance (updated per window emitted)
 
     gui_id_t  win_id;               // id of the window currently between begin/window_end
@@ -111,8 +102,6 @@ static struct
     bool        win_hidden;         // current window is CLOSEABLE + closed: begin emitted nothing, end early-outs
     gui_win_flags_t win_flags;      // current window's behavior flags (window_begin arg)
     f32         win_title_h;        // current window's title bar height (0 if NOTITLEBAR)
-    u8          win_resize_hot;     // resize edges hot this frame -- suppresses widget hover
-    bool        win_grip_hot;       // cursor over the CAN_AUTOSIZE grip -- suppresses widget hover
     struct gui_window_t* cur_win;   // persisted window record; scroll write-back target
 
     /* Docking (gui_dock.c): the node hosting the current window, or NULL when it is free-floating.
@@ -131,33 +120,20 @@ static struct
        window is just the root frame.  s_build keeps only the cross-cutting per-frame
        context the chrome and widgets read regardless of which region is active. */
 
-    gui_rect_t clip_rect;   // active interaction clip -- widget hover is gated by it
     bool         wheel_used;  // a region consumed the wheel this frame (innermost wins)
-
-    /* Keyboard-nav structural stamp.  widget_next_rect_w latches the placing region's coordinate
-       here as it hands out each cell; widget_behavior copies it into the nav item list.  The
-       stamp stays latched across the several behavior calls one cell can make (a numeric's
-       sub-fields are same-line siblings), and item_flags_chrome_reset drops it at every chrome
-       seam -- so "was this item placed by the layout engine" is exactly the body/chrome split. */
 
     u32  nav_region_seq;    // per-frame region dispenser (layout_seed_content takes the next)
     u32  nav_line_seq;      // per-frame line dispenser (a line-open takes the next)
-    u32  nav_item_region;   // stamp: region that placed the item being emitted
-    u32  nav_item_line;     // stamp: its line sequence
-    bool nav_item_placed;   // stamp is live (false => the next behavior call is chrome)
-    bool nav_skip;          // one-shot: the next behavior call is no keyboard target at all
-                            // (scrollbar, drag strip) -- consumed by widget_behavior
 
     /* Item flags -- the push-model behavior set a widget reads at emit time (see gui_item_flags_t).
        item_flags is the merged top of the push/pop stack; next_set / next_val are the one-shot
-       override for the next widget (which bits it controls + their values); cur_item_flags is the
-       value resolved for the widget currently being emitted, latched by item_flags_resolve and read
-       by widget_behavior and the widgets.  All reset to 0 each frame. */
+       override for the next widget (which bits it controls + their values); the value resolved for
+       the widget currently emitting is latched into s_scope.flags by item_flags_resolve, where
+       widget_behavior and the widgets read it.  All reset to 0 each frame. */
 
     gui_item_flags_t item_flags;       // merged top-of-stack item flags
     gui_item_flags_t next_set;         // bits the next-item override controls
     gui_item_flags_t next_val;         // their values
-    gui_item_flags_t cur_item_flags;   // flags resolved for the item being emitted
 
     /* Combo dropdown coordination (gui_widget_combo.c).  combo_begin sets combo_open true while
        emitting its popup body; a selectable clicked in that body sets combo_item_clicked, and
@@ -172,6 +148,47 @@ static struct
        below) so the per-frame builder stays small. */
 
 } s_build;
+
+/* The interaction scope -- the declared contract between composition and behavior.  Everything
+   widget_behavior (2_interact/gui_item.c) consumes about "where is this item emitting" lives here,
+   nowhere else: composition stamps the record at its seams (window_begin / child_begin / popup /
+   table stamp win + clip; the resize/grip resolvers stamp the chrome suppression; the emit seam
+   widget_next_rect_w latches the per-item flags + nav stamp), and behavior reads only this record
+   plus its own s_interaction -- never the composer scratch above.  Behavior publishes its result
+   back into the last_* fields, where the item-query readers (5_user/gui_query.c), drag sourcing,
+   and context-menu anchoring pick it up.  Unlike the s_interaction arbitration fields (verb-only
+   writes), the scope is stamped directly: the contract is the record itself -- a field added here
+   is a new input to behavior and must be reset below and saved across the popup seam
+   (gui_overlay_save_t).  Tier: frame scratch, same lifetime as s_build. */
+
+static struct
+{
+    /* scope -- stamped at the window/child/popup/table seams */
+    gui_id_t   win;          // scope owner: hover domain (vs hover_win) and nav domain (vs s_nav.win)
+    gui_rect_t clip;         // active interaction clip -- widget hover is gated by it
+    u8         resize_hot;   // window resize edges hot this frame -- suppresses widget hover
+    bool       grip_hot;     // cursor over the CAN_AUTOSIZE grip -- suppresses widget hover
+
+    /* item -- latched at the emit seam (widget_next_rect_w), dropped at the chrome seams.
+       The nav stamp is the placing region's structural coordinate: it stays latched across the
+       several behavior calls one cell can make (a numeric's sub-fields are same-line siblings),
+       and item_flags_chrome_reset drops nav_placed at every chrome seam -- so "was this item
+       placed by the layout engine" is exactly the body/chrome split. */
+    gui_item_flags_t flags;  // flags resolved for the item being emitted (item_flags_resolve)
+    u32   nav_region;        // stamp: region that placed the item being emitted
+    u32   nav_line;          // stamp: its line sequence
+    bool  nav_placed;        // stamp is live (false => the next behavior call is chrome)
+    bool  nav_skip;          // one-shot: the next behavior call is no keyboard target at all
+                             // (scrollbar, drag strip) -- consumed by widget_behavior
+
+    /* result -- published by widget_behavior for the most recent item (the Dear ImGui IsItem*
+       model): the item-query readers report on "the widget just emitted" with no per-widget
+       bookkeeping, the same anchor context menus / tooltips / drag sources hang from. */
+    gui_id_t       last_id;      // id of the most recent widget emitted
+    gui_rect_t     last_rect;    // its screen rect
+    widget_state_t last_status;  // its resolved hover / active / clicked / focused / nav flags
+
+} s_scope;
 
 #ifdef GUI_DEBUG_OVERLAY
 /* The debug overlay (gui_debug_overlay.c) lives in the render backend unit and tags each captured rect
@@ -251,7 +268,7 @@ item_flags_resolve( void )
     gui_item_flags_t f = ( s_build.item_flags & ~s_build.next_set ) | ( s_build.next_val & s_build.next_set );
     s_build.next_set = 0;
     s_build.next_val = 0;
-    s_build.cur_item_flags = f;
+    s_scope.flags = f;
 
     /* Same seam for the style stacks: promote any next_style_* override into the active per-item
        layer so it applies for this widget's whole draw, then clears for the following one. */
@@ -274,8 +291,8 @@ item_flags_resolve( void )
 static void
 item_flags_chrome_reset( void )
 {
-    s_build.cur_item_flags  = GUI_ITEM_NONE;
-    s_build.nav_item_placed = false;   /* chrome is not an item to keyboard nav either: whatever
+    s_scope.flags  = GUI_ITEM_NONE;
+    s_scope.nav_placed = false;   /* chrome is not an item to keyboard nav either: whatever
                                           interacts past this seam lists in the F6 chrome lane */
     draw_set_alpha( 1.0f );
     style_chrome_reset();   /* drop lingering next_style_* overrides; keep the push/pop stack */
@@ -629,9 +646,9 @@ ctx_new_frame( void )
 {
     /* Last-item introspection resets to "no item": a query before any widget this frame (or in
        a frame that emits none) reports false rather than reading a stale rect / status. */
-    s_build.last_item_id     = GUI_ID_NONE;
-    s_build.last_item_rect   = ( gui_rect_t ){ 0 };
-    s_build.last_item_status = ( widget_state_t ){ 0 };
+    s_scope.last_id     = GUI_ID_NONE;
+    s_scope.last_rect   = ( gui_rect_t ){ 0 };
+    s_scope.last_status = ( widget_state_t ){ 0 };
 
     /* Fresh layout stack each frame; no region is open until a window_begin/child_begin.
        The interaction clip starts at the full display, and the wheel is unclaimed. */
@@ -643,8 +660,8 @@ ctx_new_frame( void )
     /* Fresh nav-stamp dispensers; nothing is placed until a layout cell is handed out. */
     s_build.nav_region_seq  = 0;
     s_build.nav_line_seq    = 0;
-    s_build.nav_item_placed = false;
-    s_build.nav_skip        = false;
+    s_scope.nav_placed = false;
+    s_scope.nav_skip        = false;
 
     /* Popup nesting depth is rebuilt as popup_begin / popup_end run; the open set persists. */
     s_popup_begin_count = 0;
@@ -658,11 +675,11 @@ ctx_new_frame( void )
     s_build.item_flags     = GUI_ITEM_NONE;
     s_build.next_set       = GUI_ITEM_NONE;
     s_build.next_val       = GUI_ITEM_NONE;
-    s_build.cur_item_flags = GUI_ITEM_NONE;
+    s_scope.flags = GUI_ITEM_NONE;
 
     /* Fresh style stacks each frame: working set re-seeded from the theme, stacks + next cleared. */
     style_new_frame();
-    s_build.clip_rect = ( gui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
+    s_scope.clip = ( gui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
     ++s_retained.frame;
 }
 

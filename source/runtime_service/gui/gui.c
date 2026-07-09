@@ -5,7 +5,8 @@
     gui is two translation units linked into one static lib (see gui_backend.h):
 
       - this unit (gui.c): context, layout, widgets, chrome, popups, nav, input, frame
-        lifecycle, the module vtable.  Owns s_build / s_io / s_interaction / g_ctx and the stacks.
+        lifecycle, the module vtable.  Owns s_build / s_scope / s_io / s_interaction / g_ctx
+        and the stacks.
 
       - the render backend (gui_backend.c): fonts, draw list, tessellation, GPU flush, debug
         overlay.  Owns s_draw / s_tess / s_font / s_render.  Called through gui_backend.h.
@@ -20,9 +21,10 @@
     backend/        -- beside the stack, not a rung in it: the render sink (the second TU,
                        gui_backend.c), reached only through gui_backend.h at flush.
     0_foundation/   -- machinery with no opinions: the ambient context records (s_interaction,
-                       s_build, g_ctx), identity (ids), keyed state tracking, the io snapshot,
-                       and the style machinery (theme registry, stacks, resolution).  Owns style
-                       MACHINERY, never style MEANING -- no foundation decision reads a style value.
+                       s_build, s_scope, g_ctx), identity (ids), keyed state tracking, the io
+                       snapshot, and the style machinery (theme registry, stacks, resolution).
+                       Owns style MACHINERY, never style MEANING -- no foundation decision reads
+                       a style value.
     1_surface/      -- RESERVED, not yet carved: window/viewport record as a surface service
                        (rect + retained placement + z + occlusion, no layout, no chrome).
                        Today that record still lives fused with its chrome in 4_window/.
@@ -39,7 +41,11 @@
                        helpers.  This tier is the ONLY writer of the s_interaction arbitration
                        fields (hover/active/focus): higher tiers claim through these verbs and
                        read the record for gating, never write it raw (one exception: the popup
-                       modal hover fence, gui_popup.c).
+                       modal hover fence, gui_popup.c).  Behavior's only inputs beyond (id, rect)
+                       are the interaction scope (s_scope: owner window, clip, chrome
+                       suppression, per-item flag/nav stamps) -- stamped by composition at its
+                       seams -- and its own s_interaction; it never reads the composer scratch
+                       (s_build).
     2_present/      -- presentation: the shared paint primitives -- COL_* palette, widget
                        macros, label grammar, text-fit, symbol/shape draws.  Consumes
                        rect + state + skin; never asks behavior, state is a parameter.
@@ -76,7 +82,7 @@
 
     0_foundation/gui_theme.c       -- theme registry + base/active style state, theme API, layout_compute
     0_foundation/gui_style.c       -- style stacks machinery: style_col/style_var resolution, push/pop/next ops
-    0_foundation/gui_ctx.c         -- context state: s_interaction, s_build, layout_frame_t, gui_context_t, ctx_new_frame
+    0_foundation/gui_ctx.c         -- context state: s_interaction, s_build, s_scope, layout_frame_t, gui_context_t, ctx_new_frame
     0_foundation/gui_io.c          -- io snapshot service: app->IO, input_update, s_io
     0_foundation/gui_id.c          -- identity service: id_hash, id_combine, id_seed/push/pop
     0_foundation/gui_state.c       -- keyed state tracking service: gui_state_get/peek, GUI_STATE

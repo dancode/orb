@@ -388,12 +388,13 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
 
     /* Commit the docked window context window_end reads. */
     s_build.win_id          = id;
+    s_scope.win             = id;      /* interaction scope: this window owns the items that follow */
     s_build.win_title       = title;
     s_build.win_collapsed   = false;
     s_build.win_flags       = flags;
     s_build.win_title_h     = title_h;
-    s_build.win_resize_hot  = float_hot;   /* 0 for a tree node; a floating group resizes like a window */
-    s_build.win_grip_hot    = false;
+    s_scope.resize_hot      = float_hot;   /* 0 for a tree node; a floating group resizes like a window */
+    s_scope.grip_hot        = false;
     s_build.cur_win         = win;
     s_build.cur_dock_node   = node;
     s_build.win_dock_active = active;
@@ -430,7 +431,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     item_flags_chrome_reset();
 
     draw_push_clip_rect( win->x, win->y, win->w, win->h );
-    s_build.clip_rect = ( gui_rect_t ){ win->x, win->y, win->w, win->h };
+    s_scope.clip = ( gui_rect_t ){ win->x, win->y, win->w, win->h };
 
     /* Body background fills the whole node; the tab strip is overpainted by dock_window_chrome last.
        Docked nodes tile against each other at right angles, so the node draws square -- a rounded
@@ -611,7 +612,7 @@ window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title,
 /* Resolve this frame's edge-resize / autosize-grip hover-and-grab, before any widget can claim the
    press.  The edge protocol (hover gate, grab band, grab on press, directional cursor) is the
    resize_item service (2_interact/gui_resize.c) -- owner_win is the window's OWN id, since this
-   resolves before s_build.win_id is stamped.  Sets s_build.win_resize_hot / win_grip_hot (read by
+   resolves before s_build.win_id is stamped.  Sets s_scope.resize_hot / grip_hot (read by
    widget_behavior + window_end's highlight); the grip triangle promotes R+B into the highlight
    mask but not the cursor.  Returns the PRE-grip-promotion resize_hot mask -- the debug overlay's
    outer-band capture wants only the true edge hit, not the grip's R+B promotion. */
@@ -625,7 +626,7 @@ window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags
         resize_hot = resize_item( id, id, disp_r,
                                   GUI_RESIZE_L | GUI_RESIZE_R | GUI_RESIZE_T | GUI_RESIZE_B,
                                   collapsed, &dragging );
-    s_build.win_resize_hot = resize_hot;   /* read by widget_behavior + window_end's highlight */
+    s_scope.resize_hot = resize_hot;   /* read by widget_behavior + window_end's highlight */
 
     /* CAN_AUTOSIZE size-grip: reserve the bottom-right corner ahead of the body's scrollbars the
        same way the edge band reserves the borders.  The grip square overlaps the scroll gutter, but
@@ -640,13 +641,13 @@ window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags
         gui_rect_t gr = { win->x + win->w - g, win->y + disp_r.h - g, g, g };
         grip_hot = rect_hit( gr );
     }
-    s_build.win_grip_hot = grip_hot;   /* read by widget_behavior to defer the corner to the grip */
+    s_scope.grip_hot = grip_hot;   /* read by widget_behavior to defer the corner to the grip */
 
     /* Grip triangle and the R+B corner always highlight together: if the grip is hot, promote the
        R+B edge bits so the border highlight follows; the reverse (R+B edges -> triangle) runs in
        window_end where hot_edges is resolved. */
     if ( grip_hot )
-        s_build.win_resize_hot |= GUI_RESIZE_R | GUI_RESIZE_B;
+        s_scope.resize_hot |= GUI_RESIZE_R | GUI_RESIZE_B;
 
     /* The cursor was already driven inside resize_item, from the PRE-grip-promotion mask: the grip
        square alone (no true edge hit) keeps the regular arrow, since the diagonal resize cursor's
@@ -839,7 +840,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     f32 disp_h = collapsed ? title_h : win->h;
 
     /* Edge resize, resolved here so it pre-empts the scrollbar and collapse arrow (resolved in
-       window_end) underneath: while the cursor sits on a hot edge, win_resize_hot suppresses
+       window_end) underneath: while the cursor sits on a hot edge, s_scope.resize_hot suppresses
        every widget hover in this window, and a press grabs the resize before any widget can.
        Gated on hover_win (last frame's front-most), so only the top window's edges go hot. */
     gui_rect_t disp_r    = { win->x, win->y, win->w, disp_h };
@@ -900,6 +901,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        column, scroll, and scrollbars are all owned by the body region opened below -- the
        window no longer resolves any of that itself; it is just the root region plus chrome. */
     s_build.win_id        = id;
+    s_scope.win           = id;      /* interaction scope: this window owns the items that follow */
     s_build.win_title     = title;   /* cached for window_end's deferred chrome */
     s_build.win_collapsed = collapsed;
     s_build.win_flags     = flags;   /* window_end reads these for chrome + resize grab */
@@ -925,7 +927,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
            clipped here.  The body region reuses this clip (own_clip false) -- it does not push
            a second one; only a child_begin inside the window adds another. */
         draw_push_clip_rect( win->x, win->y, win->w, disp_h );
-        s_build.clip_rect = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
+        s_scope.clip = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
 
         /* Window body background.  Skipped for a frame-only shell: its body stays empty so the
            borderless viewport shows the cleared surface (and the windows inside it) through it. */
@@ -951,12 +953,12 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     else
     {
         /* Collapsed: no body region opens and no draw clip is pushed, but window_end still
-           hit-tests the collapse arrow through s_build.clip_rect.  Left unset it would inherit
+           hit-tests the collapse arrow through s_scope.clip.  Left unset it would inherit
            whatever clip the previously drawn window left behind -- which need not cover this
            title bar, so the arrow goes intermittently dead (it only "works" when the stale clip
            happens to contain it).  Point it at the shown title-bar rect so the arrow is always
            hittable; the deferred chrome in window_end draws within these bounds without a clip. */
-        s_build.clip_rect = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
+        s_scope.clip = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
     }
 
     /* false tells the caller to skip its body widgets (they would do nothing anyway). */
@@ -1097,10 +1099,10 @@ gui_window_end( void )
 
             /* Double-click anywhere on the bar (but not the arrow, which hovers, nor a hot
                resize edge) does the same toggle -- the familiar "double-click titlebar to
-               collapse" gesture.  hover_id == NONE excludes the arrow; win_resize_hot excludes
+               collapse" gesture.  hover_id == NONE excludes the arrow; resize_hot excludes
                the edges; the toggle lands next frame like the arrow click and the drag grab. */
             gui_rect_t bar_r = { s_build.win_x, s_build.win_y, s_build.win_w, title_h };
-            if ( s_io.mouse_double[ 0 ] && !s_build.win_resize_hot
+            if ( s_io.mouse_double[ 0 ] && !s_scope.resize_hot
                  && s_build.win_id == s_interaction.hover_win && s_interaction.hover_id == GUI_ID_NONE
                  && rect_hit( bar_r ) )
             {
@@ -1253,13 +1255,13 @@ gui_window_end( void )
     DBG_WINDOW( win_r, ( s_build.win_id == s_interaction.hover_win ) );
 
     /* Resize affordance: bold the outline on any hot edge.  While a resize is in flight, the
-       grabbed edges stay lit even if the cursor drifts off them; otherwise use win_resize_hot,
+       grabbed edges stay lit even if the cursor drifts off them; otherwise use resize_hot,
        the hover set computed in window_begin (already NORESIZE- and hover_win-gated).
        hot_edges is declared here (not in a block) so the grip section below can read it for
        the R+B -> triangle reverse direction. */
     u8 hot_edges = ( s_interaction.active_id == id_combine( s_build.win_id, GUI_RESIZE_SALT ) )
                  ? s_resize_edges
-                 : s_build.win_resize_hot;
+                 : s_scope.resize_hot;
     if ( hot_edges )
         draw_resize_highlight( win_r, hot_edges );
 

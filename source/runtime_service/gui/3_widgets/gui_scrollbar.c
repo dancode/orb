@@ -70,7 +70,7 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
     f32 knob_off = track_org + t_cur * travel;
 
     /* Mouse-only: opt out of nav registration for this item (see the file banner). */
-    s_build.nav_skip = true;
+    s_scope.nav_skip = true;
     widget_state_t st = widget_behavior( id, track, WIDGET_KIND_DRAG );
 
     /* On the press frame, decide whether the cursor landed on the knob (drag from the grabbed

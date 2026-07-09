@@ -106,12 +106,12 @@ overlay_detach( void )
     s.win_collapsed  = s_build.win_collapsed;
     s.win_flags      = s_build.win_flags;
     s.win_title_h    = s_build.win_title_h;
-    s.win_resize_hot = s_build.win_resize_hot;
-    s.win_grip_hot   = s_build.win_grip_hot;
+    s.resize_hot     = s_scope.resize_hot;
+    s.grip_hot       = s_scope.grip_hot;
     s.cur_win        = s_build.cur_win;
     s.win_x = s_build.win_x; s.win_y = s_build.win_y;
     s.win_w = s_build.win_w; s.win_h = s_build.win_h;
-    s.clip_rect      = s_build.clip_rect;
+    s.clip           = s_scope.clip;
     s.window         = draw_window();
     s.sort_key       = draw_sort_key();
     s.viewport       = draw_viewport();
@@ -145,16 +145,17 @@ overlay_reattach( gui_overlay_save_t s )
         *lf() = s.parent_frame;
 
     s_build.win_id         = s.win_id;
+    s_scope.win            = s.win_id;   /* scope owner tracks win_id (stamped together everywhere) */
     s_build.win_title      = s.win_title;
     s_build.win_collapsed  = s.win_collapsed;
     s_build.win_flags      = s.win_flags;
     s_build.win_title_h    = s.win_title_h;
-    s_build.win_resize_hot = s.win_resize_hot;
-    s_build.win_grip_hot   = s.win_grip_hot;
+    s_scope.resize_hot     = s.resize_hot;
+    s_scope.grip_hot       = s.grip_hot;
     s_build.cur_win        = s.cur_win;
     s_build.win_x = s.win_x; s_build.win_y = s.win_y;
     s_build.win_w = s.win_w; s_build.win_h = s.win_h;
-    s_build.clip_rect      = s.clip_rect;
+    s_scope.clip           = s.clip;
     draw_set_window( s.window );
     draw_set_sort_key( s.sort_key );
     draw_set_viewport( s.viewport );
@@ -388,14 +389,14 @@ gui_popup_close_current( void )
 /*----------------------------------------------------------------------------------------------
     Context menus -- open a popup on a right-click.
 
-    _item binds to the previous widget (its id is latched in s_build.last_item_id by widget_behavior);
+    _item binds to the previous widget (its id is latched in s_scope.last_id by widget_behavior);
     _window binds to empty space in the current window.  Both then render through popup_begin.
 ----------------------------------------------------------------------------------------------*/
 
 bool
 gui_popup_context_item_begin( const char* str )
 {
-    gui_id_t want = s_build.last_item_id;
+    gui_id_t want = s_scope.last_id;
     if ( want != GUI_ID_NONE && s_interaction.hover_id == want && s_io.mouse_pressed[ 1 ] )
         gui_popup_open( str );
     return gui_popup_begin( str, GUI_WIN_NONE );
@@ -465,7 +466,7 @@ gui_tooltip_end( void )
 void
 gui_set_item_tooltip( const char* text )
 {
-    if ( s_build.last_item_id == GUI_ID_NONE || s_interaction.hover_id != s_build.last_item_id )
+    if ( s_scope.last_id == GUI_ID_NONE || s_interaction.hover_id != s_scope.last_id )
         return;
 
     if ( !text || !text[0] ) return;
@@ -525,7 +526,7 @@ gui_help_marker( const char* text )
     draw_push_text( tr.x, tr.y, st.hover ? COL_TEXT : COL_TEXT_DIM, mark );
     widget_track_width( tr.x + mw );
 
-    /* Bind the tooltip to the mark just emitted (last_item_id / hover_id were set above). */
+    /* Bind the tooltip to the mark just emitted (s_scope.last_id / hover_id were set above). */
     gui_set_item_tooltip( text );
 }
 

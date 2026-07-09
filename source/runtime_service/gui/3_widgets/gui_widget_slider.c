@@ -73,7 +73,7 @@ slider_render( gui_rect_t track_r, widget_state_t st, f32 t, const char* value_t
         draw_set_rounding( save_round );
     }
 
-    if ( value_text && !( s_build.cur_item_flags & GUI_ITEM_NO_VALUE_TEXT ) )
+    if ( value_text && !( s_scope.flags & GUI_ITEM_NO_VALUE_TEXT ) )
     {
         f32 inner = track_r.w - 2.0f * WIDGET_PAD;
         f32 tw    = font_text_w_n( value_text, 0xFFFFFFFFu );

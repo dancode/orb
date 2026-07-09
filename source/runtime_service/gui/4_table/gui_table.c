@@ -139,8 +139,8 @@ table_resize_interact( gui_table_t* t )
 {
     if ( !( t->flags & GUI_TABLE_RESIZABLE ) || !t->persist ) return;
 
-    gui_rect_t body_hit = s_build.clip_rect;
-    s_build.clip_rect = rect_intersect( t->saved_clip, t->outer_rect );
+    gui_rect_t body_hit = s_scope.clip;
+    s_scope.clip = rect_intersect( t->saved_clip, t->outer_rect );
 
     const f32 thick = 6.0f;          /* grab band width, centered on the boundary */
     const f32 min_w = WIDGET_MIN_W;  /* floor for each side of the resized pair    */
@@ -180,7 +180,7 @@ table_resize_interact( gui_table_t* t )
         }
     }
 
-    s_build.clip_rect = body_hit;
+    s_scope.clip = body_hit;
 }
 
 /* Advance the layout cursor past the current row.  The table is an imperative host: it owns the
@@ -202,9 +202,9 @@ table_open_body( gui_table_t* t )
     /* The ONE clip: the whole table box, header included.  Like a window body, the scroll region
        below runs own_clip=false inside this single clip, and the header is drawn last (as chrome)
        to overpaint rows that scroll up under it -- so the entire table needs just this one clip. */
-    t->saved_clip = s_build.clip_rect;
+    t->saved_clip = s_scope.clip;
     draw_push_clip_rect( t->outer_rect.x, t->outer_rect.y, t->outer_rect.w, t->outer_rect.h );
-    s_build.clip_rect = rect_intersect( t->saved_clip, t->outer_rect );
+    s_scope.clip = rect_intersect( t->saved_clip, t->outer_rect );
 
     gui_rect_t body = { t->outer_rect.x,
                           t->outer_rect.y + t->header_h,
@@ -385,7 +385,7 @@ gui_table_end( void )
 
     /* Done with the one table clip: pop it and restore the caller's clip. */
     draw_pop_clip_rect();
-    s_build.clip_rect = t->saved_clip;
+    s_scope.clip = t->saved_clip;
 
     s_tab_active = false;
 }
@@ -419,8 +419,8 @@ gui_table_setup_column( const char* label, gui_table_col_flags_t flags, f32 widt
 static void
 table_header_interact( gui_table_t* t )
 {
-    gui_rect_t body_hit = s_build.clip_rect;
-    s_build.clip_rect = rect_intersect( t->saved_clip, t->outer_rect );
+    gui_rect_t body_hit = s_scope.clip;
+    s_scope.clip = rect_intersect( t->saved_clip, t->outer_rect );
 
     const f32 hy = t->outer_rect.y;
     const f32 hh = t->header_h;
@@ -459,7 +459,7 @@ table_header_interact( gui_table_t* t )
         }
     }
 
-    s_build.clip_rect = body_hit;
+    s_scope.clip = body_hit;
 }
 
 /* Draw the header strip.  Called LAST (from table_end) within the one table clip so it overpaints
