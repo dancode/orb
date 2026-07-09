@@ -35,7 +35,7 @@ void
 gui_layout( gui_layout_t desc )
 {
     layout_set( desc.cols, desc.row_h, desc.gap_x, desc.gap_y );
-    lf()->lay_align = (u8)desc.align;   /* full template carries the content alignment too */
+    lf()->mod.align = (u8)desc.align;   /* full template carries the content alignment too */
 }
 
 /* stack -- the explicit header for a single full-width flex column, rows accumulating + scrolling
@@ -124,17 +124,17 @@ void gui_row4( f32 a, f32 b, f32 c, f32 d )  { f32 t[ 5 ] = { a, b, c, d, GUI_EN
    the theme's default widget gap).  The widget takes its natural width (a button to its label, text
    to its glyphs); a widget with no natural width fills to the content's right edge.  The next plain
    widget after it resumes a fresh row below the line.  No-op before any widget has emitted in the
-   region.  Mirrors ImGui::SameLine; built entirely on the cell engine's prev_item anchor. */
+   region.  Mirrors ImGui::SameLine; built entirely on the cell engine's line.prev_item anchor. */
 void
 gui_same_line( f32 spacing )
 {
     layout_frame_t* f = lf();
-    if ( f->prev_item.w <= 0.0f && f->prev_item.h <= 0.0f ) return;   /* nothing to continue from */
+    if ( f->line.prev_item.w <= 0.0f && f->line.prev_item.h <= 0.0f ) return;   /* nothing to continue from */
 
     f32 gap         = ( spacing >= 0.0f ) ? spacing : WIDGET_GAP;
-    f->line_main    = f->prev_item.x + f->prev_item.w + gap;
-    f->line_open    = true;   /* reopen the last line -- line_cross / line_ext are still current */
-    f->cont_pending = true;   /* one-shot: the next emit is a pen placement on that line */
+    f->line.main    = f->line.prev_item.x + f->line.prev_item.w + gap;
+    f->line.open    = true;   /* reopen the last line -- line.cross / line.ext are still current */
+    f->line.cont_pending = true;   /* one-shot: the next emit is a pen placement on that line */
 }
 
 /* stack_same_line -- the mode-prefixed name for same_line; identical behavior.  The stack_ spelling
@@ -157,9 +157,9 @@ void
 gui_field_split( gui_label_side_t side, f32 label, f32 control )
 {
     layout_frame_t* f   = lf();
-    f->lay_field_side    = (u8)side;
-    f->lay_field_label   = label;
-    f->lay_field_control = control;
+    f->mod.field_side    = (u8)side;
+    f->mod.field_label   = label;
+    f->mod.field_control = control;
 }
 
 /* field_split sugar -- a fixed-width label column with a flex control filling the rest, on the
@@ -187,7 +187,7 @@ gui_form( gui_label_side_t side, f32 label_w )
 void
 gui_align( gui_align_t a )
 {
-    lf()->lay_align = (u8)a;
+    lf()->mod.align = (u8)a;
 }
 
 /* next_item_fit -- override how big the very next cell item is (STACK / COLUMNS / GRID; pack has
@@ -198,7 +198,7 @@ gui_align( gui_align_t a )
 
        gui()->next_item_fit( 1.0f ); gui()->button( "Save" );   // stretch a button across its column
        gui()->next_item_fit( 0.0f ); gui()->slider_float(...);  // shrink a field to its own width */
-void gui_next_item_fit( f32 unit ) { lf()->fit_next = unit; }
+void gui_next_item_fit( f32 unit ) { lf()->line.fit_next = unit; }
 
 /* Grid mode: partition the band from the pen to the region bottom into desc.cols x desc.rows
    (both GUI_END-terminated, overloaded units).  Uses cols, rows, gaps, and align; row_h is
@@ -207,7 +207,7 @@ void
 gui_grid( gui_layout_t desc )
 {
     layout_set_grid( desc.cols, desc.rows, desc.gap_x, desc.gap_y );
-    lf()->lay_align = (u8)desc.align;   /* full template carries the content alignment too */
+    lf()->mod.align = (u8)desc.align;   /* full template carries the content alignment too */
 }
 
 /* nc x nr equal flex cells filling the band -- the uniform grid (image grids, dashboards). */
@@ -249,24 +249,24 @@ gui_pack( gui_pack_dir_t dir )
     layout_template_reset( f );       /* fresh iteration state; the line opens below */
 
     f->mode      = GUI_MODE_PACK;
-    f->pack_dir  = (u8)dir;
-    f->lay_ncols = 1;                 /* non-zero: pack bypasses the column walk */
+    f->line.pack_dir  = (u8)dir;
+    f->tmpl.ncols = 1;                 /* non-zero: pack bypasses the column walk */
 
     /* Open the first line at the pen: the main pen runs along dir from the line origin, the
        cross axis sits at the gap-before position below prior content / the content edge. */
     if ( dir == GUI_PACK_HORIZONTAL )
     {
-        f->line_origin = f->content_x;        /* x start of every line       */
-        f->line_cross  = layout_next_y( f );  /* y top of the first line     */
+        f->line.origin = f->content_x;        /* x start of every line       */
+        f->line.cross  = layout_next_y( f );  /* y top of the first line     */
     }
     else
     {
-        f->line_origin = layout_next_y( f );  /* y top of every column       */
-        f->line_cross  = f->content_x;        /* x left of the first column  */
+        f->line.origin = layout_next_y( f );  /* y top of every column       */
+        f->line.cross  = f->content_x;        /* x left of the first column  */
     }
-    f->line_main = f->line_origin;
-    f->line_ext  = 0.0f;
-    f->line_open = true;
+    f->line.main = f->line.origin;
+    f->line.ext  = 0.0f;
+    f->line.open = true;
     f->nav_line  = ++s_build.nav_line_seq;   /* the run's first line is a fresh nav line */
 }
 
@@ -278,7 +278,7 @@ void gui_strip( void ) { gui_pack( GUI_PACK_VERTICAL ); }
 
 /* pack_size -- set the next packed item's main-axis measure (overloaded unit, resolved against the
    space remaining on the current line); cleared back to natural after that one item. */
-void gui_pack_size( f32 unit ) { lf()->pack_size_next = unit; }
+void gui_pack_size( f32 unit ) { lf()->line.pack_size_next = unit; }
 
 /* pack_nextline -- break to a fresh line: commit the line just laid (folding it into the content
    measure) and open the next one past it, with the main pen back at the line start.  An empty
@@ -289,18 +289,18 @@ gui_pack_nextline( void )
     layout_frame_t* f = lf();
     if ( f->mode != GUI_MODE_PACK ) return;
 
-    bool horiz     = ( f->pack_dir == GUI_PACK_HORIZONTAL );
-    f32  gap       = horiz ? f->lay_gap_y : f->lay_gap_x;
-    f32  new_cross = f->line_cross + f->line_ext + gap;   /* past the line just laid */
+    bool horiz     = ( f->line.pack_dir == GUI_PACK_HORIZONTAL );
+    f32  gap       = horiz ? f->mod.gap_y : f->mod.gap_x;
+    f32  new_cross = f->line.cross + f->line.ext + gap;   /* past the line just laid */
 
     line_commit( f );              /* close the line -- its extent is already in the highwater */
 
-    f->line_cross = new_cross;
-    f->line_main  = f->line_origin;
-    f->line_ext   = 0.0f;
-    f->line_open  = true;
+    f->line.cross = new_cross;
+    f->line.main  = f->line.origin;
+    f->line.ext   = 0.0f;
+    f->line.open  = true;
     f->nav_line   = ++s_build.nav_line_seq;   /* the broken-to line is a fresh nav line */
-    f->prev_item  = ( gui_rect_t ){ 0 };
+    f->line.prev_item  = ( gui_rect_t ){ 0 };
 }
 
 /* Region padding: re-inset the current region's content area and clear the template back to
@@ -387,7 +387,7 @@ gui_content_avail( void )
     layout_frame_t* f = lf();
     gui_vec2_t      p = gui_cursor_screen_pos();
     f32 w = ( f->content_x + f->content_w ) - p.x;
-    f32 h = f->content_y_max - p.y;
+    f32 h = f->band_bottom - p.y;
     if ( w < 0.0f ) w = 0.0f;
     if ( h < 0.0f ) h = 0.0f;
     return ( gui_vec2_t ){ w, h };
@@ -403,14 +403,14 @@ gui_cursor_screen_pos( void )
 {
     layout_frame_t* f = lf();
 
-    if ( f->line_open && ( f->mode == GUI_MODE_PACK || f->cont_pending ) )
+    if ( f->line.open && ( f->mode == GUI_MODE_PACK || f->line.cont_pending ) )
     {
-        if ( f->mode == GUI_MODE_PACK && f->pack_dir == GUI_PACK_VERTICAL )
-            return ( gui_vec2_t ){ f->line_cross, f->line_main };   /* strip: pen runs down     */
-        return ( gui_vec2_t ){ f->line_main, f->line_cross };       /* bar / continuation: right */
+        if ( f->mode == GUI_MODE_PACK && f->line.pack_dir == GUI_PACK_VERTICAL )
+            return ( gui_vec2_t ){ f->line.cross, f->line.main };   /* strip: pen runs down     */
+        return ( gui_vec2_t ){ f->line.main, f->line.cross };       /* bar / continuation: right */
     }
-    if ( f->line_open && f->col > 0 )
-        return ( gui_vec2_t ){ f->cellx[ f->col ], f->line_cross }; /* next cell on the open row */
+    if ( f->line.open && f->line.col > 0 )
+        return ( gui_vec2_t ){ f->tmpl.cellx[ f->line.col ], f->line.cross }; /* next cell on the open row */
 
     return ( gui_vec2_t ){ f->content_x, layout_next_y( f ) };      /* a fresh line at the pen   */
 }

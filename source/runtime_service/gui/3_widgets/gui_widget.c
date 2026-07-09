@@ -44,7 +44,7 @@ text_emit( u32 col, const char* str )
     /* Place the run inside its cell per the region's content alignment (default LEFT | TOP, the
        original top-left).  A row tall enough for the glyph centers vertically when asked. */
 
-    gui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->lay_align );
+    gui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->mod.align );
 
     /* When the run fits its cell, draw at the aligned position.  When it overflows, ellipsize to the
        cell width so the widget self-fits regardless of whether a clip rect is active (GUI_WIN_NO_CLIP
@@ -409,7 +409,7 @@ gui_checkbox( const char* label, bool* v )
        Under a field split the cell must NOT shrink: the split resolves its label + control tracks
        over the cell, so a hugged cell collapses the control track to the CHECKBOX_SZ floor and the
        nav/hit rect shrinks to the bare box instead of spanning the field like input/slider rows. */
-    bool       split_on = ( lf()->lay_field_side != 0 );
+    bool       split_on = ( lf()->mod.field_side != 0 );
     gui_rect_t r  = widget_next_rect_w( split_on ? -1.0f
                                                  : 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD
                                                        + label_width( label ),
@@ -499,7 +499,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
     /* Natural width = pad + disc + gap + label + pad, so a same_line radio shrinks to fit (a group
        on one row).  Under a field split the cell must not shrink -- same rule as checkbox: the
        split needs the full cell or its control track collapses to the floor. */
-    bool       split_on = ( lf()->lay_field_side != 0 );
+    bool       split_on = ( lf()->mod.field_side != 0 );
     gui_rect_t r  = widget_next_rect_w( split_on ? -1.0f
                                                  : 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD
                                                        + label_width( label ),

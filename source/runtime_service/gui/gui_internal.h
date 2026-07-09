@@ -298,100 +298,109 @@ typedef struct
     context layout_pop_region needs to measure content and draw the region's scrollbars.
 ==============================================================================================*/
 
+/* The three grouped lifetimes of a layout frame, named so each reset in gui_layout_core.c is a
+   single struct assignment that cannot drift from the field list:
+
+     layout_tmpl_t -- the installed shape; persists until the next header replaces it
+     layout_mod_t  -- orthogonal modifiers; persist across installs, reset only by the full
+                      clears (layout_clear / layout_set_default via layout_modifiers_reset)
+     layout_line_t -- the iteration cursor + open-line record; re-zeroed by every install
+                      (layout_template_reset) */
+
+/* Active row template (gui_layout / row sugar).  Persists and repeats: each widget fills the
+   next cell, wrapping to a fresh row of the same shape when the columns run out.  See
+   gui_layout_t in gui.h for the unit rule.  The resolved cell geometry is computed once when a
+   template is installed (the source track list is kept only so indent can re-resolve): flow uses
+   cellx/cellw for every row; grid uses cellx/cellw x rowy/rowh as the fixed matrix.  cols
+   indexes [0,ncols), rows [0,nrows). */
+
 typedef struct
 {
-    f32             content_x, content_y;           // pen: current line's left edge / y it opens at (scroll-biased)
-    f32             content_w;                      // available width from content_x
-    f32             content_max_x, content_max_y;   // highwater: far corner the content reached (scroll-biased)
+    u32 ncols;                      // column count
+    u32 nrows;                      // row count; 0 => flow mode, else grid
+    f32 row_h;                      // flow row height: 0 = auto, >0 = pixels
+    f32 cols[ GUI_LAYOUT_COLS ];    // source column units, kept so indent can re-resolve
 
-    /* The PEN (content_x, content_y; x has no independent motion -- a line always starts at
-       content_x) is where the next item goes; the HIGHWATER (content_max_x, content_max_y) is the
-       monotonic bounding-box max the region measures at pop to size its scrollbars / autosize.
-       Forward flow advances both together (content_reach); a pen REPOSITION -- layout_pen_jump for
-       a table row or a menu-bar restore -- moves content_y alone, so the highwater never rewinds.
+    f32 cellx[ GUI_LAYOUT_COLS ];   // resolved cell left edges
+    f32 cellw[ GUI_LAYOUT_COLS ];   // resolved cell widths
+    f32 rowy [ GUI_LAYOUT_COLS ];   // resolved cell tops    (grid only)
+    f32 rowh [ GUI_LAYOUT_COLS ];   // resolved cell heights (grid only)
+
+} layout_tmpl_t;
+
+/* Orthogonal modifiers -- gaps, alignment, field split.  align (gui_align_t flags) is where a
+   widget's natural-sized content sits in its cell; 0 = LEFT | TOP.  The field split
+   (field_split / field_label_left) makes a labeled value widget split its cell into a label
+   track + a control track, resolved with the column unit rule. */
+
+typedef struct
+{
+    f32 gap_x, gap_y;               // inter-cell spacing (resolved to a number)
+    u8  align;                      // gui_align_t flags
+    u8  field_side;                 // gui_label_side_t: 0 off (label trails), 1 left, 2 right
+    f32 field_label;                // label track size   (overloaded unit)
+    f32 field_control;              // control track size (overloaded unit)
+
+} layout_mod_t;
+
+/* The iteration cursor + the open line -- the one record behind flow rows, pack lines, and
+   same_line continuations.  A flow row fixes ext when it opens (row_h, or the first item's
+   height) and places items at the template cells; pack and continuations place at the running
+   main pen and grow ext by max.  line_commit folds the line into pen_y.  In a strip (vertical
+   pack) the axes flip: cross / ext are x / width, main is the y pen.
+
+   fit_next (next_item_fit) is a one-shot overloaded unit that decides how big the very next cell
+   item is *before* mod.align decides where it sits -- the explicit escape hatch for the implicit
+   per-widget fit signal every emit carries in its own natural_w.  < 0 = unset (the common case):
+   the widget's own natural_w wins, matching its type's default (a button hugs its label, a
+   slider fills).  See cell_fit_resolve in gui_layout_core.c. */
+
+typedef struct
+{
+    u32 col;                        // next column to emit (0 = at a row start)
+    u32 row;                        // current grid row (with col, walks row-major)
+
+    f32  cross;                     // cross-axis origin of the current / last line
+    f32  ext;                       // its cross extent (fixed for a flow row, max for pack)
+    f32  main;                      // running main-axis pen (past the last item + gap)
+    f32  origin;                    // main-axis line start (the pack_nextline reset)
+    bool open;                      // items may still join this line; commit closes it
+
+    gui_rect_t prev_item;           // last cell emitted this region: same_line() reopens its
+    bool cont_pending;              //   line, and the next emit is a one-shot pen placement
+
+    u8  pack_dir;                   // gui_pack_dir_t: 0 horizontal (bar), 1 vertical (strip)
+    f32 pack_size_next;             // pending main-axis size unit; < 0 = unset (natural)
+    f32 fit_next;                   // pending cell-item fit unit; < 0 = unset (implicit)
+
+} layout_line_t;
+
+typedef struct
+{
+    /* The PEN (content_x, pen_y; x has no independent motion -- a line always starts at
+       content_x) is where the next item goes; the HIGHWATER (high_x, high_y) is the monotonic
+       bounding-box max the region measures at pop to size its scrollbars / autosize.  Forward
+       flow advances both together (content_reach); a pen REPOSITION -- layout_pen_jump for a
+       table row or a menu-bar restore -- moves pen_y alone, so the highwater never rewinds.
        extent_track grows the highwater; widget_track_width is its x-only face for a leaf widget
-       that overflows its cell. */
-
-    /* Active row template (gui_layout / row sugar).  Persists and repeats: each widget fills
-       the next cell, wrapping to a fresh row of the same shape when the columns run out.  A
-       region opens with the default -- one flex column, auto height -- so a plain vertical
-       stack needs no layout call.  See gui_layout_t in gui.h for the unit rule. */
-
-    gui_layout_mode_t mode;                         // declared next-item methodology; NONE until a header
-
-    u32             lay_ncols;                      // column count
-    u32             lay_nrows;                      // row count; 0 => flow mode, else grid
-    f32             lay_row_h;                      // flow row height: 0 = auto, >0 = pixels
-    f32             lay_gap_x, lay_gap_y;           // inter-cell spacing (resolved to a number)
-    f32             lay_cols[ GUI_LAYOUT_COLS ];    // source column units, kept so indent can re-resolve
-
-    /* Content alignment (align / layout.align): where a widget's natural-sized content sits in
-       its cell.  Persists like the row template; 0 = LEFT | TOP (the original top-left). */
-
-    u8              lay_align;              // gui_align_t flags
-
-    /* Fit override (next_item_fit): a one-shot overloaded unit that decides how big the very next
-       cell item is *before* lay_align decides where it sits -- the explicit escape hatch for the
-       implicit per-widget fit signal every emit carries in its own natural_w.  < 0 = unset (the
-       common case): the widget's own natural_w wins, matching its type's default (a button hugs
-       its label, a slider fills).  See cell_fit_resolve in gui_layout_core.c. */
-
-    f32             fit_next;               // pending cell-item fit unit; < 0 = unset (implicit)
-
-    /* Field split (field_split / field_label_left): a labeled value widget splits its cell into a
-       label track + a control track, resolved with the column unit rule.  side 0 = off (the
-       label trails the control); 1 = label-left; 2 = label-right. */
-
-    u8              lay_field_side;         // gui_label_side_t: 0 off, 1 left, 2 right
-    f32             lay_field_label;        // label track size   (overloaded unit)
-    f32             lay_field_control;      // control track size (overloaded unit)
-
-
-
-    /* Resolved cell geometry, computed once when a template is installed (the source track lists
-       are not kept -- they are only needed to produce these).  Flow uses cellx/cellw for every
-       row; grid uses cellx/cellw x rowy/rowh as the fixed matrix.  cols indexes [0,lay_ncols),
-       rows [0,lay_nrows). */
-
-    f32             cellx[ GUI_LAYOUT_COLS ];       // resolved cell left edges
-    f32             cellw[ GUI_LAYOUT_COLS ];       // resolved cell widths
-    f32             rowy [ GUI_LAYOUT_COLS ];       // resolved cell tops    (grid only)
-    f32             rowh [ GUI_LAYOUT_COLS ];       // resolved cell heights (grid only)
-
-    /* Iteration cursor.  Flow: (col) walks one row of the template; grid: (col,row) walk the
-       pre-resolved matrix.  content_y is carried live at the exact content end (committed lines
+       that overflows its cell.  pen_y is carried live at the exact content end (committed lines
        plus the open line) -- a gap is owed *before* the next line (gap_pending), never appended
-       after content, so measurement at pop needs no trailing-gap correction. */
+       after content, so measurement at pop needs no trailing-gap correction.  gap_pending is the
+       one flow fact that survives a template install: content committed above still owes its gap
+       to whatever shape comes next. */
 
-    u32             col;                // next column to emit (0 = at a row start)
-    u32             row;                // current grid row (with col, walks row-major)
-    f32             content_y_max;      // bottom of the content area -- grid band end
-    bool            gap_pending;        // content committed above -- the next line owes a gap
+    f32  content_x;         // content column left edge (scroll-biased); lines start here
+    f32  content_w;         // available width from content_x
+    f32  pen_y;             // pen: y the next line opens at (scroll-biased)
+    f32  high_x, high_y;    // highwater: far corner the content reached (scroll-biased)
+    f32  band_bottom;       // bottom of the content area -- grid band end
+    bool gap_pending;       // content committed above -- the next line owes a gap
 
-    /* The open line -- the one record behind flow rows, pack lines, and same_line continuations.
-       A flow row fixes line_ext when it opens (row_h, or the first item's height) and places
-       items at the template cells; pack and continuations place at the running line_main pen and
-       grow line_ext by max.  line_commit folds the line into content_y.  In a strip (vertical
-       pack) the axes flip: line_cross / line_ext are x / width, line_main is the y pen. */
+    gui_layout_mode_t mode; // declared next-item methodology; NONE until a header
 
-    f32             line_cross;         // cross-axis origin of the current / last line
-    f32             line_ext;           // its cross extent (fixed for a flow row, max for pack)
-    f32             line_main;          // running main-axis pen (past the last item + gap)
-    f32             line_origin;        // main-axis line start (the pack_nextline reset)
-    bool            line_open;          // items may still join this line; commit closes it
-
-    /* same_line: prev_item is the last cell handed out; same_line() reopens its line, moves the
-       pen just past it, and arms cont_pending so the next emit is a one-shot pen placement. */
-
-    gui_rect_t      prev_item;          // last cell emitted this region (same_line anchor)
-    bool            cont_pending;       // next emit continues on the reopened line (one-shot)
-
-    /* Pack mode (bar / strip): a print run placing items along pack_dir at natural size -- or a
-       pack_size override resolved against the space remaining on the current line -- with
-       pack_nextline breaking to a fresh line.  Built on the open-line record above. */
-
-    u8              pack_dir;           // gui_pack_dir_t: 0 horizontal (bar), 1 vertical (strip)
-    f32             pack_size_next;     // pending main-axis size unit; < 0 = unset (natural)
+    layout_tmpl_t tmpl;     // the installed shape (persists until replaced)
+    layout_mod_t  mod;      // orthogonal modifiers (persist across installs)
+    layout_line_t line;     // iteration cursor + the open line (re-zeroed per install)
 
     /* Keyboard-nav structural coordinate (see gui_nav_item_t).  nav_region is dispensed once per
        region open (layout_seed_content); nav_line is re-dispensed from the frame-global counter

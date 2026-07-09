@@ -459,7 +459,7 @@ show_region_demo( void )
                       gui()->want_capture_mouse() );
 
     gui()->row2( 0.5f, 0.5f );
-    gui()->button( "A" );                       // default: shrinks to label, seated by lay_align
+    gui()->button( "A" );                       // default: shrinks to label, seated by mod.align
     gui()->next_item_fit( 1.0f );
     gui()->button( "B" );                       // overridden: stretches to fill its half
 

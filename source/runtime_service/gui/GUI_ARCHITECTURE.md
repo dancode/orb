@@ -173,9 +173,11 @@ Invariants:
 ## Layout engine (2_compose/gui_layout_core.c = mechanism, 2_compose/gui_layout.c = public verbs)
 
 Model: every window body / region / child owns a `layout_frame_t` with a content box, a PEN
-(`content_y`, flows downward) and a HIGHWATER (`content_max_x/y`, monotonic bounding box used
-at region pop to decide scrollbars). `content_reach` moves both; only `layout_pen_jump` parts
-them. Widgets never see the layout shape: each calls `widget_next_rect_w(natural_w, h)` and is
+(`pen_y`, flows downward) and a HIGHWATER (`high_x/high_y`, monotonic bounding box used at
+region pop to decide scrollbars). `content_reach` moves both; only `layout_pen_jump` parts
+them. The frame groups its other state by lifetime: `tmpl` (the installed shape), `mod`
+(orthogonal modifiers), `line` (iteration cursor + the open line, re-zeroed per install).
+Widgets never see the layout shape: each calls `widget_next_rect_w(natural_w, h)` and is
 handed the next cell.
 
 ### The one overloaded unit rule (used EVERYWHERE: tracks, splits, fit, pack)

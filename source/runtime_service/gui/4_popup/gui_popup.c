@@ -519,7 +519,7 @@ gui_help_marker( const char* text )
     f32          mw = font_text_w( mark );
     f32          mh = font_char_h();
     gui_rect_t   r  = widget_next_rect_w( mw, mh );
-    gui_rect_t   tr = rect_align( r, mw, mh, lf()->lay_align );
+    gui_rect_t   tr = rect_align( r, mw, mh, lf()->mod.align );
 
     /* Hoverable but inert: the returned click is ignored, only st.hover drives the brighten. */
     widget_state_t st = widget_behavior( id, tr, WIDGET_KIND_BUTTON );

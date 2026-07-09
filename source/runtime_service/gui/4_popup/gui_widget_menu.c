@@ -308,7 +308,7 @@ gui_menu_bar_begin( void )
     draw_push_rect_filled( bar.x, bar.y, bar.w, bar.h, 0,0,1,1, 0, COL_TITLE_BG );
 
     /* Save the body pen: the strip is drawn outside the body flow, so the body resumes from here. */
-    s_menubar_saved_cursor = lf()->content_y;
+    s_menubar_saved_cursor = lf()->pen_y;
 
     /* The strip sits ABOVE the body region that is currently on the stack, so the live interaction clip (s_scope.clip)
        (the body's, which starts below the strip) excludes it entirely.  layout_push_region with
@@ -342,7 +342,7 @@ gui_menu_bar_end( void )
        resumes exactly where it stood -- pen authoritative (no gap owed), and the strip box must
        not linger as a same_line anchor. */
     layout_pen_jump( lf(), s_menubar_saved_cursor );
-    lf()->prev_item = ( gui_rect_t ){ 0 };
+    lf()->line.prev_item = ( gui_rect_t ){ 0 };
 }
 
 // clang-format on

@@ -207,7 +207,7 @@ layout_pop_region( void )
     item_flags_chrome_reset();
 
     /* Close any open line first so the measure sees the full content extent (a partially filled
-       last row counts), then read the highwater: content_max_y is the exact content end -- gap-before
+       last row counts), then read the highwater: high_y is the exact content end -- gap-before
        means no trailing gap to correct for. */
     layout_row_break( f );
 
@@ -217,8 +217,8 @@ layout_pop_region( void )
        leaves the same air under the content as a short region shows above it.  An empty region
        still measures 0 -- consumers use content <= 0 as the "never measured" premeasure sentinel.
        Both axes read the highwater pair symmetrically.  Stored for next frame's gutter + knob. */
-    f32 items_h = ( f->content_max_y + f->scroll->scroll_y ) - f->origin_y;
-    f32 items_w = ( f->content_max_x + f->scroll->scroll_x ) - f->origin_x;
+    f32 items_h = ( f->high_y + f->scroll->scroll_y ) - f->origin_y;
+    f32 items_w = ( f->high_x + f->scroll->scroll_x ) - f->origin_x;
     f32 content_h = ( items_h > 0.0f ) ? items_h + f->pad.t + f->pad.b : 0.0f;
     f32 content_w = ( items_w > 0.0f ) ? items_w + f->pad.l + f->pad.r : 0.0f;
     f->scroll->content_h = content_h;
@@ -280,7 +280,7 @@ layout_pop_region( void )
     /* Pop the frame and advance the parent pen past the region box, so the parent's next
        widget lands directly below it.  The box is the parent's last "line": the pen lands at its
        exact bottom (the gap before whatever follows is owed via gap_pending, not appended), and
-       prev_item / the line record are stamped so same_line after child_end anchors to the box.
+       line.prev_item / the line record are stamped so same_line after child_end anchors to the box.
        The root region (a window body) has no parent frame. */
     s_id_sp = f->id_restore;   /* unwind this region's id scope (and any leaked push_id) */
     gui_rect_t outer = f->outer;
@@ -290,10 +290,10 @@ layout_pop_region( void )
         layout_frame_t* p = lf();
         content_reach( p, outer.x + outer.w, outer.y + outer.h );   /* pen + highwater past the box */
         p->gap_pending = true;
-        p->prev_item   = outer;
-        p->line_cross  = outer.y;
-        p->line_ext    = outer.h;
-        p->line_open   = false;
+        p->line.prev_item   = outer;
+        p->line.cross  = outer.y;
+        p->line.ext    = outer.h;
+        p->line.open   = false;
     }
 }
 

@@ -85,7 +85,7 @@ gui_volatile_begin( void )
                 "not reproduced on idle-frame replay" );
 
     layout_frame_t* f = lf();
-    gui_volatile_stamp( f->content_x, f->content_y, f->content_w );
+    gui_volatile_stamp( f->content_x, f->pen_y, f->content_w );
 }
 
 void
@@ -100,7 +100,7 @@ gui_volatile_end( void )
     scrollbar gutter, pushes no clip, and calls no id_push -- the caller handles id scoping
     itself.  layout_set_default installs a plain single-column stack and resets the
     modifier/template state, so a widget can be placed immediately without tripping the
-    emit-before-header guard in widget_next_rect_w.  content_y_max is set far below y since a
+    emit-before-header guard in widget_next_rect_w.  band_bottom is set far below y since a
     replay frame never opens a grid.
 ----------------------------------------------------------------------------------------------*/
 
@@ -112,11 +112,11 @@ layout_push_scoped( f32 x, f32 y, f32 w )
     layout_frame_t* f = &s_layout_stack[ slot ];
 
     f->content_x     = x;
-    f->content_y     = y;
+    f->pen_y     = y;
     f->content_w     = w;
-    f->content_max_x = x;
-    f->content_max_y = y;
-    f->content_y_max = y + 1.0e6f;
+    f->high_x = x;
+    f->high_y = y;
+    f->band_bottom = y + 1.0e6f;
 
     layout_set_default( f );
 }

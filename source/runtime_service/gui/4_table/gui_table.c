@@ -4,7 +4,7 @@
 
     A table is a region whose content is laid out in a column grid -- columns resolved once per
     table_begin, rows accumulated per table_next_row.  table_next_column just points the layout pen
-    at the column's cell (cellx / cellw); content stays inside the column because widgets self-fit
+    at the column's cell (tmpl.cellx / tmpl.cellw); content stays inside the column because widgets self-fit
     to that width (text ellipsizes, labeled widgets shrink), exactly like the layout engine's
     columns mode.  There is therefore NO per-cell clip.
 
@@ -232,7 +232,7 @@ table_open_body( gui_table_t* t )
     layout_push_region( t->id, body, ( gui_pad_t ){ 0, 0, 0, 0 }, rflags,
                         link, /* own_clip */ false );
 
-    /* STACK mode so widget_next_rect_w uses cellx[0] / cellw[0], overridden per column. */
+    /* STACK mode so widget_next_rect_w uses tmpl.cellx[0] / tmpl.cellw[0], overridden per column. */
     layout_set_default( lf() );
 
     /* Resolve from the newly-opened region's content geometry -- content_w already excludes the
@@ -354,12 +354,12 @@ gui_table_end( void )
         content_bottom = ( t->cur_row >= 0 ) ? ( t->row_top + t->row_h ) : t->body_rect.y;
 
     /* Restore the full-width content column before pop so layout_pop_region measures the correct
-       horizontal extent (content_max_x tracks the rightmost draw edge for hscroll decisions). */
+       horizontal extent (high_x tracks the rightmost draw edge for hscroll decisions). */
     layout_frame_t* f = lf();
     f->content_x  = t->body_rect.x;
     f->content_w  = t->body_rect.w;
-    f->cellx[ 0 ] = t->body_rect.x;
-    f->cellw[ 0 ] = t->body_rect.w;
+    f->tmpl.cellx[ 0 ] = t->body_rect.x;
+    f->tmpl.cellw[ 0 ] = t->body_rect.w;
 
     /* Chrome is painted bottom-to-top while the one table clip is still on the draw stack, so every
        layer is bounded by the table box:
@@ -559,7 +559,7 @@ gui_table_next_row( f32 min_h )
     t->cur_row++;
     t->cur_col  = -1;
     t->row_h    = h;
-    t->row_top  = lf()->content_y;
+    t->row_top  = lf()->pen_y;
 
     /* One nav line for the whole row (table_next_column pins it over its per-column pen jumps),
        so the keyboard sees the table as rows of cells: Up/Down step rows, Left/Right the cells. */
@@ -596,7 +596,7 @@ gui_table_next_column( void )
     if ( t->cur_col >= t->ncols ) return false;
 
     /* Set the layout pen and column geometry so widget_next_rect_w returns the correct cell.
-       Content stays inside the column because widgets self-fit to cellw (text ellipsizes, labeled
+       Content stays inside the column because widgets self-fit to tmpl.cellw (text ellipsizes, labeled
        widgets shrink) -- the same contract as the layout engine's columns mode, so no per-cell clip
        is pushed.  The one exterior clip (the body region) bounds the table as a whole. */
     layout_frame_t* f = lf();
@@ -617,8 +617,8 @@ gui_table_next_column( void )
     layout_pen_jump( f, t->row_top );   /* pen to the row's top for each column, no gap owed */
     f->content_x  = ix;
     f->content_w  = iw;
-    f->cellx[ 0 ] = ix;
-    f->cellw[ 0 ] = iw;
+    f->tmpl.cellx[ 0 ] = ix;
+    f->tmpl.cellw[ 0 ] = iw;
 
     /* Pin the row's nav line over the per-column pen jumps: left to itself each cell's placement
        would open (and dispense) a fresh line, splitting one visual row into many keyboard rows. */

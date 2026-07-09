@@ -79,10 +79,10 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     /* Resize is a flow-child affordance: a grid cell sizes its own child, so the flags are inert
        there. */
     ORB_ASSERT_MSG( !( ( flags & ( GUI_WIN_CHILD_RESIZE_X | GUI_WIN_CHILD_RESIZE_Y ) )
-                       && parent->lay_nrows > 0 ),
+                       && parent->tmpl.nrows > 0 ),
                     "CHILD_RESIZE_X/_Y has no effect inside a grid-cell parent" );
-    bool resize_x = ( flags & GUI_WIN_CHILD_RESIZE_X ) && parent->lay_nrows == 0;
-    bool resize_y = ( flags & GUI_WIN_CHILD_RESIZE_Y ) && parent->lay_nrows == 0;
+    bool resize_x = ( flags & GUI_WIN_CHILD_RESIZE_X ) && parent->tmpl.nrows == 0;
+    bool resize_y = ( flags & GUI_WIN_CHILD_RESIZE_Y ) && parent->tmpl.nrows == 0;
 
     /* Consume any next-child size constraints up front (cleared so they bind only this child).  A
        grid cell sizes its own child, so the bounds, like the resize flags, are inert there; in flow
@@ -90,7 +90,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     f32 con_min_w = 0.0f, con_min_h = 0.0f, con_max_w = 0.0f, con_max_h = 0.0f;
     if ( s_next_child_con.has )
     {
-        ORB_ASSERT_MSG( parent->lay_nrows == 0,
+        ORB_ASSERT_MSG( parent->tmpl.nrows == 0,
                         "window_set_next_size_constraints has no effect inside a grid-cell parent" );
         con_min_w = s_next_child_con.min_w;  con_min_h = s_next_child_con.min_h;
         con_max_w = s_next_child_con.max_w;  con_max_h = s_next_child_con.max_h;
@@ -102,7 +102,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
        at the pen, on its own line.  The parent pen / grid cursor is advanced by layout_pop_region
        for flow, but the grid cursor must step here since pop does not touch (col,row). */
     gui_rect_t box;
-    if ( parent->lay_nrows > 0 )
+    if ( parent->tmpl.nrows > 0 )
     {
         box = grid_next_rect( parent, -1.0f );   /* the next matrix cell, filled; advances the matrix cursor */
     }
@@ -274,7 +274,7 @@ sublayout_open( gui_rect_t cell )
     f->view_h = cell.h;
 
     /* Content area = the whole cell (no pad, no scroll bias through the zeroed sink); opens
-       undeclared -- declare a mode inside.  content_y_max lands on the cell bottom, so a grid
+       undeclared -- declare a mode inside.  band_bottom lands on the cell bottom, so a grid
        sub-layout fills it. */
     layout_seed_content( f, ( gui_pad_t ){ 0 } );
 }
@@ -344,14 +344,14 @@ split_push_panel( gui_rect_t rect )
 }
 
 /* Pop the current panel and return the content height it actually emitted: commit the open line
-   and read the highwater -- under gap-before, content_max_y is the exact content end, so the stored
+   and read the highwater -- under gap-before, high_y is the exact content end, so the stored
    height feeds back stably (a button_fill that fills to it reclaims the same size next frame). */
 static f32
 split_pop_panel( void )
 {
     layout_frame_t* f = lf();
     layout_row_break( f );   /* close any partially-filled multi-column row */
-    f32 h = f->content_max_y - f->origin_y;
+    f32 h = f->high_y - f->origin_y;
     if ( h < 0.0f ) h = 0.0f;
     s_id_sp           = f->id_restore;
     s_scope.clip = f->parent_clip;
@@ -386,16 +386,16 @@ gui_split_begin( const char* id_str, f32 right_w )
     gui_rect_t right_rect = { x + left_w + gap, y, right_w, resolved_h };
 
     /* Advance the parent past the split now so it can continue below after split_end: the pen
-       lands at the band's exact bottom (the gap below is owed, not appended), and prev_item /
+       lands at the band's exact bottom (the gap below is owed, not appended), and line.prev_item /
        the line record are stamped so same_line() after split_end anchors to the band. */
-    parent->content_y   = y + resolved_h;   /* pen past the band */
-    if ( y + resolved_h > parent->content_max_y )
-        parent->content_max_y = y + resolved_h;   /* highwater climbs to the band bottom (x unchanged) */
+    parent->pen_y   = y + resolved_h;   /* pen past the band */
+    if ( y + resolved_h > parent->high_y )
+        parent->high_y = y + resolved_h;   /* highwater climbs to the band bottom (x unchanged) */
     parent->gap_pending = true;
-    parent->prev_item   = ( gui_rect_t ){ x, y, parent->content_w, resolved_h };
-    parent->line_cross  = y;
-    parent->line_ext    = resolved_h;
-    parent->line_open   = false;
+    parent->line.prev_item   = ( gui_rect_t ){ x, y, parent->content_w, resolved_h };
+    parent->line.cross  = y;
+    parent->line.ext    = resolved_h;
+    parent->line.open   = false;
 
     /* Push the split frame and open the left panel. */
     ORB_ASSERT( s_split_sp < GUI_SPLIT_DEPTH );
