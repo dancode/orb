@@ -56,11 +56,24 @@ region_get( gui_id_t id )
     is defined; shared by the gutter reservation (push), the wheel (pop), and any future caller.
 ----------------------------------------------------------------------------------------------*/
 
+/* Sub-quantum spill tolerance.  Lattice-quantized content (auto rows / natural sizes ceil to
+   grid_quantum) meeting a free-px container (a dragged window edge, a hand-sized box) can
+   overhang the view by a few px no author intended; an overflow within one quantum reads as
+   fitting -- no bar, no scroll range -- instead of a region that "scrolls" by a jittery 2px.
+   Genuine overflow (>= one more row) clears the tolerance by construction.  0 when the grid
+   is off (q <= 1): exact comparisons, the pre-grid behavior. */
+static f32
+region_spill_tol( void )
+{
+    u32 q = s_style.grid_quantum;
+    return ( q > 1 ) ? (f32)q : 0.0f;
+}
+
 static void
 scroll_clamp( f32* scroll, f32 content, f32 view )
 {
     f32 max = content - view;
-    if ( max < 0.0f ) max = 0.0f;
+    if ( max <= region_spill_tol() ) max = 0.0f;   /* sub-quantum spill: not scrollable */
     *scroll = clampf( *scroll, 0.0f, max );
 }
 
@@ -195,14 +208,17 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     f32 view_h = outer.h - WIN_BORDER;
     f32 view_w = outer.w - 2.0f * WIN_BORDER;
 
-    /* Two-pass gutter reservation from last frame's content. */
+    /* Two-pass gutter reservation from last frame's content.  Overflow within the spill
+       tolerance reads as fitting, matching the scroll range scroll_clamp allows -- a bar never
+       appears for a range the clamp would zero out. */
+    f32 tol    = region_spill_tol();
     f32 last_h = scroll->content_h, last_w = scroll->content_w;
-    bool show_v = v_static || ( v_dyn && last_h > view_h );
-    bool show_h = h_static || ( h_dyn && last_w > view_w );
+    bool show_v = v_static || ( v_dyn && last_h > view_h + tol );
+    bool show_h = h_static || ( h_dyn && last_w > view_w + tol );
     if ( show_v ) view_w -= knob;
     if ( show_h ) view_h -= knob;
-    if ( !show_v && v_dyn && last_h > view_h ) { show_v = true; view_w -= knob; }
-    if ( !show_h && h_dyn && last_w > view_w ) { show_h = true; view_h -= knob; }
+    if ( !show_v && v_dyn && last_h > view_h + tol ) { show_v = true; view_w -= knob; }
+    if ( !show_h && h_dyn && last_w > view_w + tol ) { show_h = true; view_h -= knob; }
 
     f->sb_w   = show_v ? knob : 0.0f;
     f->sb_h   = show_h ? knob : 0.0f;

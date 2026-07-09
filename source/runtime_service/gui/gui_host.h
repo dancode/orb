@@ -196,6 +196,7 @@ void gui_separator( void );
 gui_rect_t gui_canvas( f32 height );
 
 /* layout - formatting helpers */
+f32 gui_u( f32 n );
 f32 gui_line_h( void );
 f32 gui_text_w( const char* s );
 f32 gui_text_h( const char* s );
@@ -238,6 +239,9 @@ void gui_next_style_color( gui_col_t slot, u32 abgr );
 void gui_push_style_var( gui_style_var_t var, f32 value );
 void gui_pop_style_var( u32 count );
 void gui_next_style_var( gui_style_var_t var, f32 value );
+void gui_scale_push( gui_scale_t s );
+void gui_scale_pop( void );
+f32  gui_scale_row( gui_scale_t s );
 void gui_set_check_style( u8 style );
 void gui_set_bullet_style( u8 style );
 void gui_set_arrow_style( u8 style );

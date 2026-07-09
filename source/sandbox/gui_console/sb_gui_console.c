@@ -14,6 +14,10 @@
         console sees them before the text edit and unconsumed keys edit the line as normal.
       - A test-bed window shows live cvar values read through core()-> every frame, so a
         "s_volume 0.25" typed in the console moves the bar the same frame.
+      - Layout is authored in the gui grid system: the console runs in a GUI_SCALE_DENSE scope
+        with a fixed one-ramp-row template, so all sizing is rows_h() row counting; the test-bed
+        window's geometry is in grid units (u( n )).  The original hand-derived font arithmetic
+        this replaced is what motivated the grid/scale system.
 
     Try:  help, cvarlist, s_volume 0.25, toggle cheats, r_quality ultra, cvarinfo r_quality,
           seta com_maxfps 120, writeconfig, reset_all, quit
@@ -191,22 +195,20 @@ console_key_hook( u32 key, bool ctrl, bool shift, bool repeat, void* user )
 static void
 show_console( f32 display_w )
 {
-    /* gui()->text() rows are only font_char_h() tall (text_h of a single line), but separator /
-       separator_text / input_text reserve a full padded WIDGET_H row (calc_row adds that
-       padding back in) -- line_h() alone under-sizes those rows and clips them.
+    /* The whole console speaks one step of the theme's scale ramp: DENSE, the text-list step.
+       The scope makes every metric read inside -- row heights, gaps, the window and child pads,
+       and the rows_h counting helper -- resolve to that step, so sizing is row COUNTING, not
+       font arithmetic (the old text_h/calc_row/gap derivation lived here; the grid quantizes
+       auto text rows, so counting fixed ramp rows is now both simpler and the only exact form).
 
-       The flow also owes a row_gap() between every pair of stacked rows, plus one above the
-       first row and one below the last (a window/child body's own top/bottom pad) -- easy to
-       forget, and forgetting it clips the last rows against the child's bottom edge exactly the
-       same way the wrong row-height metric did.  hist_h below is the child box: its own top pad,
-       CONSOLE_ROWS text rows with a gap between each, a gap before the trailing separator, the
-       separator row itself, and its own bottom pad.  win_h is the outer window: top pad, the
-       child (already self-padded), a gap before the input row, the input row, bottom pad. */
-    const f32 text_row_h   = gui()->text_h( " " );
-    const f32 widget_row_h = gui()->calc_row( text_row_h );
-    const f32 gap          = gui()->row_gap();
-    const f32 hist_h       = text_row_h * CONSOLE_ROWS + widget_row_h + (gap * ( CONSOLE_ROWS + 2 ));
-    const f32 win_h        = hist_h + widget_row_h + gap * 3.0f;
+       hist_h is the scrollback child: CONSOLE_ROWS text rows plus the trailing separator row,
+       each exactly one dense row (the fixed row template below), with rows_h carrying the gaps
+       between and the child's own top/bottom pad.  win_h adds the input row -- rows_h( 1 )
+       carries the gap above it and the window's bottom pad -- plus the window's top pad. */
+    gui()->scale_push( GUI_SCALE_DENSE );
+
+    const f32 hist_h = gui()->rows_h( CONSOLE_ROWS + 1 );                /* text rows + separator */
+    const f32 win_h  = hist_h + gui()->rows_h( 1 ) + gui()->row_gap();   /* + input row + top pad */
 
     /* window_begin instead of region_begin: a normal window's background (translucent per
        theme) and border, just stripped of title bar / resize / move / collapse -- looks like
@@ -223,7 +225,11 @@ show_console( f32 display_w )
            window. */
         if ( gui()->child_begin( "##console_scrollback", 0.0f, hist_h, GUI_WIN_NOSCROLL ) )
         {
-            gui()->stack();
+            /* Fixed dense rows: every line -- text or separator -- occupies exactly one ramp
+               row, so hist_h above is exact and every line edge sits on the grid.  (A plain
+               stack() would auto-size text rows to the font instead; fixed rows are what make
+               the count-based sizing a guarantee rather than a coincidence.) */
+            gui()->row( gui()->scale_row( GUI_SCALE_DENSE ) );
 
             /* Mouse wheel scrolls the scrollback -- while the console is open it owns the
                wheel, Quake style.  Wheel up (positive) looks back in history. */
@@ -247,9 +253,8 @@ show_console( f32 display_w )
                 gui()->text( ( idx >= 0 ) ? core()->con_line_get( ( u32 )idx ) : " " );
             }
 
-            /* separator_text and separator both consume the same WIDGET_H cell (unlike
-               text_disabled, which is only font_char_h() tall) -- switching between them here
-               keeps this row's height constant across scroll states. */
+            /* The fixed row template hands both separator kinds the same one-row cell, so
+               switching between them keeps this row's height constant across scroll states. */
             if ( s_view_offset > 0 )
                 gui()->separator_text( "^ ^ ^  (PageDown for live tail)  ^ ^ ^" );
             else
@@ -287,6 +292,7 @@ show_console( f32 display_w )
         }
     }
     gui()->window_end();
+    gui()->scale_pop();   /* close the DENSE scope opened above the sizing math */
 }
 
 /*==============================================================================================
@@ -296,8 +302,10 @@ show_console( f32 display_w )
 static void
 show_test_bed( void )
 {
-    gui()->window_set_next_pos( 60.0f, 480.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 460.0f, 220.0f, GUI_COND_ONCE );
+    /* Authored in grid units (u( n ) = n quanta), not raw px: the same geometry as before at
+       q=4, but it stays on the lattice if the theme's quantum retunes. */
+    gui()->window_set_next_pos ( gui()->u( 15 ),  gui()->u( 120 ), GUI_COND_ONCE );
+    gui()->window_set_next_size( gui()->u( 115 ), gui()->u( 55 ),  GUI_COND_ONCE );
     if ( gui()->window_begin( "Console Test Bed", GUI_WIN_NONE ) )
     {
         gui()->stack();

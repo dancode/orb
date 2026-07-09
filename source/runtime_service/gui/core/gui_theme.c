@@ -33,6 +33,10 @@
     inflate every padding.  The em is the design unit a typographer reasons in, so spacing,
     padding, and control heights all scale off it and stay proportional across fonts.
     Defaults match a 12px em.
+
+    grid_quantum then snaps the scaled row-level metrics onto one px lattice (default 4) so
+    row pitch, insets, and title bars share a common divisor and nested regions seam-align;
+    set it to 1 (or 0) in a theme for free-pixel metrics, larger for a blockier feel.
 ==============================================================================================*/
 
 /* Font type size (em) used by layout_compute; updated by font_load(). */
@@ -66,9 +70,9 @@ static const gui_theme_t k_themes[] =
                 [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
             },
             .line_size     = 20,
-            .widget_gap    = 3,
-            .widget_pad    = 6,
-            .win_title_h   = 23,
+            .widget_gap    = 4,
+            .widget_pad    = 8,
+            .win_title_h   = 24,
             .win_border    = 1,
             .checkbox_sz   = 16,
             .slider_knob_w = 12,
@@ -76,9 +80,16 @@ static const gui_theme_t k_themes[] =
             .checkmark_pad = 4,
             .cursor_w      = 1,
             .cursor_inset  = 3,
+            .grid_quantum  = 4,
             .win_rounding    = 0,       /* geometric default: hard square corners everywhere */
             .widget_rounding = 0,
             .grab_rounding   = 0,
+            .scales = {
+                [ GUI_SCALE_DENSE ] = { .row = 16, .pad = 4,  .gap = 4 },
+                [ GUI_SCALE_STD   ] = { .row = 20, .pad = 8,  .gap = 4 },   /* == the base metrics */
+                [ GUI_SCALE_ROOMY ] = { .row = 24, .pad = 8,  .gap = 4 },
+                [ GUI_SCALE_BAR   ] = { .row = 32, .pad = 12, .gap = 4 },
+            },
             .check_style     = GUI_CHECK_TICK,
             .bullet_style    = GUI_BULLET_DISC,
             .arrow_style     = GUI_ARROW_FILLED,
@@ -114,9 +125,9 @@ static const gui_theme_t k_themes[] =
                 [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
             },
             .line_size     = 20,
-            .widget_gap    = 3,
-            .widget_pad    = 6,
-            .win_title_h   = 23,
+            .widget_gap    = 4,
+            .widget_pad    = 8,
+            .win_title_h   = 24,
             .win_border    = 1,
             .checkbox_sz   = 16,
             .slider_knob_w = 12,
@@ -124,9 +135,16 @@ static const gui_theme_t k_themes[] =
             .checkmark_pad = 4,
             .cursor_w      = 1,
             .cursor_inset  = 3,
+            .grid_quantum  = 4,
             .win_rounding    = 8,
             .widget_rounding = 5,
             .grab_rounding   = 6,
+            .scales = {
+                [ GUI_SCALE_DENSE ] = { .row = 16, .pad = 4,  .gap = 4 },
+                [ GUI_SCALE_STD   ] = { .row = 20, .pad = 8,  .gap = 4 },   /* == the base metrics */
+                [ GUI_SCALE_ROOMY ] = { .row = 24, .pad = 8,  .gap = 4 },
+                [ GUI_SCALE_BAR   ] = { .row = 32, .pad = 12, .gap = 4 },
+            },
             .check_style     = GUI_CHECK_TICK,
             .bullet_style    = GUI_BULLET_DISC,
             .arrow_style     = GUI_ARROW_FILLED,
@@ -159,9 +177,9 @@ static const gui_theme_t k_themes[] =
                 [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x30, 0x90, 0xE0, 0xFF ),
             },
             .line_size     = 20,
-            .widget_gap    = 3,
-            .widget_pad    = 6,
-            .win_title_h   = 23,
+            .widget_gap    = 4,
+            .widget_pad    = 8,
+            .win_title_h   = 24,
             .win_border    = 1,
             .checkbox_sz   = 16,
             .slider_knob_w = 12,
@@ -169,9 +187,16 @@ static const gui_theme_t k_themes[] =
             .checkmark_pad = 4,
             .cursor_w      = 1,
             .cursor_inset  = 3,
+            .grid_quantum  = 4,
             .win_rounding    = 6,
             .widget_rounding = 4,
             .grab_rounding   = 4,
+            .scales = {
+                [ GUI_SCALE_DENSE ] = { .row = 16, .pad = 4,  .gap = 4 },
+                [ GUI_SCALE_STD   ] = { .row = 20, .pad = 8,  .gap = 4 },   /* == the base metrics */
+                [ GUI_SCALE_ROOMY ] = { .row = 24, .pad = 8,  .gap = 4 },
+                [ GUI_SCALE_BAR   ] = { .row = 32, .pad = 12, .gap = 4 },
+            },
             .check_style     = GUI_CHECK_TICK,
             .bullet_style    = GUI_BULLET_DISC,
             .arrow_style     = GUI_ARROW_FILLED,
@@ -275,6 +300,16 @@ gui_theme_reset( void )
     style_new_frame();  /* reseed s_col[]/s_var[] from s_style, clear all push stacks */
 }
 
+/* Snap a scaled metric onto the grid lattice: nearest multiple of q, floored at one quantum so
+   a nonzero authored metric never vanishes.  Zero stays zero (an authored "none" is preserved). */
+static u8
+metric_quantize( u32 v, u32 q )
+{
+    if ( v == 0 ) return 0;
+    u32 r = ( ( v + q / 2 ) / q ) * q;
+    return (u8)( r < q ? q : r );
+}
+
 /* Recompute the active layout metrics by scaling the user's base style profile to the
    active font's type size (em).  The base style is authored assuming em=12. */
 static void
@@ -304,6 +339,14 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     s_style.widget_rounding = (u8)( (f32)s_style_base.widget_rounding * scale );
     s_style.grab_rounding   = (u8)( (f32)s_style_base.grab_rounding   * scale );
 
+    /* The scale ramp steps are metrics like any other: em-scale each with the same factor. */
+    for ( u32 i = 0; i < GUI_SCALE_COUNT; ++i )
+    {
+        s_style.scales[ i ].row = (u8)( (f32)s_style_base.scales[ i ].row * scale );
+        s_style.scales[ i ].pad = (u8)( (f32)s_style_base.scales[ i ].pad * scale );
+        s_style.scales[ i ].gap = (u8)( (f32)s_style_base.scales[ i ].gap * scale );
+    }
+
     /* Prevent vanishing outlines or cursors when scaling down. */
     bool clamp_min_visible_metrics = true;
     if ( clamp_min_visible_metrics )
@@ -320,6 +363,43 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     {
         if ( s_style.line_size < char_h ) s_style.line_size = (u8)( char_h );
         if ( s_style.line_size < line_h ) s_style.line_size = (u8)( line_h );
+
+        /* Every ramp row owes the same guarantee: a row always holds one line of text, so a
+           font too tall for DENSE simply lifts it (the ramp compresses rather than clips). */
+        for ( u32 i = 0; i < GUI_SCALE_COUNT; ++i )
+        {
+            if ( s_style.scales[ i ].row < char_h ) s_style.scales[ i ].row = (u8)( char_h );
+            if ( s_style.scales[ i ].row < line_h ) s_style.scales[ i ].row = (u8)( line_h );
+        }
+    }
+
+    /* Grid theme: snap the row-level layout metrics back onto the quantum lattice -- the em
+       scale and the font floor above land on arbitrary pixels, and the whole point of the grid
+       is that row pitch (line_size + gap), insets, and title bars share one divisor so nested
+       regions stay seam-aligned.  Row height rounds UP so the font floor is never undone (text
+       must still fit); everything else rounds to nearest.  Strokes and fine details (win_border,
+       cursor_*, checkmark_pad, rounding) stay free -- they are drawing weights, not layout. */
+    u32 q = s_style_base.grid_quantum;
+    if ( q > 1 )
+    {
+        u32 row = ( ( (u32)s_style.line_size + q - 1 ) / q ) * q;   /* ceil: keep the font floor */
+        s_style.line_size     = (u8)row;
+        s_style.widget_gap    = metric_quantize( s_style.widget_gap,    q );
+        s_style.widget_pad    = metric_quantize( s_style.widget_pad,    q );
+        s_style.win_title_h   = metric_quantize( s_style.win_title_h,   q );
+        s_style.checkbox_sz   = metric_quantize( s_style.checkbox_sz,   q );
+        s_style.slider_knob_w = metric_quantize( s_style.slider_knob_w, q );
+        s_style.min_cell_w    = metric_quantize( s_style.min_cell_w,    q );
+
+        /* Ramp steps land on the same lattice: rows ceil (keep the font floor), pads and gaps
+           snap to nearest.  The whole ramp retunes together when the quantum or font changes. */
+        for ( u32 i = 0; i < GUI_SCALE_COUNT; ++i )
+        {
+            u32 sr = ( ( (u32)s_style.scales[ i ].row + q - 1 ) / q ) * q;
+            s_style.scales[ i ].row = (u8)sr;
+            s_style.scales[ i ].pad = metric_quantize( s_style.scales[ i ].pad, q );
+            s_style.scales[ i ].gap = metric_quantize( s_style.scales[ i ].gap, q );
+        }
     }
 }
 

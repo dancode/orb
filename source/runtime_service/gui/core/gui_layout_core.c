@@ -64,6 +64,37 @@ content_reach( layout_frame_t* f, f32 x, f32 y )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Grid lattice -- the theme's grid_quantum (gui_style_t; 0/1 = off) snaps CONTENT-DRIVEN sizes
+    so resolved flex tracks and natural widths land on the same px lattice the theme metrics
+    were already quantized to (layout_compute).  Authored sizes are never snapped: a fixed-px
+    track, an explicit row_h, a fit_next / pack_size are taken verbatim -- unit-first authoring
+    goes through gui_u(), which is on-lattice by construction.  Content sizes round UP (text is
+    never clipped); divided space rounds DOWN (tracks never overflow their extent).
+----------------------------------------------------------------------------------------------*/
+
+/* Largest lattice multiple <= v, floored at one quantum so a live size never collapses. */
+static f32
+quant_floor( f32 v )
+{
+    u32 q = s_style.grid_quantum;
+    if ( q <= 1 || v <= 0.0f ) return v;
+    f32 r = (f32)( (u32)( v / (f32)q ) * q );
+    return ( r < (f32)q ) ? (f32)q : r;
+}
+
+/* Smallest lattice multiple >= v. */
+static f32
+quant_ceil( f32 v )
+{
+    u32 q = s_style.grid_quantum;
+    if ( q <= 1 || v <= 0.0f ) return v;
+    f32 m = v / (f32)q;
+    u32 n = (u32)m;
+    if ( (f32)n < m ) ++n;
+    return (f32)( n * q );
+}
+
+/*----------------------------------------------------------------------------------------------
     Layout engine -- carve a region's content area into cells from a repeating row template.
 
     One resolver does both axes (here, only columns are wired); the row template lives on the
@@ -125,6 +156,14 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
         bool is_flex_or_fraction_track = ( t == 1.0f ) || ( t > 0.0f && t < 1.0f );
         if ( is_flex_or_fraction_track && sz < min_w )
             sz = min_w;
+
+        /* Grid: a divided (flex / fraction) size floors onto the lattice so every track edge in
+           the row is a quantum step from the origin (the gaps already are).  The sub-quantum
+           remainder is left as slack at the row's right edge -- the extent itself (a dragged
+           window width) is free px, so the slack merges into the pad there.  Fixed px stays
+           authored intent, exactly like the min_w rule above. */
+        if ( is_flex_or_fraction_track )
+            sz = quant_floor( sz );
 
         out_pos [ i ] = pos;
         out_size[ i ] = sz;
@@ -432,6 +471,8 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
 static gui_rect_t
 cell_fit_resolve( layout_frame_t* f, f32 cell_x, f32 cell_w, f32 natural_w, f32 y, f32 h )
 {
+    natural_w = quant_ceil( natural_w );   /* grid: content-driven widths round up onto the lattice */
+
     f32 fit     = f->fit_next;
     f->fit_next = -1.0f;   /* one-shot: consumed whichever branch below reads it */
 
@@ -481,6 +522,9 @@ grid_next_rect( layout_frame_t* f, f32 natural_w )
 static gui_rect_t
 line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
 {
+    natural_w = quant_ceil( natural_w );   /* grid: content-driven extents round up onto the */
+    h         = quant_ceil( h );           /* lattice, so pack pens advance in quantum steps */
+
     bool horiz = ( f->mode != GUI_MODE_PACK ) || ( f->pack_dir == GUI_PACK_HORIZONTAL );
 
     /* Nav line: a placement onto a closed line opens a new one; a strip (vertical pack) runs its
@@ -533,7 +577,11 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
     {
         line_commit( f );                       /* close a reopened same_line row, if any */
         f->line_cross = layout_next_y( f );     /* the gap owed above is applied here */
-        f->line_ext   = ( f->lay_row_h > 0.0f ) ? f->lay_row_h : h;
+
+        /* Auto row height (row_h == 0) takes the first item's h ceiled onto the lattice, so the
+           row pitch of content-sized rows (a text line) is a quantum step like the metric rows
+           already are.  An explicit row_h is authored intent and stays verbatim. */
+        f->line_ext   = ( f->lay_row_h > 0.0f ) ? f->lay_row_h : quant_ceil( h );
         f->line_open  = true;
         if ( !f->nav_line_pin )                     /* a fresh flow row is a fresh nav line -- */
             f->nav_line = ++s_build.nav_line_seq;   /* unless a table pinned the row's        */

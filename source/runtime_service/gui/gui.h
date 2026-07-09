@@ -916,6 +916,33 @@ typedef enum
     Global Style Configuration
 ==============================================================================================*/
 
+/* The scale ramp -- the named density steps the UI is authored in, instead of raw pixel sizes.
+   Each step is a complete metric set (row height + pad + gap, authored in gui_style_t.scales),
+   so "this region is a dense list" is one declaration and the pairing that makes a density look
+   right lives in the theme.  scale_push/scale_pop scope a step over the style-var stack, which
+   makes every metric read (WIDGET_H / pad / gap) and every counting helper (rows_h, calc_row)
+   speak that step with no widget changes.  STD is authored identical to the base metrics, so
+   an unpushed UI is unchanged. */
+typedef enum
+{
+    GUI_SCALE_DENSE,   // text lists: outliners, entity browsers, tree views, table rows
+    GUI_SCALE_STD,     // the everyday widget row: forms, buttons, sliders, inputs
+    GUI_SCALE_ROOMY,   // menus, combo dropdown lists, title-height rows
+    GUI_SCALE_BAR,     // tab bars, icon toolbars, panel headers
+    GUI_SCALE_COUNT
+
+} gui_scale_t;
+
+/* One ramp step's metrics.  Authored in px at em=12 like every other theme metric; em-scaled,
+   grid-quantized, and font-floored (a row always holds a text line) by gui_style_apply. */
+typedef struct gui_scale_metrics_t
+{
+    u8 row;   // row height (the step's WIDGET_H)
+    u8 pad;   // frame / content padding
+    u8 gap;   // gap between consecutive widgets
+
+} gui_scale_metrics_t;
+
 typedef struct gui_style_t
 {
     u32 colors[ GUI_COL_COUNT ]; // Theme default palette (GUI_COLOR packs R,G,B,A bytes)
@@ -932,6 +959,7 @@ typedef struct gui_style_t
     u8 checkmark_pad;      // inset of filled square inside the checkbox
     u8 cursor_w;           // input text cursor width
     u8 cursor_inset;       // input text cursor top/bottom inset
+    u8 grid_quantum;       // px lattice row-level metrics snap to after font scaling (0/1 = off)
     u8 win_rounding;       // corner radius: windows / children / popups
     u8 widget_rounding;    // corner radius: control frames
     u8 grab_rounding;      // corner radius: slider knobs / scrollbar grabs
@@ -942,6 +970,9 @@ typedef struct gui_style_t
     u8 progress_style;     // progress fill: 0=solid, 1=gradient (gui_progress_style_t)
     u8 slider_knob;        // slider knob: 0=bar, 1=circle (gui_slider_knob_t)
     u8 menu_check;         // menu check gutter: 0=plain, 1=box (gui_menu_check_t)
+
+    /* The scale ramp (see gui_scale_t).  STD mirrors line_size / widget_pad / widget_gap. */
+    gui_scale_metrics_t scales[ GUI_SCALE_COUNT ];
 
 } gui_style_t;
 

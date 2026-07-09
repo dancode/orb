@@ -98,5 +98,46 @@ void gui_push_style_var( gui_style_var_t var, f32 value )   { style_push_var( va
 void gui_pop_style_var ( u32 count )                          { style_pop_var( count ); }
 void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( var, value ); }
 
+/*----------------------------------------------------------------------------------------------
+    scale_push / scale_pop -- scope a named density step (the theme's scale ramp, gui_scale_t)
+    over the widgets until the matching pop: one declaration instead of per-row pixel sizes.
+
+    A step is a paired push of the three metric slots (LINE_SIZE, WIDGET_PAD, WIDGET_GAP) with
+    that step's theme values, so every metric read and counting helper inside the scope --
+    WIDGET_H, rows_h( n ), calc_row -- speaks the step with no widget changes.  Push before
+    opening the region/child the scope styles: a region captures its pad and gaps as it opens.
+
+        gui()->scale_push( GUI_SCALE_DENSE );        // this panel is a dense list
+        gui()->child_begin( "entities", 0, 0, 0 );
+        ... selectable rows at the dense height ...
+        gui()->child_end();
+        gui()->scale_pop();
+----------------------------------------------------------------------------------------------*/
+
+void
+gui_scale_push( gui_scale_t s )
+{
+    if ( (u32)s >= GUI_SCALE_COUNT ) s = GUI_SCALE_STD;   /* clamp, like the other stacks */
+    const gui_scale_metrics_t* m = &s_style.scales[ s ];
+    style_push_var( GUI_VAR_LINE_SIZE,  (f32)m->row );
+    style_push_var( GUI_VAR_WIDGET_PAD, (f32)m->pad );
+    style_push_var( GUI_VAR_WIDGET_GAP, (f32)m->gap );
+}
+
+void
+gui_scale_pop( void )
+{
+    style_pop_var( 3 );   /* the three slots scale_push pushed */
+}
+
+/* The row height of a ramp step, without pushing it -- size a child to another step's rows
+   (a BAR header band above a DENSE list), or feed custom chrome. */
+f32
+gui_scale_row( gui_scale_t s )
+{
+    if ( (u32)s >= GUI_SCALE_COUNT ) s = GUI_SCALE_STD;
+    return (f32)s_style.scales[ s ].row;
+}
+
 // clang-format on
 /*============================================================================================*/

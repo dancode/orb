@@ -325,6 +325,23 @@ gui_pad( gui_pad_t p )
         f32 w = gui()->calc_col( gui()->text_w("X") ); // a column sized to a label
 ----------------------------------------------------------------------------------------------*/
 
+/* u -- n grid quanta in pixels (grid_quantum, the theme's px lattice; 4 by default).  The
+   unit-first way to author any px size -- tracks, row heights, child / window sizes, pack_size --
+   so authored geometry sits on the same lattice the theme metrics and the resolved tracks do,
+   and retunes when the theme's quantum changes:
+
+       gui()->cols( (f32[]){ gui()->u( 12 ), 1.0f, GUI_END } );   // a 12-quantum column + a fill
+       gui()->row( gui()->u( 8 ) );                                // a 32px row at q=4
+
+   q <= 1 degenerates to raw pixels.  Convention: gaps are one quantum, blocky panel measures
+   are multiples of four quanta (the coarse "cell" -- 16px at q=4). */
+f32
+gui_u( f32 n )
+{
+    u32 q = s_style.grid_quantum;
+    return n * (f32)( q > 1 ? q : 1 );
+}
+
 /* Height of one line of text in the active font. */
 f32 gui_line_h( void ) { return font_line_h(); }
 

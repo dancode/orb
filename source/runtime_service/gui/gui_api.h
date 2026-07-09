@@ -673,6 +673,11 @@ typedef struct gui_api_s
            gui()->row( gui()->calc_row( 128 ) );             // a row sized for a 128px image
            f32 w = gui()->calc_col( gui()->text_w("Name") ); // a column sized to a label */
 
+    /* u( n ) -- n grid quanta in pixels (the theme's grid_quantum lattice, 4 by default): the
+       unit-first spelling for any authored px size (tracks, row heights, child sizes), so
+       geometry stays on the theme lattice and retunes with it.  q <= 1 degenerates to raw px. */
+    f32 ( *u        )( f32 n );
+
     f32 ( *line_h   )( void );
     f32 ( *text_w   )( const char* s );
     f32 ( *text_h   )( const char* s );
@@ -814,6 +819,15 @@ typedef struct gui_api_s
     void ( *push_style_var   )( gui_style_var_t var, f32 value );
     void ( *pop_style_var    )( u32 count );
     void ( *next_style_var   )( gui_style_var_t var, f32 value );
+
+    /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
+       BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
+       the style-var stack, so every metric read and counting helper (rows_h, calc_row) inside
+       speaks the step.  Push before opening the region/child it styles.  scale_row( s ) is the
+       step's row height without pushing -- size a header band or custom chrome to a step. */
+    void ( *scale_push )( gui_scale_t s );
+    void ( *scale_pop  )( void );
+    f32  ( *scale_row  )( gui_scale_t s );
 
     /* Global indicator-shape selectors -- set the default check / bullet / arrow glyph the chrome
        draws (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t).  These are style
