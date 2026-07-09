@@ -23,7 +23,7 @@
     gui_emit_draw.c (s_draw).  gui_debug_overlay.c follows this file and reuses s_render + render_ortho.
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   // gui_viewport_t, gui_context_t, GUI_MAX_VIEWPORTS
+#include "runtime_service/gui/gui_internal.h"   // gui_viewport_t, gui_ctx_t, GUI_MAX_VIEWPORTS
 #include "engine/sys/sys_host.h"                // sys_exe_dir -- probe for cooked .oshd shaders
                                                 //   (gui is a static lib: sys is always in the host)
 
