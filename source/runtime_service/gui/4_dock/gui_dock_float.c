@@ -133,7 +133,7 @@ dock_float_hit( gui_id_t drag_id, u32 vp, gui_dock_node_t** out_node, gui_id_t* 
         if ( w->id == GUI_ID_NONE || w->id == drag_id ) continue;
         if ( w->viewport != vp || w->closed )             continue;
         if ( w->last_frame + 1 < s_retained.frame )       continue;   /* not begun this frame */
-        if ( w->z >= GUI_POPUP_Z_BASE )                   continue;   /* popup / tooltip overlay */
+        if ( w->overlay )                   continue;   /* popup / tooltip overlay */
         if ( w->flags & ( GUI_WIN_NATIVE | GUI_WIN_NO_INPUT | GUI_WIN_NOMOVE
                           | GUI_WIN_NO_TAB_TARGET ) )     continue;   /* opted out of hosting tabs */
 

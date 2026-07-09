@@ -34,8 +34,9 @@
     Constants
 ----------------------------------------------------------------------------------------------*/
 
-/* GUI_POPUP_Z_BASE (the reserved high z-band) lives in gui_internal.h so window_is_native can
-   read it too; popup_begin rewrites win->z every frame so a stray window_raise_on_press can never
+/* A popup window is an OVERLAY: win->overlay is stamped every begin (the type fact the native /
+   nav / tab-drop tests key on) alongside a z in the reserved overlay band (surface_z_overlay,
+   1_surface/gui_surface.c) -- rewritten every frame so a stray window_raise_on_press can never
    sink a popup. */
 
 /* Popup window ids are salted off the caller's string so a popup never shares a record with a
@@ -232,10 +233,11 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
     p->modal       = modal;
     p->begun_frame = s_retained.frame;
 
-    /* The popup's window record; force its z onto the reserved band (depth-stacked) every frame. */
+    /* The popup's window record; stamp the overlay type + its band z (depth-stacked) every frame. */
     gui_window_t* win = window_get( id, p->anchor_x, p->anchor_y,
                                       GUI_POPUP_SEED_W, GUI_POPUP_SEED_H );
-    win->z = GUI_POPUP_Z_BASE + depth;
+    win->z       = surface_z_overlay( depth );
+    win->overlay = true;
 
     /* Pin the popup to the parent's CURRENT surface every frame, not just the one it was first
        seen on.  window_get seeds viewport only at creation, so a popup first opened while its
@@ -399,8 +401,9 @@ gui_tooltip_begin( void )
 {
     gui_window_t* win = window_get( GUI_TOOLTIP_ID, s_io.mouse_x, s_io.mouse_y,
                                       GUI_POPUP_SEED_W, GUI_POPUP_SEED_H );
-    win->z = GUI_POPUP_Z_BASE + g_ctx->popup_depth;   /* above every popup */
-    win->viewport = s_build.win.viewport;               /* track the parent's current surface (see popup_begin) */
+    win->z        = surface_z_overlay( g_ctx->popup_depth );   /* above every popup */
+    win->overlay  = true;
+    win->viewport = s_build.win.viewport;   /* track the parent's current surface (see popup_begin) */
 
     bool premeasure = win->scroll.content_h <= 0.0f;
     f32  px, py;

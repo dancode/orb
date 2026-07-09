@@ -137,10 +137,10 @@ static bool window_is_native( const gui_window_t* win, gui_win_flags_t flags )
 {
     /* A popup / tooltip overlay is never the OS frame, even when it inherits an owned floater's
        viewport: it is an anchored, auto-sized overlay on that surface, not the surface itself.
-       Stamped into the reserved z-band before window_begin_ex runs, so the test is live here --
-       without it a menu opened from a detached floater would be pinned to (0,0) at full surface
-       size by the native branch below instead of dropping under its button. */
-    if ( win && win->z >= GUI_POPUP_Z_BASE )
+       win->overlay is stamped before window_begin_ex runs, so the test is live here -- without
+       it a menu opened from a detached floater would be pinned to (0,0) at full surface size by
+       the native branch below instead of dropping under its button. */
+    if ( win && win->overlay )
         return false;
 
     return ( flags & GUI_WIN_NATIVE ) != 0
@@ -744,12 +744,10 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        that may sit below windows that were raised while they were closed.
 
        EXCEPT a popup / tooltip overlay: popup_begin (gui_popup.c) has already put win->z in the
-       reserved GUI_POPUP_Z_BASE band above this call.  Stamping a normal counter value here would
-       sink it out of that band for exactly the appearing frame -- long enough for window_is_native
-       (below) to mistake an appearing popup on an owned floater for that surface's native frame and
-       pin it to 0,0 (window_sync_native), so the popup flashes full-surface at the origin for one
-       frame before snapping to its anchor.  A z already in the popup band is left untouched. */
-    if ( appearing && win->z < GUI_POPUP_Z_BASE )
+       reserved overlay band above this call.  Stamping a normal counter value here would sink it
+       out of that band for exactly the appearing frame, breaking its paint order over the
+       windows below.  An overlay's z is the popup layer's to stamp; leave it untouched. */
+    if ( appearing && !win->overlay )
         win->z = surface_z_raise( win->z );
 
     window_apply_next( win, appearing );

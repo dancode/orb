@@ -49,6 +49,7 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->h         = h;
     win->z         = 0;
     win->viewport  = s_build.win.viewport;   /* inherit ambient; window_set_next_viewport overrides */
+    win->overlay   = false;   /* a normal window until the popup layer stamps otherwise */
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
     win->closed    = false;   /* a freshly seen window starts open                */
     win->reopen_floater   = false;   /* not a re-opening floater until one is closed */
@@ -176,22 +177,55 @@ window_apply_next( gui_window_t* win, bool appearing )
 }
 
 /*----------------------------------------------------------------------------------------------
+    The z band map -- every stacked entity competes in ONE contest (the hover nomination below +
+    the draw sort) keyed on a plain u32 z, so the bands are pure ordering policy, all authored
+    here:
+
+        0x00000000   GUI_REGION_BG_Z    background regions -- tie the docked/base window floor
+        1 ..         (dispenser)        normal windows + floating dock groups (surface_z_raise)
+        0x40000000   GUI_REGION_Z       default root-region band: over windows, under popups
+        0x80000000+  GUI_Z_OVERLAY      overlay band: popup depth d at OVERLAY + d, tooltip above
+        0xF0000000   GUI_REGION_FG_Z    foreground regions -- above every popup depth
+
+    The dispenser never climbs anywhere near the fixed bands.  A record placed in the overlay
+    band also carries win->overlay -- the TYPE fact ("an anchored overlay, not a window") the
+    nav / dock / native tests key on -- so z itself stays pure paint order.
+----------------------------------------------------------------------------------------------*/
+
+#define GUI_REGION_BG_Z  0x00000000u
+#define GUI_REGION_Z     0x40000000u
+#define GUI_Z_OVERLAY    0x80000000u
+#define GUI_REGION_FG_Z  0xF0000000u
+
+/*----------------------------------------------------------------------------------------------
     surface_z_raise -- the z dispenser's single verb: bring a stacked entity to the front.
 
     Returns the z the entity should hold: a fresh top-of-stack value, or its own z unchanged
     when it is already the most recently raised (no value is burned re-raising the top).  The
     dispenser (s_z_counter) is monotonic and shared by windows, floating dock groups, and
     appearing windows alike, so every raise lands strictly above everything raised before it.
-    This tier is the ONLY writer of the dispenser: 4_window/4_dock/4_popup raise through this
-    verb and never touch s_z_counter raw.  (The reserved popup band, GUI_POPUP_Z_BASE and up,
-    is record z POLICY stamped directly by popup_begin -- it deliberately sits outside the
-    dispenser's range and never routes through it.)
+    This tier is the ONLY author of z values: 4_window/4_dock raise through this verb, and the
+    popup layer stamps the overlay band through surface_z_overlay below -- nothing outside this
+    file touches s_z_counter or the band constants raw.
 ----------------------------------------------------------------------------------------------*/
 
 static u32
 surface_z_raise( u32 z )
 {
-    return ( z == s_z_counter ) ? z : ++s_z_counter;
+    /* 0 is the never-dispensed seed every fresh record starts at -- many entities share it, so
+       it is never "already top": always dispense (the counter's first value is 1).  A NONZERO z
+       equal to the counter is the unique most-recently-raised holder (dispensed values are held
+       by one entity at a time), so only then is the re-raise skipped. */
+    return ( z != 0u && z == s_z_counter ) ? z : ++s_z_counter;
+}
+
+/* z for an overlay-band occupant at `depth`: popups stack parent -> child, the tooltip sits at
+   the maximum depth, above them all.  Stamped fresh (with win->overlay) on every popup / tooltip
+   begin, so a stray raise can never sink an overlay and the dispenser never reaches this band. */
+static u32
+surface_z_overlay( u32 depth )
+{
+    return GUI_Z_OVERLAY + depth;
 }
 
 /*----------------------------------------------------------------------------------------------

@@ -16,11 +16,13 @@ Static lib `gui`, two translation units:
   from earlier ones.
   `1_surface/gui_surface.c` is the surface service: window records as placed, stacked,
   occluding rectangles before any layout or chrome -- the record pool (`window_get` /
-  `window_find`), the next-window placement channel, the z dispenser (`surface_z_raise`, the
-  tier is its ONLY writer; the popup band is record z policy outside the dispenser), the
-  hover-win occlusion contest (`surface_hover_nominate`, entered by windows, floating dock
-  groups, and root regions alike), the surface reassignment request slot (tear-off /
-  merge-back, serviced by the conductor), and open/closed state. Storage + frame turnover
+  `window_find`), the next-window placement channel, the z policy (the tier authors ALL z: the
+  band map -- region tiers, the overlay band -- is defined here, `surface_z_raise` is the
+  dispenser's only verb, and popups stamp their band through `surface_z_overlay` plus the
+  record's `overlay` type flag, so z itself is pure paint order), the hover-win occlusion
+  contest (`surface_hover_nominate`, entered by windows, floating dock groups, and root regions
+  alike), the surface reassignment request slot (tear-off / merge-back, serviced by the
+  conductor), and open/closed state. Storage + frame turnover
   stay in `gui_context_t` (0_foundation), the house pattern; window GESTURES (drags, grips,
   raise-on-press with its dock exception) are 4_window/ policy over these services.
 - `gui_backend.c` (render unit): fonts, draw list, tessellation, GPU flush, debug overlay.

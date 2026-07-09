@@ -82,15 +82,16 @@ nav_choose_window( void )
     }
 
     /* No popup: the explicit target if it is still a live window, else the front-most normal
-       window by z.  Popup-band records (a closed popup's stale high z) are skipped so they never
-       masquerade as the front-most window, and so is a GUI_WIN_NATIVE frame-only shell -- it has
-       no body items, so defaulting nav onto it would strand the keyboard on bare chrome. */
+       window by z.  Overlay records (popups, the tooltip; a closed one keeps the flag) are
+       skipped so they never masquerade as the front-most window, and so is a GUI_WIN_NATIVE
+       frame-only shell -- it has no body items, so defaulting nav onto it would strand the
+       keyboard on bare chrome. */
     gui_id_t front = GUI_ID_NONE;
     u32        frontz = 0;
     bool       have_explicit = false;
     for ( u32 i = 0; i < s_window_count; ++i )
     {
-        if ( s_windows[ i ].z >= GUI_POPUP_Z_BASE ) continue;
+        if ( s_windows[ i ].overlay ) continue;
         if ( s_windows[ i ].id == s_nav.explicit_win ) have_explicit = true;
         if ( s_windows[ i ].flags & GUI_WIN_NATIVE ) continue;
         if ( s_windows[ i ].z >= frontz ) { frontz = s_windows[ i ].z; front = s_windows[ i ].id; }
@@ -106,14 +107,14 @@ nav_choose_window( void )
     front so it is visible and usable, and nav_id is cleared so the first item takes focus.
 ----------------------------------------------------------------------------------------------*/
 
-/* A window Ctrl+Tab never lands on: a popup-band record, a GUI_WIN_NATIVE frame-only shell (bare
-   chrome, no body), or a docked window hidden behind another tab -- cycling only visits what is
-   visible; the hidden tabs of a node are reached locally, through its visible tab's chrome lane
-   (F6, then Left/Right along the strip). */
+/* A window Ctrl+Tab never lands on: an overlay record (popup / tooltip), a GUI_WIN_NATIVE
+   frame-only shell (bare chrome, no body), or a docked window hidden behind another tab --
+   cycling only visits what is visible; the hidden tabs of a node are reached locally, through
+   its visible tab's chrome lane (F6, then Left/Right along the strip). */
 static bool
 nav_cycle_skip( const gui_window_t* w )
 {
-    if ( w->z >= GUI_POPUP_Z_BASE )       return true;
+    if ( w->overlay )                     return true;
     if ( w->flags & GUI_WIN_NATIVE )      return true;
 
     gui_dock_node_t* dn = dock_find_window_node( w->id );
@@ -131,12 +132,12 @@ nav_cycle_window( i32 dir )
     bool found = false;
     for ( u32 i = 0; i < s_window_count; ++i )
     {
-        if ( s_windows[ i ].z >= GUI_POPUP_Z_BASE ) continue;
+        if ( s_windows[ i ].overlay ) continue;
         if ( s_windows[ i ].id == s_nav.explicit_win ) { curz = s_windows[ i ].z; found = true; }
     }
     if ( !found )
         for ( u32 i = 0; i < s_window_count; ++i )
-            if ( s_windows[ i ].z < GUI_POPUP_Z_BASE && s_windows[ i ].z >= curz )
+            if ( !s_windows[ i ].overlay && s_windows[ i ].z >= curz )
                 curz = s_windows[ i ].z;
 
     /* Nearest visible window strictly past curz in the requested direction (see nav_cycle_skip).
@@ -742,7 +743,7 @@ nav_new_frame( void )
             for ( u32 i = 0; i < s_window_count; ++i )
                 if ( s_windows[ i ].id == s_interaction.hover_win )
                 {
-                    if ( s_windows[ i ].z < GUI_POPUP_Z_BASE
+                    if ( !s_windows[ i ].overlay
                          && !( s_windows[ i ].flags & GUI_WIN_NATIVE ) )
                         s_nav.explicit_win = s_windows[ i ].id;
                     break;

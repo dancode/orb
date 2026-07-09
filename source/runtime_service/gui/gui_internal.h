@@ -146,13 +146,6 @@ typedef struct
     holds these lives in the bound context (gui_context_t).  Behavior is in gui_window.c.
 ==============================================================================================*/
 
-/* Reserved high z-band for popup / tooltip overlays: they paint above every normal window (whose z
-   comes from z_counter and never climbs this high), and a deeper popup above a shallower one.  A
-   window stamped into this band is an overlay, never the OS-window frame -- window_is_native keys
-   off it so a popup opened from an owned floater stays an anchored overlay, not a surface-filling
-   native window.  gui_popup.c stamps it (GUI_POPUP_Z_BASE + depth) before window_begin_ex. */
-#define GUI_POPUP_Z_BASE   0x80000000u
-
 typedef struct gui_window_t
 {
     gui_id_t    id;             // id_hash(title); 0 = free slot
@@ -160,6 +153,12 @@ typedef struct gui_window_t
     f32         w, h;           // persisted dimensions
     u32         z;              // paint order: higher = more recently raised = in front
     u32         viewport;       // target surface index (0 = main swapchain); set via window_set_next_viewport
+
+    /* Popup / tooltip overlay: an anchored overlay on its surface, never the OS-window frame
+       (window_is_native), never a nav or tab-drop target.  Stamped by the popup layer each begin,
+       alongside a z in the reserved overlay band (see the z band map in 1_surface/gui_surface.c) --
+       the flag carries the TYPE fact so z stays pure paint order. */
+    bool       overlay;
 
     gui_scroll_link_t scroll;   // persisted scroll offset + last-measured content extent
 

@@ -34,15 +34,10 @@
 ==============================================================================================*/
 // clang-format off
 
-/* z tiers for root regions.  GUI_REGION_Z is the default mid-band: above every ordinary window
-   (whose z comes from z_counter, a small monotonic count nowhere near this) and below the popup
-   band (GUI_POPUP_Z_BASE), so a HUD element always draws over normal windows but under a popup /
-   tooltip.  GUI_REGION_BG_Z ties the floor windows start/dock at (0), so a raised window (z >= 1)
-   always wins the contest over it.  GUI_REGION_FG_Z sits above every realistic popup depth, so it
-   wins over an open menu/combo/modal too. */
-#define GUI_REGION_Z     0x40000000u
-#define GUI_REGION_BG_Z  0x00000000u
-#define GUI_REGION_FG_Z  0xF0000000u
+/* z tiers for root regions: GUI_REGION_Z (default mid-band: over windows, under popups),
+   GUI_REGION_BG_Z (ties the window floor -- any raised window wins), GUI_REGION_FG_Z (above
+   every popup depth).  Defined with the rest of the z band map in 1_surface/gui_surface.c --
+   the surface tier authors all z policy. */
 
 /* Persistent scroll + content-measure state, keyed by id -- exactly gui_region_t's scroll link,
    but standalone since a root region has no user_w/user_h (no resize grip). */
