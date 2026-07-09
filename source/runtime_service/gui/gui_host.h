@@ -49,15 +49,15 @@ void gui_frame_end( void );
 void gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms );   /* 0 opts that sleep out */
 void gui_set_idle_skip( bool on );
 bool gui_idle_skip( void );
-void gui_ctx_begin( gui_ctx_t ctx );
+void gui_ctx_begin( gui_ctx_id_t ctx );
 void gui_ctx_end( void );
 void gui_render( gui_vp_t vp, rhi_cmd_t cmd );
 
 /* multi-context */
-gui_ctx_t gui_ctx_create       ( const gui_ctx_config_t* cfg );
-void        gui_ctx_destroy      ( gui_ctx_t ctx );
-void        gui_ctx_bind         ( gui_ctx_t ctx );
-void        gui_ctx_set_listening( gui_ctx_t ctx, bool listen );
+gui_ctx_id_t gui_ctx_create       ( const gui_ctx_config_t* cfg );
+void         gui_ctx_destroy      ( gui_ctx_id_t ctx );
+void         gui_ctx_bind         ( gui_ctx_id_t ctx );
+void         gui_ctx_set_listening( gui_ctx_id_t ctx, bool listen );
 
 /* viewport management */
 gui_vp_t gui_viewport_open  ( i32 win_id );

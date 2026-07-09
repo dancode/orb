@@ -10,18 +10,25 @@
           layout_resolve_tracks, the layout_template_reset / layout_modifiers_reset seams,
           layout_seed_content, and layout_set / _grid / _reflow / _clear) -- the "what shape
           is this region" mechanism;
-        - cell emitters (widget_next_rect_w, grid_next_rect, pack_next_rect, field_split_resolve,
-          widget_split_label) -- the per-item "hand out the next rect" mechanism.
+        - cell emitters (widget_next_rect_w, grid_next_rect, pack_next_rect,
+          field_split_resolve) -- the per-item "hand out the next rect" mechanism.
 
-    Lifted out of gui_widget_core.c so the layout engine sits adjacent to the API that drives it,
-    the way gui_window.c (state) precedes gui_widget_window.c (chrome).
+    This tier composes and never paints: field_split_resolve hands out geometry, and its painting
+    companion widget_split_label lives with the rest of the label grammar in
+    2_present/gui_widget_core.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD / ...) resolves
+    in 0_foundation/gui_style.c.
 
-    Included by gui.c after gui_widget_core.c (so the size / color macros, rect_align, the
-    label grammar, text_center_y, and item_flags_resolve are in scope) and before gui_layout.c
-    (which calls layout_set / widget_next_rect / the region helpers).
+    Included by gui.c after gui_widget_core.c (so rect_align and item_flags_resolve are in
+    scope) and before gui_layout.c (which calls layout_set / widget_next_rect / the region
+    helpers).
 
 ==============================================================================================*/
 // clang-format off
+
+/* Default region padding (the inset every window body / child opens with): pad columns by
+   WIDGET_PAD left and right, WIDGET_GAP of breathing above the first row and below the last --
+   the bottom pad scrolls with the content and joins the measured canvas at pop. */
+#define REGION_PAD_DEFAULT ( ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, WIDGET_GAP } )
 
 /*----------------------------------------------------------------------------------------------
     Layout cursor helpers
@@ -689,44 +696,6 @@ field_split_resolve( gui_rect_t cell, f32 min_control_w, f32* out_label_x, f32* 
     *out_label_w = size[ lab_i ];
     *out_control = ( gui_rect_t ){ pos[ ctl_i ], cell.y, control_w, cell.h };
     return true;
-}
-
-/* Split a labeled widget row into a control rect and its label.  In the default (trailing-label)
-   mode the label keeps its natural width pinned at the row's right edge and the control takes the
-   rest, never shrinking below min_control_w so it stays usable when the label is long (the control
-   then overruns under the label, matching the prior per-widget behavior); in field-split mode
-   (field_split_resolve) the label and control are two resolved tracks.  Draws the label here,
-   vertically centered in the given color, and returns the control rect for the caller to interact
-   with and fill.  The single seam every "control + trailing label" widget (slider_float,
-   input_text, combo, drag_float, color_edit) routes through, so row proportions retune in one place. */
-static gui_rect_t
-widget_split_label( gui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
-{
-    /* Field split mode: the label sits in its track at full strength (the trailing-label dim hint,
-       label_color, does not apply -- a field label reads as primary); the control fills the rest.
-       The label is fitted to its track width so a narrow (fraction-shrunk) track ellipsizes it. */
-    f32          label_x, label_w;
-    gui_rect_t control;
-    if ( field_split_resolve( row, min_control_w, &label_x, &label_w, &control ) )
-    {
-        draw_label_fit( label_x, text_center_y( row.y, row.h ), COL_TEXT, label, label_w );
-        return control;
-    }
-
-    /* Default: control on the left, the label trailing at its natural width on the right.  When the
-       control floors at min_control_w the label space narrows; fit it so it ellipsizes there
-       instead of bleeding under the row's right edge.  No visible label ("##key") => full row. */
-    label_w = label_width( label );
-    if ( label_w == 0.0f ) return row;
-    f32 control_w = row.w - label_w - WIDGET_PAD;
-    if ( control_w < min_control_w ) control_w = min_control_w;
-
-    control = ( gui_rect_t ){ row.x, row.y, control_w, row.h };
-
-    f32 trail_x = control.x + control.w + WIDGET_PAD;
-    draw_label_fit( trail_x, text_center_y( row.y, row.h ), label_color, label,
-                    ( row.x + row.w ) - trail_x );
-    return control;
 }
 
 // clang-format on

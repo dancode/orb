@@ -17,9 +17,9 @@
     chrome reset calls style_chrome_reset), so colors / vars and flags all latch on the same
     once-per-widget boundary -- see gui_ctx.c.
 
-    The payoff is reach with no churn: the COL_*, WIDGET_*, and WIN_* macros in gui_widget_core.c
-    are redefined to call style_col / style_var, so every existing draw site honors an override
-    without changing a single widget.
+    The payoff is reach with no churn: the COL_*, WIDGET_*, and WIN_* vocabulary macros at the
+    bottom of this file resolve through style_col / style_var, so every existing read site honors
+    an override without changing a single widget.
 
     Included by gui.c after gui_theme.c and before gui_ctx.c (ctx_new_frame drives
     style_new_frame) so the accessors are in scope for the macros and the resolve seam.
@@ -30,21 +30,24 @@
 
 /* Base value of a style var -- read live from the font-derived metrics so a font_load update flows
    through without re-seeding anything.  The single map from slot to s_style field, grouped by the
-   three gui_style_t categories (see gui.h). */
+   two gui_style_t categories (see gui.h). */
 
 static f32
 style_var_base( gui_style_var_t v )
 {
     switch ( v )
     {
-        /* 1. LAYOUT CONTROLLER */
+        /* 1. METRICS */
         case GUI_VAR_LINE_SIZE:       return (f32)s_style.line_size;
         case GUI_VAR_WIDGET_GAP:      return (f32)s_style.widget_gap;
         case GUI_VAR_WIDGET_PAD:      return (f32)s_style.widget_pad;
         case GUI_VAR_MIN_CELL_W:      return (f32)s_style.min_cell_w;
-
-        /* 2. STYLE */
         case GUI_VAR_WIN_BORDER:      return (f32)s_style.win_border;
+        case GUI_VAR_WIN_TITLE_H:     return (f32)s_style.win_title_h;
+        case GUI_VAR_CHECKBOX_SZ:     return (f32)s_style.checkbox_sz;
+        case GUI_VAR_SLIDER_KNOB_W:   return (f32)s_style.slider_knob_w;
+
+        /* 2. SKIN */
         case GUI_VAR_WIN_ROUNDING:    return (f32)s_style.win_rounding;
         case GUI_VAR_WIDGET_ROUNDING: return (f32)s_style.widget_rounding;
         case GUI_VAR_GRAB_ROUNDING:   return (f32)s_style.grab_rounding;
@@ -55,11 +58,6 @@ style_var_base( gui_style_var_t v )
         case GUI_VAR_PROGRESS_STYLE:  return (f32)s_style.progress_style;  /* enum-as-var: 0 solid / 1 gradient */
         case GUI_VAR_SLIDER_KNOB:     return (f32)s_style.slider_knob;     /* enum-as-var: 0 bar / 1 circle */
         case GUI_VAR_MENU_CHECK:      return (f32)s_style.menu_check;      /* enum-as-var: 0 plain / 1 box */
-
-        /* 3. WIDGET DRAWING STYLE */
-        case GUI_VAR_WIN_TITLE_H:     return (f32)s_style.win_title_h;
-        case GUI_VAR_CHECKBOX_SZ:     return (f32)s_style.checkbox_sz;
-        case GUI_VAR_SLIDER_KNOB_W:   return (f32)s_style.slider_knob_w;
 
         default:                      return 0.0f;
     }
@@ -231,6 +229,56 @@ style_new_frame( void )
     s_col_stack.sp = s_var_stack.sp = 0;
     s_next_n = s_item_n = 0;
 }
+
+/*----------------------------------------------------------------------------------------------
+    The style vocabulary -- the macros every later tier reads style through.
+
+    Each read resolves through style_var / style_col above (the theme base with any push_style_*
+    / next_style_* override applied), so every call site honors the stacks with no change.  They
+    live here with the resolver -- 0_foundation -- because every tier-2 role consumes them: the
+    composer sizes cells and gutters with the METRICS group, widgets measure natural sizes and
+    seat labels with the same numbers, and presentation paints with the SKIN group.  Grouped by
+    the two gui_style_t categories (see gui.h).
+----------------------------------------------------------------------------------------------*/
+
+/* 1. METRICS -- can move a rect */
+#define WIDGET_H      style_var( GUI_VAR_LINE_SIZE     )
+#define WIDGET_GAP    style_var( GUI_VAR_WIDGET_GAP    )
+#define WIDGET_PAD    style_var( GUI_VAR_WIDGET_PAD    )
+#define WIDGET_MIN_W  style_var( GUI_VAR_MIN_CELL_W    )
+#define WIN_BORDER    style_var( GUI_VAR_WIN_BORDER    )
+#define WIN_TITLE_H   style_var( GUI_VAR_WIN_TITLE_H   )
+#define CHECKBOX_SZ   style_var( GUI_VAR_CHECKBOX_SZ   )
+#define SLIDER_KNOB_W style_var( GUI_VAR_SLIDER_KNOB_W )
+
+/* 2. SKIN -- paint-only.  The roundings are corner-radius categories, fed to draw_set_rounding
+   (gui_backend) so a draw site can pick the right rounding before emitting.  The item seam
+   defaults to ROUND_WIDGET and the chrome seam to ROUND_WIN; grabs and squared-off marks
+   override locally. */
+#define ROUND_WIN     style_var( GUI_VAR_WIN_ROUNDING    )
+#define ROUND_WIDGET  style_var( GUI_VAR_WIDGET_ROUNDING )
+#define ROUND_GRAB    style_var( GUI_VAR_GRAB_ROUNDING   )
+
+/* SKIN: color palette (GUI_COLOR: byte order R,G,B,A in memory = ABGR u32).  Theme defaults
+   come from the active theme (k_themes in gui_theme.c, seeded into s_style.colors); see
+   gui_col_t for the slots. */
+#define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG    )
+#define COL_CHILD_BG     style_col( GUI_COL_CHILD_BG     )
+#define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG     )
+#define COL_BORDER       style_col( GUI_COL_BORDER       )
+#define COL_TEXT         style_col( GUI_COL_TEXT         )
+#define COL_TEXT_DIM     style_col( GUI_COL_TEXT_DIM     )
+#define COL_WIDGET_BG    style_col( GUI_COL_WIDGET_BG    )
+#define COL_WIDGET_HOT   style_col( GUI_COL_WIDGET_HOT   )
+#define COL_WIDGET_ACT   style_col( GUI_COL_WIDGET_ACT   )
+#define COL_WIDGET_FG    style_col( GUI_COL_WIDGET_FG    )
+#define COL_CHECK_MARK   style_col( GUI_COL_CHECK_MARK   )
+#define COL_SLIDER_TRACK style_col( GUI_COL_SLIDER_TRACK )
+#define COL_RESIZE_HOT   style_col( GUI_COL_RESIZE_HOT   )
+#define COL_INPUT_BG     style_col( GUI_COL_INPUT_BG     )
+#define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS  )
+#define COL_CURSOR       style_col( GUI_COL_CURSOR       )
+#define COL_NAV          style_col( GUI_COL_NAV_HIGHLIGHT )
 
 // clang-format on
 /*============================================================================================*/

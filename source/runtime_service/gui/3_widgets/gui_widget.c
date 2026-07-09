@@ -21,10 +21,12 @@
     primitives for a caller-held rect rather than self-laying-out controls.
 
     The window compound widget lives in gui_widget_window.c; the shared interaction state
-    machine, theme, and layout macros these widgets build on live in gui_widget_core.c.
+    machine is 2_interact/gui_item.c, the label grammar + paint helpers these widgets build on
+    are 2_present/gui_widget_core.c, and the COL_* / WIDGET_* / WIN_* style vocabulary resolves
+    in 0_foundation/gui_style.c.
 
     Included by gui.c after 2_present/gui_widget_core.c + 2_interact/gui_item.c so widget_behavior,
-    widget_next_rect, the COL_* palette, and the WIDGET_/WIN_ layout macros are all in scope.
+    widget_next_rect, and the label grammar are all in scope.
 
 ==============================================================================================*/
 // clang-format off
@@ -250,7 +252,7 @@ gui_button( const char* label )
     gui_id_t   id = widget_id( label );
 
     /* Natural width = label + padding.  Shrinks to this in stack and same_line; fills in columns. */
-    gui_rect_t r  = widget_next_rect_w( label_width( label ) + 2.0f * WIDGET_PAD, WIDGET_H );
+    gui_rect_t r  = widget_next_rect_w( label_natural_w( label ), WIDGET_H );
 
     gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
@@ -271,7 +273,7 @@ gui_button( const char* label )
 f32
 gui_button_width( const char* label )
 {
-    return label_width( label ) + 2.0f * WIDGET_PAD;
+    return label_natural_w( label );
 }
 
 bool
@@ -304,7 +306,7 @@ gui_small_button( const char* label )
 
     /* Height hugs the glyph (plus 2px so the frame does not touch the text); width is label + pad. */
     f32          h  = font_char_h() + 2.0f;
-    gui_rect_t r  = widget_next_rect_w( label_width( label ) + 2.0f * WIDGET_PAD, h );
+    gui_rect_t r  = widget_next_rect_w( label_natural_w( label ), h );
 
     gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 

@@ -2,15 +2,16 @@
 
     runtime_service/gui/2_present/gui_widget_core.c -- Shared presentation primitives.
 
-    The style-facing foundation the widget layer draws through: the layout-derived size
-    macros, the color palette, the label grammar + content placement (rect_align / arrows),
-    and the text-fit helpers.  Both the leaf widgets (gui_widget.c) and the window chrome
+    The paint-facing foundation the widget layer draws through: the label grammar + content
+    placement (rect_align / arrows), the text-fit helpers, the frame/background color policy,
+    and the system adornments.  Both the leaf widgets (gui_widget.c) and the window chrome
     (gui_widget_window.c) draw through these, so they live here, ahead of both in the unity
-    build.  The interaction state machine (widget_behavior) is a service now -- it lives in
-    2_interact/gui_item.c, included immediately after this file so it can use the WIN_BORDER /
-    COL_NAV macros for the nav focus ring.  The shared edge-resize geometry is
-    2_interact/gui_resize.c and the layout engine (track resolver + cell emitters) is
-    2_compose/gui_layout_core.c.
+    build.  The style vocabulary (WIDGET_* / WIN_* / COL_* macros) lives with its resolver in
+    0_foundation/gui_style.c -- this file only consumes it.  The interaction state machine
+    (widget_behavior) is a service -- it lives in 2_interact/gui_item.c, included immediately
+    after this file so it can invoke the adornment painters below.  The shared edge-resize
+    geometry is 2_interact/gui_resize.c and the layout engine (track resolver + cell emitters)
+    is 2_compose/gui_layout_core.c.
 
     Included by gui.c after 0_foundation/gui_ctx.c + 0_foundation/gui_io.c so s_interaction, s_build, s_io, s_style,
     rect_hit, and the draw helpers are all in scope.  Despite the name, this file has no
@@ -20,65 +21,6 @@
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   /* widget_kind_t, gui_item_state_t */
 // clang-format off
-
-/*----------------------------------------------------------------------------------------------
-    Layout accessors  (read from s_style, computed by layout_compute() in gui.c)
-----------------------------------------------------------------------------------------------*/
-
-/* Each resolves through style_var (gui_style.c): the font-derived base with any push_style_var /
-   next_style_var override applied, so every read here honors the style stacks with no call-site
-   change.  Grouped by the three gui_style_t categories -- see gui_style_var_t for the slots. */
-
-/* 1. LAYOUT CONTROLLER */
-#define WIDGET_H      style_var( GUI_VAR_LINE_SIZE     )
-#define WIDGET_GAP    style_var( GUI_VAR_WIDGET_GAP    )
-#define WIDGET_PAD    style_var( GUI_VAR_WIDGET_PAD    )
-#define WIDGET_MIN_W  style_var( GUI_VAR_MIN_CELL_W    )
-
-/* 2. STYLE -- the roundings are corner-radius categories, fed to draw_set_rounding
-   (gui_emit_draw.c) so a draw site can pick the right rounding before emitting.  The item seam
-   defaults to ROUND_WIDGET and the chrome seam to ROUND_WIN; grabs and squared-off marks
-   override locally. */
-#define WIN_BORDER    style_var( GUI_VAR_WIN_BORDER      )
-#define ROUND_WIN     style_var( GUI_VAR_WIN_ROUNDING    )
-#define ROUND_WIDGET  style_var( GUI_VAR_WIDGET_ROUNDING )
-#define ROUND_GRAB    style_var( GUI_VAR_GRAB_ROUNDING   )
-
-/* 3. WIDGET DRAWING STYLE */
-#define WIN_TITLE_H   style_var( GUI_VAR_WIN_TITLE_H   )
-#define CHECKBOX_SZ   style_var( GUI_VAR_CHECKBOX_SZ   )
-#define SLIDER_KNOB_W style_var( GUI_VAR_SLIDER_KNOB_W )
-
-/* Default region padding (the inset every window body / child opens with): pad columns by
-   WIDGET_PAD left and right, WIDGET_GAP of breathing above the first row and below the last --
-   the bottom pad scrolls with the content and joins the measured canvas at pop. */
-#define REGION_PAD_DEFAULT ( ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, WIDGET_GAP } )
-
-/*----------------------------------------------------------------------------------------------
-    Color palette (GUI_COLOR: byte order R,G,B,A in memory = ABGR u32)
-----------------------------------------------------------------------------------------------*/
-
-/* Each resolves through style_col (gui_style.c): the theme default with any push_style_color /
-   next_style_color override applied.  The defaults themselves come from the active theme (k_themes
-   in gui_theme.c, seeded into s_style.colors); these names stay so every existing draw site keeps
-   reading COL_* while gaining override support.  See gui_col_t for the slots. */
-#define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG    )
-#define COL_CHILD_BG     style_col( GUI_COL_CHILD_BG     )
-#define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG     )
-#define COL_BORDER       style_col( GUI_COL_BORDER       )
-#define COL_TEXT         style_col( GUI_COL_TEXT         )
-#define COL_TEXT_DIM     style_col( GUI_COL_TEXT_DIM     )
-#define COL_WIDGET_BG    style_col( GUI_COL_WIDGET_BG    )
-#define COL_WIDGET_HOT   style_col( GUI_COL_WIDGET_HOT   )
-#define COL_WIDGET_ACT   style_col( GUI_COL_WIDGET_ACT   )
-#define COL_WIDGET_FG    style_col( GUI_COL_WIDGET_FG    )
-#define COL_CHECK_MARK   style_col( GUI_COL_CHECK_MARK   )
-#define COL_SLIDER_TRACK style_col( GUI_COL_SLIDER_TRACK )
-#define COL_RESIZE_HOT   style_col( GUI_COL_RESIZE_HOT   )
-#define COL_INPUT_BG     style_col( GUI_COL_INPUT_BG     )
-#define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS  )
-#define COL_CURSOR       style_col( GUI_COL_CURSOR       )
-#define COL_NAV          style_col( GUI_COL_NAV_HIGHLIGHT )
 
 /* Baseline y to vertically center one line of glyphs in a row of height h starting at y.
    Used by every labeled widget and the window title so the centering math lives in one place.
@@ -189,6 +131,11 @@ widget_id( const char* label )
 static f32  label_width( const char* s )                         { return font_text_w_n( s, label_vis_len( s ) ); }
 static void draw_label ( f32 x, f32 y, u32 c, const char* s )    { draw_push_text_n( x, y, c, s, label_vis_len( s ) ); }
 
+/* The natural width a label-sized widget requests from the composer: the visible span plus the
+   standard inset on both sides.  THE self-measurement formula -- button, small_button, menu
+   items, and the public gui_button_width all speak it through this one helper. */
+static f32  label_natural_w( const char* s )                     { return label_width( s ) + 2.0f * WIDGET_PAD; }
+
 /* Compact truncation ellipsis -- three baseline dots packed into ~1.2 glyph advances instead of
    three full '.' glyph cells.  A literal "..." spends three whole character advances on the cut
    marker, stealing space from the text and forcing the truncation earlier than necessary; these
@@ -276,6 +223,51 @@ static void
 draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
 {
     draw_text_fit_n( x, y, c, s, label_vis_len( s ), max_w );
+}
+
+/* Split a labeled widget row into a control rect and its painted label.  The geometry halves
+   live with the composer: field_split_resolve (2_compose/gui_layout_core.c, forward-declared
+   here -- the one present->compose seam) lays the two tracks when a field split is active; the
+   default trailing-label math is local.  This wrapper owns the PAINT: it draws the label and
+   returns the control rect, which is why it sits here with the label grammar and not in the
+   composer -- compose never colors a pixel.  In the default (trailing-label) mode the label
+   keeps its natural width pinned at the row's right edge and the control takes the rest, never
+   shrinking below min_control_w so it stays usable when the label is long (the control then
+   overruns under the label); in field-split mode the label and control are two resolved tracks.
+   The single seam every "control + trailing label" widget (slider_float, input_text, combo,
+   drag_float, color_edit) routes through, so row proportions retune in one place. */
+
+static bool field_split_resolve( gui_rect_t cell, f32 min_control_w, f32* out_label_x,
+                                 f32* out_label_w, gui_rect_t* out_control );   /* 2_compose */
+
+static gui_rect_t
+widget_split_label( gui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
+{
+    /* Field split mode: the label sits in its track at full strength (the trailing-label dim hint,
+       label_color, does not apply -- a field label reads as primary); the control fills the rest.
+       The label is fitted to its track width so a narrow (fraction-shrunk) track ellipsizes it. */
+    f32          label_x, label_w;
+    gui_rect_t control;
+    if ( field_split_resolve( row, min_control_w, &label_x, &label_w, &control ) )
+    {
+        draw_label_fit( label_x, text_center_y( row.y, row.h ), COL_TEXT, label, label_w );
+        return control;
+    }
+
+    /* Default: control on the left, the label trailing at its natural width on the right.  When the
+       control floors at min_control_w the label space narrows; fit it so it ellipsizes there
+       instead of bleeding under the row's right edge.  No visible label ("##key") => full row. */
+    label_w = label_width( label );
+    if ( label_w == 0.0f ) return row;
+    f32 control_w = row.w - label_w - WIDGET_PAD;
+    if ( control_w < min_control_w ) control_w = min_control_w;
+
+    control = ( gui_rect_t ){ row.x, row.y, control_w, row.h };
+
+    f32 trail_x = control.x + control.w + WIDGET_PAD;
+    draw_label_fit( trail_x, text_center_y( row.y, row.h ), label_color, label,
+                    ( row.x + row.w ) - trail_x );
+    return control;
 }
 
 /* Frame-background tint for a "framed field" widget (checkbox box, slider track, drag box, input):

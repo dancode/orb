@@ -187,7 +187,7 @@ main( int argc, char** argv )
        Default context starts listening; ctx2 starts deaf.  A/S keys toggle which listens.
        Toggle b_multi_ctx to exercise the API.  Teardown is handled by gui()->shutdown(). */
     const bool b_multi_ctx = false;
-    gui_ctx_t  ctx2 = GUI_CTX_INVALID;
+    gui_ctx_id_t  ctx2 = GUI_CTX_INVALID;
     if ( b_multi_ctx )
     {
         gui_ctx_config_t game_cfg = GUI_CTX_CONFIG_GAME_UI;

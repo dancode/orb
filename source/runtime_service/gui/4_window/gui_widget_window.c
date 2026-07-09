@@ -9,7 +9,9 @@
     declares no long-lived state of its own.
 
     A window is treated as a large compound widget, so this builds on the shared primitives
-    in 2_present/gui_widget_core.c (widget_bg_color, the theme + layout macros) and 2_interact/gui_item.c (widget_behavior).
+    in 2_present/gui_widget_core.c (widget_bg_color, the label grammar) and 2_interact/gui_item.c
+    (widget_behavior); the style vocabulary (WIDGET_* / WIN_* / COL_*) resolves in
+    0_foundation/gui_style.c.
 
     Included by gui.c after gui_widget.c, so the window record (gui_window.c), the
     shared widget core, and the leaf widgets are all in scope.
@@ -40,11 +42,11 @@
    window_end calls (native_caption_chrome) -- lives in gui_window_native.c, included just
    before this file. */
 
-/* GUI_RESIZE_SALT, the GUI_RESIZE_* edge bits, the WIN_RESIZE_* grab-band constants, and the
-   record-agnostic resize helpers (window_resize_hit, draw_resize_highlight, resize_grab,
-   resize_apply_edges) live in gui_widget_core.c -- alongside the style macros they need and ahead
-   of gui_layout.c -- so child_begin reuses the same mechanism (the dock splitter does not; it has its
-   own drag path in 4_dock/).  Only the
+/* GUI_RESIZE_SALT, the WIN_RESIZE_* grab-band constants, and the record-agnostic resize helpers
+   (window_resize_hit, resize_grab, resize_apply_edges) live in 2_interact/gui_resize.c (the
+   GUI_RESIZE_* edge bits in gui_internal.h, the hot-edge paint in 2_present/gui_widget_core.c:
+   draw_resize_highlight), ahead of gui_layout.c, so child_begin reuses the same mechanism (the
+   dock splitter does not; it has its own drag path in 4_dock/).  Only the
    window's size policy stays below: the min clamp with far-edge pinning (window_apply_resize) and
    the content auto-fit (window_fit_size). */
 

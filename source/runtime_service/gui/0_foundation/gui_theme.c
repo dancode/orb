@@ -9,8 +9,8 @@
                         via gui_style_get() (theme_name then goes anonymous / NULL).
         s_style      -- s_style_base scaled to the active font's type size (em) by layout_compute;
                         every other file's WIDGET_ / WIN_ metrics and default colors ultimately
-                        read this (through gui_style.c's push-stack resolver, gui_widget_core.c's
-                        macros, gui_symbol.c's check/bullet/arrow style setters, ...).
+                        read this (through gui_style.c's push-stack resolver + vocabulary macros,
+                        gui_symbol.c's check/bullet/arrow style setters, ...).
 
     The theme API (theme_list/set/get/reset) and gui_style_get() are the public surface over that
     state; layout_compute is the font-driven rescale, called from gui_frame.c whenever a font
@@ -69,15 +69,18 @@ static const gui_theme_t k_themes[] =
                 [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ),
                 [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
             },
-            /* 1. LAYOUT CONTROLLER */
+            /* 1. METRICS */
             .line_size          = 20,
             .widget_gap         = 4,
             .widget_pad         = 8,
             .min_cell_w         = 40,
             .grid_quantum       = 4,
-
-            /* 2. STYLE */
             .win_border         = 1,
+            .win_title_h        = 24,
+            .checkbox_sz        = 16,
+            .slider_knob_w      = 12,
+
+            /* 2. SKIN */
             .win_rounding       = 0,       /* geometric default: hard square corners everywhere */
             .widget_rounding    = 0,
             .grab_rounding      = 0,
@@ -88,11 +91,6 @@ static const gui_theme_t k_themes[] =
             .progress_style     = GUI_PROGRESS_SOLID,
             .slider_knob        = GUI_SLIDER_KNOB_BAR,
             .menu_check         = GUI_MENU_CHECK_BOX,
-
-            /* 3. WIDGET DRAWING STYLE */
-            .win_title_h        = 24,
-            .checkbox_sz        = 16,
-            .slider_knob_w      = 12,
             .checkmark_pad      = 4,
             .cursor_w           = 1,
             .cursor_inset       = 3,
@@ -130,15 +128,18 @@ static const gui_theme_t k_themes[] =
                 [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ),
                 [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
             },
-            /* 1. LAYOUT CONTROLLER */
+            /* 1. METRICS */
             .line_size          = 20,
             .widget_gap         = 4,
             .widget_pad         = 8,
             .min_cell_w         = 40,
             .grid_quantum       = 4,
-
-            /* 2. STYLE */
             .win_border         = 1,
+            .win_title_h        = 24,
+            .checkbox_sz        = 16,
+            .slider_knob_w      = 12,
+
+            /* 2. SKIN */
             .win_rounding       = 8,
             .widget_rounding    = 5,
             .grab_rounding      = 6,
@@ -149,11 +150,6 @@ static const gui_theme_t k_themes[] =
             .progress_style     = GUI_PROGRESS_SOLID,
             .slider_knob        = GUI_SLIDER_KNOB_CIRCLE,
             .menu_check         = GUI_MENU_CHECK_BOX,
-
-            /* 3. WIDGET DRAWING STYLE */
-            .win_title_h        = 24,
-            .checkbox_sz        = 16,
-            .slider_knob_w      = 12,
             .checkmark_pad      = 4,
             .cursor_w           = 1,
             .cursor_inset       = 3,
@@ -188,15 +184,18 @@ static const gui_theme_t k_themes[] =
                 [ GUI_COL_CURSOR       ] = GUI_COLOR( 0x10, 0x10, 0x60, 0xFF ),
                 [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x30, 0x90, 0xE0, 0xFF ),
             },
-            /* 1. LAYOUT CONTROLLER */
+            /* 1. METRICS */
             .line_size          = 20,
             .widget_gap         = 4,
             .widget_pad         = 8,
             .min_cell_w         = 40,
             .grid_quantum       = 4,
-
-            /* 2. STYLE */
             .win_border         = 1,
+            .win_title_h        = 24,
+            .checkbox_sz        = 16,
+            .slider_knob_w      = 12,
+
+            /* 2. SKIN */
             .win_rounding       = 6,
             .widget_rounding    = 4,
             .grab_rounding      = 4,
@@ -207,11 +206,6 @@ static const gui_theme_t k_themes[] =
             .progress_style     = GUI_PROGRESS_SOLID,
             .slider_knob        = GUI_SLIDER_KNOB_BAR,
             .menu_check         = GUI_MENU_CHECK_BOX,
-
-            /* 3. WIDGET DRAWING STYLE */
-            .win_title_h        = 24,
-            .checkbox_sz        = 16,
-            .slider_knob_w      = 12,
             .checkmark_pad      = 4,
             .cursor_w           = 1,
             .cursor_inset       = 3,
@@ -341,26 +335,24 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     /* Copy colors and enums */
     s_style = s_style_base;
 
-    /* Scale pixel metrics proportionally -- grouped by the three gui_style_t categories.
-       (grid_quantum and the enum-valued STYLE knobs are not pixel metrics; the struct copy
+    /* Scale pixel metrics proportionally -- grouped by the two gui_style_t categories.
+       (grid_quantum and the enum-valued SKIN knobs are not pixel metrics; the struct copy
        above carries them.) */
 
-    /* 1. LAYOUT CONTROLLER */
+    /* 1. METRICS */
     s_style.line_size       = (u8)( (f32)s_style_base.line_size       * scale );
     s_style.widget_gap      = (u8)( (f32)s_style_base.widget_gap      * scale );
     s_style.widget_pad      = (u8)( (f32)s_style_base.widget_pad      * scale );
     s_style.min_cell_w      = (u8)( (f32)s_style_base.min_cell_w      * scale );
-
-    /* 2. STYLE */
     s_style.win_border      = (u8)( (f32)s_style_base.win_border      * scale );
-    s_style.win_rounding    = (u8)( (f32)s_style_base.win_rounding    * scale );
-    s_style.widget_rounding = (u8)( (f32)s_style_base.widget_rounding * scale );
-    s_style.grab_rounding   = (u8)( (f32)s_style_base.grab_rounding   * scale );
-
-    /* 3. WIDGET DRAWING STYLE */
     s_style.win_title_h     = (u8)( (f32)s_style_base.win_title_h     * scale );
     s_style.checkbox_sz     = (u8)( (f32)s_style_base.checkbox_sz     * scale );
     s_style.slider_knob_w   = (u8)( (f32)s_style_base.slider_knob_w   * scale );
+
+    /* 2. SKIN */
+    s_style.win_rounding    = (u8)( (f32)s_style_base.win_rounding    * scale );
+    s_style.widget_rounding = (u8)( (f32)s_style_base.widget_rounding * scale );
+    s_style.grab_rounding   = (u8)( (f32)s_style_base.grab_rounding   * scale );
     s_style.checkmark_pad   = (u8)( (f32)s_style_base.checkmark_pad   * scale );
     s_style.cursor_w        = (u8)( (f32)s_style_base.cursor_w        * scale );
     s_style.cursor_inset    = (u8)( (f32)s_style_base.cursor_inset    * scale );
@@ -404,7 +396,8 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
        is that row pitch (line_size + gap), insets, and title bars share one divisor so nested
        regions stay seam-aligned.  Row height rounds UP so the font floor is never undone (text
        must still fit); everything else rounds to nearest.  Strokes and fine details (win_border,
-       cursor_*, checkmark_pad, rounding) stay free -- they are drawing weights, not layout. */
+       cursor_*, checkmark_pad, rounding) stay free -- a hairline or inset snapped to the lattice
+       would quadruple, so they keep their scaled pixel value even when they shape geometry. */
     u32 q = s_style_base.grid_quantum;
     if ( q > 1 )
     {

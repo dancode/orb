@@ -16,8 +16,8 @@
     the GUI_RESIZE_* edge bits both sides speak are in gui_internal.h.  WIN_BORDER is still read
     here so the grab band straddles the visible border (a hit-test metric, not paint).
 
-    Included by gui.c after gui_widget_core.c (for WIN_BORDER) and before the consumers
-    (gui_layout_child.c / gui_widget_window.c).
+    Included by gui.c before the consumers (gui_layout_child.c / gui_widget_window.c);
+    WIN_BORDER resolves from the 0_foundation/gui_style.c vocabulary.
 
 ==============================================================================================*/
 // clang-format off

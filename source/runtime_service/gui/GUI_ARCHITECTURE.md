@@ -32,9 +32,11 @@ Static lib `gui`, two translation units:
 
 The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one contract:
 
-- **Composer** (`2_compose/`): the ONLY code that turns style spacing metrics
-  (`line_size`/`gap`/`pad`/`grid_quantum`/`scales`) into geometry. Consumes spacing, produces
-  rects. Public face: the layout verbs + the `sz_` sizing family.
+- **Composer** (`2_compose/`): the ONLY code that POSITIONS rects -- divides regions into
+  cells, moves the pen, decides where the next widget lands. Widgets MEASURE themselves with
+  the same METRICS vocabulary (a button's natural width is its label plus pad) but only ever
+  REQUEST a size through `widget_next_rect_w`; the composer decides placement. Composes and
+  never paints. Public face: the layout verbs + the `sz_` sizing family.
 - **Behavior** (`2_interact/`, public door `5_user/gui_behavior.c`): widget-agnostic
   interaction SERVICES over the 0_foundation/ utilities (identity `0_foundation/gui_id.c`,
   keyed state tracking `0_foundation/gui_state.c`, the io snapshot `0_foundation/gui_io.c`;
@@ -57,15 +59,19 @@ The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one co
   and behavior publishes its per-item result back into it (`s_scope.last_*`, read by the
   `is_item_*` queries and the context-menu / drag anchors).
   Style is invisible below this line -- a service never
-  reads a metric or color to make a decision, and never paints: the system adornments
-  (nav focus ring, drag accept ring, hot resize edges) are invoked from behavior at the
-  protocol point but painted by present-tier helpers (`draw_nav_ring` / `draw_drop_ring` /
-  `draw_resize_highlight` in `2_present/gui_widget_core.c`), so the paint policy lives with
-  the skin.
-- **Presentation** (`2_present/`: palette, widget macros, label grammar, text-fit, symbol
-  draws): consumes rect + state + skin and paints; state is a parameter, it never asks
-  behavior. `3_widgets/` and the 4_window/4_dock/4_popup chrome are its CLIENTS -- the stock
-  widget set is written on the same substrate a user widget uses, not a privileged layer.
+  reads a skin value and never paints (the one metric it reads is `WIN_BORDER`, because the
+  resize grab band and the scroll view box straddle the border, and border is geometry): the
+  system adornments (nav focus ring, drag accept ring, hot resize edges) are invoked from
+  behavior at the protocol point but painted by present-tier helpers (`draw_nav_ring` /
+  `draw_drop_ring` / `draw_resize_highlight` in `2_present/gui_widget_core.c`), so the paint
+  policy lives with the skin.
+- **Presentation** (`2_present/`: label grammar + self-measurement (`label_natural_w`),
+  text-fit, frame color policy, system adornments, symbol draws): consumes rect + state + skin
+  and paints; state is a parameter, it never asks behavior. The style vocabulary itself
+  (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in `0_foundation/gui_style.c`
+  since all three roles read it. `3_widgets/` and the 4_window/4_dock/4_popup chrome are its
+  CLIENTS -- the stock widget set is written on the same substrate a user widget uses, not a
+  privileged layer.
 
 `5_user/` is the top tier and the public door onto the first two roles -- the caller's vocabulary,
 pure verbs + readers with zero state or machinery: `canvas`/`split`/`carve`/`empty` for
@@ -78,9 +84,11 @@ surface through gui_host.h declarations.
 A custom widget (`game_ui_slider()`) never needs skin or spacing metrics -- it brings its own
 look and composes with any layout.
 
-`gui_style_t` mirrors the split as three labeled bundles (see gui.h): composer metrics / skin /
-widget inner geometry. `widget_pad` is the one deliberate double-agent (region inset for the
-composer, label inset for stock widgets).
+`gui_style_t` sorts every field into two bundles by one test -- can a read of this field move a
+rect? (see gui.h): METRICS (row heights, gaps, pads, border, title bar, indicator sides, the
+scrollbar gutter -- consumed by the composer to size cells AND by widgets to measure/seat
+themselves, deliberately the same numbers) and SKIN (colors, roundings, mark shapes, caret --
+paint-only, provably never sizes a cell).
 
 Consumers call through the module vtable: `gui()->verb(...)`. gui links only `app` + `rhi`;
 OS services it cannot reach (clock/sleep/wait) are injected via `set_frame_hooks`

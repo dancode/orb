@@ -369,7 +369,7 @@ gui_frame_begin( f32 dt )
    interaction (hover nomination and widget hit-tests).  Emit this context's windows immediately
    after the call -- it leaves g_ctx bound to ctx_handle -- and close with ctx_end. */
 void
-gui_ctx_begin( gui_ctx_t ctx_handle )
+gui_ctx_begin( gui_ctx_id_t ctx_handle )
 {
     /* Every widget this context emits lays out off the active font's metrics (s_style, scaled by
        gui_style_apply/layout_compute) -- with none activated s_style is still zero-initialized and
@@ -1081,7 +1081,7 @@ gui_force_redraw( void )
    Multiple contexts may listen simultaneously; a deaf context renders but returns inert
    widget state.  The default context starts listening; secondary contexts start deaf. */
 void
-gui_ctx_set_listening( gui_ctx_t ctx, bool listen )
+gui_ctx_set_listening( gui_ctx_id_t ctx, bool listen )
 {
     if ( ctx >= 0 && ctx < GUI_CTX_POOL_MAX && s_ctx_pool[ ctx ] )
         s_ctx_pool[ ctx ]->listening = listen;
@@ -1090,7 +1090,7 @@ gui_ctx_set_listening( gui_ctx_t ctx, bool listen )
 /* Allocate a fresh secondary context sized to `cfg` (NULL = editor defaults).
    Each gets a unique id_salt so same-named widgets do not alias across contexts.
    Returns GUI_CTX_INVALID when the pool is full.  Call between frames. */
-gui_ctx_t
+gui_ctx_id_t
 gui_ctx_create( const gui_ctx_config_t* cfg )
 {
     /* Resolve config: NULL or zero fields fall back to editor defaults.
@@ -1120,12 +1120,12 @@ gui_ctx_create( const gui_ctx_config_t* cfg )
 
     s_ctx_pool[ slot ] = ctx;
     if ( (u32)slot >= s_ctx_pool_count ) s_ctx_pool_count = (u32)slot + 1u;
-    return (gui_ctx_t)slot;
+    return (gui_ctx_id_t)slot;
 }
 
 /* Free a secondary context; rebinds the default if this was current.  Never destroys slot 0. */
 void
-gui_ctx_destroy( gui_ctx_t ctx )
+gui_ctx_destroy( gui_ctx_id_t ctx )
 {
     if ( ctx <= 0 || ctx >= GUI_CTX_POOL_MAX || !s_ctx_pool[ ctx ] )
         return;
@@ -1140,7 +1140,7 @@ gui_ctx_destroy( gui_ctx_t ctx )
 
 /* Make ctx the current context.  GUI_CTX_DEFAULT (0) or an invalid handle rebinds the default. */
 void
-gui_ctx_bind( gui_ctx_t ctx )
+gui_ctx_bind( gui_ctx_id_t ctx )
 {
     if ( ctx >= 0 && ctx < GUI_CTX_POOL_MAX && s_ctx_pool[ ctx ] )
         ctx_bind( s_ctx_pool[ ctx ] );

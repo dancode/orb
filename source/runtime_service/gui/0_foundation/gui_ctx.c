@@ -228,9 +228,8 @@ item_flags_resolve( void )
     draw_set_alpha( ( f & GUI_ITEM_DISABLED ) ? GUI_DISABLED_ALPHA : 1.0f );
     /* Default this widget's rects to the control-frame radius (base + push/pop + next-* override).
        A widget that draws a grab (slider knob, scrollbar) or a squared-off mark (check, bullet)
-       overrides draw_set_rounding locally for that sub-element.  (style_var directly: the ROUND_*
-       macros live in gui_widget_core.c, included after this file.) */
-    draw_set_rounding( style_var( GUI_VAR_WIDGET_ROUNDING ) );
+       overrides draw_set_rounding locally for that sub-element. */
+    draw_set_rounding( ROUND_WIDGET );
     return f;
 }
 

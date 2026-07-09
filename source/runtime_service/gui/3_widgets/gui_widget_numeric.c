@@ -17,8 +17,8 @@
     Focus gain seeds it from the current value; Enter / focus loss parses it back.
 
     Included by gui.c after gui_widget_slider.c (which is after gui_widget.c, so
-    widget_behavior, widget_split_label, input_field_edit, the COL_* palette, and the
-    WIDGET_/WIN_ layout macros from gui_widget_core.c are all in scope).
+    widget_behavior, widget_split_label, input_field_edit, and the COL_* / WIDGET_ / WIN_
+    style vocabulary from gui_style.c are all in scope).
 
 ==============================================================================================*/
 // clang-format off

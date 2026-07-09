@@ -276,11 +276,11 @@ typedef struct gui_api_s
          frame_end()                    -- seal the build; volatile replay on clean frames.
        A single-context host runs exactly one ctx_begin(GUI_CTX_DEFAULT)/ctx_end pair. */
 
-    gui_ctx_t   ( *ctx_create        )( const gui_ctx_config_t* cfg );
-    void        ( *ctx_destroy       )( gui_ctx_t ctx );
-    void        ( *ctx_bind          )( gui_ctx_t ctx );
-    void        ( *ctx_set_listening )( gui_ctx_t ctx, bool listen );
-    void        ( *ctx_begin         )( gui_ctx_t ctx );
+    gui_ctx_id_t( *ctx_create        )( const gui_ctx_config_t* cfg );
+    void        ( *ctx_destroy       )( gui_ctx_id_t ctx );
+    void        ( *ctx_bind          )( gui_ctx_id_t ctx );
+    void        ( *ctx_set_listening )( gui_ctx_id_t ctx, bool listen );
+    void        ( *ctx_begin         )( gui_ctx_id_t ctx );
     void        ( *ctx_end           )( void );
 
     /* Host input -- the host owns the app event ring drain and forwards each event here.

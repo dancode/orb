@@ -144,7 +144,7 @@ gui_menu_begin( const char* label )
     f32          anchor_x, anchor_y;
     if ( in_bar )
     {
-        box      = widget_next_rect_w( label_width( label ) + 2.0f * WIDGET_PAD, WIDGET_H );
+        box      = widget_next_rect_w( label_natural_w( label ), WIDGET_H );
         anchor_x = box.x;
         anchor_y = box.y + box.h;            /* drop below the bar label */
     }

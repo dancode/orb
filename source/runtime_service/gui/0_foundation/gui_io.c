@@ -61,7 +61,6 @@ static i32  s_pending_mouse_win = APP_WIN_INVALID;
 static bool s_pending_mouse_win_set;
 
 static bool s_debug_enabled;
-
 void gui_debug_enable( bool enable )
 {
     s_debug_enabled = enable;
