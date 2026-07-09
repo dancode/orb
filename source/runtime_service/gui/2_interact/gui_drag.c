@@ -18,7 +18,7 @@
     live drag" threshold machine, and drag_from_chrome starts a drag from non-item chrome (a dock
     tab, gui_dock_drag.c) with the payload attached in the same call.
 
-    Included by gui.c after gui_widget_core.c (COL_NAV / WIN_BORDER macros for the accept
+    Included by gui.c after gui_widget_core.c (draw_drop_ring, the present-tier accept
     highlight); the preview tooltip reuses gui_tooltip_begin/end (gui_popup.c, later in the TU --
     resolved by the public declarations in gui_host.h).
 
@@ -204,13 +204,10 @@ gui_drag_payload_accept( const char* type, gui_drag_flags_t flags )
     if ( strncmp( type, s_drag.type, GUI_DRAG_TYPE_CAP ) != 0 )
         return NULL;
 
-    /* Type matches: ring the target so the drop reads as "accepted here". */
+    /* Type matches: ring the target so the drop reads as "accepted here" (paint policy lives
+       with the skin -- draw_drop_ring, 2_present/gui_widget_core.c). */
     if ( !( flags & GUI_DRAG_NO_PREVIEW ) )
-    {
-        gui_rect_t r = s_drag.target_rect;
-        draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f,
-                                2.0f, 0, COL_NAV );
-    }
+        draw_drop_ring( s_drag.target_rect );
 
     s_drag.view.type = s_drag.type;
     s_drag.view.data = s_drag.data;

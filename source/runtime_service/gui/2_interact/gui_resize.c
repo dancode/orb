@@ -3,7 +3,7 @@
     runtime_service/gui/2_interact/gui_resize.c -- Shared edge-resize geometry.
 
     The record-agnostic mechanism behind every draggable edge in the UI: the grab-band hit test,
-    the hot-edge highlight, the press-time anchor record, and the raw cursor-to-edge apply.  Each
+    the press-time anchor record, and the raw cursor-to-edge apply.  Each
     touches only a rect and the cursor, so a window (gui_widget_window.c) and a resizeable
     child_begin (gui_layout_child.c) share one resize feel from here (the dock splitter has its own
     drag path in 4_dock/, not this mechanism).
@@ -11,10 +11,12 @@
     Split is mechanism vs policy: this records the anchors and maps the cursor onto the edges; the
     caller layers its own size policy on the result (a window pins + clamps to its min, a child
     clamps to its constraints and persists the size).  The in-flight s_resize_* state lives here
-    because both consumers read/write it, so it belongs to neither.  Style macros (WIN_BORDER,
-    COL_RESIZE_HOT) come from gui_widget_core.c.
+    because both consumers read/write it, so it belongs to neither.  The hot-edge highlight is
+    paint policy and lives with the skin (2_present/gui_widget_core.c: draw_resize_highlight);
+    the GUI_RESIZE_* edge bits both sides speak are in gui_internal.h.  WIN_BORDER is still read
+    here so the grab band straddles the visible border (a hit-test metric, not paint).
 
-    Included by gui.c after gui_widget_core.c (for the macros) and before the consumers
+    Included by gui.c after gui_widget_core.c (for WIN_BORDER) and before the consumers
     (gui_layout_child.c / gui_widget_window.c).
 
 ==============================================================================================*/
@@ -30,12 +32,6 @@
 static u8   s_resize_edges;
 static f32  s_resize_off_x, s_resize_off_y;
 static f32  s_resize_fix_x, s_resize_fix_y;
-
-/* Edge bits for s_resize_edges -- combined on a corner grab (e.g. R|B). */
-#define GUI_RESIZE_L  ( 1u << 0 )
-#define GUI_RESIZE_R  ( 1u << 1 )
-#define GUI_RESIZE_T  ( 1u << 2 )
-#define GUI_RESIZE_B  ( 1u << 3 )
 
 /* Grab band straddling the border: a few pixels inside and a few outside. */
 #define WIN_RESIZE_INNER  ( 4.0f )                  /* reach inside the border  */
@@ -84,19 +80,6 @@ resize_cursor_for_edges( u8 e )
     if ( corner_tr_or_bl ) return APP_CURSOR_RESIZE_NESW;
     if ( l || r )          return APP_CURSOR_RESIZE_EW;
     return APP_CURSOR_RESIZE_NS;
-}
-
-/* Paint a bold line over each hot edge of an outline so it is obvious that the border is
-   grabbable and which side will move.  Drawn just inside the rect, over the thin border. */
-static void
-window_draw_resize_highlight( gui_rect_t r, u8 edges )
-{
-    const f32 t = WIN_BORDER * 2.0f + 1.0f;   /* bold relative to the 1px frame */
-
-    if ( edges & GUI_RESIZE_L ) draw_push_rect_filled( r.x,             r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
-    if ( edges & GUI_RESIZE_R ) draw_push_rect_filled( r.x + r.w - t,   r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
-    if ( edges & GUI_RESIZE_T ) draw_push_rect_filled( r.x,             r.y,             r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
-    if ( edges & GUI_RESIZE_B ) draw_push_rect_filled( r.x,             r.y + r.h - t,   r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
 }
 
 /* Record the grab anchors for an edge-resize of `box`, keyed by `id` (resize-salted into active_id).

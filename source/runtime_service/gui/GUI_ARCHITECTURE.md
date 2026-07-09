@@ -33,8 +33,11 @@ The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one co
   composition every stock widget runs). Each service knows a capability (exclusivity, clicks, tracking) over
   (id, rect); none knows a slider. Consumes finished rects, produces interaction state
   (`hover`/`active`/`pressed`/`clicked`). Style is invisible below this line -- a service never
-  reads a metric or color to make a decision. (One sanctioned exception, documented in place:
-  the keyboard-nav focus ring draw in `gui_item.c`.)
+  reads a metric or color to make a decision, and never paints: the system adornments
+  (nav focus ring, drag accept ring, hot resize edges) are invoked from behavior at the
+  protocol point but painted by present-tier helpers (`draw_nav_ring` / `draw_drop_ring` /
+  `draw_resize_highlight` in `2_present/gui_widget_core.c`), so the paint policy lives with
+  the skin.
 - **Presentation** (`2_present/`: palette, widget macros, label grammar, text-fit, symbol
   draws): consumes rect + state + skin and paints; state is a parameter, it never asks
   behavior. `3_widgets/` and the 4_window/4_dock/4_popup chrome are its CLIENTS -- the stock

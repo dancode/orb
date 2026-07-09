@@ -33,8 +33,8 @@
                        protocol (widget_behavior), drag threshold + payload, edge-resize
                        mechanism, animation stepping.  Each serves a capability (exclusivity,
                        clicks, tracking) over (id, rect); none knows a widget, and none reads a
-                       style metric (the nav ring is the one sanctioned exception, see
-                       2_interact/gui_item.c).
+                       style value or paints -- system adornments (nav ring, drop ring, hot
+                       edges) are invoked from here but painted by 2_present/ helpers.
     2_present/      -- presentation: the shared paint primitives -- COL_* palette, widget
                        macros, label grammar, text-fit, symbol/shape draws.  Consumes
                        rect + state + skin; never asks behavior, state is a parameter.
@@ -84,10 +84,11 @@
 
     2_interact/gui_item.c          -- the standard item protocol: widget_behavior, nav registration, repeat
     2_interact/gui_drag.c          -- drag service: threshold machine + typed payload transfer (source/target)
-    2_interact/gui_resize.c        -- edge-resize mechanism: hit-test, highlight, grab, edge apply
-    2_interact/gui_anim.c          -- animation stepping service: gui_anim_f32, gui_anim_bg
+    2_interact/gui_resize.c        -- edge-resize mechanism: hit-test, grab, edge apply
+    2_interact/gui_anim.c          -- animation stepping service: gui_anim_f32
 
-    2_present/gui_widget_core.c    -- shared presentation primitives: COL_* palette, layout macros, label grammar
+    2_present/gui_widget_core.c    -- shared presentation primitives: COL_* palette, layout macros, label
+                                      grammar, system adornments (nav/drop rings, resize highlight)
     2_present/gui_symbol.c         -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
 
     3_widgets/gui_text_edit.c      -- single-line text editing engine: input_field_edit (behind input_text)

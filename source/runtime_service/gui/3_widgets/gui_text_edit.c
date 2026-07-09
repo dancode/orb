@@ -633,7 +633,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
         if ( s_io.keys_pressed[ APP_KEY_ENTER ] )
         {
             s_undo.for_id    = GUI_ID_NONE;
-            s_interaction.focused_id = GUI_ID_NONE;
+            item_focus_release();
             res.enter = true;
         }
         if ( s_io.keys_pressed[ APP_KEY_ESCAPE ] )
@@ -649,7 +649,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
                 len = rv_len;
             }
             s_undo.for_id    = GUI_ID_NONE;
-            s_interaction.focused_id = GUI_ID_NONE;
+            item_focus_release();
         }
 
         /* Mouse.  st.pressed is the grab frame (also the focus-gaining click, since

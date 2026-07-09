@@ -23,11 +23,12 @@
     The ownership state itself (s_interaction) lives in 0_foundation/gui_ctx.c -- the context owns the
     record; this file is the service that arbitrates it.
 
-    LAYERING NOTE: the nav focus ring drawn in nav_item_register (WIN_BORDER / COL_NAV) is the
-    one sanctioned presentation act inside the interaction tier -- see the comment at that site.
+    LAYERING NOTE: nav_item_register invokes the present-tier focus ring (draw_nav_ring,
+    2_present/gui_widget_core.c) -- behavior decides WHEN the system adornment paints; the paint
+    policy (color, thickness, extent) lives with the skin.  See the comment at that site.
 
-    Included by gui.c after 2_present/gui_widget_core.c (WIN_BORDER / COL_NAV macros for the ring)
-    and before every consumer (2_compose/ scrollbars, 3_widgets/, 4_window/ chrome, 4_dock/, 4_table/).
+    Included by gui.c after 2_present/gui_widget_core.c (draw_nav_ring, NAV_RING) and before
+    every consumer (2_compose/ scrollbars, 3_widgets/, 4_window/ chrome, 4_dock/, 4_table/).
 
 ==============================================================================================*/
 // clang-format off
@@ -73,8 +74,6 @@ widget_repeat_tick( bool pressed )
    lights the focus ring and synthesizes a click from an Enter/Space activation so every widget
    activates from the keyboard with no per-widget code, exactly as a mouse click flows through
    st.clicked. */
-
-#define NAV_RING 2.0f    /* focus-ring inset outside the item rect so the item's own fill spares it */
 
 /* Bring the nav cursor's rect into view -- the keyboard analogue of the wheel.  Runs once, on the
    frame the cursor was adopted (s_nav.scroll_chase), for the layout-placed cursor item: walk the
@@ -165,12 +164,12 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
        activation.  The ring is drawn before the widget's own background (widget_behavior runs
        first), inset outward by NAV_RING so the fill leaves the border visible.
 
-       LAYERING NOTE: this ring draw (WIN_BORDER / COL_NAV) is the one sanctioned presentation act
-       inside the behavior tier.  Behavior otherwise consumes finished rects and never reads a
-       style value; the ring stays here because it is a system adornment that must be uniform
-       across every widget -- stock and custom alike -- and must paint beneath the item's own
-       fill, and no single presentation seam exists after behavior that every widget passes
-       through.  Do not add further style reads to this tier. */
+       LAYERING NOTE: the ring is invoked from here because it is a system adornment that must
+       be uniform across every widget -- stock and custom alike -- and must paint beneath the
+       item's own fill, and no single presentation seam exists after behavior that every widget
+       passes through.  The paint itself (color, thickness, extent) is draw_nav_ring in
+       2_present/gui_widget_core.c; behavior only picks the moment.  Do not add style reads or
+       raw draws to this tier. */
 
     if ( is_cur && s_nav.active )
     {
@@ -183,9 +182,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
                 nav_scroll_chase( r );
         }
 
-        draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
-                                r.w + 2.0f * NAV_RING, r.h + 2.0f * NAV_RING,
-                                WIN_BORDER, 0, COL_NAV );
+        draw_nav_ring( r );
 
         if ( s_nav.highlight )
         {
@@ -237,6 +234,15 @@ void
 gui_set_keyboard_focus( void )
 {
     s_focus_request = true;
+}
+
+/* Drop keyboard/text focus entirely (Enter commit, Escape revert).  The arbitration verb for
+   ending a focus capture -- widgets call this instead of writing the interaction record raw;
+   the record itself stays owned by 0_foundation/gui_ctx.c. */
+static void
+item_focus_release( void )
+{
+    s_interaction.focused_id = GUI_ID_NONE;
 }
 
 /* Unified hover/active/focus/click state machine.  Call once per widget with the

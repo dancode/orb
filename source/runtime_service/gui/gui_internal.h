@@ -873,6 +873,14 @@ void gui_popup_close_current( void );
    files.  Forward-declared so size_animate can reach it across the unity TU. */
 static f32 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 
+/* Edge bits shared by the edge-resize service (2_interact/gui_resize.c: hit test, grab, apply),
+   its highlight painter (2_present/gui_widget_core.c: draw_resize_highlight), and the tier-4
+   consumers.  Combined on a corner grab (e.g. R|B). */
+#define GUI_RESIZE_L  ( 1u << 0 )
+#define GUI_RESIZE_R  ( 1u << 1 )
+#define GUI_RESIZE_T  ( 1u << 2 )
+#define GUI_RESIZE_B  ( 1u << 3 )
+
 /*==============================================================================================
     Shared stateless helpers
 

@@ -294,9 +294,100 @@ frame_bg_color( widget_state_t st, u32 idle_color_enum )
 
 /* Background color for a pushbutton / knob style widget: frame_bg_color with the plain widget
    background as the idle base. */
-static u32 widget_bg_color( widget_state_t st ) 
-{ 
-    return frame_bg_color( st, COL_WIDGET_BG ); 
+static u32 widget_bg_color( widget_state_t st )
+{
+    return frame_bg_color( st, COL_WIDGET_BG );
+}
+
+/* Animated background for a pushbutton-like widget: widget_bg_color with the hover/active
+   transitions smoothed through the keyed state pool (0_foundation/gui_state.c).  Both blend
+   channels share one 8-byte slot keyed via an internal salt, so the widget needs no knowledge
+   of animation storage.  Fast path: an idle widget with no prior animation history returns
+   COL_WIDGET_BG with zero state-pool operations. */
+
+typedef struct { f32 t_hot; f32 t_active; } gui_hover_anim_t;
+
+#define ANIM_TAG_BG  0xA501u   /* id_combine salt; keeps this slot distinct from all other per-widget state */
+
+static u32
+widget_bg_color_anim( gui_id_t id, widget_state_t st )
+{
+    gui_id_t                anim_id    = id_combine( id, ANIM_TAG_BG );
+    bool                      needs_anim = st.hover || st.nav || st.active;
+    const gui_hover_anim_t* peek       = (const gui_hover_anim_t*)gui_state_peek( anim_id );
+
+    if ( !needs_anim && !peek )
+        return COL_WIDGET_BG;
+
+    f32 hot_t    = peek ? peek->t_hot    : 0.0f;
+    f32 active_t = peek ? peek->t_active : 0.0f;
+    f32 dt       = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
+
+    f32 hot_tgt = ( st.hover || st.nav ) ? 1.0f : 0.0f;
+    f32 act_tgt = st.active ? 1.0f : 0.0f;
+
+    f32 new_hot = fabsf( hot_tgt - hot_t ) < 0.001f
+                ? hot_tgt
+                : hot_t + ( hot_tgt - hot_t ) * ( 1.0f - expf( -10.0f * dt ) );
+    f32 new_act = fabsf( act_tgt - active_t ) < 0.001f
+                ? act_tgt
+                : active_t + ( act_tgt - active_t ) * ( 1.0f - expf( -20.0f * dt ) );
+
+    bool settled = ( new_hot == hot_tgt ) && ( new_act == act_tgt );
+
+    if ( !settled || needs_anim )
+    {
+        gui_hover_anim_t* s = GUI_STATE( gui_hover_anim_t, anim_id );
+        s->t_hot    = new_hot;
+        s->t_active = new_act;
+        if ( !settled ) s_retained.wants_redraw = true;
+    }
+    /* settled && !needs_anim: do not stamp -- slot evicts via seen_frame within 1-2 frames. */
+
+    return col_lerp( col_lerp( COL_WIDGET_BG, COL_WIDGET_HOT, new_hot ), COL_WIDGET_ACT, new_act );
+}
+
+/*----------------------------------------------------------------------------------------------
+    System adornments -- the uniform highlight rings and edge markers the interaction services
+    invoke.  Behavior (2_interact/) decides WHEN one paints (the protocol point); the paint
+    policy -- color, thickness, extent -- lives here with the rest of the skin, so the behavior
+    tier never reads a style value to adorn an item.
+----------------------------------------------------------------------------------------------*/
+
+/* Focus-ring inset outside the item rect so the item's own fill spares it.  The nav scroll
+   chase (2_interact/gui_item.c) also reads this to keep the ring clear of the view edge. */
+#define NAV_RING 2.0f
+
+/* Keyboard-nav focus ring: an outline just outside the item rect, painted before the item's
+   own background so the fill leaves the border visible (nav_item_register invokes it). */
+static void
+draw_nav_ring( gui_rect_t r )
+{
+    draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
+                            r.w + 2.0f * NAV_RING, r.h + 2.0f * NAV_RING,
+                            WIN_BORDER, 0, COL_NAV );
+}
+
+/* Drag-and-drop accept ring: a bolder outline around an open target whose type matched the
+   payload, so the drop reads as "accepted here" (gui_drag_payload_accept invokes it). */
+static void
+draw_drop_ring( gui_rect_t r )
+{
+    draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, 0, COL_NAV );
+}
+
+/* Paint a bold line over each hot edge of an outline so it is obvious that the border is
+   grabbable and which side will move.  Drawn just inside the rect, over the thin border.
+   `edges` is the GUI_RESIZE_* mask from the edge-resize service (2_interact/gui_resize.c). */
+static void
+draw_resize_highlight( gui_rect_t r, u8 edges )
+{
+    const f32 t = WIN_BORDER * 2.0f + 1.0f;   /* bold relative to the 1px frame */
+
+    if ( edges & GUI_RESIZE_L ) draw_push_rect_filled( r.x,             r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
+    if ( edges & GUI_RESIZE_R ) draw_push_rect_filled( r.x + r.w - t,   r.y,             t,   r.h, 0,0,1,1, 0, COL_RESIZE_HOT );
+    if ( edges & GUI_RESIZE_T ) draw_push_rect_filled( r.x,             r.y,             r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
+    if ( edges & GUI_RESIZE_B ) draw_push_rect_filled( r.x,             r.y + r.h - t,   r.w, t,   0,0,1,1, 0, COL_RESIZE_HOT );
 }
 
 // clang-format on

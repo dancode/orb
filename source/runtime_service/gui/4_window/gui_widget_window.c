@@ -39,7 +39,7 @@
 #define GUI_NATIVE_BTN_SALT 0xCA9710B0u
 
 /* GUI_RESIZE_SALT, the GUI_RESIZE_* edge bits, the WIN_RESIZE_* grab-band constants, and the
-   record-agnostic resize helpers (window_resize_hit, window_draw_resize_highlight, resize_grab,
+   record-agnostic resize helpers (window_resize_hit, draw_resize_highlight, resize_grab,
    resize_apply_edges) live in gui_widget_core.c -- alongside the style macros they need and ahead
    of gui_layout.c -- so child_begin reuses the same mechanism (the dock splitter does not; it has its
    own drag path in 4_dock/).  Only the
@@ -1264,7 +1264,7 @@ gui_window_end( void )
                  ? s_resize_edges
                  : s_build.win_resize_hot;
     if ( hot_edges )
-        window_draw_resize_highlight( win_r, hot_edges );
+        draw_resize_highlight( win_r, hot_edges );
 
     /* CAN_AUTOSIZE: a size-grip triangle hugging the bottom-right corner -- both a resize handle
        and an auto-fit button.  Drag it to resize the window (it grabs the same right+bottom edge

@@ -254,7 +254,7 @@ gui_button( const char* label )
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, gui_anim_bg( id, st ) );
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color_anim( id, st ) );
     draw_button_label( r, label );
 
     return st.clicked;
@@ -286,7 +286,7 @@ gui_button_fill( const char* label )
 
     widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
 
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, gui_anim_bg( id, st ) );
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color_anim( id, st ) );
     draw_button_label( r, label );
 
     return st.clicked;

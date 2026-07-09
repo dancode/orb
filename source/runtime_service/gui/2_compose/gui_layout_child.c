@@ -17,7 +17,7 @@
 
     Included by gui.c after gui_layout_region.c (provides layout_push/pop_region,
     region_get, scroll_clamp) and 2_interact/gui_resize.c (provides window_resize_hit, resize_apply_edges,
-    resize_grab, window_draw_resize_highlight, GUI_RESIZE_*, s_resize_edges).
+    resize_grab, draw_resize_highlight, GUI_RESIZE_*, s_resize_edges).
 
 ==============================================================================================*/
 // clang-format off
@@ -232,7 +232,7 @@ gui_child_end( void )
 
     /* Resize affordance: bold the hot/armed edge so the border reads as draggable. */
     if ( edges )
-        window_draw_resize_highlight( box, edges );
+        draw_resize_highlight( box, edges );
 }
 
 /*----------------------------------------------------------------------------------------------

@@ -80,7 +80,7 @@ gui_state_peek( gui_id_t id )
     return NULL;
 }
 
-/* Animation utilities (gui_anim_f32, gui_anim_bg, ...) live in 2_interact/gui_anim.c,
+/* Animation utilities (gui_anim_f32, ...) live in 2_interact/gui_anim.c,
    included after 2_present/gui_widget_core.c which provides the color palette they blend. */
 
 // clang-format on
