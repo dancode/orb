@@ -669,41 +669,41 @@ typedef struct gui_api_s
        draw_* / path_* calls.  It flows like any widget and the window clips it. */
     gui_rect_t ( *canvas )( f32 height );
 
-    /* Layout metrics.  The standard vocabulary is grid-first -- author sizes in quanta and row
-       counts, not pixels:
+    /* Sizing (sz_) -- the one family that turns intent into a pixel dimension; layout verbs
+       (row, cols, child_begin, window_set_next_size) consume what these produce.  Grid-first,
+       in order of preference:
 
-       u( n ) -- n grid quanta in pixels (the theme's grid_quantum lattice, 4 by default): the
-       unit-first spelling for any authored px size (tracks, row heights, child sizes), so
-       geometry stays on the theme lattice and retunes with it.  q <= 1 degenerates to raw px. */
-    f32 ( *u        )( f32 n );
+       sz_u( n ) -- n grid quanta in pixels (the theme's grid_quantum lattice, 4 by default):
+       the unit-first spelling for any authored px size (tracks, row heights, child sizes), so
+       geometry stays on the theme lattice and retunes with it.  q <= 1 degenerates to raw px.
 
-    /* row_gap() -- the vertical gap the flow places between consecutive rows, and the top/bottom
-       pad a window body / child opens with.  Owed once above the first row, once below the last,
-       and once between every pair -- needed to precompute a fixed box height for N stacked rows. */
-    f32 ( *row_gap  )( void );
+       sz_row_gap() -- the vertical gap the flow places between consecutive rows, and the
+       top/bottom pad a window body / child opens with.  Owed once above the first row, once
+       below the last, and once between every pair.
 
-    /* rows_h( n ) -- fixed box height for n uniform WIDGET_H rows stacked with the default
+       sz_rows_h( n ) -- fixed box height for n uniform WIDGET_H rows stacked with the default
        pad/gap (a fixed-size list of buttons/fields, a popup sized to its item count).  Reads
-       through the style stack, so inside a scale_push scope it speaks that step's metrics. */
-    f32 ( *rows_h   )( u32 n );
+       through the style stack, so inside a scale_push scope it speaks that step's metrics.
 
-    /* adv_ metrics -- the raw px / font calculators underneath the grid vocabulary.  Escape
-       hatches: reach for them only when content-fit sizing cannot be said in quanta / row counts.
-       adv_line_h / adv_text_w / adv_text_h are the raw font metrics (adv_text_h is the laid-out,
-       '\n'-aware height, the scalar of text_size().y); adv_h_min / adv_w_min are the standard
-       margin a row / cell adds around its content (the "size without content"); adv_calc_row /
-       adv_calc_col add that margin to a content pixel size, giving a fixed dimension that fits
-       content plus margin:
+       sz_scale_row( s ) -- one row height at a named ramp step (gui_scale_t) without pushing
+       the scope: size a header band or custom chrome to a step.
 
-           gui()->row( gui()->adv_calc_row( 128 ) );                 // a row sized for a 128px image
-           f32 w = gui()->adv_calc_col( gui()->adv_text_w("Name") ); // a column sized to a label */
-    f32 ( *adv_line_h   )( void );
-    f32 ( *adv_text_w   )( const char* s );
-    f32 ( *adv_text_h   )( const char* s );
-    f32 ( *adv_h_min    )( void );
-    f32 ( *adv_w_min    )( void );
-    f32 ( *adv_calc_row )( f32 content_h );
-    f32 ( *adv_calc_col )( f32 content_w );
+       Content-fit escape hatches (prefer letting the layout measure via natural sizing):
+
+       sz_fit_row / sz_fit_col -- content px plus the standard margin a row / cell puts around
+       its content; fit( 0 ) is the bare margin (the "size without content").
+       sz_line_h() -- the raw font line advance, for text-shaped custom-draw rects.  Text
+       measurement itself lives with the draw family (text_size), not here.
+
+           gui()->row( gui()->sz_fit_row( 128 ) );               // a row sized for a 128px image
+           f32 w = gui()->sz_fit_col( gui()->text_size("Name").x ); // a column sized to a label */
+    f32 ( *sz_u         )( f32 n );
+    f32 ( *sz_row_gap   )( void );
+    f32 ( *sz_rows_h    )( u32 n );
+    f32 ( *sz_scale_row )( gui_scale_t s );
+    f32 ( *sz_line_h    )( void );
+    f32 ( *sz_fit_row   )( f32 content_h );
+    f32 ( *sz_fit_col   )( f32 content_w );
 
     /* content_avail() -- remaining free space in the current region from the layout pen: the width
        a flex widget would fill and the height left before the region bottom.  The ImGui
@@ -832,12 +832,11 @@ typedef struct gui_api_s
 
     /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
        BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
-       the style-var stack, so every metric read and counting helper (rows_h, calc_row) inside
-       speaks the step.  Push before opening the region/child it styles.  scale_row( s ) is the
-       step's row height without pushing -- size a header band or custom chrome to a step. */
+       the style-var stack, so every metric read and counting helper (sz_rows_h, sz_fit_row)
+       inside speaks the step.  Push before opening the region/child it styles.  To size against
+       a step without pushing it, query sz_scale_row( s ) from the sizing family. */
     void ( *scale_push )( gui_scale_t s );
     void ( *scale_pop  )( void );
-    f32  ( *scale_row  )( gui_scale_t s );
 
     /* Global indicator-shape selectors -- set the default check / bullet / arrow glyph the chrome
        draws (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t).  These are style
@@ -894,10 +893,14 @@ typedef struct gui_api_s
        push_item_flag( GUI_ITEM_BUTTON_REPEAT, true ) for press-and-hold stepping (spin buttons). */
     bool ( *arrow_button )( const char* id_str, gui_dir_t dir );
 
-    /* invisible_button -- standard button interaction (hover, press-capture, click) on an explicit
-       rect the caller already holds (a canvas() cut, an empty() slot, any custom-drawn region); returns
-       true on the click frame.  Owns no layout reservation, so it composes with the rect helpers:
-       cut/draw a region, then make it clickable.  For only a hover tint, use is_mouse_hovering_rect. */
+    /* item -- the custom-UI behavior seam: run the shared widget interaction state machine over a
+       rect the CALLER derived (a canvas() cut, an empty() slot, split/carve panels, custom math)
+       and report the resolved state (hover / active / pressed / clicked).  A custom widget is
+       rect + item() + draw_*: it hovers, press-captures, clicks, and registers for keyboard nav
+       exactly like a stock widget, with the presentation entirely yours.  Owns no layout
+       reservation, so it composes with the rect helpers.  invisible_button is item() reduced to
+       its click bit; for only a hover tint, use is_mouse_hovering_rect. */
+    gui_item_state_t ( *item )( const char* id_str, gui_rect_t r );
     bool ( *invisible_button )( const char* id_str, gui_rect_t r );
 
     bool ( *checkbox    )( const char* label, bool* v );

@@ -104,7 +104,7 @@ void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( va
 
     A step is a paired push of the three metric slots (LINE_SIZE, WIDGET_PAD, WIDGET_GAP) with
     that step's theme values, so every metric read and counting helper inside the scope --
-    WIDGET_H, rows_h( n ), calc_row -- speaks the step with no widget changes.  Push before
+    WIDGET_H, sz_rows_h( n ), sz_fit_row -- speaks the step with no widget changes.  Push before
     opening the region/child the scope styles: a region captures its pad and gaps as it opens.
 
         gui()->scale_push( GUI_SCALE_DENSE );        // this panel is a dense list
@@ -133,7 +133,7 @@ gui_scale_pop( void )
 /* The row height of a ramp step, without pushing it -- size a child to another step's rows
    (a BAR header band above a DENSE list), or feed custom chrome. */
 f32
-gui_scale_row( gui_scale_t s )
+gui_sz_scale_row( gui_scale_t s )
 {
     if ( (u32)s >= GUI_SCALE_COUNT ) s = GUI_SCALE_STD;
     return (f32)s_style.scales[ s ].row;

@@ -425,6 +425,25 @@ gui_anchor_box( gui_rect_t area, f32 w, f32 h, gui_align_t align, gui_pad_t m )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Custom-item interaction state (custom/gui_behavior.c)
+
+    The result of gui()->item( id, rect ): the shared widget interaction state machine run over
+    a rect the CALLER derived, reported as plain flags.  This is the behavior half of the
+    custom-UI substrate -- a user widget takes a rect (canvas cut, split/carve, own math), asks
+    for behavior, and draws its own presentation from these flags, exactly as the stock widgets
+    do internally.  invisible_button( id, r ) is this reduced to its click bit.
+----------------------------------------------------------------------------------------------*/
+
+typedef struct gui_item_state_t
+{
+    bool hover;      // cursor is over the rect this frame
+    bool active;     // primary button held with this item captured (dragging / holding)
+    bool pressed;    // primary button went down on the item this frame
+    bool clicked;    // press + release completed with the cursor still over ("fired")
+
+} gui_item_state_t;
+
+/*----------------------------------------------------------------------------------------------
     Anchor frame -- the general placement (UE4 Slate model): a normalized sub-rect of the parent
     (0..1 per axis) plus pixel offsets, resolved per axis by gui()->anchor.  On an axis where
     min == max the child is point-anchored: the anchor is a single line at that fraction, the child
@@ -943,23 +962,34 @@ typedef struct gui_scale_metrics_t
 
 } gui_scale_metrics_t;
 
+/* The style is THREE bundles wearing one struct, and each has exactly one consumer tier:
+
+     1. Composer metrics -- how space is divided.  Consumed only by the layout composer
+        (compose/): track resolver, region pads, row heights.  Their output is rects.
+     2. Skin -- how a stock widget paints inside the rect it was given.  The palette above
+        (colors[]), rounding, borders, and the shape-choice knobs.  Consumed only by the
+        presentation tier (widgets/ and the chrome).
+     3. Widget inner geometry -- presentation metrics.  Metric-shaped, which makes them LOOK
+        like layout, but they never influence where the next cell goes -- only what a stock
+        widget draws inside its own cell.
+
+   Behavior (the interaction state machine) consumes none of them: it takes finished rects.
+   widget_pad is the one double-agent: the composer uses it as the region inset, and stock
+   widgets reuse it as the label inset inside their rect.  Same knob, two roles -- deliberate. */
+
 typedef struct gui_style_t
 {
     u32 colors[ GUI_COL_COUNT ]; // Theme default palette (GUI_COLOR packs R,G,B,A bytes)
 
-    /* Layout metrics */
-    u8 line_size;          // widget row height                                 
+    /* 1. Composer metrics -- divide space, produce rects (compose/ is the only consumer) */
+    u8 line_size;          // widget row height
     u8 widget_gap;         // vertical gap between consecutive widgets
-    u8 widget_pad;         // horizontal content area padding
-    u8 win_title_h;        // window title bar height
-    u8 win_border;         // window / widget outline thickness
-    u8 checkbox_sz;        // checkbox indicator side
-    u8 slider_knob_w;      // slider draggable knob width
+    u8 widget_pad;         // horizontal content area padding (also: stock label inset, see above)
     u8 min_cell_w;         // floor a flex/fraction track shrinks to before overflow
-    u8 checkmark_pad;      // inset of filled square inside the checkbox
-    u8 cursor_w;           // input text cursor width
-    u8 cursor_inset;       // input text cursor top/bottom inset
     u8 grid_quantum;       // px lattice row-level metrics snap to after font scaling (0/1 = off)
+
+    /* 2. Skin -- how stock widgets + chrome paint (with colors[] above) */
+    u8 win_border;         // window / widget outline thickness
     u8 win_rounding;       // corner radius: windows / children / popups
     u8 widget_rounding;    // corner radius: control frames
     u8 grab_rounding;      // corner radius: slider knobs / scrollbar grabs
@@ -971,7 +1001,16 @@ typedef struct gui_style_t
     u8 slider_knob;        // slider knob: 0=bar, 1=circle (gui_slider_knob_t)
     u8 menu_check;         // menu check gutter: 0=plain, 1=box (gui_menu_check_t)
 
-    /* The scale ramp (see gui_scale_t).  STD mirrors line_size / widget_pad / widget_gap. */
+    /* 3. Widget inner geometry -- presentation metrics inside a stock widget's own cell */
+    u8 win_title_h;        // window title bar height
+    u8 checkbox_sz;        // checkbox indicator side
+    u8 slider_knob_w;      // slider draggable knob width
+    u8 checkmark_pad;      // inset of filled square inside the checkbox
+    u8 cursor_w;           // input text cursor width
+    u8 cursor_inset;       // input text cursor top/bottom inset
+
+    /* The scale ramp (see gui_scale_t) -- composer metrics per density step.  STD mirrors
+       line_size / widget_pad / widget_gap. */
     gui_scale_metrics_t scales[ GUI_SCALE_COUNT ];
 
 } gui_style_t;

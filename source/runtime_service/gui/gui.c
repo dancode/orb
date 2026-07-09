@@ -15,14 +15,31 @@
     tiers above it, so this is also where a future `#ifdef GUI_ENABLE_<tier>` would wrap an
     #include line to compile a feature out entirely.
 
-    core/        -- Tier 0, foundation: everything below needs this, it needs nothing else in gui.
-    widgets/     -- Tier 1, leaf widgets: built on core/ only.
+    core/        -- Tier 0a, foundation: state, ids, io, style resolution, the interaction
+                    state machine (behavior).  Behavior consumes finished RECTS -- it never
+                    reads a style metric to make a decision; style is invisible below here.
+    compose/     -- Tier 0b, the layout composer: the only code that turns style spacing
+                    metrics (line_size/gap/pad/quantum/scales) into rects.  Track resolver,
+                    regions, children, the public layout verbs + sz_ sizing family.
+    custom/      -- Tier 1a, the custom-UI substrate: behavior (gui_item/invisible_button) and
+                    draw/canvas placement on rects the CALLER holds.  Where user widgets are
+                    written; consumes composer rects + core behavior, no skin.
+    widgets/     -- Tier 1b, the stock presentation layer: the default widget set, painting
+                    skin + inner geometry inside composer rects via core behavior.  The stock
+                    set is a CLIENT of the tiers above it, not a privileged layer.
     window/      -- Tier 2, window subsystem: persisted window record + window-as-widget chrome.
                     First real optional boundary -- a canvas/HUD-only embedding can skip it.
     popup/       -- Tier 3, window-dependent overlay stack: popups/tooltips/combo/menus/nav all
                     share the open-popup stack (s_popups_open), so nav and menus live here too.
     dock/        -- Tier 3, window-dependent, independent of popup/: dock-node tree + splitters.
-    table/       -- Tier 4, independent optional feature: needs only core/, no window dependency.
+    table/       -- Tier 4, independent optional feature: needs only core/+compose/, no window
+                    dependency.
+
+    Cross-tier contract (the composer / behavior / presentation split):
+      composer (compose/) consumes spacing metrics, produces rects;
+      behavior (core/gui_widget_core.c) consumes rects, produces interaction state;
+      presentation (widgets/ + chrome) consumes rect + state + skin and paints.
+    custom/ is the public door onto the first two, skin optional -- the game-UI path.
 
     core/gui_theme.c            -- theme registry + base/active style state, theme API, layout_compute
     core/gui_input.c            -- app->IO snapshot: input_update, s_io
@@ -35,15 +52,19 @@
     core/gui_stacks.c           -- push-model public API: push/pop id, item flags, style color / var
     core/gui_symbol.c           -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
     core/gui_resize.c           -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
-    core/gui_layout_core.c      -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
-    core/gui_layout_region.c    -- scrollable region engine: gui_region_t, region_scrollbar, push/pop_region
-    core/gui_layout_child.c     -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
-    core/gui_layout.c           -- public layout API verbs: gui_layout, gui_stack, gui_cols, gui_grid
     core/gui_anim.c             -- widget animation utilities: gui_anim_f32, gui_anim_bg
+
+    compose/gui_layout_core.c   -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
+    compose/gui_layout_region.c -- scrollable region engine: gui_region_t, region_scrollbar, push/pop_region
+    compose/gui_layout_child.c  -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
+    compose/gui_region.c        -- root-level region: a fixed-rect layout primitive, no window chrome
+    compose/gui_layout.c        -- public layout API verbs + sz_ sizing: gui_layout, gui_stack, gui_cols
+
+    custom/gui_canvas.c          -- custom-draw surface: canvas, draw_rect/text, text measure, icons
+    custom/gui_behavior.c        -- public behavior on caller rects: gui_item, invisible_button
 
     widgets/gui_text_edit.c      -- single-line text editing engine: input_field_edit (behind input_text)
     widgets/gui_widget.c         -- core leaf widgets: text, button, checkbox, input_text, selectable
-    widgets/gui_widget_draw.c    -- custom-draw escape hatches: canvas, draw_rect/text, text measure, icons
     widgets/gui_widget_slider.c  -- slider + drag widgets: slider_float/int, drag_int, slider_render
     widgets/gui_widget_numeric.c -- numeric text inputs: input_int/float/double, input_float2/3/4
 
@@ -140,7 +161,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
    backend/gui_debug_overlay) is the SECOND unit -- compiled separately via gui_backend.c.  This
    unit calls into it through the draw_* / font_* / gui_render_* declarations in gui_backend.h. */
 
-// Tier 0 -- foundation
+// Tier 0a -- foundation (state, ids, io, style resolution, behavior)
 #include "runtime_service/gui/core/gui_theme.c"
 #include "runtime_service/gui/core/gui_input.c"
 #include "runtime_service/gui/core/gui_style.c"
@@ -152,22 +173,28 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/core/gui_stacks.c"
 #include "runtime_service/gui/core/gui_symbol.c"
 #include "runtime_service/gui/core/gui_resize.c"
-#include "runtime_service/gui/core/gui_layout_core.c"
-#include "runtime_service/gui/core/gui_layout_region.c"
-#include "runtime_service/gui/core/gui_layout_child.c"
-#include "runtime_service/gui/core/gui_region.c"
-#include "runtime_service/gui/core/gui_layout.c"
+
+// Tier 0b -- the layout composer (spacing metrics in, rects out)
+#include "runtime_service/gui/compose/gui_layout_core.c"
+#include "runtime_service/gui/compose/gui_layout_region.c"
+#include "runtime_service/gui/compose/gui_layout_child.c"
+#include "runtime_service/gui/compose/gui_region.c"
+#include "runtime_service/gui/compose/gui_layout.c"
+
 #include "runtime_service/gui/core/gui_anim.c"
 
-// Tier 1 -- leaf widgets (needs core/ only)
+// Tier 1a -- custom-UI substrate (caller rects + behavior + raw draw; no skin)
+#include "runtime_service/gui/custom/gui_canvas.c"
+#include "runtime_service/gui/custom/gui_behavior.c"
+
+// Tier 1b -- stock presentation: the default widget set (a client of the tiers above)
 #include "runtime_service/gui/widgets/gui_text_edit.c"
 #include "runtime_service/gui/widgets/gui_widget.c"
-#include "runtime_service/gui/widgets/gui_widget_draw.c"
 #include "runtime_service/gui/widgets/gui_volatile.c"
 #include "runtime_service/gui/widgets/gui_widget_slider.c"
 #include "runtime_service/gui/widgets/gui_widget_numeric.c"
 
-// Tier 4 -- independent optional feature (needs core/ only, no window dependency)
+// Tier 4 -- independent optional feature (needs core/ + compose/ only, no window dependency)
 #include "runtime_service/gui/table/gui_table.c"
 
 // Tier 2 -- window subsystem (first real optional boundary)

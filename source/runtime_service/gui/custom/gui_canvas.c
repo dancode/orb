@@ -1,17 +1,18 @@
 /*==============================================================================================
 
-    runtime_service/gui/widgets/gui_widget_draw.c -- Custom-draw / canvas escape hatches.
+    runtime_service/gui/custom/gui_canvas.c -- Custom-draw / canvas surface of the custom tier.
 
     Placement primitives for a rect the caller already holds, rather than a self-laying-out
     control: canvas() reserves the rect (a cell like any widget); draw_rect / draw_text are the
-    raw fill/text calls; invisible_button adds click interaction on top of an explicit rect;
-    text_size / text_h / draw_text_in / draw_text_clipped measure and place text within one; the
-    icon section is the thin public surface over the runtime icon atlas (gui_icon.c, backend
-    unit).  None of these consume the row template beyond canvas() and image() -- they act on a
-    rect, not on widget_next_rect's cursor -- so they compose with any custom layout.
+    raw fill/text calls; text_size / draw_text_in / draw_text_clipped measure and place text
+    within one; the icon section is the thin public surface over the runtime icon atlas
+    (gui_icon.c, backend unit).  None of these consume the row template beyond canvas() and
+    image() -- they act on a rect, not on widget_next_rect's cursor -- so they compose with any
+    custom layout.  The interaction half of the tier (gui_item / invisible_button) is
+    gui_behavior.c, included next; together they are the substrate a user widget is written on.
 
-    Included by gui.c right after gui_widget.c; needs nothing beyond gui_widget_core.c's
-    widget_next_rect / widget_id / widget_behavior and the WIDGET_/COL_ macros already in scope.
+    Included by gui.c in the custom/ tier; needs nothing beyond gui_widget_core.c's
+    widget_next_rect / rect_align and the draw_push_* backend calls already in scope.
 
 ==============================================================================================*/
 // clang-format off
@@ -49,21 +50,8 @@ gui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
    widgets/gui_volatile.c -- rather than here, since they're a distinct cross-cutting feature
    spanning both units, not a custom-draw escape hatch. */
 
-/*----------------------------------------------------------------------------------------------
-    invisible_button -- standard button interaction (hover, press-capture, click) on an explicit rect
-    you already hold: a cell cut from a canvas(), an empty() slot, any custom-drawn region.  Returns
-    true on the click frame.  It owns no layout reservation (the rect is the caller's), so it composes
-    with the rect helpers: cut/draw the region, then make it clickable.  For just a hover tint use
-    is_mouse_hovering_rect; this adds the full press + release-on-target click semantics.
-----------------------------------------------------------------------------------------------*/
-
-bool
-gui_invisible_button( const char* id_str, gui_rect_t r )
-{
-    gui_id_t     id = widget_id( id_str );
-    widget_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
-    return st.clicked;
-}
+/* invisible_button / gui_item -- interaction on an explicit rect -- moved to gui_behavior.c,
+   the behavior half of this tier. */
 
 /*----------------------------------------------------------------------------------------------
     Text measurement + aligned draw -- the placement primitives for custom drawing.  draw_text gives
@@ -96,10 +84,6 @@ gui_text_size( const char* s )
     }
     return ( gui_vec2_t ){ max_w, font_char_h() + (f32)( lines - 1 ) * font_line_h() };
 }
-
-/* adv_text_h -- the laid-out pixel height of s (text_size( s ).y); the height twin of adv_text_w,
-   for sizing a row to a (possibly multi-line) caption without taking the whole vec2. */
-f32 gui_adv_text_h( const char* s ) { return gui_text_size( s ).y; }
 
 /* draw_text_in -- draw s aligned within rect r (gui_align_t).  Multi-line: the block is placed by
    the vertical flag, each line by the horizontal flag, so RIGHT flushes every line to r's right edge. */

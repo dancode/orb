@@ -560,7 +560,7 @@ ed_viewport_panel( void )
         char ov[ 128 ];
         snprintf( ov, sizeof( ov ), " %s   %dx%d   RMB look+WASD  LMB drive/select  RMB+LMB pan  Alt+LMB orbit",
                   mode_names[ g_ed.mode ], g_ed.target.w, g_ed.target.h );
-        gui()->draw_text_in( ( gui_rect_t ){ r.x + 4, r.y + 2, r.w - 8, gui()->adv_line_h() },
+        gui()->draw_text_in( ( gui_rect_t ){ r.x + 4, r.y + 2, r.w - 8, gui()->sz_line_h() },
                              GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
                              GUI_COLOR( 0xE8, 0xE8, 0xF0, 0xC0 ), ov );
     }

@@ -34,9 +34,9 @@
             s_interaction) so widget_behavior (gui_widget_core.c) can read it inline; this file
             is the only place that sets it.
 
-    Included by gui.c after gui_widget_draw.c -- needs lf() / layout_frame_t (gui_ctx.c,
-    gui_layout_core.c), id_push/id_pop (gui_ctx_id.c), and layout_set_default
-    (gui_layout_core.c) already in scope.
+    Included by gui.c after gui_widget.c -- needs lf() / layout_frame_t (gui_ctx.c,
+    compose/gui_layout_core.c), id_push/id_pop (gui_ctx_id.c), and layout_set_default
+    (compose/gui_layout_core.c) already in scope.
 
 ==============================================================================================*/
 // clang-format off

@@ -124,7 +124,7 @@ typedef struct
 } widget_state_t;
 
 /*==============================================================================================
-    Scroll link (core/gui_layout_region.c)
+    Scroll link (compose/gui_layout_region.c)
 
     Persistent scroll offset + last-measured content extent for one scrollable region.
     layout_push_region biases the pen by -scroll and writes content_w/content_h back at pop; the

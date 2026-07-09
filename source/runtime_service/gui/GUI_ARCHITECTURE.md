@@ -9,10 +9,35 @@ Static lib `gui`, two translation units:
 
 - `gui.c` (UI/core unit): context, id/state pool, input snapshot, layout engine, widgets,
   window/dock/popup/nav/table, frame lifecycle, mod vtable. Unity-includes its constituents in
-  DEPENDENCY TIERS (core/ -> widgets/ -> window/ -> dock/ + popup/; table/ needs core/ only).
-  Include order matters; later files may reference statics from earlier ones.
+  DEPENDENCY TIERS (core/ + compose/ -> custom/ -> widgets/ -> window/ -> dock/ + popup/;
+  table/ needs core/ + compose/ only). Include order matters; later files may reference statics
+  from earlier ones.
 - `gui_backend.c` (render unit): fonts, draw list, tessellation, GPU flush, debug overlay.
   UI unit calls it one-way through `gui_backend.h` (`draw_*`, `font_*`, `gui_render_*`).
+
+## The composer / behavior / presentation split (two orthogonal groupings)
+
+The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one contract:
+
+- **Composer** (`compose/`): the ONLY code that turns style spacing metrics
+  (`line_size`/`gap`/`pad`/`grid_quantum`/`scales`) into geometry. Consumes spacing, produces
+  rects. Public face: the layout verbs + the `sz_` sizing family.
+- **Behavior** (`core/gui_widget_core.c`, public door `custom/gui_behavior.c`): consumes
+  finished rects, produces interaction state (`hover`/`active`/`pressed`/`clicked`). Style is
+  invisible below this line -- behavior never reads a metric or color to make a decision.
+  (One sanctioned exception, documented in place: the keyboard-nav focus ring draw.)
+- **Presentation** (`widgets/` + the window/dock/popup chrome): consumes rect + state + skin
+  and paints. The stock widget set is the HIGHEST layer -- a client of the tiers below, written
+  on the same substrate a user widget uses, not a privileged one.
+
+`custom/` is the public door onto the first two roles: `canvas`/`split`/`carve`/`empty` for
+rects, `item`/`invisible_button` for behavior, `draw_*`/`text_size` for your own presentation.
+A custom widget (`game_ui_slider()`) never needs skin or spacing metrics -- it brings its own
+look and composes with any layout.
+
+`gui_style_t` mirrors the split as three labeled bundles (see gui.h): composer metrics / skin /
+widget inner geometry. `widget_pad` is the one deliberate double-agent (region inset for the
+composer, label inset for stock widgets).
 
 Consumers call through the module vtable: `gui()->verb(...)`. gui links only `app` + `rhi`;
 OS services it cannot reach (clock/sleep/wait) are injected via `set_frame_hooks`
@@ -104,7 +129,7 @@ Invariants:
 - `volatile_cb` blocks keep animating on skipped frames but MUST keep a fixed layout
   footprint (constant size; pad printf fields).
 
-## Layout engine (core/gui_layout_core.c = mechanism, core/gui_layout.c = public verbs)
+## Layout engine (compose/gui_layout_core.c = mechanism, compose/gui_layout.c = public verbs)
 
 Model: every window body / region / child owns a `layout_frame_t` with a content box, a PEN
 (`content_y`, flows downward) and a HIGHWATER (`content_max_x/y`, monotonic bounding box used
@@ -151,11 +176,13 @@ Other flow verbs: `same_line(spacing)` / `stack_same_line` (one-shot pen placeme
 the previous item's line), `indent()/unindent()` (shift content column, reflow; flow only),
 `empty(w,h)` (reserve a block, the Dummy analogue), `new_line`, `separator_text`.
 
-Metrics: grid-first sizing is the standard vocabulary -- `u(n)` (quanta to px), `rows_h(n)`,
-`row_gap()`, plus the `scale_push/scale_pop/scale_row` density ramp. The raw px / font
-calculators carry an `adv_` prefix and are escape hatches for content-fit sizing:
-`adv_line_h`, `adv_text_w(s)`, `adv_text_h(s)`, `adv_calc_row(content_h)`,
-`adv_calc_col(content_w)`, `adv_h_min`, `adv_w_min`. Placement queries stay unprefixed:
+Sizing: the `sz_` family is the one category that turns intent into a pixel dimension; layout
+verbs consume what it produces. Grid-first, in order of preference: `sz_u(n)` (quanta to px),
+`sz_rows_h(n)` / `sz_row_gap()` (box heights from row counts, scale-aware), `sz_scale_row(s)`
+(a ramp step's row height without pushing it; `scale_push/scale_pop` scope a step). Content-fit
+escape hatches: `sz_fit_row(content_h)` / `sz_fit_col(content_w)` (content px plus the standard
+row / cell margin; `fit(0)` is the bare margin) and `sz_line_h()` (raw font line advance). Text
+measurement lives with the draw family (`text_size`). Placement queries stay unprefixed:
 `content_avail()`, `cursor_screen_pos()`.
 
 ### Containers
@@ -190,11 +217,14 @@ overloaded unit. Pair results with `push_layout_overlay` or `draw_*`.
 Absolute-rect placement does NOT move the layout pen: after drawing a HUD/carved band, reserve
 it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
 
-## Interaction / ids / draw escape hatches
+## Interaction / ids / the custom tier (custom/)
 
 - IDs: label-hashed; `"##hidden"` suffix hides label; `push_id_int/pop_id` for loops.
 - Item queries after any emit: `is_item_hovered/active/clicked`; `want_capture_mouse` for
   app-vs-ui input arbitration.
+- Custom behavior: `item( id, rect )` runs the shared interaction state machine over a
+  caller rect and reports `hover/active/pressed/clicked` (`gui_item_state_t`);
+  `invisible_button` is its click bit. A custom widget = rect + `item()` + `draw_*`.
 - Custom draw: `canvas(h)` reserves a cell; `draw_rect/line/circle/text/draw_text_in` take
   caller rects, composing with split/carve/anchor. Colors are u32 ABGR (`GUI_COLOR(r,g,b,a)`).
 - Style: `style_get()` + edit + `style_apply()`, or scoped `push_style_color/pop_style_color`.

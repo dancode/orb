@@ -407,7 +407,14 @@ nav_item_register( gui_id_t id, gui_rect_t r, widget_state_t* st, widget_kind_t 
        keeps its location), and -- only while the keyboard is the active instrument (nav_highlight)
        -- give it the fill (st->nav, read by widget_bg_color / frame_bg_color) and apply a pending
        activation.  The ring is drawn before the widget's own background (widget_behavior runs
-       first), inset outward by NAV_RING so the fill leaves the border visible. */
+       first), inset outward by NAV_RING so the fill leaves the border visible.
+
+       LAYERING NOTE: this ring draw (WIN_BORDER / COL_NAV) is the one sanctioned presentation act
+       inside the behavior tier.  Behavior otherwise consumes finished rects and never reads a
+       style value; the ring stays here because it is a system adornment that must be uniform
+       across every widget -- stock and custom alike -- and must paint beneath the item's own
+       fill, and no single presentation seam exists after behavior that every widget passes
+       through.  Do not add further style reads to this tier. */
 
     if ( is_cur && s_nav.active )
     {

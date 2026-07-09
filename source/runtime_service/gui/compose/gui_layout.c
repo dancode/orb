@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/core/gui_layout.c -- Public layout API verbs.
+    runtime_service/gui/compose/gui_layout.c -- Public layout API verbs + the sz_ sizing family.
 
     Defines the per-region template-shaping calls (gui_layout, gui_stack, gui_row,
     gui_cols, gui_grid, gui_pack, gui_bar, gui_strip, gui_field_split,
@@ -314,68 +314,66 @@ gui_pad( gui_pad_t p )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Layout metrics -- theme-derived sizes for pre-computing fixed row / column dimensions.
+    Sizing (sz_) -- the one public family that turns intent into a pixel dimension.  Everything
+    a caller feeds to row / cols / child_begin / window_set_next_size that is not a fraction or
+    a fill comes from here; layout verbs consume sizes, sz_ produces them.
 
-    The standard vocabulary is grid-first: u( n ) for authored sizes, rows_h( n ) / row_gap()
-    for count-based box heights, scale_push / scale_row for the density ramp.  Those speak in
-    quanta and row counts and stay on the theme lattice by construction.
+    Grid-first vocabulary (the standard rungs, in order of preference):
 
-    The adv_ helpers below are the raw px / font calculators underneath -- escape hatches for
-    content-fit sizing the grid vocabulary cannot express (a row hugging an image, a column
-    hugging a measured label).  adv_line_h / adv_text_w are the raw font metrics a caller cannot
-    compute itself.  adv_h_min / adv_w_min are the standard margin a row / cell puts around its
-    content -- the "size without content".  adv_calc_row / adv_calc_col add that margin to a
-    content pixel size, giving a fixed dimension that fits the content plus breathing room:
+        sz_u( n )         -- authored geometry, in grid quanta
+        sz_rows_h( n )    -- box height from a row count (scale-aware via the style stack)
+        sz_row_gap()      -- the flow gap those boxes owe
+        sz_scale_row( s ) -- one row height at a named ramp step, without pushing the scope
 
-        gui()->row( gui()->adv_calc_row( 128 ) );              // a row sized for a 128px image
-        f32 w = gui()->adv_calc_col( gui()->adv_text_w("X") ); // a column sized to a label
+    Content-fit escape hatches (rare -- prefer letting the layout measure via natural sizing):
+
+        sz_fit_row( content_h ) / sz_fit_col( content_w ) -- content px plus the standard row /
+        cell margin; fit( 0 ) is the bare margin (the "size without content").
+        sz_line_h() -- the raw font line advance, for text-shaped custom-draw rects.
+
+    Text measurement lives with the draw family (text_size), not here.
 ----------------------------------------------------------------------------------------------*/
 
-/* u -- n grid quanta in pixels (grid_quantum, the theme's px lattice; 4 by default).  The
+/* sz_u -- n grid quanta in pixels (grid_quantum, the theme's px lattice; 4 by default).  The
    unit-first way to author any px size -- tracks, row heights, child / window sizes, pack_size --
    so authored geometry sits on the same lattice the theme metrics and the resolved tracks do,
    and retunes when the theme's quantum changes:
 
-       gui()->cols( (f32[]){ gui()->u( 12 ), 1.0f, GUI_END } );   // a 12-quantum column + a fill
-       gui()->row( gui()->u( 8 ) );                                // a 32px row at q=4
+       gui()->cols( (f32[]){ gui()->sz_u( 12 ), 1.0f, GUI_END } );   // a 12-quantum column + a fill
+       gui()->row( gui()->sz_u( 8 ) );                                // a 32px row at q=4
 
    q <= 1 degenerates to raw pixels.  Convention: gaps are one quantum, blocky panel measures
    are multiples of four quanta (the coarse "cell" -- 16px at q=4). */
 f32
-gui_u( f32 n )
+gui_sz_u( f32 n )
 {
     u32 q = s_style.grid_quantum;
     return n * (f32)( q > 1 ? q : 1 );
 }
 
-/* Height of one line of text in the active font. */
-f32 gui_adv_line_h( void ) { return font_line_h(); }
-
-/* Pixel width of a string in the active font (whole string, no "##" handling). */
-f32 gui_adv_text_w( const char* s ) { return font_text_w( s ); }
-
-/* Standard vertical margin a row adds around its content (so adv_calc_row( char_h ) == one row). */
-f32 gui_adv_h_min( void ) { f32 m = WIDGET_H - font_char_h(); return m > 0.0f ? m : 0.0f; }
-
-/* Standard horizontal margin a cell adds around its content (a left + right content inset). */
-f32 gui_adv_w_min( void ) { return 2.0f * WIDGET_PAD; }
-
 /* Vertical gap the flow places between consecutive rows in a region -- also the top/bottom pad a
    window body / child opens with (REGION_PAD_DEFAULT).  A caller stacking N flow rows to
    precompute a fixed box height (a child_begin sized to hold an exact row count, say) owes this
-   once above the first row and once below the last, plus once between every pair of rows --
-   adv_line_h() alone is a font metric and knows nothing about it. */
-f32 gui_row_gap( void ) { return WIDGET_GAP; }
-
-/* Fixed row height / column width that fits content_* pixels plus the standard margin. */
-f32 gui_adv_calc_row( f32 content_h ) { return content_h + gui_adv_h_min(); }
-f32 gui_adv_calc_col( f32 content_w ) { return content_w + gui_adv_w_min(); }
+   once above the first row and once below the last, plus once between every pair of rows. */
+f32 gui_sz_row_gap( void ) { return WIDGET_GAP; }
 
 /* Fixed box height for n uniform WIDGET_H rows stacked in a region with the default pad/gap
-   (REGION_PAD_DEFAULT top/bottom, row_gap() between) -- the everyday case (a fixed list of
-   buttons/fields, a popup sized to its item count) where every row is a standard widget line and
-   a caller would otherwise hand-assemble calc_row + row_gap arithmetic for each one. */
-f32 gui_rows_h( u32 n ) { return ( n == 0 ) ? 0.0f : (f32)n * WIDGET_H + ( (f32)n + 1.0f ) * WIDGET_GAP; }
+   (REGION_PAD_DEFAULT top/bottom, sz_row_gap() between) -- the everyday case (a fixed list of
+   buttons/fields, a popup sized to its item count).  Reads through the style stack, so inside a
+   scale_push scope it speaks that step's metrics. */
+f32 gui_sz_rows_h( u32 n ) { return ( n == 0 ) ? 0.0f : (f32)n * WIDGET_H + ( (f32)n + 1.0f ) * WIDGET_GAP; }
+
+/* Height of one line of text in the active font (the raw line advance) -- a font metric, for
+   text-shaped custom-draw rects; it knows nothing about row margins or gaps. */
+f32 gui_sz_line_h( void ) { return font_line_h(); }
+
+/* Fixed row height / column width that fits content_* pixels plus the standard margin a row /
+   cell puts around its content (fit( 0 ) is the bare margin -- the "size without content"):
+
+       gui()->row( gui()->sz_fit_row( 128 ) );                  // a row sized for a 128px image
+       f32 w = gui()->sz_fit_col( gui()->text_size("X").x );    // a column sized to a label */
+f32 gui_sz_fit_row( f32 content_h ) { f32 m = WIDGET_H - font_char_h(); return content_h + ( m > 0.0f ? m : 0.0f ); }
+f32 gui_sz_fit_col( f32 content_w ) { return content_w + 2.0f * WIDGET_PAD; }
 
 /* Remaining free space in the current region from the layout pen -- the GetContentRegionAvail
    analogue.  Width is what a flex widget would fill (the content column from the pen to its right

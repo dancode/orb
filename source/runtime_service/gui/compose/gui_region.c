@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/core/gui_region.c -- Root-level region: a fixed-rect layout primitive
+    runtime_service/gui/compose/gui_region.c -- Root-level region: a fixed-rect layout primitive
     with no window chrome.
 
     window_begin_ex (window/gui_widget_window.c) and child_begin (gui_layout_child.c) are both

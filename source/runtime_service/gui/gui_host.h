@@ -193,22 +193,17 @@ void gui_stack_same_line( f32 spacing );
 void gui_skip( void );
 void gui_separator( void );
 
-/* layout - blank space canvas */
+/* custom substrate - blank space canvas (custom/gui_canvas.c): reserve a rect to draw into */
 gui_rect_t gui_canvas( f32 height );
 
-/* layout - grid-first sizing (the standard vocabulary: quanta and row counts) */
-f32 gui_u( f32 n );
-f32 gui_row_gap( void );
-f32 gui_rows_h( u32 n );
-
-/* layout - adv_ raw px / font calculators (escape hatches for content-fit sizing) */
-f32 gui_adv_line_h( void );
-f32 gui_adv_text_w( const char* s );
-f32 gui_adv_text_h( const char* s );
-f32 gui_adv_h_min( void );
-f32 gui_adv_w_min( void );
-f32 gui_adv_calc_row( f32 content_h );
-f32 gui_adv_calc_col( f32 content_w );
+/* sizing (sz_) - intent to px; grid-first first, content-fit escape hatches last */
+f32 gui_sz_u( f32 n );
+f32 gui_sz_row_gap( void );
+f32 gui_sz_rows_h( u32 n );
+f32 gui_sz_scale_row( gui_scale_t s );
+f32 gui_sz_line_h( void );
+f32 gui_sz_fit_row( f32 content_h );
+f32 gui_sz_fit_col( f32 content_w );
 gui_vec2_t gui_content_avail( void );
 gui_vec2_t gui_cursor_screen_pos( void );
 gui_rect_t gui_content_rect( void );
@@ -217,7 +212,10 @@ u32        gui_carve( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out
 gui_rect_t gui_anchor( gui_rect_t parent, gui_anchor_t a );
 gui_rect_t gui_empty( f32 w, f32 h );
 
-/* layout - interactive helpers */
+/* custom substrate - behavior on caller rects (custom/gui_behavior.c): the shared interaction
+   state machine run over a rect YOU derived.  item() reports the full state; invisible_button
+   is its click bit.  A custom widget = rect (canvas/split/carve) + item() + draw_*. */
+gui_item_state_t gui_item( const char* id_str, gui_rect_t r );
 bool gui_invisible_button( const char* id_str, gui_rect_t r );
 bool gui_is_mouse_hovering_rect( gui_rect_t r );
 void gui_window_set_drag( gui_win_drag_t mode );
@@ -244,7 +242,6 @@ void gui_pop_style_var( u32 count );
 void gui_next_style_var( gui_style_var_t var, f32 value );
 void gui_scale_push( gui_scale_t s );
 void gui_scale_pop( void );
-f32  gui_scale_row( gui_scale_t s );
 void gui_set_check_style( u8 style );
 void gui_set_bullet_style( u8 style );
 void gui_set_arrow_style( u8 style );

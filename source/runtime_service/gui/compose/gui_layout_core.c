@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/core/gui_layout_core.c -- Layout mechanism: track resolver + cell emitters.
+    runtime_service/gui/compose/gui_layout_core.c -- Layout mechanism: track resolver + cell emitters.
 
     The engine the public layout API (gui_layout.c) drives.  It carves a region's content area
     into cells from a repeating row / column template (or a fixed grid, or a pack run) and hands
@@ -68,7 +68,7 @@ content_reach( layout_frame_t* f, f32 x, f32 y )
     so resolved flex tracks and natural widths land on the same px lattice the theme metrics
     were already quantized to (layout_compute).  Authored sizes are never snapped: a fixed-px
     track, an explicit row_h, a fit_next / pack_size are taken verbatim -- unit-first authoring
-    goes through gui_u(), which is on-lattice by construction.  Content sizes round UP (text is
+    goes through gui_sz_u(), which is on-lattice by construction.  Content sizes round UP (text is
     never clipped); divided space rounds DOWN (tracks never overflow their extent).
 ----------------------------------------------------------------------------------------------*/
 

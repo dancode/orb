@@ -197,18 +197,18 @@ show_console( f32 display_w )
 {
     /* The whole console speaks one step of the theme's scale ramp: DENSE, the text-list step.
        The scope makes every metric read inside -- row heights, gaps, the window and child pads,
-       and the rows_h counting helper -- resolve to that step, so sizing is row COUNTING, not
-       font arithmetic (the old text_h/calc_row/gap derivation lived here; the grid quantizes
+       and the sz_rows_h counting helper -- resolve to that step, so sizing is row COUNTING, not
+       font arithmetic (the old text_h/fit_row/gap derivation lived here; the grid quantizes
        auto text rows, so counting fixed ramp rows is now both simpler and the only exact form).
 
        hist_h is the scrollback child: CONSOLE_ROWS text rows plus the trailing separator row,
-       each exactly one dense row (the fixed row template below), with rows_h carrying the gaps
-       between and the child's own top/bottom pad.  win_h adds the input row -- rows_h( 1 )
+       each exactly one dense row (the fixed row template below), with sz_rows_h carrying the gaps
+       between and the child's own top/bottom pad.  win_h adds the input row -- sz_rows_h( 1 )
        carries the gap above it and the window's bottom pad -- plus the window's top pad. */
     gui()->scale_push( GUI_SCALE_DENSE );
 
-    const f32 hist_h = gui()->rows_h( CONSOLE_ROWS + 1 );                /* text rows + separator */
-    const f32 win_h  = hist_h + gui()->rows_h( 1 ) + gui()->row_gap();   /* + input row + top pad */
+    const f32 hist_h = gui()->sz_rows_h( CONSOLE_ROWS + 1 );                   /* text rows + separator */
+    const f32 win_h  = hist_h + gui()->sz_rows_h( 1 ) + gui()->sz_row_gap();   /* + input row + top pad */
 
     /* window_begin instead of region_begin: a normal window's background (translucent per
        theme) and border, just stripped of title bar / resize / move / collapse -- looks like
@@ -229,7 +229,7 @@ show_console( f32 display_w )
                row, so hist_h above is exact and every line edge sits on the grid.  (A plain
                stack() would auto-size text rows to the font instead; fixed rows are what make
                the count-based sizing a guarantee rather than a coincidence.) */
-            gui()->row( gui()->scale_row( GUI_SCALE_DENSE ) );
+            gui()->row( gui()->sz_scale_row( GUI_SCALE_DENSE ) );
 
             /* Mouse wheel scrolls the scrollback -- while the console is open it owns the
                wheel, Quake style.  Wheel up (positive) looks back in history. */
@@ -302,10 +302,10 @@ show_console( f32 display_w )
 static void
 show_test_bed( void )
 {
-    /* Authored in grid units (u( n ) = n quanta), not raw px: the same geometry as before at
+    /* Authored in grid units (sz_u( n ) = n quanta), not raw px: the same geometry as before at
        q=4, but it stays on the lattice if the theme's quantum retunes. */
-    gui()->window_set_next_pos ( gui()->u( 15 ),  gui()->u( 120 ), GUI_COND_ONCE );
-    gui()->window_set_next_size( gui()->u( 115 ), gui()->u( 55 ),  GUI_COND_ONCE );
+    gui()->window_set_next_pos ( gui()->sz_u( 15 ),  gui()->sz_u( 120 ), GUI_COND_ONCE );
+    gui()->window_set_next_size( gui()->sz_u( 115 ), gui()->sz_u( 55 ),  GUI_COND_ONCE );
     if ( gui()->window_begin( "Console Test Bed", GUI_WIN_NONE ) )
     {
         gui()->stack();

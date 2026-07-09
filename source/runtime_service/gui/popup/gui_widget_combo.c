@@ -35,14 +35,14 @@
    the popup by the time combo_begin runs -- without it the same click would close then reopen. */
 typedef struct { u32 open_frame; } gui_combo_state_t;
 
-/* The height a list of `n` selectable rows occupies in a stack body: gui_rows_h's uniform-row box
-   plus the popup's own bottom border.  Shared by the combo dropdown height cap and the list box
-   default. */
+/* The height a list of `n` selectable rows occupies in a stack body: gui_sz_rows_h's uniform-row
+   box plus the popup's own bottom border.  Shared by the combo dropdown height cap and the list
+   box default. */
 static f32
 combo_rows_h( i32 n )
 {
     if ( n < 1 ) n = 1;
-    return gui_rows_h( (u32)n ) + WIN_BORDER;
+    return gui_sz_rows_h( (u32)n ) + WIN_BORDER;
 }
 
 /* Mandatory combo dropdown window behavior: fixed, uncollapsible, no title bar -- a popup but with
