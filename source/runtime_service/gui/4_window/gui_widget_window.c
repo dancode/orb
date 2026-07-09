@@ -413,13 +413,13 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
         if ( node->floating )
         {
             f32 o = WIN_RESIZE_OUTER;
-            window_nominate_hover( id, ( gui_rect_t ){ node->rect.x - o, node->rect.y - o,
+            surface_hover_nominate( id, ( gui_rect_t ){ node->rect.x - o, node->rect.y - o,
                                                          node->rect.w + 2.0f * o, node->rect.h + 2.0f * o },
                                    node->z, node->viewport );
         }
         else
         {
-            window_nominate_hover( id, node->rect, 0u, node->viewport );
+            surface_hover_nominate( id, node->rect, 0u, node->viewport );
         }
     }
 
@@ -750,7 +750,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        pin it to 0,0 (window_sync_native), so the popup flashes full-surface at the origin for one
        frame before snapping to its anchor.  A z already in the popup band is left untouched. */
     if ( appearing && win->z < GUI_POPUP_Z_BASE )
-        win->z = ++s_z_counter;
+        win->z = surface_z_raise( win->z );
 
     window_apply_next( win, appearing );
     win->last_frame = s_retained.frame;
@@ -860,10 +860,10 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         if ( frame_only )
             /* Frame-only shell: only the titlebar (caption band + its buttons) is interactive; the body
                is click-through so windows inside the viewport keep their own hover and selection. */
-            window_nominate_hover( id, ( gui_rect_t ){ win->x, win->y, win->w, title_h },
+            surface_hover_nominate( id, ( gui_rect_t ){ win->x, win->y, win->w, title_h },
                                    win->z, win->viewport );
         else
-            window_nominate_hover( id, ( gui_rect_t ){ win->x - ox, win->y - oy,
+            surface_hover_nominate( id, ( gui_rect_t ){ win->x - ox, win->y - oy,
                                                          win->w + 2.0f * ox, disp_h + 2.0f * oy }, win->z,
                                    win->viewport );
     }

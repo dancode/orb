@@ -9,11 +9,20 @@ Static lib `gui`, two translation units:
 
 - `gui.c` (UI/core unit): context, id/state pool, input snapshot, layout engine, widgets,
   4_window/4_dock/4_popup/nav/table, frame lifecycle, mod vtable. Unity-includes its constituents in
-  NUMBERED DEPENDENCY TIERS -- the directory listing is the stack, bottom-up (0_foundation/ +
-  the three sibling 2_* roles -> 3_widgets/ -> 4_window/ -> 4_dock/ + 4_popup/; 4_table/ needs
-  tiers 0-2 only; 5_user/ sits on top of everything; 1_surface/ is reserved for the window
-  record/chrome carve; root files are the frame conductor, top alongside 5_user/). Include
-  order matters; later files may reference statics from earlier ones.
+  NUMBERED DEPENDENCY TIERS -- the directory listing is the stack, bottom-up (0_foundation/ ->
+  1_surface/ -> the three sibling 2_* roles -> 3_widgets/ -> 4_window/ -> 4_dock/ + 4_popup/;
+  4_table/ needs tiers 0-2 only; 5_user/ sits on top of everything; root files are the frame
+  conductor, top alongside 5_user/). Include order matters; later files may reference statics
+  from earlier ones.
+  `1_surface/gui_surface.c` is the surface service: window records as placed, stacked,
+  occluding rectangles before any layout or chrome -- the record pool (`window_get` /
+  `window_find`), the next-window placement channel, the z dispenser (`surface_z_raise`, the
+  tier is its ONLY writer; the popup band is record z policy outside the dispenser), the
+  hover-win occlusion contest (`surface_hover_nominate`, entered by windows, floating dock
+  groups, and root regions alike), the surface reassignment request slot (tear-off /
+  merge-back, serviced by the conductor), and open/closed state. Storage + frame turnover
+  stay in `gui_context_t` (0_foundation), the house pattern; window GESTURES (drags, grips,
+  raise-on-press with its dock exception) are 4_window/ policy over these services.
 - `gui_backend.c` (render unit): fonts, draw list, tessellation, GPU flush, debug overlay.
   UI unit calls it one-way through `gui_backend.h` (`draw_*`, `font_*`, `gui_render_*`).
 

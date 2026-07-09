@@ -169,14 +169,14 @@ nav_cycle_window( i32 dir )
 
     /* Adopt + raise the picked window; first item takes focus next frame. */
     for ( u32 i = 0; i < s_window_count; ++i )
-        if ( s_windows[ i ].id == pick && s_windows[ i ].z != s_z_counter )
-            s_windows[ i ].z = ++s_z_counter;
+        if ( s_windows[ i ].id == pick )
+            s_windows[ i ].z = surface_z_raise( s_windows[ i ].z );
 
     /* A floating tab group raises with its picked (visible) tab so the group surfaces. */
     {
         gui_dock_node_t* dn = dock_find_window_node( pick );
-        if ( dn && dn->floating && dn->z != s_z_counter )
-            dn->z = ++s_z_counter;
+        if ( dn && dn->floating )
+            dn->z = surface_z_raise( dn->z );
     }
 
     s_nav.explicit_win = pick;

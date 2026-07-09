@@ -94,7 +94,7 @@ dock_float_group_create( gui_window_t* target, gui_id_t target_id, const char* t
     if ( !n )
         return NULL;
     n->floating = true;
-    n->z        = ++s_z_counter;
+    n->z        = surface_z_raise( n->z );
     n->rect     = ( gui_rect_t ){ target->x, target->y, target->w, target->h };
 
     f32 th = WIN_TITLE_H;

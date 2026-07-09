@@ -25,9 +25,15 @@
                        snapshot, and the style machinery (theme registry, stacks, resolution).
                        Owns style MACHINERY, never style MEANING -- no foundation decision reads
                        a style value.
-    1_surface/      -- RESERVED, not yet carved: window/viewport record as a surface service
-                       (rect + retained placement + z + occlusion, no layout, no chrome).
-                       Today that record still lives fused with its chrome in 4_window/.
+    1_surface/      -- the surface service: window records as placed, stacked, occluding
+                       rectangles -- the pool (window_get/window_find), the next-window
+                       placement channel, the z dispenser (surface_z_raise, this tier is its
+                       ONLY writer), the hover-win occlusion contest (surface_hover_nominate),
+                       the surface reassignment request slot, and open/closed state.  No
+                       layout, no chrome, no gestures -- those are 4_window/ policy over these
+                       services.  Storage + frame turnover stay with the context
+                       (0_foundation/gui_ctx.c), the house pattern; viewport (OS surface)
+                       lifecycle stays with the conductor (app()/rhi() operations).
     2_compose/      -- composition: the only code that turns style spacing metrics
                        (line_size/gap/pad/quantum/scales) into rects.  Track resolver, regions,
                        children, the public layout verbs + sz_ sizing family.
@@ -87,6 +93,9 @@
     0_foundation/gui_id.c          -- identity service: id_hash, id_combine, id_seed/push/pop
     0_foundation/gui_state.c       -- keyed state tracking service: gui_state_get/peek, GUI_STATE
 
+    1_surface/gui_surface.c        -- surface service: window record pool, placement channel, z dispenser,
+                                      hover-win contest, surface reassignment slot, open/closed state
+
     2_compose/gui_layout_core.c    -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
     2_compose/gui_layout_region.c  -- scrollable region engine: gui_region_t, gutters, push/pop_region
     2_compose/gui_layout_child.c   -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
@@ -112,7 +121,7 @@
 
     4_table/gui_table.c            -- table layout: multi-column rows, self-fitting cells, one table clip (needs tiers 0-2 only)
 
-    4_window/gui_window.c          -- persistent per-window state: gui_window_t, window_get, drag mode
+    4_window/gui_window.c          -- window gesture policy state: drag mode, merge-back latch, raise-on-press
     4_window/gui_widget_window.c   -- the window as a widget: begin/window_end + chrome (resize); body is a region
 
     4_dock/gui_dock_core.c         -- docking: node pool, per-frame layout, splitter interaction + chrome
@@ -218,6 +227,9 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/0_foundation/gui_ctx.c"
 #include "runtime_service/gui/0_foundation/gui_id.c"
 #include "runtime_service/gui/0_foundation/gui_state.c"
+
+#include "runtime_service/gui/1_surface/gui_surface.c"
+
 #include "runtime_service/gui/2_present/gui_widget_core.c"
 #include "runtime_service/gui/2_interact/gui_item.c"
 #include "runtime_service/gui/2_interact/gui_drag.c"

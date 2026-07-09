@@ -636,7 +636,7 @@ dock_window_chrome( gui_dock_node_t* node )
                     if ( win )
                     {
                         win->viewport = vp;              /* float on the surface it was docked on */
-                        win->z        = ++s_z_counter;   /* raise above the tiles                 */
+                        win->z        = surface_z_raise( win->z );   /* raise above the tiles      */
                         win->x        = s_io.mouse_x - WIN_TITLE_H;         /* grab near the      */
                         win->y        = s_io.mouse_y - WIN_TITLE_H * 0.5f;  /* title's left edge  */
                         move_grab( wid, 0, win->x, win->y );  /* continue as a free window drag   */
