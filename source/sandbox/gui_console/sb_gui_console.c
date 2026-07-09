@@ -185,95 +185,108 @@ console_key_hook( u32 key, bool ctrl, bool shift, bool repeat, void* user )
 }
 
 /*==============================================================================================
-    Console drop-down -- a chrome-less region pinned across the top of the display
+    Console drop-down -- one undecorated window pinned across the top of the display
 ==============================================================================================*/
 
 static void
 show_console( f32 display_w )
 {
-    /* Two fixed-rect regions instead of one stacked column: the scrollback's row count and
-       indicator widget never change, but if they ever did, a shared stack would shove the
-       input line below by however much the scrollback grew or shrank.  Pinning the input
-       region's y to a constant (hist_h) makes it immune to anything the scrollback region
-       emits -- it can only move if hist_h itself changes. */
     /* gui()->text() rows are only font_char_h() tall (text_h of a single line), but separator /
        separator_text / input_text reserve a full padded WIDGET_H row (calc_row adds that
-       padding back in) -- line_h() alone under-sizes those rows and clips them. */
+       padding back in) -- line_h() alone under-sizes those rows and clips them.
+
+       The flow also owes a row_gap() between every pair of stacked rows, plus one above the
+       first row and one below the last (a window/child body's own top/bottom pad) -- easy to
+       forget, and forgetting it clips the last rows against the child's bottom edge exactly the
+       same way the wrong row-height metric did.  hist_h below is the child box: its own top pad,
+       CONSOLE_ROWS text rows with a gap between each, a gap before the trailing separator, the
+       separator row itself, and its own bottom pad.  win_h is the outer window: top pad, the
+       child (already self-padded), a gap before the input row, the input row, bottom pad. */
     const f32 text_row_h   = gui()->text_h( " " );
     const f32 widget_row_h = gui()->calc_row( text_row_h );
-    const f32 hist_h       = text_row_h * CONSOLE_ROWS + widget_row_h;    // rows + indicator row
-    const f32 input_h      = widget_row_h;
+    const f32 gap          = gui()->row_gap();
+    const f32 hist_h       = text_row_h * CONSOLE_ROWS + widget_row_h + (gap * ( CONSOLE_ROWS + 2 ));
+    const f32 win_h        = hist_h + widget_row_h + gap * 3.0f;
 
-    gui()->region_begin( "##console_scrollback", 0.0f, 0.0f, display_w, hist_h,
-                         GUI_WIN_NOSCROLL | GUI_WIN_REGION_BG );
-    gui()->stack();
-
-    /* Mouse wheel scrolls the scrollback -- while the console is open it owns the wheel,
-       Quake style.  Wheel up (positive) looks back in history. */
-    const f32 wheel = gui()->get_mouse_wheel();
-    if ( wheel != 0.0f )
-        s_view_offset += ( i32 )wheel * 3;
-
-    /* Scrollback: the last CONSOLE_ROWS lines, shifted up by the view offset. */
-    const i32 total = ( i32 )core()->con_line_count();
-    i32 max_offset  = total - CONSOLE_ROWS;
-    if ( max_offset < 0 )
-        max_offset = 0;
-    if ( s_view_offset > max_offset )
-        s_view_offset = max_offset;
-    if ( s_view_offset < 0 )
-        s_view_offset = 0;
-
-    for ( i32 row = 0; row < CONSOLE_ROWS; ++row )
+    /* window_begin instead of region_begin: a normal window's background (translucent per
+       theme) and border, just stripped of title bar / resize / move / collapse -- looks like
+       any other window rather than a chrome-less HUD overlay. */
+    gui()->window_set_next_pos( 0.0f, 0.0f, GUI_COND_ALWAYS );
+    gui()->window_set_next_size( display_w, win_h, GUI_COND_ALWAYS );
+    if ( gui()->window_begin( "##console", GUI_WIN_NODECORATION | GUI_WIN_NOMOVE ) )
     {
-        const i32 idx = total - s_view_offset - ( CONSOLE_ROWS - row );
-        gui()->text( ( idx >= 0 ) ? core()->con_line_get( ( u32 )idx ) : " " );
+        gui()->stack();
+
+        /* child_begin carves a fixed-height box out of the window's flow: whatever it holds,
+           the input line below always lands at the same y, immune to scroll state or content
+           inside the child -- the same guarantee the two-region split gave, without a second
+           window. */
+        if ( gui()->child_begin( "##console_scrollback", 0.0f, hist_h, GUI_WIN_NOSCROLL ) )
+        {
+            gui()->stack();
+
+            /* Mouse wheel scrolls the scrollback -- while the console is open it owns the
+               wheel, Quake style.  Wheel up (positive) looks back in history. */
+            const f32 wheel = gui()->get_mouse_wheel();
+            if ( wheel != 0.0f )
+                s_view_offset += ( i32 )wheel * 3;
+
+            /* Scrollback: the last CONSOLE_ROWS lines, shifted up by the view offset. */
+            const i32 total = ( i32 )core()->con_line_count();
+            i32 max_offset  = total - CONSOLE_ROWS;
+            if ( max_offset < 0 )
+                max_offset = 0;
+            if ( s_view_offset > max_offset )
+                s_view_offset = max_offset;
+            if ( s_view_offset < 0 )
+                s_view_offset = 0;
+
+            for ( i32 row = 0; row < CONSOLE_ROWS; ++row )
+            {
+                const i32 idx = total - s_view_offset - ( CONSOLE_ROWS - row );
+                gui()->text( ( idx >= 0 ) ? core()->con_line_get( ( u32 )idx ) : " " );
+            }
+
+            /* separator_text and separator both consume the same WIDGET_H cell (unlike
+               text_disabled, which is only font_char_h() tall) -- switching between them here
+               keeps this row's height constant across scroll states. */
+            if ( s_view_offset > 0 )
+                gui()->separator_text( "^ ^ ^  (PageDown for live tail)  ^ ^ ^" );
+            else
+                gui()->separator();
+        }
+        gui()->child_end();
+
+        /* Input line: stacked directly below the child in the window's own flow.  The child
+           above always consumes exactly hist_h regardless of its content, so this never
+           shifts. */
+
+        /* set_keyboard_focus queues focus for the next focusable widget: on open it was
+           requested last frame, after Enter it is requested below for the coming frame. */
+        if ( s_focus_pending )
+        {
+            gui()->set_keyboard_focus();
+            s_focus_pending = false;
+        }
+
+        /* One-shot: the hook must be re-armed each frame, just before the field it is meant for. */
+        gui()->set_edit_key_hook( console_key_hook, NULL );
+
+        const bool entered = gui()->input_text( "##con_input", s_input, sizeof( s_input ) );
+
+        strip_backticks( s_input );
+
+        if ( entered )
+        {
+            core()->con_submit( s_input );    /* queued: runs at the loop's next cmd_pump */
+            s_redraw_frames = 2;              /* output lands next frame; keep the emit alive */
+            s_input[ 0 ]  = '\0';
+            s_history_pos = -1;
+            s_view_offset = 0;         /* executing snaps the view back to the live tail */
+            s_focus_pending = true;    /* Enter dropped focus; take it back next frame */
+        }
     }
-
-    /* separator_text and separator both consume the same WIDGET_H cell (unlike text_disabled,
-       which is only font_char_h() tall) -- switching between them here keeps this row's height
-       constant across scroll states. */
-    if ( s_view_offset > 0 )
-        gui()->separator_text( "^ ^ ^  (PageDown for live tail)  ^ ^ ^" );
-    else
-        gui()->separator();
-
-    gui()->region_end();
-
-    /* Input line: its own region, pinned at hist_h -- a constant, not the scrollback's
-       emitted content height. */
-    gui()->region_begin( "##console_input", 0.0f, hist_h, display_w, input_h,
-                         GUI_WIN_NOSCROLL | GUI_WIN_REGION_BG );
-    gui()->stack();
-
-    /* set_keyboard_focus queues focus for the next focusable widget: on open it was requested
-       last frame, after Enter it is requested below for the coming frame. */
-    if ( s_focus_pending )
-    {
-        gui()->set_keyboard_focus();
-        s_focus_pending = false;
-    }
-
-    /* One-shot: the hook must be re-armed each frame, just before the field it is meant for. */
-    gui()->set_edit_key_hook( console_key_hook, NULL );
-
-    gui()->text( "]" );
-    gui()->same_line( 0 );
-    const bool entered = gui()->input_text( "##con_input", s_input, sizeof( s_input ) );
-
-    strip_backticks( s_input );
-
-    if ( entered )
-    {
-        core()->con_submit( s_input );    /* queued: runs at the loop's next cmd_pump */
-        s_redraw_frames = 2;              /* output lands next frame; keep the emit alive */
-        s_input[ 0 ]  = '\0';
-        s_history_pos = -1;
-        s_view_offset = 0;         /* executing snaps the view back to the live tail */
-        s_focus_pending = true;    /* Enter dropped focus; take it back next frame */
-    }
-
-    gui()->region_end();
+    gui()->window_end();
 }
 
 /*==============================================================================================

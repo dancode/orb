@@ -337,9 +337,22 @@ f32 gui_h_min( void ) { f32 m = WIDGET_H - font_char_h(); return m > 0.0f ? m : 
 /* Standard horizontal margin a cell adds around its content (a left + right content inset). */
 f32 gui_w_min( void ) { return 2.0f * WIDGET_PAD; }
 
+/* Vertical gap the flow places between consecutive rows in a region -- also the top/bottom pad a
+   window body / child opens with (REGION_PAD_DEFAULT).  A caller stacking N flow rows to
+   precompute a fixed box height (a child_begin sized to hold an exact row count, say) owes this
+   once above the first row and once below the last, plus once between every pair of rows --
+   line_h() alone is a font metric and knows nothing about it. */
+f32 gui_row_gap( void ) { return WIDGET_GAP; }
+
 /* Fixed row height / column width that fits content_* pixels plus the standard margin. */
 f32 gui_calc_row( f32 content_h ) { return content_h + gui_h_min(); }
 f32 gui_calc_col( f32 content_w ) { return content_w + gui_w_min(); }
+
+/* Fixed box height for n uniform WIDGET_H rows stacked in a region with the default pad/gap
+   (REGION_PAD_DEFAULT top/bottom, row_gap() between) -- the everyday case (a fixed list of
+   buttons/fields, a popup sized to its item count) where every row is a standard widget line and
+   a caller would otherwise hand-assemble calc_row + row_gap arithmetic for each one. */
+f32 gui_rows_h( u32 n ) { return ( n == 0 ) ? 0.0f : (f32)n * WIDGET_H + ( (f32)n + 1.0f ) * WIDGET_GAP; }
 
 /* Remaining free space in the current region from the layout pen -- the GetContentRegionAvail
    analogue.  Width is what a flex widget would fill (the content column from the pen to its right

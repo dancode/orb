@@ -681,6 +681,15 @@ typedef struct gui_api_s
     f32 ( *calc_row )( f32 content_h );
     f32 ( *calc_col )( f32 content_w );
 
+    /* row_gap() -- the vertical gap the flow places between consecutive rows, and the top/bottom
+       pad a window body / child opens with.  Owed once above the first row, once below the last,
+       and once between every pair -- needed to precompute a fixed box height for N stacked rows. */
+    f32 ( *row_gap  )( void );
+
+    /* rows_h( n ) -- fixed box height for n uniform WIDGET_H rows stacked with the default
+       pad/gap (a fixed-size list of buttons/fields, a popup sized to its item count). */
+    f32 ( *rows_h   )( u32 n );
+
     /* content_avail() -- remaining free space in the current region from the layout pen: the width
        a flex widget would fill and the height left before the region bottom.  The ImGui
        GetContentRegionAvail analogue -- size a child_begin to the leftover, or lay out by hand. */

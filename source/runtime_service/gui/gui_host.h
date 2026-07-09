@@ -203,6 +203,8 @@ f32 gui_h_min( void );
 f32 gui_w_min( void );
 f32 gui_calc_row( f32 content_h );
 f32 gui_calc_col( f32 content_w );
+f32 gui_row_gap( void );
+f32 gui_rows_h( u32 n );
 gui_vec2_t gui_content_avail( void );
 gui_vec2_t gui_cursor_screen_pos( void );
 gui_rect_t gui_content_rect( void );
