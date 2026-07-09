@@ -962,33 +962,35 @@ typedef struct gui_scale_metrics_t
 
 } gui_scale_metrics_t;
 
-/* The style is THREE bundles wearing one struct, and each has exactly one consumer tier:
+/* ONE struct, THREE categories.  They stay together because the machinery treats them all
+   identically -- themes snapshot them, the style stacks override them, style_var/style_col
+   resolve them, gui_style_apply em-scales them -- but each category applies to a DIFFERENT
+   part of the pipeline, and no consumer reads across:
 
-     1. Composer metrics -- how space is divided.  Consumed only by the layout composer
-        (compose/): track resolver, region pads, row heights.  Their output is rects.
-     2. Skin -- how a stock widget paints inside the rect it was given.  The palette above
-        (colors[]), rounding, borders, and the shape-choice knobs.  Consumed only by the
-        presentation tier (widgets/ and the chrome).
-     3. Widget inner geometry -- presentation metrics.  Metric-shaped, which makes them LOOK
-        like layout, but they never influence where the next cell goes -- only what a stock
-        widget draws inside its own cell.
+     1. LAYOUT CONTROLLER -- drives the composer (compose/): how space is divided into rects.
+        These never color a pixel; their output is geometry.
+     2. STYLE -- the toolkit skin: how presentation looks.  colors[] plus the border /
+        rounding / shape-choice knobs.  Consumed by widgets/ + chrome; never sizes a cell.
+     3. WIDGET DRAWING STYLE -- per-widget inner geometry.  Metric-shaped, which makes them
+        LOOK like layout, but they never move the next cell -- they only shape what one stock
+        widget draws inside its own rect.
 
-   Behavior (the interaction state machine) consumes none of them: it takes finished rects.
-   widget_pad is the one double-agent: the composer uses it as the region inset, and stock
-   widgets reuse it as the label inset inside their rect.  Same knob, two roles -- deliberate. */
+   Behavior (core/) consumes none of the three: it takes finished rects.
+   widget_pad is the one double-agent: the composer uses it as the region inset (category 1),
+   and stock widgets reuse it as the label inset inside their rect (category 3) -- deliberate. */
 
 typedef struct gui_style_t
 {
-    u32 colors[ GUI_COL_COUNT ]; // Theme default palette (GUI_COLOR packs R,G,B,A bytes)
+    u32 colors[ GUI_COL_COUNT ]; // STYLE: theme default palette (GUI_COLOR packs R,G,B,A bytes)
 
-    /* 1. Composer metrics -- divide space, produce rects (compose/ is the only consumer) */
+    /* 1. LAYOUT CONTROLLER -- composer input: divides space, produces rects (compose/ only) */
     u8 line_size;          // widget row height
     u8 widget_gap;         // vertical gap between consecutive widgets
     u8 widget_pad;         // horizontal content area padding (also: stock label inset, see above)
     u8 min_cell_w;         // floor a flex/fraction track shrinks to before overflow
     u8 grid_quantum;       // px lattice row-level metrics snap to after font scaling (0/1 = off)
 
-    /* 2. Skin -- how stock widgets + chrome paint (with colors[] above) */
+    /* 2. STYLE -- the toolkit skin: how presentation paints (with colors[] above) */
     u8 win_border;         // window / widget outline thickness
     u8 win_rounding;       // corner radius: windows / children / popups
     u8 widget_rounding;    // corner radius: control frames
@@ -1001,7 +1003,7 @@ typedef struct gui_style_t
     u8 slider_knob;        // slider knob: 0=bar, 1=circle (gui_slider_knob_t)
     u8 menu_check;         // menu check gutter: 0=plain, 1=box (gui_menu_check_t)
 
-    /* 3. Widget inner geometry -- presentation metrics inside a stock widget's own cell */
+    /* 3. WIDGET DRAWING STYLE -- inner geometry inside one stock widget's own rect */
     u8 win_title_h;        // window title bar height
     u8 checkbox_sz;        // checkbox indicator side
     u8 slider_knob_w;      // slider draggable knob width
@@ -1009,8 +1011,8 @@ typedef struct gui_style_t
     u8 cursor_w;           // input text cursor width
     u8 cursor_inset;       // input text cursor top/bottom inset
 
-    /* The scale ramp (see gui_scale_t) -- composer metrics per density step.  STD mirrors
-       line_size / widget_pad / widget_gap. */
+    /* The scale ramp (see gui_scale_t) -- LAYOUT CONTROLLER metrics per density step.  STD
+       mirrors line_size / widget_pad / widget_gap. */
     gui_scale_metrics_t scales[ GUI_SCALE_COUNT ];
 
 } gui_style_t;
@@ -1057,10 +1059,14 @@ void               gui_theme_reset( void );              /* restore base + clear
 /*==============================================================================================
     Style vars
 
-    The tunable layout metrics, the ImGuiStyleVar_ analogue.  Each names one scalar pixel metric
-    the layout + widgets read; push_style_var( var, value ) overrides it until the matching
-    pop_style_var, next_style_var for just the next widget, and an unpushed var uses the
-    font-derived default (recomputed when the font changes).  Values are f32 pixels.
+    The tunable scalar metrics, the ImGuiStyleVar_ analogue.  Each names one scalar the layout
+    or widgets read; push_style_var( var, value ) overrides it until the matching pop_style_var,
+    next_style_var for just the next widget, and an unpushed var uses the font-derived default
+    (recomputed when the font changes).  Values are f32 pixels.
+
+    Grouped by the same three categories as gui_style_t (one mechanism, three audiences):
+    LAYOUT CONTROLLER slots move rects and are what scale_push rides on; STYLE slots change the
+    toolkit look; WIDGET DRAWING STYLE slots shape one widget's interior.
 
     Only metrics that flow through the shared accessor are listed, so every slot here is honored
     uniformly everywhere it is read; purely cosmetic internals (caret width, checkmark inset) are
@@ -1069,14 +1075,14 @@ void               gui_theme_reset( void );              /* restore base + clear
 
 typedef enum
 {
+    /* 1. LAYOUT CONTROLLER -- composer input (scale_push/scale_pop override the first three) */
     GUI_VAR_LINE_SIZE,      // widget row height (the frame height)
     GUI_VAR_WIDGET_GAP,     // gap between consecutive widgets / cells
     GUI_VAR_WIDGET_PAD,     // content padding inside a frame (FramePadding)
-    GUI_VAR_WIN_TITLE_H,    // window title bar height
-    GUI_VAR_WIN_BORDER,     // window / widget outline thickness
-    GUI_VAR_CHECKBOX_SZ,    // checkbox / radio indicator side
-    GUI_VAR_SLIDER_KNOB_W,  // slider knob + scrollbar thickness
     GUI_VAR_MIN_CELL_W,     // min width a flex cell shrinks to
+
+    /* 2. STYLE -- the toolkit skin */
+    GUI_VAR_WIN_BORDER,     // window / widget outline thickness
     GUI_VAR_WIN_ROUNDING,   // corner radius for windows / children / popups; 0 = square
     GUI_VAR_WIDGET_ROUNDING,// corner radius for control frames (button/checkbox/input/...)
     GUI_VAR_GRAB_ROUNDING,  // corner radius for slider knobs + scrollbar grabs
@@ -1087,6 +1093,11 @@ typedef enum
     GUI_VAR_PROGRESS_STYLE, // progress_bar fill: 0 = solid, 1 = vertical gradient (gui_progress_style_t)
     GUI_VAR_SLIDER_KNOB,    // slider knob shape: 0 = bar, 1 = circle (gui_slider_knob_t)
     GUI_VAR_MENU_CHECK,     // menu item check gutter: 0 = plain indicator, 1 = bordered box (gui_menu_check_t)
+
+    /* 3. WIDGET DRAWING STYLE -- inner geometry inside one stock widget's own rect */
+    GUI_VAR_WIN_TITLE_H,    // window title bar height
+    GUI_VAR_CHECKBOX_SZ,    // checkbox / radio indicator side
+    GUI_VAR_SLIDER_KNOB_W,  // slider knob + scrollbar thickness
 
     GUI_VAR_COUNT,          // var count -- not a metric
 
