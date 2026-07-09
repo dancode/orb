@@ -376,6 +376,11 @@ draw_drop_ring( gui_rect_t r )
     draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, 0, COL_NAV );
 }
 
+/* Child box chrome (2_compose/gui_layout_child.c invokes these around its region): the body
+   fill under the region clips at child_begin, the border over the bar tracks at child_end. */
+static void draw_child_bg    ( gui_rect_t r ) { draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0,0,1,1, 0, COL_CHILD_BG ); }
+static void draw_child_border( gui_rect_t r ) { draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER ); }
+
 /* Paint a bold line over each hot edge of an outline so it is obvious that the border is
    grabbable and which side will move.  Drawn just inside the rect, over the thin border.
    `edges` is the GUI_RESIZE_* mask from the edge-resize service (2_interact/gui_resize.c). */

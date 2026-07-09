@@ -15,9 +15,10 @@
     no scroll, no clip, no persistent state, no frame.  It is the recursive completion of the
     cell model -- a cell can host a layout, the way a window or child does.
 
-    Included by gui.c after gui_layout_region.c (provides layout_push/pop_region,
-    region_get, scroll_clamp) and 2_interact/gui_resize.c (provides window_resize_hit, resize_apply_edges,
-    resize_grab, draw_resize_highlight, GUI_RESIZE_*, s_resize_edges).
+    Included by gui.c after gui_layout_region.c (provides layout_push/pop_region, region_get,
+    scroll_clamp) and 2_interact/gui_resize.c (provides the resize_item protocol +
+    resize_apply_edges); the chrome paint comes from 2_present/gui_widget_core.c
+    (draw_child_bg / draw_child_border / draw_resize_highlight).
 
 ==============================================================================================*/
 // clang-format off
@@ -76,13 +77,12 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     gui_region_t* rg = region_get( id );
 
     /* Resize is a flow-child affordance: a grid cell sizes its own child, so the flags are inert
-       there.  resize_id is the active_id this child holds while its border is being dragged. */
+       there. */
     ORB_ASSERT_MSG( !( ( flags & ( GUI_WIN_CHILD_RESIZE_X | GUI_WIN_CHILD_RESIZE_Y ) )
                        && parent->lay_nrows > 0 ),
                     "CHILD_RESIZE_X/_Y has no effect inside a grid-cell parent" );
-    bool       resize_x  = ( flags & GUI_WIN_CHILD_RESIZE_X ) && parent->lay_nrows == 0;
-    bool       resize_y  = ( flags & GUI_WIN_CHILD_RESIZE_Y ) && parent->lay_nrows == 0;
-    gui_id_t resize_id = id_combine( id, GUI_RESIZE_SALT );
+    bool resize_x = ( flags & GUI_WIN_CHILD_RESIZE_X ) && parent->lay_nrows == 0;
+    bool resize_y = ( flags & GUI_WIN_CHILD_RESIZE_Y ) && parent->lay_nrows == 0;
 
     /* Consume any next-child size constraints up front (cleared so they bind only this child).  A
        grid cell sizes its own child, so the bounds, like the resize flags, are inert there; in flow
@@ -141,51 +141,36 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
 
     /* Edge-resize interaction, resolved here -- before the body widgets -- so a press on the grip
        band pre-empts a body widget under it, mirroring how window_begin resolves the window edge
-       first.  Gated on the owning window being front-most and a free or self-owned active_id.
-       Apply an in-flight drag to the persisted size, then re-derive the box so the frame painted
-       below tracks the cursor this frame (the right/bottom edges only -- the origin stays put). */
+       first.  The protocol (window gating, hot band, grab on press, directional cursor) is the
+       resize_item service (2_interact/gui_resize.c); the child only exposes its edges and layers
+       its own size policy on an in-flight drag: clamp to the next-child constraints and the
+       CHILD_MIN floor, persist into the region record, and feed the result back into the box
+       drawn below.  Right/bottom only -- the child's top-left is pinned. */
     u8 resize_hot = 0;
-    if ( ( resize_x || resize_y ) && s_build.win_id == s_interaction.hover_win
-         && ( s_interaction.active_id == GUI_ID_NONE || s_interaction.active_id == resize_id ) )
+    if ( resize_x || resize_y )
     {
-        if ( s_interaction.active_id == resize_id )
-        {
-            /* Shared raw edge-drag (R / B only -- the child's top-left is pinned); the child then
-               layers its own policy: clamp to the next-child constraints and the CHILD_MIN floor,
-               persist into the region record, and feed the result back into the box drawn below. */
-            gui_rect_t rr = box;
-            resize_apply_edges( &rr, (u8)( s_resize_edges & ( GUI_RESIZE_R | GUI_RESIZE_B ) ) );
+        u8   allow    = (u8)( ( resize_x ? GUI_RESIZE_R : 0u ) | ( resize_y ? GUI_RESIZE_B : 0u ) );
+        bool dragging = false;
+        resize_hot = resize_item( id, box, allow, false, &dragging );
 
-            if ( s_resize_edges & GUI_RESIZE_R )
+        if ( dragging )
+        {
+            gui_rect_t rr = box;
+            resize_apply_edges( &rr, resize_hot );
+
+            if ( resize_hot & GUI_RESIZE_R )
             {
                 rg->user_w = child_con_clamp( rr.w, con_min_w, con_max_w );
                 if ( rg->user_w < CHILD_MIN_W ) rg->user_w = CHILD_MIN_W;
                 box.w = rg->user_w;
             }
-            if ( s_resize_edges & GUI_RESIZE_B )
+            if ( resize_hot & GUI_RESIZE_B )
             {
                 rg->user_h = child_con_clamp( rr.h, con_min_h, con_max_h );
                 if ( rg->user_h < CHILD_MIN_H ) rg->user_h = CHILD_MIN_H;
                 box.h = rg->user_h;
             }
         }
-
-        /* Hot edges under the cursor, narrowed to this child's resizeable axes -- and only the
-           grow-from-origin pair (right + bottom), since the child's top-left is pinned. */
-        u8 allow   = (u8)( ( resize_x ? GUI_RESIZE_R : 0u ) | ( resize_y ? GUI_RESIZE_B : 0u ) );
-        resize_hot = (u8)( window_resize_hit( box, false ) & allow );
-
-        /* Grab on press: the shared resize_grab claims the resize active_id and records the offset
-           that keeps the grabbed edge under the cursor (so the size does not jump by the band width
-           at grab time).  resize_hot is only ever R / B here, so its far-edge pins go unused. */
-        if ( resize_hot && s_interaction.active_id == GUI_ID_NONE && s_io.mouse_pressed[ 0 ] )
-            resize_grab( id, box, resize_hot );
-
-        /* Directional hardware cursor over a hot grip / during the drag (R/B only for a child). */
-        u8 ce = ( s_interaction.active_id == resize_id )
-              ? (u8)( s_resize_edges & ( GUI_RESIZE_R | GUI_RESIZE_B ) ) : resize_hot;
-        if ( ce )
-            set_mouse_cursor( resize_cursor_for_edges( ce ) );
     }
 
     /* The child box is chrome, not an item: paint its frame opaque even if a disabled widget
@@ -194,8 +179,9 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
 
     /* Child body fill, drawn under the parent clip before the region clips in.  The border is
        deferred to child_end (after the scrollbars) so the bar tracks cannot overdraw it -- the
-       same deferral window_end uses for the window frame. */
-    draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0,0,1,1, 0, COL_CHILD_BG );
+       same deferral window_end uses for the window frame.  Paint policy lives with the skin
+       (draw_child_bg / draw_child_border, 2_present/gui_widget_core.c). */
+    draw_child_bg( box );
 
     layout_push_region( id, box, REGION_PAD_DEFAULT, flags, &rg->scroll,
                         /* own_clip */ !( flags & GUI_WIN_NO_CLIP ) );
@@ -204,7 +190,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
        under a hot/armed edge for the child's duration (the edges stay armed mid-drag even if the
        cursor drifts off).  child_end restores the saved hot, so siblings below are unaffected. */
     layout_frame_t* f         = lf();
-    f->child_resize_edge      = ( s_interaction.active_id == resize_id ) ? s_resize_edges : resize_hot;
+    f->child_resize_edge      = resize_hot;   /* live edges: dragged mid-drag, else hot under cursor */
     f->child_resize_saved_hot = s_build.win_resize_hot;
     if ( f->child_resize_edge ) s_build.win_resize_hot = f->child_resize_edge;
 
@@ -228,7 +214,7 @@ gui_child_end( void )
 
     s_build.win_resize_hot = saved;   /* lift the body-widget suppression this child raised */
 
-    draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER );
+    draw_child_border( box );
 
     /* Resize affordance: bold the hot/armed edge so the border reads as draggable. */
     if ( edges )

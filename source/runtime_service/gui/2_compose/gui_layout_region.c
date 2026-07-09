@@ -7,32 +7,23 @@
 
         gui_region_t        persistent scroll + content-size state, keyed by id
         scroll_clamp        pin a scroll offset into [0, content - view]
-        region_scrollbar    one axis-generic scrollbar track + knob widget
         layout_push_region  open a region: reserve gutters, clamp scroll, seed a layout frame
-        layout_pop_region   close a region: measure content, draw bars, claim the wheel
+        layout_pop_region   close a region: measure content, emit the bars, claim the wheel
 
     The persistent state for child_begin boxes is kept in the shared keyed pool
     (gui_state_get); window bodies pass pointers to their own gui_window_t fields.
 
-    Included by gui.c after gui_layout_core.c (provides widget_next_rect, widget_behavior,
-    layout_frame_t, lf, layout_clear, layout_set_default, item_flags_chrome_reset) and before
-    gui_layout_child.c and gui_layout.c which call layout_push/pop_region.
+    The scrollbar itself is a stock widget (3_widgets/gui_scrollbar.c) -- this engine only
+    reserves its gutter and hands it the track rect + scroll slot at pop, through the forward
+    declaration in gui_internal.h.  Compose produces rects; the widget owns feel + look.
+
+    Included by gui.c after gui_layout_core.c (provides widget_next_rect, layout_frame_t, lf,
+    layout_clear, layout_set_default, item_flags_chrome_reset) and before gui_layout_child.c
+    and gui_layout.c which call layout_push/pop_region.
 
 ==============================================================================================*/
 
 // clang-format off
-/*==============================================================================================
-    Scrollbar ids -- distinct salts so a region's vertical and horizontal bars never share an
-    id, nor collide with a label-hashed widget in the same window.  Applied to a region id.
-==============================================================================================*/
-
-#define GUI_SCROLLBAR_SALT  0x5C011B01u
-#define GUI_HSCROLLBAR_SALT 0x5C011B02u
-
-/* Grab offset within the knob at the moment of press.  Single-slot: only one scrollbar can be
-   active (own active_id) at a time, so this covers every bar on every region. */
-static f32 s_sb_grab_off = 0.0f;
-
 /*----------------------------------------------------------------------------------------------
     Persistent region state
 
@@ -75,78 +66,6 @@ scroll_clamp( f32* scroll, f32 content, f32 view )
     f32 max = content - view;
     if ( max <= region_spill_tol() ) max = 0.0f;   /* sub-quantum spill: not scrollable */
     *scroll = clampf( *scroll, 0.0f, max );
-}
-
-/*----------------------------------------------------------------------------------------------
-    region_scrollbar -- one scrollbar track + knob along an axis; folds a knob drag into *scroll.
-
-    `vertical` picks the axis; `track` is the full track rect, `content`/`view` the measured and
-    visible extents along that axis, and `mouse_along` the live cursor coordinate on it.  The
-    knob length tracks the visible fraction (min-clamped so it stays grabbable) and the drag
-    maps the cursor back into scroll, mirroring slider_float.  Shared by every region's bars.
-----------------------------------------------------------------------------------------------*/
-
-static void
-region_scrollbar( gui_id_t id, gui_rect_t track, bool vertical,
-                  f32 content, f32 view, f32 mouse_along, f32* scroll )
-{
-    f32 max_scroll = content - view;
-    if ( max_scroll < 0.0f ) max_scroll = 0.0f;
-
-    f32 track_len = vertical ? track.h : track.w;
-    f32 track_org = vertical ? track.y : track.x;
-
-    /* Knob length is the visible fraction of the track, clamped to a grabbable minimum
-       and never longer than the track itself (content <= view => full-length knob).  The
-       min-then-cap order matters: a track shorter than the minimum collapses to track_len,
-       so it is not folded into one clampf (whose bounds would invert). */
-    f32 knob_len = ( content > 0.0f ) ? track_len * ( view / content ) : track_len;
-    f32 min_len  = SLIDER_KNOB_W;
-    if ( knob_len < min_len )   knob_len = min_len;
-    if ( knob_len > track_len ) knob_len = track_len;
-    f32 travel = track_len - knob_len;
-
-    /* Derive the current knob position before any interaction this frame -- used for
-       press-hit-detection and (after possible update) for drawing. */
-    f32 t_cur    = ( max_scroll > 0.0f ) ? *scroll / max_scroll : 0.0f;
-    f32 knob_off = track_org + t_cur * travel;
-
-    /* A scrollbar is mouse-only: keyboard scrolling is the nav cursor's scroll chase, so the bar
-       never lists as a keyboard target (neither Tab nor the chrome lane). */
-    s_build.nav_skip = true;
-    widget_state_t st = widget_behavior( id, track, WIDGET_KIND_DRAG );
-
-    /* On the press frame, decide whether the cursor landed on the knob (drag from the grabbed
-       point) or in the gutter (jump: center the knob under the cursor).  s_sb_grab_off is the
-       offset from the knob's leading edge to the cursor and stays fixed for the whole drag. */
-    if ( st.pressed )
-    {
-        if ( mouse_along >= knob_off && mouse_along <= knob_off + knob_len )
-            s_sb_grab_off = mouse_along - knob_off;   /* preserve the grab point within handle */
-        else
-            s_sb_grab_off = knob_len * 0.5f;          /* gutter click: center knob on cursor  */
-    }
-
-    /* Drag maps the cursor back into the scroll offset via the grab offset. */
-    if ( st.active && travel > 0.0f )
-    {
-        f32 t = saturate( ( mouse_along - track_org - s_sb_grab_off ) / travel );
-        *scroll = t * max_scroll;
-        t_cur    = t;
-        knob_off = track_org + t_cur * travel;
-    }
-
-    /* Track keeps the control-frame radius; the grab uses the grab radius (so a pill grab is one
-       style var away).  Saved/restored because the scrollbar draws in the chrome context. */
-    f32 save_round = draw_rounding();
-    draw_set_rounding( ROUND_WIDGET );
-    draw_push_rect_filled( track.x, track.y, track.w, track.h, 0,0,1,1, 0, COL_SLIDER_TRACK );
-    draw_set_rounding( ROUND_GRAB );
-    if ( vertical )
-        draw_push_rect_filled( track.x, knob_off, track.w, knob_len, 0,0,1,1, 0, widget_bg_color( st ) );
-    else
-        draw_push_rect_filled( knob_off, track.y, knob_len, track.h, 0,0,1,1, 0, widget_bg_color( st ) );
-    draw_set_rounding( save_round );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -312,20 +231,19 @@ layout_pop_region( void )
         draw_pop_clip_rect();
     s_build.clip_rect = f->parent_clip;
 
-    /* Bars: inset by the border, in the reserved gutters, clear of the corner. */
+    /* Bars: inset by the border, in the reserved gutters, clear of the corner.  Compose ends at
+       the track rect -- the widget (3_widgets/gui_scrollbar.c) owns the grab and the paint. */
     if ( f->show_v )
     {
         gui_rect_t track = { f->outer.x + f->outer.w - WIN_BORDER - f->sb_w,
                                f->outer.y, f->sb_w, f->view_h };
-        region_scrollbar( id_combine( f->region_id, GUI_SCROLLBAR_SALT ), track, true,
-                          content_h, f->view_h, s_io.mouse_y, &f->scroll->scroll_y );
+        scrollbar_widget( f->region_id, track, true, content_h, f->view_h, &f->scroll->scroll_y );
     }
     if ( f->show_h )
     {
         gui_rect_t track = { f->outer.x + WIN_BORDER,
                                f->outer.y + f->outer.h - WIN_BORDER - f->sb_h, f->view_w, f->sb_h };
-        region_scrollbar( id_combine( f->region_id, GUI_HSCROLLBAR_SALT ), track, false,
-                          content_w, f->view_w, s_io.mouse_x, &f->scroll->scroll_x );
+        scrollbar_widget( f->region_id, track, false, content_w, f->view_w, &f->scroll->scroll_x );
     }
 
     /* Wheel: the hovered region consumes it (vertical by default, horizontal with Shift).

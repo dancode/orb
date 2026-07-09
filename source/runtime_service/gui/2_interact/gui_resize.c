@@ -118,5 +118,42 @@ resize_apply_edges( gui_rect_t* r, u8 edges )
     if ( edges & GUI_RESIZE_T ) { r->y = s_io.mouse_y - s_resize_off_y; r->h = s_resize_fix_y - r->y; }
 }
 
+/* One frame of the edge-resize item protocol over (id, box): the behavior seam a resizeable
+   rect owner calls once per frame, before its body widgets.  While this id's drag is in flight
+   it reports the dragged edges (the caller maps them through resize_apply_edges and layers its
+   own clamp / persist policy); otherwise it hit-tests the grab band, arms the grab on press,
+   and shows the directional cursor.  `allow` masks the edges this caller exposes; `pin_v`
+   drops the vertical pair (a collapsed window).  Returns the edges live this frame -- dragged
+   when *dragging, else hot -- and 0 while another widget owns the interaction or the owning
+   window is not hovered. */
+static u8
+resize_item( gui_id_t id, gui_rect_t box, u8 allow, bool pin_v, bool* dragging )
+{
+    gui_id_t resize_id = id_combine( id, GUI_RESIZE_SALT );
+
+    *dragging = false;
+    if ( s_build.win_id != s_interaction.hover_win )
+        return 0;
+    if ( s_interaction.active_id != GUI_ID_NONE && s_interaction.active_id != resize_id )
+        return 0;
+
+    if ( s_interaction.active_id == resize_id )
+    {
+        u8 ce = (u8)( s_resize_edges & allow );
+        if ( ce ) set_mouse_cursor( resize_cursor_for_edges( ce ) );
+        *dragging = true;
+        return ce;
+    }
+
+    u8 hot = (u8)( window_resize_hit( box, pin_v ) & allow );
+    if ( hot )
+    {
+        if ( s_io.mouse_pressed[ 0 ] )
+            resize_grab( id, box, hot );
+        set_mouse_cursor( resize_cursor_for_edges( hot ) );
+    }
+    return hot;
+}
+
 // clang-format on
 /*============================================================================================*/

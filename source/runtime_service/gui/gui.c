@@ -77,14 +77,14 @@
     0_foundation/gui_state.c       -- keyed state tracking service: gui_state_get/peek, GUI_STATE
 
     2_compose/gui_layout_core.c    -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
-    2_compose/gui_layout_region.c  -- scrollable region engine: gui_region_t, region_scrollbar, push/pop_region
+    2_compose/gui_layout_region.c  -- scrollable region engine: gui_region_t, gutters, push/pop_region
     2_compose/gui_layout_child.c   -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
     2_compose/gui_region.c         -- root-level region: a fixed-rect layout primitive, no window chrome
     2_compose/gui_layout.c         -- public layout API verbs + sz_ sizing: gui_layout, gui_stack, gui_cols
 
     2_interact/gui_item.c          -- the standard item protocol: widget_behavior, nav registration, repeat
     2_interact/gui_drag.c          -- drag service: threshold machine + typed payload transfer (source/target)
-    2_interact/gui_resize.c        -- edge-resize mechanism: hit-test, grab, edge apply
+    2_interact/gui_resize.c        -- edge-resize mechanism: resize_item protocol, hit-test, grab, edge apply
     2_interact/gui_anim.c          -- animation stepping service: gui_anim_f32
 
     2_present/gui_widget_core.c    -- shared presentation primitives: COL_* palette, layout macros, label
@@ -92,6 +92,7 @@
     2_present/gui_symbol.c         -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
 
     3_widgets/gui_text_edit.c      -- single-line text editing engine: input_field_edit (behind input_text)
+    3_widgets/gui_scrollbar.c      -- scrollbar widget: track + knob over a region-handed rect + scroll slot
     3_widgets/gui_widget.c         -- core leaf widgets: text, button, checkbox, input_text, selectable
     3_widgets/gui_volatile.c       -- volatile widgets: per-frame retessellated text/plots (tess_gen slots)
     3_widgets/gui_widget_slider.c  -- slider + drag widgets: slider_float/int, drag_int, slider_render
@@ -224,6 +225,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 // calls to the 5_user/ vocabulary (gui_canvas tooltips, combo's push_id) resolve through the public
 // declarations in gui_host.h -- deliberate dogfooding of the caller surface, not an order cycle.
 #include "runtime_service/gui/3_widgets/gui_text_edit.c"
+#include "runtime_service/gui/3_widgets/gui_scrollbar.c"
 #include "runtime_service/gui/3_widgets/gui_widget.c"
 #include "runtime_service/gui/3_widgets/gui_volatile.c"
 #include "runtime_service/gui/3_widgets/gui_widget_slider.c"

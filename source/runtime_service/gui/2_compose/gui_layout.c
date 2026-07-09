@@ -6,8 +6,9 @@
     gui_cols, gui_grid, gui_pack, gui_bar, gui_strip, gui_field_split,
     gui_form, gui_indent/unindent, gui_content_avail, etc.).
 
-    The scrollable region engine (layout_push/pop_region, region_scrollbar, gui_region_t,
-    scroll_clamp) is in gui_layout_region.c, included just before this file.
+    The scrollable region engine (layout_push/pop_region, gui_region_t, scroll_clamp) is in
+    gui_layout_region.c, included just before this file; the scrollbar it emits is a stock
+    widget (3_widgets/gui_scrollbar.c).
 
     Child box and sub-layout lifecycle (gui_child_begin/child_end, gui_push/pop_layout,
     gui_window_set_next_size_constraints) is in gui_layout_child.c, also included before

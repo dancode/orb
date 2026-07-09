@@ -23,7 +23,8 @@
 ----------------------------------------------------------------------------------------------*/
 
 /* Scrollbar salts (GUI_SCROLLBAR_SALT / GUI_HSCROLLBAR_SALT) and the scrollbar widget
-   itself now live in gui_layout.c -- the window body is just a region that uses them. */
+   itself live in 3_widgets/gui_scrollbar.c -- the window body is just a region whose engine
+   emits them into its gutters. */
 
 /* Collapse arrow: a distinct stable per-window widget id. */
 #define GUI_COLLAPSE_SALT   0xC011A95Eu

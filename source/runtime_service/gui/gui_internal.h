@@ -873,6 +873,13 @@ void gui_popup_close_current( void );
    files.  Forward-declared so size_animate can reach it across the unity TU. */
 static f32 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 
+/* The region engine (2_compose/gui_layout_region.c) emits the scrollbar widget into the gutter
+   it reserved at layout_pop_region -- but the widget lives above it (3_widgets/gui_scrollbar.c),
+   included AFTER the layout files.  Forward-declared so the pop can reach it across the unity
+   TU: compose hands the track rect + scroll slot; the widget owns the feel and the look. */
+static void scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
+                              f32 content, f32 view, f32* scroll );
+
 /* Edge bits shared by the edge-resize service (2_interact/gui_resize.c: hit test, grab, apply),
    its highlight painter (2_present/gui_widget_core.c: draw_resize_highlight), and the tier-4
    consumers.  Combined on a corner grab (e.g. R|B). */
