@@ -8,10 +8,12 @@ Dense reference for working on the gui service (this directory) and its sandbox
 Static lib `gui`, two translation units:
 
 - `gui.c` (UI/core unit): context, id/state pool, input snapshot, layout engine, widgets,
-  window/dock/popup/nav/table, frame lifecycle, mod vtable. Unity-includes its constituents in
-  DEPENDENCY TIERS (core/ + interact/ + compose/ -> widgets/ -> window/ -> dock/ +
-  popup/; table/ needs the Tier 0 dirs only; user/ sits on top of everything). Include order
-  matters; later files may reference statics from earlier ones.
+  4_window/4_dock/4_popup/nav/table, frame lifecycle, mod vtable. Unity-includes its constituents in
+  NUMBERED DEPENDENCY TIERS -- the directory listing is the stack, bottom-up (0_foundation/ +
+  the three sibling 2_* roles -> 3_widgets/ -> 4_window/ -> 4_dock/ + 4_popup/; 4_table/ needs
+  tiers 0-2 only; 5_user/ sits on top of everything; 1_surface/ is reserved for the window
+  record/chrome carve; root files are the frame conductor, top alongside 5_user/). Include
+  order matters; later files may reference statics from earlier ones.
 - `gui_backend.c` (render unit): fonts, draw list, tessellation, GPU flush, debug overlay.
   UI unit calls it one-way through `gui_backend.h` (`draw_*`, `font_*`, `gui_render_*`).
 
@@ -19,24 +21,26 @@ Static lib `gui`, two translation units:
 
 The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one contract:
 
-- **Composer** (`compose/`): the ONLY code that turns style spacing metrics
+- **Composer** (`2_compose/`): the ONLY code that turns style spacing metrics
   (`line_size`/`gap`/`pad`/`grid_quantum`/`scales`) into geometry. Consumes spacing, produces
   rects. Public face: the layout verbs + the `sz_` sizing family.
-- **Behavior** (`interact/`, public door `user/gui_behavior.c`): a bucket of widget-agnostic
-  interaction SERVICES -- identity (`gui_id.c`), keyed state tracking (`gui_state.c`), the io
-  snapshot (`gui_io.c`; the public readers over it are `user/gui_query.c`), the drag threshold
-  machine + payload transfer (`gui_drag.c`), the edge-resize mechanism (`gui_resize.c`), animation stepping (`gui_anim.c`),
-  and the standard item protocol (`gui_item.c`: `widget_behavior`, the default composition every
-  stock widget runs). Each service knows a capability (exclusivity, clicks, tracking) over
+- **Behavior** (`2_interact/`, public door `5_user/gui_behavior.c`): widget-agnostic
+  interaction SERVICES over the 0_foundation/ utilities (identity `0_foundation/gui_id.c`,
+  keyed state tracking `0_foundation/gui_state.c`, the io snapshot `0_foundation/gui_io.c`;
+  the public readers over it are `5_user/gui_query.c`) -- the drag threshold machine + payload
+  transfer (`gui_drag.c`), the edge-resize mechanism (`gui_resize.c`), animation stepping
+  (`gui_anim.c`), and the standard item protocol (`gui_item.c`: `widget_behavior`, the default
+  composition every stock widget runs). Each service knows a capability (exclusivity, clicks, tracking) over
   (id, rect); none knows a slider. Consumes finished rects, produces interaction state
   (`hover`/`active`/`pressed`/`clicked`). Style is invisible below this line -- a service never
   reads a metric or color to make a decision. (One sanctioned exception, documented in place:
   the keyboard-nav focus ring draw in `gui_item.c`.)
-- **Presentation** (`widgets/` + the window/dock/popup chrome): consumes rect + state + skin
-  and paints. The stock widget set is the HIGHEST layer -- a client of the tiers below, written
-  on the same substrate a user widget uses, not a privileged one.
+- **Presentation** (`2_present/`: palette, widget macros, label grammar, text-fit, symbol
+  draws): consumes rect + state + skin and paints; state is a parameter, it never asks
+  behavior. `3_widgets/` and the 4_window/4_dock/4_popup chrome are its CLIENTS -- the stock
+  widget set is written on the same substrate a user widget uses, not a privileged layer.
 
-`user/` is the top tier and the public door onto the first two roles -- the caller's vocabulary,
+`5_user/` is the top tier and the public door onto the first two roles -- the caller's vocabulary,
 pure verbs + readers with zero state or machinery: `canvas`/`split`/`carve`/`empty` for
 rects, `item`/`invisible_button` for behavior, `draw_*`/`text_size` for your own presentation,
 the bracketing stacks (`push_id`, item flags, `push_style_*`, `scale_push`, `disabled_begin`),
@@ -76,7 +80,7 @@ gui()->init_config_front( caps );                 // optional feature gates, BEF
 gui()->init( font );                              // or GUI_FONT_NONE
 gui()->set_frame_hooks( clock, sleep, wait );     // OS services gui cannot reach itself
 gui()->debug_enable( true );                      // optional hotkey driver
-gui_vp_t vp0 = gui()->viewport_open( win_id );    // attach gui to the EXISTING window/ctx
+gui_vp_t vp0 = gui()->viewport_open( win_id );    // attach gui to the EXISTING 4_window/ctx
 
 // per frame
 while ( app pump )                                // host pumps OS events itself
@@ -128,7 +132,7 @@ while ( gui()->frame_poll( &dt ) )      // pumps OS, routes rhi + gui events; fa
 gui()->shutdown();                      // also tears down the boot window + context
 ```
 
-Mapping: `boot` = window/ctx creation + init + hooks + `viewport_open`; `frame_poll` = event
+Mapping: `boot` = 4_window/ctx creation + init + hooks + `viewport_open`; `frame_poll` = event
 pump + routing; `present_begin/present_end` = `rhi frame_begin` + clear + `gui()->render` +
 present + `viewport_render_floaters`.
 
@@ -141,7 +145,7 @@ Invariants:
 - `volatile_cb` blocks keep animating on skipped frames but MUST keep a fixed layout
   footprint (constant size; pad printf fields).
 
-## Layout engine (compose/gui_layout_core.c = mechanism, compose/gui_layout.c = public verbs)
+## Layout engine (2_compose/gui_layout_core.c = mechanism, 2_compose/gui_layout.c = public verbs)
 
 Model: every window body / region / child owns a `layout_frame_t` with a content box, a PEN
 (`content_y`, flows downward) and a HIGHWATER (`content_max_x/y`, monotonic bounding box used
@@ -229,7 +233,7 @@ overloaded unit. Pair results with `push_layout_overlay` or `draw_*`.
 Absolute-rect placement does NOT move the layout pen: after drawing a HUD/carved band, reserve
 it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
 
-## Interaction / ids / the user tier (user/)
+## Interaction / ids / the user tier (5_user/)
 
 - IDs: label-hashed; `"##hidden"` suffix hides label; `push_id_int/pop_id` for loops.
 - Item queries after any emit: `is_item_hovered/active/clicked`; `want_capture_mouse` for

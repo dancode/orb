@@ -58,7 +58,7 @@ typedef struct gui_api_s
     /* boot() -- TEST-BED tier: the one-call alternative to the block above for sandboxes, demos,
        and quick tools whose main window IS a gui surface -- gui owns the window + render context
        end to end, exactly like its tear-off floaters.  Non-idiomatic for engine hosts: those run
-       through the runtime host (run_host_main), which keeps ownership of the window/loop and
+       through the runtime host (run_host_main), which keeps ownership of the 4_window/loop and
        wires gui as an optional service.  Stands up the whole stack from a single descriptor
        (gui_boot_desc_t, gui.h): rhi()->init() (idempotent -- safe if the host already ran it),
        app window (borderless by default, with the chrome shell then auto-emitted each frame;

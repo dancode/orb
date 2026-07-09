@@ -193,15 +193,15 @@ void                gui_build_dump_geometry( void );
     The feature's actual logic is entirely in two files, one per unit -- read those for the full
     picture; this header is only the boundary between them:
 
-        widgets/gui_volatile.c            -- UI unit: gui()->volatile_cb/_begin/_end (gui_api.h),
+        3_widgets/gui_volatile.c            -- UI unit: gui()->volatile_cb/_begin/_end (gui_api.h),
                                              the replay scope (layout + id), gui_replay_scope_enter/_exit.
         backend/pipeline/gui_build_volatile.c -- BUILD unit: the registry, capture at real emit, and
                                              gui_update_volatile (run internally by frame_end).
 
     Forward direction (core -> backend, the normal call direction for this header): gui_volatile_cb
-    (widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
+    (3_widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
     gui_volatile_cb_open records where its commands start, gui_volatile_stamp (called from inside
-    the callback body, by gui_volatile_begin) records the window/z/vp/font/clip context and the
+    the callback body, by gui_volatile_begin) records the 4_window/z/vp/font/clip context and the
     layout cursor position, and gui_volatile_cb_close records where they end and tags the range.
     tess_dispatch (gui_build_tess.c) then reserves the block a padded region of its window's slot
     (vertices, indices, and its own GPU commands, each with headroom past the live geometry).
@@ -222,7 +222,7 @@ void     gui_volatile_stamp   ( f32 x, f32 y, f32 w );          // fill win/z/vp
 void     gui_volatile_cb_close( gui_volatile_fn fn );           // cmd_hi + fn for the open row; tags the command range
 void     gui_update_volatile  ( void );
 
-/* Implemented in the UI unit (widgets/gui_volatile.c); called only from gui_update_volatile. */
+/* Implemented in the UI unit (3_widgets/gui_volatile.c); called only from gui_update_volatile. */
 void     gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w );
 void     gui_replay_scope_exit ( bool force_redraw );
 
@@ -284,7 +284,7 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
     void dbg_capture_layout( gui_rect_t r );
 
     /* Name registry -- records the source string behind an id as it is minted (widget label,
-       window/popup title, region/child/table id string), so gui_state_overlay() can show a
+       4_window/popup title, region/child/table id string), so gui_state_overlay() can show a
        readable name instead of a hash.  See gui_debug_name() in gui_host.h for the reader. */
     void dbg_name_register( gui_id_t id, const char* str );
 

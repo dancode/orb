@@ -4,7 +4,7 @@
 
     An inline-emit callback replayed in place on frames the UI build is skipped entirely
     (gui_frame_dirty() false) -- see gui.h (gui_volatile_fn) for the full contract and
-    widgets/gui_volatile.c for the UI-unit half of this seam.
+    3_widgets/gui_volatile.c for the UI-unit half of this seam.
 
     Design: every volatile block owns a RESERVED, PADDED sub-region of its window's geometry
     slot -- a vertex span, an index span, and a run of GPU commands, each allocated with headroom
@@ -26,10 +26,10 @@
     re-emitting (content branch hid it) fails the generation check and the patch is skipped --
     a stale address physically cannot be produced.
 
-    Real emit: gui_volatile_cb (widgets/gui_volatile.c) brackets one inline invocation of the
+    Real emit: gui_volatile_cb (3_widgets/gui_volatile.c) brackets one inline invocation of the
     caller's callback with gui_volatile_cb_open/_close (this file), which record the command range
     it produced and tag it with the row id; gui_volatile_stamp (called from inside the callback by
-    gui_volatile_begin) records the window/z/vp/font/clip context, the ambient
+    gui_volatile_begin) records the 4_window/z/vp/font/clip context, the ambient
     alpha/rounding/text-clip scalars a raw draw_ call reads directly, and the layout cursor
     position.  When the window tessellates, tess_dispatch (gui_build_tess.c) calls
     volatile_range_close (this file), which reserves the padded region, pads the slot's GPU
@@ -146,7 +146,7 @@ volatile_find_or_add( gui_id_t id )
     return row;
 }
 
-/* Called by gui_volatile_cb (widgets/gui_volatile.c) right before it invokes the callback inline
+/* Called by gui_volatile_cb (3_widgets/gui_volatile.c) right before it invokes the callback inline
    during real emit -- opens the command-range bracket for `id`.  A full registry degrades
    gracefully: the bracket never opens, the commands stay untagged, and the widget behaves as a
    plain (hash-participating) widget that animates through ordinary dirty frames. */
@@ -162,8 +162,8 @@ gui_volatile_cb_open( gui_id_t id )
     s_open_cmd_lo = s_draw.cmd_count;
 }
 
-/* Called by gui_volatile_begin (widgets/gui_volatile.c), from inside the callback body during
-   real emit -- stamps the emit context (window/z/vp/font/clip) and the layout cursor position
+/* Called by gui_volatile_begin (3_widgets/gui_volatile.c), from inside the callback body during
+   real emit -- stamps the emit context (4_window/z/vp/font/clip) and the layout cursor position
    (x, y, w) the callback started at, so replay can reconstruct a matching scope later. */
 void
 gui_volatile_stamp( f32 x, f32 y, f32 w )

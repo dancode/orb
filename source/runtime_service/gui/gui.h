@@ -6,7 +6,7 @@
 
     In-house immediate-mode GUI for ORB.  No Dear ImGui, no GLFW/SDL: windowing/input come from
     the engine `app` layer (Win32), rendering goes through `rhi` (Vulkan).  The host drives a
-    frame_begin -> ctx_begin/widgets/ctx_end -> frame_end -> render() lifecycle each frame.
+    frame_begin -> ctx_begin/3_widgets/ctx_end -> frame_end -> render() lifecycle each frame.
 
     Read ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is the
     orientation map: the three state tiers (ambient-singular / per-context retained via g_ctx /
@@ -425,7 +425,7 @@ gui_anchor_box( gui_rect_t area, f32 w, f32 h, gui_align_t align, gui_pad_t m )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Custom-item interaction state (user/gui_behavior.c)
+    Custom-item interaction state (5_user/gui_behavior.c)
 
     The result of gui()->item( id, rect ): the shared widget interaction state machine run over
     a rect the CALLER derived, reported as plain flags.  This is the behavior half of the
@@ -720,7 +720,7 @@ typedef enum
        OVERLAY      -- a passive, non-interactive window-based HUD: undecorated, fixed in place,
                        hugging its content every frame, and non-detachable.  Pin it with
                        window_set_next_pos.  For a HUD with no window identity at all (no pool
-                       record, no dock/native/z-order path), use region_begin instead. */
+                       record, no 4_dock/native/z-order path), use region_begin instead. */
 
     GUI_WIN_NODECORATION = GUI_WIN_NOTITLEBAR | GUI_WIN_NORESIZE |
                            GUI_WIN_NOSCROLL   | GUI_WIN_NOCOLLAPSE,
@@ -967,15 +967,15 @@ typedef struct gui_scale_metrics_t
    resolve them, gui_style_apply em-scales them -- but each category applies to a DIFFERENT
    part of the pipeline, and no consumer reads across:
 
-     1. LAYOUT CONTROLLER -- drives the composer (compose/): how space is divided into rects.
+     1. LAYOUT CONTROLLER -- drives the composer (2_compose/): how space is divided into rects.
         These never color a pixel; their output is geometry.
      2. STYLE -- the toolkit skin: how presentation looks.  colors[] plus the border /
-        rounding / shape-choice knobs.  Consumed by widgets/ + chrome; never sizes a cell.
+        rounding / shape-choice knobs.  Consumed by 3_widgets/ + chrome; never sizes a cell.
      3. WIDGET DRAWING STYLE -- per-widget inner geometry.  Metric-shaped, which makes them
         LOOK like layout, but they never move the next cell -- they only shape what one stock
         widget draws inside its own rect.
 
-   Behavior (core/) consumes none of the three: it takes finished rects.
+   Behavior (2_interact/) consumes none of the three: it takes finished rects.
    widget_pad is the one double-agent: the composer uses it as the region inset (category 1),
    and stock widgets reuse it as the label inset inside their rect (category 3) -- deliberate. */
 
@@ -983,7 +983,7 @@ typedef struct gui_style_t
 {
     u32 colors[ GUI_COL_COUNT ]; // STYLE: theme default palette (GUI_COLOR packs R,G,B,A bytes)
 
-    /* 1. LAYOUT CONTROLLER -- composer input: divides space, produces rects (compose/ only) */
+    /* 1. LAYOUT CONTROLLER -- composer input: divides space, produces rects (2_compose/ only) */
     u8 line_size;          // widget row height
     u8 widget_gap;         // vertical gap between consecutive widgets
     u8 widget_pad;         // horizontal content area padding (also: stock label inset, see above)
@@ -1285,7 +1285,7 @@ typedef struct
     RESERVED, PADDED region of the window's cached tessellation (vertex/index/draw-command
     headroom past what it actually produced).  On an idle frame (frame_dirty()==false), the same
     callback is invoked again standalone with is_replay=true; the framework reconstructs just
-    enough context (window/clip/cursor position + the ambient draw state stamped at real emit),
+    enough context (4_window/clip/cursor position + the ambient draw state stamped at real emit),
     re-tessellates the output, and patches it into the reserved region.  The output does NOT have
     to match the original -- text may grow or shrink, shapes may change -- it only has to FIT the
     reservation; outgrowing it costs one automatic real frame, after which the block re-captures

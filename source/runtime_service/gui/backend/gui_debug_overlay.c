@@ -102,7 +102,7 @@ static struct
     Debug Name Registry -- id -> source string, so the state overlay can show a readable label
     instead of a hash.  Populated every frame at the DBG_NAME( id, str ) call sites (widget_id,
     window_begin_ex, region/child/table id mint points); read back by gui_debug_name(), which the
-    UI unit calls from gui_state_overlay().  Open-addressed like gui_state_get (interact/gui_state.c):
+    UI unit calls from gui_state_overlay().  Open-addressed like gui_state_get (0_foundation/gui_state.c):
     linear probe, home-bucket overwrite when full -- a rare degradation, not an overflow, and fine
     for a debug tool.  No staleness tracking; a name simply goes stale (but harmless) once its id
     stops being emitted.

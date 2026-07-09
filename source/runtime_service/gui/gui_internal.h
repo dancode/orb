@@ -63,10 +63,10 @@
 #define GUI_MAX_VIEWPORTS 4                 // GPU buffer region count; matches APP_WIN_MAX / RHI_CTX_MAX
 
 /*==============================================================================================
-    Input snapshot (interact/gui_io.c)
+    Input snapshot (0_foundation/gui_io.c)
 
     The frame's distilled IO state -- not exposed in the public header.  GUI_KEY_COUNT must cover
-    the full app_key_t range; interact/gui_io.c carries the static assert that verifies this.
+    the full app_key_t range; 0_foundation/gui_io.c carries the static assert that verifies this.
 ==============================================================================================*/
 
 typedef struct
@@ -124,7 +124,7 @@ typedef struct
 } widget_state_t;
 
 /*==============================================================================================
-    Scroll link (compose/gui_layout_region.c)
+    Scroll link (2_compose/gui_layout_region.c)
 
     Persistent scroll offset + last-measured content extent for one scrollable region.
     layout_push_region biases the pen by -scroll and writes content_w/content_h back at pop; the
@@ -224,7 +224,7 @@ typedef struct
 typedef struct
 {
     gui_id_t    id;            // the highlighted item (keyboard cursor); persists across frames
-    gui_id_t    win;           // window/popup nav is scoped to (the hover_win analogue)
+    gui_id_t    win;           // 4_window/popup nav is scoped to (the hover_win analogue)
 
     /* Explicit nav target window (gui_window_set_nav / Ctrl+Tab).  0 means "follow the
        front-most normal window", so nav has a sensible default with no caller setup. */
@@ -587,7 +587,7 @@ typedef struct
     /* true when gui created this surface's OS window + rhi context (tear-off floater) and must
        therefore destroy them.  false for the host-provided main surface (index 0) and any surface
        the host opened via viewport_open -- gui frees only the GPU buffers for those, never the
-       window/context it does not own. */
+       4_window/context it does not own. */
     bool owned;
 
     /* Set when the user closes an owned floater's OS window (APP_EV_WIN_CLOSE): the surface is torn
@@ -619,7 +619,7 @@ typedef struct
 
     /* Per-surface dock tree root.  GUI_DOCK_REF_NONE = free-float placement (overlapping windows,
        including the main viewport); otherwise a ref into the context dock-node pool that tiles/tabs
-       the windows on this surface.  Driven by dock/ (dock.c builds it, dock_drag.c re-tiles on drag,
+       the windows on this surface.  Driven by 4_dock/ (dock.c builds it, dock_drag.c re-tiles on drag,
        dock_serialize.c saves/loads it). */
     gui_dock_ref_t dock_root;
 
@@ -834,12 +834,12 @@ typedef struct
     hand-placed forward declarations that used to sit in gui.c.
 ==============================================================================================*/
 
-/* The mouse-input path (interact/gui_io.c) resolves an event's app win_id to the viewport hosting it,
+/* The mouse-input path (0_foundation/gui_io.c) resolves an event's app win_id to the viewport hosting it,
    but the viewport pool lives on g_ctx (gui_ctx.c) included later.  Defined after g_ctx. */
 static u32 viewport_index_for_window( i32 win_id );
 
 /* OS resize / close events for an gui-OWNED floater are serviced against the viewport pool, so
-   gui_event (interact/gui_io.c) delegates them here.  Defined in gui_frame.c after g_ctx; returns
+   gui_event (0_foundation/gui_io.c) delegates them here.  Defined in gui_frame.c after g_ctx; returns
    true when win_id is an owned viewport (event consumed). */
 static bool gui_owned_window_event( const app_event_t* ev );
 
@@ -869,7 +869,7 @@ static void dock_float_service_request( gui_id_t id, const char* title, gui_wind
 void gui_popup_close_current( void );
 
 /* The size-animate seam (gui_layout_core.c) eases a remembered extent toward its target through the
-   animation pool, whose primitive (gui_anim_f32) lives in interact/gui_anim.c -- included AFTER the layout
+   animation pool, whose primitive (gui_anim_f32) lives in 2_interact/gui_anim.c -- included AFTER the layout
    files.  Forward-declared so size_animate can reach it across the unity TU. */
 static f32 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 

@@ -27,7 +27,7 @@ static gui_backend_caps_t s_init_caps = { .icons = true, .retained_cache = true,
                                            .render_debug = true, .stats_trace = false };
 
 /* Boot-path seams -- defined in gui_boot.c (same TU, included after this file): teardown of the
-   boot-owned window/context from gui_shutdown, and the auto chrome-shell emit at the default
+   boot-owned 4_window/context from gui_shutdown, and the auto chrome-shell emit at the default
    context's ctx_begin.  Both no-op when the host did not boot(). */
 static void boot_shutdown( void );
 static void boot_shell_emit( void );
@@ -437,7 +437,7 @@ gui_ctx_end( void )
     ctx_bind( s_ctx_save_stack[ i ] );   /* NULL (no prior context) rebinds the default */
 }
 
-/* Seal the build: every window/context emitted this frame is now final.  The symmetric partner to
+/* Seal the build: every 4_window/context emitted this frame is now final.  The symmetric partner to
    frame_begin -- it latches the emit cost (frame_begin -> frame_end) for the perf overlay and, in
    Debug builds, asserts every ctx_begin was matched by a ctx_end.  Call once after the UI build and
    before any render(); render consumes the sealed draw list.  On a clean frame (frame_begin

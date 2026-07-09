@@ -17,7 +17,7 @@
 
     Scope contract: this tier composes PUBLIC app/rhi/gui primitives only, and owns nothing
     beyond the main surface's lifecycle (window + swapchain + viewport 0 + the frame pair).
-    Anything that is not window/surface/UI -- job ticks, hot-reload, simulation clocks,
+    Anything that is not 4_window/surface/UI -- job ticks, hot-reload, simulation clocks,
     networking -- belongs to the runtime host (source/runtime), never here.
 
     Included LAST in the gui.c unity (after gui_frame.c): it calls straight into the frame
