@@ -6,12 +6,12 @@
     layout_frame_t, gui_context_t) and drives the per-frame lifecycle via ctx_new_frame.
 
     ID hashing and the keyed state pool (id_hash, id_combine, id_seed/push/pop, gui_state_get,
-    GUI_STATE) are in gui_ctx_id.c, included just after this file.
+    GUI_STATE) are in interact/gui_id.c + interact/gui_state.c, included just after this file.
 
     Public IO accessors (gui_want_capture_*, gui_is_key_*, gui_is_mouse_*, etc.) are in
-    gui_ctx_io.c, also included after this file.
+    user/gui_query.c, included in the user/ tier below.
 
-    Included by gui.c after gui_input.c so s_io is in scope.
+    Included by gui.c after interact/gui_io.c so s_io is in scope.
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   /* nav_state_t, layout_frame_t, gui_popup_t,
@@ -80,7 +80,7 @@ static struct
 
 /* True only while a volatile-widget callback is replayed standalone on an idle frame; set/cleared
    by gui_replay_scope_enter/_exit (widgets/gui_volatile.c).  Ambient frame-phase state, same tier as
-   hover_id/active_id: widget_behavior (gui_widget_core.c) reads it inline to short-circuit before any
+   hover_id/active_id: widget_behavior (interact/gui_item.c) reads it inline to short-circuit before any
    hit-test or write to s_interaction/s_build -- a replay renders against the hover/active/focus the
    last real frame established and can never acquire state or see a fresh click, since interaction is
    resolved only on real frames. */
@@ -98,7 +98,7 @@ static struct
 
     /* Last-item introspection (the Dear ImGui IsItem* model).  widget_behavior latches the rect and
        the resolved interaction state of each emitted item here, so the item-query readers
-       (gui_ctx_io.c) report on "the widget just emitted" with no per-widget bookkeeping -- the same
+       (user/gui_query.c) report on "the widget just emitted" with no per-widget bookkeeping -- the same
        anchor last_item_id already provides for context menus / tooltips, widened to the full result. */
     gui_rect_t   last_item_rect;     // screen rect of the most recent widget
     widget_state_t last_item_status; // its resolved hover / active / clicked / focused / nav flags
@@ -190,7 +190,7 @@ u32 gui_dbg_build_viewport( void ) { return s_build.cur_viewport; }
     scoped window records itself into the nav item list as it emits (with the region + line the
     layout engine stamped when it placed it), and the next nav_new_frame resolves a move as index
     math over that list -- one frame deferred, exactly as hover_win lags the cursor.  gui_nav.c
-    drives it; nav_item_register (gui_widget_core.c) is the per-item seam.
+    drives it; nav_item_register (interact/gui_item.c) is the per-item seam.
 ----------------------------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------------------------
@@ -340,7 +340,7 @@ static u32           s_popup_begin_count;   // current popup nesting depth (rebu
     The store a widget uses to keep a few bytes alive across frames, keyed by its id (a region's
     scroll offset, a tree node's open flag, a combo's popup state).  It is a member of the bound
     context's retained store (gui_retained_t); gui_state_get and the open-addressing / tombstone
-    contract live with the id system that keys it, in gui_ctx_id.c.
+    contract live in interact/gui_state.c, next to the id system that keys it (interact/gui_id.c).
 ----------------------------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------------------------
@@ -464,7 +464,7 @@ ctx_bind( gui_context_t* ctx )
    secondary contexts share the same OS windows and render surfaces rather than owning separate ones.
    Searches the primary context's viewport array for a live slot (one with GPU buffers) whose
    recorded win_id matches; falls back to 0 (main swapchain) if none found.
-   Forward-declared in gui_internal.h; called by the mouse-input path in gui_input.c. */
+   Forward-declared in gui_internal.h; called by the mouse-input path in interact/gui_io.c. */
 static u32
 viewport_index_for_window( i32 win_id )
 {
@@ -496,7 +496,7 @@ static gui_id_t s_id_stack[ GUI_ID_STACK_DEPTH ];
 static u32        s_id_sp;
 
 /* id_seed / id_push / id_pop / id_hash / id_combine and the keyed-state pool (gui_state_get,
-   GUI_STATE) are in gui_ctx_id.c, included just after this file; they operate on s_id_stack / s_id_sp
+   GUI_STATE) are in interact/gui_id.c + interact/gui_state.c, included just after this file. they operate on s_id_stack / s_id_sp
    and s_retained (via g_ctx) defined here. */
 
 /*----------------------------------------------------------------------------------------------
@@ -581,7 +581,7 @@ static void
 interaction_frame_reset( void )
 {
     /* Snapshot the active item before this frame mutates it -- the previous-frame baseline the
-       is_item_activated / is_item_deactivated edge readers compare against (gui_ctx_io.c). */
+       is_item_activated / is_item_deactivated edge readers compare against (user/gui_query.c). */
     s_interaction.active_id_prev = s_interaction.active_id;
 
     /* Snapshot focused_id so frame_end can detect whether focus moved this frame. */
@@ -667,7 +667,7 @@ ctx_new_frame( void )
 }
 
 /* Public IO accessors (gui_want_capture_*, gui_is_key_*, gui_is_mouse_*, gui_get_*)
-   are defined in gui_ctx_io.c, included immediately after gui_ctx_id.c.
+   are defined in user/gui_query.c, included in the user/ tier below.
    They read s_interaction, s_nav, s_popup_open_count, s_build, s_io, and rect_hit --
    all visible in the unity build at that point. */
 

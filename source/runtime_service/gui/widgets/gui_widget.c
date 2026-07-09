@@ -16,15 +16,15 @@
     gui_widget_numeric.c, also included after this file.
 
     Custom-draw / canvas escape hatches (canvas, draw_rect, draw_text, text measurement, icons)
-    and behavior on caller rects (gui_item, invisible_button) are the custom/ tier
+    and behavior on caller rects (gui_item, invisible_button) are the user/ tier
     (gui_canvas.c, gui_behavior.c), included before this file -- placement + interaction
     primitives for a caller-held rect rather than self-laying-out controls.
 
     The window compound widget lives in gui_widget_window.c; the shared interaction state
     machine, theme, and layout macros these widgets build on live in gui_widget_core.c.
 
-    Included by gui.c after gui_widget_core.c so widget_behavior, widget_next_rect, the
-    COL_* palette, and the WIDGET_/WIN_ layout macros are all in scope.
+    Included by gui.c after core/gui_widget_core.c + interact/gui_item.c so widget_behavior,
+    widget_next_rect, the COL_* palette, and the WIDGET_/WIN_ layout macros are all in scope.
 
 ==============================================================================================*/
 // clang-format off

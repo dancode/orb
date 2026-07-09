@@ -893,7 +893,7 @@ typedef struct gui_api_s
        push_item_flag( GUI_ITEM_BUTTON_REPEAT, true ) for press-and-hold stepping (spin buttons). */
     bool ( *arrow_button )( const char* id_str, gui_dir_t dir );
 
-    /* item -- the custom-UI behavior seam: run the shared widget interaction state machine over a
+    /* item -- the user-UI behavior seam: run the shared widget interaction state machine over a
        rect the CALLER derived (a canvas() cut, an empty() slot, split/carve panels, custom math)
        and report the resolved state (hover / active / pressed / clicked).  A custom widget is
        rect + item() + draw_*: it hovers, press-captures, clicks, and registers for keyboard nav

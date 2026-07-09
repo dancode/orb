@@ -1,17 +1,21 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/core/gui_ctx_io.c -- Public IO accessor API.
+    runtime_service/gui/user/gui_query.c -- Public readers over the io + interaction services.
 
     The frame-coherent input snapshot the widgets see, exposed for UI / tool code that wants
     to read keys, the mouse, or the clock without re-querying app() -- which bypasses gui's
-    frame timing and, more importantly, its input capture.
+    frame timing and, more importantly, its input capture.  Pure caller vocabulary: the
+    machinery (interact/gui_io.c snapshot, interact/gui_item.c last-item latch) stays with the
+    services; the readers a user speaks live here.
 
     want_capture_* are the fence: gate any direct app() input read in non-UI code on them, so
     gameplay never acts on a keystroke gui consumed (typing in a field) or a click that was
     really a widget / window drag.
 
-    Included by gui.c after gui_ctx.c (which defines s_interaction, s_build, s_nav,
-    s_popup_open_count, rect_hit) and gui_input.c (which defines s_io).
+    Included by gui.c in the user/ tier (last of the tiers); reads s_interaction, s_build,
+    s_nav, s_popup_open_count, rect_hit (core/gui_ctx.c) and s_io (interact/gui_io.c), all in
+    scope far above.  Internal readers (the frame overlay's hotkeys, the dashboard's hover
+    check) are deliberate dogfooding through the gui_host.h declarations.
 
 ==============================================================================================*/
 // clang-format off
@@ -51,7 +55,7 @@ gui_is_mouse_hovering_rect( gui_rect_t r )
     Last-item introspection (the Dear ImGui IsItem* family).
 
     Every reader reports on "the widget just emitted" -- the item whose rect and interaction state
-    widget_behavior latched into s_build.last_item_* (gui_widget_core.c).  Call immediately after a
+    widget_behavior latched into s_build.last_item_* (interact/gui_item.c).  Call immediately after a
     widget, the way set_item_tooltip / popup_context_item_begin already bind to the previous item:
 
         gui()->button( "Save" );
@@ -108,7 +112,7 @@ gui_is_item_visible( void )
 gui_rect_t gui_get_item_rect( void ) { return s_build.last_item_rect; }
 
 /* Per-key state from the frame snapshot.  An out-of-range key reads as up; the public app_key_t
-   range is bounded by APP_KEY_COUNT <= GUI_KEY_COUNT (asserted in gui_input.c).  is_key_pressed
+   range is bounded by APP_KEY_COUNT <= GUI_KEY_COUNT (asserted in interact/gui_io.c).  is_key_pressed
    is the initial press this frame; is_key_pressed_repeat also fires on each OS auto-repeat tick (the
    Dear ImGui repeat=true case) -- the user's system rate drives it. */
 static bool key_in_range( app_key_t key ) { return (i32)key >= 0 && (i32)key < APP_KEY_COUNT; }

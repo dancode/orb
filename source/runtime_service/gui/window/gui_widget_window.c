@@ -9,7 +9,7 @@
     declares no long-lived state of its own.
 
     A window is treated as a large compound widget, so this builds on the shared primitives
-    in gui_widget_core.c (widget_behavior, widget_bg_color, the theme + layout macros).
+    in core/gui_widget_core.c (widget_bg_color, the theme + layout macros) and interact/gui_item.c (widget_behavior).
 
     Included by gui.c after gui_widget.c, so the window record (gui_window.c), the
     shared widget core, and the leaf widgets are all in scope.

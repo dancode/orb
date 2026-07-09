@@ -16,7 +16,7 @@
     cell model -- a cell can host a layout, the way a window or child does.
 
     Included by gui.c after gui_layout_region.c (provides layout_push/pop_region,
-    region_get, scroll_clamp) and gui_resize.c (provides window_resize_hit, resize_apply_edges,
+    region_get, scroll_clamp) and interact/gui_resize.c (provides window_resize_hit, resize_apply_edges,
     resize_grab, window_draw_resize_highlight, GUI_RESIZE_*, s_resize_edges).
 
 ==============================================================================================*/

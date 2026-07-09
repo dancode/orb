@@ -964,7 +964,7 @@ main( int argc, char** argv )
         style->colors[GUI_COL_WINDOW_BG] = GUI_COLOR( 0x20, 0x20, 0x20, 0xFF );
         style->colors[GUI_COL_TEXT]      = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
 
-        // Modify any layout metrics (authored for a baseline em=12)
+        // Modify any skin (STYLE) knobs -- metrics are authored for a baseline em=12
         style->win_rounding    = 0;         // Square windows
         style->widget_rounding = 0;         // No bevel on buttons
         style->grab_rounding = 0;

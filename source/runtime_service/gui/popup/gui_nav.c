@@ -24,7 +24,7 @@
          as popup_apply_modal steals hover_win), else the explicit target window, else the
          front-most normal window.
 
-    The per-item half lives in nav_item_register (gui_widget_core.c), called from widget_behavior:
+    The per-item half lives in nav_item_register (interact/gui_item.c), called from widget_behavior:
     each item in nav_win appends itself to the list and -- if it is the nav cursor -- lights the
     focus ring and takes a synthesized click from an activation.  Chrome (title-bar buttons,
     dock tabs: anything not placed by a layout cell) forms its own lane: F6 hops between the

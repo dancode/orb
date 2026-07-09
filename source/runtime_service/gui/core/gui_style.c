@@ -29,21 +29,22 @@
 // clang-format off
 
 /* Base value of a style var -- read live from the font-derived metrics so a font_load update flows
-   through without re-seeding anything.  The single map from slot to s_style field. */
+   through without re-seeding anything.  The single map from slot to s_style field, grouped by the
+   three gui_style_t categories (see gui.h). */
 
 static f32
 style_var_base( gui_style_var_t v )
 {
     switch ( v )
     {
+        /* 1. LAYOUT CONTROLLER */
         case GUI_VAR_LINE_SIZE:       return (f32)s_style.line_size;
         case GUI_VAR_WIDGET_GAP:      return (f32)s_style.widget_gap;
         case GUI_VAR_WIDGET_PAD:      return (f32)s_style.widget_pad;
-        case GUI_VAR_WIN_TITLE_H:     return (f32)s_style.win_title_h;
-        case GUI_VAR_WIN_BORDER:      return (f32)s_style.win_border;
-        case GUI_VAR_CHECKBOX_SZ:     return (f32)s_style.checkbox_sz;
-        case GUI_VAR_SLIDER_KNOB_W:   return (f32)s_style.slider_knob_w;
         case GUI_VAR_MIN_CELL_W:      return (f32)s_style.min_cell_w;
+
+        /* 2. STYLE */
+        case GUI_VAR_WIN_BORDER:      return (f32)s_style.win_border;
         case GUI_VAR_WIN_ROUNDING:    return (f32)s_style.win_rounding;
         case GUI_VAR_WIDGET_ROUNDING: return (f32)s_style.widget_rounding;
         case GUI_VAR_GRAB_ROUNDING:   return (f32)s_style.grab_rounding;
@@ -54,6 +55,12 @@ style_var_base( gui_style_var_t v )
         case GUI_VAR_PROGRESS_STYLE:  return (f32)s_style.progress_style;  /* enum-as-var: 0 solid / 1 gradient */
         case GUI_VAR_SLIDER_KNOB:     return (f32)s_style.slider_knob;     /* enum-as-var: 0 bar / 1 circle */
         case GUI_VAR_MENU_CHECK:      return (f32)s_style.menu_check;      /* enum-as-var: 0 plain / 1 box */
+
+        /* 3. WIDGET DRAWING STYLE */
+        case GUI_VAR_WIN_TITLE_H:     return (f32)s_style.win_title_h;
+        case GUI_VAR_CHECKBOX_SZ:     return (f32)s_style.checkbox_sz;
+        case GUI_VAR_SLIDER_KNOB_W:   return (f32)s_style.slider_knob_w;
+
         default:                      return 0.0f;
     }
 }
@@ -71,29 +78,30 @@ style_var_base( gui_style_var_t v )
 #define GUI_STYLE_STACK_DEPTH 32
 
 /* Stack + override entry types (named so the compound literals avoid the typeof extension). */
+
 typedef struct { u8 slot; u32 prev; } col_save_t;   // push/pop restore pair
 typedef struct { u8 slot; u32 val;  } col_ov_t;     // next-item override
 typedef struct { u8 slot; f32 prev; } var_save_t;
 typedef struct { u8 slot; f32 val;  } var_ov_t;
 
 /* Colors */
-static u32        s_col[ GUI_COL_COUNT ];                      // working set (base + stack)
+static u32        s_col[ GUI_COL_COUNT ];                   // working set (base + stack)
 static col_save_t s_col_stack[ GUI_STYLE_STACK_DEPTH ];
-static u32        s_col_sp;
+static u32        s_col_sp;                                 // stack pointer (count of pushes, not index)
 
-static col_ov_t   s_col_next[ GUI_COL_COUNT ];                 // next-item pending
-static u32        s_col_next_n;
-static col_ov_t   s_col_item[ GUI_COL_COUNT ];                 // active for current item
+static col_ov_t   s_col_next[ GUI_COL_COUNT ];              // next-item pending
+static u32        s_col_next_n;                             // count of pending next-item overrides
+static col_ov_t   s_col_item[ GUI_COL_COUNT ];              // active for current item
 static u32        s_col_item_n;
 
 /* Vars (f32) */
-static f32        s_var[ GUI_VAR_COUNT ];                      // working set (base + stack)
+static f32        s_var[ GUI_VAR_COUNT ];                   // working set (base + stack)
 static var_save_t s_var_stack[ GUI_STYLE_STACK_DEPTH ];
 static u32        s_var_sp;
 
-static var_ov_t   s_var_next[ GUI_VAR_COUNT ];                 // next-item pending
+static var_ov_t   s_var_next[ GUI_VAR_COUNT ];              // next-item pending
 static u32        s_var_next_n;
-static var_ov_t   s_var_item[ GUI_VAR_COUNT ];                 // active for current item
+static var_ov_t   s_var_item[ GUI_VAR_COUNT ];              // active for current item
 static u32        s_var_item_n;
 
 /*----------------------------------------------------------------------------------------------

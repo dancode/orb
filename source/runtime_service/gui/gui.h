@@ -425,11 +425,11 @@ gui_anchor_box( gui_rect_t area, f32 w, f32 h, gui_align_t align, gui_pad_t m )
 }
 
 /*----------------------------------------------------------------------------------------------
-    Custom-item interaction state (custom/gui_behavior.c)
+    Custom-item interaction state (user/gui_behavior.c)
 
     The result of gui()->item( id, rect ): the shared widget interaction state machine run over
     a rect the CALLER derived, reported as plain flags.  This is the behavior half of the
-    custom-UI substrate -- a user widget takes a rect (canvas cut, split/carve, own math), asks
+    user-UI substrate -- a user widget takes a rect (canvas cut, split/carve, own math), asks
     for behavior, and draws its own presentation from these flags, exactly as the stock widgets
     do internally.  invisible_button( id, r ) is this reduced to its click bit.
 ----------------------------------------------------------------------------------------------*/
@@ -1076,12 +1076,14 @@ void               gui_theme_reset( void );              /* restore base + clear
 typedef enum
 {
     /* 1. LAYOUT CONTROLLER -- composer input (scale_push/scale_pop override the first three) */
+
     GUI_VAR_LINE_SIZE,      // widget row height (the frame height)
     GUI_VAR_WIDGET_GAP,     // gap between consecutive widgets / cells
     GUI_VAR_WIDGET_PAD,     // content padding inside a frame (FramePadding)
     GUI_VAR_MIN_CELL_W,     // min width a flex cell shrinks to
 
     /* 2. STYLE -- the toolkit skin */
+
     GUI_VAR_WIN_BORDER,     // window / widget outline thickness
     GUI_VAR_WIN_ROUNDING,   // corner radius for windows / children / popups; 0 = square
     GUI_VAR_WIDGET_ROUNDING,// corner radius for control frames (button/checkbox/input/...)
@@ -1095,6 +1097,7 @@ typedef enum
     GUI_VAR_MENU_CHECK,     // menu item check gutter: 0 = plain indicator, 1 = bordered box (gui_menu_check_t)
 
     /* 3. WIDGET DRAWING STYLE -- inner geometry inside one stock widget's own rect */
+
     GUI_VAR_WIN_TITLE_H,    // window title bar height
     GUI_VAR_CHECKBOX_SZ,    // checkbox / radio indicator side
     GUI_VAR_SLIDER_KNOB_W,  // slider knob + scrollbar thickness

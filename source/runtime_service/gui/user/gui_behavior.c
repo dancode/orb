@@ -1,9 +1,9 @@
 /*==============================================================================================
 
-    runtime_service/gui/custom/gui_behavior.c -- Public interaction behavior on caller rects.
+    runtime_service/gui/user/gui_behavior.c -- Public interaction behavior on caller rects.
 
-    The behavior half of the custom-UI substrate: gui_item() runs the shared widget interaction
-    state machine (widget_behavior, core/gui_widget_core.c) over a rect the CALLER derived -- a
+    The behavior half of the user-UI substrate: gui_item() runs the shared widget interaction
+    state machine (widget_behavior, interact/gui_item.c) over a rect the CALLER derived -- a
     canvas() cut, a split/carve panel, custom layout math -- and reports the resolved state as
     plain flags.  This is the seam a user widget is built on: get a rect, ask for behavior, draw
     your own presentation.  The stock widgets (widgets/) resolve their rects through the composer
@@ -13,7 +13,9 @@
 
     invisible_button is gui_item() reduced to its click bit, kept as the one-liner convenience.
 
-    Included by gui.c after core/; needs widget_id / widget_behavior (core/gui_widget_core.c).
+    Included by gui.c in the user/ tier (last of the tiers -- pure vocabulary, no state); needs
+    widget_id (core/gui_widget_core.c) and widget_behavior (interact/gui_item.c), in scope far
+    above.
 
 ==============================================================================================*/
 // clang-format off

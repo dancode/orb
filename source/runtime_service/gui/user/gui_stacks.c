@@ -1,18 +1,20 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/core/gui_stacks.c -- Push-model public API: id scope, item flags, style.
+    runtime_service/gui/user/gui_stacks.c -- Bracketing vocabulary: id scope, item flags, style.
 
     The thin public wrappers for the three push / pop / next stacks a caller brackets widgets with:
-        push_id / pop_id           -- id-scope levels for repeated widgets (id stack, gui_ctx.c)
-        push_item_flag / next_     -- per-item behavior tweaks (item-flag stack, gui_ctx.c)
-        push_style_color / _var    -- per-item theme overrides (style stacks, gui_style.c)
+        push_id / pop_id           -- id-scope levels for repeated widgets (id stack, interact/gui_id.c)
+        push_item_flag / next_     -- per-item behavior tweaks (item-flag stack, core/gui_ctx.c)
+        push_style_color / _var    -- per-item theme overrides (style stacks, core/gui_style.c)
 
-    Each just forwards to the static stack operations in gui_ctx.c / gui_style.c; they are
-    grouped here, out of gui_layout.c (where they had accreted only because it was the public
-    API file), so the layout file is layout and the push-model API is one named unit.
+    Each just forwards to the static stack operations in the machinery files above -- this file
+    is pure caller vocabulary (the machinery / vocabulary split: the stacks and their resolution
+    live with core/ + interact/; the verbs a user speaks live here).  Nothing in the lib below
+    depends on these wrappers; internal uses (combo's push_id for its list rows) are deliberate
+    dogfooding through the gui_host.h declarations.
 
-    Included by gui.c after the modules that implement the stacks, and before gui_api.c, which
-    wires these into the vtable.
+    Included by gui.c in the user/ tier (last of the tiers), before gui_api.c, which wires
+    these into the vtable.
 
 ==============================================================================================*/
 // clang-format off
@@ -47,7 +49,7 @@ void gui_pop_id     ( void )            { id_pop(); }
 ----------------------------------------------------------------------------------------------*/
 
 void gui_push_item_flag( gui_item_flags_t flag, bool enable ) { item_flag_push( flag, enable ); }
-void gui_pop_item_flag ( void )                                 { item_flag_pop(); }
+void gui_pop_item_flag ( void )                               { item_flag_pop(); }
 void gui_next_item_flag( gui_item_flags_t flag, bool enable ) { item_flag_next( flag, enable ); }
 
 /*----------------------------------------------------------------------------------------------

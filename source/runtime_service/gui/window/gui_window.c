@@ -68,7 +68,7 @@ static f32        s_grip_drag_py;
 
 /* In-flight edge resize.  The window being resized holds active_id == (id ^ RESIZE_SALT).
    The s_resize_* in-flight state (edges, offsets, far-edge pins) is owned by the shared
-   resize mechanism in core/gui_resize.c -- a resizeable child_begin (gui_layout_child.c)
+   resize mechanism in interact/gui_resize.c -- a resizeable child_begin (gui_layout_child.c)
    reads it too, so it cannot live here; only the window-record apply / grab / fit stay in
    gui_widget_window.c. */
 

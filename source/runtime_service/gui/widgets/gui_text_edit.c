@@ -10,7 +10,7 @@
     then delegates here.  Lifted out of gui_widget_core.c so the editor is one named unit.
 
     The persisted per-id edit state (cursor, anchor, scroll, blink) lives in the keyed state
-    pool (gui_ctx.c); gui_clipboard_set is in gui_input.c.
+    pool (gui_ctx.c); gui_clipboard_set is in interact/gui_io.c.
 
     Included by gui.c after gui_widget_core.c so widget_state_t, text_center_y, the COL_*
     palette, WIDGET_PAD / WIN_BORDER, and the draw + font helpers are all in scope.
@@ -803,7 +803,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, widget_state_t st, char* buf, u32
         on_change( buf, final_len, bufsz, cb_user );
     }
 
-    /* Accumulate the edit flag for is_item_deactivated_after_edit (gui_ctx_io.c). */
+    /* Accumulate the edit flag for is_item_deactivated_after_edit (user/gui_query.c). */
     if ( res.changed )
         mark_item_edited();
 

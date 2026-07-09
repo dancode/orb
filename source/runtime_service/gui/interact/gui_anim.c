@@ -1,13 +1,13 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/core/gui_anim.c -- Widget animation utilities.
+    runtime_service/gui/interact/gui_anim.c -- Animation stepping service.
 
     A growing collection of reusable stateful effects.  Each effect is a single function
     that a widget calls with its id and resolved interaction state; all peek-guard logic,
     channel stepping, slot stamping, and wants_redraw signalling is handled here so widgets
     stay simple.
 
-    Storage lives in the keyed state pool (gui_ctx_id.c) with peek-then-stamp semantics:
+    Storage lives in the keyed state pool (interact/gui_state.c) with peek-then-stamp semantics:
     pool pressure stays proportional to in-flight animations, not total widget count.  Idle
     widgets with no animation history pay only a single non-stamping probe.
 

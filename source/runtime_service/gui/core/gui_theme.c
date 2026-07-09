@@ -69,34 +69,40 @@ static const gui_theme_t k_themes[] =
                 [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ),
                 [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
             },
-            .line_size     = 20,
-            .widget_gap    = 4,
-            .widget_pad    = 8,
-            .win_title_h   = 24,
-            .win_border    = 1,
-            .checkbox_sz   = 16,
-            .slider_knob_w = 12,
-            .min_cell_w    = 40,
-            .checkmark_pad = 4,
-            .cursor_w      = 1,
-            .cursor_inset  = 3,
-            .grid_quantum  = 4,
-            .win_rounding    = 0,       /* geometric default: hard square corners everywhere */
-            .widget_rounding = 0,
-            .grab_rounding   = 0,
+            /* 1. LAYOUT CONTROLLER */
+            .line_size          = 20,
+            .widget_gap         = 4,
+            .widget_pad         = 8,
+            .min_cell_w         = 40,
+            .grid_quantum       = 4,
+
+            /* 2. STYLE */
+            .win_border         = 1,
+            .win_rounding       = 0,       /* geometric default: hard square corners everywhere */
+            .widget_rounding    = 0,
+            .grab_rounding      = 0,
+            .check_style        = GUI_CHECK_TICK,
+            .bullet_style       = GUI_BULLET_DISC,
+            .arrow_style        = GUI_ARROW_FILLED,
+            .separator_style    = GUI_SEPARATOR_SOLID,
+            .progress_style     = GUI_PROGRESS_SOLID,
+            .slider_knob        = GUI_SLIDER_KNOB_BAR,
+            .menu_check         = GUI_MENU_CHECK_BOX,
+
+            /* 3. WIDGET DRAWING STYLE */
+            .win_title_h        = 24,
+            .checkbox_sz        = 16,
+            .slider_knob_w      = 12,
+            .checkmark_pad      = 4,
+            .cursor_w           = 1,
+            .cursor_inset       = 3,
+
             .scales = {
                 [ GUI_SCALE_DENSE ] = { .row = 16, .pad = 4,  .gap = 4 },
                 [ GUI_SCALE_STD   ] = { .row = 20, .pad = 8,  .gap = 4 },   /* == the base metrics */
                 [ GUI_SCALE_ROOMY ] = { .row = 24, .pad = 8,  .gap = 4 },
                 [ GUI_SCALE_BAR   ] = { .row = 32, .pad = 12, .gap = 4 },
             },
-            .check_style     = GUI_CHECK_TICK,
-            .bullet_style    = GUI_BULLET_DISC,
-            .arrow_style     = GUI_ARROW_FILLED,
-            .separator_style = GUI_SEPARATOR_SOLID,
-            .progress_style  = GUI_PROGRESS_SOLID,
-            .slider_knob     = GUI_SLIDER_KNOB_BAR,
-            .menu_check      = GUI_MENU_CHECK_BOX,
         },
     },
     {
@@ -124,34 +130,40 @@ static const gui_theme_t k_themes[] =
                 [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ),
                 [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
             },
-            .line_size     = 20,
-            .widget_gap    = 4,
-            .widget_pad    = 8,
-            .win_title_h   = 24,
-            .win_border    = 1,
-            .checkbox_sz   = 16,
-            .slider_knob_w = 12,
-            .min_cell_w    = 40,
-            .checkmark_pad = 4,
-            .cursor_w      = 1,
-            .cursor_inset  = 3,
-            .grid_quantum  = 4,
-            .win_rounding    = 8,
-            .widget_rounding = 5,
-            .grab_rounding   = 6,
+            /* 1. LAYOUT CONTROLLER */
+            .line_size          = 20,
+            .widget_gap         = 4,
+            .widget_pad         = 8,
+            .min_cell_w         = 40,
+            .grid_quantum       = 4,
+
+            /* 2. STYLE */
+            .win_border         = 1,
+            .win_rounding       = 8,
+            .widget_rounding    = 5,
+            .grab_rounding      = 6,
+            .check_style        = GUI_CHECK_TICK,
+            .bullet_style       = GUI_BULLET_DISC,
+            .arrow_style        = GUI_ARROW_FILLED,
+            .separator_style    = GUI_SEPARATOR_SOLID,
+            .progress_style     = GUI_PROGRESS_SOLID,
+            .slider_knob        = GUI_SLIDER_KNOB_CIRCLE,
+            .menu_check         = GUI_MENU_CHECK_BOX,
+
+            /* 3. WIDGET DRAWING STYLE */
+            .win_title_h        = 24,
+            .checkbox_sz        = 16,
+            .slider_knob_w      = 12,
+            .checkmark_pad      = 4,
+            .cursor_w           = 1,
+            .cursor_inset       = 3,
+
             .scales = {
                 [ GUI_SCALE_DENSE ] = { .row = 16, .pad = 4,  .gap = 4 },
                 [ GUI_SCALE_STD   ] = { .row = 20, .pad = 8,  .gap = 4 },   /* == the base metrics */
                 [ GUI_SCALE_ROOMY ] = { .row = 24, .pad = 8,  .gap = 4 },
                 [ GUI_SCALE_BAR   ] = { .row = 32, .pad = 12, .gap = 4 },
             },
-            .check_style     = GUI_CHECK_TICK,
-            .bullet_style    = GUI_BULLET_DISC,
-            .arrow_style     = GUI_ARROW_FILLED,
-            .separator_style = GUI_SEPARATOR_SOLID,
-            .progress_style  = GUI_PROGRESS_SOLID,
-            .slider_knob     = GUI_SLIDER_KNOB_CIRCLE,
-            .menu_check      = GUI_MENU_CHECK_BOX,
         },
     },
     {
@@ -176,34 +188,40 @@ static const gui_theme_t k_themes[] =
                 [ GUI_COL_CURSOR       ] = GUI_COLOR( 0x10, 0x10, 0x60, 0xFF ),
                 [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x30, 0x90, 0xE0, 0xFF ),
             },
-            .line_size     = 20,
-            .widget_gap    = 4,
-            .widget_pad    = 8,
-            .win_title_h   = 24,
-            .win_border    = 1,
-            .checkbox_sz   = 16,
-            .slider_knob_w = 12,
-            .min_cell_w    = 40,
-            .checkmark_pad = 4,
-            .cursor_w      = 1,
-            .cursor_inset  = 3,
-            .grid_quantum  = 4,
-            .win_rounding    = 6,
-            .widget_rounding = 4,
-            .grab_rounding   = 4,
+            /* 1. LAYOUT CONTROLLER */
+            .line_size          = 20,
+            .widget_gap         = 4,
+            .widget_pad         = 8,
+            .min_cell_w         = 40,
+            .grid_quantum       = 4,
+
+            /* 2. STYLE */
+            .win_border         = 1,
+            .win_rounding       = 6,
+            .widget_rounding    = 4,
+            .grab_rounding      = 4,
+            .check_style        = GUI_CHECK_TICK,
+            .bullet_style       = GUI_BULLET_DISC,
+            .arrow_style        = GUI_ARROW_FILLED,
+            .separator_style    = GUI_SEPARATOR_SOLID,
+            .progress_style     = GUI_PROGRESS_SOLID,
+            .slider_knob        = GUI_SLIDER_KNOB_BAR,
+            .menu_check         = GUI_MENU_CHECK_BOX,
+
+            /* 3. WIDGET DRAWING STYLE */
+            .win_title_h        = 24,
+            .checkbox_sz        = 16,
+            .slider_knob_w      = 12,
+            .checkmark_pad      = 4,
+            .cursor_w           = 1,
+            .cursor_inset       = 3,
+
             .scales = {
                 [ GUI_SCALE_DENSE ] = { .row = 16, .pad = 4,  .gap = 4 },
                 [ GUI_SCALE_STD   ] = { .row = 20, .pad = 8,  .gap = 4 },   /* == the base metrics */
                 [ GUI_SCALE_ROOMY ] = { .row = 24, .pad = 8,  .gap = 4 },
                 [ GUI_SCALE_BAR   ] = { .row = 32, .pad = 12, .gap = 4 },
             },
-            .check_style     = GUI_CHECK_TICK,
-            .bullet_style    = GUI_BULLET_DISC,
-            .arrow_style     = GUI_ARROW_FILLED,
-            .separator_style = GUI_SEPARATOR_SOLID,
-            .progress_style  = GUI_PROGRESS_SOLID,
-            .slider_knob     = GUI_SLIDER_KNOB_BAR,
-            .menu_check      = GUI_MENU_CHECK_BOX,
         },
     },
 };
@@ -323,21 +341,29 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     /* Copy colors and enums */
     s_style = s_style_base;
 
-    /* Scale pixel metrics proportionally */
+    /* Scale pixel metrics proportionally -- grouped by the three gui_style_t categories.
+       (grid_quantum and the enum-valued STYLE knobs are not pixel metrics; the struct copy
+       above carries them.) */
+
+    /* 1. LAYOUT CONTROLLER */
     s_style.line_size       = (u8)( (f32)s_style_base.line_size       * scale );
     s_style.widget_gap      = (u8)( (f32)s_style_base.widget_gap      * scale );
     s_style.widget_pad      = (u8)( (f32)s_style_base.widget_pad      * scale );
-    s_style.win_title_h     = (u8)( (f32)s_style_base.win_title_h     * scale );
-    s_style.win_border      = (u8)( (f32)s_style_base.win_border      * scale );
-    s_style.checkbox_sz     = (u8)( (f32)s_style_base.checkbox_sz     * scale );
-    s_style.slider_knob_w   = (u8)( (f32)s_style_base.slider_knob_w   * scale );
     s_style.min_cell_w      = (u8)( (f32)s_style_base.min_cell_w      * scale );
-    s_style.checkmark_pad   = (u8)( (f32)s_style_base.checkmark_pad   * scale );
-    s_style.cursor_w        = (u8)( (f32)s_style_base.cursor_w        * scale );
-    s_style.cursor_inset    = (u8)( (f32)s_style_base.cursor_inset    * scale );
+
+    /* 2. STYLE */
+    s_style.win_border      = (u8)( (f32)s_style_base.win_border      * scale );
     s_style.win_rounding    = (u8)( (f32)s_style_base.win_rounding    * scale );
     s_style.widget_rounding = (u8)( (f32)s_style_base.widget_rounding * scale );
     s_style.grab_rounding   = (u8)( (f32)s_style_base.grab_rounding   * scale );
+
+    /* 3. WIDGET DRAWING STYLE */
+    s_style.win_title_h     = (u8)( (f32)s_style_base.win_title_h     * scale );
+    s_style.checkbox_sz     = (u8)( (f32)s_style_base.checkbox_sz     * scale );
+    s_style.slider_knob_w   = (u8)( (f32)s_style_base.slider_knob_w   * scale );
+    s_style.checkmark_pad   = (u8)( (f32)s_style_base.checkmark_pad   * scale );
+    s_style.cursor_w        = (u8)( (f32)s_style_base.cursor_w        * scale );
+    s_style.cursor_inset    = (u8)( (f32)s_style_base.cursor_inset    * scale );
 
     /* The scale ramp steps are metrics like any other: em-scale each with the same factor. */
     for ( u32 i = 0; i < GUI_SCALE_COUNT; ++i )
@@ -386,10 +412,10 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
         s_style.line_size     = (u8)row;
         s_style.widget_gap    = metric_quantize( s_style.widget_gap,    q );
         s_style.widget_pad    = metric_quantize( s_style.widget_pad,    q );
+        s_style.min_cell_w    = metric_quantize( s_style.min_cell_w,    q );
         s_style.win_title_h   = metric_quantize( s_style.win_title_h,   q );
         s_style.checkbox_sz   = metric_quantize( s_style.checkbox_sz,   q );
         s_style.slider_knob_w = metric_quantize( s_style.slider_knob_w, q );
-        s_style.min_cell_w    = metric_quantize( s_style.min_cell_w,    q );
 
         /* Ramp steps land on the same lattice: rows ceil (keep the font floor), pads and gaps
            snap to nearest.  The whole ramp retunes together when the quantum or font changes. */

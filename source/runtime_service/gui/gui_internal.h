@@ -63,10 +63,10 @@
 #define GUI_MAX_VIEWPORTS 4                 // GPU buffer region count; matches APP_WIN_MAX / RHI_CTX_MAX
 
 /*==============================================================================================
-    Input snapshot (gui_input.c)
+    Input snapshot (interact/gui_io.c)
 
     The frame's distilled IO state -- not exposed in the public header.  GUI_KEY_COUNT must cover
-    the full app_key_t range; gui_input.c carries the static assert that verifies this.
+    the full app_key_t range; interact/gui_io.c carries the static assert that verifies this.
 ==============================================================================================*/
 
 typedef struct
@@ -834,12 +834,12 @@ typedef struct
     hand-placed forward declarations that used to sit in gui.c.
 ==============================================================================================*/
 
-/* The mouse-input path (gui_input.c) resolves an event's app win_id to the viewport hosting it,
+/* The mouse-input path (interact/gui_io.c) resolves an event's app win_id to the viewport hosting it,
    but the viewport pool lives on g_ctx (gui_ctx.c) included later.  Defined after g_ctx. */
 static u32 viewport_index_for_window( i32 win_id );
 
 /* OS resize / close events for an gui-OWNED floater are serviced against the viewport pool, so
-   gui_event (gui_input.c) delegates them here.  Defined in gui_frame.c after g_ctx; returns
+   gui_event (interact/gui_io.c) delegates them here.  Defined in gui_frame.c after g_ctx; returns
    true when win_id is an owned viewport (event consumed). */
 static bool gui_owned_window_event( const app_event_t* ev );
 
@@ -869,7 +869,7 @@ static void dock_float_service_request( gui_id_t id, const char* title, gui_wind
 void gui_popup_close_current( void );
 
 /* The size-animate seam (gui_layout_core.c) eases a remembered extent toward its target through the
-   animation pool, whose primitive (gui_anim_f32) lives in gui_anim.c -- included AFTER the layout
+   animation pool, whose primitive (gui_anim_f32) lives in interact/gui_anim.c -- included AFTER the layout
    files.  Forward-declared so size_animate can reach it across the unity TU. */
 static f32 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 

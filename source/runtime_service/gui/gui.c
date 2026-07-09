@@ -15,18 +15,23 @@
     tiers above it, so this is also where a future `#ifdef GUI_ENABLE_<tier>` would wrap an
     #include line to compile a feature out entirely.
 
-    core/        -- Tier 0a, foundation: state, ids, io, style resolution, the interaction
-                    state machine (behavior).  Behavior consumes finished RECTS -- it never
-                    reads a style metric to make a decision; style is invisible below here.
+    core/        -- Tier 0a, the context + style machinery: the ambient state records
+                    (s_interaction, s_build, g_ctx), style resolution (theme/style/stacks),
+                    and the shared presentation primitives (macros, palette, label grammar).
+    interact/    -- Tier 0a, the interaction services: widget-agnostic utilities the higher
+                    tiers compose behavior from -- identity (ids), keyed state tracking, the
+                    io snapshot, the standard item protocol (widget_behavior), drag payloads,
+                    edge-resize mechanism, animation stepping.  Each serves a capability
+                    (exclusivity, clicks, tracking) over (id, rect); none knows a widget.
+                    A service consumes finished RECTS -- it never reads a style metric to
+                    make a decision; style is invisible to this tier (the nav ring is the one
+                    sanctioned exception, see interact/gui_item.c).
     compose/     -- Tier 0b, the layout composer: the only code that turns style spacing
                     metrics (line_size/gap/pad/quantum/scales) into rects.  Track resolver,
                     regions, children, the public layout verbs + sz_ sizing family.
-    custom/      -- Tier 1a, the custom-UI substrate: behavior (gui_item/invisible_button) and
-                    draw/canvas placement on rects the CALLER holds.  Where user widgets are
-                    written; consumes composer rects + core behavior, no skin.
-    widgets/     -- Tier 1b, the stock presentation layer: the default widget set, painting
-                    skin + inner geometry inside composer rects via core behavior.  The stock
-                    set is a CLIENT of the tiers above it, not a privileged layer.
+    widgets/     -- Tier 1, the stock presentation layer: the default widget set, painting
+                    skin + inner geometry inside composer rects via the item protocol.  The
+                    stock set is a CLIENT of the tiers above it, not a privileged layer.
     window/      -- Tier 2, window subsystem: persisted window record + window-as-widget chrome.
                     First real optional boundary -- a canvas/HUD-only embedding can skip it.
     popup/       -- Tier 3, window-dependent overlay stack: popups/tooltips/combo/menus/nav all
@@ -34,25 +39,33 @@
     dock/        -- Tier 3, window-dependent, independent of popup/: dock-node tree + splitters.
     table/       -- Tier 4, independent optional feature: needs only core/+compose/, no window
                     dependency.
+    user/        -- Tier 5, the caller's vocabulary: pure public verbs + readers -- the
+                    bracketing stacks (id / item flags / style / scale / disabled), behavior on
+                    caller rects (gui_item), the canvas + raw-draw surface, and the query
+                    readers (want_capture_*, is_item_*, is_key_*).  Zero state, zero machinery;
+                    consumed only from outside the lib (via the vtable) or by lower tiers
+                    deliberately dogfooding the public surface through gui_host.h declarations.
+                    Where user widgets are written: rect (canvas) + item() + draw_*, no skin.
 
     Cross-tier contract (the composer / behavior / presentation split):
       composer (compose/) consumes spacing metrics, produces rects;
-      behavior (core/gui_widget_core.c) consumes rects, produces interaction state;
+      behavior (interact/) consumes rects, produces interaction state;
       presentation (widgets/ + chrome) consumes rect + state + skin and paints.
-    custom/ is the public door onto the first two, skin optional -- the game-UI path.
+    user/ is the public door onto the first two, skin optional -- the game-UI path.
 
     core/gui_theme.c            -- theme registry + base/active style state, theme API, layout_compute
-    core/gui_input.c            -- app->IO snapshot: input_update, s_io
-    core/gui_style.c            -- style stacks: colors + metrics, style_col/style_var, push/pop/next
+    core/gui_style.c            -- style stacks machinery: style_col/style_var resolution, push/pop/next ops
     core/gui_ctx.c              -- context state: s_interaction, s_build, layout_frame_t, gui_context_t, ctx_new_frame
-    core/gui_ctx_id.c           -- id system + state pool: id_hash, id_combine, id_seed/push/pop, gui_state_get
-    core/gui_ctx_io.c           -- public IO accessors: want_capture_*, is_key_*, is_mouse_*, get_mouse_pos
-    core/gui_widget_core.c      -- shared widget primitives + theme: widget_behavior, COL_*, layout macros
-    core/gui_drag.c             -- drag and drop: typed payload transfer between items (source/target)
-    core/gui_stacks.c           -- push-model public API: push/pop id, item flags, style color / var
+    core/gui_widget_core.c      -- shared presentation primitives: COL_* palette, layout macros, label grammar
     core/gui_symbol.c           -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
-    core/gui_resize.c           -- shared edge-resize geometry: hit-test, highlight, grab, edge apply
-    core/gui_anim.c             -- widget animation utilities: gui_anim_f32, gui_anim_bg
+
+    interact/gui_io.c           -- io snapshot service: app->IO, input_update, s_io
+    interact/gui_id.c           -- identity service: id_hash, id_combine, id_seed/push/pop
+    interact/gui_state.c        -- keyed state tracking service: gui_state_get/peek, GUI_STATE
+    interact/gui_item.c         -- the standard item protocol: widget_behavior, nav registration, repeat
+    interact/gui_drag.c         -- drag service: threshold machine + typed payload transfer (source/target)
+    interact/gui_resize.c       -- edge-resize mechanism: hit-test, highlight, grab, edge apply
+    interact/gui_anim.c         -- animation stepping service: gui_anim_f32, gui_anim_bg
 
     compose/gui_layout_core.c   -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
     compose/gui_layout_region.c -- scrollable region engine: gui_region_t, region_scrollbar, push/pop_region
@@ -60,8 +73,10 @@
     compose/gui_region.c        -- root-level region: a fixed-rect layout primitive, no window chrome
     compose/gui_layout.c        -- public layout API verbs + sz_ sizing: gui_layout, gui_stack, gui_cols
 
-    custom/gui_canvas.c          -- custom-draw surface: canvas, draw_rect/text, text measure, icons
-    custom/gui_behavior.c        -- public behavior on caller rects: gui_item, invisible_button
+    user/gui_stacks.c            -- bracketing vocabulary: push/pop id, item flags, style color/var, scale, disabled
+    user/gui_behavior.c          -- public behavior on caller rects: gui_item, invisible_button
+    user/gui_canvas.c            -- custom-draw surface: canvas, draw_rect/text, text measure, icons
+    user/gui_query.c             -- public readers: want_capture_*, is_item_*, is_key_*, is_mouse_*, get_mouse_pos
 
     widgets/gui_text_edit.c      -- single-line text editing engine: input_field_edit (behind input_text)
     widgets/gui_widget.c         -- core leaf widgets: text, button, checkbox, input_text, selectable
@@ -161,18 +176,19 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
    backend/gui_debug_overlay) is the SECOND unit -- compiled separately via gui_backend.c.  This
    unit calls into it through the draw_* / font_* / gui_render_* declarations in gui_backend.h. */
 
-// Tier 0a -- foundation (state, ids, io, style resolution, behavior)
+// Tier 0a -- core (context + style machinery) interleaved with interact/ (the interaction
+// services): the include order is dependency-driven, the directories are the conceptual split.
 #include "runtime_service/gui/core/gui_theme.c"
-#include "runtime_service/gui/core/gui_input.c"
+#include "runtime_service/gui/interact/gui_io.c"
 #include "runtime_service/gui/core/gui_style.c"
 #include "runtime_service/gui/core/gui_ctx.c"
-#include "runtime_service/gui/core/gui_ctx_id.c"
-#include "runtime_service/gui/core/gui_ctx_io.c"
+#include "runtime_service/gui/interact/gui_id.c"
+#include "runtime_service/gui/interact/gui_state.c"
 #include "runtime_service/gui/core/gui_widget_core.c"
-#include "runtime_service/gui/core/gui_drag.c"
-#include "runtime_service/gui/core/gui_stacks.c"
+#include "runtime_service/gui/interact/gui_item.c"
+#include "runtime_service/gui/interact/gui_drag.c"
 #include "runtime_service/gui/core/gui_symbol.c"
-#include "runtime_service/gui/core/gui_resize.c"
+#include "runtime_service/gui/interact/gui_resize.c"
 
 // Tier 0b -- the layout composer (spacing metrics in, rects out)
 #include "runtime_service/gui/compose/gui_layout_core.c"
@@ -181,13 +197,11 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/compose/gui_region.c"
 #include "runtime_service/gui/compose/gui_layout.c"
 
-#include "runtime_service/gui/core/gui_anim.c"
+#include "runtime_service/gui/interact/gui_anim.c"
 
-// Tier 1a -- custom-UI substrate (caller rects + behavior + raw draw; no skin)
-#include "runtime_service/gui/custom/gui_canvas.c"
-#include "runtime_service/gui/custom/gui_behavior.c"
-
-// Tier 1b -- stock presentation: the default widget set (a client of the tiers above)
+// Tier 1 -- stock presentation: the default widget set (a client of the tiers above).  Internal
+// calls to the user/ vocabulary (gui_canvas tooltips, combo's push_id) resolve through the public
+// declarations in gui_host.h -- deliberate dogfooding of the caller surface, not an order cycle.
 #include "runtime_service/gui/widgets/gui_text_edit.c"
 #include "runtime_service/gui/widgets/gui_widget.c"
 #include "runtime_service/gui/widgets/gui_volatile.c"
@@ -213,6 +227,15 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/popup/gui_nav.c"
 #include "runtime_service/gui/popup/gui_widget_combo.c"
 #include "runtime_service/gui/popup/gui_widget_menu.c"
+
+// Tier 5 -- user/: the caller's vocabulary.  Pure public verbs + readers over the machinery
+// above; zero state, zero machinery -- deleting any file here breaks no lower tier.  Included
+// last-of-the-tiers because nothing below needs them at definition time (all upward calls go
+// through gui_host.h declarations).
+#include "runtime_service/gui/user/gui_stacks.c"
+#include "runtime_service/gui/user/gui_behavior.c"
+#include "runtime_service/gui/user/gui_canvas.c"
+#include "runtime_service/gui/user/gui_query.c"
 
 // Pipeline dashboard -- an ordinary debug-band window + panel painters over the standard draw
 // API; the snapshot it reads is captured in the backend unit (backend/gui_dash_capture.c).

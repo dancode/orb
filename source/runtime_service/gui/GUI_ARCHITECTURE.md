@@ -9,9 +9,9 @@ Static lib `gui`, two translation units:
 
 - `gui.c` (UI/core unit): context, id/state pool, input snapshot, layout engine, widgets,
   window/dock/popup/nav/table, frame lifecycle, mod vtable. Unity-includes its constituents in
-  DEPENDENCY TIERS (core/ + compose/ -> custom/ -> widgets/ -> window/ -> dock/ + popup/;
-  table/ needs core/ + compose/ only). Include order matters; later files may reference statics
-  from earlier ones.
+  DEPENDENCY TIERS (core/ + interact/ + compose/ -> widgets/ -> window/ -> dock/ +
+  popup/; table/ needs the Tier 0 dirs only; user/ sits on top of everything). Include order
+  matters; later files may reference statics from earlier ones.
 - `gui_backend.c` (render unit): fonts, draw list, tessellation, GPU flush, debug overlay.
   UI unit calls it one-way through `gui_backend.h` (`draw_*`, `font_*`, `gui_render_*`).
 
@@ -22,16 +22,28 @@ The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one co
 - **Composer** (`compose/`): the ONLY code that turns style spacing metrics
   (`line_size`/`gap`/`pad`/`grid_quantum`/`scales`) into geometry. Consumes spacing, produces
   rects. Public face: the layout verbs + the `sz_` sizing family.
-- **Behavior** (`core/gui_widget_core.c`, public door `custom/gui_behavior.c`): consumes
-  finished rects, produces interaction state (`hover`/`active`/`pressed`/`clicked`). Style is
-  invisible below this line -- behavior never reads a metric or color to make a decision.
-  (One sanctioned exception, documented in place: the keyboard-nav focus ring draw.)
+- **Behavior** (`interact/`, public door `user/gui_behavior.c`): a bucket of widget-agnostic
+  interaction SERVICES -- identity (`gui_id.c`), keyed state tracking (`gui_state.c`), the io
+  snapshot (`gui_io.c`; the public readers over it are `user/gui_query.c`), the drag threshold
+  machine + payload transfer (`gui_drag.c`), the edge-resize mechanism (`gui_resize.c`), animation stepping (`gui_anim.c`),
+  and the standard item protocol (`gui_item.c`: `widget_behavior`, the default composition every
+  stock widget runs). Each service knows a capability (exclusivity, clicks, tracking) over
+  (id, rect); none knows a slider. Consumes finished rects, produces interaction state
+  (`hover`/`active`/`pressed`/`clicked`). Style is invisible below this line -- a service never
+  reads a metric or color to make a decision. (One sanctioned exception, documented in place:
+  the keyboard-nav focus ring draw in `gui_item.c`.)
 - **Presentation** (`widgets/` + the window/dock/popup chrome): consumes rect + state + skin
   and paints. The stock widget set is the HIGHEST layer -- a client of the tiers below, written
   on the same substrate a user widget uses, not a privileged one.
 
-`custom/` is the public door onto the first two roles: `canvas`/`split`/`carve`/`empty` for
-rects, `item`/`invisible_button` for behavior, `draw_*`/`text_size` for your own presentation.
+`user/` is the top tier and the public door onto the first two roles -- the caller's vocabulary,
+pure verbs + readers with zero state or machinery: `canvas`/`split`/`carve`/`empty` for
+rects, `item`/`invisible_button` for behavior, `draw_*`/`text_size` for your own presentation,
+the bracketing stacks (`push_id`, item flags, `push_style_*`, `scale_push`, `disabled_begin`),
+and the query readers (`want_capture_*`, `is_item_*`, `is_key_*`). Nothing below depends on it;
+internal uses (combo's `push_id`, the overlay's key reads) deliberately dogfood the public
+surface through gui_host.h declarations.
+
 A custom widget (`game_ui_slider()`) never needs skin or spacing metrics -- it brings its own
 look and composes with any layout.
 
@@ -217,7 +229,7 @@ overloaded unit. Pair results with `push_layout_overlay` or `draw_*`.
 Absolute-rect placement does NOT move the layout pen: after drawing a HUD/carved band, reserve
 it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
 
-## Interaction / ids / the custom tier (custom/)
+## Interaction / ids / the user tier (user/)
 
 - IDs: label-hashed; `"##hidden"` suffix hides label; `push_id_int/pop_id` for loops.
 - Item queries after any emit: `is_item_hovered/active/clicked`; `want_capture_mouse` for

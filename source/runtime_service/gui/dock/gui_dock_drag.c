@@ -29,7 +29,7 @@
     gui_dock_core.c (via the public verbs in gui_dock.c: gui_dock_split / gui_dock_window).
     The overlay paints on a reserved z-band above everything (popups sit at 0x80000000).
 
-    Tab drag: a press on a tab rides the generic drag machine (drag_from_chrome, core/gui_drag.c),
+    Tab drag: a press on a tab rides the generic drag machine (drag_from_chrome, interact/gui_drag.c),
     publishing a "gui.dock_tab" payload.  While the cursor stays inside the strip band the drag
     REORDERS the tabs live (dock_strip_reorder); leaving the band vertically UNDOCKS -- pops that
     window out of its node into a free window that follows the cursor -- handled inside

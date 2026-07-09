@@ -316,7 +316,7 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
     emitted by debug_overlays_emit(), called from ctx_end while the DEFAULT context is still
     bound -- last in its build, so they draw on top and their cost is counted like any widget.
 
-        F1-F5   debug overlay layers (handled at event time in gui_input.c, Debug builds)
+        F1-F5   debug overlay layers (handled at event time in interact/gui_io.c, Debug builds)
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
         P       perf overlay tier  (off / fps / +timings / +counts / +retained)

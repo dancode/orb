@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/core/gui_resize.c -- Shared edge-resize geometry.
+    runtime_service/gui/interact/gui_resize.c -- Shared edge-resize geometry.
 
     The record-agnostic mechanism behind every draggable edge in the UI: the grab-band hit test,
     the hot-edge highlight, the press-time anchor record, and the raw cursor-to-edge apply.  Each

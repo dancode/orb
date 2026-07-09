@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/core/gui_drag.c -- Drag and drop: typed payload transfer between items.
+    runtime_service/gui/interact/gui_drag.c -- Drag and drop: typed payload transfer between items.
 
     The ambient drag machine (the ImGui BeginDragDropSource/Target analogue).  One drag exists at
     a time (one mouse), so the whole feature is a single module-static slot: which item the drag
