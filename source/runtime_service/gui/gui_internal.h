@@ -468,50 +468,133 @@ typedef struct
 typedef struct { f32 left_h; f32 right_h; } gui_split_entry_t;
 
 /*==============================================================================================
-    Popup stack (gui_ctx.c; driver in gui_popup.c)
+    Window context (the `win` member of s_build, 0_foundation/gui_ctx.c; stamped in 4_window/)
 
-    A popup is a top-level overlay begun while a parent window is still open but laid out, clipped,
-    and painted independent of it.  gui_overlay_save_t snapshots exactly the cross-cutting state
-    begin/window_end mutate so popup_end can restore the parent verbatim.  The open set is a stack
-    ordered parent -> child, held in gui_context_t.
+    The flat "window currently between window_begin / window_end" record -- everything begin
+    stamps and end consumes.  One named struct so the overlay seam (gui_overlay_save_t below)
+    saves and restores the whole window context as a single assignment: a field added here is
+    carried across the popup seam automatically.  The frame-global scratch that must SURVIVE
+    that seam (wheel_used, the nav dispensers, the combo channel) lives beside it in s_build,
+    outside this record.
 ==============================================================================================*/
 
 typedef struct
 {
-    /* Flat window context (s_build) + interaction scope (s_scope) the popup's window_begin
-       clobbers.  The scope owner needs no field of its own: it is stamped alongside win_id
-       everywhere, so reattach restores both from win_id. */
-    gui_id_t             win_id;
-    const char*            win_title;
-    bool                   win_collapsed;
-    gui_win_flags_t      win_flags;
-    f32                    win_title_h;
-    u8                     resize_hot;    // s_scope.resize_hot (chrome hover suppression)
-    bool                   grip_hot;      // s_scope.grip_hot
-    struct gui_window_t* cur_win;
-    f32                    win_x, win_y, win_w, win_h;
-    gui_rect_t           clip;          // s_scope.clip (interaction clip)
+    gui_id_t    id;            // id of the window currently between begin/window_end
+    const char* title;         // title string, cached for window_end's deferred chrome
+    bool        collapsed;     // current window is collapsed (title bar only this frame)
+    bool        hidden;        // CLOSEABLE + closed: begin emitted nothing, end early-outs
+    gui_win_flags_t flags;     // behavior flags supplied to window_begin
+    f32         title_h;       // title bar height (0 if NOTITLEBAR)
+    struct gui_window_t* rec;  // persisted window record; scroll write-back target
 
-    /* Draw cursor + the parent's top layout frame. */
+    /* Docking (gui_dock.c): the node hosting the current window, or NULL when it is
+       free-floating.  When set, the window's geometry is owned by the node and its title bar is
+       replaced by the node's tab strip; dock_active distinguishes the visible tab (draws a body)
+       from a window docked behind another tab (window_begin returns false, draws nothing). */
+    struct gui_dock_node_t* dock_node;
+    bool        dock_active;
 
-    gui_id_t             window;        // s_draw.cur_win (retained-cache key)
-    u32                    sort_key;      // s_draw.cur_z
-    u32                    viewport;      // s_draw.cur_vp (target surface routing)
-    u32                    band;          // s_draw.cur_band (arena band: debug UI isolation)
+    f32         x, y;          // current window top-left (outer frame)
+    f32         w, h;          // current window dimensions
 
-    /* Ambient glyph-clip window (a table cell sets it for its span): cleared for the overlay --
-       its text must follow the overlay, not stay bounded to the parent's slot -- and restored
-       at reattach so the remaining cell text keeps its window. */
-    f32                    text_clip_x0;  // s_draw.text_clip_x0
-    f32                    text_clip_x1;  // s_draw.text_clip_x1
-    bool                   had_parent;    // a layout region was open (parent frame valid)
-    layout_frame_t         parent_frame;  // the parent's top frame, restored after the popup
+    gui_rect_t  menubar_rect;  // reserved strip (WIN_MENUBAR); menu_bar_begin fills it
+
+    u32         viewport;      // ambient viewport for new-window inheritance (stamped per window)
+
+} gui_win_ctx_t;
+
+/*==============================================================================================
+    Interaction scope (the s_scope instance in 0_foundation/gui_ctx.c)
+
+    The declared contract between composition and behavior.  Everything widget_behavior
+    (2_interact/gui_item.c) consumes about "where is this item emitting" lives here, nowhere
+    else: composition stamps the record at its seams (window_begin / child_begin / popup / table
+    stamp win + clip; the resize/grip resolvers stamp the chrome suppression; the emit seam
+    widget_next_rect_w latches the per-item flags + nav stamp), and behavior reads only this
+    record plus its own s_interaction -- never the composer scratch (s_build).  Behavior
+    publishes its result back into the last_* fields, where the item-query readers
+    (5_user/gui_query.c), drag sourcing, and context-menu anchoring pick it up.  Unlike the
+    s_interaction arbitration fields (verb-only writes), the scope is stamped directly: the
+    contract is the record itself.  The overlay seam saves and restores it wholesale, so a field
+    added here only needs its per-frame reset.  Tier: frame scratch, same lifetime as s_build.
+==============================================================================================*/
+
+typedef struct
+{
+    /* scope -- stamped at the window/child/popup/table seams */
+    gui_id_t   win;          // scope owner: hover domain (vs hover_win) and nav domain (vs s_nav.win)
+    gui_rect_t clip;         // active interaction clip -- widget hover is gated by it
+    u8         resize_hot;   // window resize edges hot this frame -- suppresses widget hover
+    bool       grip_hot;     // cursor over the CAN_AUTOSIZE grip -- suppresses widget hover
+
+    /* item -- latched at the emit seam (widget_next_rect_w), dropped at the chrome seams.
+       The nav stamp is the placing region's structural coordinate: it stays latched across the
+       several behavior calls one cell can make (a numeric's sub-fields are same-line siblings),
+       and item_flags_chrome_reset drops nav_placed at every chrome seam -- so "was this item
+       placed by the layout engine" is exactly the body/chrome split. */
+    gui_item_flags_t flags;  // flags resolved for the item being emitted (item_flags_resolve)
+    u32   nav_region;        // stamp: region that placed the item being emitted
+    u32   nav_line;          // stamp: its line sequence
+    bool  nav_placed;        // stamp is live (false => the next behavior call is chrome)
+    bool  nav_skip;          // one-shot: the next behavior call is no keyboard target at all
+                             // (scrollbar, drag strip) -- consumed by widget_behavior
+
+    /* result -- published by widget_behavior for the most recent item (the Dear ImGui IsItem*
+       model): the item-query readers report on "the widget just emitted" with no per-widget
+       bookkeeping, the same anchor context menus / tooltips / drag sources hang from. */
+    gui_id_t       last_id;      // id of the most recent widget emitted
+    gui_rect_t     last_rect;    // its screen rect
+    widget_state_t last_status;  // its resolved hover / active / clicked / focused / nav flags
+
+} gui_scope_t;
+
+/*==============================================================================================
+    Draw scope (state in backend/pipeline/gui_emit_draw.c; accessors in gui_backend.h)
+
+    The backend paint cursor as one record: the command segment tag (owning window, sort key,
+    viewport, arena band -- the ambient font stays global by design) plus the ambient glyph-clip
+    window (a table cell sets it for its span).  draw_scope / draw_scope_set read and write it
+    wholesale for the overlay seam.
+==============================================================================================*/
+
+typedef struct
+{
+    gui_id_t window;         // s_draw.cur_win (retained-cache key)
+    u32      sort_key;       // s_draw.cur_z (paint order)
+    u32      viewport;       // s_draw.cur_vp (target surface routing)
+    u32      band;           // s_draw.cur_band (arena band: debug UI isolation)
+    f32      text_clip_x0;   // ambient glyph-clip window
+    f32      text_clip_x1;
+
+} gui_draw_scope_t;
+
+/*==============================================================================================
+    Popup stack (gui_ctx.c; driver in gui_popup.c)
+
+    A popup is a top-level overlay begun while a parent window is still open but laid out,
+    clipped, and painted independent of it.  gui_overlay_save_t is the parent context popup_end
+    restores: whole-struct copies of the window context, the interaction scope, and the draw
+    scope, plus the parent's top layout frame (its pen must survive the popup's region pop).
+    Because the copies are wholesale, nothing here is maintained field-by-field -- a field added
+    to any of those records rides the seam automatically.  The open set is a stack ordered
+    parent -> child, held in gui_context_t.
+==============================================================================================*/
+
+typedef struct
+{
+    gui_win_ctx_t    win;      // s_build.win -- the flat window context
+    gui_scope_t      scope;    // s_scope -- the interaction scope (behavior contract)
+    gui_draw_scope_t draw;     // backend paint cursor + ambient glyph-clip window
+
+    bool             had_parent;    // a layout region was open (parent frame valid)
+    layout_frame_t   parent_frame;  // the parent's top frame, restored after the popup
 
 } gui_overlay_save_t;
 
 typedef struct
 {
-    gui_id_t            id;                 // popup window id (salted; matches s_build.win_id / hover_win)
+    gui_id_t            id;                 // popup window id (salted; matches s_build.win.id / hover_win)
     bool                modal;              // blocks input behind it + dims the background
     f32                 anchor_x;           // open point -- where a non-modal popup is placed
     f32                 anchor_y;           // 

@@ -91,7 +91,7 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_win_flags_
        tag, not this.  A window sets it in window_begin_ex; a region is its own root-level
        context so it must set it too, exactly the same way (win_id alongside, for the chrome
        and dock bookkeeping that reads the composer scratch). */
-    s_build.win_id = id;
+    s_build.win.id = id;
     s_scope.win    = id;
 
     /* Interactive by default -- enter the same hover_win contest a window does, at this region's

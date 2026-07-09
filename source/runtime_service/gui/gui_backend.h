@@ -109,16 +109,15 @@ void draw_set_rounding          ( f32 r );          // corner radius folded into
 f32  draw_rounding              ( void );           // current ambient radius (save/restore around a sub-element)
 void draw_set_text_clip_x       ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run
 void draw_clear_text_clip       ( void );           // restore the no-clip sentinel (unbounded text)
-void draw_get_text_clip         ( f32* x0, f32* x1 ); // read the window (saved/restored by the popup layer)
 void draw_set_sort_key          ( u32 z );          // paint order stamped on new commands (window z)
-u32  draw_sort_key              ( void );           // current sort key (saved/restored by the popup layer)
 void draw_set_viewport          ( u32 vp );         // viewport index stamped on new commands (surface routing)
-u32  draw_viewport              ( void );           // current viewport index
 void draw_set_band              ( u32 band );       // arena band: 0 = main UI, 1 = debug (GUI_WIN_DEBUG_BAND)
-u32  draw_band                  ( void );           // current band (saved/restored + inherited by popups)
+u32  draw_band                  ( void );           // current band (sampled for popup band inheritance)
 void draw_set_window            ( gui_id_t win );   // stable window id stamped on new commands (cache key)
 void draw_set_font              ( u32 font );       // active font id -> per-segment atlas batch context (push/pop/use_font)
-gui_id_t draw_window            ( void );           // current window id (saved/restored by the popup layer)
+
+gui_draw_scope_t draw_scope     ( void );              // paint cursor + glyph clip as one record
+void             draw_scope_set ( gui_draw_scope_t s );// restore it wholesale (the overlay seam)
 
 void draw_push_clip_rect        ( f32 x, f32 y, f32 w, f32 h ); // push clip, intersected with the parent
 void draw_pop_clip_rect         ( void );                       // pop the top clip
@@ -295,7 +294,7 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
     #define DBG_LAYOUT( r )               dbg_capture_layout( ( r ) )
     #define DBG_NAME( id, str )           dbg_name_register( ( id ), ( str ) )
 
-    /* Ambient build viewport (s_build.cur_viewport, gui_ctx.c) -- the capture functions live in/usage
+    /* Ambient build viewport (s_build.win.viewport, gui_ctx.c) -- the capture functions live in/usage
        the backend unit, so they read it through this accessor rather than the UI-unit static. */
     u32 gui_dbg_build_viewport( void );
 

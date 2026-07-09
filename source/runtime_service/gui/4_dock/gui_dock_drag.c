@@ -516,10 +516,10 @@ dock_strip_reorder( gui_dock_node_t* node, gui_id_t wid, f32 strip_x )
 static void
 dock_window_chrome( gui_dock_node_t* node )
 {
-    f32 x  = s_build.win_x;
-    f32 y  = s_build.win_y;
-    f32 w  = s_build.win_w;
-    f32 th = s_build.win_title_h;   /* tab-strip height (= WIN_TITLE_H, clamped for a tiny node) */
+    f32 x  = s_build.win.x;
+    f32 y  = s_build.win.y;
+    f32 w  = s_build.win.w;
+    f32 th = s_build.win.title_h;   /* tab-strip height (= WIN_TITLE_H, clamped for a tiny node) */
 
     draw_set_rounding( 0.0f );   /* the strip is a flat band behind the tabs */
     draw_push_rect_filled( x, y, w, th, 0, 0, 1, 1, 0, COL_TITLE_BG );
@@ -588,7 +588,7 @@ dock_window_chrome( gui_dock_node_t* node )
        angles.  Drawn before the undock handler so it never reads `node` after a drag-out collapses
        an emptied node. */
     draw_set_rounding( 0.0f );
-    draw_push_rect_outline( x, y, w, s_build.win_h, WIN_BORDER, 0, COL_BORDER );
+    draw_push_rect_outline( x, y, w, s_build.win.h, WIN_BORDER, 0, COL_BORDER );
 
     /* Floating group: bold the hot / grabbed resize edges over the thin border, exactly like a
        free window's window_end does (the hot mask was resolved in dock_float_resolve). */
@@ -597,7 +597,7 @@ dock_window_chrome( gui_dock_node_t* node )
         u8 hot_edges = ( s_interaction.active_id == id_combine( node->id, GUI_RESIZE_SALT ) )
                      ? s_resize_edges : s_scope.resize_hot;
         if ( hot_edges )
-            draw_resize_highlight( ( gui_rect_t ){ x, y, w, s_build.win_h }, hot_edges );
+            draw_resize_highlight( ( gui_rect_t ){ x, y, w, s_build.win.h }, hot_edges );
     }
 
     /* Tab drag: an armed tab press rides the generic drag machine (drag_from_chrome publishes a

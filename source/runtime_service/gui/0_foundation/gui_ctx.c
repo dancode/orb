@@ -22,7 +22,7 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
-/* s_build.cur_win points at a live gui_window_t pool record (window types in gui_internal.h; the
+/* s_build.win.rec points at a live gui_window_t pool record (window types in gui_internal.h; the
    pool is reached through g_ctx) so window_end can write scroll / content extent back into it. */
 
 /* Ambient interaction state -- the one live hover / active / focus, persisting across frames.  One
@@ -94,31 +94,15 @@ static bool s_replay_mode;
 
 static struct
 {
-    u32         cur_viewport;       // ambient viewport for new-window inheritance (updated per window emitted)
+    /* The window currently between window_begin / window_end -- everything begin stamps and end
+       consumes, as one record (gui_win_ctx_t, gui_internal.h) so the popup seam saves/restores
+       it with a single assignment.  Everything below it is a frame-global channel that must
+       SURVIVE that seam and so lives outside the record. */
+    gui_win_ctx_t win;
 
-    gui_id_t  win_id;               // id of the window currently between begin/window_end
-    const char* win_title;          // title string, cached for window_end's deferred chrome
-    bool        win_collapsed;      // current window is collapsed (title bar only this frame)
-    bool        win_hidden;         // current window is CLOSEABLE + closed: begin emitted nothing, end early-outs
-    gui_win_flags_t win_flags;      // current window's behavior flags (window_begin arg)
-    f32         win_title_h;        // current window's title bar height (0 if NOTITLEBAR)
-    struct gui_window_t* cur_win;   // persisted window record; scroll write-back target
-
-    /* Docking (gui_dock.c): the node hosting the current window, or NULL when it is free-floating.
-       When set, the window's geometry is owned by the node and its title bar is replaced by the
-       node's tab strip; win_dock_active distinguishes the visible tab (draws a body) from a window
-       that is docked but behind another tab (window_begin returns false, draws nothing). */
-    struct gui_dock_node_t* cur_dock_node;
-    bool        win_dock_active;    // current docked window is its node's active (visible) tab
-
-    f32  win_x, win_y;        // current window top-left (outer frame)
-    f32  win_w, win_h;        // current window dimensions
-
-    gui_rect_t menubar_rect; // reserved menu-bar strip for the current window (WIN_MENUBAR); menu_bar_begin fills it
-
-    /* Layout pen + scroll region state now live on the layout-frame stack below; the
-       window is just the root frame.  s_build keeps only the cross-cutting per-frame
-       context the chrome and widgets read regardless of which region is active. */
+    /* Layout pen + scroll region state live on the layout-frame stack below; the window is
+       just the root frame.  s_build keeps only the cross-cutting per-frame context the chrome
+       and widgets read regardless of which region is active. */
 
     bool         wheel_used;  // a region consumed the wheel this frame (innermost wins)
 
@@ -149,52 +133,19 @@ static struct
 
 } s_build;
 
-/* The interaction scope -- the declared contract between composition and behavior.  Everything
-   widget_behavior (2_interact/gui_item.c) consumes about "where is this item emitting" lives here,
-   nowhere else: composition stamps the record at its seams (window_begin / child_begin / popup /
-   table stamp win + clip; the resize/grip resolvers stamp the chrome suppression; the emit seam
-   widget_next_rect_w latches the per-item flags + nav stamp), and behavior reads only this record
-   plus its own s_interaction -- never the composer scratch above.  Behavior publishes its result
-   back into the last_* fields, where the item-query readers (5_user/gui_query.c), drag sourcing,
-   and context-menu anchoring pick it up.  Unlike the s_interaction arbitration fields (verb-only
-   writes), the scope is stamped directly: the contract is the record itself -- a field added here
-   is a new input to behavior and must be reset below and saved across the popup seam
-   (gui_overlay_save_t).  Tier: frame scratch, same lifetime as s_build. */
+/* The interaction scope -- the declared contract between composition and behavior; the full
+   contract lives with the type (gui_scope_t, gui_internal.h).  Stamped directly by composition
+   at its seams, read by behavior, saved/restored wholesale at the popup seam -- a field added to
+   the type only needs its per-frame reset in ctx_new_frame below.  Tier: frame scratch, same
+   lifetime as s_build. */
 
-static struct
-{
-    /* scope -- stamped at the window/child/popup/table seams */
-    gui_id_t   win;          // scope owner: hover domain (vs hover_win) and nav domain (vs s_nav.win)
-    gui_rect_t clip;         // active interaction clip -- widget hover is gated by it
-    u8         resize_hot;   // window resize edges hot this frame -- suppresses widget hover
-    bool       grip_hot;     // cursor over the CAN_AUTOSIZE grip -- suppresses widget hover
-
-    /* item -- latched at the emit seam (widget_next_rect_w), dropped at the chrome seams.
-       The nav stamp is the placing region's structural coordinate: it stays latched across the
-       several behavior calls one cell can make (a numeric's sub-fields are same-line siblings),
-       and item_flags_chrome_reset drops nav_placed at every chrome seam -- so "was this item
-       placed by the layout engine" is exactly the body/chrome split. */
-    gui_item_flags_t flags;  // flags resolved for the item being emitted (item_flags_resolve)
-    u32   nav_region;        // stamp: region that placed the item being emitted
-    u32   nav_line;          // stamp: its line sequence
-    bool  nav_placed;        // stamp is live (false => the next behavior call is chrome)
-    bool  nav_skip;          // one-shot: the next behavior call is no keyboard target at all
-                             // (scrollbar, drag strip) -- consumed by widget_behavior
-
-    /* result -- published by widget_behavior for the most recent item (the Dear ImGui IsItem*
-       model): the item-query readers report on "the widget just emitted" with no per-widget
-       bookkeeping, the same anchor context menus / tooltips / drag sources hang from. */
-    gui_id_t       last_id;      // id of the most recent widget emitted
-    gui_rect_t     last_rect;    // its screen rect
-    widget_state_t last_status;  // its resolved hover / active / clicked / focused / nav flags
-
-} s_scope;
+static gui_scope_t s_scope;
 
 #ifdef GUI_DEBUG_OVERLAY
 /* The debug overlay (gui_debug_overlay.c) lives in the render backend unit and tags each captured rect
    with the ambient build viewport.  s_build is private to this unit, so the overlay reads it
    across the unit seam through this accessor (declared in gui_backend.h, Debug builds only). */
-u32 gui_dbg_build_viewport( void ) { return s_build.cur_viewport; }
+u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
 #endif
 
 /*----------------------------------------------------------------------------------------------
@@ -341,10 +292,10 @@ lf( void )
                              writes a request at this depth; popup_begin matches its id against it.
 
     A popup is a top-level overlay begun while its parent window is still open, yet it must lay out,
-    clip, and paint independent of that parent.  gui_overlay_save_t (gui_internal.h) snapshots exactly
-    the cross-cutting state begin/window_end mutate -- the flat window context, interaction clip, draw
-    sort key, and the parent's top layout frame -- so popup_end restores the parent verbatim; the
-    stack counters balance through the normal push/pop, so no slot is reused or lost.
+    clip, and paint independent of that parent.  gui_overlay_save_t (gui_internal.h) holds the parent
+    context -- whole-struct copies of the window context, interaction scope, and draw scope, plus the
+    parent's top layout frame -- so popup_end restores the parent verbatim; the stack counters
+    balance through the normal push/pop, so no slot is reused or lost.
 ----------------------------------------------------------------------------------------------*/
 
 /* The open set (s_popups_open) and its count (s_popup_open_count) are per-context members reached
@@ -655,7 +606,7 @@ ctx_new_frame( void )
     s_layout_sp           = 0;
     s_id_sp               = 0;       /* fresh id-scope stack; regions/push_id reseed it */
     s_build.wheel_used    = false;
-    s_build.cur_viewport  = 0;       /* ambient viewport resets to primary each frame */
+    s_build.win.viewport  = 0;       /* ambient viewport resets to primary each frame */
 
     /* Fresh nav-stamp dispensers; nothing is placed until a layout cell is handed out. */
     s_build.nav_region_seq  = 0;

@@ -22,7 +22,7 @@
 
       main_menu_bar_begin -- a helper window pinned across the top of the display, then a bar().
       menu_bar_begin      -- the strip a WIN_MENUBAR window reserved below its title bar (a region
-                             over s_build.menubar_rect, drawn outside the body's scrolling flow).
+                             over s_build.win.menubar_rect, drawn outside the body's scrolling flow).
 
     Included by gui.c after gui_widget_combo.c, so the popup internals (popup_open_id,
     popup_is_open_id, popup_set_anchor, popup_begin_common_id, the s_popups_open stack, the
@@ -176,7 +176,7 @@ gui_menu_begin( const char* label )
                     and consume the request (issue: Alt+F opens File).
          nav_right -- inside a menu, a Right move on a submenu row opens it; nav descends next frame
                     as the new popup becomes the top one and captures nav. */
-    bool bar_nav = in_bar && st.nav && s_nav.bar_win == s_build.win_id && !s_nav.in_menus;
+    bool bar_nav = in_bar && st.nav && s_nav.bar_win == s_build.win.id && !s_nav.in_menus;
 
     u8   lead = ( label[ 0 ] != '#' )
               ? (u8)( ( label[ 0 ] >= 'a' && label[ 0 ] <= 'z' ) ? label[ 0 ] - 32 : label[ 0 ] )
@@ -185,7 +185,7 @@ gui_menu_begin( const char* label )
     if ( mnem )
     {
         s_nav.id       = id;                 /* highlight this entry from next frame on */
-        s_nav.bar_win  = s_build.win_id;       /* drive this window's bar */
+        s_nav.bar_win  = s_build.win.id;       /* drive this window's bar */
         s_nav.in_menus = false;
         s_nav.mnemonic = 0;                  /* consume */
     }
@@ -287,7 +287,7 @@ gui_main_menu_bar_end( void )
     menu_bar_begin / menu_bar_end -- the strip a WIN_MENUBAR window reserved below its title bar.
 
     The strip rect was carved off the top of the body in window_begin_ex and stashed in
-    s_build.menubar_rect.  We open a transient pack region over it (outside the body's scrolling
+    s_build.win.menubar_rect.  We open a transient pack region over it (outside the body's scrolling
     flow) and restore the body pen on pop, so the body content lays out from its own origin
     regardless of the strip region's parent-pen advance.
 ----------------------------------------------------------------------------------------------*/
@@ -299,10 +299,10 @@ static gui_rect_t s_menubar_saved_clip;    /* body hit-test clip to restore afte
 bool
 gui_menu_bar_begin( void )
 {
-    if ( !( s_build.win_flags & GUI_WIN_MENUBAR ) )
+    if ( !( s_build.win.flags & GUI_WIN_MENUBAR ) )
         return false;
 
-    gui_rect_t bar = s_build.menubar_rect;
+    gui_rect_t bar = s_build.win.menubar_rect;
 
     /* Strip background, a touch distinct from the body. */
     draw_push_rect_filled( bar.x, bar.y, bar.w, bar.h, 0,0,1,1, 0, COL_TITLE_BG );
@@ -318,10 +318,10 @@ gui_menu_bar_begin( void )
        Point the parent clip at the whole window rect for the push so the strip's hit-test clip
        resolves to the strip itself, then restore the body clip in menu_bar_end. */
     s_menubar_saved_clip = s_scope.clip;
-    s_scope.clip = ( gui_rect_t ){ s_build.win_x, s_build.win_y, s_build.win_w, s_build.win_h };
+    s_scope.clip = ( gui_rect_t ){ s_build.win.x, s_build.win.y, s_build.win.w, s_build.win.h };
 
     s_menubar_sink = ( gui_scroll_link_t ){ 0 };
-    layout_push_region( id_combine( s_build.win_id, GUI_MENUBAR_SALT ), bar,
+    layout_push_region( id_combine( s_build.win.id, GUI_MENUBAR_SALT ), bar,
                         ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIN_BORDER, 0.0f },
                         GUI_WIN_NOSCROLL, &s_menubar_sink,
                         /* own_clip */ false );
@@ -332,7 +332,7 @@ gui_menu_bar_begin( void )
 void
 gui_menu_bar_end( void )
 {
-    if ( !( s_build.win_flags & GUI_WIN_MENUBAR ) )
+    if ( !( s_build.win.flags & GUI_WIN_MENUBAR ) )
         return;
 
     layout_pop_region();

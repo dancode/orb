@@ -144,7 +144,7 @@ table_resize_interact( gui_table_t* t )
 
     const f32 thick = 6.0f;          /* grab band width, centered on the boundary */
     const f32 min_w = WIDGET_MIN_W;  /* floor for each side of the resized pair    */
-    bool      front = ( s_build.win_id == s_interaction.hover_win );
+    bool      front = ( s_build.win.id == s_interaction.hover_win );
 
     for ( i32 i = 0; i < t->ncols - 1; ++i )
     {

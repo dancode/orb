@@ -48,7 +48,7 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->w         = w;
     win->h         = h;
     win->z         = 0;
-    win->viewport  = s_build.cur_viewport;   /* inherit ambient; window_set_next_viewport overrides */
+    win->viewport  = s_build.win.viewport;   /* inherit ambient; window_set_next_viewport overrides */
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
     win->closed    = false;   /* a freshly seen window starts open                */
     win->reopen_floater   = false;   /* not a re-opening floater until one is closed */

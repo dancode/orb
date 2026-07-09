@@ -352,12 +352,6 @@ draw_set_font( u32 font )
     draw_seg_retag( s_draw.cur_win, s_draw.cur_z, s_draw.cur_vp, font, s_draw.cur_band );
 }
 
-gui_id_t
-draw_window( void )
-{
-    return s_draw.cur_win;
-}
-
 /*----------------------------------------------------------------------------------------------
     draw_set_sort_key -- stamp subsequent commands with this z (window paint order).
     Set to the window's z in window_begin and back to 0 (background) in window_end.
@@ -367,14 +361,6 @@ void
 draw_set_sort_key( u32 z )
 {
     draw_seg_retag( s_draw.cur_win, z, s_draw.cur_vp, s_draw.cur_font, s_draw.cur_band );
-}
-
-/* Current sort key -- saved by the popup layer so an overlay window can restore the parent's
-   paint order on close (begin/window_end drive cur_z, which is a single global). */
-u32
-draw_sort_key( void )
-{
-    return s_draw.cur_z;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -390,14 +376,6 @@ void
 draw_set_viewport( u32 vp )
 {
     draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp, s_draw.cur_font, s_draw.cur_band );
-}
-
-/* Current viewport -- saved/restored by the popup layer alongside the sort key, so an overlay
-   begun mid-window leaves the parent's routing intact (begin/window_end drive cur_vp globally). */
-u32
-draw_viewport( void )
-{
-    return s_draw.cur_vp;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -510,14 +488,30 @@ draw_clear_text_clip( void )
     s_draw.text_clip_x1 = GUI_TEXT_NO_CLIP;
 }
 
-/* Read the current window so a seam that must emit UNCLIPPED text mid-span (an overlay detached
-   from inside a table cell -- a tooltip, popup, or drag preview) can save it, clear, and restore
-   on reattach -- see overlay_detach / overlay_reattach (gui_popup.c). */
-void
-draw_get_text_clip( f32* x0, f32* x1 )
+/*----------------------------------------------------------------------------------------------
+    Draw scope -- the paint cursor as one record (gui_draw_scope_t, gui_internal.h): the command
+    segment tag (window, sort key, viewport, band -- the ambient font stays global by design)
+    plus the ambient text-clip window above.  The overlay seam (overlay_detach / overlay_reattach,
+    gui_popup.c) saves and restores it wholesale; the restore is a single segment retag.
+----------------------------------------------------------------------------------------------*/
+
+gui_draw_scope_t
+draw_scope( void )
 {
-    *x0 = s_draw.text_clip_x0;
-    *x1 = s_draw.text_clip_x1;
+    return ( gui_draw_scope_t ){ .window       = s_draw.cur_win,
+                                 .sort_key     = s_draw.cur_z,
+                                 .viewport     = s_draw.cur_vp,
+                                 .band         = s_draw.cur_band,
+                                 .text_clip_x0 = s_draw.text_clip_x0,
+                                 .text_clip_x1 = s_draw.text_clip_x1 };
+}
+
+void
+draw_scope_set( gui_draw_scope_t s )
+{
+    draw_seg_retag( s.window, s.sort_key, s.viewport, s_draw.cur_font, s.band );
+    s_draw.text_clip_x0 = s.text_clip_x0;
+    s_draw.text_clip_x1 = s.text_clip_x1;
 }
 
 static f32

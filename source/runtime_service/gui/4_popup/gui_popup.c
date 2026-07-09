@@ -101,26 +101,13 @@ overlay_detach( void )
 {
     gui_overlay_save_t s;
 
-    s.win_id         = s_build.win_id;
-    s.win_title      = s_build.win_title;
-    s.win_collapsed  = s_build.win_collapsed;
-    s.win_flags      = s_build.win_flags;
-    s.win_title_h    = s_build.win_title_h;
-    s.resize_hot     = s_scope.resize_hot;
-    s.grip_hot       = s_scope.grip_hot;
-    s.cur_win        = s_build.cur_win;
-    s.win_x = s_build.win_x; s.win_y = s_build.win_y;
-    s.win_w = s_build.win_w; s.win_h = s_build.win_h;
-    s.clip           = s_scope.clip;
-    s.window         = draw_window();
-    s.sort_key       = draw_sort_key();
-    s.viewport       = draw_viewport();
-    s.band           = draw_band();
+    s.win   = s_build.win;    /* the whole window context, one copy */
+    s.scope = s_scope;        /* the whole interaction scope        */
+    s.draw  = draw_scope();   /* paint cursor + ambient glyph clip  */
 
     /* Escape the parent's ambient glyph-clip window (a table cell sets one spanning its column):
        the overlay's text must clip to the overlay, not to the slot it was raised from -- a drag
        preview tooltip dragged out of its source column would otherwise lose its glyphs. */
-    draw_get_text_clip( &s.text_clip_x0, &s.text_clip_x1 );
     draw_clear_text_clip();
 
     /* Save the parent's top layout frame so its pen survives the popup's region pop. */
@@ -138,29 +125,15 @@ static void
 overlay_reattach( gui_overlay_save_t s )
 {
     /* Balance the root clip pushed in detach (the popup's own clip was already popped by
-       window_end).  Restore the parent's pen, then its window context + paint cursor. */
+       window_end).  Restore the parent's pen, then its window context, scope, and paint cursor. */
     draw_pop_clip_rect();
 
     if ( s.had_parent )
         *lf() = s.parent_frame;
 
-    s_build.win_id         = s.win_id;
-    s_scope.win            = s.win_id;   /* scope owner tracks win_id (stamped together everywhere) */
-    s_build.win_title      = s.win_title;
-    s_build.win_collapsed  = s.win_collapsed;
-    s_build.win_flags      = s.win_flags;
-    s_build.win_title_h    = s.win_title_h;
-    s_scope.resize_hot     = s.resize_hot;
-    s_scope.grip_hot       = s.grip_hot;
-    s_build.cur_win        = s.cur_win;
-    s_build.win_x = s.win_x; s_build.win_y = s.win_y;
-    s_build.win_w = s.win_w; s_build.win_h = s.win_h;
-    s_scope.clip           = s.clip;
-    draw_set_window( s.window );
-    draw_set_sort_key( s.sort_key );
-    draw_set_viewport( s.viewport );
-    draw_set_band( s.band );
-    draw_set_text_clip_x( s.text_clip_x0, s.text_clip_x1 );   /* the parent span's glyph window */
+    s_build.win = s.win;
+    s_scope     = s.scope;
+    draw_scope_set( s.draw );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -270,7 +243,7 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
        its own floater surface.  cur_viewport is the surface of the window (or parent popup) that
        opened this one, so re-stamping it here makes the menu follow its parent across detach /
        reattach. */
-    win->viewport = s_build.cur_viewport;
+    win->viewport = s_build.win.viewport;
 
     /* Capped popup (combo dropdown): a fixed width with a height that hugs the measured content up
        to cap_h, then scrolls -- the same hug-then-scroll behavior child_begin gets from a max-height
@@ -405,7 +378,7 @@ gui_popup_context_item_begin( const char* str )
 bool
 gui_popup_context_window_begin( const char* str )
 {
-    if ( s_build.win_id == s_interaction.hover_win && s_interaction.hover_id == GUI_ID_NONE
+    if ( s_build.win.id == s_interaction.hover_win && s_interaction.hover_id == GUI_ID_NONE
          && s_io.mouse_pressed[ 1 ] )
         gui_popup_open( str );
     return gui_popup_begin( str, GUI_WIN_NONE );
@@ -427,7 +400,7 @@ gui_tooltip_begin( void )
     gui_window_t* win = window_get( GUI_TOOLTIP_ID, s_io.mouse_x, s_io.mouse_y,
                                       GUI_POPUP_SEED_W, GUI_POPUP_SEED_H );
     win->z = GUI_POPUP_Z_BASE + g_ctx->popup_depth;   /* above every popup */
-    win->viewport = s_build.cur_viewport;               /* track the parent's current surface (see popup_begin) */
+    win->viewport = s_build.win.viewport;               /* track the parent's current surface (see popup_begin) */
 
     bool premeasure = win->scroll.content_h <= 0.0f;
     f32  px, py;
@@ -572,7 +545,7 @@ popup_close_check( void )
 
     When a modal is open, anything not over the modal (or a popup opened on top of it) must be
     inert.  Stealing hover_win is the whole fence: widget_behavior gates all hover on
-    s_build.win_id == hover_win, so pointing hover_win at the modal freezes every window behind it
+    s_build.win.id == hover_win, so pointing hover_win at the modal freezes every window behind it
     with no per-widget code -- the window-scale analogue of active_id drag-modality.
 ----------------------------------------------------------------------------------------------*/
 

@@ -251,7 +251,7 @@ layout_pop_region( void )
        cursor inside this region's box.  Re-clamp against this frame's measured content. */
     if ( !s_build.wheel_used
          && !( f->flags & GUI_WIN_NOMOUSESCROLL )
-         && s_build.win_id == s_interaction.hover_win
+         && s_build.win.id == s_interaction.hover_win
          && s_interaction.active_id == GUI_ID_NONE
          && s_io.mouse_wheel != 0.0f
          && rect_hit( f->outer ) )
