@@ -363,14 +363,16 @@ static gui_context_t*
 ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
 {
     #define ALIGN8( x ) ( ( ( x ) + 7u ) & ~7u )
-    u32 sz_state = slots            * (u32)sizeof( gui_state_slot_t );
-    u32 sz_pop   = c->popup_depth   * (u32)sizeof( gui_popup_t      );
-    u32 sz_win   = c->max_windows   * (u32)sizeof( gui_window_t     );
-    u32 sz_vp    = c->max_viewports * (u32)sizeof( gui_viewport_t   );
-    u32 sz_dock  = c->max_dock_nodes* (u32)sizeof( gui_dock_node_t  );
+    u32 sz_state = slots               * (u32)sizeof( gui_state_slot_t     );
+    u32 sz_big   = GUI_STATE_BIG_SLOTS * (u32)sizeof( gui_state_big_slot_t );
+    u32 sz_pop   = c->popup_depth      * (u32)sizeof( gui_popup_t          );
+    u32 sz_win   = c->max_windows      * (u32)sizeof( gui_window_t         );
+    u32 sz_vp    = c->max_viewports    * (u32)sizeof( gui_viewport_t       );
+    u32 sz_dock  = c->max_dock_nodes   * (u32)sizeof( gui_dock_node_t      );
 
     u32 off_state = ALIGN8( (u32)sizeof( gui_context_t ) );
-    u32 off_pop   = ALIGN8( off_state + sz_state );
+    u32 off_big   = ALIGN8( off_state + sz_state );
+    u32 off_pop   = ALIGN8( off_big   + sz_big   );
     u32 off_win   = ALIGN8( off_pop   + sz_pop   );
     u32 off_vp    = ALIGN8( off_win   + sz_win   );
     u32 off_dock  = ALIGN8( off_vp    + sz_vp    );
@@ -385,6 +387,8 @@ ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
     ctx->retained.state       = (gui_state_slot_t*)( blk + off_state );
     ctx->retained.state_count = slots;
     ctx->retained.state_mask  = slots - 1;
+    ctx->retained.state_big   = (gui_state_big_slot_t*)( blk + off_big );
+    ctx->retained.big_mask    = GUI_STATE_BIG_SLOTS - 1;
     ctx->retained.id_salt     = (u32)slot * 0x9e3779b9u;
     ctx->popups_open          = (gui_popup_t*)   ( blk + off_pop  );
     ctx->popup_depth          = c->popup_depth;

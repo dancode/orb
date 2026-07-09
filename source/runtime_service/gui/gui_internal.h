@@ -54,7 +54,13 @@
 #define GUI_DOCK_TABS_MAX           8       // windows co-docked (tabbed) in one leaf node
 #define GUI_DOCK_NAME_CAP           28      // bytes of a tab's display name, copied at dock time
 
-#define GUI_STATE_CAP               24      // payload bytes per slot (max state struct: gui_region_t)
+/* Keyed state pool slot payloads -- two size classes over one probe (0_foundation/gui_state.c).
+   gui_state_get picks the class from the requested size; the caps are asserted against their
+   largest tenants in gui_state.c / gui_table.c. */
+
+#define GUI_STATE_CAP               24      // small-class payload bytes (max tenant: gui_region_t)
+#define GUI_STATE_BIG_CAP           96      // big-class payload bytes (max tenant: gui_table_persist_t)
+#define GUI_STATE_BIG_SLOTS         32      // big-class capacity, power of two (tables are the main tenant)
 
 /* GPU buffer region sizing uses a fixed viewport count (allocated once at init before any config).
    This is NOT the per-context runtime limit -- that is g_ctx->max_viewports.
@@ -607,11 +613,20 @@ typedef struct
 /*==============================================================================================
     Keyed state pool + per-context retained state (gui_ctx.c)
 
-    The single store a widget uses to keep a few bytes alive across frames, keyed by its id (a
-    region's scroll, a tree node's open flag, a combo's popup state), plus the per-context id-salt
-    and frame clock that stamp and age it.  An open-addressing hash table; see gui_ctx.c for the
-    reclamation contract.
+    The single store a widget uses to keep bytes alive across frames, keyed by its id (a
+    region's scroll, a tree node's open flag, a combo's popup state, a table's column widths),
+    plus the per-context id-salt and frame clock that stamp and age it.  Two open-addressing
+    hash tables -- a small class and a big class -- walked by the one probe in gui_state.c,
+    which also holds the reclamation contract.  Both slot types share the (id, seen_frame)
+    header prefix the probe reads.
 ==============================================================================================*/
+
+typedef struct
+{
+    gui_id_t    id;                       // 0 = empty slot
+    u32         seen_frame;               // frame last touched -- drives stale reclamation
+
+} gui_state_hdr_t;
 
 typedef struct
 {
@@ -620,6 +635,14 @@ typedef struct
     u8          data[ GUI_STATE_CAP ];    // payload; naturally 4-byte aligned (follows two u32 fields)
 
 } gui_state_slot_t;
+
+typedef struct
+{
+    gui_id_t    id;                       // 0 = empty slot
+    u32         seen_frame;               // frame last touched -- drives stale reclamation
+    u8          data[ GUI_STATE_BIG_CAP ];// payload for the rare large tenant (table persist)
+
+} gui_state_big_slot_t;
 
 typedef struct
 {
@@ -637,6 +660,9 @@ typedef struct
     gui_state_slot_t*   state;       // open-addressed keyed per-widget state; points into context alloc
     u32                 state_count; // capacity, power of two
     u32                 state_mask;  // state_count - 1, for bucket masking
+
+    gui_state_big_slot_t* state_big; // big-class slots (GUI_STATE_BIG_SLOTS); points into context alloc
+    u32                 big_mask;    // GUI_STATE_BIG_SLOTS - 1, for bucket masking
 
 } gui_retained_t;
 
@@ -776,41 +802,6 @@ typedef struct gui_dock_node_t
 } gui_dock_node_t;
 
 /*==============================================================================================
-    Table persistence types (gui_table.c)
-
-    Moved above gui_context_t so the persist pool can be embedded in it by value, keyed by table
-    id and LRU-reclaimed the same way as the keyed widget state pool -- per-context, so two bound
-    contexts with identically-titled tables never share column widths / sort state.
-==============================================================================================*/
-
-/* Per-column setup data filled by table_setup_column before the first row. */
-typedef struct
-{
-    char                    label[ 32 ];   /* display name drawn by table_headers_row     */
-    gui_table_col_flags_t   flags;         /* FIXED / STRETCH / NO_RESIZE / etc.          */
-    f32                     init_w;        /* 0 = stretch (==1 fill); >1 = fixed pixels   */
-
-} gui_table_col_t;
-
-#define GUI_TABLE_POOL_CAP 32   /* max concurrent distinct tables tracked across frames */
-
-/* Per-table persistent state: column widths, sort choice, and scroll position survive frames. */
-typedef struct
-{
-    gui_id_t id;
-    u32        seen_frame;
-    f32        col_w[ GUI_TABLE_COLS_MAX ];   /* 0 = use column's init_w / default */
-    i8         sort_col;                        /* -1 = unsorted                     */
-    i8         sort_dir;                        /* 0 = ascending, 1 = descending     */
-
-    /* Scroll state + measured content extent for a scrolling body (GUI_TABLE_SCROLL_*).
-       The layout region reads scroll as the pen bias and writes content_w/h back at pop; both
-       must persist across frames for the two-pass gutter / clamp logic to settle. */
-    gui_scroll_link_t scroll;
-
-} gui_table_persist_t;
-
-/*==============================================================================================
     gui_context_t -- the bound per-context retained state ("bind and use").
 
     A context is the emission session the code binds once and emits ALL its windows into; it owns
@@ -848,8 +839,6 @@ typedef struct gui_context_t
     u32                 dock_id_seq;        // monotonic node-id dispenser (0 = none)
     u32                 max_dock_nodes;     // capacity; 0 = docking disabled
 
-    gui_table_persist_t table_pool[ GUI_TABLE_POOL_CAP ];  // per-table col widths / sort, keyed by id
-
     bool                listening;          // true: context receives hover/click/nav input this frame
     void*               _alloc;             // the single ctx_alloc_slot malloc backing this header + all
                                             // pool arrays; freed at teardown. Non-NULL for every context,
@@ -857,67 +846,6 @@ typedef struct gui_context_t
     u32                 _alloc_size;        // byte size of the _alloc block; reported by gui_mem_stats()
 
 } gui_context_t;
-
-/*==============================================================================================
-    Table per-frame state type (gui_table.c)
-
-    The persist pool (gui_table_persist_t, above) is embedded per-context in
-    gui_context_t.table_pool.  This is the per-frame active-table context: a single active slot,
-    module-static like s_build (frame scratch, not per-context).  FUTURE: nested tables (a second
-    active slot); today one table is active at a time (gui_table.c rejects nesting).
-==============================================================================================*/
-
-/* Per-frame active table context.  One table active at a time (gui_table.c rejects nesting; see
-   the FUTURE note above). */
-typedef struct
-{
-    gui_id_t                id;
-    gui_table_flags_t       flags;
-    i32                     ncols;
-    gui_table_col_t         cols[ GUI_TABLE_COLS_MAX ];
-    i32                     col_setup_n;   /* number of table_setup_column calls so far */
-
-    /* Resolved column geometry (screen space), set once in table_begin. */
-    f32                     col_x[ GUI_TABLE_COLS_MAX ];
-    f32                     col_w[ GUI_TABLE_COLS_MAX ];
-
-    /* Iteration state. */
-    i32                     cur_col;       // -1 before first table_next_column this row
-    i32                     cur_row;       // -1 before first table_next_row
-    f32                     row_top;       // screen-space top of the current row
-    f32                     row_h;         // current row height in pixels
-    u32                     nav_row_line;  // nav line the whole row shares (keyboard row = table row)
-
-    gui_rect_t              outer_rect;    // full table box in screen space             
-    gui_rect_t              body_rect;     // content area inside the opened region      
-    f32                     header_h;      // header strip height; 0 if no header        
-
-    /* Set true once the body region has been pushed (either by table_headers_row or
-       the first table_next_row).  Guards layout_pop_region in table_end. */
-    bool                    header_done;
-
-    /* The header is drawn last (as chrome, like a window title bar) so it overpaints rows that
-       scrolled under it.  table_headers_row only does the sort interaction up front and records
-       what the deferred draw needs: whether a header exists and which column is hot / active. */
-
-    bool                    want_header;   // table_headers_row was called this frame      
-    i8                      hdr_hot;       // column under the cursor (-1 none)            
-    i8                      hdr_act;       // column being pressed    (-1 none)          
-
-    /* Column-resize feedback: index of the interior boundary (between col i and i+1) that is hot
-       or being dragged, drawn as a highlight line in table_end.  -1 = none.  See GUI_TABLE_RESIZABLE. */
-    i8                      resize_hot;
-
-    /* Set true in table_headers_row when the user clicks a sort-active column header.
-       Cleared by table_get_sort_specs.  Automatically false each new frame (s_tab memset). */
-    bool                    sort_dirty;
-
-    /* s_scope.clip on entry, restored when the one table clip is popped in table_end. */
-    gui_rect_t              saved_clip;
-
-    gui_table_persist_t*    persist;
-
-} gui_table_t;
 
 /*==============================================================================================
     Cross-file forward declarations
