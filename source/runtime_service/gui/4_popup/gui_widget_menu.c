@@ -71,7 +71,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
     gui_id_t   id = widget_id( label );
     gui_rect_t r  = widget_next_rect( WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
 
     /* Pointing at a leaf row -- by mouse or by the nav cursor -- collapses any submenu open at this
        depth, so moving off a sibling menu_begin onto a plain item closes that submenu: the menu
@@ -155,7 +155,7 @@ gui_menu_begin( const char* label )
         anchor_y = box.y;
     }
 
-    gui_item_state_t st = widget_behavior( id, box, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, box, GUI_WIDGET_KIND_BUTTON );
 
     gui_menu_state_t* ms = GUI_STATE( gui_menu_state_t, id );
     bool was_open     = ( ms->open_frame + 1u == g_ctx->retained.frame );

@@ -3,7 +3,7 @@
     runtime_service/gui/3_widgets/gui_widget_slider.c -- Slider, drag, and color-edit widgets.
 
     Every value-editing control here shares the drag-value interaction pattern: widget_behavior
-    claims active_id on mouse press (WIDGET_KIND_DRAG), keeping the drag bound to the widget while
+    claims active_id on mouse press (GUI_WIDGET_KIND_DRAG), keeping the drag bound to the widget while
     the cursor sweeps off it.  The displayed value changes live while dragging.
 
         slider_float / slider_float_step / slider_int  -- a horizontal track with a knob;
@@ -94,7 +94,7 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
     /* Track takes the left portion; the label sits at the right.  The min track width keeps the
        knob travel usable when the label is long. */
     gui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
-    gui_item_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
+    gui_item_state_t st = widget_behavior( id, track_r, GUI_WIDGET_KIND_DRAG );
 
     /* Drag: map the cursor's track fraction to a value, snapping to the step grid when asked. */
     bool changed = false;
@@ -149,7 +149,7 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     gui_rect_t r  = widget_next_rect( WIDGET_H );
 
     gui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
-    gui_item_state_t st = widget_behavior( id, track_r, WIDGET_KIND_DRAG );
+    gui_item_state_t st = widget_behavior( id, track_r, GUI_WIDGET_KIND_DRAG );
 
     bool changed = false;
     if ( st.active )
@@ -194,7 +194,7 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     drag actually changes the value, so the caller can react to live edits.
 
     Mouse capture works exactly like slider_float: widget_behavior claims active_id on the press
-    (WIDGET_KIND_DRAG), so the drag stays bound to this widget while the cursor sweeps off it and
+    (GUI_WIDGET_KIND_DRAG), so the drag stays bound to this widget while the cursor sweeps off it and
     no neighbour can steal it.  The press anchor is s_click_x[0] (recorded by the input snapshot)
     paired with the value captured here at press time; re-deriving from that anchor every frame
     keeps the drag exact and drift-free.
@@ -207,7 +207,7 @@ static i32 s_drag_anchor_v;
 static bool
 drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format )
 {
-    gui_item_state_t st = widget_behavior( id, box_r, WIDGET_KIND_DRAG );
+    gui_item_state_t st = widget_behavior( id, box_r, GUI_WIDGET_KIND_DRAG );
 
     if ( st.pressed )
         s_drag_anchor_v = *v;
@@ -285,7 +285,7 @@ static bool
 drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
                 f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
 {
-    gui_item_state_t st = widget_behavior( id, box_r, WIDGET_KIND_DRAG );
+    gui_item_state_t st = widget_behavior( id, box_r, GUI_WIDGET_KIND_DRAG );
 
     /* Capture the value at the grab, then re-derive from the anchor each frame (drift-free). */
     if ( st.pressed )
@@ -464,7 +464,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
 
     /* Clickable color square -- placed first for fast visual identification. */
     gui_rect_t preview_r = { ctrl.x, ctrl.y, preview_w, ctrl.h };
-    gui_item_state_t pst = widget_behavior( id_combine( id, 1u ), preview_r, WIDGET_KIND_BUTTON );
+    gui_item_state_t pst = widget_behavior( id_combine( id, 1u ), preview_r, GUI_WIDGET_KIND_BUTTON );
     {
         f32 sv = draw_rounding();
         draw_set_rounding( 2.0f );

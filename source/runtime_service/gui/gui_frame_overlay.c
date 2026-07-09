@@ -169,7 +169,7 @@ gui_perf_overlay( int mode )
         bool show_geometry_rows = ( mode >= 3 );
         if ( show_geometry_rows )
         {
-            gui_render_stats_t rs = gui_build_stats();
+            gui_render_stats_t rs = gui_render_stats();
             gui_new_line( 2.0f );
             gui_textf( "verts   %6u", rs.vert_count );
             gui_textf( "tris    %6u", rs.tri_count  );

@@ -34,18 +34,18 @@ static f32  s_resize_off_x, s_resize_off_y;
 static f32  s_resize_fix_x, s_resize_fix_y;
 
 /* Grab band straddling the border: a few pixels inside and a few outside. */
-#define WIN_RESIZE_INNER  ( 4.0f )                  /* reach inside the border  */
-#define WIN_RESIZE_OUTER  ( WIN_BORDER + 6.0f )     /* and just outside it      */
+#define RESIZE_BAND_INNER  ( 4.0f )                  /* reach inside the border  */
+#define RESIZE_BAND_OUTER  ( WIN_BORDER + 6.0f )     /* and just outside it      */
 
 /* Which edges of rect r the cursor is within the grab band of (0 = none).  The band spans
    [edge - OUTER, edge + INNER] on each side, so the cursor catches an edge from just outside
    the border as well as just inside.  Caller gates on hover_win, so no occlusion test here.
    `pin_v` reports horizontal edges only -- a collapsed window (height pinned to the title bar). */
 static u8
-window_resize_hit( gui_rect_t r, bool pin_v )
+edge_resize_hit( gui_rect_t r, bool pin_v )
 {
-    const f32 in  = WIN_RESIZE_INNER;
-    const f32 out = WIN_RESIZE_OUTER;
+    const f32 in  = RESIZE_BAND_INNER;
+    const f32 out = RESIZE_BAND_OUTER;
     const f32 mx  = s_io.mouse_x;
     const f32 my  = s_io.mouse_y;
 
@@ -148,7 +148,7 @@ resize_item( gui_id_t id, gui_id_t owner_win, gui_rect_t box, u8 allow, bool pin
         return ce;
     }
 
-    u8 hot = (u8)( window_resize_hit( box, pin_v ) & allow );
+    u8 hot = (u8)( edge_resize_hit( box, pin_v ) & allow );
     if ( hot )
     {
         if ( s_io.mouse_pressed[ 0 ] )

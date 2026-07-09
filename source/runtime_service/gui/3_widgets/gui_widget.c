@@ -254,7 +254,7 @@ gui_button( const char* label )
     /* Natural width = label + padding.  Shrinks to this in stack and same_line; fills in columns. */
     gui_rect_t r  = widget_next_rect_w( label_natural_w( label ), WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
 
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color_anim( id, st ) );
     draw_button_label( r, label );
@@ -270,12 +270,6 @@ gui_button( const char* label )
     button to match the height of the adjacent panel's content.
 ----------------------------------------------------------------------------------------------*/
 
-f32
-gui_button_width( const char* label )
-{
-    return label_natural_w( label );
-}
-
 bool
 gui_button_fill( const char* label )
 {
@@ -286,7 +280,7 @@ gui_button_fill( const char* label )
 
     gui_rect_t r = widget_next_rect( avh );   /* fill the cell; height from content_avail */
 
-    gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
 
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color_anim( id, st ) );
     draw_button_label( r, label );
@@ -308,12 +302,20 @@ gui_small_button( const char* label )
     f32          h  = font_char_h() + 2.0f;
     gui_rect_t r  = widget_next_rect_w( label_natural_w( label ), h );
 
-    gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
 
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
     draw_button_label( r, label );
 
     return st.clicked;
+}
+
+/* button_width -- the natural width button() would use for `label`, for callers that need to
+   lay out around a button before emitting it. */
+f32
+gui_button_width( const char* label )
+{
+    return label_natural_w( label );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -377,14 +379,14 @@ gui_progress_bar( f32 fraction, const char* overlay )
 ----------------------------------------------------------------------------------------------*/
 
 bool
-gui_arrow_button( const char* id_str, gui_dir_t dir )
+gui_arrow_button( const char* label, gui_dir_t dir )
 {
-    gui_id_t   id = widget_id( id_str );
+    gui_id_t   id = widget_id( label );
 
     /* Square natural size (row height), so a same_line row of arrows packs tightly. */
     gui_rect_t r  = widget_next_rect_w( WIDGET_H, WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
 
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
     draw_arrow( r, dir, COL_TEXT );
@@ -444,7 +446,7 @@ gui_checkbox( const char* label, bool* v )
         label_w = ( r.x + r.w - side_pad ) - label_x;    /* trails to the cell's right edge      */
     }
 
-    gui_item_state_t st = widget_behavior( id, split ? control : r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, split ? control : r, GUI_WIDGET_KIND_BUTTON );
 
     f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
     draw_push_rect_filled( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, widget_bg_color( st ) );
@@ -527,7 +529,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
         label_w = ( r.x + r.w - side_pad ) - label_x;    /* trails to the cell's right edge        */
     }
 
-    gui_item_state_t st = widget_behavior( id, split ? control : r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, split ? control : r, GUI_WIDGET_KIND_BUTTON );
 
     /* Disc centred in a CHECKBOX_SZ box, vertically centred in the row. */
     f32 by  = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
@@ -580,7 +582,7 @@ input_text_begin( const char* label )
     gui_id_t     id    = widget_id( label );
     gui_rect_t   box_r = widget_split_label( widget_next_rect( WIDGET_H ), label,
                                                font_char_h() * 3.0f, COL_TEXT_DIM );
-    gui_item_state_t st    = widget_behavior( id, box_r, WIDGET_KIND_FOCUSABLE );
+    gui_item_state_t st    = widget_behavior( id, box_r, GUI_WIDGET_KIND_FOCUSABLE );
     draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h, 0, 0, 1, 1, 0,
                            st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
     draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
@@ -661,7 +663,7 @@ gui_selectable( const char* label, bool* selected )
     gui_id_t   id = widget_id( label );
     gui_rect_t r  = widget_next_rect( WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
 
     /* Fill: selected rows use the active tint, a hovered row the hot tint; otherwise the row
        is transparent so the region background shows through. */
@@ -713,7 +715,7 @@ gui_collapsing_header( const char* label )
 
     gui_header_state_t* hs = GUI_STATE( gui_header_state_t, id );
 
-    gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
     if ( st.clicked ) hs->open = !hs->open;
 
     /* Clickable bar with hover/active feedback, an arrow box on the left, then the label. */
@@ -751,7 +753,7 @@ gui_tree_node( const char* label )
 
     gui_header_state_t* hs = GUI_STATE( gui_header_state_t, id );
 
-    gui_item_state_t st = widget_behavior( id, r, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
     if ( st.clicked ) hs->open = !hs->open;
 
     /* No framed bar: tint only on hover / active / nav (like selectable), so a tree is a list of rows. */

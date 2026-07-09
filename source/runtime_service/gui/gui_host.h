@@ -266,7 +266,7 @@ void gui_label_text( const char* label, const char* value );
 bool gui_button( const char* label );
 bool gui_small_button( const char* label );
 void gui_progress_bar( f32 fraction, const char* overlay );
-bool gui_arrow_button( const char* id_str, gui_dir_t dir );
+bool gui_arrow_button( const char* label, gui_dir_t dir );
 bool gui_checkbox( const char* label, bool* v );
 bool gui_radio_button( const char* label, i32* v, i32 value );
 

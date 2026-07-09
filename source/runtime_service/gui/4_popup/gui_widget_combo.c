@@ -73,7 +73,7 @@ gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t
        arrow plus a little preview text when the cell is squeezed. */
     gui_rect_t box = widget_split_label( row, label, WIDGET_H + font_char_h() * 2.0f, COL_TEXT_DIM );
 
-    gui_item_state_t st = widget_behavior( id, box, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, box, GUI_WIDGET_KIND_BUTTON );
 
     /* The dropdown is a popup keyed off the combo's widget id, so it inherits the id scope + the
        "###" grammar and never collides with a same-titled combo elsewhere. */

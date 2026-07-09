@@ -107,7 +107,7 @@ dock_find_window_node( gui_id_t win )
     for ( u32 i = 0; i < g_ctx->dock_node_count; ++i )
     {
         gui_dock_node_t* n = &g_ctx->dock_nodes[ i ];
-        if ( n->id == 0 || n->split != DOCK_SPLIT_NONE )
+        if ( n->id == 0 || n->split != GUI_DOCK_SPLIT_NONE )
             continue;
         for ( u32 t = 0; t < n->tab_count; ++t )
             if ( n->tabs[ t ] == win )
@@ -211,7 +211,7 @@ dock_node_layout( gui_dock_node_t* n, gui_rect_t r )
         return;
     n->rect = r;
 
-    if ( n->split == DOCK_SPLIT_NONE )
+    if ( n->split == GUI_DOCK_SPLIT_NONE )
     {
         f32 th = WIN_TITLE_H;
         if ( th > r.h ) th = r.h;
@@ -220,14 +220,14 @@ dock_node_layout( gui_dock_node_t* n, gui_rect_t r )
     }
 
     f32 thick = DOCK_SPLITTER;
-    if ( n->split == DOCK_SPLIT_X )
+    if ( n->split == GUI_DOCK_SPLIT_X )
     {
         f32 avail = r.w - thick; if ( avail < 0.0f ) avail = 0.0f;
         f32 w0    = floorf( avail * n->ratio );
         dock_node_layout( dock_at( n->child[ 0 ] ), ( gui_rect_t ){ r.x,             r.y, w0,               r.h } );
         dock_node_layout( dock_at( n->child[ 1 ] ), ( gui_rect_t ){ r.x + w0 + thick, r.y, r.w - w0 - thick, r.h } );
     }
-    else /* DOCK_SPLIT_Y */
+    else /* GUI_DOCK_SPLIT_Y */
     {
         f32 avail = r.h - thick; if ( avail < 0.0f ) avail = 0.0f;
         f32 h0    = floorf( avail * n->ratio );
@@ -258,7 +258,7 @@ dock_node_layout( gui_dock_node_t* n, gui_rect_t r )
 static f32
 dock_axis_ext( const gui_dock_node_t* n, u8 axis )
 {
-    return ( axis == DOCK_SPLIT_X ) ? n->rect.w : n->rect.h;
+    return ( axis == GUI_DOCK_SPLIT_X ) ? n->rect.w : n->rect.h;
 }
 
 /* How many pixels subtree n can give up along `axis` before a pane on its `side` near chain hits
@@ -267,7 +267,7 @@ static f32
 dock_shrink_capacity( gui_dock_node_t* n, u8 axis, u32 side )
 {
     if ( !n ) return 0.0f;
-    if ( n->split == DOCK_SPLIT_NONE )
+    if ( n->split == GUI_DOCK_SPLIT_NONE )
     {
         f32 c = dock_axis_ext( n, axis ) - DOCK_MIN_PANE;
         return c > 0.0f ? c : 0.0f;
@@ -285,7 +285,7 @@ dock_shrink_capacity( gui_dock_node_t* n, u8 axis, u32 side )
 static void
 dock_absorb_delta( gui_dock_node_t* n, u8 axis, u32 side, f32 delta )
 {
-    if ( !n || n->split == DOCK_SPLIT_NONE || delta == 0.0f )
+    if ( !n || n->split == GUI_DOCK_SPLIT_NONE || delta == 0.0f )
         return;
     if ( n->split != axis )
     {
@@ -320,7 +320,7 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
     gui_rect_t r     = n->rect;
     f32          thick = DOCK_SPLITTER;
     gui_rect_t sr;
-    if ( n->split == DOCK_SPLIT_X )
+    if ( n->split == GUI_DOCK_SPLIT_X )
         sr = ( gui_rect_t ){ dock_at( n->child[ 1 ] )->rect.x - thick, r.y, thick, r.h };
     else
         sr = ( gui_rect_t ){ r.x, dock_at( n->child[ 1 ] )->rect.y - thick, r.w, thick };
@@ -339,13 +339,13 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
         gui_dock_node_t* c0 = dock_at( n->child[ 0 ] );
         gui_dock_node_t* c1 = dock_at( n->child[ 1 ] );
 
-        f32 avail = ( ( axis == DOCK_SPLIT_X ) ? r.w : r.h ) - thick;
+        f32 avail = ( ( axis == GUI_DOCK_SPLIT_X ) ? r.w : r.h ) - thick;
         if ( avail < 1.0f ) avail = 1.0f;
 
         /* Cursor-desired child[0] extent -> a pixel delta against this frame's resolved rect,
            clamped so no pane on either side's near chain shrinks below DOCK_MIN_PANE. */
         f32 old0  = dock_axis_ext( c0, axis );
-        f32 want0 = ( axis == DOCK_SPLIT_X ) ? ( s_io.mouse_x - r.x ) : ( s_io.mouse_y - r.y );
+        f32 want0 = ( axis == GUI_DOCK_SPLIT_X ) ? ( s_io.mouse_x - r.x ) : ( s_io.mouse_y - r.y );
         f32 delta = want0 - old0;
         f32 cap0  = dock_shrink_capacity( c0, axis, 1u );
         f32 cap1  = dock_shrink_capacity( c1, axis, 0u );
@@ -362,7 +362,7 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
     /* Directional hardware cursor while the gutter is hot or being dragged: an X split divides
        horizontally (a left/right drag -> EW), a Y split vertically (up/down -> NS). */
     if ( hot || active )
-        set_mouse_cursor( ( n->split == DOCK_SPLIT_X ) ? APP_CURSOR_RESIZE_EW : APP_CURSOR_RESIZE_NS );
+        set_mouse_cursor( ( n->split == GUI_DOCK_SPLIT_X ) ? APP_CURSOR_RESIZE_EW : APP_CURSOR_RESIZE_NS );
 
     draw_push_rect_filled( sr.x, sr.y, sr.w, sr.h, 0, 0, 1, 1, 0, ( hot || active ) ? COL_RESIZE_HOT : COL_BORDER );
 }
@@ -372,7 +372,7 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
 static void
 dock_tree_splitters( gui_dock_node_t* n, u32 vp )
 {
-    if ( !n || n->split == DOCK_SPLIT_NONE )
+    if ( !n || n->split == GUI_DOCK_SPLIT_NONE )
         return;
     dock_tree_splitters( dock_at( n->child[ 0 ] ), vp );
     dock_tree_splitters( dock_at( n->child[ 1 ] ), vp );
@@ -387,7 +387,7 @@ dock_tree_placeholders( gui_dock_node_t* n )
 {
     if ( !n )
         return;
-    if ( n->split == DOCK_SPLIT_NONE )
+    if ( n->split == GUI_DOCK_SPLIT_NONE )
     {
         if ( n->tab_count == 0 )
         {

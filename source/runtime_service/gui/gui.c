@@ -61,7 +61,11 @@
     4_window/       -- host structure: persisted window record + window-as-widget chrome.
                        First real optional boundary -- a canvas/HUD-only embedding can skip it.
     4_popup/        -- host structure, window-dependent overlay stack: popups/tooltips/combo/
-                       menus/nav all share the open-popup stack (g_ctx->popups_open).
+                       menus share the open-popup stack (g_ctx->popups_open).
+    4_nav/          -- keyboard nav: a peer service that arbitrates focus across windows, docks,
+                       menus, and popups alike -- not a client of any one of them.  Included right
+                       after 4_popup/ (dependency order: it reads/drives the popup stack), even
+                       though topically it sits beside 4_popup/4_dock/4_window, not inside them.
     4_dock/         -- host structure, window-dependent, independent of 4_popup/: dock-node
                        tree + splitters.
     4_table/        -- host structure, independent optional feature: needs tiers 0-2 only,
@@ -73,7 +77,7 @@
                        consumed only from outside the lib (via the vtable) or by lower tiers
                        deliberately dogfooding the public surface through gui_host.h declarations.
                        Where user widgets are written: rect (canvas) + item() + draw_*, no skin.
-    (root)          -- the conductor: gui_frame.c lifecycle, gui_boot.c, the dashboard +
+    (root)          -- the conductor: gui_frame.c lifecycle, gui_viewport.c, gui_boot.c, the dashboard +
                        overlays, gui_api.c vtable.  Top of the stack alongside 5_user/ (the
                        host's driver over the tiers, as user/ is the caller's door into them),
                        NOT a foundation: prepare/update/dispatch touches every tier.
@@ -88,7 +92,8 @@
 
     0_foundation/gui_theme.c       -- theme registry + base/active style state, theme API, layout_compute
     0_foundation/gui_style.c       -- style stacks machinery: style_col/style_var resolution, push/pop/next ops
-    0_foundation/gui_ctx.c         -- context state: s_interaction, s_build, s_scope, layout_frame_t, gui_context_t, ctx_new_frame
+    0_foundation/gui_ctx.c         -- context state: s_interaction, s_build, s_scope, layout_frame_t, gui_context_t,
+                                      ctx_new_frame, memory stats, multi-context lifecycle (ctx_create/destroy/bind)
     0_foundation/gui_io.c          -- io snapshot service: app->IO, input_update, s_io
     0_foundation/gui_id.c          -- identity service: id_hash, id_combine, id_seed/push/pop
     0_foundation/gui_state.c       -- keyed state tracking service: gui_state_get/peek, GUI_STATE
@@ -98,7 +103,9 @@
 
     2_compose/gui_layout_core.c    -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
     2_compose/gui_layout_region.c  -- scrollable region engine: gui_region_t, gutters, push/pop_region
-    2_compose/gui_layout_child.c   -- child box + sub-layout lifecycle: begin/child_end, push/pop_layout
+    2_compose/gui_layout_child.c   -- child box lifecycle: child_begin/child_end
+    2_compose/gui_sublayout.c      -- transient sub-layout lifecycle: push/pop_layout, sublayout_open
+    2_compose/gui_split.c          -- side-by-side split panels: split_begin/next/end
     2_compose/gui_region.c         -- root-level region: a fixed-rect layout primitive, no window chrome
     2_compose/gui_layout.c         -- public layout API verbs + sz_ sizing: gui_layout, gui_stack, gui_cols
 
@@ -132,9 +139,10 @@
     4_dock/gui_dock_serialize.c    -- docking: layout save/load (text blob)
 
     4_popup/gui_popup.c            -- popups / context menus / tooltips: overlay windows on a reserved z-band
-    4_popup/gui_nav.c              -- keyboard nav cursor + menu-bar mode (reads/drives the popup stack)
     4_popup/gui_widget_combo.c     -- combo box + list box: a popup dropdown / a scrolling child of selectables
     4_popup/gui_widget_menu.c      -- menu bar + menu items: built directly on the popup internals
+
+    4_nav/gui_nav.c                -- keyboard nav cursor + menu-bar mode (reads/drives the popup stack)
 
     5_user/gui_stacks.c            -- bracketing vocabulary: push/pop id, item flags, style color/var, scale, disabled
     5_user/gui_behavior.c          -- public behavior on caller rects: gui_item, invisible_button
@@ -143,7 +151,8 @@
 
     gui_dashboard.c                -- pipeline dashboard: debug-band window over the backend capture snapshot
     gui_frame_overlay.c            -- built-in perf / state HUD overlays + the frame-timing helpers they read
-    gui_frame.c                    -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, viewport, font, clip
+    gui_frame.c                    -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, font, clip
+    gui_viewport.c                 -- viewport open/resize/close + gui-owned floater lifecycle (spawn/update/render_floaters)
     gui_boot.c                     -- one-call host front end: boot, frame_poll, present_begin/present
     gui_api.c                      -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
@@ -242,6 +251,8 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/2_compose/gui_layout_core.c"
 #include "runtime_service/gui/2_compose/gui_layout_region.c"
 #include "runtime_service/gui/2_compose/gui_layout_child.c"
+#include "runtime_service/gui/2_compose/gui_sublayout.c"
+#include "runtime_service/gui/2_compose/gui_split.c"
 #include "runtime_service/gui/2_compose/gui_region.c"
 #include "runtime_service/gui/2_compose/gui_layout.c"
 
@@ -272,9 +283,11 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/4_dock/gui_dock.c"
 #include "runtime_service/gui/4_dock/gui_dock_serialize.c"
 
-// Tier 4 -- window-dependent overlay stack (popup/nav/combo/menu share g_ctx->popups_open)
+// Tier 4 -- window-dependent overlay stack (popup/combo/menu share g_ctx->popups_open)
 #include "runtime_service/gui/4_popup/gui_popup.c"
-#include "runtime_service/gui/4_popup/gui_nav.c"
+// Tier 4 -- keyboard nav: a peer service over windows/docks/menus/popups alike, included here
+// (not with 4_popup/) only because it reads/drives the popup stack gui_popup.c just opened.
+#include "runtime_service/gui/4_nav/gui_nav.c"
 #include "runtime_service/gui/4_popup/gui_widget_combo.c"
 #include "runtime_service/gui/4_popup/gui_widget_menu.c"
 
@@ -296,6 +309,11 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 // so it must precede gui_frame.c in the unity build.
 #include "runtime_service/gui/gui_frame_overlay.c"
 #include "runtime_service/gui/gui_frame.c"
+
+// Viewport lifecycle + gui-owned floater surfaces -- separated from gui_frame.c because it is a
+// distinct concern (OS window / rhi context ownership) from the frame lifecycle proper.  Included
+// after gui_frame.c: gui_viewport_render_floaters calls gui_render(), defined there.
+#include "runtime_service/gui/gui_viewport.c"
 
 // Boot-tier host front end -- one-call setup (boot) + the canonical loop (frame_poll,
 // present_begin/present).  Last: it composes the lifecycle, viewport, and window layers above.

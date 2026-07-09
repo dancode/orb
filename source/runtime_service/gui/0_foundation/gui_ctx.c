@@ -2,8 +2,11 @@
 
     runtime_service/gui/0_foundation/gui_ctx.c -- Immediate-mode context state and per-frame drivers.
 
-    Declares all persistent ambient and frame-scratch state (s_interaction, s_build, nav_state_t,
-    layout_frame_t, gui_context_t) and drives the per-frame lifecycle via ctx_new_frame.
+    Declares all persistent ambient and frame-scratch state (s_interaction, s_build, gui_nav_state_t,
+    layout_frame_t, gui_context_t) and drives the per-frame lifecycle via ctx_new_frame.  Also owns
+    the public services that operate directly on the context pool and belong to no tier of their
+    own: memory stats (gui_mem_stats/gui_print_mem_stats) and the multi-context lifecycle
+    (gui_ctx_create/destroy/bind/set_listening).
 
     ID hashing and the keyed state pool (id_hash, id_combine, id_seed/push/pop, gui_state_get,
     GUI_STATE) are in 0_foundation/gui_id.c + 0_foundation/gui_state.c, included just after this file.
@@ -14,7 +17,7 @@
     Included by gui.c after 0_foundation/gui_io.c so s_io is in scope.
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   /* nav_state_t, layout_frame_t, gui_popup_t,
+#include "runtime_service/gui/gui_internal.h"   /* gui_nav_state_t, layout_frame_t, gui_popup_t,
                                                         gui_retained_t, gui_viewport_t, gui_context_t */
 // clang-format off
 
@@ -128,7 +131,7 @@ static struct
     bool               combo_open;          // a combo dropdown body is currently being emitted
     bool               combo_item_clicked;  // a selectable in that body was clicked this frame
 
-    /* Nav state is not part of this scratch: it lives in nav_state_t g_ctx->nav (a per-context member,
+    /* Nav state is not part of this scratch: it lives in gui_nav_state_t g_ctx->nav (a per-context member,
        below) so the per-frame builder stays small. */
 
 } s_build;
@@ -152,7 +155,7 @@ u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
     Keyboard navigation state (g_ctx->nav)
 
     The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather than
-    the mouse -- plus the menu-bar state machine layered on it.  nav_state_t is defined in
+    the mouse -- plus the menu-bar state machine layered on it.  gui_nav_state_t is defined in
     gui_internal.h; the instance is the g_ctx->nav member of the bound context, reached through g_ctx, so
     each context keeps its own cursor.  Movement is structural, not spatial: every item of the
     scoped window records itself into the nav item list as it emits (with the region + line the
@@ -641,6 +644,163 @@ ctx_new_frame( void )
 
 static f32 vp_w( const gui_viewport_t* vp ) { return vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w; }
 static f32 vp_h( const gui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h; }
+
+/*==============================================================================================
+    Memory Stats
+
+    A full accounting of the gui system's resident footprint, split by where it lives (GPU device
+    memory / fixed CPU .bss / per-context CPU heap).  The backend fills its own buckets through
+    gui_render_memory (GPU buffers + the fixed backend buffers); this frontend owns the context
+    pool, so it counts the live GPU surfaces to scale the geometry buffers and sums the per-context
+    malloc blocks for the heap total.  See gui_mem_stats_t (gui.h) for the bucket meanings.
+==============================================================================================*/
+
+gui_mem_stats_t
+gui_mem_stats( void )
+{
+    /* Count live GPU surfaces across every context (a viewport is live once it owns geometry
+       buffers) so the backend can scale the per-surface VB/IB by the true surface count -- the
+       old report assumed a single surface and undercounted every floater / secondary window. */
+    u32 live_viewports = 0;
+    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
+    {
+        gui_context_t* ctx = s_ctx_pool[ i ];
+        if ( !ctx ) continue;
+        for ( u32 v = 0; v < ctx->max_viewports; ++v )
+            if ( rhi_handle_valid( ctx->viewports[ v ].vb ) )
+                ++live_viewports;
+    }
+
+    /* Backend fills GPU + CPU .bss; frontend adds the CPU-heap context blocks and the totals. */
+    gui_mem_stats_t s = gui_render_memory( live_viewports );
+
+    /* CPU heap: one malloc block per live context (recorded at allocation as _alloc_size). */
+    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
+    {
+        gui_context_t* ctx = s_ctx_pool[ i ];
+        if ( !ctx ) continue;
+        s.cpu_context_bytes += ctx->_alloc_size;
+        ++s.context_count;
+    }
+    s.cpu_dynamic_total = s.cpu_context_bytes;
+
+    s.total_bytes = s.gpu_total + s.cpu_static_total + s.cpu_dynamic_total;
+    return s;
+}
+
+/* Dump the full breakdown to stdout as a sectioned table: GPU / CPU static / CPU heap, each with
+   its own subtotal, then the grand total.  Bytes and KiB side by side so small (font glyph tables)
+   and large (geometry buffers) buckets are both legible at a glance. */
+void
+gui_print_mem_stats( void )
+{
+    gui_mem_stats_t s = gui_mem_stats();
+    const f32 kb = 1024.0f;
+
+    #define GUI_MEM_ROW( label, bytes ) \
+        printf( "  %-22s %10u B  (%8.1f KB)\n", (label), (u32)(bytes), (u32)(bytes) / kb )
+
+    printf( "[gui] memory usage -- full breakdown:\n" );
+
+    printf( "  -- GPU device (%u live surface%s) ------------------------\n",
+            s.viewport_count, s.viewport_count == 1u ? "" : "s" );
+    GUI_MEM_ROW( "vertex buffers",   s.gpu_vertex_bytes  );
+    GUI_MEM_ROW( "index buffers",    s.gpu_index_bytes   );
+    GUI_MEM_ROW( "font atlas texture", s.gpu_texture_bytes );
+    GUI_MEM_ROW( "  GPU subtotal",   s.gpu_total         );
+
+    printf( "  -- CPU static (.bss, fixed) ----------------------------\n" );
+    GUI_MEM_ROW( "draw command list",  s.cpu_drawlist_bytes );
+    GUI_MEM_ROW( "tessellation stage", s.cpu_tess_bytes     );
+    GUI_MEM_ROW( "retained cache",     s.cpu_cache_bytes    );
+    GUI_MEM_ROW( "font registry",      s.cpu_font_bytes     );
+    GUI_MEM_ROW( "  CPU static subtotal", s.cpu_static_total );
+
+    printf( "  -- CPU heap (%u context%s) -----------------------------\n",
+            s.context_count, s.context_count == 1u ? "" : "s" );
+    GUI_MEM_ROW( "context blocks",        s.cpu_context_bytes );
+    GUI_MEM_ROW( "  CPU heap subtotal",   s.cpu_dynamic_total );
+
+    printf( "  --------------------------------------------------------\n" );
+    GUI_MEM_ROW( "TOTAL", s.total_bytes );
+
+    #undef GUI_MEM_ROW
+}
+
+/*==============================================================================================
+    Multi-context API
+==============================================================================================*/
+
+/* Set whether a context listens for hover/click/nav input.  Call between frames.
+   Multiple contexts may listen simultaneously; a deaf context renders but returns inert
+   widget state.  The default context starts listening; secondary contexts start deaf. */
+void
+gui_ctx_set_listening( gui_ctx_id_t ctx, bool listen )
+{
+    if ( ctx >= 0 && ctx < GUI_CTX_POOL_MAX && s_ctx_pool[ ctx ] )
+        s_ctx_pool[ ctx ]->listening = listen;
+}
+
+/* Allocate a fresh secondary context sized to `cfg` (NULL = editor defaults).
+   Each gets a unique id_salt so same-named widgets do not alias across contexts.
+   Returns GUI_CTX_INVALID when the pool is full.  Call between frames. */
+gui_ctx_id_t
+gui_ctx_create( const gui_ctx_config_t* cfg )
+{
+    /* Resolve config: NULL or zero fields fall back to editor defaults.
+       max_dock_nodes == 0 is valid (disables docking); do not default it. */
+    gui_ctx_config_t c = cfg ? *cfg : GUI_CTX_CONFIG_EDITOR;
+    if ( !c.max_windows   ) c.max_windows   = GUI_DEFAULT_MAX_WINDOWS;
+    if ( !c.state_slots   ) c.state_slots   = GUI_DEFAULT_STATE_SLOTS;
+    if ( !c.popup_depth   ) c.popup_depth   = GUI_DEFAULT_POPUP_DEPTH;
+    if ( !c.max_viewports ) c.max_viewports = GUI_MAX_VIEWPORTS;
+
+    /* state_slots must be a power of two for the hash mask to work. */
+    u32 slots = c.state_slots;
+    if ( slots < 16 ) slots = 16;
+    u32 p = 1;
+    while ( p < slots ) p <<= 1;
+    slots = p;
+
+    /* Find a free pool slot (1..GUI_CTX_POOL_MAX-1). */
+    i32 slot = -1;
+    for ( i32 i = 1; i < GUI_CTX_POOL_MAX; ++i )
+        if ( !s_ctx_pool[ i ] ) { slot = i; break; }
+    if ( slot < 0 ) return GUI_CTX_INVALID;
+
+    gui_context_t* ctx = ctx_alloc_slot( &c, slots, slot );
+    if ( !ctx ) return GUI_CTX_INVALID;
+    ctx->listening = false;   /* secondary contexts start deaf; caller opts in */
+
+    s_ctx_pool[ slot ] = ctx;
+    if ( (u32)slot >= s_ctx_pool_count ) s_ctx_pool_count = (u32)slot + 1u;
+    return (gui_ctx_id_t)slot;
+}
+
+/* Free a secondary context; rebinds the default if this was current.  Never destroys slot 0. */
+void
+gui_ctx_destroy( gui_ctx_id_t ctx )
+{
+    if ( ctx <= 0 || ctx >= GUI_CTX_POOL_MAX || !s_ctx_pool[ ctx ] )
+        return;
+    gui_context_t* c = s_ctx_pool[ ctx ];
+    if ( g_ctx == c ) ctx_bind( NULL );
+    /* Destroy any GPU surfaces the context opened before releasing its memory block. */
+    for ( u32 i = 0; i < c->max_viewports; ++i )
+        viewport_destroy( &c->viewports[ i ] );
+    if ( c->_alloc ) free( c->_alloc );
+    s_ctx_pool[ ctx ] = NULL;
+}
+
+/* Make ctx the current context.  GUI_CTX_DEFAULT (0) or an invalid handle rebinds the default. */
+void
+gui_ctx_bind( gui_ctx_id_t ctx )
+{
+    if ( ctx >= 0 && ctx < GUI_CTX_POOL_MAX && s_ctx_pool[ ctx ] )
+        ctx_bind( s_ctx_pool[ ctx ] );
+    else
+        ctx_bind( NULL );
+}
 
 // clang-format on
 /*============================================================================================*/

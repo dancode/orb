@@ -252,7 +252,7 @@ undo_apply( gui_undo_buf_t* u, i32 logical_idx, char* buf, u32 bufsz,
     The caller is responsible for:
         - carving `box` from the layout (widget_next_rect has already been called),
         - drawing the box background and border (so the visual treatment is widget-specific),
-        - obtaining `st` from widget_behavior with WIDGET_KIND_FOCUSABLE.
+        - obtaining `st` from widget_behavior with GUI_WIDGET_KIND_FOCUSABLE.
     On Enter or Escape the function drops focus by clearing s_interaction.focused_id.
 
     Mouse capture: widget_behavior already claims active_id on the press (for every widget

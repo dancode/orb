@@ -44,7 +44,7 @@ dock_serialize_node( dock_writer_t* w, gui_dock_node_t* n )
     char line[ 64 ];
     if ( !n )
         return;
-    if ( n->split == DOCK_SPLIT_NONE )
+    if ( n->split == GUI_DOCK_SPLIT_NONE )
     {
         int k = snprintf( line, sizeof line, "L %u %u\n", n->active_tab, n->tab_count );
         dw_emit( w, line, (u32)k );
@@ -59,7 +59,7 @@ dock_serialize_node( dock_writer_t* w, gui_dock_node_t* n )
     else
     {
         int k = snprintf( line, sizeof line, "S %d %.4f\n",
-                          ( n->split == DOCK_SPLIT_Y ) ? 1 : 0, n->ratio );
+                          ( n->split == GUI_DOCK_SPLIT_Y ) ? 1 : 0, n->ratio );
         dw_emit( w, line, (u32)k );
         dock_serialize_node( w, dock_at( n->child[ 0 ] ) );
         dock_serialize_node( w, dock_at( n->child[ 1 ] ) );
@@ -134,7 +134,7 @@ dock_parse_node( dock_reader_t* r, u32 vp )
         gui_dock_node_t* n = dock_node_alloc( vp );
         if ( !n )
             return NULL;
-        n->split = axis ? DOCK_SPLIT_Y : DOCK_SPLIT_X;
+        n->split = axis ? GUI_DOCK_SPLIT_Y : GUI_DOCK_SPLIT_X;
         n->ratio = ratio;
         gui_dock_node_t* c0 = dock_parse_node( r, vp );
         gui_dock_node_t* c1 = dock_parse_node( r, vp );
@@ -153,7 +153,7 @@ dock_parse_node( dock_reader_t* r, u32 vp )
         gui_dock_node_t* n = dock_node_alloc( vp );
         if ( !n )
             return NULL;
-        n->split = DOCK_SPLIT_NONE;
+        n->split = GUI_DOCK_SPLIT_NONE;
         if ( count > GUI_DOCK_TABS_MAX ) count = GUI_DOCK_TABS_MAX;
         for ( u32 t = 0; t < count; ++t )
         {

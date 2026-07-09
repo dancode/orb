@@ -498,7 +498,7 @@ gui_help_marker( const char* text )
     gui_rect_t   tr = rect_align( r, mw, mh, lf()->mod.align );
 
     /* Hoverable but inert: the returned click is ignored, only st.hover drives the brighten. */
-    gui_item_state_t st = widget_behavior( id, tr, WIDGET_KIND_BUTTON );
+    gui_item_state_t st = widget_behavior( id, tr, GUI_WIDGET_KIND_BUTTON );
     draw_push_text( tr.x, tr.y, st.hover ? COL_TEXT : COL_TEXT_DIM, mark );
     widget_track_width( tr.x + mw );
 

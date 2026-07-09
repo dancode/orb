@@ -136,7 +136,7 @@ nav_scroll_chase( gui_rect_t r )
 }
 
 static void
-nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, widget_kind_t kind )
+nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_kind_t kind )
 {
     bool is_cur = ( id == g_ctx->nav.id );
     if ( is_cur )
@@ -193,7 +193,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, widget_kind_
             st->nav = true;
             if ( g_ctx->nav.activate )
             {
-                if ( kind == WIDGET_KIND_DRAG )
+                if ( kind == GUI_WIDGET_KIND_DRAG )
                 {
                     /* A value widget (slider, drag box) does not click -- activation captures it
                        for keyboard editing: Left/Right then step the value (st->nav_adjust below)
@@ -203,7 +203,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, widget_kind_
                 else
                 {
                     st->pressed = st->clicked = true;
-                    if ( kind == WIDGET_KIND_FOCUSABLE )
+                    if ( kind == GUI_WIDGET_KIND_FOCUSABLE )
                         s_interaction.focused_id = id;  /* Enter on an input box -> enter text capture */
                 }
 
@@ -254,7 +254,7 @@ item_focus_release( void )
    needs for drawing and value updates. */
 
 static gui_item_state_t
-widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
+widget_behavior( gui_id_t id, gui_rect_t r, gui_widget_kind_t kind )
 {
     gui_item_state_t st = { 0 };
 
@@ -327,7 +327,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
 
     /* Programmatic focus: a queued set_keyboard_focus request lands on the first focusable
        widget emitted after it -- the keyboard twin of click-to-focus below. */
-    if ( s_focus_request && kind == WIDGET_KIND_FOCUSABLE )
+    if ( s_focus_request && kind == GUI_WIDGET_KIND_FOCUSABLE )
     {
         s_focus_request          = false;
         s_interaction.focused_id = id;
@@ -338,7 +338,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, widget_kind_t kind )
     {
         s_interaction.active_id = id;
         st.pressed      = true;
-        if ( kind == WIDGET_KIND_FOCUSABLE )
+        if ( kind == GUI_WIDGET_KIND_FOCUSABLE )
             s_interaction.focused_id = id;
 
         /* Keep the nav ring synced to the last interacted item: a click moves the cursor here, so

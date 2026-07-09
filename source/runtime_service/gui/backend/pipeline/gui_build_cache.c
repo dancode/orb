@@ -65,7 +65,7 @@ static struct
 } s_stats;
 
 gui_render_stats_t
-gui_build_stats( void )
+gui_render_stats( void )
 {
     return s_stats.published;
 }

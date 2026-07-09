@@ -109,11 +109,11 @@ typedef struct
 
 typedef enum
 {
-    WIDGET_KIND_BUTTON    = 0,   // press captures active; reports clicked
-    WIDGET_KIND_DRAG      = 1,   // press captures active; held for dragging
-    WIDGET_KIND_FOCUSABLE = 2,   // press also claims keyboard focus
+    GUI_WIDGET_KIND_BUTTON    = 0,   // press captures active; reports clicked
+    GUI_WIDGET_KIND_DRAG      = 1,   // press captures active; held for dragging
+    GUI_WIDGET_KIND_FOCUSABLE = 2,   // press also claims keyboard focus
 
-} widget_kind_t;
+} gui_widget_kind_t;
 
 /*==============================================================================================
     Scroll link (2_compose/gui_layout_region.c)
@@ -279,7 +279,7 @@ typedef struct
     gui_id_t    prev_id;       // nav cursor to restore on Alt toggle-out (the last focus location)
     u8          mnemonic;      // pending Alt+letter mnemonic (uppercase ASCII); 0 = none
 
-} nav_state_t;
+} gui_nav_state_t;
 
 /*==============================================================================================
     Layout-frame (stack in gui_ctx.c)
@@ -746,8 +746,8 @@ typedef struct
     Dock node (behavior in gui_dock.c)
 
     One node of a viewport's dock tree -- the machinery behind the dock_root seam above.  A node is
-    either a LEAF (split == DOCK_SPLIT_NONE), which tabs one or more windows into a single region, or
-    an INTERNAL split (DOCK_SPLIT_X / _Y), which divides its rect between two children at `ratio` with
+    either a LEAF (split == GUI_DOCK_SPLIT_NONE), which tabs one or more windows into a single region, or
+    an INTERNAL split (GUI_DOCK_SPLIT_X / _Y), which divides its rect between two children at `ratio` with
     a draggable splitter between them.  Nodes live in a fixed per-context pool (gui_context_t.
     dock_nodes) so child / parent pool indices (gui_dock_ref_t) stay valid across frames; a freed
     slot has id == 0.
@@ -758,9 +758,9 @@ typedef struct
 
 typedef enum
 {
-    DOCK_SPLIT_NONE = 0,    /* leaf -- tabs windows; child[] unused                 */
-    DOCK_SPLIT_X,           /* internal -- vertical split, children side by side    */
-    DOCK_SPLIT_Y,           /* internal -- horizontal split, children top / bottom  */
+    GUI_DOCK_SPLIT_NONE = 0,    /* leaf -- tabs windows; child[] unused                 */
+    GUI_DOCK_SPLIT_X,           /* internal -- vertical split, children side by side    */
+    GUI_DOCK_SPLIT_Y,           /* internal -- horizontal split, children top / bottom  */
 
 } gui_dock_split_t;
 
@@ -789,7 +789,7 @@ typedef struct gui_dock_node_t
        tabbed onto one shared free-floating frame, no split panes.  Not reachable from dock_root,
        so dock_node_layout never touches it: `rect` doubles as its PERSISTED geometry (moved by the
        strip drag, sized by the edge resize), and `z` stacks it among the free windows (a tree node
-       draws at z 0 behind them).  Always DOCK_SPLIT_NONE with parent GUI_DOCK_REF_NONE. */
+       draws at z 0 behind them).  Always GUI_DOCK_SPLIT_NONE with parent GUI_DOCK_REF_NONE. */
     bool floating;
     u32  z;
 
@@ -812,7 +812,7 @@ typedef struct gui_dock_node_t
 typedef struct gui_context_t
 {
     gui_retained_t      retained;           // id salt, frame clock, keyed state pool (ptr into alloc)
-    nav_state_t         nav;                // nav cursor location + menu-bar mode
+    gui_nav_state_t         nav;                // nav cursor location + menu-bar mode
                                             
     gui_popup_t*        popups_open;        // open popup set, ordered parent -> child; ptr into alloc
     u32                 popup_open_count;   // live open count

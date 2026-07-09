@@ -42,8 +42,8 @@
    window_end calls (native_caption_chrome) -- lives in gui_window_native.c, included just
    before this file. */
 
-/* GUI_RESIZE_SALT, the WIN_RESIZE_* grab-band constants, and the record-agnostic resize helpers
-   (window_resize_hit, resize_grab, resize_apply_edges) live in 2_interact/gui_resize.c (the
+/* GUI_RESIZE_SALT, the RESIZE_BAND_* grab-band constants, and the record-agnostic resize helpers
+   (edge_resize_hit, resize_grab, resize_apply_edges) live in 2_interact/gui_resize.c (the
    GUI_RESIZE_* edge bits in gui_internal.h, the hot-edge paint in 2_present/gui_widget_core.c:
    draw_resize_highlight), ahead of gui_layout.c, so child_begin reuses the same mechanism (the
    dock splitter does not; it has its own drag path in 4_dock/).  Only the
@@ -256,7 +256,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     {
         if ( node->floating )
         {
-            f32 o = WIN_RESIZE_OUTER;
+            f32 o = RESIZE_BAND_OUTER;
             surface_hover_nominate( id, ( gui_rect_t ){ node->rect.x - o, node->rect.y - o,
                                                          node->rect.w + 2.0f * o, node->rect.h + 2.0f * o },
                                    node->z, node->viewport );
@@ -661,8 +661,8 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        since its height is pinned) so the cursor still counts as "over" it just outside the
        border -- that is what keeps an edge hot as the cursor crosses to the outside.  The
        winner becomes hover_win next frame; that single fact gates all widget hit-testing. */
-    f32 ox = resizeable ? WIN_RESIZE_OUTER : 0.0f;
-    f32 oy = ( resizeable && !collapsed ) ? WIN_RESIZE_OUTER : 0.0f;
+    f32 ox = resizeable ? RESIZE_BAND_OUTER : 0.0f;
+    f32 oy = ( resizeable && !collapsed ) ? RESIZE_BAND_OUTER : 0.0f;
     if ( !( flags & GUI_WIN_NO_INPUT ) )
     {
         if ( frame_only )
@@ -883,7 +883,7 @@ gui_window_end( void )
         {
             gui_rect_t   arrow_r  = { s_build.win.x, s_build.win.y, title_h, title_h };
             gui_id_t     arrow_id = id_combine( s_build.win.id, GUI_COLLAPSE_SALT );
-            gui_item_state_t arrow_st = widget_behavior( arrow_id, arrow_r, WIDGET_KIND_BUTTON );
+            gui_item_state_t arrow_st = widget_behavior( arrow_id, arrow_r, GUI_WIDGET_KIND_BUTTON );
             if ( arrow_st.clicked )
             {
                 win->collapsed = !win->collapsed;
@@ -922,7 +922,7 @@ gui_window_end( void )
             btn_x -= title_h;
             gui_rect_t   cl_r  = { btn_x, s_build.win.y, title_h, title_h };
             gui_id_t     cl_id = id_combine( s_build.win.id, GUI_CLOSE_SALT );
-            gui_item_state_t cl_st = widget_behavior( cl_id, cl_r, WIDGET_KIND_BUTTON );
+            gui_item_state_t cl_st = widget_behavior( cl_id, cl_r, GUI_WIDGET_KIND_BUTTON );
 
             /* Hover/press background so the control reads as clickable (the glyph stays square). */
             if ( cl_st.hover || cl_st.active )
@@ -952,7 +952,7 @@ gui_window_end( void )
             btn_x -= title_h;
             gui_rect_t   det_r  = { btn_x, s_build.win.y, title_h, title_h };
             gui_id_t     det_id = id_combine( s_build.win.id, GUI_DETACH_SALT );
-            gui_item_state_t det_st = widget_behavior( det_id, det_r, WIDGET_KIND_BUTTON );
+            gui_item_state_t det_st = widget_behavior( det_id, det_r, GUI_WIDGET_KIND_BUTTON );
             if ( det_st.clicked )
                 vp_request_button( win );   /* 0 = main surface -> tear off; else floater -> merge back */
 

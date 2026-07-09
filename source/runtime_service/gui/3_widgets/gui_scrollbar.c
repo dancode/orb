@@ -6,7 +6,7 @@
     The region engine (2_compose/gui_layout_region.c) reserves the gutter, computes the track
     rect from it, and invokes this at layout_pop_region once the frame's content is measured.
     From there it is the standard widget recipe on a handed rect: widget_behavior for the grab
-    (WIDGET_KIND_DRAG), the drag mapped back into *scroll, then the track + knob paint.
+    (GUI_WIDGET_KIND_DRAG), the drag mapped back into *scroll, then the track + knob paint.
     Compose hands the rect and owns the scroll state; this file owns the feel and the look.
 
     Mouse-only by design: keyboard scrolling is the nav cursor's scroll chase
@@ -71,7 +71,7 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
 
     /* Mouse-only: opt out of nav registration for this item (see the file banner). */
     s_scope.nav.skip = true;
-    gui_item_state_t st = widget_behavior( id, track, WIDGET_KIND_DRAG );
+    gui_item_state_t st = widget_behavior( id, track, GUI_WIDGET_KIND_DRAG );
 
     /* On the press frame, decide whether the cursor landed on the knob (drag from the grabbed
        point) or in the gutter (jump: center the knob under the cursor).  s_sb_grab_off is the

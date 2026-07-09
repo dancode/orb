@@ -19,7 +19,7 @@
     is included right after this file.
 
     Included by gui.c FIRST among the Tier 0 files -- s_style must already be declared (file-scope
-    static, no header) before 0_foundation/gui_style.c's style_var_base/style_col_base resolvers and every
+    static, no header) before 0_foundation/gui_style.c's style_var_base resolver and every
     later tier's widget code can read it in the same TU.
 
 ==============================================================================================*/

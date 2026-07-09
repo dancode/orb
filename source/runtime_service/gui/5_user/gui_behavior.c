@@ -24,7 +24,7 @@ gui_item_state_t
 gui_item( const char* id_str, gui_rect_t r )
 {
     /* widget_behavior's result IS the public state record -- no translation layer. */
-    return widget_behavior( widget_id( id_str ), r, WIDGET_KIND_BUTTON );
+    return widget_behavior( widget_id( id_str ), r, GUI_WIDGET_KIND_BUTTON );
 }
 
 bool

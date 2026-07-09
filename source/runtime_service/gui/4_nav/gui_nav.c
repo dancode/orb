@@ -1,6 +1,12 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/4_popup/gui_nav.c -- Keyboard navigation driver.
+    runtime_service/gui/4_nav/gui_nav.c -- Keyboard navigation driver.
+
+    A peer service, not a client of 4_popup/: it arbitrates focus across windows, docks, menus,
+    and popups alike (nav_choose_window reads dock nodes and popups and plain windows equally).
+    It lives in its own tier for that reason; it is included right after 4_popup/gui_popup.c
+    only because it reads/drives the popup stack that file just opened -- a dependency-order
+    constraint, not a topical one.
 
     The per-frame brain behind the nav cursor (g_ctx->nav.id, the persistent keyboard analogue of
     hover_id).  Run once per frame from gui_ctx_begin after the popup state settles:

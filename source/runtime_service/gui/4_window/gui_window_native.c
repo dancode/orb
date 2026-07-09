@@ -193,7 +193,7 @@ window_sync_native( gui_window_t* win, gui_win_flags_t flags )
     if ( vp->disp_w > 0 ) win->w = ( f32 )vp->disp_w;
     if ( vp->disp_h > 0 ) win->h = ( f32 )vp->disp_h;
 
-    i32 border = ( flags & GUI_WIN_NORESIZE ) ? 0 : ( i32 )WIN_RESIZE_OUTER;
+    i32 border = ( flags & GUI_WIN_NORESIZE ) ? 0 : ( i32 )RESIZE_BAND_OUTER;
     app()->window_set_native_frame( window_native_id( win ), true, border );
 
     i32 caption = ( flags & GUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
@@ -252,7 +252,7 @@ native_caption_chrome( gui_window_t* win, f32 title_h, f32 right_limit )
         gui_rect_t       br  = btns[ i ].r;
         gui_id_t         bid = id_combine( s_build.win.id,
                                            GUI_NATIVE_BTN_SALT + ( u32 )btns[ i ].kind );
-        gui_item_state_t bs  = widget_behavior( bid, br, WIDGET_KIND_BUTTON );
+        gui_item_state_t bs  = widget_behavior( bid, br, GUI_WIDGET_KIND_BUTTON );
 
         /* Hover/press background so the control reads as clickable -- a control frame, so it
            takes the widget radius (the glyph itself squares off in native_btn_draw_glyph). */

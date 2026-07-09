@@ -81,7 +81,7 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
     return root->id;
 }
 
-/* Wire `internal` as a DOCK_SPLIT_X/Y node dividing `new_node` and `other` along `dir`, `ratio` the
+/* Wire `internal` as a GUI_DOCK_SPLIT_X/Y node dividing `new_node` and `other` along `dir`, `ratio` the
    fraction of the axis `new_node` receives.  child[0] is always the left/top side, so when the new
    side is child[1] (RIGHT / DOWN) `other` gets the complementary ratio.  Links both children's
    parent to `internal`; leaves internal->parent untouched (a converted leaf keeps its own parent, a
@@ -95,7 +95,7 @@ dock_node_wire_split( gui_dock_node_t* internal, gui_dir_t dir, f32 ratio,
     bool new_first  = ( dir == GUI_DIR_LEFT || dir == GUI_DIR_UP );   /* new on child[0] side */
     f32  r          = clampf( ratio, 0.05f, 0.95f );
 
-    internal->split    = horizontal ? DOCK_SPLIT_X : DOCK_SPLIT_Y;
+    internal->split    = horizontal ? GUI_DOCK_SPLIT_X : GUI_DOCK_SPLIT_Y;
     internal->child[ 0 ] = dock_ref( new_first ? new_node : other );
     internal->child[ 1 ] = dock_ref( new_first ? other    : new_node );
     internal->ratio      = new_first ? r : ( 1.0f - r );
@@ -115,7 +115,7 @@ gui_dock_split( gui_dock_id_t node_id, gui_dir_t dir, f32 ratio, gui_dock_id_t* 
     if ( out_remain ) *out_remain = node_id;
 
     gui_dock_node_t* n = dock_node_find( node_id );
-    if ( !n || n->split != DOCK_SPLIT_NONE )
+    if ( !n || n->split != GUI_DOCK_SPLIT_NONE )
         return GUI_DOCK_NONE;
     if ( n->floating )
         return GUI_DOCK_NONE;   /* a floating tab group is tabs-only by definition */
@@ -178,7 +178,7 @@ gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio )
         return GUI_DOCK_NONE;
 
     /* An empty single-leaf root: nothing to wrap, divide it directly. */
-    if ( root->split == DOCK_SPLIT_NONE && root->tab_count == 0 )
+    if ( root->split == GUI_DOCK_SPLIT_NONE && root->tab_count == 0 )
         return gui_dock_split( root->id, dir, ratio, NULL );
 
     gui_dock_node_t* leaf  = dock_node_alloc( vp );   /* the new edge pane          */
@@ -207,7 +207,7 @@ gui_dock_window( const char* title, gui_dock_id_t node_id )
     if ( !title )
         return;
     gui_dock_node_t* n = dock_node_find( node_id );
-    if ( !n || n->split != DOCK_SPLIT_NONE || n->tab_count >= GUI_DOCK_TABS_MAX )
+    if ( !n || n->split != GUI_DOCK_SPLIT_NONE || n->tab_count >= GUI_DOCK_TABS_MAX )
         return;
 
     gui_id_t wid = id_hash( title );

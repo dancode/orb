@@ -160,11 +160,11 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
 
 void                gui_build_frame_reset( void );
 
-/* Per-frame render stats: gui_build_stats returns the last published frame's totals;
+/* Per-frame render stats: gui_render_stats returns the last published frame's totals;
    gui_build_stats_publish promotes the in-progress accumulator to the published value and
    resets it -- called once per frame by gui_frame_begin (the UI unit), before draw_reset. */
 
-gui_render_stats_t  gui_build_stats        ( void );
+gui_render_stats_t  gui_render_stats        ( void );
 void                gui_build_stats_publish( void );
 
 /* Retained-skip optimization: when on (default), an unchanged frame (all per-window hashes match

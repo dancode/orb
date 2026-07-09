@@ -19,7 +19,7 @@
     (4_window/gui_window.c).
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   /* widget_kind_t, gui_item_state_t */
+#include "runtime_service/gui/gui_internal.h"   /* gui_widget_kind_t, gui_item_state_t */
 // clang-format off
 
 /* Baseline y to vertically center one line of glyphs in a row of height h starting at y.

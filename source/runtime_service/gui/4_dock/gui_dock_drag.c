@@ -100,7 +100,7 @@ dock_leaf_at( gui_dock_node_t* n, f32 mx, f32 my )
 {
     if ( !n || !gui_rect_contains( n->rect, mx, my ) )
         return NULL;
-    if ( n->split == DOCK_SPLIT_NONE )
+    if ( n->split == GUI_DOCK_SPLIT_NONE )
         return n;
     gui_dock_node_t* c = dock_leaf_at( dock_at( n->child[ 0 ] ), mx, my );
     return c ? c : dock_leaf_at( dock_at( n->child[ 1 ] ), mx, my );
@@ -253,7 +253,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
        5-way already spans the whole surface, so an edge chip would be a redundant duplicate.  Once
        there's a split, edge chips are the ONLY way to carve a pane across it (a full-height left column
        beside a top/bottom stack, etc.) -- they target the root, not the leaf under the cursor. */
-    bool        has_outer  = !no_split && ( root->split != DOCK_SPLIT_NONE );
+    bool        has_outer  = !no_split && ( root->split != GUI_DOCK_SPLIT_NONE );
     f32         margin     = s * 0.5f + 10.0f;
     dock_zone_t outer_zone = DOCK_ZONE_NONE;
     if ( has_outer )
@@ -389,7 +389,7 @@ dock_drag_commit( gui_id_t win_id, const char* title )
         else
         {
             gui_dock_node_t* leaf = dock_node_find( s_dock_drag.target );
-            if ( leaf && leaf->split == DOCK_SPLIT_NONE )
+            if ( leaf && leaf->split == GUI_DOCK_SPLIT_NONE )
             {
                 if ( s_dock_drag.zone == DOCK_ZONE_CENTER )
                 {
@@ -533,7 +533,7 @@ dock_window_chrome( gui_dock_node_t* node )
         bool         is_active = ( i == node->active_tab );
 
         gui_id_t     tid = id_combine( node->id, DOCK_TAB_SALT + i );
-        gui_item_state_t st  = widget_behavior( tid, tr, WIDGET_KIND_BUTTON );
+        gui_item_state_t st  = widget_behavior( tid, tr, GUI_WIDGET_KIND_BUTTON );
 
         /* Active tab takes the body colour so it reads as joined to the content below; the rest stay
            on the title band, lifting to the hover colour under the cursor. */
@@ -578,7 +578,7 @@ dock_window_chrome( gui_dock_node_t* node )
         {
             gui_id_t     gid = id_combine( node->id, DOCK_FLOAT_SALT );
             s_scope.nav.skip = true;   /* pure drag surface -- never a keyboard target */
-            gui_item_state_t st  = widget_behavior( gid, rem, WIDGET_KIND_BUTTON );
+            gui_item_state_t st  = widget_behavior( gid, rem, GUI_WIDGET_KIND_BUTTON );
             if ( st.pressed )
                 move_grab( gid, 0, x, y );   /* released globally when the left button lifts */
         }
