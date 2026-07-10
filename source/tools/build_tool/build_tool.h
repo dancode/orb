@@ -78,24 +78,24 @@
     What was changed : Change update for BUILD_SAFE_MODE -- don't remove for now.
 
     build_tool.h
-    - Added #define BUILD_SAFE_MODE with a doc comment — uncomment to activate
+    - Added #define BUILD_SAFE_MODE with a doc comment ï¿½ uncomment to activate
     - Guarded the build_run_cmd_quiet declaration with #if !defined( BUILD_SAFE_MODE )
     
     build_tool_win.c
     - Added three Win32 helpers inside #if defined( BUILD_SAFE_MODE ):
-      - platform_delete_file_quiet(path) — DeleteFileA, silent
-      - platform_delete_glob_quiet(dir, glob) — FindFirstFileA loop + DeleteFileA
-      - platform_rmdir_quiet(path) — recursive RemoveDirectoryA
+      - platform_delete_file_quiet(path) ï¿½ DeleteFileA, silent
+      - platform_delete_glob_quiet(dir, glob) ï¿½ FindFirstFileA loop + DeleteFileA
+      - platform_rmdir_quiet(path) ï¿½ recursive RemoveDirectoryA
     
     build_tool_04_env.c (the main EDR trigger)
-    - locate_vcvarsall(): vswhere _popen loop wrapped in #if !defined( BUILD_SAFE_MODE ) — hardcoded path fallback always runs
+    - locate_vcvarsall(): vswhere _popen loop wrapped in #if !defined( BUILD_SAFE_MODE ) ï¿½ hardcoded path fallback always runs
     - build_setup_vc_env(): after fast paths 1+2, safe mode prints a clear message and returns; original vcvars import under #else
     
     build_tool_06_spawn.c
     - build_run_cmd_quiet() definition wrapped in #if !defined( BUILD_SAFE_MODE )
     
     build_tool_11_clean.c
-    - Safe-mode build_clean() uses platform_delete_file_quiet / platform_delete_glob_quiet / platform_rmdir_quiet directly — no child processes
+    - Safe-mode build_clean() uses platform_delete_file_quiet / platform_delete_glob_quiet / platform_rmdir_quiet directly ï¿½ no child processes
     - Original del_q() + build_clean() preserved under #else
 */
 
@@ -203,9 +203,9 @@ typedef void* platform_thread_t;
 /*  Capacity of the dynamic target and solution pools in build_tool_02_data.c.
     build_tool and reflect_tool are hardcoded; all others are loaded from orb.targets. */
 
-#define MAX_TARGETS                 64
+#define MAX_TARGETS                 128
 #define MAX_SOLUTIONS               16
-#define MAX_SLN_TARGETS             64
+#define MAX_SLN_TARGETS             128
 
 /*  Max extra include directories per target or solution declared via 'include_dir'.
     These are appended to AdditionalIncludeDirectories/NMakeIncludeSearchPath in vcxproj

@@ -1368,10 +1368,9 @@ typedef i32 ( *gui_table_sort_cmp_fn )( i32 a, i32 b, i32 col, bool descending, 
 typedef enum
 {
     GUI_FONT_NONE = 0,        // load nothing; caller loads its own font(s) via font_load()
-    GUI_FONT_JETBRAINS_16,    // assets/font/jetbrains_regular_16.orb_font
-    GUI_FONT_ROBOTO_16,       // assets/font/Roboto-Regular.orb_font
-    GUI_FONT_ROBOTO_BOLD_16,  // assets/font/Roboto-Bold.orb_font
-    GUI_FONT_CASCADIA_MONO_16 // assets/font/cascadia_mono_16.orb_font
+    GUI_FONT_JETBRAINS_16,
+    GUI_FONT_ROBOTO_16,
+    GUI_FONT_CASCADIA_MONO_16
 
 } gui_builtin_font_t;
 

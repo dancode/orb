@@ -127,6 +127,13 @@ int sys_dir_walk( const char* root, sys_glob_fn cb, void* userdata );
 
 bool sys_font_resolve_name( const char* name, char* out, int out_size );
 
+/* Enumerate installed fonts from the OS font registry. `cb` is called once per bakeable face
+   (.ttf/.otf/.ttc that resolves to a file on disk) with the friendly name (e.g. "Cascadia Mono
+   Regular") as `filename` and the absolute file path as `full_path`; return false to stop early.
+   Returns the number of faces delivered. Returns 0 on platforms with no font registry (POSIX). */
+
+int sys_font_enumerate( sys_glob_fn cb, void* userdata );
+
 /*==============================================================================================
 
     File Watch - Directory change polling with debounced notifications
