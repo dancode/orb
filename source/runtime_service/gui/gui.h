@@ -279,6 +279,12 @@ typedef struct gui_style_t
 
 gui_style_t* gui_style_get( void );
 
+/* gui_style_peek() -- read-only view of the base style.  Unlike gui_style_get() this does NOT
+   mark the theme anonymous, so a style editor can populate its widgets (and keep labeling the
+   active theme) and only call gui_style_get() on the frame it actually commits an edit. */
+
+const gui_style_t* gui_style_peek( void );
+
 /* gui_style_apply() -- recomputes the scaled active metrics from the current base style.
    Called automatically on font change; call manually after editing via gui_style_get(). */
 

@@ -178,6 +178,7 @@ const gui_api_t g_gui_api_struct =
     .drag_active                        = gui_drag_active,
     .drag_payload_peek                  = gui_drag_payload_peek,
     .style_get                          = gui_style_get,
+    .style_peek                         = gui_style_peek,
     .style_apply                        = gui_style_apply,
     .theme_list                         = gui_theme_list,
     .theme_set                          = gui_theme_set,

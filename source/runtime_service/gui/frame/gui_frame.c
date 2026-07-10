@@ -454,6 +454,15 @@ gui_style_apply( void )
     if ( !font_valid() )
         return;
     layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
+
+    /* A style / theme change restyles every window, but the retained cache only re-tessellates on a
+       dirty frame.  Request a redraw so the NEXT frame does a full clean rebuild with the reseeded
+       style -- otherwise a change made while the UI is idle (e.g. picking a theme in a style editor,
+       then no further input) freezes into a half-restyled cached frame: windows already emitted /
+       tessellated this frame keep their old colors and metrics.  Guarded because style_apply also
+       runs at init-time font load, before any context exists. */
+    if ( g_ctx )
+        g_ctx->retained.wants_redraw = true;
 }
 
 u32

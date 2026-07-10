@@ -871,8 +871,9 @@ typedef struct gui_api_s
     void ( *drag_target_end     )( void );
     bool ( *drag_active         )( void );
     const gui_drag_payload_t* ( *drag_payload_peek   )( void );
-    gui_style_t* (*style_get)( void );
-    void         (*style_apply)( void );
+    gui_style_t*       (*style_get)( void );    /* mutable base -- marks the theme anonymous       */
+    const gui_style_t* (*style_peek)( void );   /* read-only base -- does NOT mark theme anonymous  */
+    void               (*style_apply)( void );
 
     /* Theme -- named style presets that form the root of the push/pop stack.
 

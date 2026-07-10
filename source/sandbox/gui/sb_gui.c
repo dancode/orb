@@ -682,6 +682,208 @@ show_tabgroup_demo( bool* p_open )
 }
 
 /*============================================================================================*/
+/* Style / theme editor                                                                        */
+/*                                                                                             */
+/* Pick a built-in theme, then tune every SKIN + METRIC knob live.  The flow is the one the    */
+/* gui style API is built around: theme_list/theme_set switch named presets; style_peek reads   */
+/* the base style WITHOUT marking it anonymous (so the theme combo keeps naming the active      */
+/* theme until an edit lands); style_get commits an edit (theme goes "(custom)"); style_apply   */
+/* rescales the active metrics.  Widgets edit a local copy of the base style and the whole copy */
+/* is committed once per frame only when something actually changed -- so merely opening the    */
+/* window never disturbs the theme.                                                             */
+/*============================================================================================*/
+
+/* One color slot -> a color_edit4 bound to the packed u32 field.  Returns true on edit. */
+static bool
+se_color( const char* label, u32* field )
+{
+    f32 c[ 4 ] = {
+        (f32)(   *field         & 0xFF ) / 255.0f,
+        (f32)( ( *field >> 8  ) & 0xFF ) / 255.0f,
+        (f32)( ( *field >> 16 ) & 0xFF ) / 255.0f,
+        (f32)( ( *field >> 24 ) & 0xFF ) / 255.0f,
+    };
+    if ( gui()->color_edit4( label, c, GUI_COLOR_EDIT_NONE ) )
+    {
+        u8 r = (u8)( c[ 0 ] * 255.0f + 0.5f ), g = (u8)( c[ 1 ] * 255.0f + 0.5f );
+        u8 b = (u8)( c[ 2 ] * 255.0f + 0.5f ), a = (u8)( c[ 3 ] * 255.0f + 0.5f );
+        *field = GUI_COLOR( r, g, b, a );
+        return true;
+    }
+    return false;
+}
+
+/* One u8 metric/skin scalar -> an integer slider over [lo,hi].  Returns true on edit. */
+static bool
+se_u8( const char* label, u8* field, i32 lo, i32 hi )
+{
+    i32 v = *field;
+    if ( gui()->slider_int( label, &v, lo, hi ) )
+    {
+        *field = (u8)v;
+        return true;
+    }
+    return false;
+}
+
+/* One enum-valued u8 knob -> a combo of named variants.  Returns true on selection change. */
+static bool
+se_enum( const char* label, u8* field, const char* const* names, i32 count )
+{
+    i32  cur     = ( *field < (u8)count ) ? *field : 0;
+    bool changed = false;
+    if ( gui()->combo_begin( label, names[ cur ], GUI_COMBO_NONE ) )
+    {
+        for ( i32 i = 0; i < count; ++i )
+        {
+            bool sel = ( i == cur );
+            if ( gui()->selectable( names[ i ], &sel ) )
+            {
+                *field  = (u8)i;
+                changed = true;
+            }
+        }
+        gui()->combo_end();
+    }
+    return changed;
+}
+
+/* Display names for the 17 color slots, indexed by gui_col_t. */
+static const char* const k_col_names[ GUI_COL_COUNT ] =
+{
+    [ GUI_COL_TEXT          ] = "Text",
+    [ GUI_COL_TEXT_DIM      ] = "Text Dim",
+    [ GUI_COL_WINDOW_BG     ] = "Window BG",
+    [ GUI_COL_CHILD_BG      ] = "Child BG",
+    [ GUI_COL_TITLE_BG      ] = "Title BG",
+    [ GUI_COL_BORDER        ] = "Border",
+    [ GUI_COL_WIDGET_BG     ] = "Widget BG",
+    [ GUI_COL_WIDGET_HOT    ] = "Widget Hot",
+    [ GUI_COL_WIDGET_ACT    ] = "Widget Active",
+    [ GUI_COL_WIDGET_FG     ] = "Widget FG",
+    [ GUI_COL_CHECK_MARK    ] = "Check Mark",
+    [ GUI_COL_SLIDER_TRACK  ] = "Slider Track",
+    [ GUI_COL_RESIZE_HOT    ] = "Resize Hot",
+    [ GUI_COL_INPUT_BG      ] = "Input BG",
+    [ GUI_COL_INPUT_FOCUS   ] = "Input Focus",
+    [ GUI_COL_CURSOR        ] = "Cursor",
+    [ GUI_COL_NAV_HIGHLIGHT ] = "Nav Highlight",
+};
+
+static void
+show_style_editor( bool* p_open )
+{
+    static const char* WIN = "Style Editor";
+    gui()->window_set_next_size( 340.0f, 620.0f, GUI_COND_ONCE );
+    if ( !gui()->window_begin( WIN, GUI_WIN_CLOSEABLE ) )
+    {
+        if ( p_open && !gui()->window_is_open( WIN ) )
+            *p_open = false;
+        gui()->window_end();
+        return;
+    }
+
+    gui()->stack();
+
+    /* --- Theme -----------------------------------------------------------------------------
+       Theme controls go FIRST so a preset switch happens before we snapshot the base style
+       below -- the tuning widgets then reflect the newly selected theme the same frame. */
+    gui()->separator_text( "Theme" );
+
+    const char* active = gui()->theme_get();            /* NULL after an anonymous edit */
+    u32         n_themes;
+    const gui_theme_t* themes = gui()->theme_list( &n_themes );
+
+    if ( gui()->combo_begin( "Theme", active ? active : "(custom)", GUI_COMBO_NONE ) )
+    {
+        for ( u32 i = 0; i < n_themes; ++i )
+        {
+            bool sel = ( active && strcmp( active, themes[ i ].name ) == 0 );
+            if ( gui()->selectable( themes[ i ].name, &sel ) )
+                gui()->theme_set( themes[ i ].name );
+        }
+        gui()->combo_end();
+    }
+
+    gui()->same_line( -1 );
+    if ( gui()->button( "Reset" ) )
+        gui()->theme_reset();   /* revert to the active theme's authored values, clear stacks */
+
+    if ( !active )
+        gui()->text_disabled( "Edited -- pick a theme above to revert." );
+
+    /* --- Snapshot --------------------------------------------------------------------------
+       Read the base through style_peek (does not disturb the theme name).  Widgets edit this
+       local copy; the whole copy is committed once at the end only if something changed. */
+    gui_style_t work    = *gui()->style_peek();
+    bool        changed = false;
+
+    /* --- Colors ---------------------------------------------------------------------------- */
+    gui()->separator_text( "Colors" );
+    for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
+        changed |= se_color( k_col_names[ i ], &work.colors[ i ] );
+
+    /* --- Metrics (can move rects) ---------------------------------------------------------- */
+    gui()->separator_text( "Metrics" );
+    changed |= se_u8( "line_size",     &work.line_size,     8, 48  );
+    changed |= se_u8( "widget_gap",    &work.widget_gap,    0, 24  );
+    changed |= se_u8( "widget_pad",    &work.widget_pad,    0, 24  );
+    changed |= se_u8( "min_cell_w",    &work.min_cell_w,    8, 128 );
+    changed |= se_u8( "grid_quantum",  &work.grid_quantum,  0, 32  );
+    changed |= se_u8( "win_border",    &work.win_border,    0, 8   );
+    changed |= se_u8( "win_title_h",   &work.win_title_h,   12, 48 );
+    changed |= se_u8( "checkbox_sz",   &work.checkbox_sz,   8, 32  );
+    changed |= se_u8( "slider_knob_w", &work.slider_knob_w, 4, 32  );
+
+    /* --- Skin: rounding + fine geometry (paint only) --------------------------------------- */
+    gui()->separator_text( "Skin - Rounding" );
+    changed |= se_u8( "win_rounding",    &work.win_rounding,    0, 24 );
+    changed |= se_u8( "widget_rounding", &work.widget_rounding, 0, 16 );
+    changed |= se_u8( "grab_rounding",   &work.grab_rounding,   0, 16 );
+    changed |= se_u8( "checkmark_pad",   &work.checkmark_pad,   0, 12 );
+    changed |= se_u8( "cursor_w",        &work.cursor_w,        1, 6  );
+    changed |= se_u8( "cursor_inset",    &work.cursor_inset,    0, 12 );
+
+    /* --- Skin: shape variants (enum combos) ------------------------------------------------ */
+    gui()->separator_text( "Skin - Shapes" );
+    static const char* const nm_check   [] = { "Tick", "Disc", "Cross" };
+    static const char* const nm_bullet  [] = { "Disc", "Square" };
+    static const char* const nm_arrow   [] = { "Filled", "Chevron" };
+    static const char* const nm_sep     [] = { "Solid", "Dashed" };
+    static const char* const nm_progress[] = { "Solid", "Gradient" };
+    static const char* const nm_knob    [] = { "Bar", "Circle" };
+    static const char* const nm_menu    [] = { "Plain", "Box" };
+    changed |= se_enum( "check_style",     &work.check_style,     nm_check,    3 );
+    changed |= se_enum( "bullet_style",    &work.bullet_style,    nm_bullet,   2 );
+    changed |= se_enum( "arrow_style",     &work.arrow_style,     nm_arrow,    2 );
+    changed |= se_enum( "separator_style", &work.separator_style, nm_sep,      2 );
+    changed |= se_enum( "progress_style",  &work.progress_style,  nm_progress, 2 );
+    changed |= se_enum( "slider_knob",     &work.slider_knob,     nm_knob,     2 );
+    changed |= se_enum( "menu_check",      &work.menu_check,      nm_menu,     2 );
+
+    /* --- Live sample of what the knobs above affect ---------------------------------------- */
+    gui()->separator_text( "Preview" );
+    static bool  sample_check = true;
+    static f32   sample_val   = 0.4f;
+    static i32   sample_int   = 3;
+    gui()->checkbox( "Checkbox", &sample_check );
+    gui()->button( "Button" );
+    gui()->slider_float( "Slider", &sample_val, 0.0f, 1.0f );
+    gui()->slider_int( "Steps", &sample_int, 0, 10 );
+    gui()->progress_bar( sample_val, NULL );
+
+    /* Commit once: writing through style_get marks the theme anonymous (an intentional edit),
+       then style_apply rescales the active metrics from the new base. */
+    if ( changed )
+    {
+        *gui()->style_get() = work;
+        gui()->style_apply();
+    }
+
+    gui()->window_end();
+}
+
+/*============================================================================================*/
 /* Demo setup                                                                                  */
 /*============================================================================================*/
 
@@ -690,13 +892,14 @@ show_tabgroup_demo( bool* p_open )
 // - BeginMenuBar() = menu-bar inside current window (which needs the ImGuiWindowFlags_MenuBar flag!)
 // - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
 
-static bool show_demo             = true;
+static bool show_demo             = false;
 static bool show_font_browser_win = false;
 static bool show_split_win        = false;
 static bool show_hud_win          = false;
 static bool show_region_win       = false;
 static bool show_dragdrop_win     = false;
 static bool show_tabgroup_win     = false;
+static bool show_style_win        = true;
 
 static void show_example_main_menu_bar()
 {
@@ -711,6 +914,7 @@ static void show_example_main_menu_bar()
             gui()->menu_item( "Region Demo",    NULL, &show_region_win );
             gui()->menu_item( "Drag and Drop",  NULL, &show_dragdrop_win );
             gui()->menu_item( "Tab Groups",     NULL, &show_tabgroup_win );
+            gui()->menu_item( "Style Editor",   NULL, &show_style_win );
             gui()->menu_end();
         }
         gui()->main_menu_bar_end();
@@ -1046,6 +1250,13 @@ main( int argc, char** argv )
             s_tabgroup_prev = show_tabgroup_win;
             if ( show_tabgroup_win )
                 show_tabgroup_demo( &show_tabgroup_win );
+
+            static bool s_style_prev = false;
+            if ( show_style_win && !s_style_prev )
+                gui()->window_set_open( "Style Editor", true );
+            s_style_prev = show_style_win;
+            if ( show_style_win )
+                show_style_editor( &show_style_win );
 
             /* Closing the default context also auto-emits the debug overlays (perf/state/dashboard)
                last in its build.  Clean frames skip this whole scope; frame_end below replays the

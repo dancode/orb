@@ -970,11 +970,19 @@ cache_build_frame( void )
     if ( s_tess.band0_vert_end > s_tess.band0_vert_hwm ) s_tess.band0_vert_hwm = s_tess.band0_vert_end;
     if ( s_tess.band0_idx_end  > s_tess.band0_idx_hwm  ) s_tess.band0_idx_hwm  = s_tess.band0_idx_end;
 
-    if ( s_tess.overflow && !s_tess.overflow_ever )
+    /* Single overflow catch for the whole build: the reservation sites just latch s_tess.overflow
+       and drop their primitive (non-fatal -- the frame still submits everything that fit, the app
+       keeps running), so we report ONCE here, after the frame is fully tessellated and about to be
+       submitted.  Not an assert: overflow is a "you exceeded the budget, some geometry is missing"
+       signal (e.g. a window's late-tessellated chrome), not a program error -- the log + the
+       dashboard's OVERFLOWED marker are how you catch which frame/UI blew the caps. */
+    if ( s_tess.overflow && !s_tess.overflow_ever ) {
         printf( "[gui] WARNING: draw list overflow -- geometry dropped this frame "
                 "(caps: %u verts, %u idx, %u gpu cmds). "
                 "Raise GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS.\n",
                 GUI_MAX_VERTS, GUI_MAX_IDX, GUI_MAX_CMDS );
+        ORB_ASSERT( 0 );
+    }
     if ( s_tess.overflow )
         s_tess.overflow_ever = true;
 
