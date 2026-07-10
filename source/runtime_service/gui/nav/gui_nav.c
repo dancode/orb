@@ -62,6 +62,30 @@ static bool s_nav_alt_used;
 static f32 s_nav_mouse_x, s_nav_mouse_y;
 
 /*----------------------------------------------------------------------------------------------
+    Window-pool helpers -- the two recurring reads over g_ctx->win.pool.
+----------------------------------------------------------------------------------------------*/
+
+/* The window record for id in the pool, or NULL if no such window exists this frame. */
+static gui_window_t*
+nav_window_find( gui_id_t id )
+{
+    if ( id == GUI_ID_NONE ) return NULL;
+    for ( u32 i = 0; i < g_ctx->win.count; ++i )
+        if ( g_ctx->win.pool[ i ].id == id )
+            return &g_ctx->win.pool[ i ];
+    return NULL;
+}
+
+/* Whether nav's front-most-by-z default may land on this window: not an overlay record (popup /
+   tooltip -- those capture nav their own way) and not a GUI_WIN_NATIVE frame-only shell (bare
+   chrome, no body item to focus, so defaulting onto it would strand the keyboard). */
+static bool
+nav_win_focusable( const gui_window_t* w )
+{
+    return !w->overlay && !( w->flags & GUI_WIN_NATIVE );
+}
+
+/*----------------------------------------------------------------------------------------------
     nav_choose_window -- pick the window/popup nav is scoped to this frame.
 ----------------------------------------------------------------------------------------------*/
 
@@ -92,15 +116,16 @@ nav_choose_window( void )
        skipped so they never masquerade as the front-most window, and so is a GUI_WIN_NATIVE
        frame-only shell -- it has no body items, so defaulting nav onto it would strand the
        keyboard on bare chrome. */
-    gui_id_t front = GUI_ID_NONE;
-    u32        frontz = 0;
-    bool       have_explicit = false;
+    gui_id_t front         = GUI_ID_NONE;
+    u32      frontz        = 0;
+    bool     have_explicit = false;
     for ( u32 i = 0; i < g_ctx->win.count; ++i )
     {
-        if ( g_ctx->win.pool[ i ].overlay ) continue;
-        if ( g_ctx->win.pool[ i ].id == g_ctx->nav.explicit_win ) have_explicit = true;
-        if ( g_ctx->win.pool[ i ].flags & GUI_WIN_NATIVE ) continue;
-        if ( g_ctx->win.pool[ i ].z >= frontz ) { frontz = g_ctx->win.pool[ i ].z; front = g_ctx->win.pool[ i ].id; }
+        gui_window_t* w = &g_ctx->win.pool[ i ];
+        if ( w->overlay ) continue;   /* an overlay never masquerades as the front-most window */
+        if ( w->id == g_ctx->nav.explicit_win ) have_explicit = true;   /* native may be explicit */
+        if ( !nav_win_focusable( w ) ) continue;
+        if ( w->z >= frontz ) { frontz = w->z; front = w->id; }
     }
     g_ctx->nav.win = have_explicit ? g_ctx->nav.explicit_win : front;
 }
@@ -130,65 +155,72 @@ nav_cycle_skip( const gui_window_t* w )
     return false;
 }
 
+/* The z the cycle steps away from: the explicit nav target if it is a live non-overlay window,
+   else the front-most non-overlay window's z. */
+static u32
+nav_cycle_fromz( void )
+{
+    gui_window_t* explicit_w = nav_window_find( g_ctx->nav.explicit_win );
+    if ( explicit_w && !explicit_w->overlay )
+        return explicit_w->z;
+
+    u32 top = 0;
+    for ( u32 i = 0; i < g_ctx->win.count; ++i )
+        if ( !g_ctx->win.pool[ i ].overlay && g_ctx->win.pool[ i ].z >= top )
+            top = g_ctx->win.pool[ i ].z;
+    return top;
+}
+
+/* One step around the visible-window ring by z (see nav_cycle_skip for what is on the ring): the
+   nearest window strictly past fromz in dir, or -- when nothing lies past it -- the extreme
+   opposite end so the ring wraps.  Both candidates fall out of a single pass.  GUI_ID_NONE if the
+   ring is empty.  Docked windows cycle too: their record z is stale for drawing (the node draws
+   them) but still orders them here. */
+static gui_id_t
+nav_cycle_step( i32 dir, u32 fromz )
+{
+    gui_id_t next  = GUI_ID_NONE;                    // nearest strictly past fromz
+    gui_id_t wrap  = GUI_ID_NONE;                    // extreme opposite end, for the wrap
+    u32      nextz = ( dir > 0 ) ? 0xFFFFFFFFu : 0u;
+    u32      wrapz = ( dir > 0 ) ? 0xFFFFFFFFu : 0u;
+
+    for ( u32 i = 0; i < g_ctx->win.count; ++i )
+    {
+        gui_window_t* w = &g_ctx->win.pool[ i ];
+        if ( nav_cycle_skip( w ) ) continue;
+        u32 z = w->z;
+        if ( dir > 0 )
+        {
+            if ( z > fromz && z < nextz ) { nextz = z; next = w->id; }   // next higher
+            if ( z <= wrapz )             { wrapz = z; wrap = w->id; }   // lowest, wraps forward
+        }
+        else
+        {
+            if ( z < fromz && z > nextz ) { nextz = z; next = w->id; }   // next lower
+            if ( z >= wrapz )             { wrapz = z; wrap = w->id; }   // highest, wraps back
+        }
+    }
+    return ( next != GUI_ID_NONE ) ? next : wrap;
+}
+
 static void
 nav_cycle_window( i32 dir )
 {
-    /* Current reference z: the explicit target if live, else the front-most normal window. */
-    u32  curz  = 0;
-    bool found = false;
-    for ( u32 i = 0; i < g_ctx->win.count; ++i )
-    {
-        if ( g_ctx->win.pool[ i ].overlay ) continue;
-        if ( g_ctx->win.pool[ i ].id == g_ctx->nav.explicit_win ) { curz = g_ctx->win.pool[ i ].z; found = true; }
-    }
-    if ( !found )
-        for ( u32 i = 0; i < g_ctx->win.count; ++i )
-            if ( !g_ctx->win.pool[ i ].overlay && g_ctx->win.pool[ i ].z >= curz )
-                curz = g_ctx->win.pool[ i ].z;
-
-    /* Nearest visible window strictly past curz in the requested direction (see nav_cycle_skip).
-       Docked windows cycle too: their record z is stale for drawing (the node draws them) but
-       still orders them here. */
-    gui_id_t pick  = GUI_ID_NONE;
-    u32        pickz = ( dir > 0 ) ? 0xFFFFFFFFu : 0u;
-    for ( u32 i = 0; i < g_ctx->win.count; ++i )
-    {
-        u32 z = g_ctx->win.pool[ i ].z;
-        if ( nav_cycle_skip( &g_ctx->win.pool[ i ] ) ) continue;
-        if ( dir > 0 ) { if ( z > curz && z < pickz ) { pickz = z; pick = g_ctx->win.pool[ i ].id; } }
-        else           { if ( z < curz && z > pickz ) { pickz = z; pick = g_ctx->win.pool[ i ].id; } }
-    }
-
-    /* None past it -- wrap to the extreme opposite end (lowest for forward, highest for back). */
-    if ( pick == GUI_ID_NONE )
-    {
-        u32 wrapz = ( dir > 0 ) ? 0xFFFFFFFFu : 0u;
-        for ( u32 i = 0; i < g_ctx->win.count; ++i )
-        {
-            u32 z = g_ctx->win.pool[ i ].z;
-            if ( nav_cycle_skip( &g_ctx->win.pool[ i ] ) ) continue;
-            if ( dir > 0 ) { if ( z <= wrapz ) { wrapz = z; pick = g_ctx->win.pool[ i ].id; } }
-            else           { if ( z >= wrapz ) { wrapz = z; pick = g_ctx->win.pool[ i ].id; } }
-        }
-    }
-
+    gui_id_t pick = nav_cycle_step( dir, nav_cycle_fromz() );
     if ( pick == GUI_ID_NONE ) return;
 
-    /* Adopt + raise the picked window; first item takes focus next frame. */
-    for ( u32 i = 0; i < g_ctx->win.count; ++i )
-        if ( g_ctx->win.pool[ i ].id == pick )
-            g_ctx->win.pool[ i ].z = surface_z_raise( g_ctx->win.pool[ i ].z );
+    /* Adopt + raise the picked window so it surfaces; its first item takes focus next frame. */
+    gui_window_t* w = nav_window_find( pick );
+    if ( w ) w->z = surface_z_raise( w->z );
 
     /* A floating tab group raises with its picked (visible) tab so the group surfaces. */
-    {
-        gui_dock_node_t* dn = dock_find_window_node( pick );
-        if ( dn && dn->floating )
-            dn->z = surface_z_raise( dn->z );
-    }
+    gui_dock_node_t* dn = dock_find_window_node( pick );
+    if ( dn && dn->floating )
+        dn->z = surface_z_raise( dn->z );
 
     g_ctx->nav.explicit_win = pick;
-    g_ctx->nav.id     = GUI_ID_NONE;
-    g_ctx->nav.active = true;
+    g_ctx->nav.id           = GUI_ID_NONE;
+    g_ctx->nav.active       = true;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -362,9 +394,8 @@ nav_resolve_page( void )
     if ( g_ctx->nav.items[ cur ].chrome ) return;
     const gui_nav_item_t c = g_ctx->nav.items[ cur ];
 
-    f32 page = 0.0f;
-    for ( u32 i = 0; i < g_ctx->win.count; ++i )
-        if ( g_ctx->win.pool[ i ].id == g_ctx->nav.win ) { page = g_ctx->win.pool[ i ].h; break; }
+    gui_window_t* nw   = nav_window_find( g_ctx->nav.win );
+    f32           page = nw ? nw->h : 0.0f;
     if ( page <= 0.0f ) page = 10.0f * WIDGET_H;
 
     if ( !g_ctx->nav.goal_set )
@@ -402,93 +433,84 @@ nav_resolve_page( void )
         nav_adopt( pick, true );
 }
 
-/* Directional move.  Left/Right are ordinal: the neighboring placed item on the same line, and a
-   line end is a wall -- a horizontal move can never read as a vertical jump.  Up/Down choose the
-   target LINE geometrically over the structural lines the layout engine built: every line whose
-   y band sits strictly beyond the cursor line's competes by edge gap, with the goal column
-   breaking near-ties -- so within one region the adjacent row always wins (rows stack; the gap is
-   decisive and Down then Up returns to the start), a child's rows slot in where the child
-   visually sits, and side-by-side regions whose rows share heights resolve to the region the
-   goal column is over rather than whichever emitted later.  The landing item within the target
-   line is the goal-column pick. */
+/* Chrome-lane step: the cursor sits on a chrome item (F6, or a click on a title-bar button).
+   Left/Right step to the nearest chrome item by x-center -- emission order is wrong here (the
+   close button emits before the detach box but sits right of it), and the strip is one visual
+   band, so geometry IS its order.  Down drops back into the body; Up and the strip ends are
+   walls. */
 static void
-nav_resolve_move( void )
+nav_move_chrome( i32 cur )
 {
-    if ( g_ctx->nav.item_count == 0 ) return;
+    gui_nav_state_t* nav = &g_ctx->nav;
 
-    /* No cursor in the list (fresh engage, stale id): land on the first placed item rather than
-       stepping from nowhere. */
-    i32 cur = nav_list_find( g_ctx->nav.id );
-    if ( cur < 0 )
+    if ( nav->move_dir == GUI_DIR_LEFT || nav->move_dir == GUI_DIR_RIGHT )
     {
-        for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
-            if ( !g_ctx->nav.items[ i ].chrome ) { nav_adopt( (i32)i, false ); return; }
+        bool right  = ( nav->move_dir == GUI_DIR_RIGHT );
+        f32  cx     = nav->items[ cur ].rect.x + nav->items[ cur ].rect.w * 0.5f;
+        i32  best   = -1;
+        f32  best_d = 0.0f;
+        for ( u32 i = 0; i < nav->item_count; ++i )
+        {
+            const gui_nav_item_t* it = &nav->items[ i ];
+            if ( !it->chrome || (i32)i == cur ) continue;
+            f32 ix = it->rect.x + it->rect.w * 0.5f;
+            f32 d  = right ? ( ix - cx ) : ( cx - ix );
+            if ( d <= 0.0f ) continue;                    /* not on the requested side */
+            if ( best < 0 || d < best_d ) { best = (i32)i; best_d = d; }
+        }
+        if ( best >= 0 )
+            nav_adopt( best, false );
+    }
+    else if ( nav->move_dir == GUI_DIR_DOWN )
+    {
+        nav_lane_body();
+    }
+}
+
+/* Body-lane horizontal step: the neighboring placed item on the cursor's own (region, line),
+   ordinal.  A line end is a wall -- a horizontal move can never read as a vertical jump. */
+static void
+nav_move_horizontal( i32 cur, gui_nav_item_t c )
+{
+    gui_nav_state_t* nav = &g_ctx->nav;
+
+    i32 step = ( nav->move_dir == GUI_DIR_LEFT ) ? -1 : 1;
+    for ( i32 i = cur + step; i >= 0 && i < (i32)nav->item_count; i += step )
+    {
+        if ( nav->items[ i ].chrome ) continue;
+        if ( nav->items[ i ].region != c.region || nav->items[ i ].line != c.line )
+            break;                       /* ran off the line -- wall */
+        nav_adopt( i, false );
         return;
     }
+}
 
-    /* Chrome lane: the cursor sits on a chrome item (F6, or a click on a title-bar button).
-       Left/Right step to the nearest chrome item by position -- emission order is wrong here
-       (the close button emits before the detach box but sits right of it), and the strip is
-       one visual band, so geometry IS its order.  Down drops back into the body; Up and the
-       strip ends are walls. */
-    if ( g_ctx->nav.items[ cur ].chrome )
+/* Body-lane vertical step (Up/Down).  Choose the target LINE geometrically over the structural
+   lines the layout engine built: every line whose y band sits strictly beyond the cursor line's
+   competes by edge gap, with the goal column breaking near-ties -- so within one region the
+   adjacent row always wins (rows stack; the gap is decisive and Down then Up returns to the
+   start), a child's rows slot in where the child visually sits, and side-by-side regions whose
+   rows share heights resolve to the region the goal column is over rather than whichever emitted
+   later.  The landing item within the target line is the goal-column pick. */
+static void
+nav_move_vertical( gui_nav_item_t c )
+{
+    gui_nav_state_t* nav  = &g_ctx->nav;
+    bool             down = ( nav->move_dir == GUI_DIR_DOWN );
+
+    /* Anchor the goal column on the first step of a run. */
+    if ( !nav->goal_set )
     {
-        if ( g_ctx->nav.move_dir == GUI_DIR_LEFT || g_ctx->nav.move_dir == GUI_DIR_RIGHT )
-        {
-            bool right  = ( g_ctx->nav.move_dir == GUI_DIR_RIGHT );
-            f32  cx     = g_ctx->nav.items[ cur ].rect.x + g_ctx->nav.items[ cur ].rect.w * 0.5f;
-            i32  best   = -1;
-            f32  best_d = 0.0f;
-            for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
-            {
-                const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
-                if ( !it->chrome || (i32)i == cur ) continue;
-                f32 ix = it->rect.x + it->rect.w * 0.5f;
-                f32 d  = right ? ( ix - cx ) : ( cx - ix );
-                if ( d <= 0.0f ) continue;                    /* not on the requested side */
-                if ( best < 0 || d < best_d ) { best = (i32)i; best_d = d; }
-            }
-            if ( best >= 0 )
-                nav_adopt( best, false );
-        }
-        else if ( g_ctx->nav.move_dir == GUI_DIR_DOWN )
-        {
-            nav_lane_body();
-        }
-        return;
-    }
-
-    const gui_nav_item_t c = g_ctx->nav.items[ cur ];   /* adoption rewrites g_ctx->nav.id only; copy for clarity */
-
-    if ( g_ctx->nav.move_dir == GUI_DIR_LEFT || g_ctx->nav.move_dir == GUI_DIR_RIGHT )
-    {
-        i32 step = ( g_ctx->nav.move_dir == GUI_DIR_LEFT ) ? -1 : 1;
-        for ( i32 i = cur + step; i >= 0 && i < (i32)g_ctx->nav.item_count; i += step )
-        {
-            if ( g_ctx->nav.items[ i ].chrome ) continue;
-            if ( g_ctx->nav.items[ i ].region != c.region || g_ctx->nav.items[ i ].line != c.line )
-                break;                       /* ran off the line -- wall */
-            nav_adopt( i, false );
-            return;
-        }
-        return;
-    }
-
-    /* Vertical: anchor the goal column on the first step of a run. */
-    bool down = ( g_ctx->nav.move_dir == GUI_DIR_DOWN );
-
-    if ( !g_ctx->nav.goal_set )
-    {
-        g_ctx->nav.goal_x   = c.rect.x + c.rect.w * 0.5f;
-        g_ctx->nav.goal_set = true;
+        nav->goal_x   = c.rect.x + c.rect.w * 0.5f;
+        nav->goal_set = true;
     }
 
     /* The cursor line's y band -- the union of its items' extents, so a short label and a tall
        control on one row read as one band and neither can be "beyond" its own row. */
     f32 band_y0 = c.rect.y, band_y1 = c.rect.y + c.rect.h;
-    for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
+    for ( u32 i = 0; i < nav->item_count; ++i )
     {
-        const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
+        const gui_nav_item_t* it = &nav->items[ i ];
         if ( it->chrome || it->region != c.region || it->line != c.line ) continue;
         if ( it->rect.y < band_y0 )              band_y0 = it->rect.y;
         if ( it->rect.y + it->rect.h > band_y1 ) band_y1 = it->rect.y + it->rect.h;
@@ -500,9 +522,9 @@ nav_resolve_move( void )
     f32  t_gap    = 0.0f;
     bool t_ov     = false;
     bool found    = false;
-    for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
+    for ( u32 i = 0; i < nav->item_count; ++i )
     {
-        const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
+        const gui_nav_item_t* it = &nav->items[ i ];
         if ( it->chrome ) continue;
         if ( it->region == c.region && it->line == c.line ) continue;   /* our own line */
 
@@ -512,7 +534,7 @@ nav_resolve_move( void )
         else        { if ( iy1 > band_y0 + NAV_BAND_EPS ) continue; gap = band_y0 - iy1; }
         if ( gap < 0.0f ) gap = 0.0f;
 
-        bool ov = ( g_ctx->nav.goal_x >= it->rect.x && g_ctx->nav.goal_x <= it->rect.x + it->rect.w );
+        bool ov = ( nav->goal_x >= it->rect.x && nav->goal_x <= it->rect.x + it->rect.w );
 
         bool better;
         if      ( !found )                       better = true;
@@ -531,9 +553,39 @@ nav_resolve_move( void )
     }
     if ( !found ) return;   /* nothing beyond -- first / last line of the window, a wall */
 
-    i32 pick = nav_line_pick( t_region, t_line, g_ctx->nav.goal_x );
+    i32 pick = nav_line_pick( t_region, t_line, nav->goal_x );
     if ( pick >= 0 )
         nav_adopt( pick, true );
+}
+
+/* Directional move: dispatch the arrow keys to the chrome lane, the body horizontal step, or the
+   body vertical step.  No cursor yet lands on the first placed item rather than stepping from
+   nowhere. */
+static void
+nav_resolve_move( void )
+{
+    gui_nav_state_t* nav = &g_ctx->nav;
+    if ( nav->item_count == 0 ) return;
+
+    i32 cur = nav_list_find( nav->id );
+    if ( cur < 0 )
+    {
+        for ( u32 i = 0; i < nav->item_count; ++i )
+            if ( !nav->items[ i ].chrome ) { nav_adopt( (i32)i, false ); return; }
+        return;
+    }
+
+    if ( nav->items[ cur ].chrome )
+    {
+        nav_move_chrome( cur );
+        return;
+    }
+
+    gui_nav_item_t c = nav->items[ cur ];   /* adoption rewrites nav->id only; copy for clarity */
+    if ( nav->move_dir == GUI_DIR_LEFT || nav->move_dir == GUI_DIR_RIGHT )
+        nav_move_horizontal( cur, c );
+    else
+        nav_move_vertical( c );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -546,10 +598,7 @@ static gui_id_t
 nav_main_bar_win( void )
 {
     gui_id_t mb = id_hash( "##MainMenuBar" );
-    for ( u32 i = 0; i < g_ctx->win.count; ++i )
-        if ( g_ctx->win.pool[ i ].id == mb )
-            return mb;
-    return GUI_ID_NONE;
+    return nav_window_find( mb ) ? mb : GUI_ID_NONE;
 }
 
 /* Enter menu-bar mode on `bar` with the first entry highlighted; remember the prior nav target so
@@ -745,25 +794,14 @@ nav_new_frame( void )
            all -- a click never raises a tile's z (window_raise_on_press leaves it tiled), so the
            front-most-by-z default can never reach it.  Popup-band records keep their own capture
            (nav_choose_window) and a frame-only native shell never takes the keyboard. */
-        if ( s_interaction.hover_win != GUI_ID_NONE )
-            for ( u32 i = 0; i < g_ctx->win.count; ++i )
-                if ( g_ctx->win.pool[ i ].id == s_interaction.hover_win )
-                {
-                    if ( !g_ctx->win.pool[ i ].overlay
-                         && !( g_ctx->win.pool[ i ].flags & GUI_WIN_NATIVE ) )
-                        g_ctx->nav.explicit_win = g_ctx->win.pool[ i ].id;
-                    break;
-                }
+        gui_window_t* clicked = nav_window_find( s_interaction.hover_win );
+        if ( clicked && nav_win_focusable( clicked ) )
+            g_ctx->nav.explicit_win = clicked->id;
     }
 
     /* Menu mode self-heals: if its bar window is gone, drop out. */
-    if ( g_ctx->nav.bar_win != GUI_ID_NONE )
-    {
-        bool alive = false;
-        for ( u32 i = 0; i < g_ctx->win.count; ++i )
-            if ( g_ctx->win.pool[ i ].id == g_ctx->nav.bar_win ) { alive = true; break; }
-        if ( !alive ) nav_menu_exit();
-    }
+    if ( g_ctx->nav.bar_win != GUI_ID_NONE && !nav_window_find( g_ctx->nav.bar_win ) )
+        nav_menu_exit();
 
     /* A focused text field owns the keyboard: nav reads nothing (Tab/arrows/Enter are the editor's,
        which releases focus on Enter/Esc -- gui_text_edit.c). */
