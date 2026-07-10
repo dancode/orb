@@ -789,6 +789,7 @@ solution orb_build
 	add 		font_tool
 	add 		asset_tool
 	add 		shader_tool
+	add 		dev_font		#used by font_tool
 
 # ==============================================================================
 # FULL SOLUTION

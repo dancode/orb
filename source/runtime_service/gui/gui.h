@@ -1371,7 +1371,7 @@ typedef enum
     GUI_FONT_JETBRAINS_16,    // assets/font/jetbrains_regular_16.orb_font
     GUI_FONT_ROBOTO_16,       // assets/font/Roboto-Regular.orb_font
     GUI_FONT_ROBOTO_BOLD_16,  // assets/font/Roboto-Bold.orb_font
-
+    GUI_FONT_CASCADIA_MONO_16 // assets/font/cascadia_mono_16.orb_font
 
 } gui_builtin_font_t;
 

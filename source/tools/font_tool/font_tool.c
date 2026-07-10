@@ -32,11 +32,18 @@
 #include FT_FREETYPE_H
 
 #include "tools/font_tool/orb_font.h"
-#include "developer/dev_font/dev_font.h"   /* shared font-path resolver (assets + OS fonts) */
+#include "developer/dev_font/dev_font.h"   /* shared font-path resolver + output dirs */
+#include "engine/sys/sys_host.h"           /* sys_dir_make */
 
 /*==============================================================================================
     Constants
 ==============================================================================================*/
+
+#if OS_WINDOWS
+    #define OUT_SEP "\\"
+#else
+    #define OUT_SEP "/"
+#endif
 
 #define GLYPH_FIRST   32u       // ASCII space; codepoints below this are control chars.
 #define GLYPH_LAST    126u      // ASCII tilde; codepoints above this are non-ASCII.
@@ -105,7 +112,7 @@ main( int argc, char** argv )
     {
         fprintf( stderr, "usage: font_tool <input.ttf | \"Font Name\"> <size_px> [output.orb_font]\n" );
         fprintf( stderr, "       input may be a path, a bare filename, or an installed font name\n" );
-        fprintf( stderr, "       output defaults to fonts\\<name>.orb_font\n" );
+        fprintf( stderr, "       output defaults to assets/font/<name>_<size>px.orb_font\n" );
         return 1;
     }
 
@@ -126,8 +133,27 @@ main( int argc, char** argv )
     }
     ttf_path = s_ttf_abs;
 
-    /* If the output path is a bare filename (no directory separator), redirect it into fonts\.
-       If omitted entirely, derive the filename from the input TTF stem. */
+    if ( size_px < 6 || size_px > 256 )
+    {
+        fprintf( stderr, "error: size_px must be 6..256\n" );
+        return 1;
+    }
+
+    /* Final (FreeType) bakes land in assets/font/, parallel to the assets/font_cache/ that the
+       runtime stb baker (dev_font_get) uses.  dev_font owns both paths so the two stay aligned. */
+
+    char font_dir[ 512 ];
+    if ( !dev_font_dir( font_dir, sizeof( font_dir ) ) )
+    {
+        fprintf( stderr, "error: dev_font not initialized\n" );
+        return 1;
+    }
+
+    /* Output rules:
+         - an output arg with a directory component is used as-is;
+         - a bare-filename output arg is redirected into assets/font/;
+         - no output arg derives assets/font/<stem>_<size>px.orb_font (matches the stb cache name).
+       A missing .orb_font extension is appended. */
 
     static char s_out_buf[ 512 ];
     const char* out_arg = ( argc == 4 ) ? argv[ 3 ] : NULL;
@@ -135,21 +161,18 @@ main( int argc, char** argv )
 
     if ( out_arg )
     {
-        /* Check whether out_arg already contains a directory component. */
         int has_dir = 0;
         for ( const char* p = out_arg; *p; ++p )
             if ( *p == '/' || *p == '\\' ) { has_dir = 1; break; }
 
-        /* Paths with a directory are used as-is; bare filenames are redirected into fonts\. */
         int n = has_dir ? snprintf( s_out_buf, sizeof( s_out_buf ), "%s", out_arg )
-                        : snprintf( s_out_buf, sizeof( s_out_buf ), "fonts\\%s", out_arg );
+                        : snprintf( s_out_buf, sizeof( s_out_buf ), "%s" OUT_SEP "%s", font_dir, out_arg );
         if ( n <= 0 || n >= (int)sizeof( s_out_buf ) )
         {
             fprintf( stderr, "error: output path too long\n" );
             return 1;
         }
 
-        /* Default the extension to .orb_font when the user omitted a recognized one. */
         if ( !path_has_orb_font_ext( s_out_buf ) )
         {
             int m = snprintf( s_out_buf + n, sizeof( s_out_buf ) - (size_t)n, ".orb_font" );
@@ -163,7 +186,7 @@ main( int argc, char** argv )
     }
     else
     {
-        /* No output given -- derive stem from input TTF. */
+        /* No output given -- derive stem from the resolved input TTF. */
 
         const char* base = ttf_path;
         for ( const char* p = ttf_path; *p; ++p )
@@ -174,7 +197,7 @@ main( int argc, char** argv )
             if ( base[ i ] == '.' ) { stem_len = i; break; }
 
         int n = snprintf( s_out_buf, sizeof( s_out_buf ),
-                          "fonts\\%.*s.orb_font", (int)stem_len, base );
+                          "%s" OUT_SEP "%.*s_%dpx.orb_font", font_dir, (int)stem_len, base, size_px );
         if ( n <= 0 || n >= (int)sizeof( s_out_buf ) )
         {
             fprintf( stderr, "error: derived output path too long\n" );
@@ -183,10 +206,18 @@ main( int argc, char** argv )
         out_path = s_out_buf;
     }
 
-    if ( size_px < 6 || size_px > 256 )
+    /* Create the output directory if it does not exist (parent of out_path). */
+
+    char out_dir[ 512 ];
+    snprintf( out_dir, sizeof( out_dir ), "%s", out_path );
+    for ( int i = (int)strlen( out_dir ) - 1; i >= 0; --i )
     {
-        fprintf( stderr, "error: size_px must be 6..256\n" );
-        return 1;
+        if ( out_dir[ i ] == '/' || out_dir[ i ] == '\\' )
+        {
+            out_dir[ i ] = '\0';
+            sys_dir_make( out_dir );
+            break;
+        }
     }
 
     /*------------------------------------------------------------------------------------------

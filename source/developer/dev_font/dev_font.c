@@ -95,8 +95,9 @@ static u8           s_atlas [ ATLAS_W * ATLAS_H ];
 static struct
 {
     char build_dir      [ DEV_PATH_MAX ];
-    char font_source_dir[ DEV_PATH_MAX ];
-    char font_cache_dir [ DEV_PATH_MAX ];
+    char font_source_dir[ DEV_PATH_MAX ];   // assets/font_source -- source .ttf inputs
+    char font_cache_dir [ DEV_PATH_MAX ];   // assets/font_cache  -- quick stb bakes (dev_font_get)
+    char font_dir       [ DEV_PATH_MAX ];   // assets/font        -- final orb bakes (font_tool)
     bool initialized;
 
 } g_rt;
@@ -536,11 +537,13 @@ dev_font_init( const dev_font_settings_t* settings )
               "%s" PATH_SEP "assets" PATH_SEP "font_source", g_rt.build_dir );
     snprintf( g_rt.font_cache_dir, sizeof( g_rt.font_cache_dir ),
               "%s" PATH_SEP "assets" PATH_SEP "font_cache", g_rt.build_dir );
+    snprintf( g_rt.font_dir, sizeof( g_rt.font_dir ),
+              "%s" PATH_SEP "assets" PATH_SEP "font", g_rt.build_dir );
 
     g_rt.initialized = true;
 
-    printf( "[dev_font] init  build=%s  source=%s  cache=%s\n",
-            g_rt.build_dir, g_rt.font_source_dir, g_rt.font_cache_dir );
+    printf( "[dev_font] init  build=%s  source=%s  cache=%s  font=%s\n",
+            g_rt.build_dir, g_rt.font_source_dir, g_rt.font_cache_dir, g_rt.font_dir );
     return true;
 }
 
@@ -599,6 +602,8 @@ dev_font_get( const char* ttf_path, int size_px, char* out_path, int out_path_si
         return true;
     }
 
+    sys_dir_make( g_rt.font_cache_dir );   // create assets/font_cache/ on first bake
+
     if ( !bake_font( ttf_abs, size_px, cache_path ) )
         return false;
 
@@ -632,6 +637,14 @@ dev_font_source_dir( char* out_path, int out_path_size )
 {
     if ( !g_rt.initialized ) return false;
     snprintf( out_path, (size_t)out_path_size, "%s", g_rt.font_source_dir );
+    return true;
+}
+
+bool
+dev_font_dir( char* out_path, int out_path_size )
+{
+    if ( !g_rt.initialized ) return false;
+    snprintf( out_path, (size_t)out_path_size, "%s", g_rt.font_dir );
     return true;
 }
 
