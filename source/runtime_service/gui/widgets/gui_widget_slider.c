@@ -251,8 +251,8 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
        rather than the two margins alternately absorbing it. */
     f32 tx = floorf( box_r.x + ( box_r.w - tw ) * 0.5f );
     if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
-    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu,
-                           box_r.x, box_r.x + box_r.w - WIDGET_PAD );
+    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 
+                          0xFFFFFFFFu, box_r.x, box_r.x + box_r.w - WIDGET_PAD );
 
     return changed;
 }
