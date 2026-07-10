@@ -217,7 +217,7 @@ gui_style_peek( void )
     return &s_style_base;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================    
     Theme API -- named style snapshots that form the root of the push/pop stack.
 
     gui_theme_reset() is the "large style change" escape hatch: it restores s_style_base from
@@ -227,7 +227,7 @@ gui_style_peek( void )
 
     style_new_frame() is static and lives in gui_style.c (included right after this file);
     declare it here so the call in gui_theme_reset() resolves within the same TU.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void style_new_frame( void );  /* forward -- defined in gui_style.c */
 
@@ -283,11 +283,12 @@ gui_theme_reset( void )
        stacks from harmlessly (nothing renders pre-font; gui_ctx_begin asserts font_valid()).
        Whichever call activates the first font (gui_init's built-in preset, or the caller's own
        font_load) triggers gui_style_apply() again and scales s_style_base for real at that point. */
+
     gui_style_apply();  /* rescale s_style from s_style_base */
     style_new_frame();  /* reseed the working slot set from s_style, clear all push stacks */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================    
     Grid lattice -- the ONE home of the quantum-snapping arithmetic.  Every place that snaps a size
     or a cumulative edge onto the theme's grid_quantum px lattice (theme metric quantize below,
     layout track resolve, natural widths, pack pens, scroll spill tolerance) routes through these
@@ -297,9 +298,10 @@ gui_theme_reset( void )
 
     The GUI_GRID_LATTICE compile switch (gui.h) collapses all four to identity when 0, so the dead
     arithmetic folds out and grid_quantum has no runtime cost.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Largest lattice multiple <= v (0 allowed -- callers needing a nonzero floor use lat_floor_min). */
+
 static f32
 lat_floor( f32 v, u32 q )
 {
@@ -314,6 +316,7 @@ lat_floor( f32 v, u32 q )
 
 /* Largest lattice multiple <= v, but never below one quantum -- for a live size that must not
    collapse to nothing when it dips under a single cell. */
+
 static f32
 lat_floor_min( f32 v, u32 q )
 {
@@ -328,6 +331,7 @@ lat_floor_min( f32 v, u32 q )
 }
 
 /* Smallest lattice multiple >= v. */
+
 static f32
 lat_ceil( f32 v, u32 q )
 {
@@ -347,6 +351,7 @@ lat_ceil( f32 v, u32 q )
    unlike lat_floor / lat_ceil / lat_floor_min (which snap non-negative sizes and cumulative edges),
    this also snaps window POSITIONS, which go negative when a window slides or resizes past the top /
    left of its viewport.  A v <= 0 guard here would silently stop snapping outside those edges. */
+
 static f32
 lat_round( f32 v, u32 q )
 {
@@ -365,6 +370,7 @@ lat_round( f32 v, u32 q )
    a nonzero authored metric never vanishes.  Zero stays zero (an authored "none" is preserved).
    Only reached from the GUI_GRID_LATTICE-gated block in layout_compute, so it lives under the gate
    rather than lingering as an unused static when snapping is compiled out. */
+
 #if GUI_GRID_LATTICE
 static u8
 metric_quantize( u32 v, u32 q )
@@ -377,11 +383,15 @@ metric_quantize( u32 v, u32 q )
 
 /* Recompute the active layout metrics by scaling the user's base style profile to the
    active font's type size (em).  The base style is authored assuming em=12. */
+
 static void
 layout_compute( u32 em, u32 char_h, u32 line_h )
 {
     if ( em < 8u ) em = 8u;
     s_font_size = em;
+
+    /* Original numbers based on font size of em=12.
+       Scale the base metrics proportionally to the active font's type size. */
 
     f32 scale = (f32)em / 12.0f;
 
@@ -407,6 +417,8 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     s_style.win_rounding    = (u8)( (f32)s_style_base.win_rounding    * scale );
     s_style.widget_rounding = (u8)( (f32)s_style_base.widget_rounding * scale );
     s_style.grab_rounding   = (u8)( (f32)s_style_base.grab_rounding   * scale );
+
+    /* Widget knobs */
     s_style.checkmark_pad   = (u8)( (f32)s_style_base.checkmark_pad   * scale );
     s_style.cursor_w        = (u8)( (f32)s_style_base.cursor_w        * scale );
     s_style.cursor_inset    = (u8)( (f32)s_style_base.cursor_inset    * scale );

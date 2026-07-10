@@ -257,6 +257,13 @@ typedef struct gui_style_t
     u8 win_rounding;       // corner radius: windows / children / popups
     u8 widget_rounding;    // corner radius: control frames
     u8 grab_rounding;      // corner radius: slider knobs / scrollbar grabs
+
+    /* Widget knobs */
+    u8 checkmark_pad;      // inset of the check mark inside the checkbox
+    u8 cursor_w;           // input text caret width
+    u8 cursor_inset;       // input text caret top/bottom inset
+
+    /* Widget style */
     u8 check_style;        // checkbox/menu indicator: 0='v' tick, 1=disc, 2='X' (gui_check_style_t)
     u8 bullet_style;       // bullet glyph: 0=disc, 1=square (gui_bullet_style_t)
     u8 arrow_style;        // directional arrow: 0=triangle, 1=chevron (gui_arrow_style_t)
@@ -264,9 +271,6 @@ typedef struct gui_style_t
     u8 progress_style;     // progress fill: 0=solid, 1=gradient (gui_progress_style_t)
     u8 slider_knob;        // slider knob: 0=bar, 1=circle (gui_slider_knob_t)
     u8 menu_check;         // menu check gutter: 0=plain, 1=box (gui_menu_check_t)
-    u8 checkmark_pad;      // inset of the check mark inside the checkbox
-    u8 cursor_w;           // input text caret width
-    u8 cursor_inset;       // input text caret top/bottom inset
 
     /* The scale ramp (see gui_scale_t) -- METRICS per density step.  STD mirrors
        line_size / widget_pad / widget_gap. */

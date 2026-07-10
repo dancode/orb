@@ -64,7 +64,8 @@ style_var_base( gui_style_var_t v )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
+
     State -- ONE slot space, one mechanism.
 
     Colors and vars are the same machine over different value types, so they share one slot
@@ -72,14 +73,19 @@ style_var_base( gui_style_var_t v )
     f32 carried as raw bits.  The typed accessors below are the only place the ranges are mapped.
 
     Working set: the base with the push/pop stacks applied -- the value an unscoped read returns.
-    Stacks: saved (slot, previous) pairs so pop restores regardless of which slots a push
-    touched.  TWO stacks, one per public pop verb: pop_style_color and pop_style_var each pop
-    their own pushes, so an interleaved push_color / push_var sequence unwinds correctly (the
-    same reason Dear ImGui keeps two).
+
+    Stacks: saved (slot, previous) pairs so pop restores regardless of which slots a push touched.  
+    
+    TWO stacks, one per public pop verb: pop_style_color and pop_style_var each pop their
+    own pushes, so an interleaved push_color / push_var sequence unwinds correctly 
+    (the same reason Dear ImGui keeps two).
+
     Next-item layers: a small list of (slot, value) overrides, `next` filled by next_style_* and
-    promoted to `item` (the active per-widget override) at the resolve seam, then cleared.  Both
-    are tiny lists -- usually empty -- so a read scans only what is active.
-----------------------------------------------------------------------------------------------*/
+    promoted to `item` (the active per-widget override) at the resolve seam, then cleared.  
+    
+    Both are tiny lists -- usually empty -- so a read scans only what is active.
+
+==============================================================================================*/
 
 #define GUI_STYLE_STACK_DEPTH 32
 #define STYLE_VAR_BASE        GUI_COL_COUNT                    /* var slot range starts here */
@@ -161,23 +167,35 @@ style_next( u32 slot, u32 val )
         s_next[ s_next_n++ ] = ( style_pair_t ){ (u16)slot, val };
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Typed faces -- the color / var range mapping, in one place each.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static u32 style_col( gui_col_t slot )       { return style_read( (u32)slot ); }
 static f32 style_var( gui_style_var_t slot ) { return style_bits_f32( style_read( STYLE_VAR_BASE + (u32)slot ) ); }
 
-static void style_push_color( gui_col_t slot, u32 abgr )
+static void style_push_color( gui_col_t slot, u32 abgr ) 
 {
-    if ( slot < GUI_COL_COUNT ) style_push( &s_col_stack, (u32)slot, abgr );
+    if ( slot < GUI_COL_COUNT ) 
+         style_push( &s_col_stack, (u32)slot, abgr );
 }
 static void style_push_var( gui_style_var_t slot, f32 value )
 {
-    if ( slot < GUI_VAR_COUNT ) style_push( &s_var_stack, STYLE_VAR_BASE + (u32)slot, style_f32_bits( value ) );
+    if ( slot < GUI_VAR_COUNT ) 
+         style_push( &s_var_stack, STYLE_VAR_BASE + (u32)slot, style_f32_bits( value ) );
 }
-static void style_pop_color( u32 count ) { style_pop( &s_col_stack, count ); }
-static void style_pop_var  ( u32 count ) { style_pop( &s_var_stack, count ); }
+static void style_pop_color( u32 count ) 
+{ 
+    style_pop( &s_col_stack, count ); 
+}
+static void style_pop_var  ( u32 count ) 
+{ 
+    style_pop( &s_var_stack, count );
+}
+
+/*==============================================================================================
+    Set next style color or var
+==============================================================================================*/
 
 static void style_next_color( gui_col_t slot, u32 abgr )
 {
@@ -257,9 +275,9 @@ style_new_frame( void )
    (gui_backend) so a draw site can pick the right rounding before emitting.  The item seam
    defaults to ROUND_WIDGET and the chrome seam to ROUND_WIN; grabs and squared-off marks
    override locally. */
-#define ROUND_WIN     style_var( GUI_VAR_WIN_ROUNDING    )
-#define ROUND_WIDGET  style_var( GUI_VAR_WIDGET_ROUNDING )
-#define ROUND_GRAB    style_var( GUI_VAR_GRAB_ROUNDING   )
+#define ROUND_WIN       style_var( GUI_VAR_WIN_ROUNDING    )
+#define ROUND_WIDGET    style_var( GUI_VAR_WIDGET_ROUNDING )
+#define ROUND_GRAB      style_var( GUI_VAR_GRAB_ROUNDING   )
 
 /* SKIN: color palette (GUI_COLOR: byte order R,G,B,A in memory = ABGR u32).  Theme defaults
    come from the active theme (k_themes in gui_theme.c, seeded into s_style.colors); see

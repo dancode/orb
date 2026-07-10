@@ -432,14 +432,17 @@ gui_render( gui_vp_t vp, rhi_cmd_t cmd )
 
 /*==============================================================================================
     Font API
-==============================================================================================*/
 
-/* The font registry lives in the render backend unit; this UI-unit API drives it through the
-   font_load / font_use accessors (gui_backend.h) and rebuilds layout from the active font's
-   metrics (font_em / font_char_h / font_line_h) -- the font -> layout bridge. */
+    The font registry lives in the render backend unit; 
+    
+    This UI-unit API drives it through the font_load / font_use accessors (gui_backend.h) 
+    and rebuilds layout from the active font's metrics (font_em / font_char_h / font_line_h) 
+        -- the font -> layout bridge.
+==============================================================================================*/
 
 /* Saved active-font ids for push_font / pop_font; small fixed depth -- font pushes are coarse
    (a section or one widget), not deeply nested. */
+
 #define GUI_FONT_STACK_MAX 8
 static u32 s_font_stack[ GUI_FONT_STACK_MAX ];
 static u32 s_font_stack_depth = 0;
@@ -448,11 +451,13 @@ static u32 s_font_stack_depth = 0;
    activated (font_valid() false) -- s_style just stays at its last computed value (zero-init
    pre-first-font).  Every caller (theme reset, init, font load/use, deferred-reload flush) can
    call this unconditionally and trust it to do the right thing either way. */
-void
+
+void 
 gui_style_apply( void )
 {
     if ( !font_valid() )
         return;
+
     layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
 
     /* A style / theme change restyles every window, but the retained cache only re-tessellates on a
