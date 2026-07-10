@@ -115,6 +115,20 @@ int sys_dir_walk( const char* root, sys_glob_fn cb, void* userdata );
 
 /*==============================================================================================
 
+    Fonts - OS-installed font lookup
+
+==============================================================================================*/
+
+/* Resolve an installed font's friendly name (e.g. "Cascadia Mono") to an absolute file path via
+   the OS font registry. Matching is tolerant of case, spaces, punctuation, and an optional
+   trailing "Regular" style word ("Cascadia Mono" matches "Cascadia Mono Regular"). Writes the
+   resolved path to `out` and returns true on a match; returns false when the font is not found or
+   the platform has no font registry (POSIX). */
+
+bool sys_font_resolve_name( const char* name, char* out, int out_size );
+
+/*==============================================================================================
+
     File Watch - Directory change polling with debounced notifications
 
 ==============================================================================================*/

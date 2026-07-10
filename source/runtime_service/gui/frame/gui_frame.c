@@ -509,7 +509,7 @@ gui_pop_font( void )
 
 void
 gui_push_clip( f32 x, f32 y, f32 w, f32 h )
-{
+{    
     draw_push_clip_rect( x, y, w, h );
 }
 
@@ -520,7 +520,7 @@ gui_pop_clip( void )
 }
 
 /*==============================================================================================
-    Animation state query
+    Dirty state query
 ==============================================================================================*/
 
 /* True when at least one gui_anim_f32 channel is still transitioning this frame.  The host

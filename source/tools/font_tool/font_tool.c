@@ -32,6 +32,7 @@
 #include FT_FREETYPE_H
 
 #include "tools/font_tool/orb_font.h"
+#include "developer/dev_font/dev_font.h"   /* shared font-path resolver (assets + OS fonts) */
 
 /*==============================================================================================
     Constants
@@ -102,13 +103,28 @@ main( int argc, char** argv )
 {
     if ( argc < 3 || argc > 4 )
     {
-        fprintf( stderr, "usage: font_tool <input.ttf> <size_px> [output.orb_font]\n" );
+        fprintf( stderr, "usage: font_tool <input.ttf | \"Font Name\"> <size_px> [output.orb_font]\n" );
+        fprintf( stderr, "       input may be a path, a bare filename, or an installed font name\n" );
         fprintf( stderr, "       output defaults to fonts\\<name>.orb_font\n" );
         return 1;
     }
 
     const char* ttf_path = argv[ 1 ];
     int         size_px  = atoi( argv[ 2 ] );
+
+    /* Resolve a bare filename or friendly font name ("Cascadia Mono") to an absolute TTF path,
+       searching assets/font_source/ and the OS fonts -- the same resolver the runtime stb baker
+       uses (dev_font).  A path with a directory separator is accepted as-is. */
+
+    dev_font_init( NULL );
+
+    static char s_ttf_abs[ 512 ];
+    if ( !dev_font_resolve( ttf_path, s_ttf_abs, sizeof( s_ttf_abs ) ) )
+    {
+        fprintf( stderr, "error: %s\n", dev_font_last_error() );
+        return 1;
+    }
+    ttf_path = s_ttf_abs;
 
     /* If the output path is a bare filename (no directory separator), redirect it into fonts\.
        If omitted entirely, derive the filename from the input TTF stem. */

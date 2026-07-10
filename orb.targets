@@ -582,6 +582,7 @@ target font_tool
     folder      08_TOOL
     unit        font_tool.c
     flag        is_tool
+    dep         dev_font sys
     inc         third_party/freetype-2.14.3/include
     link_flag   msvc third_party/freetype-2.14.3/objs/x64/Release/freetype.lib
 

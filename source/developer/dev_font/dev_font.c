@@ -172,8 +172,84 @@ auto_detect_build_dir( char* out, int size )
     snprintf( out, (size_t)size, "%s", exe_dir );
 }
 
-/* Resolve a bare filename or full path to an absolute TTF path that exists on disk.
-   Search order for bare filenames: assets/font_source/, then OS system font directory. */
+/* Lowercase, alphanumeric-only copy of `s`.  Lets a requested font name match filenames and OS
+   registry entries regardless of spaces, case, or punctuation ("Cascadia Mono" -> "cascadiamono"
+   == "CascadiaMono.ttf"). */
+
+static void
+normalize_name( const char* s, char* out, int out_size )
+{
+    int len = 0;
+    for ( const char* p = s; *p && len < out_size - 1; ++p )
+    {
+        char c = *p;
+        if ( c >= 'A' && c <= 'Z' ) c = (char)( c - 'A' + 'a' );
+        if ( ( c >= 'a' && c <= 'z' ) || ( c >= '0' && c <= '9' ) )
+            out[ len++ ] = c;
+    }
+    out[ len ] = '\0';
+}
+
+/* Normalized stem of a path's filename (directory and everything from the first '.' dropped). */
+
+static void
+normalize_stem( const char* path, char* out, int out_size )
+{
+    char raw[ 128 ];
+    derive_stem( path, raw, sizeof( raw ) );
+    normalize_name( raw, out, out_size );
+}
+
+/*==============================================================================================
+    By-name resolution -- match a friendly font name to a file on disk.
+==============================================================================================*/
+
+/* Context threaded through the glob callback while scanning a directory for a name match. */
+
+typedef struct
+{
+    const char* want_norm;   /* normalized target name */
+    char*       out;
+    int         out_size;
+    bool        found;
+
+} scan_ctx_t;
+
+static bool
+scan_match_cb( const char* filename, const char* full_path, void* ud )
+{
+    scan_ctx_t* c = (scan_ctx_t*)ud;
+    char        norm[ 128 ];
+    normalize_stem( filename, norm, sizeof( norm ) );
+    if ( strcmp( norm, c->want_norm ) == 0 )
+    {
+        snprintf( c->out, (size_t)c->out_size, "%s", full_path );
+        c->found = true;
+        return false;   /* stop iterating */
+    }
+    return true;
+}
+
+/* Scan `dir` for a TTF/OTF/TTC whose normalized stem equals `want_norm`.  Portable fallback that
+   matches names differing from the filename only by spaces/case ("Cascadia Mono" -> CascadiaMono). */
+
+static bool
+scan_dir_for_name( const char* dir, const char* want_norm, char* out, int out_size )
+{
+    static const char* pats[] = { "*.ttf", "*.otf", "*.ttc" };
+    scan_ctx_t         c       = { want_norm, out, out_size, false };
+    for ( int i = 0; i < 3 && !c.found; ++i )
+        sys_file_glob( dir, pats[ i ], scan_match_cb, &c );
+    return c.found;
+}
+
+/* Resolve a bare filename, a friendly font name, or a full path to an absolute TTF path that
+   exists on disk.  For bare requests the search order is:
+       1. assets/font_source/    -- exact name, then + .ttf / .otf / .ttc
+       2. OS system font dir      -- exact filename, then + .ttf / .otf / .ttc
+       3. by friendly name        -- OS font registry (Windows), then a normalized-stem scan of
+                                     font_source/ and the system font dir (portable)
+   A request that already contains a separator is used as-is. */
 
 static bool
 resolve_ttf( const char* ttf_path, char* out, int size )
@@ -189,15 +265,35 @@ resolve_ttf( const char* ttf_path, char* out, int size )
         return true;
     }
 
-    /* assets/font_source/ */
-    snprintf( out, (size_t)size, "%s" PATH_SEP "%s", g_rt.font_source_dir, ttf_path );
-    if ( sys_file_time( out ) > 0 ) return true;
+    /* "" leaves the request untouched (it may already carry an extension); the rest probe the
+       common face extensions so a bare family name resolves to a file. */
+    static const char* ext[] = { "", ".ttf", ".otf", ".ttc" };
 
-    /* OS system font directory */
-    snprintf( out, (size_t)size, "%s" PATH_SEP "%s", s_sys_font_dir, ttf_path );
-    if ( sys_file_time( out ) > 0 ) return true;
+    /* 1. assets/font_source/ */
+    for ( int i = 0; i < 4; ++i )
+    {
+        snprintf( out, (size_t)size, "%s" PATH_SEP "%s%s", g_rt.font_source_dir, ttf_path, ext[ i ] );
+        if ( sys_file_time( out ) > 0 ) return true;
+    }
 
-    set_error( "font '%s' not found in assets/font_source/ or system fonts", ttf_path );
+    /* 2. OS system font directory */
+    for ( int i = 0; i < 4; ++i )
+    {
+        snprintf( out, (size_t)size, "%s" PATH_SEP "%s%s", s_sys_font_dir, ttf_path, ext[ i ] );
+        if ( sys_file_time( out ) > 0 ) return true;
+    }
+
+    /* 3. By friendly name (handles files named differently from the font, e.g. Consolas ->
+       consola.ttf, or Cascadia Mono -> CascadiaMono.ttf).  The OS font registry is authoritative;
+       a normalized-stem scan of our own dirs is the portable fallback (and the POSIX path). */
+    if ( sys_font_resolve_name( ttf_path, out, size ) ) return true;
+
+    char want[ 128 ];
+    normalize_name( ttf_path, want, sizeof( want ) );
+    if ( scan_dir_for_name( g_rt.font_source_dir, want, out, size ) ) return true;
+    if ( scan_dir_for_name( s_sys_font_dir,       want, out, size ) ) return true;
+
+    set_error( "font '%s' not found in assets/font_source/, system fonts, or by name", ttf_path );
     return false;
 }
 
@@ -508,6 +604,27 @@ dev_font_get( const char* ttf_path, int size_px, char* out_path, int out_path_si
 
     snprintf( out_path, (size_t)out_path_size, "%s", cache_path );
     return true;
+}
+
+bool
+dev_font_resolve( const char* request, char* out_path, int out_path_size )
+{
+    if ( !g_rt.initialized )
+    {
+        set_error( "dev_font_init() not called" );
+        return false;
+    }
+    if ( !request || !*request )
+    {
+        set_error( "request is required" );
+        return false;
+    }
+    if ( !out_path || out_path_size < 2 )
+    {
+        set_error( "out_path buffer is NULL or too small" );
+        return false;
+    }
+    return resolve_ttf( request, out_path, out_path_size );
 }
 
 bool

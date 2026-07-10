@@ -22,10 +22,15 @@
 
     Path resolution
     ---------------
-    When ttf_path contains no directory separator it is searched in order:
-        1. <build_root>/assets/font_source/
-        2. C:\Windows\Fonts\           (Windows)
+    ttf_path may be a bare filename ("CascadiaMono.ttf"), a friendly font name ("Cascadia Mono"),
+    or a full path.  A request with no directory separator is searched in order:
+        1. <build_root>/assets/font_source/   (exact name, then + .ttf / .otf / .ttc)
+        2. C:\Windows\Fonts\           (Windows)  (exact filename, then + .ttf / .otf / .ttc)
            /usr/share/fonts/truetype/  (Linux / macOS)
+        3. By friendly name -- the OS font registry (Windows: HKLM then HKCU), then a
+           normalized-stem scan of font_source/ and the system font dir.  This resolves names
+           that differ from the filename ("Consolas" -> consola.ttf, "Cascadia Mono" ->
+           CascadiaMono.ttf) so fonts need not be copied into font_source/ first.
     Paths that already contain a separator are used as-is.
 
     Cache
@@ -56,6 +61,13 @@ void        dev_font_shutdown( void );
    Returns true on success; call dev_font_last_error() for the failure reason. */
 bool        dev_font_get( const char* ttf_path, int size_px,
                           char* out_path, int out_path_size );
+
+/* Resolve a bare filename, a friendly font name ("Cascadia Mono"), or a path to an absolute
+   TTF/OTF/TTC path that exists on disk, using the same search order as dev_font_get (see Path
+   resolution).  No baking occurs.  Shared with font_tool so the offline (FreeType) baker accepts
+   the same inputs as the runtime stb baker.  Requires dev_font_init(); returns false and sets
+   dev_font_last_error() when the font cannot be found. */
+bool        dev_font_resolve( const char* request, char* out_path, int out_path_size );
 
 const char* dev_font_last_error( void );
 

@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 
 #include "orb.h"
@@ -31,7 +32,8 @@
 #    define WIN32_EXTRA_LEAN
 #    define VC_EXTRALEAN
 
-#    pragma comment( lib, "winmm.lib" )    // timeBeginPeriod
+#    pragma comment( lib, "winmm.lib" )     // timeBeginPeriod
+#    pragma comment( lib, "advapi32.lib" )  // Reg* font-name lookup (win_font.c)
 
 #    include <windows.h>
 #    include <timeapi.h> 
@@ -55,6 +57,7 @@
 #    include "win/win_library.c"
 #    include "win/win_file_watch.c"
 #    include "win/win_file.c"
+#    include "win/win_font.c"
 #    include "win/win_thread.c"
 #    include "win/win_thread_mutex.c"
 #    include "win/win_thread_sema.c"
