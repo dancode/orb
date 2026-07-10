@@ -368,13 +368,18 @@ lat_ceil( f32 v, u32 q )
 #endif
 }
 
-/* Nearest lattice multiple (round half up). */
+/* Nearest lattice multiple (round half away from zero).  Signed-safe across the whole real line --
+   unlike lat_floor / lat_ceil / lat_floor_min (which snap non-negative sizes and cumulative edges),
+   this also snaps window POSITIONS, which go negative when a window slides or resizes past the top /
+   left of its viewport.  A v <= 0 guard here would silently stop snapping outside those edges. */
 static f32
 lat_round( f32 v, u32 q )
 {
 #if GUI_GRID_LATTICE
-    if ( q <= 1 || v <= 0.0f ) return v;
-    return (f32)( (u32)( ( v + (f32)q * 0.5f ) / (f32)q ) * q );
+    if ( q <= 1 ) return v;
+    f32 n = v / (f32)q;
+    i32 k = (i32)( n >= 0.0f ? n + 0.5f : n - 0.5f );   /* round half away from zero, sign-correct */
+    return (f32)( k * (i32)q );
 #else
     (void)q;
     return v;
