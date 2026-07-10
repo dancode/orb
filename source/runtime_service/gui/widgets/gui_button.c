@@ -62,9 +62,18 @@ gui_button( const char* label )
 /*----------------------------------------------------------------------------------------------
     button_fill -- a button that fills the remaining height of its containing region.
 
-    Identical to button() in every respect except the height comes from content_avail().y
-    instead of the fixed WIDGET_H.  Intended for use inside a split panel where you want the
-    button to match the height of the adjacent panel's content.
+    Identical to button() except the painted height grows to content_avail().y instead of the
+    fixed WIDGET_H.  Intended as a terminal / slack-absorbing element (the tall side of a split
+    panel, a lone action row that should reach the region floor).
+
+    Layout footprint vs paint: a fill's remaining-height is measured in scroll-biased space against
+    the fixed region bottom, so counting the filled height toward the region's content extent makes
+    it feed back -- scroll down, the fill grows, content_h grows, the scroll range grows, forever.
+    So the fill occupies only ONE ROW (WIDGET_H) in the layout flow -- that is all it contributes to
+    high_y / the auto-size + scroll extent -- and merely PAINTS (and hit-tests) over the taller
+    box.  Net: a fill can never push content past the region; content size stays bounded by the
+    window, and the slack is what the fill expands into.  A widget emitted after a fill overlaps its
+    paint (the fill occupies min in the flow) -- fills are meant to be terminal.
 ----------------------------------------------------------------------------------------------*/
 
 bool
@@ -72,10 +81,11 @@ gui_button_fill( const char* label )
 {
     gui_id_t id = widget_id( label );
 
-    f32 avh = gui_content_avail().y;
+    f32 avh = gui_content_avail().y;   /* to the region floor: bottom margin is the region's pad.b */
     if ( avh < WIDGET_H ) avh = WIDGET_H;
 
-    gui_rect_t r = widget_next_rect( avh );   /* fill the cell; height from content_avail */
+    gui_rect_t r = widget_next_rect( WIDGET_H );   /* flow + extent contribution = one row */
+    r.h          = avh;                            /* paint + hit-test over the filled height */
 
     gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
 

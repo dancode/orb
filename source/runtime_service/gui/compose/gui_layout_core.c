@@ -89,6 +89,19 @@ quant_floor( f32 v )
     return ( r < (f32)q ) ? (f32)q : r;
 }
 
+/* Largest lattice multiple <= v (0 allowed -- no one-quantum floor).  For snapping a CUMULATIVE
+   track edge onto the grid: sizes are taken as the difference of consecutive snapped edges, so the
+   per-edge value must be free to be exactly the running total's lattice point (including 0 for the
+   first edge) or the differences drift.  quant_floor's collapse guard belongs on a standalone size,
+   not on an edge. */
+static f32
+lattice_floor( f32 v )
+{
+    u32 q = s_style.grid_quantum;
+    if ( q <= 1 || v <= 0.0f ) return v;
+    return (f32)( (u32)( v / (f32)q ) * q );
+}
+
 /* Smallest lattice multiple >= v. */
 static f32
 quant_ceil( f32 v )
@@ -148,8 +161,24 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
     if ( leftover < 0.0f ) leftover = 0.0f;
     f32 fill_each = fill ? leftover / (f32)fill : 0.0f;
 
-    /* Pass 2: place left-to-right, gap between cells (not before the first / after the last). */
-    f32 pos = origin;
+    /* Pass 2: place left-to-right, gap between cells (not before the first / after the last).
+
+       Grid snapping is done on CUMULATIVE EDGES, not per-track sizes.  Each flex / fraction track's
+       far edge (its running position along avail) is floored onto the lattice, and the track's size
+       is the difference from the previous snapped edge.  This is why row track-counts stay
+       consistent: the last flex edge is lattice_floor( its ideal cumulative ) regardless of how many
+       tracks preceded it, so a two-column 0.5/0.5 row reaches the SAME right edge as a single full
+       -width flex over the same avail -- the rounding loss is one sub-quantum remainder at the row
+       end, never one-per-track.  (Per-size flooring, the old form, floored each track independently:
+       0.5/0.5 could lose up to two quanta and the loss jumped around as a drag moved 0.5*avail
+       across a lattice line, so the halves snapped at different widths than full rows above them.)
+
+       ideal_cum tracks the unsnapped running edge; snap_cum the snapped one.  A fixed-px / natural
+       track advances both by its exact size (authored intent, never snapped); a flex / fraction
+       track advances ideal_cum by its share, then snaps the edge and takes the delta. */
+    f32 pos      = origin;
+    f32 ideal_cum = 0.0f;   /* unsnapped running edge along avail (content only, gaps excluded) */
+    f32 snap_cum  = 0.0f;   /* lattice-snapped running edge */
     for ( u32 i = 0; i < n; ++i )
     {
         f32 t  = tracks[ i ];
@@ -164,13 +193,19 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
         if ( is_flex_or_fraction_track && sz < min_w )
             sz = min_w;
 
-        /* Grid: a divided (flex / fraction) size floors onto the lattice so every track edge in
-           the row is a quantum step from the origin (the gaps already are).  The sub-quantum
-           remainder is left as slack at the row's right edge -- the extent itself (a dragged
-           window width) is free px, so the slack merges into the pad there.  Fixed px stays
-           authored intent, exactly like the min_w rule above. */
         if ( is_flex_or_fraction_track )
-            sz = quant_floor( sz );
+        {
+            ideal_cum += sz;
+            f32 edge   = lattice_floor( ideal_cum );   /* snap the cumulative edge, not the size */
+            sz         = edge - snap_cum;
+            if ( sz < 0.0f ) sz = 0.0f;
+            snap_cum   = edge;
+        }
+        else
+        {
+            ideal_cum += sz;   /* fixed / natural: exact, and it carries the running edge forward */
+            snap_cum  += sz;
+        }
 
         out_pos [ i ] = pos;
         out_size[ i ] = sz;

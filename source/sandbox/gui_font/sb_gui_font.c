@@ -365,7 +365,7 @@ show_font_tool( void )
         }
         gui()->combo_end();
     }
-    gui()->same_line( -1 );
+    // gui()->same_line( -1 );
     if ( gui()->small_button( "Refresh" ) )
         ft_scan();
 
@@ -374,10 +374,19 @@ show_font_tool( void )
     /* --- Actions -------------------------------------------------------------- */
     gui()->separator_text( "Bake" );
 
+    /* Two half-width buttons at normal height.  next_item_fit(1.0) makes each button fill its
+       0.5 cell (a plain button would shrink to its label); button_fill is NOT used here -- it
+       sizes its HEIGHT to the view bottom, which feeds back into the scroll extent when content
+       follows it (status + preview below), growing the region without bound every scrolled frame. */
     gui()->row2( 0.5f, 0.5f );
     if ( gui()->button_fill( "Bake & Preview (stb)" ) )
+    // gui()->next_item_fit( 1.0f );
+    // if ( gui()->button( "Bake & Preview (stb)" ) )
         ft_bake_preview();
-    if ( gui()->button_fill( "Export final (font_tool)" ) )
+
+     if ( gui()->button_fill( "Export final (font_tool)" ) )
+    // gui()->next_item_fit( 1.0f );
+    // if ( gui()->button( "Export final (font_tool)" ) )
         ft_export_final();
 
     gui()->stack();
