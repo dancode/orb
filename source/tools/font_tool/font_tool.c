@@ -10,7 +10,8 @@
         font_tool.exe <input.ttf> <size_px> <output.orb_font>
 
     Bakes ASCII printable range U+0020..U+007F (96 glyphs; DEL synthesized as solid block).
-    .orb_font output atlas is always 512x512, R8 grayscale.
+    .orb_font output atlas is R8 grayscale, sized to the smallest power-of-two square
+    (ATLAS_MIN..ATLAS_MAX px) that fits every packed glyph.
 
     Link deps: freetype.lib (import lib for freetype.dll)
 
@@ -51,8 +52,8 @@
 #define GLYPH_MAX    ( GLYPH_LAST - GLYPH_FIRST + 1u )   /* 95 */
 
 #define GLYPH_PAD     1         // gap between packed rects (prevents filter bleed)
-#define ATLAS_W       512       // atlas width in pixels
-#define ATLAS_H       512       // atlas height in pixels
+#define ATLAS_MIN     64        // smallest atlas size attempted (px, square)
+#define ATLAS_MAX     512       // largest atlas size attempted (px, square); also static buffer cap
 
 /*==============================================================================================
     Internal types
@@ -78,8 +79,8 @@ typedef struct raw_glyph_s
 
 static raw_glyph_t       s_raw          [ GLYPH_MAX ];
 static orb_font_glyph_t  s_out_glyphs   [ GLYPH_MAX ];
-static stbrp_node        s_nodes        [ ATLAS_W ];
-static uint8_t           s_atlas        [ ATLAS_W * ATLAS_H ];
+static stbrp_node        s_nodes        [ ATLAS_MAX ];
+static uint8_t           s_atlas        [ ATLAS_MAX * ATLAS_MAX ];
 
 /*==============================================================================================
     path_has_orb_font_ext -- returns 1 if path ends in ".orb_font" (case-insensitive).
@@ -290,27 +291,42 @@ main( int argc, char** argv )
     FT_Done_FreeType( ft );
 
     /*------------------------------------------------------------------------------------------
-        Pass 2 -- pack glyph rects into the atlas using stb_rect_pack.
-        GLYPH_PAD is added to each rect dimension so there is a 1-pixel gap
-        between neighbours, preventing bilinear filter bleed.
+        Pass 2 -- pack glyph rects using stb_rect_pack, into the smallest power-of-two square
+        (ATLAS_MIN..ATLAS_MAX) that fits every glyph.  A fixed 512x512 canvas wastes most of its
+        area for small fonts (95 ASCII glyphs at 16px need only a few percent of that space), so
+        try progressively larger sizes and stop at the first that packs everything.
+        GLYPH_PAD is added to each rect dimension so there is a 1-pixel gap between neighbours,
+        preventing bilinear filter bleed.
     ------------------------------------------------------------------------------------------*/
-
-    stbrp_context pack_ctx;
-    stbrp_init_target( &pack_ctx, ATLAS_W, ATLAS_H, s_nodes, ATLAS_W );
 
     stbrp_rect rects[ GLYPH_MAX ];
     for ( uint32_t i = 0; i < raw_count; ++i )
     {
-        rects[ i ].id         = (int)i;
-        rects[ i ].w          = (stbrp_coord)( s_raw[ i ].w + GLYPH_PAD );
-        rects[ i ].h          = (stbrp_coord)( s_raw[ i ].h + GLYPH_PAD );
-        rects[ i ].was_packed = 0;
+        rects[ i ].id = (int)i;
+        rects[ i ].w  = (stbrp_coord)( s_raw[ i ].w + GLYPH_PAD );
+        rects[ i ].h  = (stbrp_coord)( s_raw[ i ].h + GLYPH_PAD );
     }
 
-    if ( !stbrp_pack_rects( &pack_ctx, rects, (int)raw_count ) )
+    stbrp_context pack_ctx;
+    uint32_t      atlas_size = 0;
+
+    for ( uint32_t try_size = ATLAS_MIN; try_size <= ATLAS_MAX; try_size *= 2 )
     {
-        fprintf( stderr, "error: atlas %dx%d too small for %u glyphs at %d px\n",
-                 ATLAS_W, ATLAS_H, raw_count, size_px );
+        for ( uint32_t i = 0; i < raw_count; ++i )
+            rects[ i ].was_packed = 0;
+
+        stbrp_init_target( &pack_ctx, (int)try_size, (int)try_size, s_nodes, (int)try_size );
+        if ( stbrp_pack_rects( &pack_ctx, rects, (int)raw_count ) )
+        {
+            atlas_size = try_size;
+            break;
+        }
+    }
+
+    if ( atlas_size == 0 )
+    {
+        fprintf( stderr, "error: %ux%u atlas too small for %u glyphs at %d px\n",
+                 ATLAS_MAX, ATLAS_MAX, raw_count, size_px );
         for ( uint32_t i = 0; i < raw_count; ++i )
             free( s_raw[ i ].bitmap );
         return 1;
@@ -320,7 +336,9 @@ main( int argc, char** argv )
         Pass 3 -- blit bitmaps into atlas and build output glyph table.
     ------------------------------------------------------------------------------------------*/
 
-    memset( s_atlas, 0, sizeof( s_atlas ) );
+    memset( s_atlas, 0, (size_t)atlas_size * atlas_size );
+
+    uint32_t packed_area = 0;
 
     for ( uint32_t i = 0; i < raw_count; ++i )
     {
@@ -340,10 +358,11 @@ main( int argc, char** argv )
 
         if ( r->bitmap )
         {
+            packed_area += r->w * r->h;
             for ( uint32_t row = 0; row < r->h; ++row )
             {
                 const uint8_t* src = r->bitmap + row * r->w;
-                uint8_t*       dst = s_atlas + ( (uint32_t)rc->y + row ) * ATLAS_W + (uint32_t)rc->x;
+                uint8_t*       dst = s_atlas + ( (uint32_t)rc->y + row ) * atlas_size + (uint32_t)rc->x;
                 memcpy( dst, src, r->w );
             }
             free( r->bitmap );
@@ -366,8 +385,8 @@ main( int argc, char** argv )
     memset( &hdr, 0, sizeof( hdr ) );
     hdr.magic       = ORB_FONT_MAGIC;
     hdr.version     = ORB_FONT_VERSION;
-    hdr.atlas_w     = ATLAS_W;
-    hdr.atlas_h     = ATLAS_H;
+    hdr.atlas_w     = atlas_size;
+    hdr.atlas_h     = atlas_size;
     hdr.font_size   = (uint32_t)size_px;
     hdr.ascent      = ascent;
     hdr.descent     = descent;
@@ -376,11 +395,12 @@ main( int argc, char** argv )
 
     fwrite( &hdr,         sizeof( hdr ),              1,         f );
     fwrite( s_out_glyphs, sizeof( orb_font_glyph_t ), raw_count, f );
-    fwrite( s_atlas,      1,                           ATLAS_W * ATLAS_H, f );
+    fwrite( s_atlas,      1,                           (size_t)atlas_size * atlas_size, f );
     fclose( f );
 
-    printf( "font_tool: %u glyphs, %dx%d atlas, %d px -> '%s'\n",
-            raw_count, ATLAS_W, ATLAS_H, size_px, out_path );
+    double usage_pct = 100.0 * (double)packed_area / ( (double)atlas_size * (double)atlas_size );
+    printf( "font_tool: %u glyphs, %ux%u atlas (%.1f%% used), %d px -> '%s'\n",
+            raw_count, atlas_size, atlas_size, usage_pct, size_px, out_path );
     return 0;
 }
 

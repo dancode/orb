@@ -98,7 +98,7 @@ show_font_browser( bool* p_open )
 
 
     // gui()->window_set_next_pos( 320.0f, 60.0f, GUI_COND_ONCE );
-    // gui()->window_set_next_size( 128.0f, 128.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 640.0f, 640.0f, GUI_COND_ONCE );
     if ( !gui()->window_begin( "Font Browser", GUI_WIN_CLOSEABLE | GUI_WIN_CAN_AUTOSIZE ))
     {
         /* window_begin returns false for both collapsed and X-closed windows.
@@ -362,16 +362,16 @@ show_split_demo( bool* p_open )
     gui()->window_end();
 }
 
-/*============================================================================================*/
-/* HUD / overlay placement demo                                                                */
-/*                                                                                              */
-/* Free placement over one content area -- the companion to split/carve.  Each element takes    */
-/* the HUD rect and returns its own rect (no pen, no flow), so the order below is just draw      */
-/* order: a stretched top bar (gui()->anchor mixing per-axis stretch + point), corner-anchored   */
-/* minimap / health / ammo (gui_anchor_box), a fraction-pinned banner (gui()->anchor pivot), and */
-/* a centered crosshair (gui_rect_align).  Real widgets drop into an anchored rect via            */
-/* push_layout_overlay.                                                                              */
-/*============================================================================================*/
+/*============================================================================================
+    HUD / overlay placement demo                                                                
+
+    Free placement over one content area -- the companion to split/carve.  Each element takes    
+    the HUD rect and returns its own rect (no pen, no flow), so the order below is just draw      
+    order: a stretched top bar (gui()->anchor mixing per-axis stretch + point), corner-anchored   
+    minimap / health / ammo (gui_anchor_box), a fraction-pinned banner (gui()->anchor pivot),   
+    and a centered crosshair (gui_rect_align).  Real widgets drop into an anchored rect via     
+    push_layout_overlay.                                                                        
+==============================================================================================*/
 
 static void
 show_hud_demo( bool* p_open )
