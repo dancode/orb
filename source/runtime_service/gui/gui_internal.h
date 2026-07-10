@@ -80,22 +80,25 @@ ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
 
 typedef struct
 {
+    f64   time;                     // seconds since the first frame -- dt accumulated; backs get_time()
+    f32   dt;                       // seconds since the last frame; backs get_delta_time()  
+    i32   display_w, display_h;     // OS window client size (pixels); backs get_display_size()
+    u32   mouse_viewport;           // surface the cursor is in (resolved from mouse-event win_id); persists
+
     f32   mouse_x, mouse_y;
     f32   mouse_wheel;
     bool  mouse_down    [ 3 ];
     bool  mouse_pressed [ 3 ];
     bool  mouse_released[ 3 ];
     bool  mouse_double  [ 3 ];
-    bool  keys_down          [ GUI_KEY_COUNT ];
-    bool  keys_pressed       [ GUI_KEY_COUNT ];   /* initial press only                  */
-    bool  keys_pressed_repeat[ GUI_KEY_COUNT ];   /* initial press + OS auto-repeat ticks */
-    bool  keys_released      [ GUI_KEY_COUNT ];
-    char  text[ 32 ];
-    char  paste[ 256 ];   /* clipboard text delivered this frame (APP_EV_CLIPBOARD), else empty */
-    f64   time;           /* seconds since the first frame -- dt accumulated; backs get_time() */
-    f32   dt;    
-    i32   display_w, display_h;
-    u32   mouse_viewport; // surface the cursor is in (resolved from mouse-event win_id); persists
+
+    bool  keys_down[ GUI_KEY_COUNT ];
+    bool  keys_pressed[ GUI_KEY_COUNT ];            // initial press only
+    bool  keys_pressed_repeat[ GUI_KEY_COUNT ];     // initial press + OS auto-repeat ticks
+    bool  keys_released[ GUI_KEY_COUNT ];
+
+    char  text[ 32 ];               // UTF-8 text input delivered this frame (APP_EV_TEXT), else empty
+    char  paste[ 256 ];             // clipboard text delivered this frame (APP_EV_CLIPBOARD), else empty
 
 } gui_io_t;
 
