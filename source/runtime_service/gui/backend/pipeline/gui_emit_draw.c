@@ -381,7 +381,7 @@ draw_set_viewport( u32 vp )
 /*----------------------------------------------------------------------------------------------
     draw_set_band -- route subsequent commands into arena band `band` (0 = main UI, 1 = debug).
 
-    Set from GUI_WIN_DEBUG_BAND at the 4_window/region begin seams and back to 0 at window_end,
+    Set from GUI_WIN_DEBUG_BAND at the window/region begin seams and back to 0 at window_end,
     exactly as draw_set_sort_key drives the paint order.  The cache packs debug-band slots after
     every main-band slot and excludes them from stats + the any_changed idle-skip signal, so a
     self-measuring diagnostic never pollutes the arena layout or the metrics it displays.
@@ -394,7 +394,7 @@ draw_set_band( u32 band )
 }
 
 /* Current band -- saved/restored by the popup layer alongside the sort key, and sampled at popup
-   begin so a 4_popup/tooltip opened from inside a debug-band window inherits the band. */
+   begin so a popup/tooltip opened from inside a debug-band window inherits the band. */
 u32
 draw_band( void )
 {

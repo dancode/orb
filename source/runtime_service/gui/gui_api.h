@@ -29,6 +29,8 @@ struct rhi_cmd_s; typedef struct rhi_cmd_s* rhi_cmd_t;
 
 typedef struct gui_api_s
 {
+    /*========================  frame/ -- lifecycle, boot, viewports, contexts, events  ========================*/
+
     /* GPU resource lifecycle.
         init_config_back()  -- OPTIONAL; call before init() to override which BACKEND (render unit,
                        gui_backend.c) capability layers (gui_backend_caps_t, gui.h) are compiled
@@ -58,7 +60,7 @@ typedef struct gui_api_s
     /* boot() -- TEST-BED tier: the one-call alternative to the block above for sandboxes, demos,
        and quick tools whose main window IS a gui surface -- gui owns the window + render context
        end to end, exactly like its tear-off floaters.  Non-idiomatic for engine hosts: those run
-       through the runtime host (run_host_main), which keeps ownership of the 4_window/loop and
+       through the runtime host (run_host_main), which keeps ownership of the window/loop and
        wires gui as an optional service.  Stands up the whole stack from a single descriptor
        (gui_boot_desc_t, gui.h): rhi()->init() (idempotent -- safe if the host already ran it),
        app window (borderless by default, with the chrome shell then auto-emitted each frame;
@@ -310,6 +312,8 @@ typedef struct gui_api_s
            }
            gui()->window_end();               // always called */
 
+    /*====================================  window/ -- persistent windows  =====================================*/
+
     /* window_set_next_pos / _size -- queue geometry for the NEXT window_begin, applied per the
        condition (gui_cond_t) and then cleared.  Decouples the value from when it is applied:
        ONCE seeds an initial position/size (apply once on first appearance, then user-owned),
@@ -343,6 +347,8 @@ typedef struct gui_api_s
        state (a window with no record yet -- never begun -- reads as open). */
     void ( *window_set_open )( const char* title, bool open );
     bool ( *window_is_open  )( const char* title );
+
+    /*==========================  dock/ -- dock tree, tab groups, layout persistence  ==========================*/
 
     /* Docking -- tile + tab windows into a dock tree that fills a viewport (the DockSpaceOverViewport
        analogue).  The programmatic path: build a layout in code, then windows whose titles were
@@ -401,6 +407,14 @@ typedef struct gui_api_s
        -- never from inside a docked window (it frees + rebuilds the tree). */
     u32  ( *dock_save )( gui_vp_t vp, char* buf, u32 bufsz );
     bool ( *dock_load )( gui_vp_t vp, const char* text );
+
+
+    /* Host-reserved top band (pixels) above viewport vp's dock area -- the height of a main menu
+       bar / toolbar strip the host draws itself; the dock tree lays out below it.  Sticky until
+       re-published; pass 0 to reclaim.  Publish before dockspace_over_viewport in the build. */
+
+    void ( *dockspace_inset )( gui_vp_t vp, f32 top );
+    /*==========================  popup/ -- popups, tooltips, menus, combo + listbox  ==========================*/
 
     /* Popups -- transient overlay windows on top of everything.  A regular popup auto-closes when
        the user clicks outside it; a modal blocks input behind it and dims the background, closing
@@ -501,6 +515,8 @@ typedef struct gui_api_s
     bool ( *menu_begin )( const char* label );
     void ( *menu_end   )( void );
     bool ( *menu_item  )( const char* label, const char* shortcut, bool* selected );
+
+    /*====================  compose/ -- containers, layout verbs, sizing, rect composition  ====================*/
 
     /* Child regions -- a nested scrollable layout box inside the current window (or another
        child).  child_begin carves a box of height h (width w, or the remaining content width
@@ -745,6 +761,39 @@ typedef struct gui_api_s
        fraction-relative position or a stretch-with-margins band.  See gui_anchor_t for the fields. */
     gui_rect_t ( *anchor )( gui_rect_t parent, gui_anchor_t a );
 
+
+    /*  split_begin / split_next / split_end -- two panels side by side sharing a Y-level.
+
+        split_begin( id, right_w ) opens a split: the left panel fills, the right panel is
+        right_w pixels wide.  split_next() closes the left panel and opens the right.
+        split_end() closes the right panel.  Each panel is an independent flow region -- declare
+        a layout mode (stack/cols/...) inside each as usual.  Heights are cached per-id across
+        frames (one-frame lag on first appearance, then stable).
+
+        Use button_width() to size the right panel to fit a specific button label exactly:
+
+            const char* title = "Bake & Preview";
+            gui()->split_begin( "##src", gui()->button_width( title ) );
+                gui()->stack();
+                gui()->combo_begin( ... ); ... gui()->combo_end();
+                gui()->slider_int( ... );
+            gui()->split_next();
+                gui()->stack();
+                gui()->button_fill( title );
+            gui()->split_end();
+
+        button_width( label ) -- natural pixel width of a button with that label.
+        button_fill  -- a button that fills the remaining height of its containing region.
+        Identical to button() but height = content_avail().y.  Designed for the right panel
+        of a split so it matches the adjacent left panel's content height naturally. */
+
+    void ( *split_begin   )( const char* id, f32 right_w );
+    void ( *split_next    )( void );
+    void ( *split_end     )( void );
+    f32  ( *button_width  )( const char* label );
+    bool ( *button_fill   )( const char* label );
+    /*=================  user/ -- bracketing stacks, behavior on caller rects, drag and drop  ==================*/
+
     /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
        seeded by the enclosing window / child region automatically, so identical labels in
        different regions never collide; push_id adds a temporary scope level for repeated widgets
@@ -788,6 +837,40 @@ typedef struct gui_api_s
     void ( *disabled_begin )( bool disabled );
     void ( *disabled_end   )( void );
 
+
+    /* Drag and drop -- typed payload transfer between items (see gui_drag_flags_t /
+       gui_drag_payload_t in gui.h).  One drag exists at a time; the payload bytes are copied.
+
+       USAGE CONTRACT:
+         Source -- right after the widget that should be draggable:
+           if ( gui()->drag_source_begin( GUI_DRAG_NONE ) )      // true while dragging from it
+           {
+               gui()->drag_payload_set( "ASSET", &index, sizeof index );   // every frame is fine
+               gui()->textf( "Move %s", name );                  // preview widgets follow the cursor
+               gui()->drag_source_end();
+           }
+         Target -- right after any widget that should receive drops:
+           if ( gui()->drag_target_begin() )                     // true while a drag hovers it
+           {
+               const gui_drag_payload_t* p = gui()->drag_payload_accept( "ASSET", GUI_DRAG_NONE );
+               if ( p )                                          // non-NULL on the drop frame
+                   place_asset( *(const i32*)p->data );
+               gui()->drag_target_end();
+           }
+
+       drag_payload_accept highlights the target while the types match and returns the payload on
+       the release frame (or every hover frame with GUI_DRAG_ACCEPT_PEEK).  drag_active reports a
+       drag in flight anywhere; drag_payload_peek inspects it without being a target.  The dock
+       tab-strip publishes its tab drags as type "gui.dock_tab" (payload: the window's gui_id_t). */
+
+    bool ( *drag_source_begin   )( gui_drag_flags_t flags );
+    void ( *drag_source_end     )( void );
+    bool ( *drag_payload_set    )( const char* type, const void* data, u32 size );
+    bool ( *drag_target_begin   )( void );
+    const gui_drag_payload_t* ( *drag_payload_accept )( const char* type, gui_drag_flags_t flags );
+    void ( *drag_target_end     )( void );
+    bool ( *drag_active         )( void );
+    const gui_drag_payload_t* ( *drag_payload_peek   )( void );
     gui_style_t* (*style_get)( void );
     void         (*style_apply)( void );
 
@@ -856,6 +939,8 @@ typedef struct gui_api_s
        Nav otherwise follows the front-most window automatically; Ctrl+Tab cycles among windows and
        Alt enters the main menu bar.  An open popup / menu always captures nav while it is open. */
     void ( *window_set_nav )( const char* title );
+
+    /*===================================  widgets/ -- the stock widget set  ===================================*/
 
     /* Widgets -- return true on the frame they are activated or changed.
        All widgets must be called between a matched window_begin / window_end pair, and only
@@ -1038,6 +1123,79 @@ typedef struct gui_api_s
     void ( *indent    )( f32 w );
     void ( *unindent  )( f32 w );
 
+
+    /*==========================  table/ -- multi-column rows over the layout engine  ==========================*/
+
+    /* Tables -- a multi-column layout with self-fitting cells (one table clip, no per-cell clip) and
+       optional scrolling, sortable headers, and resizable columns.  Conceptually a grid whose rows accumulate and scroll
+       (like flow) with column tracks resolved once per table (like grid), plus frozen header support.
+
+       USAGE CONTRACT:
+         1. table_begin()            -- open the table; returns true (always, like child_begin).
+                                        Consume it paired with table_end() regardless.
+         2. table_setup_column()     -- call ncols times between table_begin and the first row.
+                                        The calls may be omitted; all columns default to stretch.
+         3. table_headers_row()      -- optional; draws and clips a non-scrolling header strip and
+                                        runs header sort-click interaction.
+                                        Call after all table_setup_column, before the first data row.
+         4. for each row:
+              table_next_row()       -- begin a new data row.  First call sets row 0.
+              for each column:
+                table_next_column()  -- advance to the next column and return true; the cell sizes the
+                                        widget and long text ellipsizes to the column (self-fit, no
+                                        per-cell clip).  Returns false past the last column.
+                <emit widgets>       -- normal widget calls; they land inside the cell.
+         5. table_end()              -- close the table; restores the parent layout.
+
+       Column widths use the overloaded-unit rule (same as columns / grid):
+           > 1.0  fixed pixels   1.0  fill / stretch   (0,1)  fraction   0.0  natural (= stretch)
+       Height: 0 = auto (8 rows tall), > 0 = fixed pixels.
+
+           if ( gui()->table_begin( "my_table", 3, GUI_TABLE_NONE, 0 ) )
+           {
+               gui()->table_setup_column( "Name",  GUI_TABLE_COL_STRETCH,  0     );
+               gui()->table_setup_column( "Value", GUI_TABLE_COL_FIXED,    80.0f );
+               gui()->table_setup_column( "Unit",  GUI_TABLE_COL_FIXED,    40.0f );
+               for ( i32 i = 0; i < count; ++i )
+               {
+                   gui()->table_next_row( 0 );
+                   if ( gui()->table_next_column() ) gui()->text( name[i]  );
+                   if ( gui()->table_next_column() ) gui()->text( value[i] );
+                   if ( gui()->table_next_column() ) gui()->text( unit[i]  );
+               }
+               gui()->table_end();
+           }
+
+       table_set_column_index( col ) -- jump to a specific column (0-based) rather than advancing.
+       table_get_column_count()      -- number of columns the table was opened with.
+       table_get_column_index()      -- current column index (-1 before the first next_column).
+       table_get_row_index()         -- current row index (-1 before the first next_row).
+       table_get_sort_specs( out )   -- read raw sort state (column + direction); returns true on
+                                        the frame a header was clicked.  Use when you want to sort
+                                        your own data structure by hand.
+       table_sort_order( order, n, val_fn, cmp_fn, user )
+                                     -- built-in sort: reorder a display-order index array to match
+                                        the active sort.  Pass val_fn for automatic alphabetical /
+                                        numeric ordering, or cmp_fn for a custom comparator.  Cheap
+                                        to call every frame (only reorders on a header click).
+       table_set_bg_color( target, abgr ) -- override the current row's or cell's background. */
+
+    bool ( *table_begin            )( const char* id, i32 ncols, gui_table_flags_t flags, f32 height );
+    void ( *table_end              )( void );
+    void ( *table_setup_column     )( const char* label, gui_table_col_flags_t flags, f32 width );
+    void ( *table_headers_row      )( void );
+    void ( *table_next_row         )( f32 min_h );
+    bool ( *table_next_column      )( void );
+    bool ( *table_set_column_index )( i32 col );
+    i32  ( *table_get_column_count )( void );
+    i32  ( *table_get_column_index )( void );
+    i32  ( *table_get_row_index    )( void );
+    bool ( *table_get_sort_specs   )( gui_table_sort_specs_t* out );
+    bool ( *table_sort_order       )( i32* order, i32 count, gui_table_sort_value_fn val_fn,
+                                      gui_table_sort_cmp_fn cmp_fn, void* user );
+    void ( *table_set_bg_color     )( gui_table_bg_target_t target, u32 abgr );
+    /*===========================================  frame/ -- fonts  ============================================*/
+
     /* Font -- select / load fonts; call between frames (outside frame_begin / render), except
        push_font / pop_font which may bracket a section or widget mid-frame.
 
@@ -1053,6 +1211,8 @@ typedef struct gui_api_s
     void ( *font_use           )( u32 id );
     void ( *push_font          )( u32 id );
     void ( *pop_font           )( void );
+
+    /*==================  present/ + user/ -- custom draw: canvas primitives, symbols, paths  ==================*/
 
     /* Low-level draw list access -- may be called anywhere between frame_begin and render.
        draw_rect and draw_text push geometry directly into the draw list.
@@ -1097,6 +1257,14 @@ typedef struct gui_api_s
     void            ( *image         )( gui_icon_id_t id, f32 w, f32 h, u32 col );
     void            ( *draw_icon_in  )( gui_rect_t r, gui_icon_id_t id, u32 col );
 
+
+    /* RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
+       image) as a full-color quad; the texel is the color, tint_abgr multiplies (0 = untinted).
+       image_texture flows in the layout like image(); draw_texture_in fills a rect the caller
+       already holds.  The caller owns the texture + its bindless slot (rhi register_texture). */
+
+    void ( *image_texture   )( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
+    void ( *draw_texture_in )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
     /* Symbol + shape draw primitives (the draw_* family, Dear ImGui's AddXxx / Render* analogue),
        drawn through the normal vertex pipeline (lines / triangles / circles), NOT the icon atlas.
        They share the draw_* verb with draw_rect / draw_text / draw_line above -- everything that
@@ -1163,6 +1331,8 @@ typedef struct gui_api_s
     void ( *push_clip )( f32 x, f32 y, f32 w, f32 h );
     void ( *pop_clip  )( void );
 
+    /*=========================  debug/ -- overlays, dashboard, retained-cache levers  =========================*/
+
     /* Debug overlay -- a separate draw list painted last, on top of the UI.  Pass a bitmask
        of gui_dbg_layer_t to debug_set_layers() to choose which visualizations show; pass
        GUI_DBG_NONE (0) to turn it off.  Compiled in for Debug builds only: in Release,
@@ -1209,6 +1379,8 @@ typedef struct gui_api_s
        or confirm that the hash-upfront path produces identical output to the reference. */
     void ( *set_retained_skip )( bool on );
     bool ( *retained_skip     )( void );
+
+    /*===================  user/ -- queries: io snapshot readers, item state, redraw state  ====================*/
 
     /* IO accessors -- the frame-coherent input snapshot the widgets see, for UI / tool code that
        would otherwise re-query app() and so bypass gui's frame timing and its input capture.
@@ -1315,154 +1487,6 @@ typedef struct gui_api_s
 
     /* force_redraw -- current state of the set_force_redraw override. */
     bool ( *force_redraw )( void );
-
-    /* Tables -- a multi-column layout with self-fitting cells (one table clip, no per-cell clip) and
-       optional scrolling, sortable headers, and resizable columns.  Conceptually a grid whose rows accumulate and scroll
-       (like flow) with column tracks resolved once per table (like grid), plus frozen header support.
-
-       USAGE CONTRACT:
-         1. table_begin()            -- open the table; returns true (always, like child_begin).
-                                        Consume it paired with table_end() regardless.
-         2. table_setup_column()     -- call ncols times between table_begin and the first row.
-                                        The calls may be omitted; all columns default to stretch.
-         3. table_headers_row()      -- optional; draws and clips a non-scrolling header strip and
-                                        runs header sort-click interaction.
-                                        Call after all table_setup_column, before the first data row.
-         4. for each row:
-              table_next_row()       -- begin a new data row.  First call sets row 0.
-              for each column:
-                table_next_column()  -- advance to the next column and return true; the cell sizes the
-                                        widget and long text ellipsizes to the column (self-fit, no
-                                        per-cell clip).  Returns false past the last column.
-                <emit widgets>       -- normal widget calls; they land inside the cell.
-         5. table_end()              -- close the table; restores the parent layout.
-
-       Column widths use the overloaded-unit rule (same as columns / grid):
-           > 1.0  fixed pixels   1.0  fill / stretch   (0,1)  fraction   0.0  natural (= stretch)
-       Height: 0 = auto (8 rows tall), > 0 = fixed pixels.
-
-           if ( gui()->table_begin( "my_table", 3, GUI_TABLE_NONE, 0 ) )
-           {
-               gui()->table_setup_column( "Name",  GUI_TABLE_COL_STRETCH,  0     );
-               gui()->table_setup_column( "Value", GUI_TABLE_COL_FIXED,    80.0f );
-               gui()->table_setup_column( "Unit",  GUI_TABLE_COL_FIXED,    40.0f );
-               for ( i32 i = 0; i < count; ++i )
-               {
-                   gui()->table_next_row( 0 );
-                   if ( gui()->table_next_column() ) gui()->text( name[i]  );
-                   if ( gui()->table_next_column() ) gui()->text( value[i] );
-                   if ( gui()->table_next_column() ) gui()->text( unit[i]  );
-               }
-               gui()->table_end();
-           }
-
-       table_set_column_index( col ) -- jump to a specific column (0-based) rather than advancing.
-       table_get_column_count()      -- number of columns the table was opened with.
-       table_get_column_index()      -- current column index (-1 before the first next_column).
-       table_get_row_index()         -- current row index (-1 before the first next_row).
-       table_get_sort_specs( out )   -- read raw sort state (column + direction); returns true on
-                                        the frame a header was clicked.  Use when you want to sort
-                                        your own data structure by hand.
-       table_sort_order( order, n, val_fn, cmp_fn, user )
-                                     -- built-in sort: reorder a display-order index array to match
-                                        the active sort.  Pass val_fn for automatic alphabetical /
-                                        numeric ordering, or cmp_fn for a custom comparator.  Cheap
-                                        to call every frame (only reorders on a header click).
-       table_set_bg_color( target, abgr ) -- override the current row's or cell's background. */
-
-    bool ( *table_begin            )( const char* id, i32 ncols, gui_table_flags_t flags, f32 height );
-    void ( *table_end              )( void );
-    void ( *table_setup_column     )( const char* label, gui_table_col_flags_t flags, f32 width );
-    void ( *table_headers_row      )( void );
-    void ( *table_next_row         )( f32 min_h );
-    bool ( *table_next_column      )( void );
-    bool ( *table_set_column_index )( i32 col );
-    i32  ( *table_get_column_count )( void );
-    i32  ( *table_get_column_index )( void );
-    i32  ( *table_get_row_index    )( void );
-    bool ( *table_get_sort_specs   )( gui_table_sort_specs_t* out );
-    bool ( *table_sort_order       )( i32* order, i32 count, gui_table_sort_value_fn val_fn,
-                                      gui_table_sort_cmp_fn cmp_fn, void* user );
-    void ( *table_set_bg_color     )( gui_table_bg_target_t target, u32 abgr );
-
-    /*  split_begin / split_next / split_end -- two panels side by side sharing a Y-level.
-
-        split_begin( id, right_w ) opens a split: the left panel fills, the right panel is
-        right_w pixels wide.  split_next() closes the left panel and opens the right.
-        split_end() closes the right panel.  Each panel is an independent flow region -- declare
-        a layout mode (stack/cols/...) inside each as usual.  Heights are cached per-id across
-        frames (one-frame lag on first appearance, then stable).
-
-        Use button_width() to size the right panel to fit a specific button label exactly:
-
-            const char* title = "Bake & Preview";
-            gui()->split_begin( "##src", gui()->button_width( title ) );
-                gui()->stack();
-                gui()->combo_begin( ... ); ... gui()->combo_end();
-                gui()->slider_int( ... );
-            gui()->split_next();
-                gui()->stack();
-                gui()->button_fill( title );
-            gui()->split_end();
-
-        button_width( label ) -- natural pixel width of a button with that label.
-        button_fill  -- a button that fills the remaining height of its containing region.
-        Identical to button() but height = content_avail().y.  Designed for the right panel
-        of a split so it matches the adjacent left panel's content height naturally. */
-
-    void ( *split_begin   )( const char* id, f32 right_w );
-    void ( *split_next    )( void );
-    void ( *split_end     )( void );
-    f32  ( *button_width  )( const char* label );
-    bool ( *button_fill   )( const char* label );
-
-    /* RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
-       image) as a full-color quad; the texel is the color, tint_abgr multiplies (0 = untinted).
-       image_texture flows in the layout like image(); draw_texture_in fills a rect the caller
-       already holds.  The caller owns the texture + its bindless slot (rhi register_texture). */
-
-    void ( *image_texture   )( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
-    void ( *draw_texture_in )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
-
-    /* Host-reserved top band (pixels) above viewport vp's dock area -- the height of a main menu
-       bar / toolbar strip the host draws itself; the dock tree lays out below it.  Sticky until
-       re-published; pass 0 to reclaim.  Publish before dockspace_over_viewport in the build. */
-
-    void ( *dockspace_inset )( gui_vp_t vp, f32 top );
-
-    /* Drag and drop -- typed payload transfer between items (see gui_drag_flags_t /
-       gui_drag_payload_t in gui.h).  One drag exists at a time; the payload bytes are copied.
-
-       USAGE CONTRACT:
-         Source -- right after the widget that should be draggable:
-           if ( gui()->drag_source_begin( GUI_DRAG_NONE ) )      // true while dragging from it
-           {
-               gui()->drag_payload_set( "ASSET", &index, sizeof index );   // every frame is fine
-               gui()->textf( "Move %s", name );                  // preview widgets follow the cursor
-               gui()->drag_source_end();
-           }
-         Target -- right after any widget that should receive drops:
-           if ( gui()->drag_target_begin() )                     // true while a drag hovers it
-           {
-               const gui_drag_payload_t* p = gui()->drag_payload_accept( "ASSET", GUI_DRAG_NONE );
-               if ( p )                                          // non-NULL on the drop frame
-                   place_asset( *(const i32*)p->data );
-               gui()->drag_target_end();
-           }
-
-       drag_payload_accept highlights the target while the types match and returns the payload on
-       the release frame (or every hover frame with GUI_DRAG_ACCEPT_PEEK).  drag_active reports a
-       drag in flight anywhere; drag_payload_peek inspects it without being a target.  The dock
-       tab-strip publishes its tab drags as type "gui.dock_tab" (payload: the window's gui_id_t). */
-
-    bool ( *drag_source_begin   )( gui_drag_flags_t flags );
-    void ( *drag_source_end     )( void );
-    bool ( *drag_payload_set    )( const char* type, const void* data, u32 size );
-    bool ( *drag_target_begin   )( void );
-    const gui_drag_payload_t* ( *drag_payload_accept )( const char* type, gui_drag_flags_t flags );
-    void ( *drag_target_end     )( void );
-    bool ( *drag_active         )( void );
-    const gui_drag_payload_t* ( *drag_payload_peek   )( void );
 
 } gui_api_t;
 

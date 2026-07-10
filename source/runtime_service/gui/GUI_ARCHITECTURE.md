@@ -8,13 +8,12 @@ Dense reference for working on the gui service (this directory) and its sandbox
 Static lib `gui`, two translation units:
 
 - `gui.c` (UI/core unit): context, id/state pool, input snapshot, layout engine, widgets,
-  4_window/4_dock/4_popup/nav/table, frame lifecycle, mod vtable. Unity-includes its constituents in
-  NUMBERED DEPENDENCY TIERS -- the directory listing is the stack, bottom-up (0_foundation/ ->
-  1_surface/ -> the three sibling 2_* roles -> 3_widgets/ -> 4_window/ -> 4_dock/ + 4_popup/;
-  4_table/ needs tiers 0-2 only; 5_user/ sits on top of everything; root files are the frame
-  conductor, top alongside 5_user/). Include order matters; later files may reference statics
-  from earlier ones.
-  `1_surface/gui_surface.c` is the surface service: window records as placed, stacked,
+  window/dock/popup/nav/table, frame lifecycle, mod vtable. Unity-includes its constituents;
+  directories name ROLES and the include list in gui.c is THE dependency order (foundation/ ->
+  surface/ -> compose/ + interact/ + present/ (siblings) -> widgets/ -> table/ -> window/ ->
+  dock/ -> popup/ -> nav/ -> user/ -> debug/ -> frame/, the conductor). Include order matters;
+  later files may reference statics from earlier ones.
+  `surface/gui_surface.c` is the surface service: window records as placed, stacked,
   occluding rectangles before any layout or chrome -- the record pool (`window_get` /
   `window_find`), the next-window placement channel, the z policy (the tier authors ALL z: the
   band map -- region tiers, the overlay band -- is defined here, `surface_z_raise` is the
@@ -23,24 +22,24 @@ Static lib `gui`, two translation units:
   contest (`surface_hover_nominate`, entered by windows, floating dock groups, and root regions
   alike), the surface reassignment request slot (tear-off / merge-back, serviced by the
   conductor), and open/closed state. Storage + frame turnover
-  stay in `gui_context_t` (0_foundation), the house pattern; window GESTURES (drags, grips,
-  raise-on-press with its dock exception) are 4_window/ policy over these services.
+  stay in `gui_context_t` (foundation), the house pattern; window GESTURES (drags, grips,
+  raise-on-press with its dock exception) are window/ policy over these services.
 - `gui_backend.c` (render unit): fonts, draw list, tessellation, GPU flush, debug overlay.
   UI unit calls it one-way through `gui_backend.h` (`draw_*`, `font_*`, `gui_render_*`).
 
-## The composer / behavior / presentation split (two orthogonal groupings)
+## The composer / behavior / presentation split
 
-The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one contract:
+Three roles, one contract (the directories carry the same names):
 
-- **Composer** (`2_compose/`): the ONLY code that POSITIONS rects -- divides regions into
+- **Composer** (`compose/`): the ONLY code that POSITIONS rects -- divides regions into
   cells, moves the pen, decides where the next widget lands. Widgets MEASURE themselves with
   the same METRICS vocabulary (a button's natural width is its label plus pad) but only ever
   REQUEST a size through `widget_next_rect_w`; the composer decides placement. Composes and
   never paints. Public face: the layout verbs + the `sz_` sizing family.
-- **Behavior** (`2_interact/`, public door `5_user/gui_behavior.c`): widget-agnostic
-  interaction SERVICES over the 0_foundation/ utilities (identity `0_foundation/gui_id.c`,
-  keyed state tracking `0_foundation/gui_state.c`, the io snapshot `0_foundation/gui_io.c`;
-  the public readers over it are `5_user/gui_query.c`) -- the drag threshold machine + payload
+- **Behavior** (`interact/`, public door `user/gui_behavior.c`): widget-agnostic
+  interaction SERVICES over the foundation/ utilities (identity `foundation/gui_id.c`,
+  keyed state tracking `foundation/gui_state.c`, the io snapshot `foundation/gui_io.c`;
+  the public readers over it are `user/gui_query.c`) -- the drag threshold machine + payload
   transfer (`gui_drag.c`), the move-drag protocol + deferred-press latch (`gui_move.c`:
   `move_grab`/`move_track`, `press_defer_*`), the edge-resize mechanism (`gui_resize.c`:
   `resize_item`), and the standard item protocol (`gui_item.c`: `widget_behavior`, the default
@@ -50,9 +49,10 @@ The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one co
   finished rects, produces interaction state (`hover`/`active`/`pressed`/`clicked`). This tier
   is the ONLY writer of the `s_interaction` arbitration fields: the window/dock/table hosts
   claim hover/active/focus exclusively through these verbs and read the record for gating,
-  never write it raw (one documented exception: the popup modal hover fence in `gui_popup.c`).
+  never write it raw (the popup modal fence claims through `interact_hover_fence`, no
+  exceptions).
   Behavior's only inputs beyond (id, rect) are the interaction scope (`s_scope`,
-  `0_foundation/gui_ctx.c`): the owner window, the interaction clip, the chrome hover
+  `foundation/gui_ctx.c`): the owner window, the interaction clip, the chrome hover
   suppression, and the per-item flag/nav stamps -- placed there by composition at its seams
   (window/child/popup/table begin, the emit seam `widget_next_rect_w`).  Behavior never reads
   the composer scratch (`s_build`); the scope record IS the composition->behavior contract,
@@ -63,17 +63,17 @@ The directories group by DEPENDENCY; the API groups by ROLE. Three roles, one co
   resize grab band and the scroll view box straddle the border, and border is geometry): the
   system adornments (nav focus ring, drag accept ring, hot resize edges) are invoked from
   behavior at the protocol point but painted by present-tier helpers (`draw_nav_ring` /
-  `draw_drop_ring` / `draw_resize_highlight` in `2_present/gui_widget_core.c`), so the paint
+  `draw_drop_ring` / `draw_resize_highlight` in `present/gui_paint_core.c`), so the paint
   policy lives with the skin.
-- **Presentation** (`2_present/`: label grammar + self-measurement (`label_natural_w`),
+- **Presentation** (`present/`: label grammar + self-measurement (`label_natural_w`),
   text-fit, frame color policy, system adornments, symbol draws): consumes rect + state + skin
   and paints; state is a parameter, it never asks behavior. The style vocabulary itself
-  (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in `0_foundation/gui_style.c`
-  since all three roles read it. `3_widgets/` and the 4_window/4_dock/4_popup chrome are its
+  (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in `foundation/gui_style.c`
+  since all three roles read it. `widgets/` and the window/dock/popup chrome are its
   CLIENTS -- the stock widget set is written on the same substrate a user widget uses, not a
   privileged layer.
 
-`5_user/` is the top tier and the public door onto the first two roles -- the caller's vocabulary,
+`user/` is the top tier and the public door onto the first two roles -- the caller's vocabulary,
 pure verbs + readers with zero state or machinery: `canvas`/`split`/`carve`/`empty` for
 rects, `item`/`invisible_button` for behavior, `draw_*`/`text_size` for your own presentation,
 the bracketing stacks (`push_id`, item flags, `push_style_*`, `scale_push`, `disabled_begin`),
@@ -115,7 +115,7 @@ gui()->init_config_front( caps );                 // optional feature gates, BEF
 gui()->init( font );                              // or GUI_FONT_NONE
 gui()->set_frame_hooks( clock, sleep, wait );     // OS services gui cannot reach itself
 gui()->debug_enable( true );                      // optional hotkey driver
-gui_vp_t vp0 = gui()->viewport_open( win_id );    // attach gui to the EXISTING 4_window/ctx
+gui_vp_t vp0 = gui()->viewport_open( win_id );    // attach gui to the EXISTING window/ctx
 
 // per frame
 while ( app pump )                                // host pumps OS events itself
@@ -167,7 +167,7 @@ while ( gui()->frame_poll( &dt ) )      // pumps OS, routes rhi + gui events; fa
 gui()->shutdown();                      // also tears down the boot window + context
 ```
 
-Mapping: `boot` = 4_window/ctx creation + init + hooks + `viewport_open`; `frame_poll` = event
+Mapping: `boot` = window/ctx creation + init + hooks + `viewport_open`; `frame_poll` = event
 pump + routing; `present_begin/present_end` = `rhi frame_begin` + clear + `gui()->render` +
 present + `viewport_render_floaters`.
 
@@ -180,7 +180,7 @@ Invariants:
 - `volatile_cb` blocks keep animating on skipped frames but MUST keep a fixed layout
   footprint (constant size; pad printf fields).
 
-## Layout engine (2_compose/gui_layout_core.c = mechanism, 2_compose/gui_layout.c = public verbs)
+## Layout engine (compose/gui_layout_core.c = mechanism, compose/gui_layout.c = public verbs)
 
 Model: every window body / region / child owns a `layout_frame_t` with a content box, a PEN
 (`pen_y`, flows downward) and a HIGHWATER (`high_x/high_y`, monotonic bounding box used at
@@ -270,7 +270,7 @@ overloaded unit. Pair results with `push_layout_overlay` or `draw_*`.
 Absolute-rect placement does NOT move the layout pen: after drawing a HUD/carved band, reserve
 it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
 
-## Interaction / ids / the user tier (5_user/)
+## Interaction / ids / the user tier (user/)
 
 - IDs: label-hashed; `"##hidden"` suffix hides label; `push_id_int/pop_id` for loops.
 - Item queries after any emit: `is_item_hovered/active/clicked`; `want_capture_mouse` for

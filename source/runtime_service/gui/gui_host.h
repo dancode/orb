@@ -194,7 +194,7 @@ void gui_stack_same_line( f32 spacing );
 void gui_skip( void );
 void gui_separator( void );
 
-/* user substrate - blank space canvas (5_user/gui_canvas.c): reserve a rect to draw into */
+/* user substrate - blank space canvas (user/gui_canvas.c): reserve a rect to draw into */
 gui_rect_t gui_canvas( f32 height );
 
 /* sizing (sz_) - intent to px; grid-first first, content-fit escape hatches last */
@@ -213,7 +213,7 @@ u32        gui_carve( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out
 gui_rect_t gui_anchor( gui_rect_t parent, gui_anchor_t a );
 gui_rect_t gui_empty( f32 w, f32 h );
 
-/* user substrate - behavior on caller rects (5_user/gui_behavior.c): the shared interaction
+/* user substrate - behavior on caller rects (user/gui_behavior.c): the shared interaction
    state machine run over a rect YOU derived.  item() reports the full state; invisible_button
    is its click bit.  A custom widget = rect (canvas/split/carve) + item() + draw_*. */
 gui_item_state_t gui_item( const char* id_str, gui_rect_t r );
@@ -384,7 +384,7 @@ void gui_debug_enable( bool enable );
 bool gui_debug_is_enabled( void );
 
 /* Reverse lookup for the id name registry (gui_debug_overlay.c): the source string an id was
-   minted from (widget label, 4_window/popup title, region/child/table id string), or NULL if
+   minted from (widget label, window/popup title, region/child/table id string), or NULL if
    unregistered.  Only Debug builds (GUI_DEBUG_OVERLAY) populate the registry, but the accessor
    itself is always callable -- Release just always gets NULL -- so callers need no #ifdef. */
 const char* gui_debug_name( gui_id_t id );

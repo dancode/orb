@@ -6,7 +6,7 @@
 
     In-house immediate-mode GUI for ORB.  No Dear ImGui, no GLFW/SDL: windowing/input come from
     the engine `app` layer (Win32), rendering goes through `rhi` (Vulkan).  The host drives a
-    frame_begin -> ctx_begin/3_widgets/ctx_end -> frame_end -> render() lifecycle each frame.
+    frame_begin -> ctx_begin/widgets/ctx_end -> frame_end -> render() lifecycle each frame.
 
     Read ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is the
     orientation map: the three state tiers (ambient-singular / per-context retained via g_ctx /
@@ -26,6 +26,23 @@
 #include "orb.h"
 
 // clang-format off
+/*==============================================================================================
+    Contents -- sections follow the source tree order (see gui.c's include list):
+
+      foundation  -- ids, context config, geometry, style colors / config / themes / vars
+      compose     -- rect algebra, layout template / alignment / modes, pack, split, field
+      interact    -- item flags, drag and drop
+      present     -- angle algebra, color packing, stroking, draw vertex, volatile cb,
+                     semantic draw commands
+      widgets     -- direction, color edit flags
+      window      -- drag mode, apply condition, window flags
+      dock        -- dockspace flags
+      popup       -- combo flags
+      table       -- table support
+      frame       -- font config, capability flags, boot descriptor, limits, memory + render stats
+      debug       -- overlay layers, render mode
+==============================================================================================*/
+
 /*==============================================================================================
     GUI: ID
 ==============================================================================================*/
@@ -90,63 +107,6 @@ typedef struct
     ( ( gui_ctx_config_t ){ 8, 64, 4, 1, 0 } )
 
 /*==============================================================================================
-    GUI: Font Configuration
-==============================================================================================*/
-/* Built-in font presets for init() -- pre-baked .orb_font assets (FreeType-rasterized offline by
-   font_tool, not an stb runtime bake) shipped under assets/font/.  GUI_FONT_NONE loads nothing;
-   the caller is then responsible for its own font_load() before the first frame renders. */
-
-typedef enum
-{
-    GUI_FONT_NONE = 0,        // load nothing; caller loads its own font(s) via font_load()
-    GUI_FONT_JETBRAINS_16,    // assets/font/jetbrains_regular_16.orb_font
-    GUI_FONT_ROBOTO_16,       // assets/font/Roboto-Regular.orb_font
-    GUI_FONT_ROBOTO_BOLD_16,  // assets/font/Roboto-Bold.orb_font
-
-
-} gui_builtin_font_t;
-
-/*==============================================================================================
-    GUI: Capability Flags
-==============================================================================================*/
-/* Backend capability flags -- latched via gui_init_config_back() before init().  The render
-   pipeline itself (fonts, EMIT draw list, tessellate, SUBMIT flush) is always on and has no flag;
-   everything here is complexity layered on top that a caller can independently switch off.  A
-   caller that never calls gui_init_config_back() gets GUI_CAPS_DEFAULT, which preserves the
-   pipeline's full behavior -- these flags exist to let a minimal/embedded use of gui shed layers
-   it doesn't need, not to change what a default caller sees. */
-
-typedef struct
-{
-    bool icons;             // Runtime icon atlas (icon_register/find, draw_push_icon) -- owns its own
-                            // 512x512 R8 texture + stb_rect_pack packer, stood up at init when on
-    bool retained_cache;    // BUILD-phase diff + geometry reuse; off always re-tessellates every
-                            // Window for every frame (also the backing for set_retained_skip)
-    bool render_debug;      // Wireframe/batch-tint debug render mode; off skips compiling the 
-                            // second (wireframe) pipeline at init
-    bool stats_trace;       // Per-frame printf lines for cache diff / geometry / retained / draw-calls
-
-} gui_backend_caps_t;
-
-#define GUI_CAPS_DEFAULT \
-    ( ( gui_backend_caps_t ){ .icons = true, .retained_cache = true, \
-                              .render_debug = true, .stats_trace = false } )
-
-/* Forward (UI-unit) capability flags -- latched via gui_init_config_front() before init().
-   These do not exclude any code from the build -- the point is feature-boundary clarity. */
-
-typedef struct
-{
-    bool tables;            // default on: optionally turn off tables.
-    bool docking;           // default on: optionally turn off docking.
-    bool keyboard_nav;      // default on: optionally turn off keyboard navigation.
-
-} gui_forward_caps_t;
-
-#define GUI_FORWARD_CAPS_DEFAULT \
-    ( ( gui_forward_caps_t ){ .tables = true, .docking = true, .keyboard_nav = true } )
-
-/*==============================================================================================
     GUI: Geometry
 ==============================================================================================*/
 
@@ -185,31 +145,276 @@ typedef void ( *gui_sleep_fn )( i32 milliseconds );
 typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 
 /*==============================================================================================
-    GUI: Boot descriptor
+    Style colors
 
-    One-call host setup (gui()->boot): gui owns the main OS window and its render context end to
-    end -- the same lifecycle its tear-off floaters already use -- instead of the host assembling
-    window_open / context_open / init / viewport_open by hand.  Everything here is optional in the
-    sense that a field left zero keeps today's default; the struct is designed to be built as a
-    compound literal at the call site.  See boot() in gui_api.h for the full contract.
+    The themeable color slots, the ImGuiCol_ analogue.  Each names one entry of the shared palette
+    the widgets draw from; push_style_color( slot, abgr ) overrides it for every widget until the
+    matching pop_style_color, next_style_color overrides it for just the next widget, and a slot
+    left unpushed uses the theme default.  Colors are packed with GUI_COLOR (byte order R,G,B,A).
+
+    The palette is shared rather than per-widget-type (one GUI_COL_WIDGET_BG, not Button +
+    Checkbox + ...), matching the engine's single-palette theme: to recolor one button, bracket it
+    with push/pop (only that button draws between them), or use next_style_color for a one-shot.
 ==============================================================================================*/
 
-typedef struct
+typedef enum
 {
-    const char*               title;      /* OS window title; doubles as the chrome shell caption  */
-    i32                       x, y;       /* window position; 0,0 = OS centers                     */
-    i32                       w, h;       /* client size; 0,0 = 50% of the desktop work area       */
-    bool                      os_chrome;  /* true = stock OS frame; false (default) = borderless
-                                             window with the gui chrome shell auto-emitted         */
-    gui_builtin_font_t        font;       /* built-in preset; GUI_FONT_NONE = caller font_load()s  */
-    const gui_forward_caps_t* caps;       /* UI-unit feature caps; NULL = GUI_FORWARD_CAPS_DEFAULT */
-    gui_clock_fn              clock;      /* frame hooks (gui links no sys) -- see set_frame_hooks */
-    gui_sleep_fn              sleep;
-    gui_wait_events_fn        wait;
-    f32                       clear[ 4 ]; /* present() clear color; alpha 0 = default dark        */
-    bool                      debug;      /* arm the debug hotkey driver (debug_enable)            */
+    GUI_COL_TEXT,           /* label / glyph text                          */
+    GUI_COL_TEXT_DIM,       /* secondary text (trailing labels)            */
+    GUI_COL_WINDOW_BG,      /* window body background                      */
+    GUI_COL_CHILD_BG,       /* child region background                     */
+    GUI_COL_TITLE_BG,       /* window title bar                            */
+    GUI_COL_BORDER,         /* window / widget outlines                    */
+    GUI_COL_WIDGET_BG,      /* idle widget body (button, checkbox, knob)   */
+    GUI_COL_WIDGET_HOT,     /* hovered widget body                         */
+    GUI_COL_WIDGET_ACT,     /* pressed / active widget body                */
+    GUI_COL_WIDGET_FG,      /* widget foreground accent (slider fill)      */
+    GUI_COL_CHECK_MARK,     /* checkbox tick / radio dot                   */
+    GUI_COL_SLIDER_TRACK,   /* slider + scrollbar track                    */
+    GUI_COL_RESIZE_HOT,     /* hot resize edge / size grip                 */
+    GUI_COL_INPUT_BG,       /* text input field background                 */
+    GUI_COL_INPUT_FOCUS,    /* focused text input field background         */
+    GUI_COL_CURSOR,         /* text input caret                           */
+    GUI_COL_NAV_HIGHLIGHT,  /* keyboard-nav focus ring around the nav item */
 
-} gui_boot_desc_t;
+    GUI_COL_COUNT,          /* slot count -- not a color                   */
+
+} gui_col_t;
+
+/*==============================================================================================
+    Global Style Configuration
+==============================================================================================*/
+
+/* The scale ramp -- the named density steps the UI is authored in, instead of raw pixel sizes.
+   Each step is a complete metric set (row height + pad + gap, authored in gui_style_t.scales),
+   so "this region is a dense list" is one declaration and the pairing that makes a density look
+   right lives in the theme.  scale_push/scale_pop scope a step over the style-var stack, which
+   makes every metric read (WIDGET_H / pad / gap) and every counting helper (rows_h, calc_row)
+   speak that step with no widget changes.  STD is authored identical to the base metrics, so
+   an unpushed UI is unchanged. */
+typedef enum
+{
+    GUI_SCALE_DENSE,   // text lists: outliners, entity browsers, tree views, table rows
+    GUI_SCALE_STD,     // the everyday widget row: forms, buttons, sliders, inputs
+    GUI_SCALE_ROOMY,   // menus, combo dropdown lists, title-height rows
+    GUI_SCALE_BAR,     // tab bars, icon toolbars, panel headers
+    GUI_SCALE_COUNT
+
+} gui_scale_t;
+
+/* One ramp step's metrics.  Authored in px at em=12 like every other theme metric; em-scaled,
+   grid-quantized, and font-floored (a row always holds a text line) by gui_style_apply. */
+typedef struct gui_scale_metrics_t
+{
+    u8 row;   // row height (the step's WIDGET_H)
+    u8 pad;   // frame / content padding
+    u8 gap;   // gap between consecutive widgets
+
+} gui_scale_metrics_t;
+
+/* ONE struct, TWO categories.  They stay together because the machinery treats them all
+   identically -- themes snapshot them, the style stacks override them, style_var/style_col
+   resolve them, gui_style_apply em-scales them -- and ONE test sorts every field between the
+   two categories: can a read of this field move a rect?
+
+     1. METRICS -- the spacing/size vocabulary.  One set of numbers consumed at two moments:
+        composition (the composer divides space into cells -- row heights, gaps, region insets,
+        scrollbar gutters, title bars) and widget self-measurement (a widget computes the
+        natural size it REQUESTS through widget_next_rect_w, then seats its label / indicator
+        inside the finished cell with the same pad).  Only the composer POSITIONS rects;
+        widgets only measure and request -- that is the composition contract.
+     2. SKIN -- paint-only: colors, corner roundings, mark shapes, caret geometry.  A read of
+        these can only change pixels inside a rect composition already fixed; none ever sizes
+        or moves a cell.
+
+   Behavior (interact/) consumes neither category: it takes finished rects.  (Its one metric
+   read is win_border, because the resize hit zone straddles the border -- border is geometry.) */
+
+typedef struct gui_style_t
+{
+    u32 colors[ GUI_COL_COUNT ]; // SKIN: theme default palette (GUI_COLOR packs R,G,B,A bytes)
+
+    /* 1. METRICS -- can move a rect: cell sizes, insets, gutters, and natural-size inputs */
+    u8 line_size;          // widget row height
+    u8 widget_gap;         // vertical gap between consecutive widgets
+    u8 widget_pad;         // region inset (composer) AND label inset / natural-width pad (widgets)
+    u8 min_cell_w;         // floor a flex/fraction track shrinks to before overflow
+    u8 grid_quantum;       // px lattice row-level metrics snap to after font scaling (0/1 = off)
+    u8 win_border;         // outline thickness -- consumes space: child heights, bar tracks, resize zones
+    u8 win_title_h;        // window title bar height -- the body starts below it
+    u8 checkbox_sz;        // checkbox indicator side -- feeds the checkbox's natural width
+    u8 slider_knob_w;      // slider knob width AND the scrollbar gutter thickness regions reserve
+
+    /* 2. SKIN -- paint-only: never sizes a cell */
+    u8 win_rounding;       // corner radius: windows / children / popups
+    u8 widget_rounding;    // corner radius: control frames
+    u8 grab_rounding;      // corner radius: slider knobs / scrollbar grabs
+    u8 check_style;        // checkbox/menu indicator: 0='v' tick, 1=disc, 2='X' (gui_check_style_t)
+    u8 bullet_style;       // bullet glyph: 0=disc, 1=square (gui_bullet_style_t)
+    u8 arrow_style;        // directional arrow: 0=triangle, 1=chevron (gui_arrow_style_t)
+    u8 separator_style;    // separator rule: 0=solid, 1=dashed (gui_separator_style_t)
+    u8 progress_style;     // progress fill: 0=solid, 1=gradient (gui_progress_style_t)
+    u8 slider_knob;        // slider knob: 0=bar, 1=circle (gui_slider_knob_t)
+    u8 menu_check;         // menu check gutter: 0=plain, 1=box (gui_menu_check_t)
+    u8 checkmark_pad;      // inset of the check mark inside the checkbox
+    u8 cursor_w;           // input text caret width
+    u8 cursor_inset;       // input text caret top/bottom inset
+
+    /* The scale ramp (see gui_scale_t) -- METRICS per density step.  STD mirrors
+       line_size / widget_pad / widget_gap. */
+    gui_scale_metrics_t scales[ GUI_SCALE_COUNT ];
+
+} gui_style_t;
+
+/* gui_style_get() -- returns a pointer to the mutable base style (s_style_base).  Edits take
+   effect on the next gui_style_apply() / gui_theme_reset() call.  Mutating the struct directly
+   without calling theme_reset marks the theme as anonymous (theme_get returns NULL). */
+
+gui_style_t* gui_style_get( void );
+
+/* gui_style_apply() -- recomputes the scaled active metrics from the current base style.
+   Called automatically on font change; call manually after editing via gui_style_get(). */
+
+void         gui_style_apply( void );
+
+/*==============================================================================================
+    Themes
+
+    A theme is a named gui_style_t snapshot: a human-readable name paired with a complete set
+    of colors and layout metrics.  The active theme is the root layer every push_style_color /
+    push_style_var overrides relative to.  Switching or resetting a theme clears the push stacks
+    immediately -- use this instead of managing deep push/pop sequences for large style changes.
+
+        u32  n;
+        const gui_theme_t* list = gui_theme_list( &n );  // enumerate built-ins
+        for ( u32 i = 0; i < n; ++i ) puts( list[i].name );
+
+        gui_theme_set( "light" );   // switch theme + clear style stacks
+        gui_theme_reset();          // revert any style_get edits, clear stacks
+==============================================================================================*/
+
+typedef struct gui_theme_t
+{
+    const char* name;    /* human-readable key used by theme_set / theme_get */
+    gui_style_t style;   /* complete color + metric snapshot                 */
+
+} gui_theme_t;
+
+const gui_theme_t* gui_theme_list ( u32* count_out );    /* enumerate built-in themes           */
+bool               gui_theme_set  ( const char* name );  /* switch to named theme + reset stacks */
+const char*        gui_theme_get  ( void );              /* active theme name, NULL if anonymous */
+void               gui_theme_reset( void );              /* restore base + clear push stacks     */
+
+/*==============================================================================================
+    Style vars
+
+    The tunable scalar metrics, the ImGuiStyleVar_ analogue.  Each names one scalar the layout
+    or widgets read; push_style_var( var, value ) overrides it until the matching pop_style_var,
+    next_style_var for just the next widget, and an unpushed var uses the font-derived default
+    (recomputed when the font changes).  Values are f32 pixels.
+
+    Grouped by the same two categories as gui_style_t (one mechanism, two audiences):
+    METRICS slots can move rects (scale_push rides on the first three); SKIN slots only
+    change how paint lands inside rects composition already fixed.
+
+    Only metrics that flow through the shared accessor are listed, so every slot here is honored
+    uniformly everywhere it is read; purely cosmetic internals (caret width, checkmark inset) are
+    intentionally left off rather than exposed as half-working knobs.
+==============================================================================================*/
+
+typedef enum
+{
+    /* 1. METRICS -- can move a rect (scale_push/scale_pop override the first three) */
+
+    GUI_VAR_LINE_SIZE,      // widget row height (the frame height)
+    GUI_VAR_WIDGET_GAP,     // gap between consecutive widgets / cells
+    GUI_VAR_WIDGET_PAD,     // content padding inside a frame (FramePadding)
+    GUI_VAR_MIN_CELL_W,     // min width a flex cell shrinks to
+    GUI_VAR_WIN_BORDER,     // outline thickness -- consumes space (child heights, bar tracks)
+    GUI_VAR_WIN_TITLE_H,    // window title bar height -- the body starts below it
+    GUI_VAR_CHECKBOX_SZ,    // checkbox / radio indicator side -- feeds the natural width
+    GUI_VAR_SLIDER_KNOB_W,  // slider knob width + the scrollbar gutter thickness
+
+    /* 2. SKIN -- paint-only */
+
+    GUI_VAR_WIN_ROUNDING,   // corner radius for windows / children / popups; 0 = square
+    GUI_VAR_WIDGET_ROUNDING,// corner radius for control frames (button/checkbox/input/...)
+    GUI_VAR_GRAB_ROUNDING,  // corner radius for slider knobs + scrollbar grabs
+    GUI_VAR_CHECK_STYLE,    // checkbox/menu indicator: 0 = 'v' tick, 1 = filled disc, 2 = 'X' cross (gui_check_style_t)
+    GUI_VAR_BULLET_STYLE,   // bullet glyph: 0 = filled disc, 1 = square (gui_bullet_style_t)
+    GUI_VAR_ARROW_STYLE,    // directional arrow: 0 = filled triangle, 1 = stroked chevron (gui_arrow_style_t)
+    GUI_VAR_SEPARATOR_STYLE,// separator rule: 0 = solid, 1 = dashed (gui_separator_style_t)
+    GUI_VAR_PROGRESS_STYLE, // progress_bar fill: 0 = solid, 1 = vertical gradient (gui_progress_style_t)
+    GUI_VAR_SLIDER_KNOB,    // slider knob shape: 0 = bar, 1 = circle (gui_slider_knob_t)
+    GUI_VAR_MENU_CHECK,     // menu item check gutter: 0 = plain indicator, 1 = bordered box (gui_menu_check_t)
+
+    GUI_VAR_COUNT,          // var count -- not a metric
+
+} gui_style_var_t;
+
+/* Checkbox / menu-item indicator shape (GUI_VAR_CHECK_STYLE).  Default is the tick. */
+typedef enum
+{
+    GUI_CHECK_TICK  = 0,   // a two-stroke 'v' check mark
+    GUI_CHECK_DISC  = 1,   // a filled disc inside the box
+    GUI_CHECK_CROSS = 2,   // a two-diagonal 'X' cross
+
+} gui_check_style_t;
+
+/* Bullet glyph shape (GUI_VAR_BULLET_STYLE).  Default is the disc (Dear ImGui's RenderBullet). */
+typedef enum
+{
+    GUI_BULLET_DISC   = 0,   // a small filled circle
+    GUI_BULLET_SQUARE = 1,   // a small filled square
+
+} gui_bullet_style_t;
+
+/* Directional arrow shape (GUI_VAR_ARROW_STYLE).  Default is the solid triangle.  Threads through
+   every arrow the chrome draws -- arrow_button, the collapse fold, the combo / submenu arrow, the
+   dock overlay -- since they all route through draw_arrow, exactly as check / bullet do. */
+typedef enum
+{
+    GUI_ARROW_FILLED  = 0,   // a filled triangle pointing the direction
+    GUI_ARROW_CHEVRON = 1,   // a stroked '>' chevron (two strokes to an apex)
+
+} gui_arrow_style_t;
+
+/* Separator rule shape (GUI_VAR_SEPARATOR_STYLE).  Default is the solid rule.  Honored by
+   separator() and the leading / trailing rules of separator_text(). */
+typedef enum
+{
+    GUI_SEPARATOR_SOLID  = 0,   // a continuous filled rule
+    GUI_SEPARATOR_DASHED = 1,   // a dashed rule           
+
+} gui_separator_style_t;
+
+/* progress_bar fill style (GUI_VAR_PROGRESS_STYLE).  Default is the solid fill; the gradient
+   variant glosses the fill from the foreground accent to a brighter tint (top to bottom). */
+typedef enum
+{
+    GUI_PROGRESS_SOLID    = 0,   // a flat foreground-accent fill
+    GUI_PROGRESS_GRADIENT = 1,   // a top-to-bottom gradient gloss
+
+} gui_progress_style_t;
+
+/* Slider / drag knob shape (GUI_VAR_SLIDER_KNOB).  Default is the bar grab; the circle variant
+   draws a round handle (raise GUI_VAR_GRAB_ROUNDING instead for a pill bar). */
+typedef enum
+{
+    GUI_SLIDER_KNOB_BAR    = 0,   // a rectangular grab (grab-rounded)
+    GUI_SLIDER_KNOB_CIRCLE = 1,   // a circular handle                
+
+} gui_slider_knob_t;
+
+/* Menu item check gutter style (GUI_VAR_MENU_CHECK).  Default is the bordered box, which draws
+   an idle checkbox frame in the gutter whether or not the item is selected; the plain variant
+   renders no box and only the indicator symbol when selected. */
+typedef enum
+{
+    GUI_MENU_CHECK_PLAIN = 0,   // indicator only when selected; no idle box
+    GUI_MENU_CHECK_BOX   = 1,   // bordered box always; indicator when selected
+
+} gui_menu_check_t;
 
 /*==============================================================================================
     GUI: Rect Algebra
@@ -292,27 +497,6 @@ gui_rect_cut_bottom( gui_rect_t* r, f32 a )
     r->h -= a;
     return ( gui_rect_t ){ r->x, r->y + r->h, r->w, a };
 }
-
-/*==============================================================================================
-    GUI: Angle Algebra
-
-    Angles -- the arc / pie / spinner / progress sweep parameters (draw_arc, draw_pie, ...) are
-    radians in screen space (y down, so a positive angle turns clockwise; 0 points right / +x).
-    Author in friendly degrees and convert at the call site:
-
-    gui()->draw_arc( cx, cy, r, gui_radians( 0 ), gui_radians( 270 ), 3.0f, col );
-    gui()->draw_pie( cx, cy, r, gui_radians( -90 ), gui_radians( 90 ), col );
-
-    Stateless pure math, so these are inline here (no vtable entry) like the rect helpers above.
-==============================================================================================*/
-
-#define GUI_PI 3.14159265358979f
-
-/* Degrees -> radians (the unit the arc / pie / sweep parameters take). */
-static inline f32 gui_radians( f32 degrees ) { return degrees * ( GUI_PI / 180.0f ); }
-
-/* Radians -> degrees (to read a stored sweep back in friendly units). */
-static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_PI ); }
 
 /*==============================================================================================
     GUI: Layout Template
@@ -538,6 +722,313 @@ typedef enum
 } gui_label_side_t;
 
 /*==============================================================================================
+    Item flags
+
+    A push-model of per-item behavior tweaks, the ImGui ItemFlags analogue.  Instead of widening
+    every widget signature with a new parameter, behavior is tuned through a flag set the widget
+    reads at emit time, so a feature can be added without touching any call site.
+
+    Two layers merge into the flags a widget sees:
+
+      Stack    -- push_item_flag( flag, enable ) / pop_item_flag(): affects every widget until
+                  popped (disable a run of buttons, mark a section read-only).  Nests; pop restores.
+      Next     -- next_item_flag( flag, enable ): a one-shot override consumed by the very next
+                  widget only, no pop needed.  Overrides the stack for that one item (it can force
+                  a bit off even when the stack has it on).
+
+    The merged value is resolved once per widget; a widget that does not care about a given flag
+    simply ignores it, so unknown / future flags are inert by construction.  Bit values so several
+    can be combined; 0 (GUI_ITEM_NONE) is the default no-op set.
+==============================================================================================*/
+
+typedef enum
+{
+    /* no tweaks -- the default behavior */
+    GUI_ITEM_NONE          = 0,       
+
+    /* inert + dimmed: no hover/active/focus/click, drawn at
+       reduced opacity.  Honored uniformly by widget_behavior and
+       the draw list, so it applies to every widget at once. */
+    GUI_ITEM_DISABLED      = 1 << 0,  
+
+    /* a held button fires repeatedly: once on press, then after
+       an initial delay at a steady rate (spinner / scroll arrows),
+       instead of once on release.  Honored by widget_behavior, so
+       any button-kind widget under the flag auto-repeats. */
+    GUI_ITEM_BUTTON_REPEAT = 1 << 1,  
+
+    /* slider_float: suppress the value text drawn centered on the
+       track.  The value is shown by default; set this (push or
+       next_item_flag) to hide it for a bare / compact slider. */
+    GUI_ITEM_NO_VALUE_TEXT = 1 << 2,
+
+    /* selectable: do NOT close the enclosing popup when clicked.
+       By default a selectable inside any popup calls popup_close_current()
+       on click (Dear ImGui CloseCurrentPopup default).  Set this to opt out --
+       e.g. a multi-select list inside a popup where the popup should stay open. */
+    GUI_ITEM_NO_CLOSE_POPUP = 1 << 3,
+
+    /* Room to grow without disturbing call sites or the vtable -- e.g. a future
+    GUI_ITEM_READ_ONLY (editable widgets show but reject input), GUI_ITEM_NO_NAV, etc. */
+
+} gui_item_flags_t;
+
+/*==============================================================================================
+    Drag and drop
+
+    Item-to-item payload transfer (the ImGui BeginDragDropSource/Target analogue).  A widget
+    becomes a drag SOURCE by calling drag_source_begin right after it emits; while the user
+    drags from it, the source sets a typed payload (a small byte blob, copied) and emits preview
+    widgets that follow the cursor.  Any other widget becomes a drop TARGET by calling
+    drag_target_begin right after it emits; while a drag hovers it, drag_payload_accept matches
+    the type tag, highlights the target, and returns the payload on the release frame.  One drag
+    exists at a time (one mouse), so the payload store is a single ambient slot.  See gui_api.h
+    for the usage contract.
+==============================================================================================*/
+
+#define GUI_DRAG_TYPE_CAP     16    // bytes of a payload type tag, including the NUL
+#define GUI_DRAG_PAYLOAD_CAP  64    // payload bytes copied by drag_payload_set
+
+typedef enum
+{
+    GUI_DRAG_NONE        = 0,
+
+    /* drag_payload_accept: return the payload while the drag hovers the target (every frame),
+       instead of only on the release (drop) frame -- for live preview effects at the target. */
+    GUI_DRAG_ACCEPT_PEEK = 1 << 0,
+
+    /* drag_source_begin: no cursor-following preview tooltip is opened (emit nothing between
+       begin/end).  drag_payload_accept: skip the accept highlight around the target. */
+    GUI_DRAG_NO_PREVIEW  = 1 << 1,
+
+} gui_drag_flags_t;
+
+/* The caller-facing payload view returned by drag_payload_accept / drag_payload_peek.  The bytes
+   were copied at drag_payload_set time and stay valid until the drag ends (the release frame
+   included) -- copy them out if they must outlive the drop. */
+typedef struct
+{
+    const char* type;   // tag stamped by drag_payload_set
+    const void* data;   // payload bytes (copied at set time)
+    u32         size;   // payload byte count
+
+} gui_drag_payload_t;
+
+/*==============================================================================================
+    GUI: Angle Algebra
+
+    Angles -- the arc / pie / spinner / progress sweep parameters (draw_arc, draw_pie, ...) are
+    radians in screen space (y down, so a positive angle turns clockwise; 0 points right / +x).
+    Author in friendly degrees and convert at the call site:
+
+    gui()->draw_arc( cx, cy, r, gui_radians( 0 ), gui_radians( 270 ), 3.0f, col );
+    gui()->draw_pie( cx, cy, r, gui_radians( -90 ), gui_radians( 90 ), col );
+
+    Stateless pure math, so these are inline here (no vtable entry) like the rect helpers above.
+==============================================================================================*/
+
+#define GUI_PI 3.14159265358979f
+
+/* Degrees -> radians (the unit the arc / pie / sweep parameters take). */
+static inline f32 gui_radians( f32 degrees ) { return degrees * ( GUI_PI / 180.0f ); }
+
+/* Radians -> degrees (to read a stored sweep back in friendly units). */
+static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_PI ); }
+
+/*==============================================================================================
+    Color packing
+
+    GUI_COLOR(r,g,b,a) packs 0-255 byte values into a u32 such that memory byte order
+    is [R, G, B, A], matching VK_FORMAT_R8G8B8A8_UNORM vertex attribute layout.
+==============================================================================================*/
+
+#define GUI_COLOR( r, g, b, a ) \
+    ( ( ( u32 )( a ) << 24 ) | ( ( u32 )( b ) << 16 ) | ( ( u32 )( g ) << 8 ) | ( u32 )( r ) )
+
+/*==============================================================================================
+    Line / path stroking
+
+    Thickness, pixel-snapping, and where a stroke sits relative to the ideal path it is drawn from.
+    Implementation in gui_emit_path.c.
+
+    Pixel model: integer coordinates fall on the lines *between* pixels, so a crisp axis-aligned
+    stroke is one whose two edges both land on integers.  draw_line strokes a single segment: a
+    horizontal / vertical one snaps to the pixel grid and renders perfectly crisp (like a
+    separator); any other angle is stroked with a 1px antialiased edge so diagonals stay smooth.
+    draw_polyline / path_stroke connect several points with miter-limited corners (always
+    antialiased) -- use them for multi-segment outlines, arrows, and diagonal runs.
+==============================================================================================*/
+
+/* Where the stroke sits across the ideal path (the line the coordinates describe).  CENTER runs
+   the path down the middle of the stroke; INSIDE / OUTSIDE push the whole width onto one side (the
+   left-hand normal of travel is the "inside").  CENTER_BIASED is CENTER plus a parity-aware snap so
+   an odd-thickness axis-aligned line lands on whole pixels instead of straddling two -- the crisp
+   default for UI rules and borders.  (The snap only bites on axis-aligned single segments; a
+   diagonal or a multi-segment polyline treats CENTER_BIASED as CENTER and relies on antialiasing.) */
+typedef enum
+{
+    GUI_STROKE_CENTER_BIASED = 0,   // centered + snapped to the pixel grid (default) 
+    GUI_STROKE_CENTER,              // centered on the path, no snap                  
+    GUI_STROKE_INSIDE,              // whole width on the interior side of a CW-screen ring 
+    GUI_STROKE_OUTSIDE,             // whole width on the exterior side of a CW-screen ring
+
+} gui_stroke_align_t;
+
+#define GUI_PATH_MAX 256            /* max points path_line_to accumulates before a stroke */
+
+/*==============================================================================================
+    Draw vertex  (20 bytes, single interleaved binding)
+
+    Vertex attribute layout (matches the gui pipeline):
+        location 0 : float2  (x, y)       offset  0   -- pixel-space position
+        location 1 : float2  (u, v)       offset  8   -- texture UV [0..1]
+        location 2 : UNORM4  (abgr u32)   offset 16   -- packed color, R8G8B8A8_UNORM
+==============================================================================================*/
+
+typedef struct
+{
+    f32 x, y; // pixel position */
+    f32 u, v; // texture UV     */
+    u32 abgr; // packed color   */
+
+} gui_draw_vert_t;
+
+/*==============================================================================================
+    Volatile widget callback
+
+    A "volatile" callback contains ordinary UI emit calls (text, colored rects, etc).  It runs
+    inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
+    any other code, no special behavior, except that the block's geometry is given its own
+    RESERVED, PADDED region of the window's cached tessellation (vertex/index/draw-command
+    headroom past what it actually produced).  On an idle frame (frame_dirty()==false), the same
+    callback is invoked again standalone with is_replay=true; the framework reconstructs just
+    enough context (window/clip/cursor position + the ambient draw state stamped at real emit),
+    re-tessellates the output, and patches it into the reserved region.  The output does NOT have
+    to match the original -- text may grow or shrink, shapes may change -- it only has to FIT the
+    reservation; outgrowing it costs one automatic real frame, after which the block re-captures
+    with a larger reservation (grow-only per widget).  The block's commands are also excluded from
+    the window's retained-cache hash, so an animating block never forces its window to
+    re-tessellate -- see gui_volatile_cb / gui_volatile_begin / gui_update_volatile.
+
+    Interactive widgets (button, etc) are safe to call from a volatile callback but are inert
+    during replay: hover/active/focus reflect whatever the last real frame established, but a
+    replay can never newly acquire either state or fire a fresh click -- interaction is only ever
+    resolved on real frames, which is guaranteed since input changes always force one.
+
+    CONTRACT -- fixed layout footprint: the block's PIXELS may change every frame, but the space
+    it occupies in the layout must not.  Surrounding widgets are retained and only re-lay-out on
+    real frames; a block whose size varies (e.g. text gaining a digit) shoves its neighbours
+    around on real frames while they sit frozen on idle ones -- visible jitter, plus the window
+    re-tessellates every real frame because the neighbours' positions really did change.  Use
+    fixed-size formatting ("%8.3f" with a mono font), a fixed canvas(), or padding to keep the
+    footprint constant.
+==============================================================================================*/
+
+typedef void ( *gui_volatile_fn )( bool is_replay );
+
+/*==============================================================================================
+    Semantic draw commands
+
+    The UI build pass emits one gui_cmd_t per visible shape into a list.  The render backend
+    (gui_render.c) tessellates each command into vertices and indices at flush time.  This
+    separates the UI logic from any graphics API knowledge.
+
+    GPU draw commands (gui_gpu_cmd_t) are a backend-private type defined in gui_emit_draw.c;
+    they carry index ranges and bind state for one GPU draw call.
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_CMD_RECT_FILLED,     // filled rectangle or textured quad (glyph)
+    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads          
+    GUI_CMD_TRIANGLE,        // solid triangle                             
+    GUI_CMD_TEXT,            // glyph run from the font atlas              
+    GUI_CMD_CIRCLE_FILLED,   // filled disc (triangle fan)                 
+    GUI_CMD_LINE,            // single stroke segment                      
+    GUI_CMD_POLYLINE,        // multi-segment antialiased polyline         
+    GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U */
+    GUI_CMD_RECT_GRADIENT,   // filled rect, col_a->col_b blended by per-vertex color (one quad) */
+
+} gui_cmd_type_t;
+
+/* Sentinel half-extent for an unclipped text command: any real glyph sits well inside this, so
+   the tessellator's clip test never triggers and the whole-run fast path is taken. */
+#define GUI_TEXT_NO_CLIP 1e30f
+
+/* High bit of a rect command's tex_idx: sample the bindless texture as a full RGBA image (the
+   texel is the color, vertex color tints) instead of the default R8-coverage model (the texel's
+   R channel is alpha, vertex color supplies RGB).  Set by image_texture / draw_texture_in for
+   scene-viewport style external textures; the render backend strips the bit into the rgba_tex
+   push constant.  Batching is unaffected: commands split on the full 32-bit tex_idx value. */
+#define GUI_TEX_RGBA_BIT 0x80000000u
+
+/* One semantic draw command.  The 4-byte header carries the command type, the index of the active
+   scissor rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), and
+   the target viewport.  z lives in gui_cmd_seg_t (per-segment, constant within a window) and is not
+   repeated here.  Reducing the header from 28 bytes to 4 bytes brings the struct from 72 -> 48 bytes.
+   tex_idx == 0 in rect means solid color (white texel).
+   rounding (rect / rect_outline) is the corner radius baked from the ambient draw rounding at emit
+   time, already clamped to the rect; 0 tessellates as a plain square shape.
+   text.off is a byte offset into the frame's text pool (s_draw.text_pool), not a pointer: the
+   string lives in the pool until the next frame_begin, so the command is valid through flush.
+   Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
+typedef struct
+{
+    u8 type;       // gui_cmd_type_t, fits u8 (9 values)
+    u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
+    u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
+    u8 _pad;
+    union
+    {
+        struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding; u32 tex_idx; u32 abgr; } rect;
+        struct { f32 x, y, w, h, t;              f32 rounding;              u32 abgr; } rect_outline;
+        struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
+        /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
+           last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
+           sentinel (clip_x0 = -GUI_TEXT_NO_CLIP, clip_x1 = +GUI_TEXT_NO_CLIP) means unclipped
+           and takes the original whole-run fast path. */
+        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; } text;
+        struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;
+        struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
+        struct { u32 pt_offset; u32 pt_count; f32 thickness;
+                 gui_stroke_align_t align; bool closed;         u32 abgr; } polyline;
+        /* Dashed line tessellates to one oriented textured quad: U spans 0..len/period so the
+           atlas dash row tiles along the line; duty (on-fraction) picks the nearest baked row. */
+        struct { f32 x0, y0, x1, y1, thickness, period, duty;     u32 abgr; } dash;
+        /* Gradient rect: one quad with col_a/col_b on opposite edges; the GPU interpolates the
+           per-vertex color across it.  horizontal = left->right, else top->bottom.  Always square. */
+        struct { f32 x, y, w, h; u32 col_a, col_b; bool horizontal; } gradient;
+    };
+} gui_cmd_t;
+
+/*==============================================================================================
+    Direction -- a cardinal direction, the ImGuiDir analogue.  Passed to arrow_button (and any
+    future directional widget) to pick which way the glyph points.
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_DIR_LEFT,
+    GUI_DIR_RIGHT,
+    GUI_DIR_UP,
+    GUI_DIR_DOWN,
+
+} gui_dir_t;
+
+/*==============================================================================================
+    Color edit flags
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_COLOR_EDIT_NONE        = 0,
+    GUI_COLOR_EDIT_NO_ALPHA    = 1 << 0,  /* ColorEdit4 with alpha ignored/hidden */
+    GUI_COLOR_EDIT_DISPLAY_HSV = 1 << 1,  /* Display inputs as HSV */
+    GUI_COLOR_EDIT_FLOAT       = 1 << 2,  /* Display inputs as float 0..1 instead of 0..255 */
+
+} gui_color_edit_flags_t;
+
+/*==============================================================================================
     Window drag mode -- how a window may be repositioned by the mouse.
     Selected globally via gui()->window_set_drag(); default is TITLEBAR.
 ==============================================================================================*/
@@ -705,7 +1196,7 @@ typedef enum
        OVERLAY      -- a passive, non-interactive window-based HUD: undecorated, fixed in place,
                        hugging its content every frame, and non-detachable.  Pin it with
                        window_set_next_pos.  For a HUD with no window identity at all (no pool
-                       record, no 4_dock/native/z-order path), use region_begin instead. */
+                       record, no dock/native/z-order path), use region_begin instead. */
 
     GUI_WIN_NODECORATION = GUI_WIN_NOTITLEBAR | GUI_WIN_NORESIZE |
                            GUI_WIN_NOSCROLL   | GUI_WIN_NOCOLLAPSE,
@@ -759,126 +1250,6 @@ typedef enum
 } gui_dockspace_flags_t;
 
 /*==============================================================================================
-    Item flags
-
-    A push-model of per-item behavior tweaks, the ImGui ItemFlags analogue.  Instead of widening
-    every widget signature with a new parameter, behavior is tuned through a flag set the widget
-    reads at emit time, so a feature can be added without touching any call site.
-
-    Two layers merge into the flags a widget sees:
-
-      Stack    -- push_item_flag( flag, enable ) / pop_item_flag(): affects every widget until
-                  popped (disable a run of buttons, mark a section read-only).  Nests; pop restores.
-      Next     -- next_item_flag( flag, enable ): a one-shot override consumed by the very next
-                  widget only, no pop needed.  Overrides the stack for that one item (it can force
-                  a bit off even when the stack has it on).
-
-    The merged value is resolved once per widget; a widget that does not care about a given flag
-    simply ignores it, so unknown / future flags are inert by construction.  Bit values so several
-    can be combined; 0 (GUI_ITEM_NONE) is the default no-op set.
-==============================================================================================*/
-
-typedef enum
-{
-    /* no tweaks -- the default behavior */
-    GUI_ITEM_NONE          = 0,       
-
-    /* inert + dimmed: no hover/active/focus/click, drawn at
-       reduced opacity.  Honored uniformly by widget_behavior and
-       the draw list, so it applies to every widget at once. */
-    GUI_ITEM_DISABLED      = 1 << 0,  
-
-    /* a held button fires repeatedly: once on press, then after
-       an initial delay at a steady rate (spinner / scroll arrows),
-       instead of once on release.  Honored by widget_behavior, so
-       any button-kind widget under the flag auto-repeats. */
-    GUI_ITEM_BUTTON_REPEAT = 1 << 1,  
-
-    /* slider_float: suppress the value text drawn centered on the
-       track.  The value is shown by default; set this (push or
-       next_item_flag) to hide it for a bare / compact slider. */
-    GUI_ITEM_NO_VALUE_TEXT = 1 << 2,
-
-    /* selectable: do NOT close the enclosing popup when clicked.
-       By default a selectable inside any popup calls popup_close_current()
-       on click (Dear ImGui CloseCurrentPopup default).  Set this to opt out --
-       e.g. a multi-select list inside a popup where the popup should stay open. */
-    GUI_ITEM_NO_CLOSE_POPUP = 1 << 3,
-
-    /* Room to grow without disturbing call sites or the vtable -- e.g. a future
-    GUI_ITEM_READ_ONLY (editable widgets show but reject input), GUI_ITEM_NO_NAV, etc. */
-
-} gui_item_flags_t;
-
-/*==============================================================================================
-    Direction -- a cardinal direction, the ImGuiDir analogue.  Passed to arrow_button (and any
-    future directional widget) to pick which way the glyph points.
-==============================================================================================*/
-
-typedef enum
-{
-    GUI_DIR_LEFT,
-    GUI_DIR_RIGHT,
-    GUI_DIR_UP,
-    GUI_DIR_DOWN,
-
-} gui_dir_t;
-
-/*==============================================================================================
-    Drag and drop
-
-    Item-to-item payload transfer (the ImGui BeginDragDropSource/Target analogue).  A widget
-    becomes a drag SOURCE by calling drag_source_begin right after it emits; while the user
-    drags from it, the source sets a typed payload (a small byte blob, copied) and emits preview
-    widgets that follow the cursor.  Any other widget becomes a drop TARGET by calling
-    drag_target_begin right after it emits; while a drag hovers it, drag_payload_accept matches
-    the type tag, highlights the target, and returns the payload on the release frame.  One drag
-    exists at a time (one mouse), so the payload store is a single ambient slot.  See gui_api.h
-    for the usage contract.
-==============================================================================================*/
-
-#define GUI_DRAG_TYPE_CAP     16    // bytes of a payload type tag, including the NUL
-#define GUI_DRAG_PAYLOAD_CAP  64    // payload bytes copied by drag_payload_set
-
-typedef enum
-{
-    GUI_DRAG_NONE        = 0,
-
-    /* drag_payload_accept: return the payload while the drag hovers the target (every frame),
-       instead of only on the release (drop) frame -- for live preview effects at the target. */
-    GUI_DRAG_ACCEPT_PEEK = 1 << 0,
-
-    /* drag_source_begin: no cursor-following preview tooltip is opened (emit nothing between
-       begin/end).  drag_payload_accept: skip the accept highlight around the target. */
-    GUI_DRAG_NO_PREVIEW  = 1 << 1,
-
-} gui_drag_flags_t;
-
-/* The caller-facing payload view returned by drag_payload_accept / drag_payload_peek.  The bytes
-   were copied at drag_payload_set time and stay valid until the drag ends (the release frame
-   included) -- copy them out if they must outlive the drop. */
-typedef struct
-{
-    const char* type;   // tag stamped by drag_payload_set
-    const void* data;   // payload bytes (copied at set time)
-    u32         size;   // payload byte count
-
-} gui_drag_payload_t;
-
-/*==============================================================================================
-    Color edit flags
-==============================================================================================*/
-
-typedef enum
-{
-    GUI_COLOR_EDIT_NONE        = 0,
-    GUI_COLOR_EDIT_NO_ALPHA    = 1 << 0,  /* ColorEdit4 with alpha ignored/hidden */
-    GUI_COLOR_EDIT_DISPLAY_HSV = 1 << 1,  /* Display inputs as HSV */
-    GUI_COLOR_EDIT_FLOAT       = 1 << 2,  /* Display inputs as float 0..1 instead of 0..255 */
-
-} gui_color_edit_flags_t;
-
-/*==============================================================================================
     Combo flags
 
     Passed to combo_begin to tune the dropdown.  The HEIGHT_* group caps the dropdown to a fixed
@@ -903,490 +1274,168 @@ typedef enum
 } gui_combo_flags_t;
 
 /*==============================================================================================
-    Style colors
+    Table support
 
-    The themeable color slots, the ImGuiCol_ analogue.  Each names one entry of the shared palette
-    the widgets draw from; push_style_color( slot, abgr ) overrides it for every widget until the
-    matching pop_style_color, next_style_color overrides it for just the next widget, and a slot
-    left unpushed uses the theme default.  Colors are packed with GUI_COLOR (byte order R,G,B,A).
+    begin_table / end_table open a multi-column layout with independent cell clipping.
+    Use table_setup_column before any row to name and size columns, then iterate with
+    table_next_row + table_next_column.  See gui_api.h for the full ergonomic contract.
 
-    The palette is shared rather than per-widget-type (one GUI_COL_WIDGET_BG, not Button +
-    Checkbox + ...), matching the engine's single-palette theme: to recolor one button, bracket it
-    with push/pop (only that button draws between them), or use next_style_color for a one-shot.
+    Column count limit is GUI_TABLE_COLS_MAX.  Column sizes use the same overloaded f32 as
+    the layout engine: >1 = fixed pixels, 1 = stretch / fill, (0,1) = fraction.
 ==============================================================================================*/
 
+#define GUI_TABLE_COLS_MAX 16
+
 typedef enum
 {
-    GUI_COL_TEXT,           /* label / glyph text                          */
-    GUI_COL_TEXT_DIM,       /* secondary text (trailing labels)            */
-    GUI_COL_WINDOW_BG,      /* window body background                      */
-    GUI_COL_CHILD_BG,       /* child region background                     */
-    GUI_COL_TITLE_BG,       /* window title bar                            */
-    GUI_COL_BORDER,         /* window / widget outlines                    */
-    GUI_COL_WIDGET_BG,      /* idle widget body (button, checkbox, knob)   */
-    GUI_COL_WIDGET_HOT,     /* hovered widget body                         */
-    GUI_COL_WIDGET_ACT,     /* pressed / active widget body                */
-    GUI_COL_WIDGET_FG,      /* widget foreground accent (slider fill)      */
-    GUI_COL_CHECK_MARK,     /* checkbox tick / radio dot                   */
-    GUI_COL_SLIDER_TRACK,   /* slider + scrollbar track                    */
-    GUI_COL_RESIZE_HOT,     /* hot resize edge / size grip                 */
-    GUI_COL_INPUT_BG,       /* text input field background                 */
-    GUI_COL_INPUT_FOCUS,    /* focused text input field background         */
-    GUI_COL_CURSOR,         /* text input caret                           */
-    GUI_COL_NAV_HIGHLIGHT,  /* keyboard-nav focus ring around the nav item */
+    GUI_TABLE_NONE            = 0,
+    GUI_TABLE_BORDERS_H       = 1 << 0,   // horizontal row dividers (between rows)         
+    GUI_TABLE_BORDERS_V       = 1 << 1,   // vertical column dividers (between columns)     
+    GUI_TABLE_BORDERS_OUTER   = 1 << 2,   // outer frame border around the whole table      
+    GUI_TABLE_BORDERS         = GUI_TABLE_BORDERS_H | GUI_TABLE_BORDERS_V | GUI_TABLE_BORDERS_OUTER,
+    GUI_TABLE_SCROLL_Y        = 1 << 3,   // table body scrolls vertically                  
+    GUI_TABLE_SCROLL_X        = 1 << 4,   // table body scrolls horizontally                
+    GUI_TABLE_SORTABLE        = 1 << 5,   // clicking a header column header sorts          
+    GUI_TABLE_ROW_STRIPES     = 1 << 6,   // alternating even/odd row background tint       
+    GUI_TABLE_RESIZABLE       = 1 << 7,   // drag column borders to resize                  
+    GUI_TABLE_NO_HEADER       = 1 << 8,   // skip table_headers_row entirely                
 
-    GUI_COL_COUNT,          /* slot count -- not a color                   */
+} gui_table_flags_t;
 
-} gui_col_t;
+typedef enum
+{
+    GUI_TABLE_COL_NONE         = 0,
+    GUI_TABLE_COL_FIXED        = 1 << 0,  // fixed pixel width -- does not stretch          
+    GUI_TABLE_COL_STRETCH      = 1 << 1,  // fill remaining space (default when width==0)   
+    GUI_TABLE_COL_NO_RESIZE    = 1 << 2,  // pins this column's right boundary (no drag)    
+    GUI_TABLE_COL_NO_SORT      = 1 << 3,  // not clickable for sort                         
+    GUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  // FUTURE: right-align cell content (flag reserved, unconsumed)
+    GUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  // FUTURE: center cell content (flag reserved, unconsumed)
 
+} gui_table_col_flags_t;
+
+/* Background color override target for table_set_bg_color. */
+typedef enum
+{
+    GUI_TABLE_BG_NONE = 0,
+    GUI_TABLE_BG_ROW,     // tint the current entire row    
+    GUI_TABLE_BG_CELL,    // tint the current cell only     
+
+} gui_table_bg_target_t;
+
+/* Sort specification returned by table_get_sort_specs. */
+typedef struct
+{
+    i32  col;          // sorted column index; -1 = unsorted
+    bool descending;   // false = ascending                  
+
+} gui_table_sort_specs_t;
+
+/* Sort key for one cell, filled by the value callback below.  Set num + is_num for a numeric
+   compare; otherwise set str for an alphabetical (strcmp) compare.  A row that leaves both unset
+   sorts as an empty string / zero. */
+typedef struct
+{
+    const char* str;      // alphabetical key (used when is_num is false)
+    f64         num;      // numeric key (used when is_num is true)       
+    bool        is_num;   // true = compare num; false = compare str      
+
+} gui_table_sort_value_t;
+
+/* Built-in sort: supply the sort key for one cell.  row is the user data index, col the column
+   being sorted.  Let the table handle alphabetical / numeric ordering and the sort direction. */
+typedef void ( *gui_table_sort_value_fn )( i32 row, i32 col, gui_table_sort_value_t* out,
+                                             void* user );
+
+/* Custom sort: full-control comparator -- return <0 / 0 / >0 like strcmp.  a and b are user data
+   indices, col the sorted column, descending the requested direction (apply or ignore it as you
+   wish; the table does NOT negate the result for you). */
+typedef i32 ( *gui_table_sort_cmp_fn )( i32 a, i32 b, i32 col, bool descending, void* user );
+
+// clang-format on
 /*==============================================================================================
-    Global Style Configuration
+    GUI: Font Configuration
 ==============================================================================================*/
+/* Built-in font presets for init() -- pre-baked .orb_font assets (FreeType-rasterized offline by
+   font_tool, not an stb runtime bake) shipped under assets/font/.  GUI_FONT_NONE loads nothing;
+   the caller is then responsible for its own font_load() before the first frame renders. */
 
-/* The scale ramp -- the named density steps the UI is authored in, instead of raw pixel sizes.
-   Each step is a complete metric set (row height + pad + gap, authored in gui_style_t.scales),
-   so "this region is a dense list" is one declaration and the pairing that makes a density look
-   right lives in the theme.  scale_push/scale_pop scope a step over the style-var stack, which
-   makes every metric read (WIDGET_H / pad / gap) and every counting helper (rows_h, calc_row)
-   speak that step with no widget changes.  STD is authored identical to the base metrics, so
-   an unpushed UI is unchanged. */
 typedef enum
 {
-    GUI_SCALE_DENSE,   // text lists: outliners, entity browsers, tree views, table rows
-    GUI_SCALE_STD,     // the everyday widget row: forms, buttons, sliders, inputs
-    GUI_SCALE_ROOMY,   // menus, combo dropdown lists, title-height rows
-    GUI_SCALE_BAR,     // tab bars, icon toolbars, panel headers
-    GUI_SCALE_COUNT
+    GUI_FONT_NONE = 0,        // load nothing; caller loads its own font(s) via font_load()
+    GUI_FONT_JETBRAINS_16,    // assets/font/jetbrains_regular_16.orb_font
+    GUI_FONT_ROBOTO_16,       // assets/font/Roboto-Regular.orb_font
+    GUI_FONT_ROBOTO_BOLD_16,  // assets/font/Roboto-Bold.orb_font
 
-} gui_scale_t;
 
-/* One ramp step's metrics.  Authored in px at em=12 like every other theme metric; em-scaled,
-   grid-quantized, and font-floored (a row always holds a text line) by gui_style_apply. */
-typedef struct gui_scale_metrics_t
-{
-    u8 row;   // row height (the step's WIDGET_H)
-    u8 pad;   // frame / content padding
-    u8 gap;   // gap between consecutive widgets
-
-} gui_scale_metrics_t;
-
-/* ONE struct, TWO categories.  They stay together because the machinery treats them all
-   identically -- themes snapshot them, the style stacks override them, style_var/style_col
-   resolve them, gui_style_apply em-scales them -- and ONE test sorts every field between the
-   two categories: can a read of this field move a rect?
-
-     1. METRICS -- the spacing/size vocabulary.  One set of numbers consumed at two moments:
-        composition (the composer divides space into cells -- row heights, gaps, region insets,
-        scrollbar gutters, title bars) and widget self-measurement (a widget computes the
-        natural size it REQUESTS through widget_next_rect_w, then seats its label / indicator
-        inside the finished cell with the same pad).  Only the composer POSITIONS rects;
-        widgets only measure and request -- that is the composition contract.
-     2. SKIN -- paint-only: colors, corner roundings, mark shapes, caret geometry.  A read of
-        these can only change pixels inside a rect composition already fixed; none ever sizes
-        or moves a cell.
-
-   Behavior (2_interact/) consumes neither category: it takes finished rects.  (Its one metric
-   read is win_border, because the resize hit zone straddles the border -- border is geometry.) */
-
-typedef struct gui_style_t
-{
-    u32 colors[ GUI_COL_COUNT ]; // SKIN: theme default palette (GUI_COLOR packs R,G,B,A bytes)
-
-    /* 1. METRICS -- can move a rect: cell sizes, insets, gutters, and natural-size inputs */
-    u8 line_size;          // widget row height
-    u8 widget_gap;         // vertical gap between consecutive widgets
-    u8 widget_pad;         // region inset (composer) AND label inset / natural-width pad (widgets)
-    u8 min_cell_w;         // floor a flex/fraction track shrinks to before overflow
-    u8 grid_quantum;       // px lattice row-level metrics snap to after font scaling (0/1 = off)
-    u8 win_border;         // outline thickness -- consumes space: child heights, bar tracks, resize zones
-    u8 win_title_h;        // window title bar height -- the body starts below it
-    u8 checkbox_sz;        // checkbox indicator side -- feeds the checkbox's natural width
-    u8 slider_knob_w;      // slider knob width AND the scrollbar gutter thickness regions reserve
-
-    /* 2. SKIN -- paint-only: never sizes a cell */
-    u8 win_rounding;       // corner radius: windows / children / popups
-    u8 widget_rounding;    // corner radius: control frames
-    u8 grab_rounding;      // corner radius: slider knobs / scrollbar grabs
-    u8 check_style;        // checkbox/menu indicator: 0='v' tick, 1=disc, 2='X' (gui_check_style_t)
-    u8 bullet_style;       // bullet glyph: 0=disc, 1=square (gui_bullet_style_t)
-    u8 arrow_style;        // directional arrow: 0=triangle, 1=chevron (gui_arrow_style_t)
-    u8 separator_style;    // separator rule: 0=solid, 1=dashed (gui_separator_style_t)
-    u8 progress_style;     // progress fill: 0=solid, 1=gradient (gui_progress_style_t)
-    u8 slider_knob;        // slider knob: 0=bar, 1=circle (gui_slider_knob_t)
-    u8 menu_check;         // menu check gutter: 0=plain, 1=box (gui_menu_check_t)
-    u8 checkmark_pad;      // inset of the check mark inside the checkbox
-    u8 cursor_w;           // input text caret width
-    u8 cursor_inset;       // input text caret top/bottom inset
-
-    /* The scale ramp (see gui_scale_t) -- METRICS per density step.  STD mirrors
-       line_size / widget_pad / widget_gap. */
-    gui_scale_metrics_t scales[ GUI_SCALE_COUNT ];
-
-} gui_style_t;
-
-/* gui_style_get() -- returns a pointer to the mutable base style (s_style_base).  Edits take
-   effect on the next gui_style_apply() / gui_theme_reset() call.  Mutating the struct directly
-   without calling theme_reset marks the theme as anonymous (theme_get returns NULL). */
-
-gui_style_t* gui_style_get( void );
-
-/* gui_style_apply() -- recomputes the scaled active metrics from the current base style.
-   Called automatically on font change; call manually after editing via gui_style_get(). */
-
-void         gui_style_apply( void );
+} gui_builtin_font_t;
 
 /*==============================================================================================
-    Themes
-
-    A theme is a named gui_style_t snapshot: a human-readable name paired with a complete set
-    of colors and layout metrics.  The active theme is the root layer every push_style_color /
-    push_style_var overrides relative to.  Switching or resetting a theme clears the push stacks
-    immediately -- use this instead of managing deep push/pop sequences for large style changes.
-
-        u32  n;
-        const gui_theme_t* list = gui_theme_list( &n );  // enumerate built-ins
-        for ( u32 i = 0; i < n; ++i ) puts( list[i].name );
-
-        gui_theme_set( "light" );   // switch theme + clear style stacks
-        gui_theme_reset();          // revert any style_get edits, clear stacks
+    GUI: Capability Flags
 ==============================================================================================*/
+/* Backend capability flags -- latched via gui_init_config_back() before init().  The render
+   pipeline itself (fonts, EMIT draw list, tessellate, SUBMIT flush) is always on and has no flag;
+   everything here is complexity layered on top that a caller can independently switch off.  A
+   caller that never calls gui_init_config_back() gets GUI_CAPS_DEFAULT, which preserves the
+   pipeline's full behavior -- these flags exist to let a minimal/embedded use of gui shed layers
+   it doesn't need, not to change what a default caller sees. */
 
-typedef struct gui_theme_t
+typedef struct
 {
-    const char* name;    /* human-readable key used by theme_set / theme_get */
-    gui_style_t style;   /* complete color + metric snapshot                 */
+    bool icons;             // Runtime icon atlas (icon_register/find, draw_push_icon) -- owns its own
+                            // 512x512 R8 texture + stb_rect_pack packer, stood up at init when on
+    bool retained_cache;    // BUILD-phase diff + geometry reuse; off always re-tessellates every
+                            // Window for every frame (also the backing for set_retained_skip)
+    bool render_debug;      // Wireframe/batch-tint debug render mode; off skips compiling the 
+                            // second (wireframe) pipeline at init
+    bool stats_trace;       // Per-frame printf lines for cache diff / geometry / retained / draw-calls
 
-} gui_theme_t;
+} gui_backend_caps_t;
 
-const gui_theme_t* gui_theme_list ( u32* count_out );    /* enumerate built-in themes           */
-bool               gui_theme_set  ( const char* name );  /* switch to named theme + reset stacks */
-const char*        gui_theme_get  ( void );              /* active theme name, NULL if anonymous */
-void               gui_theme_reset( void );              /* restore base + clear push stacks     */
+#define GUI_CAPS_DEFAULT \
+    ( ( gui_backend_caps_t ){ .icons = true, .retained_cache = true, \
+                              .render_debug = true, .stats_trace = false } )
+
+/* Forward (UI-unit) capability flags -- latched via gui_init_config_front() before init().
+   These do not exclude any code from the build -- the point is feature-boundary clarity. */
+
+typedef struct
+{
+    bool tables;            // default on: optionally turn off tables.
+    bool docking;           // default on: optionally turn off docking.
+    bool keyboard_nav;      // default on: optionally turn off keyboard navigation.
+
+} gui_forward_caps_t;
+
+#define GUI_FORWARD_CAPS_DEFAULT \
+    ( ( gui_forward_caps_t ){ .tables = true, .docking = true, .keyboard_nav = true } )
 
 /*==============================================================================================
-    Style vars
+    GUI: Boot descriptor
 
-    The tunable scalar metrics, the ImGuiStyleVar_ analogue.  Each names one scalar the layout
-    or widgets read; push_style_var( var, value ) overrides it until the matching pop_style_var,
-    next_style_var for just the next widget, and an unpushed var uses the font-derived default
-    (recomputed when the font changes).  Values are f32 pixels.
-
-    Grouped by the same two categories as gui_style_t (one mechanism, two audiences):
-    METRICS slots can move rects (scale_push rides on the first three); SKIN slots only
-    change how paint lands inside rects composition already fixed.
-
-    Only metrics that flow through the shared accessor are listed, so every slot here is honored
-    uniformly everywhere it is read; purely cosmetic internals (caret width, checkmark inset) are
-    intentionally left off rather than exposed as half-working knobs.
-==============================================================================================*/
-
-typedef enum
-{
-    /* 1. METRICS -- can move a rect (scale_push/scale_pop override the first three) */
-
-    GUI_VAR_LINE_SIZE,      // widget row height (the frame height)
-    GUI_VAR_WIDGET_GAP,     // gap between consecutive widgets / cells
-    GUI_VAR_WIDGET_PAD,     // content padding inside a frame (FramePadding)
-    GUI_VAR_MIN_CELL_W,     // min width a flex cell shrinks to
-    GUI_VAR_WIN_BORDER,     // outline thickness -- consumes space (child heights, bar tracks)
-    GUI_VAR_WIN_TITLE_H,    // window title bar height -- the body starts below it
-    GUI_VAR_CHECKBOX_SZ,    // checkbox / radio indicator side -- feeds the natural width
-    GUI_VAR_SLIDER_KNOB_W,  // slider knob width + the scrollbar gutter thickness
-
-    /* 2. SKIN -- paint-only */
-
-    GUI_VAR_WIN_ROUNDING,   // corner radius for windows / children / popups; 0 = square
-    GUI_VAR_WIDGET_ROUNDING,// corner radius for control frames (button/checkbox/input/...)
-    GUI_VAR_GRAB_ROUNDING,  // corner radius for slider knobs + scrollbar grabs
-    GUI_VAR_CHECK_STYLE,    // checkbox/menu indicator: 0 = 'v' tick, 1 = filled disc, 2 = 'X' cross (gui_check_style_t)
-    GUI_VAR_BULLET_STYLE,   // bullet glyph: 0 = filled disc, 1 = square (gui_bullet_style_t)
-    GUI_VAR_ARROW_STYLE,    // directional arrow: 0 = filled triangle, 1 = stroked chevron (gui_arrow_style_t)
-    GUI_VAR_SEPARATOR_STYLE,// separator rule: 0 = solid, 1 = dashed (gui_separator_style_t)
-    GUI_VAR_PROGRESS_STYLE, // progress_bar fill: 0 = solid, 1 = vertical gradient (gui_progress_style_t)
-    GUI_VAR_SLIDER_KNOB,    // slider knob shape: 0 = bar, 1 = circle (gui_slider_knob_t)
-    GUI_VAR_MENU_CHECK,     // menu item check gutter: 0 = plain indicator, 1 = bordered box (gui_menu_check_t)
-
-    GUI_VAR_COUNT,          // var count -- not a metric
-
-} gui_style_var_t;
-
-/* Checkbox / menu-item indicator shape (GUI_VAR_CHECK_STYLE).  Default is the tick. */
-typedef enum
-{
-    GUI_CHECK_TICK  = 0,   // a two-stroke 'v' check mark
-    GUI_CHECK_DISC  = 1,   // a filled disc inside the box
-    GUI_CHECK_CROSS = 2,   // a two-diagonal 'X' cross
-
-} gui_check_style_t;
-
-/* Bullet glyph shape (GUI_VAR_BULLET_STYLE).  Default is the disc (Dear ImGui's RenderBullet). */
-typedef enum
-{
-    GUI_BULLET_DISC   = 0,   // a small filled circle
-    GUI_BULLET_SQUARE = 1,   // a small filled square
-
-} gui_bullet_style_t;
-
-/* Directional arrow shape (GUI_VAR_ARROW_STYLE).  Default is the solid triangle.  Threads through
-   every arrow the chrome draws -- arrow_button, the collapse fold, the combo / submenu arrow, the
-   dock overlay -- since they all route through draw_arrow, exactly as check / bullet do. */
-typedef enum
-{
-    GUI_ARROW_FILLED  = 0,   // a filled triangle pointing the direction
-    GUI_ARROW_CHEVRON = 1,   // a stroked '>' chevron (two strokes to an apex)
-
-} gui_arrow_style_t;
-
-/* Separator rule shape (GUI_VAR_SEPARATOR_STYLE).  Default is the solid rule.  Honored by
-   separator() and the leading / trailing rules of separator_text(). */
-typedef enum
-{
-    GUI_SEPARATOR_SOLID  = 0,   // a continuous filled rule
-    GUI_SEPARATOR_DASHED = 1,   // a dashed rule           
-
-} gui_separator_style_t;
-
-/* progress_bar fill style (GUI_VAR_PROGRESS_STYLE).  Default is the solid fill; the gradient
-   variant glosses the fill from the foreground accent to a brighter tint (top to bottom). */
-typedef enum
-{
-    GUI_PROGRESS_SOLID    = 0,   // a flat foreground-accent fill
-    GUI_PROGRESS_GRADIENT = 1,   // a top-to-bottom gradient gloss
-
-} gui_progress_style_t;
-
-/* Slider / drag knob shape (GUI_VAR_SLIDER_KNOB).  Default is the bar grab; the circle variant
-   draws a round handle (raise GUI_VAR_GRAB_ROUNDING instead for a pill bar). */
-typedef enum
-{
-    GUI_SLIDER_KNOB_BAR    = 0,   // a rectangular grab (grab-rounded)
-    GUI_SLIDER_KNOB_CIRCLE = 1,   // a circular handle                
-
-} gui_slider_knob_t;
-
-/* Menu item check gutter style (GUI_VAR_MENU_CHECK).  Default is the bordered box, which draws
-   an idle checkbox frame in the gutter whether or not the item is selected; the plain variant
-   renders no box and only the indicator symbol when selected. */
-typedef enum
-{
-    GUI_MENU_CHECK_PLAIN = 0,   // indicator only when selected; no idle box
-    GUI_MENU_CHECK_BOX   = 1,   // bordered box always; indicator when selected
-
-} gui_menu_check_t;
-
-/*==============================================================================================
-    Debug overlay layers
-
-    Bitmask passed to gui()->debug_set_layers().  Each bit enables one bolt-on debug
-    visualization, emitted into a separate draw list and painted last, on top of the UI.
-    The overlay is compiled in for Debug builds only (GUI_DEBUG_OVERLAY); in a Release
-    build set_layers is a no-op and get_layers returns 0.  These constants stay defined in
-    every build so call sites compile unchanged.
-==============================================================================================*/
-
-typedef enum
-{
-    GUI_DBG_NONE     = 0,         // overlay off                                          }
-    GUI_DBG_WINDOW   = 1 << 0,    // window outer frames; the hover window stands out     }
-    GUI_DBG_INTERACT = 1 << 1,    // per-widget interaction rects (hover/active tinted)   }
-    GUI_DBG_RESIZE   = 1 << 2,    // window edge-resize grab bands; hot when armed        }
-    GUI_DBG_CLIP     = 1 << 3,    // clip (scissor) rectangle stack, colored by depth     }
-    GUI_DBG_LAYOUT   = 1 << 4,    // layout allocated space per widget                    }
-
-    GUI_DBG_ALL      = GUI_DBG_WINDOW | GUI_DBG_INTERACT | GUI_DBG_RESIZE | GUI_DBG_CLIP | GUI_DBG_LAYOUT,
-
-} gui_dbg_layer_t;
-
-/*==============================================================================================
-    Debug render mode
-
-    How the main UI draw list is rasterized, selected via gui()->debug_set_render_mode().  Unlike
-    the debug overlay layers (a separate draw list painted on top), this changes the rasterization
-    of the UI itself, so the two are independent and compose.  Available in every build (it is just
-    a pipeline + push-constant switch, cheap enough to leave in Release).
-
-      NORMAL    -- textured, blended UI (the default).
-      WIREFRAME -- the geometry's triangle edges (VK_POLYGON_MODE_LINE), each window keeping its own
-                   color: a direct read on how many triangles a shape costs.
-      BATCH     -- every GPU draw call (one indexed draw == one batch) is tinted a distinct color, so
-                   a color change marks a batch split -- count the colors to count the batches.
-==============================================================================================*/
-
-typedef enum
-{
-    GUI_RENDER_NORMAL    = 0,   // normal textured / blended UI                       */
-    GUI_RENDER_WIREFRAME = 1,   // triangle edges only (wireframe)                    */
-    GUI_RENDER_BATCH     = 2,   // per-draw-call color tint (batch boundary view)     */
-
-    GUI_RENDER_MODE_COUNT,      // mode count -- not a mode                           */
-
-} gui_render_mode_t;
-
-/*==============================================================================================
-    Color packing
-
-    GUI_COLOR(r,g,b,a) packs 0-255 byte values into a u32 such that memory byte order
-    is [R, G, B, A], matching VK_FORMAT_R8G8B8A8_UNORM vertex attribute layout.
-==============================================================================================*/
-
-#define GUI_COLOR( r, g, b, a ) \
-    ( ( ( u32 )( a ) << 24 ) | ( ( u32 )( b ) << 16 ) | ( ( u32 )( g ) << 8 ) | ( u32 )( r ) )
-
-/*==============================================================================================
-    Line / path stroking
-
-    Thickness, pixel-snapping, and where a stroke sits relative to the ideal path it is drawn from.
-    Implementation in gui_emit_path.c.
-
-    Pixel model: integer coordinates fall on the lines *between* pixels, so a crisp axis-aligned
-    stroke is one whose two edges both land on integers.  draw_line strokes a single segment: a
-    horizontal / vertical one snaps to the pixel grid and renders perfectly crisp (like a
-    separator); any other angle is stroked with a 1px antialiased edge so diagonals stay smooth.
-    draw_polyline / path_stroke connect several points with miter-limited corners (always
-    antialiased) -- use them for multi-segment outlines, arrows, and diagonal runs.
-==============================================================================================*/
-
-/* Where the stroke sits across the ideal path (the line the coordinates describe).  CENTER runs
-   the path down the middle of the stroke; INSIDE / OUTSIDE push the whole width onto one side (the
-   left-hand normal of travel is the "inside").  CENTER_BIASED is CENTER plus a parity-aware snap so
-   an odd-thickness axis-aligned line lands on whole pixels instead of straddling two -- the crisp
-   default for UI rules and borders.  (The snap only bites on axis-aligned single segments; a
-   diagonal or a multi-segment polyline treats CENTER_BIASED as CENTER and relies on antialiasing.) */
-typedef enum
-{
-    GUI_STROKE_CENTER_BIASED = 0,   // centered + snapped to the pixel grid (default) 
-    GUI_STROKE_CENTER,              // centered on the path, no snap                  
-    GUI_STROKE_INSIDE,              // whole width on the interior side of a CW-screen ring 
-    GUI_STROKE_OUTSIDE,             // whole width on the exterior side of a CW-screen ring
-
-} gui_stroke_align_t;
-
-#define GUI_PATH_MAX 256            /* max points path_line_to accumulates before a stroke */
-
-/*==============================================================================================
-    Draw vertex  (20 bytes, single interleaved binding)
-
-    Vertex attribute layout (matches the gui pipeline):
-        location 0 : float2  (x, y)       offset  0   -- pixel-space position
-        location 1 : float2  (u, v)       offset  8   -- texture UV [0..1]
-        location 2 : UNORM4  (abgr u32)   offset 16   -- packed color, R8G8B8A8_UNORM
+    One-call host setup (gui()->boot): gui owns the main OS window and its render context end to
+    end -- the same lifecycle its tear-off floaters already use -- instead of the host assembling
+    window_open / context_open / init / viewport_open by hand.  Everything here is optional in the
+    sense that a field left zero keeps today's default; the struct is designed to be built as a
+    compound literal at the call site.  See boot() in gui_api.h for the full contract.
 ==============================================================================================*/
 
 typedef struct
 {
-    f32 x, y; // pixel position */
-    f32 u, v; // texture UV     */
-    u32 abgr; // packed color   */
+    const char*               title;      /* OS window title; doubles as the chrome shell caption  */
+    i32                       x, y;       /* window position; 0,0 = OS centers                     */
+    i32                       w, h;       /* client size; 0,0 = 50% of the desktop work area       */
+    bool                      os_chrome;  /* true = stock OS frame; false (default) = borderless
+                                             window with the gui chrome shell auto-emitted         */
+    gui_builtin_font_t        font;       /* built-in preset; GUI_FONT_NONE = caller font_load()s  */
+    const gui_forward_caps_t* caps;       /* UI-unit feature caps; NULL = GUI_FORWARD_CAPS_DEFAULT */
+    gui_clock_fn              clock;      /* frame hooks (gui links no sys) -- see set_frame_hooks */
+    gui_sleep_fn              sleep;
+    gui_wait_events_fn        wait;
+    f32                       clear[ 4 ]; /* present() clear color; alpha 0 = default dark        */
+    bool                      debug;      /* arm the debug hotkey driver (debug_enable)            */
 
-} gui_draw_vert_t;
-
-/*==============================================================================================
-    Volatile widget callback
-
-    A "volatile" callback contains ordinary UI emit calls (text, colored rects, etc).  It runs
-    inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
-    any other code, no special behavior, except that the block's geometry is given its own
-    RESERVED, PADDED region of the window's cached tessellation (vertex/index/draw-command
-    headroom past what it actually produced).  On an idle frame (frame_dirty()==false), the same
-    callback is invoked again standalone with is_replay=true; the framework reconstructs just
-    enough context (4_window/clip/cursor position + the ambient draw state stamped at real emit),
-    re-tessellates the output, and patches it into the reserved region.  The output does NOT have
-    to match the original -- text may grow or shrink, shapes may change -- it only has to FIT the
-    reservation; outgrowing it costs one automatic real frame, after which the block re-captures
-    with a larger reservation (grow-only per widget).  The block's commands are also excluded from
-    the window's retained-cache hash, so an animating block never forces its window to
-    re-tessellate -- see gui_volatile_cb / gui_volatile_begin / gui_update_volatile.
-
-    Interactive widgets (button, etc) are safe to call from a volatile callback but are inert
-    during replay: hover/active/focus reflect whatever the last real frame established, but a
-    replay can never newly acquire either state or fire a fresh click -- interaction is only ever
-    resolved on real frames, which is guaranteed since input changes always force one.
-
-    CONTRACT -- fixed layout footprint: the block's PIXELS may change every frame, but the space
-    it occupies in the layout must not.  Surrounding widgets are retained and only re-lay-out on
-    real frames; a block whose size varies (e.g. text gaining a digit) shoves its neighbours
-    around on real frames while they sit frozen on idle ones -- visible jitter, plus the window
-    re-tessellates every real frame because the neighbours' positions really did change.  Use
-    fixed-size formatting ("%8.3f" with a mono font), a fixed canvas(), or padding to keep the
-    footprint constant.
-==============================================================================================*/
-
-typedef void ( *gui_volatile_fn )( bool is_replay );
-
-/*==============================================================================================
-    Semantic draw commands
-
-    The UI build pass emits one gui_cmd_t per visible shape into a list.  The render backend
-    (gui_render.c) tessellates each command into vertices and indices at flush time.  This
-    separates the UI logic from any graphics API knowledge.
-
-    GPU draw commands (gui_gpu_cmd_t) are a backend-private type defined in gui_emit_draw.c;
-    they carry index ranges and bind state for one GPU draw call.
-==============================================================================================*/
-
-typedef enum
-{
-    GUI_CMD_RECT_FILLED,     // filled rectangle or textured quad (glyph)
-    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads          
-    GUI_CMD_TRIANGLE,        // solid triangle                             
-    GUI_CMD_TEXT,            // glyph run from the font atlas              
-    GUI_CMD_CIRCLE_FILLED,   // filled disc (triangle fan)                 
-    GUI_CMD_LINE,            // single stroke segment                      
-    GUI_CMD_POLYLINE,        // multi-segment antialiased polyline         
-    GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U */
-    GUI_CMD_RECT_GRADIENT,   // filled rect, col_a->col_b blended by per-vertex color (one quad) */
-
-} gui_cmd_type_t;
-
-/* Sentinel half-extent for an unclipped text command: any real glyph sits well inside this, so
-   the tessellator's clip test never triggers and the whole-run fast path is taken. */
-#define GUI_TEXT_NO_CLIP 1e30f
-
-/* High bit of a rect command's tex_idx: sample the bindless texture as a full RGBA image (the
-   texel is the color, vertex color tints) instead of the default R8-coverage model (the texel's
-   R channel is alpha, vertex color supplies RGB).  Set by image_texture / draw_texture_in for
-   scene-viewport style external textures; the render backend strips the bit into the rgba_tex
-   push constant.  Batching is unaffected: commands split on the full 32-bit tex_idx value. */
-#define GUI_TEX_RGBA_BIT 0x80000000u
-
-/* One semantic draw command.  The 4-byte header carries the command type, the index of the active
-   scissor rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), and
-   the target viewport.  z lives in gui_cmd_seg_t (per-segment, constant within a window) and is not
-   repeated here.  Reducing the header from 28 bytes to 4 bytes brings the struct from 72 -> 48 bytes.
-   tex_idx == 0 in rect means solid color (white texel).
-   rounding (rect / rect_outline) is the corner radius baked from the ambient draw rounding at emit
-   time, already clamped to the rect; 0 tessellates as a plain square shape.
-   text.off is a byte offset into the frame's text pool (s_draw.text_pool), not a pointer: the
-   string lives in the pool until the next frame_begin, so the command is valid through flush.
-   Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
-typedef struct
-{
-    u8 type;       // gui_cmd_type_t, fits u8 (9 values)
-    u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
-    u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
-    u8 _pad;
-    union
-    {
-        struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding; u32 tex_idx; u32 abgr; } rect;
-        struct { f32 x, y, w, h, t;              f32 rounding;              u32 abgr; } rect_outline;
-        struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
-        /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
-           last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
-           sentinel (clip_x0 = -GUI_TEXT_NO_CLIP, clip_x1 = +GUI_TEXT_NO_CLIP) means unclipped
-           and takes the original whole-run fast path. */
-        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; } text;
-        struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;
-        struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
-        struct { u32 pt_offset; u32 pt_count; f32 thickness;
-                 gui_stroke_align_t align; bool closed;         u32 abgr; } polyline;
-        /* Dashed line tessellates to one oriented textured quad: U spans 0..len/period so the
-           atlas dash row tiles along the line; duty (on-fraction) picks the nearest baked row. */
-        struct { f32 x0, y0, x1, y1, thickness, period, duty;     u32 abgr; } dash;
-        /* Gradient rect: one quad with col_a/col_b on opposite edges; the GPU interpolates the
-           per-vertex color across it.  horizontal = left->right, else top->bottom.  Always square. */
-        struct { f32 x, y, w, h; u32 col_a, col_b; bool horizontal; } gradient;
-    };
-} gui_cmd_t;
+} gui_boot_desc_t;
 
 /*==============================================================================================
     Limits
@@ -1492,84 +1541,52 @@ typedef struct
 } gui_render_stats_t;
 
 /*==============================================================================================
-    Table support
+    Debug overlay layers
 
-    begin_table / end_table open a multi-column layout with independent cell clipping.
-    Use table_setup_column before any row to name and size columns, then iterate with
-    table_next_row + table_next_column.  See gui_api.h for the full ergonomic contract.
-
-    Column count limit is GUI_TABLE_COLS_MAX.  Column sizes use the same overloaded f32 as
-    the layout engine: >1 = fixed pixels, 1 = stretch / fill, (0,1) = fraction.
+    Bitmask passed to gui()->debug_set_layers().  Each bit enables one bolt-on debug
+    visualization, emitted into a separate draw list and painted last, on top of the UI.
+    The overlay is compiled in for Debug builds only (GUI_DEBUG_OVERLAY); in a Release
+    build set_layers is a no-op and get_layers returns 0.  These constants stay defined in
+    every build so call sites compile unchanged.
 ==============================================================================================*/
 
-#define GUI_TABLE_COLS_MAX 16
+typedef enum
+{
+    GUI_DBG_NONE     = 0,         // overlay off                                          }
+    GUI_DBG_WINDOW   = 1 << 0,    // window outer frames; the hover window stands out     }
+    GUI_DBG_INTERACT = 1 << 1,    // per-widget interaction rects (hover/active tinted)   }
+    GUI_DBG_RESIZE   = 1 << 2,    // window edge-resize grab bands; hot when armed        }
+    GUI_DBG_CLIP     = 1 << 3,    // clip (scissor) rectangle stack, colored by depth     }
+    GUI_DBG_LAYOUT   = 1 << 4,    // layout allocated space per widget                    }
+
+    GUI_DBG_ALL      = GUI_DBG_WINDOW | GUI_DBG_INTERACT | GUI_DBG_RESIZE | GUI_DBG_CLIP | GUI_DBG_LAYOUT,
+
+} gui_dbg_layer_t;
+
+/*==============================================================================================
+    Debug render mode
+
+    How the main UI draw list is rasterized, selected via gui()->debug_set_render_mode().  Unlike
+    the debug overlay layers (a separate draw list painted on top), this changes the rasterization
+    of the UI itself, so the two are independent and compose.  Available in every build (it is just
+    a pipeline + push-constant switch, cheap enough to leave in Release).
+
+      NORMAL    -- textured, blended UI (the default).
+      WIREFRAME -- the geometry's triangle edges (VK_POLYGON_MODE_LINE), each window keeping its own
+                   color: a direct read on how many triangles a shape costs.
+      BATCH     -- every GPU draw call (one indexed draw == one batch) is tinted a distinct color, so
+                   a color change marks a batch split -- count the colors to count the batches.
+==============================================================================================*/
 
 typedef enum
 {
-    GUI_TABLE_NONE            = 0,
-    GUI_TABLE_BORDERS_H       = 1 << 0,   // horizontal row dividers (between rows)         
-    GUI_TABLE_BORDERS_V       = 1 << 1,   // vertical column dividers (between columns)     
-    GUI_TABLE_BORDERS_OUTER   = 1 << 2,   // outer frame border around the whole table      
-    GUI_TABLE_BORDERS         = GUI_TABLE_BORDERS_H | GUI_TABLE_BORDERS_V | GUI_TABLE_BORDERS_OUTER,
-    GUI_TABLE_SCROLL_Y        = 1 << 3,   // table body scrolls vertically                  
-    GUI_TABLE_SCROLL_X        = 1 << 4,   // table body scrolls horizontally                
-    GUI_TABLE_SORTABLE        = 1 << 5,   // clicking a header column header sorts          
-    GUI_TABLE_ROW_STRIPES     = 1 << 6,   // alternating even/odd row background tint       
-    GUI_TABLE_RESIZABLE       = 1 << 7,   // drag column borders to resize                  
-    GUI_TABLE_NO_HEADER       = 1 << 8,   // skip table_headers_row entirely                
+    GUI_RENDER_NORMAL    = 0,   // normal textured / blended UI                       */
+    GUI_RENDER_WIREFRAME = 1,   // triangle edges only (wireframe)                    */
+    GUI_RENDER_BATCH     = 2,   // per-draw-call color tint (batch boundary view)     */
 
-} gui_table_flags_t;
+    GUI_RENDER_MODE_COUNT,      // mode count -- not a mode                           */
 
-typedef enum
-{
-    GUI_TABLE_COL_NONE         = 0,
-    GUI_TABLE_COL_FIXED        = 1 << 0,  // fixed pixel width -- does not stretch          
-    GUI_TABLE_COL_STRETCH      = 1 << 1,  // fill remaining space (default when width==0)   
-    GUI_TABLE_COL_NO_RESIZE    = 1 << 2,  // pins this column's right boundary (no drag)    
-    GUI_TABLE_COL_NO_SORT      = 1 << 3,  // not clickable for sort                         
-    GUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  // FUTURE: right-align cell content (flag reserved, unconsumed)
-    GUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  // FUTURE: center cell content (flag reserved, unconsumed)
+} gui_render_mode_t;
 
-} gui_table_col_flags_t;
-
-/* Background color override target for table_set_bg_color. */
-typedef enum
-{
-    GUI_TABLE_BG_NONE = 0,
-    GUI_TABLE_BG_ROW,     // tint the current entire row    
-    GUI_TABLE_BG_CELL,    // tint the current cell only     
-
-} gui_table_bg_target_t;
-
-/* Sort specification returned by table_get_sort_specs. */
-typedef struct
-{
-    i32  col;          // sorted column index; -1 = unsorted
-    bool descending;   // false = ascending                  
-
-} gui_table_sort_specs_t;
-
-/* Sort key for one cell, filled by the value callback below.  Set num + is_num for a numeric
-   compare; otherwise set str for an alphabetical (strcmp) compare.  A row that leaves both unset
-   sorts as an empty string / zero. */
-typedef struct
-{
-    const char* str;      // alphabetical key (used when is_num is false)
-    f64         num;      // numeric key (used when is_num is true)       
-    bool        is_num;   // true = compare num; false = compare str      
-
-} gui_table_sort_value_t;
-
-/* Built-in sort: supply the sort key for one cell.  row is the user data index, col the column
-   being sorted.  Let the table handle alphabetical / numeric ordering and the sort direction. */
-typedef void ( *gui_table_sort_value_fn )( i32 row, i32 col, gui_table_sort_value_t* out,
-                                             void* user );
-
-/* Custom sort: full-control comparator -- return <0 / 0 / >0 like strcmp.  a and b are user data
-   indices, col the sorted column, descending the requested direction (apply or ignore it as you
-   wish; the table does NOT negate the result for you). */
-typedef i32 ( *gui_table_sort_cmp_fn )( i32 a, i32 b, i32 col, bool descending, void* user );
-
-// clang-format on
 /*============================================================================================*/
 #endif    // GUI_H
