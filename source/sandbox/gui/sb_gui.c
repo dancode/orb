@@ -52,6 +52,8 @@ typedef struct
     char custom_text [ 256 ];
     char status      [ 256 ];
     bool status_ok;
+    bool show_atlas;   /* independent of preview_ready -- shows the active font's atlas as-is */
+    bool atlas_2x;     /* draw the atlas at 2x native pixel size instead of 1x */
 
 } font_browser_t;
 
@@ -236,6 +238,40 @@ show_font_browser( bool* p_open )
         gui()->textf( "Preview: %s  %d px", s_fb.preview_ttf, s_fb.preview_size );
         if ( gui()->button( "Use Font" ) )
             gui()->font_use( s_fb.preview_id );
+    }
+
+    /* --- Atlas ------------------------------------------------------------------ */
+    /* Independent of the bake/preview flow above -- shows the CURRENTLY ACTIVE font's atlas
+       (whatever the app booted with, or last font_use'd), so checking packing/coverage doesn't
+       require baking anything through this window first. */
+    gui()->separator_text( "Atlas" );
+    if ( gui()->button( "Show Atlas" ) )
+        s_fb.show_atlas = !s_fb.show_atlas;
+    gui()->same_line( -1 );
+    gui()->checkbox( "2x", &s_fb.atlas_2x );
+
+    if ( s_fb.show_atlas )
+    {
+        u32 active_id = gui()->font_active_id();
+        u32 atlas_idx = gui()->font_atlas_idx( active_id );
+        if ( atlas_idx )
+        {
+            gui_vec2_t asz = gui()->font_atlas_size( active_id );
+
+            gui()->textf( "Active font #%u -- %.0f x %.0f px  (bindless #%u)",
+                          active_id, asz.x, asz.y, atlas_idx );
+
+            /* Native resolution (or 2x via the checkbox) -- no fit-to-window scaling, so packing/
+               coverage reads exactly as baked.  Same red-channel-only nuance as before: the atlas
+               is R8_UNORM coverage, sampled here through the RGBA path, so glyph ink renders red,
+               not white. */
+            f32 scale = s_fb.atlas_2x ? 2.0f : 1.0f;
+            gui()->image_texture( atlas_idx, asz.x * scale, asz.y * scale, 0 );
+        }
+        else
+        {
+            gui()->text_disabled( "No active font atlas." );
+        }
     }
 
     gui()->window_end();
@@ -892,64 +928,6 @@ show_style_editor( bool* p_open )
 }
 
 /*============================================================================================*/
-/* Demo setup                                                                                  */
-/*============================================================================================*/
-
-// Demonstrate creating a "main" fullscreen menu bar and populating it.
-// Note the difference between BeginMainMenuBar() and BeginMenuBar():
-// - BeginMenuBar() = menu-bar inside current window (which needs the ImGuiWindowFlags_MenuBar flag!)
-// - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
-
-static bool show_demo             = false;
-static bool show_font_browser_win = false;
-static bool show_split_win        = false;
-static bool show_hud_win          = false;
-static bool show_region_win       = false;
-static bool show_dragdrop_win     = false;
-static bool show_tabgroup_win     = false;
-static bool show_style_win        = true;
-
-static void show_example_main_menu_bar()
-{
-    if ( gui()->main_menu_bar_begin() )
-    {
-        if ( gui()->menu_begin( "Examples" ) )
-        {
-            gui()->menu_item( "Demo Window",    NULL, &show_demo );
-            gui()->menu_item( "Font Browser",   NULL, &show_font_browser_win );
-            gui()->menu_item( "Split Panels",   NULL, &show_split_win );
-            gui()->menu_item( "HUD Overlay",    NULL, &show_hud_win );
-            gui()->menu_item( "Region Demo",    NULL, &show_region_win );
-            gui()->menu_item( "Drag and Drop",  NULL, &show_dragdrop_win );
-            gui()->menu_item( "Tab Groups",     NULL, &show_tabgroup_win );
-            gui()->menu_item( "Style Editor",   NULL, &show_style_win );
-            gui()->menu_end();
-        }
-        gui()->main_menu_bar_end();
-    }
-
-    // if (ImGui::BeginMainMenuBar())
-    // {
-    //     if (ImGui::BeginMenu("File"))
-    //     {
-    //         ShowExampleMenuFile();
-    //         ImGui::EndMenu();
-    //     }
-    //     if (ImGui::BeginMenu("Edit"))
-    //     {
-    //         if (ImGui::MenuItem("Undo", "Ctrl+Z")) {}
-    //         if (ImGui::MenuItem("Redo", "Ctrl+Y", false, false)) {} // Disabled item
-    //         ImGui::Separator();
-    //         if (ImGui::MenuItem("Cut", "Ctrl+X")) {}
-    //         if (ImGui::MenuItem("Copy", "Ctrl+C")) {}
-    //         if (ImGui::MenuItem("Paste", "Ctrl+V")) {}
-    //         ImGui::EndMenu();
-    //     }
-    //     ImGui::EndMainMenuBar();
-    // }
-}
-
-/*============================================================================================*/
 /* Volatile widget demo -- a purely cosmetic square that keeps pulsing on frames where the rest
    of the UI build is skipped (frame_begin returned false: mouse idle, nothing else animating).
    Proves the feature end to end: an ordinary gui()->rect_filled() call, wrapped in
@@ -981,6 +959,49 @@ demo_volatile_pulse_cb( bool is_replay )
     gui()->textf( "Application average %8.3f ms/frame (%7.1f FPS)", ms, fps );
     gui()->volatile_end();
 }
+
+/*============================================================================================*/
+/* Demo setup                                                                                 */
+/*============================================================================================*/
+
+// Demonstrate creating a "main" fullscreen menu bar and populating it.
+// Note the difference between BeginMainMenuBar() and BeginMenuBar():
+// - BeginMenuBar() = menu-bar inside current window (which needs the ImGuiWindowFlags_MenuBar flag!)
+// - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
+
+static bool show_demo             = false;
+static bool show_font_browser_win = true;
+static bool show_split_win        = false;
+static bool show_hud_win          = false;
+static bool show_region_win       = false;
+static bool show_dragdrop_win     = false;
+static bool show_tabgroup_win     = false;
+static bool show_style_win        = false;
+
+static void show_example_main_menu_bar()
+{
+    if ( gui()->main_menu_bar_begin() )
+    {
+        if ( gui()->menu_begin( "Examples" ) )
+        {
+            gui()->menu_item( "Demo Window",    NULL, &show_demo );
+            gui()->menu_item( "Font Browser",   NULL, &show_font_browser_win );
+            gui()->menu_item( "Split Panels",   NULL, &show_split_win );
+            gui()->menu_item( "HUD Overlay",    NULL, &show_hud_win );
+            gui()->menu_item( "Region Demo",    NULL, &show_region_win );
+            gui()->menu_item( "Drag and Drop",  NULL, &show_dragdrop_win );
+            gui()->menu_item( "Tab Groups",     NULL, &show_tabgroup_win );
+            gui()->menu_item( "Style Editor",   NULL, &show_style_win );
+            gui()->menu_end();
+        }
+        gui()->main_menu_bar_end();
+    }
+
+}
+
+/*============================================================================================*/
+/* Demo window                                                                                */
+/*============================================================================================*/
 
 static void
 show_demo_window(bool* p_open)

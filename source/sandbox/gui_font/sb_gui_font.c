@@ -422,6 +422,26 @@ show_font_tool( void )
         gui()->text( "0123456789  !@#$%^&*()-+=[]{};:" );
         gui()->pop_font();
 
+        /* --- Atlas -------------------------------------------------------------- */
+        /* Preview the live GPU atlas backing this font id, so packing density and wasted space
+           are visible directly instead of guessed at.  NOTE -- the atlas is an R8_UNORM coverage
+           texture, but image_texture samples it via the RGBA path (texel.rgb as color): only the
+           red channel carries data, so glyph ink renders red-on-black rather than white-on-black.
+           Fine for judging packing (ink vs gap is still obvious); a true grayscale view would need
+           a dedicated coverage-sampling draw path. */
+        u32 atlas_idx = gui()->font_atlas_idx( s_ft.preview_id );
+        if ( atlas_idx )
+        {
+            gui_vec2_t asz = gui()->font_atlas_size( s_ft.preview_id );
+
+            gui()->separator_text( "Atlas" );
+            gui()->textf( "%.0f x %.0f px  (bindless #%u)", asz.x, asz.y, atlas_idx );
+
+            /* Native resolution, no fit-to-window scaling -- one atlas texel is one screen pixel,
+               so packing/coverage reads exactly as baked. */
+            gui()->image_texture( atlas_idx, asz.x, asz.y, 0 );
+        }
+
         gui()->separator_text( "Apply" );
         gui()->textf( "Live: %s  %d px", s_ft.preview_name, s_ft.preview_size );
         if ( gui()->button( "Use as UI font" ) )

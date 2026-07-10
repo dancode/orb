@@ -149,6 +149,16 @@ font_slot_atlas_idx( u32 id )
     return s_fonts[ id ].metrics.atlas.atlas_idx;
 }
 
+/* Live atlas pixel dimensions backing font id `id` (0,0 for an empty / out-of-range slot).  The
+   companion read font_slot_atlas_idx doesn't carry size, so a texture preview needs both. */
+gui_vec2_t
+font_slot_atlas_size( u32 id )
+{
+    if ( id >= GUI_FONT_REGISTRY_MAX )
+        return ( gui_vec2_t ){ 0.0f, 0.0f };
+    return ( gui_vec2_t ){ (f32)s_fonts[ id ].atlas.atlas_w, (f32)s_fonts[ id ].atlas.atlas_h };
+}
+
 /*==============================================================================================
     Dispatch helpers -- read from s_font / s_active, set by font_activate() (gui_font_internal.c).
 ==============================================================================================*/

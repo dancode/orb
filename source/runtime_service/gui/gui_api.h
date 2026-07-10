@@ -1215,6 +1215,7 @@ typedef struct gui_api_s
     void ( *font_use           )( u32 id );
     void ( *push_font          )( u32 id );
     void ( *pop_font           )( void );
+    u32  ( *font_active_id     )( void );   // id of the currently active font (save/restore, or just to inspect)
 
     /*==================  present/ + user/ -- custom draw: canvas primitives, symbols, paths  ==================*/
 
@@ -1269,6 +1270,12 @@ typedef struct gui_api_s
 
     void ( *image_texture   )( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
     void ( *draw_texture_in )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
+
+    /* Font atlas access -- the bindless index + pixel size backing a loaded font id, for previewing
+       its live GPU atlas through image_texture / draw_texture_in above (0 / {0,0} if empty). */
+    u32        ( *font_atlas_idx  )( u32 font_id );
+    gui_vec2_t ( *font_atlas_size )( u32 font_id );
+
     /* Symbol + shape draw primitives (the draw_* family, Dear ImGui's AddXxx / Render* analogue),
        drawn through the normal vertex pipeline (lines / triangles / circles), NOT the icon atlas.
        They share the draw_* verb with draw_rect / draw_text / draw_line above -- everything that

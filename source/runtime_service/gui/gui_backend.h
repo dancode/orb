@@ -65,6 +65,7 @@ void font_use                ( u32 id );                    // make an already-l
 u32  font_active_id         ( void );                       // id of the active font slot (save/restore for push/pop)
 bool font_valid              ( void );                      // true once a font is activated -- gate metric/glyph reads on this
 u32  font_slot_atlas_idx    ( u32 id );                     // live bindless atlas index backing a font id (0 if empty)
+gui_vec2_t font_slot_atlas_size( u32 id );                  // live atlas pixel dimensions backing a font id
 bool font_flush_pending     ( void );                       // commit deferred (re)loads; true if the active font changed
 
 f32  font_char_h            ( void );                       // glyph-box height of the active font (ascent+descent)

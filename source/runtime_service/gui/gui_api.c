@@ -273,6 +273,7 @@ const gui_api_t g_gui_api_struct =
     .font_use                           = gui_font_use,
     .push_font                          = gui_push_font,
     .pop_font                           = gui_pop_font,
+    .font_active_id                     = gui_font_active_id,
 
     /*==================  present/ + user/ -- custom draw: canvas primitives, symbols, paths  ==================*/
 
@@ -291,6 +292,8 @@ const gui_api_t g_gui_api_struct =
     .draw_icon_in                       = gui_draw_icon_in,
     .image_texture                      = gui_image_texture,
     .draw_texture_in                    = gui_draw_texture_in,
+    .font_atlas_idx                     = gui_font_atlas_idx,
+    .font_atlas_size                    = gui_font_atlas_size,
     .draw_check_mark                    = gui_draw_check_mark,
     .draw_arrow                         = gui_draw_arrow,
     .draw_bullet                        = gui_draw_bullet,

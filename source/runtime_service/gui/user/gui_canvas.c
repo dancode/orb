@@ -204,6 +204,22 @@ gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr )
     gui_draw_texture_in( r, bindless_idx, tint_abgr );
 }
 
+/* Font atlas access -- bridges the font registry (gui_font.h / gui_backend.h) to the RGBA texture
+   primitives above, so a caller can preview a font's live GPU atlas (a texture like any other) via
+   image_texture / draw_texture_in without reaching into the backend's internal font_slot_t. */
+
+u32
+gui_font_atlas_idx( u32 font_id )
+{
+    return font_slot_atlas_idx( font_id );
+}
+
+gui_vec2_t
+gui_font_atlas_size( u32 font_id )
+{
+    return font_slot_atlas_size( font_id );
+}
+
 /* The public gui_render_* symbol surface (draw_check_mark / draw_arrow / draw_frame /
    draw_round_rect / ... and the set_*_style setters) lives in gui_symbol.c, beside the
    draw_* helpers it wraps. */

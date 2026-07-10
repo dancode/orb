@@ -320,6 +320,7 @@ bool gui_font_load_into     ( u32 id, const char* path );
 void gui_font_use           ( u32 id );
 void gui_push_font          ( u32 id );
 void gui_pop_font           ( void );
+u32  gui_font_active_id     ( void );
 
 /* drawing */
 void gui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr );
@@ -338,6 +339,10 @@ void gui_draw_icon_in( gui_rect_t r, gui_icon_id_t id, u32 col );
 /* RGBA textures -- arbitrary bindless texture as a full-color quad (scene viewport) */
 void gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
 void gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
+
+/* font atlas access -- bindless index + pixel size for previewing a font's live GPU atlas */
+u32 gui_font_atlas_idx( u32 font_id );
+gui_vec2_t gui_font_atlas_size( u32 font_id );
 
 /* symbol + shape render primitives -- Dear ImGui Render* / AddXxx family (normal pipeline, not the
    icon atlas).  Implemented in gui_symbol.c. */
