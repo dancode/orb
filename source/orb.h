@@ -237,6 +237,44 @@ typedef ptrdiff_t isize;
         while ( 0 )
 #endif
 
+/* Fire an assert at most ONCE per call site for the life of the process.  A function-local static
+   latch, scoped to the macro's own block, trips the first time `cond` is false and suppresses every
+   check after -- so a per-frame condition (an overflow flag, a hot-path invariant) breaks a single
+   time for diagnosis instead of every frame.  The latch is set BEFORE the underlying assert, so
+   continuing past the trap in the debugger does not re-arm it.  Delegates to ORB_ASSERT / MSG so it
+   routes through whatever handler is active at the call site (core's skip-mode handler once
+   engine/core/debug/assert.h has overridden the stubs).  `cond` is evaluated twice while armed
+   (guard + assert), so it must be side-effect-free -- the usual rule for assert conditions.  Pass a
+   runtime expression, not a literal (a constant `cond` trips MSVC C4127 inside ORB_ASSERT). */
+#if RELEASE
+    #define ORB_ASSERT_ONCE( cond )        ( ( void )0 )
+    #define ORB_ASSERT_MSG_ONCE( cond, m ) ( ( void )0 )
+#else
+    #define ORB_ASSERT_ONCE( cond )               \
+        do                                        \
+        {                                         \
+            static bool orb_asserted_ = false;    \
+            if ( !orb_asserted_ && !( cond ) )    \
+            {                                     \
+                orb_asserted_ = true;             \
+                ORB_ASSERT( cond );               \
+            }                                     \
+        }                                         \
+        while ( 0 )
+
+    #define ORB_ASSERT_MSG_ONCE( cond, m )        \
+        do                                        \
+        {                                         \
+            static bool orb_asserted_ = false;    \
+            if ( !orb_asserted_ && !( cond ) )    \
+            {                                     \
+                orb_asserted_ = true;             \
+                ORB_ASSERT_MSG( cond, m );        \
+            }                                     \
+        }                                         \
+        while ( 0 )
+#endif
+
 #ifdef __cplusplus    // for intellisense (cpp20 in NMake)
     #define ORB_STATIC_ASSERT( cond, msg ) static_assert( cond, msg )
 #else

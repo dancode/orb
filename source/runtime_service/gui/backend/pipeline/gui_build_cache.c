@@ -20,6 +20,12 @@
 #include "runtime_service/gui/gui_internal.h"
 // clang-format off
 
+/* Reverse id->name lookup, defined later in this unit (gui_debug_overlay.c) -- used by the overflow
+   report below to name the window that blew the geometry caps.  Returns the registered title in
+   debug builds (windows register via DBG_NAME in window_begin_ex), NULL when the name registry is
+   compiled out (release) or the id was never registered. */
+const char* gui_debug_name( gui_id_t id );
+
 /*----------------------------------------------------------------------------------------------
     Once-per-frame guard.
 
@@ -864,6 +870,13 @@ cache_build_frame( void )
     u32 vert_retained = 0, tri_retained = 0, win_retained = 0;
     u32 total_vert    = 0, total_tri    = 0, overlay_win  = 0;
 
+    /* First window whose tessellation exhausts the arena -- captured so the overflow report below
+       can name the culprit ("window X overflowed at N/CAP") instead of a bare "something overflowed".
+       overflow_at_* record the fill level reached when it first hit (the reservation drops the
+       primitive that would not fit, so the counts are what actually made it in). */
+    gui_id_t overflow_win     = GUI_ID_NONE;
+    u32      overflow_at_vert = 0, overflow_at_idx = 0, overflow_at_cmd = 0;
+
     /* Windows reused this frame that carry volatile rows: their reserved regions are patched AFTER
        the whole slot loop completes.  Patching cannot run inline in the reuse branch because
        volatile_patch tessellates into scratch at s_tess.vert_count -- which, mid-loop, is only the
@@ -891,6 +904,8 @@ cache_build_frame( void )
 
         bool reuse_geo = set_stable && s_caps.retained_cache && !wh->changed && prev->valid;
 
+        bool ovf_before = s_tess.overflow;   /* did the arena already spill before this window? */
+
         if ( reuse_geo )
         {
             cache_slot_reuse( slot, prev, wi );
@@ -910,6 +925,15 @@ cache_build_frame( void )
         else
         {
             cache_slot_tessellate( slot, wh, prev, wi, set_stable );
+        }
+
+        /* First window to tip the arena over: remember it (and the fill it reached) for the report. */
+        if ( !ovf_before && s_tess.overflow && overflow_win == GUI_ID_NONE )
+        {
+            overflow_win     = wh->win;
+            overflow_at_vert = s_tess.vert_count;
+            overflow_at_idx  = s_tess.idx_count;
+            overflow_at_cmd  = s_tess.cmd_count;
         }
 
         /* Accumulate per-slot geometry stats; exclude self-measuring debug-band windows from totals. */
@@ -965,26 +989,55 @@ cache_build_frame( void )
 
     /* Track geometry high-water marks and warn once on overflow.  The total (both bands) and the
        main band alone peak independently, so each gets its own accumulator. */
-    if ( s_tess.vert_count     > s_tess.vert_hwm      ) s_tess.vert_hwm      = s_tess.vert_count;
-    if ( s_tess.idx_count      > s_tess.idx_hwm       ) s_tess.idx_hwm       = s_tess.idx_count;
+    if ( s_tess.vert_count     > s_tess.vert_hwm       ) s_tess.vert_hwm      = s_tess.vert_count;
+    if ( s_tess.idx_count      > s_tess.idx_hwm        ) s_tess.idx_hwm       = s_tess.idx_count;
     if ( s_tess.band0_vert_end > s_tess.band0_vert_hwm ) s_tess.band0_vert_hwm = s_tess.band0_vert_end;
     if ( s_tess.band0_idx_end  > s_tess.band0_idx_hwm  ) s_tess.band0_idx_hwm  = s_tess.band0_idx_end;
 
-    /* Single overflow catch for the whole build: the reservation sites just latch s_tess.overflow
-       and drop their primitive (non-fatal -- the frame still submits everything that fit, the app
-       keeps running), so we report ONCE here, after the frame is fully tessellated and about to be
-       submitted.  Not an assert: overflow is a "you exceeded the budget, some geometry is missing"
-       signal (e.g. a window's late-tessellated chrome), not a program error -- the log + the
-       dashboard's OVERFLOWED marker are how you catch which frame/UI blew the caps. */
-    if ( s_tess.overflow && !s_tess.overflow_ever ) {
-        printf( "[gui] WARNING: draw list overflow -- geometry dropped this frame "
-                "(caps: %u verts, %u idx, %u gpu cmds). "
-                "Raise GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS.\n",
-                GUI_MAX_VERTS, GUI_MAX_IDX, GUI_MAX_CMDS );
-        ORB_ASSERT( 0 );
+    bool check_for_overflow = true;
+    if ( check_for_overflow )
+    {
+        /* Single overflow catch for the whole build: the reservation sites just latch s_tess.overflow
+           and drop their primitive (non-fatal -- the frame still submits everything that fit, the app
+           keeps running), so we report ONCE here, after the frame is fully tessellated and about to be
+           submitted.  We name the window that blew the caps (log line + break-once assert below) so a
+           dropped primitive -- classically a window's late-tessellated chrome vanishing -- is traced to
+           its source; the log and the dashboard's OVERFLOWED marker persist even past the assert. */
+        /* Spill outside the per-window loop (a deferred volatile patch): no culprit window was captured,
+           so report the final arena fill rather than a stale zero. */
+        if ( s_tess.overflow && overflow_win == GUI_ID_NONE )
+        {
+            overflow_at_vert = s_tess.vert_count;
+            overflow_at_idx  = s_tess.idx_count;
+            overflow_at_cmd  = s_tess.cmd_count;
+        }
+
+        if ( s_tess.overflow && !s_tess.overflow_ever )
+        {
+            /* Name the window that hit the wall (a title in debug, else its hashed id) plus the fill it
+               reached, so the report points at the culprit instead of just "something overflowed".  A
+               NONE id means the spill happened outside the per-window loop (a deferred volatile patch). */
+            const char* nm = ( overflow_win != GUI_ID_NONE ) ? gui_debug_name( overflow_win ) : NULL;
+            printf( "[gui] WARNING: draw list overflow -- geometry dropped tessellating window '%s' "
+                    "(id 0x%08X); arena filled to %u/%u verts, %u/%u idx, %u/%u gpu cmds. "
+                    "Raise GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS.\n",
+                    nm ? nm : "<unnamed>", (unsigned)overflow_win,
+                    overflow_at_vert, GUI_MAX_VERTS, overflow_at_idx, GUI_MAX_IDX,
+                    overflow_at_cmd, GUI_MAX_CMDS );
+            fflush( stdout );   /* flush the diagnostic before the once-assert below can trap */
+        }
+        if ( s_tess.overflow )
+             s_tess.overflow_ever = true;
+
+        /* Break once (debug) so you can catch which frame / UI blew the caps under the debugger; the
+           macro self-latches, so a persistent overflow does not re-trap every frame.  Non-fatal: skip
+           past it (or a release build) and the app keeps running with the dropped geometry. */
+        ORB_ASSERT_MSG_ONCE( !s_tess.overflow, "gui draw list overflow -- geometry dropped; raise "
+                                               "GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS (gui.h)" );
     }
-    if ( s_tess.overflow )
-        s_tess.overflow_ever = true;
+
+    /* Debug trace: print the current geometry counts only when they change (spam prevention)
+       The peak high-water marks are always printed  */
 
     static u32 prev_verts = ~0u, prev_idx = ~0u;
     if ( s_caps.stats_trace && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
@@ -995,6 +1048,9 @@ cache_build_frame( void )
         prev_verts = s_tess.vert_count;
         prev_idx   = s_tess.idx_count;
     }
+
+    /* Debug trace: print the retained cache counts only when they change (spam prevention)
+       The peak high-water marks are always printed  */
 
     static u32 prev_win_ret = ~0u, prev_vert_ret = ~0u;
     if ( s_caps.stats_trace &&
