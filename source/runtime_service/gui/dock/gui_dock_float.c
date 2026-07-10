@@ -57,34 +57,6 @@ static struct
 
 } s_dock_float_req;
 
-/*----------------------------------------------------------------------------------------------
-    Leaf edits -- add a tab by id + display name.
-
-    gui_dock_window covers the title-string path; this covers the id path (the request slot only
-    holds the dragged window's truncated NAME, whose hash need not match its id).  Same steps:
-    pull the window out of any node it was in, append, make it the active tab.
-----------------------------------------------------------------------------------------------*/
-
-static void
-dock_float_tab_add( gui_dock_node_t* n, gui_id_t wid, const char* name )
-{
-    if ( n->tab_count >= GUI_DOCK_TABS_MAX )
-        return;
-    gui_dock_node_t* prev = dock_find_window_node( wid );
-    if ( prev == n )
-        return;
-    if ( prev )
-        dock_node_remove_window( prev, wid );
-
-    u32 idx = n->tab_count++;
-    n->tabs[ idx ] = wid;
-    u32 vis = label_vis_len( name );
-    if ( vis >= GUI_DOCK_NAME_CAP ) vis = GUI_DOCK_NAME_CAP - 1;
-    memcpy( n->names[ idx ], name, vis );
-    n->names[ idx ][ vis ] = '\0';
-    n->active_tab = idx;
-}
-
 /* A fresh one-tab group wrapped around `target`, inheriting its exact frame and a fresh top z --
    the group appears exactly where the window was, now wearing a strip instead of a title bar. */
 static gui_dock_node_t*
@@ -101,7 +73,7 @@ dock_float_group_create( gui_window_t* target, gui_id_t target_id, const char* t
     if ( th > n->rect.h ) th = n->rect.h;
     n->content = ( gui_rect_t ){ n->rect.x, n->rect.y + th, n->rect.w, n->rect.h - th };
 
-    dock_float_tab_add( n, target_id, target_title );
+    dock_leaf_tab_add( n, target_id, target_title );
     return n;
 }
 
@@ -206,7 +178,7 @@ dock_float_service_request( gui_id_t id, const char* title, gui_window_t* win )
         n = dock_float_group_create( win, id, title );
     }
     if ( n )
-        dock_float_tab_add( n, s_dock_float_req.dragged, s_dock_float_req.dragged_name );
+        dock_leaf_tab_add( n, s_dock_float_req.dragged, s_dock_float_req.dragged_name );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -315,7 +287,7 @@ gui_window_tab( const char* title, const char* onto_title )
         n = dock_float_group_create( tw, tid, onto_title );
     }
     if ( n )
-        dock_float_tab_add( n, wid, title );
+        dock_leaf_tab_add( n, wid, title );
 }
 
 // clang-format on

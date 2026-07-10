@@ -147,21 +147,32 @@ gui_arrow_button( const char* label, gui_dir_t dir )
 }
 
 /*----------------------------------------------------------------------------------------------
-    checkbox -- returns true when the value toggles
+    checkbox / radio_button -- an indicator box + a trailing label.
+
+    Both share one cell recipe (natural width, field-split resolve, item protocol) and differ only
+    in what they paint into the CHECKBOX_SZ indicator box: a square + check, or a disc.  That recipe
+    -- including a subtle nav-rect alignment rule -- lives once in checkable_cell so the two widgets
+    stay in step.
 ----------------------------------------------------------------------------------------------*/
 
-bool
-gui_checkbox( const char* label, bool* v )
+typedef struct
 {
-    gui_id_t   id = widget_id( label );
+    gui_item_state_t st;
+    gui_rect_t       box;                 /* CHECKBOX_SZ indicator box (paint the mark/disc here) */
+    f32              label_x, label_w;    /* trailing label placement */
+    f32              label_y;             /* label baseline (text_center_y of the row) */
+} checkable_cell_t;
 
+static checkable_cell_t
+checkable_cell( gui_id_t id, const char* label )
+{
     /* The box (CHECKBOX_SZ) is shorter than the row (WIDGET_H), so centering it vertically already
        gives it a free top/bottom margin -- side_pad matches that same margin on the left/right so
        the item rect (and the nav ring / hit-test that key off it) pads the box evenly on all four
        sides instead of hugging it flush left and at the label's last glyph. */
     f32 side_pad = ( WIDGET_H - CHECKBOX_SZ ) * 0.5f;
 
-    /* Natural width = pad + box + gap + label + pad, so a same_line checkbox shrinks to fit.
+    /* Natural width = pad + box + gap + label + pad, so a same_line control shrinks to fit.
        Under a field split the cell must NOT shrink: the split resolves its label + control tracks
        over the cell, so a hugged cell collapses the control track to the CHECKBOX_SZ floor and the
        nav/hit rect shrinks to the bare box instead of spanning the field like input/slider rows. */
@@ -181,11 +192,10 @@ gui_checkbox( const char* label, bool* v )
        cell here instead would put this widget's nav rect at a different X than every other field in
        the same form -- e.g. a checkbox at column 0 next to input/slider fields starting at column 90 --
        so directional nav (which keys off cross-axis overlap) would treat them as different columns. */
-
-    f32         label_x, label_w;
-    gui_rect_t  control;
-    f32         bx;
-    bool        split = field_split_resolve( r, CHECKBOX_SZ, &label_x, &label_w, &control );
+    checkable_cell_t c;
+    gui_rect_t       control;
+    f32              bx;
+    bool             split = field_split_resolve( r, CHECKBOX_SZ, &c.label_x, &c.label_w, &control );
 
     if ( split )
     {
@@ -193,32 +203,41 @@ gui_checkbox( const char* label, bool* v )
     }
     else
     {
-        bx      = r.x + side_pad;
-        label_x = bx + CHECKBOX_SZ + WIDGET_PAD;         /* default: label just right of the box */
-        label_w = ( r.x + r.w - side_pad ) - label_x;    /* trails to the cell's right edge      */
+        bx         = r.x + side_pad;
+        c.label_x  = bx + CHECKBOX_SZ + WIDGET_PAD;         /* default: label just right of the box */
+        c.label_w  = ( r.x + r.w - side_pad ) - c.label_x;  /* trails to the cell's right edge      */
     }
 
-    gui_item_state_t st = widget_behavior( id, split ? control : r, GUI_WIDGET_KIND_BUTTON );
+    c.st      = widget_behavior( id, split ? control : r, GUI_WIDGET_KIND_BUTTON );
+    f32 by    = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
+    c.box     = ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ };
+    c.label_y = text_center_y( r.y, r.h );
+    return c;
+}
 
-    f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
-    draw_push_rect_filled( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, widget_bg_color( st ) );
-    draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER );
+bool
+gui_checkbox( const char* label, bool* v )
+{
+    gui_id_t         id = widget_id( label );
+    checkable_cell_t c  = checkable_cell( id, label );
+
+    draw_push_rect_filled ( c.box.x, c.box.y, c.box.w, c.box.h, 0,0,1,1, 0, widget_bg_color( c.st ) );
+    draw_push_rect_outline( c.box.x, c.box.y, c.box.w, c.box.h, WIN_BORDER, 0, COL_BORDER );
 
     if ( *v )
     {
         /* Indicator: a 'v' tick (default), a filled disc, or an 'X' cross per GUI_VAR_CHECK_STYLE. */
-        draw_check_indicator( ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
+        draw_check_indicator( c.box, COL_CHECK_MARK );
     }
 
     /* Draw the label plainly -- no ellipsis (markers still stripped); a label too wide for its
        track overflows and is bounded by the window clip, matching text() and the input widgets. */
-    (void)label_w;
-    draw_label( label_x, text_center_y( r.y, r.h ), COL_TEXT, label );
+    draw_label( c.label_x, c.label_y, COL_TEXT, label );
 
     bool changed = false;
-    if ( st.clicked )
+    if ( c.st.clicked )
     {
-        *v    = !( *v );
+        *v      = !( *v );
         changed = true;
         /* The indicator above drew the OLD *v; the new state shows on next frame's emit.  Force
            that frame -- an isolated toggle changes no other UI, so nothing else would mark the
@@ -246,47 +265,12 @@ gui_checkbox( const char* label, bool* v )
 bool
 gui_radio_button( const char* label, i32* v, i32 value )
 {
-    gui_id_t   id = widget_id( label );
+    gui_id_t         id = widget_id( label );
+    checkable_cell_t c  = checkable_cell( id, label );
 
-    /* Same flush-vs-padded fix as checkbox: side_pad matches the free top/bottom margin the disc
-       already gets from being centred in the row, so the item rect pads it evenly on all sides. */
-    f32 side_pad = ( WIDGET_H - CHECKBOX_SZ ) * 0.5f;
-
-    /* Natural width = pad + disc + gap + label + pad, so a same_line radio shrinks to fit (a group
-       on one row).  Under a field split the cell must not shrink -- same rule as checkbox: the
-       split needs the full cell or its control track collapses to the floor. */
-    bool       split_on = ( lf()->mod.field_side != 0 );
-    gui_rect_t r  = widget_next_rect_w( split_on ? -1.0f
-                                                 : 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD
-                                                       + label_width( label ),
-                                        WIDGET_H );
-
-    /* Same label/control split as checkbox, resolved BEFORE widget_behavior for the same reason: so
-       the hit/nav rect starts at the control track (matching input_text / slider_float) instead of
-       the cell's left edge, which would otherwise put this widget's nav rect at a different X than
-       the other fields in the same form. */
-    f32          label_x, label_w;
-    gui_rect_t control;
-    f32          bx;
-    bool         split = field_split_resolve( r, CHECKBOX_SZ, &label_x, &label_w, &control );
-
-    if ( split )
-    {
-        bx = control.x;
-    }
-    else
-    {
-        bx      = r.x + side_pad;
-        label_x = bx + CHECKBOX_SZ + WIDGET_PAD;         /* default: label just right of the disc */
-        label_w = ( r.x + r.w - side_pad ) - label_x;    /* trails to the cell's right edge        */
-    }
-
-    gui_item_state_t st = widget_behavior( id, split ? control : r, GUI_WIDGET_KIND_BUTTON );
-
-    /* Disc centred in a CHECKBOX_SZ box, vertically centred in the row. */
-    f32 by  = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
-    f32 cx  = bx + CHECKBOX_SZ * 0.5f;
-    f32 cy  = by + CHECKBOX_SZ * 0.5f;
+    /* Disc centred in the CHECKBOX_SZ indicator box. */
+    f32 cx  = c.box.x + CHECKBOX_SZ * 0.5f;
+    f32 cy  = c.box.y + CHECKBOX_SZ * 0.5f;
     f32 rad = CHECKBOX_SZ * 0.5f;
 
     const u32 segs = 16;   /* facets -- round at widget sizes */
@@ -294,14 +278,14 @@ gui_radio_button( const char* label, i32* v, i32 value )
 
     /* Border ring, then the well (hover/active tinted like a button knob), then the selected dot. */
     draw_push_circle_filled( cx, cy, rad,              segs, COL_BORDER );
-    draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, widget_bg_color( st ) );
+    draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, widget_bg_color( c.st ) );
     if ( on )
         draw_push_circle_filled( cx, cy, rad - (f32)s_style.checkmark_pad, segs, COL_CHECK_MARK );
 
-    draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT, label, label_w );
+    draw_label_fit( c.label_x, c.label_y, COL_TEXT, label, c.label_w );
 
     bool changed = false;
-    if ( st.clicked && v && *v != value )
+    if ( c.st.clicked && v && *v != value )
     {
         *v      = value;
         changed = true;

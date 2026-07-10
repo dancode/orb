@@ -210,21 +210,7 @@ gui_dock_window( const char* title, gui_dock_id_t node_id )
     if ( !n || n->split != GUI_DOCK_SPLIT_NONE || n->tab_count >= GUI_DOCK_TABS_MAX )
         return;
 
-    gui_id_t wid = id_hash( title );
-
-    gui_dock_node_t* prev = dock_find_window_node( wid );
-    if ( prev == n )
-        return;   /* already here */
-    if ( prev )
-        dock_node_remove_window( prev, wid );
-
-    u32 idx = n->tab_count++;
-    n->tabs[ idx ] = wid;
-    u32 vis = label_vis_len( title );
-    if ( vis >= GUI_DOCK_NAME_CAP ) vis = GUI_DOCK_NAME_CAP - 1;
-    memcpy( n->names[ idx ], title, vis );
-    n->names[ idx ][ vis ] = '\0';
-    n->active_tab = idx;
+    dock_leaf_tab_add( n, id_hash( title ), title );
 }
 
 /* Remove a window from its node, returning it to free-floating.  A node emptied by this is collapsed

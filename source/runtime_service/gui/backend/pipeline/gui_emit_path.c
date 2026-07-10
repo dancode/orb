@@ -135,6 +135,18 @@ stroke_axis_aligned_rect( f32 x0, f32 y0, f32 x1, f32 y1, f32 t,
     return true;
 }
 
+/* Cull a single segment against the clip: true when its bounding box -- padded by half the stroke
+   width plus 1px, so a thick line grazing the clip edge is never wrongly dropped -- lies fully
+   outside.  Shared by the CMD_LINE and CMD_DASHED_LINE fast paths below. */
+static bool
+stroke_seg_culled( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness )
+{
+    f32 lx = x0 < x1 ? x0 : x1, ly = y0 < y1 ? y0 : y1;
+    f32 hx = x0 > x1 ? x0 : x1, hy = y0 > y1 ? y0 : y1;
+    f32 pad = thickness * 0.5f + 1.0f;
+    return draw_cull_box( lx - pad, ly - pad, ( hx - lx ) + 2.0f * pad, ( hy - ly ) + 2.0f * pad );
+}
+
 /*==============================================================================================
     Public draw-list entry points
 ==============================================================================================*/
@@ -205,13 +217,8 @@ gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     /* Diagonal: push a CMD_LINE; tessellated at flush as a 2-point antialiased stroke. */
     if ( s_draw.cmd_count >= GUI_MAX_CMDS )
         return;
-    {
-        f32 lx = x0 < x1 ? x0 : x1, ly = y0 < y1 ? y0 : y1;
-        f32 hx = x0 > x1 ? x0 : x1, hy = y0 > y1 ? y0 : y1;
-        f32 pad = thickness * 0.5f + 1.0f;
-        if ( draw_cull_box( lx - pad, ly - pad, ( hx - lx ) + 2.0f * pad, ( hy - ly ) + 2.0f * pad ) )
-            return;
-    }
+    if ( stroke_seg_culled( x0, y0, x1, y1, thickness ) )
+        return;
     gui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type           = GUI_CMD_LINE;
     c->clip_idx       = s_draw.cur_clip_idx;
@@ -235,13 +242,8 @@ gui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thi
     f32 period = dash + ( gap > 0.0f ? gap : dash );
     if ( period <= 0.0f || s_draw.cmd_count >= GUI_MAX_CMDS )
         return;
-    {
-        f32 lx = x0 < x1 ? x0 : x1, ly = y0 < y1 ? y0 : y1;
-        f32 hx = x0 > x1 ? x0 : x1, hy = y0 > y1 ? y0 : y1;
-        f32 pad = thickness * 0.5f + 1.0f;
-        if ( draw_cull_box( lx - pad, ly - pad, ( hx - lx ) + 2.0f * pad, ( hy - ly ) + 2.0f * pad ) )
-            return;
-    }
+    if ( stroke_seg_culled( x0, y0, x1, y1, thickness ) )
+        return;
     gui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type           = GUI_CMD_DASHED_LINE;
     c->clip_idx       = s_draw.cur_clip_idx;

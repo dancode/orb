@@ -214,6 +214,40 @@ gui_event( const app_event_t* ev )
     }
 }
 
+/* Per-button double-click detection: a press counts as a double-click when it lands within
+   DOUBLE_CLICK_TIME of the previous press and within DOUBLE_CLICK_DIST of it.  s_click_elapsed
+   grows by dt each frame (gui has no clock of its own) and resets on every fresh press; a detected
+   double consumes the timer so a third press is a fresh single.  Writes s_io.mouse_double[]. */
+static void
+input_detect_double_click( f32 dt )
+{
+    for ( u32 i = 0; i < 3; ++i )
+    {
+        s_io.mouse_double[ i ] = false;
+        s_click_elapsed[ i ]  += dt;
+
+        if ( s_io.mouse_pressed[ i ] )
+        {
+            f32  dx      = s_io.mouse_x - s_click_x[ i ];
+            f32  dy      = s_io.mouse_y - s_click_y[ i ];
+            bool in_time = s_click_elapsed[ i ] <= DOUBLE_CLICK_TIME;
+            bool in_dist = ( dx * dx + dy * dy ) <= DOUBLE_CLICK_DIST * DOUBLE_CLICK_DIST;
+
+            if ( in_time && in_dist )
+            {
+                s_io.mouse_double[ i ] = true;
+                s_click_elapsed[ i ]   = 1.0e9f;   /* consume: a 3rd press is a fresh single */
+            }
+            else
+            {
+                s_click_elapsed[ i ] = 0.0f;       /* first press of a potential pair */
+            }
+            s_click_x[ i ] = s_io.mouse_x;
+            s_click_y[ i ] = s_io.mouse_y;
+        }
+    }
+}
+
 /*----------------------------------------------------------------------------------------------
     input_update -- populate s_io for the current frame.
 ----------------------------------------------------------------------------------------------*/
@@ -259,35 +293,7 @@ input_update( i32 win_w, i32 win_h, f32 dt )
 
     /* Double-click: a press soon after, and close to, the previous press.  Done before the
        text/scroll merge below so it is ready for the widget code this frame. */
-    bool detect_double_click = true;
-    if ( detect_double_click )
-    {
-        for ( u32 i = 0; i < 3; ++i )
-        {
-            s_io.mouse_double[ i ] = false;
-            s_click_elapsed[ i ]  += dt;
-
-            if ( s_io.mouse_pressed[ i ] )
-            {
-                f32 dx = s_io.mouse_x - s_click_x[ i ];
-                f32 dy = s_io.mouse_y - s_click_y[ i ];
-                bool in_time = s_click_elapsed[ i ] <= DOUBLE_CLICK_TIME;
-                bool in_dist = ( dx * dx + dy * dy ) <= DOUBLE_CLICK_DIST * DOUBLE_CLICK_DIST;
-
-                if ( in_time && in_dist )
-                {
-                    s_io.mouse_double[ i ] = true;
-                    s_click_elapsed[ i ]   = 1.0e9f;   /* consume: a 3rd press is a fresh single */
-                }
-                else
-                {
-                    s_click_elapsed[ i ] = 0.0f;       /* first press of a potential pair */
-                }
-                s_click_x[ i ] = s_io.mouse_x;
-                s_click_y[ i ] = s_io.mouse_y;
-            }
-        }
-    }
+    input_detect_double_click( dt );
 
     /* Key state snapshot.  keys_pressed is the initial press; keys_pressed_repeat also catches OS
        auto-repeat ticks (held backspace / arrows in a text field), the caller picking which it reads.

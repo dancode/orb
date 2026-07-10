@@ -112,12 +112,14 @@ static struct
 #define GUI_DBG_NAME_SLOTS 256                          /* power of two                           */
 #define GUI_DBG_NAME_MASK  ( GUI_DBG_NAME_SLOTS - 1 )
 
-static struct
+typedef struct
 {
     gui_id_t id;                                        /* 0 = empty slot */
     char     name[ GUI_DBG_NAME_CAP ];                  /* source string that minted the id */
 
-} s_dbg_names[ GUI_DBG_NAME_SLOTS ];
+} gui_dbg_name_entry_t;
+
+static gui_dbg_name_entry_t s_dbg_names[ GUI_DBG_NAME_SLOTS ];
 
 void
 dbg_name_register( gui_id_t id, const char* str )
@@ -128,21 +130,23 @@ dbg_name_register( gui_id_t id, const char* str )
     for ( u32 i = 0; i < GUI_DBG_NAME_SLOTS; ++i )
     {
         u32 slot = ( bucket + i ) & GUI_DBG_NAME_MASK;
-        if ( s_dbg_names[ slot ].id == id || s_dbg_names[ slot ].id == GUI_ID_NONE )
+        gui_dbg_name_entry_t* e = &s_dbg_names[ slot ];
+        if ( e->id == id || e->id == GUI_ID_NONE )
         {
-            s_dbg_names[ slot ].id = id;
+            e->id = id;
             size_t n = strlen( str );
             if ( n >= GUI_DBG_NAME_CAP ) n = GUI_DBG_NAME_CAP - 1;
-            memcpy( s_dbg_names[ slot ].name, str, n );
-            s_dbg_names[ slot ].name[ n ] = '\0';
+            memcpy( e->name, str, n );
+            e->name[ n ] = '\0';
             return;
         }
     }
     /* Table full of distinct live ids (256 named things in one frame) -- overwrite the home
        bucket rather than growing; a rare degradation, not a crash. */
-    s_dbg_names[ bucket ].id = id;
-    strncpy( s_dbg_names[ bucket ].name, str, GUI_DBG_NAME_CAP - 1 );
-    s_dbg_names[ bucket ].name[ GUI_DBG_NAME_CAP - 1 ] = '\0';
+    gui_dbg_name_entry_t* home = &s_dbg_names[ bucket ];
+    home->id = id;
+    strncpy( home->name, str, GUI_DBG_NAME_CAP - 1 );
+    home->name[ GUI_DBG_NAME_CAP - 1 ] = '\0';
 }
 
 const char*
@@ -152,9 +156,9 @@ gui_debug_name( gui_id_t id )
     u32 bucket = id & GUI_DBG_NAME_MASK;
     for ( u32 i = 0; i < GUI_DBG_NAME_SLOTS; ++i )
     {
-        u32 slot = ( bucket + i ) & GUI_DBG_NAME_MASK;
-        if ( s_dbg_names[ slot ].id == id      ) return s_dbg_names[ slot ].name;
-        if ( s_dbg_names[ slot ].id == GUI_ID_NONE ) return NULL;   /* empty ends the chain */
+        gui_dbg_name_entry_t* e = &s_dbg_names[ ( bucket + i ) & GUI_DBG_NAME_MASK ];
+        if ( e->id == id           ) return e->name;
+        if ( e->id == GUI_ID_NONE  ) return NULL;   /* empty ends the chain */
     }
     return NULL;
 }

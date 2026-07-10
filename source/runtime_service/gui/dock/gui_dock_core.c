@@ -194,6 +194,31 @@ dock_node_remove_window( gui_dock_node_t* n, gui_id_t wid )
         dock_collapse( n );
 }
 
+/* Tab window `wid` (display `name`) into leaf `n`: pull it out of any node it was already in,
+   append it, and make it the active tab.  The shared leaf edit behind both docking entry points
+   -- gui_dock_window (title-string path, gui_dock.c) and the floating-group id path
+   (gui_dock_float.c: group create, drop service, gui_window_tab).  No-op if `n` is full or the
+   window already tabs here. */
+static void
+dock_leaf_tab_add( gui_dock_node_t* n, gui_id_t wid, const char* name )
+{
+    if ( n->tab_count >= GUI_DOCK_TABS_MAX )
+        return;
+    gui_dock_node_t* prev = dock_find_window_node( wid );
+    if ( prev == n )
+        return;   /* already here */
+    if ( prev )
+        dock_node_remove_window( prev, wid );
+
+    u32 idx = n->tab_count++;
+    n->tabs[ idx ] = wid;
+    u32 vis = label_vis_len( name );
+    if ( vis >= GUI_DOCK_NAME_CAP ) vis = GUI_DOCK_NAME_CAP - 1;
+    memcpy( n->names[ idx ], name, vis );
+    n->names[ idx ][ vis ] = '\0';
+    n->active_tab = idx;
+}
+
 /*----------------------------------------------------------------------------------------------
     Layout -- assign every node a rect, top-down from the surface area.
 

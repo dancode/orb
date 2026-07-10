@@ -55,10 +55,7 @@ typedef struct { u32 open_frame; } gui_menu_state_t;
 static void
 menu_close_chain( void )
 {
-    u32 floor = 0;
-    for ( u32 i = 0; i < g_ctx->popup.open_count; ++i )
-        if ( g_ctx->popup.open[ i ].modal ) floor = i + 1u;
-    g_ctx->popup.open_count = floor;
+    g_ctx->popup.open_count = popup_modal_floor();   /* truncate to just past the topmost modal */
 }
 
 /*----------------------------------------------------------------------------------------------

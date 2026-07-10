@@ -517,6 +517,19 @@ gui_help_marker( const char* text )
     click in a child keeps the chain, a click in a parent body closes just the child.
 ----------------------------------------------------------------------------------------------*/
 
+/* Count of popups the topmost open modal pins open: one past the last modal in the open stack, 0
+   when none is modal.  A modal swallows its own outside clicks, so neither the click-outside check
+   nor a menu-chain dismiss may drop it or anything beneath it -- both truncate no lower than this
+   floor (and popup_apply_modal fences from the same last-modal position). */
+static u32
+popup_modal_floor( void )
+{
+    u32 floor = 0;
+    for ( u32 i = 0; i < g_ctx->popup.open_count; ++i )
+        if ( g_ctx->popup.open[ i ].modal ) floor = i + 1u;
+    return floor;
+}
+
 static void
 popup_close_check( void )
 {
@@ -531,9 +544,7 @@ popup_close_check( void )
     if ( !s_io.mouse_pressed[ 0 ] && !s_io.mouse_pressed[ 1 ] ) return;
 
     /* The topmost modal pins [0, floor) open -- nothing at or below it auto-closes. */
-    u32 floor = 0;
-    for ( u32 i = 0; i < g_ctx->popup.open_count; ++i )
-        if ( g_ctx->popup.open[ i ].modal ) floor = i + 1u;
+    u32 floor = popup_modal_floor();
 
     u32 keep = floor;
     for ( u32 i = g_ctx->popup.open_count; i-- > floor; )
@@ -554,9 +565,7 @@ popup_close_check( void )
 static void
 popup_apply_modal( void )
 {
-    i32 m = -1;
-    for ( u32 i = 0; i < g_ctx->popup.open_count; ++i )
-        if ( g_ctx->popup.open[ i ].modal ) m = (i32)i;
+    i32 m = (i32)popup_modal_floor() - 1;   /* index of the topmost modal, -1 when none is open */
     if ( m < 0 ) return;
 
     /* Allow the modal and any deeper (later-opened, on-top) popup to keep interacting. */
