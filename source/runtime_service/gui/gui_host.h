@@ -394,15 +394,15 @@ bool gui_want_capture_mouse( void );
 bool gui_want_capture_keyboard( void );
 
 /* last-item introspection */
-bool         gui_is_item_hovered( void );
-bool         gui_is_item_active( void );
-bool         gui_is_item_clicked( void );
-bool         gui_is_item_focused( void );
-bool         gui_is_item_activated( void );
-bool         gui_is_item_deactivated( void );
-bool         gui_is_item_deactivated_after_edit( void );
-bool         gui_is_item_visible( void );
-gui_rect_t gui_get_item_rect( void );
+bool        gui_is_item_hovered( void );
+bool        gui_is_item_active( void );
+bool        gui_is_item_clicked( void );
+bool        gui_is_item_focused( void );
+bool        gui_is_item_activated( void );
+bool        gui_is_item_deactivated( void );
+bool        gui_is_item_deactivated_after_edit( void );
+bool        gui_is_item_visible( void );
+gui_rect_t  gui_get_item_rect( void );
 
 bool gui_is_key_down( app_key_t key );
 bool gui_is_key_pressed( app_key_t key );

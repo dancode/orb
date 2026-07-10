@@ -346,6 +346,12 @@ gui_selectable( const char* label, bool* selected )
 
     if ( st.clicked )
     {
+        /* Same one-frame-late fix as checkbox/radio_button: a click here almost always drives a
+           caller-owned selection (this row, a picked index) that is not visible until the NEXT
+           frame's emit -- often because the content it selects was already built earlier in this
+           same frame.  Force that frame so the new selection shows without waiting on more input. */
+        g_ctx->retained.wants_redraw = true;
+
         /* Inside a combo dropdown a clicked row dismisses the combo: flag it for combo_end to close
            (the popup machinery is not in scope here).  Inert for an ordinary list selectable. */
         if ( s_build.combo_open )

@@ -21,28 +21,26 @@
     2. GPU tessellation cache (gui_build_cache.c): granular per window.  A per-window hash mismatch
        re-tessellates only that window's slot; sibling windows reuse their geometry in place.
 
+    Contents -- sections follow the source tree order (see gui.c's include list):
+
+    foundation  -- ids, context config, geometry, style colors / config / themes / vars
+    compose     -- rect algebra, layout template / alignment / modes, pack, split, field
+    interact    -- item flags, drag and drop
+    present     -- angle algebra, color packing, stroking, draw vertex, volatile cb,
+                   semantic draw commands
+    widgets     -- direction, color edit flags
+    window      -- drag mode, apply condition, window flags
+    dock        -- dockspace flags
+    popup       -- combo flags
+    table       -- table support
+    frame       -- font config, capability flags, boot descriptor, limits, memory + render stats
+    debug       -- overlay layers, render mode
+
 ==============================================================================================*/
 
 #include "orb.h"
 
 // clang-format off
-/*==============================================================================================
-    Contents -- sections follow the source tree order (see gui.c's include list):
-
-      foundation  -- ids, context config, geometry, style colors / config / themes / vars
-      compose     -- rect algebra, layout template / alignment / modes, pack, split, field
-      interact    -- item flags, drag and drop
-      present     -- angle algebra, color packing, stroking, draw vertex, volatile cb,
-                     semantic draw commands
-      widgets     -- direction, color edit flags
-      window      -- drag mode, apply condition, window flags
-      dock        -- dockspace flags
-      popup       -- combo flags
-      table       -- table support
-      frame       -- font config, capability flags, boot descriptor, limits, memory + render stats
-      debug       -- overlay layers, render mode
-==============================================================================================*/
-
 /*==============================================================================================
     GUI: ID
 ==============================================================================================*/
@@ -84,11 +82,12 @@ typedef i32 gui_ctx_id_t;
 
 /*==============================================================================================
     GUI: Context Configuration
+
+    Context configuration -- sizes the per-context resource pools at creation time.
+    Pass to ctx_create(); NULL or zero fields default to the EDITOR preset (32 windows,
+    512 state slots, 8 popup depth, 4 viewports, 48 dock nodes).
+    max_dock_nodes == 0 is valid and disables docking for that context.
 ==============================================================================================*/
-/* Context configuration -- sizes the per-context resource pools at creation time.
-   Pass to ctx_create(); NULL or zero fields default to the EDITOR preset (32 windows,
-   512 state slots, 8 popup depth, 4 viewports, 48 dock nodes).
-   max_dock_nodes == 0 is valid and disables docking for that context. */
 
 typedef struct
 {
