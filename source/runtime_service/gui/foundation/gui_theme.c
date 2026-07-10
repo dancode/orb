@@ -74,7 +74,7 @@ static const gui_theme_t k_themes[] =
             .widget_gap         = 8,
             .widget_pad         = 8,
             .min_cell_w         = 40,
-            .grid_quantum       = 16,
+            .grid_quantum       = 1,
             .win_border         = 1,
             .win_title_h        = 24,
             .checkbox_sz        = 16,
@@ -218,7 +218,64 @@ static const gui_theme_t k_themes[] =
             },
         },
     },
+    {
+        "quantum",
+        {
+            .colors = {
+                [ GUI_COL_TEXT         ] = GUI_COLOR( 0xF0, 0xF0, 0xF0, 0xFF ),
+                [ GUI_COL_TEXT_DIM     ] = GUI_COLOR( 0xA0, 0xA0, 0xA0, 0xFF ),
+                [ GUI_COL_WINDOW_BG    ] = GUI_COLOR( 0x24, 0x24, 0x24, 0xE8 ),
+                [ GUI_COL_CHILD_BG     ] = GUI_COLOR( 0x1C, 0x1C, 0x1C, 0xFF ),
+                [ GUI_COL_TITLE_BG     ] = GUI_COLOR( 0x10, 0x60, 0xA0, 0xFF ),
+                [ GUI_COL_BORDER       ] = GUI_COLOR( 0x80, 0x80, 0x80, 0xFF ),
+                [ GUI_COL_WIDGET_BG    ] = GUI_COLOR( 0x40, 0x40, 0x40, 0xFF ),
+                [ GUI_COL_WIDGET_HOT   ] = GUI_COLOR( 0x50, 0x80, 0xB0, 0xFF ),
+                [ GUI_COL_WIDGET_ACT   ] = GUI_COLOR( 0x30, 0x60, 0x90, 0xFF ),
+                [ GUI_COL_WIDGET_FG    ] = GUI_COLOR( 0x20, 0x90, 0xD0, 0xFF ),
+                [ GUI_COL_CHECK_MARK   ] = GUI_COLOR( 0x18, 0xE6, 0x48, 0xFF ),
+                [ GUI_COL_SLIDER_TRACK ] = GUI_COLOR( 0x30, 0x30, 0x30, 0xFF ),
+                [ GUI_COL_RESIZE_HOT   ] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
+                [ GUI_COL_INPUT_BG     ] = GUI_COLOR( 0x38, 0x38, 0x38, 0xFF ),
+                [ GUI_COL_INPUT_FOCUS  ] = GUI_COLOR( 0x20, 0x50, 0x70, 0xFF ),
+                [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ),
+                [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ),
+            },
+            /* 1. METRICS */
+            .line_size          = 20,
+            .widget_gap         = 8,
+            .widget_pad         = 8,
+            .min_cell_w         = 40,
+            .grid_quantum       = 16,
+            .win_border         = 1,
+            .win_title_h        = 24,
+            .checkbox_sz        = 16,
+            .slider_knob_w      = 12,
+
+            /* 2. SKIN */
+            .win_rounding       = 0,       /* geometric default: hard square corners everywhere */
+            .widget_rounding    = 0,
+            .grab_rounding      = 0,
+            .check_style        = GUI_CHECK_TICK,
+            .bullet_style       = GUI_BULLET_DISC,
+            .arrow_style        = GUI_ARROW_FILLED,
+            .separator_style    = GUI_SEPARATOR_SOLID,
+            .progress_style     = GUI_PROGRESS_SOLID,
+            .slider_knob        = GUI_SLIDER_KNOB_BAR,
+            .menu_check         = GUI_MENU_CHECK_BOX,
+            .checkmark_pad      = 4,
+            .cursor_w           = 1,
+            .cursor_inset       = 3,
+
+            .scales = {
+                [ GUI_SCALE_DENSE ] = { .row = 16, .pad = 4,  .gap = 4 },
+                [ GUI_SCALE_STD   ] = { .row = 20, .pad = 8,  .gap = 4 },   /* == the base metrics */
+                [ GUI_SCALE_ROOMY ] = { .row = 24, .pad = 8,  .gap = 4 },
+                [ GUI_SCALE_BAR   ] = { .row = 32, .pad = 12, .gap = 4 },
+            },
+        },
+    },
 };
+
 static const u32 k_theme_count = sizeof( k_themes ) / sizeof( k_themes[ 0 ] );
 
 /* The mutable user base style -- edited directly via gui_style_get(), or overwritten by
