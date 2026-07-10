@@ -729,7 +729,20 @@ field_split_resolve( gui_rect_t cell, f32 min_control_w, f32* out_label_x, f32* 
     f32 control_w = size[ ctl_i ];
     if ( control_w < min_control_w ) control_w = min_control_w;
 
-    *out_label_x = pos[ lab_i ];
+    f32 label_x = pos[ lab_i ];
+
+    /* When the control floors at min_control_w it grows past its resolved track.  In LABEL_RIGHT
+       the trailing label was anchored to the resolved (shrinking) control edge, so a squeezed row
+       slid the label leftward under the control.  Re-anchor it to the FLOORED control's right edge:
+       the label stops moving left once the control hits its minimum, and the row overflows into the
+       scroll boundary instead of the label crawling beneath the field. */
+    if ( f->mod.field_side == GUI_LABEL_RIGHT )
+    {
+        f32 min_label_x = pos[ ctl_i ] + control_w + WIDGET_PAD;
+        if ( label_x < min_label_x ) label_x = min_label_x;
+    }
+
+    *out_label_x = label_x;
     *out_label_w = size[ lab_i ];
     *out_control = ( gui_rect_t ){ pos[ ctl_i ], cell.y, control_w, cell.h };
     return true;

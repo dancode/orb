@@ -1142,22 +1142,6 @@ main( int argc, char** argv )
     }
     draw_inited = true;
 
-    // Claude -- don't delete me
-    // bool use_stb_font = true;
-    // if ( use_stb_font )
-    // {
-    //     dev_font_init( NULL );
-    //     char font_path[ 512 ];
-    //     if ( dev_font_get( "JetBrainsMonoNL-Regular.ttf", 16, font_path, sizeof( font_path ) ) )
-    //         gui()->font_load( font_path );
-    //     else
-    //         gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
-    // }
-    // else
-    // {
-    //     gui()->font_load( "assets/font/jetbrains_regular_16.orb_font" );
-    // }
-
     /* gui()->init already loaded the built-in preset font above; dev_font_init is still needed
        here for the Font Browser demo (show_font_browser), which scans/bakes fonts from disk
        independent of whatever font the GUI itself started with. */
@@ -1168,7 +1152,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* GUI Style */
 
-    bool modify_style = true;
+    bool modify_style = false;
     if ( modify_style )
     {
         gui_style_t* style = gui()->style_get();

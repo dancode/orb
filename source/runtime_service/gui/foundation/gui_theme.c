@@ -142,7 +142,7 @@ static const gui_theme_t k_themes[] =
             .colors = { THEME_PALETTE_DARK },
             /* 1. METRICS */
             .line_size = 20, .widget_gap = 4, .widget_pad = 8, .min_cell_w = 40,
-            .grid_quantum = 4, .win_border = 1, .win_title_h = 24,
+            .grid_quantum = 1, .win_border = 1, .win_title_h = 24,
             .checkbox_sz = 16, .slider_knob_w = 12,
             /* 2. SKIN -- rounded corners, circular knob */
             .win_rounding = 8, .widget_rounding = 4, .grab_rounding = 6,
@@ -157,7 +157,7 @@ static const gui_theme_t k_themes[] =
             .colors = { THEME_PALETTE_LIGHT },
             /* 1. METRICS */
             .line_size = 20, .widget_gap = 4, .widget_pad = 8, .min_cell_w = 40,
-            .grid_quantum = 4, .win_border = 1, .win_title_h = 24,
+            .grid_quantum = 1, .win_border = 1, .win_title_h = 24,
             .checkbox_sz = 16, .slider_knob_w = 12,
             /* 2. SKIN -- lightly rounded, bar knob */
             .win_rounding = 0, .widget_rounding = 0, .grab_rounding = 0,

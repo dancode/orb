@@ -234,7 +234,7 @@ typedef struct gui_scale_metrics_t
    arithmetic folds out and grid_quantum costs nothing.  Independent of a style's grid_quantum,
    which still disables snapping per-style at runtime when <= 1. */
 #ifndef GUI_GRID_LATTICE
-#define GUI_GRID_LATTICE 1
+#define GUI_GRID_LATTICE 0
 #endif
 
 typedef struct gui_style_t

@@ -246,7 +246,10 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
     char buf[ 64 ];
     snprintf( buf, sizeof( buf ), format, *v );
     f32 tw = font_text_w_n( buf, 0xFFFFFFFFu );
-    f32 tx = box_r.x + ( box_r.w - tw ) * 0.5f;
+    /* Floor-bias the center: the odd remainder pixel goes consistently to the right margin, so the
+       glyph run lands on a whole pixel (no sub-pixel shimmer) and steps monotonically on resize
+       rather than the two margins alternately absorbing it. */
+    f32 tx = floorf( box_r.x + ( box_r.w - tw ) * 0.5f );
     if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
     draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu,
                            box_r.x, box_r.x + box_r.w - WIDGET_PAD );
@@ -322,7 +325,10 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
     char buf[ 64 ];
     snprintf( buf, sizeof( buf ), fmt, *v );
     f32 tw = font_text_w_n( buf, 0xFFFFFFFFu );
-    f32 tx = box_r.x + ( box_r.w - tw ) * 0.5f;
+    /* Floor-bias the center: the odd remainder pixel goes consistently to the right margin, so the
+       glyph run lands on a whole pixel (no sub-pixel shimmer) and steps monotonically on resize
+       rather than the two margins alternately absorbing it. */
+    f32 tx = floorf( box_r.x + ( box_r.w - tw ) * 0.5f );
     if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
     draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu,
                            box_r.x, box_r.x + box_r.w - WIDGET_PAD );
@@ -374,8 +380,6 @@ bool gui_drag_float3( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_m
 
 bool gui_drag_float4( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
 { return drag_float_n( label, v, 4u, v_speed, v_min, v_max, fmt ); }
-
-// clang-format on
 
 /* HSV -> RGB, h/s/v and r/g/b all in [0,1] (h wraps).  The standard six-sector conversion:
    which sector h falls in selects which of r/g/b holds the max/min/ramp role. */
@@ -534,24 +538,32 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
         gui_tooltip_end();
     }
 
-    /* Drag fields -- one per component, sharing remaining control width equally. */
+    /* Drag fields -- one per component, sharing remaining control width equally.  slot is the
+       IDEAL (fractional) box width; the loop snaps cumulative edges rather than flooring slot per
+       box, so the sub-pixel remainder is spread one pixel at a time across the borders as the row
+       grows.  Every border then steps monotonically instead of the last box absorbing the whole
+       remainder and snapping back each time a floored field width ticked (border wobble). */
     bool changed  = false;
-    f32  cursor_x = ctrl.x + preview_w + gap;
-    f32  avail_w  = ctrl.w - preview_w - gap;
-    f32  field_w  = floorf( ( avail_w - gap * (f32)( comps - 1u ) ) / (f32)comps );
+    f32  base_x   = ctrl.x + preview_w + gap;                             /* left edge, first box */
+    f32  span     = ctrl.w - preview_w - gap;                            /* boxes + inter-box gaps */
+    f32  slot     = ( span - gap * (f32)( comps - 1u ) ) / (f32)comps;   /* ideal fractional width */
 
-    static const char* s_rgb_i[] = { "R:%d",   "G:%d",   "B:%d",   "A:%d"   };
+    /* Integer formats are space-padded to a fixed 3-digit field (R/G/B/A max 255, H max 360,
+       S/V max 100 -- all <= 3 digits) so the monospace label width never changes with the value.
+       Constant width keeps every box's centered text on a stable column: it no longer ticks
+       forward at a different resize threshold than its neighbors.  Float labels are already
+       constant width ("0.00".."1.00"). */
+    static const char* s_rgb_i[] = { "R:%3d",  "G:%3d",  "B:%3d",  "A:%3d"  };
     static const char* s_rgb_f[] = { "R:%.2f", "G:%.2f", "B:%.2f", "A:%.2f" };
-    static const char* s_hsv_i[] = { "H:%d",   "S:%d",   "V:%d",   "A:%d"   };
+    static const char* s_hsv_i[] = { "H:%3d",  "S:%3d",  "V:%3d",  "A:%3d"  };
     static const char* s_hsv_f[] = { "H:%.2f", "S:%.2f", "V:%.2f", "A:%.2f" };
 
     for ( u32 i = 0; i < comps; ++i )
     {
-        f32 x0 = floorf( cursor_x );
-        f32 x1 = ( i + 1u < comps ) ? floorf( x0 + field_w )
-                                     : floorf( ctrl.x + ctrl.w );
+        f32 lead = base_x + (f32)i * ( slot + gap );   /* ideal left edge of this box */
+        f32 x0   = floorf( lead );
+        f32 x1   = ( i + 1u < comps ) ? floorf( lead + slot ) : floorf( ctrl.x + ctrl.w );
         gui_rect_t drag_r = { x0, ctrl.y, x1 - x0, ctrl.h };
-        cursor_x += field_w + gap;
 
         gui_id_t cid = id_combine( id, 10u + i );
         f32      val  = is_hsv ? hsv[i] : v[i];
@@ -579,6 +591,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
             }
         }
     }
+    #undef EVEN_FLOOR
 
     if ( changed && is_hsv )
     {
@@ -663,4 +676,5 @@ bool gui_color_edit3( const char* label, f32 col[ 3 ], gui_color_edit_flags_t fl
 bool gui_color_edit4( const char* label, f32 col[ 4 ], gui_color_edit_flags_t flags )
 { return color_edit_n( label, col, 4u, flags ); }
 
+// clang-format on
 /*============================================================================================*/
