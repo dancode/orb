@@ -316,7 +316,8 @@ gui_window_end( void )
         win_id_t   os          = window_native_id( win );
         bool       on_bare_bar = ( s_interaction.hover_id == GUI_ID_NONE ) && rect_hit( title_r );
 
-        if ( frame_only || ( native && win && win->viewport != 0 ) )
+        bool native_titlebar = frame_only || ( native && win && win->viewport != 0 );
+        if ( native_titlebar )
         {
             /* Native title bar (frame-shell or floater): defer dispatch behind a drag threshold
                so a fast double-click never triggers window_start_move or sets active_id on

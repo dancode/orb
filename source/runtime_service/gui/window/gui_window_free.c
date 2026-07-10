@@ -355,8 +355,10 @@ window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags
        the grip -- drawn and grabbed later in window_end -- would sit dead behind it.  Suppressing
        widget hover over the grip rect leaves active_id free for window_end to grab. */
     bool grip_hot = false;
-    if ( ( flags & GUI_WIN_CAN_AUTOSIZE ) && !collapsed && s_interaction.hover_win == id
-         && ( interact_idle() || interact_held( resize_id ) ) )
+    bool grip_eligible = ( flags & GUI_WIN_CAN_AUTOSIZE ) && !collapsed
+                         && s_interaction.hover_win == id
+                         && ( interact_idle() || interact_held( resize_id ) );
+    if ( grip_eligible )
     {
         f32          g  = WIDGET_H;   /* grip leg length -- matches window_end's grip rect */
         gui_rect_t gr = { win->x + win->w - g, win->y + disp_r.h - g, g, g };

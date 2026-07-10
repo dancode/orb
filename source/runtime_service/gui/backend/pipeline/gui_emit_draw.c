@@ -287,8 +287,9 @@ draw_set_root_clip( f32 w, f32 h )
 static void
 draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font, u32 band )
 {
-    if ( win == s_draw.cur_win && z == s_draw.cur_z && vp == s_draw.cur_vp && font == s_draw.cur_font
-         && band == s_draw.cur_band )
+    bool same_tag = win == s_draw.cur_win && z == s_draw.cur_z && vp == s_draw.cur_vp
+                    && font == s_draw.cur_font && band == s_draw.cur_band;
+    if ( same_tag )
         return;   /* no real change -- keep the open segment as is */
 
     /* No open segment yet -- called outside a frame (e.g. font_use during startup setup, before the

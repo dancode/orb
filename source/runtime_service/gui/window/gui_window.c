@@ -71,18 +71,20 @@ window_raise_on_press( void )
     for ( u32 i = 0; i < g_ctx->win.count; ++i )
         if ( g_ctx->win.pool[ i ].id == s_interaction.hover_win )
         {
+            gui_window_t* w = &g_ctx->win.pool[ i ];
+
             /* A frame-only native shell (GUI_WIN_NATIVE) is the borderless viewport's backdrop
                frame: it must stay behind the windows living inside it, so it never raises. */
-            if ( g_ctx->win.pool[ i ].flags & GUI_WIN_NATIVE )
+            if ( w->flags & GUI_WIN_NATIVE )
                 break;
 
             /* The dock exception (route seam): a docked tile is placed by its node and a click
                must never reorder it -- leave its z untouched.  A FLOATING tab group stacks like
                a free window and raises as a whole; the seam raises its node's z inside. */
-            if ( window_route_raise( g_ctx->win.pool[ i ].id ) )
+            if ( window_route_raise( w->id ) )
                 break;
 
-            g_ctx->win.pool[ i ].z = surface_z_raise( g_ctx->win.pool[ i ].z );
+            w->z = surface_z_raise( w->z );
             break;
         }
 }

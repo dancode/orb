@@ -579,7 +579,8 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
 {
     /* Uniform-radius fast path: route a filled, equal-cornered rect through the backend's single
        rounded-rect command (crisp AA, one command) instead of fanning a perimeter into triangles. */
-    if ( filled && r_tl == r_tr && r_tr == r_br && r_br == r_bl )
+    bool equal_corners = ( r_tl == r_tr && r_tr == r_br && r_br == r_bl );
+    if ( filled && equal_corners )
     {
         f32 save = draw_rounding();
         draw_set_rounding( r_tl );

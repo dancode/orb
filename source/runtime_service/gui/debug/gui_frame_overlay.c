@@ -281,7 +281,10 @@ gui_state_overlay( int mode )
             gui_new_line( 2.0f );
             gui_textf( "Popups  %u", g_ctx->popup.open_count );
             if ( g_ctx->popup.open_count )
-                gui_textf( "Top pop %s", dbg_id_str( g_ctx->popup.open[ g_ctx->popup.open_count - 1u ].id ) );
+            {
+                gui_id_t top_popup = g_ctx->popup.open[ g_ctx->popup.open_count - 1u ].id;
+                gui_textf( "Top pop %s", dbg_id_str( top_popup ) );
+            }
             gui_textf( "Ctx salt 0x%08X", g_ctx->retained.id_salt );
         }
     }

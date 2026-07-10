@@ -62,19 +62,9 @@ static bool s_nav_alt_used;
 static f32 s_nav_mouse_x, s_nav_mouse_y;
 
 /*----------------------------------------------------------------------------------------------
-    Window-pool helpers -- the two recurring reads over g_ctx->win.pool.
+    Window-pool helpers -- the recurring read over g_ctx->win.pool.  (The lookup by id is the
+    surface tier's window_find, in scope here since gui_surface.c is included first.)
 ----------------------------------------------------------------------------------------------*/
-
-/* The window record for id in the pool, or NULL if no such window exists this frame. */
-static gui_window_t*
-nav_window_find( gui_id_t id )
-{
-    if ( id == GUI_ID_NONE ) return NULL;
-    for ( u32 i = 0; i < g_ctx->win.count; ++i )
-        if ( g_ctx->win.pool[ i ].id == id )
-            return &g_ctx->win.pool[ i ];
-    return NULL;
-}
 
 /* Whether nav's front-most-by-z default may land on this window: not an overlay record (popup /
    tooltip -- those capture nav their own way) and not a GUI_WIN_NATIVE frame-only shell (bare
@@ -166,7 +156,7 @@ nav_cycle_skip( const gui_window_t* w )
 static u32
 nav_cycle_from_z( void )
 {
-    gui_window_t* explicit_w = nav_window_find( g_ctx->nav.explicit_win );
+    gui_window_t* explicit_w = window_find( g_ctx->nav.explicit_win );
     if ( explicit_w && !explicit_w->overlay )
         return explicit_w->z;
 
@@ -216,7 +206,7 @@ nav_cycle_window( i32 dir )
     if ( pick == GUI_ID_NONE ) return;
 
     /* Adopt + raise the picked window so it surfaces; its first item takes focus next frame. */
-    gui_window_t* w = nav_window_find( pick );
+    gui_window_t* w = window_find( pick );
     if ( w ) w->z = surface_z_raise( w->z );
 
     /* A floating tab group raises with its picked (visible) tab so the group surfaces. */
@@ -400,7 +390,7 @@ nav_resolve_page( void )
     if ( g_ctx->nav.items[ cur ].chrome ) return;
     const gui_nav_item_t c = g_ctx->nav.items[ cur ];
 
-    gui_window_t* nw   = nav_window_find( g_ctx->nav.win );
+    gui_window_t* nw   = window_find( g_ctx->nav.win );
     f32           page = nw ? nw->h : 0.0f;
     if ( page <= 0.0f ) page = 10.0f * WIDGET_H;
 
@@ -604,7 +594,7 @@ static gui_id_t
 nav_main_bar_win( void )
 {
     gui_id_t mb = id_hash( "##MainMenuBar" );
-    return nav_window_find( mb ) ? mb : GUI_ID_NONE;
+    return window_find( mb ) ? mb : GUI_ID_NONE;
 }
 
 /* Enter menu-bar mode on `bar` with the first entry highlighted; remember the prior nav target so
@@ -804,13 +794,13 @@ nav_new_frame( void )
            all -- a click never raises a tile's z (window_raise_on_press leaves it tiled), so the
            front-most-by-z default can never reach it.  Popup-band records keep their own capture
            (nav_choose_window) and a frame-only native shell never takes the keyboard. */
-        gui_window_t* clicked = nav_window_find( s_interaction.hover_win );
+        gui_window_t* clicked = window_find( s_interaction.hover_win );
         if ( clicked && nav_win_focusable( clicked ) )
             g_ctx->nav.explicit_win = clicked->id;
     }
 
     /* Menu mode self-heals: if its bar window is gone, drop out. */
-    if ( g_ctx->nav.bar_win != GUI_ID_NONE && !nav_window_find( g_ctx->nav.bar_win ) )
+    if ( g_ctx->nav.bar_win != GUI_ID_NONE && !window_find( g_ctx->nav.bar_win ) )
         nav_menu_exit();
 
     /* A focused text field owns the keyboard: nav reads nothing (Tab/arrows/Enter are the editor's,

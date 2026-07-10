@@ -67,12 +67,14 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
 /*----------------------------------------------------------------------------------------------
     window_find -- locate an existing window record by id, or NULL.  Unlike window_get this never
     creates one; used by the post-build reconcile (viewport_update) to reach the window a
-    tear-off / merge-back gesture named, where creating a phantom record would be wrong.
+    tear-off / merge-back gesture named, where creating a phantom record would be wrong.  A
+    GUI_ID_NONE query is "no window" and short-circuits -- no real record ever carries that id.
 ----------------------------------------------------------------------------------------------*/
 
 static gui_window_t*
 window_find( gui_id_t id )
 {
+    if ( id == GUI_ID_NONE ) return NULL;
     for ( u32 i = 0; i < g_ctx->win.count; ++i )
         if ( g_ctx->win.pool[ i ].id == id )
             return &g_ctx->win.pool[ i ];
