@@ -1075,42 +1075,43 @@ typedef enum
 typedef enum
 {
     GUI_WIN_NONE              = 0,         /* default behavior */
+
+    /* Title bar & chrome -- strip default window decoration. */
+
     GUI_WIN_NOTITLEBAR        = 1 << 0,    /* no title bar: body fills the top; no collapse, no titlebar drag */
     GUI_WIN_NOCOLLAPSE        = 1 << 1,    /* no collapse arrow; the window stays expanded */
-    GUI_WIN_NORESIZE          = 1 << 2,    /* disable user resizing from the border edges */
-    GUI_WIN_NOMOVE            = 1 << 3,    /* disable user drag moving the window from anywhere */
-
-    /* scrollbars -- dynamic: vertical bar and mouse wheel input are enabled by default */
-
-    GUI_WIN_NOSCROLL          = 1 << 4,    /* disable all scroll bars (keep mouse input) */
-    GUI_WIN_HSCROLL           = 1 << 5,    /* enable dynamic horizontal scroll bar (off by default) */
-    GUI_WIN_NOMOUSESCROLL     = 1 << 6,    /* disable mouse wheel scrolling */
-    
-    /* scrollbars - static: override dynamic bar flags */
-
-    GUI_WIN_ALWAYS_VSCROLL    = 1 << 7,    /* always show vertical scroll bar -- override*/
-    GUI_WIN_ALWAYS_HSCROLL    = 1 << 8,    /* always show horizontal scroll bar -- override */
-    
-    /* auto-resize -- size the window to its content instead of a fixed w/h */
-
-    GUI_WIN_ALWAYS_AUTOSIZE   = 1 << 9,    /* hug content every frame: no user resize, no scrollbars */
-    GUI_WIN_CAN_AUTOSIZE      = 1 << 10,   /* show a corner size-grip; double-click it to fit content */
-
-    /* child resize -- child_begin only (the ImGuiChildFlags_ResizeX / _ResizeY analogue).  A
-       draggable grip on the child's right / bottom border; the size on that axis then becomes
-       user-owned and persisted -- seeded once from the child_begin w/h, thereafter set by the
-       drag -- overriding the passed value.  RESIZE_Y supersedes the h<=0 auto-size on that axis.
-       A real window ignores these (it owns its geometry already), as does a grid-cell child
-       (the cell sizes it).  Vertical is the common case; both axes may be combined. */
-
-    GUI_WIN_CHILD_RESIZE_X    = 1 << 11,   /* child: drag the right border to resize width   */
-    GUI_WIN_CHILD_RESIZE_Y    = 1 << 12,   /* child: drag the bottom border to resize height  */
 
     /* Menu bar -- reserve a one-row strip below the title bar that menu_bar_begin fills (the
        ImGuiWindowFlags_MenuBar analogue).  The strip is carved from the top of the body before the
        body scroll region opens, so it never scrolls; menu_bar_begin returns false unless set. */
 
-    GUI_WIN_MENUBAR           = 1 << 13,   /* reserve a non-scrolling menu-bar strip (menu_bar_begin) */
+    GUI_WIN_MENUBAR           = 1 << 2,    /* reserve a non-scrolling menu-bar strip (menu_bar_begin) */
+
+    /* Move & resize -- the window is user-movable and edge-resizable by default. */
+
+    GUI_WIN_NOMOVE            = 1 << 3,    /* disable user drag moving the window from anywhere */
+    GUI_WIN_NORESIZE          = 1 << 4,    /* disable user resizing from the border edges */
+
+    /* Placement is managed externally (docking layout, animation, scripted snap).  Bypasses both
+       the per-drag margin clamp (window_clamp) and the merge-back fit-inside clamp so the system
+       can position and size the window freely without gui fighting the placement.  Without this
+       flag both clamps apply unconditionally; with it neither does. */
+
+    GUI_WIN_NO_BOUNDARY_CLAMP = 1 << 5,    /* placement is externally managed; skip both clamps */
+
+    /* Auto-resize -- size the window to its content instead of a fixed w/h. */
+
+    GUI_WIN_ALWAYS_AUTOSIZE   = 1 << 6,    /* hug content every frame: no user resize, no scrollbars */
+    GUI_WIN_CAN_AUTOSIZE      = 1 << 7,    /* show a corner size-grip; double-click it to fit content */
+
+    /* Scrolling -- a dynamic vertical bar and mouse-wheel input are on by default.  The NO* flags
+       switch pieces off; the ALWAYS_* flags force a bar to stay shown regardless of content. */
+
+    GUI_WIN_NOSCROLL          = 1 << 8,    /* disable all scroll bars (keep mouse input) */
+    GUI_WIN_NOMOUSESCROLL     = 1 << 9,    /* disable mouse wheel scrolling */
+    GUI_WIN_HSCROLL           = 1 << 10,   /* enable dynamic horizontal scroll bar (off by default) */
+    GUI_WIN_ALWAYS_VSCROLL    = 1 << 11,   /* always show vertical scroll bar -- override */
+    GUI_WIN_ALWAYS_HSCROLL    = 1 << 12,   /* always show horizontal scroll bar -- override */
 
     /* Native-borderless: this window IS its host OS window (window kind 3).  Its titlebar stands in
        for the Win32 caption and its border for the sizing frame, so titlebar drag / double-click /
@@ -1123,7 +1124,7 @@ typedef enum
        it emits the frame-only shell (and no-ops on an OS-chrome window).  Pass NATIVE yourself
        only to build a custom shell window. */
 
-    GUI_WIN_NATIVE            = 1 << 14,
+    GUI_WIN_NATIVE            = 1 << 13,
 
     /* Title-bar capability -- subtract a caption control a window should not offer.  All three
        buttons show by default (opt-out, like the NO* flags above); a window drops the ones it does
@@ -1137,16 +1138,9 @@ typedef enum
        NO_DETACH removes the pop-out path for any window -- it hides the non-native detach button and
        blocks the drag tear-off -- independent of NOMOVE (a window may move yet refuse to pop out). */
 
-    GUI_WIN_NO_MINIMIZE       = 1 << 15,   /* native: no minimize caption button */
-    GUI_WIN_NO_MAXIMIZE       = 1 << 16,   /* native: no maximize / restore caption button */
-    GUI_WIN_NO_DETACH         = 1 << 17,   /* no pop-out: hide detach button, block tear-off drag */
-
-    /* Placement is managed externally (docking layout, animation, scripted snap).  Bypasses both
-       the per-drag margin clamp (window_clamp) and the merge-back fit-inside clamp so the system
-       can position and size the window freely without gui fighting the placement.  Without this
-       flag both clamps apply unconditionally; with it neither does. */
-
-    GUI_WIN_NO_BOUNDARY_CLAMP = 1 << 18,
+    GUI_WIN_NO_MINIMIZE       = 1 << 14,   /* native: no minimize caption button */
+    GUI_WIN_NO_MAXIMIZE       = 1 << 15,   /* native: no maximize / restore caption button */
+    GUI_WIN_NO_DETACH         = 1 << 16,   /* no pop-out: hide detach button, block tear-off drag */
 
     /* Closeable -- add a close (X) button at the title bar's right edge.  Clicking it hides the
        window: window_begin returns false and emits nothing from then on, and the record persists
@@ -1154,7 +1148,14 @@ typedef enum
        offer a button that calls window_set_open( title, true ).  A native window uses its OS close
        caption button instead, so this flag only adds the X to a regular (non-native) panel. */
 
-    GUI_WIN_CLOSEABLE         = 1 << 19,   /* show a close (X) button; hidden until re-opened */
+    GUI_WIN_CLOSEABLE         = 1 << 17,   /* show a close (X) button; hidden until re-opened */
+
+    /* Never hosts tabs: the window is not a tab-drop target (no center chip when another window is
+       title-dragged over it) and window_tab refuses it as `onto_title`.  For control / instruction
+       panels whose body the host gates on window_begin's return -- becoming an inactive tab would
+       silently skip that body.  The window itself may still be dragged INTO groups or dockspaces. */
+
+    GUI_WIN_NO_TAB_TARGET     = 1 << 18,   /* not a tab-drop target; window_tab refuses it as onto_title */
 
     /* Input passthrough -- the window is purely visual; the cursor passes through it as if it
        were not there.  hover_win is never set to this window, so no widget inside can receive
@@ -1163,12 +1164,23 @@ typedef enum
        honors this flag too -- a region is interactive by default, opt out with NO_INPUT for a
        fixed-rect HUD with no window identity at all (the perf overlay's case). */
 
-    GUI_WIN_NO_INPUT          = 1 << 20,   /* click-through: never becomes hover_win */
+    GUI_WIN_NO_INPUT          = 1 << 19,   /* click-through: never becomes hover_win */
 
-    /* child_begin only: skip pushing a draw clip rect for this child region.  Use when the
-       caller knows content fits and wants to avoid the extra draw batch the scissor causes. */
+    /* Child regions -- child_begin only.
 
-    GUI_WIN_NO_CLIP           = 1 << 21,   /* child: do not push a clip rect */
+       CHILD_RESIZE_X / _Y (the ImGuiChildFlags_ResizeX / _ResizeY analogue): a draggable grip on
+       the child's right / bottom border; the size on that axis then becomes user-owned and persisted
+       -- seeded once from the child_begin w/h, thereafter set by the drag -- overriding the passed
+       value.  RESIZE_Y supersedes the h<=0 auto-size on that axis.  A real window ignores these (it
+       owns its geometry already), as does a grid-cell child (the cell sizes it).  Vertical is the
+       common case; both axes may be combined.
+
+       NO_CLIP: skip pushing a draw clip rect for this child region.  Use when the caller knows
+       content fits and wants to avoid the extra draw batch the scissor causes. */
+
+    GUI_WIN_CHILD_RESIZE_X    = 1 << 20,   /* child: drag the right border to resize width   */
+    GUI_WIN_CHILD_RESIZE_Y    = 1 << 21,   /* child: drag the bottom border to resize height  */
+    GUI_WIN_NO_CLIP           = 1 << 22,   /* child: do not push a clip rect */
 
     /* Arena band: routes this window's (or region's) retained geometry into the debug band of
        the shared vertex/index arena.  Debug-band windows pack AFTER every main-band slot, are
@@ -1177,13 +1189,7 @@ typedef enum
        self-measuring diagnostic UI -- the perf overlay and the pipeline dashboard; popups and
        tooltips opened from inside a debug-band window inherit the band automatically. */
 
-    GUI_WIN_DEBUG_BAND        = 1 << 24,   /* diagnostic UI: debug arena band + stats/dirty exempt */
-
-    /* Never hosts tabs: the window is not a tab-drop target (no center chip when another window is
-       title-dragged over it) and window_tab refuses it as `onto_title`.  For control / instruction
-       panels whose body the host gates on window_begin's return -- becoming an inactive tab would
-       silently skip that body.  The window itself may still be dragged INTO groups or dockspaces. */
-    GUI_WIN_NO_TAB_TARGET     = 1 << 25,
+    GUI_WIN_DEBUG_BAND        = 1 << 23,   /* diagnostic UI: debug arena band + stats/dirty exempt */
 
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
