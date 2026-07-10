@@ -71,10 +71,10 @@ static const gui_theme_t k_themes[] =
             },
             /* 1. METRICS */
             .line_size          = 20,
-            .widget_gap         = 4,
+            .widget_gap         = 8,
             .widget_pad         = 8,
             .min_cell_w         = 40,
-            .grid_quantum       = 4,
+            .grid_quantum       = 16,
             .win_border         = 1,
             .win_title_h        = 24,
             .checkbox_sz        = 16,
@@ -312,15 +312,88 @@ gui_theme_reset( void )
     style_new_frame();  /* reseed the working slot set from s_style, clear all push stacks */
 }
 
+/*----------------------------------------------------------------------------------------------
+    Grid lattice -- the ONE home of the quantum-snapping arithmetic.  Every place that snaps a size
+    or a cumulative edge onto the theme's grid_quantum px lattice (theme metric quantize below,
+    layout track resolve, natural widths, pack pens, scroll spill tolerance) routes through these
+    four primitives; no other code divides or multiplies by grid_quantum to snap.  Each takes the
+    lattice pitch `q` explicitly so it is phase-agnostic -- theme compute passes the base quantum,
+    the layout engine passes the live one.  q <= 1 is "grid off" and returns the value verbatim.
+
+    The GUI_GRID_LATTICE compile switch (gui.h) collapses all four to identity when 0, so the dead
+    arithmetic folds out and grid_quantum has no runtime cost.
+----------------------------------------------------------------------------------------------*/
+
+/* Largest lattice multiple <= v (0 allowed -- callers needing a nonzero floor use lat_floor_min). */
+static f32
+lat_floor( f32 v, u32 q )
+{
+#if GUI_GRID_LATTICE
+    if ( q <= 1 || v <= 0.0f ) return v;
+    return (f32)( (u32)( v / (f32)q ) * q );
+#else
+    (void)q;
+    return v;
+#endif
+}
+
+/* Largest lattice multiple <= v, but never below one quantum -- for a live size that must not
+   collapse to nothing when it dips under a single cell. */
+static f32
+lat_floor_min( f32 v, u32 q )
+{
+#if GUI_GRID_LATTICE
+    if ( q <= 1 || v <= 0.0f ) return v;
+    f32 r = (f32)( (u32)( v / (f32)q ) * q );
+    return ( r < (f32)q ) ? (f32)q : r;
+#else
+    (void)q;
+    return v;
+#endif
+}
+
+/* Smallest lattice multiple >= v. */
+static f32
+lat_ceil( f32 v, u32 q )
+{
+#if GUI_GRID_LATTICE
+    if ( q <= 1 || v <= 0.0f ) return v;
+    f32 m = v / (f32)q;
+    u32 n = (u32)m;
+    if ( (f32)n < m ) ++n;
+    return (f32)( n * q );
+#else
+    (void)q;
+    return v;
+#endif
+}
+
+/* Nearest lattice multiple (round half up). */
+static f32
+lat_round( f32 v, u32 q )
+{
+#if GUI_GRID_LATTICE
+    if ( q <= 1 || v <= 0.0f ) return v;
+    return (f32)( (u32)( ( v + (f32)q * 0.5f ) / (f32)q ) * q );
+#else
+    (void)q;
+    return v;
+#endif
+}
+
 /* Snap a scaled metric onto the grid lattice: nearest multiple of q, floored at one quantum so
-   a nonzero authored metric never vanishes.  Zero stays zero (an authored "none" is preserved). */
+   a nonzero authored metric never vanishes.  Zero stays zero (an authored "none" is preserved).
+   Only reached from the GUI_GRID_LATTICE-gated block in layout_compute, so it lives under the gate
+   rather than lingering as an unused static when snapping is compiled out. */
+#if GUI_GRID_LATTICE
 static u8
 metric_quantize( u32 v, u32 q )
 {
     if ( v == 0 ) return 0;
-    u32 r = ( ( v + q / 2 ) / q ) * q;
+    u32 r = (u32)lat_round( (f32)v, q );
     return (u8)( r < q ? q : r );
 }
+#endif
 
 /* Recompute the active layout metrics by scaling the user's base style profile to the
    active font's type size (em).  The base style is authored assuming em=12. */
@@ -398,11 +471,11 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
        must still fit); everything else rounds to nearest.  Strokes and fine details (win_border,
        cursor_*, checkmark_pad, rounding) stay free -- a hairline or inset snapped to the lattice
        would quadruple, so they keep their scaled pixel value even when they shape geometry. */
+#if GUI_GRID_LATTICE
     u32 q = s_style_base.grid_quantum;
     if ( q > 1 )
     {
-        u32 row = ( ( (u32)s_style.line_size + q - 1 ) / q ) * q;   /* ceil: keep the font floor */
-        s_style.line_size     = (u8)row;
+        s_style.line_size     = (u8)lat_ceil( (f32)s_style.line_size, q );   /* ceil: keep font floor */
         s_style.widget_gap    = metric_quantize( s_style.widget_gap,    q );
         s_style.widget_pad    = metric_quantize( s_style.widget_pad,    q );
         s_style.min_cell_w    = metric_quantize( s_style.min_cell_w,    q );
@@ -414,12 +487,12 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
            snap to nearest.  The whole ramp retunes together when the quantum or font changes. */
         for ( u32 i = 0; i < GUI_SCALE_COUNT; ++i )
         {
-            u32 sr = ( ( (u32)s_style.scales[ i ].row + q - 1 ) / q ) * q;
-            s_style.scales[ i ].row = (u8)sr;
+            s_style.scales[ i ].row = (u8)lat_ceil( (f32)s_style.scales[ i ].row, q );
             s_style.scales[ i ].pad = metric_quantize( s_style.scales[ i ].pad, q );
             s_style.scales[ i ].gap = metric_quantize( s_style.scales[ i ].gap, q );
         }
     }
+#endif
 }
 
 // clang-format on
