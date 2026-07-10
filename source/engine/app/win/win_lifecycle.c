@@ -281,6 +281,20 @@ app_window_set_native_frame( win_id_t id, bool enabled, i32 border )
                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED );
 }
 
+/* Publish the live-resize client-area quantum gui republishes each frame from grid_quantum.  The
+   WM_SIZING handler snaps the OS-proposed client size to a whole multiple of this; a step <= 1
+   stores 0 (free-pixel resize, the WM_SIZING handler then defers to the OS). */
+static void
+app_window_set_size_step( win_id_t id, i32 step_w, i32 step_h )
+{
+    app_window_t* win = win_get( id );
+    if ( !win )
+        return;
+
+    win->size_step.w = step_w > 1 ? step_w : 0;
+    win->size_step.h = step_h > 1 ? step_h : 0;
+}
+
 /* Request a graceful close (as if the user clicked the OS close button): post WM_CLOSE so the
    normal close path runs -- main window sets the quit flag, an gui-owned floater is torn down
    through its APP_EV_WIN_CLOSE handler.  Distinct from window_close, which destroys immediately. */

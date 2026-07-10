@@ -92,6 +92,13 @@ typedef struct app_api_s
        window_title_event, and window_system_menu rather than routing them through HTCAPTION. */
     void ( *window_set_native_frame )( win_id_t id, bool enabled, i32 border );
 
+    /* Publish the live-resize client-area quantum (px) for this window.  During an interactive edge
+       drag (WM_SIZING) the OS-proposed client size is snapped to a whole multiple of step_w/step_h,
+       so the drawable surface always holds an integer number of gui grid cells and the windows
+       snapped inside (which rest on the same lattice) align flush with its edges.  gui republishes
+       this each frame from grid_quantum; a step <= 1 disables snapping (free-pixel resize). */
+    void ( *window_set_size_step )( win_id_t id, i32 step_w, i32 step_h );
+
     /* Request a graceful close: post WM_CLOSE so the normal close path runs (main window quits,
        an gui-owned floater is torn down).  Unlike window_close it does not destroy immediately. */
     void ( *window_request_close )( win_id_t id );

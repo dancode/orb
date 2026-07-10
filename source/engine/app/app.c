@@ -147,6 +147,12 @@ typedef struct app_window_s
 
     } native;
 
+    /* Live-resize client-area quantum (px).  While an interactive edge drag is in flight
+       (WM_SIZING) the OS-proposed CLIENT size is snapped to a whole multiple of w/h, so the
+       drawable surface always holds an integer number of gui grid cells and windows snapped inside
+       align flush with its edges.  gui republishes this each frame from grid_quantum; 0 = free. */
+    struct { i32 w, h; } size_step;
+
     /* Relative mouse mode (FPS look).  While enabled the cursor is hidden and confined to the
        client rect; motion is read through mouse_raw_delta (WM_INPUT), so this window's
        WM_MOUSEMOVE stream is suppressed -- buttons and wheel flow normally.  Raw deltas are

@@ -297,6 +297,60 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
         }
             return 0;
 
+        case WM_SIZING:
+        {
+            /* Snap the CLIENT area to the gui grid quantum during an interactive edge drag, so the
+               drawable surface always holds a whole number of lattice cells and the windows snapped
+               inside it (which rest on the same lattice) align flush with its edges.  size_step is
+               the client-px quantum gui republishes from grid_quantum; 0 leaves the OS free. */
+            i32 sw = win->size_step.w;
+            i32 sh = win->size_step.h;
+            if ( sw <= 1 && sh <= 1 )
+                return DefWindowProcW( hwnd, msg, wp, lp );
+
+            RECT* wr = ( RECT* )lp;   /* proposed WINDOW rect, screen coords -- edited in place */
+
+            /* Frame margins = window rect minus client rect (0 for a borderless window whose client
+               fills the whole window).  The quantum applies to the CLIENT area, so peel the frame
+               off, snap, and add it back. */
+            RECT wrc, crc;
+            GetWindowRect( hwnd, &wrc );
+            GetClientRect( hwnd, &crc );
+            i32 frame_w = ( wrc.right - wrc.left ) - ( crc.right - crc.left );
+            i32 frame_h = ( wrc.bottom - wrc.top ) - ( crc.bottom - crc.top );
+
+            /* Which axes this edge/corner actually drives (a pure top/bottom drag never resizes
+               width, so leave it untouched rather than nudging the far edge). */
+            bool horiz = wp == WMSZ_LEFT || wp == WMSZ_RIGHT || wp == WMSZ_TOPLEFT
+                      || wp == WMSZ_TOPRIGHT || wp == WMSZ_BOTTOMLEFT || wp == WMSZ_BOTTOMRIGHT;
+            bool vert  = wp == WMSZ_TOP || wp == WMSZ_BOTTOM || wp == WMSZ_TOPLEFT
+                      || wp == WMSZ_TOPRIGHT || wp == WMSZ_BOTTOMLEFT || wp == WMSZ_BOTTOMRIGHT;
+
+            if ( sw > 1 && horiz )
+            {
+                i32 cw = ( wr->right - wr->left ) - frame_w;    /* proposed client width */
+                i32 nw = ( ( cw + sw / 2 ) / sw ) * sw;         /* nearest multiple, >= one step */
+                if ( nw < sw ) nw = sw;
+                i32 dw = nw - cw;
+                if ( wp == WMSZ_LEFT || wp == WMSZ_TOPLEFT || wp == WMSZ_BOTTOMLEFT )
+                    wr->left -= dw;     /* left edge moves; right pinned */
+                else
+                    wr->right += dw;    /* right edge moves; left pinned */
+            }
+            if ( sh > 1 && vert )
+            {
+                i32 ch = ( wr->bottom - wr->top ) - frame_h;    /* proposed client height */
+                i32 nh = ( ( ch + sh / 2 ) / sh ) * sh;
+                if ( nh < sh ) nh = sh;
+                i32 dh = nh - ch;
+                if ( wp == WMSZ_TOP || wp == WMSZ_TOPLEFT || wp == WMSZ_TOPRIGHT )
+                    wr->top -= dh;      /* top edge moves; bottom pinned */
+                else
+                    wr->bottom += dh;   /* bottom edge moves; top pinned */
+            }
+            return TRUE;
+        }
+
         case WM_PAINT:
         {
             PAINTSTRUCT ps;

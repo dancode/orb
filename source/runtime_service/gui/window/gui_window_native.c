@@ -196,6 +196,17 @@ window_sync_native( gui_window_t* win, gui_win_flags_t flags )
     i32 border = ( flags & GUI_WIN_NORESIZE ) ? 0 : ( i32 )RESIZE_BAND_OUTER;
     app()->window_set_native_frame( window_native_id( win ), true, border );
 
+    /* Snap the OS client area to the same lattice the gui windows inside it snap to, so a live
+       edge-drag of this surface always leaves a whole number of grid cells and docked/snapped
+       windows stay flush with its edges.  0 when the grid is off (grid_quantum <= 1 or the
+       GUI_GRID_LATTICE compile switch is off) -> free-pixel resize, the pre-grid behavior. */
+#if GUI_GRID_LATTICE
+    i32 step = ( s_style.grid_quantum > 1 ) ? ( i32 )s_style.grid_quantum : 0;
+#else
+    i32 step = 0;
+#endif
+    app()->window_set_size_step( window_native_id( win ), step, step );
+
     i32 caption = ( flags & GUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
     g_ctx->vp.pool[ win->viewport ].caption_inset = ( f32 )caption;
 
