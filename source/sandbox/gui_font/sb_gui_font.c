@@ -17,6 +17,7 @@
 ==============================================================================================*/
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
@@ -48,9 +49,11 @@
 
 typedef struct
 {
-    /* Picker listing: font_source/ files, plus installed faces when allow_windows is on. */
+    /* Picker listing: font_source/ files first (indices 0..local_count), then installed faces
+       (indices local_count..count, sorted) when allow_windows is on. */
     char names[ FT_LIST_MAX ][ FT_NAME_MAX ];
     int  count;
+    int  local_count;        /* number of leading entries that are project (font_source) fonts */
     int  sel;
     bool scanned;
     bool list_has_windows;   /* scope the current listing was built with (detects toggle) */
@@ -137,12 +140,27 @@ ft_windows_cb( const char* name, const char* full_path, void* ud )
     return ft_add( name );   /* friendly name, e.g. "Cascadia Mono Regular" */
 }
 
+/* Case-insensitive name compare for sorting the Windows portion of the list. */
+static int
+ft_name_cmp( const void* a, const void* b )
+{
+    const char* x = (const char*)a;
+    const char* y = (const char*)b;
+    for ( ; *x && *y; ++x, ++y )
+    {
+        char cx = ( *x >= 'A' && *x <= 'Z' ) ? (char)( *x - 'A' + 'a' ) : *x;
+        char cy = ( *y >= 'A' && *y <= 'Z' ) ? (char)( *y - 'A' + 'a' ) : *y;
+        if ( cx != cy ) return (unsigned char)cx - (unsigned char)cy;
+    }
+    return (unsigned char)*x - (unsigned char)*y;
+}
+
 static void
 ft_scan( void )
 {
     s_ft.count = 0;
 
-    /* Local .ttf/.otf/.ttc under assets/font_source/ (always listed, by filename). */
+    /* Local .ttf/.otf/.ttc under assets/font_source/ (always listed first, by filename). */
     char src[ 512 ];
     if ( dev_font_source_dir( src, sizeof( src ) ) )
     {
@@ -150,10 +168,18 @@ ft_scan( void )
         sys_file_glob( src, "*.otf", ft_local_cb, NULL );
         sys_file_glob( src, "*.ttc", ft_local_cb, NULL );
     }
+    s_ft.local_count = s_ft.count;   /* everything before here is a project font */
 
-    /* Installed fonts by friendly name, only when the scope box is ticked. */
+    /* Installed fonts by friendly name, only when the scope box is ticked.  These arrive as two
+       per-hive alphabetical runs; sort the whole appended block into one A-Z list so a face is
+       easy to find (and does not appear to be missing just because it sits in another run). */
     if ( s_ft.allow_windows )
+    {
         sys_font_enumerate( ft_windows_cb, NULL );
+        if ( s_ft.count > s_ft.local_count )
+            qsort( s_ft.names[ s_ft.local_count ], (size_t)( s_ft.count - s_ft.local_count ),
+                   FT_NAME_MAX, ft_name_cmp );
+    }
 
     s_ft.list_has_windows = s_ft.allow_windows;
     s_ft.scanned          = true;
@@ -321,12 +347,21 @@ show_font_tool( void )
     {
         for ( int i = 0; i < s_ft.count; i++ )
         {
+            /* Project (font_source) fonts lead the list in a distinct tint; installed Windows
+               faces follow in default color. */
+            bool project = ( i < s_ft.local_count );
+            if ( project )
+                gui()->push_style_color( GUI_COL_TEXT, GUI_COLOR( 0x7C, 0xD9, 0x92, 0xFF ) );
+
             bool sel = ( i == s_ft.sel );
             if ( gui()->selectable( s_ft.names[ i ], &sel ) )
             {
                 s_ft.sel = i;
                 snprintf( s_ft.request, sizeof( s_ft.request ), "%s", s_ft.names[ i ] );
             }
+
+            if ( project )
+                gui()->pop_style_color( 1 );
         }
         gui()->combo_end();
     }
