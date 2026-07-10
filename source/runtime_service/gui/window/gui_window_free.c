@@ -121,6 +121,15 @@ static f32 window_min_w( void ) { return WIN_TITLE_H * 4.0f; }
    a resize never eats into the title bar vertically.  title_h is 0 for a NOTITLEBAR window. */
 static f32 window_min_h( f32 title_h ) { return title_h + WIDGET_H + WIN_BORDER; }
 
+/* Snap a window position or extent onto the grid lattice (nearest), so a window rests only on snap
+   thresholds -- its interior content column then always lands on the same lattice the theme metrics
+   and resolved tracks do, and widget widths never jump mid-resize as the free-pixel width crosses a
+   lattice line.  Movement/resize reads blocky by one quantum step; a future settle-lerp (gui_anim.c)
+   would smooth it.  q<=1 or GUI_GRID_LATTICE=0 -> identity (free-pixel windows, the pre-grid feel).
+   The per-gesture callers snap the MOVING edge only and hold the pinned far edge fixed, so a snap
+   never drags the opposite edge. */
+static f32 window_snap( f32 v ) { return lat_round( v, s_style.grid_quantum ); }
+
 /*----------------------------------------------------------------------------------------------
     Auto-resize
 
@@ -165,8 +174,13 @@ window_fit_size( const char* title, f32 title_h, f32 mb_h, bool collapsible,
     f32 min_w = window_min_w();
     if ( want_w < min_w ) want_w = min_w;
 
-    *out_w = want_w;
-    *out_h = want_h;
+    /* Rest the autosized window on the lattice too, so its edges align with the manually-resized
+       case.  Ceil (not round) so the hug never crops the content it was measured to hold; the
+       content extent is already lattice-ceiled, so this only absorbs the sub-quantum chrome slack
+       (the free-pixel border). */
+    u32 q = s_style.grid_quantum;
+    *out_w = lat_ceil( want_w, q );
+    *out_h = lat_ceil( want_h, q );
 }
 
 /* Apply the in-flight resize to win's geometry, clamped to the minimum size.  The raw edge-drag is
@@ -181,6 +195,15 @@ window_apply_resize( gui_window_t* win, f32 title_h )
     gui_rect_t r = { win->x, win->y, win->w, win->h };
     resize_apply_edges( &r, s_resize_edges );
     win->x = r.x;  win->y = r.y;  win->w = r.w;  win->h = r.h;
+
+    /* Snap the moving edge onto the lattice, holding the pinned far edge fixed: a right/bottom drag
+       snaps the extent out from the fixed origin; a left/top drag snaps the origin and recovers the
+       extent against the pinned far edge (s_resize_fix_*, itself on the lattice from the last rest).
+       Both edges land on the grid, so the window's content column stays lattice-aligned as it grows. */
+    if ( s_resize_edges & GUI_RESIZE_R ) win->w = window_snap( win->w );
+    if ( s_resize_edges & GUI_RESIZE_L ) { win->x = window_snap( win->x ); win->w = s_resize_fix_x - win->x; }
+    if ( s_resize_edges & GUI_RESIZE_B ) win->h = window_snap( win->h );
+    if ( s_resize_edges & GUI_RESIZE_T ) { win->y = window_snap( win->y ); win->h = s_resize_fix_y - win->y; }
 
     /* Clamp to minimum; a moving edge stops against the pinned far edge. */
     if ( win->w < min_w )
@@ -229,6 +252,8 @@ window_apply_drag( gui_window_t* win, gui_id_t id )
     {
         move_track( id, s_io.mouse_x, s_io.mouse_y, &win->x, &win->y );
         window_clamp( win );
+        win->x = window_snap( win->x );   /* rest on the lattice: blocky move, size preserved */
+        win->y = window_snap( win->y );   /* (both origin coords snap; extent is untouched) */
     }
     else
     {
@@ -236,7 +261,8 @@ window_apply_drag( gui_window_t* win, gui_id_t id )
         f32 nx = 0.0f, ny = 0.0f;
         app()->mouse_position_screen( &cx, &cy );
         move_track( id, (f32)cx, (f32)cy, &nx, &ny );
-        app()->window_set_pos( g_ctx->vp.pool[ win->viewport ].win_id, (i32)nx, (i32)ny );
+        app()->window_set_pos( g_ctx->vp.pool[ win->viewport ].win_id,
+                               (i32)window_snap( nx ), (i32)window_snap( ny ) );
         win->x = 0.0f;
         win->y = 0.0f;
     }
@@ -401,8 +427,8 @@ window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 ti
         app()->window_get_pos( os, &sox, &soy );
         f32 local_x = (f32)scx - (f32)sox;
         f32 local_y = (f32)scy - (f32)soy;
-        f32 new_w   = local_x - s_resize_off_x;
-        f32 new_h   = local_y - s_resize_off_y;
+        f32 new_w   = window_snap( local_x - s_resize_off_x );   /* rest the OS size on the lattice */
+        f32 new_h   = window_snap( local_y - s_resize_off_y );
         if ( new_w < window_min_w() )        new_w = window_min_w();
         if ( new_h < window_min_h( title_h ) ) new_h = window_min_h( title_h );
         win->w = new_w;

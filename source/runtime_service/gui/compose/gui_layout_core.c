@@ -77,16 +77,19 @@ content_reach( layout_frame_t* f, f32 x, f32 y )
     track, an explicit row_h, a line.fit_next / pack_size are taken verbatim -- unit-first authoring
     goes through gui_sz_u(), which is on-lattice by construction.  Content sizes round UP (text is
     never clipped); divided space rounds DOWN (tracks never overflow their extent).
+
+    The snapping arithmetic itself lives in the lat_* primitives (gui_theme.c, behind the
+    GUI_GRID_LATTICE compile switch).  The wrappers below just bind the pitch to the live
+    grid_quantum so call sites stay terse (quant_floor( v ) not lat_floor( v, q )).
 ----------------------------------------------------------------------------------------------*/
 
-/* Largest lattice multiple <= v, floored at one quantum so a live size never collapses. */
+/* Content size floored onto the live style's lattice, never below one quantum so a live size
+   never collapses.  Thin wrapper over the lat_* primitives (gui_theme.c) that binds the pitch to
+   the active grid_quantum -- the lattice arithmetic and the GUI_GRID_LATTICE gate live there. */
 static f32
 quant_floor( f32 v )
 {
-    u32 q = s_style.grid_quantum;
-    if ( q <= 1 || v <= 0.0f ) return v;
-    f32 r = (f32)( (u32)( v / (f32)q ) * q );
-    return ( r < (f32)q ) ? (f32)q : r;
+    return lat_floor_min( v, s_style.grid_quantum );
 }
 
 /* Largest lattice multiple <= v (0 allowed -- no one-quantum floor).  For snapping a CUMULATIVE
@@ -97,21 +100,14 @@ quant_floor( f32 v )
 static f32
 lattice_floor( f32 v )
 {
-    u32 q = s_style.grid_quantum;
-    if ( q <= 1 || v <= 0.0f ) return v;
-    return (f32)( (u32)( v / (f32)q ) * q );
+    return lat_floor( v, s_style.grid_quantum );
 }
 
 /* Smallest lattice multiple >= v. */
 static f32
 quant_ceil( f32 v )
 {
-    u32 q = s_style.grid_quantum;
-    if ( q <= 1 || v <= 0.0f ) return v;
-    f32 m = v / (f32)q;
-    u32 n = (u32)m;
-    if ( (f32)n < m ) ++n;
-    return (f32)( n * q );
+    return lat_ceil( v, s_style.grid_quantum );
 }
 
 /*----------------------------------------------------------------------------------------------

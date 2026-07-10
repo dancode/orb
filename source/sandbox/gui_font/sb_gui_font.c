@@ -379,14 +379,14 @@ show_font_tool( void )
        sizes its HEIGHT to the view bottom, which feeds back into the scroll extent when content
        follows it (status + preview below), growing the region without bound every scrolled frame. */
     gui()->row2( 0.5f, 0.5f );
-    if ( gui()->button_fill( "Bake & Preview (stb)" ) )
-    // gui()->next_item_fit( 1.0f );
-    // if ( gui()->button( "Bake & Preview (stb)" ) )
+    // if ( gui()->button_fill( "Bake & Preview (stb)" ) )
+    gui()->next_item_fit( 1.0f );
+    if ( gui()->button( "Bake & Preview (stb)" ) )
         ft_bake_preview();
 
-     if ( gui()->button_fill( "Export final (font_tool)" ) )
-    // gui()->next_item_fit( 1.0f );
-    // if ( gui()->button( "Export final (font_tool)" ) )
+    // if ( gui()->button_fill( "Export final (font_tool)" ) )
+    gui()->next_item_fit( 1.0f );
+    if ( gui()->button( "Export final (font_tool)" ) )
         ft_export_final();
 
     gui()->stack();

@@ -229,6 +229,14 @@ typedef struct gui_scale_metrics_t
    Behavior (interact/) consumes neither category: it takes finished rects.  (Its one metric
    read is win_border, because the resize hit zone straddles the border -- border is geometry.) */
 
+/* GUI_GRID_LATTICE -- compile-time master switch for grid_quantum snapping.  1 (default) keeps
+   the feature; define 0 (e.g. -DGUI_GRID_LATTICE=0) to strip every snap to identity so the lattice
+   arithmetic folds out and grid_quantum costs nothing.  Independent of a style's grid_quantum,
+   which still disables snapping per-style at runtime when <= 1. */
+#ifndef GUI_GRID_LATTICE
+#define GUI_GRID_LATTICE 1
+#endif
+
 typedef struct gui_style_t
 {
     u32 colors[ GUI_COL_COUNT ]; // SKIN: theme default palette (GUI_COLOR packs R,G,B,A bytes)
