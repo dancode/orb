@@ -316,7 +316,7 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
 
     The debug modes that used to be host-side loop state (perf/state overlay tiers, pipeline
     dashboard, render mode, retained/idle skip) live here, behind hotkeys read from the frame's
-    own IO snapshot.  debug_hotkeys() runs from frame_begin after input_update; the overlays are
+    own IO snapshot.  debug_hotkeys() runs from frame_begin after input_frame_begin; the overlays are
     emitted by debug_overlays_emit(), called from ctx_end while the DEFAULT context is still
     bound -- last in its build, so they draw on top and their cost is counted like any widget.
 
@@ -353,7 +353,7 @@ void gui_set_idle_skip( bool on ) { s_idle_skip = on; }
 bool gui_idle_skip( void )        { return s_idle_skip; }
 
 /* Poll the debug hotkeys from this frame's IO snapshot.  Called from frame_begin (after
-   input_update) only while debug_enable is on.  A hotkey press is an input event, so the frame
+   input_frame_begin) only while debug_enable is on.  A hotkey press is an input event, so the frame
    is already dirty and the new mode emits this same frame. */
 static void
 debug_hotkeys( void )

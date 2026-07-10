@@ -2,56 +2,64 @@
 
     runtime_service/gui/foundation/gui_io.c -- App input -> gui IO snapshot.
 
-    input_update() is called once per frame before any widget calls.  It:
-        1. Samples mouse position and button state via the app() query API.
-        2. Samples per-key down/pressed state for all APP_KEY_COUNT keys.
-        3. Consumes text + scroll fed in since the last frame by gui_event().
-    The app event ring is single-consumer; the host drains it (for resize etc.) and
-    hands each event to gui_event(), which unpacks CHAR / MOUSE_WHEEL internally,
-    so gui does not drain the ring itself.  The result is stored in s_io and read
-    by the widget code.
+    The input frame is bracketed like everything else in gui:
+
+        gui_event()          -- during the host's ring drain (BEFORE frame_begin), writes the
+                                 event-borne input (typed text, wheel, clipboard paste) straight
+                                 into s_io, accumulating across the several events of one frame.
+        input_frame_begin()  -- from gui_frame_begin: samples the POLLED input (mouse position +
+                                 buttons, per-key state for all APP_KEY_COUNT keys, display size)
+                                 and computes s_io_dirty.  Does not touch the event-borne fields --
+                                 the drain already filled them.
+        input_frame_end()    -- from gui_frame_end: clears the one-frame fields (text/wheel/paste)
+                                 so each is non-empty only on the frame its event arrived.
+
+    The app event ring is single-consumer; the host drains it (for resize etc.) and hands each
+    event to gui_event(), so gui does not drain the ring itself.  Because the drain completes
+    before frame_begin, one storage slot per field suffices -- gui_event fills it, widgets read it,
+    input_frame_end clears it -- with no separate pending buffer.  The result lives in s_io.
 
     Included by gui.c after gui_emit_draw.c.
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   /* gui_io_t, GUI_KEY_COUNT */
-// clang-format off
 
 /* Compile-time check: GUI_KEY_COUNT must be large enough to index all app keys. */
 ORB_STATIC_ASSERT( APP_KEY_COUNT <= GUI_KEY_COUNT,
                    "GUI_KEY_COUNT too small for APP_KEY_COUNT" );
 
+// clang-format off
 /*----------------------------------------------------------------------------------------------
     State
 ----------------------------------------------------------------------------------------------*/
 
+/* The per-frame input snapshot the widgets see.  The polled fields are sampled by
+   input_frame_begin(); the event-borne fields (text/wheel/paste) are written straight in by
+   gui_event() during the host's ring drain and cleared by input_frame_end(). */
 static gui_io_t s_io;
 
 /* True when any input-state change was detected this frame: mouse moved, button edge,
-   key press/release, wheel, text, paste, or display-size change.  Computed in input_update
+   key press/release, wheel, text, paste, or display-size change.  Computed in input_frame_begin
    and cleared at the next call.  Read by frame_begin to gate the frontend-dirty check. */
 static bool s_io_dirty;
 
 /* Set by gui_owned_window_event (gui_frame.c, same unity TU) when a floater OS window
-   is resized.  Consumed and cleared by input_update so the resize marks one frame dirty. */
+   is resized.  Consumed and cleared by input_frame_begin so the resize marks one frame dirty. */
 static bool s_viewport_dirty;
 
 /* Previous primary display size -- compared each frame to detect host-side viewport_resize
-   calls on the main surface (which also change win_w/win_h passed into input_update). */
+   calls on the main surface (which also change win_w/win_h passed into input_frame_begin). */
 static i32 s_prev_disp_w, s_prev_disp_h;
 
 /* Internal accessors used by gui_frame.c (same unity TU). */
 static bool io_dirty( void ) { return s_io_dirty; }
 
-/* Pending text + scroll accumulated between frames by gui_event().  The app event
-   ring is single-consumer, and the host must drain it itself (for resize etc.), so
-   gui can no longer drain it here -- the host forwards each event to gui_event().
-   input_update() moves this pending state into s_io and clears it each frame. */
-static char s_pending_text[ sizeof( ( (gui_io_t*)0 )->text ) ];
-static u32  s_pending_text_len;
-static f32  s_pending_wheel;
-static char s_pending_paste[ sizeof( ( (gui_io_t*)0 )->paste ) ];
-static bool s_pending_paste_set;   /* a paste arrived this frame (distinguishes "" paste) */
+/* Bookkeeping for the event-borne fields gui_event writes directly into s_io.  s_io_text_len is
+   the append cursor into s_io.text (where the next typed char lands, and the bound check);
+   s_io_paste_set records that a paste arrived this frame so an empty-string paste is distinguished
+   from no paste.  Both reset by input_frame_end. */
+static u32  s_io_text_len;
+static bool s_io_paste_set;
 
 /* The OS window the cursor is currently in, learned from the win_id on mouse move/button/wheel
    events (the polled position alone carries no window identity).  Win32 holds mouse capture on the
@@ -87,9 +95,9 @@ static f32 s_click_x[ 3 ], s_click_y[ 3 ];
     Outbound (cut / copy) goes straight to the OS clipboard through the app module
     (app()->clipboard_set), so copied text is available to other applications.  Inbound (paste)
     is event-driven: the platform reads the OS clipboard on the paste gesture and posts an
-    APP_EV_CLIPBOARD event, which gui_event copies into the pending-paste buffer below; the
-    next input_update promotes it to s_io.paste for the widget code to consume.  gui owns no
-    clipboard buffer of its own -- it is a pure conduit between the OS and the focused field.
+    APP_EV_CLIPBOARD event, which gui_event writes straight into s_io.paste for the focused field
+    to consume this frame; input_frame_end clears it after.  gui owns no clipboard buffer of its
+    own -- it is a pure conduit between the OS and the focused field.
 ----------------------------------------------------------------------------------------------*/
 
 /* Copy n bytes of `s` to the OS clipboard, dropping control characters (a single-line field's
@@ -107,16 +115,18 @@ gui_clipboard_set( const char* s, u32 n )
     app()->clipboard_set( tmp );
 }
 
-/* Stage pasted text arriving via APP_EV_CLIPBOARD; promoted to s_io.paste by input_update. */
+/* Write pasted text arriving via APP_EV_CLIPBOARD straight into s_io.paste for the focused field
+   to consume this frame; input_frame_end clears it after.  s_io_paste_set marks that a paste
+   happened so an empty-string paste is not mistaken for no paste. */
 static void
 add_paste_text( const char* text )
 {
     u32 i = 0;
     if ( text )
-        for ( ; text[ i ] && i + 1u < sizeof( s_pending_paste ); ++i )
-            s_pending_paste[ i ] = text[ i ];
-    s_pending_paste[ i ]  = '\0';
-    s_pending_paste_set   = true;
+        for ( ; text[ i ] && i + 1u < sizeof( s_io.paste ); ++i )
+            s_io.paste[ i ] = text[ i ];
+    s_io.paste[ i ]  = '\0';
+    s_io_paste_set   = true;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -135,17 +145,17 @@ add_input_char( u32 codepoint )
         return;
 
     /* ASCII only: codepoints >127 collapse to '?'. */
-    if ( s_pending_text_len + 1u < sizeof( s_pending_text ) )
+    if ( s_io_text_len + 1u < sizeof( s_io.text ) )
     {
-        s_pending_text[ s_pending_text_len++ ] = ( codepoint < 128u ) ? (char)codepoint : '?';
-        s_pending_text[ s_pending_text_len   ] = '\0';
+        s_io.text[ s_io_text_len++ ] = ( codepoint < 128u ) ? (char)codepoint : '?';
+        s_io.text[ s_io_text_len   ] = '\0';
     }
 }
 
 static void
 add_mouse_wheel( f32 delta )
 {
-    s_pending_wheel += delta;
+    s_io.mouse_wheel += delta;
 }
 
 /* Forward one drained app event to gui.  The host loops its event ring and
@@ -190,7 +200,7 @@ gui_event( const app_event_t* ev )
             return false;
         }
 
-        /* Position + buttons are still resolved by input_update from the polled snapshot (client
+        /* Position + buttons are still resolved by input_frame_begin from the polled snapshot (client
            coords of the window the cursor is in); these events carry the win_id that identifies
            WHICH window that is, so the host viewport can be resolved.  Not consumed -- the
            mouse-capture fence (want_capture_mouse) decides UI-vs-scene at read time, not here. */
@@ -249,11 +259,16 @@ input_detect_double_click( f32 dt )
 }
 
 /*----------------------------------------------------------------------------------------------
-    input_update -- populate s_io for the current frame.
+    input_frame_begin -- sample the polled input into s_io for the current frame.
+
+    The head of the input frame, called from gui_frame_begin.  Samples what must be polled (mouse
+    position + buttons, per-key state, display size) and computes s_io_dirty.  The event-borne
+    fields (text/wheel/paste) are NOT touched here -- gui_event already wrote them straight into
+    s_io during the host's ring drain, which runs before frame_begin; input_frame_end clears them.
 ----------------------------------------------------------------------------------------------*/
 
 static void
-input_update( i32 win_w, i32 win_h, f32 dt )
+input_frame_begin( i32 win_w, i32 win_h, f32 dt )
 {
     /* Mouse position (polled): client coords of the window the cursor is in.
        Compare against the previous frame before overwriting to detect movement. */
@@ -291,8 +306,7 @@ input_update( i32 win_w, i32 win_h, f32 dt )
         }
     }
 
-    /* Double-click: a press soon after, and close to, the previous press.  Done before the
-       text/scroll merge below so it is ready for the widget code this frame. */
+    /* Double-click: a press soon after, and close to, the previous press. */
     input_detect_double_click( dt );
 
     /* Key state snapshot.  keys_pressed is the initial press; keys_pressed_repeat also catches OS
@@ -308,17 +322,9 @@ input_update( i32 win_w, i32 win_h, f32 dt )
         if ( s_io.keys_pressed[ k ] || s_io.keys_released[ k ] || s_io.keys_pressed_repeat[ k ] ) key_edge = true;
     }
 
-    /* Text + scroll + paste arrive via the host-fed pending state (the host owns the event
-       ring drain).  Move it into the frame snapshot, then clear it for next frame.  s_io.paste
-       is non-empty only on the single frame a paste event was seen, so the focused field
-       applies it exactly once. */
-    memcpy( s_io.text, s_pending_text, (size_t)s_pending_text_len + 1u );
-    s_io.mouse_wheel = s_pending_wheel;
-
-    if ( s_pending_paste_set )
-        memcpy( s_io.paste, s_pending_paste, sizeof( s_io.paste ) );
-    else
-        s_io.paste[ 0 ] = '\0';
+    /* Text, scroll and paste were written straight into s_io by gui_event during the host's ring
+       drain, which completes before this call -- nothing to promote here.  They stay live for the
+       widgets this frame and are cleared by input_frame_end. */
 
     /* Display size change: primary window resized (win_w/win_h changed) or a floater viewport
        was resized (s_viewport_dirty set by gui_owned_window_event).  Either invalidates the
@@ -329,22 +335,37 @@ input_update( i32 win_w, i32 win_h, f32 dt )
     s_viewport_dirty = false;
 
     /* Frame is dirty when anything changed vs last frame: position, button/key edges (including
-       repeat ticks), wheel, typed text, clipboard paste, or display-size change. */
+       repeat ticks), wheel, typed text, clipboard paste, or display-size change.  The event-borne
+       fields are read from s_io, where gui_event just left them. */
     s_io_dirty = mouse_moved || mouse_edge || key_edge || disp_changed
-              || ( s_pending_wheel    != 0.0f )
-              || ( s_pending_text_len >  0    )
-              || s_pending_paste_set;
-
-    s_pending_text[ 0 ]  = '\0';
-    s_pending_text_len   = 0;
-    s_pending_wheel      = 0.0f;
-    s_pending_paste[ 0 ] = '\0';
-    s_pending_paste_set  = false;
+              || ( s_io.mouse_wheel != 0.0f )
+              || ( s_io_text_len    >  0    )
+              || s_io_paste_set;
 
     s_io.display_w = win_w;
     s_io.display_h = win_h;
     s_io.dt        = dt;
     s_io.time     += (f64)dt;   /* monotonic frame clock for get_time() */
+}
+
+/*----------------------------------------------------------------------------------------------
+    input_frame_end -- clear the one-frame event-borne input.
+
+    The tail of the input frame, called from gui_frame_end unconditionally (every frame, including
+    clean / idle-skipped ones).  Text, wheel and paste are non-empty only on the frame their event
+    arrived, so they are cleared here after the widgets have read them and before the next drain
+    refills them.  Valid because the host drains the event ring (which fills these fields) before
+    frame_begin -- never between this call and the next input_frame_begin.
+----------------------------------------------------------------------------------------------*/
+
+static void
+input_frame_end( void )
+{
+    s_io.text[ 0 ]   = '\0';
+    s_io_text_len    = 0;
+    s_io.mouse_wheel = 0.0f;
+    s_io.paste[ 0 ]  = '\0';
+    s_io_paste_set   = false;
 }
 
 /* Modifier key helpers: poll both L and R variants so callers need not repeat the pair. */

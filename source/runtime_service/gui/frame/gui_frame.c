@@ -151,7 +151,7 @@ static gui_context_t* s_ctx_save_stack[ GUI_CTX_STACK_DEPTH ];
 static u32              s_ctx_save_sp;
 
 /* True when the current frame has any input change, in-flight animation, or render delta from last
-   frame.  Computed in frame_begin after input_update; exposed via gui_frame_dirty().  When false
+   frame.  Computed in frame_begin after input_frame_begin; exposed via gui_frame_dirty().  When false
    the host may skip ctx_begin / widget emit / ctx_end entirely and call render() directly -- the
    previous frame's draw list and tessellation are preserved and reused unchanged. */
 static bool s_frame_dirty = true;   /* start true: forces a full first-frame build */
@@ -166,19 +166,12 @@ static bool s_overlays_emitted = false;
 /* Once-per-frame latch for the boot-path chrome-shell emit at the default context's ctx_begin. */
 static bool s_shell_emitted = false;
 
-/* Global frame phase: input poll + draw-list reset.  Always reads display dimensions from the
-   PRIMARY context (slot 0): the OS window and its viewports belong to the default context
-   regardless of which context is active for input this frame.
-
-   This is the global half of the frame; it binds NO context.  Returns true when this frame must
-   emit widgets (frame_dirty): open the context scopes and build only then, and always close with
-   frame_end -- on a clean (false) frame it replays the volatile widgets internally and render()
-   reuses the preserved geometry.  See the FRAME CONTRACT note in gui_api.h. */
-
+/*============================================================================================*/
 /* Commit any font (re)loads deferred from last frame's build at this between-frames latch.  The
    GPU atlas swap (create/upload/register + deferred destroy of the old atlas) is done here, before
    any context renders, so it never interleaves with an in-flight frame.  Returns true when the
    active font changed -- its metrics drive layout, so the caller forces a rebuild this frame. */
+
 static bool
 gui_font_flush_deferred( void )
 {
@@ -187,6 +180,16 @@ gui_font_flush_deferred( void )
     gui_style_apply();          /* active font's metrics changed -> rescale the layout base */
     return true;
 }
+
+/*============================================================================================*/
+/* Global frame phase: input poll + draw-list reset.  Always reads display dimensions from the
+   PRIMARY context (slot 0): the OS window and its viewports belong to the default context
+   regardless of which context is active for input this frame.
+
+   This is the global half of the frame; it binds NO context.  Returns true when this frame must
+   emit widgets (frame_dirty): open the context scopes and build only then, and always close with
+   frame_end -- on a clean (false) frame it replays the volatile widgets internally and render()
+   reuses the preserved geometry.  See the FRAME CONTRACT note in gui_api.h. */
 
 bool
 gui_frame_begin( f32 dt )
@@ -208,7 +211,7 @@ gui_frame_begin( f32 dt )
        the field always reflects the last frame the shell was active. */
 
     /* Push last frame's cursor request to the OS BEFORE interaction_frame_reset promotes the new
-       hover_win and input_update overwrites mouse_viewport -- cursor_flush reads both as the
+       hover_win and input_frame_begin overwrites mouse_viewport -- cursor_flush reads both as the
        previous frame left them, keeping the requested shape and its target window coherent. */
     cursor_flush();
 
@@ -217,7 +220,7 @@ gui_frame_begin( f32 dt )
     gui_build_stats_publish();
 
     /* Refresh the IO snapshot, computing s_io_dirty as a side-effect. */
-    input_update( disp_w, disp_h, dt );
+    input_frame_begin( disp_w, disp_h, dt );
 
     /* Debug hotkeys (overlay tiers, render mode, retained/idle skip) -- polled from the fresh IO
        snapshot while debug_enable is on.  A press is itself an input change, so any mode it flips
@@ -282,11 +285,57 @@ gui_frame_begin( f32 dt )
     return s_frame_dirty;
 }
 
+/*============================================================================================*/
+/* Seal the build: every window/context emitted this frame is now final.  The symmetric partner to
+   frame_begin -- it latches the emit cost (frame_begin -> frame_end) for the perf overlay and, in
+   Debug builds, asserts every ctx_begin was matched by a ctx_end.  Call once after the UI build and
+   before any render(); render consumes the sealed draw list.  On a clean frame (frame_begin
+   returned false, no widget emit ran) it replays the registered volatile widgets against their
+   cached geometry, so a host never wires update_volatile itself. */
+
+void
+gui_frame_end( void )
+{
+    /* Clean frame: no emit ran, the preserved draw list will be replayed verbatim -- patch the
+       volatile widgets (gui()->volatile_cb registrations) in place so they keep animating. */
+    if ( !s_frame_dirty )
+        gui_update_volatile();
+
+    /* Build cost concludes here: latch emit_ms for the perf overlay (render is timed separately). */
+    perf_frame_end();
+
+    /* A leftover context scope means a ctx_begin without its ctx_end -- catch it at the seam rather
+       than letting the stale binding bleed into render or the next frame. */
+    ORB_ASSERT( s_ctx_save_sp == 0 );
+
+    /* Focus departure: if focused_id changed during this frame (a click moved focus, or Enter /
+       Escape cleared it), latch the departing widget and its edit flag for one frame so
+       is_item_deactivated_after_edit can read them on the NEXT frame's emission of that widget.
+       If focus did not change, clear the ended slot so it does not linger past the valid frame. */
+    if ( s_interaction.focused_id != s_interaction.focused_id_at_frame_start )
+    {
+        s_interaction.focus_ended_id     = s_interaction.focused_id_at_frame_start;
+        s_interaction.focus_ended_edited = s_interaction.focused_id_edited;
+        s_interaction.focused_id_edited  = false;
+    }
+    else
+    {
+        s_interaction.focus_ended_id     = GUI_ID_NONE;
+        s_interaction.focus_ended_edited = false;
+    }
+
+    /* Clear the one-frame event-borne input (text/wheel/paste) now that the widgets have read it.
+       Runs every frame, including clean ones, so it stays cleared before the next ring drain. */
+    input_frame_end();
+}
+
+/*============================================================================================*/
 /* Per-context frame phase: bind `ctx_handle` and run a full frame init for it.  Pushes the context
    bound on entry so the matching ctx_end restores it.  Every context gets the full init (nav, popup
    check, per-frame scratch reset) regardless of its `listening` flag; the flag only gates widget
    interaction (hover nomination and widget hit-tests).  Emit this context's windows immediately
    after the call -- it leaves g_ctx bound to ctx_handle -- and close with ctx_end. */
+
 void
 gui_ctx_begin( gui_ctx_id_t ctx_handle )
 {
@@ -326,6 +375,7 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
     }
 }
 
+/*============================================================================================*/
 /* Close the context opened by the matching ctx_begin, rebinding the context that was current before
    it.  The symmetric partner to ctx_begin -- it removes the need to hand-restore the default with
    ctx_bind after emitting a secondary context's windows.
@@ -334,6 +384,7 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
    used to hand-place them, last in the context's build):
      - fold this context's animation state into the frame-wide s_any_redraw for frame_pace
      - emit the debug overlays (perf/state/dashboard) into the DEFAULT context when debug is on */
+
 void
 gui_ctx_end( void )
 {
@@ -356,48 +407,12 @@ gui_ctx_end( void )
     ctx_bind( s_ctx_save_stack[ i ] );   /* NULL (no prior context) rebinds the default */
 }
 
-/* Seal the build: every window/context emitted this frame is now final.  The symmetric partner to
-   frame_begin -- it latches the emit cost (frame_begin -> frame_end) for the perf overlay and, in
-   Debug builds, asserts every ctx_begin was matched by a ctx_end.  Call once after the UI build and
-   before any render(); render consumes the sealed draw list.  On a clean frame (frame_begin
-   returned false, no widget emit ran) it replays the registered volatile widgets against their
-   cached geometry, so a host never wires update_volatile itself. */
-void
-gui_frame_end( void )
-{
-    /* Clean frame: no emit ran, the preserved draw list will be replayed verbatim -- patch the
-       volatile widgets (gui()->volatile_cb registrations) in place so they keep animating. */
-    if ( !s_frame_dirty )
-        gui_update_volatile();
-
-    /* Build cost concludes here: latch emit_ms for the perf overlay (render is timed separately). */
-    perf_frame_end();
-
-    /* A leftover context scope means a ctx_begin without its ctx_end -- catch it at the seam rather
-       than letting the stale binding bleed into render or the next frame. */
-    ORB_ASSERT( s_ctx_save_sp == 0 );
-
-    /* Focus departure: if focused_id changed during this frame (a click moved focus, or Enter /
-       Escape cleared it), latch the departing widget and its edit flag for one frame so
-       is_item_deactivated_after_edit can read them on the NEXT frame's emission of that widget.
-       If focus did not change, clear the ended slot so it does not linger past the valid frame. */
-    if ( s_interaction.focused_id != s_interaction.focused_id_at_frame_start )
-    {
-        s_interaction.focus_ended_id     = s_interaction.focused_id_at_frame_start;
-        s_interaction.focus_ended_edited = s_interaction.focused_id_edited;
-        s_interaction.focused_id_edited  = false;
-    }
-    else
-    {
-        s_interaction.focus_ended_id     = GUI_ID_NONE;
-        s_interaction.focus_ended_edited = false;
-    }
-}
-
+/*============================================================================================*/
 /* Flush one viewport's geometry partition to GPU.  The host opens a frame on that viewport's rhi
    context, calls render() with the context cmd, then ends the frame -- once per live viewport.
    The viewport's stored disp_w/h drive the GPU viewport and scissor clamping.
    The debug overlay is also painted when vp == 0 (the primary).  GUI_VP_INVALID is a no-op. */
+
 void
 gui_render( gui_vp_t vp, rhi_cmd_t cmd )
 {
