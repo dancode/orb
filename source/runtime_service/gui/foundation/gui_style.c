@@ -66,7 +66,7 @@ style_var_base( gui_style_var_t v )
 
 /*==============================================================================================
 
-    State -- ONE slot space, one mechanism.
+    Style State -- ONE slot space, one mechanism.
 
     Colors and vars are the same machine over different value types, so they share one slot
     space: colors occupy [0, GUI_COL_COUNT), vars [GUI_COL_COUNT, STYLE_SLOT_COUNT) with their
@@ -113,8 +113,9 @@ static u32           s_next_n;
 static style_pair_t  s_item[ STYLE_SLOT_COUNT ];      // active for the current item
 static u32           s_item_n;
 
-/*----------------------------------------------------------------------------------------------
-    The mechanism -- read / push / pop / next over the one slot space.
+/*==============================================================================================
+
+    The Style Mechanism -- read / push / pop / next over the one slot space.
 
     Over-deep pushes: the value is still written to the working set (so the UI renders correctly
     in all builds), and sp is still counted so push/pop stay paired.  The save record is only
@@ -122,16 +123,19 @@ static u32           s_item_n;
     restore, which is the documented cap behaviour.  An ORB_ASSERT fires in debug builds so
     callers discover the imbalance immediately at the push site rather than on a silent bad
     restore.  pop takes a count, like ImGui.
-----------------------------------------------------------------------------------------------*/
 
-/* The value a widget sees: the per-item override (if the slot has one this widget) wins;
-   otherwise the working set (base + push/pop).  This is what every COL_* / metric macro
-   ultimately resolves to. */
+==============================================================================================*/
+
+/* This is what every COL_* / metric macro ultimately resolves to. */
+
 static u32
 style_read( u32 slot )
 {
+    /* check all single widget next items first */
     for ( u32 i = 0; i < s_item_n; ++i )
         if ( s_item[ i ].slot == (u16)slot ) return s_item[ i ].val;
+
+    /* normal style value working set (base + push/pop) */
     return s_slot[ slot ];
 }
 
@@ -206,9 +210,9 @@ static void style_next_var( gui_style_var_t slot, f32 value )
     if ( slot < GUI_VAR_COUNT ) style_next( STYLE_VAR_BASE + (u32)slot, style_f32_bits( value ) );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Seam hooks -- called from the shared item boundary in gui_ctx.c.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Promote the pending next-item overrides into the active per-item layer and clear the pending.
    Called once per widget from item_flags_resolve, so the override that next_style_* queued just
@@ -242,6 +246,7 @@ style_new_frame( void )
 {
     for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
         s_slot[ i ] = s_style.colors[ i ];
+
     for ( u32 i = 0; i < GUI_VAR_COUNT; ++i )
         s_slot[ STYLE_VAR_BASE + i ] = style_f32_bits( style_var_base( (gui_style_var_t)i ) );
 
@@ -249,7 +254,8 @@ style_new_frame( void )
     s_next_n = s_item_n = 0;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
+    
     The style vocabulary -- the macros every later tier reads style through.
 
     Each read resolves through style_var / style_col above (the theme base with any push_style_*
@@ -258,7 +264,8 @@ style_new_frame( void )
     composer sizes cells and gutters with the METRICS group, widgets measure natural sizes and
     seat labels with the same numbers, and presentation paints with the SKIN group.  Grouped by
     the two gui_style_t categories (see gui.h).
-----------------------------------------------------------------------------------------------*/
+
+==============================================================================================*/
 
 /* 1. METRICS -- can move a rect */
 #define WIDGET_H      style_var( GUI_VAR_LINE_SIZE     )
@@ -275,6 +282,7 @@ style_new_frame( void )
    (gui_backend) so a draw site can pick the right rounding before emitting.  The item seam
    defaults to ROUND_WIDGET and the chrome seam to ROUND_WIN; grabs and squared-off marks
    override locally. */
+
 #define ROUND_WIN       style_var( GUI_VAR_WIN_ROUNDING    )
 #define ROUND_WIDGET    style_var( GUI_VAR_WIDGET_ROUNDING )
 #define ROUND_GRAB      style_var( GUI_VAR_GRAB_ROUNDING   )
@@ -282,22 +290,23 @@ style_new_frame( void )
 /* SKIN: color palette (GUI_COLOR: byte order R,G,B,A in memory = ABGR u32).  Theme defaults
    come from the active theme (k_themes in gui_theme.c, seeded into s_style.colors); see
    gui_col_t for the slots. */
-#define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG    )
-#define COL_CHILD_BG     style_col( GUI_COL_CHILD_BG     )
-#define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG     )
-#define COL_BORDER       style_col( GUI_COL_BORDER       )
-#define COL_TEXT         style_col( GUI_COL_TEXT         )
-#define COL_TEXT_DIM     style_col( GUI_COL_TEXT_DIM     )
-#define COL_WIDGET_BG    style_col( GUI_COL_WIDGET_BG    )
-#define COL_WIDGET_HOT   style_col( GUI_COL_WIDGET_HOT   )
-#define COL_WIDGET_ACT   style_col( GUI_COL_WIDGET_ACT   )
-#define COL_WIDGET_FG    style_col( GUI_COL_WIDGET_FG    )
-#define COL_CHECK_MARK   style_col( GUI_COL_CHECK_MARK   )
-#define COL_SLIDER_TRACK style_col( GUI_COL_SLIDER_TRACK )
-#define COL_RESIZE_HOT   style_col( GUI_COL_RESIZE_HOT   )
-#define COL_INPUT_BG     style_col( GUI_COL_INPUT_BG     )
-#define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS  )
-#define COL_CURSOR       style_col( GUI_COL_CURSOR       )
+
+#define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG     )
+#define COL_CHILD_BG     style_col( GUI_COL_CHILD_BG      )
+#define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG      )
+#define COL_BORDER       style_col( GUI_COL_BORDER        )
+#define COL_TEXT         style_col( GUI_COL_TEXT          )
+#define COL_TEXT_DIM     style_col( GUI_COL_TEXT_DIM      )
+#define COL_WIDGET_BG    style_col( GUI_COL_WIDGET_BG     )
+#define COL_WIDGET_HOT   style_col( GUI_COL_WIDGET_HOT    )
+#define COL_WIDGET_ACT   style_col( GUI_COL_WIDGET_ACT    )
+#define COL_WIDGET_FG    style_col( GUI_COL_WIDGET_FG     )
+#define COL_CHECK_MARK   style_col( GUI_COL_CHECK_MARK    )
+#define COL_SLIDER_TRACK style_col( GUI_COL_SLIDER_TRACK  )
+#define COL_RESIZE_HOT   style_col( GUI_COL_RESIZE_HOT    )
+#define COL_INPUT_BG     style_col( GUI_COL_INPUT_BG      )
+#define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS   )
+#define COL_CURSOR       style_col( GUI_COL_CURSOR        )
 #define COL_NAV          style_col( GUI_COL_NAV_HIGHLIGHT )
 
 // clang-format on
