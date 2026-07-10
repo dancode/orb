@@ -1469,8 +1469,8 @@ typedef struct
    matters if the VB/IB are ever moved off HOST_COHERENT memory, in which case regions
    would need rounding up to nonCoherentAtomSize to flush apart. */
 
-#define GUI_MAX_VERTS      ( 16 * 1024 )
-#define GUI_MAX_IDX        ( GUI_MAX_VERTS * 2 )
+#define GUI_MAX_VERTS      ( 32 * 1024 )
+#define GUI_MAX_IDX        ( GUI_MAX_VERTS * 3 )
 #define GUI_MAX_CMDS       1024
 
 /* Command segments: one contiguous span of the command list per (z, vp) the emit path stamps, cut
