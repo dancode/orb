@@ -743,18 +743,18 @@ typedef enum
 typedef enum
 {
     /* no tweaks -- the default behavior */
-    GUI_ITEM_NONE          = 0,       
+    GUI_ITEM_NONE          = 0,
 
     /* inert + dimmed: no hover/active/focus/click, drawn at
        reduced opacity.  Honored uniformly by widget_behavior and
        the draw list, so it applies to every widget at once. */
-    GUI_ITEM_DISABLED      = 1 << 0,  
+    GUI_ITEM_DISABLED      = 1 << 0,
 
     /* a held button fires repeatedly: once on press, then after
        an initial delay at a steady rate (spinner / scroll arrows),
        instead of once on release.  Honored by widget_behavior, so
        any button-kind widget under the flag auto-repeats. */
-    GUI_ITEM_BUTTON_REPEAT = 1 << 1,  
+    GUI_ITEM_BUTTON_REPEAT = 1 << 1,
 
     /* slider_float: suppress the value text drawn centered on the
        track.  The value is shown by default; set this (push or
@@ -939,14 +939,14 @@ typedef void ( *gui_volatile_fn )( bool is_replay );
 typedef enum
 {
     GUI_CMD_RECT_FILLED,     // filled rectangle or textured quad (glyph)
-    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads          
-    GUI_CMD_TRIANGLE,        // solid triangle                             
-    GUI_CMD_TEXT,            // glyph run from the font atlas              
-    GUI_CMD_CIRCLE_FILLED,   // filled disc (triangle fan)                 
-    GUI_CMD_LINE,            // single stroke segment                      
-    GUI_CMD_POLYLINE,        // multi-segment antialiased polyline         
-    GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U */
-    GUI_CMD_RECT_GRADIENT,   // filled rect, col_a->col_b blended by per-vertex color (one quad) */
+    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads
+    GUI_CMD_TRIANGLE,        // solid triangle
+    GUI_CMD_TEXT,            // glyph run from the font atlas
+    GUI_CMD_CIRCLE_FILLED,   // filled disc (triangle fan)
+    GUI_CMD_LINE,            // single stroke segment
+    GUI_CMD_POLYLINE,        // multi-segment antialiased polyline
+    GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U
+    GUI_CMD_RECT_GRADIENT,   // filled rect, col_a->col_b blended by per-vertex color (one quad)
 
 } gui_cmd_type_t;
 
