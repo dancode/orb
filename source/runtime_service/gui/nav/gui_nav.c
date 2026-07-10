@@ -92,22 +92,25 @@ nav_win_focusable( const gui_window_t* w )
 static void
 nav_choose_window( void )
 {
+    bool     have_popup = ( g_ctx->popup.open_count > 0 );
+    gui_id_t top_popup  = have_popup ? g_ctx->popup.open[ g_ctx->popup.open_count - 1u ].id
+                                     : GUI_ID_NONE;
+
     /* Menu-bar mode (Alt / mnemonic): nav lives on the bar window while on the entries, or on the
        top open popup once descended into the menus -- so Left/Right traverse the bar and Up/Down
        walk the open menu, both through the one nav cursor. */
     if ( g_ctx->nav.bar_win != GUI_ID_NONE )
     {
-        g_ctx->nav.win = ( g_ctx->nav.in_menus && g_ctx->popup.open_count > 0 )
-                      ? g_ctx->popup.open[ g_ctx->popup.open_count - 1u ].id
-                      : g_ctx->nav.bar_win;
+        bool descended = ( g_ctx->nav.in_menus && have_popup );
+        g_ctx->nav.win = descended ? top_popup : g_ctx->nav.bar_win;
         return;
     }
 
     /* A popup owns nav while open (the front-most one), mirroring popup_apply_modal stealing
        hover_win -- so mouse-opened menus, combos, and context menus capture the arrows too. */
-    if ( g_ctx->popup.open_count > 0 )
+    if ( have_popup )
     {
-        g_ctx->nav.win = g_ctx->popup.open[ g_ctx->popup.open_count - 1u ].id;
+        g_ctx->nav.win = top_popup;
         return;
     }
 
@@ -149,8 +152,11 @@ nav_cycle_skip( const gui_window_t* w )
     if ( w->flags & GUI_WIN_NATIVE )      return true;
 
     gui_dock_node_t* dn = dock_find_window_node( w->id );
-    if ( dn && !( dn->active_tab < dn->tab_count && dn->tabs[ dn->active_tab ] == w->id ) )
-        return true;   /* docked but behind another tab -- not visible */
+    if ( dn )
+    {
+        bool is_active_tab = ( dn->active_tab < dn->tab_count && dn->tabs[ dn->active_tab ] == w->id );
+        if ( !is_active_tab ) return true;   /* docked but behind another tab -- not visible */
+    }
 
     return false;
 }
@@ -158,7 +164,7 @@ nav_cycle_skip( const gui_window_t* w )
 /* The z the cycle steps away from: the explicit nav target if it is a live non-overlay window,
    else the front-most non-overlay window's z. */
 static u32
-nav_cycle_fromz( void )
+nav_cycle_from_z( void )
 {
     gui_window_t* explicit_w = nav_window_find( g_ctx->nav.explicit_win );
     if ( explicit_w && !explicit_w->overlay )
@@ -206,7 +212,7 @@ nav_cycle_step( i32 dir, u32 fromz )
 static void
 nav_cycle_window( i32 dir )
 {
-    gui_id_t pick = nav_cycle_step( dir, nav_cycle_fromz() );
+    gui_id_t pick = nav_cycle_step( dir, nav_cycle_from_z() );
     if ( pick == GUI_ID_NONE ) return;
 
     /* Adopt + raise the picked window so it surfaces; its first item takes focus next frame. */
@@ -669,15 +675,17 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
     {
         /* Inside the menus.  Up at the first item of a top-level menu returns to the bar; Left /
            Esc close one level, ascending to the owning bar entry at the top level. */
-        u32 depth = g_ctx->popup.open_count;
+        u32  depth       = g_ctx->popup.open_count;
+        bool in_submenu  = ( depth >= 2 );
+        bool at_menu_top = ( depth <= 1 && first_prev != GUI_ID_NONE && g_ctx->nav.id == first_prev );
 
-        if ( up && depth <= 1 && first_prev != GUI_ID_NONE && g_ctx->nav.id == first_prev )
+        if ( up && at_menu_top )
         {
             nav_menu_ascend_to_bar();
         }
         else if ( left || esc )
         {
-            if ( depth >= 2 )                  /* close a submenu, back to its parent menu */
+            if ( in_submenu )                  /* close a submenu, back to its parent menu */
             {
                 --g_ctx->popup.open_count;
                 g_ctx->nav.id = GUI_ID_NONE;
@@ -726,9 +734,11 @@ nav_finish( void )
 static void
 nav_new_frame( void )
 {
-    if ( !s_fwd_caps.keyboard_nav ) return;   /* feature boundary: gui_forward_caps_t.keyboard_nav;
-                                                  g_ctx->nav.win stays GUI_ID_NONE, so nav_item_register
-                                                  never matches a window and mouse input is untouched */
+     /* feature boundary: gui_forward_caps_t.keyboard_nav; g_ctx->nav.win stays GUI_ID_NONE, 
+        so nav_item_register never matches a window and mouse input is untouched */
+
+    if ( !s_fwd_caps.keyboard_nav ) 
+        return;                             /* not using the keyboard for nav */
 
     /* One-shot: only an adoption made THIS frame (recovery below, or a resolver in nav_finish)
        chases the cursor into view during the emission that follows. */
@@ -817,8 +827,9 @@ nav_new_frame( void )
        Up/Down can never yank the cursor off a widget mid-edit. */
     if ( g_ctx->nav.edit_id != GUI_ID_NONE )
     {
-        if ( s_io.keys_pressed[ APP_KEY_ENTER ] || s_io.keys_pressed[ APP_KEY_SPACE ]
-             || s_io.keys_pressed[ APP_KEY_ESCAPE ] )
+        bool edit_release = ( s_io.keys_pressed[ APP_KEY_ENTER ] || s_io.keys_pressed[ APP_KEY_SPACE ]
+                              || s_io.keys_pressed[ APP_KEY_ESCAPE ] );
+        if ( edit_release )
         {
             g_ctx->nav.edit_id = GUI_ID_NONE;
             s_io.keys_pressed[ APP_KEY_ENTER ] = false;   /* the release must not re-activate */
@@ -936,12 +947,15 @@ nav_new_frame( void )
        Left closes a submenu back to its parent. */
     else if ( g_ctx->popup.open_count > 0 )
     {
-        if ( esc )
+        bool close_top     = esc;
+        bool close_submenu = ( g_ctx->nav.move_dir == GUI_DIR_LEFT && g_ctx->popup.open_count >= 2 );
+
+        if ( close_top )
         {
             --g_ctx->popup.open_count;
             g_ctx->nav.id = GUI_ID_NONE;
         }
-        else if ( g_ctx->nav.move_dir == GUI_DIR_LEFT && g_ctx->popup.open_count >= 2 )
+        else if ( close_submenu )
         {
             --g_ctx->popup.open_count;
             g_ctx->nav.move_dir = -1;
@@ -952,9 +966,14 @@ nav_new_frame( void )
     nav_finish();
 }
 
-/*----------------------------------------------------------------------------------------------
-    Public: window_set_nav -- aim keyboard nav at a window by title (the explicit-focus entry).
-----------------------------------------------------------------------------------------------*/
+/*==============================================================================================
+    Public: The single public function, used to set (keyboard) nav target window by title.
+    
+    The next nav_new_frame will land on its first placed item (or the first placed item
+    of the front-most window if the title is not found).
+
+    window_set_nav -- aim keyboard nav at a window by title (the explicit-focus entry).
+==============================================================================================*/
 
 void
 gui_window_set_nav( const char* title )
