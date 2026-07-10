@@ -160,7 +160,7 @@ static const gui_theme_t k_themes[] =
             .grid_quantum = 4, .win_border = 1, .win_title_h = 24,
             .checkbox_sz = 16, .slider_knob_w = 12,
             /* 2. SKIN -- lightly rounded, bar knob */
-            .win_rounding = 6, .widget_rounding = 4, .grab_rounding = 4,
+            .win_rounding = 0, .widget_rounding = 0, .grab_rounding = 0,
             .slider_knob = GUI_SLIDER_KNOB_BAR,
             THEME_SKIN_SHAPES_DEFAULT,
             THEME_SCALES_DEFAULT,
