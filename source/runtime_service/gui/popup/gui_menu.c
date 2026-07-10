@@ -267,9 +267,17 @@ gui_main_menu_bar_begin( void )
     gui_window_set_next_pos ( 0.0f, top, GUI_COND_ALWAYS );
     gui_window_set_next_size( (f32)s_io.display_w, h, GUI_COND_ALWAYS );
 
+    /* Bar sits flush across the display edge: pin the window radius to 0 only for the body-background
+       fill window_begin draws inline below, so it comes out square the first time rather than reading
+       the ambient GUI_VAR_WIN_ROUNDING theme value.  Popped immediately after -- narrow on purpose, so
+       it does not also flatten a dropdown/submenu popup a caller opens between begin and end. */
+    style_push_var( GUI_VAR_WIN_ROUNDING, 0.0f );
+
     bool vis = gui_window_begin( "##MainMenuBar",
                                    GUI_WIN_NOTITLEBAR | GUI_WIN_NOMOVE | GUI_WIN_NORESIZE
                                    | GUI_WIN_NOCOLLAPSE | GUI_WIN_NOSCROLL );
+    style_pop_var( 1 );
+
     if ( vis )
         gui_bar();        /* the menu labels pack horizontally */
     return vis;
@@ -278,7 +286,10 @@ gui_main_menu_bar_begin( void )
 void
 gui_main_menu_bar_end( void )
 {
+    /* Same narrow bracket as begin, this time around the border outline window_end draws inline. */
+    style_push_var( GUI_VAR_WIN_ROUNDING, 0.0f );
     gui_window_end();
+    style_pop_var( 1 );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -302,8 +313,12 @@ gui_menu_bar_begin( void )
 
     gui_rect_t bar = s_build.win.menubar_rect;
 
-    /* Strip background, a touch distinct from the body. */
+    /* Strip background, a touch distinct from the body.  Always square: it sits flush against the
+       body's top and side edges, where a rounded corner would visibly clip against them. */
+    f32 save_round = draw_rounding();
+    draw_set_rounding( 0.0f );
     draw_push_rect_filled( bar.x, bar.y, bar.w, bar.h, 0,0,1,1, 0, COL_TITLE_BG );
+    draw_set_rounding( save_round );
 
     /* Save the body pen: the strip is drawn outside the body flow, so the body resumes from here. */
     s_menubar_saved_cursor = lf()->pen_y;

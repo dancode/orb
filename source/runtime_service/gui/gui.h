@@ -109,13 +109,13 @@ typedef struct
     GUI: Geometry
 ==============================================================================================*/
 
+/* standard math vectors */
 typedef struct { f32 x, y; }        gui_vec2_t;
 typedef struct { f32 x, y, w, h; }  gui_rect_t;
 
 /* Edge insets, in pixels. Region padding -- the gap between a region's box and where its layout
    starts (see gui_pad).  Breathing room *inside* a widget's frame is a per-widget style concern
    (WIDGET_PAD), not a layout one; spacing *between* cells is gap_x / gap_y. */
-
 typedef struct { f32 l, r, t, b; }  gui_pad_t;
 
 /* Callback fired by input_text_ex after any frame that modifies the buffer.
@@ -123,8 +123,8 @@ typedef struct { f32 l, r, t, b; }  gui_pad_t;
    length (excluding NUL); bufsz is the total buffer capacity. */
 typedef void ( *gui_text_cb_fn )( char* buf, u32 len, u32 bufsz, void* user );
 
-/* Key hook consulted by the FOCUSED text field before its own key handling (see
-   set_edit_key_hook).  Called once per key down this frame; key is an app_key_t value,
+/* Key hook consulted by the FOCUSED text field before its own key handling 
+   (see set_edit_key_hook).  Called once per key down this frame; key is an app_key_t value,
    repeat is true on OS auto-repeat ticks (false on the initial press).  Return true to
    consume: the key is cleared from the frame io, so neither the field nor any later widget
    acts on it -- the Quake-console passthrough (history, completion, scrollback keys). */
@@ -234,7 +234,7 @@ typedef struct gui_scale_metrics_t
    arithmetic folds out and grid_quantum costs nothing.  Independent of a style's grid_quantum,
    which still disables snapping per-style at runtime when <= 1. */
 #ifndef GUI_GRID_LATTICE
-#define GUI_GRID_LATTICE 0
+#define GUI_GRID_LATTICE 1
 #endif
 
 typedef struct gui_style_t
