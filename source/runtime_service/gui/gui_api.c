@@ -144,6 +144,7 @@ const gui_api_t g_gui_api_struct =
     .sz_rows_h                          = gui_sz_rows_h,
     .sz_scale_row                       = gui_sz_scale_row,
     .sz_line_h                          = gui_sz_line_h,
+    .sz_chars                           = gui_sz_chars,
     .sz_fit_row                         = gui_sz_fit_row,
     .sz_fit_col                         = gui_sz_fit_col,
     .content_avail                      = gui_content_avail,

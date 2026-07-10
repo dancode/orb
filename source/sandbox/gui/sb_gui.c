@@ -820,6 +820,10 @@ show_style_editor( bool* p_open )
 
     /* --- Colors ---------------------------------------------------------------------------- */
     gui()->separator_text( "Colors" );
+    f32 label_width = gui()->text_size( "widget_rounding" ).x;
+    gui()->form( GUI_LABEL_RIGHT, label_width );
+    // gui()->field_label_left( 90.0f );
+
     for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
         changed |= se_color( k_col_names[ i ], &work.colors[ i ] );
 
@@ -860,6 +864,8 @@ show_style_editor( bool* p_open )
     changed |= se_enum( "progress_style",  &work.progress_style,  nm_progress, 2 );
     changed |= se_enum( "slider_knob",     &work.slider_knob,     nm_knob,     2 );
     changed |= se_enum( "menu_check",      &work.menu_check,      nm_menu,     2 );
+    
+    gui()->form( GUI_LABEL_RIGHT, 0.0 );
 
     /* --- Live sample of what the knobs above affect ---------------------------------------- */
     gui()->separator_text( "Preview" );
@@ -868,6 +874,8 @@ show_style_editor( bool* p_open )
     static i32   sample_int   = 3;
     gui()->checkbox( "Checkbox", &sample_check );
     gui()->button( "Button" );
+
+    gui()->form( GUI_LABEL_RIGHT, label_width );
     gui()->slider_float( "Slider", &sample_val, 0.0f, 1.0f );
     gui()->slider_int( "Steps", &sample_int, 0, 10 );
     gui()->progress_bar( sample_val, NULL );

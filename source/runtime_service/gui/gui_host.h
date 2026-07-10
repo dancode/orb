@@ -203,6 +203,7 @@ f32 gui_sz_row_gap( void );
 f32 gui_sz_rows_h( u32 n );
 f32 gui_sz_scale_row( gui_scale_t s );
 f32 gui_sz_line_h( void );
+f32 gui_sz_chars( f32 n );
 f32 gui_sz_fit_row( f32 content_h );
 f32 gui_sz_fit_col( f32 content_w );
 gui_vec2_t gui_content_avail( void );

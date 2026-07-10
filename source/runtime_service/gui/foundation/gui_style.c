@@ -46,6 +46,7 @@ style_var_base( gui_style_var_t v )
         case GUI_VAR_WIN_TITLE_H:     return (f32)s_style.win_title_h;
         case GUI_VAR_CHECKBOX_SZ:     return (f32)s_style.checkbox_sz;
         case GUI_VAR_SLIDER_KNOB_W:   return (f32)s_style.slider_knob_w;
+        case GUI_VAR_FIELD_LABEL_W:   return (f32)s_style.field_label_w;
 
         /* 2. SKIN */
         case GUI_VAR_WIN_ROUNDING:    return (f32)s_style.win_rounding;
@@ -250,6 +251,7 @@ style_new_frame( void )
 #define WIN_TITLE_H   style_var( GUI_VAR_WIN_TITLE_H   )
 #define CHECKBOX_SZ   style_var( GUI_VAR_CHECKBOX_SZ   )
 #define SLIDER_KNOB_W style_var( GUI_VAR_SLIDER_KNOB_W )
+#define FIELD_LABEL_W style_var( GUI_VAR_FIELD_LABEL_W )
 
 /* 2. SKIN -- paint-only.  The roundings are corner-radius categories, fed to draw_set_rounding
    (gui_backend) so a draw site can pick the right rounding before emitting.  The item seam

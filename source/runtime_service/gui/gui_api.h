@@ -711,6 +711,8 @@ typedef struct gui_api_s
        its content; fit( 0 ) is the bare margin (the "size without content").
        sz_line_h() -- the raw font line advance, for text-shaped custom-draw rects.  Text
        measurement itself lives with the draw family (text_size), not here.
+       sz_chars( n ) -- width of n characters (n * a representative glyph advance), for sizing a
+       field to a fixed character count without measuring a placeholder string.
 
            gui()->row( gui()->sz_fit_row( 128 ) );               // a row sized for a 128px image
            f32 w = gui()->sz_fit_col( gui()->text_size("Name").x ); // a column sized to a label */
@@ -719,6 +721,7 @@ typedef struct gui_api_s
     f32 ( *sz_rows_h    )( u32 n );
     f32 ( *sz_scale_row )( gui_scale_t s );
     f32 ( *sz_line_h    )( void );
+    f32 ( *sz_chars     )( f32 n );
     f32 ( *sz_fit_row   )( f32 content_h );
     f32 ( *sz_fit_col   )( f32 content_w );
 

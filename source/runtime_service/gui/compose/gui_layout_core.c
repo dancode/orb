@@ -344,12 +344,18 @@ layout_template_reset( layout_frame_t* f )
     /* gap_pending is NOT reset: content committed above still owes its gap to the next line. */
 }
 
-/* Reset the orthogonal modifiers: gaps back to the theme, field split off (trailing label),
-   align to LEFT | TOP. */
+/* Reset the orthogonal modifiers: gaps back to the theme, align to LEFT | TOP, and the field split
+   back to the style default -- FIELD_LABEL_W > 0 seeds a fixed left label column for every region so
+   forms align window-wide with no per-block call; 0 leaves it off (each label trails at its own
+   width).  A local field_split / field_label_* still overrides within its region. */
 static void
 layout_modifiers_reset( layout_frame_t* f )
 {
-    f->mod = ( layout_mod_t ){ .gap_x = WIDGET_GAP, .gap_y = WIDGET_GAP };
+    f32 lw = FIELD_LABEL_W;
+    f->mod = ( layout_mod_t ){ .gap_x = WIDGET_GAP, .gap_y = WIDGET_GAP,
+                               .field_side    = ( lw > 0.0f ) ? (u8)GUI_LABEL_LEFT : 0u,
+                               .field_label   = lw,
+                               .field_control = 1.0f };
 }
 
 /* Open a region UNDECLARED: zero the template state and leave the mode NONE so the first layout

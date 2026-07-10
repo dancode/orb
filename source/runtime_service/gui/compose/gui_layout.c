@@ -367,6 +367,12 @@ f32 gui_sz_rows_h( u32 n ) { return ( n == 0 ) ? 0.0f : (f32)n * WIDGET_H + ( (f
    text-shaped custom-draw rects; it knows nothing about row margins or gaps. */
 f32 gui_sz_line_h( void ) { return font_line_h(); }
 
+/* Width of n characters in the active font -- n times the advance of a representative glyph ('0',
+   a solid non-proportional reference), for sizing a field to a fixed character count without
+   measuring a placeholder string.  Raw content width (no cell margin); wrap in sz_fit_col to add
+   the standard inset.  gui()->col( gui()->sz_chars( 8 ) )  // a column ~8 digits wide. */
+f32 gui_sz_chars( f32 n ) { return n * font_text_w( "0" ); }
+
 /* Fixed row height / column width that fits content_* pixels plus the standard margin a row /
    cell puts around its content (fit( 0 ) is the bare margin -- the "size without content"):
 

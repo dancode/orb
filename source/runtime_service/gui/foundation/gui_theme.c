@@ -68,25 +68,27 @@ static u32 s_font_size = 0;
     [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ), \
     [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF )
 
-/* The light palette. */
+/* The light palette -- a soft neutral-grey desktop look (never a white glare): the window sits on
+   a calm mid-grey, panels recess a shade under it, controls raise a shade over it, and the accent
+   is a muted steel blue rather than a saturated primary so nothing vibrates against the grey. */
 #define THEME_PALETTE_LIGHT \
-    [ GUI_COL_TEXT         ] = GUI_COLOR( 0x10, 0x10, 0x10, 0xFF ), \
-    [ GUI_COL_TEXT_DIM     ] = GUI_COLOR( 0x60, 0x60, 0x60, 0xFF ), \
-    [ GUI_COL_WINDOW_BG    ] = GUI_COLOR( 0xF0, 0xF0, 0xF0, 0xFF ), \
-    [ GUI_COL_CHILD_BG     ] = GUI_COLOR( 0xE4, 0xE4, 0xE4, 0xFF ), \
-    [ GUI_COL_TITLE_BG     ] = GUI_COLOR( 0x20, 0x80, 0xC0, 0xFF ), \
-    [ GUI_COL_BORDER       ] = GUI_COLOR( 0xA0, 0xA0, 0xA0, 0xFF ), \
-    [ GUI_COL_WIDGET_BG    ] = GUI_COLOR( 0xD0, 0xD0, 0xD0, 0xFF ), \
-    [ GUI_COL_WIDGET_HOT   ] = GUI_COLOR( 0x60, 0xA0, 0xD0, 0xFF ), \
-    [ GUI_COL_WIDGET_ACT   ] = GUI_COLOR( 0x40, 0x80, 0xB0, 0xFF ), \
-    [ GUI_COL_WIDGET_FG    ] = GUI_COLOR( 0x20, 0x80, 0xC0, 0xFF ), \
-    [ GUI_COL_CHECK_MARK   ] = GUI_COLOR( 0x10, 0xA0, 0x30, 0xFF ), \
-    [ GUI_COL_SLIDER_TRACK ] = GUI_COLOR( 0xC0, 0xC0, 0xC0, 0xFF ), \
-    [ GUI_COL_RESIZE_HOT   ] = GUI_COLOR( 0x30, 0x90, 0xE0, 0xFF ), \
-    [ GUI_COL_INPUT_BG     ] = GUI_COLOR( 0xE8, 0xE8, 0xE8, 0xFF ), \
-    [ GUI_COL_INPUT_FOCUS  ] = GUI_COLOR( 0xC0, 0xD8, 0xF0, 0xFF ), \
-    [ GUI_COL_CURSOR       ] = GUI_COLOR( 0x10, 0x10, 0x60, 0xFF ), \
-    [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x30, 0x90, 0xE0, 0xFF )
+    [ GUI_COL_TEXT         ] = GUI_COLOR( 0x20, 0x22, 0x26, 0xFF ), \
+    [ GUI_COL_TEXT_DIM     ] = GUI_COLOR( 0x6C, 0x6E, 0x74, 0xFF ), \
+    [ GUI_COL_WINDOW_BG    ] = GUI_COLOR( 0xE2, 0xE2, 0xE6, 0xFF ), \
+    [ GUI_COL_CHILD_BG     ] = GUI_COLOR( 0xD6, 0xD7, 0xDC, 0xFF ), \
+    [ GUI_COL_TITLE_BG     ] = GUI_COLOR( 0x50, 0x6C, 0x94, 0xFF ), \
+    [ GUI_COL_BORDER       ] = GUI_COLOR( 0xB4, 0xB5, 0xBC, 0xFF ), \
+    [ GUI_COL_WIDGET_BG    ] = GUI_COLOR( 0xEC, 0xEC, 0xF0, 0xFF ), \
+    [ GUI_COL_WIDGET_HOT   ] = GUI_COLOR( 0x86, 0xA6, 0xD2, 0xFF ), \
+    [ GUI_COL_WIDGET_ACT   ] = GUI_COLOR( 0x5C, 0x82, 0xB4, 0xFF ), \
+    [ GUI_COL_WIDGET_FG    ] = GUI_COLOR( 0x44, 0x6C, 0xA6, 0xFF ), \
+    [ GUI_COL_CHECK_MARK   ] = GUI_COLOR( 0x2E, 0x9E, 0x54, 0xFF ), \
+    [ GUI_COL_SLIDER_TRACK ] = GUI_COLOR( 0xC7, 0xC8, 0xCE, 0xFF ), \
+    [ GUI_COL_RESIZE_HOT   ] = GUI_COLOR( 0x44, 0x6C, 0xA6, 0xFF ), \
+    [ GUI_COL_INPUT_BG     ] = GUI_COLOR( 0xF3, 0xF3, 0xF6, 0xFF ), \
+    [ GUI_COL_INPUT_FOCUS  ] = GUI_COLOR( 0xCF, 0xDE, 0xF1, 0xFF ), \
+    [ GUI_COL_CURSOR       ] = GUI_COLOR( 0x22, 0x28, 0x40, 0xFF ), \
+    [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x44, 0x6C, 0xA6, 0xFF )
 
 /* The density ramp is identical across every built-in theme (STD mirrors the base metrics). */
 #define THEME_SCALES_DEFAULT \
@@ -399,6 +401,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     s_style.win_title_h     = (u8)( (f32)s_style_base.win_title_h     * scale );
     s_style.checkbox_sz     = (u8)( (f32)s_style_base.checkbox_sz     * scale );
     s_style.slider_knob_w   = (u8)( (f32)s_style_base.slider_knob_w   * scale );
+    s_style.field_label_w   = (u8)( (f32)s_style_base.field_label_w   * scale );
 
     /* 2. SKIN */
     s_style.win_rounding    = (u8)( (f32)s_style_base.win_rounding    * scale );
@@ -460,6 +463,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
         s_style.win_title_h   = metric_quantize( s_style.win_title_h,   q );
         s_style.checkbox_sz   = metric_quantize( s_style.checkbox_sz,   q );
         s_style.slider_knob_w = metric_quantize( s_style.slider_knob_w, q );
+        s_style.field_label_w = metric_quantize( s_style.field_label_w, q );
 
         /* Ramp steps land on the same lattice: rows ceil (keep the font floor), pads and gaps
            snap to nearest.  The whole ramp retunes together when the quantum or font changes. */
