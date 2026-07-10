@@ -223,168 +223,144 @@ gui_owned_window_event( const app_event_t* ev )
     return false;
 }
 
-/* Reconcile gui-owned floater surfaces with their OS windows.  Call once per frame after the UI
-   build and BEFORE rendering: it is the safe point to tear surfaces down, since no in-flight draw
-   list references one being freed.  Runs in two steps: (1) service tear-off / merge-back requests
-   enqueued during the build (a window dragged off its host surface, or back onto it), then (2)
-   tear down owned surfaces the user closed (pending_close) or abandoned (their panel stopped
-   emitting). */
-
-void
-gui_viewport_update( void )
+/* Tear a window off the main surface into its own floater.  Placement depends on how the tear-off
+   was requested: by_drag keeps the grab point under the cursor (spawned no-activate so the origin
+   window keeps its OS mouse capture -- activating would release it and sever the drag); a re-open
+   (has_home) lands at the saved restore position and size; a plain detach-button click keeps the
+   panel at its exact current screen position. */
+static void
+viewport_service_tearoff( gui_window_t* win, bool has_home )
 {
-    /* (1) Tear-off / merge-back: a window whose title was dragged off its host surface (enqueued by
-       window_begin_ex) changes which surface hosts it. */
-    if ( s_vp_request.active )
+    i32 sx, sy;
+    if ( s_vp_request.by_drag )
     {
-        s_vp_request.active     = false;
-        gui_window_t* win     = window_find( s_vp_request.win_id );
-        bool            has_home = s_vp_request.has_home;
-        s_vp_request.has_home   = false;   /* one-shot: never leak into a later drag tear-off */
-        if ( win && s_vp_request.from_vp == 0 )
+        i32 cx = 0, cy = 0;
+        f32 gox = 0.0f, goy = 0.0f;
+        app()->mouse_position_screen( &cx, &cy );
+        move_grab_offset( &gox, &goy );
+        sx = cx - (i32)gox;
+        sy = cy - (i32)goy;
+    }
+    else if ( has_home )
+    {
+        /* Re-opening a closed floater: land at the saved RESTORE (normal) position. */
+        sx = win->reopen.home_x;
+        sy = win->reopen.home_y;
+    }
+    else
+    {
+        i32 mx = 0, my = 0;
+        app()->window_get_pos( g_ctx->vp.pool[ 0 ].win_id, &mx, &my );
+        sx = mx + (i32)win->x;
+        sy = my + (i32)win->y;
+    }
+
+    /* Re-open spawns at the saved restore size so the OS restore rect is the previous normal
+       size; a plain tear-off spawns at the window's current size. */
+    i32 sw = has_home ? (i32)win->reopen.w : (i32)win->w;
+    i32 sh = has_home ? (i32)win->reopen.h : (i32)win->h;
+
+    gui_vp_t vp = viewport_spawn( s_vp_request.title ? s_vp_request.title : "panel",
+                                    sx, sy, sw, sh, s_vp_request.by_drag );
+    if ( vp != GUI_VP_INVALID )
+    {
+        /* window_open positions the FRAME; set_pos lands the CLIENT corner on (sx,sy). */
+        app()->window_set_pos( g_ctx->vp.pool[ vp ].win_id, sx, sy );
+        win->viewport = vp;
+        win->x        = 0.0f;
+        win->y        = 0.0f;
+
+        /* Re-maximize a floater that was closed maximized: spawned at the restore rect first
+           (above), so the OS restore target becomes the previous normal size. */
+        if ( has_home && win->reopen.maximized )
+            app()->window_maximize( g_ctx->vp.pool[ vp ].win_id );
+    }
+}
+
+/* Merge a floater back into the main surface.  Placement mirrors tear-off: by_drag lands the panel
+   at cursor - grab offset (capture is held by the main window, so mouse coords are already
+   main-client), continuous with the in-flight drag; a button click keeps it at the screen location
+   the floater occupied.  The window is size- then position-clamped to fit the host surface (unless
+   NO_BOUNDARY_CLAMP), and the vacated owned surface is destroyed once no window is left on it. */
+static void
+viewport_service_mergeback( gui_window_t* win )
+{
+    u32 fvp = s_vp_request.from_vp;
+
+    win->viewport = 0;
+
+    /* Clamp the window to fit inside the host surface on any pop-in path.  Size first so
+       that position clamping below always has a non-negative travel range.  A panel that was
+       fullscreened while floating must not land with resize handles off-screen.
+       Skipped for GUI_WIN_NO_BOUNDARY_CLAMP -- placement is externally managed. */
+    if ( !( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP ) )
+    {
+        const gui_viewport_t* hv = &g_ctx->vp.pool[ 0 ];
+        f32 dw    = vp_w( hv );
+        f32 dh    = vp_h( hv );
+        f32 top   = hv->caption_inset;
+        f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
+        if ( win->w > dw )    win->w = dw;
+        if ( win->h > max_h ) win->h = max_h;
+    }
+
+    if ( s_vp_request.by_drag )
+    {
+        f32 gox = 0.0f, goy = 0.0f;
+        move_grab_offset( &gox, &goy );
+        win->x = s_io.mouse_x - gox;
+        win->y = s_io.mouse_y - goy;
+    }
+    else
+    {
+        i32 fx = 0, fy = 0, mx = 0, my = 0;
+        if ( fvp < g_ctx->vp.max )
+            app()->window_get_pos( g_ctx->vp.pool[ fvp ].win_id, &fx, &fy );
+        app()->window_get_pos( g_ctx->vp.pool[ 0 ].win_id, &mx, &my );
+        win->x = (f32)( fx - mx );
+        win->y = (f32)( fy - my );
+
+        /* Snap fully inside the host's client bounds: a floater merged from well clear of the
+           main window would otherwise land at a screen offset outside the visible area (the
+           button path never runs the per-frame window_clamp the drag path relies on).
+           Skipped for GUI_WIN_NO_BOUNDARY_CLAMP -- caller is responsible for placement. */
+        if ( !( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP ) )
         {
-            /* Tear the window off the main surface into its own floater.  Placement depends on how
-               the tear-off was requested:
-
-               by_drag -- a live title-bar drag (button still down).  Place the floater so the grab
-               point stays exactly beneath the cursor: client origin = screen cursor - the grab offset
-               recorded when the drag began.  Spawned no-activate so the origin window keeps its OS
-               mouse capture (activating would release it and sever the drag); the per-frame
-               floater-follow in window_begin then keeps the panel tracking the cursor.
-
-               else -- a detach-button click, no drag in flight.  Keep the panel at its EXACT screen
-               position (main client origin + the panel's position within it), so it pops out in place
-               rather than jumping to the cursor.  Activate normally; there is no capture to preserve. */
-
-            i32 sx, sy;
-            if ( s_vp_request.by_drag )
-            {
-                i32 cx = 0, cy = 0;
-                f32 gox = 0.0f, goy = 0.0f;
-                app()->mouse_position_screen( &cx, &cy );
-                move_grab_offset( &gox, &goy );
-                sx = cx - (i32)gox;
-                sy = cy - (i32)goy;
-            }
-            else if ( has_home )
-            {
-                /* Re-opening a closed floater: land at the saved RESTORE (normal) position. */
-                sx = win->reopen.home_x;
-                sy = win->reopen.home_y;
-            }
-            else
-            {
-                i32 mx = 0, my = 0;
-                app()->window_get_pos( g_ctx->vp.pool[ 0 ].win_id, &mx, &my );
-                sx = mx + (i32)win->x;
-                sy = my + (i32)win->y;
-            }
-
-            /* Re-open spawns at the saved restore size so the OS restore rect is the previous normal
-               size; a plain tear-off spawns at the window's current size. */
-            i32 sw = has_home ? (i32)win->reopen.w : (i32)win->w;
-            i32 sh = has_home ? (i32)win->reopen.h : (i32)win->h;
-
-            gui_vp_t vp = viewport_spawn( s_vp_request.title ? s_vp_request.title : "panel",
-                                            sx, sy, sw, sh, s_vp_request.by_drag );
-            if ( vp != GUI_VP_INVALID )
-            {
-                /* window_open positions the FRAME; set_pos lands the CLIENT corner on (sx,sy). */
-                app()->window_set_pos( g_ctx->vp.pool[ vp ].win_id, sx, sy );
-                win->viewport = vp;
-                win->x        = 0.0f;
-                win->y        = 0.0f;
-
-                /* Re-maximize a floater that was closed maximized: spawned at the restore rect first
-                   (above), so the OS restore target becomes the previous normal size. */
-                if ( has_home && win->reopen.maximized )
-                    app()->window_maximize( g_ctx->vp.pool[ vp ].win_id );
-            }
-        }
-        else if ( win )
-        {
-            /* Merge back into the main surface.  Placement mirrors tear-off:
-
-               by_drag -- capture is held by the main window for the whole drag, so s_io.mouse_x/y are
-               already main-client coords; the panel lands at cursor - grab offset, continuous with the
-               in-flight drag, which the attached drag-apply in window_begin then carries on.
-
-               else -- a button click; keep the panel at the screen location the floater occupied (its
-               client origin minus the main client origin), so it docks in place rather than jumping. */
-            u32 fvp = s_vp_request.from_vp;
-
-            win->viewport = 0;
-
-            /* Clamp the window to fit inside the host surface on any pop-in path.  Size first so
-               that position clamping below always has a non-negative travel range.  A panel that was
-               fullscreened while floating must not land with resize handles off-screen.
-               Skipped for GUI_WIN_NO_BOUNDARY_CLAMP -- placement is externally managed. */
-            if ( !( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP ) )
-            {
-                const gui_viewport_t* hv = &g_ctx->vp.pool[ 0 ];
-                f32 dw    = vp_w( hv );
-                f32 dh    = vp_h( hv );
-                f32 top   = hv->caption_inset;
-                f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
-                if ( win->w > dw )    win->w = dw;
-                if ( win->h > max_h ) win->h = max_h;
-            }
-
-            if ( s_vp_request.by_drag )
-            {
-                f32 gox = 0.0f, goy = 0.0f;
-                move_grab_offset( &gox, &goy );
-                win->x = s_io.mouse_x - gox;
-                win->y = s_io.mouse_y - goy;
-            }
-            else
-            {
-                i32 fx = 0, fy = 0, mx = 0, my = 0;
-                if ( fvp < g_ctx->vp.max )
-                    app()->window_get_pos( g_ctx->vp.pool[ fvp ].win_id, &fx, &fy );
-                app()->window_get_pos( g_ctx->vp.pool[ 0 ].win_id, &mx, &my );
-                win->x = (f32)( fx - mx );
-                win->y = (f32)( fy - my );
-
-                /* Snap fully inside the host's client bounds: a floater merged from well clear of the
-                   main window would otherwise land at a screen offset outside the visible area (the
-                   button path never runs the per-frame window_clamp the drag path relies on).
-                   Skipped for GUI_WIN_NO_BOUNDARY_CLAMP -- caller is responsible for placement. */
-                if ( !( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP ) )
-                {
-                    const gui_viewport_t* hv = &g_ctx->vp.pool[ 0 ];
-                    f32 dw  = vp_w( hv );
-                    f32 dh  = vp_h( hv );
-                    f32 top = hv->caption_inset;
-                    f32 max_x = dw - win->w;
-                    f32 max_y = dh - win->h; if ( max_y < top ) max_y = top;
-                    win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );
-                    win->y = win->y < top  ? top  : ( win->y > max_y ? max_y : win->y );
-                }
-            }
-
-            bool empty = true;
-            for ( u32 w = 0; w < g_ctx->win.count; ++w )
-                if ( g_ctx->win.pool[ w ].viewport == fvp ) { empty = false; break; }
-            if ( empty && fvp > 0 && fvp < g_ctx->vp.max && g_ctx->vp.pool[ fvp ].owned )
-                viewport_destroy( &g_ctx->vp.pool[ fvp ] );
+            const gui_viewport_t* hv = &g_ctx->vp.pool[ 0 ];
+            f32 dw  = vp_w( hv );
+            f32 dh  = vp_h( hv );
+            f32 top = hv->caption_inset;
+            f32 max_x = dw - win->w;
+            f32 max_y = dh - win->h; if ( max_y < top ) max_y = top;
+            win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );
+            win->y = win->y < top  ? top  : ( win->y > max_y ? max_y : win->y );
         }
     }
 
-    /* (2) Tear down owned floaters for either reason:
+    bool empty = true;
+    for ( u32 w = 0; w < g_ctx->win.count; ++w )
+        if ( g_ctx->win.pool[ w ].viewport == fvp ) { empty = false; break; }
+    if ( empty && fvp > 0 && fvp < g_ctx->vp.max && g_ctx->vp.pool[ fvp ].owned )
+        viewport_destroy( &g_ctx->vp.pool[ fvp ] );
+}
 
-         pending_close -- the user closed the OS window (APP_EV_WIN_CLOSE).
+/* Tear down owned floaters for either reason:
 
-         abandoned     -- the window(s) the floater hosts stopped being emitted.  A floater is just a
-                          surface for the panel that was torn into it; if the caller hides that panel
-                          or quits drawing it, its window_begin stops running and last_frame freezes,
-                          leaving a hovering OS window with no UI and no controls.  Detect it by the
-                          same staleness rule popups use (popup_close_check): the freshest assigned
-                          window has missed a full frame (max last_frame + 1 < frame), or no window is
-                          bound at all.  One frame of grace tolerates a transient single-frame hide.
+     pending_close -- the user closed the OS window (APP_EV_WIN_CLOSE).
 
-       This runs after step (1), so a window just torn off / merged this frame already carries
-       last_frame == g_ctx->retained.frame on its new surface and never reads as abandoned. */
+     abandoned     -- the window(s) the floater hosts stopped being emitted.  A floater is just a
+                      surface for the panel that was torn into it; if the caller hides that panel or
+                      quits drawing it, its window_begin stops running and last_frame freezes, leaving
+                      a hovering OS window with no UI.  Detect it by the same staleness rule popups
+                      use (popup_close_check): the freshest assigned window has missed a full frame
+                      (max last_frame + 1 < frame), or no window is bound at all.  One frame of grace
+                      tolerates a transient single-frame hide.
+
+   Runs after the tear-off / merge-back step, so a window just moved this frame already carries
+   last_frame == g_ctx->retained.frame on its new surface and never reads as abandoned. */
+static void
+viewport_teardown_owned( void )
+{
     for ( u32 i = 1; i < g_ctx->vp.count; ++i )
     {
         gui_viewport_t* vp = &g_ctx->vp.pool[ i ];
@@ -423,6 +399,34 @@ gui_viewport_update( void )
     while ( g_ctx->vp.count > 0
             && !rhi_handle_valid( g_ctx->vp.pool[ g_ctx->vp.count - 1 ].vb ) )
         --g_ctx->vp.count;
+}
+
+/* Reconcile gui-owned floater surfaces with their OS windows.  Call once per frame after the UI
+   build and BEFORE rendering: it is the safe point to tear surfaces down, since no in-flight draw
+   list references one being freed.  Runs in two steps: (1) service tear-off / merge-back requests
+   enqueued during the build (a window dragged off its host surface, or back onto it), then (2)
+   tear down owned surfaces the user closed (pending_close) or abandoned (their panel stopped
+   emitting). */
+
+void
+gui_viewport_update( void )
+{
+    /* (1) Tear-off / merge-back: a window whose title was dragged off its host surface (enqueued by
+       window_begin_ex) changes which surface hosts it. */
+    if ( s_vp_request.active )
+    {
+        s_vp_request.active     = false;
+        gui_window_t* win     = window_find( s_vp_request.win_id );
+        bool            has_home = s_vp_request.has_home;
+        s_vp_request.has_home   = false;   /* one-shot: never leak into a later drag tear-off */
+        if ( win && s_vp_request.from_vp == 0 )
+            viewport_service_tearoff( win, has_home );
+        else if ( win )
+            viewport_service_mergeback( win );
+    }
+
+    /* (2) Tear down owned surfaces the user closed or abandoned, then compact the count. */
+    viewport_teardown_owned();
 }
 
 /* Present every gui-owned floater surface from the shared draw list: open a frame on the

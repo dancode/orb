@@ -695,6 +695,115 @@ gui_build_dump_geometry( void )
     cache_dump_slots( "manual" );
 }
 
+/* Reuse a window's geometry in place: it sits at prev->vert_base unchanged, so copy the slot fields,
+   advance the write head by the padded alloc (keeping the next window's prev->vert_base aligned with
+   s_tess.vert_count), and replay its cached GPU commands at this frame's offsets. */
+static void
+cache_slot_reuse( win_geo_slot_t* slot, win_geo_slot_t* prev, u32 wi )
+{
+    /* Geometry is in place at prev->vert_base.  Advance the write head by the padded
+       alloc so the next window's prev->vert_base aligns with s_tess.vert_count. */
+    slot->vert_base  = prev->vert_base;
+    slot->vert_count = prev->vert_count;
+    slot->vert_alloc = prev->vert_alloc;
+    slot->idx_base   = prev->idx_base;
+    slot->idx_count  = prev->idx_count;
+    slot->idx_alloc  = prev->idx_alloc;
+    slot->tess_gen   = prev->tess_gen;   /* geometry unchanged: same tessellation pass */
+    s_tess.vert_count = prev->vert_base + prev->vert_alloc;
+    s_tess.idx_count  = prev->idx_base  + prev->idx_alloc;
+
+    /* Replay GPU commands from the stable cache.  lvbase/libase are slot-local, so
+       adding slot->vert_base/idx_base gives the absolute offsets for this frame. */
+    slot->cmd_base  = s_tess.cmd_count;
+    slot->cmd_count = s_win_cached_count[ wi ];
+    u32 nc = slot->cmd_count;
+    for ( u32 k = 0; k < nc; ++k )
+    {
+        u32 ci = slot->cmd_base + k;
+        s_tess.cmds    [ ci ]  = s_win_cached[ wi ][ k ].cmd;
+        s_tess.cmd_vp  [ ci ]  = s_win_cached[ wi ][ k ].vp;
+        s_tess.cmd_vbase[ ci ] = slot->vert_base + s_win_cached[ wi ][ k ].lvbase;
+        s_tess.cmd_ibase[ ci ] = slot->idx_base  + s_win_cached[ wi ][ k ].libase;
+    }
+    s_tess.cmd_count += nc;
+
+    /* This window's own content matched, but that comparison excludes volatile commands entirely
+       (cache_diff_windows).  Its volatile rows are patched from this frame's live emit AFTER the
+       loop (see reused_volatile_wins) -- once every slot is placed and s_tess.vert_count is the true
+       tail, so the patch's scratch tessellation cannot land on a later slot's live geometry.  The
+       slot fields (incl. tess_gen) set here are what volatile_patch resolves and generation-checks
+       against then. */
+    slot->valid = true;
+}
+
+/* Tessellate a changed / new / unstable window at the current write head (which, in stable mode,
+   equals prev->vert_base, so this overwrites only the window's own prior region).  Keeps the padded
+   reservation if the new geometry fits so downstream slots stay put; otherwise expands and
+   invalidates all downstream prev slots so they re-tessellate at their shifted homes.  Finally
+   writes the GPU commands into the stable cache for reuse next retained frame. */
+static void
+cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh, win_geo_slot_t* prev,
+                       u32 wi, bool set_stable )
+{
+    slot->vert_base       = s_tess.vert_count;
+    slot->idx_base        = s_tess.idx_count;
+    slot->cmd_base        = s_tess.cmd_count;
+    slot->tess_gen        = ++s_tess_gen_next;   /* fresh pass: volatile captures bind to it */
+    s_tess.slot_vert_base = s_tess.vert_count;
+    s_tess.slot_idx_base  = s_tess.idx_count;
+    s_tess.slot_cmd_base  = s_tess.cmd_count;
+    s_tess.slot_tess_gen  = slot->tess_gen;
+    s_tess.force_new_cmd  = true;
+
+    cache_tess_window( wh->win );
+
+    slot->vert_count = s_tess.vert_count - slot->vert_base;
+    slot->idx_count  = s_tess.idx_count  - slot->idx_base;
+    slot->cmd_count  = s_tess.cmd_count  - slot->cmd_base;
+
+    /* Keep the slot's padded reservation if the new geometry fits, so downstream
+       slots stay put and can reuse in place next frame.  Otherwise expand and
+       invalidate all downstream prev slots so they re-tessellate at their new homes. */
+    bool fits = ( set_stable && prev && prev->valid
+                  && slot->vert_count <= prev->vert_alloc
+                  && slot->idx_count  <= prev->idx_alloc );
+    if ( fits )
+    {
+        slot->vert_alloc = prev->vert_alloc;
+        slot->idx_alloc  = prev->idx_alloc;
+    }
+    else
+    {
+        slot->vert_alloc = slot->vert_count + SLOT_VERT_PAD;
+        slot->idx_alloc  = slot->idx_count  + SLOT_IDX_PAD;
+        if ( set_stable )
+            for ( u32 ni = wi + 1; ni < s_slot_prev_count; ++ni )
+                s_slots_prev[ ni ].valid = false;
+    }
+
+    /* Advance the write head by the full padded reservation.  Both the reuse and
+       tessellation paths use this rule, which is what keeps s_tess.vert_count ==
+       prev[wi].vert_base for every window, every frame, in stable mode. */
+    s_tess.vert_count = slot->vert_base + slot->vert_alloc;
+    s_tess.idx_count  = slot->idx_base  + slot->idx_alloc;
+
+    /* Write GPU commands into the stable cache for reuse next retained frame. */
+    u32 nc = slot->cmd_count;
+    if ( nc > WIN_SLOT_CMD_MAX ) nc = WIN_SLOT_CMD_MAX;
+    s_win_cached_count[ wi ] = nc;
+    for ( u32 k = 0; k < nc; ++k )
+    {
+        u32 ci = slot->cmd_base + k;
+        s_win_cached[ wi ][ k ].cmd    = s_tess.cmds    [ ci ];
+        s_win_cached[ wi ][ k ].vp     = s_tess.cmd_vp  [ ci ];
+        s_win_cached[ wi ][ k ].lvbase = s_tess.cmd_vbase[ ci ] - slot->vert_base;
+        s_win_cached[ wi ][ k ].libase = s_tess.cmd_ibase[ ci ] - slot->idx_base;
+    }
+    slot->cmd_count = nc;
+    slot->valid     = true;
+}
+
 /*==============================================================================================
     cache_build_frame (BUILD step 2) -- diff, reuse or re-tessellate per window, z-sort.
 
@@ -784,40 +893,10 @@ cache_build_frame( void )
 
         if ( reuse_geo )
         {
-            /* Geometry is in place at prev->vert_base.  Advance the write head by the padded
-               alloc so the next window's prev->vert_base aligns with s_tess.vert_count. */
-            slot->vert_base  = prev->vert_base;
-            slot->vert_count = prev->vert_count;
-            slot->vert_alloc = prev->vert_alloc;
-            slot->idx_base   = prev->idx_base;
-            slot->idx_count  = prev->idx_count;
-            slot->idx_alloc  = prev->idx_alloc;
-            slot->tess_gen   = prev->tess_gen;   /* geometry unchanged: same tessellation pass */
-            s_tess.vert_count = prev->vert_base + prev->vert_alloc;
-            s_tess.idx_count  = prev->idx_base  + prev->idx_alloc;
+            cache_slot_reuse( slot, prev, wi );
 
-            /* Replay GPU commands from the stable cache.  lvbase/libase are slot-local, so
-               adding slot->vert_base/idx_base gives the absolute offsets for this frame. */
-            slot->cmd_base  = s_tess.cmd_count;
-            slot->cmd_count = s_win_cached_count[ wi ];
-            u32 nc = slot->cmd_count;
-            for ( u32 k = 0; k < nc; ++k )
-            {
-                u32 ci = slot->cmd_base + k;
-                s_tess.cmds    [ ci ]  = s_win_cached[ wi ][ k ].cmd;
-                s_tess.cmd_vp  [ ci ]  = s_win_cached[ wi ][ k ].vp;
-                s_tess.cmd_vbase[ ci ] = slot->vert_base + s_win_cached[ wi ][ k ].lvbase;
-                s_tess.cmd_ibase[ ci ] = slot->idx_base  + s_win_cached[ wi ][ k ].libase;
-            }
-            s_tess.cmd_count += nc;
-
-            /* This window's own content matched, but that comparison excludes volatile commands
-               entirely (cache_diff_windows).  Its volatile rows are patched from this frame's live
-               emit AFTER the loop (see reused_volatile_wins) -- once every slot is placed and
-               s_tess.vert_count is the true tail, so the patch's scratch tessellation cannot land
-               on a later slot's live geometry.  The slot fields (incl. tess_gen) set here are what
-               volatile_patch resolves and generation-checks against then. */
-            slot->valid = true;
+            /* Register for the deferred volatile patch after the loop, and tally retained
+               geometry (debug-band windows are excluded from the totals below). */
             if ( reused_volatile_n < RENDER_MAX_WIN )
                 reused_volatile_wins[ reused_volatile_n++ ] = wh->win;
 
@@ -830,65 +909,7 @@ cache_build_frame( void )
         }
         else
         {
-            /* Changed, new, or unstable window: tessellate at the current write head.
-               In stable mode the write head equals prev->vert_base, so this overwrites
-               only the window's own prior region without disturbing its neighbours. */
-            slot->vert_base       = s_tess.vert_count;
-            slot->idx_base        = s_tess.idx_count;
-            slot->cmd_base        = s_tess.cmd_count;
-            slot->tess_gen        = ++s_tess_gen_next;   /* fresh pass: volatile captures bind to it */
-            s_tess.slot_vert_base = s_tess.vert_count;
-            s_tess.slot_idx_base  = s_tess.idx_count;
-            s_tess.slot_cmd_base  = s_tess.cmd_count;
-            s_tess.slot_tess_gen  = slot->tess_gen;
-            s_tess.force_new_cmd  = true;
-
-            cache_tess_window( wh->win );
-
-            slot->vert_count = s_tess.vert_count - slot->vert_base;
-            slot->idx_count  = s_tess.idx_count  - slot->idx_base;
-            slot->cmd_count  = s_tess.cmd_count  - slot->cmd_base;
-
-            /* Keep the slot's padded reservation if the new geometry fits, so downstream
-               slots stay put and can reuse in place next frame.  Otherwise expand and
-               invalidate all downstream prev slots so they re-tessellate at their new homes. */
-            bool fits = ( set_stable && prev && prev->valid
-                          && slot->vert_count <= prev->vert_alloc
-                          && slot->idx_count  <= prev->idx_alloc );
-            if ( fits )
-            {
-                slot->vert_alloc = prev->vert_alloc;
-                slot->idx_alloc  = prev->idx_alloc;
-            }
-            else
-            {
-                slot->vert_alloc = slot->vert_count + SLOT_VERT_PAD;
-                slot->idx_alloc  = slot->idx_count  + SLOT_IDX_PAD;
-                if ( set_stable )
-                    for ( u32 ni = wi + 1; ni < s_slot_prev_count; ++ni )
-                        s_slots_prev[ ni ].valid = false;
-            }
-
-            /* Advance the write head by the full padded reservation.  Both the reuse and
-               tessellation paths use this rule, which is what keeps s_tess.vert_count ==
-               prev[wi].vert_base for every window, every frame, in stable mode. */
-            s_tess.vert_count = slot->vert_base + slot->vert_alloc;
-            s_tess.idx_count  = slot->idx_base  + slot->idx_alloc;
-
-            /* Write GPU commands into the stable cache for reuse next retained frame. */
-            u32 nc = slot->cmd_count;
-            if ( nc > WIN_SLOT_CMD_MAX ) nc = WIN_SLOT_CMD_MAX;
-            s_win_cached_count[ wi ] = nc;
-            for ( u32 k = 0; k < nc; ++k )
-            {
-                u32 ci = slot->cmd_base + k;
-                s_win_cached[ wi ][ k ].cmd    = s_tess.cmds    [ ci ];
-                s_win_cached[ wi ][ k ].vp     = s_tess.cmd_vp  [ ci ];
-                s_win_cached[ wi ][ k ].lvbase = s_tess.cmd_vbase[ ci ] - slot->vert_base;
-                s_win_cached[ wi ][ k ].libase = s_tess.cmd_ibase[ ci ] - slot->idx_base;
-            }
-            slot->cmd_count = nc;
-            slot->valid     = true;
+            cache_slot_tessellate( slot, wh, prev, wi, set_stable );
         }
 
         /* Accumulate per-slot geometry stats; exclude self-measuring debug-band windows from totals. */

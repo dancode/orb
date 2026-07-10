@@ -319,429 +319,433 @@ gui_set_edit_key_hook( gui_edit_key_fn fn, void* user )
     s_key_hook_user = user;
 }
 
-static input_field_result_t
-input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u32 bufsz,
-                  gui_text_cb_fn on_change, void* cb_user )
+/* Length of a NUL-terminated string bounded by its buffer capacity (never counts the terminator,
+   never runs past bufsz-1).  The field recomputes this wherever an edit may have resized buf. */
+static u32
+edit_strlen( const char* buf, u32 bufsz )
 {
-    gui_edit_state_t*  es      = GUI_STATE( gui_edit_state_t, id );
-    input_field_result_t res     = { false, false };
-    bool                 focused = st.focused;
+    u32 n = 0;
+    while ( n < bufsz - 1u && buf[ n ] ) ++n;
+    return n;
+}
 
-    /* I-beam over a text field -- and held through a selection drag (st.active), so it does not flip
-       back to the arrow while the cursor sweeps outside the box mid-drag. */
-    if ( st.hover || st.active )
-        set_mouse_cursor( APP_CURSOR_TEXT );
+/* Selection bounds from the caret/anchor pair: [lo,hi) is the highlighted range, *has is false
+   for a bare insertion point (cursor == anchor). */
+static void
+edit_sel( const gui_edit_state_t* es, u32* lo, u32* hi, bool* has )
+{
+    *lo  = es->cursor < es->anchor ? es->cursor : es->anchor;
+    *hi  = es->cursor > es->anchor ? es->cursor : es->anchor;
+    *has = ( *lo != *hi );
+}
 
-    u32 len = 0;
-    while ( len < bufsz - 1u && buf[ len ] ) ++len;
+/* Key passthrough hook: the registered one-shot hook gets first crack at every key down this
+   frame (history recall, tab completion, scrollback jumps).  A key the hook consumes is erased
+   from the frame io so the field's own handling never sees it.  The hook may replace the buffer
+   (and queue set_edit_cursor_end), so length and caret are recomputed afterward; wants_redraw
+   covers hook-side state the caller emitted before this field ran (scrollback rows), or the
+   clean-frame skip would stall the update. */
+static void
+edit_run_key_hook( char* buf, u32 bufsz, gui_edit_state_t* es, u32* len_io )
+{
+    if ( !s_key_hook ) return;
 
-    /* Clamp cursor and anchor to the current length -- a programmatic buffer change between
-       frames may have shortened the string under the old positions. */
-    if ( es->cursor > len ) es->cursor = (u16)len;
-    if ( es->anchor > len ) es->anchor = (u16)len;
+    gui_edit_key_fn hook = s_key_hook;
+    void*           user = s_key_hook_user;
+    bool            used = false;
+    s_key_hook      = NULL;
+    s_key_hook_user = NULL;
 
-    /* Key passthrough: the registered hook gets first crack at every key down this frame --
-       history recall, tab completion, scrollback jumps in a console front end.  A consumed
-       key is erased from the frame io so the field's handling below never sees it.  The hook
-       may replace the buffer (and queue set_edit_cursor_end), so length and caret are
-       recomputed afterwards; wants_redraw covers hook-side state the caller emitted before
-       this field ran (scrollback rows), or the clean-frame skip would stall the update. */
-    if ( focused && s_key_hook )
+    for ( u32 k = 0; k < GUI_KEY_COUNT; ++k )
     {
-        gui_edit_key_fn hook = s_key_hook;
-        void*           user = s_key_hook_user;
-        bool            used = false;
-        s_key_hook      = NULL;
-        s_key_hook_user = NULL;
-
-        for ( u32 k = 0; k < GUI_KEY_COUNT; ++k )
+        if ( !s_io.keys_pressed_repeat[ k ] ) continue;
+        if ( hook( k, io_ctrl(), io_shift(), !s_io.keys_pressed[ k ], user ) )
         {
-            if ( !s_io.keys_pressed_repeat[ k ] ) continue;
-            if ( hook( k, io_ctrl(), io_shift(), !s_io.keys_pressed[ k ], user ) )
-            {
-                s_io.keys_pressed[ k ]        = false;
-                s_io.keys_pressed_repeat[ k ] = false;
-                used = true;
-            }
-        }
-
-        if ( used )
-        {
-            len = 0;
-            while ( len < bufsz - 1u && buf[ len ] ) ++len;
-            if ( es->cursor > len ) es->cursor = (u16)len;
-            if ( es->anchor > len ) es->anchor = (u16)len;
-            g_ctx->retained.wants_redraw = true;
+            s_io.keys_pressed[ k ]        = false;
+            s_io.keys_pressed_repeat[ k ] = false;
+            used = true;
         }
     }
 
-    /* A queued set_edit_cursor_end request lands on the focused field: caret to the end of
-       the (possibly replaced) buffer, selection collapsed, blink reset so the caret shows. */
-    if ( focused && s_cursor_end_request )
+    if ( used )
     {
-        s_cursor_end_request = false;
-        es->cursor  = es->anchor = (u16)len;
-        es->blink_t = 0.0f;
+        u32 len = edit_strlen( buf, bufsz );
+        if ( es->cursor > len ) es->cursor = (u16)len;
+        if ( es->anchor > len ) es->anchor = (u16)len;
+        *len_io = len;
+        g_ctx->retained.wants_redraw = true;
+    }
+}
+
+/* Keyboard command handling for a focused field: clipboard copy/cut/paste, undo/redo, caret
+   navigation (Left/Right/Home/End, word jumps, Ctrl+A), backspace/delete, character insertion,
+   and the Enter/Escape submit/revert.  Threads len (kept in step with buf), the result flags,
+   and the blink-reset request back to the caller. */
+static void
+edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shift,
+                 u32* len_io, input_field_result_t* res_io, bool* blink_io )
+{
+    u32                  len         = *len_io;
+    input_field_result_t res         = *res_io;
+    bool                 blink_reset = *blink_io;
+
+    u32  sel_lo, sel_hi;
+    bool has_sel;
+    edit_sel( es, &sel_lo, &sel_hi, &has_sel );
+
+    /* Clipboard.  Copy / cut are key-driven (only this field knows the selection) and push
+       to the OS clipboard via gui_clipboard_set.  Paste is event-driven: the platform
+       already read the OS clipboard on the paste gesture and delivered it in s_io.paste, so
+       there is no Ctrl+V key check here -- a non-empty s_io.paste IS the paste.  Resolved
+       first so it acts on the selection as the user sees it, before navigation moves it. */
+
+    if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_C ] )
+    {
+        gui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
+        blink_reset = true;
     }
 
-    u32  sel_lo  = es->cursor < es->anchor ? es->cursor : es->anchor;
-    u32  sel_hi  = es->cursor > es->anchor ? es->cursor : es->anchor;
-    bool has_sel = ( sel_lo != sel_hi );
-
-    if ( focused )
+    if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_X ] )
     {
-        /* On the first frame this field is focused, initialise the undo ring for it. */
-        if ( s_undo.for_id != id )
-            undo_init( &s_undo, id, buf, es->cursor, es->anchor );
+        gui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
+        memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
+        len -= ( sel_hi - sel_lo );
+        es->cursor = es->anchor = (u16)sel_lo;
+        has_sel = false; sel_lo = sel_hi = es->cursor;
+        undo_push( &s_undo, buf, es->cursor, es->anchor );
+        res.changed = true;
+        blink_reset = true;
+    }
 
-        bool shift = io_shift();
-        bool ctrl  = io_ctrl();
-        bool blink_reset = false;
-
-        /* Clipboard.  Copy / cut are key-driven (only this field knows the selection) and push
-           to the OS clipboard via gui_clipboard_set.  Paste is event-driven: the platform
-           already read the OS clipboard on the paste gesture and delivered it in s_io.paste, so
-           there is no Ctrl+V key check here -- a non-empty s_io.paste IS the paste.  Resolved
-           first so it acts on the selection as the user sees it, before navigation moves it. */
-
-        if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_C ] )
+    if ( s_io.paste[ 0 ] )
+    {
+        /* Drop the selection first so the paste lands where it was. */
+        if ( has_sel )
         {
-            gui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
-            blink_reset = true;
-        }
-
-        if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_X ] )
-        {
-            gui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
             memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
             len -= ( sel_hi - sel_lo );
             es->cursor = es->anchor = (u16)sel_lo;
             has_sel = false; sel_lo = sel_hi = es->cursor;
-            undo_push( &s_undo, buf, es->cursor, es->anchor );
-            res.changed = true;
-            blink_reset = true;
         }
-
-        if ( s_io.paste[ 0 ] )
+        /* Insert each pasted byte at the advancing caret, skipping control characters
+           (a single-line field rejects newlines / tabs) and stopping at capacity. */
+        for ( const char* c = s_io.paste; *c && len + 1u < bufsz; ++c )
         {
-            /* Drop the selection first so the paste lands where it was. */
-            if ( has_sel )
-            {
-                memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
-                len -= ( sel_hi - sel_lo );
-                es->cursor = es->anchor = (u16)sel_lo;
-                has_sel = false; sel_lo = sel_hi = es->cursor;
-            }
-            /* Insert each pasted byte at the advancing caret, skipping control characters
-               (a single-line field rejects newlines / tabs) and stopping at capacity. */
-            for ( const char* c = s_io.paste; *c && len + 1u < bufsz; ++c )
-            {
-                if ( (u8)*c < 0x20u || (u8)*c == 0x7Fu ) continue;
-                memmove( buf + es->cursor + 1u, buf + es->cursor, len - es->cursor + 1u );
-                buf[ es->cursor ] = *c;
-                ++len; ++es->cursor;
-            }
-            es->anchor  = es->cursor;
-            undo_push( &s_undo, buf, es->cursor, es->anchor );
-            res.changed = true;
-            blink_reset = true;
+            if ( (u8)*c < 0x20u || (u8)*c == 0x7Fu ) continue;
+            memmove( buf + es->cursor + 1u, buf + es->cursor, len - es->cursor + 1u );
+            buf[ es->cursor ] = *c;
+            ++len; ++es->cursor;
         }
-
-        /* Undo / redo.  Ctrl+Z undoes; Ctrl+Y or Ctrl+Shift+Z redoes.  Both repeat. */
-        if ( ctrl && !shift && s_io.keys_pressed_repeat[ APP_KEY_Z ] )
-        {
-            if ( s_undo.cur > 0 )
-            {
-                s_undo.cur--;
-                res.changed     = undo_apply( &s_undo, s_undo.cur, buf, bufsz, es );
-                s_undo.last_was_char = false;
-                len             = 0;
-                while ( len < bufsz - 1u && buf[ len ] ) ++len;
-                has_sel = false; sel_lo = sel_hi = es->cursor;
-                blink_reset = true;
-            }
-        }
-
-        if ( ctrl && ( s_io.keys_pressed_repeat[ APP_KEY_Y ] ||
-                       ( shift && s_io.keys_pressed_repeat[ APP_KEY_Z ] ) ) )
-        {
-            if ( s_undo.cur + 1 < s_undo.top )
-            {
-                s_undo.cur++;
-                res.changed     = undo_apply( &s_undo, s_undo.cur, buf, bufsz, es );
-                s_undo.last_was_char = false;
-                len             = 0;
-                while ( len < bufsz - 1u && buf[ len ] ) ++len;
-                has_sel = false; sel_lo = sel_hi = es->cursor;
-                blink_reset = true;
-            }
-        }
-
-        /* Navigation: Left / Right collapse or extend the selection; Home / End jump.
-           Ctrl+Left / Ctrl+Right jump by word.  Navigation and deletion read
-           keys_pressed_repeat so a held key repeats at the OS rate. */
-
-        if ( s_io.keys_pressed_repeat[ APP_KEY_LEFT ] )
-        {
-            if ( ctrl )
-            {
-                /* Word-jump left: skip whitespace run, then skip preceding word. */
-                u32 pos = es->cursor;
-                while ( pos > 0 && char_class( (u8)buf[ pos - 1u ] ) == 0 ) --pos;
-                if ( pos > 0 )
-                {
-                    int cls = char_class( (u8)buf[ pos - 1u ] );
-                    while ( pos > 0 && char_class( (u8)buf[ pos - 1u ] ) == cls ) --pos;
-                }
-                es->cursor = (u16)pos;
-                if ( !shift ) es->anchor = (u16)pos;
-            }
-            else
-            {
-                if ( !shift && has_sel ) { es->cursor = es->anchor = (u16)sel_lo; }
-                else if ( es->cursor > 0 ) { --es->cursor; if ( !shift ) es->anchor = es->cursor; }
-            }
-            blink_reset = true;
-        }
-
-        if ( s_io.keys_pressed_repeat[ APP_KEY_RIGHT ] )
-        {
-            if ( ctrl )
-            {
-                /* Word-jump right: skip current word, then skip trailing whitespace. */
-                u32 pos = es->cursor;
-                if ( pos < len )
-                {
-                    int cls = char_class( (u8)buf[ pos ] );
-                    while ( pos < len && char_class( (u8)buf[ pos ] ) == cls ) ++pos;
-                }
-                while ( pos < len && char_class( (u8)buf[ pos ] ) == 0 ) ++pos;
-                es->cursor = (u16)pos;
-                if ( !shift ) es->anchor = (u16)pos;
-            }
-            else
-            {
-                if ( !shift && has_sel ) { es->cursor = es->anchor = (u16)sel_hi; }
-                else if ( es->cursor < len ) { ++es->cursor; if ( !shift ) es->anchor = es->cursor; }
-            }
-            blink_reset = true;
-        }
-
-        if ( s_io.keys_pressed[ APP_KEY_HOME ] )
-        {
-            es->cursor = 0; if ( !shift ) es->anchor = 0;
-            blink_reset = true;
-        }
-
-        if ( s_io.keys_pressed[ APP_KEY_END ] )
-        {
-            es->cursor = (u16)len; if ( !shift ) es->anchor = (u16)len;
-            blink_reset = true;
-        }
-
-        /* Ctrl+A: select the entire buffer. */
-        if ( ctrl && s_io.keys_pressed[ APP_KEY_A ] )
-        {
-            es->anchor = 0; es->cursor = (u16)len;
-            blink_reset = true;
-        }
-
-        /* Backspace: delete the selection, or the character before the caret. */
-        if ( s_io.keys_pressed_repeat[ APP_KEY_BACKSPACE ] )
-        {
-            if ( has_sel )
-            {
-                memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
-                len -= ( sel_hi - sel_lo );
-                es->cursor = es->anchor = (u16)sel_lo;
-                undo_push( &s_undo, buf, es->cursor, es->anchor );
-                res.changed = true;
-            }
-            else if ( es->cursor > 0 )
-            {
-                --es->cursor;
-                memmove( buf + es->cursor, buf + es->cursor + 1u, len - es->cursor );
-                --len; buf[ len ] = '\0';
-                es->anchor = es->cursor;
-                undo_push( &s_undo, buf, es->cursor, es->anchor );
-                res.changed = true;
-            }
-            has_sel = false; sel_lo = sel_hi = es->cursor;
-            blink_reset = true;
-        }
-
-        /* Delete: delete the selection, or the character after the caret. */
-        if ( s_io.keys_pressed_repeat[ APP_KEY_DELETE ] )
-        {
-            if ( has_sel )
-            {
-                memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
-                len -= ( sel_hi - sel_lo );
-                es->cursor = es->anchor = (u16)sel_lo;
-                undo_push( &s_undo, buf, es->cursor, es->anchor );
-                res.changed = true;
-            }
-            else if ( es->cursor < len )
-            {
-                memmove( buf + es->cursor, buf + es->cursor + 1u, len - es->cursor );
-                --len; buf[ len ] = '\0';
-                undo_push( &s_undo, buf, es->cursor, es->anchor );
-                res.changed = true;
-            }
-            has_sel = false; sel_lo = sel_hi = es->cursor;
-            blink_reset = true;
-        }
-
-        /* Character input: replace the selection with the first incoming char, then insert
-           any remaining chars at the advancing caret.  Selection is cleared after the first
-           replacement so subsequent chars in the same frame insert normally.  Skipped while
-           Ctrl is held so shortcut combos (Ctrl+C/V/X/A) never leak a stray glyph -- the OS
-           filters their control codes too, but this keeps the contract explicit. */
-        for ( const char* ch = ctrl ? "" : s_io.text; *ch; ++ch )
-        {
-            /* Single-line field: reject control characters (tab, CR, ...) exactly like the
-               paste path above -- a consumed Tab must not leak a '\t' glyph into the buffer. */
-            if ( (u8)*ch < 0x20u || (u8)*ch == 0x7Fu ) continue;
-
-            if ( has_sel )
-            {
-                /* Selection replacement ends the current char group (ring[cur] already holds
-                   the pre-replacement state) but does not push a redundant duplicate. */
-                s_undo.last_was_char = false;
-                memmove( buf + sel_lo + 1u, buf + sel_hi, len - sel_hi + 1u );
-                buf[ sel_lo ] = *ch;
-                len          -= ( sel_hi - sel_lo ) - 1u;
-                es->cursor    = es->anchor = (u16)( sel_lo + 1u );
-                has_sel       = false; sel_lo = sel_hi = es->cursor;
-            }
-            else if ( len + 1u < bufsz )
-            {
-                memmove( buf + es->cursor + 1u, buf + es->cursor, len - es->cursor + 1u );
-                buf[ es->cursor ] = *ch;
-                ++len; ++es->cursor;
-                es->anchor = es->cursor;
-            }
-            res.changed = true;
-            blink_reset = true;
-        }
-
-        /* After character input, push or update the undo snapshot for char grouping.
-           Push if this is the first char in a burst; update in place for subsequent chars. */
-        if ( res.changed && !ctrl && s_io.text[ 0 ] )
-        {
-            if ( !s_undo.last_was_char )
-            {
-                undo_push( &s_undo, buf, es->cursor, es->anchor );
-                s_undo.last_was_char = true;
-            }
-            else
-            {
-                undo_update( &s_undo, buf, es->cursor, es->anchor );
-            }
-        }
-
-        /* Enter submits; Escape reverts to content at focus-gain, then drops focus. */
-        if ( s_io.keys_pressed[ APP_KEY_ENTER ] )
-        {
-            s_undo.for_id    = GUI_ID_NONE;
-            item_focus_release();
-            res.enter = true;
-        }
-        if ( s_io.keys_pressed[ APP_KEY_ESCAPE ] )
-        {
-            /* Restore the buffer to its state at focus-gain, signal change if it differs. */
-            u32 rv_len = 0;
-            while ( rv_len < bufsz - 1u && s_undo.revert[ rv_len ] ) ++rv_len;
-            if ( rv_len != len || memcmp( buf, s_undo.revert, rv_len ) != 0 )
-            {
-                memcpy( buf, s_undo.revert, rv_len + 1u );
-                es->cursor = es->anchor = 0;
-                res.changed = true;
-                len = rv_len;
-            }
-            s_undo.for_id    = GUI_ID_NONE;
-            item_focus_release();
-        }
-
-        /* Mouse.  st.pressed is the grab frame (also the focus-gaining click, since
-           widget_behavior set focused_id = id by now); st.active stays true for the whole
-           capture, so the drag below keeps extending the selection even after the cursor
-           leaves the box.  text_offset_at clamps a cursor past either edge to 0 / len, so a
-           drag past the ends selects to the start / end naturally. */
-        {
-            f32 px  = s_io.mouse_x - ( box.x + WIDGET_PAD ) + es->scroll_x;
-            u32 off = text_offset_at( buf, len, px );
-
-            if ( st.pressed && s_io.mouse_double[ 0 ] )
-            {
-                /* Double-click: select the word under the cursor. */
-                u32 wb_off = word_click_off( buf, len, off );
-                u32 wlo, whi;
-                word_bounds( buf, len, wb_off, &wlo, &whi );
-                es->anchor   = (u16)wlo;
-                es->cursor   = (u16)whi;
-                es->dbl_lo   = (u16)wlo;
-                es->dbl_hi   = (u16)whi;
-                es->word_sel = 1;
-                blink_reset  = true;
-            }
-            else if ( st.pressed )
-            {
-                /* Single press: caret to the click; Shift keeps the anchor to extend. */
-                es->cursor   = (u16)off;
-                es->word_sel = 0;
-                if ( !shift ) es->anchor = (u16)off;
-                blink_reset = true;
-            }
-            else if ( st.active )
-            {
-                if ( es->word_sel )
-                {
-                    /* Word-select drag: keep the initial double-clicked word selected and extend
-                       by word boundaries when the mouse moves outside it.
-                       Apply the same right-edge correction as the double-click itself. */
-                    u32 drag_off = word_click_off( buf, len, off );
-                    if ( drag_off < es->dbl_lo )
-                    {
-                        /* Dragged left of original word: pin right at dbl_hi, extend left. */
-                        u32 wlo, whi;
-                        word_bounds( buf, len, drag_off, &wlo, &whi );
-                        es->anchor = es->dbl_hi;
-                        es->cursor = (u16)wlo;
-                    }
-                    else if ( drag_off >= es->dbl_hi )
-                    {
-                        /* Dragged right of original word: pin left at dbl_lo, extend right. */
-                        u32 wlo, whi;
-                        word_bounds( buf, len, drag_off, &wlo, &whi );
-                        es->anchor = es->dbl_lo;
-                        es->cursor = (u16)whi;
-                    }
-                    else
-                    {
-                        /* Still inside the original word: restore the initial word selection. */
-                        es->anchor = es->dbl_lo;
-                        es->cursor = es->dbl_hi;
-                    }
-                }
-                else
-                {
-                    /* Normal drag: move the caret, leaving the anchor put. */
-                    es->cursor = (u16)off;
-                }
-                blink_reset = true;
-            }
-        }
-
-        /* Recompute selection bounds after all edits this frame. */
-        sel_lo  = es->cursor < es->anchor ? es->cursor : es->anchor;
-        sel_hi  = es->cursor > es->anchor ? es->cursor : es->anchor;
-        has_sel = ( sel_lo != sel_hi );
-
-        if ( blink_reset ) es->blink_t = 0.0f;
-        else               es->blink_t += s_io.dt;
+        es->anchor  = es->cursor;
+        undo_push( &s_undo, buf, es->cursor, es->anchor );
+        res.changed = true;
+        blink_reset = true;
     }
 
+    /* Undo / redo.  Ctrl+Z undoes; Ctrl+Y or Ctrl+Shift+Z redoes.  Both repeat. */
+    if ( ctrl && !shift && s_io.keys_pressed_repeat[ APP_KEY_Z ] )
+    {
+        if ( s_undo.cur > 0 )
+        {
+            s_undo.cur--;
+            res.changed     = undo_apply( &s_undo, s_undo.cur, buf, bufsz, es );
+            s_undo.last_was_char = false;
+            len             = edit_strlen( buf, bufsz );
+            has_sel = false; sel_lo = sel_hi = es->cursor;
+            blink_reset = true;
+        }
+    }
+
+    if ( ctrl && ( s_io.keys_pressed_repeat[ APP_KEY_Y ] ||
+                   ( shift && s_io.keys_pressed_repeat[ APP_KEY_Z ] ) ) )
+    {
+        if ( s_undo.cur + 1 < s_undo.top )
+        {
+            s_undo.cur++;
+            res.changed     = undo_apply( &s_undo, s_undo.cur, buf, bufsz, es );
+            s_undo.last_was_char = false;
+            len             = edit_strlen( buf, bufsz );
+            has_sel = false; sel_lo = sel_hi = es->cursor;
+            blink_reset = true;
+        }
+    }
+
+    /* Navigation: Left / Right collapse or extend the selection; Home / End jump.
+       Ctrl+Left / Ctrl+Right jump by word.  Navigation and deletion read
+       keys_pressed_repeat so a held key repeats at the OS rate. */
+
+    if ( s_io.keys_pressed_repeat[ APP_KEY_LEFT ] )
+    {
+        if ( ctrl )
+        {
+            /* Word-jump left: skip whitespace run, then skip preceding word. */
+            u32 pos = es->cursor;
+            while ( pos > 0 && char_class( (u8)buf[ pos - 1u ] ) == 0 ) --pos;
+            if ( pos > 0 )
+            {
+                int cls = char_class( (u8)buf[ pos - 1u ] );
+                while ( pos > 0 && char_class( (u8)buf[ pos - 1u ] ) == cls ) --pos;
+            }
+            es->cursor = (u16)pos;
+            if ( !shift ) es->anchor = (u16)pos;
+        }
+        else
+        {
+            if ( !shift && has_sel ) { es->cursor = es->anchor = (u16)sel_lo; }
+            else if ( es->cursor > 0 ) { --es->cursor; if ( !shift ) es->anchor = es->cursor; }
+        }
+        blink_reset = true;
+    }
+
+    if ( s_io.keys_pressed_repeat[ APP_KEY_RIGHT ] )
+    {
+        if ( ctrl )
+        {
+            /* Word-jump right: skip current word, then skip trailing whitespace. */
+            u32 pos = es->cursor;
+            if ( pos < len )
+            {
+                int cls = char_class( (u8)buf[ pos ] );
+                while ( pos < len && char_class( (u8)buf[ pos ] ) == cls ) ++pos;
+            }
+            while ( pos < len && char_class( (u8)buf[ pos ] ) == 0 ) ++pos;
+            es->cursor = (u16)pos;
+            if ( !shift ) es->anchor = (u16)pos;
+        }
+        else
+        {
+            if ( !shift && has_sel ) { es->cursor = es->anchor = (u16)sel_hi; }
+            else if ( es->cursor < len ) { ++es->cursor; if ( !shift ) es->anchor = es->cursor; }
+        }
+        blink_reset = true;
+    }
+
+    if ( s_io.keys_pressed[ APP_KEY_HOME ] )
+    {
+        es->cursor = 0; if ( !shift ) es->anchor = 0;
+        blink_reset = true;
+    }
+
+    if ( s_io.keys_pressed[ APP_KEY_END ] )
+    {
+        es->cursor = (u16)len; if ( !shift ) es->anchor = (u16)len;
+        blink_reset = true;
+    }
+
+    /* Ctrl+A: select the entire buffer. */
+    if ( ctrl && s_io.keys_pressed[ APP_KEY_A ] )
+    {
+        es->anchor = 0; es->cursor = (u16)len;
+        blink_reset = true;
+    }
+
+    /* Backspace: delete the selection, or the character before the caret. */
+    if ( s_io.keys_pressed_repeat[ APP_KEY_BACKSPACE ] )
+    {
+        if ( has_sel )
+        {
+            memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
+            len -= ( sel_hi - sel_lo );
+            es->cursor = es->anchor = (u16)sel_lo;
+            undo_push( &s_undo, buf, es->cursor, es->anchor );
+            res.changed = true;
+        }
+        else if ( es->cursor > 0 )
+        {
+            --es->cursor;
+            memmove( buf + es->cursor, buf + es->cursor + 1u, len - es->cursor );
+            --len; buf[ len ] = '\0';
+            es->anchor = es->cursor;
+            undo_push( &s_undo, buf, es->cursor, es->anchor );
+            res.changed = true;
+        }
+        has_sel = false; sel_lo = sel_hi = es->cursor;
+        blink_reset = true;
+    }
+
+    /* Delete: delete the selection, or the character after the caret. */
+    if ( s_io.keys_pressed_repeat[ APP_KEY_DELETE ] )
+    {
+        if ( has_sel )
+        {
+            memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
+            len -= ( sel_hi - sel_lo );
+            es->cursor = es->anchor = (u16)sel_lo;
+            undo_push( &s_undo, buf, es->cursor, es->anchor );
+            res.changed = true;
+        }
+        else if ( es->cursor < len )
+        {
+            memmove( buf + es->cursor, buf + es->cursor + 1u, len - es->cursor );
+            --len; buf[ len ] = '\0';
+            undo_push( &s_undo, buf, es->cursor, es->anchor );
+            res.changed = true;
+        }
+        has_sel = false; sel_lo = sel_hi = es->cursor;
+        blink_reset = true;
+    }
+
+    /* Character input: replace the selection with the first incoming char, then insert
+       any remaining chars at the advancing caret.  Selection is cleared after the first
+       replacement so subsequent chars in the same frame insert normally.  Skipped while
+       Ctrl is held so shortcut combos (Ctrl+C/V/X/A) never leak a stray glyph -- the OS
+       filters their control codes too, but this keeps the contract explicit. */
+    for ( const char* ch = ctrl ? "" : s_io.text; *ch; ++ch )
+    {
+        /* Single-line field: reject control characters (tab, CR, ...) exactly like the
+           paste path above -- a consumed Tab must not leak a '\t' glyph into the buffer. */
+        if ( (u8)*ch < 0x20u || (u8)*ch == 0x7Fu ) continue;
+
+        if ( has_sel )
+        {
+            /* Selection replacement ends the current char group (ring[cur] already holds
+               the pre-replacement state) but does not push a redundant duplicate. */
+            s_undo.last_was_char = false;
+            memmove( buf + sel_lo + 1u, buf + sel_hi, len - sel_hi + 1u );
+            buf[ sel_lo ] = *ch;
+            len          -= ( sel_hi - sel_lo ) - 1u;
+            es->cursor    = es->anchor = (u16)( sel_lo + 1u );
+            has_sel       = false; sel_lo = sel_hi = es->cursor;
+        }
+        else if ( len + 1u < bufsz )
+        {
+            memmove( buf + es->cursor + 1u, buf + es->cursor, len - es->cursor + 1u );
+            buf[ es->cursor ] = *ch;
+            ++len; ++es->cursor;
+            es->anchor = es->cursor;
+        }
+        res.changed = true;
+        blink_reset = true;
+    }
+
+    /* After character input, push or update the undo snapshot for char grouping.
+       Push if this is the first char in a burst; update in place for subsequent chars. */
+    if ( res.changed && !ctrl && s_io.text[ 0 ] )
+    {
+        if ( !s_undo.last_was_char )
+        {
+            undo_push( &s_undo, buf, es->cursor, es->anchor );
+            s_undo.last_was_char = true;
+        }
+        else
+        {
+            undo_update( &s_undo, buf, es->cursor, es->anchor );
+        }
+    }
+
+    /* Enter submits; Escape reverts to content at focus-gain, then drops focus. */
+    if ( s_io.keys_pressed[ APP_KEY_ENTER ] )
+    {
+        s_undo.for_id    = GUI_ID_NONE;
+        item_focus_release();
+        res.enter = true;
+    }
+    if ( s_io.keys_pressed[ APP_KEY_ESCAPE ] )
+    {
+        /* Restore the buffer to its state at focus-gain, signal change if it differs. */
+        u32 rv_len = edit_strlen( s_undo.revert, bufsz );
+        if ( rv_len != len || memcmp( buf, s_undo.revert, rv_len ) != 0 )
+        {
+            memcpy( buf, s_undo.revert, rv_len + 1u );
+            es->cursor = es->anchor = 0;
+            res.changed = true;
+            len = rv_len;
+        }
+        s_undo.for_id    = GUI_ID_NONE;
+        item_focus_release();
+    }
+
+    *len_io   = len;
+    *res_io   = res;
+    *blink_io = blink_reset;
+}
+
+/* Mouse handling for a focused field: click-to-caret, Shift-extend, double-click word select,
+   and the click-drag that extends the selection (plain, or by whole words after a double-click).
+   Runs off st.active so the drag survives the cursor leaving the box, like the scrollbar knob. */
+static void
+edit_apply_mouse( gui_rect_t box, gui_item_state_t st, char* buf, u32 len,
+                  gui_edit_state_t* es, bool shift, bool* blink_io )
+{
+    bool blink_reset = *blink_io;
+
+    /* st.pressed is the grab frame (also the focus-gaining click, since widget_behavior set
+       focused_id = id by now); st.active stays true for the whole capture, so the drag below
+       keeps extending the selection even after the cursor leaves the box.  text_offset_at clamps
+       a cursor past either edge to 0 / len, so a drag past the ends selects to start / end. */
+    f32 px  = s_io.mouse_x - ( box.x + WIDGET_PAD ) + es->scroll_x;
+    u32 off = text_offset_at( buf, len, px );
+
+    if ( st.pressed && s_io.mouse_double[ 0 ] )
+    {
+        /* Double-click: select the word under the cursor. */
+        u32 wb_off = word_click_off( buf, len, off );
+        u32 wlo, whi;
+        word_bounds( buf, len, wb_off, &wlo, &whi );
+        es->anchor   = (u16)wlo;
+        es->cursor   = (u16)whi;
+        es->dbl_lo   = (u16)wlo;
+        es->dbl_hi   = (u16)whi;
+        es->word_sel = 1;
+        blink_reset  = true;
+    }
+    else if ( st.pressed )
+    {
+        /* Single press: caret to the click; Shift keeps the anchor to extend. */
+        es->cursor   = (u16)off;
+        es->word_sel = 0;
+        if ( !shift ) es->anchor = (u16)off;
+        blink_reset = true;
+    }
+    else if ( st.active )
+    {
+        if ( es->word_sel )
+        {
+            /* Word-select drag: keep the initial double-clicked word selected and extend
+               by word boundaries when the mouse moves outside it.
+               Apply the same right-edge correction as the double-click itself. */
+            u32 drag_off = word_click_off( buf, len, off );
+            if ( drag_off < es->dbl_lo )
+            {
+                /* Dragged left of original word: pin right at dbl_hi, extend left. */
+                u32 wlo, whi;
+                word_bounds( buf, len, drag_off, &wlo, &whi );
+                es->anchor = es->dbl_hi;
+                es->cursor = (u16)wlo;
+            }
+            else if ( drag_off >= es->dbl_hi )
+            {
+                /* Dragged right of original word: pin left at dbl_lo, extend right. */
+                u32 wlo, whi;
+                word_bounds( buf, len, drag_off, &wlo, &whi );
+                es->anchor = es->dbl_lo;
+                es->cursor = (u16)whi;
+            }
+            else
+            {
+                /* Still inside the original word: restore the initial word selection. */
+                es->anchor = es->dbl_lo;
+                es->cursor = es->dbl_hi;
+            }
+        }
+        else
+        {
+            /* Normal drag: move the caret, leaving the anchor put. */
+            es->cursor = (u16)off;
+        }
+        blink_reset = true;
+    }
+
+    *blink_io = blink_reset;
+}
+
+/* Horizontal scroll + paint: keep the caret in view, then draw the selection highlight, the
+   glyph-clipped text, and the blinking caret -- all inside the box interior.  Runs every frame
+   (focused or not) so a programmatic caret move from outside is honoured and the field always
+   repaints its content. */
+static void
+edit_scroll_and_paint( gui_rect_t box, char* buf, gui_edit_state_t* es, bool focused )
+{
     /* Scroll to keep the caret inside the visible width on every frame, not just when
        focused, so a programmatic cursor move from outside is also honoured. */
     {
@@ -751,6 +755,10 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
         if ( cx - (f32)es->scroll_x < 0.0f )  es->scroll_x = (u16)cx;
         if ( cx - (f32)es->scroll_x > vis_w ) es->scroll_x = (u16)( cx - vis_w );
     }
+
+    u32  sel_lo, sel_hi;
+    bool has_sel;
+    edit_sel( es, &sel_lo, &sel_hi, &has_sel );
 
     /* Clip text, selection, and caret to the box interior so scrolled content does not bleed past
        the border.  Glyph-level horizontal clip: the scrolled text is hard-cut to the [clip_x0,
@@ -793,12 +801,64 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
                                    0, 0, 1, 1, 0, COL_CURSOR );
         }
     }
+}
+
+static input_field_result_t
+input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u32 bufsz,
+                  gui_text_cb_fn on_change, void* cb_user )
+{
+    gui_edit_state_t*    es      = GUI_STATE( gui_edit_state_t, id );
+    input_field_result_t res     = { false, false };
+    bool                 focused = st.focused;
+
+    /* I-beam over a text field -- and held through a selection drag (st.active), so it does not flip
+       back to the arrow while the cursor sweeps outside the box mid-drag. */
+    if ( st.hover || st.active )
+        set_mouse_cursor( APP_CURSOR_TEXT );
+
+    u32 len = edit_strlen( buf, bufsz );
+
+    /* Clamp cursor and anchor to the current length -- a programmatic buffer change between
+       frames may have shortened the string under the old positions. */
+    if ( es->cursor > len ) es->cursor = (u16)len;
+    if ( es->anchor > len ) es->anchor = (u16)len;
+
+    /* The registered hook gets first crack at this frame's keys (may replace buf, moving len). */
+    if ( focused )
+        edit_run_key_hook( buf, bufsz, es, &len );
+
+    /* A queued set_edit_cursor_end request lands on the focused field: caret to the end of
+       the (possibly replaced) buffer, selection collapsed, blink reset so the caret shows. */
+    if ( focused && s_cursor_end_request )
+    {
+        s_cursor_end_request = false;
+        es->cursor  = es->anchor = (u16)len;
+        es->blink_t = 0.0f;
+    }
+
+    if ( focused )
+    {
+        /* On the first frame this field is focused, initialise the undo ring for it. */
+        if ( s_undo.for_id != id )
+            undo_init( &s_undo, id, buf, es->cursor, es->anchor );
+
+        bool shift       = io_shift();
+        bool ctrl        = io_ctrl();
+        bool blink_reset = false;
+
+        edit_apply_keys( buf, bufsz, es, ctrl, shift, &len, &res, &blink_reset );
+        edit_apply_mouse( box, st, buf, len, es, shift, &blink_reset );
+
+        if ( blink_reset ) es->blink_t = 0.0f;
+        else               es->blink_t += s_io.dt;
+    }
+
+    edit_scroll_and_paint( box, buf, es, focused );
 
     /* Fire the change callback after all rendering so the caller sees the final state. */
     if ( res.changed && on_change )
     {
-        u32 final_len = 0;
-        while ( final_len < bufsz - 1u && buf[ final_len ] ) ++final_len;
+        u32 final_len = edit_strlen( buf, bufsz );
         on_change( buf, final_len, bufsz, cb_user );
     }
 

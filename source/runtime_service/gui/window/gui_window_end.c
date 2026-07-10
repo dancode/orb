@@ -21,67 +21,14 @@
 ==============================================================================================*/
 // clang-format off
 
-void
-gui_window_end( void )
+/* Deferred chrome: titlebar background, collapse arrow (+ double-click-to-collapse), the
+   close and detach buttons marching in from the right, native caption buttons, and the fitted
+   title text -- painted last under the outer window clip so they overdraw any content that
+   scrolled beneath them while still merging into the one window draw command.  A NOTITLEBAR
+   window (title_h 0) skips the bar entirely and keeps only the border. */
+static void
+window_end_titlebar( gui_window_t* win, bool native )
 {
-    /* Closed CLOSEABLE window: window_begin emitted nothing (no region, no clip, no chrome), so
-       there is nothing to balance here -- just consume the latch and return. */
-    if ( s_build.win.hidden )
-    {
-        s_build.win.hidden = false;
-        return;
-    }
-
-    gui_window_t* win = s_build.win.rec;
-
-    /* Docked window: the node owns chrome, not the free-float path below.  An inactive tab opened
-       nothing (begin returned false), so there is nothing to close; the active tab closes its body
-       region, draws the tab strip + node border, and balances its clip.  Either way, restore the
-       ambient draw state and return before the free-float chrome runs. */
-    if ( s_build.win.dock_node )
-    {
-        gui_dock_node_t* node = s_build.win.dock_node;
-        s_build.win.dock_node = NULL;   /* consume for the next window */
-
-        if ( s_build.win.dock_active )
-        {
-            item_flags_chrome_reset();
-            layout_pop_region();        /* measure content, draw scrollbars, pop the inner clip */
-            window_route_chrome( node ); /* tab strip + tabs + node border, under the window clip */
-            draw_pop_clip_rect();       /* balance the clip pushed in window_begin_docked */
-        }
-
-        draw_set_window( 0 );
-        draw_set_sort_key( 0 );
-        draw_set_viewport( 0 );
-        draw_set_band( 0 );
-        draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
-        return;
-    }
-
-    /* Same native test window_begin used (flag or owned floater): a native window's titlebar/border
-       is the OS frame, so its collapse arrow, detach button and gui drag-grab are all suppressed. */
-    bool native     = window_is_native( win, s_build.win.flags );
-    bool frame_only = ( s_build.win.flags & GUI_WIN_NATIVE ) != 0;
-
-    /* Chrome below (scrollbars via layout_pop_region, collapse arrow, border, size grip) is not an
-       item.  layout_pop_region resets too, but a collapsed window opens no region and skips it, so
-       reset here to cover that case and the deferred chrome either way. */
-    item_flags_chrome_reset();
-
-    /* Close the body scroll region (expanded only -- a collapsed window opened none).  This
-       measures the content extent, pops the inner content clip, draws the scrollbars, and
-       handles the wheel, all via the shared layout engine.  A collapsed window measures
-       nothing and keeps its extents from the last expanded frame, so scroll survives collapse.
-       Bars are drawn here, before the chrome (so the border frames them) and before the window
-       drag-grab below (so a press on a knob claims active_id and the window does not drag). */
-    if ( !s_build.win.collapsed )
-        layout_pop_region();
-
-    /* Deferred chrome: titlebar, collapse arrow, title text, and border paint last under the
-       outer window clip, so they overdraw any content that scrolled beneath them while still
-       merging into the one window draw command.  A NOTITLEBAR window (title_h 0) skips the bar
-       entirely and keeps only the border. */
     if ( s_build.win.title_h > 0.0f )
     {
         f32 title_h = s_build.win.title_h;
@@ -199,39 +146,21 @@ gui_window_end( void )
         draw_text_fit_n( text_x, text_center_y( s_build.win.y, title_h ), COL_TEXT, s_build.win.title,
                          0xFFFFFFFFu, right_limit - text_x );
     }
+}
 
-    /* Border frames the whole window, with or without a title bar.  Reassert the window radius: a
-       caption button above may have left the ambient at the widget radius. */
-    gui_rect_t win_r = { s_build.win.x, s_build.win.y, s_build.win.w, s_build.win.h };
-    draw_set_rounding( ROUND_WIN );
-    draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER );
+/* CAN_AUTOSIZE size-grip: a triangle hugging the bottom-right corner -- both a resize handle and an
+   auto-fit button.  Drag it to resize (it grabs the same right+bottom edge the border band uses, so
+   window_begin applies it next frame); double-click it to snap the window to this frame's measured
+   content.  Only one of the two fires per press, and the double-click never starts a drag.  The grip
+   resizes regardless of NORESIZE -- it is the window's own explicit handle.
 
-    /* Debug overlay: trace the window frame; the front-most (hover) window stands out. */
-    DBG_WINDOW( win_r, ( s_build.win.id == s_interaction.hover_win ) );
-
-    /* Resize affordance: bold the outline on any hot edge.  While a resize is in flight, the
-       grabbed edges stay lit even if the cursor drifts off them; otherwise use resize_hot,
-       the hover set computed in window_begin (already NORESIZE- and hover_win-gated).
-       hot_edges is declared here (not in a block) so the grip section below can read it for
-       the R+B -> triangle reverse direction. */
-    u8 hot_edges = interact_held( id_combine( s_build.win.id, GUI_RESIZE_SALT ) )
-                 ? s_resize_edges
-                 : s_scope.resize_hot;
-    if ( hot_edges )
-        draw_resize_highlight( win_r, hot_edges );
-
-    /* CAN_AUTOSIZE: a size-grip triangle hugging the bottom-right corner -- both a resize handle
-       and an auto-fit button.  Drag it to resize the window (it grabs the same right+bottom edge
-       resize the border band uses, so window_begin applies it next frame); double-click it to snap
-       the window to this frame's measured content (win->content_* was just written back by
-       layout_pop_region).  Only one of the two fires per press, and the double-click never starts a
-       drag.  The grip resizes regardless of NORESIZE -- it is the window's own explicit handle.
-
-       Press-1 is deferred behind the press_defer latch (interact/gui_move.c, same service as the
-       native title bar below), keyed by resize_id: grabbing the resize immediately on press-1 would
-       set active_id and swallow press-2 before mouse_double can be tested, so every double-click
-       attempt needed several tries. Only committing once the cursor actually moves keeps the grip's
-       hit rect stationary through a stationary click, so press-2 lands on it. */
+   Press-1 is deferred behind the press_defer latch (interact/gui_move.c, same service as the native
+   title bar), keyed by resize_id: grabbing the resize immediately on press-1 would set active_id and
+   swallow press-2 before mouse_double can be tested.  Only committing once the cursor actually moves
+   keeps the grip's hit rect stationary through a stationary click, so press-2 lands on it. */
+static void
+window_end_size_grip( gui_window_t* win, bool native, u8 hot_edges )
+{
     if ( ( s_build.win.flags & GUI_WIN_CAN_AUTOSIZE ) && !s_build.win.collapsed && win )
     {
         f32          g         = WIDGET_H;           /* grip leg length */
@@ -280,35 +209,24 @@ gui_window_end( void )
         draw_push_triangle( gr.x + g, gr.y, gr.x + g, gr.y + g, gr.x, gr.y + g,
                             0, ( hot || resizing ) ? COL_RESIZE_HOT : COL_TEXT_DIM );
     }
+}
 
-    /* Balance the clip push, which window_begin only made for an expanded window. */
-    if ( !s_build.win.collapsed )
-        draw_pop_clip_rect();
+/* Window move grab.  Decided here, after this window's widgets have run, and pinned off entirely by
+   NOMOVE (fixed-position widgets).  This window must be the one under the cursor (hover_win) and
+   nothing must already own active_id -- an edge press never reaches here, since window_begin grabbed
+   the resize before the widgets ran.
 
-    /* Subsequent draws (low-level API, the next window) revert to the background key and the
-       main surface; the next window_begin re-routes them to its own viewport.  Restore the base
-       clip to the main display so background / low-level draws are not bounded by this window's
-       (possibly larger or smaller) surface. */
-    draw_set_window( 0 );
-    draw_set_sort_key( 0 );
-    draw_set_viewport( 0 );
-    draw_set_band( 0 );
-    draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+   frame_only (GUI_WIN_NATIVE shell): gui owns the full client surface via HTCLIENT, so title-bar
+   clicks land here instead of going to the OS.  Dispatch them: single press starts an OS move (Aero
+   Snap follows for free); double-click sends the maximize toggle; right-click shows the system menu.
+   No active_id is set -- the OS modal loop runs in place of gui drag.
 
-    /* Window move grab.  Decided here, after this window's widgets have run, and pinned off
-       entirely by NOMOVE (fixed-position widgets).  This window must be the one under the
-       cursor (hover_win) and nothing must already own active_id -- an edge press never reaches
-       here, since window_begin grabbed the resize before the widgets ran.
-
-       frame_only (GUI_WIN_NATIVE shell): gui owns the full client surface via HTCLIENT, so
-       title-bar clicks land here instead of going to the OS.  Dispatch them: single press starts
-       an OS move (Aero Snap follows for free); double-click sends the maximize toggle; right-click
-       shows the system menu.  No active_id is set -- the OS modal loop runs in place of gui drag.
-
-       All other windows (panels on main surface, floaters on owned viewports): gui drag grab.
-       Left button obeys the global drag mode and only fires on empty space (hover_id == NONE, so a
-       widget press drives the widget).  Middle button grabs from anywhere -- no widget consumes it.
-       Floaters on owned viewports move their whole OS window each frame (see window_begin drag apply). */
+   All other windows (panels on main surface, floaters on owned viewports): gui drag grab.  Left
+   button obeys the global drag mode and only fires on empty space (hover_id == NONE, so a widget
+   press drives the widget).  Middle button grabs from anywhere -- no widget consumes it. */
+static void
+window_end_move_grab( gui_window_t* win, bool native, bool frame_only )
+{
     bool movable = !( s_build.win.flags & GUI_WIN_NOMOVE );
     if ( movable && s_interaction.hover_win == s_build.win.id && interact_idle() )
     {
@@ -356,11 +274,15 @@ gui_window_end( void )
                 move_grab( s_build.win.id, mid_grab ? 2 : 0, s_build.win.x, s_build.win.y );
         }
     }
+}
 
-    /* Native title-bar poll: commit or clear the pending press outside the hover / active_id
-       gate so dragging off the title bar does not stall an in-flight drag.  Keyed by this
-       window's id, so only the arming window acts; frame_only picks the same dispatch the arm
-       site saw (flags do not change mid-gesture). */
+/* Native title-bar poll: commit or clear the pending press outside the hover / active_id gate so
+   dragging off the title bar does not stall an in-flight drag.  Keyed by this window's id, so only
+   the arming window acts; frame_only picks the same dispatch the arm site saw (flags do not change
+   mid-gesture). */
+static void
+window_end_titlebar_poll( gui_window_t* win, bool frame_only )
+{
     if ( press_defer_crossed( s_build.win.id ) )
     {
         win_id_t os = window_native_id( win );
@@ -388,6 +310,110 @@ gui_window_end( void )
             }
         }
     }
+}
+
+void
+gui_window_end( void )
+{
+    /* Closed CLOSEABLE window: window_begin emitted nothing (no region, no clip, no chrome), so
+       there is nothing to balance here -- just consume the latch and return. */
+    if ( s_build.win.hidden )
+    {
+        s_build.win.hidden = false;
+        return;
+    }
+
+    gui_window_t* win = s_build.win.rec;
+
+    /* Docked window: the node owns chrome, not the free-float path below.  An inactive tab opened
+       nothing (begin returned false), so there is nothing to close; the active tab closes its body
+       region, draws the tab strip + node border, and balances its clip.  Either way, restore the
+       ambient draw state and return before the free-float chrome runs. */
+    if ( s_build.win.dock_node )
+    {
+        gui_dock_node_t* node = s_build.win.dock_node;
+        s_build.win.dock_node = NULL;   /* consume for the next window */
+
+        if ( s_build.win.dock_active )
+        {
+            item_flags_chrome_reset();
+            layout_pop_region();        /* measure content, draw scrollbars, pop the inner clip */
+            window_route_chrome( node ); /* tab strip + tabs + node border, under the window clip */
+            draw_pop_clip_rect();       /* balance the clip pushed in window_begin_docked */
+        }
+
+        draw_set_window( 0 );
+        draw_set_sort_key( 0 );
+        draw_set_viewport( 0 );
+        draw_set_band( 0 );
+        draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+        return;
+    }
+
+    /* Same native test window_begin used (flag or owned floater): a native window's titlebar/border
+       is the OS frame, so its collapse arrow, detach button and gui drag-grab are all suppressed. */
+    bool native     = window_is_native( win, s_build.win.flags );
+    bool frame_only = ( s_build.win.flags & GUI_WIN_NATIVE ) != 0;
+
+    /* Chrome below (scrollbars via layout_pop_region, collapse arrow, border, size grip) is not an
+       item.  layout_pop_region resets too, but a collapsed window opens no region and skips it, so
+       reset here to cover that case and the deferred chrome either way. */
+    item_flags_chrome_reset();
+
+    /* Close the body scroll region (expanded only -- a collapsed window opened none).  This
+       measures the content extent, pops the inner content clip, draws the scrollbars, and
+       handles the wheel, all via the shared layout engine.  A collapsed window measures
+       nothing and keeps its extents from the last expanded frame, so scroll survives collapse.
+       Bars are drawn here, before the chrome (so the border frames them) and before the window
+       drag-grab below (so a press on a knob claims active_id and the window does not drag). */
+    if ( !s_build.win.collapsed )
+        layout_pop_region();
+
+    /* Deferred chrome: titlebar, collapse arrow, buttons, and fitted title text. */
+    window_end_titlebar( win, native );
+
+    /* Border frames the whole window, with or without a title bar.  Reassert the window radius: a
+       caption button above may have left the ambient at the widget radius. */
+    gui_rect_t win_r = { s_build.win.x, s_build.win.y, s_build.win.w, s_build.win.h };
+    draw_set_rounding( ROUND_WIN );
+    draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER );
+
+    /* Debug overlay: trace the window frame; the front-most (hover) window stands out. */
+    DBG_WINDOW( win_r, ( s_build.win.id == s_interaction.hover_win ) );
+
+    /* Resize affordance: bold the outline on any hot edge.  While a resize is in flight, the
+       grabbed edges stay lit even if the cursor drifts off them; otherwise use resize_hot,
+       the hover set computed in window_begin (already NORESIZE- and hover_win-gated).
+       hot_edges is declared here (not in a block) so the grip section below can read it for
+       the R+B -> triangle reverse direction. */
+    u8 hot_edges = interact_held( id_combine( s_build.win.id, GUI_RESIZE_SALT ) )
+                 ? s_resize_edges
+                 : s_scope.resize_hot;
+    if ( hot_edges )
+        draw_resize_highlight( win_r, hot_edges );
+
+    /* CAN_AUTOSIZE size-grip triangle in the bottom-right corner (resize handle + auto-fit). */
+    window_end_size_grip( win, native, hot_edges );
+
+    /* Balance the clip push, which window_begin only made for an expanded window. */
+    if ( !s_build.win.collapsed )
+        draw_pop_clip_rect();
+
+    /* Subsequent draws (low-level API, the next window) revert to the background key and the
+       main surface; the next window_begin re-routes them to its own viewport.  Restore the base
+       clip to the main display so background / low-level draws are not bounded by this window's
+       (possibly larger or smaller) surface. */
+    draw_set_window( 0 );
+    draw_set_sort_key( 0 );
+    draw_set_viewport( 0 );
+    draw_set_band( 0 );
+    draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+
+    /* Window move grab, decided after this window's widgets ran (native dispatch vs gui drag). */
+    window_end_move_grab( win, native, frame_only );
+
+    /* Native title-bar poll: commit or clear the pending title-bar press outside the hover gate. */
+    window_end_titlebar_poll( win, frame_only );
 
     /* Drag-to-dock release: dock this window if it was released over a valid target (computed by
        window_route_drag in window_begin).  Gating lives inside the seam -- the drag state is

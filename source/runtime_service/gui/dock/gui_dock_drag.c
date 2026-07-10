@@ -170,6 +170,55 @@ dock_zone_region( gui_rect_t r, dock_zone_t z )
     }
 }
 
+/* Tab-onto-window pre-empt: another free window's title bar -- or an existing floating group's
+   strip -- under the cursor takes priority over the dockspace chips (the strip sits visually above
+   them).  When one is hit, arm s_dock_drag for a tab / float-join drop, draw one center chip
+   previewing the whole target frame, and return true so the caller skips the dockspace path. */
+static bool
+dock_drag_float_target( gui_id_t win_id, u32 vp, f32 s )
+{
+    gui_dock_node_t* fnode = NULL;
+    gui_id_t       fwin  = GUI_ID_NONE;
+    if ( !dock_float_hit( win_id, vp, &fnode, &fwin ) )
+        return false;
+
+    gui_window_t* tw   = window_find( fwin );
+    gui_rect_t    base = fnode ? fnode->rect
+                         : tw    ? ( gui_rect_t ){ tw->x, tw->y, tw->w, tw->h }
+                                 : ( gui_rect_t ){ 0, 0, 0, 0 };
+
+    s_dock_drag.viewport   = vp;
+    s_dock_drag.zone       = DOCK_ZONE_CENTER;
+    s_dock_drag.active     = true;
+    s_dock_drag.float_join = ( fnode != NULL );
+    s_dock_drag.float_new  = ( fnode == NULL );
+    s_dock_drag.target     = fnode ? fnode->id : GUI_DOCK_NONE;
+    s_dock_drag.float_win  = fwin;
+
+    const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
+    draw_set_viewport ( vp );
+    draw_set_sort_key ( DOCK_OVERLAY_Z );
+    draw_set_root_clip( vp_w( v ), vp_h( v ) );
+    draw_set_rounding ( ROUND_WIDGET );
+
+    draw_push_rect_filled ( base.x, base.y, base.w, base.h, 0, 0, 1, 1, 0, DOCK_OVERLAY_FILL );
+    draw_push_rect_outline( base.x, base.y, base.w, base.h, WIN_BORDER, 0, DOCK_OVERLAY_LINE );
+
+    /* The hot center chip with its "tab here" glyph, over the title band. */
+    gui_rect_t cr = { base.x + base.w * 0.5f - s * 0.5f, base.y + ( WIN_TITLE_H - s ) * 0.5f, s, s };
+    draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+    draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
+    f32 ins = cr.w * 0.28f;
+    draw_set_rounding( 0.0f );
+    draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
+                            WIN_BORDER, 0, COL_TEXT );
+
+    draw_set_sort_key ( 0 );
+    draw_set_viewport ( 0 );
+    draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+    return true;
+}
+
 /* Compute + preview the drop target for a free window being dragged over a dockspace on its own
    surface.  Sets s_dock_drag (active only when the cursor is over a chip) and draws the overlay on
    the reserved high z-band.  Forward-declared in gui_internal.h for window_begin_ex to call. */
@@ -192,52 +241,9 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     f32 s = WIN_TITLE_H * 1.4f;
     f32 g = 6.0f;
 
-    /* Tab-onto-window (gui_dock_float.c): another free window's title bar -- or an existing
-       floating group's strip -- under the cursor pre-empts the dockspace chips below (the strip
-       is visually above them).  One center chip on the band, previewing the whole target frame:
-       the drop tabs the dragged window onto it. */
-    {
-        gui_dock_node_t* fnode = NULL;
-        gui_id_t       fwin  = GUI_ID_NONE;
-        if ( dock_float_hit( win_id, vp, &fnode, &fwin ) )
-        {
-            gui_window_t* tw   = window_find( fwin );
-            gui_rect_t    base = fnode ? fnode->rect
-                                 : tw    ? ( gui_rect_t ){ tw->x, tw->y, tw->w, tw->h }
-                                         : ( gui_rect_t ){ 0, 0, 0, 0 };
-
-            s_dock_drag.viewport   = vp;
-            s_dock_drag.zone       = DOCK_ZONE_CENTER;
-            s_dock_drag.active     = true;
-            s_dock_drag.float_join = ( fnode != NULL );
-            s_dock_drag.float_new  = ( fnode == NULL );
-            s_dock_drag.target     = fnode ? fnode->id : GUI_DOCK_NONE;
-            s_dock_drag.float_win  = fwin;
-
-            const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
-            draw_set_viewport ( vp );
-            draw_set_sort_key ( DOCK_OVERLAY_Z );
-            draw_set_root_clip( vp_w( v ), vp_h( v ) );
-            draw_set_rounding ( ROUND_WIDGET );
-
-            draw_push_rect_filled ( base.x, base.y, base.w, base.h, 0, 0, 1, 1, 0, DOCK_OVERLAY_FILL );
-            draw_push_rect_outline( base.x, base.y, base.w, base.h, WIN_BORDER, 0, DOCK_OVERLAY_LINE );
-
-            /* The hot center chip with its "tab here" glyph, over the title band. */
-            gui_rect_t cr = { base.x + base.w * 0.5f - s * 0.5f, base.y + ( WIN_TITLE_H - s ) * 0.5f, s, s };
-            draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
-            draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
-            f32 ins = cr.w * 0.28f;
-            draw_set_rounding( 0.0f );
-            draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
-                                    WIN_BORDER, 0, COL_TEXT );
-
-            draw_set_sort_key ( 0 );
-            draw_set_viewport ( 0 );
-            draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
-            return;
-        }
-    }
+    /* Tab-onto-window pre-empts the dockspace chips below (see dock_drag_float_target). */
+    if ( dock_drag_float_target( win_id, vp, s ) )
+        return;
 
     gui_dock_node_t* root = dock_at( g_ctx->vp.pool[ vp ].dock_root );
     if ( !root )

@@ -381,6 +381,91 @@ window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags
     return resize_hot;
 }
 
+/* Apply an in-progress edge resize (active_id is the resize-salted window id).  Runs after the drag
+   apply -- the two are mutually exclusive, only one can own active_id at a time.  A native floater
+   derives local coords from the stable screen cursor and its fixed screen origin (bottom-right
+   resize pins the top-left), because s_io.mouse_x/y is only valid while the cursor is over THIS
+   window and the drag routinely leaves the floater -- reading mouse_position() then would return
+   coords in whatever window the cursor crossed into and compute the wrong (usually too small) size. */
+static void
+window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 title_h )
+{
+    if ( !interact_held( id_combine( id, GUI_RESIZE_SALT ) ) )
+        return;
+
+    if ( native && win->viewport != 0 )
+    {
+        win_id_t os = window_native_id( win );
+        i32 scx = 0, scy = 0, sox = 0, soy = 0;
+        app()->mouse_position_screen( &scx, &scy );
+        app()->window_get_pos( os, &sox, &soy );
+        f32 local_x = (f32)scx - (f32)sox;
+        f32 local_y = (f32)scy - (f32)soy;
+        f32 new_w   = local_x - s_resize_off_x;
+        f32 new_h   = local_y - s_resize_off_y;
+        if ( new_w < window_min_w() )        new_w = window_min_w();
+        if ( new_h < window_min_h( title_h ) ) new_h = window_min_h( title_h );
+        win->w = new_w;
+        win->h = new_h;
+        app()->window_resize( os, (i32)new_w, (i32)new_h );
+    }
+    else
+    {
+        window_apply_resize( win, title_h );
+    }
+}
+
+/* Open the window body -- or, when collapsed, just seed the collapse-arrow clip.  Expanded: push the
+   one clip rect the whole window shares, fill the body background (skipped for a frame-only shell so
+   the borderless viewport shows through), reserve the menu-bar strip, and open the body scroll
+   region.  Collapsed: no region opens and no clip is pushed, but s_scope.clip is pointed at the shown
+   title bar so window_end's collapse arrow stays hittable instead of inheriting the previous
+   window's stale clip (which need not cover this bar, leaving the arrow intermittently dead). */
+static void
+window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 title_h, f32 disp_h,
+                  bool collapsed )
+{
+    bool            frame_only = ( flags & GUI_WIN_NATIVE ) != 0;
+    gui_win_flags_t body_flags = ( flags & GUI_WIN_ALWAYS_AUTOSIZE ) ? ( flags | GUI_WIN_NOSCROLL ) : flags;
+
+    if ( !collapsed )
+    {
+        /* One clip rect for the whole window: the background, the scrolled content, and the
+           titlebar/border chrome (deferred to window_end) all share it, so the window flushes
+           as a single draw command.  Content scrolled under the title bar or border is
+           overpainted by the chrome window_end draws last; anything past the outer edge is
+           clipped here.  The body region reuses this clip (own_clip false) -- it does not push
+           a second one; only a child_begin inside the window adds another. */
+        draw_push_clip_rect( win->x, win->y, win->w, disp_h );
+        s_scope.clip = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
+
+        /* Window body background.  Skipped for a frame-only shell: its body stays empty so the
+           borderless viewport shows the cleared surface (and the windows inside it) through it. */
+        if ( !frame_only )
+            draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
+
+        /* Menu-bar strip: when WIN_MENUBAR is set, reserve one row below the title bar for
+           menu_bar_begin to fill.  Carved off the top of the body here -- before the scroll
+           region opens -- so it sits above the scrolling content and never moves.  The rect is
+           stashed in s_build for menu_bar_begin; mb_h is 0 (no reservation) otherwise. */
+        f32 mb_h = ( flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
+        s_build.win.menubar_rect = ( gui_rect_t ){ win->x, win->y + title_h, win->w, mb_h };
+
+        /* Open the body as a scroll region.  Its region id is the window id, so the body
+           scrollbar ids stay exactly what the window used before unification.  The region owns
+           the pen, content column, wheel, and bars until layout_pop_region in window_end, but
+           reuses the window's single clip.  Bias-from-scroll, gutter reservation, and clamping
+           all live there now. */
+        gui_rect_t body = { win->x, win->y + title_h + mb_h, win->w, win->h - title_h - mb_h };
+        layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags, &win->scroll,
+                            /* own_clip */ false );
+    }
+    else
+    {
+        s_scope.clip = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
+    }
+}
+
 /* window_begin_ex -- the shared body of window_begin, with the window id supplied explicitly and
    the title used only for display + chrome (NULL = no title text).  gui_window_begin hashes the
    title for its id; the popup layer (gui_popup.c) passes a salted popup id and its own title (or
@@ -500,44 +585,14 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
 
     /* ALWAYS_AUTOSIZE owns its own geometry: it cannot be user-resized and shows no scrollbars
        (the body always fits), and its size is recomputed below from the measured content.  The
-       body region is opened with NOSCROLL so it never reserves a gutter -- a clean content_w. */
+       body region is opened with NOSCROLL (in window_open_body) so it never reserves a gutter. */
     bool autosize = ( flags & GUI_WIN_ALWAYS_AUTOSIZE ) != 0;
-    gui_win_flags_t body_flags = autosize ? ( flags | GUI_WIN_NOSCROLL ) : flags;
 
     window_apply_drag( win, id );                             /* in-progress title-bar drag */
     window_apply_tearoff_gesture( win, id, title, flags );    /* tear-off / merge-back / drag-to-dock */
 
-    /* Apply an in-progress edge resize (active_id is the resize-salted window id).  Runs after
-       the drag apply -- the two are mutually exclusive, only one can own active_id at a time. */
-    if ( interact_held( id_combine( id, GUI_RESIZE_SALT ) ) )
-    {
-        if ( native && win->viewport != 0 )
-        {
-            /* Native floater: s_io.mouse_x/y is only valid while the cursor is over THIS window.
-               During the drag the cursor can leave the floater, causing mouse_position() to return
-               coords in whatever window it crosses into -- which makes window_apply_resize compute
-               the wrong size (usually too small).  Derive local coords from the stable screen
-               cursor and the floater's fixed screen origin (bottom-right resize pins the top-left)
-               so the formula stays correct regardless of which window the cursor is over. */
-            win_id_t os = window_native_id( win );
-            i32 scx = 0, scy = 0, sox = 0, soy = 0;
-            app()->mouse_position_screen( &scx, &scy );
-            app()->window_get_pos( os, &sox, &soy );
-            f32 local_x = (f32)scx - (f32)sox;
-            f32 local_y = (f32)scy - (f32)soy;
-            f32 new_w   = local_x - s_resize_off_x;
-            f32 new_h   = local_y - s_resize_off_y;
-            if ( new_w < window_min_w() )        new_w = window_min_w();
-            if ( new_h < window_min_h( title_h ) ) new_h = window_min_h( title_h );
-            win->w = new_w;
-            win->h = new_h;
-            app()->window_resize( os, (i32)new_w, (i32)new_h );
-        }
-        else
-        {
-            window_apply_resize( win, title_h );
-        }
-    }
+    /* Apply an in-progress edge resize (mutually exclusive with the drag apply above). */
+    window_apply_resize_gesture( win, id, native, title_h );
 
     /* ALWAYS_AUTOSIZE: hug the content measured last frame (held in win->content_*).  Skipped while
        collapsed (the title-bar-only height is preserved) and on the very first appearance, before
@@ -635,48 +690,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        The fixed-size chrome window_end draws is wholly inside the app bounds.  A caller that
        ignores the return and emits widgets anyway draws into the empty root layout frame --
        harmless zero-size rects -- rather than into the window. */
-    if ( !collapsed )
-    {
-        /* One clip rect for the whole window: the background, the scrolled content, and the
-           titlebar/border chrome (deferred to window_end) all share it, so the window flushes
-           as a single draw command.  Content scrolled under the title bar or border is
-           overpainted by the chrome window_end draws last; anything past the outer edge is
-           clipped here.  The body region reuses this clip (own_clip false) -- it does not push
-           a second one; only a child_begin inside the window adds another. */
-        draw_push_clip_rect( win->x, win->y, win->w, disp_h );
-        s_scope.clip = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
-
-        /* Window body background.  Skipped for a frame-only shell: its body stays empty so the
-           borderless viewport shows the cleared surface (and the windows inside it) through it. */
-        if ( !frame_only )
-            draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
-
-        /* Menu-bar strip: when WIN_MENUBAR is set, reserve one row below the title bar for
-           menu_bar_begin to fill.  Carved off the top of the body here -- before the scroll
-           region opens -- so it sits above the scrolling content and never moves.  The rect is
-           stashed in s_build for menu_bar_begin; mb_h is 0 (no reservation) otherwise. */
-        f32 mb_h = ( flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
-        s_build.win.menubar_rect = ( gui_rect_t ){ win->x, win->y + title_h, win->w, mb_h };
-
-        /* Open the body as a scroll region.  Its region id is the window id, so the body
-           scrollbar ids stay exactly what the window used before unification.  The region owns
-           the pen, content column, wheel, and bars until layout_pop_region in window_end, but
-           reuses the window's single clip.  Bias-from-scroll, gutter reservation, and clamping
-           all live there now. */
-        gui_rect_t body = { win->x, win->y + title_h + mb_h, win->w, win->h - title_h - mb_h };
-        layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags, &win->scroll,
-                            /* own_clip */ false );
-    }
-    else
-    {
-        /* Collapsed: no body region opens and no draw clip is pushed, but window_end still
-           hit-tests the collapse arrow through s_scope.clip.  Left unset it would inherit
-           whatever clip the previously drawn window left behind -- which need not cover this
-           title bar, so the arrow goes intermittently dead (it only "works" when the stale clip
-           happens to contain it).  Point it at the shown title-bar rect so the arrow is always
-           hittable; the deferred chrome in window_end draws within these bounds without a clip. */
-        s_scope.clip = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
-    }
+    window_open_body( win, id, flags, title_h, disp_h, collapsed );
 
     /* false tells the caller to skip its body widgets (they would do nothing anyway). */
     return !collapsed;
