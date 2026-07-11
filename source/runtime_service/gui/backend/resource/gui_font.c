@@ -52,7 +52,9 @@ static const char* s_builtin_font_path[] =
     [ GUI_FONT_NONE ]               = NULL,
     [ GUI_FONT_JETBRAINS_16 ]       = "assets/font/JetBrainsMonoNL-Regular_16px.orb_font",
     [ GUI_FONT_ROBOTO_16 ]          = "assets/font/Roboto-Regular_16px.orb_font",
+    [ GUI_FONT_CASCADIA_MONO_12 ]   = "assets/font/CascadiaMono_12px.orb_font",
     [ GUI_FONT_CASCADIA_MONO_16 ]   = "assets/font/CascadiaMono_16px.orb_font",
+    [ GUI_FONT_CASCADIA_MONO_20 ]  = "assets/font/CascadiaMono_20px.orb_font",     
 };
 
 /* Load a built-in font preset into slot 0 and activate it. A no-op success for GUI_FONT_NONE.

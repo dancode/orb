@@ -1392,8 +1392,9 @@ typedef enum
     GUI_FONT_NONE = 0,        // load nothing; caller loads its own font(s) via font_load()
     GUI_FONT_JETBRAINS_16,
     GUI_FONT_ROBOTO_16,
-    GUI_FONT_CASCADIA_MONO_16
-
+    GUI_FONT_CASCADIA_MONO_12,
+    GUI_FONT_CASCADIA_MONO_16,
+    GUI_FONT_CASCADIA_MONO_20
 } gui_builtin_font_t;
 
 /*==============================================================================================

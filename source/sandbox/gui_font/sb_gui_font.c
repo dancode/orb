@@ -75,6 +75,11 @@ typedef struct
     bool bake_ok;
     char export_status[ 512 ];
     bool export_ok;
+    char export_path  [ 512 ];   /* just the .orb_font path parsed out of export_status, for copy-to-clipboard */
+
+    /* Atlas preview toggle (see sb_gui.c's Font Browser -- same pattern). */
+    bool show_atlas;
+    bool atlas_2x;
 
 } font_tool_t;
 
@@ -289,11 +294,29 @@ ft_export_final( void )
         if ( ( *p == '\n' || *p == '\r' ) && p[ 1 ] && p[ 1 ] != '\n' && p[ 1 ] != '\r' )
             tail = p + 1;
 
+    s_ft.export_path[ 0 ] = '\0';
+
     if ( res.exit_code == 0 )
+    {
         snprintf( s_ft.export_status, sizeof( s_ft.export_status ), "font_tool ok: %s", tail );
+
+        /* Pull the path back out of font_tool's own "... -> 'path'" trailer (see font_tool.c's
+           final printf) so the copy button doesn't need to re-derive the output path itself. */
+        const char* arrow = strstr( tail, " -> '" );
+        if ( arrow )
+        {
+            const char* path_start = arrow + 5;
+            const char* quote_end  = strrchr( path_start, '\'' );
+            if ( quote_end && quote_end > path_start )
+                snprintf( s_ft.export_path, sizeof( s_ft.export_path ), "%.*s",
+                          (int)( quote_end - path_start ), path_start );
+        }
+    }
     else
+    {
         snprintf( s_ft.export_status, sizeof( s_ft.export_status ),
                   "font_tool failed (exit %d): %s", res.exit_code, tail );
+    }
     s_ft.export_ok = ( res.exit_code == 0 );
 }
 
@@ -400,6 +423,8 @@ show_font_tool( void )
         if ( s_ft.export_ok ) gui()->text_wrapped( s_ft.export_status );
         else                  gui()->text_colored( GUI_COLOR( 0xFF, 0x60, 0x60, 0xFF ), s_ft.export_status );
     }
+    if ( s_ft.export_path[ 0 ] && gui()->button( "Copy Path" ) )
+        app()->clipboard_set( s_ft.export_path );
 
     /* --- Preview -------------------------------------------------------------- */
     if ( s_ft.preview_ready )
@@ -422,30 +447,46 @@ show_font_tool( void )
         gui()->text( "0123456789  !@#$%^&*()-+=[]{};:" );
         gui()->pop_font();
 
-        /* --- Atlas -------------------------------------------------------------- */
-        /* Preview the live GPU atlas backing this font id, so packing density and wasted space
-           are visible directly instead of guessed at.  NOTE -- the atlas is an R8_UNORM coverage
-           texture, but image_texture samples it via the RGBA path (texel.rgb as color): only the
-           red channel carries data, so glyph ink renders red-on-black rather than white-on-black.
-           Fine for judging packing (ink vs gap is still obvious); a true grayscale view would need
-           a dedicated coverage-sampling draw path. */
-        u32 atlas_idx = gui()->font_atlas_idx( s_ft.preview_id );
-        if ( atlas_idx )
-        {
-            gui_vec2_t asz = gui()->font_atlas_size( s_ft.preview_id );
-
-            gui()->separator_text( "Atlas" );
-            gui()->textf( "%.0f x %.0f px  (bindless #%u)", asz.x, asz.y, atlas_idx );
-
-            /* Native resolution, no fit-to-window scaling -- one atlas texel is one screen pixel,
-               so packing/coverage reads exactly as baked. */
-            gui()->image_texture( atlas_idx, asz.x, asz.y, 0 );
-        }
-
         gui()->separator_text( "Apply" );
         gui()->textf( "Live: %s  %d px", s_ft.preview_name, s_ft.preview_size );
         if ( gui()->button( "Use as UI font" ) )
             gui()->font_use( s_ft.preview_id );
+    }
+
+    /* --- Atlas ------------------------------------------------------------------ */
+    /* Independent of the bake/preview flow above -- shows the CURRENTLY ACTIVE font's atlas
+       (whatever the app booted with, or last font_use'd via "Use as UI font"), so the controls are
+       there from the first frame instead of only appearing after a bake.  NOTE -- the atlas is an
+       R8_UNORM coverage texture, but image_texture samples it via the RGBA path (texel.rgb as
+       color): only the red channel carries data, so glyph ink renders red-on-black rather than
+       white-on-black.  Fine for judging packing (ink vs gap is still obvious); a true grayscale
+       view would need a dedicated coverage-sampling draw path. */
+    gui()->separator_text( "Atlas" );
+    if ( gui()->button( "Show Atlas" ) )
+        s_ft.show_atlas = !s_ft.show_atlas;
+    gui()->same_line( -1 );
+    gui()->checkbox( "2x", &s_ft.atlas_2x );
+
+    if ( s_ft.show_atlas )
+    {
+        u32 active_id = gui()->font_active_id();
+        u32 atlas_idx = gui()->font_atlas_idx( active_id );
+        if ( atlas_idx )
+        {
+            gui_vec2_t asz = gui()->font_atlas_size( active_id );
+
+            gui()->textf( "Active font #%u -- %.0f x %.0f px  (bindless #%u)",
+                          active_id, asz.x, asz.y, atlas_idx );
+
+            /* Native resolution (or 2x via the checkbox) -- no fit-to-window scaling, so packing/
+               coverage reads exactly as baked. */
+            f32 scale = s_ft.atlas_2x ? 2.0f : 1.0f;
+            gui()->image_texture( atlas_idx, asz.x * scale, asz.y * scale, 0 );
+        }
+        else
+        {
+            gui()->text_disabled( "No active font atlas." );
+        }
     }
 
     gui()->window_end();
@@ -490,7 +531,7 @@ main( int argc, char** argv )
         .title     = "sb_gui_font",
         .w         = 1100, .h = 720,
         .os_chrome = true,
-        .font      = GUI_FONT_CASCADIA_MONO_16,
+        .font      = GUI_FONT_CASCADIA_MONO_16, // GUI_FONT_CASCADIA_MONO_16
         .caps      = &( gui_forward_caps_t ){ .keyboard_nav = true, .tables = false, .docking = false },
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,

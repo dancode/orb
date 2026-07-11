@@ -106,7 +106,7 @@ gui_small_button( const char* label )
     gui_id_t   id = widget_id( label );
 
     /* Height hugs the glyph (plus 2px so the frame does not touch the text); width is label + pad. */
-    f32          h  = font_char_h() + 2.0f;
+    f32        h  = font_char_h() + 2.0f;
     gui_rect_t r  = widget_next_rect_w( label_natural_w( label ), h );
 
     gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );

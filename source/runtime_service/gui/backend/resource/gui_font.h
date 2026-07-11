@@ -11,8 +11,10 @@
     The .orb_font is currently the only font source format gui loads, so we assume it.
 
     Every atlas is finalized the same way (font_finalize_atlas): a white texel row and
-    GUI_DASH_PATTERN_COUNT stipple rows are appended so the active font alone backs solid fills,
-    dashed strokes, and text in one texture.
+    GUI_DASH_PATTERN_COUNT stipple rows are painted into the bottom ORB_FONT_RESERVED_ROWS rows of
+    the atlas -- a band the baker (font_tool.c / dev_font.c) never lets the packer touch -- so the
+    active font alone backs solid fills, dashed strokes, and text in one texture with no runtime
+    growth beyond the baked atlas_w x atlas_h.
 
 ==============================================================================================*/
 #pragma once
@@ -23,18 +25,23 @@
 // clang-format off
 /*==============================================================================================
     
-    Atlas tail: white texel + dash patterns
+    Atlas reserved band: white texel + dash patterns
 
-    A fixed set of full-width 1-row stipple patterns is appended to every atlas after the white
-    texel row.  Each row encodes ONE dash period: the leftmost `duty * atlas_w` texels are opaque
-    (the "on" run), the rest zero.  Tessellated dashed lines sample these as a single oriented
-    quad whose U spans 0..len/period; with REPEAT addressing on U the row tiles along the line --
-    O(1) geometry instead of one quad per dash.  Glyph U coords never leave [0,1], so REPEAT does
-    not affect text sampling.
+    A fixed set of full-width 1-row stipple patterns lives in the bottom ORB_FONT_RESERVED_ROWS
+    rows of every atlas, just above the white texel row.  Each row encodes ONE dash period: the
+    leftmost `duty * atlas_w` texels are opaque (the "on" run), the rest zero.  Tessellated dashed
+    lines sample these as a single oriented quad whose U spans 0..len/period; with REPEAT
+    addressing on U the row tiles along the line -- O(1) geometry instead of one quad per dash.
+    Glyph U coords never leave [0,1], so REPEAT does not affect text sampling.
 
 ==============================================================================================*/
 
 #define GUI_DASH_PATTERN_COUNT 4
+
+/* ORB_FONT_RESERVED_ROWS (orb_font.h) is the bake-time contract this count feeds -- keep them in
+   sync so the baker reserves exactly as many rows as the loader paints into. */
+_Static_assert( ORB_FONT_RESERVED_ROWS == 1u + GUI_DASH_PATTERN_COUNT,
+                "ORB_FONT_RESERVED_ROWS must equal 1 (white) + GUI_DASH_PATTERN_COUNT" );
 
 /* Capacity of the loaded-font registry (gui_font_internal.c).  
    Slot 0 is the default; loaded fonts occupy ids 1..GUI_FONT_REGISTRY_MAX-1. */
@@ -72,10 +79,10 @@ typedef struct
     f32  white_u;       // UV of a guaranteed-opaque texel in this atlas (solid-fill draws)
     f32  white_v;       // sampling it gives r=1.0 so the vertex color drives the draw
 
-    f32  inv_atlas_w;   // 1 / atlas pixel width              -- precomputed so glyph dispatch avoids a divide
-    f32  inv_atlas_h;   // 1 / uploaded atlas height (tex_h)  -- per-glyph UV scale, constant per font
+    f32  inv_atlas_w;   // 1 / atlas pixel width   -- precomputed so glyph dispatch avoids a divide
+    f32  inv_atlas_h;   // 1 / atlas pixel height  -- per-glyph UV scale, constant per font
 
-    f32  dash_v[ GUI_DASH_PATTERN_COUNT ]; // center V of each appended dash pattern row
+    f32  dash_v[ GUI_DASH_PATTERN_COUNT ]; // center V of each reserved-band dash pattern row
 
 } font_atlas_sample_t;
 

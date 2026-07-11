@@ -59,44 +59,40 @@ font_paint_dash_rows( u8* pixels, u32 w, u32 row0 )
     }
 }
 
-/* Fill dash_v[]: pattern row p sits at pixel row row0 + p in a `tex_h`-tall upload. */
+/* Fill dash_v[]: pattern row p sits at pixel row row0 + p in an `atlas_h`-tall atlas. */
 static void
-font_dash_row_v( f32* dash_v, u32 row0, u32 tex_h )
+font_dash_row_v( f32* dash_v, u32 row0, u32 atlas_h )
 {
     for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
-        dash_v[ p ] = ( (f32)( row0 + p ) + 0.5f ) / (f32)tex_h;
+        dash_v[ p ] = ( (f32)( row0 + p ) + 0.5f ) / (f32)atlas_h;
 }
 
-/* Uploaded atlas height for a glyph region of `glyph_h` rows: one white texel row plus the dash
-   pattern rows are appended on top.  The loader sizes its staging buffer to this. */
-static u32
-font_atlas_tex_h( u32 glyph_h )
-{
-    return glyph_h + 1u + GUI_DASH_PATTERN_COUNT;
-}
-
-/* Finalize a staged R8 atlas: append the white texel row and the dash pattern rows on top of the
-   `glyph_h`-row glyph region, then resolve the metrics fields that describe them (white UV,
-   per-glyph UV scale, dash row V coords).  `tex_h` must equal font_atlas_tex_h( glyph_h ). */
+/* Finalize a staged R8 atlas: paint the white texel row and the dash pattern rows into the bottom
+   ORB_FONT_RESERVED_ROWS rows of the atlas, then resolve the metrics fields that describe them
+   (white UV, per-glyph UV scale, dash row V coords).  That band is guaranteed blank on disk --
+   the baker (font_tool.c / dev_font.c) never lets the packer place a glyph there -- so this never
+   overlaps packed glyph pixels and the atlas never grows past hdr.atlas_w x hdr.atlas_h. */
 
 static void
-font_finalize_atlas( u8* pixels, u32 atlas_w, u32 glyph_h, u32 tex_h, font_metrics_t* m )
+font_finalize_atlas( u8* pixels, u32 atlas_w, u32 atlas_h, font_metrics_t* m )
 {
-    /* White texel strip: fill the first appended row opaque, then the dash pattern rows. */
-    memset( &pixels[ glyph_h * atlas_w ], 0xFF, atlas_w );
-    font_paint_dash_rows( pixels, atlas_w, glyph_h + 1u );
+    u32 white_row = atlas_h - GUI_DASH_PATTERN_COUNT - 1u;
+    u32 dash_row0 = atlas_h - GUI_DASH_PATTERN_COUNT;
 
-    /* White texel: center of the first appended row (pixel row glyph_h). */
+    /* White texel strip: fill the first reserved row opaque, then the dash pattern rows. */
+    memset( &pixels[ white_row * atlas_w ], 0xFF, atlas_w );
+    font_paint_dash_rows( pixels, atlas_w, dash_row0 );
+
+    /* White texel: center of the first reserved row. */
     m->atlas.white_u = 0.5f / (f32)atlas_w;
-    m->atlas.white_v = ( (f32)glyph_h + 0.5f ) / (f32)tex_h;
+    m->atlas.white_v = ( (f32)white_row + 0.5f ) / (f32)atlas_h;
 
-    /* Per-glyph UV scale, constant per font -- folds the divide out of the glyph path.  V divides
-       by tex_h (the padded height), so the appended rows stay outside every glyph's UV range. */
+    /* Per-glyph UV scale, constant per font -- folds the divide out of the glyph path. */
     m->atlas.inv_atlas_w = 1.0f / (f32)atlas_w;
-    m->atlas.inv_atlas_h = 1.0f / (f32)tex_h;
+    m->atlas.inv_atlas_h = 1.0f / (f32)atlas_h;
 
-    /* Dash pattern rows follow the white row at pixel row glyph_h + 1. */
-    font_dash_row_v( m->atlas.dash_v, glyph_h + 1u, tex_h );
+    /* Dash pattern rows follow the white row. */
+    font_dash_row_v( m->atlas.dash_v, dash_row0, atlas_h );
 }
 
 /*==============================================================================================
@@ -132,7 +128,7 @@ font_slot_load( font_slot_t* slot, const char* path )
          || hdr.magic   != ORB_FONT_MAGIC
          || hdr.version != ORB_FONT_VERSION
          || hdr.glyph_count == 0 || hdr.glyph_count > 256
-         || hdr.atlas_w == 0     || hdr.atlas_h == 0 )
+         || hdr.atlas_w == 0     || hdr.atlas_h <= ORB_FONT_RESERVED_ROWS )
     {
         fclose( f );
         return false;
@@ -150,15 +146,14 @@ font_slot_load( font_slot_t* slot, const char* path )
             lookup[ g.codepoint - 32 ] = g;
     }
 
-    /* Read the glyph pixels into a staging buffer sized for the appended white + dash rows. */
+    /* Read the full baked atlas -- glyph pixels plus the guaranteed-blank reserved band the baker
+       left at the bottom (see orb_font.h / ORB_FONT_RESERVED_ROWS). */
 
-    u32 tex_h       = font_atlas_tex_h( hdr.atlas_h );
-    u32 glyph_bytes = hdr.atlas_w * hdr.atlas_h;
-    u32 pixel_count = hdr.atlas_w * tex_h;
+    u32 pixel_count = hdr.atlas_w * hdr.atlas_h;
     u8* pixels      = (u8*)malloc( pixel_count );
     if ( !pixels ) { fclose( f ); return false; }
 
-    if ( fread( pixels, 1, glyph_bytes, f ) != glyph_bytes )
+    if ( fread( pixels, 1, pixel_count, f ) != pixel_count )
     {
         free( pixels );
         fclose( f );
@@ -176,8 +171,9 @@ font_slot_load( font_slot_t* slot, const char* path )
         },
     };
 
-    /* Append the white texel + dash rows and resolve white/dash/UV-scale metrics. */
-    font_finalize_atlas( pixels, hdr.atlas_w, hdr.atlas_h, tex_h, &metrics );
+    /* Paint the white texel + dash rows into the reserved band and resolve white/dash/UV-scale
+       metrics. */
+    font_finalize_atlas( pixels, hdr.atlas_w, hdr.atlas_h, &metrics );
 
     /* Reload swap-safety: when this slot already holds an atlas, in-flight frames may still be
        sampling it (and hold the bindless set bound).  Re-baking a font live -- e.g. the font
@@ -192,7 +188,7 @@ font_slot_load( font_slot_t* slot, const char* path )
     /* Create the render texture and upload the atlas pixels. */
 
     gui_atlas_t atlas;
-    if ( !gui_atlas_create( &atlas, hdr.atlas_w, tex_h, pixels, "gui_font_atlas" ) )
+    if ( !gui_atlas_create( &atlas, hdr.atlas_w, hdr.atlas_h, pixels, "gui_font_atlas" ) )
     {
         free( pixels );
         return false;
@@ -208,7 +204,7 @@ font_slot_load( font_slot_t* slot, const char* path )
     slot->descent = hdr.descent;
     memcpy( slot->lookup, lookup, sizeof( lookup ) );
 
-    slot->atlas = atlas;               /* padded: glyph UV math divides by the uploaded height */
+    slot->atlas = atlas;
     slot->used  = true;
 
     metrics.atlas.atlas_idx = atlas.atlas_idx;
