@@ -355,6 +355,25 @@ nav_line_pick( u32 region, u32 line, f32 goal )
    as three separate one-letter jumps (c, then a, then t), not a failed four-letter prefix. */
 #define GUI_TYPEAHEAD_TIMEOUT 1.0
 
+/* True when last frame's item list (the same one-frame-lagged list the resolver scans) has at
+   least one labeled, non-chrome candidate -- i.e. type-ahead could actually land somewhere in the
+   current nav window.  A window with no selectables (a form of sliders/checkboxes/text fields,
+   like the font-tool bench) has none, so there is nothing for a typed letter to ever match; without
+   this check nav_typeahead_feed still claimed the key and raised nav.highlight purely because a
+   window was focused, silently eating every letter keystroke -- including app-level hotkeys like
+   'P' -- for a search that could never succeed. */
+static bool
+nav_has_typeahead_targets( void )
+{
+    for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
+    {
+        const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
+        if ( !it->chrome && it->label[ 0 ] != 0 )
+            return true;
+    }
+    return false;
+}
+
 /* Accumulate this frame's typed text into the query.  A repeated single key with no pause is the
    Explorer-style cycle case: the query stays one character (nav_resolve_typeahead then scans past
    the current cursor instead of from the top), so tapping "m" repeatedly steps through every M
@@ -363,6 +382,7 @@ static void
 nav_typeahead_feed( const char* text )
 {
     if ( !text[ 0 ] ) return;
+    if ( !nav_has_typeahead_targets() ) return;   /* nothing here can match -- let the key fall through */
     gui_nav_state_t* nav = &g_ctx->nav;
 
     bool first = true;
