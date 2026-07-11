@@ -45,6 +45,7 @@ const app_api_t g_app_api_struct = {
     .pump_events = app_pump_events,
     .next_event  = app_next_event,
     .should_quit = app_should_quit,
+    .quit_reset  = app_quit_reset,
 
     /* Keyboard */
     .key_down            = app_key_down,

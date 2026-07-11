@@ -108,6 +108,13 @@ mod_desc_t*     mod_get_mod_desc            ( void );
 
 bool            mod_static_load             ( const char* name, mod_desc_t* mod_desc );
 bool            mod_dynamic_load            ( const char* name );
+
+/* Load "<dir>\<name>.dll" from an external directory (a game project's bin/); dir NULL or
+   "" = exe dir (same as mod_dynamic_load).  The dir sticks to the module, so hot-reload
+   timestamp polling and shadow copies operate there.  Tier-3: always a DLL, even under
+   BUILD_STATIC. */
+bool            mod_dynamic_load_dir        ( const char* name, const char* dir );
+
 bool            mod_unload                  ( const char* name );
 bool            mod_reload                  ( const char* name );
 int             mod_reload_all              ( void );

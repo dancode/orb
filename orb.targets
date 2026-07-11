@@ -207,9 +207,9 @@ target physics
 # 04_GAME
 # ==============================================================================
 
-target game
+target game							# gameplay framework module -- hot-reload DLL, RUN_MODULE( game ) in hosts
 
-    type        static
+    type        dynamic
     root        source/game
     folder      04_GAME
     unit        game.c
@@ -261,9 +261,9 @@ target 	editor_example
 # 06_Project
 # ==============================================================================
 
-target sample_game
+target sample_game					# canonical project DLL -- host_game -module sample_game; -create template source
 
-    type        static
+    type        dynamic
     root        source/project/sample_game
     folder      06_PROJECT
     unit        sample_game.c
@@ -320,11 +320,13 @@ target host_common
 
 target host_game
 
-    type        static
+    type        exe
     root        source/host/game
     folder      08_HOST
     unit        host_game_main.c
-	dep         mod sys ref core job app
+	dep         mod ref sys core job app host_common
+    dep         run rhi draw
+	mono_dep	render game
 	
 target host_editor
 
@@ -334,7 +336,7 @@ target host_editor
     unit        host_editor_main.c
 	dep         mod ref sys core job app host_common
     dep         run rhi draw gui
-	mono_dep	render
+	mono_dep	render game
 	
 target host_tool
 
@@ -750,11 +752,13 @@ solution orb_editor
 	add 		editor_example
 	
 	#			--- LIBRARIES ---
-	
+
+	add 		host_common
 	add 		host_game
 	add 		host_editor 
 	add 		host_sandbox 
 	add 		host_tool
+
 
 	#			--- EXECUTABLE ---
 	add 		sb_example_runtime

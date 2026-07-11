@@ -16,11 +16,13 @@
         <name>.h  <name>_api.h  <name>.c  <name>_api.c
 
     Project scaffolding creates a complete standalone game project that builds on this
-    engine (run from the engine root; -dir defaults to <name>):
-        <dir>/orb.targets      -- 'engine' declaration + game exe target + solution
-        <dir>/src/main.c       -- copy of source/project/template_game/main.c with the
-                                  identifier 'template_game' renamed to <name>; the
-                                  template is a compiled engine target, so it cannot rot
+    engine (run from the engine root; -dir defaults to <name>).  The project builds a
+    GAME MODULE DLL (game/game_project.h contract) that the engine's hosts load and run:
+    host_game.exe -project <dir> / host_editor.exe -project <dir>.
+        <dir>/orb.targets      -- 'engine' declaration + game DLL target + solution
+        <dir>/src/<name>.c|.h  -- copy of source/project/sample_game/sample_game.c|.h
+                                  with the identifier 'sample_game' renamed to <name>;
+                                  the template is a compiled engine target, so it cannot rot
         <dir>/.orb_engine      -- absolute engine root (read by clean_build.bat)
         <dir>/bin/build_tool.bat  -- forwarder to the engine's build_tool.exe
         <dir>/clean_build.bat  -- wipe bin/ + build/ and restore the forwarder
@@ -601,10 +603,16 @@ create_project_engine_ref( const char* dir_fwd, const char* engine_abs, char* ou
     snprintf( out, size, "%s", engine_abs );
 }
 
-/* <dir>/orb.targets -- engine declaration, game exe target, and solution. */
+/* <dir>/orb.targets -- engine declaration, game DLL target, and solution.
+
+   The project builds a game module DLL, not an exe: the engine's hosts run it --
+   host_game.exe -project <dir> (play) or host_editor.exe -project <dir> (Play/Stop in
+   the editor).  The DLL implements game/game_project.h and hot-reloads while a host is
+   running.  -monolithic is not supported for project DLLs (a mono build produces no
+   engine DLLs for the project to pair with). */
 static void
 create_emit_project_targets( const char* path, const char* name, const char* NAME,
-                             const char* engine_ref )
+                             const char* engine_ref, const char* engine_abs )
 {
     FILE* f = create_open_write( path );
     if ( !f ) return;
@@ -617,27 +625,23 @@ create_emit_project_targets( const char* path, const char* name, const char* NAM
     fprintf( f, "#   - Engine headers (engine/sys/sys.h etc.) are on the include path automatically.\n" );
     fprintf( f, "#   - Built-in tools (build_tool, reflect_tool) resolve from the engine root.\n" );
     fprintf( f, "#\n" );
+    fprintf( f, "# This project builds %s.dll -- a game module (game/game_project.h contract)\n", name );
+    fprintf( f, "# run by the engine's hosts.  -monolithic is not supported for project DLLs.\n" );
+    fprintf( f, "#\n" );
     fprintf( f, "# Workflow:\n" );
     fprintf( f, "#   bin\\build_tool.bat -gen      generate VS project files (build/proj)\n" );
-    fprintf( f, "#   bin\\build_tool.bat           build (add -config Release / -monolithic as needed)\n" );
-    fprintf( f, "#   bin\\%s.exe\n", name );
+    fprintf( f, "#   bin\\build_tool.bat           build (add -config Release as needed)\n" );
+    fprintf( f, "#   \"%s\\bin\\host_game.exe\"   -project .     play it\n", engine_abs );
+    fprintf( f, "#   \"%s\\bin\\host_editor.exe\" -project .     edit it (Play/Stop)\n", engine_abs );
     fprintf( f, "\n" );
     fprintf( f, "engine  %s\n", engine_ref );
     fprintf( f, "\n" );
     fprintf( f, "target %s\n", name );
     fprintf( f, "\n" );
-    fprintf( f, "    type        exe\n" );
+    fprintf( f, "    type        dynamic\n" );
     fprintf( f, "    root        src\n" );
     fprintf( f, "    folder      01_%s\n", NAME );
-    fprintf( f, "    unit        main.c\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    # Static engine libraries linked into the host exe.\n" );
-    fprintf( f, "    dep         mod ref sys core job app\n" );
-    fprintf( f, "    dep         run rhi draw\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    # render is a hot-reload DLL. Declaring it as a dep builds render.dll into\n" );
-    fprintf( f, "    # this project's bin/ for modular builds; -monolithic links it statically.\n" );
-    fprintf( f, "    dep         render\n" );
+    fprintf( f, "    unit        %s.c\n", name );
     fprintf( f, "\n" );
     fprintf( f, "solution %s\n", name );
     fprintf( f, "\n" );
@@ -647,28 +651,30 @@ create_emit_project_targets( const char* path, const char* name, const char* NAM
     fprintf( f, "\n" );
     fprintf( f, "    # Engine targets included for source navigation and debugging.\n" );
     fprintf( f, "    add         base sys ref mod app core job\n" );
-    fprintf( f, "    add         run rhi draw render\n" );
+    fprintf( f, "    add         run rhi draw render game\n" );
 
     fclose( f );
     printf( ORB_INDENT "  wrote  %s\n", path );
 }
 
-/* <dir>/src/main.c -- copied from the compiled template project
-   (source/project/template_game/main.c) with the identifier 'template_game' renamed
-   to the project name. The template is a real engine target built on every full
-   engine build, so the emitted code can never drift from the current API. */
+/* <dir>/src/<name>.c|.h -- copied from the canonical project module
+   (source/project/sample_game/sample_game.c|.h) with the identifier 'sample_game'
+   renamed to the project name. The template is a real engine target built on every
+   full engine build, so the emitted code can never drift from the current API. */
 static void
-create_emit_project_main( const char* path, const char* name )
+create_emit_project_module( const char* path, const char* name, const char* template_file )
 {
-    static const char k_template[] =
-        "source" PATH_SEP "project" PATH_SEP "template_game" PATH_SEP "main.c";
-    static const char k_token[]    = "template_game";
-    const size_t      token_len    = sizeof( k_token ) - 1;
+    static const char k_token[] = "sample_game";
+    const size_t      token_len = sizeof( k_token ) - 1;
+
+    char template_path[ PATH_MAX ];
+    snprintf( template_path, sizeof( template_path ),
+              "source" PATH_SEP "project" PATH_SEP "sample_game" PATH_SEP "%s", template_file );
 
     platform_mapped_file_t mf;
-    if ( !platform_map_file( k_template, &mf ) || !mf.data )
+    if ( !platform_map_file( template_path, &mf ) || !mf.data )
     {
-        printf( ORB_INDENT "[orb error] project template not found: %s\n", k_template );
+        printf( ORB_INDENT "[orb error] project template not found: %s\n", template_path );
         return;
     }
 
@@ -783,10 +789,13 @@ cmd_create_project( const char* name, const char* dir )
     char path[ PATH_MAX ];
 
     snprintf( path, sizeof( path ), "%s%sorb.targets", dir, PATH_SEP );
-    create_emit_project_targets( path, name, NAME, engine_ref );
+    create_emit_project_targets( path, name, NAME, engine_ref, engine_abs );
 
-    snprintf( path, sizeof( path ), "%s%ssrc%smain.c", dir, PATH_SEP, PATH_SEP );
-    create_emit_project_main( path, name );
+    snprintf( path, sizeof( path ), "%s%ssrc%s%s.c", dir, PATH_SEP, PATH_SEP, name );
+    create_emit_project_module( path, name, "sample_game.c" );
+
+    snprintf( path, sizeof( path ), "%s%ssrc%s%s.h", dir, PATH_SEP, PATH_SEP, name );
+    create_emit_project_module( path, name, "sample_game.h" );
 
     snprintf( path, sizeof( path ), "%s%sclean_build.bat", dir, PATH_SEP );
     create_emit_project_clean_bat( path );
@@ -819,8 +828,10 @@ cmd_create_project( const char* name, const char* dir )
     printf( ORB_BANNER "Project ready. Next steps (from %s):\n", dir );
     printf( "\n" );
     printf( "    bin\\build_tool.bat -gen      generate VS project files\n" );
-    printf( "    bin\\build_tool.bat           build\n" );
-    printf( "    bin\\%s.exe\n", name );
+    printf( "    bin\\build_tool.bat           build %s.dll\n", name );
+    printf( "\n" );
+    printf( "    \"%s\\bin\\host_game.exe\"   -project .     play it\n", engine_abs );
+    printf( "    \"%s\\bin\\host_editor.exe\" -project .     edit it (Play/Stop)\n", engine_abs );
     printf( "\n" );
 
     return true;

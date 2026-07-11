@@ -1,9 +1,9 @@
 /*==============================================================================================
 
-    sample_game.c  (compiled as sample_game.dll)
+    my_project.c  (compiled as my_project.dll)
 
     The CANONICAL PROJECT MODULE -- the reference for a game project DLL loaded by a host
-    at runtime ( host_game.exe -module sample_game, or from a child project directory via
+    at runtime ( host_game.exe -module my_project, or from a child project directory via
     -project <dir> ), and the source template for `build_tool -create <name> -type project`.
 
     Demonstrates the full project shape:
@@ -16,14 +16,14 @@
       - persistent state that survives hot-reloads ( edit this file, rebuild, watch the
         swap land without losing position )
 
-    The module system owns all memory for sample_game_state_t.  Never free it inside
+    The module system owns all memory for my_project_state_t.  Never free it inside
     exit() -- the system reuses the same block on the next reload.
 
 ==============================================================================================*/
 
 #include "orb.h"
 #include "base/math.h"
-#define LOG_CH "sample_game"
+#define LOG_CH "my_project"
 #include "engine/mod/mod_export.h"
 #include "engine/mod/mod_import.h"
 
@@ -31,7 +31,7 @@
 #include "runtime_modules/render/render_api.h"
 #include "game/game_api.h"
 
-#include "sample_game.h"
+#include "my_project.h"
 
 MOD_USE_CORE;
 MOD_USE_RENDER;
@@ -42,23 +42,23 @@ MOD_USE_GAME;
 ==============================================================================================*/
 
 #define SAMPLE_SQUARE_SIZE  80.0f
-#define SAMPLE_ORBIT_SPEED  1.2f    /* radians per second */
+#define SAMPLE_ORBIT_SPEED  2.5f    /* radians per second -- hot-reload test edit */
 
-typedef struct sample_game_state_s
+typedef struct my_project_state_s
 {
     bool running;   /* between on_start and on_stop */
     f32  angle;     /* orbit angle -- proves state survives hot-reload */
 
-} sample_game_state_t;
+} my_project_state_t;
 
-static sample_game_state_t* g_state = NULL;
+static my_project_state_t* g_state = NULL;
 
 /*==============================================================================================
     Project contract  (game/game_project.h)
 ==============================================================================================*/
 
 static void
-sample_game_on_start( void )
+my_project_on_start( void )
 {
     if ( !g_state )
         return;
@@ -69,7 +69,7 @@ sample_game_on_start( void )
 }
 
 static void
-sample_game_on_update( f32 dt, const game_project_ctx_t* ctx )
+my_project_on_update( f32 dt, const game_project_ctx_t* ctx )
 {
     if ( !g_state || !g_state->running )
         return;
@@ -95,7 +95,7 @@ sample_game_on_update( f32 dt, const game_project_ctx_t* ctx )
 }
 
 static void
-sample_game_on_stop( void )
+my_project_on_stop( void )
 {
     if ( !g_state )
         return;
@@ -105,10 +105,10 @@ sample_game_on_stop( void )
     LOG_INFO( "on_stop" );
 }
 
-const game_project_api_t g_sample_game_api_struct = {
-    .on_start  = sample_game_on_start,
-    .on_update = sample_game_on_update,
-    .on_stop   = sample_game_on_stop,
+const game_project_api_t g_my_project_api_struct = {
+    .on_start  = my_project_on_start,
+    .on_update = my_project_on_update,
+    .on_stop   = my_project_on_stop,
 };
 
 /*==============================================================================================
@@ -116,10 +116,10 @@ const game_project_api_t g_sample_game_api_struct = {
 ==============================================================================================*/
 
 static bool
-sample_game_init( void* raw_state, get_api_fn get_api )
+my_project_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
-    g_state = ( sample_game_state_t* )raw_state;
+    g_state = ( my_project_state_t* )raw_state;
 
     if ( !MOD_FETCH_CORE )   return false;
     if ( !MOD_FETCH_RENDER ) return false;
@@ -130,10 +130,10 @@ sample_game_init( void* raw_state, get_api_fn get_api )
 }
 
 static bool
-sample_game_reload( void* raw_state, get_api_fn get_api )
+my_project_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
-    g_state = ( sample_game_state_t* )raw_state;
+    g_state = ( my_project_state_t* )raw_state;
 
     if ( !MOD_FETCH_CORE )   return false;
     if ( !MOD_FETCH_RENDER ) return false;
@@ -144,9 +144,9 @@ sample_game_reload( void* raw_state, get_api_fn get_api )
 }
 
 static void
-sample_game_exit( void* raw_state )
+my_project_exit( void* raw_state )
 {
-    sample_game_state_t* s = raw_state;
+    my_project_state_t* s = raw_state;
     LOG_INFO( "exit (running=%d)", s ? s->running : 0 );
 }
 
@@ -155,22 +155,22 @@ sample_game_exit( void* raw_state )
 ==============================================================================================*/
 
 mod_desc_t*
-sample_game_get_mod_desc( void )
+my_project_get_mod_desc( void )
 {
     static mod_desc_t desc = {
         .version       = 1,
-        .state_size    = sizeof( sample_game_state_t ),
+        .state_size    = sizeof( my_project_state_t ),
         .func_api_size = sizeof( game_project_api_t ),
         .deps          = { "core", "game", "render" },
         .dep_count     = 3,
-        .func_api      = ( void* )&g_sample_game_api_struct,
-        .init          = sample_game_init,
-        .exit          = sample_game_exit,
-        .reload        = sample_game_reload,
+        .func_api      = ( void* )&g_my_project_api_struct,
+        .init          = my_project_init,
+        .exit          = my_project_exit,
+        .reload        = my_project_reload,
     };
     return &desc;
 }
 
-MOD_DEFINE_EXPORTS( sample_game );
+MOD_DEFINE_EXPORTS( my_project );
 
 /*============================================================================================*/

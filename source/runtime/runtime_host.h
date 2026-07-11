@@ -54,7 +54,10 @@
 
     Quit
     ----
-    Windowed:  app()->pump_events() returning false, or an unvetoed main-window WIN_CLOSE.
+    Windowed:  an unvetoed main-window WIN_CLOSE (on_close_request), or an OS-level quit
+               honored after the event drain -- the drain always runs before the quit flag
+               is checked, so on_close_request is guaranteed its look; a veto calls
+               app()->quit_reset() and the loop carries on.
     Headless:  run_host_quit() sets a flag checked at the top of each frame.
     Both paths lead to the same clean shutdown: mod_system_exit() in reverse dep order.
 
@@ -140,6 +143,14 @@ typedef struct run_host_desc_s
     i32                       window_height;      /* client area height, 0 -> 720            */
     const run_module_entry_t* modules;            /* null-terminated array                   */
     const run_gui_desc_t*     gui;                /* optional gui config; NULL = defaults    */
+
+    /* Optional game project DLL -- Tier-3, always dynamic, loaded with mod_dynamic_load_dir
+       AFTER modules[] registers and BEFORE mod_init_all (one dep-ordered init pass covers
+       it; its deps -- core/game/render -- must be in modules[]).  The runtime is contract-
+       agnostic: it loads and hot-reloads the DLL but never calls into it.  Hosts fetch the
+       vtable via mod_get_api( project_name ) and drive it (see game/game_project.h). */
+    const char*               project_name;       /* project DLL base name; NULL = none      */
+    const char*               project_dir;        /* dir holding <name>.dll; NULL = exe dir  */
     void ( *on_ready )( void );                   /* after init + window creation            */
     void ( *on_update )( f32 dt );                /* each frame — game logic, no widgets     */
     void ( *on_gui )( f32 dt );                   /* dirty frames only — the widget build    */

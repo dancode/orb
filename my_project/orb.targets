@@ -1,24 +1,35 @@
 # orb.targets -- my_project
 #
 # 'engine' declares the ORB installation this project builds on:
-#   - All ORB targets become available as deps (but excluded from local build/gen/clean).
+#   - All engine targets are available as deps and build on demand into this
+#     project's bin/ (they are excluded from local build-all/gen/clean).
 #   - Engine headers (engine/sys/sys.h etc.) are on the include path automatically.
 #   - Built-in tools (build_tool, reflect_tool) resolve from the engine root.
 #
-# Run bootstrap_project.bat once from this directory to create bin\build_tool.bat.
-# Then: bin\build_tool.bat -gen   (generate VS project files)
-#       bin\build_tool.bat        (build)
+# This project builds my_project.dll -- a game module (game/game_project.h contract)
+# run by the engine's hosts.  -monolithic is not supported for project DLLs.
+#
+# Workflow:
+#   bin\build_tool.bat -gen      generate VS project files (build/proj)
+#   bin\build_tool.bat           build (add -config Release as needed)
+#   "F:\orb\bin\host_game.exe"   -project .     play it
+#   "F:\orb\bin\host_editor.exe" -project .     edit it (Play/Stop)
 
-engine  ..\
+engine  ../
 
 target my_project
-    type        exe
+
+    type        dynamic
     root        src
     folder      01_MY_PROJECT
-    unit        main.c
-    dep       	sys
+    unit        my_project.c
 
 solution my_project
-    out     build/proj
-    add     my_project
-	add 	sys
+
+    out         build/proj
+    startup     my_project
+    add         my_project
+
+    # Engine targets included for source navigation and debugging.
+    add         base sys ref mod app core job
+    add         run rhi draw render game

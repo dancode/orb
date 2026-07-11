@@ -8,6 +8,7 @@
         2. ref_wire_mod_callbacks()                 -- install hooks; no code fires yet
         3. mod_static_load( sys, ref, job, run )    -- PASSIVE: engine baseline registered
         4. load_all( desc->modules )                -- PASSIVE: every entry registered
+           mod_dynamic_load_dir( project )          -- PASSIVE: optional project DLL (desc->project_name)
         5. mod_init_all()                           -- pass 1: load callbacks fire in dep order (ref frames pushed, reflection live)
                                                        pass 2: init() runs in same order
         6. MOD_HOST_FETCH_API( app, rhi, render )   -- cache host-owned API ptrs
@@ -327,10 +328,28 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     }
 
     /* Engine extented -- Load all the modules dynamically passed in to the host from the .exe */
-    if ( !load_all( desc->modules )) 
+    if ( !load_all( desc->modules ))
     {
         mod_system_exit();
         return 1;
+    }
+
+    /* Optional game project DLL -- registered after modules[] so its deps (core, game,
+       render) are all present, before mod_init_all so the single dep-ordered init pass
+       covers it.  Loaded from an external dir when given (a child project's bin/); the
+       mod system hot-reloads it there like any other dynamic module.  The runtime never
+       calls into it -- hosts drive it via mod_get_api( project_name ). */
+    if ( desc->project_name && desc->project_name[ 0 ] )
+    {
+        if ( !mod_dynamic_load_dir( desc->project_name, desc->project_dir ) )
+        {
+            fprintf( stderr, "[host] failed to load project '%s' (dir: %s): %s\n",
+                     desc->project_name,
+                     desc->project_dir && desc->project_dir[ 0 ] ? desc->project_dir : "<exe dir>",
+                     mod_last_error() );
+            mod_system_exit();
+            return 1;
+        }
     }
 
     /* Single dep-ordered init pass. Every reflected module's init() can already query
@@ -526,8 +545,13 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- pump OS events (windowed) ---------------------------------- */
 
-        if ( windowed && !app()->pump_events() )
-            break;
+        /* The pump's return is NOT honored here: the main window's WM_CLOSE arms app's
+           quit flag AND queues APP_EV_WIN_CLOSE in the same pump, so breaking now would
+           exit before the drain below ever hands that event to on_close_request (the
+           documented veto point).  Pump, drain, then check should_quit at the bottom of
+           the drain -- a veto calls quit_reset and the loop carries on. */
+        if ( windowed )
+            app()->pump_events();
 
         /* -- drain event ring ------------------------------------------ */
 
@@ -574,8 +598,18 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 {
                     if ( !desc->on_close_request || desc->on_close_request() )
                         goto loop_exit;
+
+                    /* Vetoed: cancel the quit the WM_CLOSE armed so pump_events keeps
+                       the app alive ("unsaved changes" flows). */
+                    app()->quit_reset();
                 }
             }
+
+            /* OS-level quit with no vetoed close in flight (WM_QUIT, or a WIN_CLOSE the
+               ring dropped): honor it here, AFTER the drain gave on_close_request its
+               chance. */
+            if ( app()->should_quit() )
+                break;
         }
 
         /* -- frame clock ------------------------------------------------ */

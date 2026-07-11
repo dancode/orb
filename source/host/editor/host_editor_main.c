@@ -9,8 +9,9 @@
     render draws the scene behind the gui composite (render path A); the host flushes gui over it.
 
     What makes this the HOST and not the sandbox: it parses launch params up front (host_common,
-    pre-engine) -- -project seeds the future project mount, -dev arms idle-sleep pacing.  Everything
-    below the arg parse is the same modern stack sb_example_editor validates.
+    pre-engine) -- -project/-module select a game project DLL that the runtime loads at boot and
+    this editor drives with Play/Stop (game/game_project.h contract), -dev arms idle-sleep pacing.
+    Everything below the arg parse is the same modern stack sb_example_editor validates.
 
     Q/R/D are developer hotkeys read from the CONSOLE (terminal focus only, via RUN_HOST_CONSOLE)
     so they can't be fumbled from the editor window -- see editor_handle_shortcuts.
@@ -34,6 +35,8 @@
 #include "runtime_service/draw/draw_host.h"
 #include "runtime_service/gui/gui_api.h"
 #include "runtime_modules/render/render_api.h"
+#include "game/game_api.h"
+#include "game/game_project.h"
 
 #include "runtime/runtime_api.h"
 #include "runtime/runtime_host.h"
@@ -41,6 +44,7 @@
 MOD_USE_APP;
 MOD_USE_RUN;
 MOD_USE_GUI;
+MOD_USE_GAME;
 
 // clang-format off
 /*==============================================================================================
@@ -49,6 +53,10 @@ MOD_USE_GUI;
 
 static bool s_show_scene = true;    /* submit the scene rect behind the gui                   */
 static bool s_show_stats;           /* frame-clock readout window                             */
+
+static host_project_t            s_proj;             /* resolved -project/-module            */
+static const game_project_api_t* s_project = NULL;   /* stable api slot; live across reloads */
+static bool                      s_playing = false;  /* editor Play state -- gates on_update  */
 
 /*==============================================================================================
     Host callbacks
@@ -60,6 +68,30 @@ editor_ready( void )
     /* gui and run are static services here -- their gateways bind directly, no fetch needed. */
     printf( "[editor] ready\n" );
     printf( "Dev keys (terminal focus): Q=quit  R=reload all  D=toggle sleep debug\n" );
+
+    /* Project vtable: the stable api slot -- the mod system rewrites its contents on every
+       hot-reload, so this pointer never needs refreshing.  game() is the framework module
+       (score readout); MOD_HOST_FETCH_API is valid from here on. */
+    if ( s_proj.present )
+    {
+        s_project = ( const game_project_api_t* )mod_get_api( s_proj.name );
+        MOD_HOST_FETCH_API( game );
+        printf( "[editor] project '%s' loaded -- use Play to start it\n", s_proj.name );
+    }
+}
+
+/* Editor Play/Stop -- the seam every play-in-editor feature grows from. */
+static void
+editor_set_playing( bool play )
+{
+    if ( !s_project || play == s_playing )
+        return;
+
+    s_playing = play;
+    if ( play )
+        s_project->on_start();
+    else
+        s_project->on_stop();
 }
 
 /* Developer hotkeys.  DELIBERATELY read the CONSOLE (sys_key_pressed, terminal focus only) rather
@@ -110,10 +142,22 @@ editor_submit_scene( void )
 static void
 editor_update( f32 dt )
 {
-    UNUSED( dt );
-
     editor_handle_shortcuts();
     editor_submit_scene();
+
+    /* Drive the playing project.  Ctx rebuilt every frame -- surface size tracks resizes
+       and a hot-reloaded project can never hold a stale handle.  This is also the future
+       play-in-editor seam: swap render_ctx for a viewport context, no contract change. */
+    if ( s_playing && s_project )
+    {
+        game_project_ctx_t ctx = {
+            .version    = GAME_PROJECT_CTX_VERSION,
+            .render_ctx = run_host_ctx(),
+        };
+        app()->window_get_size( run_host_window(), &ctx.surface_w, &ctx.surface_h );
+
+        s_project->on_update( dt, &ctx );
+    }
 }
 
 /* UI emission -- dirty frames only.  The chrome shell is already emitted by run_host (first in
@@ -144,13 +188,27 @@ editor_gui( f32 dt )
     f32 caption_h = gui()->viewport_caption_h( run_host_vp() );
 
     gui()->window_set_next_pos ( 40.0f, caption_h + 60.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 360.0f, 180.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 360.0f, 220.0f, GUI_COND_ONCE );
     if ( gui()->window_begin( "Editor", GUI_WIN_NONE ) )
     {
         gui()->stack();
-        gui()->textf( "orb editor host" );
+
+        /* Project controls -- Play drives the loaded project DLL's on_start/on_update;
+           Stop calls on_stop.  The framework score readout proves the delegation chain. */
+        if ( s_project )
+        {
+            gui()->textf( "project: %s", s_proj.name );
+            if ( gui()->button( s_playing ? "Stop" : "Play" ) )
+                editor_set_playing( !s_playing );
+            gui()->textf( "state  %s", s_playing ? "PLAYING" : "stopped" );
+            gui()->textf( "score  %d", game() ? game()->score() : 0 );
+        }
+        else
+        {
+            gui()->textf( "no project (-project <dir>)" );
+        }
+
         gui()->separator();
-        gui()->textf( "gui() driven as a service from run_host_main." );
         gui()->checkbox( "Scene rect (behind gui)", &s_show_scene );
     }
     gui()->window_end();
@@ -171,12 +229,13 @@ editor_gui( f32 dt )
     }
 }
 
-/* Main-window X pressed -- the veto point for "unsaved changes" flows.  Nothing to save yet,
-   so log and allow the close. */
+/* Main-window X pressed -- the veto point for "unsaved changes" flows.  Stop the project
+   if it is playing, then allow the close. */
 static bool
 editor_close_request( void )
 {
     printf( "[editor] close requested -- allowing\n" );
+    editor_set_playing( false );
     return true;
 }
 
@@ -191,6 +250,7 @@ static const run_module_entry_t k_modules[] = {
     RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend */
     RUN_SERVICE( gui    ),    /* immediate mode GUI -- OPTIONAL static service */
     RUN_MODULE ( render ),    /* scene frame owner -- gui composites over it   */
+    RUN_MODULE ( game   ),    /* gameplay framework -- project DLLs build on it */
     { 0 }
 };
 
@@ -207,16 +267,28 @@ static const run_gui_desc_t k_gui_desc = {
     .debug = true,            /* P/O/F10 overlays, I idle skip, etc. */
 };
 
+/*
+    host_game.exe   -project F:\orb\my_project     -> plays my_project.dll
+    host_game.exe   -module  sample_game           -> plays sample_game.dll from engine bin
+    host_editor.exe -project F:\orb\my_project     -> loads it; Play/Stop drives it
+*/
+
 int
 main( int argc, char** argv )
 {
-    /* Pre-engine launch params (host_common): -project seeds the project mount, -dev arms
-       idle-sleep pacing.  This is the seam that makes editor.exe a real host, not a sandbox. */
+    /* Pre-engine launch params (host_common): -project/-module select the game project
+       DLL, -dev arms idle-sleep pacing.  An absent project is fine -- the editor runs
+       standalone; an INVALID one (bad path, missing dll, reserved name) is a hard error
+       so a typo can't silently launch a projectless editor. */
     launch_params_t params;
     host_args_parse( argc, argv, &params );
 
-    if ( params.project_path[ 0 ] )
-        printf( "[editor] project: %s\n", params.project_path );
+    char err[ 512 ];
+    if ( !host_resolve_project( &params, &s_proj, err, sizeof( err ) ) )
+    {
+        fprintf( stderr, "[editor] %s\n", err );
+        return 1;
+    }
 
     u32 flags = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_BORDERLESS;
     if ( params.dev_mode )
@@ -230,6 +302,8 @@ main( int argc, char** argv )
         .window_height    = 900,
         .modules          = k_modules,
         .gui              = &k_gui_desc,
+        .project_name     = s_proj.present ? s_proj.name : NULL,
+        .project_dir      = s_proj.present ? s_proj.dir  : NULL,
         .on_ready         = editor_ready,
         .on_update        = editor_update,
         .on_gui           = editor_gui,

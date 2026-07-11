@@ -41,6 +41,18 @@ typedef struct launch_params_s
 } launch_params_t;
 
 /*==============================================================================================
+    Project Resolution — turn -project / -module launch args into a loadable (name, dir)
+==============================================================================================*/
+
+typedef struct host_project_s
+{
+    bool present;                  /* false = no -project/-module given          */
+    char name[ HOST_MODULE_MAX ];  /* module + dll base name                     */
+    char dir [ HOST_PATH_MAX ];    /* dir holding <name>.dll; "" = host exe dir  */
+
+} host_project_t;
+
+/*==============================================================================================
     API
 ==============================================================================================*/
 
@@ -48,6 +60,20 @@ typedef struct launch_params_s
  *out is zeroed first so every field has a safe default before flag processing. */
 
 void host_args_parse( int argc, char** argv, launch_params_t* out );
+
+/* Resolve -project/-module into a loadable (name, dir) pair:
+
+       -module <name>              name only, dll expected in the host exe dir
+       -project <path>             name = dir basename, dll at <path>/bin/<name>.dll
+                                   (falls back to <path>/<name>.dll if no bin/)
+       -project <path> -module <n> -module overrides the basename
+
+   Returns true with out->present=false when neither flag was given (a host that requires
+   a project checks .present).  Returns false with a message in err on invalid input:
+   name too long, reserved engine module name, or the resolved dll missing on disk. */
+
+bool host_resolve_project( const launch_params_t* params, host_project_t* out,
+                           char* err, size_t err_size );
 
 /*============================================================================================*/
 #endif

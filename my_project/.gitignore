@@ -1,0 +1,8 @@
+bin/
+build/
+.cache/
+.vscode/
+.clangd
+.orb_engine
+compile_commands.json
+*.code-workspace

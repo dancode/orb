@@ -628,4 +628,13 @@ app_should_quit( void )
     return g_app_quit;
 }
 
+/* Cancel a pending quit.  The main window's WM_CLOSE queues APP_EV_WIN_CLOSE and arms the
+   quit flag in the same pump; a host that vetoes the close (on_close_request returning
+   false) calls this so pump_events resumes returning true and the app keeps running. */
+static void
+app_quit_reset( void )
+{
+    g_app_quit = false;
+}
+
 /*============================================================================================*/

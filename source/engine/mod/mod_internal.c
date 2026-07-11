@@ -38,6 +38,11 @@ typedef struct mod_info_s
     bool                is_static;     /* true → no DLL, no shadow copies */
     uint32_t            shadow_count;  /* shadow file name counter for this slot */
 
+    char                dir[ MAX_PATH ]; /* module home dir; "" = g_root (exe dir).  Set by
+                                            mod_dynamic_load_dir for project/external DLLs;
+                                            every path, timestamp, and shadow op resolves
+                                            through slot_root() so hot-reload works there too. */
+
     void*               dll;           /* handle to the loaded shadow copy */
     uint64_t            last_write;    /* file timestamp at last successful load */
 
@@ -162,28 +167,35 @@ set_error( const char* fmt, ... )
 }
 
 /*==============================================================================================
-    Path Helpers
+    Path Helpers — all resolve through the slot so external-dir modules (project DLLs
+    loaded via mod_dynamic_load_dir) get the same load / timestamp / shadow machinery.
 ==============================================================================================*/
 
-static void
-path_dll( const char* name, char* out, size_t size )
+static const char*
+slot_root( const mod_info_t* m )
 {
-    /* "<root>\<name>.dll" */
-    snprintf( out, size, "%s%c%s.dll", g_root, PATH_SEP, name );
+    return m->dir[ 0 ] ? m->dir : g_root;
 }
 
 static void
-path_shadow( const char* name, uint32_t counter, char* out, size_t size )
+path_dll( const mod_info_t* m, char* out, size_t size )
+{
+    /* "<root>\<name>.dll" */
+    snprintf( out, size, "%s%c%s.dll", slot_root( m ), PATH_SEP, m->name );
+}
+
+static void
+path_shadow( const mod_info_t* m, uint32_t counter, char* out, size_t size )
 {
     /* "<root>\<name>.tmp_<counter>.dll" */
-    snprintf( out, size, "%s%c%s.tmp_%u.dll", g_root, PATH_SEP, name, counter );
+    snprintf( out, size, "%s%c%s.tmp_%u.dll", slot_root( m ), PATH_SEP, m->name, counter );
 }
 
 static uint64_t
-dll_file_time( const char* name )
+dll_file_time( const mod_info_t* m )
 {
     char path[ MAX_PATH ];
-    path_dll( name, path, sizeof( path ) );
+    path_dll( m, path, sizeof( path ) );
     return sys_file_time( path );
 }
 
@@ -192,11 +204,11 @@ dll_file_time( const char* name )
 ==============================================================================================*/
 
 static bool
-shadow_copy( const char* name, uint32_t counter )
+shadow_copy( const mod_info_t* m, uint32_t counter )
 {
     char src[ MAX_PATH ], dst[ MAX_PATH ];
-    path_dll( name, src, sizeof( src ) );
-    path_shadow( name, counter, dst, sizeof( dst ) );
+    path_dll( m, src, sizeof( src ) );
+    path_shadow( m, counter, dst, sizeof( dst ) );
 
     if ( !sys_file_copy( src, dst ) )
     {
@@ -207,10 +219,10 @@ shadow_copy( const char* name, uint32_t counter )
 }
 
 static void
-shadow_delete( const char* name, uint32_t counter )
+shadow_delete( const mod_info_t* m, uint32_t counter )
 {
     char path[ MAX_PATH ];
-    path_shadow( name, counter, path, sizeof( path ) );
+    path_shadow( m, counter, path, sizeof( path ) );
     sys_file_delete( path ); /* best-effort; ignore failure */
 }
 
@@ -281,11 +293,11 @@ slot_load_dll( mod_info_t* m )
     /* --- shadow copy --- */
 
     m->shadow_count = g_shadow_counter++;
-    if ( !shadow_copy( m->name, m->shadow_count ) )
+    if ( !shadow_copy( m, m->shadow_count ) )
         return false;
 
     char shadow[ MAX_PATH ];
-    path_shadow( m->name, m->shadow_count, shadow, sizeof( shadow ) );
+    path_shadow( m, m->shadow_count, shadow, sizeof( shadow ) );
 
     /* --- load shadow DLL --- */
 
@@ -293,7 +305,7 @@ slot_load_dll( mod_info_t* m )
     if ( !m->dll )
     {
         set_error( "LoadLibrary failed: %s", shadow );
-        shadow_delete( m->name, m->shadow_count );
+        shadow_delete( m, m->shadow_count );
         return false;
     }
 
@@ -317,12 +329,12 @@ slot_load_dll( mod_info_t* m )
 
     /* --- record file-time for hot-reload detection --- */
 
-    m->last_write = dll_file_time( m->name );
+    m->last_write = dll_file_time( m );
     return true;
 
 fail:
     sys_library_unload( m->dll );
-    shadow_delete( m->name, m->shadow_count );
+    shadow_delete( m, m->shadow_count );
     m->dll     = NULL;
     m->mod_desc = NULL;
     return false;
@@ -335,7 +347,7 @@ slot_unload_dll( mod_info_t* m )
         return;
 
     sys_library_unload( m->dll );
-    shadow_delete( m->name, m->shadow_count );
+    shadow_delete( m, m->shadow_count );
 
     m->dll     = NULL;
     m->mod_desc = NULL;
@@ -722,7 +734,7 @@ do_reload( mod_info_t* m )
         if ( g_post_exit_fn )
             g_post_exit_fn( m->name, prev.mod_desc, g_post_exit_user );
         sys_library_unload( prev.dll );
-        shadow_delete( m->name, prev.shadow_count );
+        shadow_delete( m, prev.shadow_count );
     }
 
     /* pre_init for the NEW instance — bracketing the reload() that just ran with the
@@ -856,13 +868,19 @@ shadow_cleanup_cb( const char* filename, const char* full_path, void* userdata )
 }
 
 static void
-shadow_cleanup( void )
+shadow_cleanup_dir( const char* dir )
 {
     shadow_cleanup_ctx_t ctx = { 0, 0 };
-    sys_file_glob( g_root, "*.tmp_*.dll", shadow_cleanup_cb, &ctx );
+    sys_file_glob( dir, "*.tmp_*.dll", shadow_cleanup_cb, &ctx );
 
     if ( ctx.deleted > 0 || ctx.failed > 0 )
-        ms_log( "[module] stale shadow cleanup: %d deleted, %d failed", ctx.deleted, ctx.failed );
+        ms_log( "[module] stale shadow cleanup (%s): %d deleted, %d failed", dir, ctx.deleted, ctx.failed );
+}
+
+static void
+shadow_cleanup( void )
+{
+    shadow_cleanup_dir( g_root );
 }
 
 // clang-format on

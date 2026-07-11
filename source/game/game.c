@@ -14,14 +14,12 @@
 
 #include "engine/mod/mod_export.h"
 #include "engine/core/core_api.h"
-#include "runtime_modules/audio/audio_api.h"
 #include "runtime_modules/render/render_api.h"
-#include "runtime_modules/physics/physics_api.h"
+
+/* audio/physics hooks return when those services join the host chain */
 
 MOD_USE_CORE;
 MOD_USE_RENDER;
-MOD_USE_AUDIO;
-MOD_USE_PHYSICS;
 
 /*==============================================================================================
     Game state
@@ -56,9 +54,6 @@ game_on_start( void )
     g_game_state->score         = 0;
     g_game_state->time_in_level = 0.0f;
 
-    // physics()->spawn_body();
-    // physics()->spawn_body();
-    audio()->play( "intro_jingle", 0.5 );
     LOG_INFO( "started" );
 }
 
@@ -80,7 +75,6 @@ game_on_update( f32 dt )
         g_game_state->time_in_level = 0.f;
         LOG_INFO( "score = %d", g_game_state->score );
     }
-    // physics()->simulate( dt );
 }
 
 static void
@@ -96,7 +90,6 @@ game_on_stop( void )
     if ( !g_game_state )
         return;
 
-    audio()->stop( 1 );
     g_game_state->started = false;
     LOG_INFO( "stopped (final score = %d)", g_game_state->score );
 }
@@ -131,8 +124,6 @@ game_init( void* raw_state, get_api_fn get_api )
 
     if ( !MOD_FETCH_CORE )    return false;
     if ( !MOD_FETCH_RENDER )  return false;
-    if ( !MOD_FETCH_AUDIO )   return false;
-    if ( !MOD_FETCH_PHYSICS ) return false;
 
     LOG_INFO( "init (deps satisfied)" );
     return true;
@@ -146,8 +137,6 @@ game_reload( void* raw_state, get_api_fn get_api )
 
     if ( !MOD_FETCH_CORE )    return false;
     if ( !MOD_FETCH_RENDER )  return false;
-    if ( !MOD_FETCH_AUDIO )   return false;
-    if ( !MOD_FETCH_PHYSICS ) return false;
 
     LOG_INFO( "reloaded (score preserved = %d)", g_game_state->score );
     return true;
@@ -181,8 +170,8 @@ game_get_mod_desc( void )
         .version       = 1,
         .state_size    = sizeof( game_state_t ),
         .func_api_size = sizeof( game_api_t ),
-        .deps          = { "core", "render", "audio", "physics" },
-        .dep_count     = 4,
+        .deps          = { "core", "render" },
+        .dep_count     = 2,
         .func_api      = &g_game_api_struct,
         .init          = game_init,
         .exit          = game_exit,

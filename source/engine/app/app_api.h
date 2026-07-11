@@ -125,6 +125,12 @@ typedef struct app_api_s
 
     bool ( *should_quit )( void );
 
+    /* Cancel a pending quit.  The main window's WM_CLOSE arms the quit flag AND queues
+       APP_EV_WIN_CLOSE in the same pump; a host that vetoes the close (on_close_request
+       returning false) calls this after draining the event so pump_events resumes
+       returning true. */
+    void ( *quit_reset  )( void );
+
     /* ---- Input snapshot ---- */
 
     /* key_pressed is the initial press only; key_pressed_repeat also fires on each OS auto-repeat

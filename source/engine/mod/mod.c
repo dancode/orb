@@ -54,9 +54,12 @@
               mod_load( render );
               mod_load( audio );
 
-      Tier 3 — FORCE-DYNAMIC   mod_dynamic_load()
-          Must be a DLL regardless of BUILD_STATIC — scripting runtimes, platform plugins.
+      Tier 3 — FORCE-DYNAMIC   mod_dynamic_load() / mod_dynamic_load_dir()
+          Must be a DLL regardless of BUILD_STATIC — scripting runtimes, platform plugins,
+          game project DLLs.  The _dir variant loads from an external directory (a child
+          project's bin/) and hot-reloads there too.
               mod_dynamic_load( "lua_runtime" );
+              mod_dynamic_load_dir( "my_game", "F:/projects/my_game/bin" );
 
 ==============================================================================================*/
 
@@ -223,6 +226,34 @@ mod_static_load( const char* name, mod_desc_t* mod_desc )
 bool
 mod_dynamic_load( const char* name )
 {
+    return mod_dynamic_load_dir( name, NULL );
+}
+
+/* Load "<dir>\<name>.dll" — the external-directory variant for project DLLs and plugins
+   living outside the exe dir (a child game project's bin/, for example).  dir NULL or ""
+   falls back to the exe dir, making this a strict superset of mod_dynamic_load.  The dir
+   is stored on the slot, so hot-reload timestamp polling and shadow copies work in the
+   external directory exactly as they do in the exe dir. */
+
+bool
+mod_dynamic_load_dir( const char* name, const char* dir )
+{
+    if ( !name || !name[ 0 ] )
+    {
+        set_error( "mod_dynamic_load_dir: empty module name" );
+        return false;
+    }
+    if ( strlen( name ) >= MODULE_NAME_MAX )
+    {
+        set_error( "module name too long (max %d): '%s'", MODULE_NAME_MAX - 1, name );
+        return false;
+    }
+    if ( dir && strlen( dir ) >= MAX_PATH )
+    {
+        set_error( "module dir too long (max %d): '%s'", MAX_PATH - 1, dir );
+        return false;
+    }
+
     if ( slot_find( name ) >= 0 )
     {
         ms_log( "[module] '%s' already loaded", name );
@@ -233,6 +264,33 @@ mod_dynamic_load( const char* name )
     if ( !m )
         return false;
 
+    if ( dir && dir[ 0 ] )
+    {
+        /* Store with trailing separator stripped — path_dll appends its own. */
+        strncpy( m->dir, dir, MAX_PATH - 1 );
+        m->dir[ MAX_PATH - 1 ] = '\0';
+        size_t len = strlen( m->dir );
+        while ( len > 1 && ( m->dir[ len - 1 ] == '\\' || m->dir[ len - 1 ] == '/' ) )
+            m->dir[ --len ] = '\0';
+
+        /* Purge crashed-session shadow leftovers in this dir, once per session per dir
+           (the exe dir was swept at mod_system_init).  NOTE: two hosts running the same
+           external project concurrently can sweep each other's live shadows — the same
+           pre-existing exposure as two hosts sharing one exe dir; accepted. */
+        bool swept = false;
+        for ( int i = 0; i < MAX_MODULES; ++i )
+        {
+            if ( &g_modules[ i ] != m && g_modules[ i ].status != MODULE_STATUS_EMPTY &&
+                 strcmp( g_modules[ i ].dir, m->dir ) == 0 )
+            {
+                swept = true;
+                break;
+            }
+        }
+        if ( !swept )
+            shadow_cleanup_dir( m->dir );
+    }
+
     if ( !slot_load_dll( m ) || !state_ensure( m ) || !api_slot_create( m ) )
     {
         slot_destroy( m );
@@ -241,8 +299,9 @@ mod_dynamic_load( const char* name )
 
     m->status  = MODULE_STATUS_LOADED;
     m->version = 0;
-    ms_log( "[module] loaded '%s' (api v%d, state %d, api %d)", name, m->mod_desc->version,
-            m->mod_desc->state_size, m->mod_desc->func_api_size );
+    ms_log( "[module] loaded '%s' (api v%d, state %d, api %d)%s%s", name, m->mod_desc->version,
+            m->mod_desc->state_size, m->mod_desc->func_api_size,
+            m->dir[ 0 ] ? " from " : "", m->dir[ 0 ] ? m->dir : "" );
 
     /* No execution here — load is passive. See note in mod_static_load(). The pre_init
        callback fires in dep order from mod_init_all(). Hot-reload swaps still fire
@@ -342,7 +401,7 @@ mod_reload( const char* name )
         return true;
     }
 
-    pending_flag( name, sys_time_ms(), dll_file_time( name ) );
+    pending_flag( name, sys_time_ms(), dll_file_time( &g_modules[ slot ] ) );
     return true;
 }
 
@@ -358,7 +417,7 @@ mod_reload_all( void )
         if ( m->status == MODULE_STATUS_EMPTY || m->is_static )
             continue;
 
-        pending_flag( m->name, now_ms, dll_file_time( m->name ) );
+        pending_flag( m->name, now_ms, dll_file_time( m ) );
         ++queued;
     }
 
@@ -377,7 +436,7 @@ mod_check_reloads( void )
         if ( m->status == MODULE_STATUS_EMPTY || m->is_static )
             continue;
 
-        uint64_t ft = dll_file_time( m->name );
+        uint64_t ft = dll_file_time( m );
         if ( ft != 0 && ft != m->last_write )
             pending_flag( m->name, now_ms, ft );
     }
