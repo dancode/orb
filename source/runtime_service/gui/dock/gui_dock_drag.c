@@ -596,6 +596,11 @@ dock_window_chrome( gui_dock_node_t* node )
     draw_set_rounding( 0.0f );
     draw_push_rect_outline( x, y, w, s_build.win.h, WIN_BORDER, 0, COL_BORDER );
 
+    /* Keyboard-focus marker: the node's active tab is the window being ended here, so overlay the
+       focus border when it is the focused window -- the docked twin of window_end's marker. */
+    if ( s_build.win.id == g_ctx->nav.focused_win )
+        draw_window_focus_border( ( gui_rect_t ){ x, y, w, s_build.win.h } );
+
     /* Floating group: bold the hot / grabbed resize edges over the thin border, exactly like a
        free window's window_end does (the hot mask was resolved in dock_float_resolve). */
     if ( node->floating )

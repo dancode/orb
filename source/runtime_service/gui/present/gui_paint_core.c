@@ -360,6 +360,19 @@ draw_nav_ring( gui_rect_t r )
                             WIN_BORDER, 0, COL_NAV );
 }
 
+/* Focused-window frame: a bolder, accent-coloured outline painted over the window's own border to
+   mark the one window that currently holds keyboard focus.  window_end (free floats) and
+   dock_window_chrome (docked / floating groups) invoke it after their base border, gated on
+   s_build.win.id == g_ctx->nav.focused_win, so it inherits the ambient rounding that border used and
+   traces the same corners.  Thickness 0 (a theme that disables it) draws nothing. */
+static void
+draw_window_focus_border( gui_rect_t r )
+{
+    f32 t = WIN_FOCUS_BORDER;
+    if ( t <= 0.0f ) return;
+    draw_push_rect_outline( r.x, r.y, r.w, r.h, t, 0, COL_FOCUS_BORDER );
+}
+
 /* Drag-and-drop accept ring: a bolder outline around an open target whose type matched the
    payload, so the drop reads as "accepted here" (gui_drag_payload_accept invokes it). */
 static void

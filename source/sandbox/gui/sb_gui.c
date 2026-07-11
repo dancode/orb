@@ -784,7 +784,7 @@ se_enum( const char* label, u8* field, const char* const* names, i32 count )
     return changed;
 }
 
-/* Display names for the 17 color slots, indexed by gui_col_t. */
+/* Display names for the color slots, indexed by gui_col_t. */
 static const char* const k_col_names[ GUI_COL_COUNT ] =
 {
     [ GUI_COL_TEXT          ] = "Text",
@@ -804,6 +804,7 @@ static const char* const k_col_names[ GUI_COL_COUNT ] =
     [ GUI_COL_INPUT_FOCUS   ] = "Input Focus",
     [ GUI_COL_CURSOR        ] = "Cursor",
     [ GUI_COL_NAV_HIGHLIGHT ] = "Nav Highlight",
+    [ GUI_COL_FOCUS_BORDER  ] = "Focus Border",
 };
 
 static void
@@ -877,9 +878,10 @@ show_style_editor( bool* p_open )
 
     /* --- Skin: rounding + fine geometry (paint only) --------------------------------------- */
     gui()->separator_text( "Skin - Rounding" );
-    changed |= se_u8( "win_rounding",    &work.win_rounding,    0, 24 );
-    changed |= se_u8( "widget_rounding", &work.widget_rounding, 0, 16 );
-    changed |= se_u8( "grab_rounding",   &work.grab_rounding,   0, 16 );
+    changed |= se_u8( "win_rounding",     &work.win_rounding,     0, 24 );
+    changed |= se_u8( "widget_rounding",  &work.widget_rounding,  0, 16 );
+    changed |= se_u8( "grab_rounding",    &work.grab_rounding,    0, 16 );
+    changed |= se_u8( "win_focus_border", &work.win_focus_border, 0, 8  );
     changed |= se_u8( "checkmark_pad",   &work.checkmark_pad,   0, 12 );
     changed |= se_u8( "cursor_w",        &work.cursor_w,        1, 6  );
     changed |= se_u8( "cursor_inset",    &work.cursor_inset,    0, 12 );

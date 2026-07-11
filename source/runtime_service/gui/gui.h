@@ -175,6 +175,7 @@ typedef enum
     GUI_COL_INPUT_FOCUS,    /* focused text input field background         */
     GUI_COL_CURSOR,         /* text input caret                           */
     GUI_COL_NAV_HIGHLIGHT,  /* keyboard-nav focus ring around the nav item */
+    GUI_COL_FOCUS_BORDER,   /* outline around the keyboard-focused window  */
 
     GUI_COL_COUNT,          /* slot count -- not a color                   */
 
@@ -257,6 +258,7 @@ typedef struct gui_style_t
     u8 win_rounding;       // corner radius: windows / children / popups
     u8 widget_rounding;    // corner radius: control frames
     u8 grab_rounding;      // corner radius: slider knobs / scrollbar grabs
+    u8 win_focus_border;   // focused-window outline thickness (paint-only; over the normal border)
 
     /* Widget knobs */
     u8 checkmark_pad;      // inset of the check mark inside the checkbox
@@ -359,6 +361,7 @@ typedef enum
     GUI_VAR_WIN_ROUNDING,   // corner radius for windows / children / popups; 0 = square
     GUI_VAR_WIDGET_ROUNDING,// corner radius for control frames (button/checkbox/input/...)
     GUI_VAR_GRAB_ROUNDING,  // corner radius for slider knobs + scrollbar grabs
+    GUI_VAR_WIN_FOCUS_BORDER,// focused-window outline thickness (paint-only; does not consume space)
     GUI_VAR_CHECK_STYLE,    // checkbox/menu indicator: 0 = 'v' tick, 1 = filled disc, 2 = 'X' cross (gui_check_style_t)
     GUI_VAR_BULLET_STYLE,   // bullet glyph: 0 = filled disc, 1 = square (gui_bullet_style_t)
     GUI_VAR_ARROW_STYLE,    // directional arrow: 0 = filled triangle, 1 = stroked chevron (gui_arrow_style_t)

@@ -66,7 +66,8 @@ static u32 s_font_size = 0;
     [ GUI_COL_INPUT_BG     ] = GUI_COLOR( 0x38, 0x38, 0x38, 0xFF ), \
     [ GUI_COL_INPUT_FOCUS  ] = GUI_COLOR( 0x20, 0x50, 0x70, 0xFF ), \
     [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ), \
-    [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF )
+    [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ), \
+    [ GUI_COL_FOCUS_BORDER ] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF )
 
 /* The light palette -- a soft neutral-grey desktop look (never a white glare): the window sits on
    a calm mid-grey, panels recess a shade under it, controls raise a shade over it, and the accent
@@ -88,7 +89,8 @@ static u32 s_font_size = 0;
     [ GUI_COL_INPUT_BG     ] = GUI_COLOR( 0xF3, 0xF3, 0xF6, 0xFF ), \
     [ GUI_COL_INPUT_FOCUS  ] = GUI_COLOR( 0xCF, 0xDE, 0xF1, 0xFF ), \
     [ GUI_COL_CURSOR       ] = GUI_COLOR( 0x22, 0x28, 0x40, 0xFF ), \
-    [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x44, 0x6C, 0xA6, 0xFF )
+    [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x44, 0x6C, 0xA6, 0xFF ), \
+    [ GUI_COL_FOCUS_BORDER ] = GUI_COLOR( 0x44, 0x6C, 0xA6, 0xFF )
 
 /* The density ramp is identical across every built-in theme (STD mirrors the base metrics). */
 #define THEME_SCALES_DEFAULT \
@@ -111,7 +113,8 @@ static u32 s_font_size = 0;
     .menu_check      = GUI_MENU_CHECK_BOX, \
     .checkmark_pad   = 4, \
     .cursor_w        = 1, \
-    .cursor_inset    = 3
+    .cursor_inset    = 3, \
+    .win_focus_border = 2
 
 /* Built-in theme registry.  Each entry is a complete gui_style_t authored for em=12;
    layout_compute scales the metrics to the active font.  Add more here; the array is const
@@ -414,9 +417,10 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     s_style.field_label_w   = (u8)( (f32)s_style_base.field_label_w   * scale );
 
     /* 2. SKIN */
-    s_style.win_rounding    = (u8)( (f32)s_style_base.win_rounding    * scale );
-    s_style.widget_rounding = (u8)( (f32)s_style_base.widget_rounding * scale );
-    s_style.grab_rounding   = (u8)( (f32)s_style_base.grab_rounding   * scale );
+    s_style.win_rounding     = (u8)( (f32)s_style_base.win_rounding     * scale );
+    s_style.widget_rounding  = (u8)( (f32)s_style_base.widget_rounding  * scale );
+    s_style.grab_rounding    = (u8)( (f32)s_style_base.grab_rounding    * scale );
+    s_style.win_focus_border = (u8)( (f32)s_style_base.win_focus_border * scale );
 
     /* Widget knobs */
     s_style.checkmark_pad   = (u8)( (f32)s_style_base.checkmark_pad   * scale );
@@ -438,6 +442,7 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
         if ( s_style.win_border == 0 && s_style_base.win_border > 0 ) s_style.win_border = 1u;
         if ( s_style.cursor_w == 0   && s_style_base.cursor_w > 0 )   s_style.cursor_w = 1u;
         if ( s_style.widget_gap == 0 && s_style_base.widget_gap > 0 ) s_style.widget_gap = 1u;
+        if ( s_style.win_focus_border == 0 && s_style_base.win_focus_border > 0 ) s_style.win_focus_border = 1u;
     }
 
     /* Floor the row height to the font's glyph box and line advance so a tall-boxed font

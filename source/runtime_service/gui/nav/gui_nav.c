@@ -50,8 +50,9 @@
 
 /* The keyboard-focused window (click / window_set_nav / Ctrl+Tab / Alt) lives in
    g_ctx->nav.focused_win (gui_internal.h) -- per-context, so two bound contexts never stomp each
-   other's focus.  NONE means no window has focus, so nav falls back to the front-most normal
-   window, giving nav a sensible default with no caller setup. */
+   other's focus.  It is the sole authority for where the keyboard goes: NONE means no window has
+   focus and the keyboard falls through to the app (no front-most fallback -- a defocused window does
+   not silently keep it).  Focus is acquired only by a click, Ctrl+Tab, or window_set_nav. */
 
 /* A letter was used as an Alt+mnemonic during the current Alt hold, so the Alt release must not also
    toggle the menu bar -- distinguishes a bare Alt tap (toggle) from Alt+F (open the File menu). */
@@ -66,9 +67,9 @@ static f32 s_nav_mouse_x, s_nav_mouse_y;
     surface tier's window_find, in scope here since gui_surface.c is included first.)
 ----------------------------------------------------------------------------------------------*/
 
-/* Whether nav's front-most-by-z default may land on this window: not an overlay record (popup /
-   tooltip -- those capture nav their own way) and not a GUI_WIN_NATIVE frame-only shell (bare
-   chrome, no body item to focus, so defaulting onto it would strand the keyboard). */
+/* Whether a window may take keyboard focus: not an overlay record (popup / tooltip -- those capture
+   nav their own way) and not a GUI_WIN_NATIVE frame-only shell (bare chrome, no body item to focus,
+   so focusing it would strand the keyboard).  Gates click-to-focus in nav_new_frame. */
 static bool
 nav_win_focusable( const gui_window_t* w )
 {
@@ -104,23 +105,20 @@ nav_choose_window( void )
         return;
     }
 
-    /* No popup: the explicit target if it is still a live window, else the front-most normal
-       window by z.  Overlay records (popups, the tooltip; a closed one keeps the flag) are
-       skipped so they never masquerade as the front-most window, and so is a GUI_WIN_NATIVE
-       frame-only shell -- it has no body items, so defaulting nav onto it would strand the
-       keyboard on bare chrome. */
-    gui_id_t front      = GUI_ID_NONE;
-    u32      frontz     = 0;
-    bool     have_focus = false;
-    for ( u32 i = 0; i < g_ctx->win.count; ++i )
-    {
-        gui_window_t* w = &g_ctx->win.pool[ i ];
-        if ( w->overlay ) continue;   /* an overlay never masquerades as the front-most window */
-        if ( w->id == g_ctx->nav.focused_win ) have_focus = true;   /* native may hold focus */
-        if ( !nav_win_focusable( w ) ) continue;
-        if ( w->z >= frontz ) { frontz = w->z; front = w->id; }
-    }
-    g_ctx->nav.win = have_focus ? g_ctx->nav.focused_win : front;
+    /* No popup: nav scopes to the explicitly focused window and ONLY that -- there is deliberately
+       no front-most fallback.  Keyboard focus is a real, losable state: a click on a window (widget,
+       chrome, or bare surface) sets focused_win; a click on the viewport / background clears it to
+       NONE; Ctrl+Tab and gui_window_set_nav set it explicitly.  When nothing is focused nav.win stays
+       NONE, so no item registers against it, motion keys resolve against an empty list, and the
+       keyboard falls through to the app -- clicking off into the scene genuinely releases it, and a
+       window that lost focus does not silently keep navigating.  (A tool that wants a window focused
+       when it first appears calls gui_window_set_nav on its own GUI_COND_APPEARING edge.)
+
+       An overlay record (a closed popup / the tooltip keeps its flag) is never a focus target; a
+       GUI_WIN_NATIVE shell can only be reached by an explicit window_set_nav and harmlessly registers
+       no body items. */
+    gui_window_t* fw = window_find( g_ctx->nav.focused_win );
+    g_ctx->nav.win   = ( fw && !fw->overlay ) ? g_ctx->nav.focused_win : GUI_ID_NONE;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -1026,9 +1024,9 @@ nav_new_frame( void )
     /* Type-ahead: any printable text typed this frame narrows/jumps the nav cursor (see the
        nav_typeahead_feed comment above).  Not while Alt is held -- those letters are menu-bar
        mnemonics, handled above -- or while the menu bar owns the keyboard, where a bare letter
-       has no jump-to-row target anyway (menu items do not opt into type-ahead).  Also requires a
-       focused window (click / Ctrl+Tab / Alt-mnemonic) -- without this, a fallback front-most
-       window with no user interaction would steal ordinary keystrokes meant for app-level hotkeys. */
+       has no jump-to-row target anyway (menu items do not opt into type-ahead).  Gated on an
+       explicitly focused window: with nothing focused nav.win is NONE and there is nothing to match,
+       so an ordinary keystroke stays the app's rather than being eaten by a search that cannot land. */
     if ( !alt && g_ctx->nav.bar_win == GUI_ID_NONE && g_ctx->nav.focused_win != GUI_ID_NONE )
         nav_typeahead_feed( s_io.text );
 
@@ -1127,9 +1125,11 @@ nav_new_frame( void )
 
 /*==============================================================================================
     Public: The single public function, used to set (keyboard) nav target window by title.
-    
-    The next nav_new_frame will land on its first placed item (or the first placed item
-    of the front-most window if the title is not found).
+
+    The next nav_new_frame will land on the window's first placed item.  If the title matches no
+    live window, focus resolves to NONE (the keyboard falls through to the app) -- there is no
+    front-most fallback.  A tool that wants a window focused when it first appears calls this on its
+    own GUI_COND_APPEARING edge; that is the sanctioned way to establish focus without a click.
 
     window_set_nav -- aim keyboard nav at a window by title (the explicit-focus entry).
 ==============================================================================================*/

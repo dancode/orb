@@ -378,6 +378,11 @@ gui_window_end( void )
     draw_set_rounding( ROUND_WIN );
     draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER );
 
+    /* Keyboard-focus marker: overlay the accent focus border on the window that holds focus, so a
+       click that gains/loses focus is visible (gui_nav.c owns focused_win; NONE after a viewport click). */
+    if ( s_build.win.id == g_ctx->nav.focused_win )
+        draw_window_focus_border( win_r );
+
     /* Debug overlay: trace the window frame; the front-most (hover) window stands out. */
     DBG_WINDOW( win_r, ( s_build.win.id == s_interaction.hover_win ) );
 

@@ -226,9 +226,11 @@ typedef struct
     gui_id_t    id;            // the highlighted item (keyboard cursor); persists across frames
     gui_id_t    win;           // window/popup nav is scoped to (the hover_win analogue)
 
-    /* Keyboard-focused window (click / gui_window_set_nav / Ctrl+Tab / Alt-mnemonic).  NONE means
-       no window has focus -- a background/viewport click clears it -- and nav then falls back to
-       following the front-most normal window, so nav has a sensible default with no caller setup. */
+    /* Keyboard-focused window (click / gui_window_set_nav / Ctrl+Tab / Alt-mnemonic), the SOLE
+       authority for where the keyboard goes.  NONE means no window has focus -- a background/viewport
+       click clears it -- and the keyboard then falls through to the app; there is no front-most
+       fallback, so a defocused window does not silently keep the keyboard.  A tool that wants a window
+       focused on first appearance sets it via gui_window_set_nav on its own GUI_COND_APPEARING edge. */
     gui_id_t    focused_win;
 
     /* Two visual states, the Dear ImGui NavDisableHighlight split.  active means a nav cursor

@@ -52,6 +52,7 @@ style_var_base( gui_style_var_t v )
         case GUI_VAR_WIN_ROUNDING:    return (f32)s_style.win_rounding;
         case GUI_VAR_WIDGET_ROUNDING: return (f32)s_style.widget_rounding;
         case GUI_VAR_GRAB_ROUNDING:   return (f32)s_style.grab_rounding;
+        case GUI_VAR_WIN_FOCUS_BORDER:return (f32)s_style.win_focus_border;
         case GUI_VAR_CHECK_STYLE:     return (f32)s_style.check_style;     /* enum-as-var: 0 tick / 1 disc / 2 cross */
         case GUI_VAR_BULLET_STYLE:    return (f32)s_style.bullet_style;    /* enum-as-var: 0 disc / 1 square */
         case GUI_VAR_ARROW_STYLE:     return (f32)s_style.arrow_style;     /* enum-as-var: 0 triangle / 1 chevron */
@@ -286,6 +287,7 @@ style_new_frame( void )
 #define ROUND_WIN       style_var( GUI_VAR_WIN_ROUNDING    )
 #define ROUND_WIDGET    style_var( GUI_VAR_WIDGET_ROUNDING )
 #define ROUND_GRAB      style_var( GUI_VAR_GRAB_ROUNDING   )
+#define WIN_FOCUS_BORDER style_var( GUI_VAR_WIN_FOCUS_BORDER )
 
 /* SKIN: color palette (GUI_COLOR: byte order R,G,B,A in memory = ABGR u32).  Theme defaults
    come from the active theme (k_themes in gui_theme.c, seeded into s_style.colors); see
@@ -308,6 +310,7 @@ style_new_frame( void )
 #define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS   )
 #define COL_CURSOR       style_col( GUI_COL_CURSOR        )
 #define COL_NAV          style_col( GUI_COL_NAV_HIGHLIGHT )
+#define COL_FOCUS_BORDER style_col( GUI_COL_FOCUS_BORDER  )
 
 // clang-format on
 /*============================================================================================*/
