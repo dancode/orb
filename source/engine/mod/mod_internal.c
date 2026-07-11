@@ -13,6 +13,7 @@
 #define MODULE_NAME_MAX 32  /* max module name length including null terminator */
 #define MAX_MODULES     16  /* max concurrently registered modules */
 #define MAX_PENDING     16  /* max modules awaiting debounced reload */
+#define MAX_EXT_DIRS    4   /* max unique external module dirs (shared pool, see g_ext_dirs) */
 #define DEBOUNCE_MS     200 /* milliseconds to wait after last file change before reloading */
 
 #ifdef _WIN32
@@ -38,10 +39,11 @@ typedef struct mod_info_s
     bool                is_static;     /* true → no DLL, no shadow copies */
     uint32_t            shadow_count;  /* shadow file name counter for this slot */
 
-    char                dir[ MAX_PATH ]; /* module home dir; "" = g_root (exe dir).  Set by
-                                            mod_dynamic_load_dir for project/external DLLs;
-                                            every path, timestamp, and shadow op resolves
-                                            through slot_root() so hot-reload works there too. */
+    uint8_t             dir_id;        /* module home dir: 0 = g_root (exe dir), else
+                                          g_ext_dirs[ dir_id - 1 ].  Set by mod_dynamic_load_dir
+                                          for project/external DLLs; every path, timestamp, and
+                                          shadow op resolves through slot_root() so hot-reload
+                                          works there too. */
 
     void*               dll;           /* handle to the loaded shadow copy */
     uint64_t            last_write;    /* file timestamp at last successful load */
@@ -91,6 +93,14 @@ static pending_reload_t g_pending[ MAX_PENDING ];
 static int32_t          g_pending_count;
 
 static char             g_root[ MAX_PATH ];
+
+/* Shared external-directory pool.  A session touches at most a handful of unique roots
+   outside the exe dir (a child project's bin/, a plugin dir), so slots carry a 1-based
+   id into this pool instead of a full path each — most modules live in g_root (id 0).
+   Entries are interned once (ext_dir_intern) and never freed. */
+static char             g_ext_dirs[ MAX_EXT_DIRS ][ MAX_PATH ];
+static int32_t          g_ext_dir_count;
+
 static char             g_last_error[ 256 ];
 static uint32_t         g_shadow_counter;  /* globally incremented per shadow copy created */
 static get_api_fn       g_api_func;        /* passed into every init() / reload() */
@@ -174,7 +184,45 @@ set_error( const char* fmt, ... )
 static const char*
 slot_root( const mod_info_t* m )
 {
-    return m->dir[ 0 ] ? m->dir : g_root;
+    return m->dir_id ? g_ext_dirs[ m->dir_id - 1 ] : g_root;
+}
+
+/* Intern an external dir into the shared pool (trailing separators stripped) and return
+   its 1-based id, or 0 on failure (dir too long / pool full).  `created` reports first
+   use so the caller can sweep stale shadows exactly once per dir per session. */
+static int32_t
+ext_dir_intern( const char* dir, bool* created )
+{
+    *created = false;
+
+    char clean[ MAX_PATH ];
+    if ( strlen( dir ) >= MAX_PATH )
+    {
+        set_error( "module dir too long (max %d): '%s'", MAX_PATH - 1, dir );
+        return 0;
+    }
+    strncpy( clean, dir, MAX_PATH - 1 );
+    clean[ MAX_PATH - 1 ] = '\0';
+
+    size_t len = strlen( clean );
+    while ( len > 1 && ( clean[ len - 1 ] == '\\' || clean[ len - 1 ] == '/' ) )
+        clean[ --len ] = '\0';
+
+    for ( int32_t i = 0; i < g_ext_dir_count; ++i )
+    {
+        if ( strcmp( g_ext_dirs[ i ], clean ) == 0 )
+            return i + 1;
+    }
+
+    if ( g_ext_dir_count >= MAX_EXT_DIRS )
+    {
+        set_error( "external module dir pool full (max %d): '%s'", MAX_EXT_DIRS, clean );
+        return 0;
+    }
+
+    strcpy( g_ext_dirs[ g_ext_dir_count ], clean );
+    *created = true;
+    return ++g_ext_dir_count;
 }
 
 static void

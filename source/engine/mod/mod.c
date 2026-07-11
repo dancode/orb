@@ -128,8 +128,10 @@ mod_system_init( void )
     memset( g_modules, 0, sizeof( g_modules ) );
     memset( g_pending, 0, sizeof( g_pending ) );
     memset( g_last_error, 0, sizeof( g_last_error ) );
+    memset( g_ext_dirs, 0, sizeof( g_ext_dirs ) );
 
     g_module_count     = 0;
+    g_ext_dir_count    = 0;
     g_init_count       = 0;
     g_pending_count    = 0;
     g_shadow_counter   = 0;
@@ -232,8 +234,9 @@ mod_dynamic_load( const char* name )
 /* Load "<dir>\<name>.dll" — the external-directory variant for project DLLs and plugins
    living outside the exe dir (a child game project's bin/, for example).  dir NULL or ""
    falls back to the exe dir, making this a strict superset of mod_dynamic_load.  The dir
-   is stored on the slot, so hot-reload timestamp polling and shadow copies work in the
-   external directory exactly as they do in the exe dir. */
+   is interned into a small shared pool (a session touches a handful of unique roots at
+   most) and the slot keeps just an id into it; hot-reload timestamp polling and shadow
+   copies work in the external directory exactly as they do in the exe dir. */
 
 bool
 mod_dynamic_load_dir( const char* name, const char* dir )
@@ -248,11 +251,6 @@ mod_dynamic_load_dir( const char* name, const char* dir )
         set_error( "module name too long (max %d): '%s'", MODULE_NAME_MAX - 1, name );
         return false;
     }
-    if ( dir && strlen( dir ) >= MAX_PATH )
-    {
-        set_error( "module dir too long (max %d): '%s'", MAX_PATH - 1, dir );
-        return false;
-    }
 
     if ( slot_find( name ) >= 0 )
     {
@@ -260,36 +258,27 @@ mod_dynamic_load_dir( const char* name, const char* dir )
         return true;
     }
 
+    int32_t dir_id = 0;
+    if ( dir && dir[ 0 ] )
+    {
+        bool first_use = false;
+        dir_id         = ext_dir_intern( dir, &first_use );
+        if ( !dir_id )
+            return false;
+
+        /* Purge crashed-session shadow leftovers on the dir's first intern this session
+           (the exe dir was swept at mod_system_init).  NOTE: two hosts running the same
+           external project concurrently can sweep each other's live shadows — the same
+           pre-existing exposure as two hosts sharing one exe dir; accepted. */
+        if ( first_use )
+            shadow_cleanup_dir( g_ext_dirs[ dir_id - 1 ] );
+    }
+
     mod_info_t* m = slot_create( name );
     if ( !m )
         return false;
 
-    if ( dir && dir[ 0 ] )
-    {
-        /* Store with trailing separator stripped — path_dll appends its own. */
-        strncpy( m->dir, dir, MAX_PATH - 1 );
-        m->dir[ MAX_PATH - 1 ] = '\0';
-        size_t len = strlen( m->dir );
-        while ( len > 1 && ( m->dir[ len - 1 ] == '\\' || m->dir[ len - 1 ] == '/' ) )
-            m->dir[ --len ] = '\0';
-
-        /* Purge crashed-session shadow leftovers in this dir, once per session per dir
-           (the exe dir was swept at mod_system_init).  NOTE: two hosts running the same
-           external project concurrently can sweep each other's live shadows — the same
-           pre-existing exposure as two hosts sharing one exe dir; accepted. */
-        bool swept = false;
-        for ( int i = 0; i < MAX_MODULES; ++i )
-        {
-            if ( &g_modules[ i ] != m && g_modules[ i ].status != MODULE_STATUS_EMPTY &&
-                 strcmp( g_modules[ i ].dir, m->dir ) == 0 )
-            {
-                swept = true;
-                break;
-            }
-        }
-        if ( !swept )
-            shadow_cleanup_dir( m->dir );
-    }
+    m->dir_id = ( uint8_t )dir_id;
 
     if ( !slot_load_dll( m ) || !state_ensure( m ) || !api_slot_create( m ) )
     {
@@ -301,7 +290,7 @@ mod_dynamic_load_dir( const char* name, const char* dir )
     m->version = 0;
     ms_log( "[module] loaded '%s' (api v%d, state %d, api %d)%s%s", name, m->mod_desc->version,
             m->mod_desc->state_size, m->mod_desc->func_api_size,
-            m->dir[ 0 ] ? " from " : "", m->dir[ 0 ] ? m->dir : "" );
+            m->dir_id ? " from " : "", m->dir_id ? slot_root( m ) : "" );
 
     /* No execution here — load is passive. See note in mod_static_load(). The pre_init
        callback fires in dep order from mod_init_all(). Hot-reload swaps still fire
