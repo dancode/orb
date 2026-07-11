@@ -352,9 +352,12 @@ static bool s_any_redraw;
 void gui_set_idle_skip( bool on ) { s_idle_skip = on; }
 bool gui_idle_skip( void )        { return s_idle_skip; }
 
-/* Poll the debug hotkeys from this frame's IO snapshot.  Called from frame_begin (after
-   input_frame_begin) only while debug_enable is on.  A hotkey press is an input event, so the frame
-   is already dirty and the new mode emits this same frame. */
+/* Poll the debug hotkeys from this frame's IO snapshot.  Called from frame_end (after nav_new_frame
+   and all widget emission, so nav/widgets have already consumed any key they use -- see
+   gui_want_capture_keyboard) only while debug_enable is on.  Because this now runs AFTER the
+   frame's overlay emit, a mode changed here is one frame too late for THIS frame's draw list; each
+   branch that mutates a mode requests g_ctx->retained.wants_redraw so frame_begin sees the frame as
+   dirty next time round instead of an idle/retained replay silently sitting on the stale mode. */
 static void
 debug_hotkeys( void )
 {
@@ -365,11 +368,13 @@ debug_hotkeys( void )
         gui_render_set_mode( m );
         static const char* names[] = { "normal", "wireframe", "batch" };
         printf( "[gui] render mode: %s\n", names[ m ] );
+        g_ctx->retained.wants_redraw = true;
     }
     if ( gui_is_key_pressed( APP_KEY_F10 ) )
     {
         s_dbg_dash_open = !s_dbg_dash_open;
         printf( "[gui] pipeline dashboard: %s\n", s_dbg_dash_open ? "open" : "closed" );
+        g_ctx->retained.wants_redraw = true;
     }
 
     /* Letter keys: fenced so a focused text field owns them. */
@@ -377,16 +382,23 @@ debug_hotkeys( void )
         return;
 
     if ( gui_is_key_pressed( APP_KEY_P ) )
+    {
         s_dbg_perf_mode = ( s_dbg_perf_mode + 1 ) % 5;
+        g_ctx->retained.wants_redraw = true;
+    }
 
     if ( gui_is_key_pressed( APP_KEY_O ) )
+    {
         s_dbg_state_mode = ( s_dbg_state_mode + 1 ) % 4;
+        g_ctx->retained.wants_redraw = true;
+    }
 
     if ( gui_is_key_pressed( APP_KEY_C ) )
     {
         bool on = !gui_build_retained_skip();
         gui_build_set_retained_skip( on );
         printf( "[gui] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
+        g_ctx->retained.wants_redraw = true;
     }
     if ( gui_is_key_pressed( APP_KEY_F ) )
     {
@@ -394,11 +406,13 @@ debug_hotkeys( void )
         gui_set_force_redraw( on );
         printf( "[gui] force redraw: %s\n", on ? "on (always emit, frame_dirty pinned)"
                                                : "off (skip emit on clean frames)" );
+        g_ctx->retained.wants_redraw = true;
     }
     if ( gui_is_key_pressed( APP_KEY_I ) )
     {
         s_idle_skip = !s_idle_skip;
         printf( "[gui] idle skip: %s\n", s_idle_skip ? "on (block on input)" : "off (spin)" );
+        g_ctx->retained.wants_redraw = true;
     }
 }
 
