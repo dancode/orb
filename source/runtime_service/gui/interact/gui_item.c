@@ -212,8 +212,8 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_k
                    this frame's Enter (instant blur) or type the activating Space. */
 
                 g_ctx->nav.activate = false;
-                s_io.keys_pressed[ APP_KEY_ENTER ] = false;
-                s_io.keys_pressed[ APP_KEY_SPACE ] = false;
+                key_claim( APP_KEY_ENTER );
+                key_claim( APP_KEY_SPACE );
                 s_io.text[ 0 ] = '\0';
             }
         }

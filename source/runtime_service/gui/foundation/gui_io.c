@@ -373,5 +373,23 @@ static bool io_ctrl ( void ) { return s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.k
 static bool io_shift( void ) { return s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ]; }
 static bool io_alt  ( void ) { return s_io.keys_down[ APP_KEY_LALT   ] || s_io.keys_down[ APP_KEY_RALT   ]; }
 
+/* Claim a key edge for this frame -- the single choke point every consumer (item activation, nav
+   type-ahead, nav mnemonics, and any future claimant) routes through instead of hand-zeroing s_io
+   fields at its own call site.  Zeroes both the initial-press and repeat edges so neither a plain
+   check nor a repeat-aware check downstream in the same frame sees the key; keys_down / keys_released
+   are untouched on purpose -- a claim silences "was this just pressed", not "is it physically held"
+   (a held key still reads as held for e.g. continuous camera movement even after something claims its
+   press edge).  Returns whether there was actually a live edge to take, so a caller can tell "I used
+   it" from "there was nothing there anyway".  See gui_want_capture_keyboard (user/gui_query.c) for the
+   full per-frame tier order this primitive is tier 2 of. */
+static bool
+key_claim( app_key_t k )
+{
+    bool had_edge = s_io.keys_pressed[ k ] || s_io.keys_pressed_repeat[ k ];
+    s_io.keys_pressed[ k ]        = false;
+    s_io.keys_pressed_repeat[ k ] = false;
+    return had_edge;
+}
+
 // clang-format on
 /*============================================================================================*/

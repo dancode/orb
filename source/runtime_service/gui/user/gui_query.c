@@ -29,13 +29,48 @@ gui_want_capture_mouse( void )
     return s_interaction.hover_win != GUI_ID_NONE || s_interaction.active_id != GUI_ID_NONE;
 }
 
-/* True when gui owns the keyboard this frame -- a text field is focused, a popup/modal is open, or
-   the menu bar/mnemonic mode is active -- so gameplay / tools must not also act on the same
-   keystrokes.  Deliberately does NOT include nav.highlight: that just means the keyboard was the
-   last input instrument used (e.g. arrow-navigating onto a checkbox), not that any particular key
-   is spoken for.  Individual nav key paths (activate, type-ahead, mnemonics) consume their own key
-   by zeroing its s_io edge when they actually use it, so unconsumed keys still reach this fence's
-   callers even while nav is highlighted.  The fence for non-UI key reads. */
+/*----------------------------------------------------------------------------------------------
+    Keyboard routing model
+
+    One key press is resolved by exactly one of four tiers, evaluated in this order every frame.
+    There is no explicit routing table (contrast Dear ImGui's SetKeyOwner/Shortcut routing, or
+    Godot's _input -> _gui_input -> _unhandled_input chain) -- ORB gets the same priority order
+    for free from frame call order, because each tier's code runs strictly after the ones above it
+    within a frame.  The two primitives that make this hold:
+
+      - HARD BLOCK  (this function): true means every key this frame belongs to gui, full stop --
+        used only for states where handling must not depend on which key it is (typing captures
+        everything so nothing types past a text field; a modal must block everything under it).
+      - key_claim(k) (foundation/gui_io.c): zeroes one key's press/repeat edge the instant a
+        consumer actually uses it, so nothing later in the frame also reacts to that same press.
+        Unclaimed keys simply survive to the next tier -- there is nothing to opt into.
+
+    +-------------------------------------------------------------------------------------------+
+    | TIER 0  ACTIVE CAPTURE   s_interaction.focused_id != NONE   (a text field is mid-edit)     |
+    |         HARD BLOCK -- typing must not also drive nav or an app hotkey.                     |
+    +-------------------------------------------------------------------------------------------+
+    | TIER 1  MODAL / MENU     popup.open_count > 0   or   nav.bar_win != NONE                   |
+    |         HARD BLOCK -- modal correctness: nothing underneath may react, key or no key.      |
+    +-------------------------------------------------------------------------------------------+
+    | TIER 2  FOCUSED WINDOW   nav.focused_win's widgets: activate, type-ahead, mnemonics         |
+    |         key_claim() -- only the keys actually used disappear; runs during widget emission,  |
+    |         i.e. before frame_end.                                                              |
+    +-------------------------------------------------------------------------------------------+
+    | TIER 3  APP / GLOBAL     debug_hotkeys() (gui_frame_end), future gameplay bindings          |
+    |         Runs last, after all emission -- sees only what tiers 0-2 left unclaimed.           |
+    +-------------------------------------------------------------------------------------------+
+
+    Tier 3 code must read keys through gui()->is_key_pressed()/is_key_down() (this file, below) --
+    NOT app()->key_pressed() directly.  app()'s state is the raw OS snapshot; key_claim only ever
+    zeroes gui's own copy (s_io), so reading app() directly bypasses the whole model.
+
+    Deliberately NOT part of the hard block: nav.highlight.  It means "the keyboard was the last
+    input instrument used" (e.g. arrow-navigating onto a checkbox), not that any particular key is
+    spoken for -- that distinction is exactly what tier 2's per-key claim exists to make precise. */
+
+/* True when gui owns EVERY key this frame (tiers 0-1 above) -- the fence for non-UI key reads.
+   Individual nav key paths below tier 1 consume only the keys they use (key_claim), so they gate
+   through their own call-order position instead of this function. */
 bool
 gui_want_capture_keyboard( void )
 {

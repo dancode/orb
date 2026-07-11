@@ -381,13 +381,12 @@ nav_typeahead_feed( const char* text )
         if ( nav->type_len < (u32)sizeof( nav->type_buf ) - 1 )
             nav->type_buf[ nav->type_len++ ] = c;
 
-        /* This character is now nav's -- zero the literal key edge so the same press cannot also
-           fall through to an app-level hotkey later in the frame (same consume-by-zeroing pattern
-           as the activate-key clear in gui_item.c's widget_behavior). */
+        /* This character is now nav's -- claim the key edge so the same press cannot also fall
+           through to an app-level hotkey later in the frame (tier 2 of the model in
+           gui_want_capture_keyboard). */
         app_key_t k = ( c >= 'a' && c <= 'z' ) ? (app_key_t)( APP_KEY_A + ( c - 'a' ) )
                                                 : (app_key_t)( APP_KEY_0 + ( c - '0' ) );
-        s_io.keys_pressed[ k ]        = false;
-        s_io.keys_pressed_repeat[ k ] = false;
+        key_claim( k );
     }
     if ( first ) return;   /* nothing usable in this chunk (punctuation / control chars only) */
 
@@ -978,8 +977,7 @@ nav_new_frame( void )
                     gui_id_t mb = nav_main_bar_win();
                     if ( mb != GUI_ID_NONE ) nav_menu_enter( mb );
                 }
-                s_io.keys_pressed[ APP_KEY_A + c ]        = false;   /* consumed -- no hotkey fallthrough */
-                s_io.keys_pressed_repeat[ APP_KEY_A + c ] = false;
+                key_claim( (app_key_t)( APP_KEY_A + c ) );   /* consumed -- no hotkey fallthrough */
                 break;
             }
 
