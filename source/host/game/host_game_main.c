@@ -26,8 +26,6 @@
 #include <stdio.h>
 #include "orb.h"
 
-#include "host/common/host_common.h"
-
 #include "engine/sys/sys_host.h"
 #include "engine/mod/mod_host.h"
 #include "engine/core/core_host.h"
@@ -41,6 +39,8 @@
 
 #include "runtime/runtime_api.h"
 #include "runtime/runtime_host.h"
+
+#include "host/common/host_common.h"
 
 MOD_USE_APP;
 MOD_USE_RUN;
@@ -112,11 +112,13 @@ game_host_update( f32 dt )
 
 /* Window X pressed: stop the project, then allow the close.  (Q-quit calls on_stop
    itself; the module's exit() during mod_system_exit is the backstop either way.) */
+
 static bool
 game_host_close_request( void )
 {
     if ( s_project )
-        s_project->on_stop();
+         s_project->on_stop();
+
     return true;
 }
 

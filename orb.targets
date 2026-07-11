@@ -745,6 +745,10 @@ solution orb_editor
 	add 		render 					# render dll
 	add 		dev_font				# dev-only font baker
 	
+	#			--- GAME ---
+	
+	add 		game 
+		
 	#			--- EDITOR ---
 	
 	add 		editor
@@ -759,8 +763,12 @@ solution orb_editor
 	add 		host_sandbox 
 	add 		host_tool
 
+	#			--- PROJECT ---
+	
+	# add 		my_project
 
 	#			--- EXECUTABLE ---
+	
 	add 		sb_example_runtime
 	add 		sb_example_editor
 	add 		sb_example_server
