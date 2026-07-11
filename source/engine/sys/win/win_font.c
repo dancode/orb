@@ -32,6 +32,22 @@ font_normalize( const char* s, char* out, int out_size )
     out[ len ] = '\0';
 }
 
+/* False for a name with no representable character left after RegEnumValueA's Unicode -> ANSI
+   codepage conversion -- a font whose friendly name uses characters outside the ANSI codepage
+   (a CJK face is the common case) comes back as all '?' replacement chars, one per code unit.
+   Such an entry still resolves to a real, loadable file, but the mangled name can never be typed
+   back (font_normalize strips '?' as non-alphanumeric, so the lookup query goes empty) or rendered
+   by this ASCII-only UI, so it is worse than useless in the picker -- filter it here rather than
+   list a name that silently does nothing when picked. */
+
+static bool
+font_name_displayable( const char* name )
+{
+    for ( const char* p = name; *p; ++p )
+        if ( *p != '?' ) return true;
+    return false;
+}
+
 static bool
 font_has_sep( const char* p )
 {
@@ -180,6 +196,7 @@ font_enum_hive( HKEY root, const char* fonts_dir, sys_glob_fn cb, void* ud, bool
         for ( int e = (int)strlen( name ) - 1; e >= 0 && ( name[ e ] == ' ' || name[ e ] == '\t' ); --e )
             name[ e ] = '\0';
         if ( !name[ 0 ] ) continue;
+        if ( !font_name_displayable( name ) ) continue;
 
         char path[ MAX_PATH ];
         font_value_path( (const char*)data, fonts_dir, path, sizeof( path ) );

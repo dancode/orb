@@ -1400,7 +1400,9 @@ typedef enum
     GUI_FONT_ROBOTO_16,
     GUI_FONT_CASCADIA_MONO_12,
     GUI_FONT_CASCADIA_MONO_16,
-    GUI_FONT_CASCADIA_MONO_20
+    GUI_FONT_CASCADIA_MONO_20, 
+    GUI_FONT_CASCADIA_CODE_16
+    
 } gui_builtin_font_t;
 
 /*==============================================================================================
