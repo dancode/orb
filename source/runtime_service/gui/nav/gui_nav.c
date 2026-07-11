@@ -852,8 +852,16 @@ nav_new_frame( void )
      /* feature boundary: gui_forward_caps_t.keyboard_nav; g_ctx->nav.win stays GUI_ID_NONE, 
         so nav_item_register never matches a window and mouse input is untouched */
 
-    if ( !s_fwd_caps.keyboard_nav ) 
+    if ( !s_fwd_caps.keyboard_nav )
         return;                             /* not using the keyboard for nav */
+
+    /* A deaf (non-listening) context takes no input.  s_io and the interaction record are shared by
+       every context (foundation/gui_ctx.c), so a passive context must not read -- much less key_claim
+       -- the keyboard from them, or it would steal keys from whichever context IS listening this
+       frame (and, with per-key claim, starve it of the press entirely).  The nav-driver peer of the
+       widget-level deaf gate (interact/gui_item.c) and the hover-nomination gate (surface/gui_surface.c). */
+    if ( !g_ctx->listening )
+        return;
 
     /* One-shot: only an adoption made THIS frame (recovery below, or a resolver in nav_finish)
        chases the cursor into view during the emission that follows. */

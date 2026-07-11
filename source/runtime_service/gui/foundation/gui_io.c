@@ -183,22 +183,12 @@ gui_event( const app_event_t* ev )
             add_paste_text( ev->data.clipboard.text );
             return true;
 
-        case APP_EV_KEY_DOWN:
-        {
-            if ( s_debug_enabled )
-            {
-                switch ( ev->data.key.key )
-                {
-                    case APP_KEY_F1: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_WINDOW );   return true;
-                    case APP_KEY_F2: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_INTERACT ); return true;
-                    case APP_KEY_F3: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_RESIZE );   return true;
-                    case APP_KEY_F4: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_CLIP );     return true;
-                    case APP_KEY_F5: gui_debug_set_layers( gui_debug_get_layers() ^ GUI_DBG_LAYOUT );   return true;
-                    default: break;
-                }
-            }
-            return false;
-        }
+        /* Key state is polled, not event-borne: input_frame_begin samples every key into s_io each
+           frame, and consumers read it through the tier model (key_claim / is_key_pressed).  So key
+           events need no handling here -- including the debug layer hotkeys (F1-F5), which now live
+           with the rest of the debug driver in debug_hotkeys (debug/gui_frame_overlay.c) on the same
+           polled channel as F9/F10/P/O, instead of this separate event-time path.  Falls through to
+           the default (not consumed), so an unbound F-key still reaches the host's bind system. */
 
         /* Position + buttons are still resolved by input_frame_begin from the polled snapshot (client
            coords of the window the cursor is in); these events carry the win_id that identifies

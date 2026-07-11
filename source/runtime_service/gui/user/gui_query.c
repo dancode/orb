@@ -52,9 +52,10 @@ gui_want_capture_mouse( void )
     | TIER 1  MODAL / MENU     popup.open_count > 0   or   nav.bar_win != NONE                   |
     |         HARD BLOCK -- modal correctness: nothing underneath may react, key or no key.      |
     +-------------------------------------------------------------------------------------------+
-    | TIER 2  FOCUSED WINDOW   nav.focused_win's widgets: activate, type-ahead, mnemonics         |
-    |         key_claim() -- only the keys actually used disappear; runs during widget emission,  |
-    |         i.e. before frame_end.                                                              |
+    | TIER 2  FOCUSED WINDOW   nav.focused_win's widgets: move, type-ahead, mnemonics, activate  |
+    |         key_claim() -- only the keys actually used vanish.  Most are read AND claimed in   |
+    |         nav_new_frame (frame_begin, after input sampling); Enter/Space at the activation   |
+    |         seam during widget emission.  Both after tiers 0-1, before tier 3 (frame_end).     |
     +-------------------------------------------------------------------------------------------+
     | TIER 3  APP / GLOBAL     debug_hotkeys() (gui_frame_end), future gameplay bindings          |
     |         Runs last, after all emission -- sees only what tiers 0-2 left unclaimed.           |
@@ -66,7 +67,12 @@ gui_want_capture_mouse( void )
 
     Deliberately NOT part of the hard block: nav.highlight.  It means "the keyboard was the last
     input instrument used" (e.g. arrow-navigating onto a checkbox), not that any particular key is
-    spoken for -- that distinction is exactly what tier 2's per-key claim exists to make precise. */
+    spoken for -- that distinction is exactly what tier 2's per-key claim exists to make precise.
+
+    Multi-context: s_io and the interaction record are shared by every gui context, but only a
+    LISTENING context (gui_ctx_set_listening) runs this model in a given frame -- nav_new_frame and
+    the widgets both early-out for a deaf context, so a passive context never reads or claims the
+    shared keys, and the keyboard belongs to whichever context the app left listening. */
 
 /* True when gui owns EVERY key this frame (tiers 0-1 above) -- the fence for non-UI key reads.
    Individual nav key paths below tier 1 consume only the keys they use (key_claim), so they gate

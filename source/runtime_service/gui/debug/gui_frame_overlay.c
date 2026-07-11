@@ -320,7 +320,7 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
     emitted by debug_overlays_emit(), called from ctx_end while the DEFAULT context is still
     bound -- last in its build, so they draw on top and their cost is counted like any widget.
 
-        F1-F5   debug overlay layers (handled at event time in foundation/gui_io.c, Debug builds)
+        F1-F5   debug overlay layers (window / interact / resize / clip / layout)
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
         P       perf overlay tier  (off / fps / +timings / +counts / +retained)
@@ -375,6 +375,26 @@ debug_hotkeys( void )
         s_dbg_dash_open = !s_dbg_dash_open;
         printf( "[gui] pipeline dashboard: %s\n", s_dbg_dash_open ? "open" : "closed" );
         g_ctx->retained.wants_redraw = true;
+    }
+
+    /* F1-F5 toggle the debug overlay layer mask (window / interact / resize / clip / layout).  Read
+       from the frame IO here like every other debug hotkey -- initial-press only, so holding a key no
+       longer flickers the layer -- rather than the old event-time path in gui_event (foundation/
+       gui_io.c), which was a second, separately-fenced consumption channel for the same feature.  The
+       layer setters compile to no-ops in Release (backend/gui_debug_overlay.c), so no build guard is
+       needed here.  Function keys, so no want_capture_keyboard fence -- they are never text input. */
+    {
+        static const struct { app_key_t key; u32 layer; } k_dbg_layer[] = {
+            { APP_KEY_F1, GUI_DBG_WINDOW   }, { APP_KEY_F2, GUI_DBG_INTERACT },
+            { APP_KEY_F3, GUI_DBG_RESIZE   }, { APP_KEY_F4, GUI_DBG_CLIP     },
+            { APP_KEY_F5, GUI_DBG_LAYOUT   },
+        };
+        for ( u32 i = 0; i < sizeof( k_dbg_layer ) / sizeof( k_dbg_layer[ 0 ] ); ++i )
+            if ( gui_is_key_pressed( k_dbg_layer[ i ].key ) )
+            {
+                gui_debug_set_layers( gui_debug_get_layers() ^ k_dbg_layer[ i ].layer );
+                g_ctx->retained.wants_redraw = true;
+            }
     }
 
     /* Letter keys: fenced so a focused text field owns them. */
