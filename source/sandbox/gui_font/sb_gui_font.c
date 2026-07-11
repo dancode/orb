@@ -57,10 +57,12 @@ typedef struct
     int  sel;
     bool scanned;
     bool list_has_windows;   /* scope the current listing was built with (detects toggle) */
+    bool list_has_local;     /* ditto, for the font_source/ toggle */
 
     /* Request the user is working on. */
     char request[ FT_NAME_MAX ];   /* font name or filename to resolve */
     bool allow_windows;            /* false = local only; true = also the OS font registry */
+    bool allow_local;              /* false = skip assets/font_source/ in the picker listing */
     i32  size_px;
 
     /* Live stb preview. */
@@ -165,13 +167,17 @@ ft_scan( void )
 {
     s_ft.count = 0;
 
-    /* Local .ttf/.otf/.ttc under assets/font_source/ (always listed first, by filename). */
-    char src[ 512 ];
-    if ( dev_font_source_dir( src, sizeof( src ) ) )
+    /* Local .ttf/.otf/.ttc under assets/font_source/ (listed first, by filename), when the scope
+       box is ticked. */
+    if ( s_ft.allow_local )
     {
-        sys_file_glob( src, "*.ttf", ft_local_cb, NULL );
-        sys_file_glob( src, "*.otf", ft_local_cb, NULL );
-        sys_file_glob( src, "*.ttc", ft_local_cb, NULL );
+        char src[ 512 ];
+        if ( dev_font_source_dir( src, sizeof( src ) ) )
+        {
+            sys_file_glob( src, "*.ttf", ft_local_cb, NULL );
+            sys_file_glob( src, "*.otf", ft_local_cb, NULL );
+            sys_file_glob( src, "*.ttc", ft_local_cb, NULL );
+        }
     }
     s_ft.local_count = s_ft.count;   /* everything before here is a project font */
 
@@ -187,6 +193,7 @@ ft_scan( void )
     }
 
     s_ft.list_has_windows = s_ft.allow_windows;
+    s_ft.list_has_local   = s_ft.allow_local;
     s_ft.scanned          = true;
     if ( s_ft.sel >= s_ft.count )
         s_ft.sel = 0;
@@ -332,6 +339,7 @@ show_font_tool( void )
     {
         s_ft.size_px       = 16;
         s_ft.allow_windows = true;
+        s_ft.allow_local   = true;
         snprintf( s_ft.sample_text, sizeof( s_ft.sample_text ),
                   "The quick brown fox jumps over the lazy dog." );
         ft_scan();
@@ -354,14 +362,19 @@ show_font_tool( void )
     gui()->text( "Font name or file" );
     gui()->input_text( "##request", s_ft.request, sizeof( s_ft.request ) );
 
+    gui()->checkbox( "Include internal fonts", &s_ft.allow_local );
+    gui()->same_line( -1 );
+    gui()->help_marker( "On:  list assets/font_source/ (the project's shipped fonts) in the picker.\n"
+                        "Off: skip them -- handy for browsing/testing the Windows registry alone." );
+
     gui()->checkbox( "Include Windows fonts", &s_ft.allow_windows );
     gui()->same_line( -1 );
     gui()->help_marker( "Off: list/search assets/font_source/ only.\n"
                         "On:  also list installed fonts by friendly name from the OS font registry\n"
                         "     (e.g. \"Cascadia Mono\" -> C:\\Windows\\Fonts\\CascadiaMono.ttf)." );
 
-    /* The checkbox governs the picker's scope too -- rebuild the list when it flips. */
-    if ( s_ft.list_has_windows != s_ft.allow_windows )
+    /* Either checkbox governs the picker's scope -- rebuild the list when either flips. */
+    if ( s_ft.list_has_windows != s_ft.allow_windows || s_ft.list_has_local != s_ft.allow_local )
         ft_scan();
 
     /* Local picker: choosing a file copies its name into the request field above. */

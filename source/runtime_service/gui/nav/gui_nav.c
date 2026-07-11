@@ -338,6 +338,101 @@ nav_line_pick( u32 region, u32 line, f32 goal )
     return best;
 }
 
+/*----------------------------------------------------------------------------------------------
+    Type-ahead -- jump the nav cursor to the first item (in the current nav window) whose stamped
+    label starts with what was just typed, the native listbox/combobox behavior.  Feeds off
+    s_io.text (already-composed printable text for the frame, gui_io.c), so it never runs while a
+    text field owns the keyboard -- nav_new_frame returns before reaching it in that case -- and it
+    respects the keyboard layout the OS text event already resolved instead of a raw A-Z scan.
+
+    Query state lives on g_ctx->nav (type_buf/type_len/type_last_t/type_dirty); resolution runs
+    from nav_finish, against the SAME one-frame-lagged item list every other resolver (Up/Down,
+    Tab, Home/End) consumes, so it composes with them for free -- no separate registry to keep in
+    sync with window/popup lifetime.
+----------------------------------------------------------------------------------------------*/
+
+/* No typing for this long resets the query instead of extending it -- so "cat" typed slowly reads
+   as three separate one-letter jumps (c, then a, then t), not a failed four-letter prefix. */
+#define GUI_TYPEAHEAD_TIMEOUT 1.0
+
+/* Accumulate this frame's typed text into the query.  A repeated single key with no pause is the
+   Explorer-style cycle case: the query stays one character (nav_resolve_typeahead then scans past
+   the current cursor instead of from the top), so tapping "m" repeatedly steps through every M
+   instead of re-landing on the first one. */
+static void
+nav_typeahead_feed( const char* text )
+{
+    if ( !text[ 0 ] ) return;
+    gui_nav_state_t* nav = &g_ctx->nav;
+
+    bool first = true;
+    for ( const char* ch = text; *ch; ++ch )
+    {
+        char c = *ch;
+        if ( c >= 'A' && c <= 'Z' ) c = (char)( c + 32 );
+        if ( !( ( c >= 'a' && c <= 'z' ) || ( c >= '0' && c <= '9' ) ) ) continue;
+
+        bool timed_out   = first && ( ( s_io.time - nav->type_last_t ) > GUI_TYPEAHEAD_TIMEOUT );
+        bool repeat_same = first && !timed_out && nav->type_len == 1 && nav->type_buf[ 0 ] == c;
+        if ( timed_out || repeat_same )
+            nav->type_len = 0;
+        first = false;
+
+        if ( nav->type_len < (u32)sizeof( nav->type_buf ) - 1 )
+            nav->type_buf[ nav->type_len++ ] = c;
+    }
+    if ( first ) return;   /* nothing usable in this chunk (punctuation / control chars only) */
+
+    nav->type_buf[ nav->type_len ] = 0;
+    nav->type_last_t = s_io.time;
+    nav->type_dirty  = true;
+
+    /* Every other key path (arrows, Tab, Home/End, ...) flips these in nav_new_frame right before
+       nav_finish runs its resolver; nav_adopt itself never does.  Without this the cursor still
+       moves internally, but nav_item_register gates the ring, the fill, AND the scroll-into-view
+       chase behind active/highlight, so a typed jump would silently have no visible effect. */
+    nav->active    = true;
+    nav->highlight = true;
+}
+
+/* Case-sensitive prefix compare against an already-lowercased label (nav_item_stamp_label lower-
+   cased it at registration; the query is lowercased as it accumulates in nav_typeahead_feed). */
+static bool
+nav_label_has_prefix( const char* label, const char* query, u32 qlen )
+{
+    for ( u32 i = 0; i < qlen; ++i )
+        if ( label[ i ] != query[ i ] ) return false;
+    return true;
+}
+
+/* Resolve this frame's query against last frame's item list.  A single-char query (the repeat-
+   cycle case) scans starting just past the current cursor, wrapping around, so a held/tapped key
+   steps forward through every match; any other query scans the whole list from the top, matching
+   plain "type a few letters, land on it" expectation. */
+static void
+nav_resolve_typeahead( void )
+{
+    gui_nav_state_t* nav = &g_ctx->nav;
+    nav->type_dirty = false;
+    if ( nav->type_len == 0 ) return;
+
+    bool cycle = ( nav->type_len == 1 );
+    i32  cur   = cycle ? nav_list_find( nav->id ) : -1;
+    u32  n     = nav->item_count;
+
+    for ( u32 k = 0; k < n; ++k )
+    {
+        u32 i = cycle ? ( (u32)( cur + 1 + (i32)k ) % n ) : k;
+        const gui_nav_item_t* it = &nav->items[ i ];
+        if ( it->chrome || it->label[ 0 ] == 0 ) continue;
+        if ( nav_label_has_prefix( it->label, nav->type_buf, nav->type_len ) )
+        {
+            nav_adopt( (i32)i, false );
+            return;
+        }
+    }
+}
+
 /* Near-tie window for the vertical line choice: two candidate lines whose edge gaps differ by
    less than this read as "the same row" (parallel regions never align to the pixel), and the
    goal column decides between them instead of the raw gap. */
@@ -712,6 +807,9 @@ nav_finish( void )
     else if ( g_ctx->nav.move_dir >= 0 )
         nav_resolve_move();
 
+    if ( g_ctx->nav.type_dirty )
+        nav_resolve_typeahead();
+
     g_ctx->nav.item_count = 0;   /* fresh list; this frame's items append during emission */
     nav_choose_window();
 }
@@ -884,6 +982,13 @@ nav_new_frame( void )
             if ( mb != GUI_ID_NONE ) nav_menu_enter( mb );
         }
     }
+
+    /* Type-ahead: any printable text typed this frame narrows/jumps the nav cursor (see the
+       nav_typeahead_feed comment above).  Not while Alt is held -- those letters are menu-bar
+       mnemonics, handled above -- or while the menu bar owns the keyboard, where a bare letter
+       has no jump-to-row target anyway (menu items do not opt into type-ahead). */
+    if ( !alt && g_ctx->nav.bar_win == GUI_ID_NONE )
+        nav_typeahead_feed( s_io.text );
 
     /* Arrows / Tab move (repeat so a held key keeps stepping); Enter/Space activate. */
     bool down  = s_io.keys_pressed_repeat[ APP_KEY_DOWN  ];

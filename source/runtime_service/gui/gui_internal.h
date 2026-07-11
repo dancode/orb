@@ -208,6 +208,12 @@ typedef struct
     u32        line;     // line sequence within the frame -- monotonic, so order == reading order
     bool       chrome;   // not layout-placed (title button, dock tab): the F6 chrome lane
 
+    /* Type-ahead label (gui_nav.c): lowercased, truncated, stamped by an opt-in widget right after
+       it registers (gui_selectable) -- empty ("") means this item does not participate.  Kept on
+       the nav item itself rather than a side table so type-ahead reuses the exact same one-frame-
+       lagged list every other resolver (Up/Down, Tab, Home/End) already consumes. */
+    char       label[ 16 ];
+
 } gui_nav_item_t;
 
 /* List capacity.  Every emitted item of the nav window registers -- including rows scrolled out
@@ -263,6 +269,16 @@ typedef struct
        the region (and its ancestors) scroll it into view (nav_scroll_chase, gui_paint_core.c).
        One-shot per adoption so the chase never fights the wheel or a scrollbar drag. */
     bool        scroll_chase;
+
+    /* Type-ahead query (gui_nav.c): A-Z / 0-9 keys accumulate here while nav owns the keyboard,
+       timed out and restarted after GUI_TYPEAHEAD_TIMEOUT of no typing.  A repeated single key is
+       the Explorer-style cycle case (buf stays length 1; the resolver scans past the current
+       cursor instead of from the top) rather than a two-letter prefix.  type_dirty marks a fresh
+       keystroke this frame so nav_finish resolves it at most once. */
+    char        type_buf[ 16 ];
+    u32         type_len;
+    f64         type_last_t;
+    bool        type_dirty;
 
     /* The nav item list -- built during emission, resolved at the next nav_new_frame. */
     gui_nav_item_t items[ GUI_NAV_ITEMS_MAX ];

@@ -155,11 +155,12 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_k
     if ( g_ctx->nav.item_count < GUI_NAV_ITEMS_MAX )
     {
         gui_nav_item_t* it = &g_ctx->nav.items[ g_ctx->nav.item_count++ ];
-        it->id     = id;
-        it->rect   = r;
-        it->region = placed ? s_scope.nav.region : 0;
-        it->line   = placed ? s_scope.nav.line   : 0;
-        it->chrome = !placed;
+        it->id       = id;
+        it->rect     = r;
+        it->region   = placed ? s_scope.nav.region : 0;
+        it->line     = placed ? s_scope.nav.line   : 0;
+        it->chrome   = !placed;
+        it->label[0] = 0;   /* type-ahead opt-in: nav_item_stamp_label fills it in, if called */
     }
 
     /* Current item: draw the outline ring whenever a nav cursor exists (even in mouse mode, so it
@@ -225,6 +226,26 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_k
             st->nav_adjust = g_ctx->nav.edit_dir;
         }
     }
+}
+
+/* Type-ahead opt-in: called right after widget_behavior by a list-y widget (gui_selectable) to
+   stamp its label onto the nav item entry that call just registered, so gui_nav.c's type-ahead
+   resolver can prefix-match it.  A no-op if the item did not register this frame (wrong nav
+   window, nav_skip) or GUI_ITEM_NO_TYPEAHEAD opted it out -- its label stays "" (nav_item_register
+   already cleared it), which the resolver skips. */
+static void
+nav_item_stamp_label( gui_id_t id, const char* label )
+{
+    if ( s_scope.flags & GUI_ITEM_NO_TYPEAHEAD ) return;
+    if ( g_ctx->nav.item_count == 0 ) return;
+
+    gui_nav_item_t* it = &g_ctx->nav.items[ g_ctx->nav.item_count - 1 ];
+    if ( it->id != id ) return;
+
+    u32 n = 0;
+    for ( ; label[ n ] && n < sizeof( it->label ) - 1; ++n )
+        it->label[ n ] = ( label[ n ] >= 'A' && label[ n ] <= 'Z' ) ? (char)( label[ n ] + 32 ) : label[ n ];
+    it->label[ n ] = 0;
 }
 
 /* Programmatic focus request (public: gui()->set_keyboard_focus).  Latched until the next

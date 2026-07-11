@@ -323,6 +323,7 @@ gui_selectable( const char* label, bool* selected )
     gui_rect_t r  = widget_next_rect( WIDGET_H );
 
     gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    nav_item_stamp_label( id, label );   /* type-ahead opt-in (GUI_ITEM_NO_TYPEAHEAD to skip) */
 
     /* Fill: selected rows use the active tint, a hovered row the hot tint; otherwise the row
        is transparent so the region background shows through. */

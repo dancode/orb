@@ -789,6 +789,12 @@ typedef enum
        e.g. a multi-select list inside a popup where the popup should stay open. */
     GUI_ITEM_NO_CLOSE_POPUP = 1 << 3,
 
+    /* selectable (and any future list-y widget that opts in): do NOT register this item's label
+       for keyboard type-ahead.  Type-ahead is on by default for every selectable -- typing a
+       letter jumps the nav cursor to the first row whose label starts with it, the native
+       listbox/combobox behavior -- set this to opt a row out (see gui_nav.c). */
+    GUI_ITEM_NO_TYPEAHEAD   = 1 << 4,
+
     /* Room to grow without disturbing call sites or the vtable -- e.g. a future
     GUI_ITEM_READ_ONLY (editable widgets show but reject input), GUI_ITEM_NO_NAV, etc. */
 
