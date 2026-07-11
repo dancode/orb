@@ -8,3 +8,4 @@
 ==============================================================================================*/
 
 #include "engine/core/debug/assert.c"
+#include "engine/core/debug/crash.c"

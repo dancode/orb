@@ -9,6 +9,7 @@
 
 #include "engine/core/core_api.h"
 #include "engine/mod/mod_host.h"
+#include "engine/core/debug/crash.h" /* core_crash_install / core_crash_report_now */
 
 /*==============================================================================================
 

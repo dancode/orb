@@ -35,12 +35,14 @@
 #    pragma comment( lib, "winmm.lib" )     // timeBeginPeriod
 #    pragma comment( lib, "advapi32.lib" )  // Reg* font-name lookup (win_font.c)
 #    pragma comment( lib, "ws2_32.lib" )    // Winsock2 (win_socket.c)
+#    pragma comment( lib, "dbghelp.lib" )   // minidump + symbols (win_crash.c)
 
 #    include <winsock2.h>                   // must precede windows.h
 #    include <ws2tcpip.h>
 #    include <mstcpip.h>                    // SIO_UDP_CONNRESET (win_socket.c)
 #    include <windows.h>
 #    include <timeapi.h>
+#    include <dbghelp.h>                    // MiniDumpWriteDump, StackWalk64, Sym* (win_crash.c)
 
 #else
 
@@ -67,6 +69,7 @@
 #    include "win/win_thread_sema.c"
 #    include "win/win_thread_atomic.c"
 #    include "win/win_process.c"
+#    include "win/win_crash.c"
 #    include "win/win_sys.c"
 #    include "win/win_memory.c"
 #    include "win/win_console_input.c"

@@ -11,7 +11,7 @@
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
-#include "engine/core/core_api.h"
+#include "engine/core/core_host.h"    // core_crash_install / core_crash_report_now
 #include "engine/sys/sys_host.h"    // sys_file_write_entire / _delete for the fs probe
 #include "engine/core/fs/fs_zip.h"  // miniz config -- must precede vendor/miniz.h
 #include "vendor/miniz.h"           // mz_zip_writer_* to build the Phase 5 test bundle in memory
@@ -359,8 +359,21 @@ fs_zip_test( void )
 int
 main( int argc, char** argv )
 {
-    UNUSED( argc );
-    UNUSED( argv );
+    core_crash_install( NULL );
+
+    /* Manual crash-pipeline probes: -crash faults and dies (expect .dmp/.txt next to the
+       exe + report on stderr); -crash-report writes a live snapshot and keeps running. */
+    if ( argc > 1 && strcmp( argv[ 1 ], "-crash" ) == 0 )
+    {
+        volatile int* die = NULL;
+        *die              = 42;
+    }
+    if ( argc > 1 && strcmp( argv[ 1 ], "-crash-report" ) == 0 )
+    {
+        core_crash_report_now( "sb_engine_core -crash-report probe" );
+        return 0;
+    }
+
     core_test();
     fs_test();
     fs_zip_test();

@@ -339,6 +339,48 @@ void sys_datetime_local( SysDateTime* dt );
 
 /*==============================================================================================
 
+    Crash - Fatal exception capture: OS hook, minidump, backtrace, symbolization
+
+    Mechanism layer only. Hosts normally use core_crash_install() (engine/core/debug/crash.h),
+    which installs a report-writing callback through sys_crash_install().
+
+==============================================================================================*/
+
+typedef struct sys_crash_info_s
+{
+    u32   code;            /* OS exception code (see sys_crash_code_str) */
+    void* address;         /* faulting instruction address */
+    void* os_exception;    /* EXCEPTION_POINTERS* on Windows; NULL outside a crash */
+
+} sys_crash_info_t;
+
+/* Called on the faulting thread after an unhandled exception, before the process dies.
+   Keep it allocation-free and re-entrancy-safe: the heap and other threads' locks may be
+   in any state. */
+typedef void ( *sys_crash_fn )( const sys_crash_info_t* info, void* user );
+
+/* Install `cb` as the unhandled-exception hook (one per process; last install wins).
+   Serialized: only the first faulting thread reports. With a debugger attached the
+   exception is passed on after `cb` so the debugger still breaks at the crash site. */
+void sys_crash_install( sys_crash_fn cb, void* user );
+
+/* Write a minidump to `path`. Inside a crash callback pass its `info` so the dump records
+   the faulting context; pass NULL for a live snapshot of the current process state. */
+bool sys_crash_minidump( const char* path, const sys_crash_info_t* info );
+
+/* Fill `frames` with up to `max` return addresses and return the count. With `info` the
+   walk starts at the faulting instruction; with NULL it captures the calling thread. */
+int sys_crash_backtrace( const sys_crash_info_t* info, void** frames, int max );
+
+/* Resolve one address to "module!function + 0xNN  [file:line]" (best effort -- degrades to
+   a raw address as symbol info thins out). Returns false when no symbol was found. */
+bool sys_crash_symbolize( void* addr, char* out, int out_size );
+
+/* Static name for an OS exception code, e.g. "ACCESS_VIOLATION". Never NULL. */
+const char* sys_crash_code_str( u32 code );
+
+/*==============================================================================================
+
     Socket - Non-blocking UDP sockets (types in sys.h)
 
     The raw datagram layer under engine/net. All sockets are non-blocking; byte-order
