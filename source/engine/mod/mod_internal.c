@@ -36,14 +36,14 @@ typedef struct mod_info_s
     char                name[ MODULE_NAME_MAX ];
     module_status_t     status;
 
-    bool                is_static;     /* true → no DLL, no shadow copies */
-    uint32_t            shadow_count;  /* shadow file name counter for this slot */
-
     uint8_t             dir_id;        /* module home dir: 0 = g_root (exe dir), else
                                           g_ext_dirs[ dir_id - 1 ].  Set by mod_dynamic_load_dir
                                           for project/external DLLs; every path, timestamp, and
                                           shadow op resolves through slot_root() so hot-reload
                                           works there too. */
+
+    bool                is_static;     /* true → no DLL, no shadow copies */
+    uint32_t            shadow_count;  /* shadow file name counter for this slot */
 
     void*               dll;           /* handle to the loaded shadow copy */
     uint64_t            last_write;    /* file timestamp at last successful load */

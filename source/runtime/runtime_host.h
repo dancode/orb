@@ -126,36 +126,38 @@ typedef struct
    gui is in k_modules[]. */
 typedef struct
 {
-    gui_builtin_font_t        font;       /* GUI_FONT_NONE = host loads its own (font_load)  */
-    const gui_forward_caps_t* caps;       /* NULL = GUI_FORWARD_CAPS_DEFAULT                 */
-    f32                       clear[ 4 ]; /* main-surface clear color; alpha 0 = default dark */
-    bool                      debug;      /* arm the gui debug hotkey driver (P/O/F9/F10...)  */
+    gui_builtin_font_t        font;       // GUI_FONT_NONE = host loads its own (font_load)
+    const gui_forward_caps_t* caps;       // NULL = GUI_FORWARD_CAPS_DEFAULT                 */
+    f32                       clear[ 4 ]; // main-surface clear color; alpha 0 = default dark
+    bool                      debug;      // arm the gui debug hotkey driver (P/O/F9/F10...)  */
 
 } run_gui_desc_t;
 
 typedef struct run_host_desc_s
 {
-    const char*               name;               /* host name for logging and window title  */
-    u32                       flags;              /* RUN_HOST_*                              */
-    run_loop_mode_t           loop_mode;          /* determines how the main loop is driven  */
-    i32                       frame_target_ms;    /* 0 -> default 16                         */
-    i32                       window_width;       /* client area width,  0 -> 1280           */
-    i32                       window_height;      /* client area height, 0 -> 720            */
-    const run_module_entry_t* modules;            /* null-terminated array                   */
-    const run_gui_desc_t*     gui;                /* optional gui config; NULL = defaults    */
+    const char*               name;               // host name for logging and window title
+    u32                       flags;              // RUN_HOST_*
+    run_loop_mode_t           loop_mode;          // determines how the main loop is driven
+    i32                       frame_target_ms;    // 0 -> default 16
+    i32                       window_width;       // client area width,  0 -> 1280
+    i32                       window_height;      // client area height, 0 -> 720
+    const run_module_entry_t* modules;            // null-terminated array
+    const run_gui_desc_t*     gui;                // optional gui config; NULL = defaults
 
     /* Optional game project DLL -- Tier-3, always dynamic, loaded with mod_dynamic_load_dir
        AFTER modules[] registers and BEFORE mod_init_all (one dep-ordered init pass covers
        it; its deps -- core/game/render -- must be in modules[]).  The runtime is contract-
        agnostic: it loads and hot-reloads the DLL but never calls into it.  Hosts fetch the
        vtable via mod_get_api( project_name ) and drive it (see game/game_project.h). */
-    const char*               project_name;       /* project DLL base name; NULL = none      */
-    const char*               project_dir;        /* dir holding <name>.dll; NULL = exe dir  */
-    void ( *on_ready )( void );                   /* after init + window creation            */
-    void ( *on_update )( f32 dt );                /* each frame — game logic, no widgets     */
-    void ( *on_gui )( f32 dt );                   /* dirty frames only — the widget build    */
-    bool ( *on_close_request )( void );           /* X pressed: true = quit, false = veto    */
-    bool ( *on_event )( const app_event_t* ev );  /* unconsumed events; true = consumed      */
+
+    const char*               project_name;       // project DLL base name; NULL = none
+    const char*               project_dir;        // dir holding <name>.dll; NULL = exe dir
+
+    void ( *on_ready )( void );                   // after init + window creation
+    void ( *on_update )( f32 dt );                // each frame — game logic, no widgets
+    void ( *on_gui )( f32 dt );                   // dirty frames only — the widget build
+    bool ( *on_close_request )( void );           // X pressed: true = quit, false = veto
+    bool ( *on_event )( const app_event_t* ev );  // unconsumed events; true = consumed
 
 } run_host_desc_t;
 

@@ -81,6 +81,7 @@ editor_ready( void )
 }
 
 /* Editor Play/Stop -- the seam every play-in-editor feature grows from. */
+
 static void
 editor_set_playing( bool play )
 {
@@ -98,6 +99,7 @@ editor_set_playing( bool play )
    than the editor window, so these destructive dev actions can't be fumbled while working in the
    UI.  In-window user shortcuts would instead read app()->key_pressed fenced by
    gui()->want_capture_keyboard -- see gui_api.h.  These three are console-gated on purpose. */
+
 static void
 editor_handle_shortcuts( void )
 {
@@ -122,6 +124,7 @@ editor_handle_shortcuts( void )
    whatever is submitted here behind the gui composite (frame_cmd hand-off in run_host_main).  Kept
    separate from shell input above: this is the seam the real editor grows into (world tick ->
    visible-set cull -> submit).  A static rect proves the scene-under-gui path for now. */
+
 static void
 editor_submit_scene( void )
 {
@@ -143,6 +146,7 @@ editor_submit_scene( void )
 
 /* Per-frame host update -- every frame, widget-free (widgets go in on_gui, which the retained
    cache may skip).  Editor shell input, then the viewport scene feed -- each in its own helper. */
+
 static void
 editor_update( f32 dt )
 {
@@ -166,6 +170,7 @@ editor_update( f32 dt )
 
 /* UI emission -- dirty frames only.  The chrome shell is already emitted by run_host (first in
    this context's build); everything here lays out below its caption band. */
+
 static void
 editor_gui( f32 dt )
 {

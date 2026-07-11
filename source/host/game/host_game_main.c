@@ -98,6 +98,7 @@ game_host_update( f32 dt )
 
     /* Drive the project.  The ctx is rebuilt every frame -- surface size tracks resizes
        and a hot-reloaded project can never hold a stale handle. */
+
     if ( s_project )
     {
         game_project_ctx_t ctx = {
