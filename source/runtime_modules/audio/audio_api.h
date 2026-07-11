@@ -2,7 +2,7 @@
 #define AUDIO_API_H
 /*==============================================================================================
 
-    runtime_modules/audio/audio_api.h — audio module API struct and gateway macro.
+    runtime_modules/audio/audio_api.h -- audio module API struct and gateway macro.
 
 ==============================================================================================*/
 
@@ -16,9 +16,22 @@
 
 typedef struct audio_api_s
 {
-    int  ( *play )( const char* name, float volume ); /* returns handle or -1 */
-    void ( *stop )( int handle );
-    void ( *set_master_volume )( float volume );
+    /* Add a sound to the bank.  The name is copied; sound->frames is CALLER-OWNED and
+       must outlive playback (the bank survives hot-reloads in module state).
+       Re-registering a name replaces its PCM.  False when the bank or name is full. */
+    bool ( *sound_register )( const char* name, const ahi_sound_t* sound );
+
+    /* Fire-and-forget by name.  volume is linear gain (1.0 = as authored).
+       Returns AUDIO_HANDLE_INVALID for unknown names or when no voice is free. */
+    audio_handle_t ( *play )( const char* name, f32 volume );
+
+    /* Full-control variant: pan -1..+1, pitch = rate multiplier, loop until stop(). */
+    audio_handle_t ( *play_ex )( const char* name, f32 volume, f32 pan, f32 pitch, bool loop );
+
+    void ( *stop )( audio_handle_t h );            /* stale handles are ignored */
+    bool ( *playing )( audio_handle_t h );
+
+    void ( *master_volume )( f32 volume );
 
 } audio_api_t;
 

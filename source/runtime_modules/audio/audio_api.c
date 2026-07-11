@@ -3,37 +3,35 @@
     audio_api.c -- audio module wiring.
     Implements the audio_api_t vtable struct and the mod_desc_t lifecycle descriptor.
 
+    Tier 2 of the audio stack: name -> bank lookup -> ahi() command.  Never touches the
+    device or the audio thread, so a hot-reload mid-playback is safe -- live voices keep
+    playing out of the ahi mixer while the DLL swaps.
+
 ==============================================================================================*/
 
 /*==============================================================================================
     Cached API pointers
-
-    Declare one per consumed module using its MOD_USE_<NAME> macro (defined in its _api.h),
-    then fetch in init() and reload() with MOD_FETCH_<NAME>:
-
-        MOD_USE_CORE;                                    // file scope
-        if ( !MOD_FETCH_CORE ) return false;             // in init() and reload()
 ==============================================================================================*/
 
-/* none */
+MOD_USE_AHI;
 
 /*==============================================================================================
     Persistent state (allocated by the module system; preserved across hot-reloads)
-==============================================================================================*/
 
-#define AUDIO_MAX_SOUNDS 32
+    The bank stores ahi_sound_t BY VALUE but the PCM it points at is caller-owned; both
+    the pointers and this table survive a reload, so playback continues seamlessly.
+==============================================================================================*/
 
 typedef struct audio_state_s
 {
-    float master_volume;
-    int   next_handle;
+    f32 master_volume;
+    u32 sound_count;
 
     struct
     {
-        int  handle;
-        char name[ 48 ];
-        bool active;
-    } sounds[ AUDIO_MAX_SOUNDS ];
+        char        name[ AUDIO_NAME_MAX ];
+        ahi_sound_t snd;
+    } bank[ AUDIO_MAX_SOUNDS ];
 
 } audio_state_t;
 
@@ -43,45 +41,81 @@ static audio_state_t* s = NULL;
     Implementation
 ==============================================================================================*/
 
-static int
-audio_play( const char* name, float volume )
+static const ahi_sound_t*
+audio_find( const char* name )
 {
-    for ( int i = 0; i < AUDIO_MAX_SOUNDS; ++i )
-    {
-        if ( s->sounds[ i ].active )
-            continue;
-
-        int h                 = s->next_handle++;
-        s->sounds[ i ].handle = h;
-        s->sounds[ i ].active = true;
-        strncpy( s->sounds[ i ].name, name, sizeof( s->sounds[ i ].name ) - 1 );
-
-        printf( "[audio] play '%s' vol=%.2f  handle=%d\n", name, volume * s->master_volume, h );
-        return h;
-    }
-    printf( "[audio] WARN: no free sound slots\n" );
-    return -1;
+    for ( u32 i = 0; i < s->sound_count; ++i )
+        if ( strcmp( s->bank[ i ].name, name ) == 0 )
+            return &s->bank[ i ].snd;
+    return NULL;
 }
 
-static void
-audio_stop( int handle )
+static bool
+audio_sound_register( const char* name, const ahi_sound_t* sound )
 {
-    for ( int i = 0; i < AUDIO_MAX_SOUNDS; ++i )
+    if ( !name || !name[ 0 ] || strlen( name ) >= AUDIO_NAME_MAX || !sound )
+        return false;
+
+    /* Re-register replaces the PCM under the same name (hot-reload friendly). */
+    for ( u32 i = 0; i < s->sound_count; ++i )
     {
-        if ( s->sounds[ i ].active && s->sounds[ i ].handle == handle )
+        if ( strcmp( s->bank[ i ].name, name ) == 0 )
         {
-            printf( "[audio] stop handle=%d ('%s')\n", handle, s->sounds[ i ].name );
-            s->sounds[ i ].active = false;
-            return;
+            s->bank[ i ].snd = *sound;
+            return true;
         }
     }
+
+    if ( s->sound_count >= AUDIO_MAX_SOUNDS )
+        return false;
+
+    strcpy( s->bank[ s->sound_count ].name, name );
+    s->bank[ s->sound_count ].snd = *sound;
+    s->sound_count++;
+    return true;
+}
+
+static audio_handle_t
+audio_play_ex( const char* name, f32 volume, f32 pan, f32 pitch, bool loop )
+{
+    const ahi_sound_t* snd = audio_find( name );
+    if ( !snd )
+        return AUDIO_HANDLE_INVALID;
+
+    ahi_params_t p = ahi_params_default();
+    p.gain         = volume;
+    p.pan          = pan;
+    p.pitch        = pitch;
+    p.loop         = loop;
+
+    return ahi()->play( snd, &p ).id;
+}
+
+static audio_handle_t
+audio_play( const char* name, f32 volume )
+{
+    return audio_play_ex( name, volume, 0.0f, 1.0f, false );
 }
 
 static void
-audio_set_master_volume( float volume )
+audio_stop( audio_handle_t h )
+{
+    ahi_voice_t v = { h };
+    ahi()->voice_stop( v );
+}
+
+static bool
+audio_playing( audio_handle_t h )
+{
+    ahi_voice_t v = { h };
+    return ahi()->voice_playing( v );
+}
+
+static void
+audio_master_volume( f32 volume )
 {
     s->master_volume = volume;
-    printf( "[audio] master volume -> %.2f\n", volume );
+    ahi()->master_set_gain( volume );
 }
 
 /*==============================================================================================
@@ -89,9 +123,12 @@ audio_set_master_volume( float volume )
 ==============================================================================================*/
 
 const audio_api_t g_audio_api_struct = {
-    .play              = audio_play,
-    .stop              = audio_stop,
-    .set_master_volume = audio_set_master_volume,
+    .sound_register = audio_sound_register,
+    .play           = audio_play,
+    .play_ex        = audio_play_ex,
+    .stop           = audio_stop,
+    .playing        = audio_playing,
+    .master_volume  = audio_master_volume,
 };
 
 /*==============================================================================================
@@ -101,32 +138,30 @@ const audio_api_t g_audio_api_struct = {
 static bool
 audio_init( void* raw_state, get_api_fn get_api )
 {
-    UNUSED( get_api );
     s = ( audio_state_t* )raw_state;
 
-    /* state is zeroed on first call; master_volume of 0 means uninitialised */
+    if ( !MOD_FETCH_AHI )
+        return false;
+
+    /* state is zeroed on first load; 0 means never set */
     if ( s->master_volume == 0.0f )
         s->master_volume = 1.0f;
 
-    printf( "[audio] init  master_volume=%.2f\n", s->master_volume );
     return true;
 }
 
 static bool
 audio_reload( void* raw_state, get_api_fn get_api )
 {
-    UNUSED( get_api );
     s = ( audio_state_t* )raw_state;
-    printf( "[audio] reloaded  master_volume=%.2f\n", s->master_volume );
-    return true;
+    return MOD_FETCH_AHI;    // bank + live voices carry over; just re-cache the service
 }
 
 static void
 audio_exit( void* raw_state )
 {
-    audio_state_t* a = ( audio_state_t* )raw_state;
-    for ( int i = 0; i < AUDIO_MAX_SOUNDS; ++i ) a->sounds[ i ].active = false;
-    printf( "[audio] exit\n" );
+    UNUSED( raw_state );
+    ahi()->stop_all();    // every live voice points at PCM we can no longer vouch for
 }
 
 /*==============================================================================================
@@ -141,7 +176,7 @@ audio_get_mod_desc( void )
         .state_size    = sizeof( audio_state_t ),
         .func_api_size = sizeof( audio_api_t ),
         .func_api      = &g_audio_api_struct,
-        .deps          = { "core" },
+        .deps          = { "ahi" },
         .dep_count     = 1,
         .init          = audio_init,
         .exit          = audio_exit,
