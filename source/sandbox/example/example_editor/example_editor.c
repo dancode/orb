@@ -42,15 +42,14 @@ MOD_USE_RUN;
 MOD_USE_GUI;
 
 // clang-format off
-
 /*==============================================================================================
     Host state
 ==============================================================================================*/
 
-static i32  s_clicks;         /* button press counter -- interaction-driven, safe when clean  */
-static bool s_check;          /* demo checkbox                                                */
-static bool s_realtime;       /* force a full emit every frame (tests set_force_redraw)       */
-static bool s_show_second;    /* second window toggle -- tear it off to test floaters         */
+static i32  s_clicks;               /* button press counter -- interaction-driven, safe when clean  */
+static bool s_check;                /* demo checkbox                                                */
+static bool s_realtime;             /* force a full emit every frame (tests set_force_redraw)       */
+static bool s_show_second;          /* second window toggle -- tear it off to test floaters         */
 static bool s_show_scene = true;    /* submit the scene rect behind the gui                   */
 
 /*==============================================================================================
@@ -210,8 +209,8 @@ static const run_gui_desc_t k_gui_desc = {
 
 static const run_host_desc_t    k_desc      = {
             .name             = "sandbox_editor",
-            .flags            = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD
-                               | RUN_HOST_EDITOR_SLEEP | RUN_HOST_BORDERLESS, 
+            .flags            =  RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD
+                                | RUN_HOST_BORDERLESS, // | RUN_HOST_EDITOR_SLEEP, 
             .loop_mode        = RUN_LOOP_RUN,
             .window_width     = 1280,
             .window_height    = 800,

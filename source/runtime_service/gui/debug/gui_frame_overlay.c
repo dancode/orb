@@ -132,7 +132,7 @@ gui_perf_overlay( int mode )
 
     f32 fps = s_perf.fps;
 
-    f32 top_y = 8.0f;
+    f32 top_y = 34.0f;
     gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
     if ( mb && mb->last_frame == g_ctx->retained.frame )
         top_y += mb->h;
