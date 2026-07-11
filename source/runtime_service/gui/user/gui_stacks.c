@@ -106,14 +106,28 @@ void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( va
 
     A step is a paired push of the three metric slots (LINE_SIZE, WIDGET_PAD, WIDGET_GAP) with
     that step's theme values, so every metric read and counting helper inside the scope --
-    WIDGET_H, sz_rows_h( n ), sz_fit_row -- speaks the step with no widget changes.  Push before
-    opening the region/child the scope styles: a region captures its pad and gaps as it opens.
+    WIDGET_H, sz_rows_h( n ), sz_fit_row -- speaks the step with no widget changes.
+
+    Region PADDING (the inset between the region box and its content) is still captured when the
+    region opens, so a push meant to affect a child's pad must precede child_begin/window_begin.
+    Row HEIGHT and the GAP between rows resolve live, per row (mod_gap_x/_y in gui_layout_core.c,
+    mirroring row_h) -- so a push placed anywhere before the first row of a body still lands, even
+    after the region itself was opened by callee code the caller doesn't control (e.g. inside a
+    combo dropdown, whose body region is opened by combo_begin, not the call site):
 
         gui()->scale_push( GUI_SCALE_DENSE );        // this panel is a dense list
         gui()->child_begin( "entities", 0, 0, 0 );
         ... selectable rows at the dense height ...
         gui()->child_end();
         gui()->scale_pop();
+
+        if ( gui()->combo_begin( "##pick", preview, GUI_COMBO_NONE ) )   // box stays std scale
+        {
+            gui()->scale_push( GUI_SCALE_DENSE );     // only the dropdown body goes dense
+            ... selectable rows ...
+            gui()->scale_pop();
+            gui()->combo_end();
+        }
 ----------------------------------------------------------------------------------------------*/
 
 void

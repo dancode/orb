@@ -366,8 +366,10 @@ show_font_tool( void )
 
     /* Local picker: choosing a file copies its name into the request field above. */
     const char* combo_label = ( s_ft.count > 0 ) ? s_ft.names[ s_ft.sel ] : "(no local fonts)";
+    
     if ( gui()->combo_begin( "##local", combo_label, GUI_COMBO_NONE ) )
     {
+        gui()->scale_push( GUI_SCALE_DENSE );
         for ( int i = 0; i < s_ft.count; i++ )
         {
             /* Project (font_source) fonts lead the list in a distinct tint; installed Windows
@@ -386,8 +388,11 @@ show_font_tool( void )
             if ( project )
                 gui()->pop_style_color( 1 );
         }
+        gui()->scale_pop();
         gui()->combo_end();
     }
+    
+
     // gui()->same_line( -1 );
     if ( gui()->small_button( "Refresh" ) )
         ft_scan();

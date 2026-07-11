@@ -329,7 +329,7 @@ typedef struct
 
 typedef struct
 {
-    f32 gap_x, gap_y;               // inter-cell spacing (resolved to a number)
+    f32 gap_x, gap_y;               // inter-cell spacing request; 0 = live theme default (mod_gap_x/_y)
     u8  align;                      // gui_align_t flags
     u8  field_side;                 // gui_label_side_t: 0 off (label trails), 1 left, 2 right
     f32 field_label;                // label track size   (overloaded unit)

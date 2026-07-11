@@ -289,7 +289,7 @@ gui_pack_nextline( void )
     if ( f->mode != GUI_MODE_PACK ) return;
 
     bool horiz     = ( f->line.pack_dir == GUI_PACK_HORIZONTAL );
-    f32  gap       = horiz ? f->mod.gap_y : f->mod.gap_x;
+    f32  gap       = horiz ? mod_gap_y( f ) : mod_gap_x( f );
     f32  new_cross = f->line.cross + f->line.ext + gap;   /* past the line just laid */
 
     line_commit( f );              /* close the line -- its extent is already in the highwater */

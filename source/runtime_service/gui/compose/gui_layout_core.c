@@ -36,6 +36,15 @@
 
 static f32 widget_right( void ) { return lf()->content_x + lf()->content_w; }
 
+/* mod.gap_x / mod.gap_y store the caller's raw request (0 = theme default), not a resolved
+   number -- resolved live here, at the moment a gap is actually consumed, the same way tmpl.row_h
+   (0 = auto) resolves live against WIDGET_H per row.  This is what lets a scale_push placed after
+   a region has opened (e.g. inside a combo dropdown body, which combo_begin opens internally)
+   still land: an eager resolve at layout_set() time would freeze WIDGET_GAP before the caller ever
+   gets a chance to push a different scale. */
+static f32 mod_gap_x( const layout_frame_t* f ) { return ( f->mod.gap_x > 0.0f ) ? f->mod.gap_x : WIDGET_GAP; }
+static f32 mod_gap_y( const layout_frame_t* f ) { return ( f->mod.gap_y > 0.0f ) ? f->mod.gap_y : WIDGET_GAP; }
+
 /* Grow the region's highwater (high_x, high_y) to include a content corner (x, y) in
    screen coords: the monotonic bounding-box max layout_pop_region cancels the scroll bias out of and
    compares against each view to decide a scrollbar.  The highwater only ever climbs, so a running
@@ -275,7 +284,7 @@ layout_next_y( layout_frame_t* f )
         return vert ? f->line.main : f->line.cross;
     }
     if ( f->line.open || f->gap_pending )
-        return f->pen_y + f->mod.gap_y;
+        return f->pen_y + mod_gap_y( f );
     return f->pen_y;
 }
 
@@ -437,13 +446,13 @@ layout_set( const f32* cols, f32 row_h, f32 gap_x, f32 gap_y )
 
     f->mode      = GUI_MODE_COLUMNS;   /* a flow template; stack()/row() override to STACK */
     f->tmpl.row_h = row_h;
-    f->mod.gap_x = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
-    f->mod.gap_y = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
+    f->mod.gap_x = gap_x;   /* raw request; 0 = live theme default, resolved by mod_gap_x/_y */
+    f->mod.gap_y = gap_y;
 
     f32 tracks[ GUI_LAYOUT_COLS ];
     f->tmpl.ncols = layout_copy_tracks( cols, tracks );
     for ( u32 i = 0; i < f->tmpl.ncols; ++i ) f->tmpl.cols[ i ] = tracks[ i ];   /* kept for indent reflow */
-    layout_resolve_tracks( tracks, f->tmpl.ncols, f->content_x, f->content_w, f->mod.gap_x,
+    layout_resolve_tracks( tracks, f->tmpl.ncols, f->content_x, f->content_w, mod_gap_x( f ),
                            f->tmpl.cellx, f->tmpl.cellw );
 }
 
@@ -456,7 +465,7 @@ layout_reflow( layout_frame_t* f )
 {
     if ( f->mode == GUI_MODE_STACK || f->mode == GUI_MODE_COLUMNS )
         layout_resolve_tracks( f->tmpl.cols, f->tmpl.ncols, f->content_x, f->content_w,
-                               f->mod.gap_x, f->tmpl.cellx, f->tmpl.cellw );
+                               mod_gap_x( f ), f->tmpl.cellx, f->tmpl.cellw );
 }
 
 /* Install a grid template on the current frame.  cols x rows partition a bounded box -- from the
@@ -472,21 +481,21 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
     layout_template_reset( f );
 
     f->mode      = GUI_MODE_GRID;
-    f->mod.gap_x = ( gap_x > 0.0f ) ? gap_x : WIDGET_GAP;
-    f->mod.gap_y = ( gap_y > 0.0f ) ? gap_y : WIDGET_GAP;
+    f->mod.gap_x = gap_x;   /* raw request; 0 = live theme default, resolved by mod_gap_x/_y */
+    f->mod.gap_y = gap_y;
 
     /* Resolve columns across the content column and rows across the band from the pen to the
        content bottom.  An empty band (content already overflowed) clamps to zero. */
     f32 tracks[ GUI_LAYOUT_COLS ];
     f->tmpl.ncols = layout_copy_tracks( cols, tracks );
-    layout_resolve_tracks( tracks, f->tmpl.ncols, f->content_x, f->content_w, f->mod.gap_x,
+    layout_resolve_tracks( tracks, f->tmpl.ncols, f->content_x, f->content_w, mod_gap_x( f ),
                            f->tmpl.cellx, f->tmpl.cellw );
 
     f->tmpl.nrows = layout_copy_tracks( rows, tracks );
     f32 grid_top = layout_next_y( f );   /* gap-before: the band opens below prior content */
     f32 grid_h   = f->band_bottom - grid_top;
     if ( grid_h < 0.0f ) grid_h = 0.0f;
-    layout_resolve_tracks( tracks, f->tmpl.nrows, grid_top, grid_h, f->mod.gap_y,
+    layout_resolve_tracks( tracks, f->tmpl.nrows, grid_top, grid_h, mod_gap_y( f ),
                            f->tmpl.rowy, f->tmpl.rowh );
 
     f->nav_line = ++s_build.nav_line_seq;   /* grid row 0 opens as a fresh nav line */
@@ -586,7 +595,7 @@ line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
     gui_rect_t r = horiz ? ( gui_rect_t ){ f->line.main, f->line.cross, main_ext, cross_ext }
                          : ( gui_rect_t ){ f->line.cross, f->line.main, cross_ext, main_ext };
 
-    f->line.main += main_ext + ( horiz ? f->mod.gap_x : f->mod.gap_y );
+    f->line.main += main_ext + ( horiz ? mod_gap_x( f ) : mod_gap_y( f ) );
     if ( cross_ext > f->line.ext ) f->line.ext = cross_ext;
 
     content_reach( f, r.x + r.w, r.y + r.h );
@@ -623,7 +632,7 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
     u32        c = f->line.col;
     gui_rect_t r = cell_fit_resolve( f, f->tmpl.cellx[ c ], f->tmpl.cellw[ c ], natural_w, f->line.cross, f->line.ext );
 
-    f->line.main = r.x + r.w + f->mod.gap_x;    /* pen past the cell -- the same_line handoff */
+    f->line.main = r.x + r.w + mod_gap_x( f );    /* pen past the cell -- the same_line handoff */
     content_reach( f, r.x + r.w, r.y + r.h );   /* pen + highwater to the cell's far corner */
 
     if ( ++f->line.col >= f->tmpl.ncols )
