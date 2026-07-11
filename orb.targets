@@ -77,7 +77,9 @@ target net
     root        source/engine/net
     folder      02_ENGINE
     unit        net.c
-	
+    dep         sys
+    flag        host_only
+
 # ==============================================================================
 # 03_RUNTIME
 # ==============================================================================
@@ -383,6 +385,14 @@ target sb_engine_job
     folder      09_SANDBOX/ENGINE
     unit        sb_engine_job.c
     dep         sys job
+
+target sb_engine_net
+
+    type        exe
+    root        source/sandbox/engine/engine_net
+    folder      09_SANDBOX/ENGINE
+    unit        sb_engine_net.c
+    dep         sys net
 
 target sb_engine_input						# input action service: binds -> +/- cmds -> action state
 
@@ -785,7 +795,7 @@ solution orb_sandbox_engine				# developing engine libraries
 	add 		sb_engine_job
 	add 		sb_engine_app
 	add 		sb_engine_input
-
+	add 		sb_engine_net
 	
 	# TOOD: engine test
 

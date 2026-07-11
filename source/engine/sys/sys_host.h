@@ -338,6 +338,59 @@ typedef struct
 void sys_datetime_local( SysDateTime* dt );
 
 /*==============================================================================================
+
+    Socket - Non-blocking UDP sockets (types in sys.h)
+
+    The raw datagram layer under engine/net. All sockets are non-blocking; byte-order
+    conversion lives entirely inside this layer. UDP only -- game traffic never wants TCP.
+
+==============================================================================================*/
+
+// Start the OS socket subsystem (WSAStartup on Windows). Refcounted; pair with shutdown.
+bool sys_net_init( void );
+
+// Release the OS socket subsystem when the last refcount drops.
+void sys_net_shutdown( void );
+
+/* Open a non-blocking UDP socket bound to `bind_addr`. NULL binds 0.0.0.0 with an ephemeral
+   port (client use); port 0 in a non-NULL address picks an ephemeral port on that interface.
+   The address family of `bind_addr` selects IPv4 or IPv6 (one family per socket).
+   Returns SYS_SOCKET_INVALID on failure. */
+sys_socket_t sys_socket_open_udp( const sys_addr_t* bind_addr );
+
+// Close the socket. Safe to call with SYS_SOCKET_INVALID.
+void sys_socket_close( sys_socket_t s );
+
+// Fetch the socket's bound address -- resolves the actual port after an ephemeral bind.
+bool sys_socket_bound_addr( sys_socket_t s, sys_addr_t* out );
+
+/* Send one datagram to `to`. Returns bytes sent, 0 if the OS send buffer was full (the
+   datagram is dropped -- normal UDP behavior, treat like wire loss), or -1 on error. */
+int sys_socket_send( sys_socket_t s, const sys_addr_t* to, const void* data, int size );
+
+/* Receive one datagram. Returns its byte size, 0 if nothing is pending, or -1 on error.
+   `from` (optional) receives the sender address. Datagrams larger than `cap` are dropped;
+   ICMP port-unreachable resets are swallowed. */
+int sys_socket_recv( sys_socket_t s, sys_addr_t* from, void* buf, int cap );
+
+/* Parse "1.2.3.4", "1.2.3.4:5000", "::1", "fe80::1", or "[::1]:5000" into an address.
+   Missing port parses as 0. Returns false on malformed input. */
+bool sys_addr_parse( const char* str, sys_addr_t* out );
+
+// Format an address as parsed above ("[...]:port" for IPv6); port omitted when 0.
+void sys_addr_to_string( const sys_addr_t* a, char* out, int size );
+
+// True when family, address bytes, and port all match.
+bool sys_addr_equal( const sys_addr_t* a, const sys_addr_t* b );
+
+// Convenience IPv4 constructor: sys_addr_ipv4( 127, 0, 0, 1, 5000 ).
+sys_addr_t sys_addr_ipv4( u8 a, u8 b, u8 c, u8 d, u16 port );
+
+/* Resolve a hostname via DNS (getaddrinfo), preferring IPv4 results. BLOCKING -- may stall
+   for seconds; call from a worker thread if the caller cannot hitch. */
+bool sys_addr_resolve( const char* hostname, u16 port, sys_addr_t* out );
+
+/*==============================================================================================
     Console Input — Simple key polling for bootstrap tools and early engine loops.
 
     Distinct from app input (windowed, raw input, controllers). Useful before the

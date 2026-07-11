@@ -61,5 +61,35 @@ typedef struct
 
 } sema_t;
 
+/*==============================================================================================
+
+    Socket - UDP socket handle and wire address. Value types stored by the net module;
+             open/send/recv functions are in sys_host.h.
+
+==============================================================================================*/
+
+typedef enum sys_addr_type_e
+{
+    SYS_ADDR_NONE = 0,
+    SYS_ADDR_IPV4,
+    SYS_ADDR_IPV6,
+
+} sys_addr_type_t;
+
+/* Wire address. `ip` holds the address bytes in network order as delivered by the OS
+   (IPv4 uses ip[0..3]); `port` is host byte order. Copy freely; compare with
+   sys_addr_equal(), never memcmp (padding + unused ip bytes). */
+typedef struct sys_addr_s
+{
+    u8  type;      // sys_addr_type_t
+    u8  ip[ 16 ];  // ipv4 in ip[0..3]
+    u16 port;      // host byte order
+
+} sys_addr_t;
+
+typedef u64 sys_socket_t;    // opaque OS socket handle
+
+#define SYS_SOCKET_INVALID ( ( sys_socket_t ) ~0ull )
+
 /*============================================================================================*/
 #endif    // SYS_H
