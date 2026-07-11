@@ -1033,6 +1033,18 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     write_vcxproj_filters_file( filters_path, NULL );
 }
 
+/* True when the named target is one of the solution's own projects.  Solution-level
+   ProjectDependencies may only reference projects present in the .sln -- VS ignores a
+   dangling GUID, but msbuild.exe fails the whole solution with MSB4051. */
+static bool
+sln_has_target( const solution_info_t* sln, const char* name )
+{
+    for ( const char* const* tn = sln->target_names; *tn; ++tn )
+        if ( strcmp( *tn, name ) == 0 )
+            return true;
+    return false;
+}
+
 /*==============================================================================================
     build_gen_solution()
 
@@ -1105,11 +1117,15 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
 
             if ( target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect || !target->is_build_tool )
             {
+                // Every entry below must name a project actually in this solution: VS silently
+                // ignores dangling dep GUIDs, but msbuild.exe on the .sln hard-fails with
+                // MSB4051 (child-project solutions don't carry reflect_tool, for example --
+                // there the reflect pre-build event / build_tool owns that ordering instead).
                 fprintf( f, "\tProjectSection(ProjectDependencies) = postProject\n" );
 
                 // Alias launchers depend on the target they build so VS builds it (with
                 // its full dep chain) before the alias's fast skip-rebuild runs.
-                if ( target->alias_for )
+                if ( target->alias_for && sln_has_target( sln, target->alias_for ) )
                 {
                     char a_guid[ 64 ];
                     guid_from_name( target->alias_for, a_guid );
@@ -1118,6 +1134,8 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
 
                 for ( int i = 0; target->deps[ i ]; ++i )
                 {
+                    if ( !sln_has_target( sln, target->deps[ i ] ) )
+                        continue;
                     char dep_guid[ 64 ];
                     guid_from_name( target->deps[ i ], dep_guid );
                     fprintf( f, "\t\t%s = %s\n", dep_guid, dep_guid );
@@ -1125,43 +1143,34 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
 
                 for ( int i = 0; target->tool_deps[ i ]; ++i )
                 {
+                    if ( !sln_has_target( sln, target->tool_deps[ i ] ) )
+                        continue;
                     char tool_guid[ 64 ];
                     guid_from_name( target->tool_deps[ i ], tool_guid );
                     fprintf( f, "\t\t%s = %s\n", tool_guid, tool_guid );
                 }
 
                 // Implicit dep: every target depends on build_tool when it is in the same solution.
-                if ( !target->is_build_tool )
+                if ( !target->is_build_tool && sln_has_target( sln, "build_tool" ) )
                 {
-                    bool bt_in_sln = false;
-                    for ( const char** tn2 = sln->target_names; *tn2; ++tn2 )
-                        if ( strcmp( *tn2, "build_tool" ) == 0 )
-                        {
-                            bt_in_sln = true;
-                            break;
-                        }
-
-                    if ( bt_in_sln )
+                    for ( int k = 0; k < g_target_count; ++k )
                     {
-                        for ( int k = 0; k < g_target_count; ++k )
+                        if ( g_targets[ k ].is_build_tool )
                         {
-                            if ( g_targets[ k ].is_build_tool )
-                            {
-                                char bt_guid[ 64 ];
-                                guid_from_name( g_targets[ k ].name, bt_guid );
-                                fprintf( f, "\t\t%s = %s\n", bt_guid, bt_guid );
-                                break;
-                            }
+                            char bt_guid[ 64 ];
+                            guid_from_name( g_targets[ k ].name, bt_guid );
+                            fprintf( f, "\t\t%s = %s\n", bt_guid, bt_guid );
+                            break;
                         }
                     }
                 }
 
-                // Implicit dep: has_reflect targets always depend on the reflect tool.
+                // Implicit dep: has_reflect targets depend on the reflect tool when present.
                 if ( target->has_reflect )
                 {
                     for ( int k = 0; k < g_target_count; ++k )
                     {
-                        if ( g_targets[ k ].is_reflect_tool )
+                        if ( g_targets[ k ].is_reflect_tool && sln_has_target( sln, g_targets[ k ].name ) )
                         {
                             char refl_guid[ 64 ];
                             guid_from_name( g_targets[ k ].name, refl_guid );

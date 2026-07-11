@@ -328,6 +328,9 @@ build_gen_proj_target_msbuild( target_info_t* target )
     //      nearly instant when already up to date). This handles fresh checkouts
     //      where reflect_tool.exe hasn't been compiled yet. reflect_tool is not
     //      included in the solution's project list, so VS won't build it on its own.
+    //      s_ctx.build_tool_exe resolves to the engine-absolute path for child
+    //      projects (a child bin has no build_tool.exe); reflect_tool.exe lands in
+    //      the local bin because build_tool runs with CWD = this project's root.
     //   2. reflect_tool.exe generates the .generated.c/.h files.
     // cd /d also changes drive letter so projects on any drive work correctly.
     // NOTE: avoid "if not exist ... (cmd) && next" -- cmd.exe absorbs the && into
@@ -346,7 +349,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
         fprintf( f, "      <Message>reflect_tool: building tool and generating %s.generated.c/.h</Message>\n", rname );
         fprintf( f, "      <Command>" );
         fprintf( f, "cd /d \"$(ProjectDir)%s\"", s_ctx.cd_root );
-        fprintf( f, " &amp;&amp; bin\\build_tool.exe -config $(Configuration) -target reflect_tool" );
+        fprintf( f, " &amp;&amp; %s -config $(Configuration) -target reflect_tool", s_ctx.build_tool_exe );
         fprintf( f, " &amp;&amp; bin\\reflect_tool.exe -src %s -out %s\\%s -name %s", root_dir_norm, g_build_dir, g_gen_dir, rname );
         fprintf( f, "</Command>\n" );
         fprintf( f, "    </PreBuildEvent>\n" );
@@ -439,6 +442,9 @@ build_gen_proj_target_msbuild( target_info_t* target )
 void
 build_gen_projects_msbuild( const gen_manifest_t* m )
 {
+    // The reflect pre-build event shells to build_tool; resolve its path here too so
+    // a standalone -gen-msbuild doesn't depend on the NMake pass having set it.
+    snprintf( s_ctx.build_tool_exe, sizeof( s_ctx.build_tool_exe ), "%s", m->build_tool_exe );
     run_solution_passes( m, "_ms", "_ms", "MSBuild Solution", build_gen_proj_target_msbuild );
 }
 
