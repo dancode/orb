@@ -40,6 +40,7 @@ cmd_print_help( void )
     printf( ORB_INDENT "  %-28s%s\n", "-gen_nm",                "Regenerate NMake .sln/.vcxproj, compile_commands.json, .vscode/tasks.json." );
     printf( ORB_INDENT "  %-28s%s\n", "-gen_ms",                "Regenerate MSBuild .sln/.vcxproj only (full EDG IntelliSense)." );
     printf( ORB_INDENT "  %-28s%s\n", "-create <name>",         "Scaffold a new module (-dir required) or standalone project (-type project)." );
+    printf( ORB_INDENT "  %-28s%s\n", "-doctor",                "Diagnose build setup: environment, registry, files, child-project wiring." );
     printf( "\n" );
 
     printf( ORB_INDENT "create options:\n" );

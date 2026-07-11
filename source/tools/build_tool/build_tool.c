@@ -37,8 +37,9 @@
         12_gen_json.c     -- -gen command: compile_commands.json (clangd / LSP tools)
         12_gen_vscode.c   -- -gen command: .vscode/tasks.json (VS Code build tasks)
         12_gen_msbuild.c  -- -gen_ms command: native MSBuild projects (full EDG IntelliSense)
-        13_create.c       -- -create command: scaffold a new static or dynamic module
+        13_create.c       -- -create command: scaffold a module or a child game project
         13_query.c        -- -help/-list/-graph commands (read-only; no compiler chain)
+        13_doctor.c       -- -doctor command: read-only build-setup diagnosis
         test.c            -- debug arg injection from build_tool_debug.args
         00_util.c         -- pre-main utilities: validate_targets, print_startup_banner.
                              Included LAST so it can call into every earlier module
@@ -144,6 +145,9 @@ static const char* g_clr_bold   = "";
    when not inside a parallel worker (serial / main-thread path). */
 const char* sched_log_path( void );
 
+/* Defined in 00_util.c (included last). -doctor reports its result as one check. */
+static bool validate_targets( void );
+
 #if defined( _WIN32 )
     #include "build_tool_win.c"             // 00a platform layer (MSVC / Win32 CRT wrappers)
     #include "build_tool_win_thread.c"      // 00b platform threading (mutex / cond / TLS / threads)
@@ -173,6 +177,7 @@ const char* sched_log_path( void );
 #include "build_tool_12_gen_msbuild.c"      // 12d -gen_ms command (MSBuild projects)
 #include "build_tool_13_create.c"           // 13  -create command (module scaffolding)
 #include "build_tool_13_query.c"            // 13  -help/-list/-graph (read-only queries)
+#include "build_tool_13_doctor.c"           // 13  -doctor (build-setup diagnosis; uses 13_query's deps_visit)
 #include "build_tool_test.c"                // debug arg injection (-custom_args flag)
 #include "build_tool_00_util.c"             // pre-main utilities: validate_targets, print_startup_banner
 
@@ -234,6 +239,7 @@ main( int argc, char** argv )
     bool  should_gen_msbuild  = false;
     bool  should_bootstrap    = false;
     bool  should_create       = false;
+    bool  should_doctor       = false;
     bool  saw_quiet           = false;
     bool  saw_verbose         = false;
     char* create_name         = NULL;
@@ -255,6 +261,7 @@ main( int argc, char** argv )
         if ( str_icmp( argv[ i ], "-gen"              ) == 0 ) should_gen = true;
         if ( str_icmp( argv[ i ], "-gen_nm"           ) == 0 ) should_gen_nmake = true;
         if ( str_icmp( argv[ i ], "-gen_ms"           ) == 0 ) should_gen_msbuild = true;
+        if ( str_icmp( argv[ i ], "-doctor"           ) == 0 ) should_doctor = true;
 
         // module / project creation (scaffolding)
         if ( str_icmp( argv[ i ], "-create" ) == 0 && arg_has_value( argc, argv, i ) ) { should_create = true; create_name = argv[ ++i ]; }
@@ -377,6 +384,11 @@ main( int argc, char** argv )
 
     bool registry_ok = registry_load( "orb.targets", false );
     init_builtin_targets();
+
+    // --- Command: DOCTOR (before the registry bail-out -- a broken orb.targets is
+    //     exactly what it diagnoses; runs validate_targets itself as one check) ---
+
+    if ( should_doctor ) return cmd_doctor( registry_ok );
 
     if ( !registry_ok || !validate_targets() ) return 1;
 

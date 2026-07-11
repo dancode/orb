@@ -33,16 +33,14 @@
 /*==============================================================================================
     --- Per-Solution Path State ---
 
-    Set once at the top of each solution's generation pass in build_gen_projects().
-    All emitter functions read these instead of hardcoding depth relative paths.
-    Moving a solution's output directory only requires changing out_dir in the
-    solution descriptor -- no string edits anywhere else in this file.
+    Set once at the top of each solution's generation pass (run_solution_passes ->
+    compute_path_parts). All emitter functions read s_ctx instead of hardcoding depth
+    relative paths -- moving a solution's output directory only requires changing
+    out_dir in the solution descriptor, no string edits anywhere else in this file.
 
-    TLDR: we calculate the depth and escape string manually before generating.
-
-    s_out_dir     -- where .sln and .vcxproj files land     (e.g. "build\\proj")
-    s_root_prefix -- "../..\\" go back to the project root  (e.g. "..\\..\\")
-    s_cd_root     -- "cd ..\\.." for NMake commands         (e.g. "..\\..")
+    s_ctx.out_dir     -- where .sln and .vcxproj files land   (e.g. "build\\proj")
+    s_ctx.root_prefix -- "..\\"-chain back to project root    (e.g. "..\\..\\")
+    s_ctx.cd_root     -- same without the trailing backslash  (e.g. "..\\..")
 ==============================================================================================*/
 
 /*==============================================================================================
@@ -312,6 +310,22 @@ scan_directory_recursive( const char* dir, const char* root_dir )
     An empty string is returned when no extras are defined.
 ==============================================================================================*/
 
+/* Append s to a separator-joined list in buf. The one string-list builder shared by every
+   generator string assembler below (includes ';', defines ';', NMake options ' '). */
+static void
+gen_list_append( char* buf, size_t buf_size, size_t* used, char sep, const char* s )
+{
+    size_t slen = strlen( s );
+    if ( *used + slen + 2 < buf_size )
+    {
+        if ( *used )
+            buf[ ( *used )++ ] = sep;
+        memcpy( buf + *used, s, slen );
+        *used += slen;
+        buf[ *used ] = '\0';
+    }
+}
+
 static void
 build_extra_include_dirs_str( const target_info_t* target, char* buf, size_t buf_size )
 {
@@ -322,17 +336,7 @@ build_extra_include_dirs_str( const target_info_t* target, char* buf, size_t buf
     if ( target )
     {
         for ( int i = 0; i < MAX_EXTRA_INCLUDE_DIRS && target->extra_include_dirs[ i ]; ++i )
-        {
-            const char* dir = target->extra_include_dirs[ i ];
-            size_t len = strlen( dir );
-            if ( used + len + 2 < buf_size )
-            {
-                if ( used ) buf[ used++ ] = ';';
-                memcpy( buf + used, dir, len );
-                used += len;
-                buf[ used ] = '\0';
-            }
-        }
+            gen_list_append( buf, buf_size, &used, ';', target->extra_include_dirs[ i ] );
     }
 
     /* Solution-level include_dirs: skip if already present from the target. */
@@ -342,14 +346,7 @@ build_extra_include_dirs_str( const target_info_t* target, char* buf, size_t buf
         {
             const char* dir = s_ctx.sln_extra_include_dirs[ i ];
             if ( buf[ 0 ] && strstr( buf, dir ) ) continue;
-            size_t len = strlen( dir );
-            if ( used + len + 2 < buf_size )
-            {
-                if ( used ) buf[ used++ ] = ';';
-                memcpy( buf + used, dir, len );
-                used += len;
-                buf[ used ] = '\0';
-            }
+            gen_list_append( buf, buf_size, &used, ';', dir );
         }
     }
 
@@ -362,14 +359,7 @@ build_extra_include_dirs_str( const target_info_t* target, char* buf, size_t buf
         for ( int i = 0; i < 2; ++i )
         {
             if ( buf[ 0 ] && strstr( buf, dirs[ i ] ) ) continue;
-            size_t len = strlen( dirs[ i ] );
-            if ( used + len + 2 < buf_size )
-            {
-                if ( used ) buf[ used++ ] = ';';
-                memcpy( buf + used, dirs[ i ], len );
-                used += len;
-                buf[ used ] = '\0';
-            }
+            gen_list_append( buf, buf_size, &used, ';', dirs[ i ] );
         }
     }
 }
@@ -383,20 +373,6 @@ build_extra_include_dirs_str( const target_info_t* target, char* buf, size_t buf
     passes to cl.exe.
 ==============================================================================================*/
 
-static inline void
-isdef_append( char* buf, size_t buf_size, size_t* used, const char* s )
-{
-    size_t slen = strlen( s );
-    if ( *used + slen + 2 < buf_size )
-    {
-        if ( *used )
-            buf[ ( *used )++ ] = ';';
-        memcpy( buf + *used, s, slen );
-        *used += slen;
-        buf[ *used ] = '\0';
-    }
-}
-
 static void
 build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_info_t* target )
 {
@@ -404,7 +380,7 @@ build_intellisense_defines( char* buf, size_t buf_size, config_t config, target_
     size_t used = 0;
 
     // Bind closure vars so call sites read identically to the old local macro.
-    #define ISDEF_APPEND( s ) isdef_append( buf, buf_size, &used, s )
+    #define ISDEF_APPEND( s ) gen_list_append( buf, buf_size, &used, ';', s )
 
     for ( int i = 0; g_defines_always[ i ]; ++i ) ISDEF_APPEND( g_defines_always[ i ] );
 
@@ -475,16 +451,7 @@ build_intellisense_nmake_options( char* buf, size_t buf_size )
     buf[ 0 ]    = '\0';
     size_t used = 0;
     for ( int i = 0; g_intellisense_flags[ i ]; ++i )
-    {
-        size_t slen = strlen( g_intellisense_flags[ i ] );
-        if ( used + slen + 2 < buf_size )
-        {
-            if ( used ) buf[ used++ ] = ' ';
-            memcpy( buf + used, g_intellisense_flags[ i ], slen );
-            used += slen;
-            buf[ used ] = '\0';
-        }
-    }
+        gen_list_append( buf, buf_size, &used, ' ', g_intellisense_flags[ i ] );
 }
 
 /*==============================================================================================
@@ -504,66 +471,52 @@ build_intellisense_nmake_options( char* buf, size_t buf_size )
 static void
 emit_intellisense_config_groups( FILE* f, target_info_t* target )
 {
-    char dbg_defines[ 1024 ];
-    char rel_defines[ 1024 ];
+    static const char* conds[ 2 ] =
+    {
+        "'$(Configuration)|$(Platform)'=='Debug|x64'",
+        "'$(Configuration)|$(Platform)'=='Release|x64'",
+    };
+
+    char defines[ 2 ][ 1024 ];
     char nmake_opts[ 256 ];
-    build_intellisense_defines( dbg_defines, sizeof( dbg_defines ), CONFIG_DEBUG,   target );
-    build_intellisense_defines( rel_defines, sizeof( rel_defines ), CONFIG_RELEASE, target );
+    build_intellisense_defines( defines[ 0 ], sizeof( defines[ 0 ] ), CONFIG_DEBUG,   target );
+    build_intellisense_defines( defines[ 1 ], sizeof( defines[ 1 ] ), CONFIG_RELEASE, target );
     build_intellisense_nmake_options( nmake_opts, sizeof( nmake_opts ) );
 
     char extra_incs[ 1024 ];
     build_extra_include_dirs_str( target, extra_incs, sizeof( extra_incs ) );
     const char* extra_sep = extra_incs[ 0 ] ? ";" : "";
 
-    fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-    fprintf( f, "    <ClCompile>\n" );
-    fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
-    if ( g_gen_fwd_compat )
-        fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-    fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
-    fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-             s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
-    fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
-             dbg_defines );
-    fprintf( f, "    </ClCompile>\n" );
-    fprintf( f, "  </ItemDefinitionGroup>\n" );
+    for ( int ci = 0; ci < 2; ++ci )
+    {
+        fprintf( f, "  <ItemDefinitionGroup Condition=\"%s\">\n", conds[ ci ] );
+        fprintf( f, "    <ClCompile>\n" );
+        fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        if ( g_gen_fwd_compat )
+            fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
+        fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
+        fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
+                 s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
+        fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
+                 defines[ ci ] );
+        fprintf( f, "    </ClCompile>\n" );
+        fprintf( f, "  </ItemDefinitionGroup>\n" );
+    }
 
-    fprintf( f, "  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-    fprintf( f, "    <ClCompile>\n" );
-    fprintf( f, "      <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
-    if ( g_gen_fwd_compat )
-        fprintf( f, "      <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-    fprintf( f, "      <UseStandardPreprocessor>true</UseStandardPreprocessor>\n" );
-    fprintf( f, "      <AdditionalIncludeDirectories>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;%%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>\n",
-             s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
-    fprintf( f, "      <PreprocessorDefinitions>%s;%%(PreprocessorDefinitions)</PreprocessorDefinitions>\n",
-             rel_defines );
-    fprintf( f, "    </ClCompile>\n" );
-    fprintf( f, "  </ItemDefinitionGroup>\n" );
-
-    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-    fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
-             dbg_defines );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-             s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
-    fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
-    if ( g_gen_fwd_compat )
-        fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-    fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-    fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
-    fprintf( f, "  </PropertyGroup>\n" );
-
-    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-    fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
-             rel_defines );
-    fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
-             s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
-    fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
-    if ( g_gen_fwd_compat )
-        fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
-    fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
-    fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
-    fprintf( f, "  </PropertyGroup>\n" );
+    for ( int ci = 0; ci < 2; ++ci )
+    {
+        fprintf( f, "  <PropertyGroup Condition=\"%s\">\n", conds[ ci ] );
+        fprintf( f, "    <NMakePreprocessorDefinitions>%s;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>\n",
+                 defines[ ci ] );
+        fprintf( f, "    <NMakeIncludeSearchPath>$(ProjectDir)%ssource;$(ProjectDir)%s%s\\%s%s%s;$(VC_IncludePath);$(WindowsSDK_IncludePath);$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>\n",
+                 s_ctx.root_prefix, s_ctx.root_prefix, g_build_dir, g_gen_dir, extra_sep, extra_incs );
+        fprintf( f, "    <LanguageStandard_C>stdc11</LanguageStandard_C>\n" );
+        if ( g_gen_fwd_compat )
+            fprintf( f, "    <LanguageStandard>stdcpp20</LanguageStandard>\n" );
+        fprintf( f, "    <IntelliSenseMode>windows-msvc-x64</IntelliSenseMode>\n" );
+        fprintf( f, "    <NMakeAdditionalOptions>%s</NMakeAdditionalOptions>\n", nmake_opts );
+        fprintf( f, "  </PropertyGroup>\n" );
+    }
 }
 
 /*==============================================================================================
@@ -610,6 +563,48 @@ gen_run_debug_cmd( const target_info_t* target, char* cmd, size_t cmd_size,
 }
 
 /*==============================================================================================
+    gen_emit_debug_property_groups()
+
+    Per-config debugger PropertyGroups shared by every project writer (NMake target,
+    MSBuild target, MSBuild alias). Emits LocalDebuggerWorkingDirectory (project root)
+    plus LocalDebuggerCommand/Arguments when the target declares a 'run' line.
+    with_outdirs adds OutDir/IntDir into the same groups (the native MSBuild writers
+    fold them here; the NMake writer emits them in its unconditional group instead).
+
+    These are DEFAULTS: per-user tweaks made in the VS debug property page land in
+    .vcxproj.user, which imports later and wins -- regen never stomps user overrides.
+==============================================================================================*/
+
+static void
+gen_emit_debug_property_groups( FILE* f, target_info_t* target, bool with_outdirs )
+{
+    char run_exe [ PATH_MAX + 64 ] = { 0 };
+    char run_args[ 512 ]           = { 0 };
+    bool has_run = target && target->run_cmd &&
+                   gen_run_debug_cmd( target, run_exe, sizeof( run_exe ), run_args, sizeof( run_args ) );
+
+    static const char* cfgs[ 2 ] = { "Debug", "Release" };
+    for ( int ci = 0; ci < 2; ++ci )
+    {
+        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\">\n", cfgs[ ci ] );
+        if ( with_outdirs )
+        {
+            fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_ctx.root_prefix );
+            fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
+                     s_ctx.root_prefix, g_build_dir, g_int_dir );
+        }
+        fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_ctx.cd_root );
+        if ( has_run )
+        {
+            fprintf( f, "    <LocalDebuggerCommand>%s</LocalDebuggerCommand>\n", run_exe );
+            if ( run_args[ 0 ] )
+                fprintf( f, "    <LocalDebuggerCommandArguments>%s</LocalDebuggerCommandArguments>\n", run_args );
+        }
+        fprintf( f, "  </PropertyGroup>\n" );
+    }
+}
+
+/*==============================================================================================
     write_vcxproj_common_header()
 
     Writes the boilerplate XML required for a Visual Studio Makefile project.
@@ -626,11 +621,10 @@ gen_run_debug_cmd( const target_info_t* target, char* cmd, size_t cmd_size,
 ==============================================================================================*/
 
 static void
-write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
-                             target_type_t type, target_info_t* target )
+write_vcxproj_common_header( FILE* f, const char* guid, target_type_t type, target_info_t* target )
 {
     // Alias launchers: build commands and NMakeOutput act on the aliased target.
-    const char* build_name = ( target && target->alias_for ) ? target->alias_for : out_name;
+    const char* build_name = target->alias_for ? target->alias_for : target->name;
 
     const char* ext = ".exe";
     if ( type == TARGET_STATIC_LIB )    ext = ".lib";
@@ -691,27 +685,7 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
 
     emit_intellisense_config_groups( f, target );
 
-    // Debugger defaults live in the .vcxproj (not .vcxproj.user): VS reads them as the
-    // baseline, and any per-user tweak made in the debug property page lands in the .user
-    // file, which imports later and wins -- regen never stomps user overrides.
-    char run_exe [ PATH_MAX + 64 ] = { 0 };
-    char run_args[ 512 ]           = { 0 };
-    bool has_run = target && target->run_cmd &&
-                   gen_run_debug_cmd( target, run_exe, sizeof( run_exe ), run_args, sizeof( run_args ) );
-
-    const char* configs[ 2 ] = { "Debug", "Release" };
-    for ( int i = 0; i < 2; ++i )
-    {
-        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\">\n", configs[ i ] );
-        fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_ctx.cd_root );
-        if ( has_run )
-        {
-            fprintf( f, "    <LocalDebuggerCommand>%s</LocalDebuggerCommand>\n", run_exe );
-            if ( run_args[ 0 ] )
-                fprintf( f, "    <LocalDebuggerCommandArguments>%s</LocalDebuggerCommandArguments>\n", run_args );
-        }
-        fprintf( f, "  </PropertyGroup>\n" );
-    }
+    gen_emit_debug_property_groups( f, target, false );
 }
 
 // Returns true if path's filename component matches one of target's unity units.
@@ -743,13 +717,18 @@ is_unit_file( const target_info_t* target, const char* path )
     natvis separately because it also needs <Filter> children).
 ==============================================================================================*/
 
+static bool
+files_have_natvis( void )
+{
+    for ( int i = 0; i < g_file_count; ++i )
+        if ( g_files[ i ].is_natvis ) return true;
+    return false;
+}
+
 static void
 write_natvis_item_group( FILE* f )
 {
-    bool any = false;
-    for ( int i = 0; i < g_file_count; ++i )
-        if ( g_files[ i ].is_natvis ) { any = true; break; }
-    if ( !any )
+    if ( !files_have_natvis() )
         return;
 
     fprintf( f, "  <ItemGroup>\n" );
@@ -832,10 +811,7 @@ write_vcxproj_filters_file( const char* filters_path, target_info_t* target )
     fprintf( f, "  </ItemGroup>\n" );
 
     // Natvis visualizer files: separate ItemGroup so VS loads them as debugger visualizers.
-    bool has_natvis = false;
-    for ( int i = 0; i < g_file_count; ++i )
-        if ( g_files[ i ].is_natvis ) { has_natvis = true; break; }
-    if ( has_natvis )
+    if ( files_have_natvis() )
     {
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; i < g_file_count; ++i )
@@ -888,7 +864,7 @@ build_gen_proj_target( target_info_t* target )
     const target_info_t* aliased = target->alias_for ? find_target( target->alias_for ) : NULL;
     target_type_t        type    = aliased ? aliased->type : target->type;
 
-    write_vcxproj_common_header( f, guid, target->name, type, target );
+    write_vcxproj_common_header( f, guid, type, target );
 
     g_file_count   = 0;
     g_filter_count = 0;
@@ -965,7 +941,7 @@ build_gen_proj_target( target_info_t* target )
 ==============================================================================================*/
 
 static void
-gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* default_target, const char* nav_guid )
+gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* nav_guid )
 {
     g_file_count   = 0;
     g_filter_count = 0;
@@ -1001,7 +977,6 @@ gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const cha
     // Nav build/clean are deliberate no-ops: per-target .vcxproj projects own their
     // own build and clean. Running a global build_tool.exe here in parallel with them
     // would race on shared dirs (e.g. build\\generated\\*).
-    ( void )default_target;
     fprintf( f, "  <PropertyGroup>\n" );
     fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_ctx.root_prefix );
     fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
@@ -1083,11 +1058,7 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
     //    but defer writing the nav Project() entry until after all target entries so that
     //    VS gives target projects first-project priority for IntelliSense ownership.
     if ( sln->nav_dir )
-    {
-        const char* default_target =
-            sln->target_names[ 0 ] ? sln->target_names[ 0 ] : "unknown";
-        gen_proj_engine_navigation( out_name, sln->nav_dir, default_target, nav_guid );
-    }
+        gen_proj_engine_navigation( out_name, sln->nav_dir, nav_guid );
 
     // 2. Target projects.
     // VS uses file order (not ExtensibilityGlobals) to pick the default startup project

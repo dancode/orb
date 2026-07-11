@@ -8,7 +8,7 @@
     provider ignores. This is the same project type CMake generates.
 
     Invoked by:  build_tool.exe -gen_ms
-    Output dir:  <solution.out_dir>_msbuild  (e.g. build/proj_msbuild)
+    Output dir:  <solution.out_dir>_ms  (e.g. build/proj_ms)
 
     Build model: VS presses Build -> MSBuild -> cl.exe directly 
     (no build_tool.exe involved). CLI builds still use build_tool.exe -config.
@@ -33,6 +33,57 @@ msbuild_config_type_str( target_type_t type )
     if ( type == TARGET_STATIC_LIB  ) return "StaticLibrary";
     if ( type == TARGET_DYNAMIC_LIB ) return "DynamicLibrary";
     return "Application";
+}
+
+/*==============================================================================================
+    msbuild_emit_prologue()
+
+    XML preamble shared by the full target writer and the alias (Utility) writer:
+    ProjectConfigurations, Globals, Cpp.Default.props, the per-config ConfigurationType
+    + PlatformToolset groups, and Cpp.props. Everything after Cpp.props differs per
+    writer (compile/link settings vs. bare debugger groups).
+==============================================================================================*/
+
+static void
+msbuild_emit_prologue( FILE* f, const char* guid, const char* cfg_type )
+{
+    static const char* cfgs[ 2 ] = { "Debug", "Release" };
+
+    fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
+    fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
+
+    fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
+    fprintf( f, "    <ProjectConfiguration Include=\"Debug|x64\"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
+    fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
+    fprintf( f, "  </ItemGroup>\n" );
+
+    fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
+    fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", guid );
+    fprintf( f, "    <Keyword>Win32Proj</Keyword>\n" );
+    fprintf( f, "    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>\n" );
+    fprintf( f, "    <PreferredToolArchitecture>x64</PreferredToolArchitecture>\n" );
+    // Default Platform to x64 when not supplied externally (e.g. standalone msbuild.exe
+    // invocation or early evaluation before the solution configuration is resolved).
+    // Without this, MSBuild falls back to Win32 and fires MSB8013 because Debug|Win32
+    // is not in our ProjectConfigurations list.
+    fprintf( f, "    <Platform Condition=\"'$(Platform)'==''\">x64</Platform>\n" );
+    fprintf( f, "  </PropertyGroup>\n" );
+
+    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
+
+    // Per-config configuration type + toolset ($(DefaultPlatformToolset) unless pinned
+    // by -vs-version; see gen_platform_toolset).
+    char ts[ 32 ];
+    gen_platform_toolset( ts, sizeof( ts ) );
+    for ( int ci = 0; ci < 2; ++ci )
+    {
+        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\" Label=\"Configuration\">\n", cfgs[ ci ] );
+        fprintf( f, "    <ConfigurationType>%s</ConfigurationType>\n", cfg_type );
+        fprintf( f, "    <PlatformToolset>%s</PlatformToolset>\n", ts );
+        fprintf( f, "  </PropertyGroup>\n" );
+    }
+
+    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
 }
 
 /*==============================================================================================
@@ -160,56 +211,8 @@ build_gen_proj_alias_msbuild( target_info_t* target )
         return;
     }
 
-    static const char* cfgs[ 2 ] = { "Debug", "Release" };
-
-    char toolset_str[ 32 ];
-    if ( g_vs_major_version > 0 )
-        snprintf( toolset_str, sizeof( toolset_str ), "v%d", g_vs_major_version + 126 );
-    else
-        snprintf( toolset_str, sizeof( toolset_str ), "$(DefaultPlatformToolset)" );
-
-    fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
-    fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-    fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
-    fprintf( f, "    <ProjectConfiguration Include=\"Debug|x64\"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
-    fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
-    fprintf( f, "  </ItemGroup>\n" );
-    fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
-    fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", guid );
-    fprintf( f, "    <Keyword>Win32Proj</Keyword>\n" );
-    fprintf( f, "    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>\n" );
-    fprintf( f, "    <Platform Condition=\"'$(Platform)'==''\">x64</Platform>\n" );
-    fprintf( f, "  </PropertyGroup>\n" );
-    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
-    for ( int ci = 0; ci < 2; ++ci )
-    {
-        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\" Label=\"Configuration\">\n", cfgs[ ci ] );
-        fprintf( f, "    <ConfigurationType>Utility</ConfigurationType>\n" );
-        fprintf( f, "    <PlatformToolset>%s</PlatformToolset>\n", toolset_str );
-        fprintf( f, "  </PropertyGroup>\n" );
-    }
-    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
-
-    char run_exe [ PATH_MAX + 64 ] = { 0 };
-    char run_args[ 512 ]           = { 0 };
-    bool has_run = target->run_cmd &&
-                   gen_run_debug_cmd( target, run_exe, sizeof( run_exe ), run_args, sizeof( run_args ) );
-
-    for ( int ci = 0; ci < 2; ++ci )
-    {
-        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\">\n", cfgs[ ci ] );
-        fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_ctx.root_prefix );
-        fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
-                 s_ctx.root_prefix, g_build_dir, g_int_dir );
-        fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_ctx.cd_root );
-        if ( has_run )
-        {
-            fprintf( f, "    <LocalDebuggerCommand>%s</LocalDebuggerCommand>\n", run_exe );
-            if ( run_args[ 0 ] )
-                fprintf( f, "    <LocalDebuggerCommandArguments>%s</LocalDebuggerCommandArguments>\n", run_args );
-        }
-        fprintf( f, "  </PropertyGroup>\n" );
-    }
+    msbuild_emit_prologue( f, guid, "Utility" );
+    gen_emit_debug_property_groups( f, target, true );
 
     fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\n" );
     fprintf( f, "</Project>\n" );
@@ -241,52 +244,11 @@ build_gen_proj_target_msbuild( target_info_t* target )
 
     target_type_t eff_type = ( s_ctx.is_monolithic && target->type == TARGET_DYNAMIC_LIB )
                            ? TARGET_STATIC_LIB : target->type;
-    const char* cfg_type = msbuild_config_type_str( eff_type );
 
-    fprintf( f, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" );
-    fprintf( f, "<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\n" );
-
-    // Configurations.
-    fprintf( f, "  <ItemGroup Label=\"ProjectConfigurations\">\n" );
-    fprintf( f, "    <ProjectConfiguration Include=\"Debug|x64\"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
-    fprintf( f, "    <ProjectConfiguration Include=\"Release|x64\"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>\n" );
-    fprintf( f, "  </ItemGroup>\n" );
-
-    // Globals.
-    fprintf( f, "  <PropertyGroup Label=\"Globals\">\n" );
-    fprintf( f, "    <ProjectGuid>%s</ProjectGuid>\n", guid );
-    fprintf( f, "    <Keyword>Win32Proj</Keyword>\n" );
-    fprintf( f, "    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>\n" );
-    fprintf( f, "    <PreferredToolArchitecture>x64</PreferredToolArchitecture>\n" );
-    // Default Platform to x64 when not supplied externally (e.g. standalone msbuild.exe
-    // invocation or early evaluation before the solution configuration is resolved).
-    // Without this, MSBuild falls back to Win32 and fires MSB8013 because Debug|Win32
-    // is not in our ProjectConfigurations list.
-    fprintf( f, "    <Platform Condition=\"'$(Platform)'==''\">x64</Platform>\n" );
-    fprintf( f, "  </PropertyGroup>\n" );
-
-    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\n" );
-
-    // Per-config configuration type. Default to $(DefaultPlatformToolset) so MSBuild picks
-    // whatever toolset is installed. When -vs-version was explicitly passed, substitute the
-    // computed vNNN string (major + 126) to pin the toolset to that version.
-    static const char* cfgs[] = { "Debug", "Release" };
-    char toolset_str[ 32 ];
-    if ( g_vs_major_version > 0 )
-        snprintf( toolset_str, sizeof( toolset_str ), "v%d", g_vs_major_version + 126 );
-    else
-        snprintf( toolset_str, sizeof( toolset_str ), "$(DefaultPlatformToolset)" );
-    for ( int ci = 0; ci < 2; ++ci )
-    {
-        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\" Label=\"Configuration\">\n", cfgs[ ci ] );
-        fprintf( f, "    <ConfigurationType>%s</ConfigurationType>\n", cfg_type );
-        fprintf( f, "    <PlatformToolset>%s</PlatformToolset>\n", toolset_str );
-        fprintf( f, "  </PropertyGroup>\n" );
-    }
-
-    fprintf( f, "  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\n" );
+    msbuild_emit_prologue( f, guid, msbuild_config_type_str( eff_type ) );
 
     // Property sheets (user overrides).
+    static const char* cfgs[] = { "Debug", "Release" };
     for ( int ci = 0; ci < 2; ++ci )
     {
         fprintf( f, "  <ImportGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\" Label=\"PropertySheets\">\n", cfgs[ ci ] );
@@ -296,26 +258,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
 
     // Output and intermediate directories + debugger defaults (see the NMake writer for
     // the 'run' contract; user edits land in .vcxproj.user and override these).
-    char run_exe [ PATH_MAX + 64 ] = { 0 };
-    char run_args[ 512 ]           = { 0 };
-    bool has_run = target->run_cmd &&
-                   gen_run_debug_cmd( target, run_exe, sizeof( run_exe ), run_args, sizeof( run_args ) );
-
-    for ( int ci = 0; ci < 2; ++ci )
-    {
-        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\">\n", cfgs[ ci ] );
-        fprintf( f, "    <OutDir>$(ProjectDir)%sbin\\</OutDir>\n", s_ctx.root_prefix );
-        fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
-                 s_ctx.root_prefix, g_build_dir, g_int_dir );
-        fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_ctx.cd_root );
-        if ( has_run )
-        {
-            fprintf( f, "    <LocalDebuggerCommand>%s</LocalDebuggerCommand>\n", run_exe );
-            if ( run_args[ 0 ] )
-                fprintf( f, "    <LocalDebuggerCommandArguments>%s</LocalDebuggerCommandArguments>\n", run_args );
-        }
-        fprintf( f, "  </PropertyGroup>\n" );
-    }
+    gen_emit_debug_property_groups( f, target, true );
 
     // Per-config compile + link settings.
     write_msbuild_clcompile_group( f, CONFIG_DEBUG,   target );
