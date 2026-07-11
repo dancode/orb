@@ -779,7 +779,9 @@ solution orb_sandbox_engine				# developing engine libraries
 
     out         build/proj
     startup     sb_runtime_gen
-
+	
+	add 		base 
+	
 	add         sys ref mod app core job net
 	add         rhi
 	add         asset

@@ -16,6 +16,7 @@
 #include "base/mem.h"
 #include "base/bit.h"
 #include "base/math.h"
+#include "base/math_rng.h"
 #include "base/char.h"
 #include "base/str.h"
 #include "base/str_buf.h"

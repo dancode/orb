@@ -328,6 +328,100 @@ test_math_sign_align( void )
 }
 
 /*==============================================================================================
+    math: rng
+==============================================================================================*/
+
+static void
+test_math_rng( void )
+{
+    // determinism: same seed reproduces the sequence
+    rng_t a, b;
+    rng_seed( &a, 12345 );
+    rng_seed( &b, 12345 );
+    for ( i32 i = 0; i < 16; ++i )
+        test_equal( rng_u32( &a ), rng_u32( &b ) );
+
+    // different seeds and different streams diverge
+    rng_t c, d;
+    rng_seed( &c, 12346 );
+    rng_seed_stream( &d, 12345, 7 );
+    test_true( rng_u32( &a ) != rng_u32( &c ) || rng_u32( &a ) != rng_u32( &c ) );
+    test_true( rng_u32( &b ) != rng_u32( &d ) || rng_u32( &b ) != rng_u32( &d ) );
+
+    // bounded draws stay in range; bound 0 is safe
+    rng_seed( &a, 999 );
+    for ( i32 i = 0; i < 1000; ++i )
+    {
+        test_true( rng_below( &a, 6 ) < 6 );
+        i32 v = rng_range_i32( &a, -3, 3 );
+        test_true( v >= -3 && v <= 3 );
+    }
+    test_equal( 0u, rng_below( &a, 0 ) );
+
+    // floats stay in [0, 1); range respects bounds
+    for ( i32 i = 0; i < 1000; ++i )
+    {
+        f32 f = rng_f32( &a );
+        test_true( f >= 0.0f && f < 1.0f );
+        f64 g = rng_f64( &a );
+        test_true( g >= 0.0 && g < 1.0 );
+        f32 h = rng_range_f32( &a, 5.0f, 6.0f );
+        test_true( h >= 5.0f && h < 6.0f );
+    }
+
+    // chance extremes
+    test_false( rng_chance( &a, 0.0f ) );
+    test_true( rng_chance( &a, 1.0f ) );
+
+    // sign is only ever -1 or +1
+    for ( i32 i = 0; i < 32; ++i )
+    {
+        i32 s = rng_sign( &a );
+        test_true( s == -1 || s == 1 );
+    }
+
+    // unit vectors have length ~1
+    f32 x, y, z;
+    rng_unit2( &a, &x, &y );
+    test_true( f32_nearly_equal( x * x + y * y, 1.0f, 1e-4f ) );
+    rng_unit3( &a, &x, &y, &z );
+    test_true( f32_nearly_equal( x * x + y * y + z * z, 1.0f, 1e-4f ) );
+    rng_in_disk( &a, &x, &y );
+    test_true( x * x + y * y <= 1.0f );
+    rng_in_sphere( &a, &x, &y, &z );
+    test_true( x * x + y * y + z * z <= 1.0f );
+
+    // gaussian: sample mean of 4096 draws is near 0
+    f32 sum = 0.0f;
+    for ( i32 i = 0; i < 4096; ++i )
+        sum += rng_gauss_f32( &a );
+    test_true( f32_abs( sum / 4096.0f ) < 0.1f );
+
+    // shuffle preserves the element multiset
+    i32 items[ 8 ] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    rng_shuffle( &a, items, 8, sizeof( i32 ) );
+    i32 mask = 0;
+    for ( i32 i = 0; i < 8; ++i )
+        mask |= 1 << items[ i ];
+    test_equal( 0xFF, mask );
+    rng_shuffle( &a, items, 0, sizeof( i32 ) );    // count 0 is safe
+
+    // weighted pick never lands on a zero-weight bucket
+    f32 weights[ 4 ] = { 0.0f, 1.0f, 0.0f, 3.0f };
+    for ( i32 i = 0; i < 256; ++i )
+    {
+        u32 pick = rng_weighted( &a, weights, 4 );
+        test_true( pick == 1 || pick == 3 );
+    }
+    f32 zero_weights[ 2 ] = { 0.0f, 0.0f };
+    test_equal( 0u, rng_weighted( &a, zero_weights, 2 ) );
+
+    // scramble: stateless, deterministic, distinct for adjacent inputs
+    test_equal( rng_scramble_u64( 42 ), rng_scramble_u64( 42 ) );
+    test_true( rng_scramble_u64( 1 ) != rng_scramble_u64( 2 ) );
+}
+
+/*==============================================================================================
     bit: popcount
 ==============================================================================================*/
 
@@ -480,6 +574,7 @@ base_run_tests( void )
     test_register( "math_abs", test_math_abs );
     test_register( "math_lerp", test_math_lerp );
     test_register( "math_sign_align", test_math_sign_align );
+    test_register( "math_rng", test_math_rng );
 
     test_register( "bit_popcount", test_bit_popcount );
     test_register( "bit_clz_ctz", test_bit_clz_ctz );

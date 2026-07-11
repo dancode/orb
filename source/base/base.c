@@ -26,6 +26,7 @@
 #include "base/char.c"
 #include "base/bit.c"
 #include "base/math.c"
+#include "base/math_rng.c"
 
 #include "base/str.c"
 #include "base/str_buf.c"
