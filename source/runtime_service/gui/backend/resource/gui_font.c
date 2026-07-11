@@ -13,6 +13,8 @@
 ==============================================================================================*/
 // clang-format off
 
+#include "engine/sys/sys_host.h"    // sys_exe_dir -- built-in presets resolve engine-relative
+
 /*==============================================================================================
 
     Registry API -- load / select fonts by id.
@@ -72,11 +74,22 @@ font_load_builtin( gui_builtin_font_t font )
 
     if ( valid_font )
     {
+        /* Built-in presets are engine assets at <engine>/assets/font, one level above the
+           exe dir -- resolve there so hosts work from any working directory (a child game
+           project's root when launched via F5, for example).  Fall back to the plain
+           CWD-relative path for relocated layouts. */
+        char path[ 576 ];
+        char dir[ 512 ];
+        sys_exe_dir( dir, ( int )sizeof( dir ) );
+        snprintf( path, sizeof( path ), "%s/../%s", dir, s_builtin_font_path[ font ] );
+
         // slot 0 = the default font
-        return font_internal_load_into( 0, s_builtin_font_path[ font ] );          
+        if ( font_internal_load_into( 0, path ) )
+            return true;
+        return font_internal_load_into( 0, s_builtin_font_path[ font ] );
     }
 
-    return false;    
+    return false;
 }
 
 /* Commit every queued deferred reload.  Called once per frame by the UI unit at frame_begin -- a

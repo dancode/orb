@@ -48,6 +48,29 @@ validate_targets( void )
     {
         const target_info_t* t = &g_targets[ i ];
 
+        // Alias launcher targets carry no sources of their own -- validate the reference
+        // and skip the source/type checks below. Build/clean/gen resolve through alias_for.
+        if ( t->alias_for )
+        {
+            const target_info_t* aliased = find_target( t->alias_for );
+            if ( !aliased )
+            {
+                printf( ORB_INDENT "[orb error] target '%s': alias references unknown target '%s'\n",
+                        t->name, t->alias_for );
+                ok = false;
+            }
+            else if ( aliased->alias_for )
+            {
+                printf( ORB_INDENT "[orb error] target '%s': alias chains are not allowed"
+                                   " ('%s' is itself an alias)\n", t->name, t->alias_for );
+                ok = false;
+            }
+            if ( !t->run_cmd )
+                printf( ORB_INDENT "[orb warn] target '%s': alias without a 'run' line does nothing\n",
+                        t->name );
+            continue;
+        }
+
         // Non-external targets must have a root_dir (guards unit file checks below).
         if ( !t->is_external && !t->root_dir )
         {

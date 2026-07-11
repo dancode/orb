@@ -567,6 +567,49 @@ emit_intellisense_config_groups( FILE* f, target_info_t* target )
 }
 
 /*==============================================================================================
+    gen_run_debug_cmd()
+
+    Resolve a target's 'run' line ("<exe_target> [args...]") into the F5 debugger command.
+    Imported engine exe targets resolve to the engine bin (absolute); local targets to the
+    solution-relative bin. Args pass through verbatim -- they resolve at debug time against
+    LocalDebuggerWorkingDirectory (the project root), so 'run host_editor -project .' works.
+    Returns false (with a warning) when the exe target is unknown.
+==============================================================================================*/
+
+static bool
+gen_run_debug_cmd( const target_info_t* target, char* cmd, size_t cmd_size,
+                   char* args, size_t args_size )
+{
+    // Split "<exe> [args...]".
+    char        exe[ 128 ];
+    const char* p = target->run_cmd;
+    size_t      n = 0;
+    while ( p[ n ] && p[ n ] != ' ' && p[ n ] != '\t' && n < sizeof( exe ) - 1 )
+    {
+        exe[ n ] = p[ n ];
+        ++n;
+    }
+    exe[ n ] = '\0';
+    p += n;
+    while ( *p == ' ' || *p == '\t' ) ++p;
+    snprintf( args, args_size, "%s", p );
+
+    target_info_t* run_t = find_target( exe );
+    if ( !run_t )
+    {
+        printf( ORB_INDENT "[orb warn] target '%s': run references unknown target '%s'"
+                           " -- no F5 command emitted\n", target->name, exe );
+        return false;
+    }
+
+    if ( run_t->is_external && g_engine_root[ 0 ] )
+        snprintf( cmd, cmd_size, "%s\\bin\\%s.exe", g_engine_root, exe );
+    else
+        snprintf( cmd, cmd_size, "$(ProjectDir)%sbin\\%s.exe", s_ctx.root_prefix, exe );
+    return true;
+}
+
+/*==============================================================================================
     write_vcxproj_common_header()
 
     Writes the boilerplate XML required for a Visual Studio Makefile project.
@@ -574,13 +617,21 @@ emit_intellisense_config_groups( FILE* f, target_info_t* target )
       1. Unconditional PropertyGroup: OutDir/IntDir and the NMake build/clean commands.
       2. Per-config IntelliSense groups (ItemDefinitionGroup + NMake PropertyGroup):
          see emit_intellisense_config_groups() above.
-      3. Per-config LocalDebuggerWorkingDirectory so F5 launches from the project root.
+      3. Per-config LocalDebuggerWorkingDirectory so F5 launches from the project root,
+         plus LocalDebuggerCommand/Arguments when the target declares a 'run' line
+         (DLL projects F5 into the host exe that loads them).
+
+    Alias launcher targets route their build/clean/output through the aliased target;
+    the project itself exists only to carry a distinct F5 command.
 ==============================================================================================*/
 
 static void
-write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name, 
+write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
                              target_type_t type, target_info_t* target )
 {
+    // Alias launchers: build commands and NMakeOutput act on the aliased target.
+    const char* build_name = ( target && target->alias_for ) ? target->alias_for : out_name;
+
     const char* ext = ".exe";
     if ( type == TARGET_STATIC_LIB )    ext = ".lib";
     if ( type == TARGET_DYNAMIC_LIB )   ext = s_ctx.is_monolithic ? ".lib" : ".dll";
@@ -621,12 +672,12 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "    <IntDir>$(ProjectDir)%s%s\\%s\\$(ProjectName)\\$(Configuration)\\</IntDir>\n",
              s_ctx.root_prefix, g_build_dir, g_int_dir );
     fprintf( f, "    <NMakeBuildCommandLine>cd %s &amp;&amp; %s -no-deps -config $(Configuration) -target %s%s</NMakeBuildCommandLine>\n",
-             s_ctx.cd_root, s_ctx.build_tool_exe, out_name, mono_flag );
-    fprintf( f, "    <NMakeOutput>%sbin\\%s%s</NMakeOutput>\n", s_ctx.root_prefix, out_name, ext );
+             s_ctx.cd_root, s_ctx.build_tool_exe, build_name, mono_flag );
+    fprintf( f, "    <NMakeOutput>%sbin\\%s%s</NMakeOutput>\n", s_ctx.root_prefix, build_name, ext );
     fprintf( f, "    <NMakeCleanCommandLine>cd %s &amp;&amp; %s -clean -target %s</NMakeCleanCommandLine>\n",
-             s_ctx.cd_root, s_ctx.build_tool_exe, out_name );
+             s_ctx.cd_root, s_ctx.build_tool_exe, build_name );
     fprintf( f, "    <NMakeCompileFile>cd %s &amp;&amp; %s -no-deps -config $(Configuration) -target %s%s</NMakeCompileFile>\n",
-             s_ctx.cd_root, s_ctx.build_tool_exe, out_name, mono_flag );
+             s_ctx.cd_root, s_ctx.build_tool_exe, build_name, mono_flag );
     fprintf( f, "  </PropertyGroup>\n" );
 
     // Single-file compile (Ctrl+F7). Unconditional so the command is available
@@ -634,18 +685,33 @@ write_vcxproj_common_header( FILE* f, const char* guid, const char* out_name,
     fprintf( f, "  <ItemDefinitionGroup>\n" );
     fprintf( f, "    <NMakeCompile>\n" );
     fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
-             s_ctx.cd_root, s_ctx.build_tool_exe, out_name, mono_flag );
+             s_ctx.cd_root, s_ctx.build_tool_exe, build_name, mono_flag );
     fprintf( f, "    </NMakeCompile>\n" );
     fprintf( f, "  </ItemDefinitionGroup>\n" );
 
     emit_intellisense_config_groups( f, target );
 
-    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Debug|x64'\">\n" );
-    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_ctx.cd_root );
-    fprintf( f, "  </PropertyGroup>\n" );
-    fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='Release|x64'\">\n" );
-    fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_ctx.cd_root );
-    fprintf( f, "  </PropertyGroup>\n" );
+    // Debugger defaults live in the .vcxproj (not .vcxproj.user): VS reads them as the
+    // baseline, and any per-user tweak made in the debug property page lands in the .user
+    // file, which imports later and wins -- regen never stomps user overrides.
+    char run_exe [ PATH_MAX + 64 ] = { 0 };
+    char run_args[ 512 ]           = { 0 };
+    bool has_run = target && target->run_cmd &&
+                   gen_run_debug_cmd( target, run_exe, sizeof( run_exe ), run_args, sizeof( run_args ) );
+
+    const char* configs[ 2 ] = { "Debug", "Release" };
+    for ( int i = 0; i < 2; ++i )
+    {
+        fprintf( f, "  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%s|x64'\">\n", configs[ i ] );
+        fprintf( f, "    <LocalDebuggerWorkingDirectory>$(ProjectDir)%s</LocalDebuggerWorkingDirectory>\n", s_ctx.cd_root );
+        if ( has_run )
+        {
+            fprintf( f, "    <LocalDebuggerCommand>%s</LocalDebuggerCommand>\n", run_exe );
+            if ( run_args[ 0 ] )
+                fprintf( f, "    <LocalDebuggerCommandArguments>%s</LocalDebuggerCommandArguments>\n", run_args );
+        }
+        fprintf( f, "  </PropertyGroup>\n" );
+    }
 }
 
 // Returns true if path's filename component matches one of target's unity units.
@@ -818,12 +884,17 @@ build_gen_proj_target( target_info_t* target )
         return;
     }
 
-    write_vcxproj_common_header( f, guid, target->name, target->type, target );
+    // Alias launchers: no sources of their own; NMakeOutput needs the aliased artifact type.
+    const target_info_t* aliased = target->alias_for ? find_target( target->alias_for ) : NULL;
+    target_type_t        type    = aliased ? aliased->type : target->type;
+
+    write_vcxproj_common_header( f, guid, target->name, type, target );
 
     g_file_count   = 0;
     g_filter_count = 0;
 
-    scan_directory_recursive( target->root_dir, target->root_dir );
+    if ( target->root_dir )
+        scan_directory_recursive( target->root_dir, target->root_dir );
 
     fprintf( f, "  <ItemGroup>\n" );
     for ( int i = 0; i < g_file_count; ++i )
@@ -1035,6 +1106,15 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
             if ( target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect || !target->is_build_tool )
             {
                 fprintf( f, "\tProjectSection(ProjectDependencies) = postProject\n" );
+
+                // Alias launchers depend on the target they build so VS builds it (with
+                // its full dep chain) before the alias's fast skip-rebuild runs.
+                if ( target->alias_for )
+                {
+                    char a_guid[ 64 ];
+                    guid_from_name( target->alias_for, a_guid );
+                    fprintf( f, "\t\t%s = %s\n", a_guid, a_guid );
+                }
 
                 for ( int i = 0; target->deps[ i ]; ++i )
                 {

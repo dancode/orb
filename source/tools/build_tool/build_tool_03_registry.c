@@ -49,11 +49,33 @@
             compile_flag <msvc|clang|all> <flag>            (per-target compiler flag; repeatable)
             subsystem   console | windows                   (exe only; /SUBSYSTEM: on Win32; default: console)
             link_flag   <msvc|clang|all> <flag>             (per-target linker flag; repeatable)
+            run         <exe_target> [args...]              (F5 debugger launch; see below)
+            alias       <target>                            (launcher-only project; builds <target>)
 
             flag        <token1> [token2] ...               (space-separated list of boolean flags)
                             reflect                         -- run reflect_tool before compile
                             host_only                       -- engine service; dynamic targets may not dep this
                             is_tool | is_build_tool | is_reflect_tool
+
+        RUN / ALIAS (F5 for DLL projects):
+            A game module builds a .dll, which VS cannot launch. 'run' names the host exe
+            (and its args) that the generated project's F5 starts under the debugger --
+            the DLL's symbols bind when the host loads it, hot-reload included:
+
+                target my_game
+                    type    dynamic
+                    ...
+                    run     host_editor -project .      # F5 = edit
+
+            The exe resolves to the engine bin when it is an imported engine target, the
+            local bin otherwise. Args pass through verbatim and resolve against the
+            debugger working directory (the project root). 'alias' adds a second launch
+            entry against the same artifact -- its project builds <target> and carries
+            only its own 'run' line (pick by set-as-startup-project):
+
+                target my_game_play
+                    alias   my_game
+                    run     host_game -project .        # F5 = play standalone
 
     SOLUTION BLOCK:
         solution <name>
@@ -584,6 +606,18 @@ registry_load( const char* path, bool is_external )
                 if ( !reg_parse_flag_entry( path, lineno, "link_flag", val, cur_t->name,
                                             cur_t->extra_link_flags, &cur_t->extra_link_flag_count,
                                             MAX_EXTRA_LINK_FLAGS ) ) ok = false;
+            }
+            else if ( strcmp( key, "run" ) == 0 && val )
+            {
+                /* F5 launch: 'run <exe_target> [args...]'. Resolved at gen time (the exe
+                   target may be declared later in this file or come from an import). */
+                cur_t->run_cmd = pool_str( val );
+            }
+            else if ( strcmp( key, "alias" ) == 0 && val )
+            {
+                /* Launcher alias: this target builds nothing itself -- its generated
+                   project builds <val> and exists to carry its own 'run' line. */
+                cur_t->alias_for = pool_str( val );
             }
             else
             {

@@ -480,6 +480,14 @@ main( int argc, char** argv )
             printf( ORB_INDENT "[orb error] unknown target '%s'\n", ctx.target_name );
             return 1;
         }
+
+        // Alias launchers build nothing themselves -- act on the aliased target.
+        if ( target->alias_for )
+        {
+            target_info_t* aliased = find_target( target->alias_for );
+            if ( aliased )
+                target = aliased;
+        }
     }
 
     // --- Command: COMPILE-ONLY (VS Ctrl+F7) ---

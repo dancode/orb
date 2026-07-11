@@ -451,10 +451,10 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     }
     else
     {
-        /* all local (non-imported) targets */
+        /* all local (non-imported) targets; alias launchers build nothing themselves */
 
         for ( int i = 0; i < g_target_count; ++i )
-            if ( !g_targets[ i ].is_external )
+            if ( !g_targets[ i ].is_external && !g_targets[ i ].alias_for )
                 if ( add_job( &g_targets[ i ] ) < 0 )
                 {
                     platform_mutex_destroy( &g_sched.lock );

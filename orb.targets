@@ -267,6 +267,13 @@ target sample_game					# canonical project DLL -- host_game -module sample_game;
     root        source/project/sample_game
     folder      06_PROJECT
     unit        sample_game.c
+    run         host_editor -module sample_game
+
+target sample_game_play				# F5 launcher: builds sample_game.dll, plays it under host_game
+
+    alias       sample_game
+    folder      06_PROJECT
+    run         host_game -module sample_game
 
 target template_game				# source template for -create <name> -type project
 
@@ -707,8 +714,8 @@ solution orb_runtime
 	# 			--- GAME MODULES --- 
 	add 		game_example
 
-	# 			--- PROJECT --- 
-	add 		sample_game
+	# 			--- PROJECT ---
+	add 		sample_game sample_game_play
 
 	# 			--- DEVELOPER ---
     add         dev_build dev_hot dev_font
@@ -763,8 +770,9 @@ solution orb_editor
 	add 		host_sandbox 
 	add 		host_tool
 
-	#			--- PROJECT ---
-	
+	# 			--- PROJECT ---
+	add 		sample_game sample_game_play
+
 	# add 		my_project
 
 	#			--- EXECUTABLE ---
@@ -955,6 +963,7 @@ solution orb_all
 	add 		sb_example_game
 	add 		sb_example_runtime
 
+	add 		sample_game sample_game_play
 	add 		template_game
 
 	add 		font_tool

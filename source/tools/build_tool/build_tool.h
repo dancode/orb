@@ -507,6 +507,23 @@ typedef struct target_info_s
 
     bool            is_external;
 
+    /*  F5 launch command declared via 'run <exe_target> [args...]' in orb.targets.
+        Emitted as LocalDebuggerCommand/Arguments in generated projects: the exe target
+        resolves to the engine bin when it is an imported engine target, the local bin
+        otherwise; args pass through verbatim and resolve against the debugger working
+        directory (the project root).  Lets a DLL project (a game module) F5 straight
+        into the host that runs it -- e.g. 'run host_editor -project .' */
+
+    const char*     run_cmd;
+
+    /*  Launcher alias declared via 'alias <target>' in orb.targets. An alias target
+        builds nothing itself: its generated project's build command builds <target>
+        and the project exists only to carry its own 'run' line -- a second F5 entry
+        against the same artifact (e.g. my_game_play running host_game). Alias targets
+        are skipped by build-all, clean, and source validation. */
+
+    const char*     alias_for;
+
 } target_info_t;
 
 /*==============================================================================================

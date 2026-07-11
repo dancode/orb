@@ -14,6 +14,9 @@
 #   bin\build_tool.bat           build (add -config Release as needed)
 #   "F:\orb\bin\host_game.exe"   -project .     play it
 #   "F:\orb\bin\host_editor.exe" -project .     edit it (Play/Stop)
+#
+# In Visual Studio, F5 does the same via the 'run' lines below: the startup
+# project launches host_editor; set 'my_project_play' as startup to launch host_game.
 
 engine  ../
 
@@ -23,12 +26,20 @@ target my_project
     root        src
     folder      01_MY_PROJECT
     unit        my_project.c
+    run         host_editor -project .
+
+# F5 launcher: builds my_project.dll, runs it standalone under host_game.
+target my_project_play
+
+    alias       my_project
+    folder      01_MY_PROJECT
+    run         host_game -project .
 
 solution my_project
 
     out         build/proj
     startup     my_project
-    add         my_project
+    add         my_project my_project_play
 
     # Engine targets included for source navigation and debugging.
     add         base sys ref mod app core job

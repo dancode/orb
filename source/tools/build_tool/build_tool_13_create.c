@@ -633,6 +633,9 @@ create_emit_project_targets( const char* path, const char* name, const char* NAM
     fprintf( f, "#   bin\\build_tool.bat           build (add -config Release as needed)\n" );
     fprintf( f, "#   \"%s\\bin\\host_game.exe\"   -project .     play it\n", engine_abs );
     fprintf( f, "#   \"%s\\bin\\host_editor.exe\" -project .     edit it (Play/Stop)\n", engine_abs );
+    fprintf( f, "#\n" );
+    fprintf( f, "# In Visual Studio, F5 does the same via the 'run' lines below: the startup\n" );
+    fprintf( f, "# project launches host_editor; set '%s_play' as startup to launch host_game.\n", name );
     fprintf( f, "\n" );
     fprintf( f, "engine  %s\n", engine_ref );
     fprintf( f, "\n" );
@@ -642,12 +645,20 @@ create_emit_project_targets( const char* path, const char* name, const char* NAM
     fprintf( f, "    root        src\n" );
     fprintf( f, "    folder      01_%s\n", NAME );
     fprintf( f, "    unit        %s.c\n", name );
+    fprintf( f, "    run         host_editor -project .\n" );
+    fprintf( f, "\n" );
+    fprintf( f, "# F5 launcher: builds %s.dll, runs it standalone under host_game.\n", name );
+    fprintf( f, "target %s_play\n", name );
+    fprintf( f, "\n" );
+    fprintf( f, "    alias       %s\n", name );
+    fprintf( f, "    folder      01_%s\n", NAME );
+    fprintf( f, "    run         host_game -project .\n" );
     fprintf( f, "\n" );
     fprintf( f, "solution %s\n", name );
     fprintf( f, "\n" );
     fprintf( f, "    out         build/proj\n" );
     fprintf( f, "    startup     %s\n", name );
-    fprintf( f, "    add         %s\n", name );
+    fprintf( f, "    add         %s %s_play\n", name, name );
     fprintf( f, "\n" );
     fprintf( f, "    # Engine targets included for source navigation and debugging.\n" );
     fprintf( f, "    add         base sys ref mod app core job\n" );
@@ -832,6 +843,9 @@ cmd_create_project( const char* name, const char* dir )
     printf( "\n" );
     printf( "    \"%s\\bin\\host_game.exe\"   -project .     play it\n", engine_abs );
     printf( "    \"%s\\bin\\host_editor.exe\" -project .     edit it (Play/Stop)\n", engine_abs );
+    printf( "\n" );
+    printf( "    Or open build\\proj\\%s_nm.sln and press F5: '%s' debugs in the editor,\n", name, name );
+    printf( "    '%s_play' (set as startup) debugs standalone under host_game.\n", name );
     printf( "\n" );
 
     return true;
