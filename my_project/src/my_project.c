@@ -7,12 +7,12 @@
     -project <dir> ), and the source template for `build_tool -create <name> -type project`.
 
     Demonstrates the full project shape:
-      - implements game/game_project.h ( game_project_api_t ) as its func_api, so any host
-        can drive it generically: on_start / on_update( dt, ctx ) / on_stop
+      - implements runtime/run_project.h ( run_project_api_t ) as its func_api, so any
+        driver can run it generically: on_start / on_sim / on_frame / on_draw / on_stop
       - builds on the game FRAMEWORK module ( game()->on_start / on_update / on_stop --
         the framework's score ticks to the console prove the delegation chain )
-      - submits its scene through render() using the rhi context handed in per update
-        ( ctx->render_ctx; -1 when running headless )
+      - submits its scene through render() using the rhi context handed in per draw
+        ( view->render_ctx; -1 when running headless )
       - persistent state that survives hot-reloads ( edit this file, rebuild, watch the
         swap land without losing position )
 
@@ -54,7 +54,7 @@ typedef struct my_project_state_s
 static my_project_state_t* g_state = NULL;
 
 /*==============================================================================================
-    Project contract  (game/game_project.h)
+    Project contract  (runtime/run_project.h)
 ==============================================================================================*/
 
 static void
@@ -69,27 +69,44 @@ my_project_on_start( void )
 }
 
 static void
-my_project_on_update( f32 dt, const game_project_ctx_t* ctx )
+my_project_on_sim( f32 fixed_dt )
 {
     if ( !g_state || !g_state->running )
         return;
 
-    game()->on_update( dt );    /* framework score ticks to the console every second */
+    game()->on_update( fixed_dt );    /* framework score ticks to the console every second */
 
-    g_state->angle += SAMPLE_ORBIT_SPEED * dt;
+    g_state->angle += SAMPLE_ORBIT_SPEED * fixed_dt;
+}
+
+static void
+my_project_on_frame( f32 dt, const run_view_t* view )
+{
+    /* Per-frame, framerate-bound work (cameras, effects) goes here -- none yet. */
+    UNUSED( dt );
+    UNUSED( view );
+}
+
+static void
+my_project_on_draw( f32 alpha, const run_view_t* view )
+{
+    UNUSED( alpha );    /* no prev-state lerp yet -- draws the latest sim state */
+
+    if ( !g_state || !g_state->running )
+        return;
 
     /* Scene submission -- a square orbiting the surface center.  render()->draw_scene
        replays this behind whatever the host composites on top (editor gui, HUD).  The
-       surface size comes from the ctx so the project never touches rhi directly. */
-    if ( ctx->render_ctx >= 0 && ctx->surface_w > 0 && ctx->surface_h > 0 )
+       surface size comes from the view so the project never touches rhi directly. */
+    if ( view->render_ctx >= 0 && view->surface_w > 0 && view->surface_h > 0 )
     {
-        f32 w  = ( f32 )ctx->surface_w;
-        f32 h  = ( f32 )ctx->surface_h;
+        f32 w  = ( f32 )view->surface_w;
+        f32 h  = ( f32 )view->surface_h;
         f32 cx = w * 0.5f + f32_cos( g_state->angle ) * w * 0.25f;
         f32 cy = h * 0.5f + f32_sin( g_state->angle ) * h * 0.25f;
 
         const f32 teal[ 4 ] = { 0.20f, 0.80f, 0.70f, 1.0f };
-        render()->submit_rect( ctx->render_ctx, cx, cy,
+        render()->submit_rect( view->render_ctx, cx, cy,
                                SAMPLE_SQUARE_SIZE, SAMPLE_SQUARE_SIZE, teal );
     }
 }
@@ -105,10 +122,12 @@ my_project_on_stop( void )
     LOG_INFO( "on_stop" );
 }
 
-const game_project_api_t g_my_project_api_struct = {
-    .on_start  = my_project_on_start,
-    .on_update = my_project_on_update,
-    .on_stop   = my_project_on_stop,
+const run_project_api_t g_my_project_api_struct = {
+    .on_start = my_project_on_start,
+    .on_sim   = my_project_on_sim,
+    .on_frame = my_project_on_frame,
+    .on_draw  = my_project_on_draw,
+    .on_stop  = my_project_on_stop,
 };
 
 /*==============================================================================================
@@ -160,7 +179,7 @@ my_project_get_mod_desc( void )
     static mod_desc_t desc = {
         .version       = 1,
         .state_size    = sizeof( my_project_state_t ),
-        .func_api_size = sizeof( game_project_api_t ),
+        .func_api_size = sizeof( run_project_api_t ),
         .deps          = { "core", "game", "render" },
         .dep_count     = 3,
         .func_api      = ( void* )&g_my_project_api_struct,

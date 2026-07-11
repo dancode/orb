@@ -6,7 +6,7 @@
 #   - Engine headers (engine/sys/sys.h etc.) are on the include path automatically.
 #   - Built-in tools (build_tool, reflect_tool) resolve from the engine root.
 #
-# This project builds my_project.dll -- a game module (game/game_project.h contract)
+# This project builds my_project.dll -- a game module (runtime/run_project.h contract)
 # run by the engine's hosts.  -monolithic is not supported for project DLLs.
 #
 # Workflow:

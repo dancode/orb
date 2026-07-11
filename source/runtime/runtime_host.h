@@ -147,8 +147,8 @@ typedef struct run_host_desc_s
     /* Optional game project DLL -- Tier-3, always dynamic, loaded with mod_dynamic_load_dir
        AFTER modules[] registers and BEFORE mod_init_all (one dep-ordered init pass covers
        it; its deps -- core/game/render -- must be in modules[]).  The runtime is contract-
-       agnostic: it loads and hot-reloads the DLL but never calls into it.  Hosts fetch the
-       vtable via mod_get_api( project_name ) and drive it (see game/game_project.h). */
+       agnostic: it loads and hot-reloads the DLL but never calls into it.  Drivers fetch the
+       vtable via mod_get_api( project_name ) and drive it (see runtime/run_project.h). */
 
     const char*               project_name;       // project DLL base name; NULL = none
     const char*               project_dir;        // dir holding <name>.dll; NULL = exe dir

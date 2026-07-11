@@ -10,10 +10,10 @@
         host_game.exe -module sample_game            loads sample_game.dll from the exe dir
         host_game.exe -project <dir> -module <name>  -module overrides the basename
 
-    The project implements game/game_project.h; this host fetches the vtable once in
+    The project implements runtime/run_project.h; this host fetches the vtable once in
     on_ready (mod_get_api returns the stable api slot -- live across hot-reloads) and
-    drives it every frame: on_start at ready, on_update( dt, ctx ) per frame, on_stop on
-    close.  The ctx hands the project its render target and surface size each update.
+    drives it every frame: on_start at ready, on_sim / on_frame / on_draw per frame,
+    on_stop on close.  The view hands the project its render target and surface size.
 
     Dev keys Q/R read the CONSOLE (terminal focus only) so they can't be fumbled from the
     game window -- same policy as host_editor.
@@ -35,7 +35,7 @@
 #include "runtime_service/draw/draw_host.h"
 #include "runtime_modules/render/render_api.h"
 #include "game/game_api.h"
-#include "game/game_project.h"
+#include "runtime/run_project.h"
 
 #include "runtime/runtime_api.h"
 #include "runtime/runtime_host.h"
@@ -50,8 +50,8 @@ MOD_USE_RUN;
     Host state
 ==============================================================================================*/
 
-static host_project_t            s_proj;             /* resolved -project/-module            */
-static const game_project_api_t* s_project = NULL;   /* stable api slot; live across reloads */
+static host_project_t           s_proj;             /* resolved -project/-module            */
+static const run_project_api_t* s_project = NULL;   /* stable api slot; live across reloads */
 
 /*==============================================================================================
     Host callbacks
@@ -62,7 +62,7 @@ game_host_ready( void )
 {
     /* The stable api slot: the mod system rewrites its contents on every hot-reload, so
        this pointer never needs refreshing. */
-    s_project = ( const game_project_api_t* )mod_get_api( s_proj.name );
+    s_project = ( const run_project_api_t* )mod_get_api( s_proj.name );
     if ( !s_project )
     {
         fprintf( stderr, "[host_game] project '%s' has no api\n", s_proj.name );
@@ -96,18 +96,22 @@ game_host_update( f32 dt )
         mod_reload_all();
     }
 
-    /* Drive the project.  The ctx is rebuilt every frame -- surface size tracks resizes
-       and a hot-reloaded project can never hold a stale handle. */
+    /* Drive the project.  The view is rebuilt every frame -- surface size tracks resizes
+       and a hot-reloaded project can never hold a stale handle.  Direct variable-step
+       drive: one sim step at dt, draw at alpha 1 -- the game framework runner takes over
+       pacing (fixed-step accumulator, play state) when it drives this contract. */
 
     if ( s_project )
     {
-        game_project_ctx_t ctx = {
-            .version    = GAME_PROJECT_CTX_VERSION,
+        run_view_t view = {
+            .version    = RUN_VIEW_VERSION,
             .render_ctx = run_host_ctx(),
         };
-        app()->window_get_size( run_host_window(), &ctx.surface_w, &ctx.surface_h );
+        app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
 
-        s_project->on_update( dt, &ctx );
+        s_project->on_sim( dt );
+        s_project->on_frame( dt, &view );
+        s_project->on_draw( 1.0f, &view );
     }
 }
 

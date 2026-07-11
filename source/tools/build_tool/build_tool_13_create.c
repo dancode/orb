@@ -17,7 +17,7 @@
 
     Project scaffolding creates a complete standalone game project that builds on this
     engine (run from the engine root; -dir defaults to <name>).  The project builds a
-    GAME MODULE DLL (game/game_project.h contract) that the engine's hosts load and run:
+    GAME MODULE DLL (runtime/run_project.h contract) that the engine's hosts load and run:
     host_game.exe -project <dir> / host_editor.exe -project <dir>.
         <dir>/orb.targets      -- 'engine' declaration + game DLL target + solution
         <dir>/src/<name>.c|.h  -- copy of source/project/sample_game/sample_game.c|.h
@@ -607,7 +607,7 @@ create_project_engine_ref( const char* dir_fwd, const char* engine_abs, char* ou
 
    The project builds a game module DLL, not an exe: the engine's hosts run it --
    host_game.exe -project <dir> (play) or host_editor.exe -project <dir> (Play/Stop in
-   the editor).  The DLL implements game/game_project.h and hot-reloads while a host is
+   the editor).  The DLL implements runtime/run_project.h and hot-reloads while a host is
    running.  -monolithic is not supported for project DLLs (a mono build produces no
    engine DLLs for the project to pair with). */
 static void
@@ -625,7 +625,7 @@ create_emit_project_targets( const char* path, const char* name, const char* NAM
     fprintf( f, "#   - Engine headers (engine/sys/sys.h etc.) are on the include path automatically.\n" );
     fprintf( f, "#   - Built-in tools (build_tool, reflect_tool) resolve from the engine root.\n" );
     fprintf( f, "#\n" );
-    fprintf( f, "# This project builds %s.dll -- a game module (game/game_project.h contract)\n", name );
+    fprintf( f, "# This project builds %s.dll -- a game module (runtime/run_project.h contract)\n", name );
     fprintf( f, "# run by the engine's hosts.  -monolithic is not supported for project DLLs.\n" );
     fprintf( f, "#\n" );
     fprintf( f, "# Workflow:\n" );

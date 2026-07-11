@@ -10,7 +10,7 @@
 
     What makes this the HOST and not the sandbox: it parses launch params up front (host_common,
     pre-engine) -- -project/-module select a game project DLL that the runtime loads at boot and
-    this editor drives with Play/Stop (game/game_project.h contract), -dev arms idle-sleep pacing.
+    this editor drives with Play/Stop (runtime/run_project.h contract), -dev arms idle-sleep pacing.
     Everything below the arg parse is the same modern stack sb_example_editor validates.
 
     Q/R/D are developer hotkeys read from the CONSOLE (terminal focus only, via RUN_HOST_CONSOLE)
@@ -34,7 +34,7 @@
 #include "runtime_service/gui/gui_api.h"
 #include "runtime_modules/render/render_api.h"
 #include "game/game_api.h"
-#include "game/game_project.h"
+#include "runtime/run_project.h"
 
 #include "runtime/runtime_api.h"
 #include "runtime/runtime_host.h"
@@ -54,9 +54,9 @@ MOD_USE_GAME;
 static bool s_show_scene = true;    /* submit the scene rect behind the gui                   */
 static bool s_show_stats;           /* frame-clock readout window                             */
 
-static host_project_t            s_proj;             /* resolved -project/-module            */
-static const game_project_api_t* s_project = NULL;   /* stable api slot; live across reloads */
-static bool                      s_playing = false;  /* editor Play state -- gates on_update  */
+static host_project_t           s_proj;             /* resolved -project/-module            */
+static const run_project_api_t* s_project = NULL;   /* stable api slot; live across reloads */
+static bool                     s_playing = false;  /* editor Play state -- gates the drive  */
 
 /*==============================================================================================
     Editor Host Functions
@@ -74,7 +74,7 @@ editor_ready( void )
        (score readout); MOD_HOST_FETCH_API is valid from here on. */
     if ( s_proj.present )
     {
-        s_project = ( const game_project_api_t* )mod_get_api( s_proj.name );
+        s_project = ( const run_project_api_t* )mod_get_api( s_proj.name );
         MOD_HOST_FETCH_API( game );
         printf( "[editor] project '%s' loaded -- use Play to start it\n", s_proj.name );
     }
@@ -153,18 +153,22 @@ editor_update( f32 dt )
     editor_handle_shortcuts();
     editor_submit_scene();
 
-    /* Drive the playing project.  Ctx rebuilt every frame -- surface size tracks resizes
+    /* Drive the playing project.  View rebuilt every frame -- surface size tracks resizes
        and a hot-reloaded project can never hold a stale handle.  This is also the future
-       play-in-editor seam: swap render_ctx for a viewport context, no contract change. */
+       play-in-editor seam: swap render_ctx for a viewport context, no contract change.
+       Direct variable-step drive for now -- the game framework runner takes over pacing
+       (fixed-step accumulator, play state) when it drives this contract. */
     if ( s_playing && s_project )
     {
-        game_project_ctx_t ctx = {
-            .version    = GAME_PROJECT_CTX_VERSION,
+        run_view_t view = {
+            .version    = RUN_VIEW_VERSION,
             .render_ctx = run_host_ctx(),
         };
-        app()->window_get_size( run_host_window(), &ctx.surface_w, &ctx.surface_h );
+        app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
 
-        s_project->on_update( dt, &ctx );
+        s_project->on_sim( dt );
+        s_project->on_frame( dt, &view );
+        s_project->on_draw( 1.0f, &view );
     }
 }
 
@@ -202,8 +206,8 @@ editor_gui( f32 dt )
     {
         gui()->stack();
 
-        /* Project controls -- Play drives the loaded project DLL's on_start/on_update;
-           Stop calls on_stop.  The framework score readout proves the delegation chain. */
+        /* Project controls -- Play drives the loaded project DLL's on_start + per-frame
+           phases; Stop calls on_stop.  The framework score readout proves the chain. */
         if ( s_project )
         {
             gui()->textf( "project: %s", s_proj.name );
