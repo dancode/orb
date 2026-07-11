@@ -14,7 +14,8 @@
     and the host flushes the gui over it via gui()->render( vp0, render()->frame_cmd() ).
 
     The window close button routes through on_close_request (veto point for save prompts).
-    Q on the keyboard is an alternative quit for keyboard-first workflows.
+    Q/R/D are developer hotkeys read from the CONSOLE (terminal focus only, via RUN_HOST_CONSOLE)
+    so they can't be fumbled from the game window -- see editor_handle_shortcuts.
 
     Loop:  RUN_LOOP_RUN
     Flags: RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_EDITOR_SLEEP | RUN_HOST_BORDERLESS
@@ -64,13 +65,21 @@ editor_ready( void )
     printf( "Drag a window out of the main surface to tear off a gui-owned floater.\n" );
 }
 
-/* Game logic -- every frame, widget-free.  The Realtime toggle is applied here edge-triggered
-   (an unconditional per-frame write would clobber gui's own F debug hotkey). */
-static void
-editor_update( f32 dt )
-{
-    UNUSED( dt );
+/* Developer hotkeys.  DELIBERATELY read the CONSOLE (sys_key_pressed, via ReadConsoleInput on
+   the terminal's STD_INPUT_HANDLE) rather than the app window -- so they fire ONLY when the
+   TERMINAL is focused, never from the game window.  These are destructive dev actions (quit,
+   reload-all, sleep-debug toggle); routing them through the console means you cannot fumble them
+   while interacting with the editor UI, and no want_capture_keyboard fence is needed because
+   console input is a separate device from the gui's windowed input entirely.
 
+   This is why sb_example_editor keeps RUN_HOST_CONSOLE in its flags: the host calls
+   sys_console_input_poll() each frame only when that flag is set.  In-window shortcuts (the ones
+   a user should trigger from the focused editor) would instead read app()->key_pressed, fenced by
+   gui()->want_capture_keyboard -- see gui_api.h.  These three are not that; they are console-gated
+   on purpose. */
+static void
+editor_handle_shortcuts( void )
+{
     if ( sys_key_pressed( PLATFORM_KEY_Q ) )
     {
         printf( "[editor] Q -- quit\n" );
@@ -86,6 +95,38 @@ editor_update( f32 dt )
 
     if ( sys_key_pressed( PLATFORM_KEY_D ) )
          run_host_sleep_debug_toggle();
+}
+
+/* Viewport scene feed -- the game/editor's per-frame render submission.  render()->draw_scene
+   replays whatever is submitted here behind the gui composite (frame_cmd hand-off in
+   run_host_main).  Kept separate from shell input above: this is the seam a real editor grows
+   into (world tick -> visible-set cull -> submit), distinct from host/tool control.  A static
+   rect is enough to prove the scene-under-gui path for now. */
+static void
+editor_submit_scene( void )
+{
+    if ( !render() || !s_show_scene )
+        return;
+
+    i32 ctx = run_host_ctx();
+    i32 w = 0, h = 0;
+    if ( rhi()->context_size( ctx, &w, &h ) && w > 0 && h > 0 )
+    {
+        const f32 orange[ 4 ] = { 0.95f, 0.55f, 0.15f, 1.0f };
+        render()->submit_rect( ctx, ( f32 )w * 0.5f, ( f32 )h * 0.5f, 220.0f, 220.0f, orange );
+    }
+}
+
+/* Per-frame host update -- every frame, widget-free (widgets go in on_gui, which the retained
+   cache may skip).  Two distinct responsibilities, each in its own helper: editor shell input,
+   then the viewport scene feed.  The Realtime toggle is applied edge-triggered between them --
+   an unconditional per-frame write would clobber gui's own F debug hotkey. */
+static void
+editor_update( f32 dt )
+{
+    UNUSED( dt );
+
+    editor_handle_shortcuts();
 
     static bool s_realtime_prev = false;
     if ( gui() && s_realtime != s_realtime_prev )
@@ -94,19 +135,7 @@ editor_update( f32 dt )
         s_realtime_prev = s_realtime;
     }
 
-    /* Scene submission -- render's draw_scene draws this behind the gui composite
-       (render()->frame_cmd hand-off in run_host_main).  A static rect is enough to
-       prove the scene-under-gui path; the real editor viewport is a later milestone. */
-    if ( render() && s_show_scene )
-    {
-        i32 ctx = run_host_ctx();
-        i32 w = 0, h = 0;
-        if ( rhi()->context_size( ctx, &w, &h ) && w > 0 && h > 0 )
-        {
-            const f32 orange[ 4 ] = { 0.95f, 0.55f, 0.15f, 1.0f };
-            render()->submit_rect( ctx, ( f32 )w * 0.5f, ( f32 )h * 0.5f, 220.0f, 220.0f, orange );
-        }
-    }
+    editor_submit_scene();
 }
 
 /* UI emission -- dirty frames only.  The chrome shell is already emitted by run_host (first

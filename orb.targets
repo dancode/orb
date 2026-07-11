@@ -1,4 +1,29 @@
 # ==============================================================================
+# Project Modules And Targets
+# ==============================================================================
+#
+# source/
+# ├── base/               # Stateless stdlib (math, strings, memory) — no global state
+# ├── engine/             # Stateful static libs: sys, core, ref, net, mod, app
+# ├── runtime/            # Host runtime scaffolding (runtime_host)
+# ├── runtime_service/    # Static services: jobs, rhi
+# ├── runtime_modules/    # Dynamic DLL modules: render, audio, physics
+# ├── developer/          # Dev-only tools: dev_build, dev_hot, dev_reflect_gen
+# ├── game/               # Reusable game framework (world, entity, component, actor)
+# ├── game_service/       # Game-specific static services
+# ├── game_modules/       # Game-specific dynamic modules
+# ├── project/            # User game project implementations (e.g. sample_game)
+# ├── editor/             # Editor framework (windows, panels, tools)
+# ├── editor_service/     # Editor-specific static services
+# ├── editor_modules/     # Editor-specific dynamic modules
+# ├── tools/              # Standalone utilities (build_tool, asset pipeline)
+# ├── sandbox/            # Layer-specific verification targets (sb_engine_*)
+# ├── host/               # ← Executable entry points (you are here)
+# ├── vendor/             # Third-party dependencies
+# ├── engine_api.h        # Aggregator header for engine APIs
+# └── orb.h               # Top-level umbrella header
+#
+# ==============================================================================
 #
 # orb.targets -- project target and solution registry.
 # Format reference: source/tools/build_tool/build_tool_03_registry.c
@@ -303,12 +328,13 @@ target host_game
 	
 target host_editor
 
-    type        static
+    type        exe
     root        source/host/editor
     folder      08_HOST
     unit        host_editor_main.c
-	dep         mod sys ref core job app
-	dep 		draw gui 
+	dep         mod ref sys core job app host_common
+    dep         run rhi draw gui
+	mono_dep	render
 	
 target host_tool
 
@@ -702,10 +728,41 @@ solution orb_runtime
 solution orb_editor 
 
     out         build/proj
+
+	#			--- LIBRARIES ---
+	
+	add         base
+	add         sys ref mod app core job net
+
+	add 		run
+	add 		rhi						# vulkan render library
+	add 		draw 					# drawing using the rhi
+	add 		gui 					# gui lbrary
+	add 		asset 					# asset service (image loader)
+	
+	add 		render 					# render dll
+	add 		dev_font				# dev-only font baker
+	
+	#			--- EDITOR ---
+	
 	add 		editor
 	add 		editor_viewport
 	add 		editor_example
+	
+	#			--- LIBRARIES ---
+	
+	add 		host_game
+	add 		host_editor 
+	add 		host_sandbox 
+	add 		host_tool
 
+	#			--- EXECUTABLE ---
+	add 		sb_example_runtime
+	add 		sb_example_editor
+	add 		sb_example_server
+	add 		sb_example_tool
+	add 		sb_example_game
+	
 # ==============================================================================
 # EXAMPLES: Executable Examples
 # ==============================================================================
