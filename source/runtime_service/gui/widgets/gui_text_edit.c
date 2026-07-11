@@ -361,8 +361,7 @@ edit_run_key_hook( char* buf, u32 bufsz, gui_edit_state_t* es, u32* len_io )
         if ( !s_io.keys_pressed_repeat[ k ] ) continue;
         if ( hook( k, io_ctrl(), io_shift(), !s_io.keys_pressed[ k ], user ) )
         {
-            s_io.keys_pressed[ k ]        = false;
-            s_io.keys_pressed_repeat[ k ] = false;
+            key_claim( (app_key_t)k );   /* the hook consumed it -- the field must not also see it */
             used = true;
         }
     }

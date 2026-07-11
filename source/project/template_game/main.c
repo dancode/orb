@@ -42,7 +42,11 @@ game_ready( void )
 static void
 game_update( f32 dt )
 {
-    /* Input -> movement. key_down is level-triggered: held keys keep moving. */
+    /* Input -> movement. key_down is level-triggered: held keys keep moving.  This starter links
+       no gui service, so reading app() directly is correct.  Once you add gui, gate gameplay input
+       on its capture fence -- wrap the key reads in  if ( !gui()->want_capture_keyboard() ) { ... }
+       (and gate clicks on want_capture_mouse) -- so typing in a text field or clicking a widget does
+       not also drive the game.  See gui_api.h want_capture_* for the pattern. */
     f32 dx = 0.0f, dy = 0.0f;
     if ( app()->key_down( APP_KEY_A ) || app()->key_down( APP_KEY_LEFT ) )  dx -= 1.0f;
     if ( app()->key_down( APP_KEY_D ) || app()->key_down( APP_KEY_RIGHT ) ) dx += 1.0f;

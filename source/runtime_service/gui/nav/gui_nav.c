@@ -949,13 +949,14 @@ nav_new_frame( void )
         if ( edit_release )
         {
             g_ctx->nav.edit_id = GUI_ID_NONE;
-            s_io.keys_pressed[ APP_KEY_ENTER ] = false;   /* the release must not re-activate */
-            s_io.keys_pressed[ APP_KEY_SPACE ] = false;
+            key_claim( APP_KEY_ENTER );    /* the release is nav's -- no re-activate, no fall-through */
+            key_claim( APP_KEY_SPACE );
+            key_claim( APP_KEY_ESCAPE );
         }
         else
         {
-            if ( s_io.keys_pressed_repeat[ APP_KEY_LEFT  ] ) g_ctx->nav.edit_dir = -1;
-            if ( s_io.keys_pressed_repeat[ APP_KEY_RIGHT ] ) g_ctx->nav.edit_dir = +1;
+            if ( s_io.keys_pressed_repeat[ APP_KEY_LEFT  ] ) { g_ctx->nav.edit_dir = -1; key_claim( APP_KEY_LEFT  ); }
+            if ( s_io.keys_pressed_repeat[ APP_KEY_RIGHT ] ) { g_ctx->nav.edit_dir = +1; key_claim( APP_KEY_RIGHT ); }
             if ( g_ctx->nav.edit_dir != 0 )
             {
                 g_ctx->nav.active    = true;   /* stepping keeps the keyboard the active instrument */
@@ -973,6 +974,7 @@ nav_new_frame( void )
     /* Ctrl+Tab cycles the nav window by z-order (Shift reverses). */
     if ( ctrl && s_io.keys_pressed[ APP_KEY_TAB ] )
     {
+        key_claim( APP_KEY_TAB );   /* nav's -- do not also fall through to a Tier-3 binding */
         nav_cycle_window( shift ? -1 : +1 );
         nav_finish();
         return;
@@ -1063,6 +1065,28 @@ nav_new_frame( void )
     {
         g_ctx->nav.active    = true;
         g_ctx->nav.highlight = true;
+    }
+
+    /* Claim the motion keys nav actually took, so the same press cannot also drive a Tier-3 binding
+       (the per-key half of the model in gui_want_capture_keyboard).  Gated on there being a nav
+       target this frame: an empty item list resolves nothing, so an arrow over a targetless window
+       falls through instead of being silently eaten -- the same lesson as nav_has_typeahead_targets.
+       Enter/Space are NOT claimed here; they are taken at the activation seam (nav_item_register,
+       interact/gui_item.c), the only place that knows an item actually consumed the activation.  Esc
+       is left to the popup / menu-bar branches below, which run under want_capture_keyboard's hard
+       block -- the app is already fenced from every key there, so a per-key claim would be redundant. */
+    if ( g_ctx->nav.item_count > 0 )
+    {
+        if ( up    ) key_claim( APP_KEY_UP        );
+        if ( down  ) key_claim( APP_KEY_DOWN      );
+        if ( left  ) key_claim( APP_KEY_LEFT      );
+        if ( right ) key_claim( APP_KEY_RIGHT     );
+        if ( tab   ) key_claim( APP_KEY_TAB       );
+        if ( pgup  ) key_claim( APP_KEY_PAGE_UP   );
+        if ( pgdn  ) key_claim( APP_KEY_PAGE_DOWN );
+        if ( home  ) key_claim( APP_KEY_HOME      );
+        if ( end   ) key_claim( APP_KEY_END       );
+        if ( lane  ) key_claim( APP_KEY_F6        );
     }
 
     /* Menu-bar mode owns the bar/menu keys (traverse, descend, ascend-to-owner, Up-to-bar). */
