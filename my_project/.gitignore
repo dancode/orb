@@ -1,8 +1,95 @@
-bin/
-build/
-.cache/
-.vscode/
-.clangd
-.orb_engine
-compile_commands.json
+# Prerequisites
+*.d
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# debug information files
+*.dwo
+
+# Build directories
+/[Bb]uild/
+/[Bb]uild_*/
+/[Bb]in/
+/[Oo]ut/
+cmake-build-*/
+
+# Standalone project outputs (any subdirectory project)
+*/[Bb]uild/
+*/[Bb]in/
+*/.vscode/
+
+# VS Code workspace settings
+/.vscode/
+
+# clangd / LSP generated files
+/compile_commands.json
+*/compile_commands.json
+/.clangd
+*/.clangd
+
 *.code-workspace
+
+# Visual Studio specific
+.vs/
+*.suo
+*.user
+*.vcxproj*
+*.sln
+
+# Child project engine root marker (machine-local)
+.orb_engine
+
+# Assets
+/assets
+
+# Third Party Bloat
+/third_party
+

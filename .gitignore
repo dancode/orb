@@ -75,6 +75,8 @@ cmake-build-*/
 /.clangd
 */.clangd
 
+*.code-workspace
+
 # Visual Studio specific
 .vs/
 *.suo
@@ -90,3 +92,4 @@ cmake-build-*/
 
 # Third Party Bloat
 /third_party
+

@@ -1,6 +1,17 @@
 {
   "folders": [
     { "name": "my_project", "path": "." },
-    { "name": "sys", "path": "F:/orb/source/engine/sys" }
+    { "name": "base", "path": "F:/orb/source/base" },
+    { "name": "sys", "path": "F:/orb/source/engine/sys" },
+    { "name": "ref", "path": "F:/orb/source/engine/ref" },
+    { "name": "mod", "path": "F:/orb/source/engine/mod" },
+    { "name": "app", "path": "F:/orb/source/engine/app" },
+    { "name": "core", "path": "F:/orb/source/engine/core" },
+    { "name": "job", "path": "F:/orb/source/engine/job" },
+    { "name": "run", "path": "F:/orb/source/runtime" },
+    { "name": "rhi", "path": "F:/orb/source/runtime_service/rhi" },
+    { "name": "draw", "path": "F:/orb/source/runtime_service/draw" },
+    { "name": "render", "path": "F:/orb/source/runtime_modules/render" },
+    { "name": "game", "path": "F:/orb/source/game" }
   ]
 }
