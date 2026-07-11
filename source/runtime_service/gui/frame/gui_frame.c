@@ -222,12 +222,6 @@ gui_frame_begin( f32 dt )
     /* Refresh the IO snapshot, computing s_io_dirty as a side-effect. */
     input_frame_begin( disp_w, disp_h, dt );
 
-    /* Debug hotkeys (overlay tiers, render mode, retained/idle skip) -- polled from the fresh IO
-       snapshot while debug_enable is on.  A press is itself an input change, so any mode it flips
-       lands in a frame that io_dirty already marks for a full emit. */
-    if ( gui_debug_is_enabled() )
-        debug_hotkeys();
-
     /* Frontend dirty: true when the frame must emit widgets.
          - io_dirty          : any input change this frame (mouse move/button/key/wheel/text)
          - wants_redraw      : an animation was in flight last frame and must advance this frame
@@ -296,6 +290,15 @@ gui_frame_begin( f32 dt )
 void
 gui_frame_end( void )
 {
+    /* Debug hotkeys (overlay tiers, render mode, retained/idle skip) -- polled here, after
+       nav_new_frame and all widget emission for the frame, so any key nav/widgets actually used
+       (arrow-nav activation, type-ahead, mnemonics) has already been consumed (zeroed) out of the
+       IO snapshot; debug_hotkeys only sees keys nothing else claimed this frame.  A press is
+       itself an input change, so any mode it flips still lands in a frame io_dirty already marked
+       dirty back in frame_begin -- moving this call does not affect that. */
+    if ( gui_debug_is_enabled() )
+        debug_hotkeys();
+
     /* Clean frame: no emit ran, the preserved draw list will be replayed verbatim -- patch the
        volatile widgets (gui()->volatile_cb registrations) in place so they keep animating. */
     if ( !s_frame_dirty )

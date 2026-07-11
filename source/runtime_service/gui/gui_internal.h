@@ -226,9 +226,10 @@ typedef struct
     gui_id_t    id;            // the highlighted item (keyboard cursor); persists across frames
     gui_id_t    win;           // window/popup nav is scoped to (the hover_win analogue)
 
-    /* Explicit nav target window (gui_window_set_nav / Ctrl+Tab).  0 means "follow the
-       front-most normal window", so nav has a sensible default with no caller setup. */
-    gui_id_t    explicit_win;
+    /* Keyboard-focused window (click / gui_window_set_nav / Ctrl+Tab / Alt-mnemonic).  NONE means
+       no window has focus -- a background/viewport click clears it -- and nav then falls back to
+       following the front-most normal window, so nav has a sensible default with no caller setup. */
+    gui_id_t    focused_win;
 
     /* Two visual states, the Dear ImGui NavDisableHighlight split.  active means a nav cursor
        position exists -> the outline ring is drawn at id (and follows clicks), persisting even in

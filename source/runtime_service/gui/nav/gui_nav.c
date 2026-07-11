@@ -48,10 +48,10 @@
     State
 ----------------------------------------------------------------------------------------------*/
 
-/* The explicit nav target window (window_set_nav / Ctrl+Tab / Alt) lives in g_ctx->nav.explicit_win
-   (gui_internal.h) -- per-context, so two bound contexts never stomp each other's nav target.
-   0 means "follow the front-most normal window", so nav has a sensible default with no caller
-   setup. */
+/* The keyboard-focused window (click / window_set_nav / Ctrl+Tab / Alt) lives in
+   g_ctx->nav.focused_win (gui_internal.h) -- per-context, so two bound contexts never stomp each
+   other's focus.  NONE means no window has focus, so nav falls back to the front-most normal
+   window, giving nav a sensible default with no caller setup. */
 
 /* A letter was used as an Alt+mnemonic during the current Alt hold, so the Alt release must not also
    toggle the menu bar -- distinguishes a bare Alt tap (toggle) from Alt+F (open the File menu). */
@@ -109,22 +109,22 @@ nav_choose_window( void )
        skipped so they never masquerade as the front-most window, and so is a GUI_WIN_NATIVE
        frame-only shell -- it has no body items, so defaulting nav onto it would strand the
        keyboard on bare chrome. */
-    gui_id_t front         = GUI_ID_NONE;
-    u32      frontz        = 0;
-    bool     have_explicit = false;
+    gui_id_t front      = GUI_ID_NONE;
+    u32      frontz     = 0;
+    bool     have_focus = false;
     for ( u32 i = 0; i < g_ctx->win.count; ++i )
     {
         gui_window_t* w = &g_ctx->win.pool[ i ];
         if ( w->overlay ) continue;   /* an overlay never masquerades as the front-most window */
-        if ( w->id == g_ctx->nav.explicit_win ) have_explicit = true;   /* native may be explicit */
+        if ( w->id == g_ctx->nav.focused_win ) have_focus = true;   /* native may hold focus */
         if ( !nav_win_focusable( w ) ) continue;
         if ( w->z >= frontz ) { frontz = w->z; front = w->id; }
     }
-    g_ctx->nav.win = have_explicit ? g_ctx->nav.explicit_win : front;
+    g_ctx->nav.win = have_focus ? g_ctx->nav.focused_win : front;
 }
 
 /*----------------------------------------------------------------------------------------------
-    nav_cycle_window -- Ctrl+Tab: move the explicit nav target to the next normal window by z.
+    nav_cycle_window -- Ctrl+Tab: move the focused window to the next normal window by z.
 
     dir > 0 picks the next-higher z (wrapping to the lowest), dir < 0 the next-lower (wrapping to
     the highest), so repeated Ctrl+Tab walks the window stack.  The chosen window is raised to the
@@ -151,14 +151,14 @@ nav_cycle_skip( const gui_window_t* w )
     return false;
 }
 
-/* The z the cycle steps away from: the explicit nav target if it is a live non-overlay window,
+/* The z the cycle steps away from: the focused window if it is a live non-overlay window,
    else the front-most non-overlay window's z. */
 static u32
 nav_cycle_from_z( void )
 {
-    gui_window_t* explicit_w = window_find( g_ctx->nav.explicit_win );
-    if ( explicit_w && !explicit_w->overlay )
-        return explicit_w->z;
+    gui_window_t* focused_w = window_find( g_ctx->nav.focused_win );
+    if ( focused_w && !focused_w->overlay )
+        return focused_w->z;
 
     u32 top = 0;
     for ( u32 i = 0; i < g_ctx->win.count; ++i )
@@ -214,9 +214,9 @@ nav_cycle_window( i32 dir )
     if ( dn && dn->floating )
         dn->z = surface_z_raise( dn->z );
 
-    g_ctx->nav.explicit_win = pick;
-    g_ctx->nav.id           = GUI_ID_NONE;
-    g_ctx->nav.active       = true;
+    g_ctx->nav.focused_win = pick;
+    g_ctx->nav.id          = GUI_ID_NONE;
+    g_ctx->nav.active      = true;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -380,6 +380,14 @@ nav_typeahead_feed( const char* text )
 
         if ( nav->type_len < (u32)sizeof( nav->type_buf ) - 1 )
             nav->type_buf[ nav->type_len++ ] = c;
+
+        /* This character is now nav's -- zero the literal key edge so the same press cannot also
+           fall through to an app-level hotkey later in the frame (same consume-by-zeroing pattern
+           as the activate-key clear in gui_item.c's widget_behavior). */
+        app_key_t k = ( c >= 'a' && c <= 'z' ) ? (app_key_t)( APP_KEY_A + ( c - 'a' ) )
+                                                : (app_key_t)( APP_KEY_0 + ( c - '0' ) );
+        s_io.keys_pressed[ k ]        = false;
+        s_io.keys_pressed_repeat[ k ] = false;
     }
     if ( first ) return;   /* nothing usable in this chunk (punctuation / control chars only) */
 
@@ -697,7 +705,7 @@ nav_main_bar_win( void )
 static void
 nav_menu_enter( gui_id_t bar )
 {
-    g_ctx->nav.prev_win   = g_ctx->nav.explicit_win;
+    g_ctx->nav.prev_win   = g_ctx->nav.focused_win;
     g_ctx->nav.prev_id    = g_ctx->nav.id;    /* remember the focus to toggle back to */
     g_ctx->nav.bar_win    = bar;
     g_ctx->nav.in_menus   = false;
@@ -715,7 +723,7 @@ nav_menu_exit( void )
     g_ctx->nav.bar_win    = GUI_ID_NONE;
     g_ctx->nav.in_menus   = false;
     g_ctx->nav.menu_owner = GUI_ID_NONE;
-    g_ctx->nav.explicit_win   = g_ctx->nav.prev_win;
+    g_ctx->nav.focused_win    = g_ctx->nav.prev_win;
     g_ctx->nav.id         = g_ctx->nav.prev_id;   /* back to the last focus location */
 }
 
@@ -887,14 +895,16 @@ nav_new_frame( void )
             g_ctx->nav.in_menus = false;
         }
 
-        /* Click-to-focus: the clicked window becomes the explicit nav target, so the keyboard
+        /* Click-to-focus: the clicked window becomes the keyboard-focused window, so the keyboard
            resumes where the mouse last worked.  This is what lets a DOCKED window take nav at
            all -- a click never raises a tile's z (window_raise_on_press leaves it tiled), so the
            front-most-by-z default can never reach it.  Popup-band records keep their own capture
            (nav_choose_window) and a frame-only native shell never takes the keyboard. */
         gui_window_t* clicked = window_find( s_interaction.hover_win );
         if ( clicked && nav_win_focusable( clicked ) )
-            g_ctx->nav.explicit_win = clicked->id;
+            g_ctx->nav.focused_win = clicked->id;
+        else if ( s_interaction.hover_win == GUI_ID_NONE )
+            g_ctx->nav.focused_win = GUI_ID_NONE;   /* background/viewport click -- nothing is focused */
     }
 
     /* Menu mode self-heals: if its bar window is gone, drop out. */
@@ -968,6 +978,8 @@ nav_new_frame( void )
                     gui_id_t mb = nav_main_bar_win();
                     if ( mb != GUI_ID_NONE ) nav_menu_enter( mb );
                 }
+                s_io.keys_pressed[ APP_KEY_A + c ]        = false;   /* consumed -- no hotkey fallthrough */
+                s_io.keys_pressed_repeat[ APP_KEY_A + c ] = false;
                 break;
             }
 
@@ -986,8 +998,10 @@ nav_new_frame( void )
     /* Type-ahead: any printable text typed this frame narrows/jumps the nav cursor (see the
        nav_typeahead_feed comment above).  Not while Alt is held -- those letters are menu-bar
        mnemonics, handled above -- or while the menu bar owns the keyboard, where a bare letter
-       has no jump-to-row target anyway (menu items do not opt into type-ahead). */
-    if ( !alt && g_ctx->nav.bar_win == GUI_ID_NONE )
+       has no jump-to-row target anyway (menu items do not opt into type-ahead).  Also requires a
+       focused window (click / Ctrl+Tab / Alt-mnemonic) -- without this, a fallback front-most
+       window with no user interaction would steal ordinary keystrokes meant for app-level hotkeys. */
+    if ( !alt && g_ctx->nav.bar_win == GUI_ID_NONE && g_ctx->nav.focused_win != GUI_ID_NONE )
         nav_typeahead_feed( s_io.text );
 
     /* Arrows / Tab move (repeat so a held key keeps stepping); Enter/Space activate. */
@@ -1073,8 +1087,8 @@ nav_new_frame( void )
 void
 gui_window_set_nav( const char* title )
 {
-    g_ctx->nav.explicit_win  = title ? id_hash( title ) : GUI_ID_NONE;
-    g_ctx->nav.id        = GUI_ID_NONE;   /* first item of the new window takes focus */
+    g_ctx->nav.focused_win = title ? id_hash( title ) : GUI_ID_NONE;
+    g_ctx->nav.id          = GUI_ID_NONE;   /* first item of the new window takes focus */
     g_ctx->nav.active    = true;
     g_ctx->nav.highlight = true;
 }

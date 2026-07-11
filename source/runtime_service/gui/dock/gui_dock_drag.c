@@ -557,7 +557,7 @@ dock_window_chrome( gui_dock_node_t* node )
             /* The tab switch also moves keyboard focus: click-to-focus (gui_nav.c) latched the OLD
                active window (it owned hover), which stops emitting the moment this tab takes over --
                retarget nav at the window actually coming to the front. */
-            g_ctx->nav.explicit_win = node->tabs[ i ];
+            g_ctx->nav.focused_win = node->tabs[ i ];
         }
 
         /* Press arms an undock-by-drag: the move threshold below decides click (select) vs drag-out. */

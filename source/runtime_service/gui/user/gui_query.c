@@ -29,13 +29,17 @@ gui_want_capture_mouse( void )
     return s_interaction.hover_win != GUI_ID_NONE || s_interaction.active_id != GUI_ID_NONE;
 }
 
-/* True when gui owns the keyboard this frame -- a text field is focused, keyboard nav is engaged,
-   or a popup/menu is open -- so gameplay / tools must not also act on the same keystrokes (an arrow
-   driving the nav cursor, an Enter activating the nav item).  The fence for non-UI key reads. */
+/* True when gui owns the keyboard this frame -- a text field is focused, a popup/modal is open, or
+   the menu bar/mnemonic mode is active -- so gameplay / tools must not also act on the same
+   keystrokes.  Deliberately does NOT include nav.highlight: that just means the keyboard was the
+   last input instrument used (e.g. arrow-navigating onto a checkbox), not that any particular key
+   is spoken for.  Individual nav key paths (activate, type-ahead, mnemonics) consume their own key
+   by zeroing its s_io edge when they actually use it, so unconsumed keys still reach this fence's
+   callers even while nav is highlighted.  The fence for non-UI key reads. */
 bool
 gui_want_capture_keyboard( void )
 {
-    return s_interaction.focused_id != GUI_ID_NONE || g_ctx->nav.highlight
+    return s_interaction.focused_id != GUI_ID_NONE
         || g_ctx->popup.open_count > 0 || g_ctx->nav.bar_win != GUI_ID_NONE;
 }
 
