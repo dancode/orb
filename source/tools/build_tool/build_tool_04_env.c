@@ -20,6 +20,16 @@
     automatically whenever vcvarsall.bat is newer than the cache file (i.e. after
     a VS update).
 
+    BUILD_SAFE_MODE and the cache:
+    Safe mode exists because some EDR software flags build_tool.exe spawning
+    cmd.exe (_popen for vswhere / the vcvarsall import). The cache sidesteps that:
+    reading it is plain file I/O + putenv, and it is SEEDED without a subprocess --
+    when a run is already inside a working VC environment (Developer Command
+    Prompt / VS build), the process dumps its own environment to the cache file
+    (vcvars_cache_save_current_env). One dev-prompt run seeds it; every later
+    plain-terminal run loads it. Only cache *population via vcvarsall* stays
+    disabled in safe mode.
+
 ==============================================================================================*/
 // clang-format off
 
@@ -140,6 +150,61 @@ vcvars_cache_load( const char* path )
 }
 
 /*==============================================================================================
+    vcvars_cache_save_current_env()
+
+    Seed the cache from the CURRENT process environment -- used when this run is
+    already inside a working VC environment (Developer Command Prompt, VS build),
+    where vcvarsall's variables are simply our own. Pure file I/O, no subprocess,
+    so it also runs under BUILD_SAFE_MODE -- this is what makes later plain-terminal
+    builds possible there.
+
+    Written to a per-process temp file and renamed into place: VS solution builds
+    spawn several build_tool processes in parallel, and racing direct writers on
+    one cache file would interleave into a corrupt environment.
+
+    Returns the number of variables written, 0 on failure.
+==============================================================================================*/
+
+#if defined( _WIN32 )
+static int
+vcvars_cache_save_current_env( const char* cache_path )
+{
+    ensure_dir( BUILD_DIR );
+
+    char tmp_path[ PATH_MAX ];
+    snprintf( tmp_path, sizeof( tmp_path ), "%s.%lu.tmp", cache_path,
+              ( unsigned long )GetCurrentProcessId() );
+
+    FILE* cache = fopen( tmp_path, "w" );
+    if ( !cache )
+        return 0;
+
+    int   written = 0;
+    char* block   = GetEnvironmentStringsA();
+    if ( block )
+    {
+        // Double-NUL-terminated list of "KEY=VALUE" entries. Entries starting with
+        // '=' are cmd.exe's hidden per-drive CWD variables ("=C:=C:\...") -- skip.
+        for ( const char* p = block; *p; p += strlen( p ) + 1 )
+        {
+            if ( *p == '=' ) continue;
+            fprintf( cache, "%s\n", p );
+            ++written;
+        }
+        FreeEnvironmentStringsA( block );
+    }
+    fclose( cache );
+
+    if ( written == 0 || !MoveFileExA( tmp_path, cache_path, MOVEFILE_REPLACE_EXISTING ) )
+    {
+        remove( tmp_path );
+        return 0;
+    }
+    return written;
+}
+#endif
+
+/*==============================================================================================
     import_vcvars_env()
 
     Run "vcvarsall x64 && set" in a sub-shell. vcvarsall mutates the sub-shell's
@@ -216,10 +281,14 @@ import_vcvars_env( const char* vcvars_path, const char* cache_path )
       1. VSCMD_ARG_TGT_ARCH == "x64": vcvarsall was already run for x64.
       2. cl.exe is in PATH under a \x64\ directory: VS has wired up an x64
          compiler without running vcvarsall (some NMake launch contexts do this).
-      3. Cache hit (s_vcvars_cache_enabled): cache file is newer than vcvarsall.bat,
-         so the saved KEY=VALUE pairs are loaded directly -- no subprocess needed.
-    If no fast path fires, locate vcvarsall.bat, run the full import, and write
-    the cache (when enabled) so the next cold launch hits fast path 3.
+         Paths 1/2 also SEED the cache from the live environment when it is
+         missing (no subprocess -- see vcvars_cache_save_current_env).
+      3. Cache hit (s_vcvars_cache_enabled): cache file exists and is not older
+         than vcvarsall.bat, so the saved KEY=VALUE pairs are loaded directly.
+         This path is available in BUILD_SAFE_MODE too -- it spawns nothing.
+    If no fast path fires: locate vcvarsall.bat, run the full import, and write
+    the cache so the next cold launch hits fast path 3. Safe mode cannot import
+    (it needs _popen), so there it warns with the seed instructions instead.
 ==============================================================================================*/
 
 void
@@ -229,45 +298,49 @@ build_setup_vc_env( void )
 
     // Fast path 1: vcvarsall already loaded for x64 -- VSCMD_ARG_TGT_ARCH is set by
     // vcvarsall.bat to the target architecture ("x64", "x86", etc.).
-    const char* tgt_arch = getenv( "VSCMD_ARG_TGT_ARCH" );
-    if ( tgt_arch && strcmp( tgt_arch, "x64" ) == 0 )
-        return;
-
     // Fast path 2: cl.exe is in PATH and lives under a \x64\ directory, meaning VS has
     // already wired up an x64 target compiler without setting VSCMD_ARG_TGT_ARCH.
     // A path check is necessary because VS may also inject HostX86\x86\cl.exe into
     // PATH without vcvars -- accepting that one silently produces 32-bit output.
-    char cl_path[ PATH_MAX ];
-    if ( SearchPathA( NULL, "cl.exe", NULL, PATH_MAX, cl_path, NULL ) != 0 )
+    const char* tgt_arch  = getenv( "VSCMD_ARG_TGT_ARCH" );
+    bool        env_ready = ( tgt_arch && strcmp( tgt_arch, "x64" ) == 0 );
+    if ( !env_ready )
     {
-        if ( strstr( cl_path, "\\x64\\" ) )
-            return;
+        char cl_path[ PATH_MAX ];
+        if ( SearchPathA( NULL, "cl.exe", NULL, PATH_MAX, cl_path, NULL ) != 0 )
+            env_ready = ( strstr( cl_path, "\\x64\\" ) != NULL );
     }
 
-#if defined( BUILD_SAFE_MODE )
-    /* vcvarsall auto-import uses _popen(cmd.exe) -- disabled in safe mode. */
-    printf( ORB_INDENT "[orb warn] BUILD_SAFE_MODE: vcvarsall auto-import disabled.\n" );
-    printf( ORB_INDENT "           Run from a Developer Command Prompt to reach cl.exe.\n" );
-    return;
-#else
-    if ( g_out_flags & ORB_OUT_VCVARS )
-        printf( ORB_INDENT "[orb vcvars] VSCMD_ARG_TGT_ARCH != x64, locating Visual Studio...\n" );
-
-    char vcvars_path[ 512 ] = { 0 };
-    if ( locate_vcvarsall( vcvars_path, sizeof( vcvars_path ) ) == false )
+    if ( env_ready )
     {
-        printf( ORB_INDENT "[orb warn] could not locate vcvarsall.bat, compiler calls will fail\n" );
+        // Seed the cache from this live environment when none exists yet -- the only
+        // way the cache gets populated under BUILD_SAFE_MODE. Missing-only (no
+        // staleness probe) keeps this path free of vswhere/_popen and avoids
+        // rewrite races across VS's parallel per-project build_tool spawns.
+        // Delete the file (or -clean, or a normal import) to force a re-seed.
+        if ( s_vcvars_cache_enabled && platform_get_mtime( VCVARS_CACHE_PATH ) == 0 )
+        {
+            int n = vcvars_cache_save_current_env( VCVARS_CACHE_PATH );
+            if ( n > 0 && ( g_out_flags & ORB_OUT_VCVARS ) )
+                printf( ORB_INDENT "[orb vcvars] cache seeded from current env (%d variables)\n", n );
+        }
         return;
     }
 
-    // Fast path 3: valid cache -- skip the vcvarsall subprocess entirely.
+    // Locate vcvarsall for the staleness check and the (non-safe) import. In safe
+    // mode locate_vcvarsall skips vswhere and only probes fixed paths -- no _popen.
+    char vcvars_path[ 512 ] = { 0 };
+    bool have_vcvars        = locate_vcvarsall( vcvars_path, sizeof( vcvars_path ) );
+
+    // Fast path 3: valid cache -- no subprocess, so safe mode may take it too.
+    // When vcvarsall cannot be located (nonstandard install + safe mode) the cache
+    // is trusted as-is: worst case is stale paths, fixed by re-seeding.
     if ( s_vcvars_cache_enabled )
     {
-        // If VS updates and touches vcvarsall.bat, the cache is stale and
-        // the next run does a full re-import and rewrites it
-        platform_mtime_t cache_mtime  = platform_get_mtime( VCVARS_CACHE_PATH );
-        platform_mtime_t vcvars_mtime = platform_get_mtime( vcvars_path );
-        if ( cache_mtime > 0 && cache_mtime >= vcvars_mtime )
+        platform_mtime_t cache_mtime = platform_get_mtime( VCVARS_CACHE_PATH );
+        bool cache_ok = ( cache_mtime > 0 ) &&
+                        ( !have_vcvars || cache_mtime >= platform_get_mtime( vcvars_path ) );
+        if ( cache_ok )
         {
             int n = vcvars_cache_load( VCVARS_CACHE_PATH );
             if ( n > 0 )
@@ -276,8 +349,22 @@ build_setup_vc_env( void )
                     printf( ORB_INDENT "[orb vcvars] loaded %d variables from cache\n", n );
                 return;
             }
-            // Cache unreadable or empty -- fall through to full import.
+            // Cache unreadable or empty -- fall through.
         }
+    }
+
+#if defined( BUILD_SAFE_MODE )
+    /* vcvarsall auto-import uses _popen(cmd.exe) -- disabled in safe mode. */
+    printf( ORB_INDENT "[orb warn] BUILD_SAFE_MODE: vcvarsall auto-import disabled and no cache (%s).\n",
+            VCVARS_CACHE_PATH );
+    printf( ORB_INDENT "           Run any build_tool command once from a Developer Command Prompt\n" );
+    printf( ORB_INDENT "           to seed the cache; plain-terminal builds work from then on.\n" );
+    return;
+#else
+    if ( !have_vcvars )
+    {
+        printf( ORB_INDENT "[orb warn] could not locate vcvarsall.bat, compiler calls will fail\n" );
+        return;
     }
 
     if ( g_out_flags & ORB_OUT_VCVARS )

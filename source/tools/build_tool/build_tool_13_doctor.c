@@ -178,10 +178,11 @@ doctor_check_environment( void )
 #endif
 
     /* cl.exe reachability mirrors the fast paths in build_setup_vc_env: on PATH under
-       an \x64\ directory means builds work as-is; otherwise the vcvars import (when
-       not disabled by BUILD_SAFE_MODE) must be able to locate vcvarsall.bat. */
+       an \x64\ directory means builds work as-is; otherwise the vcvars CACHE (works in
+       every mode) or the vcvars import (blocked by BUILD_SAFE_MODE) must cover it. */
     char cl_path[ PATH_MAX ];
     bool cl_found = doctor_exe_on_path( "cl.exe", cl_path, sizeof( cl_path ) );
+    bool has_cache = ( platform_get_mtime( VCVARS_CACHE_PATH ) > 0 );
     if ( cl_found && strstr( cl_path, "\\x64\\" ) )
         doc_ok( "cl.exe on PATH (x64): %s", cl_path );
     else if ( cl_found )
@@ -189,10 +190,13 @@ doctor_check_environment( void )
         doc_warn( "cl.exe on PATH is not the x64 compiler: %s", cl_path );
         doc_fix( "run vcvarsall.bat with the x64 argument -- an x86 cl produces 32-bit output" );
     }
+    else if ( has_cache )
+        doc_ok( "cl.exe not on PATH; vcvars cache available: %s", VCVARS_CACHE_PATH );
     else if ( safe_mode )
     {
-        doc_fail( "cl.exe not on PATH, and BUILD_SAFE_MODE disables vcvars auto-import" );
-        doc_fix( "run build_tool from a Developer Command Prompt (vcvarsall x64)" );
+        doc_fail( "cl.exe not on PATH; BUILD_SAFE_MODE blocks auto-import and no vcvars cache exists" );
+        doc_fix( "run any build_tool command once from a Developer Command Prompt to seed %s",
+                 VCVARS_CACHE_PATH );
     }
     else
     {
@@ -207,7 +211,8 @@ doctor_check_environment( void )
     }
 
     if ( safe_mode )
-        doc_warn( "BUILD_SAFE_MODE compiled in (build_tool.h): vcvars auto-import + vswhere disabled" );
+        doc_warn( "BUILD_SAFE_MODE compiled in (build_tool.h): vcvars import + vswhere disabled"
+                  " (cache still works)" );
     else
         doc_ok( "vcvars auto-import enabled (BUILD_SAFE_MODE off)" );
 
