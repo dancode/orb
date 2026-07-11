@@ -59,7 +59,7 @@ static const game_project_api_t* s_project = NULL;   /* stable api slot; live ac
 static bool                      s_playing = false;  /* editor Play state -- gates on_update  */
 
 /*==============================================================================================
-    Host callbacks
+    Editor Host Functions
 ==============================================================================================*/
 
 static void
@@ -136,6 +136,10 @@ editor_submit_scene( void )
         render()->submit_rect( ctx, ( f32 )w * 0.5f, ( f32 )h * 0.5f, ( f32 )w * 0.6f, ( f32 )h * 0.6f, slate );
     }
 }
+
+/*==============================================================================================
+    Host Callbacks
+==============================================================================================*/
 
 /* Per-frame host update -- every frame, widget-free (widgets go in on_gui, which the retained
    cache may skip).  Editor shell input, then the viewport scene feed -- each in its own helper. */
