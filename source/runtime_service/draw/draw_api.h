@@ -27,7 +27,8 @@ typedef struct draw_api_s
 {
     /* GPU resource setup / teardown.
        init()     -- call after rhi()->init(); creates vertex/index buffers and pipelines.
-       shutdown() -- call before rhi()->shutdown(); destroys all GPU-side resources. */
+       shutdown() -- call before rhi()->shutdown(); waits for the device to go idle, then
+                     destroys all GPU-side resources (destroys are immediate, not deferred). */
     bool ( *init     )( void );
     void ( *shutdown )( void );
 

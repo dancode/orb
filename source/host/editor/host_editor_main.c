@@ -24,8 +24,6 @@
 #include <stdio.h>
 #include "orb.h"
 
-#include "host/common/host_common.h"
-
 #include "engine/sys/sys_host.h"
 #include "engine/mod/mod_host.h"
 #include "engine/core/core_host.h"
@@ -40,6 +38,8 @@
 
 #include "runtime/runtime_api.h"
 #include "runtime/runtime_host.h"
+
+#include "host/common/host_common.h"
 
 MOD_USE_APP;
 MOD_USE_RUN;

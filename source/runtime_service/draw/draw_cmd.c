@@ -91,6 +91,11 @@ draw_init( void )
 static void
 draw_shutdown( void )
 {
+    /* The last submitted frame may still be executing on the GPU.  Every destroy below is
+       immediate (pipelines/samplers/buffers have no deferred-garbage path), so drain the
+       device first -- destroying a pipeline a pending command buffer references is invalid. */
+    rhi()->device_wait_idle();
+
     if ( rhi_handle_valid( s.samp_point_h ) )
     {
         rhi()->unregister_sampler( s.samp_point );

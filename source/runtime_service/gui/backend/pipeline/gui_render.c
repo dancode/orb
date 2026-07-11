@@ -350,6 +350,10 @@ gui_render_shutdown( void )
     // Peak draw calls in a single frame -- a measure of batching effectiveness.
     printf( "[gui] peak draw calls in a frame: %u\n", cache_draw_call_hwm() );
 
+    /* The last submitted frame may still be executing on the GPU; the destroys below
+       (font textures, samplers, pipelines) are immediate, so drain the device first. */
+    rhi()->device_wait_idle();
+
     font_shutdown();
 
     if ( s_render.font_sampler_idx )
