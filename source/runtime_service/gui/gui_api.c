@@ -75,6 +75,7 @@ const gui_api_t g_gui_api_struct =
     .window_tab                         = gui_window_tab,
     .dock_save                          = gui_dock_save,
     .dock_load                          = gui_dock_load,
+    .dock_clear                         = gui_dock_clear,
     .dockspace_inset                    = gui_dockspace_inset,
 
     /*==========================  popup/ -- popups, tooltips, menus, combo + listbox  ==========================*/

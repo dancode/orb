@@ -97,6 +97,22 @@ dock_free_viewport_tree( u32 vp )
     g_ctx->vp.pool[ vp ].dock_root = GUI_DOCK_REF_NONE;
 }
 
+/* Public teardown twin of dockspace_over_viewport: free viewport vp's whole dock tree and clear its
+   root.  Every tree-docked window returns to free-floating at the rect its node last gave it
+   (window_begin_docked mirrors node geometry onto the record each frame), and the viewport stops
+   offering drag-to-dock chips (dock_drag_detect gates on dock_root).  Without this a viewport stays
+   dock-capable forever once dockspace_over_viewport has run: the tree outlives the host's dockspace
+   emission, so windows keep routing docked into rects that no longer re-layout and title drags keep
+   offering chips.  Same safe-point rule as dock_load above: call at the top of the build, never from
+   inside a docked window's body.  Floating tab groups are not part of the tree and stay standing. */
+void
+gui_dock_clear( gui_vp_t vp )
+{
+    if ( !g_ctx->dock.pool || vp >= g_ctx->vp.max )
+        return;
+    dock_free_viewport_tree( vp );
+}
+
 /* Line cursor over the blob: copy the next line (sans newline) into out, advance past it; false at
    end of input. */
 typedef struct { const char* p; } dock_reader_t;

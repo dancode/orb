@@ -212,7 +212,9 @@
       "Bash(git mv *)",
       "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_vulkan)",
       "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui_example)",
-      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui_example; Get-Item bin\\\\sb_gui_example.exe | Select-Object Name, LastWriteTime)"
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui_example; Get-Item bin\\\\sb_gui_example.exe | Select-Object Name, LastWriteTime)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui_dock; Get-Item bin\\\\sb_gui_dock.exe | Select-Object Name, LastWriteTime)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug)"
     ]
   }
 }

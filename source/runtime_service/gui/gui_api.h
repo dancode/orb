@@ -408,6 +408,16 @@ typedef struct gui_api_s
     u32  ( *dock_save )( gui_vp_t vp, char* buf, u32 bufsz );
     bool ( *dock_load )( gui_vp_t vp, const char* text );
 
+    /* dock_clear() -- the teardown twin of dockspace_over_viewport: free viewport vp's whole dock
+       tree and clear its root.  Docked windows return to free-floating at the rect their node last
+       gave them; the viewport stops offering drag-to-dock drop chips.  A viewport is dock-capable
+       from the first dockspace_over_viewport call until dock_clear -- merely no longer calling
+       dockspace_over_viewport leaves the tree LIVE and stale (windows still route docked into rects
+       that never re-layout, and every title drag still offers dock chips), so a host switching a
+       viewport out of docking must clear the state as well as stop emitting.  Same safe-point rule
+       as dock_load.  Floating tab groups are independent of the tree and stay standing. */
+    void ( *dock_clear )( gui_vp_t vp );
+
 
     /* Host-reserved top band (pixels) above viewport vp's dock area -- the height of a main menu
        bar / toolbar strip the host draws itself; the dock tree lays out below it.  Sticky until

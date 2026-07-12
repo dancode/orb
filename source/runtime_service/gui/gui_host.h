@@ -101,6 +101,7 @@ bool gui_window_is_docked( const char* title );
 void gui_window_tab( const char* title, const char* onto_title );
 u32  gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz );
 bool gui_dock_load( gui_vp_t vp, const char* text );
+void gui_dock_clear( gui_vp_t vp );
 
 /* popup */
 void gui_popup_open( const char* id );
