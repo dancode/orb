@@ -10,10 +10,10 @@
         host_game.exe -module sample_game            loads sample_game.dll from the exe dir
         host_game.exe -project <dir> -module <name>  -module overrides the basename
 
-    The project implements runtime/run_project.h; this host fetches the vtable once in
-    on_ready (mod_get_api returns the stable api slot -- live across hot-reloads) and
-    drives it every frame: on_start at ready, on_sim / on_frame / on_draw per frame,
-    on_stop on close.  The view hands the project its render target and surface size.
+    The project implements runtime/run_project.h, and the game framework runner drives
+    it -- this host is pure POLICY: bind + play at ready, one game()->tick( dt, view )
+    per frame (fixed-step sim, pacing, and the play session live in the runner), stop on
+    close.  The view hands the project its render target and surface size every frame.
 
     Dev keys Q/R read the CONSOLE (terminal focus only) so they can't be fumbled from the
     game window -- same policy as host_editor.
@@ -44,14 +44,14 @@
 
 MOD_USE_APP;
 MOD_USE_RUN;
+MOD_USE_GAME;
 
 // clang-format off
 /*==============================================================================================
     Host state
 ==============================================================================================*/
 
-static host_project_t           s_proj;             /* resolved -project/-module            */
-static const run_project_api_t* s_project = NULL;   /* stable api slot; live across reloads */
+static host_project_t s_proj;    /* resolved -project/-module */
 
 /*==============================================================================================
     Host callbacks
@@ -60,10 +60,9 @@ static const run_project_api_t* s_project = NULL;   /* stable api slot; live acr
 static void
 game_host_ready( void )
 {
-    /* The stable api slot: the mod system rewrites its contents on every hot-reload, so
-       this pointer never needs refreshing. */
-    s_project = ( const run_project_api_t* )mod_get_api( s_proj.name );
-    if ( !s_project )
+    /* Hand the project to the runner: bind resolves its stable api slot (live across
+       hot-reloads), play starts the session.  This host's policy is "play at boot". */
+    if ( !MOD_HOST_FETCH_API( game ) || !game()->project_bind( s_proj.name ) )
     {
         fprintf( stderr, "[host_game] project '%s' has no api\n", s_proj.name );
         run_host_quit();
@@ -73,7 +72,7 @@ game_host_ready( void )
     printf( "[host_game] running project '%s'\n", s_proj.name );
     printf( "Dev keys (terminal focus): Q=quit  R=reload all\n" );
 
-    s_project->on_start();
+    game()->play();
 }
 
 static void
@@ -84,8 +83,7 @@ game_host_update( f32 dt )
     if ( sys_key_pressed( PLATFORM_KEY_Q ) )
     {
         printf( "[host_game] Q -- quit\n" );
-        if ( s_project )
-            s_project->on_stop();
+        game()->stop();
         run_host_quit();
         return;
     }
@@ -96,34 +94,26 @@ game_host_update( f32 dt )
         mod_reload_all();
     }
 
-    /* Drive the project.  The view is rebuilt every frame -- surface size tracks resizes
-       and a hot-reloaded project can never hold a stale handle.  Direct variable-step
-       drive: one sim step at dt, draw at alpha 1 -- the game framework runner takes over
-       pacing (fixed-step accumulator, play state) when it drives this contract. */
+    /* The one per-frame runner call.  The view is rebuilt every frame -- surface size
+       tracks resizes and a hot-reloaded project can never hold a stale handle.  The
+       runner owns everything else: fixed-step sim, interpolation alpha, play state. */
 
-    if ( s_project )
-    {
-        run_view_t view = {
-            .version    = RUN_VIEW_VERSION,
-            .render_ctx = run_host_ctx(),
-        };
-        app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
+    run_view_t view = {
+        .version    = RUN_VIEW_VERSION,
+        .render_ctx = run_host_ctx(),
+    };
+    app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
 
-        s_project->on_sim( dt );
-        s_project->on_frame( dt, &view );
-        s_project->on_draw( 1.0f, &view );
-    }
+    game()->tick( dt, &view );
 }
 
-/* Window X pressed: stop the project, then allow the close.  (Q-quit calls on_stop
-   itself; the module's exit() during mod_system_exit is the backstop either way.) */
+/* Window X pressed: stop the session, then allow the close.  (Q-quit stops it too; the
+   project module's own exit() during mod_system_exit is the backstop either way.) */
 
 static bool
 game_host_close_request( void )
 {
-    if ( s_project )
-         s_project->on_stop();
-
+    game()->stop();
     return true;
 }
 

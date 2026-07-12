@@ -9,8 +9,9 @@
     render draws the scene behind the gui composite (render path A); the host flushes gui over it.
 
     What makes this the HOST and not the sandbox: it parses launch params up front (host_common,
-    pre-engine) -- -project/-module select a game project DLL that the runtime loads at boot and
-    this editor drives with Play/Stop (runtime/run_project.h contract), -dev arms idle-sleep pacing.
+    pre-engine) -- -project/-module select a project DLL that the runtime loads at boot and the
+    game framework runner drives; this editor is pure POLICY (Play/Stop/Pause/Step buttons ->
+    game() session calls, one tick per frame), -dev arms idle-sleep pacing.
     Everything below the arg parse is the same modern stack sb_example_editor validates.
 
     Q/R/D are developer hotkeys read from the CONSOLE (terminal focus only, via RUN_HOST_CONSOLE)
@@ -54,9 +55,7 @@ MOD_USE_GAME;
 static bool s_show_scene = true;    /* submit the scene rect behind the gui                   */
 static bool s_show_stats;           /* frame-clock readout window                             */
 
-static host_project_t           s_proj;             /* resolved -project/-module            */
-static const run_project_api_t* s_project = NULL;   /* stable api slot; live across reloads */
-static bool                     s_playing = false;  /* editor Play state -- gates the drive  */
+static host_project_t s_proj;    /* resolved -project/-module; the runner owns the session */
 
 /*==============================================================================================
     Editor Host Functions
@@ -69,30 +68,11 @@ editor_ready( void )
     printf( "[editor] ready\n" );
     printf( "Dev keys (terminal focus): Q=quit  R=reload all  D=toggle sleep debug\n" );
 
-    /* Project vtable: the stable api slot -- the mod system rewrites its contents on every
-       hot-reload, so this pointer never needs refreshing.  game() is the framework runner
-       (session control -- hosts hand it the drive in Phase 2); fetch is valid from here on. */
-    if ( s_proj.present )
-    {
-        s_project = ( const run_project_api_t* )mod_get_api( s_proj.name );
-        MOD_HOST_FETCH_API( game );
+    /* game() is the framework runner -- it resolves the project's stable api slot and owns
+       the play session; this editor only issues session calls (Play/Stop/Pause/Step). */
+    MOD_HOST_FETCH_API( game );
+    if ( s_proj.present && game() && game()->project_bind( s_proj.name ) )
         printf( "[editor] project '%s' loaded -- use Play to start it\n", s_proj.name );
-    }
-}
-
-/* Editor Play/Stop -- the seam every play-in-editor feature grows from. */
-
-static void
-editor_set_playing( bool play )
-{
-    if ( !s_project || play == s_playing )
-        return;
-
-    s_playing = play;
-    if ( play )
-        s_project->on_start();
-    else
-        s_project->on_stop();
 }
 
 /* Developer hotkeys.  DELIBERATELY read the CONSOLE (sys_key_pressed, terminal focus only) rather
@@ -106,6 +86,8 @@ editor_handle_shortcuts( void )
     if ( sys_key_pressed( PLATFORM_KEY_Q ) )
     {
         printf( "[editor] Q -- quit\n" );
+        if ( game() )
+            game()->stop();    /* run_host_quit is final -- close_request never runs */
         run_host_quit();
         return;
     }
@@ -153,12 +135,11 @@ editor_update( f32 dt )
     editor_handle_shortcuts();
     editor_submit_scene();
 
-    /* Drive the playing project.  View rebuilt every frame -- surface size tracks resizes
-       and a hot-reloaded project can never hold a stale handle.  This is also the future
-       play-in-editor seam: swap render_ctx for a viewport context, no contract change.
-       Direct variable-step drive for now -- the game framework runner takes over pacing
-       (fixed-step accumulator, play state) when it drives this contract. */
-    if ( s_playing && s_project )
+    /* The one per-frame runner call -- a no-op while GAME_STOPPED.  View rebuilt every
+       frame: surface size tracks resizes and a hot-reloaded project can never hold a
+       stale handle.  This is also the future play-in-editor seam: swap render_ctx for a
+       viewport context, no contract change. */
+    if ( game() )
     {
         run_view_t view = {
             .version    = RUN_VIEW_VERSION,
@@ -166,9 +147,7 @@ editor_update( f32 dt )
         };
         app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
 
-        s_project->on_sim( dt );
-        s_project->on_frame( dt, &view );
-        s_project->on_draw( 1.0f, &view );
+        game()->tick( dt, &view );
     }
 }
 
@@ -206,14 +185,35 @@ editor_gui( f32 dt )
     {
         gui()->stack();
 
-        /* Project controls -- Play drives the loaded project DLL's on_start + per-frame
-           phases; Stop calls on_stop.  The framework score readout proves the chain. */
-        if ( s_project )
+        /* Project controls -- session calls into the game framework runner.  Play/Stop
+           restart the session (the sample's score reset proves it), Pause freezes the sim
+           while the scene keeps drawing, Step advances exactly one sim tick. */
+        if ( s_proj.present && game() )
         {
+            i32 st = game()->state();
+
             gui()->textf( "project: %s", s_proj.name );
-            if ( gui()->button( s_playing ? "Stop" : "Play" ) )
-                editor_set_playing( !s_playing );
-            gui()->textf( "state  %s", s_playing ? "PLAYING" : "stopped" );
+
+            if ( gui()->button( st == GAME_STOPPED ? "Play" : "Stop" ) )
+            {
+                if ( st == GAME_STOPPED )
+                    game()->play();
+                else
+                    game()->stop();
+            }
+
+            if ( st != GAME_STOPPED )
+            {
+                if ( gui()->button( st == GAME_PAUSED ? "Resume" : "Pause" ) )
+                    game()->pause( st != GAME_PAUSED );
+
+                if ( st == GAME_PAUSED && gui()->button( "Step" ) )
+                    game()->step();
+            }
+
+            gui()->textf( "state  %s", st == GAME_PLAYING ? "PLAYING"
+                                     : st == GAME_PAUSED  ? "PAUSED"
+                                                          : "stopped" );
         }
         else
         {
@@ -241,13 +241,14 @@ editor_gui( f32 dt )
     }
 }
 
-/* Main-window X pressed -- the veto point for "unsaved changes" flows.  Stop the project
-   if it is playing, then allow the close. */
+/* Main-window X pressed -- the veto point for "unsaved changes" flows.  Stop the session
+   if one is active, then allow the close. */
 static bool
 editor_close_request( void )
 {
     printf( "[editor] close requested -- allowing\n" );
-    editor_set_playing( false );
+    if ( game() )
+        game()->stop();
     return true;
 }
 
