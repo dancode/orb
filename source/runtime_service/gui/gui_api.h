@@ -367,7 +367,15 @@ typedef struct gui_api_s
        dock_window()             -- add a window (matched to window_begin by title) as a tab in a leaf,
                                     moving it out of any node it was already in; it becomes active.
        dock_undock()             -- remove a window from its node, returning it to free-floating.
-       window_is_docked()        -- true while the window is tabbed into some node.
+       window_is_docked()        -- true while the window is tabbed into some node (dormant included).
+
+       A dockspace is EMIT-GATED like every immediate-mode element: on frames the host does not call
+       dockspace_over_viewport, the viewport's tree is DORMANT -- retained but inert.  Windows tabbed
+       in a dormant tree keep their membership but render nothing (window_begin returns false,
+       inactive-tab semantics), and title drags offer no dock chips; floating tab groups are
+       independent of the tree and unaffected.  Re-emitting the dockspace revives the layout exactly
+       as it was, so a host can swap whole UI modes in and out just by (not) running the dock code
+       path.  dock_clear (below) is the only thing that destroys the tree.
 
            gui_dock_id_t root  = gui()->dockspace_over_viewport( 0, GUI_DOCKSPACE_NONE );
            gui_dock_id_t left  = gui()->dock_split( root, GUI_DIR_LEFT, 0.25f, &root );
@@ -408,14 +416,12 @@ typedef struct gui_api_s
     u32  ( *dock_save )( gui_vp_t vp, char* buf, u32 bufsz );
     bool ( *dock_load )( gui_vp_t vp, const char* text );
 
-    /* dock_clear() -- the teardown twin of dockspace_over_viewport: free viewport vp's whole dock
-       tree and clear its root.  Docked windows return to free-floating at the rect their node last
-       gave them; the viewport stops offering drag-to-dock drop chips.  A viewport is dock-capable
-       from the first dockspace_over_viewport call until dock_clear -- merely no longer calling
-       dockspace_over_viewport leaves the tree LIVE and stale (windows still route docked into rects
-       that never re-layout, and every title drag still offers dock chips), so a host switching a
-       viewport out of docking must clear the state as well as stop emitting.  Same safe-point rule
-       as dock_load.  Floating tab groups are independent of the tree and stay standing. */
+    /* dock_clear() -- DESTROY viewport vp's dock tree: free every node and clear the root.  Windows
+       lose their tab membership permanently and free-float from their next begin (at the rect their
+       node last gave them).  Not needed to merely stop docking for a while -- a dockspace that is
+       not emitted goes DORMANT (see above) and revives intact.  Clear is for discarding a layout
+       wholesale, e.g. before hand-building a fresh one.  Same safe-point rule as dock_load: top of
+       the build, never from inside a docked window.  Floating tab groups stay standing. */
     void ( *dock_clear )( gui_vp_t vp );
 
 

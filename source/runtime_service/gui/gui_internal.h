@@ -762,6 +762,15 @@ typedef struct
        call.  NO_SPLIT restricts the tree to tab docking: no split drop chips, split verbs refuse. */
     gui_dockspace_flags_t dock_flags;
 
+    /* Frame stamp (g_ctx->retained.frame) of this viewport's last dockspace_over_viewport call.
+       A dockspace is emit-gated like every immediate-mode element: the tree is ACTIVE only on
+       frames the host emits it; on other frames it is DORMANT -- retained but inert.  Windows
+       tabbed in a dormant tree suppress (inactive-tab semantics) instead of rendering into rects
+       that no longer lay out, and drag-to-dock offers no chips (dock_vp_emitted, gui_dock_core.c).
+       A host code path that stops running its dockspace thus parks the layout instead of
+       corrupting it; only dock_clear destroys it. */
+    u32 dock_seen_frame;
+
 } gui_viewport_t;
 
 /*==============================================================================================

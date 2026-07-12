@@ -31,6 +31,13 @@ window_route_resolve( gui_id_t id, const char* title, gui_window_t* win )
     if ( !route.node )
         return route;
 
+    /* Dormant tree (dockspace not emitted this build): the window keeps its tab membership but
+       renders nothing -- inactive-tab semantics (begin returns false, end early-outs) -- rather
+       than free-floating away or drawing pinned to a rect that no longer lays out.  Floating tab
+       groups are not part of the viewport tree and self-manage; they are exempt. */
+    if ( !route.node->floating && !dock_vp_emitted( route.node->viewport ) )
+        return route;   /* route.active stays false */
+
     route.active = ( route.node->active_tab < route.node->tab_count
                      && route.node->tabs[ route.node->active_tab ] == id );
 

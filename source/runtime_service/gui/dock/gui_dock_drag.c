@@ -245,8 +245,10 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     if ( dock_drag_float_target( win_id, vp, s ) )
         return;
 
+    /* A dormant dockspace (tree retained but not emitted this build) offers no drop chips --
+       drops would land in rects that no longer lay out.  See dock_seen_frame, gui_internal.h. */
     gui_dock_node_t* root = dock_at( g_ctx->vp.pool[ vp ].dock_root );
-    if ( !root )
+    if ( !root || !dock_vp_emitted( vp ) )
         return;
     gui_dock_node_t* leaf = dock_leaf_at( root, s_io.mouse_x, s_io.mouse_y );
     if ( !leaf )

@@ -97,6 +97,17 @@ dock_node_find( gui_dock_id_t id )
     return NULL;
 }
 
+/* True only on frames the host emitted dockspace_over_viewport for vp (its stamp matches this
+   build's frame clock -- the clock advances at ctx_begin, so equality means "emitted in the
+   current build").  A live tree without emission is DORMANT: retained, but it places no windows
+   and offers no drops (see dock_seen_frame in gui_internal.h). */
+static bool
+dock_vp_emitted( u32 vp )
+{
+    const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
+    return v->dock_root != GUI_DOCK_REF_NONE && v->dock_seen_frame == g_ctx->retained.frame;
+}
+
 /* The lookup window_begin routes through: which LEAF tabs this window, or NULL.  Forward-declared in
    gui_internal.h so gui_window_free.c (included earlier) can call it. */
 static gui_dock_node_t*

@@ -115,6 +115,7 @@ viewport_create( gui_viewport_t* vp, rhi_texture_t target, i32 win_id )
     vp->caption_inset   = 0.0f;             // no native shell band until one publishes it during the build
     vp->dock_inset      = 0.0f;             // no host menu/toolbar band until one publishes it
     vp->dock_root       = GUI_DOCK_REF_NONE; // free-float until docking assigns a tree
+    vp->dock_seen_frame = 0;                 // never emitted; frame clock starts at 1 so 0 = dormant
 
     // Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame.
     vp->vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
