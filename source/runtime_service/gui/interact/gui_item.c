@@ -386,7 +386,14 @@ widget_behavior( gui_id_t id, gui_rect_t r, gui_widget_kind_t kind )
        Gated on the cursor being over it so sliding off pauses the repeat, like a real spin button. */
 
     if ( ( s_scope.flags & GUI_ITEM_BUTTON_REPEAT ) && st.active && s_interaction.hover_id == id )
+    {
         st.clicked = widget_repeat_tick( st.pressed );
+
+        /* A held repeat button advances by time alone, not by mouse movement, so it needs a frame
+           even when the mouse sits dead still -- without this the idle-skip sees no input change,
+           the build never re-runs, and repeat_t never accumulates past the first fire. */
+        g_ctx->retained.wants_redraw = true;
+    }
 
     /* Debug overlay: every interactive widget passes through here, so this one site captures
        the hit rects -- tinted by hover/active so the live interaction is visible.  Capture the
