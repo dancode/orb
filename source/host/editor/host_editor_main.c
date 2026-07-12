@@ -2,7 +2,7 @@
 
     host_editor_main.c -- the developer "editor.exe" host.
 
-    The real editor executable.  Same driving as sb_example_editor -- gui() as an OPTIONAL
+    The real editor executable.  Same driving as sb_host_editor -- gui() as an OPTIONAL
     SERVICE under run_host_main: the host owns the borderless window (with the gui-drawn chrome
     shell), the rhi context, the loop, and the pacing; the descriptor wires gui's font / caps /
     debug, and the UI is emitted in on_gui (called only on dirty frames -- retained-cache skip).
@@ -12,7 +12,7 @@
     pre-engine) -- -project/-module select a project DLL that the runtime loads at boot and the
     game framework runner drives; this editor is pure POLICY (Play/Stop/Pause/Step buttons ->
     game() session calls, one tick per frame), -dev arms idle-sleep pacing.
-    Everything below the arg parse is the same modern stack sb_example_editor validates.
+    Everything below the arg parse is the same modern stack sb_host_editor validates.
 
     Q/R/D are developer hotkeys read from the CONSOLE (terminal focus only, via RUN_HOST_CONSOLE)
     so they can't be fumbled from the editor window -- see editor_handle_shortcuts.
