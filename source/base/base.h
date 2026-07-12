@@ -9,6 +9,7 @@
 ==============================================================================================*/
 #include "orb.h"
 
+#define ORB_USE_CONTAINERS 0    /* currently no macro-based containers used */
 /*==============================================================================================
     standard library includes
 ==============================================================================================*/
@@ -21,6 +22,11 @@
 #include "base/str.h"
 #include "base/str_buf.h"
 #include "base/str_arena.h"
+
+/* only if we ever really need them -- keep ununsed for now */
+#if ORB_USE_CONTAINERS
+    #include "base/container.h"
+#endif 
 
 /*============================================================================================*/
 #endif    // BASE_H

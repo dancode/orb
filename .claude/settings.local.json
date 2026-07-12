@@ -216,7 +216,11 @@
       "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui_dock; Get-Item bin\\\\sb_gui_dock.exe | Select-Object Name, LastWriteTime)",
       "PowerShell(bin\\\\build_tool.exe -config Debug)",
       "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui_editor)",
-      "PowerShell($p = Start-Process -FilePath \"bin\\\\sb_gui_example.exe\" -WorkingDirectory \\(Get-Location\\) -PassThru; Start-Sleep -Seconds 6; if \\($p.HasExited\\) { \"EXITED code=$\\($p.ExitCode\\)\" } else { \"RUNNING ok\"; Stop-Process -Id $p.Id -Force })"
+      "PowerShell($p = Start-Process -FilePath \"bin\\\\sb_gui_example.exe\" -WorkingDirectory \\(Get-Location\\) -PassThru; Start-Sleep -Seconds 6; if \\($p.HasExited\\) { \"EXITED code=$\\($p.ExitCode\\)\" } else { \"RUNNING ok\"; Stop-Process -Id $p.Id -Force })",
+      "Bash(bin/sb_base.exe *)",
+      "Bash(clang-format --version)",
+      "Bash(clang-format -i source/base/container.h)",
+      "Bash(clang-format -i source/base/base_test.c)"
     ]
   }
 }

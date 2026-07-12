@@ -338,8 +338,7 @@ test_math_rng( void )
     rng_t a, b;
     rng_seed( &a, 12345 );
     rng_seed( &b, 12345 );
-    for ( i32 i = 0; i < 16; ++i )
-        test_equal( rng_u32( &a ), rng_u32( &b ) );
+    for ( i32 i = 0; i < 16; ++i ) test_equal( rng_u32( &a ), rng_u32( &b ) );
 
     // different seeds and different streams diverge
     rng_t c, d;
@@ -393,16 +392,14 @@ test_math_rng( void )
 
     // gaussian: sample mean of 4096 draws is near 0
     f32 sum = 0.0f;
-    for ( i32 i = 0; i < 4096; ++i )
-        sum += rng_gauss_f32( &a );
+    for ( i32 i = 0; i < 4096; ++i ) sum += rng_gauss_f32( &a );
     test_true( f32_abs( sum / 4096.0f ) < 0.1f );
 
     // shuffle preserves the element multiset
     i32 items[ 8 ] = { 0, 1, 2, 3, 4, 5, 6, 7 };
     rng_shuffle( &a, items, 8, sizeof( i32 ) );
     i32 mask = 0;
-    for ( i32 i = 0; i < 8; ++i )
-        mask |= 1 << items[ i ];
+    for ( i32 i = 0; i < 8; ++i ) mask |= 1 << items[ i ];
     test_equal( 0xFF, mask );
     rng_shuffle( &a, items, 0, sizeof( i32 ) );    // count 0 is safe
 
@@ -553,6 +550,87 @@ test_bit_fields_flags( void )
 }
 
 /*==============================================================================================
+    container: dynamic array
+==============================================================================================*/
+
+#if ORB_USE_CONTAINERS
+
+da_typedef( i32, int_array_t );
+
+static void
+test_container_append( void )
+{
+    int_array_t xs = { 0 };
+
+    test_true( da_empty( xs ) );
+
+    for ( i32 i = 0; i < 20; i++ ) da_append( xs, i * 2 );
+
+    test_equal( 20, xs.count );
+    test_true( xs.capacity >= xs.count );
+    test_false( da_empty( xs ) );
+    test_equal( 0, xs.items[ 0 ] );
+    test_equal( 38, xs.items[ 19 ] );
+    test_equal( 38, da_last( xs ) );
+
+    da_free( xs );
+    test_null( xs.items );
+    test_equal( 0, xs.count );
+    test_equal( 0, xs.capacity );
+}
+
+static void
+test_container_append_many( void )
+{
+    int_array_t xs       = { 0 };
+    i32         src[ 5 ] = { 10, 11, 12, 13, 14 };
+
+    da_append( xs, 1 );
+    da_append_many( xs, src, 5 );
+
+    test_equal( 6, xs.count );
+    test_equal( 1, xs.items[ 0 ] );
+    test_equal( 10, xs.items[ 1 ] );
+    test_equal( 14, xs.items[ 5 ] );
+
+    da_free( xs );
+}
+
+static void
+test_container_insert_remove( void )
+{
+    int_array_t xs = { 0 };
+
+    for ( i32 i = 0; i < 5; i++ ) da_append( xs, i );    // 0 1 2 3 4
+
+    da_insert( xs, 2, 99 );    // 0 1 99 2 3 4
+    test_equal( 6, xs.count );
+    test_equal( 99, xs.items[ 2 ] );
+    test_equal( 2, xs.items[ 3 ] );
+    test_equal( 4, xs.items[ 5 ] );
+
+    da_remove_ordered( xs, 2 );    // 0 1 2 3 4
+    test_equal( 5, xs.count );
+    test_equal( 2, xs.items[ 2 ] );
+    test_equal( 3, xs.items[ 3 ] );
+    test_equal( 4, xs.items[ 4 ] );
+
+    da_remove_swap( xs, 0 );    // 4 1 2 3
+    test_equal( 4, xs.count );
+    test_equal( 4, xs.items[ 0 ] );
+
+    test_equal( 3, da_pop( xs ) );
+    test_equal( 3, xs.count );
+
+    da_clear( xs );
+    test_equal( 0, xs.count );
+    test_true( xs.capacity > 0 );    // clear keeps the allocation
+
+    da_free( xs );
+}
+
+#endif 
+/*==============================================================================================
     Entry point
 ==============================================================================================*/
 
@@ -581,6 +659,10 @@ base_run_tests( void )
     test_register( "bit_pow2", test_bit_pow2 );
     test_register( "bit_rotate", test_bit_rotate );
     test_register( "bit_fields_flags", test_bit_fields_flags );
+
+    test_register( "container_append", test_container_append );
+    test_register( "container_append_many", test_container_append_many );
+    test_register( "container_insert_remove", test_container_insert_remove );
 
     return test_run( "base" );
 }
