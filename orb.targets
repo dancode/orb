@@ -620,6 +620,17 @@ target sb_gui_example					# gui feature explorer: end-to-end demos of every feat
     dep         sys ref mod core job app
 	dep 		rhi gui
 
+target sb_gui_timeline					# prof timeline overlay (flame graph) + synthetic workload
+
+    type        exe
+    root        source/sandbox/gui/sb_gui_timeline
+    folder      09_SANDBOX/GUI
+    unit        sb_gui_timeline.c
+    unit        gui_timeline.c
+    unit        tl_workload.c
+    dep         sys ref mod core job app
+	dep 		prof rhi gui
+
 target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
 
     type        exe
@@ -924,6 +935,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	add 		sb_gui_example			# gui feature explorer (end-to-end demos)
 	add 		sb_gui_console			# quake-style dev console
 	add 		sb_gui_dock				# docking test bed
+	add 		sb_gui_timeline			# prof timeline overlay + workload
 	add 		sb_gui_editor			# game-engine editor shell
 	add 		sb_gui_font				# font find/bake/preview/export bench
 	add 		sb_vulkan_stress		# multi-context sync stress exe
