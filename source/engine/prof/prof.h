@@ -31,19 +31,39 @@
         0  off    -- every PROF_* macro expands to nothing
         1  frame  -- frame marks, counters, thread names
         2  zones  -- + scoped zone capture (dev default)
+
+    ORB_PROFILE_FAST (default 0) additionally routes the ZONE macros through an inline
+    TLS-ring write instead of the vtable call. It only takes effect in translation units
+    statically linked with prof (PROF_STATIC / BUILD_STATIC) -- the inline path needs
+    direct sys calls, which DLL modules do not have, so they silently keep the vtable
+    path. Both flavors produce identical events; the toggle is free to flip per build.
+
+    PROF_RING_RECYCLE (default 1) enables the ring release path: a thread that calls
+    prof()->thread_release() (PROF_THREAD_RELEASE) before exiting returns its ring to a
+    free pool for the next thread. At 0, rings are claimed forever (the original
+    fixed-pool behavior -- fine for a host + fixed worker pool, no transient churn).
 ==============================================================================================*/
 
 #ifndef ORB_PROFILE
     #define ORB_PROFILE 2
 #endif
 
+#ifndef ORB_PROFILE_FAST
+    #define ORB_PROFILE_FAST 0
+#endif
+
+#ifndef PROF_RING_RECYCLE
+    #define PROF_RING_RECYCLE 1
+#endif
+
 /*==============================================================================================
     Limits
 
     All storage is static fixed pools (2 MB of rings in BSS at the defaults). Rings are
-    claimed one per thread on first use and never released -- sized for a host + a fixed
-    worker pool, not for transient thread churn. Threads past PROF_MAX_THREADS fall back
-    to a shared discard ring that only counts drops.
+    claimed one per thread on first use; with PROF_RING_RECYCLE a thread that releases
+    before exiting returns its slot to the pool, otherwise slots are claimed forever.
+    Threads past PROF_MAX_THREADS fall back to a shared discard ring that only counts
+    drops.
 ==============================================================================================*/
 
 #define PROF_MAX_THREADS       16               // per-thread rings; extras discard        
@@ -120,6 +140,32 @@ typedef struct prof_counter_s
     u32 _pad;       // reserved
     i64 value;      // current value at snapshot time
 } prof_counter_t;
+
+/*==============================================================================================
+    Ring storage -- INTERNAL
+
+    Public only so the ORB_PROFILE_FAST inline path (prof_api.h) can write events without
+    a call; treat as opaque everywhere else. Each ring is SPSC: the owning thread writes,
+    the single drain consumer reads. Cursors are free-running modular u32 counters stored
+    in volatile i32 (w - r is the pending count, correct across wrap).
+==============================================================================================*/
+
+#define PROF_RING_FREE      0    /* slot unclaimed, or released with nothing pending      */
+#define PROF_RING_OWNED     1    /* a live thread is writing                              */
+#define PROF_RING_RETIRED   2    /* owner released with events pending; drain frees it    */
+
+typedef struct prof_ring_s
+{
+    volatile i32 write_pos;                     // modular cursor: total events written (owner thread)
+    volatile i32 read_pos;                      // modular cursor: total events consumed (drain thread)
+    volatile i32 dropped;                       // events lost to overflow / discard
+    volatile i32 owner;                         // PROF_RING_* claim state (recycle path)
+    bool         discard;                       // overflow-thread ring: count drops, store nothing
+
+    char         label[ PROF_THREAD_NAME_MAX ]; // thread display name for readouts
+    prof_event_t events[ PROF_RING_CAP ];
+
+} prof_ring_t;
 
 // clang-format on
 /*============================================================================================*/

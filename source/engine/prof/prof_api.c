@@ -35,12 +35,19 @@ const prof_api_t g_prof_api_struct =
     .set_enabled     = prof_set_enabled,
     .is_enabled      = prof_is_enabled,
     .thread_name     = prof_thread_name,
+    .thread_release  = prof_thread_release,
 
     /* Drain */
     .thread_count    = prof_thread_count,
     .thread_label    = prof_thread_label,
     .thread_dropped  = prof_thread_dropped,
     .drain           = prof_drain,
+
+    /* Chrome-trace dump */
+    .dump_begin      = prof_dump_begin,
+    .dump_flush      = prof_dump_flush,
+    .dump_end        = prof_dump_end,
+    .dump_active     = prof_dump_active,
 };
 
 /*==============================================================================================

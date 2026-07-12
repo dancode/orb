@@ -5,6 +5,7 @@
 ==============================================================================================*/
 
 #include <stdio.h>
+#include <stdlib.h>
 #include "orb.h"
 
 /*==============================================================================================
@@ -34,6 +35,7 @@
 /* static modules always used by the runtime */
 #include "engine/sys/sys_host.h"        // system: auto-wired on every DLL load
 #include "engine/ref/ref_host.h"        // reflection: auto-wired on every DLL load
+#include "engine/prof/prof_host.h"      // profiler: leaf capture kernel, always present
 
 /*==============================================================================================
     (Optional) Module API's

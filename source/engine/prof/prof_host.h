@@ -51,6 +51,7 @@ u32             prof_counters        ( prof_counter_t* out, u32 max );
 void            prof_set_enabled     ( bool enabled );
 bool            prof_is_enabled      ( void );
 void            prof_thread_name     ( const char* name );
+void            prof_thread_release  ( void );
 
 /*==============================================================================================
     Drain -- single consumer, once per frame
@@ -60,6 +61,15 @@ u32             prof_thread_count    ( void );
 const char*     prof_thread_label    ( u32 thread_index );
 u32             prof_thread_dropped  ( u32 thread_index );
 u32             prof_drain           ( u32 thread_index, prof_event_t* out, u32 max );
+
+/*==============================================================================================
+    Chrome-trace dump -- consumer side; the dump IS the single drain consumer while active
+==============================================================================================*/
+
+bool            prof_dump_begin      ( const char* path );
+u32             prof_dump_flush      ( void );
+void            prof_dump_end        ( void );
+bool            prof_dump_active     ( void );
 
 /*==============================================================================================
     Module Descriptor

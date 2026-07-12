@@ -168,6 +168,43 @@ void host_perf_tick( void );
 bool host_perf_active( void );
 void host_draw_perf_content( i32 win_w, i32 win_h );
 
+/*==============================================================================================
+    Profiler capture command -- "prof_dump [frames] [path]"
+
+    Starts a Chrome-trace capture of the next N frames (default 120) into path (default
+    prof_dump.json next to the working dir); load the file in chrome://tracing or
+    https://ui.perfetto.dev. While active the loop flushes every frame -- the host is the
+    profiler's single drain consumer. Re-running the command stops an active capture early.
+==============================================================================================*/
+
+static i32 s_prof_dump_frames = 0;    /* frames left in an active capture; 0 = idle */
+
+static void
+host_cmd_prof_dump( int argc, char** argv )
+{
+    if ( prof_dump_active() )
+    {
+        prof_dump_end();
+        s_prof_dump_frames = 0;
+        printf( "[host] prof_dump: capture stopped early\n" );
+        return;
+    }
+
+    i32         frames = argc > 1 ? atoi( argv[ 1 ] ) : 0;
+    const char* path   = argc > 2 ? argv[ 2 ] : "prof_dump.json";
+    if ( frames <= 0 )
+        frames = 120;
+
+    if ( !prof_dump_begin( path ) )
+    {
+        printf( "[host] prof_dump: cannot open '%s'\n", path );
+        return;
+    }
+
+    s_prof_dump_frames = frames;
+    printf( "[host] prof_dump: capturing %d frames to '%s'\n", frames, path );
+}
+
 /* sys_key_t values are pinned to app_key_t for the shared range so console-input polling
    (sys_key_pressed) and windowed input (app()->key_pressed) agree on key constants.
    C5287 (newer MSVC) flags the mixed-enum comparison even through the casts; comparing
@@ -339,11 +376,13 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     core_wire_mod_callbacks();
 
-    /* Engine baseline -- sys (clock + sleep), ref (reflection), job (scheduling), run (frame clock). */
-    if ( !mod_static_load( "sys", sys_get_mod_desc() ) ||
-         !mod_static_load( "ref", ref_get_mod_desc() ) ||
-         !mod_static_load( "job", job_get_mod_desc() ) ||
-         !mod_static_load( "run", run_get_mod_desc() ) )
+    /* Engine baseline -- sys (clock + sleep), ref (reflection), prof (zone capture),
+       job (scheduling), run (frame clock). */
+    if ( !mod_static_load( "sys",  sys_get_mod_desc() )  ||
+         !mod_static_load( "ref",  ref_get_mod_desc() )  ||
+         !mod_static_load( "prof", prof_get_mod_desc() ) ||
+         !mod_static_load( "job",  job_get_mod_desc() )  ||
+         !mod_static_load( "run",  run_get_mod_desc() ) )
     {
         fprintf( stderr, "[host] baseline load failed: %s\n", mod_last_error() );
         mod_system_exit();
@@ -399,6 +438,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     /* Give the bind system app's source-name table (keyboard + mouse + pad) so
        "bind f5 quicksave" and "bind pad_a +jump" round-trip. */
     cmd_bind_wire_names( app_key_names(), APP_SRC_COUNT );
+
+    /* Profiler capture verb -- see host_cmd_prof_dump above the key asserts. */
+    s_prof_dump_frames = 0;
+    cmd_register( "prof_dump", host_cmd_prof_dump,
+                  "Capture N frames to a Chrome trace (prof_dump [frames] [path])" );
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
@@ -561,6 +605,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     const i64 frame_us    = ( i64 )frame_ms * 1000;
     i64       deadline_us = sys_tick_microseconds() + frame_us;
 
+    PROF_THREAD_NAME( "main" );
+
     while ( !g_quit_requested )
     {
         run_frame_stats_t stats      = { 0 };
@@ -672,8 +718,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            clean retained frames); they go in on_gui.  Can call any loaded module API or
            run_host_quit(). */
 
+        PROF_ZONE_BEGIN( "host/update" );
         if ( desc->on_update )
              desc->on_update( dt );
+        PROF_ZONE_END();
 
         i64 t_update_us = sys_tick_microseconds();
         stats.update_us = t_update_us - t_events_us;
@@ -693,6 +741,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            band -- read it via viewport_caption_h(0)), then on_gui emits the host's windows.
            frame_end seals the frame either way (clean frames replay volatile widgets there). */
 
+        PROF_ZONE_BEGIN( "host/gui" );
         if ( s_gui_inited )
         {
             if ( gui()->frame_begin( dt ) )
@@ -718,6 +767,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         if ( s_gui_inited )
             gui()->viewport_update();
+        PROF_ZONE_END();
 
         i64 t_gui_us = sys_tick_microseconds();
         stats.gui_us = t_gui_us - t_update_us;
@@ -745,6 +795,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
              into that same pass, present.  The clear + present run every tick regardless of the
              HUD, or nothing reaches the screen. */
 
+        PROF_ZONE_BEGIN( "host/render" );
         bool gui_ran = ( s_gui_inited && s_vp0 != GUI_VP_INVALID );
         if ( windowed && !app()->window_is_minimized( s_win_id ) )
         {
@@ -808,9 +859,24 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            no floaters are alive; safe to call unconditionally. */
         if ( s_gui_inited )
             gui()->viewport_render_floaters();
+        PROF_ZONE_END();
 
         i64 t_render_us = sys_tick_microseconds();
         stats.render_us = t_render_us - t_gui_us;
+
+        /* -- profiler dump flush ------------------------------------------ */
+
+        /* While a prof_dump capture is live the host is the drain consumer: move this
+           frame's events (all rings) into the trace file, closing it on the last frame. */
+        if ( s_prof_dump_frames > 0 )
+        {
+            prof_dump_flush();
+            if ( --s_prof_dump_frames == 0 )
+            {
+                prof_dump_end();
+                printf( "[host] prof_dump: capture complete\n" );
+            }
+        }
 
         /* -- hot-reload -------------------------------------------------- */
 
@@ -841,6 +907,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         stats.work_us = work_end_us - t_frame_us;
 
+        PROF_ZONE_BEGIN( "host/wait" );
         if ( editor_sleep && !g_realtime )
         {
             /* Run at frame_ms cadence -- rather than blocking on OS input -- while the gui has not
@@ -875,6 +942,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         }
         else if ( remain_us >= 1000 )
             sys()->sleep_milliseconds( ( i32 )( remain_us / 1000 ) );
+        PROF_ZONE_END();
 
         /* Advance the deadline by exactly one period; if this frame overran the whole
            next budget (load spike, editor wait), resync forward instead of running
@@ -886,6 +954,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         stats.wait_us  = t_end_us - work_end_us;
         stats.frame_us = t_end_us - t_frame_us;
+
+        /* Profiler frame boundary + headline counter -- macro-gated, zero cost at level 0. */
+        PROF_FRAME_MARK();
+        PROF_COUNTER_SET( "host/frame_us", stats.frame_us );
+
         run_clock_stats_submit( &stats );
     }
 

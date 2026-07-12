@@ -281,6 +281,9 @@ i64  sys_atomic_compare_exchange_64( volatile i64* target, i64 exchange, i64 com
 // Performs a thread-safe atomic read of the 64-bit target enforcing read memory barriers.
 i64  sys_atomic_read_64( volatile i64* target );
 
+// Performs a thread-safe atomic write to the 64-bit target enforcing write memory barriers.
+void sys_atomic_write_64( volatile i64* target, i64 value );
+
 
 /*==============================================================================================
 

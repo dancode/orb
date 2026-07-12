@@ -15,8 +15,15 @@
         count, correct across wrap).
       - A stale read_pos on the writer side only makes overflow drop early -- never
         corrupts. Drops are counted, never blocked on.
-      - Rings are claimed one per thread on first emit and never released. Threads past
-        PROF_MAX_THREADS share a discard ring that only counts drops.
+      - Rings are claimed one per thread on first emit. With PROF_RING_RECYCLE, claims go
+        through a CAS on the slot's owner word and prof_thread_release returns the slot:
+        immediately when empty, else RETIRED until the drain consumer empties it (an
+        undrained retired slot can also be adopted directly once empty). Without recycle,
+        slots are claimed forever by a bump allocator. Threads past PROF_MAX_THREADS share
+        a discard ring that only counts drops.
+      - The ring struct and the TLS ring pointer are exported (prof.h / prof_api.h) for
+        the ORB_PROFILE_FAST inline write path in statically-linked consumers; the
+        publish ordering there mirrors prof_ring_push exactly.
 
 ==============================================================================================*/
 
@@ -37,31 +44,22 @@ _Static_assert( PROF_NAME_TABLE_SIZE >= 2 * PROF_MAX_NAMES,          "name table
 
 /*==============================================================================================
     Storage
+
+    prof_ring_t itself lives in prof.h (exported for the ORB_PROFILE_FAST inline path).
 ==============================================================================================*/
-
-typedef struct prof_ring_s
-{
-    volatile i32 write_pos;                     // modular cursor: total events written (owner thread)
-    volatile i32 read_pos;                      // modular cursor: total events consumed (drain thread)
-    volatile i32 dropped;                       // events lost to overflow / discard
-    bool         discard;                       // overflow-thread ring: count drops, store nothing
-    char         label[ PROF_THREAD_NAME_MAX ]; // thread display name for readouts
-    prof_event_t events[ PROF_RING_CAP ];
-
-} prof_ring_t;
 
 /* Name registry slot: id published LAST (atomic write) so lock-free readers that see a
    nonzero id are guaranteed to see the offset it guards. Slots are never removed. */
 typedef struct prof_name_slot_s
 {
-    volatile i32 id;                           // zone/counter name hash; 0 = empty
-    u32          offset;                       // byte offset into the name pool
+    volatile i32 id;                            // zone/counter name hash; 0 = empty
+    u32          offset;                        // byte offset into the name pool
 
 } prof_name_slot_t;
 
 typedef struct prof_counter_slot_s
 {
-    volatile i32 id;                           // counter name hash; 0 = empty; inserts are contiguous
+    volatile i32 id;                            // counter name hash; 0 = empty; inserts are contiguous
     volatile i64 value;
 
 } prof_counter_slot_t;
@@ -69,9 +67,9 @@ typedef struct prof_counter_slot_s
 static prof_ring_t         g_prof_rings[ PROF_MAX_THREADS ];
 static prof_ring_t         g_prof_discard_ring = { .discard = true, .label = "overflow" };
 
-static volatile i32        g_prof_ring_count;                        // claimed rings (may overshoot MAX)
-static volatile i32        g_prof_enabled = 1;                       // runtime capture switch
-static volatile i64        g_prof_frame;                             // global frame counter
+static volatile i32        g_prof_ring_count;   // recycle: high-water slot count; legacy: claims (may overshoot MAX)
+volatile i32               g_prof_enabled = 1;  // runtime capture switch (extern: fast inline path reads it)
+static volatile i64        g_prof_frame;        // global frame counter
 
 static prof_name_slot_t    g_prof_names[ PROF_NAME_TABLE_SIZE ];
 static char                g_prof_name_pool[ PROF_NAME_POOL_SIZE ];
@@ -80,10 +78,11 @@ static u32                 g_prof_name_count;
 
 static prof_counter_slot_t g_prof_counters[ PROF_MAX_COUNTERS ];
 
-static mutex_t             g_prof_lock;                              // guards all cold-path inserts
-static volatile i32        g_prof_boot;                              // 0 = cold, 1 = initializing, 2 = ready
+static mutex_t             g_prof_lock;         // guards all cold-path inserts
+static volatile i32        g_prof_boot;         // 0 = cold, 1 = initializing, 2 = ready
 
-static ORB_THREAD_LOCAL prof_ring_t* t_prof_ring;                    // this thread's claimed ring
+// this thread's claimed ring (extern: the fast inline path caches through it)
+ORB_THREAD_LOCAL prof_ring_t* g_prof_tls_ring;
 
 /*==============================================================================================
     Lifecycle
@@ -121,6 +120,8 @@ prof_init( void )
 void
 prof_exit( void )
 {
+    prof_dump_end();    /* closes + finalizes an abandoned capture; no-op when idle */
+
     if ( sys_atomic_read( &g_prof_boot ) == 2 )
         mutex_destroy( &g_prof_lock );
 
@@ -134,7 +135,7 @@ prof_exit( void )
     g_prof_ring_count    = 0;
     g_prof_frame         = 0;
     g_prof_enabled       = 1;
-    t_prof_ring          = NULL;
+    g_prof_tls_ring      = NULL;
 
     sys_atomic_write( &g_prof_boot, 0 );
 }
@@ -148,22 +149,92 @@ prof_ring_acquire( void )
 {
     prof_ensure_init();
 
-    i32          idx = sys_atomic_increment( &g_prof_ring_count ) - 1;
-    prof_ring_t* r;
+    prof_ring_t* r = NULL;
 
-    if ( idx >= PROF_MAX_THREADS )
+#if PROF_RING_RECYCLE
+
+    /* Pass 1: claim the lowest free slot (never used, or returned to the pool). The CAS
+       is the claim -- racing threads land on distinct slots. */
+    for ( i32 i = 0; i < PROF_MAX_THREADS && !r; ++i )
     {
-        r = &g_prof_discard_ring;
+        if ( sys_atomic_compare_exchange( &g_prof_rings[ i ].owner,
+                                          PROF_RING_OWNED, PROF_RING_FREE ) == PROF_RING_FREE )
+            r = &g_prof_rings[ i ];
     }
-    else
+
+    /* Pass 2: adopt a retired slot that is already fully drained -- covers hosts that
+       never run a drain consumer, so releases still recycle once rings empty out. The
+       cursors cannot move under us: a retired ring has no writer, and an empty ring
+       gives the drain side nothing to advance. */
+    for ( i32 i = 0; i < PROF_MAX_THREADS && !r; ++i )
+    {
+        prof_ring_t* cand = &g_prof_rings[ i ];
+        if ( sys_atomic_read( &cand->owner ) != PROF_RING_RETIRED )
+            continue;
+        u32 w  = ( u32 )sys_atomic_read( &cand->write_pos );
+        u32 rd = ( u32 )sys_atomic_read( &cand->read_pos );
+        if ( w == rd && sys_atomic_compare_exchange( &cand->owner,
+                                                     PROF_RING_OWNED, PROF_RING_RETIRED ) == PROF_RING_RETIRED )
+            r = cand;
+    }
+
+    if ( r )
+    {
+        /* Fresh owner: reset the drop count and label. Cursors stay free-running -- the
+           slot was empty at claim, so the pending count is already zero. */
+        i32 idx = ( i32 )( r - g_prof_rings );
+        sys_atomic_write( &r->dropped, 0 );
+        snprintf( r->label, sizeof( r->label ), "thread_%d", idx );
+
+        /* Raise the high-water count so drain enumeration reaches this slot. */
+        i32 c;
+        while ( ( c = sys_atomic_read( &g_prof_ring_count ) ) < idx + 1 )
+            if ( sys_atomic_compare_exchange( &g_prof_ring_count, idx + 1, c ) == c )
+                break;
+    }
+
+#else
+
+    /* Legacy bump allocator: slots are claimed forever. */
+    i32 idx = sys_atomic_increment( &g_prof_ring_count ) - 1;
+    if ( idx < PROF_MAX_THREADS )
     {
         r = &g_prof_rings[ idx ];
+        sys_atomic_write( &r->owner, PROF_RING_OWNED );
         if ( !r->label[ 0 ] )
             snprintf( r->label, sizeof( r->label ), "thread_%d", idx );
     }
 
-    t_prof_ring = r;
+#endif    /* PROF_RING_RECYCLE */
+
+    if ( !r )
+        r = &g_prof_discard_ring;
+
+    g_prof_tls_ring = r;
     return r;
+}
+
+/* Return the calling thread's ring to the pool -- the counterpart of the implicit claim
+   on first emit; call it before a transient thread exits. Empty rings free immediately;
+   rings with pending events RETIRE so the drain consumer can still collect them (it
+   frees the slot after the emptying drain). Without PROF_RING_RECYCLE this is a no-op:
+   the slot stays claimed, exactly the old fixed-pool behavior. */
+void
+prof_thread_release( void )
+{
+#if PROF_RING_RECYCLE
+    prof_ring_t* r  = g_prof_tls_ring;
+    g_prof_tls_ring = NULL;
+
+    if ( !r || r->discard )
+        return;
+
+    /* A stale read_pos here only demotes a free to a retire -- the drain side then
+       frees it, so nothing is lost either way. */
+    u32 w  = ( u32 )r->write_pos;
+    u32 rd = ( u32 )sys_atomic_read( &r->read_pos );
+    sys_atomic_write( &r->owner, ( w == rd ) ? PROF_RING_FREE : PROF_RING_RETIRED );
+#endif
 }
 
 static void
@@ -199,7 +270,7 @@ prof_ring_push( prof_ring_t* r, u16 type, u32 id, i64 tick_ns )
 static ORB_INLINE prof_ring_t*
 prof_ring_mine( void )
 {
-    prof_ring_t* r = t_prof_ring;
+    prof_ring_t* r = g_prof_tls_ring;
     return r ? r : prof_ring_acquire();
 }
 
@@ -371,13 +442,8 @@ void
 prof_counter_set( u32 id, i64 value )
 {
     prof_counter_slot_t* c = prof_counter_find( id );
-    if ( !c )
-        return;
-
-    /* No atomic 64-bit store in the sys layer -- emulate with a CAS loop. */
-    i64 old = sys_atomic_read_64( &c->value );
-    while ( sys_atomic_compare_exchange_64( &c->value, value, old ) != old )
-        old = sys_atomic_read_64( &c->value );
+    if ( c )
+        sys_atomic_write_64( &c->value, value );
 }
 
 void
@@ -480,12 +546,23 @@ prof_drain( u32 thread_index, prof_event_t* out, u32 max )
     }
 
     sys_atomic_write( &r->read_pos, ( i32 )( rd + n ) );
+
+#if PROF_RING_RECYCLE
+    /* Owner released with events pending and this drain emptied it: free the slot. The
+       write cursor cannot move (retired = no writer), so the emptiness check holds. */
+    if ( rd + n == w && sys_atomic_read( &r->owner ) == PROF_RING_RETIRED )
+        sys_atomic_compare_exchange( &r->owner, PROF_RING_FREE, PROF_RING_RETIRED );
+#endif
+
     return n;
 }
 
 /*==============================================================================================
-    API wiring  (must be last -- assigns every function to g_prof_api_struct)
+    Unity build -- dump consumer, then the API wiring (must be last: prof_api.c assigns
+    every function to g_prof_api_struct)
 ==============================================================================================*/
+
+#include "engine/prof/prof_dump.c"
 
 #ifndef PROF_API_C_PRELUDE
 #include "engine/prof/prof_api.c"

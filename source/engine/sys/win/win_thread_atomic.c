@@ -79,4 +79,12 @@ sys_atomic_read_64( volatile i64* target )
     return ( i64 )InterlockedOr64( ( volatile LONG64* )target, 0 );
 }
 
+void
+sys_atomic_write_64( volatile i64* target, i64 value )
+{
+    // InterlockedExchange64 writes the value atomically and returns the original value.
+    // Enforces a hardware memory fence to immediately flush the write to other cores.
+    InterlockedExchange64( ( volatile LONG64* )target, ( LONG64 )value );
+}
+
 /*============================================================================================*/

@@ -124,7 +124,7 @@ target run
     root        source/runtime
     folder      03_RUNTIME
     unit        run.c
-    dep         mod sys ref core app job
+    dep         mod sys ref prof core app job
 
 # ==============================================================================
 # 03_RUNTIME_SERVICE
@@ -291,7 +291,7 @@ target template_game				# source template for -create <name> -type project
     folder      06_PROJECT
     unit        main.c
 	dep 		mod ref sys core job app
-    dep         run rhi draw
+    dep         run prof rhi draw
 	mono_dep	render
 
 # ==============================================================================
@@ -341,7 +341,7 @@ target host_game
     folder      08_HOST
     unit        host_game_main.c
 	dep         mod ref sys core job app host_common
-    dep         run rhi draw
+    dep         run prof rhi draw
 	mono_dep	render game
 	
 target host_editor
@@ -351,7 +351,7 @@ target host_editor
     folder      08_HOST
     unit        host_editor_main.c
 	dep         mod ref sys core job app host_common
-    dep         run rhi draw gui
+    dep         run prof rhi draw gui
 	mono_dep	render game
 	
 target host_tool
@@ -552,7 +552,7 @@ target sb_vulkan						# vulkan development and testing
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
     dep         sys ref mod core job app
-	dep 		run rhi draw gui
+	dep 		run prof rhi draw gui
 	dep         dev_font
 	mono_dep 	render
   # flag        reflect
@@ -577,7 +577,7 @@ target sb_gui
     folder      09_SANDBOX/GUI
     unit        sb_gui.c
     dep         sys ref mod core job app
-	dep 		run rhi draw gui
+	dep 		run prof rhi draw gui
 	dep         dev_font
 	mono_dep 	render
 
@@ -606,7 +606,7 @@ target sb_gui_editor					# game-engine editor shell over the gui library
     folder      09_SANDBOX/GUI
     unit        sb_gui_editor.c
     dep         sys ref mod core job app
-	dep 		run rhi draw gui
+	dep 		run prof rhi draw gui
 	dep         dev_font
 	mono_dep 	render
 
@@ -627,7 +627,7 @@ target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
     folder      09_SANDBOX/GUI
     unit        sb_gui_font.c
     dep         sys ref mod core job app
-	dep 		run rhi draw gui
+	dep 		run prof rhi draw gui
 	dep         dev_font
 	mono_dep 	render
 
@@ -642,7 +642,7 @@ target sb_host_runtime
     folder      09_SANDBOX/HOST
     unit        sb_host_runtime.c
 	dep 		mod ref sys core job app net 	# static engine
-    dep         run rhi draw    				# static runtime + services
+    dep         run prof rhi draw    				# static runtime + services
 	mono_dep	render
 
 target sb_host_tool
@@ -652,7 +652,7 @@ target sb_host_tool
     folder      09_SANDBOX/HOST
     unit        sb_host_tool.c
 	dep 		mod ref sys core job app
-    dep         run
+    dep         run prof
 	mono_dep	render rhi draw
 
 target sb_host_server
@@ -662,7 +662,7 @@ target sb_host_server
     folder      09_SANDBOX/HOST
     unit        sb_host_server.c
 	dep 		mod ref sys core job app
-    dep         run
+    dep         run prof
 	mono_dep	render rhi draw example
 
 target sb_host_editor
@@ -672,7 +672,7 @@ target sb_host_editor
     folder      09_SANDBOX/HOST
     unit        sb_host_editor.c
 	dep 		mod ref sys core job app
-    dep         run rhi draw gui
+    dep         run prof rhi draw gui
 	mono_dep	render
 
 target sb_host_game
@@ -682,7 +682,7 @@ target sb_host_game
     folder      09_SANDBOX/HOST
     unit        sb_host_game.c
 	dep 		mod ref sys core job app
-    dep         run rhi draw input
+    dep         run prof rhi draw input
 	mono_dep	render
 
 target sb_host_runtime_proj			# BYPASS PROOF: drives run_project.h directly -- no game framework in k_modules
@@ -692,7 +692,7 @@ target sb_host_runtime_proj			# BYPASS PROOF: drives run_project.h directly -- n
     folder      09_SANDBOX/HOST
     unit        sb_host_runtime_proj.c
 	dep 		mod ref sys core job app
-    dep         run rhi draw
+    dep         run prof rhi draw
 	mono_dep	render
 
 target sb_proj_runtime					# framework-BYPASS project DLL -- core+render only; sb_host_runtime_proj drives it

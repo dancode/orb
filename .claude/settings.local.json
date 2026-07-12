@@ -224,7 +224,12 @@
       "PowerShell(.\\\\bin\\\\build_tool.exe -gen)",
       "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_prof)",
       "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_prof -monolithic; .\\\\bin\\\\build_tool.exe -config Release -target sb_prof)",
-      "PowerShell(.\\\\bin\\\\sb_prof.exe)"
+      "PowerShell(.\\\\bin\\\\sb_prof.exe)",
+      "Bash(bin/sb_prof.exe)",
+      "Bash(bin/sb_prof.exe --release-check)",
+      "PowerShell(Stop-Process *)",
+      "Bash(git stash *)",
+      "Bash(git log *)"
     ]
   }
 }
