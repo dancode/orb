@@ -17,7 +17,6 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "base/str.h"
 #define LOG_CH "game"
 #include "game/game_api.h"
 
@@ -83,8 +82,16 @@ game_project_bind( const char* name )
         return false;
     }
 
-    str_to_cstr( str_from_cstr( name ), s->project, sizeof( s->project ) );
-    s->proj = proj;
+    /* bounded copy by hand -- base's str.c is not linked into monolithic host exes,
+       and one copy does not justify adding that dependency */
+    size_t n = 0;
+    while ( name[ n ] && n < sizeof( s->project ) - 1 )
+    {
+        s->project[ n ] = name[ n ];
+        n++;
+    }
+    s->project[ n ] = '\0';
+    s->proj         = proj;
 
     LOG_INFO( "project '%s' bound", s->project );
     return true;

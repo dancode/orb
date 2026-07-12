@@ -12,6 +12,8 @@
         ( the game framework runner is the standard driver -- game()->play/tick )
       - fixed-step gameplay in on_sim ( the score ticks once per sim second and resets
         on every on_start -- editor Stop/Play proves the session restart )
+      - interpolated drawing: on_sim keeps prev/cur angle and on_draw lerps them by
+        alpha, so the orbit is smooth at any game_fixed_hz ( try 10 -- still smooth )
       - submits its scene through render() using the rhi context handed in per draw
         ( view->render_ctx; -1 when running headless )
       - persistent state that survives hot-reloads ( edit this file, rebuild, watch the
@@ -46,9 +48,10 @@ MOD_USE_RENDER;
 typedef struct sample_game_state_s
 {
     bool running;         /* between on_start and on_stop */
-    f32  angle;           /* orbit angle -- proves state survives hot-reload */
-    i32  score;           /* +1 per sim second; reset every on_start        */
-    f32  time_in_level;   /* seconds accumulated toward the next score tick */
+    f32  angle;           /* orbit angle -- proves state survives hot-reload   */
+    f32  angle_prev;      /* last sim tick's angle -- on_draw lerps prev->cur  */
+    i32  score;           /* +1 per sim second; reset every on_start          */
+    f32  time_in_level;   /* seconds accumulated toward the next score tick   */
 
 } sample_game_state_t;
 
@@ -67,6 +70,7 @@ sample_game_on_start( void )
     g_state->running       = true;
     g_state->score         = 0;      /* session state: every Play starts fresh */
     g_state->time_in_level = 0.0f;
+    g_state->angle_prev    = g_state->angle;
     LOG_INFO( "on_start" );
 }
 
@@ -76,7 +80,8 @@ sample_game_on_sim( f32 fixed_dt )
     if ( !g_state || !g_state->running )
         return;
 
-    g_state->angle += SAMPLE_ORBIT_SPEED * fixed_dt;
+    g_state->angle_prev  = g_state->angle;
+    g_state->angle      += SAMPLE_ORBIT_SPEED * fixed_dt;
 
     /* very fake gameplay: every sim second, score +1 -- the console tick proves the
        fixed-step cadence and the reset on Play proves the session restart */
@@ -100,20 +105,22 @@ sample_game_on_frame( f32 dt, const run_view_t* view )
 static void
 sample_game_on_draw( f32 alpha, const run_view_t* view )
 {
-    UNUSED( alpha );    /* no prev-state lerp yet -- draws the latest sim state */
-
     if ( !g_state || !g_state->running )
         return;
 
-    /* Scene submission -- a square orbiting the surface center.  render()->draw_scene
-       replays this behind whatever the host composites on top (editor gui, HUD).  The
-       surface size comes from the view so the project never touches rhi directly. */
+    /* Scene submission -- a square orbiting the surface center.  The drawn angle lerps
+       last tick -> current tick by alpha (the fraction of a sim step the frame sits at),
+       so motion stays smooth however the frame rate beats against game_fixed_hz.
+       render()->draw_scene replays this behind whatever the host composites on top
+       (editor gui, HUD); the surface size comes from the view so the project never
+       touches rhi directly. */
     if ( view->render_ctx >= 0 && view->surface_w > 0 && view->surface_h > 0 )
     {
+        f32 a  = f32_lerp( g_state->angle_prev, g_state->angle, alpha );
         f32 w  = ( f32 )view->surface_w;
         f32 h  = ( f32 )view->surface_h;
-        f32 cx = w * 0.5f + f32_cos( g_state->angle ) * w * 0.25f;
-        f32 cy = h * 0.5f + f32_sin( g_state->angle ) * h * 0.25f;
+        f32 cx = w * 0.5f + f32_cos( a ) * w * 0.25f;
+        f32 cy = h * 0.5f + f32_sin( a ) * h * 0.25f;
 
         const f32 teal[ 4 ] = { 0.20f, 0.80f, 0.70f, 1.0f };
         render()->submit_rect( view->render_ctx, cx, cy,

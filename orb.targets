@@ -213,7 +213,6 @@ target game							# game framework runner -- hot-reload DLL, RUN_MODULE( game ) 
     root        source/game
     folder      04_GAME
     unit        game.c
-    dep         base
 
 # ==============================================================================
 
@@ -275,6 +274,14 @@ target sample_game_play				# F5 launcher: builds sample_game.dll, plays it under
     alias       sample_game
     folder      06_PROJECT
     run         host_game -module sample_game
+
+target sample_raw					# framework-BYPASS project DLL -- core+render only; sb_runtime_project drives it
+
+    type        dynamic
+    root        source/project/sample_raw
+    folder      06_PROJECT
+    unit        sample_raw.c
+    run         sb_runtime_project
 
 target template_game				# source template for -create <name> -type project
 
@@ -644,6 +651,16 @@ target sb_example_game
     dep         run rhi draw input
 	mono_dep	render
 
+target sb_runtime_project			# BYPASS PROOF: drives run_project.h directly -- no game framework in k_modules
+
+    type        exe
+    root        source/sandbox/runtime_project
+    folder      09_SANDBOX/RUNTIME
+    unit        sb_runtime_project.c
+	dep 		mod ref sys core job app
+    dep         run rhi draw
+	mono_dep	render
+
 
 # ==============================================================================
 # 10_TOOLS -- Standalone offline CLI tools (no engine runtime dependency)
@@ -795,10 +812,11 @@ solution orb_examples
 	add 		run
 	
 	add 		sb_example_tool
-	add 		sb_example_server			
-	add 		sb_example_editor 
-	add 		sb_example_game 
+	add 		sb_example_server
+	add 		sb_example_editor
+	add 		sb_example_game
 	add 		sb_example_runtime
+	add 		sb_runtime_project
 
 	#			--- project tyypes by host types ---
 	
@@ -963,8 +981,10 @@ solution orb_all
 	add 		sb_example_editor
 	add 		sb_example_game
 	add 		sb_example_runtime
+	add 		sb_runtime_project
 
 	add 		sample_game sample_game_play
+	add 		sample_raw
 	add 		template_game
 
 	add 		font_tool
