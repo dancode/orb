@@ -1284,142 +1284,7 @@ demo_table( void )
 }
 
 /*==============================================================================================
-    16. Docking -- tile + tab windows into a dockspace that fills the main viewport.
-
-    dockspace_over_viewport( 0, ... ) is called at the TOP of the build every frame: it lays the dock
-    tree out over the surface and draws + interacts its splitters.  The layout itself is built once
-    (programmatically) with dock_split / dock_window -- the DockBuilder idiom of splitting the shrinking
-    remainder.  The docked windows below then render into their nodes: no per-window title bar, a shared
-    tab strip instead (drag the splitters to resize; click the Console / Assets tabs to switch).  The
-    "Demos" picker and any other free window still float on top of the dockspace.
-==============================================================================================*/
-
-static void
-demo_docking( void )
-{
-    /* Layout persistence (Phase 3): the Viewport panel's buttons only set these flags; the actual
-       save/restore runs HERE, at the top of the build before the dockspace and any docked window --
-       a safe point to free + rebuild the tree (dock_load) without touching a node mid-render.  A real
-       app would write s_layout to a file on save and load it at startup; here it round-trips in RAM. */
-    static char s_layout[ 2048 ];
-    static bool s_have_layout    = false;
-    static bool s_save_layout    = false;
-    static bool s_restore_layout = false;
-    if ( s_save_layout )
-    {
-        gui()->dock_save( 0, s_layout, sizeof( s_layout ) );
-        s_have_layout = true;
-        s_save_layout = false;
-    }
-    if ( s_restore_layout )
-    {
-        if ( s_have_layout ) gui()->dock_load( 0, s_layout );
-        s_restore_layout = false;
-    }
-
-    /* Lay out + interact the dockspace every frame (must precede the docked windows' window_begin). */
-    gui_dock_id_t root = gui()->dockspace_over_viewport( 0, GUI_DOCKSPACE_NONE );
-
-    /* Build the tree once: left rail, right inspector, a bottom strip, central viewport. */
-    static bool built = false;
-    if ( !built && root != GUI_DOCK_NONE )
-    {
-        gui_dock_id_t left   = gui()->dock_split( root, GUI_DIR_LEFT,  0.22f, &root );
-        gui_dock_id_t right  = gui()->dock_split( root, GUI_DIR_RIGHT, 0.28f, &root );
-        gui_dock_id_t bottom = gui()->dock_split( root, GUI_DIR_DOWN,  0.30f, &root );
-        gui()->dock_window( "Scene Tree", left   );
-        gui()->dock_window( "Inspector",  right  );
-        gui()->dock_window( "Console",    bottom );
-        gui()->dock_window( "Assets",     bottom );   /* tab alongside Console */
-        gui()->dock_window( "Viewport",   root   );   /* central remainder */
-        built = true;
-    }
-
-    if ( gui()->window_begin( "Scene Tree", GUI_WIN_NONE ) )
-    {
-        gui()->stack();
-        if ( gui()->tree_node( "World" ) )
-        {
-            gui()->text( "Camera" );
-            gui()->text( "Sun Light" );
-            if ( gui()->tree_node( "Props" ) )
-            {
-                gui()->text( "Crate" );
-                gui()->text( "Barrel" );
-                gui()->tree_pop();
-            }
-            gui()->tree_pop();
-        }
-    }
-    gui()->window_end();
-
-    if ( gui()->window_begin( "Inspector", GUI_WIN_NONE ) )
-    {
-        static char name[ 32 ] = "Crate";
-        static f32  pos[ 3 ]   = { 0.0f, 1.0f, 0.0f };
-        static bool visible    = true;
-        gui()->stack();                     /* declare the layout mode before any widget */
-        gui()->field_label_left( 80.0f );
-        gui()->input_text  ( "Name",     name, sizeof( name ) );
-        gui()->input_float3( "Position", pos, NULL );
-        gui()->checkbox    ( "Visible",  &visible );
-    }
-    gui()->window_end();
-
-    if ( gui()->window_begin( "Console", GUI_WIN_NONE ) )
-    {
-        gui()->stack();
-        gui()->text( "[info] engine started" );
-        gui()->text( "[info] dock layout built" );
-        gui()->text( "> _" );
-    }
-    gui()->window_end();
-
-    if ( gui()->window_begin( "Assets", GUI_WIN_NONE ) )
-    {
-        gui()->stack();
-        gui()->bullet_text( "models/crate.obj" );
-        gui()->bullet_text( "textures/wood.png" );
-        gui()->bullet_text( "shaders/lit.glsl" );
-    }
-    gui()->window_end();
-
-    if ( gui()->window_begin( "Viewport", GUI_WIN_NONE ) )
-    {
-        gui()->stack();
-        gui()->text( "Central viewport panel." );
-        gui()->separator();
-        gui()->text( "Drag the gutters between regions to resize." );
-        gui()->text( "Click the Console / Assets tabs to switch." );
-        gui()->text( "Drag a tab OUT to pop it into a floater." );
-        gui()->text( "Drag the Palette window onto a pane to dock." );
-        gui()->separator();
-        gui()->text( "Rearrange, Save, rearrange more, then Restore:" );
-        /* Two full-width stacked rows: a stack() button fills its column, so same_line would push the
-           second button off the pane's right edge. */
-        if ( gui()->button( "Save Layout" ) )    s_save_layout    = true;
-        if ( gui()->button( "Restore Layout" ) ) s_restore_layout = true;
-    }
-    gui()->window_end();
-
-    /* A FREE (undocked) window to exercise the Phase-2 drag-to-dock gesture: drag its title bar over
-       any pane to see the 5-way overlay, then drop on center (tab in) or a side (split). */
-    gui()->window_set_next_pos ( 980, 120, GUI_COND_ONCE );
-    gui()->window_set_next_size( 220, 150, GUI_COND_ONCE );
-    if ( gui()->window_begin( "Palette", GUI_WIN_NONE ) )
-    {
-        gui()->stack();
-        gui()->text( "I'm a floating window." );
-        gui()->separator();
-        gui()->text( "Drag my title bar over a" );
-        gui()->text( "pane to dock me (center =" );
-        gui()->text( "tab, sides = split)." );
-    }
-    gui()->window_end();
-}
-
-/*==============================================================================================
-    17. Icons -- the runtime icon atlas.
+    16. Icons -- the runtime icon atlas.
 
     Three icons are rasterized once into a buffer and registered (register_icon -> handle); after
     that they draw as tinted quads in the same flush as text.  image() reserves a layout slot and
@@ -1479,7 +1344,7 @@ demo_icons( void )
 }
 
 /*==============================================================================================
-    18. Symbols -- the Render* primitive family (normal pipeline, not the icon atlas).
+    17. Symbols -- the Render* primitive family (normal pipeline, not the icon atlas).
 
     Two halves.  Top: the widget *style tags* -- per-emit enum switches pushed via push_style_var
     (GUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE / _SEPARATOR_STYLE / _PROGRESS_STYLE /
@@ -1668,7 +1533,6 @@ const ex_demo_t ex_demos[] =
     { "Menus",        "menu bar / menu_begin / menu_item / context",    demo_menus       },
     { "Lines / Paths","draw_line / draw_polyline / path_stroke",        demo_lines       },
     { "Tables",       "table_begin / setup_column / next_row / next_column", demo_table   },
-    { "Docking",      "dockspace_over_viewport / dock_split / tabs",     demo_docking     },
     { "Icons",        "register_icon / image / draw_icon_in",            demo_icons       },
     { "Symbols",      "style tags + render_* shape/curve/fill palette",  demo_symbols     },
     { NULL,           NULL,                                             NULL             },
