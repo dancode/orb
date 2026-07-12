@@ -32,8 +32,7 @@
 
 _Static_assert( sizeof( prof_event_t ) == 16,                        "prof event must stay 16 bytes" );
 _Static_assert( ( PROF_RING_CAP & ( PROF_RING_CAP - 1 ) ) == 0,      "ring cap must be a power of two" );
-_Static_assert( ( PROF_NAME_TABLE_SIZE & ( PROF_NAME_TABLE_SIZE - 1 ) ) == 0,
-                                                                     "name table must be a power of two" );
+_Static_assert( ( PROF_NAME_TABLE_SIZE & ( PROF_NAME_TABLE_SIZE - 1 ) ) == 0, "name table must be a power of two" );
 _Static_assert( PROF_NAME_TABLE_SIZE >= 2 * PROF_MAX_NAMES,          "name table needs <= 0.5 load factor" );
 
 /*==============================================================================================
@@ -42,11 +41,11 @@ _Static_assert( PROF_NAME_TABLE_SIZE >= 2 * PROF_MAX_NAMES,          "name table
 
 typedef struct prof_ring_s
 {
-    volatile i32 write_pos;                    // modular cursor: total events written (owner thread)
-    volatile i32 read_pos;                     // modular cursor: total events consumed (drain thread)
-    volatile i32 dropped;                      // events lost to overflow / discard
-    bool         discard;                      // overflow-thread ring: count drops, store nothing
-    char         label[ PROF_THREAD_NAME_MAX ];// thread display name for readouts
+    volatile i32 write_pos;                     // modular cursor: total events written (owner thread)
+    volatile i32 read_pos;                      // modular cursor: total events consumed (drain thread)
+    volatile i32 dropped;                       // events lost to overflow / discard
+    bool         discard;                       // overflow-thread ring: count drops, store nothing
+    char         label[ PROF_THREAD_NAME_MAX ]; // thread display name for readouts
     prof_event_t events[ PROF_RING_CAP ];
 
 } prof_ring_t;

@@ -906,7 +906,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	startup     sb_vulkan
 
     add         base
-	add         sys ref mod app core job net
+	add         sys ref prof mod app core job net
 
 	add 		run
 	add 		rhi						# vulkan render library

@@ -20,7 +20,6 @@
 #include "orb.h"
 
 // clang-format off
-
 /*==============================================================================================
     Compile-time capture level
 
@@ -47,13 +46,13 @@
     to a shared discard ring that only counts drops.
 ==============================================================================================*/
 
-#define PROF_MAX_THREADS       16              /* per-thread rings; extras discard          */
-#define PROF_RING_CAP          8192            /* events per ring; must be a power of two   */
-#define PROF_MAX_NAMES         256             /* distinct zone/counter names               */
-#define PROF_NAME_TABLE_SIZE   512             /* id -> name hash table; power of two       */
-#define PROF_NAME_POOL_SIZE    ( 8 * 1024 )    /* interned name string bytes                */
-#define PROF_MAX_COUNTERS      64              /* distinct live counters                    */
-#define PROF_THREAD_NAME_MAX   32              /* thread label bytes, including NUL         */
+#define PROF_MAX_THREADS       16               // per-thread rings; extras discard        
+#define PROF_RING_CAP          8192             // events per ring; must be a power of two 
+#define PROF_MAX_NAMES         256              // distinct zone/counter names             
+#define PROF_NAME_TABLE_SIZE   512              // id -> name hash table; power of two     
+#define PROF_NAME_POOL_SIZE    ( 8 * 1024 )     // interned name string bytes              
+#define PROF_MAX_COUNTERS      64               // distinct live counters                  
+#define PROF_THREAD_NAME_MAX   32               // thread label bytes, including NUL       
 
 /*==============================================================================================
     prof_hash_str -- case-insensitive FNV-1a
