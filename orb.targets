@@ -59,6 +59,15 @@ target ref
     unit        ref.c
     flag        host_only
 
+target prof
+
+    type        static
+    root        source/engine/prof
+    folder      02_ENGINE
+    unit        prof.c
+    dep         sys
+    flag        host_only
+
 target mod
 
     type        static
@@ -429,6 +438,14 @@ target sb_net
     unit        sb_net.c
     dep         sys net
 
+target sb_prof
+
+    type        exe
+    root        source/sandbox/engine/sb_prof
+    folder      09_SANDBOX/ENGINE
+    unit        sb_prof.c
+    dep         sys prof
+
 # ==============================================================================
 # 09_SANDBOX -- RUNTIME (runtime service tests)
 # ==============================================================================
@@ -735,8 +752,8 @@ solution orb_runtime
 	# 			--- STANDARD LIBRARY --- 
 	add 		base
 
-	# 			--- ENGINE --- 
-    add         sys ref mod app core job net
+	# 			--- ENGINE ---
+    add         sys ref prof mod app core job net
 	
 	# 			--- RUNTIME --- 
     add         run
@@ -784,7 +801,7 @@ solution orb_editor
 	#			--- LIBRARIES ---
 	
 	add         base
-	add         sys ref mod app core job net
+	add         sys ref prof mod app core job net
 
 	add 		run
 	add 		rhi						# vulkan render library
@@ -922,9 +939,9 @@ solution orb_sandbox_engine				# developing engine libraries
     out         build/proj
     startup     sb_gen_exe
 	
-	add 		base 
-	
-	add         sys ref mod app core job net
+	add 		base
+
+	add         sys ref prof mod app core job net
 	add         rhi
 	add         asset
 	add         input
@@ -939,6 +956,7 @@ solution orb_sandbox_engine				# developing engine libraries
 	add 		sb_job
 	add 		sb_app
 	add 		sb_net
+	add 		sb_prof
 
 	# 			--- SANDBOX : RUNTIME SERVICES --
 
@@ -972,8 +990,8 @@ solution orb_all
 # 	nav 		source
 
 	add 		base
-    add         sys ref mod app core job net
-	
+    add         sys ref prof mod app core job net
+
     add         run
     add         rhi
     add         draw
@@ -994,6 +1012,7 @@ solution orb_all
 	add 		sb_core
 	add 		sb_job
 	add 		sb_app
+	add 		sb_prof
 
 	add 		sb_asset_test
 	add 		sb_input

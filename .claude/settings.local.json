@@ -220,7 +220,11 @@
       "Bash(bin/sb_base.exe *)",
       "Bash(clang-format --version)",
       "Bash(clang-format -i source/base/container.h)",
-      "Bash(clang-format -i source/base/base_test.c)"
+      "Bash(clang-format -i source/base/base_test.c)",
+      "PowerShell(.\\\\bin\\\\build_tool.exe -gen)",
+      "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_prof)",
+      "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_prof -monolithic; .\\\\bin\\\\build_tool.exe -config Release -target sb_prof)",
+      "PowerShell(.\\\\bin\\\\sb_prof.exe)"
     ]
   }
 }
