@@ -1,7 +1,7 @@
 # GUI Architecture + Layout/Composer Notes (AI-oriented)
 
 Dense reference for working on the gui service (this directory) and its sandbox
-`source/sandbox/gui/sb_gui.c`. Code is source of truth. ASCII only in all source.
+`source/sandbox/gui/sb_gui/sb_gui.c`. Code is source of truth. ASCII only in all source.
 
 ## Big picture
 
@@ -104,7 +104,7 @@ at deferred tessellation time -- `push_font`/`pop_font` cannot scope a second fo
 The core lifecycle is always the same sequence; what differs is who owns the window, the rhi
 context, and the render/present step.
 
-### Standard manual loop (real hosts: runtime/host/host_main.c, sandbox/vulkan/sb_vulkan.c)
+### Standard manual loop (real hosts: runtime/host/host_main.c, sandbox/rhi/sb_vulkan/sb_vulkan.c)
 
 The host owns everything: it creates the app window + rhi context itself, then attaches gui to
 them. `gui_boot.c` is NOT involved.
@@ -286,7 +286,7 @@ it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
 
 ## sb_gui sandbox specifics
 
-`source/sandbox/gui/sb_gui.c` -- host exe: `mod_static` sys/ref/app/core/rhi/draw/gui, then the
+`source/sandbox/gui/sb_gui/sb_gui.c` -- host exe: `mod_static` sys/ref/app/core/rhi/draw/gui, then the
 boot + loop above. Demos map 1:1 to features: demo window (widgets, volatile pulse), font
 browser (dev_font bake + `font_load/_into/use`), split panels (`carve` + `push_layout_overlay`),
 HUD overlay (`anchor`/`gui_anchor_box`/`gui_rect_align`), region demo, drag-drop, tab groups

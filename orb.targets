@@ -17,7 +17,7 @@
 # ├── editor_service/     # Editor-specific static services
 # ├── editor_modules/     # Editor-specific dynamic modules
 # ├── tools/              # Standalone utilities (build_tool, asset pipeline)
-# ├── sandbox/            # Layer-specific verification targets (sb_engine_*)
+# ├── sandbox/            # Layer-specific verification targets (sb_*)
 # ├── host/               # ← Executable entry points (you are here)
 # ├── vendor/             # Third-party dependencies
 # ├── engine_api.h        # Aggregator header for engine APIs
@@ -379,54 +379,54 @@ target sb_base
 # 09_SANDBOX -- ENGINE
 # ==============================================================================
 
-target sb_engine_mod
+target sb_mod
 
     type        exe
-    root        source/sandbox/engine/engine_mod
+    root        source/sandbox/engine/sb_mod
     folder      09_SANDBOX/ENGINE
-    unit        sb_engine_mod.c
+    unit        sb_mod.c
     dep         sys mod ref
     dep         dev_build dev_hot
 	mono_dep 	example 
 
-target sb_engine_sys
+target sb_sys
 
     type        exe
-    root        source/sandbox/engine/engine_sys
+    root        source/sandbox/engine/sb_sys
     folder      09_SANDBOX/ENGINE
-    unit        sb_engine_sys.c
+    unit        sb_sys.c
     dep         sys
 
-target sb_engine_app
+target sb_app
 
     type        exe
-    root        source/sandbox/engine/engine_app
+    root        source/sandbox/engine/sb_app
     folder      09_SANDBOX/ENGINE
-    unit        sb_engine_app.c
+    unit        sb_app.c
     dep         sys mod app
 
-target sb_engine_core
+target sb_core
 
     type        exe
-    root        source/sandbox/engine/engine_core
+    root        source/sandbox/engine/sb_core
     folder      09_SANDBOX/ENGINE
-    unit        sb_engine_core.c
+    unit        sb_core.c
     dep         core sys
 
-target sb_engine_job
+target sb_job
 
     type        exe
-    root        source/sandbox/engine/engine_job
+    root        source/sandbox/engine/sb_job
     folder      09_SANDBOX/ENGINE
-    unit        sb_engine_job.c
+    unit        sb_job.c
     dep         sys job
 
-target sb_engine_net
+target sb_net
 
     type        exe
-    root        source/sandbox/engine/engine_net
+    root        source/sandbox/engine/sb_net
     folder      09_SANDBOX/ENGINE
-    unit        sb_engine_net.c
+    unit        sb_net.c
     dep         sys net
 
 # ==============================================================================
@@ -524,14 +524,14 @@ target sb_runtime_gen						# load a REF_MODULE() dll
     flag        reflect
 
 # ==============================================================================
-# 09_SANDBOX -- Vulkan
+# 09_SANDBOX -- RHI (render hardware interface testbeds)
 # ==============================================================================
 
 target sb_vulkan						# vulkan development and testing
 
     type        exe
-    root        source/sandbox/vulkan
-    folder      09_SANDBOX/VULKAN
+    root        source/sandbox/rhi/sb_vulkan
+    folder      09_SANDBOX/RHI
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
     unit        sb_vulkan_gui.c
@@ -544,16 +544,20 @@ target sb_vulkan						# vulkan development and testing
 target sb_vulkan_stress					# multi-context rhi sync stress test
 
     type        exe
-    root        source/sandbox/vulkan_stress
-    folder      09_SANDBOX/VULKAN
+    root        source/sandbox/rhi/sb_vulkan_stress
+    folder      09_SANDBOX/RHI
     unit        sb_vulkan_stress.c
     dep         sys ref mod core job app
 	dep 		rhi
 
+# ==============================================================================
+# 09_SANDBOX -- GUI
+# ==============================================================================
+
 target sb_gui
 
     type        exe
-    root        source/sandbox/gui
+    root        source/sandbox/gui/sb_gui
     folder      09_SANDBOX/GUI
     unit        sb_gui.c
     dep         sys ref mod core job app
@@ -564,7 +568,7 @@ target sb_gui
 target sb_gui_console					# Quake-style dev console over core cvar/console
 
     type        exe
-    root        source/sandbox/gui/gui_console
+    root        source/sandbox/gui/sb_gui_console
     folder      09_SANDBOX/GUI
     unit        sb_gui_console.c
     dep         sys ref mod core job app
@@ -573,7 +577,7 @@ target sb_gui_console					# Quake-style dev console over core cvar/console
 target sb_gui_editor					# game-engine editor shell over the gui library
 
     type        exe
-    root        source/sandbox/gui/gui_editor
+    root        source/sandbox/gui/sb_gui_editor
     folder      09_SANDBOX/GUI
     unit        sb_gui_editor.c
     dep         sys ref mod core job app
@@ -584,7 +588,7 @@ target sb_gui_editor					# game-engine editor shell over the gui library
 target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
 
     type        exe
-    root        source/sandbox/gui/gui_font
+    root        source/sandbox/gui/sb_gui_font
     folder      09_SANDBOX/GUI
     unit        sb_gui_font.c
     dep         sys ref mod core job app
@@ -854,12 +858,12 @@ solution orb_sandbox_reflect			# developing reflection
 solution orb_sandbox_job				# developing reflection
 
     out         build/proj
-    startup     sb_engine_job
+    startup     sb_job
 
     add         base
 	add         sys ref mod app core job net
 
-	add 		sb_engine_job 			# test job system	
+	add 		sb_job 			# test job system	
 
 solution orb_sandbox_vulkan				# developing rendering / vulkan
 
@@ -909,12 +913,12 @@ solution orb_sandbox_engine				# developing engine libraries
 	# 			--- SANDBOX : BASE --
 
     add         sb_base
-    add         sb_engine_mod
-	add 		sb_engine_sys
-	add 		sb_engine_core
-	add 		sb_engine_job
-	add 		sb_engine_app
-	add 		sb_engine_net
+    add         sb_mod
+	add 		sb_sys
+	add 		sb_core
+	add 		sb_job
+	add 		sb_app
+	add 		sb_net
 
 	# 			--- SANDBOX : RUNTIME SERVICES --
 
@@ -965,11 +969,11 @@ solution orb_all
 	
     add         host_common
 	
-	add         sb_engine_mod
-	add 		sb_engine_sys
-	add 		sb_engine_core
-	add 		sb_engine_job
-	add 		sb_engine_app
+	add         sb_mod
+	add 		sb_sys
+	add 		sb_core
+	add 		sb_job
+	add 		sb_app
 
 	add 		sb_asset_test
 	add 		sb_input

@@ -52,14 +52,14 @@ module API headers switch behavior automatically. Call sites are identical in bo
 
 No automated test framework. Run sandbox executables to validate:
 
-- `sb_engine_sys` -- sys layer
-- `sb_engine_core` -- core layer
-- `sb_engine_reflect` -- ref_ reflection
-- `sb_engine_mod` -- module system / hot-reload
-- `sb_engine_app` -- application / windowing
+- `sb_sys` -- sys layer
+- `sb_core` -- core layer
+- `sb_reflect` -- ref_ reflection
+- `sb_mod` -- module system / hot-reload
+- `sb_app` -- application / windowing
 
 ```bat
-bin\build_tool.exe -config Debug -target sb_engine_mod && bin\sb_engine_mod.exe
+bin\build_tool.exe -config Debug -target sb_mod && bin\sb_mod.exe
 ```
 
 ## Architecture

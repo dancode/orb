@@ -202,9 +202,9 @@ Phase 1 -- core/fs virtual filesystem (DIR mounts + catalog)   [DONE 2026-07-06]
      malloc'd blob. fs_glob = "vdir/pattern" split -> sys_file_glob per matching mount (flat).
    - Watch forwarding: NOT built yet -- deferred to Phase 4 (hot-reload) where it is consumed.
    - BUILD NOTE: core now references sys symbols, and the build tool links only DIRECT deps.
-     Every exe that statically links core must also list sys (hosts already do; sb_engine_core
+     Every exe that statically links core must also list sys (hosts already do; sb_core
      needed `dep core sys` added).
-   - Proof (sb_engine_core fs_test): write a scratch file via sys, mount "data/" -> CWD, then
+   - Proof (sb_core fs_test): write a scratch file via sys, mount "data/" -> CWD, then
      exists/stat/read match (22 bytes); 2nd read is a catalog hit (file_count==1); missing
      path = not found; backslash+mixed-case vpath folds to the same file.
 
@@ -295,7 +295,7 @@ Phase 5 -- Packaged (.zip) mounts   [DONE 2026-07-06]
      fs_stat's live-restat is gated to DIR mounts only (a ZIP catalog hit returns cached size/
      mtime -- its `real` is an in-archive name, not an OS path), so a zip-backed asset never
      spuriously hot-reloads while a loose shadow (DIR-backed) still does.
-   - Proof A (headless, deterministic -- sb_engine_core fs_zip_test): builds a two-file zip in
+   - Proof A (headless, deterministic -- sb_core fs_zip_test): builds a two-file zip in
      memory with the miniz writer (no committed binary), writes it out, then: mount ok; read a
      nested DEFLATE'd entry (byte match -> inflate works); bundle serves shared.txt "FROM ZIP";
      zip stat stable+nonzero across two calls; missing entry = not found. Then a second scenario

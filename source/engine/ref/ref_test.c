@@ -2,7 +2,7 @@
 
     engine/ref/ref_test.c - Exercise the ref_ reflection system.
 
-    Compiled as a standalone TU in the test sandbox (sb_engine_core_reflect).
+    Compiled as a standalone TU in the test sandbox (sb_reflect).
     Depends only on engine_rs.  ref_init() uses the internal string pool so no
     external interner is needed.
 

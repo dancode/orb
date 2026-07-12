@@ -87,11 +87,11 @@ ORB uses a self-contained, high-performance C-based build orchestrator.
 - **Bootstrap**: Run `bootstrap_build_tool.bat` or `bootstrap_gen.bat` from a **Developer Command Prompt**.
 - **Hot-Rebuild**: Use `build_hot.bat <target> [Debug|Release]` to rebuild a module while the debugger is attached.
 - **Verification**: Validate by running sandbox executables:
-  - `sb_engine_sys` - sys layer (OS abstractions)
-  - `sb_engine_core` - core layer (memory, logging, cvars)
-  - `sb_engine_reflect` - ref_ reflection system
-  - `sb_engine_mod` - module system / hot-reload
-  - `sb_engine_app` - application / windowing
+  - `sb_sys` - sys layer (OS abstractions)
+  - `sb_core` - core layer (memory, logging, cvars)
+  - `sb_reflect` - ref_ reflection system
+  - `sb_mod` - module system / hot-reload
+  - `sb_app` - application / windowing
 
 ## Troubleshooting & Common Mistakes
 - **Shell Environment**: When running on Windows via PowerShell, always use `.\script.bat` or `cmd /c script.bat` to execute batch files.
