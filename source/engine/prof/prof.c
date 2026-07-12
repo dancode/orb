@@ -84,9 +84,29 @@ static volatile i32        g_prof_boot;         // 0 = cold, 1 = initializing, 2
 // this thread's claimed ring (extern: the fast inline path caches through it)
 ORB_THREAD_LOCAL prof_ring_t* g_prof_tls_ring;
 
+/* INFO: Thread-local storage is the whole trick.
+
+   "Which ring do I write to?" must be answered in about a nanosecond, with no lock and no
+   search, from any thread -- including ones the profiler has never seen. ORB_THREAD_LOCAL
+   gives every thread its own private copy of this pointer: NULL until that thread's first
+   event (the claim happens lazily right there), then a plain load forever after. No
+   thread ever reads another thread's copy, so the variable itself needs no synchronization
+   at all -- all cross-thread traffic goes through the ring it points at. This is the
+   standard pattern in every instrumenting profiler (Tracy and Optick do exactly this).    */
+
 /*==============================================================================================
     Lifecycle
 ==============================================================================================*/
+
+/* INFO: Lazy boot via a tiny state machine.
+
+   The profiler cannot demand "call prof_init before anything else" -- the first event may
+   arrive from any thread at any time; that is the point of a leaf library. So boot happens
+   on first touch, guarded by one atomic state: 0 = cold, 1 = someone is booting, 2 = ready.
+   compare_exchange( 0 -> 1 ) elects exactly one booting thread even if ten race here at
+   once: CAS is atomic, so exactly one caller sees the old value 0 (the "I won" signal);
+   the rest see 1 or 2 and spin-yield for the few nanoseconds boot takes. This is the C
+   equivalent of a C++ magic static / std::call_once.                                      */
 
 /* Lazy one-time boot: first thread through the CAS creates the mutex, everyone else spins
    the handful of cycles until it is published. Called only on cold paths. */
@@ -143,6 +163,20 @@ prof_exit( void )
 /*==============================================================================================
     Rings
 ==============================================================================================*/
+
+/* INFO: Claiming a ring with CAS instead of a lock.
+
+   Several threads can arrive here at once, each needing a distinct slot. The claim is
+   compare_exchange( owner: FREE -> OWNED ): if two threads target the same slot, the
+   hardware guarantees exactly one sees FREE as the return value (it won) and the other
+   sees OWNED and moves on to the next slot. The CAS itself is the arbitration -- no lock
+   needed. This runs once per thread LIFETIME, so scanning 16 slots is performance-
+   irrelevant; on cold paths simplicity beats cleverness every time.
+
+   The high-water CAS-max loop below the claim handles a second classic race: threads
+   claiming slots 3 and 5 concurrently both try to raise ring_count. The loop re-reads and
+   retries until the count is at least its own idx+1, so a smaller concurrent value can
+   never overwrite a larger one -- which a plain store could do.                           */
 
 static prof_ring_t*
 prof_ring_acquire( void )
@@ -214,6 +248,20 @@ prof_ring_acquire( void )
     return r;
 }
 
+/* INFO: Why release is explicit, and why RETIRED exists.
+
+   C gives the library no portable "this thread is exiting" hook, so a thread that wants
+   its slot back must say so (workers call PROF_THREAD_RELEASE on the way out). Forgetting
+   is not a leak in the scary sense: the slot just stays claimed, which is the pre-recycle
+   behavior and perfectly fine for long-lived threads like main or a fixed worker pool.
+
+   The FREE/RETIRED two-step solves an ordering problem: the dying thread may leave events
+   nobody has drained yet. Handing that slot straight to a new thread would splice two
+   threads' histories into one stream and break BEGIN/END pairing. RETIRED means "no
+   writer, data pending": the drain may still read it, nobody may claim it, and whichever
+   drain empties it flips it FREE. All transitions go through atomics on the owner word,
+   so every observer sees a coherent lifecycle no matter how the threads interleave.       */
+
 /* Return the calling thread's ring to the pool -- the counterpart of the implicit claim
    on first emit; call it before a transient thread exits. Empty rings free immediately;
    rings with pending events RETIRE so the drain consumer can still collect them (it
@@ -236,6 +284,27 @@ prof_thread_release( void )
     sys_atomic_write( &r->owner, ( w == rd ) ? PROF_RING_FREE : PROF_RING_RETIRED );
 #endif
 }
+
+/* INFO: The publish protocol -- the one memory-ordering rule that truly matters here.
+
+   The consumer discovers new events by reading write_pos, so the payload stores MUST be
+   visible to another core before the new cursor value is. Both the compiler and the CPU
+   are free to reorder plain stores; the barriered sys_atomic_write (a release-semantics
+   store) is what forbids that: everything stored above it is guaranteed visible before
+   the cursor bump. The consumer's matching half is its barriered read of write_pos
+   (acquire semantics) in prof_drain. This store-release / load-acquire pair is THE
+   canonical lock-free handoff -- understand it once and every SPSC queue you ever read
+   becomes the same code.
+
+   Two more subtleties worth internalizing:
+     - read_pos may be STALE here (the consumer just advanced it). Worst case, w - rd
+       looks bigger than reality and we drop an event we could have kept -- wrong in the
+       harmless direction. The "fix" would fence every push to slightly improve behavior
+       at the full-ring edge, which is already a failure state. Not worth it.
+     - Drop-NEWEST (refuse the write) instead of overwrite-oldest: overwriting would let
+       the writer stomp the very slot the consumer is mid-memcpy on. Refusing keeps the
+       writer out of the consumer's territory entirely, and the dropped counter still
+       tells the truth about what was lost.                                                */
 
 static void
 prof_ring_push( prof_ring_t* r, u16 type, u32 id, i64 tick_ns )
@@ -311,6 +380,21 @@ prof_zone_end( void )
     merge into one zone -- with 32-bit FNV over <= 256 names the odds are negligible.
 ==============================================================================================*/
 
+/* INFO: The classic "lock-free read, locked write" registry.
+
+   Reads probe with no lock, touching slot ids only through atomic loads. Writes take a
+   real mutex: inserts happen a handful of times per run, so contention is irrelevant and
+   the mutex makes the multi-field update (copy string, set offset, bump pool top)
+   trivially correct. Splitting the workload this way -- optimize the frequent operation,
+   simplify the rare one -- is the pragmatic middle ground before reaching for a fully
+   lock-free table.
+
+   The one crossing point is publish order: a lock-free reader must never see a nonzero id
+   on a half-initialized slot. So the insert fills EVERYTHING else first and stores the id
+   LAST through a barriered write; the reader's atomic load of the id is the acquire side,
+   proving the offset and the pooled string bytes are already visible. Same release/acquire
+   pattern as the ring cursor, applied to a hash-table slot.                               */
+
 u32
 prof_name_register( const char* name )
 {
@@ -383,6 +467,14 @@ prof_name_lookup( u32 id )
     Frame + Counters
 ==============================================================================================*/
 
+/* INFO: Frame marks are how a flat event stream becomes per-frame data.
+
+   Zones say what happened; frame marks say where the frame boundaries fall, so a consumer
+   can segment the stream ("frame 1041 took 21 ms, and HERE are its zones"). The counter
+   is a global 64-bit fetch-add so the number is unique and monotonic no matter which
+   thread marks, and the event lands in the CALLER's ring stamped with that number so
+   streams from different threads can be correlated against the same frame axis.           */
+
 u64
 prof_frame_mark( void )
 {
@@ -437,6 +529,15 @@ prof_counter_find( u32 id )
     mutex_unlock( &g_prof_lock );
     return found;
 }
+
+/* INFO: Counter atomicity -- set and add are different problems.
+
+   counter_add MUST be a hardware fetch-add: with a plain read-modify-write, two threads
+   adding 1 concurrently can both read 5 and both store 6 -- one increment silently lost
+   (the textbook "lost update"). counter_set only needs an atomic 64-bit STORE: last-
+   writer-wins is the intended meaning of "set", and the only atomicity requirement is
+   that a reader never sees a torn half-old/half-new 64-bit value -- which a plain store
+   does not guarantee on every target, hence sys_atomic_write_64.                          */
 
 void
 prof_counter_set( u32 id, i64 value )
@@ -519,6 +620,20 @@ prof_thread_dropped( u32 thread_index )
         return ( u32 )sys_atomic_read( &g_prof_discard_ring.dropped );
     return ( u32 )sys_atomic_read( &g_prof_rings[ thread_index ].dropped );
 }
+
+/* INFO: The consumer side, and why "single consumer" is a hard rule.
+
+   read_pos has exactly one writer: this function. Two concurrent drainers would both read
+   the same rd, copy the same events, and double-advance the cursor -- duplicated AND lost
+   data, with no crash to warn you. Hence the engine contract: one drainer total (the
+   overlay OR the dump, once per frame), and dump_flush loudly takes over that role while
+   a capture is active.
+
+   The copy itself: the ring is a circle but the caller's buffer is a line, so a pending
+   span can wrap the physical end of the array -- hence up to two memcpys (the piece to
+   the end, then the piece from slot 0). The barriered read of write_pos is the acquire
+   half of the writer's publish; read_pos is published only AFTER the copy completes, so
+   when the writer sees it advance, the slots are genuinely reusable.                      */
 
 u32
 prof_drain( u32 thread_index, prof_event_t* out, u32 max )

@@ -11,6 +11,14 @@
 #include "engine/prof/prof_host.h"
 #endif
 
+/* INFO: This file is what makes prof a "module" like any DLL: one descriptor (api struct,
+   sizes, init/exit) registered with the module system by the host. The registry copies
+   &g_prof_api_struct into a stable slot; every module that says MOD_FETCH_PROF receives
+   that slot -- which is how a hot-reloaded game DLL finds a profiler living inside the
+   host exe. func_api_size is the ABI handshake: if a reloaded DLL disagrees on the struct
+   size, the swap is refused up front instead of corrupting memory through a mis-shaped
+   table.                                                                                  */
+
 /*==============================================================================================
     API Struct
 ==============================================================================================*/

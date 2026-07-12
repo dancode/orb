@@ -16,6 +16,17 @@
 
 ==============================================================================================*/
 
+/* INFO: The Chrome trace format in three sentences.
+
+   It is a JSON array of small objects, one per event: "ph" is the phase ("B" begin, "E"
+   end, "i" instant, "C" counter, "M" metadata), "ts" is a microsecond timestamp, and
+   "pid"/"tid" pick the row the viewer draws the event on. The viewer pairs each "B" with
+   the next "E" on the same tid to draw a bar, nesting later bars inside open ones --
+   exactly the push/pop stack walk our own consumers do. Text JSON is ~10x the bytes of
+   the binary ring events, but this is a COLD path and it buys a world-class timeline UI
+   (chrome://tracing, ui.perfetto.dev) for free -- the highest leverage-per-line feature
+   in profiling.                                                                           */
+
 // clang-format off
 
 #define PROF_DUMP_CHUNK  512    /* events per drain chunk (8 KB scratch)               */
@@ -153,6 +164,12 @@ prof_dump_begin( const char* path )
     g_prof_dump.first = true;
     return true;
 }
+
+/* INFO: Why flush must run every frame: each ring holds 8192 events and a busy frame can
+   emit thousands, so the rings alone only remember the last moment of history. A per-frame
+   flush turns the fixed rings into an unbounded on-disk capture -- the rings are the
+   funnel, the file is the reservoir. Counters are re-sampled once per flush (one "C"
+   record each), which the viewer renders as a step graph over the capture.                */
 
 /* Drain every ring into the trace, then sample the counters as "C" steps. Returns the
    number of trace events written this flush. */

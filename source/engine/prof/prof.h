@@ -20,6 +20,33 @@
 #include "orb.h"
 
 // clang-format off
+
+/* INFO: What an instrumenting profiler is, in one page.
+
+   There are two big families of profilers:
+
+     1. SAMPLING profilers (VTune, Superluminal, the VS profiler) interrupt the program a
+        few thousand times a second and record the callstack. Zero code changes and whole-
+        program coverage, but the results are statistical -- blurry at frame granularity.
+
+     2. INSTRUMENTING profilers (Tracy, Optick, this library) require the code to announce
+        "work X starts NOW" / "work X ends NOW". Exact, frame-accurate, and events carry
+        engine meaning (zones named by the developer), but only measure what you marked.
+
+   This library is the second kind. Its entire runtime job is deliberately tiny: append a
+   timestamped BEGIN or END record to an in-memory log. Everything smart -- pairing BEGINs
+   with ENDs, computing durations, drawing flame graphs -- happens LATER, outside the
+   measured code (a drain consumer, an overlay, an offline viewer). That split is the core
+   design idea: the hot path must be so cheap that measuring the program does not change
+   the program (the "observer effect" every profiler fights).
+
+   The data flow, end to end:
+
+       PROF_ZONE_BEGIN("sim")  -> 16-byte event -> this thread's ring buffer     (hot, ~ns)
+       PROF_ZONE_END()         -> 16-byte event -> same ring                     (hot, ~ns)
+       once per frame:            a single consumer drains every ring            (cold)
+       consumer replays BEGIN/END order to rebuild nesting, then renders / dumps (cold)   */
+
 /*==============================================================================================
     Compile-time capture level
 
@@ -43,6 +70,19 @@
     free pool for the next thread. At 0, rings are claimed forever (the original
     fixed-pool behavior -- fine for a host + fixed worker pool, no transient churn).
 ==============================================================================================*/
+
+/* INFO: Why compile-time levels AND a runtime switch.
+
+   Instrumentation macros end up sprinkled through hot engine code, so there must be a way
+   to make them cost literally zero in a shipping build: at level 0 the macros expand to
+   ( (void)0 ) and the compiler deletes them -- no branch, no dead name string, nothing.
+   The runtime switch (set_enabled) serves a different need: a dev build should idle cheaply
+   (one predictable branch per event) and start recording the instant you ask, without a
+   rebuild. Two gates, two costs, two audiences.
+
+   Note what the level does NOT change: prof_api_t (the function-pointer table) always
+   carries every entry point. Hot-reloaded DLLs compiled at different levels must still
+   agree on that struct's layout, so only CALL SITES are gated, never the ABI.             */
 
 #ifndef ORB_PROFILE
     #define ORB_PROFILE 2
@@ -74,6 +114,18 @@
 #define PROF_MAX_COUNTERS      64               // distinct live counters                  
 #define PROF_THREAD_NAME_MAX   32               // thread label bytes, including NUL       
 
+/* INFO: Why fixed static pools instead of malloc.
+
+   Every byte the profiler will ever use is a global array sized at compile time (~2 MB,
+   all in BSS, which occupies no space in the exe on disk). Reasons:
+     - The hot path may never allocate: an allocator can take locks, fault pages, or call
+       back into instrumented code (infinite recursion). Fixed pools bound every cost.
+     - Failure becomes graceful degradation instead of a crash: too many threads -> shared
+       discard ring that only counts; too many names -> capture still works, lookups just
+       return NULL; ring full -> events dropped and counted.
+     - A profiler must stay trustworthy while the engine is misbehaving -- that is exactly
+       when you need it -- so it depends on nothing above the OS clock and its own arrays. */
+
 /*==============================================================================================
     prof_hash_str -- case-insensitive FNV-1a
 
@@ -97,6 +149,20 @@ prof_hash_str( const char* s )
     }
     return h ? h : 1u;
 }
+
+/* INFO: Why the zone id IS a hash of the name.
+
+   Every event must identify its zone in a fixed-size field. The alternatives and why they
+   fail here:
+     - Pointer to the string literal (Tracy's trick): free and unique, but this engine
+       hot-reloads DLLs -- the literal's address dies with the old DLL image, and history
+       recorded before a reload would dangle.
+     - Sequential id from a registry: stable, but every call site then needs a handshake
+       with the registry before it can emit anything.
+   A hash of the name is stable across reloads, runs, machines, and modules -- two DLLs
+   that both say "sim/update" agree on the id without ever coordinating. Matching sid_hash
+   exactly is a bonus: profiler ids compare directly against engine string ids. The
+   1-in-4-billion collision odds over a few hundred names are accepted on purpose.         */
 
 /*==============================================================================================
     Event
@@ -127,6 +193,19 @@ typedef struct prof_event_s
     u16 _pad;       // reserved
 } prof_event_t;
 
+/* INFO: Anatomy of the 16-byte event.
+
+   16 bytes is a deliberate target: four events per 64-byte cache line, 128 KB per
+   8192-event ring, and a power-of-two size so slot math is a shift. Note what is NOT
+   stored:
+     - no thread id     -- implied by WHICH ring the event sits in (one ring per thread)
+     - no duration      -- computed later as END.tick_ns - BEGIN.tick_ns
+     - no nesting depth -- implied by ORDER: on one thread zones form a proper stack
+       (calls cannot return out of order), so replaying BEGIN/END like push/pop rebuilds
+       the tree exactly; recording depth would pay bytes for redundant information.
+   The timestamp is the expensive field: one QPC read (~20-40 ns) dominates the entire
+   cost of emitting an event. Everything else is a handful of ordinary stores.             */
+
 /*==============================================================================================
     Counter snapshot
 
@@ -140,6 +219,14 @@ typedef struct prof_counter_s
     u32 _pad;       // reserved
     i64 value;      // current value at snapshot time
 } prof_counter_t;
+
+/* INFO: Counters vs zones.
+
+   Zones answer "how LONG did this span take"; counters answer "how MUCH of something
+   exists right now" (draw calls, live entities, bytes in flight). A value like that does
+   not need an event trail -- only its latest value matters -- so counters skip the rings
+   entirely and live in a small table the consumer snapshots once per frame. Writing one
+   is a single atomic 64-bit store: the cheapest telemetry in the library.                 */
 
 /*==============================================================================================
     Ring storage -- INTERNAL
@@ -166,6 +253,22 @@ typedef struct prof_ring_s
     prof_event_t events[ PROF_RING_CAP ];
 
 } prof_ring_t;
+
+/* INFO: The SPSC ring, and why the cursors never wrap.
+
+   SPSC = Single Producer, Single Consumer: exactly one thread appends (the ring's owner)
+   and exactly one thread reads (the drain consumer). That pairing is what makes a
+   lock-free queue SIMPLE: each cursor has exactly one writer, so the fast path has no
+   compare-and-swap races at all -- just carefully ordered plain stores (see the publish
+   protocol notes in prof.c).
+
+   The cursors count events EVER written / EVER read, not slot indexes; the slot is the
+   cursor masked with (PROF_RING_CAP - 1). Free-running unsigned counters make the math
+   immune to overflow: write_pos - read_pos is the pending count even after either wraps
+   past 2^32, because the difference of two unsigned counters is exact while they stay
+   within one ring-capacity of each other. They are stored in volatile i32 only because
+   the sys atomics API traffics in i32 -- the casts to u32 at every use are where the
+   modular arithmetic actually happens.                                                    */
 
 // clang-format on
 /*============================================================================================*/

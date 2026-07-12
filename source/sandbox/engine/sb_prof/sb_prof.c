@@ -22,6 +22,21 @@
 #include "engine/sys/sys_host.h"
 #include "engine/prof/prof_host.h"
 
+/* INFO: How you test a lock-free profiler deterministically.
+
+   Concurrency bugs are timing-dependent, so every suite is built to make its outcome
+   exact rather than probabilistic:
+     - Effects are verified through the full API round trip: emit, then drain, then assert
+       on the drained bytes -- the same path a real consumer (overlay, dump) uses.
+     - Every suite starts from drained-empty rings (sb_flush_all), so counts are absolute
+       numbers, not "at least N".
+     - Threaded suites assert only on states guaranteed after thread_join: join is a full
+       synchronization point, so everything a worker wrote is visible after it returns.
+     - Invariants are chosen so ANY legal interleaving must satisfy them (exact totals,
+       well-formed pairing, zero drops) -- never assertions about timing.
+   The cost readouts at the end are informational, not checks: perf numbers vary machine
+   to machine and would make the suite flaky as assertions.                                */
+
 /*==============================================================================================
     Check helper
 ==============================================================================================*/
@@ -65,6 +80,12 @@ sb_drain_thread( u32 thread_index )
     return prof_drain( thread_index, s_events, PROF_RING_CAP );
 }
 
+/* INFO: This tiny walk is a working model of what every profiler viewer does: treat BEGIN
+   as push and END as pop; the stream is valid iff the stack never underflows and ends
+   empty. The depth at any point is the flame-graph nesting level, and END.tick - BEGIN.tick
+   at matching depth is a zone's duration. Understand this loop and you understand how a
+   timeline UI is derived from the raw ring bytes.                                         */
+
 /* Walk a drained event batch: verify BEGIN/END events pair up like a well-nested stack
    and that timestamps never go backwards. Returns the deepest nesting level seen, or -1
    on a malformed stream. */
@@ -101,6 +122,13 @@ sb_verify_pairing( const prof_event_t* ev, u32 count )
     Suite: name registry
 ==============================================================================================*/
 
+/* INFO: Identity is the contract everything else leans on: registering twice must yield
+   the same id (call sites cache it in statics), the id must equal the raw hash (so ids
+   survive restarts and hot-reloads, and can be precomputed offline), and lookup must
+   return the interned string (viewers and dumps translate ids back to labels at the very
+   end of the pipeline). In practice this is what lets you diff captures from different
+   runs by zone id.                                                                        */
+
 static void
 sb_test_names( void )
 {
@@ -122,6 +150,12 @@ sb_test_names( void )
 /*==============================================================================================
     Suite: zones -- direct calls, nesting, drain
 ==============================================================================================*/
+
+/* INFO: The core round trip: emit a known nested shape (frame > sim > physics, plus a
+   sibling), drain it, and assert the stream replays exactly that shape. The check that
+   END events carry id 0 pins down a deliberate design choice: closes are anonymous
+   because pairing is positional -- which is why PROF_ZONE_END needs no argument and no
+   per-site static, halving what the hot path has to know.                                 */
 
 static void
 sb_test_zones( void )
@@ -156,6 +190,12 @@ sb_test_zones( void )
 /*==============================================================================================
     Suite: capture macros
 ==============================================================================================*/
+
+/* INFO: Verifies the macro machinery rather than the profiler core: the per-call-site
+   static must mean one registration then reuse (all three loop passes carry the same id),
+   and PROF_SCOPE must run its body EXACTLY once, because it secretly wraps the block in a
+   for loop. A bug here would silently double-execute user code -- far worse than a wrong
+   timing number, which is why body_runs is counted explicitly.                            */
 
 static void
 sb_test_macros( void )
@@ -192,6 +232,11 @@ sb_test_macros( void )
     Suite: frame marks
 ==============================================================================================*/
 
+/* INFO: Frame marks are the axis every per-frame view hangs off. Two halves are pinned:
+   the RETURNED number is globally monotonic (fetch-add semantics -- no two marks can get
+   the same number), and the RING event carries that number, which is how a consumer lines
+   zones from many threads up against one shared frame timeline.                           */
+
 static void
 sb_test_frames( void )
 {
@@ -213,6 +258,12 @@ sb_test_frames( void )
 /*==============================================================================================
     Suite: counters
 ==============================================================================================*/
+
+/* INFO: Exercises last-write-wins (set) versus accumulate (add) on the shared slot table,
+   including slot creation on first touch and the macro forms landing on the same slots as
+   direct calls (the id is the same hash either way). In regular practice counters carry
+   the per-frame quantities you would otherwise printf: draw calls, entity counts, bytes
+   in flight -- set once per frame, or add from many sites and read the total.             */
 
 static void
 sb_test_counters( void )
@@ -255,6 +306,13 @@ sb_test_counters( void )
     Suite: overflow -- fill the ring past capacity, drops counted, drain chunks recover all
 ==============================================================================================*/
 
+/* INFO: Deliberately overflows one ring to prove the failure mode is exact accounting, not
+   corruption: capacity + 500 writes must produce exactly 500 counted drops, and a chunked
+   drain must recover exactly capacity events. The odd chunk size (300 into an 8192 ring)
+   forces the drain's wrap-around two-memcpy path to actually execute. In practice the
+   dropped counter is the operator's alarm that the ring is too small or the consumer is
+   not keeping up -- data loss you can SEE beats data loss you cannot.                     */
+
 static void
 sb_test_overflow( void )
 {
@@ -286,6 +344,12 @@ sb_test_overflow( void )
     Suite: runtime disable
 ==============================================================================================*/
 
+/* INFO: The runtime gate must be airtight in both directions: disabled means zero ring
+   traffic (this is what lets an instrumented dev build idle at one branch per macro), and
+   re-enabling must work with no further ceremony. A toggle in the middle of an open zone
+   can orphan a BEGIN or an END -- by contract the CONSUMER tolerates that, rather than the
+   hot path paying to prevent it; sb_verify_pairing's tolerance mirrors the same rule.     */
+
 static void
 sb_test_disable( void )
 {
@@ -309,6 +373,14 @@ sb_test_disable( void )
 /*==============================================================================================
     Suite: multi-threaded capture -- one SPSC ring per worker
 ==============================================================================================*/
+
+/* INFO: The SPSC isolation proof. Four workers hammer zones concurrently; if storage were
+   shared this would be a data race, but each worker's stream must come back in its own
+   ring: exactly 2 * SB_WORK_ZONES events, perfectly paired at depth 1, zero drops. The
+   thread_join before the asserts is what makes this deterministic -- join is a full
+   synchronization point, so every worker write is visible when the checks run. This is
+   the suite that would catch a broken publish order: a torn or reordered event shows up
+   as a pairing or count failure.                                                          */
 
 #define SB_WORKERS     4
 #define SB_WORK_ZONES  1000
@@ -383,6 +455,15 @@ sb_test_threads( void )
     pending events RETIRES the slot (drainable, not reusable) until the drain that empties
     it frees it; an empty release frees immediately. Reuse keeps thread_count stable.
 ==============================================================================================*/
+
+/* INFO: Ring slots are a fixed pool of 16, so transient threads (loaders, one-shot jobs)
+   would exhaust the pool permanently without a release path. This suite walks the whole
+   lifecycle and pins the one dangerous transition: releasing with PENDING events must
+   RETIRE the slot, not free it -- proven by rc_x NOT reusing rc_a's slot -- because
+   handing an undrained ring to a new thread would splice two histories into one stream.
+   The emptying drain frees; reuse keeps thread_count stable; an empty release skips
+   RETIRED entirely. Practical rule: fixed worker pools never bother releasing, short-
+   lived threads call PROF_THREAD_RELEASE on the way out.                                  */
 
 typedef struct sb_release_arg_s
 {
@@ -480,6 +561,13 @@ sb_test_recycle( void )
     Suite: Chrome-trace dump -- write, spot-check the trace grammar, clean up
 ==============================================================================================*/
 
+/* INFO: Treats the trace file as a black-box artifact: capture a little of everything
+   (a frame mark, a macro zone pair, a counter), then assert the JSON grammar a viewer
+   depends on actually appears -- B/E phases with the zone name, the frame instant, the
+   counter sample, thread metadata, and a properly closed array. This is byte-for-byte the
+   same file the host's `prof_dump` console command produces; drop one onto
+   https://ui.perfetto.dev to see the timeline these tests are checking in text form.      */
+
 static void
 sb_test_dump( void )
 {
@@ -528,6 +616,11 @@ sb_test_dump( void )
     Suite: wall-clock sanity -- a zone around a real sleep measures a real duration
 ==============================================================================================*/
 
+/* INFO: Anchors tick_ns to reality: a zone wrapped around a real 5 ms sleep must measure
+   roughly 5 ms. Every other suite checks STRUCTURE and would pass with a broken clock
+   source or a ns/us unit mixup; only a wall-clock comparison catches those. The loose
+   bounds (>= 4 ms, < 1 s) absorb OS sleep jitter without making the check flaky.          */
+
 static void
 sb_test_timing( void )
 {
@@ -554,6 +647,13 @@ sb_test_timing( void )
     Two flavors: the direct call (the classic path) and the ZONE macro form, which is the
     inline TLS write here (ORB_PROFILE_FAST) or the gateway call when built without it.
 ==============================================================================================*/
+
+/* INFO: Microbenchmark hygiene in miniature: batches sized to FIT the ring so drops never
+   distort the loop, a flush between batches so every run starts from empty cursors, and
+   best-of-10 instead of an average -- the minimum is the cleanest estimate of intrinsic
+   cost, while averages absorb scheduler noise, interrupts, and cache-cold first passes.
+   Expect the QPC timestamp read to dominate both flavors; that floor is the number that
+   tells you how densely you can afford to instrument.                                     */
 
 static void
 sb_report_cost( void )

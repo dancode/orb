@@ -12,6 +12,18 @@
 #include "engine/mod/mod_export.h"
 
 // clang-format off
+
+/* INFO: The three-header pattern, and who includes what.
+
+       prof.h       types + constants only   -- safe for ANY header to include
+       prof_api.h   vtable + capture macros  -- what DLL module .c files include
+       prof_host.h  direct declarations      -- what host exes and sandboxes include
+
+   The split keeps the dependency direction honest: a DLL can only see the vtable surface,
+   so it physically cannot link host internals; the host gets these direct declarations
+   (plus the lifecycle entries below) because prof is statically linked into it. The same
+   functions appear twice on purpose -- once as pointers in prof_api_t, once as direct
+   decls here -- and prof_api.c is where both surfaces are proven to be the same code.     */
 /*==============================================================================================
     Lifecycle
 

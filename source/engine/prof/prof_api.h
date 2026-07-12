@@ -24,6 +24,16 @@
     call-site macros only, never the struct shape, so func_api_size is level-invariant.
 ==============================================================================================*/
 
+/* INFO: Why a struct full of function pointers.
+
+   prof is compiled INTO the host exe. A hot-reloaded DLL cannot call prof_zone_begin by
+   name -- the linker that built the DLL has no idea where that symbol lives inside the
+   exe. So, like every engine module here, prof publishes ONE struct of function pointers
+   through the module registry; a DLL fetches the struct pointer once at init/reload and
+   calls through it thereafter. Cost per call: one extra pointer load versus a direct
+   call. In static/monolithic builds the gateway below bypasses the table entirely --
+   identical source text, two different machine-code outcomes.                             */
+
 typedef struct prof_api_s
 {
     /* Zones (level 2). zone_begin takes a pre-registered id (fastest); zone_begin_name
@@ -84,6 +94,16 @@ typedef struct prof_api_s
     #define MOD_FETCH_PROF  MOD_FETCH_API( prof_api_t, prof )
 #endif
 
+/* INFO: The prof() gateway, decoded.
+
+   From here on every consumer writes prof()->fn(...) no matter how it is built:
+     - static link (host exe, monolithic build): prof() is an inline that returns
+       &g_prof_api_struct. The optimizer sees the final struct and devirtualizes the
+       whole thing into direct calls.
+     - dynamic DLL: prof() reads a pointer that MOD_FETCH_PROF cached during the module's
+       init/reload. NULL means "prof is not loaded", which is why the capture macros
+       null-check the gateway -- a module keeps working with profiling absent.             */
+
 /*==============================================================================================
     Fast path (stage 2) -- ORB_PROFILE_FAST
 
@@ -95,6 +115,23 @@ typedef struct prof_api_s
     discard ring, disabled, ring full) falls back to the full call, which owns claiming
     and drop accounting -- the two paths are behaviorally identical.
 ==============================================================================================*/
+
+/* INFO: What "stage 2" buys, concretely.
+
+   The vtable path per event: load api pointer -> indirect call -> callee prologue -> TLS
+   load -> checks -> clock read -> stores -> return. The inline path deletes the call frame
+   entirely; what remains AT THE CALL SITE is: one TLS load, three predictable branches,
+   the clock read, four plain stores, one atomic store. Because the QPC clock read
+   (~20-40 ns) dominates both flavors, the measured win is modest on x64 -- the deeper
+   reason this path exists is to cap the ceiling: zone macros can sit inside per-entity
+   inner loops with no function call in sight, and a future cheaper clock (calibrated
+   rdtsc) would widen the gap.
+
+   The fallback shape is the part worth copying into your own lock-free code: the inline
+   body handles ONLY the perfect case (have a ring, enabled, not full, not the discard
+   ring). Every rare case bails into the full call, which already owns ring claiming and
+   drop accounting. The hot body stays a straight line, and the two implementations cannot
+   drift apart behaviorally because the cold logic exists exactly once.                    */
 
 #if ORB_PROFILE_FAST && ORB_PROFILE >= 2 && ( defined( BUILD_STATIC ) || defined( PROF_STATIC ) )
     #define PROF_FAST_ACTIVE 1
@@ -163,6 +200,19 @@ prof_fast_end( void )
     vtable; only the BEGIN/END pair gets the ORB_PROFILE_FAST inline path.)
 ==============================================================================================*/
 
+/* INFO: Why these are macros and not functions.
+
+   Three jobs only a macro can do here:
+     1. Vanish completely at level 0 -- even an empty inline function still evaluates its
+        arguments; ( (void)0 ) does not even keep the zone name string in the binary.
+     2. Plant a PER-CALL-SITE static (s_prof_zone_id): the name is hashed and registered
+        on the first pass through each site, then every later pass is a load + compare.
+        Each macro expansion is textually distinct code, so C gives each its own static.
+     3. Wrap in do { } while ( 0 ) so the expansion is exactly one statement and binds
+        correctly under an unbraced if/else.
+   After a DLL hot-reload the statics reset to zero -- the site simply re-registers and,
+   because the id is a pure hash of the name, lands on the SAME id: history survives.      */
+
 #if PROF_FAST_ACTIVE
 
     /* Static link: prof() can never be NULL, so the gateway guard is dropped. */
@@ -227,6 +277,12 @@ prof_fast_end( void )
             prof()->zone_end();
         return 0;
     }
+
+    /* INFO: The for-trick: for( init; cond; increment ) runs enter() once in the init,
+       the body once (cond starts at 1), then the increment (leave) flips cond to 0 and
+       the loop exits. It lets one macro wrap the following { block } in begin/end with
+       no matching END macro required -- but a break/return inside the block skips the
+       increment, which is exactly the "leaks the zone open" hazard documented above.      */
 
     #define PROF_SCOPE( name_lit )                                            \
         for ( u32 prof_scope_it = prof_scope_enter( name_lit );               \
