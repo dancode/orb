@@ -1,6 +1,7 @@
 /*==============================================================================================
 
-    build_tool_11_clean.c -- Artifact cleanup for the -clean command.
+    build_tool_11_clean.c -- Artifact cleanup for the -clean command, plus the
+    third-party runtime deploy that repopulates bin/ after cleans.
 
     Two clean modes:
 
@@ -21,6 +22,58 @@
 
 ==============================================================================================*/
 // clang-format off
+
+/*==============================================================================================
+    --- Third-Party Runtime Deploy ---
+
+    Mirrors g_third_party_bin_dir (flat -- no recursion) into bin/ so prebuilt runtime
+    files (freetype.dll/.lib for font_tool, ...) survive cleans and fresh checkouts.
+    Called after a global clean and before a full build-all (named-target builds and
+    per-target cleans skip it). A file is copied only when the
+    bin/ copy is missing or older than the source, so an up-to-date tree is a silent
+    no-op. Both the source directory and the master switch live with the project
+    constants in build_tool.c. Uses the platform_find/copy seam -- no shell children,
+    so it works identically under BUILD_SAFE_MODE.
+==============================================================================================*/
+
+void
+build_deploy_third_party( void )
+{
+    if ( !g_deploy_third_party ) return;
+    if ( !platform_file_exists( g_third_party_bin_dir ) ) return;
+
+    ensure_dir( "bin" );
+
+    char pattern[ PATH_MAX ];
+    snprintf( pattern, sizeof( pattern ), "%s" PATH_SEP "*", g_third_party_bin_dir );
+
+    platform_find_data_t fd;
+    platform_find_t      h = platform_find_first( pattern, &fd );
+    if ( h == PLATFORM_FIND_INVALID ) return;
+
+    int copied = 0;
+    do
+    {
+        if ( fd.is_dir ) continue;
+
+        char src[ PATH_MAX ], dst[ PATH_MAX ];
+        snprintf( src, sizeof( src ), "%s" PATH_SEP "%s", g_third_party_bin_dir, fd.name );
+        snprintf( dst, sizeof( dst ), "bin" PATH_SEP "%s", fd.name );
+
+        if ( platform_get_mtime( dst ) >= platform_get_mtime( src ) ) continue;
+
+        if ( platform_copy_file_quiet( src, dst ) )
+            ++copied;
+        else
+            printf( ORB_INDENT "[orb warn] deploy failed: %s -> %s (file in use?)\n", src, dst );
+    }
+    while ( platform_find_next( h, &fd ) );
+    platform_find_close( h );
+
+    if ( copied )
+        printf( ORB_INDENT "[orb deploy] %d file%s %s -> bin\n",
+                copied, copied == 1 ? "" : "s", g_third_party_bin_dir );
+}
 
 #if defined( BUILD_SAFE_MODE )
 

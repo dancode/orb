@@ -781,6 +781,12 @@ bool build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_c
 
 void build_clean( target_info_t* target );
 
+/*  Mirrors THIRD_PARTY_BIN_DIR into bin/ (missing-or-older files only) so prebuilt
+    third-party runtime files survive cleans and fresh checkouts. No-op when
+    g_deploy_third_party is false or the source directory does not exist. */
+
+void build_deploy_third_party( void );
+
 /*==============================================================================================
     --- Generation Manifest ---
 

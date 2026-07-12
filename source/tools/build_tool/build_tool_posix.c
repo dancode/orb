@@ -16,6 +16,7 @@
         platform_pclose()        -- close a pipe                   (pclose)
         platform_cpu_count()     -- logical processor count        (sysconf)
         platform_mkdir()         -- create a directory             (mkdir)
+        platform_copy_file_quiet() -- overwrite-copy a file        (fread / fwrite)
         platform_get_cwd()       -- working directory with trailing slash  (getcwd)
         platform_find_first()    -- begin directory enumeration    (opendir / readdir / fnmatch)
         platform_find_next()     -- advance directory enumeration  (readdir / fnmatch)
@@ -190,6 +191,36 @@ static void
 platform_mkdir( const char* path )
 {
     mkdir( path, 0755 );
+}
+
+/*==============================================================================================
+    --- File Copy ---
+==============================================================================================*/
+
+/* Copies src over dst (overwrites). Unlike the Win32 CopyFileA counterpart the
+   destination gets a fresh mtime, which still satisfies the callers' missing-or-
+   older checks. Silent on failure; returns false so the caller can count/report. */
+
+static bool
+platform_copy_file_quiet( const char* src, const char* dst )
+{
+    FILE* in = fopen( src, "rb" );
+    if ( !in ) return false;
+    FILE* out = fopen( dst, "wb" );
+    if ( !out ) { fclose( in ); return false; }
+
+    char   buf[ 64 * 1024 ];
+    size_t n;
+    bool   ok = true;
+    while ( ( n = fread( buf, 1, sizeof( buf ), in ) ) > 0 )
+    {
+        if ( fwrite( buf, 1, n, out ) != n ) { ok = false; break; }
+    }
+    if ( ferror( in ) ) ok = false;
+
+    fclose( in );
+    fclose( out );
+    return ok;
 }
 
 /*==============================================================================================

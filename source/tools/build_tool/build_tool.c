@@ -31,7 +31,8 @@
         08_link.c         -- link.exe / lib.exe command assembly and execution
         09_exec.c         -- build_target() orchestration
         10_sched.c        -- topological worker-pool parallel scheduler
-        11_clean.c        -- -clean command: per-target or global artifact wipe
+        11_clean.c        -- -clean command: per-target or global artifact wipe;
+                             third-party runtime deploy into bin/
         12_gen_manifest.c -- resolved generation intent shared by all generators
         12_gen_nmake.c    -- -gen command: NMake-style .sln/.vcxproj (build_tool owns build)
         12_gen_json.c     -- -gen command: compile_commands.json (clangd / LSP tools)
@@ -100,6 +101,22 @@
 static const char* g_build_dir      = BUILD_DIR;    // root for VS project files + intermediates.
 static const char* g_int_dir        = "obj";        // sub-folder: per-target .obj files.
 static const char* g_gen_dir        = "generated";  // sub-folder: reflection-generated .c/.h.
+
+/*==============================================================================================
+    --- Third-Party Runtime Deploy ---
+
+    Prebuilt third-party runtime files (freetype.dll/.lib for font_tool, ...) live in
+    THIRD_PARTY_BIN_DIR and must sit next to the build outputs in bin/. A global clean or
+    a fresh checkout leaves bin/ without them, so build_deploy_third_party() re-mirrors
+    the directory into bin/ after a global -clean and before a full build-all (named
+    -target builds skip it). Files already up to date in bin/ are not touched. Flip
+    g_deploy_third_party to false to disable the whole step.
+==============================================================================================*/
+
+#define THIRD_PARTY_BIN_DIR  "third_party" PATH_SEP "bin"
+
+static bool        g_deploy_third_party  = true;                  // master switch for the deploy step.
+static const char* g_third_party_bin_dir = THIRD_PARTY_BIN_DIR;   // source dir mirrored into bin/.
 
 /*==============================================================================================
     --- Output Flags ---
@@ -435,6 +452,11 @@ main( int argc, char** argv )
             }
         }
         build_clean( clean_target );
+
+        // A global wipe deletes bin\*.dll / *.lib, taking the deployed third-party
+        // runtime files with it -- restore them immediately.
+        if ( !clean_target )
+            build_deploy_third_party();
         return 0;
     }
 
@@ -476,6 +498,12 @@ main( int argc, char** argv )
     // Make cl.exe / link.exe / lib.exe callable. Idempotent when already inside
     // a Developer Command Prompt.
     build_setup_vc_env();
+
+    // Re-mirror third-party runtime files into bin/ on full builds only (covers
+    // fresh checkouts and external cleans). Named-target builds skip it -- VS
+    // solution builds spawn one build_tool per project and shouldn't re-probe.
+    if ( !ctx.target_name )
+        build_deploy_third_party();
 
     // --- Resolve target (if named) ---
 

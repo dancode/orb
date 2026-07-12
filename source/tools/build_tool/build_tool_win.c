@@ -19,6 +19,7 @@
         platform_enable_ansi_color() -- enable VT processing on stdout (SetConsoleMode)
         platform_cpu_count()     -- logical processor count         (GetSystemInfo)
         platform_mkdir()         -- create a directory             (CreateDirectoryA)
+        platform_copy_file_quiet() -- overwrite-copy a file        (CopyFileA)
         platform_get_cwd()       -- working directory with trailing backslash (GetCurrentDirectoryA)
         platform_find_first()    -- begin directory enumeration    (_findfirst)
         platform_find_next()     -- advance directory enumeration  (_findnext)
@@ -168,6 +169,19 @@ static void
 platform_mkdir( const char* path )
 {
     CreateDirectoryA( path, NULL );
+}
+
+/*==============================================================================================
+    --- File Copy ---
+==============================================================================================*/
+
+/* Copies src over dst (overwrites), preserving the source last-write time.
+   Silent on failure; returns false so the caller can count/report. */
+
+static bool
+platform_copy_file_quiet( const char* src, const char* dst )
+{
+    return CopyFileA( src, dst, FALSE ) != 0;
 }
 
 /*==============================================================================================
