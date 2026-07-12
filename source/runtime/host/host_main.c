@@ -99,6 +99,7 @@
 
 static bool g_quit_requested = false;
 static bool g_sleep_debug    = false;
+static bool g_realtime       = false;
 
 void
 run_host_quit( void )
@@ -123,6 +124,27 @@ run_host_sleep_debug_toggle( void )
 {
     g_sleep_debug = !g_sleep_debug;
     printf( "[host] editor sleep debug %s\n", g_sleep_debug ? "ON" : "OFF" );
+}
+
+/* Realtime gate: while true, RUN_HOST_EDITOR_SLEEP is suspended and the loop paces
+   at frame_target_ms like a game host.  This is core to editor simulate/play/stop --
+   a live session must tick without waiting on OS input; when it stops the loop
+   returns to blocking on input.  Idempotent; hosts may re-assert it every frame. */
+void
+run_host_realtime_set( bool active )
+{
+    if ( g_realtime == active )
+        return;
+
+    g_realtime = active;
+    if ( g_sleep_debug )
+        printf( "[host] realtime %s\n", active ? "ON (editor sleep suspended)" : "OFF (editor sleep resumes)" );
+}
+
+bool
+run_host_realtime( void )
+{
+    return g_realtime;
 }
 
 /*==============================================================================================
@@ -291,6 +313,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* Reset all state so run_host_shutdown() starts from a clean baseline. */
     g_quit_requested = false;
+    g_realtime       = false;
     s_win_id         = APP_WIN_INVALID;
     s_ctx_id         = RHI_CTX_INVALID;
     s_vp0            = GUI_VP_INVALID;
@@ -809,13 +832,16 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            overshoot so the average rate holds exactly -- event pump and every other
            phase count against the budget because the deadline is absolute.
            Editor mode: block until OS input arrives, capped by editor_timeout_ms
-           so hot-reload checks and other periodic work still run. */
+           so hot-reload checks and other periodic work still run.
+           Realtime gate: a live play/simulate session (run_host_realtime_set) suspends
+           the editor block entirely -- the session must tick every frame regardless of
+           OS input, so the loop paces like a game host until the session stops. */
         i64 work_end_us = sys_tick_microseconds();
         i64 remain_us   = deadline_us - work_end_us;
 
         stats.work_us = work_end_us - t_frame_us;
 
-        if ( editor_sleep )
+        if ( editor_sleep && !g_realtime )
         {
             /* Run at frame_ms cadence -- rather than blocking on OS input -- while the gui has not
                SETTLED, then block until input.  "Not settled" is two things:

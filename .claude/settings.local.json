@@ -207,7 +207,8 @@
       "PowerShell(& \"${env:ProgramFiles\\(x86\\)}\\\\Microsoft Visual Studio\\\\Installer\\\\vswhere.exe\" -all -prerelease -format json | ConvertFrom-Json | Select-Object displayName, installationVersion, installationPath | Format-List)",
       "PowerShell(ls \"$env:APPDATA\\\\Microsoft\\\\VisualStudio\" | Select-Object Name, LastWriteTime)",
       "PowerShell(ls \"$env:APPDATA\\\\Microsoft\\\\VisualStudio\\\\18.0_c23a6242\" | Select-Object Name, LastWriteTime, Length)",
-      "PowerShell(bin\\\\build_tool.exe -gen)"
+      "PowerShell(bin\\\\build_tool.exe -gen)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target host_editor)"
     ]
   }
 }

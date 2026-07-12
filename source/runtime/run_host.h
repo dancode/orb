@@ -187,6 +187,14 @@ bool run_host_should_quit( void );
 void run_host_sleep_debug_set( bool enabled );
 void run_host_sleep_debug_toggle( void );
 
+/* Realtime gate: while active, RUN_HOST_EDITOR_SLEEP is suspended and the loop paces
+   at frame_target_ms like a game host.  Core to editor simulate/play/stop -- assert it
+   while a game session is live (typically re-derived every frame in on_update from the
+   session state); clear it when the session stops and idle blocking resumes.  Hosts
+   without RUN_HOST_EDITOR_SLEEP may call it freely -- it is a no-op there. */
+void run_host_realtime_set( bool active );
+bool run_host_realtime( void );
+
 /* called once per frame by the host before on_update; now_us is the integer
    microsecond tick (sys_tick_microseconds).  The clock diffs it against the previous
    stamp internally -- floats are derived here, never accumulated.  Modules must not call. */

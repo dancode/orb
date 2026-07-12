@@ -11,14 +11,16 @@
     What makes this the HOST and not the sandbox: it parses launch params up front (host_common,
     pre-engine) -- -project/-module select a project DLL that the runtime loads at boot and the
     game framework runner drives; this editor is pure POLICY (Play/Stop/Pause/Step buttons ->
-    game() session calls, one tick per frame), -dev arms idle-sleep pacing.
+    game() session calls, one tick per frame).  Idle-sleep pacing is always on, but a live
+    session suspends it via the run_host realtime gate (see editor_update) -- Play must tick
+    in realtime; Stop returns the loop to blocking on OS input.
     Everything below the arg parse is the same modern stack sb_host_editor validates.
 
     Q/R/D are developer hotkeys read from the CONSOLE (terminal focus only, via RUN_HOST_CONSOLE)
     so they can't be fumbled from the editor window -- see editor_handle_shortcuts.
 
     Loop:  RUN_LOOP_RUN
-    Flags: RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_BORDERLESS [ | RUN_HOST_EDITOR_SLEEP ]
+    Flags: RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_BORDERLESS | RUN_HOST_EDITOR_SLEEP
 
 ==============================================================================================*/
 
@@ -149,6 +151,13 @@ editor_update( f32 dt )
 
         game()->tick( dt, &view );
     }
+
+    /* Realtime gate -- core to Play/Stop.  A live session (playing OR paused: the scene
+       still draws every frame) suspends editor idle-sleep so the sim ticks without
+       waiting on OS input; Stop returns the loop to blocking.  Re-derived from session
+       state every frame so it survives every transition -- the Play/Stop buttons, the
+       Q/close-request stops, and a project ending its own session. */
+    run_host_realtime_set( game() && game()->state() != GAME_STOPPED );
 }
 
 /* UI emission -- dirty frames only.  The chrome shell is already emitted by run_host (first in
@@ -303,9 +312,9 @@ main( int argc, char** argv )
         return 1;
     }
 
-    u32 flags = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_BORDERLESS;
-    if ( params.dev_mode )
-        flags |= RUN_HOST_EDITOR_SLEEP;    /* block on OS input when idle -- lower dev-box heat */
+    /* The editor is always dev mode: idle-sleep is unconditional.  A live play session
+       suspends it through the realtime gate (editor_update), not by dropping the flag. */
+    u32 flags = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_BORDERLESS | RUN_HOST_EDITOR_SLEEP;
 
     const run_host_desc_t desc = {
         .name             = "orb editor",
