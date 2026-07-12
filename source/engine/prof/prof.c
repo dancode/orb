@@ -84,6 +84,9 @@ static volatile i32        g_prof_boot;         // 0 = cold, 1 = initializing, 2
 // this thread's claimed ring (extern: the fast inline path caches through it)
 ORB_THREAD_LOCAL prof_ring_t* g_prof_tls_ring;
 
+// memory-scope teardown, defined in prof_mem.c (unity-internal, needed by prof_exit)
+static void prof_mem_reset( void );
+
 /* INFO: Thread-local storage is the whole trick.
 
    "Which ring do I write to?" must be answered in about a nanosecond, with no lock and no
@@ -140,7 +143,9 @@ prof_init( void )
 void
 prof_exit( void )
 {
-    prof_dump_end();    /* closes + finalizes an abandoned capture; no-op when idle */
+    prof_dump_end();            /* closes + finalizes an abandoned capture; no-op when idle */
+    prof_hitch_arm( 0.0, NULL );    /* disarm + clear the hitch monitor's session state */
+    prof_mem_reset();               /* clear the memory-scope table */
 
     if ( sys_atomic_read( &g_prof_boot ) == 2 )
         mutex_destroy( &g_prof_lock );
@@ -673,11 +678,14 @@ prof_drain( u32 thread_index, prof_event_t* out, u32 max )
 }
 
 /*==============================================================================================
-    Unity build -- dump consumer, then the API wiring (must be last: prof_api.c assigns
-    every function to g_prof_api_struct)
+    Unity build -- memory hooks, the dump consumer (samples them), the hitch monitor
+    (reuses the dump writer), then the API wiring (must be last: prof_api.c assigns every
+    function to g_prof_api_struct)
 ==============================================================================================*/
 
+#include "engine/prof/prof_mem.c"
 #include "engine/prof/prof_dump.c"
+#include "engine/prof/prof_hitch.c"
 
 #ifndef PROF_API_C_PRELUDE
 #include "engine/prof/prof_api.c"

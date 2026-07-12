@@ -613,6 +613,249 @@ sb_test_dump( void )
 }
 
 /*==============================================================================================
+    Suite: memory hooks -- exact accounting, CAS-max peak under contention, dump sampling
+==============================================================================================*/
+
+/* INFO: How the hooks are meant to be used (nothing in the engine calls them yet): an
+   allocator wraps its own alloc/free with PROF_MEM_ALLOC/FREE and a scope name -- e.g. an
+   arena reporting "arena/gui" -- and from then on live bytes, high-water peak, and churn
+   counts are exact without anyone polling. The threaded check below is the reason the
+   table exists at all: every worker's allocations are freed by join time, so a SAMPLED
+   value would read zero and show nothing ever happened -- while the hook-maintained peak
+   and churn counts still hold the true story of what the memory did in between.           */
+
+typedef struct sb_mem_arg_s
+{
+    u32 scope_id;
+    u32 iterations;
+} sb_mem_arg_t;
+
+static void
+sb_mem_worker( void* arg )
+{
+    sb_mem_arg_t* ma = ( sb_mem_arg_t* )arg;
+    for ( u32 i = 0; i < ma->iterations; ++i )
+    {
+        prof_mem_alloc( ma->scope_id, 16 );
+        prof_mem_free( ma->scope_id, 16 );
+    }
+}
+
+/* Snapshot all scopes and copy out the one matching id. */
+static bool
+sb_mem_find( u32 id, prof_mem_t* out )
+{
+    prof_mem_t snap[ PROF_MAX_MEM_SCOPES ];
+    u32        n = prof_mem_stats( snap, PROF_MAX_MEM_SCOPES );
+    for ( u32 i = 0; i < n; ++i )
+    {
+        if ( snap[ i ].id == id )
+        {
+            *out = snap[ i ];
+            return true;
+        }
+    }
+    return false;
+}
+
+static void
+sb_test_mem( void )
+{
+#if ORB_PROFILE_MEM
+    prof_mem_t m;
+
+    /* Exact single-thread accounting: current follows the balance, peak holds the max. */
+    u32 pool = prof_name_register( "mem/pool" );
+    prof_mem_alloc( pool, 100 );
+    prof_mem_alloc( pool, 50 );
+    prof_mem_free( pool, 100 );
+    prof_mem_alloc( pool, 25 );
+
+    sb_check( sb_mem_find( pool, &m ), "scope appears in the stats snapshot" );
+    sb_check( m.current == 75, "current tracks the alloc/free balance" );
+    sb_check( m.peak == 150, "peak holds the high-water mark after frees" );
+    sb_check( m.allocs == 3 && m.frees == 1, "alloc/free events are counted" );
+
+    /* Macro form: same table through the gateway, per-site cached id. */
+    PROF_MEM_ALLOC( "mem/macro", 64 );
+    PROF_MEM_FREE( "mem/macro", 64 );
+    sb_check( sb_mem_find( prof_name_register( "mem/macro" ), &m ), "macro form reaches the table" );
+    sb_check( m.current == 0 && m.peak == 64, "macro pair balances; peak survives" );
+    sb_check( m.allocs == 1 && m.frees == 1, "macro pair counted once" );
+
+    /* Unbalanced hooks are reported truthfully, never clamped. */
+    u32 stray = prof_name_register( "mem/stray" );
+    prof_mem_free( stray, 10 );
+    sb_check( sb_mem_find( stray, &m ) && m.current == -10, "unbalanced free goes negative, not clamped" );
+
+    /* Contention: totals are exact under any interleaving, and by join time everything
+       is freed -- exactly the history a sampled counter would erase. Peak is bounded by
+       the max possible concurrent live bytes (one 16-byte alloc per worker). */
+    enum { SB_MEM_WORKERS = 4, SB_MEM_ITERS = 4000 };
+    u32          shared = prof_name_register( "mem/shared" );
+    sb_mem_arg_t args[ SB_MEM_WORKERS ];
+    thread_t     threads[ SB_MEM_WORKERS ];
+
+    for ( int i = 0; i < SB_MEM_WORKERS; ++i )
+    {
+        args[ i ].scope_id   = shared;
+        args[ i ].iterations = SB_MEM_ITERS;
+        threads[ i ]         = thread_create( sb_mem_worker, &args[ i ], 0 );
+        sb_check( thread_valid( threads[ i ] ), "mem worker created" );
+    }
+    for ( int i = 0; i < SB_MEM_WORKERS; ++i )
+        thread_join( threads[ i ] );
+
+    sb_check( sb_mem_find( shared, &m ), "shared scope present after workers" );
+    sb_check( m.current == 0, "contended alloc/free balance is exact (fetch-add)" );
+    sb_check( m.allocs == SB_MEM_WORKERS * SB_MEM_ITERS, "no alloc event lost under contention" );
+    sb_check( m.frees == SB_MEM_WORKERS * SB_MEM_ITERS, "no free event lost under contention" );
+    sb_check( m.peak >= 16 && m.peak <= SB_MEM_WORKERS * 16, "peak within the possible live range" );
+
+    /* Dump sampling: scopes land as "used"/"peak" counter tracks in the trace. */
+    sb_flush_all();
+    const char* path = "sb_prof_mem.json";
+    sb_check( prof_dump_begin( path ), "mem dump opens" );
+    prof_dump_flush();
+    prof_dump_end();
+
+    static char buf[ 64 * 1024 ];
+    FILE*       f = fopen( path, "rb" );
+    sb_check( f != NULL, "mem trace file exists" );
+    if ( f )
+    {
+        size_t len = fread( buf, 1, sizeof( buf ) - 1, f );
+        fclose( f );
+        buf[ len ] = 0;
+
+        sb_check( strstr( buf, "mem/pool" ) != NULL, "scope sampled into the trace" );
+        sb_check( strstr( buf, "\"used\":75" ) != NULL, "live bytes sampled as the used series" );
+        sb_check( strstr( buf, "\"peak\":150" ) != NULL, "high-water sampled as the peak series" );
+    }
+    remove( path );
+#else
+    printf( "    (ORB_PROFILE_MEM disabled -- suite skipped)\n" );
+#endif
+}
+
+/*==============================================================================================
+    Suite: hitch capture -- rolling history, threshold trigger, cooldown, session reset
+==============================================================================================*/
+
+/* INFO: Hitch capture in practice: a shipped dev build arms the monitor once at boot
+   ("prof_hitch 33.3" on the host console) and then nobody thinks about it -- when a frame
+   stutters, a trace of the moments BEFORE and DURING the stutter appears on disk by
+   itself, ready for perfetto. This suite plays both roles by hand: it is the "host loop"
+   (calling update once per simulated frame with a made-up frame time) and the "spike"
+   (passing a big frame_ms), so every trigger rule -- threshold, cooldown, dump priority,
+   re-arm reset -- is checked deterministically without real stalls or real timing.        */
+
+static void
+sb_test_hitch( void )
+{
+#if ORB_PROFILE_HITCH
+    sb_flush_all();
+
+    /* Disarmed monitor is inert regardless of the frame time reported. */
+    sb_check( !prof_hitch_armed(), "monitor starts disarmed" );
+    sb_check( prof_hitch_update( 100.0 ) == 0, "disarmed update captures nothing" );
+    sb_check( prof_hitch_count() == 0, "no captures while disarmed" );
+    sb_check( prof_hitch_last_path() == NULL, "no capture path while disarmed" );
+
+    /* Armed, under threshold: history accumulates, nothing fires. */
+    prof_hitch_arm( 10.0, "sb_prof_hitch" );
+    sb_check( prof_hitch_armed(), "monitor reports armed" );
+
+    u32 fired = 0;
+    for ( int f = 0; f < 3; ++f )
+    {
+        PROF_ZONE_BEGIN( "hitch/work" );
+        PROF_ZONE_END();
+        prof_frame_mark();
+        fired += prof_hitch_update( 1.0 );
+    }
+    sb_check( fired == 0, "under-threshold frames never capture" );
+    sb_check( prof_hitch_count() == 0, "capture count stays zero under threshold" );
+
+    /* Over-threshold frame: the capture fires with the whole buffered history. */
+    PROF_ZONE_BEGIN( "hitch/spike" );
+    PROF_ZONE_END();
+    prof_frame_mark();
+    u32 written = prof_hitch_update( 50.0 );
+    sb_check( written >= 12, "capture writes the buffered history (4 frames of events)" );
+    sb_check( prof_hitch_count() == 1, "capture count increments" );
+
+    char path[ 160 ] = { 0 };
+    sb_check( prof_hitch_last_path() != NULL, "capture path is published" );
+    if ( prof_hitch_last_path() )
+        snprintf( path, sizeof( path ), "%s", prof_hitch_last_path() );
+    sb_check( strstr( path, "sb_prof_hitch_" ) == path, "capture path uses the prefix" );
+
+    /* Read back: pre-hitch history AND the hitch frame itself are in one trace. */
+    static char buf[ 64 * 1024 ];
+    FILE*       f = fopen( path, "rb" );
+    sb_check( f != NULL, "hitch trace file exists" );
+    if ( f )
+    {
+        size_t len = fread( buf, 1, sizeof( buf ) - 1, f );
+        fclose( f );
+        buf[ len ] = 0;
+
+        sb_check( strstr( buf, "{\"traceEvents\":[" ) == buf, "hitch trace opens the traceEvents array" );
+        sb_check( strstr( buf, "hitch/work" ) != NULL, "pre-hitch history survives into the trace" );
+        sb_check( strstr( buf, "hitch/spike" ) != NULL, "the hitch frame itself is in the trace" );
+        sb_check( strstr( buf, "]}" ) != NULL, "hitch trace closes cleanly" );
+    }
+    remove( path );
+
+    /* Cooldown: an immediate second spike is suppressed (no file spam on a long stall). */
+    PROF_ZONE_BEGIN( "hitch/work" );
+    PROF_ZONE_END();
+    prof_frame_mark();
+    sb_check( prof_hitch_update( 50.0 ) == 0, "cooldown suppresses back-to-back captures" );
+    sb_check( prof_hitch_count() == 1, "capture count unchanged during cooldown" );
+
+    /* An explicit dump owns the drain: the armed monitor stands down entirely. */
+    const char* dump_path = "sb_prof_hitch_dump.json";
+    sb_check( prof_dump_begin( dump_path ), "explicit dump opens while armed" );
+    sb_check( prof_hitch_update( 50.0 ) == 0, "monitor is inert while a dump is active" );
+    prof_dump_end();
+    remove( dump_path );
+
+    /* Re-arm starts a fresh session: cooldown, count, and path all reset. */
+    prof_hitch_arm( 10.0, "sb_prof_hitch2" );
+    sb_check( prof_hitch_count() == 0, "re-arm resets the capture count" );
+    sb_check( prof_hitch_last_path() == NULL, "re-arm clears the last path" );
+
+    /* History wrap: buffer far more than PROF_HITCH_HISTORY_CAP events across frames --
+       the capture must hold exactly the most recent CAP of them (plus the live-flush
+       counter samples), proving the circular overwrite keeps the newest history. */
+    for ( int frame = 0; frame < 3; ++frame )
+    {
+        for ( u32 i = 0; i < 3000; ++i )
+        {
+            PROF_ZONE_BEGIN( "hitch/wrap" );
+            PROF_ZONE_END();
+        }
+        sb_check( prof_hitch_update( 1.0 ) == 0, "wrap-fill frame stays under threshold" );
+    }
+    written = prof_hitch_update( 50.0 );
+    sb_check( written >= PROF_HITCH_HISTORY_CAP, "wrapped capture writes a full history window" );
+    sb_check( written <= PROF_HITCH_HISTORY_CAP + PROF_MAX_COUNTERS + PROF_MAX_MEM_SCOPES,
+              "wrapped capture writes at most one window" );
+    if ( prof_hitch_last_path() )
+        remove( prof_hitch_last_path() );
+
+    /* Threshold <= 0 disarms. */
+    prof_hitch_arm( 0.0, NULL );
+    sb_check( !prof_hitch_armed(), "threshold <= 0 disarms" );
+    sb_check( prof_hitch_update( 100.0 ) == 0, "disarmed again after the session" );
+#else
+    printf( "    (ORB_PROFILE_HITCH disabled -- suite skipped)\n" );
+#endif
+}
+
+/*==============================================================================================
     Suite: wall-clock sanity -- a zone around a real sleep measures a real duration
 ==============================================================================================*/
 
@@ -753,6 +996,16 @@ main( int argc, char** argv )
     printf( " chrome-trace dump\n" );
     printf( "========================================\n" );
     sb_test_dump();
+
+    printf( "\n========================================\n" );
+    printf( " memory hooks\n" );
+    printf( "========================================\n" );
+    sb_test_mem();
+
+    printf( "\n========================================\n" );
+    printf( " hitch capture\n" );
+    printf( "========================================\n" );
+    sb_test_hitch();
 
     printf( "\n========================================\n" );
     printf( " timing sanity + hot-path cost\n" );

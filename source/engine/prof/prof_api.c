@@ -56,6 +56,18 @@ const prof_api_t g_prof_api_struct =
     .dump_flush      = prof_dump_flush,
     .dump_end        = prof_dump_end,
     .dump_active     = prof_dump_active,
+
+    /* Hitch capture */
+    .hitch_arm       = prof_hitch_arm,
+    .hitch_armed     = prof_hitch_armed,
+    .hitch_update    = prof_hitch_update,
+    .hitch_count     = prof_hitch_count,
+    .hitch_last_path = prof_hitch_last_path,
+
+    /* Memory hooks */
+    .mem_alloc       = prof_mem_alloc,
+    .mem_free        = prof_mem_free,
+    .mem_stats       = prof_mem_stats,
 };
 
 /*==============================================================================================

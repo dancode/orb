@@ -84,6 +84,26 @@ void            prof_dump_end        ( void );
 bool            prof_dump_active     ( void );
 
 /*==============================================================================================
+    Hitch capture -- consumer side; while armed, hitch_update IS the single drain consumer
+    (inert stubs when ORB_PROFILE_HITCH is compiled out)
+==============================================================================================*/
+
+void            prof_hitch_arm       ( f64 threshold_ms, const char* path_prefix );
+bool            prof_hitch_armed     ( void );
+u32             prof_hitch_update    ( f64 frame_ms );
+u32             prof_hitch_count     ( void );
+const char*     prof_hitch_last_path ( void );
+
+/*==============================================================================================
+    Memory hooks -- balanced alloc/free from any thread; inert stubs when ORB_PROFILE_MEM
+    is compiled out
+==============================================================================================*/
+
+void            prof_mem_alloc       ( u32 id, i64 bytes );
+void            prof_mem_free        ( u32 id, i64 bytes );
+u32             prof_mem_stats       ( prof_mem_t* out, u32 max );
+
+/*==============================================================================================
     Module Descriptor
 
     Used by the host to register the prof module:

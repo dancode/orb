@@ -69,6 +69,17 @@
     prof()->thread_release() (PROF_THREAD_RELEASE) before exiting returns its ring to a
     free pool for the next thread. At 0, rings are claimed forever (the original
     fixed-pool behavior -- fine for a host + fixed worker pool, no transient churn).
+
+    ORB_PROFILE_HITCH (default 1) compiles the hitch-capture consumer (prof_hitch.c):
+    an armed per-frame monitor that folds drained events into rolling history buffers
+    and auto-writes a Chrome trace of the recent past when a frame exceeds a threshold.
+    At 0 the history storage vanishes and the hitch entry points become inert stubs
+    (the vtable shape is unchanged -- only the bodies are gated).
+
+    ORB_PROFILE_MEM (default 1) compiles the memory hooks (prof_mem.c): per-scope
+    allocation accounting (live bytes, peak, alloc/free counts) fed by PROF_MEM_ALLOC /
+    PROF_MEM_FREE at allocator call sites and sampled into dumps as counter tracks. At 0
+    the macros vanish and the entry points become inert stubs (vtable shape unchanged).
 ==============================================================================================*/
 
 /* INFO: Why compile-time levels AND a runtime switch.
@@ -96,6 +107,14 @@
     #define PROF_RING_RECYCLE 1
 #endif
 
+#ifndef ORB_PROFILE_HITCH
+    #define ORB_PROFILE_HITCH 1
+#endif
+
+#ifndef ORB_PROFILE_MEM
+    #define ORB_PROFILE_MEM 1
+#endif
+
 /*==============================================================================================
     Limits
 
@@ -111,8 +130,17 @@
 #define PROF_MAX_NAMES         256              // distinct zone/counter names             
 #define PROF_NAME_TABLE_SIZE   512              // id -> name hash table; power of two     
 #define PROF_NAME_POOL_SIZE    ( 8 * 1024 )     // interned name string bytes              
-#define PROF_MAX_COUNTERS      64               // distinct live counters                  
-#define PROF_THREAD_NAME_MAX   32               // thread label bytes, including NUL       
+#define PROF_MAX_COUNTERS      64               // distinct live counters
+#define PROF_MAX_MEM_SCOPES    64               // distinct memory scopes (ORB_PROFILE_MEM)
+#define PROF_THREAD_NAME_MAX   32               // thread label bytes, including NUL
+
+/* Hitch capture (ORB_PROFILE_HITCH) -- overridable per build. */
+#ifndef PROF_HITCH_HISTORY_CAP
+    #define PROF_HITCH_HISTORY_CAP 8192         // rolling history events per thread; power of two
+#endif
+#ifndef PROF_HITCH_COOLDOWN_FRAMES
+    #define PROF_HITCH_COOLDOWN_FRAMES 120      // frames suppressed after a capture fires
+#endif
 
 /* INFO: Why fixed static pools instead of malloc.
 
@@ -227,6 +255,36 @@ typedef struct prof_counter_s
    not need an event trail -- only its latest value matters -- so counters skip the rings
    entirely and live in a small table the consumer snapshots once per frame. Writing one
    is a single atomic 64-bit store: the cheapest telemetry in the library.                 */
+
+/*==============================================================================================
+    Memory scope snapshot -- ORB_PROFILE_MEM
+
+    One scope per allocator/arena name, updated from any thread by prof_mem_alloc/free at
+    the allocator's own call sites; sampled by the consumer via prof()->mem_stats(). Hooks
+    must be balanced by the caller -- a negative current truthfully reports an unbalanced
+    pair, it is never clamped.
+==============================================================================================*/
+
+typedef struct prof_mem_s
+{
+    u32 id;         // scope name hash
+    u32 _pad;       // reserved
+    i64 current;    // live bytes right now
+    i64 peak;       // high-water live bytes
+    i64 allocs;     // allocation events
+    i64 frees;      // free events
+} prof_mem_t;
+
+/* INFO: Why memory gets its own table instead of reusing counters.
+
+   A counter could carry "bytes in use" -- but only its LATEST value: a consumer sampling
+   once per frame would never see an allocation spike that rose and fell between samples,
+   and could not tell 2 allocs from 2000 if the total came out even. The scope table
+   updates AT THE ALLOCATION ITSELF, so peak (high-water) and alloc/free churn are exact
+   no matter when anyone looks. That is the whole feature: three extra fields maintained
+   at the source, recovering exactly the information sampling destroys. The hooks are
+   allocator-agnostic on purpose -- an arena, a heap wrapper, or a pool all just call
+   alloc/free with a scope name and a byte count.                                          */
 
 /*==============================================================================================
     Ring storage -- INTERNAL

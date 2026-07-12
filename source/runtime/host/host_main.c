@@ -205,6 +205,37 @@ host_cmd_prof_dump( int argc, char** argv )
     printf( "[host] prof_dump: capturing %d frames to '%s'\n", frames, path );
 }
 
+/*==============================================================================================
+    Hitch monitor command -- "prof_hitch [ms] [prefix]"
+
+    Arms the profiler's hitch capture: every frame the loop folds events into the rolling
+    history, and any frame whose WORK time (pacing wait excluded) crosses the threshold
+    (default 33.3 ms -- two missed 60 Hz periods) auto-writes "<prefix>_<frame>.json" for
+    chrome://tracing / https://ui.perfetto.dev. Re-running the command disarms.
+==============================================================================================*/
+
+static void
+host_cmd_prof_hitch( int argc, char** argv )
+{
+    if ( prof_hitch_armed() )
+    {
+        prof_hitch_arm( 0.0, NULL );
+        printf( "[host] prof_hitch: disarmed\n" );
+        return;
+    }
+
+    f64         ms     = argc > 1 ? atof( argv[ 1 ] ) : 0.0;
+    const char* prefix = argc > 2 ? argv[ 2 ] : "hitch";
+    if ( ms <= 0.0 )
+        ms = 33.3;
+
+    prof_hitch_arm( ms, prefix );
+    if ( prof_hitch_armed() )
+        printf( "[host] prof_hitch: armed at %.1f ms (captures to '%s_<frame>.json')\n", ms, prefix );
+    else
+        printf( "[host] prof_hitch: unavailable (ORB_PROFILE_HITCH compiled out)\n" );
+}
+
 /* sys_key_t values are pinned to app_key_t for the shared range so console-input polling
    (sys_key_pressed) and windowed input (app()->key_pressed) agree on key constants.
    C5287 (newer MSVC) flags the mixed-enum comparison even through the casts; comparing
@@ -443,6 +474,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     s_prof_dump_frames = 0;
     cmd_register( "prof_dump", host_cmd_prof_dump,
                   "Capture N frames to a Chrome trace (prof_dump [frames] [path])" );
+    cmd_register( "prof_hitch", host_cmd_prof_hitch,
+                  "Auto-capture a trace when frame work exceeds a threshold (prof_hitch [ms] [prefix])" );
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
@@ -958,6 +991,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         /* Profiler frame boundary + headline counter -- macro-gated, zero cost at level 0. */
         PROF_FRAME_MARK();
         PROF_COUNTER_SET( "host/frame_us", stats.frame_us );
+
+        /* Hitch monitor -- armed via "prof_hitch". Work time only: the pacing wait above
+           (editor input block, budget sleep) is deliberate idling, not a hitch. Two cheap
+           branches per frame while disarmed. */
+        u32 hitch_events = prof_hitch_update( ( f64 )stats.work_us / 1000.0 );
+        if ( hitch_events )
+            printf( "[host] prof_hitch: %.1f ms frame -- wrote '%s' (%u events)\n",
+                    ( f64 )stats.work_us / 1000.0, prof_hitch_last_path(), hitch_events );
 
         run_clock_stats_submit( &stats );
     }

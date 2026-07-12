@@ -193,20 +193,32 @@ prof_dump_flush( void )
         }
     }
 
+    f64 now = ( f64 )sys_tick_nanoseconds() / 1000.0;
+
     prof_counter_t snap[ PROF_MAX_COUNTERS ];
     u32            cn = prof_counters( snap, PROF_MAX_COUNTERS );
-    if ( cn )
+    for ( u32 i = 0; i < cn; ++i )
     {
-        f64 now = ( f64 )sys_tick_nanoseconds() / 1000.0;
-        for ( u32 i = 0; i < cn; ++i )
-        {
-            prof_dump_sep();
-            fprintf( g_prof_dump.file, "{\"ph\":\"C\",\"pid\":0,\"tid\":0,\"ts\":%.3f,\"name\":\"", now );
-            prof_dump_name( snap[ i ].id );
-            fprintf( g_prof_dump.file, "\",\"args\":{\"value\":%lld}}", ( long long )snap[ i ].value );
-        }
-        written += cn;
+        prof_dump_sep();
+        fprintf( g_prof_dump.file, "{\"ph\":\"C\",\"pid\":0,\"tid\":0,\"ts\":%.3f,\"name\":\"", now );
+        prof_dump_name( snap[ i ].id );
+        fprintf( g_prof_dump.file, "\",\"args\":{\"value\":%lld}}", ( long long )snap[ i ].value );
     }
+    written += cn;
+
+    /* Memory scopes as two-series counter tracks -- the viewer stacks "used" and "peak"
+       into one graph per scope. Empty when ORB_PROFILE_MEM is compiled out. */
+    prof_mem_t mem[ PROF_MAX_MEM_SCOPES ];
+    u32        mn = prof_mem_stats( mem, PROF_MAX_MEM_SCOPES );
+    for ( u32 i = 0; i < mn; ++i )
+    {
+        prof_dump_sep();
+        fprintf( g_prof_dump.file, "{\"ph\":\"C\",\"pid\":0,\"tid\":0,\"ts\":%.3f,\"name\":\"", now );
+        prof_dump_name( mem[ i ].id );
+        fprintf( g_prof_dump.file, "\",\"args\":{\"used\":%lld,\"peak\":%lld}}",
+                 ( long long )mem[ i ].current, ( long long )mem[ i ].peak );
+    }
+    written += mn;
 
     return written;
 }

@@ -229,7 +229,11 @@
       "Bash(bin/sb_prof.exe --release-check)",
       "PowerShell(Stop-Process *)",
       "Bash(git stash *)",
-      "Bash(git log *)"
+      "Bash(git log *)",
+      "PowerShell(\\(Get-Item F:\\\\orb\\\\source\\\\runtime\\\\run.c\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_prof)",
+      "PowerShell(bin\\\\sb_prof.exe)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_prof)",
+      "PowerShell(\\(Get-Item F:\\\\orb\\\\source\\\\runtime\\\\run.c\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target host_editor; if \\($?\\) { bin\\\\build_tool.exe -config Debug -target sb_prof })"
     ]
   }
 }

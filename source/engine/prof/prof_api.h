@@ -78,6 +78,24 @@ typedef struct prof_api_s
     void        ( *dump_end )        ( void );
     bool        ( *dump_active )     ( void );
 
+    /* Hitch capture (ORB_PROFILE_HITCH; stubs when compiled out). hitch_arm arms
+       (threshold_ms > 0, resets the session) or disarms (<= 0); hitch_update runs once
+       per frame from the consumer thread -- it IS the drain consumer while armed -- and
+       auto-writes "<prefix>_<frame>.json" when frame_ms crosses the threshold, returning
+       the events written (0 = no capture). Inert while an explicit dump is active. */
+    void        ( *hitch_arm )       ( f64 threshold_ms, const char* path_prefix );
+    bool        ( *hitch_armed )     ( void );
+    u32         ( *hitch_update )    ( f64 frame_ms );
+    u32         ( *hitch_count )     ( void );                    /* captures since armed          */
+    const char* ( *hitch_last_path ) ( void );                    /* NULL until a capture fires    */
+
+    /* Memory hooks (ORB_PROFILE_MEM; stubs when compiled out). Call alloc/free from the
+       allocator's own call sites, balanced, from any thread; mem_stats snapshots every
+       scope (returns count). Scopes also land in dumps as "used"/"peak" counter tracks. */
+    void        ( *mem_alloc )       ( u32 id, i64 bytes );
+    void        ( *mem_free )        ( u32 id, i64 bytes );
+    u32         ( *mem_stats )       ( prof_mem_t* out, u32 max );
+
 } prof_api_t;
 
 /*============================================================================================*/
@@ -354,6 +372,42 @@ prof_fast_end( void )
     #define PROF_THREAD_RELEASE()                ( ( void )0 )
 
 #endif    /* ORB_PROFILE >= 1 */
+
+/* Memory hooks -- place at the allocator's own alloc/free sites, always balanced. Same
+   per-call-site id caching as the counter macros; vanish when the level or
+   ORB_PROFILE_MEM compiles the feature out. */
+#if ORB_PROFILE >= 1 && ORB_PROFILE_MEM
+
+    #define PROF_MEM_ALLOC( name_lit, bytes )                                 \
+        do                                                                    \
+        {                                                                     \
+            static u32 s_prof_mem_id;                                         \
+            if ( prof() )                                                     \
+            {                                                                 \
+                if ( !s_prof_mem_id )                                         \
+                    s_prof_mem_id = prof()->name_register( name_lit );        \
+                prof()->mem_alloc( s_prof_mem_id, ( i64 )( bytes ) );         \
+            }                                                                 \
+        } while ( 0 )
+
+    #define PROF_MEM_FREE( name_lit, bytes )                                  \
+        do                                                                    \
+        {                                                                     \
+            static u32 s_prof_mem_id;                                         \
+            if ( prof() )                                                     \
+            {                                                                 \
+                if ( !s_prof_mem_id )                                         \
+                    s_prof_mem_id = prof()->name_register( name_lit );        \
+                prof()->mem_free( s_prof_mem_id, ( i64 )( bytes ) );          \
+            }                                                                 \
+        } while ( 0 )
+
+#else
+
+    #define PROF_MEM_ALLOC( name_lit, bytes )    ( ( void )0 )
+    #define PROF_MEM_FREE( name_lit, bytes )     ( ( void )0 )
+
+#endif    /* memory hooks */
 
 // clang-format on
 /*============================================================================================*/
