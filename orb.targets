@@ -534,7 +534,6 @@ target sb_vulkan						# vulkan development and testing
     folder      09_SANDBOX/RHI
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
-    unit        sb_vulkan_gui.c
     dep         sys ref mod core job app
 	dep 		run rhi draw gui
 	dep         dev_font
@@ -580,6 +579,18 @@ target sb_gui_editor					# game-engine editor shell over the gui library
     root        source/sandbox/gui/sb_gui_editor
     folder      09_SANDBOX/GUI
     unit        sb_gui_editor.c
+    dep         sys ref mod core job app
+	dep 		run rhi draw gui
+	dep         dev_font
+	mono_dep 	render
+
+target sb_gui_example					# gui feature explorer: end-to-end demos of every feature group
+
+    type        exe
+    root        source/sandbox/gui/sb_gui_example
+    folder      09_SANDBOX/GUI
+    unit        sb_gui_example.c
+    unit        ex_demos.c
     dep         sys ref mod core job app
 	dep 		run rhi draw gui
 	dep         dev_font
@@ -886,6 +897,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	add 		sb_asset_image			# asset image loader proof
 	add 		sb_asset_shader			# shader asset + hot-reload proof
 	add 		sb_gui					# gui demo
+	add 		sb_gui_example			# gui feature explorer (end-to-end demos)
 	add 		sb_gui_console			# quake-style dev console
 	add 		sb_gui_editor			# game-engine editor shell
 	add 		sb_gui_font				# font find/bake/preview/export bench

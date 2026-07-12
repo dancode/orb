@@ -1,10 +1,10 @@
 ﻿/*==============================================================================================
 
-    sandbox/rhi/sb_vulkan/sb_vulkan_gui.c -- gui feature demos.
+    sandbox/gui/sb_gui_example/ex_demos.c -- gui feature demos.
 
     One function per feature group, each opening its own window.  Kept small and focused so the
     window on screen reads as a worked example of exactly one part of the gui API; the host
-    switches between them with a key.  See sb_vulkan_gui.h for the contract.
+    switches between them with a key.  See ex_demos.h for the contract.
 
     All persistent widget values are file-scope statics local to each demo function -- the demos
     are pure UI, no shared state, so a demo can be read top to bottom in isolation.
@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <math.h>      /* cosf / sinf -- the diagonal fan + polygon in demo_lines */
 
-#include "sb_vulkan_gui.h"
+#include "ex_demos.h"
 #include "runtime_service/gui/gui_host.h"
 
 // clang-format off
@@ -1651,7 +1651,7 @@ demo_symbols( void )
     Demo table -- the menu the host steps through.
 ==============================================================================================*/
 
-const sb_gui_demo_t sb_gui_demos[] =
+const ex_demo_t ex_demos[] =
 {
     { "Widgets",      "text / button / checkbox / slider / input_text", demo_widgets     },
     { "Text",         "textf / bullet / separator / collapsing_header", demo_text        },
@@ -1675,10 +1675,10 @@ const sb_gui_demo_t sb_gui_demos[] =
 };
 
 int
-sb_gui_demo_count( void )
+ex_demo_count( void )
 {
     int n = 0;
-    while ( sb_gui_demos[ n ].name )
+    while ( ex_demos[ n ].name )
         n++;
     return n;
 }
@@ -1688,9 +1688,9 @@ sb_gui_demo_count( void )
 ==============================================================================================*/
 
 int
-sb_gui_demo_picker( int active )
+ex_demo_picker( int active )
 {
-    const int count    = sb_gui_demo_count();
+    const int count    = ex_demo_count();
     int       selected = active;                  /* unchanged unless a row is clicked */
 
     gui()->window_set_next_pos ( 940, 48, GUI_COND_ONCE );
@@ -1698,7 +1698,7 @@ sb_gui_demo_picker( int active )
     if ( gui()->window_begin( "Demos", GUI_WIN_NOCOLLAPSE ) )
     {
         gui()->stack();
-        gui()->text( "Keys: 1-9 select  +/- step  ESC quit" );
+        gui()->text( "Keys: +/- step  ESC quit" );
         gui()->separator();
 
         for ( int i = 0; i < count; i++ )
@@ -1706,7 +1706,7 @@ sb_gui_demo_picker( int active )
             gui()->push_id_int( i );
             bool on = ( i == active );
             char label[ 64 ];
-            snprintf( label, sizeof( label ), "%d. %s", i + 1, sb_gui_demos[ i ].name );
+            snprintf( label, sizeof( label ), "%d. %s", i + 1, ex_demos[ i ].name );
             /* selectable returns true on the clicked frame -- report that row back to the
                host, which owns the real active index. */
             if ( gui()->selectable( label, &on ) )
@@ -1717,8 +1717,8 @@ sb_gui_demo_picker( int active )
         gui()->separator();
         if ( active >= 0 && active < count )
         {
-            gui()->textf( "%s", sb_gui_demos[ active ].name );
-            gui()->text( sb_gui_demos[ active ].desc );
+            gui()->textf( "%s", ex_demos[ active ].name );
+            gui()->text( ex_demos[ active ].desc );
         }
     }
     gui()->window_end();

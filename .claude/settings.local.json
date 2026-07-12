@@ -208,7 +208,10 @@
       "PowerShell(ls \"$env:APPDATA\\\\Microsoft\\\\VisualStudio\" | Select-Object Name, LastWriteTime)",
       "PowerShell(ls \"$env:APPDATA\\\\Microsoft\\\\VisualStudio\\\\18.0_c23a6242\" | Select-Object Name, LastWriteTime, Length)",
       "PowerShell(bin\\\\build_tool.exe -gen)",
-      "PowerShell(bin\\\\build_tool.exe -config Debug -target host_editor)"
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target host_editor)",
+      "Bash(git mv *)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_vulkan)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui_example)"
     ]
   }
 }
