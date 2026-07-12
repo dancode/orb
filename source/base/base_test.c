@@ -660,9 +660,11 @@ base_run_tests( void )
     test_register( "bit_rotate", test_bit_rotate );
     test_register( "bit_fields_flags", test_bit_fields_flags );
 
+    #if ORB_USE_CONTAINERS
     test_register( "container_append", test_container_append );
     test_register( "container_append_many", test_container_append_many );
     test_register( "container_insert_remove", test_container_insert_remove );
+    #endif
 
     return test_run( "base" );
 }
