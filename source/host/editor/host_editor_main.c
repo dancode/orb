@@ -70,8 +70,8 @@ editor_ready( void )
     printf( "Dev keys (terminal focus): Q=quit  R=reload all  D=toggle sleep debug\n" );
 
     /* Project vtable: the stable api slot -- the mod system rewrites its contents on every
-       hot-reload, so this pointer never needs refreshing.  game() is the framework module
-       (score readout); MOD_HOST_FETCH_API is valid from here on. */
+       hot-reload, so this pointer never needs refreshing.  game() is the framework runner
+       (session control -- hosts hand it the drive in Phase 2); fetch is valid from here on. */
     if ( s_proj.present )
     {
         s_project = ( const run_project_api_t* )mod_get_api( s_proj.name );
@@ -214,7 +214,6 @@ editor_gui( f32 dt )
             if ( gui()->button( s_playing ? "Stop" : "Play" ) )
                 editor_set_playing( !s_playing );
             gui()->textf( "state  %s", s_playing ? "PLAYING" : "stopped" );
-            gui()->textf( "score  %d", game() ? game()->score() : 0 );
         }
         else
         {
@@ -263,7 +262,7 @@ static const run_module_entry_t k_modules[] = {
     RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend */
     RUN_SERVICE( gui    ),    /* immediate mode GUI -- OPTIONAL static service */
     RUN_MODULE ( render ),    /* scene frame owner -- gui composites over it   */
-    RUN_MODULE ( game   ),    /* gameplay framework -- project DLLs build on it */
+    RUN_MODULE ( game   ),    /* game framework runner -- drives project DLLs   */
     { 0 }
 };
 

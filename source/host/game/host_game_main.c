@@ -137,7 +137,7 @@ static const run_module_entry_t k_modules[] = {
     RUN_SERVICE( rhi    ),    /* GPU backend -- static service                 */
     RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend */
     RUN_MODULE ( render ),    /* scene frame owner                             */
-    RUN_MODULE ( game   ),    /* gameplay framework -- project DLLs build on it */
+    RUN_MODULE ( game   ),    /* game framework runner -- drives project DLLs   */
     { 0 }
 };
 

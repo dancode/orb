@@ -207,12 +207,13 @@ target physics
 # 04_GAME
 # ==============================================================================
 
-target game							# gameplay framework module -- hot-reload DLL, RUN_MODULE( game ) in hosts
+target game							# game framework runner -- hot-reload DLL, RUN_MODULE( game ) in hosts
 
     type        dynamic
     root        source/game
     folder      04_GAME
     unit        game.c
+    dep         base
 
 # ==============================================================================
 

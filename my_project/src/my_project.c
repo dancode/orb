@@ -9,8 +9,9 @@
     Demonstrates the full project shape:
       - implements runtime/run_project.h ( run_project_api_t ) as its func_api, so any
         driver can run it generically: on_start / on_sim / on_frame / on_draw / on_stop
-      - builds on the game FRAMEWORK module ( game()->on_start / on_update / on_stop --
-        the framework's score ticks to the console prove the delegation chain )
+        ( the game framework runner is the standard driver -- game()->play/tick )
+      - fixed-step gameplay in on_sim ( the score ticks once per sim second and resets
+        on every on_start -- editor Stop/Play proves the session restart )
       - submits its scene through render() using the rhi context handed in per draw
         ( view->render_ctx; -1 when running headless )
       - persistent state that survives hot-reloads ( edit this file, rebuild, watch the
@@ -29,13 +30,11 @@
 
 #include "engine/core/core_api.h"
 #include "runtime_modules/render/render_api.h"
-#include "game/game_api.h"
 
 #include "my_project.h"
 
 MOD_USE_CORE;
 MOD_USE_RENDER;
-MOD_USE_GAME;
 
 /*==============================================================================================
     Persistent state  (zeroed on first load; preserved across hot-reloads)
@@ -46,8 +45,10 @@ MOD_USE_GAME;
 
 typedef struct my_project_state_s
 {
-    bool running;   /* between on_start and on_stop */
-    f32  angle;     /* orbit angle -- proves state survives hot-reload */
+    bool running;         /* between on_start and on_stop */
+    f32  angle;           /* orbit angle -- proves state survives hot-reload */
+    i32  score;           /* +1 per sim second; reset every on_start        */
+    f32  time_in_level;   /* seconds accumulated toward the next score tick */
 
 } my_project_state_t;
 
@@ -63,8 +64,9 @@ my_project_on_start( void )
     if ( !g_state )
         return;
 
-    g_state->running = true;
-    game()->on_start();    /* framework: resets score, starts the fake gameplay loop */
+    g_state->running       = true;
+    g_state->score         = 0;      /* session state: every Play starts fresh */
+    g_state->time_in_level = 0.0f;
     LOG_INFO( "on_start" );
 }
 
@@ -74,9 +76,17 @@ my_project_on_sim( f32 fixed_dt )
     if ( !g_state || !g_state->running )
         return;
 
-    game()->on_update( fixed_dt );    /* framework score ticks to the console every second */
-
     g_state->angle += SAMPLE_ORBIT_SPEED * fixed_dt;
+
+    /* very fake gameplay: every sim second, score +1 -- the console tick proves the
+       fixed-step cadence and the reset on Play proves the session restart */
+    g_state->time_in_level += fixed_dt;
+    if ( g_state->time_in_level >= 1.0f )
+    {
+        g_state->score++;
+        g_state->time_in_level -= 1.0f;
+        LOG_INFO( "score = %d", g_state->score );
+    }
 }
 
 static void
@@ -118,8 +128,7 @@ my_project_on_stop( void )
         return;
 
     g_state->running = false;
-    game()->on_stop();    /* framework: logs the final score */
-    LOG_INFO( "on_stop" );
+    LOG_INFO( "on_stop (final score = %d)", g_state->score );
 }
 
 const run_project_api_t g_my_project_api_struct = {
@@ -142,7 +151,6 @@ my_project_init( void* raw_state, get_api_fn get_api )
 
     if ( !MOD_FETCH_CORE )   return false;
     if ( !MOD_FETCH_RENDER ) return false;
-    if ( !MOD_FETCH_GAME )   return false;
 
     LOG_INFO( "init (deps satisfied)" );
     return true;
@@ -156,7 +164,6 @@ my_project_reload( void* raw_state, get_api_fn get_api )
 
     if ( !MOD_FETCH_CORE )   return false;
     if ( !MOD_FETCH_RENDER ) return false;
-    if ( !MOD_FETCH_GAME )   return false;
 
     LOG_INFO( "reloaded (running=%d angle=%.2f)", g_state->running, g_state->angle );
     return true;
@@ -180,8 +187,8 @@ my_project_get_mod_desc( void )
         .version       = 1,
         .state_size    = sizeof( my_project_state_t ),
         .func_api_size = sizeof( run_project_api_t ),
-        .deps          = { "core", "game", "render" },
-        .dep_count     = 3,
+        .deps          = { "core", "render" },
+        .dep_count     = 2,
         .func_api      = ( void* )&g_my_project_api_struct,
         .init          = my_project_init,
         .exit          = my_project_exit,

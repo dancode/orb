@@ -1,103 +1,183 @@
 /*==============================================================================================
 
-    game.c : game framework module
+    game.c : game framework module -- the RUNNER.
 
-    Game framework that uses the engine + runtime.
+    The standard driver of the project contract (runtime/run_project.h).  Owns the play
+    session so hosts don't have to: the state machine (stopped/playing/paused), the
+    fixed-step accumulator, and the per-frame phase drive of the bound project DLL.
 
-    This holds the game systems/serices that user games projects are built on top of.
+    Hosts bind the runtime-loaded project once at on_ready, control the session with
+    play/stop/pause/step, and call tick( dt, view ) every frame.  See game_api.h for the
+    host-side picture.
+
+    Shutdown: hosts must stop() before quitting (close-request / quit paths).  exit()
+    deliberately never calls into the project -- module exit order is not guaranteed, so
+    the project DLL may already be gone; the project's own exit() is its backstop.
 
 ==============================================================================================*/
 
 #include "orb.h"
+#include "base/str.h"
 #define LOG_CH "game"
 #include "game/game_api.h"
 
 #include "engine/mod/mod_export.h"
 #include "engine/core/core_api.h"
-#include "runtime_modules/render/render_api.h"
-
-/* audio/physics hooks return when those services join the host chain */
 
 MOD_USE_CORE;
-MOD_USE_RENDER;
 
 /*==============================================================================================
-    Game state
+    Session state  (zeroed on first load; preserved across hot-reloads)
 ==============================================================================================*/
+
+/* Stall guard: never run more than this many sim steps in one tick -- excess accumulated
+   time is dropped (the sim slows down instead of spiraling: more steps -> longer frame ->
+   more steps).  4 steps absorbs a 4x frame spike at the configured rate. */
+#define GAME_MAX_SIM_STEPS 4
 
 typedef struct game_state_s
 {
-    i32  tick_count;
+    i32  play_state;      /* game_play_state_t                        */
+    f32  acc;             /* fixed-step accumulator, seconds          */
+    char project[ 64 ];   /* bound project module name; "" = unbound  */
 
-    bool started;
-    i32  score;
-    f32  time_in_level;
+    /* The project's stable api slot -- the mod system rewrites its contents on every
+       hot-reload, so this pointer stays live across project AND framework reloads. */
+    const run_project_api_t* proj;
 
 } game_state_t;
 
-static game_state_t* g_game_state = NULL;
+static game_state_t* g_game_state  = NULL;
+static get_api_fn    g_get_api     = NULL;   /* host lookup fn -- re-stowed every init/reload */
+static cvar_t*       g_cv_fixed_hz = NULL;
 
-/*==============================================================================================
-    Game : Public API
-==============================================================================================*/
-
-/*==============================================================================================
-    Public API
-==============================================================================================*/
-
-static void
-game_on_start( void )
+/* The fixed step is read per tick so a cvar change lands on the next frame; the cvar's
+   min bound keeps the division safe. */
+static f32
+game_fixed_dt( void )
 {
-    if ( !g_game_state )
-        return;
-    g_game_state->started       = true;
-    g_game_state->score         = 0;
-    g_game_state->time_in_level = 0.0f;
-
-    LOG_INFO( "started" );
+    return 1.0f / ( f32 )core()->cvar_get_int( g_cv_fixed_hz );
 }
 
-static void
-game_on_update( f32 dt )
+/*==============================================================================================
+    Session control
+==============================================================================================*/
+
+static bool
+game_project_bind( const char* name )
 {
-    /* would poll input and advance game state here in a real engine */
+    game_state_t* s = g_game_state;
+    if ( !s || !name || !name[ 0 ] )
+        return false;
 
-    UNUSED( dt );
-    if ( !g_game_state || !g_game_state->started )
-        return;
-
-    g_game_state->time_in_level += dt;
-
-    /* very fake gameplay: every "second" of accumulated time, score +1 */
-    if ( g_game_state->time_in_level >= 1.0f )
+    if ( s->play_state != GAME_STOPPED )
     {
-        g_game_state->score++;
-        g_game_state->time_in_level = 0.f;
-        LOG_INFO( "score = %d", g_game_state->score );
+        LOG_WARN( "project_bind( '%s' ) while a session is active -- stop() first", name );
+        return false;
     }
+
+    const run_project_api_t* proj = ( const run_project_api_t* )g_get_api( name );
+    if ( !proj )
+    {
+        LOG_WARN( "project '%s' is not loaded", name );
+        return false;
+    }
+
+    str_to_cstr( str_from_cstr( name ), s->project, sizeof( s->project ) );
+    s->proj = proj;
+
+    LOG_INFO( "project '%s' bound", s->project );
+    return true;
 }
 
 static void
-game_on_render( void )
+game_play( void )
 {
-    /* host calls begin_frame / end_frame; game_on_render issues draw calls between them */
-    // render()->draw_scene( ctx_id, dt );
-}
-
-static void
-game_on_stop( void )
-{
-    if ( !g_game_state )
+    game_state_t* s = g_game_state;
+    if ( !s || !s->proj || s->play_state != GAME_STOPPED )
         return;
 
-    g_game_state->started = false;
-    LOG_INFO( "stopped (final score = %d)", g_game_state->score );
+    s->acc        = 0.0f;
+    s->play_state = GAME_PLAYING;
+    s->proj->on_start();
+
+    LOG_INFO( "play '%s'", s->project );
+}
+
+static void
+game_stop( void )
+{
+    game_state_t* s = g_game_state;
+    if ( !s || !s->proj || s->play_state == GAME_STOPPED )
+        return;
+
+    s->proj->on_stop();
+    s->play_state = GAME_STOPPED;
+
+    LOG_INFO( "stop '%s'", s->project );
+}
+
+static void
+game_pause( bool paused )
+{
+    game_state_t* s = g_game_state;
+    if ( !s )
+        return;
+
+    if ( paused && s->play_state == GAME_PLAYING )
+        s->play_state = GAME_PAUSED;
+    else if ( !paused && s->play_state == GAME_PAUSED )
+        s->play_state = GAME_PLAYING;
+}
+
+static void
+game_step( void )
+{
+    game_state_t* s = g_game_state;
+    if ( !s || !s->proj || s->play_state != GAME_PAUSED )
+        return;
+
+    s->proj->on_sim( game_fixed_dt() );
 }
 
 static i32
-game_score( void )
+game_state( void )
 {
-    return g_game_state ? g_game_state->score : 0;
+    return g_game_state ? g_game_state->play_state : GAME_STOPPED;
+}
+
+/*==============================================================================================
+    Frame drive
+==============================================================================================*/
+
+static void
+game_tick( f32 dt, const run_view_t* view )
+{
+    game_state_t* s = g_game_state;
+    if ( !s || !s->proj || s->play_state == GAME_STOPPED )
+        return;
+
+    f32 fixed_dt = game_fixed_dt();
+
+    if ( s->play_state == GAME_PLAYING )
+    {
+        s->acc += dt;
+
+        f32 cap = fixed_dt * GAME_MAX_SIM_STEPS;
+        if ( s->acc > cap )
+            s->acc = cap;
+
+        while ( s->acc >= fixed_dt )
+        {
+            s->proj->on_sim( fixed_dt );
+            s->acc -= fixed_dt;
+        }
+    }
+
+    /* Paused keeps drawing: the sim is frozen but the scene stays live (and the alpha
+       stays frozen with the accumulator, so interpolated draws hold their pose). */
+    s->proj->on_frame( dt, view );
+    s->proj->on_draw( s->acc / fixed_dt, view );
 }
 
 /*==============================================================================================
@@ -105,62 +185,71 @@ game_score( void )
 ==============================================================================================*/
 
 const game_api_t g_game_api_struct = {
-    .on_start  = game_on_start,
-    .on_update = game_on_update,
-    .on_render = game_on_render,
-    .on_stop   = game_on_stop,
-    .score     = game_score,
+    .project_bind = game_project_bind,
+    .play         = game_play,
+    .stop         = game_stop,
+    .pause        = game_pause,
+    .step         = game_step,
+    .state        = game_state,
+    .tick         = game_tick,
 };
 
 /*==============================================================================================
     Lifecycle
 ==============================================================================================*/
 
+/* Shared by init and reload: stow the lookup fn, register/refresh the cvar, and re-fetch
+   the bound project's slot (same address either way -- the slot is stable). */
+static bool
+game_wire( game_state_t* s, get_api_fn get_api )
+{
+    g_game_state = s;
+    g_get_api    = get_api;
+
+    if ( !MOD_FETCH_CORE )
+        return false;
+
+    g_cv_fixed_hz = core()->cvar_register_i(
+        "game_fixed_hz", "Fixed simulation step rate (Hz)", 60, 10, 480, CVAR_NONE );
+
+    if ( s->project[ 0 ] )
+        s->proj = ( const run_project_api_t* )g_get_api( s->project );
+
+    return true;
+}
+
 static bool
 game_init( void* raw_state, get_api_fn get_api )
 {
-    UNUSED( get_api );
-    g_game_state = ( game_state_t* )raw_state;
+    if ( !game_wire( ( game_state_t* )raw_state, get_api ) )
+        return false;
 
-    if ( !MOD_FETCH_CORE )    return false;
-    if ( !MOD_FETCH_RENDER )  return false;
-
-    LOG_INFO( "init (deps satisfied)" );
+    LOG_INFO( "init (runner ready)" );
     return true;
 }
 
 static bool
 game_reload( void* raw_state, get_api_fn get_api )
 {
-    UNUSED( get_api );
-    g_game_state = ( game_state_t* )raw_state;
+    if ( !game_wire( ( game_state_t* )raw_state, get_api ) )
+        return false;
 
-    if ( !MOD_FETCH_CORE )    return false;
-    if ( !MOD_FETCH_RENDER )  return false;
-
-    LOG_INFO( "reloaded (score preserved = %d)", g_game_state->score );
+    LOG_INFO( "reloaded (state=%d project='%s')", g_game_state->play_state, g_game_state->project );
     return true;
 }
 
 static void
 game_exit( void* raw_state )
 {
-    ( void )raw_state;
+    game_state_t* s = ( game_state_t* )raw_state;
+    if ( s && s->play_state != GAME_STOPPED )
+        LOG_WARN( "exit with session active -- host should stop() first; project exit() is the backstop" );
+
     LOG_INFO( "exit" );
 }
 
-// static void
-// game_tick( void* raw_state, float dt )
-// {
-//     UNUSED( raw_state );
-//     /* Per-frame work the host doesn't have to know about — we just plumb through. */
-//     game_on_update( dt );
-//     game_on_render();
-// 
-// }
-
 /*==============================================================================================
-Game module descriptor
+    Game module descriptor
 ==============================================================================================*/
 
 mod_desc_t*
@@ -170,8 +259,8 @@ game_get_mod_desc( void )
         .version       = 1,
         .state_size    = sizeof( game_state_t ),
         .func_api_size = sizeof( game_api_t ),
-        .deps          = { "core", "render" },
-        .dep_count     = 2,
+        .deps          = { "core" },
+        .dep_count     = 1,
         .func_api      = &g_game_api_struct,
         .init          = game_init,
         .exit          = game_exit,
