@@ -35,8 +35,8 @@
 #include "runtime_service/gui/gui_api.h"
 #include "runtime_modules/render/render_api.h"
 
-#include "runtime/runtime_api.h"
-#include "runtime/runtime_host.h"
+#include "runtime/run_api.h"
+#include "runtime/run_host.h"
 
 MOD_USE_APP;
 MOD_USE_RUN;

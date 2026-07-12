@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime/runtime.c — Unity build entry point for the runtime (host) module.
+    runtime/run.c -- Unity build entry point for the runtime (host) module.
 
 ==============================================================================================*/
 
@@ -53,14 +53,14 @@
     Our API
 ==============================================================================================*/
 
-#include "runtime/runtime_api.h"
+#include "runtime/run_api.h"
 
 /*==============================================================================================
     Runtime Headers
 ==============================================================================================*/
 
-#include "runtime/runtime.h"            // module API (hosts and clients).
-#include "runtime/runtime_host.h"       // hosts API (entry point, boot sequence, main loop, etc).
+#include "runtime/run.h"                // module API (hosts and clients).
+#include "runtime/run_host.h"           // hosts API (entry point, boot sequence, main loop, etc).
 
 /*==============================================================================================
     Unity Build (The Host Entry Point)

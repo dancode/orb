@@ -16,7 +16,7 @@
 #include "runtime_service/rhi/rhi_api.h"
 #include "runtime_service/draw/draw_host.h"
 #include "runtime_modules/render/render_api.h"
-#include "runtime/runtime_host.h"
+#include "runtime/run_host.h"
 
 /*==============================================================================================
     Game state -- one square.

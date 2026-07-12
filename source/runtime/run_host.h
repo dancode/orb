@@ -1,8 +1,8 @@
-#ifndef RUNTIME_HOST_H
-#define RUNTIME_HOST_H
+#ifndef RUN_HOST_H
+#define RUN_HOST_H
 /*==============================================================================================
 
-    runtime/host.h — For host executables only.
+    runtime/run_host.h -- For host executables only.
 
     Every exe converges on one call:
 
@@ -64,7 +64,7 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "runtime/runtime.h"            /* run_clock_t / run_frame_stats_t          */
+#include "runtime/run.h"                /* run_clock_t / run_frame_stats_t          */
 #include "engine/app/app.h"             /* app_event_t (types only)                 */
 #include "runtime_service/gui/gui.h"    /* gui font / caps types (types only — no
                                            link dependency; gui remains optional)   */
@@ -197,4 +197,4 @@ void run_clock_update( u64 now_us );
 void run_clock_stats_submit( const run_frame_stats_t* stats );
 
 /*============================================================================================*/
-#endif /* RUNTIME_HOST_H */
+#endif /* RUN_HOST_H */

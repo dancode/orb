@@ -139,7 +139,7 @@ MOD_USE_GUI;
 MOD_USE_INPUT;
 
 /* Host-side perf HUD -- defined in host_perf.c, included after this unit in the runtime unity
-   build (runtime.c).  host_perf_tick polls the toggle + folds this frame's stats (every frame);
+   build (run.c).  host_perf_tick polls the toggle + folds this frame's stats (every frame);
    host_perf_active reports whether the overlay is on; host_draw_perf_content paints it (through
    draw's built-in bitmap font) inside an already-open draw pass at a render composite point. */
 void host_perf_tick( void );
@@ -380,7 +380,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     /* ---- cache engine module APIs ------------------------------------- */
     /*
        This TU opts into the pointer gateway for these services in every build mode
-       (MOD_HOST_DYNAMIC_SERVICES in runtime.c), so each fetch returns NULL when the module
+       (MOD_HOST_DYNAMIC_SERVICES in run.c), so each fetch returns NULL when the module
        is absent from k_modules[] -- headless hosts that don't load app, draw, or gui get
        NULL here, which is fine; the guarded paths below check it.  app's fetch is what
        drives the windowed inference.

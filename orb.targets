@@ -114,7 +114,7 @@ target run
     type        static
     root        source/runtime
     folder      03_RUNTIME
-    unit        runtime.c
+    unit        run.c
     dep         mod sys ref core app job
 
 # ==============================================================================

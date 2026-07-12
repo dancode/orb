@@ -1,12 +1,12 @@
-#ifndef RUNTIME_API_H
-#define RUNTIME_API_H
+#ifndef RUN_API_H
+#define RUN_API_H
 /*==============================================================================================
 
-    runtime/runtime_api.h — runtime module API struct and gateway macro.
+    runtime/run_api.h -- runtime module API struct and gateway macro.
 
 ==============================================================================================*/
 
-#include "runtime/runtime.h"
+#include "runtime/run.h"
 #include "engine/mod/mod_import.h"
 
 // clang-format off
@@ -37,4 +37,4 @@ typedef struct run_api_s
 
 // clang-format on
 /*============================================================================================*/
-#endif    // RUNTIME_API_H
+#endif    // RUN_API_H

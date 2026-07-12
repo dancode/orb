@@ -37,8 +37,8 @@
 #include "game/game_api.h"
 #include "runtime/run_project.h"
 
-#include "runtime/runtime_api.h"
-#include "runtime/runtime_host.h"
+#include "runtime/run_api.h"
+#include "runtime/run_host.h"
 
 #include "host/common/host_common.h"
 

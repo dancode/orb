@@ -1,8 +1,8 @@
-#ifndef RUNTIME_H
-#define RUNTIME_H
+#ifndef RUN_H
+#define RUN_H
 /*==============================================================================================
 
-    runtime/runtime.h — Runtime module types.
+    runtime/run.h -- Runtime module types.
 
 ==============================================================================================*/
 
@@ -43,4 +43,4 @@ typedef struct run_frame_stats_s
 } run_frame_stats_t;
 
 /*============================================================================================*/
-#endif    // RUNTIME_H
+#endif    // RUN_H
