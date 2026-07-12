@@ -203,7 +203,11 @@
       "Bash(sort -k6,7)",
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\" && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 80)",
       "PowerShell(cmd /c '\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\" && cd /d F:\\\\orb && bin\\\\build_tool.exe -config Debug -target sb_gui' 2>&1 | Select-Object -Last 60)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "PowerShell(& \"${env:ProgramFiles\\(x86\\)}\\\\Microsoft Visual Studio\\\\Installer\\\\vswhere.exe\" -all -prerelease -format json | ConvertFrom-Json | Select-Object displayName, installationVersion, installationPath | Format-List)",
+      "PowerShell(ls \"$env:APPDATA\\\\Microsoft\\\\VisualStudio\" | Select-Object Name, LastWriteTime)",
+      "PowerShell(ls \"$env:APPDATA\\\\Microsoft\\\\VisualStudio\\\\18.0_c23a6242\" | Select-Object Name, LastWriteTime, Length)",
+      "PowerShell(bin\\\\build_tool.exe -gen)"
     ]
   }
 }
