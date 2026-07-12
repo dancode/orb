@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    sandbox/runtime/run_audio/sb_run_audio.c -- End-to-end proof of the audio stack.
+    sandbox/runtime/sb_audio/sb_audio.c -- End-to-end proof of the audio stack.
 
     The two tiers under test:
 
@@ -138,7 +138,7 @@ main( int argc, char** argv )
 
     MOD_HOST_FETCH_API( audio );
 
-    printf( "\n=== sb_run_audio: ahi service + audio module proof ===\n\n" );
+    printf( "\n=== sb_audio: ahi service + audio module proof ===\n\n" );
 
     generate_sounds();
 
@@ -158,7 +158,7 @@ main( int argc, char** argv )
     {
         printf( "\nno output device -- skipping playback checks\n" );
         mod_system_exit();
-        printf( "\nsb_run_audio: %d passed, %d failed\n", s_pass, s_fail );
+        printf( "\nsb_audio: %d passed, %d failed\n", s_pass, s_fail );
         return s_fail;
     }
 
@@ -214,7 +214,7 @@ main( int argc, char** argv )
 
     mod_system_exit();
 
-    printf( "\nsb_run_audio: %d passed, %d failed\n", s_pass, s_fail );
+    printf( "\nsb_audio: %d passed, %d failed\n", s_pass, s_fail );
     return s_fail;
 }
 

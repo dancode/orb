@@ -223,7 +223,7 @@ Phase 2 -- runtime_service/asset registry (synchronous, no loaders yet)   [DONE 
    - Vtable: type_register / acquire / release / reload / get / state / valid / refcount /
      count. Synchronous load (acquire: fs_read -> type.load -> LOADED/FAILED); LOADING + id
      indirection reserved for a later async loader. reload() = unload+load in place.
-   - Proof (sb_run_asset): boots sys+ref+core+asset via mod_static; blob type over a
+   - Proof (sb_asset_test): boots sys+ref+core+asset via mod_static; blob type over a
      scratch file; acquire x2 = same id refcount 2 loads 1 (dedup); LOADED + byte match;
      backslash/case alt-form folds to same record (no reload); release unwinds refcount then
      unloads at 0; stale handle rejected by generation; missing file = FAILED but releasable.
@@ -241,9 +241,9 @@ Phase 3 -- Image loader + on-screen proof   [DONE 2026-07-06]
      (cooked .tex slots in later behind an extension/header check). draw NOT a service dep -- the
      DRAWING code (sandbox) owns draw()->image; the loader only needs rhi.
    - BUILD NOTE (direct-dep linking again): every asset consumer now also links rhi (+ rhi's dep
-     app). Headless sb_run_asset gained `dep rhi app` and mod_static(app/rhi) -- rhi_mod_init only
+     app). Headless sb_asset_test gained `dep rhi app` and mod_static(app/rhi) -- rhi_mod_init only
      probes vulkan-1.dll (no device until rhi()->init()), so the blob test stays headless.
-   - Proof: new windowed sandbox sb_asset_image (source/sandbox/asset; dep sys ref mod core app rhi
+   - Proof: new windowed sandbox sb_asset_image (source/sandbox/runtime/sb_asset_image; dep sys ref mod core app rhi
      draw asset; in orb_sandbox_vulkan). Boots the stack, mounts CWD, acquire("gui_issue.png") ->
      get() -> draw()->image centered+aspect-fit each frame via draw()->begin_pass/end_pass. Optional
      argv[1]=frame count for a clean headless smoke exit. Verified: RTX 3080 device up, PNG decoded
@@ -263,7 +263,7 @@ Phase 4 -- Hot-reload   [DONE 2026-07-06]
      resolved real path; only size/mtime are volatile) and reports a miss if the file vanished.
      The OS is the source of truth for DIR mounts, per fs.h -- ZIP entries (Phase 5) will keep
      their eager catalog values.
-   - Proof A (headless, deterministic -- sb_run_asset asset_refresh_test): acquire a blob;
+   - Proof A (headless, deterministic -- sb_asset_test asset_refresh_test): acquire a blob;
      refresh() with an unchanged source = 0 reloads / no new load; rewrite the file (+40ms sleep
      past Windows' ~15ms file-time granularity) then refresh() = 1 reload, loads 1->2, SAME id,
      refcount preserved, bytes now v2. Proof B (on-screen -- sb_asset_image): loop calls

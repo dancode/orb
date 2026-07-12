@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    sandbox/runtime/run_input/sb_run_input.c -- End-to-end proof of the input action service (Phase 3).
+    sandbox/runtime/sb_input/sb_input.c -- End-to-end proof of the input action service (Phase 3).
 
     The full chain under test, in one window:
 
@@ -109,7 +109,7 @@ main( int argc, char** argv )
         return 1;
     }
 
-    win_id_t win = app()->window_open( "sb_run_input", 0, 0, 800, 500, APP_WIN_DEFAULT );
+    win_id_t win = app()->window_open( "sb_input", 0, 0, 800, 500, APP_WIN_DEFAULT );
     if ( win == APP_WIN_INVALID )
     {
         fprintf( stderr, "window_open failed\n" );
@@ -150,7 +150,7 @@ main( int argc, char** argv )
 
     input()->context_push( CTX_GAME );
 
-    printf( "\n=== sb_run_input: bind -> cmd -> action proof ===\n" );
+    printf( "\n=== sb_input: bind -> cmd -> action proof ===\n" );
     printf( "W/S/A/D+SPACE move, UP also = forward, MOUSE1 attack, PAD_A jump,\n" );
     printf( "F plain bind, TAB toggle UI context (force-release), ESC quit\n" );
     printf( "axes: WASD+left stick -> [move], mouse+right stick -> [look], C writeconfig\n\n" );
@@ -271,7 +271,7 @@ main( int argc, char** argv )
 
     app()->window_close( win );
     mod_system_exit();
-    printf( "sb_run_input done.\n" );
+    printf( "sb_input done.\n" );
     return 0;
 }
 

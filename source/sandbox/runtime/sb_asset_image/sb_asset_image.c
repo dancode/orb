@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    sandbox/asset/sb_asset_image.c -- asset service image loader proof (Phase 3).
+    sandbox/runtime/sb_asset_image/sb_asset_image.c -- asset service image loader proof (Phase 3).
 
     Boots sys + ref + app + core + rhi + draw + asset through the module system, opens a window
     and an RHI context, then:

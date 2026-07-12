@@ -433,28 +433,46 @@ target sb_engine_net
 # 09_SANDBOX -- RUNTIME (runtime service tests)
 # ==============================================================================
 
-target sb_run_asset							# asset service registry + hot reload
+target sb_asset_test						# asset service registry + hot reload
 
     type        exe
-    root        source/sandbox/runtime/run_asset
+    root        source/sandbox/runtime/sb_asset_test
     folder      09_SANDBOX/RUNTIME
-    unit        sb_run_asset.c
+    unit        sb_asset_test.c
     dep         asset core sys ref mod rhi app
 
-target sb_run_input							# input action service: binds -> +/- cmds -> action state
+target sb_asset_image						# asset service Phase 3: PNG -> bindless texture -> on-screen quad
 
     type        exe
-    root        source/sandbox/runtime/run_input
+    root        source/sandbox/runtime/sb_asset_image
     folder      09_SANDBOX/RUNTIME
-    unit        sb_run_input.c
+    unit        sb_asset_image.c
+    dep         sys ref mod core app
+    dep         rhi draw asset
+
+target sb_asset_shader						# shader system Phase 5: asset_tool .hlsl cook -> .oshd asset -> hash-gated hot reload
+
+    type        exe
+    root        source/sandbox/runtime/sb_asset_shader
+    folder      09_SANDBOX/RUNTIME
+    unit        sb_asset_shader.c
+    dep         sys ref mod core app
+    dep         rhi asset
+
+target sb_input								# input action service: binds -> +/- cmds -> action state
+
+    type        exe
+    root        source/sandbox/runtime/sb_input
+    folder      09_SANDBOX/RUNTIME
+    unit        sb_input.c
     dep         input core sys ref mod app
 
-target sb_run_audio							# audio stack: ahi service + audio module
+target sb_audio								# audio stack: ahi service + audio module
 
     type        exe
-    root        source/sandbox/runtime/run_audio
+    root        source/sandbox/runtime/sb_audio
     folder      09_SANDBOX/RUNTIME
-    unit        sb_run_audio.c
+    unit        sb_audio.c
     dep         ahi core sys ref mod
     mono_dep    audio
 
@@ -531,24 +549,6 @@ target sb_vulkan_stress					# multi-context rhi sync stress test
     unit        sb_vulkan_stress.c
     dep         sys ref mod core job app
 	dep 		rhi
-
-target sb_asset_image					# asset service Phase 3: PNG -> bindless texture -> on-screen quad
-
-    type        exe
-    root        source/sandbox/asset
-    folder      09_SANDBOX/VULKAN
-    unit        sb_asset_image.c
-    dep         sys ref mod core app
-		dep 		rhi draw asset
-
-target sb_asset_shader					# shader system Phase 5: asset_tool .hlsl cook -> .oshd asset -> hash-gated hot reload
-
-    type        exe
-    root        source/sandbox/asset
-    folder      09_SANDBOX/VULKAN
-    unit        sb_asset_shader.c
-    dep         sys ref mod core app
-    dep         rhi asset
 
 target sb_gui
 
@@ -918,9 +918,9 @@ solution orb_sandbox_engine				# developing engine libraries
 
 	# 			--- SANDBOX : RUNTIME SERVICES --
 
-	add 		sb_run_asset
-	add 		sb_run_input
-	add 		sb_run_audio
+	add 		sb_asset_test
+	add 		sb_input
+	add 		sb_audio
 
 	# TOOD: engine test
 
@@ -971,9 +971,9 @@ solution orb_all
 	add 		sb_engine_job
 	add 		sb_engine_app
 
-	add 		sb_run_asset
-	add 		sb_run_input
-	add 		sb_run_audio
+	add 		sb_asset_test
+	add 		sb_input
+	add 		sb_audio
 
 
 	# 			reflection testing

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    sandbox/asset/sb_asset_shader.c -- shader asset pipeline proof (shader system Phase 5).
+    sandbox/runtime/sb_asset_shader/sb_asset_shader.c -- shader asset pipeline proof (shader system Phase 5).
 
     The whole cook -> acquire -> render -> hot-reload chain in one run:
 

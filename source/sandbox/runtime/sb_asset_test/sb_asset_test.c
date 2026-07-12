@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    sandbox/runtime/run_asset/sb_run_asset.c -- asset service registry proof (Phase 2).
+    sandbox/runtime/sb_asset_test/sb_asset_test.c -- asset service registry proof (Phase 2).
 
     Boots sys + ref + core + asset through the module system, mounts a scratch directory on
     core/fs, registers a trivial "blob" asset type, then exercises the registry:
