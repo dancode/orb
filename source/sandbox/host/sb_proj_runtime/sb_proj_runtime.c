@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    proj_runtime.c  (compiled as proj_runtime.dll)
+    sb_proj_runtime.c  (compiled as sb_proj_runtime.dll)
 
     The FRAMEWORK-BYPASS project -- proof that the project contract lives at the runtime
     level with no game-framework tether.  This is "not a game": a visualizer-shaped
@@ -16,14 +16,14 @@
 
 #include "orb.h"
 #include "base/math.h"
-#define LOG_CH "proj_runtime"
+#define LOG_CH "sb_proj_runtime"
 #include "engine/mod/mod_export.h"
 #include "engine/mod/mod_import.h"
 
 #include "engine/core/core_api.h"
 #include "runtime_modules/render/render_api.h"
 
-#include "proj_runtime.h"
+#include "sb_proj_runtime.h"
 
 MOD_USE_CORE;
 MOD_USE_RENDER;
@@ -35,23 +35,23 @@ MOD_USE_RENDER;
 #define RAW_SQUARE_SIZE 60.0f
 #define RAW_SPEED       0.5f    /* surface widths per second */
 
-typedef struct proj_runtime_state_s
+typedef struct sb_proj_runtime_state_s
 {
     bool running;    /* between on_start and on_stop */
     f32  pos;        /* normalized 0..1 across the surface -- survives hot-reload */
     f32  pos_prev;   /* last sim tick's pos -- on_draw lerps prev->cur            */
     f32  dir;        /* +1 / -1 ping-pong direction                               */
 
-} proj_runtime_state_t;
+} sb_proj_runtime_state_t;
 
-static proj_runtime_state_t* g_state = NULL;
+static sb_proj_runtime_state_t* g_state = NULL;
 
 /*==============================================================================================
     Project contract  (runtime/run_project.h)
 ==============================================================================================*/
 
 static void
-proj_runtime_on_start( void )
+sb_proj_runtime_on_start( void )
 {
     if ( !g_state )
         return;
@@ -65,7 +65,7 @@ proj_runtime_on_start( void )
 }
 
 static void
-proj_runtime_on_sim( f32 fixed_dt )
+sb_proj_runtime_on_sim( f32 fixed_dt )
 {
     if ( !g_state || !g_state->running )
         return;
@@ -78,14 +78,14 @@ proj_runtime_on_sim( f32 fixed_dt )
 }
 
 static void
-proj_runtime_on_frame( f32 dt, const run_view_t* view )
+sb_proj_runtime_on_frame( f32 dt, const run_view_t* view )
 {
     UNUSED( dt );
     UNUSED( view );
 }
 
 static void
-proj_runtime_on_draw( f32 alpha, const run_view_t* view )
+sb_proj_runtime_on_draw( f32 alpha, const run_view_t* view )
 {
     if ( !g_state || !g_state->running )
         return;
@@ -105,7 +105,7 @@ proj_runtime_on_draw( f32 alpha, const run_view_t* view )
 }
 
 static void
-proj_runtime_on_stop( void )
+sb_proj_runtime_on_stop( void )
 {
     if ( !g_state )
         return;
@@ -114,12 +114,12 @@ proj_runtime_on_stop( void )
     LOG_INFO( "on_stop" );
 }
 
-const run_project_api_t g_proj_runtime_api_struct = {
-    .on_start = proj_runtime_on_start,
-    .on_sim   = proj_runtime_on_sim,
-    .on_frame = proj_runtime_on_frame,
-    .on_draw  = proj_runtime_on_draw,
-    .on_stop  = proj_runtime_on_stop,
+const run_project_api_t g_sb_proj_runtime_api_struct = {
+    .on_start = sb_proj_runtime_on_start,
+    .on_sim   = sb_proj_runtime_on_sim,
+    .on_frame = sb_proj_runtime_on_frame,
+    .on_draw  = sb_proj_runtime_on_draw,
+    .on_stop  = sb_proj_runtime_on_stop,
 };
 
 /*==============================================================================================
@@ -127,10 +127,10 @@ const run_project_api_t g_proj_runtime_api_struct = {
 ==============================================================================================*/
 
 static bool
-proj_runtime_init( void* raw_state, get_api_fn get_api )
+sb_proj_runtime_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
-    g_state = ( proj_runtime_state_t* )raw_state;
+    g_state = ( sb_proj_runtime_state_t* )raw_state;
 
     if ( !MOD_FETCH_CORE )   return false;
     if ( !MOD_FETCH_RENDER ) return false;
@@ -140,10 +140,10 @@ proj_runtime_init( void* raw_state, get_api_fn get_api )
 }
 
 static bool
-proj_runtime_reload( void* raw_state, get_api_fn get_api )
+sb_proj_runtime_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( get_api );
-    g_state = ( proj_runtime_state_t* )raw_state;
+    g_state = ( sb_proj_runtime_state_t* )raw_state;
 
     if ( !MOD_FETCH_CORE )   return false;
     if ( !MOD_FETCH_RENDER ) return false;
@@ -153,9 +153,9 @@ proj_runtime_reload( void* raw_state, get_api_fn get_api )
 }
 
 static void
-proj_runtime_exit( void* raw_state )
+sb_proj_runtime_exit( void* raw_state )
 {
-    proj_runtime_state_t* s = raw_state;
+    sb_proj_runtime_state_t* s = raw_state;
     LOG_INFO( "exit (running=%d)", s ? s->running : 0 );
 }
 
@@ -164,22 +164,22 @@ proj_runtime_exit( void* raw_state )
 ==============================================================================================*/
 
 mod_desc_t*
-proj_runtime_get_mod_desc( void )
+sb_proj_runtime_get_mod_desc( void )
 {
     static mod_desc_t desc = {
         .version       = 1,
-        .state_size    = sizeof( proj_runtime_state_t ),
+        .state_size    = sizeof( sb_proj_runtime_state_t ),
         .func_api_size = sizeof( run_project_api_t ),
         .deps          = { "core", "render" },
         .dep_count     = 2,
-        .func_api      = ( void* )&g_proj_runtime_api_struct,
-        .init          = proj_runtime_init,
-        .exit          = proj_runtime_exit,
-        .reload        = proj_runtime_reload,
+        .func_api      = ( void* )&g_sb_proj_runtime_api_struct,
+        .init          = sb_proj_runtime_init,
+        .exit          = sb_proj_runtime_exit,
+        .reload        = sb_proj_runtime_reload,
     };
     return &desc;
 }
 
-MOD_DEFINE_EXPORTS( proj_runtime );
+MOD_DEFINE_EXPORTS( sb_proj_runtime );
 
 /*============================================================================================*/

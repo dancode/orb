@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    host_editor.c -- EDITOR / DEV SANDBOX shape.
+    sb_host_editor.c -- EDITOR / DEV SANDBOX shape.
 
     Windowed, hot-reloadable, console-assisted -- and the reference for driving gui() as an
     OPTIONAL SERVICE from the runtime host: the host owns the window (borderless, with the

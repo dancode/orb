@@ -1,9 +1,9 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
-    example_reflect.c -- Unity build entry for the example_reflect module.
+    sb_ref_dll.c -- Unity build entry for the sb_ref_dll module.
 
     The module ships no reflection plumbing of its own. Generated code
-    (example_reflect.generated.c) defines example_reflect_ref_register(); the function
+    (sb_ref_dll.generated.c) defines sb_ref_dll_ref_register(); the function
     pointer is passed to the mod system via the descriptor's ref_register slot, and the
     host's load callback invokes it. Same path for static and dynamic builds.
 
@@ -14,22 +14,22 @@
 
 #include "engine/mod/mod_export.h"
 #include "engine/ref/ref_api.h"
-#include "sandbox/reflect/example_reflect/example_reflect_api.h"
-#include "example_reflect.generated.h"
+#include "sandbox/reflect/sb_ref_dll/sb_ref_dll_api.h"
+#include "sb_ref_dll.generated.h"
 
 /*==============================================================================================
     Unity build
 ==============================================================================================*/
 
 /* Implementation files go here:
-   #include "runtime_modules/example_reflect/example_reflect_function.c" */
+   #include "runtime_modules/sb_ref_dll/sb_ref_dll_function.c" */
 
 /*==============================================================================================
     Public API wiring  (must be last -- all implementations must be in scope)
 ==============================================================================================*/
 
-#ifndef EXAMPLE_REFLECT_API_C_PRELUDE
-#include "sandbox/reflect/example_reflect/example_reflect_api.c"
+#ifndef SB_REF_DLL_API_C_PRELUDE
+#include "sandbox/reflect/sb_ref_dll/sb_ref_dll_api.c"
 #endif
 
 /*============================================================================================*/

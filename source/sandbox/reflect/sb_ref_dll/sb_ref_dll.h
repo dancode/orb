@@ -1,8 +1,8 @@
-﻿#ifndef EXAMPLE_REFLECT_H
-#define EXAMPLE_REFLECT_H
+#ifndef SB_REF_DLL_H
+#define SB_REF_DLL_H
 /*==============================================================================================
 
-    example_reflect.h - Public API and reflected types for the example_reflect module.
+    sb_ref_dll.h - Public API and reflected types for the sb_ref_dll module.
 
     Exercises the full feature set of the ref_ reflection system:
         - basic struct registration
@@ -181,4 +181,4 @@ typedef struct ex_npc_s
 } ex_npc_t;
 
 /*============================================================================================*/
-#endif    // EXAMPLE_REFLECT_H
+#endif    // SB_REF_DLL_H

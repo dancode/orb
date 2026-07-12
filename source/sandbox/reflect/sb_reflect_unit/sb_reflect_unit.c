@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    sandbox/reflect/sb_reflect_unit.c - Testbed for the engine reflection system.
+    sandbox/reflect/sb_reflect_unit/sb_reflect_unit.c - Testbed for the engine reflection system.
 
     Runs reflection_test() which exercises registration, lookup, field iteration,
     hot-reload simulation, attributes, and diagnostics.

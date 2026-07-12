@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    host_game.c -- SHIPPED GAME shape.
+    sb_host_game.c -- SHIPPED GAME shape.
 
     Windowed, no hot-reload, no console. The only quit path is the OS window close
     button, routed through app()->pump_events() returning false. No developer

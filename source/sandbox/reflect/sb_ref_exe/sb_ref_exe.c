@@ -1,11 +1,11 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
-    sandbox/sb_runtime_reflect.c - How to use the ref_ reflection system.
+    sandbox/reflect/sb_ref_exe/sb_ref_exe.c - How to use the ref_ reflection system.
 
     This file is a guided tour. Read it top to bottom. Each section shows one concept.
 
-    The reflection system (ref_) lets you inspect C structs and enums at runtime — their
-    field names, types, offsets, and attributes — without writing any parsing code.
+    The reflection system (ref_) lets you inspect C structs and enums at runtime -- their
+    field names, types, offsets, and attributes -- without writing any parsing code.
     You annotate your types with REF_STRUCT / REF_PROP / REF_ENUM, run the reflect_tool
     tool, and it generates the registration code automatically.
 
@@ -39,14 +39,14 @@
 #include "engine/core/core_api.h"
 #include "engine/ref/ref_host.h"
 
-#include "sandbox/reflect/example_reflect/example_reflect_api.h"
+#include "sandbox/reflect/sb_ref_dll/sb_ref_dll_api.h"
 
-MOD_USE_EXAMPLE_REFLECT;
+MOD_USE_SB_REF_DLL;
 
 /*==============================================================================================
     Callbacks used by the iteration and walker examples below.
 
-    ref_ uses callbacks for iteration — you give it a function, it calls it once per item.
+    ref_ uses callbacks for iteration -- you give it a function, it calls it once per item.
     Each callback receives the item and a void* user pointer for your own context.
 ==============================================================================================*/
 
@@ -228,11 +228,11 @@ ref_visit( void** slot, uint16_t pointee_type_id, const ref_field_t* field, void
 static void
 exercise_reflection( void )
 {
-    const example_reflect_api_t* mod = example_reflect();
+    const sb_ref_dll_api_t* mod = sb_ref_dll();
 
     /* STEP 1: Look up types by name.
        Every type registered from a reflected module gets a stable numeric ID (type_id).
-       ref_find_type_by_name does a hash lookup — O(1), no string scanning at runtime. */
+       ref_find_type_by_name does a hash lookup -- O(1), no string scanning at runtime. */
 
     u16 entity_tid = ref_find_type_by_name( "ex_entity_t" );
     u16 facing_tid = ref_find_type_by_name( "ex_facing_t" );
@@ -240,7 +240,7 @@ exercise_reflection( void )
 
     /* STEP 2: List all types registered by a module.
        Each module owns a "frame" in the registry. When the module unloads, its frame
-       is popped and all its types disappear — no cleanup code needed. */
+       is popped and all its types disappear -- no cleanup code needed. */
     
     /* This is the user data we send to our for_each() callback to filter for our frame */
     list_ctx_t lc = { .frame_id = ref_get_type( entity_tid )->frame_id };
@@ -305,7 +305,7 @@ exercise_reflection( void )
     }
 
     /* STEP 7: Full value walker (ref_walk).
-       Visits every field of a live instance — primitives, enums, structs, and pointers.
+       Visits every field of a live instance -- primitives, enums, structs, and pointers.
        Recurses into nested structs automatically. Use this for inspection UIs, diffing,
        copying, or any operation that needs to see every value in a struct tree.
        The visitor receives the address of each field so you can read or write values. */
@@ -319,7 +319,7 @@ exercise_reflection( void )
     /* STEP 8: Serialization.
        ref_write saves a struct to a flat byte buffer. It zeroes pointer fields and any
        field marked @transient so saved data is self-contained.
-       ref_read restores it, but only if the schema hash matches — meaning the struct layout
+       ref_read restores it, but only if the schema hash matches -- meaning the struct layout
        hasn't changed since it was saved. This catches hot-reload ABI breaks automatically. */
     if ( entity_tid != REF_TYPE_INVALID )
     {
@@ -331,7 +331,7 @@ exercise_reflection( void )
         printf( "  wrote %zu bytes\n", n );
 
         /* ref_peek_type_hash reads the type identity from the saved header without
-           fully deserializing — handy for routing saved blobs to the right handler. */
+           fully deserializing -- handy for routing saved blobs to the right handler. */
         uint32_t tag = ref_peek_type_hash( buf, n );
         printf( "  peek type_hash = 0x%08x  (expected 0x%08x)\n", tag, ref_hash_str( "ex_entity_t" ) );
 
@@ -351,7 +351,7 @@ exercise_reflection( void )
        REF_UNION() types are reflected identically to structs: each variant is a named field
        with its own offset and size.  For a plain union all offsets are 0 (they all alias
        the same bytes).  The discriminant lives in the enclosing struct (ex_event_t.kind)
-       and is a separate reflected field — the reflection system records the shape, not the
+       and is a separate reflected field -- the reflection system records the shape, not the
        semantics of which variant is live.
        Tools (inspectors, serializers) use the discriminant field to decide which member to
        show or serialize; ref_walk visits every member when walking blindly. */
@@ -372,7 +372,7 @@ exercise_reflection( void )
 
     if ( event_tid != REF_TYPE_INVALID )
     {
-        /* Construct a damage event locally — no module API needed.
+        /* Construct a damage event locally -- no module API needed.
            ref_walk visits all fields including the nested union variants. */
         ex_event_t ev               = { 0 };
         ev.id                       = 42;
@@ -435,7 +435,7 @@ exercise_reflection( void )
                     sig ? ref_cstr( sig->name_id ) : "?", ( unsigned )cb_field->aux );
         }
 
-        /* Walk the live NPC instance — value_visit prints the function pointer slot as "(set)". */
+        /* Walk the live NPC instance -- value_visit prints the function pointer slot as "(set)". */
         const ex_npc_t* demo_npc = mod->demo_npc();
         if ( demo_npc )
         {
@@ -455,7 +455,7 @@ main( int argc, char** argv )
     UNUSED( argc );
     UNUSED( argv );
 
-    printf( "=== sb_runtime_reflect ===\n" );
+    printf( "=== sb_ref_exe ===\n" );
 
     mod_system_init();
 
@@ -469,8 +469,8 @@ main( int argc, char** argv )
     mod_static( sys );
     mod_static( core );
 
-    /* Load example_reflect — the load callback above fires and registers its types. */
-    if ( !mod_load( example_reflect ) )
+    /* Load sb_ref_dll -- the load callback above fires and registers its types. */
+    if ( !mod_load( sb_ref_dll ) )
         return 1;
 
     /* Single dep-ordered init pass for everything. */
@@ -480,8 +480,8 @@ main( int argc, char** argv )
         return 1;
     }
 
-    /* Cache the example_reflect API pointer so we can call into the module. */
-    MOD_HOST_FETCH_API( example_reflect );
+    /* Cache the sb_ref_dll API pointer so we can call into the module. */
+    MOD_HOST_FETCH_API( sb_ref_dll );
 
     exercise_reflection();
 

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    host_server.c -- DEDICATED SERVER shape.
+    sb_host_server.c -- DEDICATED SERVER shape.
 
     Headless long-running host. Hot-reload lets modules be swapped without restart.
     Console input provides the operator quit path: Q exits cleanly.

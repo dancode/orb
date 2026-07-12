@@ -1,6 +1,6 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
-    example_gen.c - Demo generated module scaffolding
+    sb_gen_dll.c - Demo generated module scaffolding
 
 
 ==============================================================================================*/
@@ -8,30 +8,30 @@
 
 #include "orb.h"
 #include "engine/mod/mod_export.h"
-#include "sandbox/reflect/example_gen/example_gen.h"
-#include "example_gen.generated.h"
+#include "sandbox/reflect/sb_gen_dll/sb_gen_dll.h"
+#include "sb_gen_dll.generated.h"
 
 #include "engine/core/core_api.h"
 
-REF_MODULE( example_gen )
+REF_MODULE( sb_gen_dll )
 MOD_USE_CORE;
 
 /*==============================================================================================
     API implementations
 ==============================================================================================*/
 
-typedef struct example_gen_state_s
+typedef struct sb_gen_dll_state_s
 {
     int the_state_variable;
 
-} example_gen_state_t;
+} sb_gen_dll_state_t;
 
 bool
-example_gen_mod_init( void* state, get_api_fn get_api )
+sb_gen_dll_mod_init( void* state, get_api_fn get_api )
 {
     UNUSED( state );
     UNUSED( get_api );
-    printf( "\n[example_gen] init\n" );
+    printf( "\n[sb_gen_dll] init\n" );
 
     if ( !MOD_FETCH_CORE ) {
         return false;
@@ -44,22 +44,22 @@ example_gen_mod_init( void* state, get_api_fn get_api )
 }
 
 bool
-example_gen_mod_reload( void* state, get_api_fn get_api )
+sb_gen_dll_mod_reload( void* state, get_api_fn get_api )
 {
     UNUSED( state );
     UNUSED( get_api );
     if ( !MOD_FETCH_CORE ) {
         return false;
     }
-    printf( "\n[example_gen] reload\n" );
+    printf( "\n[sb_gen_dll] reload\n" );
     return true;
 }
 
 void
-example_gen_mod_exit( void* state )
+sb_gen_dll_mod_exit( void* state )
 {
     UNUSED( state );
-    printf( "\n[example_gen] exit\n" );
+    printf( "\n[sb_gen_dll] exit\n" );
 }
 
 /*==============================================================================================
@@ -69,19 +69,19 @@ REF_API() void test_function_one( void ) { return; }
 REF_API() int test_function_two( void ) { return 99; }
 
 mod_desc_t*
-example_gen_get_mod_desc( void )
+sb_gen_dll_get_mod_desc( void )
 {
     static mod_desc_t api = {
         .version       = 1,
-        .state_size    = sizeof( example_gen_state_t ),
-        .func_api      = MOD_API_FUNC( example_gen ),
-        .func_api_size = sizeof( example_gen_api_t ),
+        .state_size    = sizeof( sb_gen_dll_state_t ),
+        .func_api      = MOD_API_FUNC( sb_gen_dll ),
+        .func_api_size = sizeof( sb_gen_dll_api_t ),
         .deps          = { "core" },
         .dep_count     = 1,
-        .init          = example_gen_mod_init,
-        .reload        = example_gen_mod_reload,
-        .exit          = example_gen_mod_exit,
-        .ref_register  = MOD_REFLECT_FUNC( example_gen ),
+        .init          = sb_gen_dll_mod_init,
+        .reload        = sb_gen_dll_mod_reload,
+        .exit          = sb_gen_dll_mod_exit,
+        .ref_register  = MOD_REFLECT_FUNC( sb_gen_dll ),
     };
     return &api;
 }
@@ -90,6 +90,6 @@ example_gen_get_mod_desc( void )
     DLL export
 ==============================================================================================*/
 
-MOD_DEFINE_EXPORTS( example_gen )
+MOD_DEFINE_EXPORTS( sb_gen_dll )
 
 /*============================================================================================*/

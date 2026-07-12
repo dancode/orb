@@ -10,7 +10,7 @@
 
     The drive is the documented direct pattern from run_project.h: a ~10-line fixed-step
     accumulator, on_sim xN, on_frame, on_draw with the interpolation alpha.  The runtime
-    loads and hot-reloads proj_runtime.dll (project_name in the descriptor) exactly as it
+    loads and hot-reloads sb_proj_runtime.dll (project_name in the descriptor) exactly as it
     does for host_game -- it never calls into it; this host does.
 
     Dev keys Q/R read the CONSOLE (terminal focus only) -- same policy as host_game.
@@ -44,7 +44,7 @@ MOD_USE_RUN;
     Host state -- the direct drive: vtable + fixed-step accumulator, nothing else.
 ==============================================================================================*/
 
-#define SB_PROJECT       "proj_runtime"
+#define SB_PROJECT       "sb_proj_runtime"
 #define SB_FIXED_HZ      60.0f
 #define SB_MAX_SIM_STEPS 4        /* stall guard -- drop time rather than spiral */
 

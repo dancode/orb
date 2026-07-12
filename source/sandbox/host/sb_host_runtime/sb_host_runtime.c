@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    sandbox/host/host_runtime/host_runtime.c
+    sandbox/host/sb_host_runtime/sb_host_runtime.c
 
     A minimal runtime host. The smallest viable shape for booting the engine stack
     without pulling in game or editor layers above it.
@@ -92,7 +92,7 @@ runtime_ready( void )
 
     render()->set_clear_color( 0, 0.08f, 0.10f, 0.18f, 1.0f );
 
-    printf( "[host_runtime] ready - ESC to quit, R to reload all DLLs\n" );
+    printf( "[sb_host_runtime] ready - ESC to quit, R to reload all DLLs\n" );
 
     /* Future: bootstrap higher layers here.
        - game_world_create() once a game/framework module is loaded
@@ -113,7 +113,7 @@ runtime_update( f32 dt )
 
     if ( app()->key_pressed( APP_KEY_R ) )
     {
-        printf( "[host_runtime] reloading all dynamic modules\n" );
+        printf( "[sb_host_runtime] reloading all dynamic modules\n" );
         mod_reload_all();
     }
 
@@ -158,7 +158,7 @@ static const run_module_entry_t k_modules[] = {
 
 /* runtime is just to test runtime without added layers on top */
 static const run_host_desc_t k_desc = {
-    .name      = "host_runtime",
+    .name      = "sb_host_runtime",
     .flags     = RUN_HOST_HOT_RELOAD | RUN_HOST_CONSOLE | RUN_HOST_EDITOR_SLEEP,
     .loop_mode = RUN_LOOP_RUN,
     .modules   = k_modules,

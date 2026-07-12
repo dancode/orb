@@ -7,10 +7,10 @@
 #include "engine/core/core_host.h"
 #include "engine/ref/ref_host.h"
 
-#include "sandbox/reflect/example_gen/example_gen.h"
+#include "sandbox/reflect/sb_gen_dll/sb_gen_dll.h"
 
 MOD_USE_CORE;
-MOD_USE_EXAMPLE_GEN;
+MOD_USE_SB_GEN_DLL;
 
 /*============================================================================================*/
 int
@@ -19,7 +19,7 @@ main( int argc, char** argv )
     UNUSED( argc );
     UNUSED( argv );
 
-    printf( "=== sb_runtime_gen ===\n" );
+    printf( "=== sb_gen_exe ===\n" );
 
     mod_system_init();
 
@@ -36,9 +36,9 @@ main( int argc, char** argv )
     if ( !mod_static( core ) )
         goto shutdown;
 
-    if ( !mod_load( example_gen ) )
+    if ( !mod_load( sb_gen_dll ) )
     {
-        fprintf( stderr, "load example_gen: %s\n", mod_last_error() );
+        fprintf( stderr, "load sb_gen_dll: %s\n", mod_last_error() );
         goto shutdown;
     }
 
@@ -53,9 +53,9 @@ main( int argc, char** argv )
     UNUSED( sid );
     mod_list_all();
 
-    MOD_HOST_FETCH_API( example_gen );
-    example_gen()->test_function_one();
-    example_gen()->test_function_two();
+    MOD_HOST_FETCH_API( sb_gen_dll );
+    sb_gen_dll()->test_function_one();
+    sb_gen_dll()->test_function_two();
 
 shutdown:
 

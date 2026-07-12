@@ -483,44 +483,44 @@ target sb_audio								# audio stack: ahi service + audio module
 target sb_reflect							# dll test code
 
     type        exe
-    root        source/sandbox/reflect
+    root        source/sandbox/reflect/sb_reflect_unit
     folder      09_SANDBOX/REFLECT
     unit        sb_reflect_unit.c
     dep         ref
 	
-target example_reflect						# a dll that has reflected types
+target sb_ref_dll						# a dll that has reflected types
 
     type        dynamic
-    root        source/sandbox/reflect/example_reflect
+    root        source/sandbox/reflect/sb_ref_dll
     folder      09_SANDBOX/REFLECT
-    unit        example_reflect.c
+    unit        sb_ref_dll.c
     flag        reflect
 	
-target example_gen							# REF_MODULE() usage
+target sb_gen_dll							# REF_MODULE() usage
 
     type        dynamic
-    root        source/sandbox/reflect/example_gen
+    root        source/sandbox/reflect/sb_gen_dll
     folder      09_SANDBOX/REFLECT
-    unit        example_gen.c
+    unit        sb_gen_dll.c
     flag        reflect
 	
-target sb_runtime_reflect					# load a dll with reflected types
+target sb_ref_exe					# load a dll with reflected types
 
     type        exe
-    root        source/sandbox/reflect/runtime_reflect
+    root        source/sandbox/reflect/sb_ref_exe
     folder      09_SANDBOX/REFLECT
-    unit        sb_runtime_reflect.c
+    unit        sb_ref_exe.c
     dep         sys ref mod core 
-	mono_dep 	example_reflect
+	mono_dep 	sb_ref_dll
 
-target sb_runtime_gen						# load a REF_MODULE() dll
+target sb_gen_exe						# load a REF_MODULE() dll
 
     type        exe
-    root        source/sandbox/reflect/runtime_gen
+    root        source/sandbox/reflect/sb_gen_exe
     folder      09_SANDBOX/REFLECT
-    unit        sb_runtime_gen.c
+    unit        sb_gen_exe.c
     dep         sys ref mod core
-	mono_dep 	example_gen
+	mono_dep 	sb_gen_dll
     flag        reflect
 
 # ==============================================================================
@@ -603,9 +603,9 @@ target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
 target sb_host_runtime
 
     type        exe
-    root        source/sandbox/host/host_runtime
+    root        source/sandbox/host/sb_host_runtime
     folder      09_SANDBOX/HOST
-    unit        host_runtime.c
+    unit        sb_host_runtime.c
 	dep 		mod ref sys core job app net 	# static engine
     dep         run rhi draw    				# static runtime + services
 	mono_dep	render
@@ -613,9 +613,9 @@ target sb_host_runtime
 target sb_host_tool
 
     type        exe
-    root        source/sandbox/host/host_tool
+    root        source/sandbox/host/sb_host_tool
     folder      09_SANDBOX/HOST
-    unit        host_tool.c
+    unit        sb_host_tool.c
 	dep 		mod ref sys core job app
     dep         run
 	mono_dep	render rhi draw
@@ -623,9 +623,9 @@ target sb_host_tool
 target sb_host_server
 
     type        exe
-    root        source/sandbox/host/host_server
+    root        source/sandbox/host/sb_host_server
     folder      09_SANDBOX/HOST
-    unit        host_server.c
+    unit        sb_host_server.c
 	dep 		mod ref sys core job app
     dep         run
 	mono_dep	render rhi draw example
@@ -633,9 +633,9 @@ target sb_host_server
 target sb_host_editor
 
     type        exe
-    root        source/sandbox/host/host_editor
+    root        source/sandbox/host/sb_host_editor
     folder      09_SANDBOX/HOST
-    unit        host_editor.c
+    unit        sb_host_editor.c
 	dep 		mod ref sys core job app
     dep         run rhi draw gui
 	mono_dep	render
@@ -643,9 +643,9 @@ target sb_host_editor
 target sb_host_game
 
     type        exe
-    root        source/sandbox/host/host_game
+    root        source/sandbox/host/sb_host_game
     folder      09_SANDBOX/HOST
-    unit        host_game.c
+    unit        sb_host_game.c
 	dep 		mod ref sys core job app
     dep         run rhi draw input
 	mono_dep	render
@@ -653,19 +653,19 @@ target sb_host_game
 target sb_host_runtime_proj			# BYPASS PROOF: drives run_project.h directly -- no game framework in k_modules
 
     type        exe
-    root        source/sandbox/host/host_runtime_proj
+    root        source/sandbox/host/sb_host_runtime_proj
     folder      09_SANDBOX/HOST
-    unit        host_runtime_proj.c
+    unit        sb_host_runtime_proj.c
 	dep 		mod ref sys core job app
     dep         run rhi draw
 	mono_dep	render
 
-target proj_runtime					# framework-BYPASS project DLL -- core+render only; sb_host_runtime_proj drives it
+target sb_proj_runtime					# framework-BYPASS project DLL -- core+render only; sb_host_runtime_proj drives it
 
     type        dynamic
-    root        source/sandbox/host/proj_runtime
+    root        source/sandbox/host/sb_proj_runtime
     folder      09_SANDBOX/HOST
-    unit        proj_runtime.c
+    unit        sb_proj_runtime.c
     run         sb_host_runtime_proj
 
 
@@ -824,7 +824,7 @@ solution orb_sandbox_host
 	add 		sb_host_game
 	add 		sb_host_runtime
 	add 		sb_host_runtime_proj
-	add 		proj_runtime
+	add 		sb_proj_runtime
 
 	#			--- project types by host types ---
 
@@ -840,18 +840,18 @@ solution orb_sandbox_host
 solution orb_sandbox_reflect			# developing reflection
 
     out         build/proj
-    startup     sb_runtime_gen
+    startup     sb_gen_exe
 
     add         base
 	add         sys ref mod app core job net
 
 	add 		sb_reflect				# unit test reflection (hand rolled)
 	
-	add 		example_gen				# test reflected REF_MODULE
-	add 		example_reflect			# test module with reflected types
+	add 		sb_gen_dll				# test reflected REF_MODULE
+	add 		sb_ref_dll			# test module with reflected types
 	
-	add 		sb_runtime_gen			# test loading REF_MODULE		
-	add 		sb_runtime_reflect		# test reading reflected types
+	add 		sb_gen_exe			# test loading REF_MODULE		
+	add 		sb_ref_exe		# test reading reflected types
 
 	add 		reflect_tool
 
@@ -900,7 +900,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 solution orb_sandbox_engine				# developing engine libraries
 
     out         build/proj
-    startup     sb_runtime_gen
+    startup     sb_gen_exe
 	
 	add 		base 
 	
@@ -963,7 +963,7 @@ solution orb_all
 
     add         render audio physics
 	
-    add         example example_reflect example_gen
+    add         example sb_ref_dll sb_gen_dll
     add         game nav game_example
     add         dev_build dev_hot dev_font
 	
@@ -981,7 +981,7 @@ solution orb_all
 
 
 	# 			reflection testing
-	add 		sb_reflect sb_runtime_reflect sb_runtime_gen
+	add 		sb_reflect sb_ref_exe sb_gen_exe
 	
 	add 		host_game
 	add 		host_editor 
@@ -994,7 +994,7 @@ solution orb_all
 	add 		sb_host_game
 	add 		sb_host_runtime
 	add 		sb_host_runtime_proj
-	add 		proj_runtime
+	add 		sb_proj_runtime
 
 	add 		sample_game sample_game_play
 	add 		template_game

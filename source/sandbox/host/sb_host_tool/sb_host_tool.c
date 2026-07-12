@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    host_tool.c -- TOOL shape.
+    sb_host_tool.c -- TOOL shape.
 
     Boots the engine, runs a single frame, exits.
     All tool work happens in on_update. Load additional modules in k_modules as needed

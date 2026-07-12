@@ -1,19 +1,19 @@
-﻿#ifndef EXAMPLE_GEN_H
-#define EXAMPLE_GEN_H
+#ifndef SB_GEN_DLL_H
+#define SB_GEN_DLL_H
 /*============================================================================================*/
 
 #include "orb.h"
-#include "example_gen.generated.h"
+#include "sb_gen_dll.generated.h"
 
 REF_ENUM()
-typedef enum example_gen_enum_e
+typedef enum sb_gen_dll_enum_e
 {
     RED    = 0,
     BLUE   = 1,
     GREEN  = 2,
     YELLOW = 3,
 
-} example_gen_enum_t;
+} sb_gen_dll_enum_t;
 
 /*============================================================================================*/
-#endif    // EXAMPLE_GEN_H
+#endif    // SB_GEN_DLL_H
