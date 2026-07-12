@@ -2,8 +2,9 @@
 
     sandbox/gui/sb_gui_example/sb_gui_example.c -- gui feature explorer.
 
-    The end-to-end tour of the gui system: every feature group has a demo window (ex_demos.c)
-    and the "Demos" picker steps through them.  This host is 100% gui-focused and runs the
+    The end-to-end tour of the gui system: every feature group has a demo window (ex_demos.c
+    and the per-category files it includes), grouped under a main menu bar -- one menu per
+    category, one checkable item per demo window.  This host is 100% gui-focused and runs the
     boot-tier easy-mode loop: gui()->boot() owns the window + render context (the borderless
     chrome shell auto-emits each frame), frame_poll/present_begin/present_end drive the frame.
     Rendering itself is not under test here (see sb_vulkan for that).
@@ -77,30 +78,20 @@ main( int argc, char** argv )
         goto shutdown;
     }
 
-    /* Active gui demo index (see ex_demos.c); switched live with the keys below. */
-    int active_demo = 0;
-
     /* Main loop -- frame_poll pumps the OS and routes events (rhi swapchain resize, gui input
        + floater lifecycle); false on quit or main-window close. */
     f32 dt = 0.0f;
     while ( gui()->frame_poll( &dt ) )
     {
-        /* Demo selection: numpad +/- step through the table (with wrap).  The "Demos" picker
-           window inside the frame does the same by click. */
-        const int demo_count = ex_demo_count();
-        if ( app()->key_pressed( APP_KEY_NP_ADD ) )
-            active_demo = ( active_demo + 1 ) % demo_count;
-        if ( app()->key_pressed( APP_KEY_NP_SUB ) )
-            active_demo = ( active_demo + demo_count - 1 ) % demo_count;
-
         /* Build the UI -- balanced scopes; emit is skipped entirely on provably clean frames
-           (frame_begin false), render then replays the preserved tessellation. */
+           (frame_begin false), render then replays the preserved tessellation.  ex_frame owns
+           the whole explorer: the main menu bar (one menu per feature category) plus every
+           demo window toggled open through it. */
         if ( gui()->frame_begin( dt ) )
         {
             gui()->ctx_begin( GUI_CTX_DEFAULT );
 
-            ex_demos[ active_demo ].fn();
-            active_demo = ex_demo_picker( active_demo );
+            ex_frame();
 
             gui()->ctx_end();
         }

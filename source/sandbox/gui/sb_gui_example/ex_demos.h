@@ -1,12 +1,17 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     sandbox/gui/sb_gui_example/ex_demos.h -- gui feature demos.
 
-    Each demo is a single self-contained function that opens its own window and exercises one
-    feature group of the gui system (basic widgets, layout rows, field forms, grids, child
-    regions, alignment, sub-layout, multiple windows).  The host (sb_gui_example.c) drives them:
-    it owns the frame_begin/ctx_begin .. ctx_end/frame_end bracket and render(), and selects
-    which demo to draw with a key switch -- +/- step through the table.
+    The exhaustive gui test suite: every feature group of the gui system has one demo window,
+    grouped into categories, and a main menu bar (one menu per category) toggles each window on
+    and off -- the Dear ImGui demo idea, split into mini-clusters instead of one mega window.
+    Docking is deliberately absent: it has its own dedicated test bed (sb_gui_dock).
+
+    Each demo is a single self-contained function that owns one primary window (plus any helper
+    windows it needs).  Demo windows are CLOSEABLE (the titlebar X works) and default-resizable
+    on both axes; the registry keeps the open flag in sync with the X through window_is_open.
+    Where a widget has parametric capabilities, the demo wraps it in an interactive test suite:
+    the widget's own parameters are driven live by sibling widgets.
 
     A demo function takes no arguments and assumes it runs inside an open context (between
     gui()->ctx_begin() and ctx_end()); it must balance its own window_begin/window_end (and
@@ -16,12 +21,10 @@
         if ( gui()->frame_begin( dt ) )   // returns frame_dirty; emit only when true
         {
             gui()->ctx_begin( GUI_CTX_DEFAULT );
-            ex_demos[ active ].fn();          // draw the active demo
-            ex_demo_picker( active );         // draw the picker overlay
+            ex_frame();                       // menu bar + every open demo window
             gui()->ctx_end();
         }
         gui()->frame_end();
-        gui()->render( vp0, cmd );
 
 ==============================================================================================*/
 #ifndef EX_DEMOS_H
@@ -29,26 +32,22 @@
 
 #include "orb.h"
 
-/* A demo is just a name + a draw function; the table below is the menu the host steps through. */
+/* A demo draws its window(s); the registry in ex_demos.c is the menu the host shows. */
 typedef void ( *ex_demo_fn )( void );
 
 typedef struct
 {
-    const char* name; /* short label shown in the picker            */
-    const char* desc; /* one-line description of the feature group  */
-    ex_demo_fn  fn;   /* draws the demo window(s) for this feature  */
+    const char* category; /* menu the demo lives under ("Widgets", "Layout", ...)      */
+    const char* name;     /* menu item label                                           */
+    const char* title;    /* primary window title -- the open-state sync key           */
+    const char* desc;     /* one-line description of the feature group                 */
+    ex_demo_fn  fn;       /* draws the demo window(s) for this feature                 */
+    bool        open;     /* live visibility flag, driven by the menu + the X button   */
 
 } ex_demo_t;
 
-/* Null-name-terminated table of demos, indexable 0..count-1. */
-extern const ex_demo_t ex_demos[];
-
-/* Number of entries in ex_demos[]. */
-int ex_demo_count( void );
-
-/* Draw the picker overlay: a small window listing every demo with the active one highlighted,
-   plus the key hints.  Call once per frame after the active demo.  Returns the demo index to
-   show next: `active` unchanged, or the index of a row the user clicked this frame. */
-int ex_demo_picker( int active );
+/* Draw one frame of the explorer: the main menu bar plus every open demo window.  Call once
+   per frame inside an open context. */
+void ex_frame( void );
 
 #endif /* EX_DEMOS_H */
