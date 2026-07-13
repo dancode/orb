@@ -6,7 +6,7 @@
 
         1. mod_system_init()                        -- registry online
         2. ref_wire_mod_callbacks()                 -- install hooks; no code fires yet
-        3. mod_static_load( sys, ref, prof, fs, core, run )  -- PASSIVE: engine baseline registered
+        3. mod_static_load( sys, ref, prof, fs, job, core, run )  -- PASSIVE: engine floor registered
         4. load_all( desc->modules )                -- PASSIVE: every entry registered
            mod_dynamic_load_dir( project )          -- PASSIVE: optional project DLL (desc->project_name)
         5. mod_init_all()                           -- pass 1: load callbacks fire in dep order (ref frames pushed, reflection live)
@@ -26,12 +26,12 @@
     (reflection, profilers) in that order. The ref frame stack therefore matches the
     dep graph -- dependencies below, dependents above.
 
-    The engine baseline ( sys + ref + prof + fs + core + run ) is loaded by the host and is
-    always present regardless of what k_modules[] declares -- core is in the baseline because
-    the loop drives its logging / cvar / cmd / bind registry directly, unguarded.  job, net,
-    and app are opt-in leaves declared by the host descriptor (app => windowed, net =>
-    networked, job => a worker pool), alongside the higher layers (rhi, draw, gui, render,
-    and eventually game / editor services).
+    The engine floor ( sys + ref + prof + fs + job + core + run ) is loaded by the host and is
+    always present regardless of what k_modules[] declares.  These root engine libraries are
+    cheap to init and create no OS resources on load (job spawns no threads until configured),
+    so the loop dereferences them unguarded.  The higher layers with real init cost -- rhi,
+    draw, gui, render, and eventually game / editor services (and, for now, net + app) -- are
+    declared by the host descriptor and guarded with if ( svc() ) at their call sites.
 
     Frame order
     -----------
@@ -156,7 +156,6 @@ run_host_realtime( void )
 MOD_USE_APP;
 MOD_USE_RUN;
 
-MOD_USE_JOB;
 MOD_USE_RHI;
 MOD_USE_RENDER;
 MOD_USE_DRAW;
@@ -410,18 +409,18 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     core_wire_mod_callbacks();
 
-    /* Engine baseline -- sys (clock + sleep), ref (reflection), prof (zone capture),
-       fs (virtual filesystem), core (logging/cvars/cmd), run (frame clock).  These are the
-       spine the loop and module lifecycle dereference unconditionally: sys is the frame
-       clock, run derives dt, core routes logging + pumps the cmd/cvar/bind registry every
-       frame (direct static linkage, no guard), ref keeps hot-reload ABI-safe, prof backs the
-       PROF_ macros scattered through the loop.  job/net/app are NOT here -- they are opt-in
-       leaves a host declares in k_modules[] (job spins up a worker pool, so a host that
-       schedules no work should not pay for it). */
+    /* Engine floor -- the root engine libraries, always loaded regardless of k_modules[].
+       They are cheap to init and create no OS resources on load: sys (clock+sleep), ref
+       (reflection), prof (zone capture -- static rings), fs (virtual filesystem, opens no
+       files), job (task system -- spawns NO threads until job_configure below), core
+       (logging/cvars/cmd), run (frame clock).  The loop and module lifecycle dereference
+       these unconditionally, so they carry no if() guard.  Real cost lives one layer up in
+       the runtime services (rhi builds a Vulkan device, etc.) -- those stay opt-in. */
     if ( !mod_static_load( "sys",  sys_get_mod_desc() )  ||
          !mod_static_load( "ref",  ref_get_mod_desc() )  ||
          !mod_static_load( "prof", prof_get_mod_desc() ) ||
          !mod_static_load( "fs",   fs_get_mod_desc() )   ||
+         !mod_static_load( "job",  job_get_mod_desc() )  ||
          !mod_static_load( "core", core_get_mod_desc() ) ||
          !mod_static_load( "run",  run_get_mod_desc() ) )
     {
@@ -468,6 +467,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     mod_set_log_fn( core_log_fn );
     app_set_log_fn( core_log_fn );
 
+    /* Size the job worker pool -- frontend policy.  desc->job_workers: 0 (the zero-init
+       default) = no threads, the main thread runs jobs itself; N = N workers; -1 = auto (one
+       per core less the main thread).  job is always loaded but spawns nothing until here. */
+    job()->configure( desc->job_workers );
+
     /* Queue default.cfg -> config.cfg -> autoexec.cfg, then "+command arg..." groups from the
        command line (+set r_width 1920 +exec dev.cfg). They execute at the loop's first cmd_pump,
        after every module has registered. Priority tags (see cvar_load_defaults) make the queue
@@ -496,7 +500,6 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        drives the windowed inference.
     */
     MOD_HOST_FETCH_API( app    );
-    MOD_HOST_FETCH_API( job    );
     MOD_HOST_FETCH_API( rhi    );
     MOD_HOST_FETCH_API( render );
     MOD_HOST_FETCH_API( draw   );
@@ -752,8 +755,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- job dispatcher tick --------------------------------------- */
 
-        if ( job() )
-             job()->tick();
+        /* job is in the engine floor -- always present.  With no workers this drains the
+           queue on the main thread; with workers it is a cheap no-op. */
+        job()->tick();
 
         /* -- host update ------------------------------------------------- */
 

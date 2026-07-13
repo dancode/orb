@@ -36,6 +36,9 @@ job_test_basic( void )
         goto shutdown;
     }
 
+    // Spawn the worker pool (init alone spawns none). -1 = auto, one per core less main thread.
+    job_configure( -1 );
+
     // Print the main thread ID so we can verify if tasks execute on workers or the main thread.
     printf( "Main Thread ID: %llu\n", ( unsigned long long )thread_current_id() );
     printf( "Job system loaded successfully.\n" );

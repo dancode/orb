@@ -18,6 +18,11 @@
 
 typedef struct job_api_s
 {
+    /* Size the worker pool. Frontend policy, called once after load: worker_count < 0 = auto
+       (one per core minus main thread), 0 = no workers (main thread is the pool), > 0 = that
+       many. Loading the module spawns nothing; this is what creates threads (if any). */
+    void          ( *configure )( i32 worker_count );
+
     /* Dispatch a set of parallel jobs. Returns a counter handle that can be awaited. */
     job_counter_t ( *dispatch )( const job_decl_t* decls, uint32_t count );
 
@@ -31,11 +36,10 @@ typedef struct job_api_s
 
 /*============================================================================================*/
 
-/* job is an opt-in service (like app / net): a host that schedules no work never loads it,
-   so the worker pool is not spun up.  Under MOD_HOST_DYNAMIC_SERVICES (the runtime unity)
-   job() is the runtime pointer gateway -- NULL when the module is absent -- so the host's
-   if ( job() ) tick guard is live.  Everywhere else it keeps the direct static gateway. */
-#if ( defined( BUILD_STATIC ) || defined( JOB_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
+/* job is part of the engine floor -- always loaded, so it keeps the direct static gateway
+   (job() is always valid, never NULL). Its worker pool is what's optional, not the module:
+   job_configure(0) loads it with zero threads. */
+#if defined( BUILD_STATIC ) || defined( JOB_STATIC )
     MOD_GATEWAY_STATIC( job_api_t, job )
     #define MOD_USE_JOB
     #define MOD_FETCH_JOB  true

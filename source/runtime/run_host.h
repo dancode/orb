@@ -98,11 +98,11 @@ typedef enum run_loop_mode_e
 /*==============================================================================================
     Module entries
 
-    k_modules[] declares only the layers ABOVE the engine baseline.  run_host_main always
-    loads the baseline itself -- sys, ref, prof, fs, core, run -- regardless of what a host
-    declares; core is in that set because the loop drives its logging / cvar / cmd / bind
-    registry directly every frame.  A host lists the opt-in leaves (job, net, app) plus the
-    higher layers (rhi, draw, gui, render, game) and any services on top.
+    k_modules[] declares only the layers ABOVE the engine floor.  run_host_main always loads
+    the floor itself -- sys, ref, prof, fs, job, core, run -- regardless of what a host
+    declares; these root engine libraries are cheap and create no OS resources on load (job
+    spawns no threads until job_workers configures the pool).  A host lists the services with
+    real init cost: rhi, draw, gui, render, game, and (for now) net + app.
 ==============================================================================================*/
 
 typedef struct mod_desc_s mod_desc_t;
@@ -145,6 +145,8 @@ typedef struct run_host_desc_s
     u32                       flags;              // RUN_HOST_*
     run_loop_mode_t           loop_mode;          // determines how the main loop is driven
     i32                       frame_target_ms;    // 0 -> default 16
+    i32                       job_workers;        // job pool size: 0 (default) = main-thread
+                                                  //   only, N = N workers, -1 = auto (per-core)
     i32                       window_width;       // client area width,  0 -> 1280
     i32                       window_height;      // client area height, 0 -> 720
     const run_module_entry_t* modules;            // null-terminated array

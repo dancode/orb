@@ -281,11 +281,50 @@ job_wait( job_counter_t counter )
 void
 job_tick( void )
 {
-    // empty
+    // With no worker threads the main thread IS the pool. The dispatch+wait pattern already
+    // runs jobs inline via wait-stealing (see job_wait); this drains anything dispatched
+    // fire-and-forget (never waited on) so a single-threaded host still completes queued work
+    // once per frame. A no-op the moment any worker exists.
+    if ( g_job_state.worker_count > 0 )
+    {
+        return;
+    }
+
+    for ( ;; )
+    {
+        job_item_t job     = { 0 };
+        bool       has_job = false;
+
+        mutex_lock( &g_job_state.queue_lock );
+        if ( g_job_state.queue_count > 0 )
+        {
+            u32 idx = g_job_state.queue_head & MAX_JOB_QUEUE_MASK;
+            job     = g_job_state.queue[ idx ];
+            g_job_state.queue_head++;
+            g_job_state.queue_count--;
+            has_job = true;
+        }
+        mutex_unlock( &g_job_state.queue_lock );
+
+        if ( !has_job )
+        {
+            break;
+        }
+
+        // We popped without sema_wait(), so consume a token to keep the count consistent.
+        sema_try_wait( &g_job_state.queue_semaphore );
+        if ( job.function )
+        {
+            job.function( job.data );
+        }
+        job_complete_one( job.counter );
+    }
 }
 
 /*==============================================================================================
-   job_init — Sets up the thread pool and queue system.
+   job_init — Sets up the queue and sync primitives. Spawns NO threads: loading the job module
+   into the engine floor must be free.  The worker pool is sized separately by job_configure(),
+   which the frontend calls with its chosen thread count.
    Invoked by the module lifecycle initialization callback.
 ==============================================================================================*/
 
@@ -303,40 +342,63 @@ job_init( void )
     mutex_init( &g_job_state.queue_lock );
     sema_init( &g_job_state.queue_semaphore, 0 );
 
-    g_job_state.is_running = 1;
+    g_job_state.is_running   = 1;
+    g_job_state.worker_count = 0;    // main-thread-only until job_configure() spawns a pool
 
-    // Determine the ideal number of threads.
-    // Standard practice: Logical core count minus 1 (the main thread acts as the coordinator).
-    uint32_t cpu_count    = sys_cpu_count();
-    uint32_t worker_count = cpu_count > 1 ? cpu_count - 1 : 1;
-    if ( worker_count > 32 )
+    return true;
+}
+
+/*==============================================================================================
+   job_configure — Frontend-driven worker pool sizing. Call once after job_init (the module is
+   already loaded in the engine floor; this is what actually spawns threads, if any).
+
+     worker_count < 0 : auto -- one worker per logical core minus the main thread (capped 32).
+     worker_count = 0 : no worker threads. The main thread IS the pool -- dispatched work runs
+                        inline in job_wait (wait-stealing) and any leftover drains in job_tick.
+                        Zero OS threads: this is the cheap default a host pays for nothing.
+     worker_count > 0 : that many workers (capped 32).
+
+   Assumes no pool is currently running (call once, after init, before dispatching).
+==============================================================================================*/
+
+void
+job_configure( i32 worker_count )
+{
+    uint32_t count;
+    if ( worker_count < 0 )
     {
-        worker_count = 32;    // Limit pool size to 32 worker threads.
+        // Auto: one worker per logical core, less the main thread (which coordinates + helps).
+        uint32_t cpu_count = sys_cpu_count();
+        count              = cpu_count > 1 ? cpu_count - 1 : 1;
+    }
+    else
+    {
+        count = ( uint32_t )worker_count;
+    }
+    if ( count > 32 )
+    {
+        count = 32;    // Limit pool size to 32 worker threads.
     }
 
-    g_job_state.worker_count = worker_count;
+    g_job_state.worker_count = 0;
 
-    // Spawn the worker threads.
-    for ( uint32_t i = 0; i < worker_count; ++i )
+    // Spawn the worker threads (none when count == 0 -- the main-thread-only path).
+    for ( uint32_t i = 0; i < count; ++i )
     {
         worker_thread_t* worker_thread = &g_job_state.workers[ i ];
         worker_thread->index           = i;
+        worker_thread->id              = 0;
+        worker_thread->handle          = thread_create( job_worker_main, worker_thread, 0 );
+        if ( !thread_valid( worker_thread->handle ) )
+        {
+            break;    // Creation failed -- run with the workers we got; the main thread helps.
+        }
 
-        // Spawn the thread. 0 stack size specifies default stack.
-        worker_thread->id = 0;
-        worker_thread->handle = thread_create( job_worker_main, worker_thread, 0 );         
-        if ( thread_valid( worker_thread->handle ) )
-        {
-            char name_buf[ 32 ];
-            sprintf( name_buf, "ORB_Worker_%02u", i );
-            thread_set_name( worker_thread->handle, name_buf );    // Helpful for debugging/profilers.
-        }
-        else
-        {
-            return false;    // Thread creation failed, fail module load.
-        }
+        char name_buf[ 32 ];
+        sprintf( name_buf, "ORB_Worker_%02u", i );
+        thread_set_name( worker_thread->handle, name_buf );    // Helpful for debugging/profilers.
+        g_job_state.worker_count = i + 1;
     }
-    return true;
 }
 
 /*==============================================================================================

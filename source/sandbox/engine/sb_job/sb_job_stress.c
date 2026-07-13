@@ -37,7 +37,10 @@ job_test_stress( void )
         goto shutdown;
     }
 
-    printf( "Starting stress test: %d batches of %d jobs (Total: %d)...\n", 
+    // Spawn the worker pool (init alone spawns none). -1 = auto, one per core less main thread.
+    job_configure( -1 );
+
+    printf( "Starting stress test: %d batches of %d jobs (Total: %d)...\n",
             STRESS_BATCH_COUNT, STRESS_JOBS_PER_BATCH, STRESS_BATCH_COUNT * STRESS_JOBS_PER_BATCH );
     
     sys_atomic_write( &g_stress_counter, 0 );

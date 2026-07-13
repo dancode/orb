@@ -14,11 +14,12 @@
     without needing to know the underlying implementation details.
 ==============================================================================================*/
 
-const job_api_t g_job_api_struct = 
+const job_api_t g_job_api_struct =
 {
-    .dispatch = job_dispatch, // Triggers parallel task execution.
-    .wait     = job_wait,     // Synchronously waits for tasks to finish.
-    .tick     = job_tick,     // Standard per-frame update tick (unused in Tier I).
+    .configure = job_configure, // Frontend sizes the worker pool (0 = main-thread only).
+    .dispatch  = job_dispatch,  // Triggers parallel task execution.
+    .wait      = job_wait,      // Synchronously waits for tasks to finish.
+    .tick      = job_tick,      // Per-frame tick; drains the queue in main-thread-only mode.
 };
 
 /*==============================================================================================

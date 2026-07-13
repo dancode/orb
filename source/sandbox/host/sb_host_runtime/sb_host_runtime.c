@@ -21,11 +21,12 @@
         ref   -- type reflection registry; auto-wires DLL load/unload events
         prof  -- profiler zone capture
         fs    -- virtual filesystem (mounts, bundles)
+        job   -- task system (spawns no threads until job_workers configures the pool)
         core  -- logging, cvars, cmd/console, memory arenas (drives the loop's cmd pump)
         run   -- authoritative frame clock (app_time, dt, frame_number)
 
-    These are always-on. k_modules[] only needs to declare modules ABOVE this baseline
-    (including the opt-in leaves job, net, app).
+    These root engine libraries are the always-on floor. k_modules[] only declares services
+    ABOVE it (rhi, draw, gui, render, ... and, for now, net + app).
 
 
     Modules declared by this host
