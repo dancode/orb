@@ -198,10 +198,11 @@ typedef struct app_api_s
 
 /*============================================================================================*/
 
-/* MOD_HOST_DYNAMIC_SERVICES: the runtime host TU opts into the pointer gateway even when
-   app is a static lib, so a host whose k_modules[] omits app sees app() == NULL (headless
-   inference) instead of a hard-bound always-true gateway.  Same rule as rhi/draw/gui/render. */
-#if ( defined( BUILD_STATIC ) || defined( APP_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
+/* app is part of the always-loaded engine floor (statically linked into every host, loaded
+   unconditionally in run_host_main), so it uses the hard-bound static gateway -- app() is never
+   NULL.  "Windowed" is no longer inferred from app()'s presence; it is explicit host policy
+   (RUN_HOST_WINDOWED).  Unlike rhi/draw/gui/render this ignores MOD_HOST_DYNAMIC_SERVICES. */
+#if defined( BUILD_STATIC ) || defined( APP_STATIC )
     MOD_GATEWAY_STATIC( app_api_t, app )
     #define MOD_USE_APP    /* static build */
     #define MOD_FETCH_APP  true

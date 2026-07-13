@@ -214,7 +214,6 @@ editor_close_request( void )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( app    ),    /* window, OS pump                               */
     RUN_SERVICE( rhi    ),    /* GPU backend -- static service                 */
     RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend */
     RUN_SERVICE( gui    ),    /* immediate mode GUI -- OPTIONAL static service */
@@ -237,8 +236,8 @@ static const run_gui_desc_t k_gui_desc = {
 
 static const run_host_desc_t    k_desc      = {
             .name             = "sandbox_editor",
-            .flags            =  RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD
-                                | RUN_HOST_BORDERLESS, // | RUN_HOST_EDITOR_SLEEP, 
+            .flags            =  RUN_HOST_WINDOWED | RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD
+                                | RUN_HOST_BORDERLESS, // | RUN_HOST_EDITOR_SLEEP,
             .loop_mode        = RUN_LOOP_RUN,
             .window_width     = 1280,
             .window_height    = 800,

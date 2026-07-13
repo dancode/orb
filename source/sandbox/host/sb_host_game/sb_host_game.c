@@ -125,7 +125,6 @@ game_update( f32 dt )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( app    ),
     RUN_SERVICE( rhi    ),
     RUN_SERVICE( draw   ),
     RUN_SERVICE( input  ),
@@ -136,7 +135,7 @@ static const run_module_entry_t k_modules[] = {
 
 static const run_host_desc_t k_desc = {
     .name      = "sandbox_game",
-    .flags     = 0, /* no hot-reload, no console -- shipping config */
+    .flags     = RUN_HOST_WINDOWED, /* windowed; no hot-reload, no console -- shipping config */
     .loop_mode = RUN_LOOP_RUN,
     .modules   = k_modules,
     .on_ready  = game_ready,

@@ -131,7 +131,6 @@ raw_host_close_request( void )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( app    ),
     RUN_SERVICE( rhi    ),
     RUN_SERVICE( draw   ),
     RUN_MODULE ( render ),
@@ -143,7 +142,7 @@ main( int argc, char** argv )
 {
     const run_host_desc_t desc = {
         .name             = "sb_host_runtime_proj",
-        .flags            = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD,
+        .flags            = RUN_HOST_WINDOWED | RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD,
         .loop_mode        = RUN_LOOP_RUN,
         .window_width     = 1280,
         .window_height    = 720,

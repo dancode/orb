@@ -133,7 +133,7 @@ target run
     root        source/runtime
     folder      03_RUNTIME
     unit        run.c
-	dep         mod sys ref job prof core
+	dep         mod sys ref job prof net app core   # engine floor: run.c loads all of these in run_host_main
 
 # ==============================================================================
 # 03_RUNTIME_SERVICE
@@ -299,7 +299,7 @@ target template_game				# source template for -create <name> -type project
     root        source/project/template_game
     folder      06_PROJECT
     unit        main.c
-	dep 		mod ref sys core job app
+	dep 		mod ref sys core job app net
     dep         run prof rhi draw fs
 	mono_dep	render
 
@@ -349,7 +349,7 @@ target host_game
     root        source/host/game
     folder      08_HOST
     unit        host_game_main.c
-	dep         mod ref sys core job app host_common
+	dep         mod ref sys core job app net host_common
     dep         run prof rhi draw fs
 	mono_dep	render game
 	
@@ -359,7 +359,7 @@ target host_editor
     root        source/host/editor
     folder      08_HOST
     unit        host_editor_main.c
-	dep         mod ref sys core job app host_common
+	dep         mod ref sys core job app net host_common
     dep         run prof rhi draw gui fs
 	mono_dep	render game
 	
@@ -568,7 +568,7 @@ target sb_vulkan						# vulkan development and testing
     folder      09_SANDBOX/RHI
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
-    dep         sys ref mod core job app
+    dep         sys ref mod core job app net
 	dep 		run prof rhi draw gui fs
 	dep         dev_font
 	mono_dep 	render
@@ -593,7 +593,7 @@ target sb_gui
     root        source/sandbox/gui/sb_gui
     folder      09_SANDBOX/GUI
     unit        sb_gui.c
-    dep         sys ref mod core job app
+    dep         sys ref mod core job app net
 	dep 		run prof rhi draw gui fs
 	dep         dev_font
 	mono_dep 	render
@@ -622,7 +622,7 @@ target sb_gui_editor					# game-engine editor shell over the gui library
     root        source/sandbox/gui/sb_gui_editor
     folder      09_SANDBOX/GUI
     unit        sb_gui_editor.c
-    dep         sys ref mod core job app
+    dep         sys ref mod core job app net
 	dep 		run prof rhi draw gui fs
 	dep         dev_font
 	mono_dep 	render
@@ -654,7 +654,7 @@ target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
     root        source/sandbox/gui/sb_gui_font
     folder      09_SANDBOX/GUI
     unit        sb_gui_font.c
-    dep         sys ref mod core job app
+    dep         sys ref mod core job app net
 	dep 		run prof rhi draw gui fs
 	dep         dev_font
 	mono_dep 	render
@@ -679,7 +679,7 @@ target sb_host_tool
     root        source/sandbox/host/sb_host_tool
     folder      09_SANDBOX/HOST
     unit        sb_host_tool.c
-	dep 		mod ref sys core job app
+	dep 		mod ref sys core job app net
     dep         run prof fs
 	mono_dep	render rhi draw
 
@@ -689,7 +689,7 @@ target sb_host_server
     root        source/sandbox/host/sb_host_server
     folder      09_SANDBOX/HOST
     unit        sb_host_server.c
-	dep 		mod ref sys core job app
+	dep 		mod ref sys core job app net
     dep         run prof fs
 	mono_dep	render rhi draw example
 
@@ -699,7 +699,7 @@ target sb_host_editor
     root        source/sandbox/host/sb_host_editor
     folder      09_SANDBOX/HOST
     unit        sb_host_editor.c
-	dep 		mod ref sys core job app
+	dep 		mod ref sys core job app net
     dep         run prof rhi draw gui fs
 	mono_dep	render
 
@@ -709,7 +709,7 @@ target sb_host_game
     root        source/sandbox/host/sb_host_game
     folder      09_SANDBOX/HOST
     unit        sb_host_game.c
-	dep 		mod ref sys core job app
+	dep 		mod ref sys core job app net
     dep         run prof rhi draw input fs
 	mono_dep	render
 
@@ -719,7 +719,7 @@ target sb_host_runtime_proj			# BYPASS PROOF: drives run_project.h directly -- n
     root        source/sandbox/host/sb_host_runtime_proj
     folder      09_SANDBOX/HOST
     unit        sb_host_runtime_proj.c
-	dep 		mod ref sys core job app
+	dep 		mod ref sys core job app net
     dep         run prof rhi draw fs
 	mono_dep	render
 

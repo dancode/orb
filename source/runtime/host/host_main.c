@@ -6,13 +6,13 @@
 
         1. mod_system_init()                        -- registry online
         2. ref_wire_mod_callbacks()                 -- install hooks; no code fires yet
-        3. mod_static_load( sys, ref, prof, fs, job, core, run )  -- PASSIVE: engine floor registered
+        3. mod_static_load( sys, ref, prof, fs, job, net, app, core, run ) -- PASSIVE: engine floor registered
         4. load_all( desc->modules )                -- PASSIVE: every entry registered
            mod_dynamic_load_dir( project )          -- PASSIVE: optional project DLL (desc->project_name)
         5. mod_init_all()                           -- pass 1: load callbacks fire in dep order (ref frames pushed, reflection live)
                                                        pass 2: init() runs in same order
-        6. MOD_HOST_FETCH_API( app, rhi, render )   -- cache host-owned API ptrs
-        7. window_open()                            -- when app is loaded (inferred from k_modules)
+        6. MOD_HOST_FETCH_API( rhi, render, ... )   -- cache host-owned optional-service API ptrs
+        7. window_open()                            -- when RUN_HOST_WINDOWED is set (explicit host policy)
            rhi->init() + context_open()             -- when rhi is loaded
            draw->init()                             -- when draw is loaded, after rhi context
            gui->init() + viewport_open()            -- when gui is loaded, after draw init
@@ -26,12 +26,13 @@
     (reflection, profilers) in that order. The ref frame stack therefore matches the
     dep graph -- dependencies below, dependents above.
 
-    The engine floor ( sys + ref + prof + fs + job + core + run ) is loaded by the host and is
-    always present regardless of what k_modules[] declares.  These root engine libraries are
-    cheap to init and create no OS resources on load (job spawns no threads until configured),
+    The engine floor ( sys + ref + prof + fs + job + net + app + core + run ) is loaded by the
+    host and is always present regardless of what k_modules[] declares.  These root engine
+    libraries are cheap to init and create no OS resources on load (job spawns no threads until
+    configured, net opens no sockets until peer_create, app opens no window until window_open),
     so the loop dereferences them unguarded.  The higher layers with real init cost -- rhi,
-    draw, gui, render, and eventually game / editor services (and, for now, net + app) -- are
-    declared by the host descriptor and guarded with if ( svc() ) at their call sites.
+    draw, gui, render, and eventually game / editor services -- are declared by the host
+    descriptor and guarded with if ( svc() ) at their call sites.
 
     Frame order
     -----------
@@ -153,7 +154,6 @@ run_host_realtime( void )
     Cached engine module API pointers
 ==============================================================================================*/
 
-MOD_USE_APP;
 MOD_USE_RUN;
 
 MOD_USE_RHI;
@@ -412,15 +412,20 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     /* Engine floor -- the root engine libraries, always loaded regardless of k_modules[].
        They are cheap to init and create no OS resources on load: sys (clock+sleep), ref
        (reflection), prof (zone capture -- static rings), fs (virtual filesystem, opens no
-       files), job (task system -- spawns NO threads until job_configure below), core
-       (logging/cvars/cmd), run (frame clock).  The loop and module lifecycle dereference
-       these unconditionally, so they carry no if() guard.  Real cost lives one layer up in
-       the runtime services (rhi builds a Vulkan device, etc.) -- those stay opt-in. */
+       files), job (task system -- spawns NO threads until job_configure below), net (UDP
+       transport -- opens no sockets until peer_create), app (windowing/input -- creates no
+       window until window_open), core (logging/cvars/cmd), run (frame clock).  The loop and
+       module lifecycle dereference these unconditionally, so they carry no if() guard.  app
+       being always present is why "windowed" is now explicit host policy (RUN_HOST_WINDOWED)
+       rather than an app()-presence inference.  Real cost lives one layer up in the runtime
+       services (rhi builds a Vulkan device, etc.) -- those stay opt-in in k_modules[]. */
     if ( !mod_static_load( "sys",  sys_get_mod_desc() )  ||
          !mod_static_load( "ref",  ref_get_mod_desc() )  ||
          !mod_static_load( "prof", prof_get_mod_desc() ) ||
          !mod_static_load( "fs",   fs_get_mod_desc() )   ||
          !mod_static_load( "job",  job_get_mod_desc() )  ||
+         !mod_static_load( "net",  net_get_mod_desc() )  ||
+         !mod_static_load( "app",  app_get_mod_desc() )  ||
          !mod_static_load( "core", core_get_mod_desc() ) ||
          !mod_static_load( "run",  run_get_mod_desc() ) )
     {
@@ -493,25 +498,25 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
-       This TU opts into the pointer gateway for these services in every build mode
-       (MOD_HOST_DYNAMIC_SERVICES in run.c), so each fetch returns NULL when the module
-       is absent from k_modules[] -- headless hosts that don't load app, draw, or gui get
-       NULL here, which is fine; the guarded paths below check it.  app's fetch is what
-       drives the windowed inference.
+       This TU opts into the pointer gateway for these optional services in every build mode
+       (MOD_HOST_DYNAMIC_SERVICES in run.c), so each fetch returns NULL when the module is
+       absent from k_modules[] -- headless hosts that don't load rhi, draw, or gui get NULL
+       here, which is fine; the guarded paths below check it.  app is NOT in this list: it is
+       an engine-floor static (always loaded), so app() is hard-bound and never NULL.
     */
-    MOD_HOST_FETCH_API( app    );
     MOD_HOST_FETCH_API( rhi    );
     MOD_HOST_FETCH_API( render );
     MOD_HOST_FETCH_API( draw   );
     MOD_HOST_FETCH_API( gui    );
     MOD_HOST_FETCH_API( input  );
 
-    /* ---- windowed path: inferred from k_modules[] -------------------- */
+    /* ---- windowed path: explicit host policy ------------------------- */
     /*
-       If app was declared in k_modules, app() is non-NULL here and we
-       create a window. No separate flag -- the module list is the declaration.
+       app is always loaded now, so its presence can no longer signal intent.  A host
+       declares it wants a window by setting RUN_HOST_WINDOWED; headless hosts (server,
+       tool) leave it clear and never open a window or pump OS events.
     */
-    const bool windowed   = ( app() != NULL );
+    const bool windowed   = ( desc->flags & RUN_HOST_WINDOWED ) != 0;
 
     /* Borderless is honored only when gui is loaded -- gui draws the chrome shell (caption,
        sizing borders) each frame; without it the window would have no frame at all.  A host

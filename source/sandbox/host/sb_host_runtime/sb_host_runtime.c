@@ -134,13 +134,14 @@ runtime_update( f32 dt )
 /*==============================================================================================
     Host descriptor
 
-    k_modules[] is the single declaration of what this host is. Adding a service or module
-    here is the only step needed to bring it online — the host picks up windowed mode,
-    RHI init, and the render loop automatically based on which entries are present.
+    k_modules[] declares the opt-in services above the engine floor.  Adding a service or
+    module here is the only step needed to bring it online — the host picks up RHI init and
+    the render loop automatically based on which entries are present.  Windowed mode is
+    separate: it is set explicitly via RUN_HOST_WINDOWED in the descriptor flags below (app
+    is always in the floor, so its presence no longer signals intent).
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( app    ),   /* windowing + input — static; presence enables windowed mode    */
     RUN_SERVICE( rhi    ),   /* Vulkan RHI — static; inits after window_open                  */
     RUN_SERVICE( draw   ),   /* immediate primitives -- static service; render's draw backend */
     RUN_MODULE ( render ),   /* renderer front-end — DLL in dynamic builds, static otherwise  */
@@ -162,7 +163,7 @@ static const run_module_entry_t k_modules[] = {
 /* runtime is just to test runtime without added layers on top */
 static const run_host_desc_t k_desc = {
     .name      = "sb_host_runtime",
-    .flags     = RUN_HOST_HOT_RELOAD | RUN_HOST_CONSOLE | RUN_HOST_EDITOR_SLEEP,
+    .flags     = RUN_HOST_WINDOWED | RUN_HOST_HOT_RELOAD | RUN_HOST_CONSOLE | RUN_HOST_EDITOR_SLEEP,
     .loop_mode = RUN_LOOP_RUN,
     .modules   = k_modules,
     .on_ready  = runtime_ready,

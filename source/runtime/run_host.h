@@ -16,7 +16,7 @@
     modules it manages (app, render) and calls them by name. It does NOT iterate
     the dep graph generically — each module call is intentional.
 
-        [pump OS events] <- app()->pump_events() — false = window closed (when app is loaded)
+        [pump OS events] <- app()->pump_events() — false = window closed (when windowed)
         [event drain]    <- rhi()->event / gui()->event routing; on_event sees the rest;
                             WIN_CLOSE consults on_close_request before quitting
         [console poll]   <- sys, if RUN_HOST_CONSOLE
@@ -29,12 +29,13 @@
 
     Windowed vs headless
     --------------------
-    The host infers its mode from k_modules[]: if app is loaded, the host creates a
-    window and pumps OS events. If render is also loaded, it drives the render loop.
-    No separate flag — k_modules[] is the single declaration of intent.  gui is a fully
-    OPTIONAL service: without it the host runs a plain platform window; with it the host
-    wires the service (caps, font, frame hooks, viewport) but keeps ownership of the
-    window, the rhi context, the loop, and the pacing.
+    app is part of the always-loaded engine floor, so the host cannot infer intent from
+    its presence.  A host declares RUN_HOST_WINDOWED to open a window and pump OS events;
+    without it the host is headless (server, tool).  If render is loaded it drives the
+    render loop; the render services (rhi/draw/gui/render) remain opt-in via k_modules[].
+    gui is a fully OPTIONAL service: without it the host runs a plain platform window; with
+    it the host wires the service (caps, font, frame hooks, viewport) but keeps ownership of
+    the window, the rhi context, the loop, and the pacing.
 
     Callbacks
     ---------
@@ -81,6 +82,10 @@ enum    // RUN_HOST_FLAGS
     RUN_HOST_BORDERLESS   = 1 << 3, /* borderless main window with gui-drawn chrome;
                                        honored only when gui is in k_modules[] (gui
                                        draws the shell) — plain frame otherwise    */
+    RUN_HOST_WINDOWED     = 1 << 4, /* open a window and pump OS events.  app is always
+                                       loaded (engine floor), so windowed vs headless is
+                                       explicit policy, not an app()-presence inference;
+                                       server / tool hosts leave this clear             */
 };
 
 /*============================================================================================*/
@@ -99,10 +104,11 @@ typedef enum run_loop_mode_e
     Module entries
 
     k_modules[] declares only the layers ABOVE the engine floor.  run_host_main always loads
-    the floor itself -- sys, ref, prof, fs, job, core, run -- regardless of what a host
-    declares; these root engine libraries are cheap and create no OS resources on load (job
-    spawns no threads until job_workers configures the pool).  A host lists the services with
-    real init cost: rhi, draw, gui, render, game, and (for now) net + app.
+    the floor itself -- sys, ref, prof, fs, job, net, app, core, run -- regardless of what a
+    host declares; these root engine libraries are cheap and create no OS resources on load
+    (job spawns no threads until job_workers configures the pool, net opens no sockets, app
+    opens no window).  A host lists only the services with real init cost: rhi, draw, gui,
+    render, game.
 ==============================================================================================*/
 
 typedef struct mod_desc_s mod_desc_t;

@@ -20,7 +20,7 @@
     so they can't be fumbled from the editor window -- see editor_handle_shortcuts.
 
     Loop:  RUN_LOOP_RUN
-    Flags: RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_BORDERLESS | RUN_HOST_EDITOR_SLEEP
+    Flags: RUN_HOST_WINDOWED | RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_BORDERLESS | RUN_HOST_EDITOR_SLEEP
 
 ==============================================================================================*/
 
@@ -266,7 +266,6 @@ editor_close_request( void )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( app    ),    /* window, OS pump                               */
     RUN_SERVICE( rhi    ),    /* GPU backend -- static service                 */
     RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend */
     RUN_SERVICE( gui    ),    /* immediate mode GUI -- OPTIONAL static service */
@@ -313,7 +312,7 @@ main( int argc, char** argv )
 
     /* The editor is always dev mode: idle-sleep is unconditional.  A live play session
        suspends it through the realtime gate (editor_update), not by dropping the flag. */
-    u32 flags = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_BORDERLESS | RUN_HOST_EDITOR_SLEEP;
+    u32 flags = RUN_HOST_WINDOWED | RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_BORDERLESS | RUN_HOST_EDITOR_SLEEP;
 
     const run_host_desc_t desc = {
         .name             = "orb editor",

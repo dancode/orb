@@ -122,7 +122,6 @@ game_host_close_request( void )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( app    ),    /* window, OS pump                               */
     RUN_SERVICE( rhi    ),    /* GPU backend -- static service                 */
     RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend */
     RUN_MODULE ( render ),    /* scene frame owner                             */
@@ -155,7 +154,7 @@ main( int argc, char** argv )
         return 1;
     }
 
-    u32 flags = RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD;
+    u32 flags = RUN_HOST_WINDOWED | RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD;
 
     const run_host_desc_t desc = {
         .name             = s_proj.name,

@@ -37,14 +37,14 @@
 #include "engine/ref/ref_host.h"        // reflection: auto-wired on every DLL load
 #include "engine/prof/prof_host.h"      // profiler: leaf capture kernel, always present
 #include "engine/fs/fs_host.h"          // virtual filesystem: leaf on sys, mount + read bytes
+#include "engine/job/job_host.h"        // task system: floor -- spawns no threads until configured
+#include "engine/net/net_host.h"        // UDP transport: floor -- opens no sockets until peer_create
+#include "engine/app/app_host.h"        // windowing/input: floor -- opens no window until window_open
+#include "engine/core/core_host.h"      // orchestration: logging, cvars, cmd/console, config
 
 /*==============================================================================================
-    (Optional) Module API's
+    (Optional) Service / module API's -- opt-in via k_modules[]
 ==============================================================================================*/
-
-#include "engine/app/app_host.h"
-#include "engine/core/core_host.h"
-#include "engine/job/job_host.h"
 
 #include "runtime_service/rhi/rhi_api.h"
 #include "runtime_service/draw/draw_api.h"

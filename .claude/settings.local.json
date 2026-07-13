@@ -261,7 +261,13 @@
       "PowerShell($t = @\\('sb_host_server','host_game','host_editor'\\); foreach \\($x in $t\\) { bin\\\\build_tool.exe -config Debug -target $x; if \\(-not $?\\) { Write-Host \"FAILED: $x\"; break } })",
       "PowerShell($t = @\\('sb_job','sb_host_server','host_game','host_editor'\\); foreach \\($x in $t\\) { bin\\\\build_tool.exe -config Debug -target $x; if \\(-not $?\\) { Write-Host \"FAILED: $x\"; break } })",
       "PowerShell($t = @\\('sb_job','sb_host_server','host_game','host_editor','sb_host_runtime'\\); foreach \\($x in $t\\) { bin\\\\build_tool.exe -config Debug -target $x; if \\(-not $?\\) { Write-Host \"FAILED: $x\"; break } })",
-      "PowerShell(Write-Host \"Logical processors: $env:NUMBER_OF_PROCESSORS\")"
+      "PowerShell(Write-Host \"Logical processors: $env:NUMBER_OF_PROCESSORS\")",
+      "Bash(./bin/build_tool.exe -config Debug -target sb_host_server)",
+      "Bash(timeout 4 ./bin/sb_host_server.exe)",
+      "Bash(echo \"[exit: $?]\")",
+      "Bash(timeout 4 ./bin/sb_host_runtime.exe)",
+      "Bash(./bin/build_tool.exe -config Debug -monolithic -target sb_host_server)",
+      "Bash(./bin/build_tool.exe -doctor)"
     ]
   }
 }
