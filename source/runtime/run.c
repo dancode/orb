@@ -66,15 +66,15 @@
 #include "runtime/run_host.h"           // hosts API (entry point, boot sequence, main loop, etc).
 
 /*==============================================================================================
-    Unity Build (The Host Entry Point)
+    Unity Build (constituents)
 ==============================================================================================*/
 
-#ifndef HOST_API_C_PRELUDE
-#include "runtime/host/host_api.c"    // Host API definition (exported to modules).
+#ifndef RUN_API_C_PRELUDE
+#include "runtime/run_api.c"     // run module API definition (exported to modules).
 #endif
 
-#include "runtime/host/host_main.c"    // The main() entry point and boot sequence.
-#include "runtime/host/host_perf.c"    // Host-side perf HUD (draw-backed frame-stats overlay).
+#include "runtime/run_host.c"    // run_host_main: entry point, boot sequence, main loop.
+#include "runtime/run_perf.c"    // host-side perf HUD (draw-backed frame-stats overlay).
 
 /*==============================================================================================
     Unity API Definition

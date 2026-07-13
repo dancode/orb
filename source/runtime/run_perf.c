@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    host_perf.c -- Host-side perf HUD (draw backend).
+    run_perf.c -- Host-side perf HUD (draw backend).
 
     The runtime host owns a per-phase frame profiler the gui knows nothing about: the integer
     microsecond timings stamped through the main loop (events / update / gui / render / work /

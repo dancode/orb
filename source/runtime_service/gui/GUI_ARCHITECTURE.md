@@ -104,7 +104,7 @@ at deferred tessellation time -- `push_font`/`pop_font` cannot scope a second fo
 The core lifecycle is always the same sequence; what differs is who owns the window, the rhi
 context, and the render/present step.
 
-### Standard manual loop (real hosts: runtime/host/host_main.c, sandbox/rhi/sb_vulkan/sb_vulkan.c)
+### Standard manual loop (real hosts: runtime/run_host.c, sandbox/rhi/sb_vulkan/sb_vulkan.c)
 
 The host owns everything: it creates the app window + rhi context itself, then attaches gui to
 them. `gui_boot.c` is NOT involved.
@@ -143,7 +143,7 @@ while ( app pump )                                // host pumps OS events itself
 gui()->shutdown();
 ```
 
-host_main.c picks a render path per tick: render module owns the frame and gui composites
+run_host.c picks a render path per tick: render module owns the frame and gui composites
 over `render()->frame_cmd()`; gui-without-render drives the explicit rhi frame by hand;
 draw-only skips gui entirely. In every path gui is one `gui()->render( vp, cmd )` call inside
 an already-open frame -- gui never owns the swapchain here.

@@ -444,7 +444,7 @@ bool sys_addr_resolve( const char* hostname, u16 port, sys_addr_t* out );
 
 /* Value order MUST mirror app_key_t (engine/app/app.h) for the shared range -- letters,
    digits, F-keys, then ESCAPE/ENTER/SPACE -- so the two tables agree on constants.
-   host_main.c _Static_asserts the pinning. */
+   run_host.c _Static_asserts the pinning. */
 typedef enum sys_key_e
 {
     PLATFORM_KEY_NONE = 0,

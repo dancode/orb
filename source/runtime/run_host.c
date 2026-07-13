@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    host_main.c -- runtime host implementation.
+    run_host.c -- runtime host implementation (run_host_main + boot sequence + main loop).
 
     Boot sequence:
 
@@ -162,7 +162,7 @@ MOD_USE_DRAW;
 MOD_USE_GUI;
 MOD_USE_INPUT;
 
-/* Host-side perf HUD -- defined in host_perf.c, included after this unit in the runtime unity
+/* Host-side perf HUD -- defined in run_perf.c, included after this unit in the runtime unity
    build (run.c).  host_perf_tick polls the toggle + folds this frame's stats (every frame);
    host_perf_active reports whether the overlay is on; host_draw_perf_content paints it (through
    draw's built-in bitmap font) inside an already-open draw pass at a render composite point. */
