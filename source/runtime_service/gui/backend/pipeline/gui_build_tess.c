@@ -33,21 +33,23 @@
 
 static struct
 {
-    gui_draw_vert_t  verts    [ GUI_MAX_VERTS ];
-    u16                indices  [ GUI_MAX_IDX   ];
-    gui_gpu_cmd_t    cmds     [ GUI_MAX_CMDS  ];
-    u32                cmd_vp   [ GUI_MAX_CMDS  ];
-    u32                cmd_vbase[ GUI_MAX_CMDS  ];  /* vertex-buffer slot where this cmd's geometry starts */
-    u32                cmd_ibase[ GUI_MAX_CMDS  ];  /* index-buffer slot where this cmd's indices start (its
-                                                        draw call's first_index).  Explicit rather than
-                                                        accumulated from elem_counts at flush time so the
-                                                        index buffer may contain reserved gaps (volatile
-                                                        block headroom) between commands. */
+    gui_draw_vert_t verts     [ GUI_MAX_VERTS ];
+    u16             indices   [ GUI_MAX_IDX   ];
+    gui_gpu_cmd_t   cmds      [ GUI_MAX_CMDS  ];
+    u32             cmd_vp    [ GUI_MAX_CMDS  ];
+    u32             cmd_vbase [ GUI_MAX_CMDS  ];    /* vertex-buffer slot where this cmd's geometry starts */
+    u32             cmd_ibase [ GUI_MAX_CMDS  ];    
+
+    /* index-buffer slot where this cmd's indices start (its
+       draw call's first_index).  Explicit rather than
+       accumulated from elem_counts at flush time so the
+       index buffer may contain reserved gaps (volatile
+       block headroom) between commands. */
 
     u32 vert_count, idx_count, cmd_count;
 
-    gui_rect_t cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
-    u32          cur_vp;    /* viewport baked from the current semantic command                    */
+    gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
+    u32         cur_vp;     /* viewport baked from the current semantic command                    */
 
     /* Vertex base of the window slot currently being tessellated.  Index values emitted during
        tess are (local_vert - slot_vert_base), making them 0-relative within the slot.  At draw

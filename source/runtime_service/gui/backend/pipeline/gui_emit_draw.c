@@ -55,14 +55,14 @@ typedef struct
 
 static struct
 {
-    gui_cmd_t       cmds            [ GUI_MAX_CMDS ];       // semantic command list; one entry per shape
-    u32             cmd_hashes      [ GUI_MAX_CMDS ];       // per-command hash baked at emit (for cache diff)
-    gui_id_t        cmd_volatile_id [ GUI_MAX_CMDS ];       // GUI_ID_NONE, or the volatile widget owning this cmd
-    gui_vec2_t      points          [ GUI_MAX_PATH_PTS ];   // point pool for CMD_POLYLINE data; indexed by pt_offset
-    gui_rect_col_t  rect_pool       [ GUI_MAX_RECT_ENTRIES ]; // rect pool for CMD_RECT_LIST data; indexed by offset
+    gui_cmd_t       cmds            [ GUI_MAX_CMDS ];           // semantic command list; one entry per shape
+    u32             cmd_hashes      [ GUI_MAX_CMDS ];           // per-command hash baked at emit (for cache diff)
+    gui_id_t        cmd_volatile_id [ GUI_MAX_CMDS ];           // GUI_ID_NONE, or the volatile widget owning this cmd
+    gui_vec2_t      points          [ GUI_MAX_PATH_PTS ];       // point pool for CMD_POLYLINE data; indexed by pt_offset
+    gui_rect_col_t  rect_pool       [ GUI_MAX_RECT_ENTRIES ];   // rect pool for CMD_RECT_LIST data; indexed by offset
 
-    gui_cmd_seg_t   segs            [ GUI_MAX_SEGS ];       // per-(win,z,vp,font,band) spans, in emit order
-    u32             seg_count;                              // spans open this frame (>= 1; segs[0] is the bg span)
+    gui_cmd_seg_t   segs            [ GUI_MAX_SEGS ];            // per-(win,z,vp,font,band) spans, in emit order
+    u32             seg_count;                                  // spans open this frame (>= 1; segs[0] is the bg span)
 
     /* Flat string pool: draw_push_text_n copies every string here so that stack-local buffers
        (textf, snprintf labels) remain valid until gui_render_flush consumes them. */
