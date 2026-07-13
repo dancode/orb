@@ -246,7 +246,8 @@
       "Bash(./bin/build_tool.exe -config Debug)",
       "Bash(./bin/build_tool.exe -config Debug -monolithic)",
       "Bash(./bin/sb_core.exe)",
-      "Bash(./bin/sb_asset_test.exe)"
+      "Bash(./bin/sb_asset_test.exe)",
+      "Bash(./bin/sb_fs.exe)"
     ]
   }
 }

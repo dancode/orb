@@ -429,7 +429,7 @@ target sb_core
     root        source/sandbox/engine/sb_core
     folder      09_SANDBOX/ENGINE
     unit        sb_core.c
-    dep         core sys fs
+    dep         core sys
 
 target sb_job
 
@@ -454,6 +454,14 @@ target sb_prof
     folder      09_SANDBOX/ENGINE
     unit        sb_prof.c
     dep         sys prof
+
+target sb_fs
+
+    type        exe
+    root        source/sandbox/engine/sb_fs
+    folder      09_SANDBOX/ENGINE
+    unit        sb_fs.c
+    dep         sys fs mod
 
 # ==============================================================================
 # 09_SANDBOX -- RUNTIME (runtime service tests)
@@ -978,7 +986,7 @@ solution orb_sandbox_engine				# developing engine libraries
 	add 		sb_app
 	add 		sb_net
 	add 		sb_prof
-#	add 		sb_fs
+	add 		sb_fs
 
 	# 			--- SANDBOX : RUNTIME SERVICES --
 
@@ -1035,7 +1043,7 @@ solution orb_all
 	add 		sb_job
 	add 		sb_app
 	add 		sb_prof
-# 	add 		sb_fs
+	add 		sb_fs
 
 	add 		sb_asset_test
 	add 		sb_input
