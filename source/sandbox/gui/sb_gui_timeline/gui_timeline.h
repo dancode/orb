@@ -23,7 +23,9 @@
 /* Drain the prof rings into the timeline's history. Call once per frame, AFTER the frame's
    workload so its zones appear immediately. The timeline is the single drain consumer while
    it runs; it stands down automatically when a Chrome-trace dump or an armed hitch monitor
-   owns the drain (the window reports which). */
+   owns the drain (the window reports which). While PAUSED it drains nothing -- capture stops
+   so the frozen view cannot be overwritten mid-investigation; resume discards the stale ring
+   backlog and continues from now. */
 void gui_timeline_update  ( void );
 
 /* Emit the "Profiler Timeline" window. Call between ctx_begin/ctx_end on emit frames. */

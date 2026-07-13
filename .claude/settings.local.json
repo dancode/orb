@@ -235,7 +235,8 @@
       "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_prof)",
       "PowerShell(\\(Get-Item F:\\\\orb\\\\source\\\\runtime\\\\run.c\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target host_editor; if \\($?\\) { bin\\\\build_tool.exe -config Debug -target sb_prof })",
       "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui_timeline)",
-      "PowerShell($p = Start-Process -FilePath \"bin\\\\sb_gui_timeline.exe\" -WorkingDirectory \"bin\" -PassThru; Start-Sleep -Seconds 8; if \\($p.HasExited\\) { \"EXITED early, code $\\($p.ExitCode\\)\" } else { \"running OK after 8s\"; Stop-Process -Id $p.Id -Force -Confirm:$false })"
+      "PowerShell($p = Start-Process -FilePath \"bin\\\\sb_gui_timeline.exe\" -WorkingDirectory \"bin\" -PassThru; Start-Sleep -Seconds 8; if \\($p.HasExited\\) { \"EXITED early, code $\\($p.ExitCode\\)\" } else { \"running OK after 8s\"; Stop-Process -Id $p.Id -Force -Confirm:$false })",
+      "PowerShell($p = Start-Process -FilePath \"bin\\\\sb_gui_timeline.exe\" -WorkingDirectory \"bin\" -PassThru; Start-Sleep -Seconds 6; if \\($p.HasExited\\) { \"EXITED early, code $\\($p.ExitCode\\)\" } else { \"running OK\"; Stop-Process -Id $p.Id -Force -Confirm:$false })"
     ]
   }
 }

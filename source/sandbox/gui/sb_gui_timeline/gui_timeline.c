@@ -16,6 +16,9 @@
     View model: a time window [ view_t1 - span_ns, view_t1 ]. LIVE pins view_t1 to the newest
     event every frame; interacting (drag to pan, wheel to zoom around the cursor, click a bar
     in the frame strip to focus that frame) drops out of live, the Live button resumes it.
+    Pausing also STOPS CAPTURE: an investigation can last minutes, and collecting on would
+    wrap the circular history right through the data under inspection (and be stale by resume
+    anyway). Resume discards the ring backlog and continues from now, leaving an honest gap.
 
     One-consumer rule: prof allows a single drain consumer. gui_timeline_update() stands down
     (drains nothing) while a Chrome-trace dump is active or the hitch monitor is armed -- those
@@ -98,7 +101,9 @@ typedef struct tl_state_s
     u32  frame_head;                    // free-running cursor into the frame-mark ring
 
     /* view */
-    bool live;                          // right edge follows t_latest
+    bool live;                          // right edge follows t_latest; false = paused, capture stopped
+    bool was_live;                      // last update's live state; a rising edge = resume
+    u32  drop_base;                     // cumulative prof drops at last resume/clear (readout baseline)
     f64  span_ns;                       // window width
     f64  view_t1;                       // window right edge (absolute ns)
     f32  drag_x;                        // pan anchor while the canvas item is held
@@ -106,7 +111,7 @@ typedef struct tl_state_s
     tl_hover_t hover;                   // span under the cursor, found during draw
 } tl_state_t;
 
-static tl_state_t      g_tl = { .live = true, .span_ns = 100.0 * 1000.0 * 1000.0 };
+static tl_state_t      g_tl = { .live = true, .was_live = true, .span_ns = 100.0 * 1000.0 * 1000.0 };
 static tl_track_t      g_tl_tracks[ PROF_MAX_THREADS ];
 static tl_frame_mark_t g_tl_frames[ TL_FRAME_CAP ];
 static prof_event_t    g_tl_buf[ TL_DRAIN_CHUNK ];
@@ -254,9 +259,36 @@ gui_timeline_update( void )
     if ( s->blocked )
         return;
 
+    /* Paused = capture STOPPED, not just the view frozen: a pause can last minutes while a
+       frame is investigated, and draining on would wrap the span rings right through the
+       data on screen. The producers keep writing until their prof rings fill, then drop
+       (cheap, counted); the stale backlog is discarded wholesale on resume. */
+    if ( !s->live )
+    {
+        s->was_live = false;
+        return;
+    }
+
     u32 threads = prof_thread_count();
     if ( threads > PROF_MAX_THREADS )
         threads = PROF_MAX_THREADS;
+
+    if ( !s->was_live )
+    {
+        /* Resuming: everything pending is pause-old and full of overflow holes -- dropped
+           BEGINs would mis-pair the stack walk. Throw the backlog away and reset the fold
+           stacks; unpaired ENDs from zones begun before the resume then land on depth 0 and
+           are ignored. History up to the pause point stays valid on screen. The drops the
+           pause deliberately caused are baselined out of the readout. */
+        s->drop_base = 0;
+        for ( u32 t = 0; t < threads; ++t )
+        {
+            while ( prof_drain( t, g_tl_buf, TL_DRAIN_CHUNK ) != 0 ) {}
+            g_tl_tracks[ t ].depth = 0;
+            s->drop_base += prof_thread_dropped( t );
+        }
+        s->was_live = true;
+    }
 
     for ( u32 t = 0; t < threads; ++t )
     {
@@ -286,8 +318,16 @@ gui_timeline_clear( void )
     memset( g_tl_tracks, 0, sizeof( g_tl_tracks ) );
     memset( g_tl_frames, 0, sizeof( g_tl_frames ) );
 
-    g_tl.live    = live;
-    g_tl.span_ns = span;
+    g_tl.live     = live;
+    g_tl.was_live = live;
+    g_tl.span_ns  = span;
+
+    /* Restart the drops readout at zero too -- prof's counters are lifetime-cumulative. */
+    u32 threads = prof_thread_count();
+    if ( threads > PROF_MAX_THREADS )
+        threads = PROF_MAX_THREADS;
+    for ( u32 t = 0; t < threads; ++t )
+        g_tl.drop_base += prof_thread_dropped( t );
 }
 
 /*==============================================================================================
@@ -649,12 +689,13 @@ tl_controls( void )
         threads = PROF_MAX_THREADS;
     for ( u32 t = 0; t < threads; ++t )
         drops += prof_thread_dropped( t );
+    drops = drops > s->drop_base ? drops - s->drop_base : 0;
 
     char span[ 32 ];
     tl_fmt_time( s->span_ns, span, sizeof( span ) );
     gui()->textf( "  view %s   events %llu   drops %u%s", span,
                   ( unsigned long long )s->drained, drops,
-                  s->live ? "" : "   [paused -- drag to pan, wheel to zoom]" );
+                  s->live ? "" : "   [paused -- capture stopped; drag to pan, wheel to zoom]" );
 }
 
 void
