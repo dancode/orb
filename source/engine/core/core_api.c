@@ -24,6 +24,9 @@ core_init( void )
     cvar_system_init();
     cmd_system_init();           /* command backend before registrants (echo/help/wait built-ins) */
     con_init();                  /* console view: registers clear/history into the backend */
+
+    /* register after core systems are up, so the commands can reach the backend */
+
     cvar_register_commands();    /* set/seta/toggle/cvarlist/... into the backend registry */
     log_register_commands();     /* 'log' per-channel verbosity command over the channel registry */
     core_register_cvars();       /* core-owned cvars: version, developer, log_level */
