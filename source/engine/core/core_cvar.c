@@ -21,173 +21,12 @@
 #include "engine/core/cmd/cmd_alias.c"
 #include "engine/core/cmd/cmd.c"
 
-/* Defined in the 'log' command block below; cvar_write_config calls it alongside the
-   bind/alias writers so channel overrides round-trip through writeconfig too. */
-static void log_channel_write_config( void* file );
-
 #include "engine/core/cvar/cvar_config.c"
 
 #include "engine/core/console/console.h"
 #include "engine/core/console/console.c"
 
 #include "engine/core/test/test_core_cvar.c"
-
-/*==============================================================================================
-
-    Core-owned 'log' command -- per-channel runtime verbosity.
-
-    The registry lives in core_log.c; its statics are visible here (same unity TU, included
-    earlier by core.c), matching how console.c reaches log_add_sink directly.
-
-    Usage:
-        log list                    list channels with override + effective level
-        log <channel>               print one channel's state
-        log <channel> <level|off>   set override (trace|debug|info|warn|error|off or 0-4)
-        log <channel> reset         clear override (channel follows log_level again)
-        log reset                   clear all overrides
-
-==============================================================================================*/
-
-static const char* s_log_level_names[] = { "trace", "debug", "info", "warn", "error" };
-
-static const char*
-log_cmd_level_name( log_level_t level )
-{
-    if ( level == LOG_LEVEL_OFF )     return "off";
-    if ( level == LOG_LEVEL_INHERIT ) return "-";
-    if ( level <= LOG_LEVEL_ERROR )   return s_log_level_names[ level ];
-    return "?";
-}
-
-static bool
-log_cmd_parse_level( const char* s, log_level_t* out )
-{
-    for ( u32 i = 0; i <= LOG_LEVEL_ERROR; i++ )
-    {
-        if ( strcmp( s, s_log_level_names[ i ] ) == 0 )
-        {
-            *out = ( log_level_t )i;
-            return true;
-        }
-    }
-    if ( strcmp( s, "off" ) == 0 )
-    {
-        *out = LOG_LEVEL_OFF;
-        return true;
-    }
-    if ( s[ 0 ] >= '0' && s[ 0 ] <= '4' && s[ 1 ] == '\0' )
-    {
-        *out = ( log_level_t )( s[ 0 ] - '0' );
-        return true;
-    }
-    return false;
-}
-
-static void
-cmd_log( int argc, char** argv )
-{
-    if ( argc < 2 )
-    {
-        con_printf( "Usage: log list | log reset | log <channel> [level|off|reset]\n" );
-        con_printf( "  Levels: trace debug info warn error (0-4). Channels register on first use.\n" );
-        return;
-    }
-
-    if ( strcmp( argv[ 1 ], "list" ) == 0 )
-    {
-        u32 count = log_channel_count();
-        con_printf( "\n%-24s %-9s %s\n", "channel", "override", "effective" );
-        con_printf( "------------------------------------------\n" );
-        for ( u32 i = 0; i < count; i++ )
-        {
-            const char* name      = NULL;
-            log_level_t override  = LOG_LEVEL_INHERIT;
-            log_level_t effective = LOG_LEVEL_INFO;
-            log_channel_get( i, &name, &override, &effective );
-            con_printf( "%-24s %-9s %s\n", name, log_cmd_level_name( override ),
-                        log_cmd_level_name( effective ) );
-        }
-        con_printf( "------------------------------------------\n" );
-        con_printf( "%u channel(s), global floor %s (log_level)\n\n",
-                    count, log_cmd_level_name( g_min_level ) );
-        return;
-    }
-
-    if ( strcmp( argv[ 1 ], "reset" ) == 0 )
-    {
-        log_channel_reset( NULL );
-        con_printf( "All log channel overrides cleared\n" );
-        return;
-    }
-
-    const char* name = argv[ 1 ];
-
-    if ( argc == 2 )    /* query form, like a bare cvar name */
-    {
-        log_channel_t* ch = log_channel_find( name );
-        if ( !ch )
-        {
-            con_printf( "No log channel '%s' registered yet\n", name );
-            return;
-        }
-        log_level_t override  = ( log_level_t )ch->override;
-        log_level_t effective = ( override != LOG_LEVEL_INHERIT ) ? override : g_min_level;
-        con_printf( "log channel '%s': override %s, effective %s\n",
-                    ch->name, log_cmd_level_name( override ), log_cmd_level_name( effective ) );
-        return;
-    }
-
-    if ( strcmp( argv[ 2 ], "reset" ) == 0 )
-    {
-        log_channel_reset( name );
-        con_printf( "log channel '%s' reset to inherit\n", name );
-        return;
-    }
-
-    log_level_t level;
-    if ( !log_cmd_parse_level( argv[ 2 ], &level ) )
-    {
-        con_printf( "Unknown log level '%s' (trace|debug|info|warn|error|off or 0-4)\n", argv[ 2 ] );
-        return;
-    }
-
-    log_channel_set( name, level );
-    con_printf( "log channel '%s' -> %s\n", name, log_cmd_level_name( level ) );
-}
-
-/* Write "log reset" + one "log <channel> <level>" line per override, mirroring the bind
-   writer's unbindall + bind lines: the unconditional reset keeps a lower-tier config file
-   (default.cfg) from leaking overrides into a session whose config.cfg has none.
-   void* keeps stdio out of the seam, same convention as cmd_bind_write_config. */
-
-static void
-log_channel_write_config( void* file )
-{
-    FILE* f     = ( FILE* )file;
-    u32   count = log_channel_count();
-
-    fprintf( f, "\nlog reset\n" );
-
-    for ( u32 i = 0; i < count; i++ )
-    {
-        const char* name     = NULL;
-        log_level_t override = LOG_LEVEL_INHERIT;
-        log_channel_get( i, &name, &override, NULL );
-        if ( override == LOG_LEVEL_INHERIT )
-            continue;
-
-        fprintf( f, "log %s %s\n", name, log_cmd_level_name( override ) );
-    }
-}
-
-/* Non-static so sandboxes that assemble core subsystems manually can register the
-   command without core_init (see sb_core); declared in core_host.h. */
-
-void
-log_register_commands( void )
-{
-    cmd_register( "log", cmd_log, "Set or list per-channel log levels" );
-}
 
 /*==============================================================================================
 
@@ -198,7 +37,7 @@ log_register_commands( void )
 /* log_level tracks the runtime log filter: setting it from the console retunes the logger. */
 
 static void
-core_cvar_log_level_changed( cvar_t* cv )
+log_level_changed( cvar_t* cv )
 {
     log_set_min_level( ( log_level_t )cvar_get_int( cv ) );
 }
@@ -207,7 +46,7 @@ core_cvar_log_level_changed( cvar_t* cv )
    separate from log_level above, which gates what reaches the log ring/sinks at all. */
 
 static void
-core_cvar_con_log_level_changed( cvar_t* cv )
+con_log_level_changed( cvar_t* cv )
 {
     con_set_log_filter( ( log_level_t )cvar_get_int( cv ) );
 }
@@ -218,17 +57,19 @@ core_register_cvars( void )
     cvar_register_r( "version", "Engine version string", "ORB 0.1.0", CVAR_ROM );
     cvar_register_b( "developer", "Enable developer diagnostics", false, 0 );
 
+    /* Log level cvars: log_level is the global filter, con_log_level is the console's ambient filter. */
+
     cvar_t* cv = cvar_register_i(
         "log_level", "Minimum log level (0=trace 1=debug 2=info 3=warn 4=error)",
         LOG_LEVEL_INFO, LOG_LEVEL_TRACE, LOG_LEVEL_ERROR, 0 );
 
-    cvar_callback_register( cv, core_cvar_log_level_changed );
+    cvar_callback_register( cv, log_level_changed );
 
     cvar_t* cv_con = cvar_register_i(
         "con_log_level", "Minimum ambient log level shown in the console (0=trace 1=debug 2=info 3=warn 4=error)",
         LOG_LEVEL_WARN, LOG_LEVEL_TRACE, LOG_LEVEL_ERROR, 0 );
 
-    cvar_callback_register( cv_con, core_cvar_con_log_level_changed );
+    cvar_callback_register( cv_con, con_log_level_changed );
 }
 
 /*============================================================================================*/
