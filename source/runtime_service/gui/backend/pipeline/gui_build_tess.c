@@ -35,10 +35,10 @@ static struct
 {
     gui_draw_vert_t verts     [ GUI_MAX_VERTS ];
     u16             indices   [ GUI_MAX_IDX   ];
-    gui_gpu_cmd_t   cmds      [ GUI_MAX_CMDS  ];
-    u32             cmd_vp    [ GUI_MAX_CMDS  ];
-    u32             cmd_vbase [ GUI_MAX_CMDS  ];    /* vertex-buffer slot where this cmd's geometry starts */
-    u32             cmd_ibase [ GUI_MAX_CMDS  ];    
+    gui_gpu_cmd_t   cmds      [ GUI_MAX_CMDS  ];    // 
+    u32             cmd_vp    [ GUI_MAX_CMDS  ];    // 
+    u32             cmd_vbase [ GUI_MAX_CMDS  ];    // vtx slot -- first vertex of command
+    u32             cmd_ibase [ GUI_MAX_CMDS  ];    // idx slot -- first index of command
 
     /* index-buffer slot where this cmd's indices start (its
        draw call's first_index).  Explicit rather than
