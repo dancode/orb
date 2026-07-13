@@ -256,7 +256,9 @@
       "PowerShell(cmd /c \"bootstrap_build_tool.bat < nul\" 2>&1 | Select-Object -Last 40)",
       "PowerShell(& cmd /c \".\\\\bootstrap_build_tool.bat < nul\" 2>&1 | Select-Object -Last 40)",
       "PowerShell(& .\\\\bin\\\\build_tool.exe -doctor 2>&1 | Select-Object -Last 60)",
-      "PowerShell($t = @\\('host_editor','sb_host_game','sb_host_editor','sb_host_runtime','sb_host_runtime_proj'\\); foreach \\($x in $t\\) { bin\\\\build_tool.exe -config Debug -target $x; if \\(-not $?\\) { Write-Host \"FAILED: $x\"; break } })"
+      "PowerShell($t = @\\('host_editor','sb_host_game','sb_host_editor','sb_host_runtime','sb_host_runtime_proj'\\); foreach \\($x in $t\\) { bin\\\\build_tool.exe -config Debug -target $x; if \\(-not $?\\) { Write-Host \"FAILED: $x\"; break } })",
+      "PowerShell($t = @\\('sb_host_server','host_game','host_editor','sb_job'\\); foreach \\($x in $t\\) { bin\\\\build_tool.exe -config Debug -target $x; if \\(-not $?\\) { Write-Host \"FAILED: $x\"; break } })",
+      "PowerShell($t = @\\('sb_host_server','host_game','host_editor'\\); foreach \\($x in $t\\) { bin\\\\build_tool.exe -config Debug -target $x; if \\(-not $?\\) { Write-Host \"FAILED: $x\"; break } })"
     ]
   }
 }

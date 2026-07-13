@@ -6,7 +6,7 @@
 
         1. mod_system_init()                        -- registry online
         2. ref_wire_mod_callbacks()                 -- install hooks; no code fires yet
-        3. mod_static_load( sys, ref, prof, fs, job, core, run )  -- PASSIVE: engine baseline registered
+        3. mod_static_load( sys, ref, prof, fs, core, run )  -- PASSIVE: engine baseline registered
         4. load_all( desc->modules )                -- PASSIVE: every entry registered
            mod_dynamic_load_dir( project )          -- PASSIVE: optional project DLL (desc->project_name)
         5. mod_init_all()                           -- pass 1: load callbacks fire in dep order (ref frames pushed, reflection live)
@@ -26,11 +26,12 @@
     (reflection, profilers) in that order. The ref frame stack therefore matches the
     dep graph -- dependencies below, dependents above.
 
-    The engine baseline ( sys + ref + prof + fs + job + core + run ) is loaded by the host
-    and is always present regardless of what k_modules[] declares -- core is in the baseline
-    because the loop drives its logging / cvar / cmd / bind registry directly, unguarded.
-    Higher layers (app, rhi, draw, gui, render, and eventually game / editor services) are
-    declared by the host descriptor.
+    The engine baseline ( sys + ref + prof + fs + core + run ) is loaded by the host and is
+    always present regardless of what k_modules[] declares -- core is in the baseline because
+    the loop drives its logging / cvar / cmd / bind registry directly, unguarded.  job, net,
+    and app are opt-in leaves declared by the host descriptor (app => windowed, net =>
+    networked, job => a worker pool), alongside the higher layers (rhi, draw, gui, render,
+    and eventually game / editor services).
 
     Frame order
     -----------
@@ -155,6 +156,7 @@ run_host_realtime( void )
 MOD_USE_APP;
 MOD_USE_RUN;
 
+MOD_USE_JOB;
 MOD_USE_RHI;
 MOD_USE_RENDER;
 MOD_USE_DRAW;
@@ -409,16 +411,17 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     core_wire_mod_callbacks();
 
     /* Engine baseline -- sys (clock + sleep), ref (reflection), prof (zone capture),
-       fs (virtual filesystem), job (scheduling), core (logging/cvars/cmd), run (frame
-       clock).  core is mandatory: the loop routes engine logging through core_log_fn and
-       pumps the cmd/cvar/bind registry every frame, all by direct static linkage with no
-       core() guard -- a light runtime that loads nothing is a different host, not this one.
-       core is cheap here (deps sys + ref only); loaded above the leaf libs, below run. */
+       fs (virtual filesystem), core (logging/cvars/cmd), run (frame clock).  These are the
+       spine the loop and module lifecycle dereference unconditionally: sys is the frame
+       clock, run derives dt, core routes logging + pumps the cmd/cvar/bind registry every
+       frame (direct static linkage, no guard), ref keeps hot-reload ABI-safe, prof backs the
+       PROF_ macros scattered through the loop.  job/net/app are NOT here -- they are opt-in
+       leaves a host declares in k_modules[] (job spins up a worker pool, so a host that
+       schedules no work should not pay for it). */
     if ( !mod_static_load( "sys",  sys_get_mod_desc() )  ||
          !mod_static_load( "ref",  ref_get_mod_desc() )  ||
          !mod_static_load( "prof", prof_get_mod_desc() ) ||
          !mod_static_load( "fs",   fs_get_mod_desc() )   ||
-         !mod_static_load( "job",  job_get_mod_desc() )  ||
          !mod_static_load( "core", core_get_mod_desc() ) ||
          !mod_static_load( "run",  run_get_mod_desc() ) )
     {
@@ -493,6 +496,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        drives the windowed inference.
     */
     MOD_HOST_FETCH_API( app    );
+    MOD_HOST_FETCH_API( job    );
     MOD_HOST_FETCH_API( rhi    );
     MOD_HOST_FETCH_API( render );
     MOD_HOST_FETCH_API( draw   );

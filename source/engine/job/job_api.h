@@ -31,7 +31,11 @@ typedef struct job_api_s
 
 /*============================================================================================*/
 
-#if defined( BUILD_STATIC ) || defined( JOB_STATIC )
+/* job is an opt-in service (like app / net): a host that schedules no work never loads it,
+   so the worker pool is not spun up.  Under MOD_HOST_DYNAMIC_SERVICES (the runtime unity)
+   job() is the runtime pointer gateway -- NULL when the module is absent -- so the host's
+   if ( job() ) tick guard is live.  Everywhere else it keeps the direct static gateway. */
+#if ( defined( BUILD_STATIC ) || defined( JOB_STATIC ) ) && !defined( MOD_HOST_DYNAMIC_SERVICES )
     MOD_GATEWAY_STATIC( job_api_t, job )
     #define MOD_USE_JOB
     #define MOD_FETCH_JOB  true

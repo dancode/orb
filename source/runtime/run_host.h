@@ -97,6 +97,12 @@ typedef enum run_loop_mode_e
 
 /*==============================================================================================
     Module entries
+
+    k_modules[] declares only the layers ABOVE the engine baseline.  run_host_main always
+    loads the baseline itself -- sys, ref, prof, fs, core, run -- regardless of what a host
+    declares; core is in that set because the loop drives its logging / cvar / cmd / bind
+    registry directly every frame.  A host lists the opt-in leaves (job, net, app) plus the
+    higher layers (rhi, draw, gui, render, game) and any services on top.
 ==============================================================================================*/
 
 typedef struct mod_desc_s mod_desc_t;
@@ -146,7 +152,8 @@ typedef struct run_host_desc_s
 
     /* Optional game project DLL -- Tier-3, always dynamic, loaded with mod_dynamic_load_dir
        AFTER modules[] registers and BEFORE mod_init_all (one dep-ordered init pass covers
-       it; its deps -- core/game/render -- must be in modules[]).  The runtime is contract-
+       it; its higher-layer deps -- game/render -- must be in modules[]; core is baseline).
+       The runtime is contract-
        agnostic: it loads and hot-reloads the DLL but never calls into it.  Drivers fetch the
        vtable via mod_get_api( project_name ) and drive it (see runtime/run_project.h). */
 

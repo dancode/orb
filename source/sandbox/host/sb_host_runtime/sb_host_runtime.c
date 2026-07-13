@@ -17,16 +17,19 @@
 
     Engine baseline (auto-loaded by run_host_main)
     ----------------------------------------------
-        sys   — OS abstractions (clock, files, threads, DLL loader)
-        ref   — type reflection registry; auto-wires DLL load/unload events
-        run   — authoritative frame clock (app_time, dt, frame_number)
+        sys   -- OS abstractions (clock, files, threads, DLL loader)
+        ref   -- type reflection registry; auto-wires DLL load/unload events
+        prof  -- profiler zone capture
+        fs    -- virtual filesystem (mounts, bundles)
+        core  -- logging, cvars, cmd/console, memory arenas (drives the loop's cmd pump)
+        run   -- authoritative frame clock (app_time, dt, frame_number)
 
-    These are always-on. k_modules[] only needs to declare modules ABOVE this baseline.
+    These are always-on. k_modules[] only needs to declare modules ABOVE this baseline
+    (including the opt-in leaves job, net, app).
 
 
     Modules declared by this host
     -----------------------------
-        core   — cvars, logging, memory arenas       (static service)
         app    — windowing, input, OS event pump     (static service; presence -> windowed)
         rhi    — Vulkan render hardware interface    (static service; inits after window opens)
         render — renderer front-end                  (hot-reloadable DLL in dynamic builds)
