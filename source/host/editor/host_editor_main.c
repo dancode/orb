@@ -266,7 +266,6 @@ editor_close_request( void )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( core   ),    /* cvars, logging, memory arenas -- static       */
     RUN_SERVICE( app    ),    /* window, OS pump                               */
     RUN_SERVICE( rhi    ),    /* GPU backend -- static service                 */
     RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend */

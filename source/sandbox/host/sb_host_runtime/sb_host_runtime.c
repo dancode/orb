@@ -136,7 +136,6 @@ runtime_update( f32 dt )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( core   ),   /* cvars, logging, memory arenas — static                       */
     RUN_SERVICE( app    ),   /* windowing + input — static; presence enables windowed mode    */
     RUN_SERVICE( rhi    ),   /* Vulkan RHI — static; inits after window_open                  */
     RUN_SERVICE( draw   ),   /* immediate primitives -- static service; render's draw backend */

@@ -255,7 +255,8 @@
       "PowerShell(bin\\\\build_tool.exe -config Debug; echo \"exit=$LASTEXITCODE\"; git status --short)",
       "PowerShell(cmd /c \"bootstrap_build_tool.bat < nul\" 2>&1 | Select-Object -Last 40)",
       "PowerShell(& cmd /c \".\\\\bootstrap_build_tool.bat < nul\" 2>&1 | Select-Object -Last 40)",
-      "PowerShell(& .\\\\bin\\\\build_tool.exe -doctor 2>&1 | Select-Object -Last 60)"
+      "PowerShell(& .\\\\bin\\\\build_tool.exe -doctor 2>&1 | Select-Object -Last 60)",
+      "PowerShell($t = @\\('host_editor','sb_host_game','sb_host_editor','sb_host_runtime','sb_host_runtime_proj'\\); foreach \\($x in $t\\) { bin\\\\build_tool.exe -config Debug -target $x; if \\(-not $?\\) { Write-Host \"FAILED: $x\"; break } })"
     ]
   }
 }

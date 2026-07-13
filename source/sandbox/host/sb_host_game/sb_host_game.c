@@ -125,7 +125,6 @@ game_update( f32 dt )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( core   ),
     RUN_SERVICE( app    ),
     RUN_SERVICE( rhi    ),
     RUN_SERVICE( draw   ),
