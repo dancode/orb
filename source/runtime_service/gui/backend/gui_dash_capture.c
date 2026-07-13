@@ -123,7 +123,7 @@ dash_capture_build( void )
 
     sn->emit_cmds     = s_draw.cmd_count;    sn->emit_segs  = s_draw.seg_count;
     sn->emit_pts      = s_draw.pt_count;     sn->emit_text  = s_draw.text_pool_used;
-    sn->emit_clips    = s_draw.clip_table_n;
+    sn->emit_clips    = s_draw.clip_table_n; sn->emit_rects = s_draw.rect_count;
     if ( sn->emit_cmds > sn->emit_cmds_hwm )   /* emit cmd pool has no backend hwm -- track it here */
         sn->emit_cmds_hwm = sn->emit_cmds;
 
@@ -137,6 +137,7 @@ dash_capture_build( void )
        not a cost the application would carry on its own. */
     sn->emit_cmds_dbg = sn->emit_segs_dbg = 0;
     sn->emit_pts_dbg  = sn->emit_text_dbg = 0;
+    sn->emit_rects_dbg = 0;
 
     u8 clip_band[ GUI_MAX_CLIP_RECTS ] = { 0 };   /* bit0 = used by band 0, bit1 = used by debug band */
     for ( u32 si = 0; si < s_draw.seg_count; ++si )
@@ -153,8 +154,9 @@ dash_capture_build( void )
             const gui_cmd_t* c = &s_draw.cmds[ ci ];
             if ( dbg )
             {
-                if ( c->type == GUI_CMD_TEXT )     sn->emit_text_dbg += c->text.len;
-                if ( c->type == GUI_CMD_POLYLINE ) sn->emit_pts_dbg  += c->polyline.pt_count;
+                if ( c->type == GUI_CMD_TEXT )      sn->emit_text_dbg  += c->text.len;
+                if ( c->type == GUI_CMD_POLYLINE )  sn->emit_pts_dbg   += c->polyline.pt_count;
+                if ( c->type == GUI_CMD_RECT_LIST ) sn->emit_rects_dbg += c->rect_list.count;
             }
             clip_band[ c->clip_idx ] |= dbg ? 0x2u : 0x1u;
         }

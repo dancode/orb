@@ -417,11 +417,11 @@ extern gui_id_t g_gui_dash_window_id;
         bool overflow_ever;
         u32  band0_vert_end, band0_idx_end;              /* main arena ends here; past = debug band */
         u32  band0_vert_hwm, band0_idx_hwm;              /* lifetime peak of the main band alone     */
-        u32  emit_cmds, emit_segs, emit_pts, emit_text, emit_clips;
+        u32  emit_cmds, emit_segs, emit_pts, emit_rects, emit_text, emit_clips;
         u32  emit_cmds_hwm;                              /* running high-water of emit_cmds across captures */
         /* Debug-band share of each shared emit pool, derived from the segment table at capture (the
            emit hot paths carry no per-band counters).  band-0 usage = total - _dbg. */
-        u32  emit_cmds_dbg, emit_segs_dbg, emit_pts_dbg, emit_text_dbg, emit_clips_dbg;
+        u32  emit_cmds_dbg, emit_segs_dbg, emit_pts_dbg, emit_rects_dbg, emit_text_dbg, emit_clips_dbg;
         u32  diff_unchanged;  bool any_changed;
         u32  tess_gen_next;
         u32  font_atlas;                                 /* live font atlas tex index (batch coloring) */

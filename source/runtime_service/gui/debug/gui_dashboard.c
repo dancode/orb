@@ -506,7 +506,8 @@ static void
 dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
 {
     static const char* tip[] = { "semantic draw commands", "command segments",
-                                 "polyline points", "text pool bytes", "clip rects",
+                                 "polyline points", "draw_rects batch entries",
+                                 "text pool bytes", "clip rects",
                                  "tessellated vertices", "tessellated indices",
                                  "GPU draw commands" };
     /* With "Second band" OFF (default) each bar is the main band alone (total minus the debug-band
@@ -517,6 +518,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
         { "cmds",  inc ? sn->emit_cmds  : sn->emit_cmds  - sn->emit_cmds_dbg,  GUI_MAX_CMDS,       inc ? sn->emit_cmds_hwm : 0 },
         { "segs",  inc ? sn->emit_segs  : sn->emit_segs  - sn->emit_segs_dbg,  GUI_MAX_SEGS,       0                           },
         { "pts",   inc ? sn->emit_pts   : sn->emit_pts   - sn->emit_pts_dbg,   GUI_MAX_PATH_PTS,   0                           },
+        { "rects", inc ? sn->emit_rects : sn->emit_rects - sn->emit_rects_dbg, GUI_MAX_RECT_ENTRIES, 0                         },
         { "text",  inc ? sn->emit_text  : sn->emit_text  - sn->emit_text_dbg,  GUI_MAX_TEXT_POOL,  0                           },
         { "clips", inc ? sn->emit_clips : sn->emit_clips - sn->emit_clips_dbg, GUI_MAX_CLIP_RECTS, 0                           },
         { "verts", inc ? sn->tess_verts : sn->band0_vert_end, GUI_MAX_VERTS,   inc ? sn->vert_hwm : sn->band0_vert_hwm         },
