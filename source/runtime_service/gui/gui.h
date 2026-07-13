@@ -113,6 +113,9 @@ typedef struct
 typedef struct { f32 x, y; }        gui_vec2_t;
 typedef struct { f32 x, y, w, h; }  gui_rect_t;
 
+/* one entry of a draw_rects batch: a solid fill plus its color (see GUI_CMD_RECT_LIST) */
+typedef struct { f32 x, y, w, h; u32 abgr; } gui_rect_col_t;
+
 /* Edge insets, in pixels. Region padding -- the gap between a region's box and where its layout
    starts (see gui_pad).  Breathing room *inside* a widget's frame is a per-widget style concern
    (WIDGET_PAD), not a layout one; spacing *between* cells is gap_x / gap_y. */
@@ -978,6 +981,7 @@ typedef enum
     GUI_CMD_POLYLINE,        // multi-segment antialiased polyline
     GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U
     GUI_CMD_RECT_GRADIENT,   // filled rect, col_a->col_b blended by per-vertex color (one quad)
+    GUI_CMD_RECT_LIST,       // batch of solid rects from the per-frame rect pool (one cmd, N quads)
 
 } gui_cmd_type_t;
 
@@ -1004,7 +1008,7 @@ typedef enum
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (9 values)
+    u8 type;       // gui_cmd_type_t, fits u8 (10 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
@@ -1028,6 +1032,10 @@ typedef struct
         /* Gradient rect: one quad with col_a/col_b on opposite edges; the GPU interpolates the
            per-vertex color across it.  horizontal = left->right, else top->bottom.  Always square. */
         struct { f32 x, y, w, h; u32 col_a, col_b; bool horizontal; } gradient;
+        /* Rect list: `count` solid fills from the per-frame rect pool (s_draw.rect_pool), one
+           command for the whole batch -- the dense-shape escape valve (timeline bars, graph
+           columns).  Always square, white texel, per-entry color; entries share the clip. */
+        struct { u32 offset; u32 count; } rect_list;
     };
 } gui_cmd_t;
 
@@ -1500,6 +1508,7 @@ typedef struct
 
 #define GUI_MAX_SEGS       ( GUI_MAX_CMDS + 1 )
 #define GUI_MAX_PATH_PTS   8192                 /* per-frame total polyline/path point pool */
+#define GUI_MAX_RECT_ENTRIES 4096               /* per-frame total draw_rects batch pool */
 #define GUI_MAX_TEXT_POOL  ( 16 * 1024 )        /* per-frame flat string copy pool for text cmds */
 #define GUI_CLIP_DEPTH     32
 #define GUI_MAX_CLIP_RECTS 64                   /* per-frame clip table entries; u8 index so max is 256 */

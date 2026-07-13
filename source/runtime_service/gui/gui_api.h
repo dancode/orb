@@ -1237,10 +1237,14 @@ typedef struct gui_api_s
 
     /* Low-level draw list access -- may be called anywhere between frame_begin and render.
        draw_rect and draw_text push geometry directly into the draw list.
+       draw_rects pushes N solid rects as ONE command -- the batched form for dense custom
+       drawing (timeline bars, graph columns) that would otherwise exhaust the frame's command
+       budget one draw_rect at a time.
        push_clip / pop_clip set the current scissor rectangle. */
 
-    void ( *draw_rect )( f32 x, f32 y, f32 w, f32 h, u32 abgr );
-    void ( *draw_text )( f32 x, f32 y, u32 abgr, const char* str );
+    void ( *draw_rect  )( f32 x, f32 y, f32 w, f32 h, u32 abgr );
+    void ( *draw_rects )( const gui_rect_col_t* rects, u32 count );
+    void ( *draw_text  )( f32 x, f32 y, u32 abgr, const char* str );
 
     /* volatile_cb -- runs `fn` inline, as ordinary code, wrapped so its command range can be
        replayed standalone on frames where the rest of the UI build is skipped (frame_begin

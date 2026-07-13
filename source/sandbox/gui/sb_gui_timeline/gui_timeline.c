@@ -116,6 +116,24 @@ static tl_track_t      g_tl_tracks[ PROF_MAX_THREADS ];
 static tl_frame_mark_t g_tl_frames[ TL_FRAME_CAP ];
 static prof_event_t    g_tl_buf[ TL_DRAIN_CHUNK ];
 
+/* Bars go through gui()->draw_rects -- one semantic command per flush instead of one per bar,
+   so a busy view no longer exhausts the frame's GUI_MAX_CMDS budget.  Batched rects paint at
+   their flush point in command order, so a flush always happens BEFORE the text drawn on top
+   of them; bar labels are deferred into g_tl_labels for the same reason. */
+#define TL_BATCH_CAP 512     /* bars per draw_rects flush                                  */
+#define TL_LABEL_CAP 256     /* deferred bar labels per track (past this, bars go unlabeled) */
+
+typedef struct tl_label_s
+{
+    f32 x, y, w;    // text slot inside the labeled bar
+    u32 id;         // zone to name
+} tl_label_t;
+
+static gui_rect_col_t g_tl_batch[ TL_BATCH_CAP ];
+static u32            g_tl_batch_n;
+static tl_label_t     g_tl_labels[ TL_LABEL_CAP ];
+static u32            g_tl_label_n;
+
 // clang-format on
 
 /*==============================================================================================
@@ -188,6 +206,24 @@ tl_zone_name( u32 id )
 {
     const char* name = prof_name_lookup( id );
     return name ? name : "<unregistered>";
+}
+
+static void
+tl_batch_flush( void )
+{
+    if ( g_tl_batch_n )
+    {
+        gui()->draw_rects( g_tl_batch, g_tl_batch_n );
+        g_tl_batch_n = 0;
+    }
+}
+
+static void
+tl_batch_rect( f32 x, f32 y, f32 w, f32 h, u32 col )
+{
+    if ( g_tl_batch_n == TL_BATCH_CAP )
+        tl_batch_flush();
+    g_tl_batch[ g_tl_batch_n++ ] = ( gui_rect_col_t ){ x, y, w, h, col };
 }
 
 /*==============================================================================================
@@ -421,6 +457,9 @@ tl_draw_frame_strip( gui_rect_t r )
     const f32 bw = 4.0f, gap = 1.0f;
     u32       count = s->frame_head < TL_FRAME_CAP ? s->frame_head : TL_FRAME_CAP;
 
+    char label[ 64 ];
+    bool labeled = false;
+
     /* Bar k covers the interval between marks (newest-1-k) and (newest-k). */
     for ( u32 k = 0; k + 1 < count; ++k )
     {
@@ -448,9 +487,8 @@ tl_draw_frame_strip( gui_rect_t r )
             col |= 0x00303030;
             char dur[ 32 ];
             tl_fmt_time( dur_ms * 1.0e6, dur, sizeof( dur ) );
-            char label[ 64 ];
             snprintf( label, sizeof( label ), "frame %u  %s", f1->number, dur );
-            gui()->draw_text( r.x + 4.0f, r.y + 2.0f, 0xFFD0D0D0, label );
+            labeled = true;    /* drawn after the bars flush so it sits on top of them */
 
             /* Click: focus that frame -- pause and frame the window around it. */
             if ( gui()->is_mouse_clicked( APP_MOUSE_LEFT ) )
@@ -462,8 +500,12 @@ tl_draw_frame_strip( gui_rect_t r )
             }
         }
 
-        gui()->draw_rect( x, r.y + r.h - bh, bw, bh, col );
+        tl_batch_rect( x, r.y + r.h - bh, bw, bh, col );
     }
+
+    tl_batch_flush();
+    if ( labeled )
+        gui()->draw_text( r.x + 4.0f, r.y + 2.0f, 0xFFD0D0D0, label );
 
     gui()->pop_clip();
 }
@@ -509,7 +551,8 @@ tl_draw_ruler( gui_rect_t r )
     Tracks -- one flame graph per thread ring
 ==============================================================================================*/
 
-/* Draw one bar; returns true when the cursor is on it (hover bookkeeping at the call site). */
+/* Push one bar into the batch (label deferred until the track's bars flush); returns true when
+   the cursor is on it (hover bookkeeping at the call site). */
 static bool
 tl_draw_bar( f32 x0, f32 x1, f32 y, u32 id, bool can_hover, f32 mx, f32 my, bool open )
 {
@@ -521,14 +564,10 @@ tl_draw_bar( f32 x0, f32 x1, f32 y, u32 id, bool can_hover, f32 mx, f32 my, bool
     if ( open )
         col = ( col & 0x00FFFFFF ) | 0xB0000000;    /* still running: slightly translucent */
 
-    gui()->draw_rect( x0, y, x1 - x0, TL_BAR_H, col );
+    tl_batch_rect( x0, y, x1 - x0, TL_BAR_H, col );
 
-    if ( x1 - x0 >= 28.0f )
-    {
-        gui_rect_t tr = { x0 + 3.0f, y, x1 - x0 - 6.0f, TL_BAR_H };
-        gui()->draw_text_clipped( tr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, 0xFF0E0E0E,
-                                  tl_zone_name( id ) );
-    }
+    if ( x1 - x0 >= 28.0f && g_tl_label_n < TL_LABEL_CAP )
+        g_tl_labels[ g_tl_label_n++ ] = ( tl_label_t ){ x0 + 3.0f, y, x1 - x0 - 6.0f, id };
     return hover;
 }
 
@@ -551,7 +590,8 @@ tl_draw_tracks( gui_rect_t r )
     f64 t0     = t1 - s->span_ns;
     f64 px_per = ( f64 )r.w / s->span_ns;
 
-    /* Frame boundaries behind the bars: newest backward, stop once past the left edge. */
+    /* Frame boundaries behind the bars: newest backward, stop once past the left edge.
+       Batched as 1px rects -- a wide view has every mark in the ring on screen at once. */
     u32 fcount = s->frame_head < TL_FRAME_CAP ? s->frame_head : TL_FRAME_CAP;
     for ( u32 k = 0; k < fcount; ++k )
     {
@@ -561,8 +601,9 @@ tl_draw_tracks( gui_rect_t r )
         if ( ( f64 )fr->tick > t1 )
             continue;
         f32 x = r.x + ( f32 )( ( ( f64 )fr->tick - t0 ) * px_per );
-        gui()->draw_line( x, r.y, x, r.y + r.h, 1.0f, 0x24FFFFFF );
+        tl_batch_rect( x, r.y, 1.0f, r.h, 0x24FFFFFF );
     }
+    tl_batch_flush();
 
     bool can_hover = gui()->is_mouse_hovering_rect( r );
     f32  mx, my;
@@ -640,6 +681,17 @@ tl_draw_tracks( gui_rect_t r )
                                            .depth  = d };
             }
         }
+
+        /* Bars land first as one draw_rects command, then their labels paint on top. */
+        tl_batch_flush();
+        for ( u32 li = 0; li < g_tl_label_n; ++li )
+        {
+            gui_rect_t lr = { g_tl_labels[ li ].x, g_tl_labels[ li ].y,
+                              g_tl_labels[ li ].w, TL_BAR_H };
+            gui()->draw_text_clipped( lr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, 0xFF0E0E0E,
+                                      tl_zone_name( g_tl_labels[ li ].id ) );
+        }
+        g_tl_label_n = 0;
 
         /* Thread label floats over the track's top-left; drops last so it stays readable. */
         {

@@ -55,13 +55,14 @@ typedef struct
 
 static struct
 {
-    gui_cmd_t       cmds        [ GUI_MAX_CMDS ];       // semantic command list; one entry per shape
-    u32             cmd_hashes  [ GUI_MAX_CMDS ];       // per-command hash baked at emit (for cache diff)
-    gui_id_t        cmd_volatile_id[ GUI_MAX_CMDS ];    // GUI_ID_NONE, or the volatile widget owning this cmd
-    gui_vec2_t      points      [ GUI_MAX_PATH_PTS ];   // point pool for CMD_POLYLINE data; indexed by pt_offset
+    gui_cmd_t       cmds            [ GUI_MAX_CMDS ];       // semantic command list; one entry per shape
+    u32             cmd_hashes      [ GUI_MAX_CMDS ];       // per-command hash baked at emit (for cache diff)
+    gui_id_t        cmd_volatile_id [ GUI_MAX_CMDS ];       // GUI_ID_NONE, or the volatile widget owning this cmd
+    gui_vec2_t      points          [ GUI_MAX_PATH_PTS ];   // point pool for CMD_POLYLINE data; indexed by pt_offset
+    gui_rect_col_t  rect_pool       [ GUI_MAX_RECT_ENTRIES ]; // rect pool for CMD_RECT_LIST data; indexed by offset
 
-    gui_cmd_seg_t   segs        [ GUI_MAX_SEGS ];       // per-(win,z,vp,font,band) spans, in emit order
-    u32             seg_count;                          // spans open this frame (>= 1; segs[0] is the bg span)
+    gui_cmd_seg_t   segs            [ GUI_MAX_SEGS ];       // per-(win,z,vp,font,band) spans, in emit order
+    u32             seg_count;                              // spans open this frame (>= 1; segs[0] is the bg span)
 
     /* Flat string pool: draw_push_text_n copies every string here so that stack-local buffers
        (textf, snprintf labels) remain valid until gui_render_flush consumes them. */
@@ -71,6 +72,7 @@ static struct
 
     u32             cmd_count;      /* commands in the list this frame  */
     u32             pt_count;       /* points in the pool this frame */
+    u32             rect_count;     /* rect-pool entries used this frame */
 
     gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */
     u32             cur_z;          /* sort key tracked per-segment (draw_seg_retag; NOT baked per command) */
@@ -149,6 +151,7 @@ draw_reset( i32 display_w, i32 display_h )
 {
     s_draw.cmd_count       = 0;
     s_draw.pt_count        = 0;
+    s_draw.rect_count      = 0;
     s_draw.text_pool_used  = 0;
 
     /* Volatile range tags must not survive into a frame whose command indices shifted: a stale
@@ -541,9 +544,10 @@ draw_clamp_rounding( f32 w, f32 h )
     cache_diff_windows (gui_build_cache.c) to detect frame-to-frame changes without
     re-scanning the command buffer after tessellation.
 
-    TEXT and POLYLINE skip the pool-offset fields (text.off / polyline.pt_offset) because
-    those values shift whenever an earlier-emitted window changes its pool volume, which would
-    falsely dirty an unrelated window.  Their content bytes are folded directly instead.
+    TEXT, POLYLINE and RECT_LIST skip the pool-offset fields (text.off / polyline.pt_offset /
+    rect_list.offset) because those values shift whenever an earlier-emitted window changes its
+    pool volume, which would falsely dirty an unrelated window.  Their content bytes are folded
+    directly instead.
 ----------------------------------------------------------------------------------------------*/
 
 static u32
@@ -584,6 +588,11 @@ draw_hash_cmd( const gui_cmd_t* c )
             break;
         case GUI_CMD_DASHED_LINE:   h = fnv1a( h, &c->dash,     sizeof c->dash );     break;
         case GUI_CMD_RECT_GRADIENT: h = fnv1a( h, &c->gradient, sizeof c->gradient ); break;
+        case GUI_CMD_RECT_LIST:
+            h = fnv1a_u32( h, c->rect_list.count );
+            h = fnv1a( h, &s_draw.rect_pool[ c->rect_list.offset ],
+                       c->rect_list.count * (u32)sizeof( gui_rect_col_t ) );   /* content while L1-hot */
+            break;
     }
     return h;
 }
@@ -621,6 +630,47 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     /* Round solid-color fills only; a textured quad (glyph / image) keeps square UVs. */
     c->rect.rounding = ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+}
+
+/*----------------------------------------------------------------------------------------------
+    draw_push_rect_list -- emit N solid rects as ONE semantic command.
+
+    The dense-shape escape valve: a caller drawing hundreds of small fills (timeline bars, graph
+    columns, heatmap cells) would otherwise spend one command slot per rect and exhaust
+    GUI_MAX_CMDS long before the vertex budget.  Entries are copied into the per-frame rect pool
+    (the CMD_POLYLINE point-pool pattern) and tessellated into one quad each at flush time.
+    Per-entry alpha fold + clip cull happens here so the pool holds only visible work.  Entries
+    share the current clip; always square (no rounding), solid color (white texel).
+----------------------------------------------------------------------------------------------*/
+
+void
+draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
+{
+    if ( !rects || s_draw.cmd_count >= GUI_MAX_CMDS )
+        return;
+
+    u32 offset = s_draw.rect_count;
+    for ( u32 i = 0; i < count && s_draw.rect_count < GUI_MAX_RECT_ENTRIES; ++i )
+    {
+        u32 col = draw_apply_alpha( rects[ i ].abgr );
+        if ( ( col >> 24 ) == 0u )   /* invisible under alpha blending (draw_push_rect_filled rule) */
+            continue;
+        if ( draw_cull_box( rects[ i ].x, rects[ i ].y, rects[ i ].w, rects[ i ].h ) )
+            continue;
+        s_draw.rect_pool[ s_draw.rect_count ]      = rects[ i ];
+        s_draw.rect_pool[ s_draw.rect_count ].abgr = col;
+        s_draw.rect_count++;
+    }
+    if ( s_draw.rect_count == offset )
+        return;   /* everything culled: no command slot spent */
+
+    gui_cmd_t* c        = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type               = GUI_CMD_RECT_LIST;
+    c->clip_idx           = s_draw.cur_clip_idx;
+    c->vp                 = (u8)s_draw.cur_vp;
+    c->rect_list.offset   = offset;
+    c->rect_list.count    = s_draw.rect_count - offset;
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );   /* entries are L1-hot here */
 }
 
 /*----------------------------------------------------------------------------------------------

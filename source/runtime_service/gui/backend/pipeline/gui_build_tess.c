@@ -826,6 +826,17 @@ tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 co
                 tess_rect_gradient( c->gradient.x, c->gradient.y, c->gradient.w, c->gradient.h,
                                     c->gradient.col_a, c->gradient.col_b, c->gradient.horizontal );
                 break;
+
+            case GUI_CMD_RECT_LIST:
+            {
+                /* One quad per pooled entry; all share this command's clip/vp so they collapse
+                   into the same GPU batch.  Solid color (tex 0 = white texel), never rounded. */
+                const gui_rect_col_t* rl = &s_draw.rect_pool[ c->rect_list.offset ];
+                for ( u32 k = 0; k < c->rect_list.count; ++k )
+                    tess_rect_filled( rl[ k ].x, rl[ k ].y, rl[ k ].w, rl[ k ].h,
+                                      0, 0, 1, 1, 0, rl[ k ].abgr );
+                break;
+            }
         }
     }
 

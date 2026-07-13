@@ -279,6 +279,7 @@ const gui_api_t g_gui_api_struct =
     /*==================  present/ + user/ -- custom draw: canvas primitives, symbols, paths  ==================*/
 
     .draw_rect                          = gui_draw_rect,
+    .draw_rects                         = gui_draw_rects,
     .draw_text                          = gui_draw_text,
     .volatile_cb                        = gui_volatile_cb,
     .volatile_begin                     = gui_volatile_begin,

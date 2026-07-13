@@ -41,6 +41,16 @@ gui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr )
     draw_push_rect_filled( x, y, w, h, 0,0,1,1, 0, abgr );
 }
 
+/* Batched form: N solid rects as ONE semantic command (one quad each at flush).  For dense
+   custom drawing -- timeline bars, graph columns, heatmap cells -- where per-rect draw_rect
+   calls would exhaust the frame's command budget (GUI_MAX_CMDS).  Entries share the current
+   clip; square corners; per-entry color. */
+void
+gui_draw_rects( const gui_rect_col_t* rects, u32 count )
+{
+    draw_push_rect_list( rects, count );
+}
+
 void
 gui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
 {

@@ -128,6 +128,11 @@ void draw_set_root_clip         ( f32 w, f32 h );               // set clip_stac
 void draw_push_rect_filled      ( f32 x, f32 y, f32 w, f32 h,
                                   f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr );
 
+/* Push `count` solid rects as ONE semantic command (per-frame rect pool, one quad each at
+   flush) -- the dense-shape escape valve for callers that would otherwise exhaust GUI_MAX_CMDS
+   (timeline bars, graph columns).  Square, current clip, per-entry color. */
+void draw_push_rect_list        ( const gui_rect_col_t* rects, u32 count );
+
 /* Push one registered icon quad (atlas tex_idx + cached UVs from resource/gui_icon.c) into the
    draw list; no-op for an invalid id.  Reuses draw_push_rect_filled -- an icon is just a textured
    quad sourced from the icon atlas instead of the font atlas. */

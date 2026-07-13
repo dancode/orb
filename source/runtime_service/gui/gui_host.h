@@ -325,6 +325,7 @@ u32  gui_font_active_id     ( void );
 
 /* drawing */
 void gui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr );
+void gui_draw_rects( const gui_rect_col_t* rects, u32 count );
 void gui_draw_text( f32 x, f32 y, u32 abgr, const char* str );
 gui_vec2_t gui_text_size( const char* s );
 void gui_draw_text_in( gui_rect_t r, gui_align_t align, u32 col, const char* s );
