@@ -1,6 +1,16 @@
 ﻿/*==============================================================================================
 
-    core.h
+    core.h : Core is policy/orchestration:
+
+    Core owns the engine's vocabulary and lifecycle policy; root modules own mechanisms.
+
+    - cvar/cmd/console — these are engine policy by nature (how the engine exposes tuning); 
+      they'd be meaningless as engine-agnostic utilities
+    - log — channels, sinks, fatal behavior are policy decisions; every engines base tier.
+    - boot/shutdown ordering, core_wire_mod_callbacks, crash-handler wiring — the orchestration.
+    - sid and arenas — small, shared, no external mass; not worth a module each
+
+
 
 ==============================================================================================*/
 #pragma once
