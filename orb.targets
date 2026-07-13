@@ -821,7 +821,7 @@ solution orb_editor
 	#			--- LIBRARIES ---
 	
 	add         base
-	add         sys ref prof mod app core job net
+	add         sys ref prof mod app core job net fs
 
 	add 		run
 	add 		rhi						# vulkan render library
@@ -926,7 +926,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	startup     sb_vulkan
 
     add         base
-	add         sys ref prof mod app core job net
+	add         sys ref prof mod app core job net fs
 
 	add 		run
 	add 		rhi						# vulkan render library
@@ -962,7 +962,7 @@ solution orb_sandbox_engine				# developing engine libraries
 	
 	add 		base
 
-	add         sys ref prof mod app core job net
+	add         sys ref prof mod app core job net fs
 	add         rhi
 	add         asset
 	add         input
@@ -978,6 +978,7 @@ solution orb_sandbox_engine				# developing engine libraries
 	add 		sb_app
 	add 		sb_net
 	add 		sb_prof
+#	add 		sb_fs
 
 	# 			--- SANDBOX : RUNTIME SERVICES --
 
@@ -1011,7 +1012,7 @@ solution orb_all
 # 	nav 		source
 
 	add 		base
-    add         sys ref prof mod app core job net
+    add         sys ref prof mod app core job net fs
 
     add         run
     add         rhi
@@ -1034,6 +1035,7 @@ solution orb_all
 	add 		sb_job
 	add 		sb_app
 	add 		sb_prof
+# 	add 		sb_fs
 
 	add 		sb_asset_test
 	add 		sb_input
