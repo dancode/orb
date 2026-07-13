@@ -69,9 +69,10 @@ future system must. They are the reason the stack stays simple.
        + SERVICES   rhi/Vulkan [SOLID]  draw [SOLID]  gui [SOLID, large]
                     asset [SOLID]  input [SOLID]  ahi/WASAPI [SOLID]
   ---- static libs, module lifecycle, linked into the host -----------------------
-   T1  ENGINE       sys [SOLID]  ref [SOLID]  mod [SOLID]  app [SOLID]
-                    core [SOLID: arena/log/cvar/cmd/console/config/fs+zip/sid/debug]
-                    job [SOLID]  net [SOLID: channels/handshake/frag/sim]
+   T1  ENGINE       mod [SOLID]  sys [SOLID]  ref [SOLID]  prof [SOLID]
+                    fs [SOLID: mounts/zip]  job [SOLID]  net [SOLID: channels/handshake/frag/sim]
+                    core [SOLID: arena/log/cvar/cmd/console/config/sid/debug] -- top of T1
+                    app [SOLID]
   ---- host-only statics, never inside a DLL -------------------------------------
    T0  BASE         math/rng [SOLID]  str/str_buf/str_arena [SOLID]  mem/bit/char
                     [SOLID]  test [SOLID]  containers [MISSING]  hash [MISSING]
@@ -161,12 +162,11 @@ payoff and the reason ref_ was built as a leaf module.
 - Everything else stays as-is. base stays stateless; it is the only code shared
   verbatim by host and every DLL.
 
-### T1 engine -- two additions, no reshaping
+### T1 engine -- one addition, no reshaping
 - **async file IO**: `sys` gains overlapped reads; `job` gains an IO-completion path.
   Consumed by asset streaming (ASSET_LOADING state is already reserved for it).
-- **profiler**: core-level scoped-zone capture (fixed ring, id = SID, thread-local),
-  drained by a gui timeline overlay. The frame-stats plumbing (run_frame_stats_t,
-  perf overlay) is the seed; this generalizes it to named zones.
+- **profiler**: DONE -- landed as the `prof` leaf library (fixed rings, id = SID,
+  thread-local), drained by the gui timeline overlay.
 
 ### T2 runtime -- the platform is done; only render grows
 - `run`, `rhi`, `draw`, `gui`, `asset`, `input`, `ahi` keep their current shapes.

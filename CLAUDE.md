@@ -68,11 +68,17 @@ Strict dependency hierarchy -- lower layers never depend on higher ones.
 
 ```
 source/base/          -- stateless stdlib (math, strings, memory); no globals; links into host + DLLs
-source/engine/
-  sys/                -- OS abstractions: files, threads, time, DLL loading, paths
-  core/               -- stateful systems: memory arenas, logging, cvars, ref_ reflection, SIDs
-  mod/                -- module registry: dynamic loading, hot-reload, dependency graph
-  app/                -- windowing, events, main-loop lifecycle
+source/engine/        -- root engine libraries, listed lowest to highest
+  mod/                -- module registry: loading, hot-reload, dep-ordered init; substrate, online first
+  sys/                -- OS abstractions: files, threads, time, DLL loading, paths (leaf, no deps)
+  ref/                -- reflection registry: types, fields, schema hash (leaf, no deps)
+  prof/               -- profiler: SID zones, SPSC rings, trace dump (dep: sys)
+  fs/                 -- virtual file system: mounts, zip bundles (dep: sys)
+  job/                -- job system: worker pool (dep: sys)
+  net/                -- UDP transport: handshake, channels, fragmentation (dep: sys)
+  core/               -- engine orchestration layer: arenas, logging, cvars, cmd/console, config, SIDs
+                         (deps: sys, ref) -- always the TOP of the engine root libraries
+  app/                -- windowing, events, main-loop lifecycle (no hard deps; wired by hosts, above core)
 source/runtime/       -- simulation scaffolding: host loop + services + hot-reload DLLs
 source/runtime_service/
   gui/                -- in-house immediate-mode GUI (gui.c + gui_backend.c static lib)
@@ -87,8 +93,8 @@ source/project/       -- game-specific code (sample_game)
 third_party/          -- vendored libraries (freetype-2.14.3)
 ```
 
-Engine libraries (`sys`, `core`, `mod`, `app`) are always statically linked into the host.
-Never in a DLL.
+Engine libraries (`mod`, `sys`, `ref`, `prof`, `fs`, `job`, `net`, `core`, `app`) are always
+statically linked into the host. Never in a DLL.
 
 ## Libraries
 
@@ -113,7 +119,7 @@ Every engine library uses a three-header split:
 
 **mod** has four files (self-hosting): `mod_import.h`, `mod_api.h`, `mod_host.h`, `mod_export.h`.
 
-Existing header sets: `mod_*`, `ref.*`, `sys.*`, `app.*`, `core.*`.
+Existing header sets: `mod_*`, `sys.*`, `ref.*`, `prof.*`, `fs.*`, `job.*`, `net.*`, `core.*`, `app.*`.
 
 ## Module System
 

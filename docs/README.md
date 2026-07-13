@@ -55,11 +55,20 @@ Provides:
 
 # Engine
 
-Contains four stateful foundational static libraries (`.lib`).
+Contains the stateful foundational static libraries (`.lib`), listed lowest to highest.
+
+## `mod` — Registry Layer
+
+Module system substrate; comes online before every other library:
+
+- Dynamic loading
+- Module management
+- Hot-reload support
+- Dependency-ordered init
 
 ## `sys` — System Layer
 
-Platform-specific systems:
+Platform-specific systems (leaf, no deps):
 
 - Files
 - Threading
@@ -70,34 +79,63 @@ Platform-specific systems:
 - Platform console
 - Other OS abstractions
 
+## `ref` — Reflection Layer
+
+Reflection registry (leaf, no deps):
+
+- Type and field metadata
+- Schema hashing for hot-reload ABI checks
+
+## `prof` — Profiler Layer
+
+Zone profiler (dep: sys):
+
+- SID-hashed scoped zones
+- Per-thread rings
+- Chrome-trace dump
+
+## `fs` — File System Layer
+
+Virtual file system (dep: sys):
+
+- Path mounts
+- Zip bundles
+
+## `job` — Job Layer
+
+Job system (dep: sys):
+
+- Worker pool
+- Task scheduling
+
+## `net` — Network Layer
+
+Network platform layer (dep: sys):
+
+- UDP sockets
+- Handshake and channels
+- Fragmentation
+
 ## `core` — Core Layer
 
-Stateful foundational systems:
+Stateful foundational systems (deps: sys, ref). Top of the engine root libraries:
 
-- Memory
-- File system
+- Memory arenas
 - Logging
-- Reflection
 - Cvars
-- String interning
+- Commands and console
+- Config
+- String interning (SIDs)
 - Other core systems
 
 ## `app` — Application Layer
 
-Application framework systems:
+Application framework systems (no hard deps; wired by hosts, above core):
 
 - Windowing
 - Main loop
 - Events
 - Lifecycle management
-
-## `mod` — Registry Layer
-
-Module system:
-
-- Dynamic loading
-- Module management
-- Hot-reload support
 
 ---
 

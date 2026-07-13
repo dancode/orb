@@ -133,7 +133,7 @@ target run
     root        source/runtime
     folder      03_RUNTIME
     unit        run.c
-    dep         mod sys ref prof core app job fs
+	dep         mod sys ref job prof core
 
 # ==============================================================================
 # 03_RUNTIME_SERVICE
@@ -145,7 +145,7 @@ target rhi
     root        source/runtime_service/rhi
     folder      03_RUNTIME/SERVICE
     unit        rhi.c
-    dep         core app
+    dep         sys app core
 	inc         %VULKAN_SDK%/Include
 
 target draw
