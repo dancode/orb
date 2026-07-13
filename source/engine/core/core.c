@@ -48,7 +48,6 @@ core_free( void* ptr )
 #include "engine/core/core_log.c"
 #include "engine/core/core_cvar.c"
 #include "engine/core/core_sid.c"
-#include "engine/core/core_fs.c"
 
 // #include "engine/core/core_memory.c"
 

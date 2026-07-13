@@ -24,6 +24,7 @@
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
+#include "engine/fs/fs_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 #include "runtime_service/asset/asset_host.h"
 
@@ -96,7 +97,7 @@ asset_test( void )
         printf( "  FAIL: could not write probe file\n" );
         return;
     }
-    core()->fs_mount( "data/", "", 0 );
+    fs()->mount( "data/", "", 0 );
 
     /* Register the blob type for the ".blob" and ".tmp" extensions. */
     const char* exts[] = { ".blob", ".tmp" };
@@ -162,7 +163,7 @@ asset_refresh_test( void )
         printf( "  FAIL: could not write probe file\n" );
         return;
     }
-    core()->fs_mount( "data/", "", 0 );
+    fs()->mount( "data/", "", 0 );
 
     const char* exts[] = { ".rlb" };
     asset()->type_register( "blob", exts, 1, blob_load, blob_unload, NULL );
@@ -211,6 +212,7 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( fs );       // virtual filesystem: leaf on sys, asset depends on it
     mod_static( app );
     mod_static( core );
     mod_static( rhi );      // asset now depends on rhi (image loader); registered but not init'd here

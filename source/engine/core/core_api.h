@@ -14,7 +14,6 @@
 #include "engine/core/cvar/cvar.h"
 #include "engine/core/cmd/cmd.h"
 #include "engine/core/console/console.h"
-#include "engine/core/fs/fs.h"
 #include "engine/mod/mod_import.h"
 
 // clang-format off
@@ -141,17 +140,6 @@ typedef struct core_api_s
     u32         ( *con_history_count )  ( void );
     const char* ( *con_history_get )    ( u32 index );
     u32         ( *con_complete )       ( const char* prefix, const char** out_names, u32 max );
-
-    /* virtual filesystem (core/fs) -- mount real dirs, read bytes by virtual path */
-
-    bool        ( *fs_mount )           ( const char* vprefix, const char* real_path, int priority );
-    void        ( *fs_unmount )         ( const char* vprefix );
-    fs_blob_t   ( *fs_read )            ( const char* vpath );
-    void        ( *fs_free )            ( fs_blob_t* blob );
-    bool        ( *fs_exists )          ( const char* vpath );
-    bool        ( *fs_stat )            ( const char* vpath, fs_stat_t* out );
-    int         ( *fs_glob )            ( const char* vpat, fs_glob_fn cb, void* userdata );
-    u32         ( *fs_file_count )      ( void );
 
 } core_api_t;
 

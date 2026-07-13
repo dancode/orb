@@ -7,7 +7,7 @@
     The asset service sits ABOVE core.  It turns a virtual path into a refcounted, typed,
     reloadable resource, deduplicating so many acquirers of the same path share one record.
 
-    Layering: core/fs supplies BYTES by vpath; the asset service adds identity (asset_id_t),
+    Layering: the fs library supplies BYTES by vpath; the asset service adds identity (asset_id_t),
     lifetime (refcount + state), and TYPE (an extension -> loader dispatch that decodes those
     bytes into a backend resource).  Because it lives above core it calls rhi/draw directly --
     there is no callback-into-core seam and core never holds a resource it cannot understand.

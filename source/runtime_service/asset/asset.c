@@ -11,10 +11,13 @@
 
 #include "asset_api.h"
 #include "engine/core/core_api.h"
+#include "engine/fs/fs_api.h"
 #include "runtime_service/rhi/rhi_api.h"
 
-/* File-scope cached API pointers.  core() = fs_read / sid / alloc (registry); rhi() = texture
-   create/upload/bindless (the image loader).  Static builds: no-op (shared globals used). */
+/* File-scope cached API pointers.  fs() = read bytes by vpath; core() = sid / alloc (registry);
+   rhi() = texture create/upload/bindless (the image loader).  Static builds: no-op (shared
+   globals used). */
+MOD_USE_FS;
 MOD_USE_CORE;
 MOD_USE_RHI;
 

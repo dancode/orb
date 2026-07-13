@@ -1,8 +1,8 @@
-#ifndef CORE_FS_ZIP_H
-#define CORE_FS_ZIP_H
+#ifndef FS_ZIP_H
+#define FS_ZIP_H
 /*==============================================================================================
 
-    engine/core/fs/fs_zip.h -- shared miniz build configuration for the fs ZIP mount reader.
+    engine/fs/fs_zip.h -- shared miniz build configuration for the fs ZIP mount reader.
 
     Both the implementation TU (fs_zip_miniz.c, which compiles vendor/miniz.c) and the caller
     (fs.c, which includes vendor/miniz.h) include this FIRST so the two agree on how miniz is
@@ -16,4 +16,4 @@
 #define MINIZ_NO_STDIO
 
 /*============================================================================================*/
-#endif    // CORE_FS_ZIP_H
+#endif    // FS_ZIP_H

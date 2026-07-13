@@ -7,9 +7,9 @@
     calls the mz_zip_writer_* API (declared in vendor/miniz.h) to bundle a cooked tree into a .zip
     that core/fs can mount; the definitions live here.
 
-    asset_tool builds its own copy of miniz rather than linking core so the tool stays base+sys
-    only -- no engine runtime.  The core target compiles the same amalgamation separately for the
-    fs ZIP reader (engine/core/fs/fs_zip_miniz.c); the two objects never meet.
+    asset_tool builds its own copy of miniz rather than linking fs so the tool stays base+sys
+    only -- no engine runtime.  The fs target compiles the same amalgamation separately for the
+    fs ZIP reader (engine/fs/fs_zip_miniz.c); the two objects never meet.
 
     We keep stdio out of miniz (MINIZ_NO_STDIO): the writer builds the archive in a heap block,
     which asset_tool then writes to disk through the sys layer, matching the engine's approach.

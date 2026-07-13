@@ -12,8 +12,9 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/core/core_host.h"    // core_crash_install / core_crash_report_now
+#include "engine/fs/fs_host.h"       // virtual filesystem: fs_system_init / fs_mount / fs_read
 #include "engine/sys/sys_host.h"    // sys_file_write_entire / _delete for the fs probe
-#include "engine/core/fs/fs_zip.h"  // miniz config -- must precede vendor/miniz.h
+#include "engine/fs/fs_zip.h"       // miniz config -- must precede vendor/miniz.h
 #include "vendor/miniz.h"           // mz_zip_writer_* to build the Phase 5 test bundle in memory
 
 int  intern_test( void );                        // ... temporary code ...

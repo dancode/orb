@@ -33,6 +33,7 @@
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
+#include "engine/fs/fs_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 #include "runtime_service/asset/asset_host.h"
 #include "runtime_service/asset/loaders/asset_shader.h"
@@ -100,6 +101,7 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( fs );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -135,7 +137,7 @@ main( int argc, char** argv )
     }
 
     /* ---- Acquire the shader assets (Track 2 proof: .oshd type behind asset ids) ---- */
-    core()->fs_mount( "", "", 0 );    /* repo root (CWD) served verbatim */
+    fs()->mount( "", "", 0 );    /* repo root (CWD) served verbatim */
 
     rhi_pipeline_t  pipeline = { 0 };    /* declared before any goto so shutdown can test it */
     asset_id_t      vs_id = asset()->acquire( VS_OSHD );

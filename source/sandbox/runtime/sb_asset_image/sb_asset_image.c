@@ -25,11 +25,12 @@
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
+#include "engine/fs/fs_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 #include "runtime_service/draw/draw_host.h"
 #include "runtime_service/asset/asset_host.h"
 #include "runtime_service/asset/loaders/asset_image.h"
-#include "engine/core/fs/fs_zip.h"   /* miniz config -- must precede vendor/miniz.h */
+#include "engine/fs/fs_zip.h"        /* miniz config -- must precede vendor/miniz.h */
 #include "vendor/miniz.h"            /* build a pack.zip for the "served from a .zip" mode */
 
 // clang-format off
@@ -104,6 +105,7 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( fs );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -173,7 +175,7 @@ main( int argc, char** argv )
             mod_system_exit();
             return 1;
         }
-        core()->fs_mount( "", PACK_ZIP, 0 );
+        fs()->mount( "", PACK_ZIP, 0 );
         printf( "[sb_asset_image] serving from bundle %s\n", PACK_ZIP );
     }
     else if ( use_pack )
@@ -183,13 +185,13 @@ main( int argc, char** argv )
            shadow the bundled one (loose-over-bundle, proven generically in fs_zip_test).  Build
            the pack first:  asset_tool -src <srctree> -dst cooked  &&  asset_tool pack cooked <zip>
            where <srctree> holds gui_issue.png, so the pack carries gui_issue.tex. */
-        core()->fs_mount( "", PACK_COOK, 0 );    // bundle (low priority)
-        core()->fs_mount( "", "", 10 );          // loose CWD (high priority) -- would override
+        fs()->mount( "", PACK_COOK, 0 );    // bundle (low priority)
+        fs()->mount( "", "", 10 );          // loose CWD (high priority) -- would override
         printf( "[sb_asset_image] serving from asset_tool pack %s (loose CWD overrides)\n", PACK_COOK );
     }
     else
     {
-        core()->fs_mount( "", "", 0 );
+        fs()->mount( "", "", 0 );
     }
 
     asset_id_t     id  = asset()->acquire( image_vpath );

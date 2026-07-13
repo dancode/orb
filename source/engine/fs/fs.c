@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    engine/core/fs/fs.c -- virtual filesystem implementation (DIR mounts + lazy catalog).
+    engine/fs/fs.c -- virtual filesystem implementation (DIR mounts + lazy catalog).
 
     Resolution: normalize the vpath, then among mounts whose vprefix matches, pick the
     highest-priority mount that actually has the file (loose-over-bundle).  The first hit is
@@ -14,11 +14,26 @@
 #include <stdio.h>
 
 #include "orb.h"
-#include "engine/core/fs/fs.h"
-#include "engine/core/fs/fs_zip.h"   /* miniz config -- must precede vendor/miniz.h */
-#include "vendor/miniz.h"            /* mz_zip_* reader (impl in fs_zip_miniz.c) */
-#include "engine/core/sid/sid.h"     /* sid_hash_len -- case-insensitive FNV-1a */
-#include "engine/sys/sys_host.h"     /* sys_file_read_entire / _exists / _size / _time / _glob */
+#include "engine/fs/fs_host.h"        /* types + direct decls (fs is a sys-only leaf) */
+#include "engine/fs/fs_zip.h"         /* miniz config -- must precede vendor/miniz.h */
+#include "vendor/miniz.h"             /* mz_zip_* reader (impl in fs_zip_miniz.c) */
+#include "engine/sys/sys_host.h"      /* sys_file_read_entire / _exists / _size / _time / _glob */
+
+/* Catalog hash: case-insensitive FNV-1a over the vpath.  fs sits below core, so it cannot call
+   core's sid_hash_len -- it keeps its own copy of the identical algorithm (a private catalog
+   hash never needs to agree with a SID anyway).  Matches sid.h so behaviour is unchanged. */
+static u32
+fs_hash( const char* str, size_t len )
+{
+    u32 h = 2166136261u;
+    for ( size_t i = 0; i < len; i++ )
+    {
+        unsigned char c = ( unsigned char )str[ i ];
+        if ( c >= 'A' && c <= 'Z' ) c = ( unsigned char )( c + 32 );
+        h = ( h ^ c ) * 16777619u;
+    }
+    return h;
+}
 
 /*==============================================================================================
     State
@@ -54,7 +69,7 @@ typedef struct fs_mount_s
 
 typedef struct fs_entry_s
 {
-    u32  hash;                     // sid_hash_len of vpath
+    u32  hash;                     // fs_hash of vpath
     u16  mount;                    // owning mount index
     u16  used;                     // 0 empty, 1 used, 2 tombstone (evicted; keeps probe chains)
     u32  size;
@@ -271,7 +286,7 @@ fs_catalog_find( const char* vpath )
     if ( !s_catalog )
         return NULL;
 
-    u32 hash = sid_hash_len( vpath, strlen( vpath ) );
+    u32 hash = fs_hash( vpath, strlen( vpath ) );
     u32 mask = FS_MAX_FILES - 1;
     u32 i    = hash & mask;
 
@@ -305,7 +320,7 @@ fs_catalog_insert( const char* vpath, const char* real, u16 mount, u32 size, u64
     if ( s_catalog_count >= ( FS_MAX_FILES * 3 ) / 4 )
         return NULL;    // keep the load factor sane; reads still work uncached
 
-    u32 hash = sid_hash_len( vpath, strlen( vpath ) );
+    u32 hash = fs_hash( vpath, strlen( vpath ) );
     u32 mask = FS_MAX_FILES - 1;
     u32 i    = hash & mask;
 
@@ -798,5 +813,12 @@ fs_file_count( void )
 {
     return s_catalog_count;
 }
+
+/*==============================================================================================
+    API struct + module descriptor -- folded into this unity TU so g_fs_api_struct sees every
+    implementation function above.
+==============================================================================================*/
+
+#include "engine/fs/fs_api.c"
 
 /*============================================================================================*/

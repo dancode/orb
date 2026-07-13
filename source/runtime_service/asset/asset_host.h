@@ -25,9 +25,9 @@
         // call site:
         asset_id_t id = asset()->acquire( "textures/hero.png" );
 
-    The dep "core" in the mod_desc_t ensures core (and its virtual filesystem) is initialized
-    before the asset service, so core()->fs_read succeeds inside the loaders.  Mount the
-    directories the assets live in (core()->fs_mount) before acquiring.
+    The dep "fs" in the mod_desc_t ensures the virtual filesystem is initialized before the
+    asset service, so fs()->read succeeds inside the loaders.  Mount the directories the assets
+    live in (fs()->mount) before acquiring.
 
 ==============================================================================================*/
 

@@ -241,7 +241,12 @@
       "PowerShell(F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_timeline)",
       "PowerShell($p = Start-Process F:\\\\orb\\\\bin\\\\sb_gui_timeline.exe -PassThru; Start-Sleep -Seconds 7; if \\( $p.HasExited \\) { \"EXITED code $\\($p.ExitCode\\)\" } else { \"running OK\"; Stop-Process -Id $p.Id -Force -Confirm:$false })",
       "PowerShell(\\(Get-Item F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\\).LastWriteTime = Get-Date; \\(Get-Item F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui_backend.c\\).LastWriteTime = Get-Date; F:\\\\orb\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_timeline)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(./bin/build_tool.exe -config Debug -target fs)",
+      "Bash(./bin/build_tool.exe -config Debug)",
+      "Bash(./bin/build_tool.exe -config Debug -monolithic)",
+      "Bash(./bin/sb_core.exe)",
+      "Bash(./bin/sb_asset_test.exe)"
     ]
   }
 }

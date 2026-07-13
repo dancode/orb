@@ -195,7 +195,7 @@ asset_do_load( asset_rec_t* r )
     r->state = ASSET_LOADING;
 
     const char* vpath = core()->sid_cstr( r->path );
-    fs_blob_t   blob  = core()->fs_read( vpath );
+    fs_blob_t   blob  = fs()->read( vpath );
     if ( !blob.ok )
     {
         LOG_WARN( "asset: read failed for '%s'", vpath );
@@ -206,13 +206,13 @@ asset_do_load( asset_rec_t* r )
     }
 
     fs_stat_t st;
-    if ( core()->fs_stat( vpath, &st ) )
+    if ( fs()->stat( vpath, &st ) )
         r->mtime = st.mtime;
     r->bytes = blob.size;
 
     asset_type_t* t   = &s_types[ r->type ];
     void*         res = ( t->used && t->load ) ? t->load( vpath, blob.data, blob.size, t->userdata ) : NULL;
-    core()->fs_free( &blob );
+    fs()->free( &blob );
 
     if ( res )
     {
@@ -424,7 +424,7 @@ asset_refresh( void )
 
         const char* vpath = core()->sid_cstr( r->path );
         fs_stat_t   st;
-        if ( !core()->fs_stat( vpath, &st ) )
+        if ( !fs()->stat( vpath, &st ) )
             continue;    // source unavailable this tick -- keep the current resource
 
         if ( r->state != ASSET_FAILED && st.mtime == r->mtime )

@@ -38,8 +38,11 @@ asset_mod_init( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
 
-    /* Cache siblings; the deps "core"/"rhi" guarantee both are initialized first.
-       core = fs + sid + alloc (registry); rhi = texture create/upload/bindless (image loader). */
+    /* Cache siblings; the deps "fs"/"core"/"rhi" guarantee all are initialized first.
+       fs = read bytes by vpath; core = sid + alloc (registry); rhi = texture create/upload/
+       bindless (image loader). */
+    if ( !MOD_FETCH_FS )
+        return false;
     if ( !MOD_FETCH_CORE )
         return false;
     if ( !MOD_FETCH_RHI )
@@ -66,7 +69,7 @@ static bool
 asset_mod_reload( void* raw_state, get_api_fn get_api )
 {
     UNUSED( raw_state );
-    return MOD_FETCH_CORE && MOD_FETCH_RHI;    // re-cache sibling API pointers after a hot-swap
+    return MOD_FETCH_FS && MOD_FETCH_CORE && MOD_FETCH_RHI;    // re-cache sibling API pointers after a hot-swap
 }
 
 static void
@@ -87,8 +90,8 @@ asset_get_mod_desc( void )
         .version       = 1,
         .state_size    = 0,        /* registry state lives in file-scope globals */
         .func_api_size = sizeof( asset_api_t ),
-        .dep_count     = 2,
-        .deps          = { "core", "rhi" },
+        .dep_count     = 3,
+        .deps          = { "fs", "core", "rhi" },
         .func_api      = &g_asset_api_struct,
         .init          = asset_mod_init,
         .reload        = asset_mod_reload,
