@@ -17,6 +17,103 @@
 int  intern_test( void );                        // ... temporary code ...
 void test_core_cvar( int argc, char** argv );    // ... temporary code ...
 
+/*==============================================================================================
+    Check helper (matches sb_net / sb_prof / sb_fs house style)
+==============================================================================================*/
+
+static int s_checks = 0;
+static int s_fails  = 0;
+
+static void
+sb_check( bool ok, const char* what )
+{
+    s_checks++;
+    if ( !ok )
+    {
+        s_fails++;
+        printf( "    FAIL: %s\n", what );
+    }
+}
+
+/*==============================================================================================
+
+    Per-channel log filtering -- registry, `log` command, console intake round trip.
+
+    Headless: ambient log entries land in the console scrollback through con_log_sink
+    (con_init registers it), so scrollback line-total deltas prove exactly what passed
+    the logger's filter.  The console intake floor is dropped to TRACE first so only the
+    logger's own global-floor/override decision is under test.
+
+==============================================================================================*/
+
+/* Write one ambient log line; true if it reached the console scrollback. */
+
+static bool
+log_probe( int level, const char* channel )
+{
+    u32 before = con_line_total();
+    core_log_fn( level, channel, "probe" );
+    return con_line_total() != before;
+}
+
+static void
+log_channel_test( void )
+{
+    printf( "\n=== log channels ===\n\n" );
+
+    cvar_system_init();
+    cmd_system_init();
+    con_init();
+    cvar_register_commands();
+    log_register_commands();
+    con_set_log_filter( LOG_LEVEL_TRACE );
+
+    /* Unconfigured channels inherit the global floor (log_level default: info). */
+    sb_check(  log_probe( ORB_LOG_INFO,  "boat" ), "info passes at global floor" );
+    sb_check( !log_probe( ORB_LOG_DEBUG, "boat" ), "debug filtered at global floor" );
+
+    /* Opening one channel below the floor leaves the others untouched. */
+    con_exec( "log boat debug" );
+    sb_check(  log_probe( ORB_LOG_DEBUG, "boat" ), "override opens boat to debug" );
+    sb_check( !log_probe( ORB_LOG_DEBUG, "gull" ), "gull still at global floor" );
+
+    /* off mutes everything below FATAL (FATAL itself terminates -- not probed). */
+    con_exec( "log boat off" );
+    sb_check( !log_probe( ORB_LOG_ERROR, "boat" ), "off mutes errors" );
+
+    /* Per-channel reset returns to the inherited floor. */
+    con_exec( "log boat reset" );
+    sb_check(  log_probe( ORB_LOG_INFO,  "boat" ), "reset restores inherit (info)" );
+    sb_check( !log_probe( ORB_LOG_DEBUG, "boat" ), "reset drops the debug override" );
+
+    /* Channel names are case-insensitive, matching cvar/cmd console conventions. */
+    con_exec( "log BOAT error" );
+    sb_check( !log_probe( ORB_LOG_WARN,  "boat" ), "case-insensitive set (warn muted)" );
+    sb_check(  log_probe( ORB_LOG_ERROR, "boat" ), "case-insensitive set (error passes)" );
+
+    /* Setting an unseen channel pre-registers it (autoexec before first write). */
+    con_exec( "log heron trace" );
+    sb_check(  log_probe( ORB_LOG_TRACE, "heron" ), "pre-registered channel at trace" );
+
+    /* Global reset clears every override at once. */
+    con_exec( "log reset" );
+    sb_check( !log_probe( ORB_LOG_TRACE, "heron" ), "log reset clears heron override" );
+    sb_check(  log_probe( ORB_LOG_WARN,  "boat" ),  "log reset clears boat override" );
+
+    /* View + error paths render through con_printf (echoed to stdout above). */
+    con_exec( "log list" );
+    con_exec( "log boat" );
+    con_exec( "log nosuch" );
+    con_exec( "log boat banana" );
+    con_exec( "log" );
+
+    printf( "\nlog channels: %d checks, %d failed\n", s_checks, s_fails );
+
+    con_exit();
+    cmd_system_exit();
+    cvar_system_exit();
+}
+
 /*============================================================================================*/
 /* '+action' handlers for the bind round trip: down queues "+test <key>", up "-test <key>". */
 
@@ -164,6 +261,7 @@ core_test( void )
         cvar_system_exit();
     }
 
+    log_channel_test();
 }
 
 /*============================================================================================*/

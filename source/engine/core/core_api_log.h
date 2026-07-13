@@ -14,9 +14,15 @@
         LOG_WARN( "texture '%s' not found", name ); // auto prefixed with function name
         LOG_ERROR( "out of memory" );               // auto prefixed with function name
 
+    Runtime filtering:
+        Global floor: the `log_level` cvar.  Per-channel override: the `log <channel>
+        <level|off>` console command or core()->log_channel_set() — channels auto-register
+        on their first write.  FATAL is never filtered.
+
     Compile-time stripping:
         LOG_COMPILE_MIN defaults to ORB_LOG_TRACE in debug, ORB_LOG_INFO in release.
-        Override per-target in #define LOG_COMPILE_MIN=2
+        Override per-target in #define LOG_COMPILE_MIN=2, or per-file alongside LOG_CH
+        (before including core_api.h) to give one channel its own compile-time cap.
         Calls below the minimum compile to ((void)0) — no string literal, no branch, no call.
 
 ==============================================================================================*/

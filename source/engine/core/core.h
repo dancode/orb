@@ -10,8 +10,6 @@
     - boot/shutdown ordering, core_wire_mod_callbacks, crash-handler wiring — the orchestration.
     - sid and arenas — small, shared, no external mass; not worth a module each
 
-
-
 ==============================================================================================*/
 #pragma once
 #include "orb.h"
@@ -36,6 +34,8 @@ typedef enum log_level_e
     LOG_LEVEL_WARN  = ORB_LOG_WARN,     // recoverable issues
     LOG_LEVEL_ERROR = ORB_LOG_ERROR,    // non-fatal errors
     LOG_LEVEL_FATAL   = ORB_LOG_FATAL,  // fatal error that should trigger a breakpoint;
+    LOG_LEVEL_OFF     = 0xFC,           // channel override only: mute everything except FATAL
+    LOG_LEVEL_INHERIT = 0xFD,           // channel override unset: channel follows the global floor
     LOG_LEVEL_CONSOLE = 0xFE,           // direct interactive console I/O (command echo/results);
                                         // never passed to log_write, tags console.c's own ring
     LOG_LEVEL_LINE    = 0xFF,           // visual separator; filtered and stored at INFO level
@@ -45,13 +45,17 @@ typedef enum log_level_e
 #define LOG_LEVEL_COUNT   6
 #define LOG_RING_CAPACITY 4096          // ring slot count; must be a power of 2
 
+#define LOG_MAX_CHANNELS      64        // max distinct channels (auto-registered on first write)
+#define LOG_CHANNEL_NAME_LEN  32        // bytes per channel name (incl. NUL); longer names truncate
+
 /* Single log record written into the ring buffer and passed to every sink. */
 
 typedef struct log_entry_s      /* 256 bytes */
 {
     u32          seq;           /* monotonic write counter */
     log_level_t  level;         /* severity level logged */
-    const char*  channel;       /* points to a static string; always valid */
+    const char*  channel;       /* canonical copy in core's channel registry (survives DLL
+                                   reloads); NULL on overflow continuation entries */
     char         msg[ 240 ];    /* pre-formatted, null-terminated */
 
 } log_entry_t;

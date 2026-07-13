@@ -30,6 +30,10 @@ void        core_assert_set_skip( bool skip );
 //          Pass this to mod_set_log_fn / app_set_log_fn after mod_init_all().
 void        core_log_fn( int level, const char* tag, const char* msg );
 
+//          Register the 'log' console command (per-channel verbosity).  core_init calls
+//          this; exposed for sandboxes that assemble core subsystems manually (sb_core).
+void        log_register_commands( void );
+
 /*==============================================================================================
     Mod Callbacks
 

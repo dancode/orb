@@ -53,6 +53,13 @@ typedef struct core_api_s
     void        ( *log_add_sink )        ( log_sink_fn fn, void* userdata );
     void        ( *log_remove_sink )     ( log_sink_fn fn );
 
+    /* per-channel verbosity (channels auto-register on first log_write; `log` console cmd) */
+
+    void        ( *log_channel_set )     ( const char* name, log_level_t level );    // TRACE..ERROR, OFF, or INHERIT to clear
+    void        ( *log_channel_reset )   ( const char* name );                       // NULL = all channels
+    u32         ( *log_channel_count )   ( void );
+    bool        ( *log_channel_get )     ( u32 index, const char** name, log_level_t* override_level, log_level_t* effective );
+
     /* ring buffer access for editor/tools */
 
     const log_entry_t*  ( *log_ring_entries )   ( void );

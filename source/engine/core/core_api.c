@@ -25,6 +25,7 @@ core_init( void )
     cmd_system_init();           /* command backend before registrants (echo/help/wait built-ins) */
     con_init();                  /* console view: registers clear/history into the backend */
     cvar_register_commands();    /* set/seta/toggle/cvarlist/... into the backend registry */
+    log_register_commands();     /* 'log' per-channel verbosity command over the channel registry */
     core_register_cvars();       /* core-owned cvars: version, developer, log_level */
 }
 
@@ -80,6 +81,11 @@ const core_api_t g_core_api_struct = {
     .log_set_min_level  = log_set_min_level,
     .log_add_sink       = log_add_sink,
     .log_remove_sink    = log_remove_sink,
+
+    .log_channel_set    = log_channel_set,
+    .log_channel_reset  = log_channel_reset,
+    .log_channel_count  = log_channel_count,
+    .log_channel_get    = log_channel_get,
     .log_ring_entries   = log_ring_entries,
     .log_ring_capacity  = log_ring_capacity,
     .log_ring_seq       = log_ring_seq,
