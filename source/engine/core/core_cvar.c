@@ -21,6 +21,10 @@
 #include "engine/core/cmd/cmd_alias.c"
 #include "engine/core/cmd/cmd.c"
 
+/* Defined in the 'log' command block below; cvar_write_config calls it alongside the
+   bind/alias writers so channel overrides round-trip through writeconfig too. */
+static void log_channel_write_config( void* file );
+
 #include "engine/core/cvar/cvar_config.c"
 
 #include "engine/core/console/console.h"
@@ -149,6 +153,31 @@ cmd_log( int argc, char** argv )
 
     log_channel_set( name, level );
     con_printf( "log channel '%s' -> %s\n", name, log_cmd_level_name( level ) );
+}
+
+/* Write "log reset" + one "log <channel> <level>" line per override, mirroring the bind
+   writer's unbindall + bind lines: the unconditional reset keeps a lower-tier config file
+   (default.cfg) from leaking overrides into a session whose config.cfg has none.
+   void* keeps stdio out of the seam, same convention as cmd_bind_write_config. */
+
+static void
+log_channel_write_config( void* file )
+{
+    FILE* f     = ( FILE* )file;
+    u32   count = log_channel_count();
+
+    fprintf( f, "\nlog reset\n" );
+
+    for ( u32 i = 0; i < count; i++ )
+    {
+        const char* name     = NULL;
+        log_level_t override = LOG_LEVEL_INHERIT;
+        log_channel_get( i, &name, &override, NULL );
+        if ( override == LOG_LEVEL_INHERIT )
+            continue;
+
+        fprintf( f, "log %s %s\n", name, log_cmd_level_name( override ) );
+    }
 }
 
 /* Non-static so sandboxes that assemble core subsystems manually can register the

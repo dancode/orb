@@ -250,7 +250,8 @@
       "Bash(./bin/sb_fs.exe)",
       "PowerShell(\\(Get-Item source\\\\engine\\\\core\\\\core.c\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_core)",
       "PowerShell(Get-Item bin\\\\sb_core.exe | Select-Object LastWriteTime; bin\\\\sb_core.exe)",
-      "PowerShell(Get-Item bin\\\\host_game.exe, bin\\\\gui.dll, bin\\\\sb_gui.exe -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime; bin\\\\build_tool.exe -config Debug; echo \"exit=$LASTEXITCODE\")"
+      "PowerShell(Get-Item bin\\\\host_game.exe, bin\\\\gui.dll, bin\\\\sb_gui.exe -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime; bin\\\\build_tool.exe -config Debug; echo \"exit=$LASTEXITCODE\")",
+      "PowerShell(\\(Get-Item source\\\\engine\\\\core\\\\core.c\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_core; echo \"build exit=$LASTEXITCODE\"; bin\\\\sb_core.exe | Select-Object -Last 40; echo \"run exit=$LASTEXITCODE\"; echo \"--- test_log.cfg ---\"; Get-Content test_log.cfg)"
     ]
   }
 }

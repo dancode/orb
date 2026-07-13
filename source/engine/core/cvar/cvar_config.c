@@ -94,6 +94,9 @@ cvar_write_config( const char* filename, u32 type_filter )
     /* Aliases persist alongside the cvars (alias lines). */
     cmd_alias_write_config( f );
 
+    /* Log channel overrides persist alongside the cvars (log reset + log lines). */
+    log_channel_write_config( f );
+
     /* Service-registered sections (input axis binds, etc.). */
     for ( u32 i = 0; i < CVAR_CONFIG_WRITER_MAX; ++i )
         if ( s_config_writers[ i ] )

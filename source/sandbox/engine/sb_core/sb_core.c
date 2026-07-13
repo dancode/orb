@@ -100,6 +100,18 @@ log_channel_test( void )
     sb_check( !log_probe( ORB_LOG_TRACE, "heron" ), "log reset clears heron override" );
     sb_check(  log_probe( ORB_LOG_WARN,  "boat" ),  "log reset clears boat override" );
 
+    /* writeconfig round trip: overrides persist like binds (log reset + log lines),
+       and exec replays them through the ordinary command buffer. */
+    con_exec( "log boat debug" );
+    con_exec( "log heron off" );
+    con_exec( "writeconfig test_log.cfg" );
+    con_exec( "log reset" );
+    sb_check( !log_probe( ORB_LOG_DEBUG, "boat" ), "override cleared before exec" );
+    con_exec( "exec test_log.cfg" );
+    cmd_pump();
+    sb_check(  log_probe( ORB_LOG_DEBUG, "boat" ),  "exec restores boat debug" );
+    sb_check( !log_probe( ORB_LOG_ERROR, "heron" ), "exec restores heron off" );
+
     /* View + error paths render through con_printf (echoed to stdout above). */
     con_exec( "log list" );
     con_exec( "log boat" );
