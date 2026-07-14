@@ -323,6 +323,12 @@ gui_window_end( void )
         return;
     }
 
+    /* Everything painted from here (border, titlebar, scrollbar, resize grip) is chrome: without
+       this reset it would inherit the window's LAST widget as its command-stepper owner, and the
+       picker would treat the window border as that widget (a border ring hit-tests over the
+       whole window edge, so the mislabel was very visible). */
+    STEP_SET_OWNER( 0 );
+
     gui_window_t* win = s_build.win.rec;
 
     /* Docked window: the node owns chrome, not the free-float path below.  An inactive tab opened

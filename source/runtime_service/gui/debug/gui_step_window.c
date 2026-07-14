@@ -50,7 +50,7 @@ static bool s_step_pick_arm;
    fractional accumulator carries the sub-command remainder across frames so low rates still
    move; playing pins wants_redraw every frame (the frame loop must keep pumping). */
 static bool s_step_play;
-static i32  s_step_rate = 120;
+static i32  s_step_rate = 20;   /* capped at 60: the whole drag range stays in the usable band */
 static f32  s_step_accum;
 
 static const char* k_step_type_name[] = {
@@ -303,7 +303,7 @@ gui_step_window( bool* open )
 
             /* View row: playback rate + the display/replay order.  Toggling the order re-seats
                the same numeric cursor in the other sequence -- the scene recomposes accordingly. */
-            gui_drag_int( "rate##step_rate", &s_step_rate, 2.0f, 1, 2000, "%d cmd/s" );
+            gui_drag_int( "rate##step_rate", &s_step_rate, 0.25f, 1, 60, "%d cmd/s" );
 
             bool paint = gui_step_paint_order();
             if ( gui_checkbox( "Paint order", &paint ) )

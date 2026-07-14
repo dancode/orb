@@ -544,9 +544,11 @@ extern gui_id_t g_gui_dash_window_id;
     bool gui_step_seg_info ( u32 index, step_seg_info_t* out );
 
     /* Pick: topmost VISIBLE frozen command whose bounds contain the point on viewport `vp` --
-       "what drew this pixel".  Walks the visible prefix top-down in the active display order
-       (exact topmost in paint order, an approximation in emit order) and respects each
-       command's frozen scissor.  False while live or on a miss. */
+       "what drew this pixel".  Always resolves topmost in PAINT order (whatever the display
+       mode), respects each command's frozen scissor, and returns the hit's DISPLAY position.
+       A topmost hit that is unattributed chrome/background (owner 0) refuses the pick -- a
+       missed click is a no-op, never a seek onto a window's body fill.  False while live, on
+       a miss, or on a chrome hit. */
     bool gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index );
 
     /* Attribution stamp (defined in gui_emit_draw.c): widget_behavior marks each registering

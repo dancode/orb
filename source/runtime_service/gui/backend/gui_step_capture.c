@@ -69,6 +69,12 @@ static struct
        approximating dispatch -- the true order also groups by clip within a window. */
     u32            order    [ GUI_MAX_CMDS ];
     gui_cmd_seg_t  disp_segs[ GUI_MAX_SEGS ];
+    u32            disp_pos [ GUI_MAX_CMDS ];   /* inverse of order[]: frozen index -> display position */
+
+    /* Paint order held SEPARATELY and built once at capture: the picker always resolves
+       "topmost under the point" in paint order, whatever the display mode -- in emit order,
+       later-emitted is not later-painted (the menu bar emits first yet sits on top). */
+    u32            paint_seq[ GUI_MAX_CMDS ];
     gui_rect_t     clip_table[ GUI_MAX_CLIP_RECTS ];
     u32            clip_hash [ GUI_MAX_CLIP_RECTS ];   u32 clip_n;
     gui_vec2_t     points    [ GUI_MAX_PATH_PTS ];     u32 pt_count;
@@ -112,13 +118,13 @@ gui_step_seek( u32 cursor )
 ----------------------------------------------------------------------------------------------*/
 
 static void
-step_build_order( void )
+step_expand_order( bool paint, u32* out_order, gui_cmd_seg_t* out_segs )
 {
     /* Segment sequence: emit order (identity), or z-ascending (stable insertion sort). */
     u32 sidx[ GUI_MAX_SEGS ];
     for ( u32 i = 0; i < s_step.seg_count; ++i )
         sidx[ i ] = i;
-    if ( s_step.paint_order )
+    if ( paint )
         for ( u32 a = 1; a < s_step.seg_count; ++a )
         {
             u32 key = sidx[ a ];
@@ -131,19 +137,30 @@ step_build_order( void )
             sidx[ b ] = key;
         }
 
-    /* Expand into the command permutation + the display-domain segment table. */
+    /* Expand into the command permutation (+ the rebased segment table, when wanted). */
     u32 w = 0;
     for ( u32 k = 0; k < s_step.seg_count; ++k )
     {
         const gui_cmd_seg_t* sg = &s_step.segs[ sidx[ k ] ];
         u32                  n  = sg->hi - sg->lo;
-        s_step.disp_segs[ k ]    = *sg;
-        s_step.disp_segs[ k ].lo = w;
-        s_step.disp_segs[ k ].hi = w + n;
+        if ( out_segs )
+        {
+            out_segs[ k ]    = *sg;
+            out_segs[ k ].lo = w;
+            out_segs[ k ].hi = w + n;
+        }
         for ( u32 j = 0; j < n; ++j )
-            s_step.order[ w + j ] = sg->lo + j;
+            out_order[ w + j ] = sg->lo + j;
         w += n;
     }
+}
+
+static void
+step_build_order( void )
+{
+    step_expand_order( s_step.paint_order, s_step.order, s_step.disp_segs );
+    for ( u32 k = 0; k < s_step.cmd_count; ++k )
+        s_step.disp_pos[ s_step.order[ k ] ] = k;
 }
 
 void
@@ -287,19 +304,29 @@ gui_step_seg_count( void )
     return g_gui_step_frozen ? s_step.seg_count : 0;
 }
 
-/* Pick: topmost VISIBLE frozen command containing the point -- "what drew this pixel".  Walks
-   the visible prefix top-down in the active display order (exact topmost in paint order; in
-   emit order, later-emitted is only an approximation of later-painted) and rejects a command
-   whose frozen scissor excludes the point, so a clipped-away shape can never claim it. */
+/* Pick: topmost VISIBLE frozen command containing the point -- "what drew this pixel".  Always
+   walks in PAINT order (paint_seq, top-down), whatever the display mode: in emit order the
+   last-emitted command is not the last-painted one (the menu bar emits first yet sits on top),
+   so a display-order walk picked whatever full-screen fill happened to emit later.  Visibility
+   is checked in the display domain (disp_pos < cursor), a command whose frozen scissor excludes
+   the point can never claim it, and the FIRST hit decides: an unattributed chrome/background
+   fill (owner 0) REFUSES the pick rather than tunnelling to content underneath -- so a click
+   that misses a widget is a no-op, not a seek onto the window's body fill that hides everything
+   painted after it.  Chrome stays inspectable via the scrubber and the segment list. */
 bool
 gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index )
 {
     if ( !g_gui_step_frozen )
         return false;
 
-    for ( u32 k = s_step.cursor; k-- > 0; )
+    for ( u32 t = s_step.cmd_count; t-- > 0; )
     {
-        const gui_cmd_t* c = &s_step.cmds[ s_step.order[ k ] ];
+        u32 fi = s_step.paint_seq[ t ];
+        u32 k  = s_step.disp_pos[ fi ];
+        if ( k >= s_step.cursor )
+            continue;   /* not visible at the current cursor */
+
+        const gui_cmd_t* c = &s_step.cmds[ fi ];
         if ( c->vp != vp )
             continue;
         gui_rect_t cl = s_step.clip_table[ c->clip_idx ];
@@ -308,6 +335,18 @@ gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index )
         gui_rect_t b = step_cmd_bounds( c );
         if ( b.w > 0.0f && x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h )
         {
+            /* A hollow outline only owns its border band: a point inside the hole falls
+               through to whatever it frames (a window border must not swallow every click
+               in the window).  Pad the band by 1px so a thin ring is still clickable. */
+            if ( c->type == GUI_CMD_RECT_OUTLINE )
+            {
+                f32 band = c->rect_outline.t + 1.0f;
+                if (    x >= b.x + band && x < b.x + b.w - band
+                     && y >= b.y + band && y < b.y + b.h - band )
+                    continue;
+            }
+            if ( s_step.cmd_owner[ fi ] == 0 )
+                return false;   /* topmost hit is chrome/background: refuse, do not tunnel */
             *out_index = k;
             return true;
         }
@@ -406,6 +445,7 @@ step_capture_build( void )
     /* Freeze showing the whole frame: the first frozen build is visually identical to the live
        frame it replaces (only volatile-carrying windows retess once -- see the file banner). */
     step_build_order();
+    step_expand_order( true, s_step.paint_seq, NULL );   /* the picker's fixed paint sequence */
     s_step.cursor     = w;
     g_gui_step_frozen = true;
 }
