@@ -3,38 +3,52 @@
     runtime_service/gui/backend/gui_step_capture.c -- Command stepper: frozen-frame capture + replay.
 
     Freeze one frame's semantic command list and replay a PREFIX of it, so the UI's generation
-    can be stepped command by command.  Two halves, both here:
+    can be stepped command by command.  The core trick: there is NO replay-specific tessellation.
+    The restore pre-loads s_draw with the frozen prefix, so the ordinary pipeline -- hash diff,
+    retained cache, per-window slots, z-sorted dispatch -- builds and renders it unchanged.  A
+    cursor change alters the restored commands, the diff flags exactly the affected windows, and
+    only those re-tessellate; an untouched frozen frame hash-matches and idle-skips like any
+    clean frame.
 
-        step_capture_build -- start of cache_build_frame (segments closed, pools complete):
-                              copies the frame's band-0 segments -- commands and hashes compacted
-                              contiguously, segment ranges rebased -- plus every side pool WHOLE
-                              (clip table, text pool, point pool, rect pool), so each pool offset
-                              baked into a command stays valid verbatim.  Sets g_gui_step_frozen.
-        step_restore_emit  -- end of draw_reset, while frozen: pre-loads s_draw with the frozen
-                              commands [0, cursor), the frozen pools, and a clamped copy of the
-                              frozen segment table, then opens a fresh live tail span.  Live
-                              emission continues after the frozen content -- but every band-0
-                              push is suppressed at the source (STEP_EMIT_SUPPRESSED in
-                              gui_emit_draw.c), so only the debug band (the stepper's own
-                              controls, the dashboard, the overlays) lands on top.
+    The feature splits into four tiers.  Each tier only ADDS state; a lower tier never reads an
+    upper tier's data, so each can be understood (or deleted) top-down:
 
-    No replay-specific tessellation exists: the restored s_draw IS the frame, so the ordinary
-    pipeline -- hash diff, retained cache, per-window slots, z-sorted dispatch -- builds and
-    renders it unchanged.  A cursor change alters the restored commands, the diff flags exactly
-    the affected windows, and only those re-tessellate; an untouched frozen frame hash-matches
-    and idle-skips like any clean frame.
+        T0  freeze / replay   cmds + hashes + segments + side pools; step_capture_build and
+                              step_restore_emit (the two pipeline hooks), g_gui_step_frozen
+                              (the emit-suppression flag).  This alone is a working freezer.
+        T1  display order     order / disp_segs / disp_pos: the SAME frozen data viewed in emit
+                              order (generation) or paint order (z).  The cursor, the restore,
+                              and every shell query live in whichever order is active.
+        T2  inspection        step_cmd_bounds + the cmd/seg info queries: read-only decode of
+                              one frozen command or segment for the stepper window.
+        T3  picking           paint_seq + cmd_owner: topmost-command-under-point resolved in
+                              TRUE paint order regardless of the display mode.
 
-    Volatile widgets: cmd_volatile_id is NOT captured -- draw_reset zeroes it, so frozen volatile
-    commands replay as plain static content and (unlike live frames) fold into their window's
-    hash.  That first-freeze hash shift retessellates volatile-carrying windows once; from then
-    on the frozen frame is static.  The live registry's rows go stale meanwhile (their tess_gen
-    no longer matches any slot) so every patch attempt refuses by the generation check; on
-    release the live emit re-tags its commands and the rows force a recapture, self-healing.
+    Contracts the tiers share:
 
-    State transitions latch and apply only at frame seams -- capture at the build, release at the
-    next draw_reset -- so a frame is never half live, half frozen.  Each mutating call site is
-    responsible for wants_redraw (debug_hotkeys sets it), keeping the seek -> restore handoff
-    ahead of the clean-frame emit skip.
+      - Requests LATCH and apply only at frame seams -- capture at the build, release / cursor /
+        order at the next draw_reset -- so a frame is never half live, half frozen.  Every
+        latched request raises s_step_pending, which frame_begin folds into frame_dirty
+        (STEP_FRAME_PENDING): per-context wants_redraw is NOT reliable for this, since any later
+        ctx_begin of the same frame wipes it and the request would stall behind the emit skip.
+
+      - The capture copies band-0 segments only (the debug band is the stepper's own tooling and
+        must never appear in its own replay), compacting commands/hashes/owners contiguously and
+        rebasing each segment's [lo, hi).  Side pools are copied WHOLE so every pool offset
+        baked into a command (text.off, pt_offset, rect_list.offset, clip_idx) stays valid
+        verbatim.
+
+      - While frozen, live band-0 pushes are suppressed at the source (STEP_EMIT_SUPPRESSED in
+        gui_emit_draw.c), so the app keeps running underneath without disturbing the replay or
+        the shared pools; only debug-band emission (this feature's own window, the dashboard,
+        the overlays) lands on top.
+
+      - Volatile widgets: cmd_volatile_id is NOT captured -- draw_reset zeroes it, so frozen
+        volatile content replays as plain static commands and (unlike live frames) folds into
+        its window's hash.  That first-freeze hash shift retessellates volatile-carrying windows
+        once; from then on the frozen frame is static.  The live registry's rows go stale
+        meanwhile (their tess_gen matches no slot, every patch refuses by the generation check)
+        and self-heal on release, when live emit re-tags and forces a recapture.
 
     Included by gui_backend.c LAST (after gui_dash_capture.c) so every emit static it copies
     (s_draw and its pools) is in scope.  Compiled out unless GUI_CMD_STEPPER (gui_backend.h);
@@ -45,77 +59,71 @@
 
 #ifdef GUI_CMD_STEPPER
 
+/*==============================================================================================
+    State.
+
+    Split by lifetime: request latches (written any time, consumed at a frame seam), the frozen
+    frame (written ONCE per capture, read-only until release), and the derived order views
+    (rebuilt from the frozen frame at capture / on a mode toggle).
+==============================================================================================*/
+
 /* Read by the emit hot path (STEP_EMIT_SUPPRESSED) to suppress live band-0 pushes per frame. */
 bool g_gui_step_frozen;
 
+/* A latched request (capture / release / seek / order toggle) needs one more emit to take
+   effect; frame_begin reads this through gui_step_pending().  Cleared when the emit runs
+   (step_restore_emit -- the restore consumes the cursor, and a same-frame capture request is
+   taken by the build that follows). */
+static bool s_step_pending;
+
 static struct
 {
+    /* --- request latches + mode ------------------------------------------------------------ */
     bool want_capture;   /* latched by gui_step_capture(); taken at the next cache_build_frame  */
     bool want_release;   /* latched by gui_step_release(); applied at the next draw_reset       */
     u32  cursor;         /* replay shows the first `cursor` commands of the ACTIVE order        */
     bool paint_order;    /* display/replay order: false = emit (generation), true = paint (z)   */
 
-    /* The frozen frame.  Band-0 commands/hashes compacted contiguously with rebased segments;
-       side pools copied whole (see the file banner). */
-    gui_cmd_t      cmds      [ GUI_MAX_CMDS ];         u32 cmd_count;
-    u32            cmd_hashes[ GUI_MAX_CMDS ];
-    gui_id_t       cmd_owner [ GUI_MAX_CMDS ];         /* emitting widget per command (0 = chrome) */
-    gui_cmd_seg_t  segs      [ GUI_MAX_SEGS ];         u32 seg_count;
+    /* --- the frozen frame (T0) -- written once per capture ---------------------------------- */
+    gui_cmd_t      cmds      [ GUI_MAX_CMDS ];          u32 cmd_count;
+    u32            cmd_hashes[ GUI_MAX_CMDS ];          /* emit-time hashes, for the cache diff  */
+    gui_id_t       cmd_owner [ GUI_MAX_CMDS ];          /* emitting widget (0 = chrome) -- T3    */
+    gui_cmd_seg_t  segs      [ GUI_MAX_SEGS ];          u32 seg_count;   /* rebased [lo, hi)     */
 
-    /* The ACTIVE display order, rebuilt at capture and on a mode toggle (step_build_order):
-       order[k] is the frozen index of the k-th shown command; disp_segs[] are the frozen
-       segments re-sequenced to match, with [lo, hi) rebased into the display domain.  Emit
-       order is the identity; paint order concatenates segments sorted by z ascending (stable),
-       approximating dispatch -- the true order also groups by clip within a window. */
+    /* Side pools, copied whole (see the banner contract).  clip_hash mirrors s_draw's
+       clip_hash_cache so the restore can hand both back without rehashing. */
+    gui_rect_t     clip_table[ GUI_MAX_CLIP_RECTS ];
+    u32            clip_hash [ GUI_MAX_CLIP_RECTS ];    u32 clip_n;
+    gui_vec2_t     points    [ GUI_MAX_PATH_PTS ];      u32 pt_count;
+    gui_rect_col_t rect_pool [ GUI_MAX_RECT_ENTRIES ];  u32 rect_count;
+    char           text_pool [ GUI_MAX_TEXT_POOL ];     u32 text_used;
+
+    /* --- derived order views (T1/T3) -- rebuilt, never captured ----------------------------- */
+
+    /* The ACTIVE display order (step_build_order): order[k] is the frozen index of the k-th
+       shown command; disp_segs[] are the frozen segments re-sequenced to match, [lo, hi)
+       rebased into the display domain; disp_pos[] is order's inverse (frozen index -> display
+       position).  Emit order is the identity; paint order concatenates segments sorted by z
+       ascending (stable), approximating dispatch -- the true order also groups by clip within
+       a window. */
     u32            order    [ GUI_MAX_CMDS ];
     gui_cmd_seg_t  disp_segs[ GUI_MAX_SEGS ];
-    u32            disp_pos [ GUI_MAX_CMDS ];   /* inverse of order[]: frozen index -> display position */
+    u32            disp_pos [ GUI_MAX_CMDS ];
 
     /* Paint order held SEPARATELY and built once at capture: the picker always resolves
        "topmost under the point" in paint order, whatever the display mode -- in emit order,
        later-emitted is not later-painted (the menu bar emits first yet sits on top). */
     u32            paint_seq[ GUI_MAX_CMDS ];
-    gui_rect_t     clip_table[ GUI_MAX_CLIP_RECTS ];
-    u32            clip_hash [ GUI_MAX_CLIP_RECTS ];   u32 clip_n;
-    gui_vec2_t     points    [ GUI_MAX_PATH_PTS ];     u32 pt_count;
-    gui_rect_col_t rect_pool [ GUI_MAX_RECT_ENTRIES ]; u32 rect_count;
-    char           text_pool [ GUI_MAX_TEXT_POOL ];    u32 text_used;
 
 } s_step;
 
-/*----------------------------------------------------------------------------------------------
-    Shell seam (gui_backend.h) -- state requests latch here; the pipeline hooks below apply them
-    at the frame seams.
-----------------------------------------------------------------------------------------------*/
+/*==============================================================================================
+    T1 -- ordering.
 
-/* A latched request (capture / release / seek / order toggle) needs one more emit to take
-   effect.  frame_begin folds gui_step_pending() into frame_dirty directly (STEP_FRAME_PENDING,
-   gui_frame.c) because the shell's wants_redraw is per-context state cleared at every ctx_begin
-   -- a host that re-opens the default context later in the frame silently wipes it, and the
-   click's seek then stalls behind the clean-frame emit skip.  Cleared when the emit runs
-   (step_restore_emit -- the restore consumes the cursor, and a same-frame capture request is
-   taken by the build that follows). */
-static bool s_step_pending;
-
-void gui_step_capture( void )  { s_step.want_capture = true;  s_step_pending = true; }
-void gui_step_release( void )  { s_step.want_release = true;  s_step_pending = true; }
-bool gui_step_frozen ( void )  { return g_gui_step_frozen; }
-bool gui_step_pending( void )  { return s_step_pending; }
-u32  gui_step_count  ( void )  { return g_gui_step_frozen ? s_step.cmd_count : 0; }
-u32  gui_step_cursor ( void )  { return s_step.cursor; }
-
-void
-gui_step_seek( u32 cursor )
-{
-    s_step.cursor  = cursor < s_step.cmd_count ? cursor : s_step.cmd_count;
-    s_step_pending = true;   /* set even for a same-value seek: the play transport leans on it */
-}
-
-/*----------------------------------------------------------------------------------------------
-    step_build_order -- (re)build the active display order (see the s_step field comment).
-    Runs at capture and on a mode toggle; both orders keep every segment's commands contiguous,
-    so the restore's segment walk works identically for either.
-----------------------------------------------------------------------------------------------*/
+    One expansion routine serves both sequences: pick the segment order (emit = identity,
+    paint = stable z-sort), then lay the segments' commands out contiguously.  Both orders keep
+    every segment's commands together, so the restore's segment walk is order-agnostic.
+==============================================================================================*/
 
 static void
 step_expand_order( bool paint, u32* out_order, gui_cmd_seg_t* out_segs )
@@ -155,12 +163,34 @@ step_expand_order( bool paint, u32* out_order, gui_cmd_seg_t* out_segs )
     }
 }
 
+/* (Re)build the ACTIVE display view: the order, its segment table, and its inverse map. */
 static void
 step_build_order( void )
 {
     step_expand_order( s_step.paint_order, s_step.order, s_step.disp_segs );
     for ( u32 k = 0; k < s_step.cmd_count; ++k )
         s_step.disp_pos[ s_step.order[ k ] ] = k;
+}
+
+/*==============================================================================================
+    Shell seam (gui_backend.h) -- the request setters and state getters the stepper window and
+    the debug hotkeys drive.  Setters only latch (+ raise s_step_pending); the pipeline hooks
+    below apply them at the frame seams.
+==============================================================================================*/
+
+void gui_step_capture( void )  { s_step.want_capture = true;  s_step_pending = true; }
+void gui_step_release( void )  { s_step.want_release = true;  s_step_pending = true; }
+bool gui_step_frozen ( void )  { return g_gui_step_frozen; }
+bool gui_step_pending( void )  { return s_step_pending; }
+bool gui_step_paint_order( void )  { return s_step.paint_order; }
+u32  gui_step_count  ( void )  { return g_gui_step_frozen ? s_step.cmd_count : 0; }
+u32  gui_step_cursor ( void )  { return s_step.cursor; }
+
+void
+gui_step_seek( u32 cursor )
+{
+    s_step.cursor  = cursor < s_step.cmd_count ? cursor : s_step.cmd_count;
+    s_step_pending = true;   /* set even for a same-value seek: the play transport leans on it */
 }
 
 void
@@ -174,17 +204,164 @@ gui_step_set_paint_order( bool on )
         step_build_order();   /* cursor keeps its numeric position in the new order */
 }
 
-bool
-gui_step_paint_order( void )
+/*==============================================================================================
+    T0 -- the two pipeline hooks: capture (build seam) and restore (emit seam).
+==============================================================================================*/
+
+/*----------------------------------------------------------------------------------------------
+    step_capture_build -- start of cache_build_frame: the final segment is closed, every pool is
+    complete, nothing has been diffed or tessellated yet.  Copies the live frame and freezes.
+----------------------------------------------------------------------------------------------*/
+
+void
+step_capture_build( void )
 {
-    return s_step.paint_order;
+    if ( !s_step.want_capture )
+        return;
+    s_step.want_capture = false;
+    if ( g_gui_step_frozen )
+        return;   /* already frozen -- a second capture would snapshot the replay itself */
+
+    /* Band-0 segments only, compacted (see the banner contract). */
+    u32 w = 0, ns = 0;
+    for ( u32 si = 0; si < s_draw.seg_count; ++si )
+    {
+        const gui_cmd_seg_t* sg = &s_draw.segs[ si ];
+        if ( sg->band != 0 || sg->lo == sg->hi )
+            continue;
+        if ( ns >= GUI_MAX_SEGS - 1u )
+            break;   /* keep one slot free for the restore's live tail span */
+        u32 n = sg->hi - sg->lo;
+        memcpy( s_step.cmds       + w, s_draw.cmds       + sg->lo, n * sizeof( gui_cmd_t ) );
+        memcpy( s_step.cmd_hashes + w, s_draw.cmd_hashes + sg->lo, n * sizeof( u32 ) );
+        memcpy( s_step.cmd_owner  + w, s_draw.cmd_owner  + sg->lo, n * sizeof( gui_id_t ) );
+        s_step.segs[ ns ]    = *sg;
+        s_step.segs[ ns ].lo = w;
+        s_step.segs[ ns ].hi = w + n;
+        ++ns;
+        w += n;
+    }
+    s_step.cmd_count = w;
+    s_step.seg_count = ns;
+
+    /* Side pools whole: pool offsets baked into the commands stay valid verbatim, and the pools
+       may hold debug-band content interleaved -- unreferenced entries are inert. */
+    memcpy( s_step.clip_table, s_draw.clip_table,      s_draw.clip_table_n * sizeof( gui_rect_t ) );
+    memcpy( s_step.clip_hash,  s_draw.clip_hash_cache, s_draw.clip_table_n * sizeof( u32 ) );
+    s_step.clip_n = s_draw.clip_table_n;
+    memcpy( s_step.points,     s_draw.points,          s_draw.pt_count * sizeof( gui_vec2_t ) );
+    s_step.pt_count = s_draw.pt_count;
+    memcpy( s_step.rect_pool,  s_draw.rect_pool,       s_draw.rect_count * sizeof( gui_rect_col_t ) );
+    s_step.rect_count = s_draw.rect_count;
+    memcpy( s_step.text_pool,  s_draw.text_pool,       s_draw.text_pool_used );
+    s_step.text_used = s_draw.text_pool_used;
+
+    /* Derived views: the active display order, and the picker's fixed paint sequence. */
+    step_build_order();
+    step_expand_order( true, s_step.paint_seq, NULL );
+
+    /* Freeze showing the whole frame: the first frozen build is visually identical to the live
+       frame it replaces (only volatile-carrying windows retess once -- see the file banner). */
+    s_step.cursor     = w;
+    g_gui_step_frozen = true;
 }
 
 /*----------------------------------------------------------------------------------------------
-    Inspector read seam -- resolve one frozen command / segment for the shell (gui_step_window.c).
-    Lives backend-side because the frozen pools do: polyline points, rect-list entries and text
-    bytes are only reachable here.
+    step_restore_emit -- end of draw_reset: the frame state is freshly seeded (background segment
+    open, root clip at slot 0, volatile tags zeroed).  Applies a pending release, then while
+    frozen replaces the empty frame with the frozen prefix.
 ----------------------------------------------------------------------------------------------*/
+
+void
+step_restore_emit( void )
+{
+    s_step_pending = false;   /* the emit is running: every latched request is served this frame */
+
+    if ( s_step.want_release )
+    {
+        s_step.want_release = false;
+        g_gui_step_frozen   = false;   /* this frame emits live again; the hash diff retesses any
+                                          window whose live content differs from the frozen prefix */
+    }
+    if ( !g_gui_step_frozen )
+        return;
+
+    u32 cur = s_step.cursor;   /* clamped at seek time */
+
+    /* The visible command prefix THROUGH THE ACTIVE ORDER (emit or paint), with the emit-time
+       hashes.  cmd_volatile_id stays zeroed (draw_reset's memset) -- frozen volatile content
+       replays as plain static commands. */
+    for ( u32 k = 0; k < cur; ++k )
+    {
+        u32 fi = s_step.order[ k ];
+        s_draw.cmds      [ k ] = s_step.cmds      [ fi ];
+        s_draw.cmd_hashes[ k ] = s_step.cmd_hashes[ fi ];
+    }
+    s_draw.cmd_count = cur;
+
+    /* Side pools whole, so every pool offset in the prefix resolves; live debug-band emission
+       appends past the frozen counts and the two never collide. */
+    memcpy( s_draw.points,    s_step.points,    s_step.pt_count * sizeof( gui_vec2_t ) );
+    memcpy( s_draw.rect_pool, s_step.rect_pool, s_step.rect_count * sizeof( gui_rect_col_t ) );
+    memcpy( s_draw.text_pool, s_step.text_pool, s_step.text_used );
+    s_draw.pt_count       = s_step.pt_count;
+    s_draw.rect_count     = s_step.rect_count;
+    s_draw.text_pool_used = s_step.text_used;
+
+    /* Frozen clip table at its original indices, then ONE fresh live root appended after it:
+       the display rect draw_reset just seeded, so the debug band scissors against the CURRENT
+       surface size even if the window was resized while frozen. */
+    u32 n = s_step.clip_n;
+    memcpy( s_draw.clip_table,      s_step.clip_table, n * sizeof( gui_rect_t ) );
+    memcpy( s_draw.clip_hash_cache, s_step.clip_hash,  n * sizeof( u32 ) );
+    if ( n < GUI_MAX_CLIP_RECTS - 1u )
+    {
+        gui_rect_t root             = s_draw.clip_stack[ 0 ];
+        s_draw.clip_table[ n ]      = root;
+        s_draw.clip_hash_cache[ n ] = fnv1a( 2166136261u, &root, sizeof( gui_rect_t ) );
+        s_draw.clip_idx_stack[ 0 ]  = (u8)n;
+        s_draw.cur_clip_idx         = (u8)n;
+        s_draw.clip_table_n         = n + 1;
+    }
+    else
+    {
+        s_draw.clip_idx_stack[ 0 ] = 0;   /* table full: fall back to the frozen root (slot 0) */
+        s_draw.cur_clip_idx        = 0;
+        s_draw.clip_table_n        = n;
+    }
+
+    /* Display-order segments clamped to the cursor (ordered by lo in the display domain by
+       construction, so the scan stops at the first span past it), then the live tail: an open
+       background-tagged span from `cur`, matching the ambient state draw_reset seeded -- the
+       debug band re-tags from here. */
+    u32 ns = 0;
+    for ( u32 si = 0; si < s_step.seg_count; ++si )
+    {
+        if ( s_step.disp_segs[ si ].lo >= cur )
+            break;
+        s_draw.segs[ ns ] = s_step.disp_segs[ si ];
+        if ( s_draw.segs[ ns ].hi > cur )
+            s_draw.segs[ ns ].hi = cur;
+        ++ns;
+    }
+    s_draw.segs[ ns++ ] = ( gui_cmd_seg_t ){ 0, 0, 0, s_draw.cur_font, 0, cur, cur };
+    s_draw.seg_count    = ns;
+}
+
+/*==============================================================================================
+    T2 -- inspection: read-only decode of one frozen command / segment for the shell
+    (gui_step_window.c).  Lives backend-side because the frozen pools do: polyline points,
+    rect-list entries and text bytes are only reachable here.  Query cost is a linear scan or a
+    pool walk -- fine for a handful of shell queries per dirty frame, never per emit.
+==============================================================================================*/
+
+/* Point-in-rect, half-open on the far edges -- the one hit rule pick uses for clip, bounds and
+   the outline hole below, so all three tests agree on boundary pixels. */
+static inline bool
+step_hit( gui_rect_t r, f32 x, f32 y )
+{
+    return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
 
 /* Pixel bbox of one frozen command -- the highlight box the shell outlines.  Fills/outlines are
    exact; strokes pad by half thickness; TEXT walks the ACTIVE font's advances (a run frozen in
@@ -284,7 +461,7 @@ gui_step_cmd_info( u32 index, step_cmd_info_t* out )
     out->text   = ( c->type == GUI_CMD_TEXT ) ? s_step.text_pool + c->text.off : NULL;
     out->owner  = s_step.cmd_owner[ fi ];
 
-    /* Owning segment tag (display domain; linear scan -- per shell query only). */
+    /* Owning segment tag (display domain). */
     out->win = 0;  out->z = 0;  out->vp = 0;  out->font = 0;
     for ( u32 si = 0; si < s_step.seg_count; ++si )
         if ( index >= s_step.disp_segs[ si ].lo && index < s_step.disp_segs[ si ].hi )
@@ -304,56 +481,6 @@ gui_step_seg_count( void )
     return g_gui_step_frozen ? s_step.seg_count : 0;
 }
 
-/* Pick: topmost VISIBLE frozen command containing the point -- "what drew this pixel".  Always
-   walks in PAINT order (paint_seq, top-down), whatever the display mode: in emit order the
-   last-emitted command is not the last-painted one (the menu bar emits first yet sits on top),
-   so a display-order walk picked whatever full-screen fill happened to emit later.  Visibility
-   is checked in the display domain (disp_pos < cursor), a command whose frozen scissor excludes
-   the point can never claim it, and the FIRST hit decides: an unattributed chrome/background
-   fill (owner 0) REFUSES the pick rather than tunnelling to content underneath -- so a click
-   that misses a widget is a no-op, not a seek onto the window's body fill that hides everything
-   painted after it.  Chrome stays inspectable via the scrubber and the segment list. */
-bool
-gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index )
-{
-    if ( !g_gui_step_frozen )
-        return false;
-
-    for ( u32 t = s_step.cmd_count; t-- > 0; )
-    {
-        u32 fi = s_step.paint_seq[ t ];
-        u32 k  = s_step.disp_pos[ fi ];
-        if ( k >= s_step.cursor )
-            continue;   /* not visible at the current cursor */
-
-        const gui_cmd_t* c = &s_step.cmds[ fi ];
-        if ( c->vp != vp )
-            continue;
-        gui_rect_t cl = s_step.clip_table[ c->clip_idx ];
-        if ( x < cl.x || x >= cl.x + cl.w || y < cl.y || y >= cl.y + cl.h )
-            continue;
-        gui_rect_t b = step_cmd_bounds( c );
-        if ( b.w > 0.0f && x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h )
-        {
-            /* A hollow outline only owns its border band: a point inside the hole falls
-               through to whatever it frames (a window border must not swallow every click
-               in the window).  Pad the band by 1px so a thin ring is still clickable. */
-            if ( c->type == GUI_CMD_RECT_OUTLINE )
-            {
-                f32 band = c->rect_outline.t + 1.0f;
-                if (    x >= b.x + band && x < b.x + b.w - band
-                     && y >= b.y + band && y < b.y + b.h - band )
-                    continue;
-            }
-            if ( s_step.cmd_owner[ fi ] == 0 )
-                return false;   /* topmost hit is chrome/background: refuse, do not tunnel */
-            *out_index = k;
-            return true;
-        }
-    }
-    return false;
-}
-
 bool
 gui_step_seg_info( u32 index, step_seg_info_t* out )
 {
@@ -369,7 +496,7 @@ gui_step_seg_info( u32 index, step_seg_info_t* out )
     out->lo   = sg->lo;
     out->hi   = sg->hi;
 
-    /* Bounds: union of the member commands' bboxes. */
+    /* Bounds: union of the member commands' bboxes (empty boxes contribute nothing). */
     gui_rect_t u = ( gui_rect_t ){ 0.0f, 0.0f, 0.0f, 0.0f };
     for ( u32 i = sg->lo; i < sg->hi; ++i )
     {
@@ -392,144 +519,66 @@ gui_step_seg_info( u32 index, step_seg_info_t* out )
     return true;
 }
 
-/*----------------------------------------------------------------------------------------------
-    step_capture_build -- start of cache_build_frame: the final segment is closed, every pool is
-    complete, nothing has been diffed or tessellated yet.  Copies the live frame and freezes.
-----------------------------------------------------------------------------------------------*/
+/*==============================================================================================
+    T3 -- picking: "what drew this pixel".
 
-void
-step_capture_build( void )
+    Always walks in PAINT order (paint_seq, top-down), whatever the display mode: in emit order
+    the last-emitted command is not the last-painted one (the menu bar emits first yet sits on
+    top), so a display-order walk picked whatever full-screen fill happened to emit later.
+
+    The walk applies four rules, in order, per candidate:
+      1. visible   -- its display position is under the cursor (disp_pos < cursor);
+      2. scissored -- its frozen clip must contain the point (a clipped-away shape never claims);
+      3. shaped    -- its bounds contain the point, where a hollow RECT_OUTLINE owns only its
+                      border band (a window border must not swallow every click in the window);
+      4. decisive  -- the FIRST hit ends the walk.  Widget-owned commands pick; unattributed
+                      chrome/background (owner 0) REFUSES rather than tunnelling to content
+                      underneath, so a click that misses a widget is a no-op, not a seek onto
+                      the window's body fill that hides everything painted after it.  Chrome
+                      stays inspectable via the scrubber and the segment list.
+==============================================================================================*/
+
+bool
+gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index )
 {
-    if ( !s_step.want_capture )
-        return;
-    s_step.want_capture = false;
-    if ( g_gui_step_frozen )
-        return;   /* already frozen -- a second capture would snapshot the replay itself */
-
-    /* Band-0 segments only: the debug band is the stepper's own machinery (plus the dashboard /
-       overlays) and must never appear in its own replay.  Commands and their emit-time hashes
-       compact to the front; each segment's [lo, hi) rebases to the compacted positions. */
-    u32 w = 0, ns = 0;
-    for ( u32 si = 0; si < s_draw.seg_count; ++si )
-    {
-        const gui_cmd_seg_t* sg = &s_draw.segs[ si ];
-        if ( sg->band != 0 || sg->lo == sg->hi )
-            continue;
-        if ( ns >= GUI_MAX_SEGS - 1u )
-            break;   /* keep one slot free for the restore's live tail span */
-        u32 n = sg->hi - sg->lo;
-        memcpy( s_step.cmds       + w, s_draw.cmds       + sg->lo, n * sizeof( gui_cmd_t ) );
-        memcpy( s_step.cmd_hashes + w, s_draw.cmd_hashes + sg->lo, n * sizeof( u32 ) );
-        memcpy( s_step.cmd_owner  + w, s_draw.cmd_owner  + sg->lo, n * sizeof( gui_id_t ) );
-        s_step.segs[ ns ]    = *sg;
-        s_step.segs[ ns ].lo = w;
-        s_step.segs[ ns ].hi = w + n;
-        ++ns;
-        w += n;
-    }
-    s_step.cmd_count = w;
-    s_step.seg_count = ns;
-
-    /* Side pools copied whole: pool offsets baked into the commands stay valid verbatim, and
-       the pools may hold debug-band content interleaved -- unreferenced entries are inert. */
-    memcpy( s_step.clip_table, s_draw.clip_table,      s_draw.clip_table_n * sizeof( gui_rect_t ) );
-    memcpy( s_step.clip_hash,  s_draw.clip_hash_cache, s_draw.clip_table_n * sizeof( u32 ) );
-    s_step.clip_n = s_draw.clip_table_n;
-    memcpy( s_step.points,     s_draw.points,          s_draw.pt_count * sizeof( gui_vec2_t ) );
-    s_step.pt_count = s_draw.pt_count;
-    memcpy( s_step.rect_pool,  s_draw.rect_pool,       s_draw.rect_count * sizeof( gui_rect_col_t ) );
-    s_step.rect_count = s_draw.rect_count;
-    memcpy( s_step.text_pool,  s_draw.text_pool,       s_draw.text_pool_used );
-    s_step.text_used = s_draw.text_pool_used;
-
-    /* Freeze showing the whole frame: the first frozen build is visually identical to the live
-       frame it replaces (only volatile-carrying windows retess once -- see the file banner). */
-    step_build_order();
-    step_expand_order( true, s_step.paint_seq, NULL );   /* the picker's fixed paint sequence */
-    s_step.cursor     = w;
-    g_gui_step_frozen = true;
-}
-
-/*----------------------------------------------------------------------------------------------
-    step_restore_emit -- end of draw_reset: the frame state is freshly seeded (background segment
-    open, root clip at slot 0, volatile tags zeroed).  Applies a pending release, then while
-    frozen replaces the empty frame with the frozen prefix.
-----------------------------------------------------------------------------------------------*/
-
-void
-step_restore_emit( void )
-{
-    s_step_pending = false;   /* the emit is running: every latched request is served this frame */
-
-    if ( s_step.want_release )
-    {
-        s_step.want_release = false;
-        g_gui_step_frozen   = false;   /* this frame emits live again; the hash diff retesses any
-                                          window whose live content differs from the frozen prefix */
-    }
     if ( !g_gui_step_frozen )
-        return;
+        return false;
 
-    u32 cur = s_step.cursor;   /* clamped at seek time */
-
-    /* The visible command prefix THROUGH THE ACTIVE ORDER (emit or paint), with the emit-time
-       hashes.  cmd_volatile_id stays zeroed (draw_reset's memset) -- frozen volatile content
-       replays as plain static commands. */
-    for ( u32 k = 0; k < cur; ++k )
+    for ( u32 t = s_step.cmd_count; t-- > 0; )
     {
-        u32 fi = s_step.order[ k ];
-        s_draw.cmds      [ k ] = s_step.cmds      [ fi ];
-        s_draw.cmd_hashes[ k ] = s_step.cmd_hashes[ fi ];
-    }
-    s_draw.cmd_count = cur;
+        u32 fi = s_step.paint_seq[ t ];
+        u32 k  = s_step.disp_pos[ fi ];
+        if ( k >= s_step.cursor )
+            continue;   /* rule 1: not visible at the current cursor */
 
-    /* Side pools whole, so every pool offset in the prefix resolves; live debug-band emission
-       appends past the frozen counts and the two never collide. */
-    memcpy( s_draw.points,    s_step.points,    s_step.pt_count * sizeof( gui_vec2_t ) );
-    memcpy( s_draw.rect_pool, s_step.rect_pool, s_step.rect_count * sizeof( gui_rect_col_t ) );
-    memcpy( s_draw.text_pool, s_step.text_pool, s_step.text_used );
-    s_draw.pt_count       = s_step.pt_count;
-    s_draw.rect_count     = s_step.rect_count;
-    s_draw.text_pool_used = s_step.text_used;
+        const gui_cmd_t* c = &s_step.cmds[ fi ];
+        if ( c->vp != vp )
+            continue;
+        if ( !step_hit( s_step.clip_table[ c->clip_idx ], x, y ) )
+            continue;   /* rule 2: the frozen scissor excludes the point */
 
-    /* Frozen clip table at its original indices, then ONE fresh live root appended after it:
-       the display rect draw_reset just seeded, so the debug band scissors against the CURRENT
-       surface size even if the window was resized while frozen. */
-    u32 n = s_step.clip_n;
-    memcpy( s_draw.clip_table,      s_step.clip_table, n * sizeof( gui_rect_t ) );
-    memcpy( s_draw.clip_hash_cache, s_step.clip_hash,  n * sizeof( u32 ) );
-    if ( n < GUI_MAX_CLIP_RECTS - 1u )
-    {
-        gui_rect_t root             = s_draw.clip_stack[ 0 ];
-        s_draw.clip_table[ n ]      = root;
-        s_draw.clip_hash_cache[ n ] = fnv1a( 2166136261u, &root, sizeof( gui_rect_t ) );
-        s_draw.clip_idx_stack[ 0 ]  = (u8)n;
-        s_draw.cur_clip_idx         = (u8)n;
-        s_draw.clip_table_n         = n + 1;
-    }
-    else
-    {
-        s_draw.clip_idx_stack[ 0 ] = 0;   /* table full: fall back to the frozen root (slot 0) */
-        s_draw.cur_clip_idx        = 0;
-        s_draw.clip_table_n        = n;
-    }
+        gui_rect_t b = step_cmd_bounds( c );
+        if ( b.w <= 0.0f || !step_hit( b, x, y ) )
+            continue;   /* rule 3: outside the shape */
 
-    /* Display-order segments clamped to the cursor (ordered by lo in the display domain by
-       construction, so the scan stops at the first span past it), then the live tail: an open
-       background-tagged span from `cur`, matching the ambient state draw_reset seeded -- the
-       debug band re-tags from here. */
-    u32 ns = 0;
-    for ( u32 si = 0; si < s_step.seg_count; ++si )
-    {
-        if ( s_step.disp_segs[ si ].lo >= cur )
-            break;
-        s_draw.segs[ ns ] = s_step.disp_segs[ si ];
-        if ( s_draw.segs[ ns ].hi > cur )
-            s_draw.segs[ ns ].hi = cur;
-        ++ns;
+        /* rule 3, hollow case: a point inside an outline's hole falls through to whatever it
+           frames.  The band is padded by 1px so a thin ring is still clickable. */
+        if ( c->type == GUI_CMD_RECT_OUTLINE )
+        {
+            f32 band = c->rect_outline.t + 1.0f;
+            gui_rect_t hole = ( gui_rect_t ){ b.x + band, b.y + band,
+                                              b.w - 2.0f * band, b.h - 2.0f * band };
+            if ( hole.w > 0.0f && step_hit( hole, x, y ) )
+                continue;
+        }
+
+        /* rule 4: first hit decides. */
+        if ( s_step.cmd_owner[ fi ] == 0 )
+            return false;   /* topmost hit is chrome/background: refuse, do not tunnel */
+        *out_index = k;
+        return true;
     }
-    s_draw.segs[ ns++ ] = ( gui_cmd_seg_t ){ 0, 0, 0, s_draw.cur_font, 0, cur, cur };
-    s_draw.seg_count    = ns;
+    return false;
 }
 
 #endif /* GUI_CMD_STEPPER */
