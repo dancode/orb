@@ -321,6 +321,7 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
     bound -- last in its build, so they draw on top and their cost is counted like any widget.
 
         F1-F5   debug overlay layers (window / interact / resize / clip / layout)
+        F8      command stepper: freeze the frame / release the frozen replay
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
         P       perf overlay tier  (off / fps / +timings / +counts / +retained)
@@ -330,6 +331,8 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
         F       force redraw on/off -- EMIT-side: on pins frame_dirty true so frame_begin never
                 skips the widget emit (the "always dirty" lever; see set_force_redraw)
         I       idle skip (frame_pace blocks on OS input when idle) on/off
+        , .     command stepper (while frozen): step the replay cursor back / forward
+                (repeat-aware, so holding scrubs; shift steps by 16)
 
     Letter keys are fenced by want_capture_keyboard so typing in a text field never toggles them.
 
@@ -376,6 +379,25 @@ debug_hotkeys( void )
         printf( "[gui] pipeline dashboard: %s\n", s_dbg_dash_open ? "open" : "closed" );
         g_ctx->retained.wants_redraw = true;
     }
+
+#ifdef GUI_CMD_STEPPER
+    /* F8 freezes the current frame's band-0 command list for stepped replay (capture latches and
+       is taken at this frame's build), or releases an active freeze back to live emission. */
+    if ( gui_is_key_pressed( APP_KEY_F8 ) )
+    {
+        if ( gui_step_frozen() )
+        {
+            gui_step_release();
+            printf( "[gui] command stepper: released\n" );
+        }
+        else
+        {
+            gui_step_capture();
+            printf( "[gui] command stepper: frame frozen (, . step the cursor; shift x16)\n" );
+        }
+        g_ctx->retained.wants_redraw = true;
+    }
+#endif
 
     /* F1-F5 toggle the debug overlay layer mask (window / interact / resize / clip / layout).  Read
        from the frame IO here like every other debug hotkey -- initial-press only, so holding a key no
@@ -434,6 +456,30 @@ debug_hotkeys( void )
         printf( "[gui] idle skip: %s\n", s_idle_skip ? "on (block on input)" : "off (spin)" );
         g_ctx->retained.wants_redraw = true;
     }
+
+#ifdef GUI_CMD_STEPPER
+    /* , . step the frozen replay cursor (repeat-aware so holding scrubs; shift steps by 16).
+       The seek latches -- it applies at the next frame's restore -- so wants_redraw is required
+       here or the clean-frame emit skip would sit on the stale cursor (the deferred-update rule). */
+    if ( gui_step_frozen() )
+    {
+        u32  stride = ( gui_is_key_down( APP_KEY_LSHIFT ) || gui_is_key_down( APP_KEY_RSHIFT ) )
+                          ? 16u : 1u;
+        bool back   = gui_is_key_pressed_repeat( APP_KEY_COMMA );
+        bool fwd    = gui_is_key_pressed_repeat( APP_KEY_PERIOD );
+        if ( back || fwd )
+        {
+            u32 c = gui_step_cursor();
+            if ( back )
+                c = c > stride ? c - stride : 0u;
+            else
+                c = c + stride;               /* seek clamps to the frozen command count */
+            gui_step_seek( c );
+            printf( "[gui] command stepper: %u/%u\n", gui_step_cursor(), gui_step_count() );
+            g_ctx->retained.wants_redraw = true;
+        }
+    }
+#endif
 }
 
 /* Emit the debug overlays into the currently bound (default) context -- called from ctx_end

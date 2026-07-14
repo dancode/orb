@@ -143,6 +143,21 @@ fnv1a_u32( u32 h, u32 v )
 }
 
 /*----------------------------------------------------------------------------------------------
+    draw_emit_blocked -- the one gate every draw_push_* entry point checks before spending a
+    command slot (and, by early-outing first, any pool space): the command list is full, or the
+    command stepper is replaying a frozen frame and live main-band emission is suppressed at the
+    source (STEP_EMIT_SUPPRESSED, gui_backend.h; capture/replay in backend/gui_step_capture.c).
+----------------------------------------------------------------------------------------------*/
+
+static inline bool
+draw_emit_blocked( void )
+{
+    if ( s_draw.cmd_count >= GUI_MAX_CMDS )
+        return true;
+    return STEP_EMIT_SUPPRESSED();
+}
+
+/*----------------------------------------------------------------------------------------------
     draw_reset -- call at the top of the frame (frame_begin)
 ----------------------------------------------------------------------------------------------*/
 
@@ -183,6 +198,10 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.rounding     = 0.0f;            /* square until a seam sets the resolved radius */
     s_draw.text_clip_x0 = -GUI_TEXT_NO_CLIP;  /* unclipped until a seam sets a window */
     s_draw.text_clip_x1 =  GUI_TEXT_NO_CLIP;
+
+    /* Command stepper: while a frozen frame is replayed, pre-load the frozen command prefix and
+       pools over the empty frame just seeded.  A no-op unless GUI_CMD_STEPPER and frozen. */
+    STEP_RESTORE_EMIT();
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -195,6 +214,11 @@ draw_reset( i32 display_w, i32 display_h )
 static u8
 clip_append( gui_rect_t r )
 {
+    /* Frozen replay: suppressed band-0 spans must not grow the table (the frozen entries plus
+       the live debug band share its 64 slots).  Slot 0 is the frozen frame's root -- the display
+       rect -- so any command stamped with it (all suppressed anyway) stays sane. */
+    if ( STEP_EMIT_SUPPRESSED() )
+        return 0;
     if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
     {
         u8 ci = (u8)s_draw.clip_table_n++;
@@ -602,7 +626,7 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
                        f32 u0, f32 v0, f32 u1, f32 v1,
                        u32 tex_idx, u32 abgr )
 {
-    if ( s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( draw_emit_blocked() )
         return;
     /* Fully transparent fills contribute nothing under alpha blending (src*0 + dst = dst).
        Drop them before they cost a command + triangles -- e.g. a hidden window body whose
@@ -646,7 +670,7 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
 void
 draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
 {
-    if ( !rects || s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( !rects || draw_emit_blocked() )
         return;
 
     u32 offset = s_draw.rect_count;
@@ -701,7 +725,7 @@ draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
 void
 draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal )
 {
-    if ( s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( draw_emit_blocked() )
         return;
     /* Both ends fully transparent: nothing blends in anywhere along the ramp -- drop it (same
        rule as draw_push_rect_filled).  One opaque end keeps the quad, of course. */
@@ -733,7 +757,7 @@ void
 draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr )
 {
     (void)tex_idx;   /* outlines are always solid-color; tessellation uses the white texel */
-    if ( s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( draw_emit_blocked() )
         return;
     /* Skip a fully transparent border (e.g. the perf overlay pushes COL_BORDER to alpha 0). */
     u32 col = draw_apply_alpha( abgr );
@@ -763,7 +787,7 @@ void
 draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr )
 {
     (void)tex_idx;   /* triangles are always solid-color */
-    if ( s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( draw_emit_blocked() )
         return;
     /* Fully transparent -- invisible under alpha blending (same rule as draw_push_rect_filled). */
     u32 col = draw_apply_alpha( abgr );
@@ -795,7 +819,7 @@ void
 draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
 {
     if ( segments < 3 ) segments = 3;
-    if ( s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( draw_emit_blocked() )
         return;
     /* Fully transparent -- invisible under alpha blending (same rule as draw_push_rect_filled). */
     u32 col = draw_apply_alpha( abgr );
@@ -827,7 +851,7 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
 void
 draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 clip_x1 )
 {
-    if ( !str || s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( !str || draw_emit_blocked() )
         return;
 
     /* Vertical cull: a glyph run lights pixels within roughly one line height of y, so if that band

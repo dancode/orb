@@ -845,6 +845,11 @@ cache_build_frame( void )
     if ( s_draw.seg_count > 0 )
         s_draw.segs[ s_draw.seg_count - 1 ].hi = s_draw.cmd_count;
 
+    /* Command-stepper capture: the frame's segments are closed and every emit pool is complete,
+       nothing is diffed or tessellated yet -- the exact seam to freeze the live command list.
+       A no-op unless GUI_CMD_STEPPER and a capture was requested (gui_step_capture). */
+    STEP_CAPTURE_BUILD();
+
     /* Step 1: hash-diff all windows, fill s_cache, accumulate cmd_count stats. */
     cache_diff_windows();
 

@@ -157,7 +157,7 @@ static void
 draw_push_polyline_cmd( const gui_vec2_t* pts, u32 count, f32 thickness,
                         gui_stroke_align_t align, bool closed, u32 abgr )
 {
-    if ( count < 2 || s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( count < 2 || draw_emit_blocked() )
         return;
     if ( s_draw.pt_count + count > GUI_MAX_PATH_PTS )
         return;   /* point pool exhausted this frame */
@@ -215,7 +215,7 @@ gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     if ( stroke_axis_aligned_rect( x0, y0, x1, y1, thickness, GUI_STROKE_CENTER_BIASED, abgr ) )
         return;
     /* Diagonal: push a CMD_LINE; tessellated at flush as a 2-point antialiased stroke. */
-    if ( s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( draw_emit_blocked() )
         return;
     if ( stroke_seg_culled( x0, y0, x1, y1, thickness ) )
         return;
@@ -240,7 +240,7 @@ gui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thi
     if ( thickness <= 0.0f || dash <= 0.0f )
         return;
     f32 period = dash + ( gap > 0.0f ? gap : dash );
-    if ( period <= 0.0f || s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( period <= 0.0f || draw_emit_blocked() )
         return;
     if ( stroke_seg_culled( x0, y0, x1, y1, thickness ) )
         return;

@@ -461,6 +461,68 @@ extern gui_id_t g_gui_dash_window_id;
     #define DASH_CAPTURE_FLUSH( ... )   ( (void)0 )
 #endif
 
+/*==============================================================================================
+    Command stepper -- freeze one frame's semantic command list and replay a prefix of it, so
+    UI generation can be stepped command by command (backend/gui_step_capture.c has the full
+    mechanism).  Two halves:
+
+        backend/gui_step_capture.c         -- the CAPTURE + RESTORE: snapshots the band-0
+                                              command list at the build seam, then pre-loads
+                                              s_draw with the frozen prefix at every draw_reset
+                                              while frozen; live band-0 pushes are suppressed
+                                              at the source (STEP_EMIT_SUPPRESSED).
+        debug/gui_frame_overlay.c hotkeys  -- phase-1 controls (F8 freeze/release, , . step);
+                                              a stepper window replaces them in a later phase.
+
+    The build switch mirrors GUI_PIPELINE_DASHBOARD: auto-on for Debug builds, force-off with
+    GUI_NO_CMD_STEPPER.  Computed here so BOTH units agree.
+==============================================================================================*/
+
+#if defined( _DEBUG ) && !defined( GUI_CMD_STEPPER ) && !defined( GUI_NO_CMD_STEPPER )
+    #define GUI_CMD_STEPPER
+#endif
+#if defined( GUI_NO_CMD_STEPPER ) && defined( GUI_CMD_STEPPER )
+    #undef GUI_CMD_STEPPER
+#endif
+
+#ifdef GUI_CMD_STEPPER
+
+    /* Frozen-replay flag, read per push by the emit hot path (STEP_EMIT_SUPPRESSED below).
+       Defined in gui_step_capture.c; written only at the frame seams. */
+    extern bool g_gui_step_frozen;
+
+    /* Shell seam (debug_hotkeys today; the stepper window later).  capture/release/seek LATCH:
+       capture applies at the next cache_build_frame, release and the cursor at the next frame's
+       draw_reset -- a frame is never half live, half frozen.  Every mutating call site must set
+       wants_redraw itself, or the clean-frame emit skip stalls the change (the deferred-update
+       rule).  count is the frozen band-0 command total (0 while live); seek clamps to it. */
+    void gui_step_capture( void );
+    void gui_step_release( void );
+    bool gui_step_frozen ( void );
+    u32  gui_step_count  ( void );
+    u32  gui_step_cursor ( void );
+    void gui_step_seek   ( u32 cursor );
+
+    /* Pipeline hooks, called via the STEP_* macros below (defined in gui_step_capture.c, which
+       the unity chain includes LAST):
+         step_capture_build -- start of cache_build_frame: segments closed, pools complete.
+         step_restore_emit  -- end of draw_reset: pre-load the frozen prefix while frozen. */
+    void step_capture_build( void );
+    void step_restore_emit ( void );
+
+    #define STEP_CAPTURE_BUILD()      step_capture_build()
+    #define STEP_RESTORE_EMIT()       step_restore_emit()
+    /* True while a frozen frame is replayed and the current emission targets the main band --
+       every such push is dropped at the source so the live UI underneath cannot disturb the
+       replay.  Expanded only inside the emit unit, where s_draw is in scope. */
+    #define STEP_EMIT_SUPPRESSED()    ( g_gui_step_frozen && s_draw.cur_band == 0 )
+
+#else
+    #define STEP_CAPTURE_BUILD()      ( (void)0 )
+    #define STEP_RESTORE_EMIT()       ( (void)0 )
+    #define STEP_EMIT_SUPPRESSED()    ( false )
+#endif
+
 // clang-format on
 /*============================================================================================*/
 #endif    // GUI_BACKEND_H
