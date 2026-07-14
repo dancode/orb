@@ -503,6 +503,12 @@ extern gui_id_t g_gui_dash_window_id;
     u32  gui_step_cursor ( void );
     void gui_step_seek   ( u32 cursor );
 
+    /* Display/replay order: emit (generation order, the default) or paint (segments z-sorted,
+       approximating dispatch).  The cursor, both info queries below, and the replay itself all
+       live in the active order; toggling keeps the cursor's numeric position. */
+    void gui_step_set_paint_order( bool on );
+    bool gui_step_paint_order    ( void );
+
     /* Inspector read seam -- one frozen command / segment resolved for display, valid only while
        frozen (both return false otherwise).  Resolution happens backend-side because the frozen
        side pools live there: bounds are the command's pixel bbox (pool-walked for polyline /

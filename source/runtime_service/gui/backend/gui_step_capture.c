@@ -52,13 +52,22 @@ static struct
 {
     bool want_capture;   /* latched by gui_step_capture(); taken at the next cache_build_frame  */
     bool want_release;   /* latched by gui_step_release(); applied at the next draw_reset       */
-    u32  cursor;         /* replay shows frozen commands [0, cursor)                            */
+    u32  cursor;         /* replay shows the first `cursor` commands of the ACTIVE order        */
+    bool paint_order;    /* display/replay order: false = emit (generation), true = paint (z)   */
 
     /* The frozen frame.  Band-0 commands/hashes compacted contiguously with rebased segments;
        side pools copied whole (see the file banner). */
     gui_cmd_t      cmds      [ GUI_MAX_CMDS ];         u32 cmd_count;
     u32            cmd_hashes[ GUI_MAX_CMDS ];
     gui_cmd_seg_t  segs      [ GUI_MAX_SEGS ];         u32 seg_count;
+
+    /* The ACTIVE display order, rebuilt at capture and on a mode toggle (step_build_order):
+       order[k] is the frozen index of the k-th shown command; disp_segs[] are the frozen
+       segments re-sequenced to match, with [lo, hi) rebased into the display domain.  Emit
+       order is the identity; paint order concatenates segments sorted by z ascending (stable),
+       approximating dispatch -- the true order also groups by clip within a window. */
+    u32            order    [ GUI_MAX_CMDS ];
+    gui_cmd_seg_t  disp_segs[ GUI_MAX_SEGS ];
     gui_rect_t     clip_table[ GUI_MAX_CLIP_RECTS ];
     u32            clip_hash [ GUI_MAX_CLIP_RECTS ];   u32 clip_n;
     gui_vec2_t     points    [ GUI_MAX_PATH_PTS ];     u32 pt_count;
@@ -82,6 +91,63 @@ void
 gui_step_seek( u32 cursor )
 {
     s_step.cursor = cursor < s_step.cmd_count ? cursor : s_step.cmd_count;
+}
+
+/*----------------------------------------------------------------------------------------------
+    step_build_order -- (re)build the active display order (see the s_step field comment).
+    Runs at capture and on a mode toggle; both orders keep every segment's commands contiguous,
+    so the restore's segment walk works identically for either.
+----------------------------------------------------------------------------------------------*/
+
+static void
+step_build_order( void )
+{
+    /* Segment sequence: emit order (identity), or z-ascending (stable insertion sort). */
+    u32 sidx[ GUI_MAX_SEGS ];
+    for ( u32 i = 0; i < s_step.seg_count; ++i )
+        sidx[ i ] = i;
+    if ( s_step.paint_order )
+        for ( u32 a = 1; a < s_step.seg_count; ++a )
+        {
+            u32 key = sidx[ a ];
+            u32 b   = a;
+            while ( b > 0 && s_step.segs[ sidx[ b - 1 ] ].z > s_step.segs[ key ].z )
+            {
+                sidx[ b ] = sidx[ b - 1 ];
+                --b;
+            }
+            sidx[ b ] = key;
+        }
+
+    /* Expand into the command permutation + the display-domain segment table. */
+    u32 w = 0;
+    for ( u32 k = 0; k < s_step.seg_count; ++k )
+    {
+        const gui_cmd_seg_t* sg = &s_step.segs[ sidx[ k ] ];
+        u32                  n  = sg->hi - sg->lo;
+        s_step.disp_segs[ k ]    = *sg;
+        s_step.disp_segs[ k ].lo = w;
+        s_step.disp_segs[ k ].hi = w + n;
+        for ( u32 j = 0; j < n; ++j )
+            s_step.order[ w + j ] = sg->lo + j;
+        w += n;
+    }
+}
+
+void
+gui_step_set_paint_order( bool on )
+{
+    if ( s_step.paint_order == on )
+        return;
+    s_step.paint_order = on;
+    if ( g_gui_step_frozen )
+        step_build_order();   /* cursor keeps its numeric position in the new order */
+}
+
+bool
+gui_step_paint_order( void )
+{
+    return s_step.paint_order;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -179,21 +245,23 @@ gui_step_cmd_info( u32 index, step_cmd_info_t* out )
     if ( !g_gui_step_frozen || index >= s_step.cmd_count )
         return false;
 
-    const gui_cmd_t* c = &s_step.cmds[ index ];
+    /* `index` is a DISPLAY position; resolve it through the active order. */
+    u32              fi = s_step.order[ index ];
+    const gui_cmd_t* c  = &s_step.cmds[ fi ];
     out->cmd    = *c;
     out->bounds = step_cmd_bounds( c );
     out->clip   = s_step.clip_table[ c->clip_idx ];
     out->text   = ( c->type == GUI_CMD_TEXT ) ? s_step.text_pool + c->text.off : NULL;
 
-    /* Owning segment tag (linear scan: segments are few and this runs per shell query only). */
+    /* Owning segment tag (display domain; linear scan -- per shell query only). */
     out->win = 0;  out->z = 0;  out->vp = 0;  out->font = 0;
     for ( u32 si = 0; si < s_step.seg_count; ++si )
-        if ( index >= s_step.segs[ si ].lo && index < s_step.segs[ si ].hi )
+        if ( index >= s_step.disp_segs[ si ].lo && index < s_step.disp_segs[ si ].hi )
         {
-            out->win  = s_step.segs[ si ].win;
-            out->z    = s_step.segs[ si ].z;
-            out->vp   = s_step.segs[ si ].vp;
-            out->font = s_step.segs[ si ].font;
+            out->win  = s_step.disp_segs[ si ].win;
+            out->z    = s_step.disp_segs[ si ].z;
+            out->vp   = s_step.disp_segs[ si ].vp;
+            out->font = s_step.disp_segs[ si ].font;
             break;
         }
     return true;
@@ -211,7 +279,8 @@ gui_step_seg_info( u32 index, step_seg_info_t* out )
     if ( !g_gui_step_frozen || index >= s_step.seg_count )
         return false;
 
-    const gui_cmd_seg_t* sg = &s_step.segs[ index ];
+    /* Display-domain segment: the list shows (and seeks in) the active order. */
+    const gui_cmd_seg_t* sg = &s_step.disp_segs[ index ];
     out->win  = sg->win;
     out->z    = sg->z;
     out->vp   = sg->vp;
@@ -223,7 +292,7 @@ gui_step_seg_info( u32 index, step_seg_info_t* out )
     gui_rect_t u = ( gui_rect_t ){ 0.0f, 0.0f, 0.0f, 0.0f };
     for ( u32 i = sg->lo; i < sg->hi; ++i )
     {
-        gui_rect_t b = step_cmd_bounds( &s_step.cmds[ i ] );
+        gui_rect_t b = step_cmd_bounds( &s_step.cmds[ s_step.order[ i ] ] );
         if ( b.w <= 0.0f || b.h <= 0.0f )
             continue;
         if ( u.w <= 0.0f )
@@ -293,6 +362,7 @@ step_capture_build( void )
 
     /* Freeze showing the whole frame: the first frozen build is visually identical to the live
        frame it replaces (only volatile-carrying windows retess once -- see the file banner). */
+    step_build_order();
     s_step.cursor     = w;
     g_gui_step_frozen = true;
 }
@@ -317,10 +387,15 @@ step_restore_emit( void )
 
     u32 cur = s_step.cursor;   /* clamped at seek time */
 
-    /* The visible command prefix, with its emit-time hashes.  cmd_volatile_id stays zeroed
-       (draw_reset's memset) -- frozen volatile content replays as plain static commands. */
-    memcpy( s_draw.cmds,       s_step.cmds,       cur * sizeof( gui_cmd_t ) );
-    memcpy( s_draw.cmd_hashes, s_step.cmd_hashes, cur * sizeof( u32 ) );
+    /* The visible command prefix THROUGH THE ACTIVE ORDER (emit or paint), with the emit-time
+       hashes.  cmd_volatile_id stays zeroed (draw_reset's memset) -- frozen volatile content
+       replays as plain static commands. */
+    for ( u32 k = 0; k < cur; ++k )
+    {
+        u32 fi = s_step.order[ k ];
+        s_draw.cmds      [ k ] = s_step.cmds      [ fi ];
+        s_draw.cmd_hashes[ k ] = s_step.cmd_hashes[ fi ];
+    }
     s_draw.cmd_count = cur;
 
     /* Side pools whole, so every pool offset in the prefix resolves; live debug-band emission
@@ -354,15 +429,16 @@ step_restore_emit( void )
         s_draw.clip_table_n        = n;
     }
 
-    /* Frozen segments clamped to the cursor (they are ordered by lo, so the scan stops at the
-       first span past it), then the live tail: an open background-tagged span from `cur`,
-       matching the ambient state draw_reset seeded -- the debug band re-tags from here. */
+    /* Display-order segments clamped to the cursor (ordered by lo in the display domain by
+       construction, so the scan stops at the first span past it), then the live tail: an open
+       background-tagged span from `cur`, matching the ambient state draw_reset seeded -- the
+       debug band re-tags from here. */
     u32 ns = 0;
     for ( u32 si = 0; si < s_step.seg_count; ++si )
     {
-        if ( s_step.segs[ si ].lo >= cur )
+        if ( s_step.disp_segs[ si ].lo >= cur )
             break;
-        s_draw.segs[ ns ] = s_step.segs[ si ];
+        s_draw.segs[ ns ] = s_step.disp_segs[ si ];
         if ( s_draw.segs[ ns ].hi > cur )
             s_draw.segs[ ns ].hi = cur;
         ++ns;

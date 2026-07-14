@@ -41,6 +41,13 @@
 /* View toggle: outline the current command / hovered segment over the frozen scene. */
 static bool s_step_highlight = true;
 
+/* Play transport: auto-advance the cursor by `rate` commands per second while playing.  The
+   fractional accumulator carries the sub-command remainder across frames so low rates still
+   move; playing pins wants_redraw every frame (the frame loop must keep pumping). */
+static bool s_step_play;
+static i32  s_step_rate = 120;
+static f32  s_step_accum;
+
 static const char* k_step_type_name[] = {
     "rect_filled", "rect_outline", "triangle", "text", "circle_filled",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
@@ -231,6 +238,8 @@ gui_step_window( bool* open )
         {
             if ( frozen ) gui_step_release();
             else          gui_step_capture();
+            s_step_play  = false;
+            s_step_accum = 0.0f;
             g_ctx->retained.wants_redraw = true;
         }
         gui_same_line( -1.0f );
@@ -241,11 +250,29 @@ gui_step_window( bool* open )
 
         if ( frozen )
         {
-            u32 cur = gui_step_cursor();
             u32 cnt = gui_step_count();
 
-            /* Transport: seek to start / one back / one forward / seek to end.  Single steps --
-               the , . hotkeys cover held scrubbing (key repeat), the slider covers long jumps. */
+            /* Play: advance by rate * dt with a fractional carry, stop at the frame's end.
+               Runs before the controls read the cursor so the row shows this frame's position. */
+            if ( s_step_play )
+            {
+                s_step_accum += (f32)s_step_rate * s_io.dt;
+                u32 step = (u32)s_step_accum;
+                if ( step > 0 )
+                {
+                    s_step_accum -= (f32)step;
+                    gui_step_seek( gui_step_cursor() + step );   /* clamps to cnt */
+                }
+                if ( gui_step_cursor() >= cnt )
+                    s_step_play = false;
+                g_ctx->retained.wants_redraw = true;   /* keep pumping frames while playing */
+            }
+
+            u32 cur = gui_step_cursor();
+
+            /* Transport: seek to start / one back / one forward / seek to end, then Play.
+               Single steps -- the , . hotkeys cover held scrubbing (key repeat), the slider
+               covers long jumps.  Play from the end restarts at the frame start. */
             if ( gui_button( "|<" ) )
                 step_seek_dirty( 0 );
             gui_same_line( -1.0f );
@@ -258,12 +285,45 @@ gui_step_window( bool* open )
             if ( gui_button( ">|" ) )
                 step_seek_dirty( cnt );
             gui_same_line( -1.0f );
+            if ( gui_button( s_step_play ? "Pause" : "Play" ) )
+            {
+                s_step_play = !s_step_play;
+                if ( s_step_play && cur >= cnt )
+                    gui_step_seek( 0 );
+                s_step_accum = 0.0f;
+                g_ctx->retained.wants_redraw = true;
+            }
+            gui_same_line( -1.0f );
             gui_checkbox( "Highlight", &s_step_highlight );
 
-            /* Scrubber over the whole frozen prefix. */
+            /* View row: playback rate + the display/replay order.  Toggling the order re-seats
+               the same numeric cursor in the other sequence -- the scene recomposes accordingly. */
+            gui_drag_int( "rate##step_rate", &s_step_rate, 2.0f, 1, 2000, "%d cmd/s" );
+            gui_same_line( -1.0f );
+            bool paint = gui_step_paint_order();
+            if ( gui_checkbox( "Paint order", &paint ) )
+            {
+                gui_step_set_paint_order( paint );
+                g_ctx->retained.wants_redraw = true;
+            }
+
+            /* Scrubber over the whole frozen prefix, with a tick at every segment boundary. */
             i32 v = (i32)cur;
             if ( gui_slider_int( "##step_cursor", &v, 0, (i32)cnt ) )
                 step_seek_dirty( v < 0 ? 0u : (u32)v );
+            if ( cnt > 0 )
+            {
+                gui_rect_t sr   = gui_get_item_rect();
+                u32        nseg = gui_step_seg_count();
+                for ( u32 si = 1; si < nseg; ++si )   /* boundary 0 is the track start; skip it */
+                {
+                    step_seg_info_t sg;
+                    if ( !gui_step_seg_info( si, &sg ) )
+                        break;
+                    f32 x = sr.x + sr.w * ( (f32)sg.lo / (f32)cnt );
+                    gui_draw_rect( x, sr.y + sr.h - 4.0f, 1.0f, 4.0f, STEP_COL_DIM );
+                }
+            }
 
             /* Inspector: the current command -- the LAST visible one, cursor - 1. */
             gui_separator_text( "Command" );
