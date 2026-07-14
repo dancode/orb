@@ -46,12 +46,22 @@ static const char* k_step_type_name[] = {
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
 };
 
-/* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12. */
+/* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
+   0 is the background draw layer (no window), not an unnamed id.  A leading "##" (an id-only
+   window title: the main menu bar) is skipped -- inside a widget label the parser hides
+   everything from the first "##", which rendered those rows completely blank. */
 static const char*
 step_name( gui_id_t id, char* buf, u32 bufsz )
 {
+    if ( id == 0 )
+        return "(background)";
     const char* n = gui_debug_name( id );
-    if ( n ) return n;
+    if ( n )
+    {
+        if ( n[ 0 ] == '#' && n[ 1 ] == '#' )
+            n += 2;
+        return n;
+    }
     snprintf( buf, bufsz, "%08X", id );
     return buf;
 }
@@ -299,9 +309,11 @@ gui_step_window( bool* open )
                     step_seg_info_t sg;
                     if ( !gui_step_seg_info( si, &sg ) )
                         break;
-                    snprintf( lbl, sizeof( lbl ), "%-14.14s z%-3u vp%u  [%u..%u)##seg%u",
-                              step_name( sg.win, nb, sizeof( nb ) ), sg.z, sg.vp,
-                              sg.lo, sg.hi, si );
+                    /* Fields first, name LAST: a "##" inside a window title (an instance suffix)
+                       hides the rest of the label, so it may only ever eat the name's tail. */
+                    snprintf( lbl, sizeof( lbl ), "z%-3u vp%u  [%4u..%4u)  %.24s##seg%u",
+                              sg.z, sg.vp, sg.lo, sg.hi,
+                              step_name( sg.win, nb, sizeof( nb ) ), si );
                     bool in_seg = ( cur > sg.lo && cur <= sg.hi );
                     if ( gui_selectable( lbl, &in_seg ) )
                         step_seek_dirty( gui_is_key_down( APP_KEY_LSHIFT )
