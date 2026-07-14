@@ -289,7 +289,11 @@
       "PowerShell(\\(Get-Item \"F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui)",
       "PowerShell(\\(Get-Item \"F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui; echo \"exit=$LASTEXITCODE\")",
       "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui_example; echo \"exit=$LASTEXITCODE\")",
-      "PowerShell(\\(Get-Item \"F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui_example; echo \"exit=$LASTEXITCODE\")"
+      "PowerShell(\\(Get-Item \"F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui_example; echo \"exit=$LASTEXITCODE\")",
+      "Bash(cmd //c \"bin\\\\\\\\build_tool.exe -config Debug -target sb_gui\")",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(tasklist *)",
+      "Bash(taskkill *)"
     ]
   }
 }

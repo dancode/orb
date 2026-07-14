@@ -353,6 +353,60 @@ layout_template_reset( layout_frame_t* f )
     /* gap_pending is NOT reset: content committed above still owes its gap to the next line. */
 }
 
+/* push_layout_state / pop_layout_state -- save and restore the region's declared shape (mode +
+   template + modifiers) around a scoped header change, so a helper that switches the active
+   region into bar() / grid() / whatever for its own widgets can hand the caller's shape back
+   verbatim on the way out, instead of requiring the caller to remember and re-declare it (or the
+   helper to guess it -- there is no way to guess a caller's columns back).  Small fixed depth
+   like the font / id stacks -- these are coarse scope brackets, not deeply nested.
+
+       gui()->push_layout_state();
+           gui()->bar();
+           gui()->button( "Save" );  gui()->button( "Open" );
+       gui()->pop_layout_state();       // caller's stack() / grid() / cols() ... is back
+
+   Line iteration (layout_line_t) is NOT part of the snapshot: layout_row_break folds the open
+   line into pen_y before the save (so a partial row the caller had open is committed, not lost)
+   and again before the restore (so whatever the scoped shape emitted is committed too); the
+   restored shape then starts a fresh line at the pen, same as any header install. */
+#define GUI_LAYOUT_STATE_STACK_MAX 8
+
+typedef struct
+{
+    gui_layout_mode_t  mode;
+    layout_tmpl_t      tmpl;
+    layout_mod_t       mod;
+
+} layout_state_t;
+
+static layout_state_t s_layout_state_stack[ GUI_LAYOUT_STATE_STACK_MAX ];
+static u32             s_layout_state_stack_depth = 0;
+
+void
+gui_push_layout_state( void )
+{
+    layout_frame_t* f = lf();
+    layout_row_break( f );
+    if ( s_layout_state_stack_depth < GUI_LAYOUT_STATE_STACK_MAX ) {
+         s_layout_state_stack[ s_layout_state_stack_depth++ ] = 
+            ( layout_state_t ){ f->mode, f->tmpl, f->mod };
+    }
+}
+
+void
+gui_pop_layout_state( void )
+{
+    layout_frame_t* f = lf();
+    layout_row_break( f );
+    if ( s_layout_state_stack_depth == 0 )
+        return;
+    layout_state_t s = s_layout_state_stack[ --s_layout_state_stack_depth ];
+    f->mode = s.mode;
+    f->tmpl = s.tmpl;
+    f->mod  = s.mod;
+    layout_template_reset( f );   /* fresh iteration cursor for the restored shape */
+}
+
 /* Reset the orthogonal modifiers: gaps back to the theme, align to LEFT | TOP, and the field split
    back to the style default -- FIELD_LABEL_W > 0 seeds a fixed left label column for every region so
    forms align window-wide with no per-block call; 0 leaves it off (each label trails at its own

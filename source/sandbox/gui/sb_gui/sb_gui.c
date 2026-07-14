@@ -930,6 +930,157 @@ show_style_editor( bool* p_open )
 }
 
 /*============================================================================================*/
+/* Toolbar icon strip demo                                                                     */
+/*                                                                                              */
+/* Exercises gui_toolbar.c end to end: toolbar_begin/end (id scope + GUI_SCALE_BAR bar()),      */
+/* toolbar_button (press), toolbar_toggle (latched state), toolbar_separator, and               */
+/* toolbar_dropdown_begin/end (a split button opening an arbitrary-widget popup -- here plain   */
+/* menu_item rows, proving the popup body is not limited to a fixed row type).  A second strip  */
+/* reuses the same icon ids and widget id strings to prove toolbar_begin's id scope keeps two   */
+/* strips from colliding.                                                                       */
+/*============================================================================================*/
+
+static void
+tb_make_save( u8* p, i32 n )
+{
+    /* A floppy-disk silhouette: body, a clipped top-right corner, and a label window cut out. */
+    for ( i32 y = 0; y < n; ++y )
+        for ( i32 x = 0; x < n; ++x )
+        {
+            bool body  = ( x >= 3 && x <= 28 && y >= 3 && y <= 28 );
+            bool notch = ( x >= 20 && y <= 8 );
+            bool label = ( x >= 7 && x <= 24 && y >= 15 && y <= 25 );
+            p[ y * n + x ] = ( body && !notch && !label ) ? 255 : 0;
+        }
+}
+
+static void
+tb_make_grid( u8* p, i32 n )
+{
+    /* A 3x3 grid glyph, for a grid-snap style toggle.  2px strokes: the icon atlas samples
+       NEAREST with no mip / box filter, and this glyph draws well below its native 32x32 in a
+       toolbar cell, so a 1px line falls between sampled texels and vanishes -- 2px survives the
+       minification. */
+    for ( i32 y = 0; y < n; ++y )
+        for ( i32 x = 0; x < n; ++x )
+        {
+            bool in     = ( x >= 3 && x <= 28 && y >= 3 && y <= 28 );
+            bool border = in && ( x <= 4 || x >= 27 || y <= 4 || y >= 27 );
+            bool vline  = in && ( ( x >= 11 && x <= 12 ) || ( x >= 19 && x <= 20 ) );
+            bool hline  = in && ( ( y >= 11 && y <= 12 ) || ( y >= 19 && y <= 20 ) );
+            p[ y * n + x ] = ( border || vline || hline ) ? 255 : 0;
+        }
+}
+
+static void
+tb_make_wire( u8* p, i32 n )
+{
+    /* A boxed X, for a wireframe style toggle. */
+    for ( i32 y = 0; y < n; ++y )
+        for ( i32 x = 0; x < n; ++x )
+        {
+            bool in    = ( x >= 3 && x <= 28 && y >= 3 && y <= 28 );
+            i32  dx    = x - y;
+            i32  dy    = x + y - ( n - 1 );
+            bool diag1 = dx >= -1 && dx <= 1;
+            bool diag2 = dy >= -1 && dy <= 1;
+            p[ y * n + x ] = ( in && ( diag1 || diag2 ) ) ? 255 : 0;
+        }
+}
+
+static void
+tb_make_view( u8* p, i32 n )
+{
+    /* An eye glyph (lens ring + pupil), for the view-mode dropdown. */
+    f32 cx = (f32)n * 0.5f, cy = (f32)n * 0.5f;
+    for ( i32 y = 0; y < n; ++y )
+        for ( i32 x = 0; x < n; ++x )
+        {
+            f32  px    = (f32)x + 0.5f - cx, py = (f32)y + 0.5f - cy;
+            f32  lens  = ( px * px ) / ( 15.0f * 15.0f ) + ( py * py ) / ( 8.0f * 8.0f );
+            f32  pupil = sqrtf( px * px + py * py );
+            bool ring  = lens <= 1.0f && lens >= 0.55f;
+            bool dot   = pupil <= 4.0f;
+            p[ y * n + x ] = ( ring || dot ) ? 255 : 0;
+        }
+}
+
+static void
+show_toolbar_demo( bool* p_open )
+{
+    static const char* WIN = "Toolbar Icons";
+    if ( !gui()->window_begin( WIN, GUI_WIN_CLOSEABLE | GUI_WIN_CAN_AUTOSIZE ) )
+    {
+        if ( p_open && !gui()->window_is_open( WIN ) )
+            *p_open = false;
+        gui()->window_end();
+        return;
+    }
+
+    static gui_icon_id_t ic_save = GUI_ICON_NONE;
+    static gui_icon_id_t ic_grid = GUI_ICON_NONE;
+    static gui_icon_id_t ic_wire = GUI_ICON_NONE;
+    static gui_icon_id_t ic_view = GUI_ICON_NONE;
+    if ( ic_save == GUI_ICON_NONE )
+    {
+        static u8 buf[ 32 * 32 ];
+        tb_make_save( buf, 32 ); ic_save = gui()->register_icon( "tb_save", 32, 32, buf );
+        tb_make_grid( buf, 32 ); ic_grid = gui()->register_icon( "tb_grid", 32, 32, buf );
+        tb_make_wire( buf, 32 ); ic_wire = gui()->register_icon( "tb_wire", 32, 32, buf );
+        tb_make_view( buf, 32 ); ic_view = gui()->register_icon( "tb_view", 32, 32, buf );
+    }
+
+    static bool grid_snap   = true;
+    static bool wireframe   = false;
+    static i32  save_clicks = 0;
+    static i32  view_mode   = 0;
+    static const char* const view_names[] = { "Lit", "Unlit", "Wireframe" };
+
+    gui()->stack();
+    gui()->text_wrapped( "toolbar_begin/end brackets a GUI_SCALE_BAR bar() run, id-scoped so two "
+                         "strips never collide.  toolbar_button presses, toolbar_toggle latches, "
+                         "toolbar_dropdown_begin/end opens an arbitrary-widget popup (here, plain "
+                         "menu_item rows) anchored below the split button." );
+    gui()->separator();
+
+    gui()->toolbar_begin( "main" );
+        if ( gui()->toolbar_button( "##save", ic_save, "Save (Ctrl+S)" ) )
+            save_clicks++;
+        gui()->toolbar_toggle( "##grid", ic_grid, &grid_snap, "Grid Snap" );
+        gui()->toolbar_toggle( "##wire", ic_wire, &wireframe, "Wireframe" );
+        gui()->toolbar_separator();
+        if ( gui()->toolbar_dropdown_begin( "##view", ic_view, "View Mode" ) )
+        {
+            for ( i32 i = 0; i < 3; ++i )
+            {
+                bool sel = ( i == view_mode );
+                if ( gui()->menu_item( view_names[ i ], NULL, &sel ) )
+                    view_mode = i;
+            }
+            gui()->toolbar_dropdown_end();
+        }
+    gui()->toolbar_end();
+
+    gui()->separator();
+    gui()->textf( "save clicks: %d", save_clicks );
+    gui()->textf( "grid snap: %s", grid_snap ? "on" : "off" );
+    gui()->textf( "wireframe: %s", wireframe ? "on" : "off" );
+    gui()->textf( "view mode: %s", view_names[ view_mode ] );
+
+    /* A second strip, same icon ids and widget id strings -- proves toolbar_begin's push_id
+       scope keeps it from colliding with the first strip's state. */
+    gui()->separator_text( "Second strip (independent id scope)" );
+    static bool locked = false;
+    gui()->toolbar_begin( "secondary" );
+        gui()->toolbar_toggle( "##grid", ic_grid, &locked, "Lock" );
+        if ( gui()->toolbar_button( "##save", ic_save, "Save (secondary)" ) )
+            save_clicks++;
+    gui()->toolbar_end();
+
+    gui()->window_end();
+}
+
+/*============================================================================================*/
 /* Volatile widget demo -- a purely cosmetic square that keeps pulsing on frames where the rest
    of the UI build is skipped (frame_begin returned false: mouse idle, nothing else animating).
    Proves the feature end to end: an ordinary gui()->rect_filled() call, wrapped in
@@ -972,13 +1123,14 @@ demo_volatile_pulse_cb( bool is_replay )
 // - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
 
 static bool show_demo             = false;
-static bool show_font_browser_win = true;
+static bool show_font_browser_win = false;
 static bool show_split_win        = false;
 static bool show_hud_win          = false;
 static bool show_region_win       = false;
 static bool show_dragdrop_win     = false;
 static bool show_tabgroup_win     = false;
 static bool show_style_win        = false;
+static bool show_toolbar_win      = false;
 
 static void show_example_main_menu_bar()
 {
@@ -994,6 +1146,7 @@ static void show_example_main_menu_bar()
             gui()->menu_item( "Drag and Drop",  NULL, &show_dragdrop_win );
             gui()->menu_item( "Tab Groups",     NULL, &show_tabgroup_win );
             gui()->menu_item( "Style Editor",   NULL, &show_style_win );
+            gui()->menu_item( "Toolbar Icons",  NULL, &show_toolbar_win );
             gui()->menu_end();
         }
         gui()->main_menu_bar_end();
@@ -1272,6 +1425,13 @@ main( int argc, char** argv )
             s_style_prev = show_style_win;
             if ( show_style_win )
                 show_style_editor( &show_style_win );
+
+            static bool s_toolbar_prev = false;
+            if ( show_toolbar_win && !s_toolbar_prev )
+                gui()->window_set_open( "Toolbar Icons", true );
+            s_toolbar_prev = show_toolbar_win;
+            if ( show_toolbar_win )
+                show_toolbar_demo( &show_toolbar_win );
 
             /* Closing the default context also auto-emits the debug overlays (perf/state/dashboard)
                last in its build.  Clean frames skip this whole scope; frame_end below replays the

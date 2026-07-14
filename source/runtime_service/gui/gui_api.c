@@ -101,6 +101,14 @@ const gui_api_t g_gui_api_struct =
     .menu_end                           = gui_menu_end,
     .menu_item                          = gui_menu_item,
 
+    .toolbar_begin                      = gui_toolbar_begin,
+    .toolbar_end                        = gui_toolbar_end,
+    .toolbar_button                     = gui_toolbar_button,
+    .toolbar_toggle                     = gui_toolbar_toggle,
+    .toolbar_dropdown_begin             = gui_toolbar_dropdown_begin,
+    .toolbar_dropdown_end               = gui_toolbar_dropdown_end,
+    .toolbar_separator                  = gui_toolbar_separator,
+
     /*====================  compose/ -- containers, layout verbs, sizing, rect composition  ====================*/
 
     .child_begin                        = gui_child_begin,
@@ -133,6 +141,8 @@ const gui_api_t g_gui_api_struct =
     .strip                              = gui_strip,
     .pack_size                          = gui_pack_size,
     .pack_nextline                      = gui_pack_nextline,
+    .push_layout_state                  = gui_push_layout_state,
+    .pop_layout_state                   = gui_pop_layout_state,
     .align                              = gui_align,
     .next_item_fit                      = gui_next_item_fit,
     .same_line                          = gui_same_line,

@@ -136,6 +136,15 @@ bool gui_menu_begin( const char* label );
 void gui_menu_end( void );
 bool gui_menu_item( const char* label, const char* shortcut, bool* selected );
 
+/* toolbar */
+bool gui_toolbar_begin( const char* str_id );
+void gui_toolbar_end( void );
+bool gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip );
+bool gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip );
+bool gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* tooltip );
+void gui_toolbar_dropdown_end( void );
+void gui_toolbar_separator( void );
+
 /* child layout */
 bool gui_child_begin( const char* id, f32 w, f32 h, gui_win_flags_t flags );
 void gui_child_end( void );
@@ -187,6 +196,10 @@ void gui_strip( void );
 
 void gui_pack_size( f32 unit );
 void gui_pack_nextline( void );
+
+/* layout - save/restore the declared shape around a scoped header change */
+void gui_push_layout_state( void );
+void gui_pop_layout_state( void );
 
 void gui_align( gui_align_t a );
 void gui_next_item_fit( f32 unit );

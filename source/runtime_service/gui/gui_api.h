@@ -532,6 +532,38 @@ typedef struct gui_api_s
     void ( *menu_end   )( void );
     bool ( *menu_item  )( const char* label, const char* shortcut, bool* selected );
 
+    /* Toolbar -- an icon strip built on bar() (compose/) + GUI_SCALE_BAR (the density step
+       authored for icon toolbars).  toolbar_begin id-scopes the strip so two toolbars' buttons
+       never collide, then opens a bar() run at the BAR row height; toolbar_end pops both.  Emit
+       inside any window / child -- it owns no window of its own, matching bar() itself.
+
+       toolbar_button / toolbar_toggle are square icon cells (press / latched-on); their id_str is
+       the id only ("##save") -- pass a display label there and it is still just the id, nothing
+       is drawn from it.  toolbar_dropdown_begin/end is the split-button form: the icon plus a
+       small corner chevron, opening an arbitrary-widget popup below the button -- the same
+       anchor / dismiss mechanics as combo_begin/combo_end, so put ANY widgets in the body,
+       including menu_item rows for the icon + label + shortcut three-column layout menus already
+       give you. tooltip may be NULL.
+
+           gui()->toolbar_begin( "main" );
+               if ( gui()->toolbar_button( "##save", icon_save, "Save (Ctrl+S)" ) ) save();
+               gui()->toolbar_toggle( "##wire", icon_wire, &wireframe, "Wireframe" );
+               gui()->toolbar_separator();
+               if ( gui()->toolbar_dropdown_begin( "##view", icon_eye, "View Mode" ) ) {
+                   gui()->menu_item( "Lit", NULL, NULL );
+                   gui()->menu_item( "Wireframe", NULL, NULL );
+                   gui()->toolbar_dropdown_end();
+               }
+           gui()->toolbar_end(); */
+
+    bool ( *toolbar_begin           )( const char* str_id );
+    void ( *toolbar_end             )( void );
+    bool ( *toolbar_button          )( const char* id_str, gui_icon_id_t icon, const char* tooltip );
+    bool ( *toolbar_toggle          )( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip );
+    bool ( *toolbar_dropdown_begin  )( const char* id_str, gui_icon_id_t icon, const char* tooltip );
+    void ( *toolbar_dropdown_end    )( void );
+    void ( *toolbar_separator       )( void );
+
     /*====================  compose/ -- containers, layout verbs, sizing, rect composition  ====================*/
 
     /* Child regions -- a nested scrollable layout box inside the current window (or another
@@ -661,6 +693,21 @@ typedef struct gui_api_s
     void ( *strip             )( void );
     void ( *pack_size         )( f32 unit );
     void ( *pack_nextline     )( void );
+
+    /* push_layout_state / pop_layout_state -- save the region's declared shape (mode + template +
+       modifiers) and restore it later, so a helper that switches into bar() / grid() / whatever
+       for its own widgets can hand the caller's shape back verbatim, instead of the caller having
+       to remember and re-declare it (stack() is not always right -- the caller may have been mid
+       cols() or grid()).  Always pair, like push_id / pop_id; small fixed depth, coarse scope
+       brackets only.
+
+           gui()->push_layout_state();
+               gui()->bar();
+               gui()->button( "Save" );  gui()->button( "Open" );
+           gui()->pop_layout_state();       // caller's stack() / grid() / cols() ... is back */
+
+    void ( *push_layout_state )( void );
+    void ( *pop_layout_state  )( void );
 
     /* align() -- set the content alignment within each cell (gui_align_t, LEFT | TOP by default).
        Persists like the row template and is independent of the columns: row() / row_cols() leave it
@@ -1279,8 +1326,8 @@ typedef struct gui_api_s
     gui_icon_id_t ( *register_icon )( const char* name, u32 w, u32 h, const u8* coverage );
     gui_icon_id_t ( *find_icon     )( const char* name );
     gui_vec2_t    ( *icon_size     )( gui_icon_id_t id );
-    void            ( *image         )( gui_icon_id_t id, f32 w, f32 h, u32 col );
-    void            ( *draw_icon_in  )( gui_rect_t r, gui_icon_id_t id, u32 col );
+    void          ( *image         )( gui_icon_id_t id, f32 w, f32 h, u32 col );
+    void          ( *draw_icon_in  )( gui_rect_t r, gui_icon_id_t id, u32 col );
 
 
     /* RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded

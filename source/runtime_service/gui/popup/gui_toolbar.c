@@ -1,0 +1,200 @@
+/*==============================================================================================
+
+    runtime_service/gui/popup/gui_toolbar.c -- Icon toolbar strip.
+
+    A UE-style icon toolbar built entirely out of the existing toolkit, the same way combo and
+    menu were: bar() lays the row out, GUI_SCALE_BAR sizes the cells, and the dropdown variant
+    reuses the popup internals combo already drives.  No new machinery.
+
+        toolbar_begin / toolbar_end -- id-scopes the strip (so two toolbars' buttons never
+            collide) and brackets a GUI_SCALE_BAR bar() run.  Emit inside any window / child --
+            it owns no window of its own, matching bar() itself.
+
+        toolbar_button   -- a square icon button; press semantics like arrow_button.
+        toolbar_toggle    -- the same cell, latched on/off (the active tint marks "on"), for a
+            state-holding tool (wireframe, grid snap).
+        toolbar_dropdown_begin/end -- a split-style button: the icon plus a small corner chevron
+            marking it as a dropdown.  Opens an arbitrary-widget popup below the button, anchored
+            and dismissed exactly like a combo box -- put any widgets in the body, including
+            menu_item rows for the icon/label/shortcut three-column layout menus already give you.
+        toolbar_separator -- a thin vertical rule between button groups.
+
+            gui()->toolbar_begin( "main" );
+                if ( gui()->toolbar_button( "##save", icon_save, "Save (Ctrl+S)" ) ) save();
+                gui()->toolbar_toggle( "##wire", icon_wire, &wireframe, "Wireframe" );
+                gui()->toolbar_separator();
+                if ( gui()->toolbar_dropdown_begin( "##view", icon_eye, "View Mode" ) ) {
+                    gui()->menu_item( "Lit",         NULL, NULL );
+                    gui()->menu_item( "Unlit",       NULL, NULL );
+                    gui()->menu_item( "Wireframe",   NULL, NULL );
+                    gui()->toolbar_dropdown_end();
+                }
+            gui()->toolbar_end();
+
+    Included by gui.c after gui_menu.c, so the popup internals (popup_open_id, popup_is_open_id,
+    popup_set_anchor, popup_begin_common_id, GUI_POPUP_SALT, GUI_POPUP_BASE_FLAGS) are in scope.
+
+==============================================================================================*/
+// clang-format off
+
+bool
+gui_toolbar_begin( const char* str_id )
+{
+    gui_push_id( str_id );
+    gui_scale_push( GUI_SCALE_BAR );   // tab bars / icon toolbars / panel headers density step
+    gui_push_layout_state();           // hand the caller's shape back verbatim at toolbar_end
+    gui_bar();
+    return true;
+}
+
+void
+gui_toolbar_end( void )
+{
+    gui_pop_layout_state();   // restores whatever the caller had before toolbar_begin (stack, grid, ...)
+    gui_scale_pop();
+    gui_pop_id();
+}
+
+/* tb_icon_rect -- the icon's draw rect, twice the linear size of the plain WIDGET_PAD inset and
+   centered in the cell (clamped to the cell so an oversized icon never spills past the button's
+   own background).  Bigger glyph, same cell footprint -- the button itself does not grow. */
+static gui_rect_t
+tb_icon_rect( gui_rect_t r )
+{
+    f32 w = ( r.w - 2.0f * WIDGET_PAD ) * 2.0f;
+    f32 h = ( r.h - 2.0f * WIDGET_PAD ) * 2.0f;
+    if ( w > r.w ) w = r.w;
+    if ( h > r.h ) h = r.h;
+    return ( gui_rect_t ){ r.x + ( r.w - w ) * 0.5f, r.y + ( r.h - h ) * 0.5f, w, h };
+}
+
+/*----------------------------------------------------------------------------------------------
+    toolbar_button -- a square icon cell, pressed like arrow_button.
+----------------------------------------------------------------------------------------------*/
+
+bool
+gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip )
+{
+    gui_id_t   id = widget_id( id_str );
+    gui_rect_t r  = widget_next_rect_w( WIDGET_H, WIDGET_H );
+
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color_anim( id, st ) );
+    gui_draw_icon_in( tb_icon_rect( r ), icon, 0xFFFFFFFFu );
+
+    if ( tooltip && tooltip[ 0 ] )
+        gui_set_item_tooltip( tooltip );
+
+    return st.clicked;
+}
+
+/*----------------------------------------------------------------------------------------------
+    toolbar_toggle -- the same cell, latched on *v.  On draws the active tint (+ a border, so it
+    still reads as "on" once the hover/active animation settles back to idle).
+----------------------------------------------------------------------------------------------*/
+
+bool
+gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip )
+{
+    gui_id_t   id = widget_id( id_str );
+    gui_rect_t r  = widget_next_rect_w( WIDGET_H, WIDGET_H );
+
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    bool               on = ( v && *v );
+
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
+                           on ? COL_WIDGET_ACT : widget_bg_color_anim( id, st ) );
+    if ( on )
+        draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER );
+
+    gui_draw_icon_in( tb_icon_rect( r ), icon, 0xFFFFFFFFu );
+
+    if ( tooltip && tooltip[ 0 ] )
+        gui_set_item_tooltip( tooltip );
+
+    bool changed = false;
+    if ( st.clicked && v )
+    {
+        *v      = !( *v );
+        changed = true;
+        /* Same one-frame-late fix checkbox uses: the tint above drew the OLD state. */
+        g_ctx->retained.wants_redraw = true;
+    }
+    return changed;
+}
+
+/*----------------------------------------------------------------------------------------------
+    toolbar_dropdown_begin / toolbar_dropdown_end -- a split-style button driving a popup.
+
+    Same open/anchor/dismiss recipe as gui_combo_begin (popup keyed off the button's widget id,
+    box-anchored, was-open guard against the same click closing then reopening it), swapping the
+    combo's preview-text-plus-arrow face for an icon plus a small corner chevron.  The body is an
+    ordinary stack popup -- any widgets go in it, not just selectable rows.
+----------------------------------------------------------------------------------------------*/
+
+typedef struct { u32 open_frame; } gui_toolbar_dd_state_t;
+
+bool
+gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* tooltip )
+{
+    gui_id_t   id = widget_id( id_str );
+    gui_rect_t r  = widget_next_rect_w( WIDGET_H, WIDGET_H );
+
+    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+
+    gui_id_t                 pid = id_combine( id, GUI_POPUP_SALT );
+    gui_toolbar_dd_state_t* ds  = GUI_STATE( gui_toolbar_dd_state_t, id );
+
+    bool was_open = ( ds->open_frame + 1u == g_ctx->retained.frame );
+    if ( st.clicked && !was_open )
+        popup_open_id( pid, r.x, r.y + r.h );
+    if ( popup_is_open_id( pid ) )
+        popup_set_anchor( pid, r.x, r.y + r.h );
+
+    bool this_open = popup_is_open_id( pid );
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
+                           this_open ? COL_WIDGET_ACT : widget_bg_color_anim( id, st ) );
+
+    gui_draw_icon_in( tb_icon_rect( r ), icon, 0xFFFFFFFFu );
+
+    /* Corner chevron marks the split-button as a dropdown -- no separate arrow column needed. */
+    f32        chev = WIDGET_H * 0.4f;
+    gui_rect_t cr   = { r.x + r.w - chev, r.y + r.h - chev, chev, chev };
+    draw_arrow( cr, GUI_DIR_DOWN, COL_TEXT_DIM );
+
+    if ( tooltip && tooltip[ 0 ] && !this_open )
+        gui_set_item_tooltip( tooltip );
+
+    /* Auto-size stack popup, opening below the button -- the arbitrary-widget menu. */
+    bool vis = popup_begin_common_id( pid, NULL, GUI_WIN_NOTITLEBAR | GUI_POPUP_BASE_FLAGS,
+                                      false, 0.0f, 0.0f );
+    if ( vis )
+    {
+        ds->open_frame = g_ctx->retained.frame;   /* body emitted this frame -> "open" next frame */
+        gui_stack();                          /* the dropdown body is a vertical list */
+    }
+    return vis;
+}
+
+void
+gui_toolbar_dropdown_end( void )
+{
+    gui_popup_end();
+}
+
+/*----------------------------------------------------------------------------------------------
+    toolbar_separator -- a thin vertical rule between button groups (the horizontal-bar mirror
+    of separator()'s horizontal rule).
+----------------------------------------------------------------------------------------------*/
+
+void
+gui_toolbar_separator( void )
+{
+    gui_rect_t r = widget_next_rect_w( WIDGET_PAD * 2.0f + WIN_BORDER, WIDGET_H );
+    f32        x = r.x + ( r.w - WIN_BORDER ) * 0.5f;
+    draw_push_rect_filled( x, r.y + WIDGET_PAD, WIN_BORDER, r.h - 2.0f * WIDGET_PAD, 0,0,1,1, 0, COL_BORDER );
+}
+
+// clang-format on
+/*============================================================================================*/

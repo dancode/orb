@@ -151,6 +151,7 @@
     popup/gui_popup.c            -- popups / context menus / tooltips: overlay windows on a reserved z-band
     popup/gui_combo.c     -- combo box + list box: a popup dropdown / a scrolling child of selectables
     popup/gui_menu.c      -- menu bar + menu items: built directly on the popup internals
+    popup/gui_toolbar.c   -- icon toolbar strip: bar() + GUI_SCALE_BAR, dropdown built on the popup internals
 
     nav/gui_nav.c                -- keyboard nav cursor + menu-bar mode (reads/drives the popup stack)
 
@@ -308,6 +309,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/nav/gui_nav.c"
 #include "runtime_service/gui/popup/gui_combo.c"
 #include "runtime_service/gui/popup/gui_menu.c"
+#include "runtime_service/gui/popup/gui_toolbar.c"
 
 // user/ -- the caller's vocabulary.  Pure public verbs + readers over the machinery
 // above; zero state, zero machinery -- deleting any file here breaks no lower tier.  Included
