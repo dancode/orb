@@ -64,15 +64,28 @@
     window_begin / window_end
 ----------------------------------------------------------------------------------------------*/
 
+/* Top of the viewport work area: the native caption band plus the main-menu-bar band on frames
+   the host emits one (one-frame tolerance -- the bar may emit after this window builds, the
+   same lag hover_win runs on).  Shared by the maximize pin, window_clamp below, and the
+   floating-group clamp (dock/gui_dock_float.c). */
+static f32
+window_work_top( const gui_viewport_t* vp )
+{
+    f32 top = vp->caption_inset;
+    if ( vp->bar_seen_frame != 0u && vp->bar_seen_frame + 1u >= g_ctx->retained.frame )
+        top += vp->bar_inset;
+    return top;
+}
+
 /* Keep a dragged window reachable: clamp so its top edge stays on-screen and at
    least one title-bar's worth of the window remains within the display bounds.
    Uses the window's own viewport dimensions so dragging on a secondary surface
-   clamps against that surface, not the primary.  The top bound is the host's
-   native caption band (caption_inset): a window cannot slide its titlebar under
-   the OS-owned caption, where the grab would be lost -- mirroring how a child
-   stays below a normal OS title bar.  Inset is 0 with no native shell, so the
-   default-chrome path keeps the old top-of-surface behavior.
-   GUI_WIN_NO_BOUNDARY_CLAMP bypasses this entirely. */
+   clamps against that surface, not the primary.  The top bound is the viewport
+   work area (window_work_top): a window cannot slide its titlebar under the
+   OS-owned caption band or the main menu bar, where the grab would be lost --
+   both are viewport chrome that paints above windows.  The bound is 0 with no
+   native shell and no menu bar, so the default-chrome path keeps the old
+   top-of-surface behavior.  GUI_WIN_NO_BOUNDARY_CLAMP bypasses this entirely. */
 static void
 window_clamp( gui_window_t* win )
 {
@@ -83,7 +96,7 @@ window_clamp( gui_window_t* win )
     f32 dw = vp_w( vp );
     f32 dh = vp_h( vp );
     const f32 margin = WIN_TITLE_H;
-    const f32 top    = vp->caption_inset;
+    const f32 top    = window_work_top( vp );
     const f32 max_x  = dw - margin;
     const f32 max_y  = dh - margin;
 
@@ -117,17 +130,8 @@ window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
     offers either (the node owns its chrome).
 ----------------------------------------------------------------------------------------------*/
 
-/* Top of the maximize work area: the native caption band plus the main-menu-bar band on frames
-   the host emits one.  One-frame tolerance -- the bar may emit after this window builds, the
-   same lag hover_win runs on. */
-static f32
-window_work_top( const gui_viewport_t* vp )
-{
-    f32 top = vp->caption_inset;
-    if ( vp->bar_seen_frame != 0u && vp->bar_seen_frame + 1u >= g_ctx->retained.frame )
-        top += vp->bar_inset;
-    return top;
-}
+/* window_work_top (the caption band + main-menu-bar top bound both the maximize pin and
+   window_clamp share) is defined above window_clamp, which needs it first. */
 
 /* Shelf chip width -- wide enough for a legible title, resting on the grid lattice. */
 static f32
@@ -915,7 +919,14 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
 bool
 gui_window_begin( const char* title, gui_win_flags_t flags )
 {
-    return window_begin_ex( id_hash( title ), title, 60.0f, 60.0f, 240.0f, 320.0f, flags );
+    /* The default spawn position hangs off the viewport work area -- below the native caption
+       band and the main menu bar (window_work_top), not the raw surface corner, where a fixed
+       offset lands the titlebar under the bar once both chrome strips are live.  Read from the
+       ambient viewport (what a new record inherits); only the very first appearance uses it
+       (window_get seeds the record once), and explicit placement still goes through
+       window_set_next_pos. */
+    f32 top = window_work_top( &g_ctx->vp.pool[ s_build.win.viewport ] );
+    return window_begin_ex( id_hash( title ), title, 60.0f, top + 60.0f, 240.0f, 320.0f, flags );
 }
 
 /*----------------------------------------------------------------------------------------------

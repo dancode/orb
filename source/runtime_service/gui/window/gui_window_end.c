@@ -558,11 +558,26 @@ gui_window_end( void )
     bool maxed = win && win->maximized && !s_build.win.minimized;
     draw_set_rounding( maxed ? 0.0f : ROUND_WIN );
     if ( !maxed )
+    {
+        /* The viewport shell's border is the surface's outermost frame: lift it into the
+           root-region band -- above every normal window, below popups -- so a window dragged
+           against (or partially past) the surface edge slides UNDER the frame instead of
+           overpainting it.  The shell emits first and never raises, so at its own z the border
+           would lose to everything; the sort-key switch re-bands only these outline commands
+           (segments key on (win, z, vp)), leaving hover and hit-testing untouched (the shell's
+           border input is OS-routed).  Restored right after for the chrome that follows. */
+        if ( frame_only )
+            draw_set_sort_key( GUI_REGION_Z );
         draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER );
+        if ( frame_only )
+            draw_set_sort_key( win ? win->z : 0 );
+    }
 
     /* Keyboard-focus marker: overlay the accent focus border on the window that holds focus, so a
-       click that gains/loses focus is visible (gui_nav.c owns focused_win; NONE after a viewport click). */
-    if ( s_build.win.id == g_ctx->nav.focused_win )
+       click that gains/loses focus is visible (gui_nav.c owns focused_win; NONE after a viewport
+       click).  Skipped while maximized: an accent ring around the whole work area reads as chrome
+       noise, and a maximized window's focus is evident from it covering the surface. */
+    if ( s_build.win.id == g_ctx->nav.focused_win && !maxed )
         draw_window_focus_border( win_r );
 
     /* Debug overlay: trace the window frame; the front-most (hover) window stands out. */

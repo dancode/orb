@@ -264,10 +264,21 @@ gui_main_menu_bar_begin( void )
        the bar stays pinned to the top edge as before. */
     f32 top = g_ctx->vp.pool[ 0 ].caption_inset;
 
-    /* Publish the bar band to the surface, frame-stamped (emit-gated like a dockspace): a
-       maximized window's work area starts below it -- window_work_top, gui_window_free.c. */
+    /* Publish the bar band to the surface, frame-stamped (emit-gated like a dockspace): the
+       work area for maximized windows and the drag clamp starts below it -- window_work_top,
+       gui_window_free.c. */
     g_ctx->vp.pool[ 0 ].bar_inset      = h;
     g_ctx->vp.pool[ 0 ].bar_seen_frame = g_ctx->retained.frame;
+
+    /* Chrome band: the bar paints with the root regions -- above every normal window, below its
+       own dropdown popups -- so a window that still overlaps it (NO_BOUNDARY_CLAMP, a gesture
+       overshooting the clamp) slides under, matching the caption band and the viewport border.
+       Stamped before begin so this frame's sort key reads it; no record exists on the very
+       first frame, where the appearing raise already lands the bar above all current windows
+       (as does the raise-on-press for a click frame -- both self-correct here next frame). */
+    gui_window_t* bar = window_find( id_hash( "##MainMenuBar" ) );
+    if ( bar )
+        bar->z = GUI_REGION_Z;
 
     gui_window_set_next_pos ( 0.0f, top, GUI_COND_ALWAYS );
     gui_window_set_next_size( (f32)s_io.display_w, h, GUI_COND_ALWAYS );
