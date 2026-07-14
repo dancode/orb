@@ -282,7 +282,8 @@
       "PowerShell($cdb = Get-Command cdb.exe -ErrorAction SilentlyContinue; if\\($cdb\\){ Write-Output \"cdb: $\\($cdb.Source\\)\" } else { $f = Get-ChildItem \"C:\\\\Program Files \\(x86\\)\\\\Windows Kits\\\\10\\\\Debuggers\\\\x64\\\\cdb.exe\",\"C:\\\\Program Files\\\\Windows Kits\\\\10\\\\Debuggers\\\\x64\\\\cdb.exe\" -ErrorAction SilentlyContinue; if\\($f\\){ Write-Output \"found: $\\($f.FullName\\)\" } else { Write-Output \"no cdb\" } })",
       "PowerShell($p = Start-Process -FilePath \".\\\\bin\\\\sb_gui_example.exe\" -RedirectStandardOutput \"$env:TEMP\\\\sbgui11.txt\" -RedirectStandardError \"$env:TEMP\\\\sbgui11e.txt\" -PassThru; Start-Sleep -Seconds 3; if\\(!$p.HasExited\\){ $p.Kill\\(\\); Write-Output \"\\(running OK\\)\" } else { Write-Output \"\\(exited/crashed\\)\" }; $c = Get-Content \"$env:TEMP\\\\sbgui11.txt\"; Write-Output \"max cur_n:\"; \\($c | Select-String -Pattern \"post-diff cur_n=\\(\\\\d+\\)\" | ForEach-Object { [int]$_.Matches.Groups[1].Value } | Measure-Object -Maximum\\).Maximum; Write-Output \"max ovf_n:\"; \\($c | Select-String -Pattern \"ovf_n=\\(\\\\d+\\)\" | ForEach-Object { [int]$_.Matches.Groups[1].Value } | Measure-Object -Maximum\\).Maximum; Write-Output \"--- sample DIAG ---\"; $c | Select-String -Pattern \"DIAG\" | Select-Object -First 3 | ForEach-Object { $_.Line })",
       "PowerShell(\\(Get-Item F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui_example)",
-      "PowerShell(echo \"exit: $LASTEXITCODE\")"
+      "PowerShell(echo \"exit: $LASTEXITCODE\")",
+      "Bash(powershell -NoProfile -Command \"\\(Get-Item F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\\).LastWriteTime = Get-Date\")"
     ]
   }
 }

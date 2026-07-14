@@ -322,6 +322,10 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 // API; the snapshot it reads is captured in the backend unit (backend/gui_dash_capture.c).
 #include "runtime_service/gui/debug/gui_dashboard.c"
 
+// Command stepper -- an ordinary debug-band window controlling the frozen-frame replay; the
+// capture + restore live in the backend unit (backend/gui_step_capture.c).
+#include "runtime_service/gui/debug/gui_step_window.c"
+
 // Orchestration -- sits above every tier, drives whichever are compiled in.  The overlay file
 // carries the perf/state HUDs plus the frame-timing helpers the lifecycle in gui_frame.c calls,
 // so it must precede gui_frame.c in the unity build.

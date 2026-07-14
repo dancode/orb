@@ -321,7 +321,7 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
     bound -- last in its build, so they draw on top and their cost is counted like any widget.
 
         F1-F5   debug overlay layers (window / interact / resize / clip / layout)
-        F8      command stepper: freeze the frame / release the frozen replay
+        F8      command stepper: freeze the frame (opens the control window) / release
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
         P       perf overlay tier  (off / fps / +timings / +counts / +retained)
@@ -344,6 +344,7 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
 static int  s_dbg_perf_mode;     /* perf overlay tier, P cycles 0..4                        */
 static int  s_dbg_state_mode;    /* state overlay tier, O cycles 0..3                       */
 static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */
+static bool s_dbg_step_open;     /* command stepper window, F8 opens (X button hides)       */
 static bool s_idle_skip;         /* frame_pace: block on OS input when idle, I toggles      */
 
 /* True while any context that closed this frame still had an animation in flight -- the OR of
@@ -382,7 +383,9 @@ debug_hotkeys( void )
 
 #ifdef GUI_CMD_STEPPER
     /* F8 freezes the current frame's band-0 command list for stepped replay (capture latches and
-       is taken at this frame's build), or releases an active freeze back to live emission. */
+       is taken at this frame's build), or releases an active freeze back to live emission.
+       Freezing also opens the control window (gui_step_window.c); releasing leaves it up, and
+       its X button only hides it -- a hidden window never releases the freeze. */
     if ( gui_is_key_pressed( APP_KEY_F8 ) )
     {
         if ( gui_step_frozen() )
@@ -393,6 +396,7 @@ debug_hotkeys( void )
         else
         {
             gui_step_capture();
+            s_dbg_step_open = true;
             printf( "[gui] command stepper: frame frozen (, . step the cursor; shift x16)\n" );
         }
         g_ctx->retained.wants_redraw = true;
@@ -489,6 +493,7 @@ static void
 debug_overlays_emit( void )
 {
     gui_pipeline_dashboard( &s_dbg_dash_open );
+    gui_step_window( &s_dbg_step_open );
     gui_perf_overlay( s_dbg_perf_mode );
     gui_state_overlay( s_dbg_state_mode );
 }
