@@ -59,6 +59,7 @@ static struct
        side pools copied whole (see the file banner). */
     gui_cmd_t      cmds      [ GUI_MAX_CMDS ];         u32 cmd_count;
     u32            cmd_hashes[ GUI_MAX_CMDS ];
+    gui_id_t       cmd_owner [ GUI_MAX_CMDS ];         /* emitting widget per command (0 = chrome) */
     gui_cmd_seg_t  segs      [ GUI_MAX_SEGS ];         u32 seg_count;
 
     /* The ACTIVE display order, rebuilt at capture and on a mode toggle (step_build_order):
@@ -81,16 +82,27 @@ static struct
     at the frame seams.
 ----------------------------------------------------------------------------------------------*/
 
-void gui_step_capture( void )  { s_step.want_capture = true; }
-void gui_step_release( void )  { s_step.want_release = true; }
+/* A latched request (capture / release / seek / order toggle) needs one more emit to take
+   effect.  frame_begin folds gui_step_pending() into frame_dirty directly (STEP_FRAME_PENDING,
+   gui_frame.c) because the shell's wants_redraw is per-context state cleared at every ctx_begin
+   -- a host that re-opens the default context later in the frame silently wipes it, and the
+   click's seek then stalls behind the clean-frame emit skip.  Cleared when the emit runs
+   (step_restore_emit -- the restore consumes the cursor, and a same-frame capture request is
+   taken by the build that follows). */
+static bool s_step_pending;
+
+void gui_step_capture( void )  { s_step.want_capture = true;  s_step_pending = true; }
+void gui_step_release( void )  { s_step.want_release = true;  s_step_pending = true; }
 bool gui_step_frozen ( void )  { return g_gui_step_frozen; }
+bool gui_step_pending( void )  { return s_step_pending; }
 u32  gui_step_count  ( void )  { return g_gui_step_frozen ? s_step.cmd_count : 0; }
 u32  gui_step_cursor ( void )  { return s_step.cursor; }
 
 void
 gui_step_seek( u32 cursor )
 {
-    s_step.cursor = cursor < s_step.cmd_count ? cursor : s_step.cmd_count;
+    s_step.cursor  = cursor < s_step.cmd_count ? cursor : s_step.cmd_count;
+    s_step_pending = true;   /* set even for a same-value seek: the play transport leans on it */
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -140,6 +152,7 @@ gui_step_set_paint_order( bool on )
     if ( s_step.paint_order == on )
         return;
     s_step.paint_order = on;
+    s_step_pending     = true;
     if ( g_gui_step_frozen )
         step_build_order();   /* cursor keeps its numeric position in the new order */
 }
@@ -252,6 +265,7 @@ gui_step_cmd_info( u32 index, step_cmd_info_t* out )
     out->bounds = step_cmd_bounds( c );
     out->clip   = s_step.clip_table[ c->clip_idx ];
     out->text   = ( c->type == GUI_CMD_TEXT ) ? s_step.text_pool + c->text.off : NULL;
+    out->owner  = s_step.cmd_owner[ fi ];
 
     /* Owning segment tag (display domain; linear scan -- per shell query only). */
     out->win = 0;  out->z = 0;  out->vp = 0;  out->font = 0;
@@ -271,6 +285,34 @@ u32
 gui_step_seg_count( void )
 {
     return g_gui_step_frozen ? s_step.seg_count : 0;
+}
+
+/* Pick: topmost VISIBLE frozen command containing the point -- "what drew this pixel".  Walks
+   the visible prefix top-down in the active display order (exact topmost in paint order; in
+   emit order, later-emitted is only an approximation of later-painted) and rejects a command
+   whose frozen scissor excludes the point, so a clipped-away shape can never claim it. */
+bool
+gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index )
+{
+    if ( !g_gui_step_frozen )
+        return false;
+
+    for ( u32 k = s_step.cursor; k-- > 0; )
+    {
+        const gui_cmd_t* c = &s_step.cmds[ s_step.order[ k ] ];
+        if ( c->vp != vp )
+            continue;
+        gui_rect_t cl = s_step.clip_table[ c->clip_idx ];
+        if ( x < cl.x || x >= cl.x + cl.w || y < cl.y || y >= cl.y + cl.h )
+            continue;
+        gui_rect_t b = step_cmd_bounds( c );
+        if ( b.w > 0.0f && x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h )
+        {
+            *out_index = k;
+            return true;
+        }
+    }
+    return false;
 }
 
 bool
@@ -339,6 +381,7 @@ step_capture_build( void )
         u32 n = sg->hi - sg->lo;
         memcpy( s_step.cmds       + w, s_draw.cmds       + sg->lo, n * sizeof( gui_cmd_t ) );
         memcpy( s_step.cmd_hashes + w, s_draw.cmd_hashes + sg->lo, n * sizeof( u32 ) );
+        memcpy( s_step.cmd_owner  + w, s_draw.cmd_owner  + sg->lo, n * sizeof( gui_id_t ) );
         s_step.segs[ ns ]    = *sg;
         s_step.segs[ ns ].lo = w;
         s_step.segs[ ns ].hi = w + n;
@@ -376,6 +419,8 @@ step_capture_build( void )
 void
 step_restore_emit( void )
 {
+    s_step_pending = false;   /* the emit is running: every latched request is served this frame */
+
     if ( s_step.want_release )
     {
         s_step.want_release = false;

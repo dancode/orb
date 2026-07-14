@@ -285,6 +285,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, gui_widget_kind_t kind )
 
     s_scope.last_id   = id;
     s_scope.last_rect = r;             /* item-query getters read this for "the widget just emitted" */
+    STEP_SET_OWNER( id );              /* command-stepper attribution: this widget's paint follows */
 
     /* Consume the one-shot nav opt-out here, before any early-out below can leak it onto the
        next widget.  A flagged item (scrollbar, drag strip) still interacts normally with the

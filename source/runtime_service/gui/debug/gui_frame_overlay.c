@@ -333,6 +333,8 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
         I       idle skip (frame_pace blocks on OS input when idle) on/off
         , .     command stepper (while frozen): step the replay cursor back / forward
                 (repeat-aware, so holding scrubs; shift steps by 16)
+                (picking a command under the mouse is the stepper window's Pick toggle -- a
+                hotkey fought the focused window's keyboard nav / type-ahead)
 
     Letter keys are fenced by want_capture_keyboard so typing in a text field never toggles them.
 

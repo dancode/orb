@@ -58,6 +58,10 @@ static struct
     gui_cmd_t       cmds            [ GUI_MAX_CMDS ];           // semantic command list; one entry per shape
     u32             cmd_hashes      [ GUI_MAX_CMDS ];           // per-command hash baked at emit (for cache diff)
     gui_id_t        cmd_volatile_id [ GUI_MAX_CMDS ];           // GUI_ID_NONE, or the volatile widget owning this cmd
+#ifdef GUI_CMD_STEPPER
+    gui_id_t        cmd_owner       [ GUI_MAX_CMDS ];           // emitting widget id (0 = chrome); stepper display only
+    gui_id_t        cur_owner;                                  // stamped by widget_behavior (STEP_SET_OWNER); 0 at window seams
+#endif
     gui_vec2_t      points          [ GUI_MAX_PATH_PTS ];       // point pool for CMD_POLYLINE data; indexed by pt_offset
     gui_rect_col_t  rect_pool       [ GUI_MAX_RECT_ENTRIES ];   // rect pool for CMD_RECT_LIST data; indexed by offset
 
@@ -154,8 +158,28 @@ draw_emit_blocked( void )
 {
     if ( s_draw.cmd_count >= GUI_MAX_CMDS )
         return true;
-    return STEP_EMIT_SUPPRESSED();
+    if ( STEP_EMIT_SUPPRESSED() )
+        return true;
+#ifdef GUI_CMD_STEPPER
+    /* Attribution: stamp the emitting widget onto the slot this push will occupy.  Speculative
+       (the push may still drop for alpha/cull), but exact: every push checks this gate first,
+       so whichever push finally lands at this index was also the last stamper. */
+    s_draw.cmd_owner[ s_draw.cmd_count ] = s_draw.cur_owner;
+#endif
+    return false;
 }
+
+#ifdef GUI_CMD_STEPPER
+/* Called by widget_behavior (STEP_SET_OWNER, gui_backend.h) as each widget registers -- the
+   commands it paints right after carry its id.  Reset to 0 (chrome) at window transitions in
+   draw_seg_retag; chrome painted after a window's last widget still attributes to that widget
+   (a known display-only imprecision). */
+void
+draw_set_cmd_owner( gui_id_t id )
+{
+    s_draw.cur_owner = id;
+}
+#endif
 
 /*----------------------------------------------------------------------------------------------
     draw_reset -- call at the top of the frame (frame_begin)
@@ -198,6 +222,10 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.rounding     = 0.0f;            /* square until a seam sets the resolved radius */
     s_draw.text_clip_x0 = -GUI_TEXT_NO_CLIP;  /* unclipped until a seam sets a window */
     s_draw.text_clip_x1 =  GUI_TEXT_NO_CLIP;
+
+#ifdef GUI_CMD_STEPPER
+    s_draw.cur_owner = 0;   /* background/chrome until the first widget stamps */
+#endif
 
     /* Command stepper: while a frozen frame is replayed, pre-load the frozen command prefix and
        pools over the empty frame just seeded.  A no-op unless GUI_CMD_STEPPER and frozen. */
@@ -318,6 +346,11 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font, u32 band )
                     && font == s_draw.cur_font && band == s_draw.cur_band;
     if ( same_tag )
         return;   /* no real change -- keep the open segment as is */
+
+#ifdef GUI_CMD_STEPPER
+    if ( win != s_draw.cur_win )
+        s_draw.cur_owner = 0;   /* window transition: chrome until the first widget stamps */
+#endif
 
     /* No open segment yet -- called outside a frame (e.g. font_use during startup setup, before the
        first draw_reset).  Just track the tag; draw_reset re-seeds segs[0] from it next frame. */

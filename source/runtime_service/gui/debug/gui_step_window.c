@@ -41,6 +41,11 @@
 /* View toggle: outline the current command / hovered segment over the frozen scene. */
 static bool s_step_highlight = true;
 
+/* Armed picker: while on, any mouse press over the frozen scene seeks to the topmost visible
+   command under it ("what drew this pixel").  A toggle rather than a hotkey on purpose: a key
+   fought the focused window's keyboard nav / type-ahead the moment this window had focus. */
+static bool s_step_pick_arm;
+
 /* Play transport: auto-advance the cursor by `rate` commands per second while playing.  The
    fractional accumulator carries the sub-command remainder across frames so low rates still
    move; playing pins wants_redraw every frame (the frame loop must keep pumping). */
@@ -299,12 +304,30 @@ gui_step_window( bool* open )
             /* View row: playback rate + the display/replay order.  Toggling the order re-seats
                the same numeric cursor in the other sequence -- the scene recomposes accordingly. */
             gui_drag_int( "rate##step_rate", &s_step_rate, 2.0f, 1, 2000, "%d cmd/s" );
-            gui_same_line( -1.0f );
+
             bool paint = gui_step_paint_order();
             if ( gui_checkbox( "Paint order", &paint ) )
             {
                 gui_step_set_paint_order( paint );
                 g_ctx->retained.wants_redraw = true;
+            }
+            gui_same_line( -1.0f );
+            gui_checkbox( "Pick", &s_step_pick_arm );
+
+            /* Armed picker: a mouse press anywhere over the frozen scene seeks to the topmost
+               visible command under it.  Presses on the visible debug tooling (any DEBUG_BAND
+               window: this one, the dashboard) keep their normal meaning -- but an INVISIBLE
+               live band-0 window hovering under the cursor must not shield the frozen scene,
+               so only the debug-band flag exempts, not hover itself. */
+            if ( s_step_pick_arm && s_io.mouse_pressed[ 0 ] )
+            {
+                gui_window_t* hw = window_find( s_interaction.hover_win );
+                if ( !hw || !( hw->flags & GUI_WIN_DEBUG_BAND ) )
+                {
+                    u32 idx;
+                    if ( gui_step_pick( s_io.mouse_x, s_io.mouse_y, s_io.mouse_viewport, &idx ) )
+                        step_seek_dirty( idx + 1 );   /* the picked command becomes current */
+                }
             }
 
             /* Scrubber over the whole frozen prefix, with a tick at every segment boundary. */
@@ -331,9 +354,10 @@ gui_step_window( bool* open )
             bool have_cmd = cur > 0 && gui_step_cmd_info( cur - 1, &ci );
             if ( !have_cmd )
             {
-                /* Same fixed shape as a decoded command (4 text rows + the swatch row), so the
+                /* Same fixed shape as a decoded command (5 text rows + the swatch row), so the
                    section height never jumps when the cursor crosses the frame start. */
                 gui_text( "(cursor at frame start)" );
+                gui_text( " " );
                 gui_text( " " );
                 gui_text( " " );
                 gui_text( " " );
@@ -341,10 +365,12 @@ gui_step_window( bool* open )
             }
             else
             {
-                char nb[ 12 ];
+                char nb[ 12 ], ob[ 12 ];
                 gui_textf( "#%u  %s   in %s", cur - 1,
                            ci.cmd.type < 10 ? k_step_type_name[ ci.cmd.type ] : "?",
                            step_name( ci.win, nb, sizeof( nb ) ) );
+                gui_textf( "widget %s", ci.owner ? step_name( ci.owner, ob, sizeof( ob ) )
+                                                 : "(chrome)" );
                 gui_textf( "z %u   vp %u   font %u   clip %.0f,%.0f %.0fx%.0f",
                            ci.z, ci.vp, ci.font, ci.clip.x, ci.clip.y, ci.clip.w, ci.clip.h );
                 step_cmd_detail( &ci );
@@ -375,9 +401,12 @@ gui_step_window( bool* open )
                               sg.z, sg.vp, sg.lo, sg.hi,
                               step_name( sg.win, nb, sizeof( nb ) ), si );
                     bool in_seg = ( cur > sg.lo && cur <= sg.hi );
+                    /* Land ON the segment: lo + 1 makes its FIRST command current (a seek to lo
+                       would sit just before it -- the previous segment's last command).  Shift:
+                       hi, the segment fully built (its last command current). */
                     if ( gui_selectable( lbl, &in_seg ) )
                         step_seek_dirty( gui_is_key_down( APP_KEY_LSHIFT )
-                                         || gui_is_key_down( APP_KEY_RSHIFT ) ? sg.hi : sg.lo );
+                                         || gui_is_key_down( APP_KEY_RSHIFT ) ? sg.hi : sg.lo + 1 );
                     if ( gui_is_item_hovered() )
                     {
                         hover_bounds = sg.bounds;

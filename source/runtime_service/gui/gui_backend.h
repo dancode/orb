@@ -491,13 +491,16 @@ extern gui_id_t g_gui_dash_window_id;
        Defined in gui_step_capture.c; written only at the frame seams. */
     extern bool g_gui_step_frozen;
 
-    /* Shell seam (debug_hotkeys today; the stepper window later).  capture/release/seek LATCH:
-       capture applies at the next cache_build_frame, release and the cursor at the next frame's
-       draw_reset -- a frame is never half live, half frozen.  Every mutating call site must set
-       wants_redraw itself, or the clean-frame emit skip stalls the change (the deferred-update
-       rule).  count is the frozen band-0 command total (0 while live); seek clamps to it. */
+    /* Shell seam (the stepper window + debug_hotkeys).  capture/release/seek LATCH: capture
+       applies at the next cache_build_frame, release and the cursor at the next frame's
+       draw_reset -- a frame is never half live, half frozen.  Every latched request self-raises
+       gui_step_pending(), which frame_begin folds into frame_dirty (STEP_FRAME_PENDING) so the
+       serving emit always runs -- per-context wants_redraw is NOT reliable for this (any later
+       ctx_begin wipes it).  count is the frozen band-0 command total (0 while live); seek
+       clamps to it. */
     void gui_step_capture( void );
     void gui_step_release( void );
+    bool gui_step_pending( void );
     bool gui_step_frozen ( void );
     u32  gui_step_count  ( void );
     u32  gui_step_cursor ( void );
@@ -522,6 +525,7 @@ extern gui_id_t g_gui_dash_window_id;
         gui_rect_t  clip;     /* frozen scissor rect the command renders under */
         const char* text;     /* TEXT: frozen pool string; NULL for every other type */
         gui_id_t    win;      /* owning segment tag (the retained-cache window key) */
+        gui_id_t    owner;    /* emitting widget id (0 = chrome/background) */
         u32         z, vp, font;
 
     } step_cmd_info_t;
@@ -539,6 +543,18 @@ extern gui_id_t g_gui_dash_window_id;
     u32  gui_step_seg_count( void );
     bool gui_step_seg_info ( u32 index, step_seg_info_t* out );
 
+    /* Pick: topmost VISIBLE frozen command whose bounds contain the point on viewport `vp` --
+       "what drew this pixel".  Walks the visible prefix top-down in the active display order
+       (exact topmost in paint order, an approximation in emit order) and respects each
+       command's frozen scissor.  False while live or on a miss. */
+    bool gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index );
+
+    /* Attribution stamp (defined in gui_emit_draw.c): widget_behavior marks each registering
+       widget so the commands it paints carry its id -- STEP_SET_OWNER compiles away with the
+       feature.  Window transitions and draw_reset clear it back to 0 (chrome). */
+    void draw_set_cmd_owner( gui_id_t id );
+    #define STEP_SET_OWNER( id )      draw_set_cmd_owner( id )
+
     /* Pipeline hooks, called via the STEP_* macros below (defined in gui_step_capture.c, which
        the unity chain includes LAST):
          step_capture_build -- start of cache_build_frame: segments closed, pools complete.
@@ -548,6 +564,7 @@ extern gui_id_t g_gui_dash_window_id;
 
     #define STEP_CAPTURE_BUILD()      step_capture_build()
     #define STEP_RESTORE_EMIT()       step_restore_emit()
+    #define STEP_FRAME_PENDING()      gui_step_pending()
     /* True while a frozen frame is replayed and the current emission targets the main band --
        every such push is dropped at the source so the live UI underneath cannot disturb the
        replay.  Expanded only inside the emit unit, where s_draw is in scope. */
@@ -556,7 +573,9 @@ extern gui_id_t g_gui_dash_window_id;
 #else
     #define STEP_CAPTURE_BUILD()      ( (void)0 )
     #define STEP_RESTORE_EMIT()       ( (void)0 )
+    #define STEP_FRAME_PENDING()      ( false )
     #define STEP_EMIT_SUPPRESSED()    ( false )
+    #define STEP_SET_OWNER( id )      ( (void)0 )
 #endif
 
 // clang-format on

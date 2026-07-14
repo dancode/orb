@@ -234,7 +234,10 @@ gui_frame_begin( f32 dt )
     s_frame_dirty = s_force_redraw
                  || io_dirty()
                  || g_ctx->retained.wants_redraw
-                 || gui_build_any_changed();
+                 || gui_build_any_changed()
+                 || STEP_FRAME_PENDING();   /* a latched stepper request (seek/capture/release)
+                                               must reach its serving emit; per-context
+                                               wants_redraw can be wiped by a later ctx_begin */
 
     /* Debug overlay capture runs every emit, so any active layer forces a full build. */
     #ifdef GUI_DEBUG_OVERLAY
