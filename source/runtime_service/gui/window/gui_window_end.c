@@ -89,7 +89,18 @@ window_end_titlebar( gui_window_t* win, bool native )
     if ( s_build.win.title_h > 0.0f )
     {
         f32 title_h = s_build.win.title_h;
-        draw_push_rect_filled( s_build.win.x, s_build.win.y, s_build.win.w, title_h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_TITLE_BG );
+
+        /* Maximized: the bar sits directly below the viewport chrome (native shell caption /
+           main menu bar), so a second full-strength caption there reads as duplicated chrome.
+           Dim it toward the window background -- it stays a grab-and-button strip without
+           competing with the surface's own caption -- and drop the corner radius so the bar is
+           flush with the surface edges.  A shelf chip is never dimmed (it parks at the bottom,
+           away from the viewport chrome, and needs to read as a window handle). */
+        bool maxed   = win && win->maximized && !s_build.win.minimized;
+        u32  bar_col = maxed ? col_lerp( COL_TITLE_BG, COL_WIN_BG, 0.6f ) : COL_TITLE_BG;
+        if ( maxed )
+            draw_set_rounding( 0.0f );
+        draw_push_rect_filled( s_build.win.x, s_build.win.y, s_build.win.w, title_h, 0.0f, 0.0f, 1.0f, 1.0f, 0, bar_col );
 
         /* Shelf chip: its own reduced chrome (restore + close), nothing else on the bar. */
         if ( s_build.win.minimized )
@@ -396,16 +407,24 @@ window_end_move_grab( gui_window_t* win, bool native, bool frame_only )
                drag threshold (same latch as the native bar) -- committing on press-1 would
                swallow press-2 before the double-click restore can be tested.  Once the cursor
                actually moves, the poll below restores the window under the cursor and converts
-               to a normal gui drag. */
-            if ( s_io.mouse_pressed[ 0 ] && s_interaction.hover_id == GUI_ID_NONE && rect_hit( title_r ) )
+               to a normal gui drag.  Press-2 of a double-click never arms: the double is the
+               maximize toggle, already dispatched (and the latch cancelled) in the titlebar
+               above -- re-arming here would undo that cancel. */
+            if ( s_io.mouse_pressed[ 0 ] && !s_io.mouse_double[ 0 ]
+                 && s_interaction.hover_id == GUI_ID_NONE && rect_hit( title_r ) )
                 press_defer_arm( s_build.win.id );
         }
         else
         {
             /* Regular panel: immediate drag grab.  The left button obeys the drag mode and only
-               fires on empty space; the middle button grabs from anywhere. */
+               fires on empty space; the middle button grabs from anywhere.  Press-2 of a
+               double-click never grabs: the double is a toggle (maximize / collapse, dispatched
+               in the titlebar above) that may have just MOVED this window -- a grab here would
+               use the pre-toggle chrome rect as the drag origin and teleport the restored
+               window to the old maximized corner. */
             bool in_grab_zone = ( s_win_drag_mode == GUI_WIN_DRAG_BODY ) || rect_hit( title_r );
-            bool left_grab    = s_io.mouse_pressed[ 0 ] && s_interaction.hover_id == GUI_ID_NONE
+            bool left_grab    = s_io.mouse_pressed[ 0 ] && !s_io.mouse_double[ 0 ]
+                             && s_interaction.hover_id == GUI_ID_NONE
                              && s_win_drag_mode != GUI_WIN_DRAG_NONE && in_grab_zone;
             bool mid_grab     = s_io.mouse_pressed[ 2 ];
 
@@ -531,10 +550,15 @@ gui_window_end( void )
     window_end_titlebar( win, native );
 
     /* Border frames the whole window, with or without a title bar.  Reassert the window radius: a
-       caption button above may have left the ambient at the widget radius. */
+       caption button above may have left the ambient at the widget radius.  A maximized window is
+       flush with its surface -- no border ring (it would trace a floating-window outline under
+       the viewport chrome and around the screen edges) and no corner radius; the ambient still
+       resets so the focus marker below keeps a deliberate (square) shape. */
     gui_rect_t win_r = { s_build.win.x, s_build.win.y, s_build.win.w, s_build.win.h };
-    draw_set_rounding( ROUND_WIN );
-    draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER );
+    bool maxed = win && win->maximized && !s_build.win.minimized;
+    draw_set_rounding( maxed ? 0.0f : ROUND_WIN );
+    if ( !maxed )
+        draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER );
 
     /* Keyboard-focus marker: overlay the accent focus border on the window that holds focus, so a
        click that gains/loses focus is visible (gui_nav.c owns focused_win; NONE after a viewport click). */

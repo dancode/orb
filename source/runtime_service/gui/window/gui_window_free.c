@@ -601,9 +601,17 @@ window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 tit
         s_scope.clip = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
 
         /* Window body background.  Skipped for a frame-only shell: its body stays empty so the
-           borderless viewport shows the cleared surface (and the windows inside it) through it. */
+           borderless viewport shows the cleared surface (and the windows inside it) through it.
+           A maximized body fills flush to the surface edges: square corners, or the radius would
+           open gaps at the surface's bottom corners. */
         if ( !frame_only )
+        {
+            f32 save_round = draw_rounding();
+            if ( win->maximized && !win->minimized )
+                draw_set_rounding( 0.0f );
             draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
+            draw_set_rounding( save_round );
+        }
 
         /* Menu-bar strip: when WIN_MENUBAR is set, reserve one row below the title bar for
            menu_bar_begin to fill.  Carved off the top of the body here -- before the scroll
