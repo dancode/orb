@@ -3,11 +3,19 @@
     runtime_service/gui/debug/gui_step_window.c -- Command stepper: control window shell.
 
     The interactive front end of the command stepper (backend/gui_step_capture.c): Capture /
-    Release, a transport row ( |<  <  >  >| ), and a scrub slider over the frozen command
-    prefix.  An ORDINARY window drawn through the normal pipeline with the standard widgets --
+    Release, a transport row ( |<  <  >  >| ), a scrub slider over the frozen command prefix,
+    an inspector decoding the current command (type, owning window, clip, per-type fields,
+    color swatches), and the frozen segment list -- click a row to seek to its start (shift:
+    its end).  An ORDINARY window drawn through the normal pipeline with the standard widgets --
     what keeps it usable over a frozen scene is GUI_WIN_DEBUG_BAND: the capture never snapshots
     the debug band and live debug-band emission is never suppressed, so the controls stay fully
     interactive while the band-0 replay under them holds still.
+
+    The highlight outlines the current command's bounds (or a hovered segment row's union) over
+    the frozen scene itself: the draw escapes this window's clip to the display root
+    (draw_push_clip_root) and routes to the command's viewport, but stays in THIS window's
+    command segment -- debug band, this window's z -- so it paints above the frozen band-0
+    content with no extra window or z machinery.
 
     Every control LATCHES its effect (capture at the next build, release / cursor at the next
     frame's restore -- see gui_backend.h), so each mutating branch raises wants_redraw or the
@@ -26,12 +34,171 @@
 
 #define STEP_SHELL_TITLE "Command Stepper"
 
+#define STEP_COL_DIM        GUI_COLOR( 0x90, 0x90, 0x90, 0xFF )
+#define STEP_COL_HL_CMD     GUI_COLOR( 0x50, 0xE0, 0xF0, 0xFF )   /* current command outline  */
+#define STEP_COL_HL_SEG     GUI_COLOR( 0xF0, 0xE0, 0x40, 0xFF )   /* hovered segment outline  */
+
+/* View toggle: outline the current command / hovered segment over the frozen scene. */
+static bool s_step_highlight = true;
+
+static const char* k_step_type_name[] = {
+    "rect_filled", "rect_outline", "triangle", "text", "circle_filled",
+    "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
+};
+
+/* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12. */
+static const char*
+step_name( gui_id_t id, char* buf, u32 bufsz )
+{
+    const char* n = gui_debug_name( id );
+    if ( n ) return n;
+    snprintf( buf, bufsz, "%08X", id );
+    return buf;
+}
+
 /* Seek + the wants_redraw the latched cursor needs to reach the next frame's restore. */
 static void
 step_seek_dirty( u32 cursor )
 {
     gui_step_seek( cursor );
     g_ctx->retained.wants_redraw = true;
+}
+
+/* One swatch square + its labelled packed value, drawn into row `r` at pen `x`; returns the pen
+   past it, so a row can chain several (the gradient's col_a / col_b). */
+static f32
+step_swatch( gui_rect_t r, f32 x, const char* label, u32 abgr )
+{
+    gui_draw_rect( x, r.y + 1.0f, r.h - 2.0f, r.h - 2.0f, abgr | 0xFF000000u );
+    gui_draw_round_rect( ( gui_rect_t ){ x, r.y + 1.0f, r.h - 2.0f, r.h - 2.0f },
+                         0.0f, 0.0f, 0.0f, 0.0f, false, 1.0f, STEP_COL_DIM );
+    char buf[ 48 ];
+    snprintf( buf, sizeof( buf ), "%s 0x%08X", label, abgr );
+    gui_draw_text( x + r.h + 4.0f, r.y, STEP_COL_DIM, buf );
+    return x + r.h + 4.0f + gui_text_size( buf ).x + 16.0f;
+}
+
+/* Per-type field decode of the current command.  FIXED SHAPE: every type emits exactly two field
+   rows (the second may be blank) and one swatch row, so the inspector -- and everything laid out
+   below it -- never changes height as the cursor walks across command kinds. */
+static void
+step_cmd_detail( const step_cmd_info_t* ci )
+{
+    const gui_cmd_t* c    = &ci->cmd;
+    const char*      row2 = NULL;   /* NULL = blank second row */
+    char             b2[ 96 ];
+
+    switch ( (gui_cmd_type_t)c->type )
+    {
+        case GUI_CMD_RECT_FILLED:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f   round %.1f",
+                       c->rect.x, c->rect.y, c->rect.w, c->rect.h, c->rect.rounding );
+            snprintf( b2, sizeof( b2 ), "tex %u%s", c->rect.tex_idx & ~GUI_TEX_RGBA_BIT,
+                      ( c->rect.tex_idx & GUI_TEX_RGBA_BIT ) ? "  (rgba)" : "" );
+            row2 = b2;
+            break;
+        case GUI_CMD_RECT_OUTLINE:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->rect_outline.x, c->rect_outline.y,
+                       c->rect_outline.w, c->rect_outline.h );
+            snprintf( b2, sizeof( b2 ), "t %.1f   round %.1f", c->rect_outline.t,
+                      c->rect_outline.rounding );
+            row2 = b2;
+            break;
+        case GUI_CMD_TRIANGLE:
+            gui_textf( "a %.0f,%.0f   b %.0f,%.0f", c->tri.ax, c->tri.ay, c->tri.bx, c->tri.by );
+            snprintf( b2, sizeof( b2 ), "c %.0f,%.0f", c->tri.cx, c->tri.cy );
+            row2 = b2;
+            break;
+        case GUI_CMD_TEXT:
+            gui_textf( "pos %.0f,%.0f   len %u%s", c->text.x, c->text.y, c->text.len,
+                       ( c->text.clip_x1 < GUI_TEXT_NO_CLIP ) ? "   (glyph-clipped)" : "" );
+            snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
+            row2 = b2;
+            break;
+        case GUI_CMD_CIRCLE_FILLED:
+            gui_textf( "center %.0f,%.0f   r %.1f", c->circle.cx, c->circle.cy, c->circle.r );
+            snprintf( b2, sizeof( b2 ), "segs %u", c->circle.segs );
+            row2 = b2;
+            break;
+        case GUI_CMD_LINE:
+            gui_textf( "%.0f,%.0f -> %.0f,%.0f", c->line.x0, c->line.y0, c->line.x1, c->line.y1 );
+            snprintf( b2, sizeof( b2 ), "t %.1f", c->line.thickness );
+            row2 = b2;
+            break;
+        case GUI_CMD_POLYLINE:
+            gui_textf( "%u pts   %s", c->polyline.pt_count,
+                       c->polyline.closed ? "closed" : "open" );
+            snprintf( b2, sizeof( b2 ), "t %.1f   align %u", c->polyline.thickness,
+                      (u32)c->polyline.align );
+            row2 = b2;
+            break;
+        case GUI_CMD_DASHED_LINE:
+            gui_textf( "%.0f,%.0f -> %.0f,%.0f", c->dash.x0, c->dash.y0, c->dash.x1, c->dash.y1 );
+            snprintf( b2, sizeof( b2 ), "t %.1f   period %.1f   duty %.2f", c->dash.thickness,
+                      c->dash.period, c->dash.duty );
+            row2 = b2;
+            break;
+        case GUI_CMD_RECT_GRADIENT:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->gradient.x, c->gradient.y,
+                       c->gradient.w, c->gradient.h );
+            snprintf( b2, sizeof( b2 ), "%s", c->gradient.horizontal ? "horizontal" : "vertical" );
+            row2 = b2;
+            break;
+        case GUI_CMD_RECT_LIST:
+            gui_textf( "%u rects   pool offset %u", c->rect_list.count, c->rect_list.offset );
+            break;
+    }
+    gui_text( row2 ? row2 : " " );
+
+    /* Swatch row -- always reserved, so the section height is constant. */
+    gui_rect_t r = gui_canvas( font_line_h() );
+    switch ( (gui_cmd_type_t)c->type )
+    {
+        case GUI_CMD_RECT_GRADIENT:
+        {
+            f32 x = step_swatch( r, r.x, "col_a", c->gradient.col_a );
+            step_swatch( r, x, "col_b", c->gradient.col_b );
+            break;
+        }
+        case GUI_CMD_RECT_LIST:
+            gui_draw_text( r.x, r.y, STEP_COL_DIM, "per-entry colors (rect pool)" );
+            break;
+        default:
+            /* Every remaining variant carries one abgr; text/rect/line unions place it last but
+               it is read through the matching member, not positionally. */
+            switch ( (gui_cmd_type_t)c->type )
+            {
+                case GUI_CMD_RECT_FILLED:   step_swatch( r, r.x, "color", c->rect.abgr );         break;
+                case GUI_CMD_RECT_OUTLINE:  step_swatch( r, r.x, "color", c->rect_outline.abgr ); break;
+                case GUI_CMD_TRIANGLE:      step_swatch( r, r.x, "color", c->tri.abgr );          break;
+                case GUI_CMD_TEXT:          step_swatch( r, r.x, "color", c->text.abgr );         break;
+                case GUI_CMD_CIRCLE_FILLED: step_swatch( r, r.x, "color", c->circle.abgr );       break;
+                case GUI_CMD_LINE:          step_swatch( r, r.x, "color", c->line.abgr );         break;
+                case GUI_CMD_POLYLINE:      step_swatch( r, r.x, "color", c->polyline.abgr );     break;
+                case GUI_CMD_DASHED_LINE:   step_swatch( r, r.x, "color", c->dash.abgr );         break;
+                default:                                                                          break;
+            }
+            break;
+    }
+}
+
+/* Outline `r` over the frozen scene: escape this window's clip to the display root and route to
+   the command's viewport.  The segment stays in THIS window's slot (debug band), so the outline
+   paints above the frozen band-0 content with the window. */
+static void
+step_highlight_rect( gui_rect_t r, u32 vp, u32 abgr )
+{
+    if ( r.w <= 0.0f || r.h <= 0.0f )
+        return;
+    gui_draw_scope_t save = draw_scope();
+    gui_draw_scope_t hl   = save;
+    hl.viewport           = vp;
+    draw_scope_set( hl );
+    draw_push_clip_root();
+    gui_draw_round_rect( ( gui_rect_t ){ r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f },
+                         0.0f, 0.0f, 0.0f, 0.0f, false, 2.0f, abgr );
+    draw_pop_clip_rect();
+    draw_scope_set( save );
 }
 
 void
@@ -43,7 +210,7 @@ gui_step_window( bool* open )
     /* The host said open: reopen the pool entry if the X button hid it on an earlier run. */
     gui_window_set_open( STEP_SHELL_TITLE, true );
 
-    gui_window_set_next_size( 340.0f, 130.0f, GUI_COND_ONCE );
+    gui_window_set_next_size( 400.0f, 560.0f, GUI_COND_ONCE );
     if ( gui_window_begin( STEP_SHELL_TITLE, GUI_WIN_CLOSEABLE | GUI_WIN_DEBUG_BAND ) )
     {
         gui_stack();
@@ -80,11 +247,83 @@ gui_step_window( bool* open )
             gui_same_line( -1.0f );
             if ( gui_button( ">|" ) )
                 step_seek_dirty( cnt );
+            gui_same_line( -1.0f );
+            gui_checkbox( "Highlight", &s_step_highlight );
 
             /* Scrubber over the whole frozen prefix. */
             i32 v = (i32)cur;
             if ( gui_slider_int( "##step_cursor", &v, 0, (i32)cnt ) )
                 step_seek_dirty( v < 0 ? 0u : (u32)v );
+
+            /* Inspector: the current command -- the LAST visible one, cursor - 1. */
+            gui_separator_text( "Command" );
+            step_cmd_info_t ci = { 0 };
+            bool have_cmd = cur > 0 && gui_step_cmd_info( cur - 1, &ci );
+            if ( !have_cmd )
+            {
+                /* Same fixed shape as a decoded command (4 text rows + the swatch row), so the
+                   section height never jumps when the cursor crosses the frame start. */
+                gui_text( "(cursor at frame start)" );
+                gui_text( " " );
+                gui_text( " " );
+                gui_text( " " );
+                gui_canvas( font_line_h() );
+            }
+            else
+            {
+                char nb[ 12 ];
+                gui_textf( "#%u  %s   in %s", cur - 1,
+                           ci.cmd.type < 10 ? k_step_type_name[ ci.cmd.type ] : "?",
+                           step_name( ci.win, nb, sizeof( nb ) ) );
+                gui_textf( "z %u   vp %u   font %u   clip %.0f,%.0f %.0fx%.0f",
+                           ci.z, ci.vp, ci.font, ci.clip.x, ci.clip.y, ci.clip.w, ci.clip.h );
+                step_cmd_detail( &ci );
+            }
+
+            /* Segment list: every frozen span in emit order.  Click seeks to the segment start
+               (shift: its end); the row containing the cursor reads selected; hovering outlines
+               the segment's union bounds over the scene. */
+            gui_separator_text( "Segments" );
+            gui_rect_t hover_bounds   = ( gui_rect_t ){ 0.0f, 0.0f, 0.0f, 0.0f };
+            u32        hover_vp       = 0;
+            bool       have_hover     = false;
+
+            if ( gui_child_begin( "##step_segs", 0.0f, 9.0f * ( font_line_h() + 8.0f ),
+                                  GUI_WIN_NONE ) )
+            {
+                gui_stack();   /* the child is a fresh layout frame: declare its mode first */
+                char nb[ 12 ], lbl[ 96 ];
+                u32  nseg = gui_step_seg_count();
+                for ( u32 si = 0; si < nseg; ++si )
+                {
+                    step_seg_info_t sg;
+                    if ( !gui_step_seg_info( si, &sg ) )
+                        break;
+                    snprintf( lbl, sizeof( lbl ), "%-14.14s z%-3u vp%u  [%u..%u)##seg%u",
+                              step_name( sg.win, nb, sizeof( nb ) ), sg.z, sg.vp,
+                              sg.lo, sg.hi, si );
+                    bool in_seg = ( cur > sg.lo && cur <= sg.hi );
+                    if ( gui_selectable( lbl, &in_seg ) )
+                        step_seek_dirty( gui_is_key_down( APP_KEY_LSHIFT )
+                                         || gui_is_key_down( APP_KEY_RSHIFT ) ? sg.hi : sg.lo );
+                    if ( gui_is_item_hovered() )
+                    {
+                        hover_bounds = sg.bounds;
+                        hover_vp     = sg.vp;
+                        have_hover   = true;
+                    }
+                }
+            }
+            gui_child_end();
+
+            /* Highlight over the frozen scene: a hovered segment wins over the current command. */
+            if ( s_step_highlight )
+            {
+                if ( have_hover )
+                    step_highlight_rect( hover_bounds, hover_vp, STEP_COL_HL_SEG );
+                else if ( have_cmd )
+                    step_highlight_rect( ci.bounds, ci.vp, STEP_COL_HL_CMD );
+            }
         }
     }
     gui_window_end();

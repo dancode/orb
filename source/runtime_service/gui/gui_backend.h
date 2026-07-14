@@ -503,6 +503,36 @@ extern gui_id_t g_gui_dash_window_id;
     u32  gui_step_cursor ( void );
     void gui_step_seek   ( u32 cursor );
 
+    /* Inspector read seam -- one frozen command / segment resolved for display, valid only while
+       frozen (both return false otherwise).  Resolution happens backend-side because the frozen
+       side pools live there: bounds are the command's pixel bbox (pool-walked for polyline /
+       rect_list; TEXT walks the ACTIVE font's advances, so a run frozen in another font measures
+       approximately), clip is the frozen scissor rect, text the NUL-terminated frozen pool string
+       (TEXT only, stable until release), win/z/vp/font the owning segment's tag. */
+    typedef struct
+    {
+        gui_cmd_t   cmd;      /* the raw frozen command; the shell decodes the union per type */
+        gui_rect_t  bounds;   /* pixel bbox (highlight aid; TEXT/thick strokes approximate) */
+        gui_rect_t  clip;     /* frozen scissor rect the command renders under */
+        const char* text;     /* TEXT: frozen pool string; NULL for every other type */
+        gui_id_t    win;      /* owning segment tag (the retained-cache window key) */
+        u32         z, vp, font;
+
+    } step_cmd_info_t;
+
+    typedef struct
+    {
+        gui_id_t   win;
+        u32        z, vp, font;
+        u32        lo, hi;    /* frozen command range [lo, hi) -- seek targets */
+        gui_rect_t bounds;    /* union of the member commands' bboxes */
+
+    } step_seg_info_t;
+
+    bool gui_step_cmd_info ( u32 index, step_cmd_info_t* out );
+    u32  gui_step_seg_count( void );
+    bool gui_step_seg_info ( u32 index, step_seg_info_t* out );
+
     /* Pipeline hooks, called via the STEP_* macros below (defined in gui_step_capture.c, which
        the unity chain includes LAST):
          step_capture_build -- start of cache_build_frame: segments closed, pools complete.

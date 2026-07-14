@@ -85,6 +85,164 @@ gui_step_seek( u32 cursor )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Inspector read seam -- resolve one frozen command / segment for the shell (gui_step_window.c).
+    Lives backend-side because the frozen pools do: polyline points, rect-list entries and text
+    bytes are only reachable here.
+----------------------------------------------------------------------------------------------*/
+
+/* Pixel bbox of one frozen command -- the highlight box the shell outlines.  Fills/outlines are
+   exact; strokes pad by half thickness; TEXT walks the ACTIVE font's advances (a run frozen in
+   another font measures approximately -- acceptable for a highlight aid). */
+static gui_rect_t
+step_cmd_bounds( const gui_cmd_t* c )
+{
+    switch ( (gui_cmd_type_t)c->type )
+    {
+        case GUI_CMD_RECT_FILLED:
+            return ( gui_rect_t ){ c->rect.x, c->rect.y, c->rect.w, c->rect.h };
+        case GUI_CMD_RECT_OUTLINE:
+            return ( gui_rect_t ){ c->rect_outline.x, c->rect_outline.y,
+                                   c->rect_outline.w, c->rect_outline.h };
+        case GUI_CMD_RECT_GRADIENT:
+            return ( gui_rect_t ){ c->gradient.x, c->gradient.y, c->gradient.w, c->gradient.h };
+        case GUI_CMD_TRIANGLE:
+        {
+            f32 x0 = c->tri.ax, x1 = c->tri.ax, y0 = c->tri.ay, y1 = c->tri.ay;
+            if ( c->tri.bx < x0 ) x0 = c->tri.bx;   if ( c->tri.bx > x1 ) x1 = c->tri.bx;
+            if ( c->tri.cx < x0 ) x0 = c->tri.cx;   if ( c->tri.cx > x1 ) x1 = c->tri.cx;
+            if ( c->tri.by < y0 ) y0 = c->tri.by;   if ( c->tri.by > y1 ) y1 = c->tri.by;
+            if ( c->tri.cy < y0 ) y0 = c->tri.cy;   if ( c->tri.cy > y1 ) y1 = c->tri.cy;
+            return ( gui_rect_t ){ x0, y0, x1 - x0, y1 - y0 };
+        }
+        case GUI_CMD_TEXT:
+        {
+            const char* s = s_step.text_pool + c->text.off;
+            f32         w = 0.0f;
+            for ( u32 i = 0; i < c->text.len && s[ i ]; ++i )
+            {
+                f32 u0, v0, u1, v1, ox, oy, gw, gh, adv;
+                font_glyph( (u8)s[ i ], &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &adv );
+                w += adv;
+            }
+            /* Fold the glyph-level hard-clip window in, when one was baked. */
+            f32 x0 = c->text.x, x1 = c->text.x + w;
+            if ( c->text.clip_x0 > x0 ) x0 = c->text.clip_x0;
+            if ( c->text.clip_x1 < x1 ) x1 = c->text.clip_x1;
+            return ( gui_rect_t ){ x0, c->text.y, x1 > x0 ? x1 - x0 : 0.0f, font_line_h() };
+        }
+        case GUI_CMD_CIRCLE_FILLED:
+            return ( gui_rect_t ){ c->circle.cx - c->circle.r, c->circle.cy - c->circle.r,
+                                   2.0f * c->circle.r, 2.0f * c->circle.r };
+        case GUI_CMD_LINE:
+        case GUI_CMD_DASHED_LINE:
+        {
+            /* line and dash share the same leading x0..thickness layout. */
+            f32 t  = c->line.thickness * 0.5f + 1.0f;
+            f32 x0 = c->line.x0 < c->line.x1 ? c->line.x0 : c->line.x1;
+            f32 x1 = c->line.x0 < c->line.x1 ? c->line.x1 : c->line.x0;
+            f32 y0 = c->line.y0 < c->line.y1 ? c->line.y0 : c->line.y1;
+            f32 y1 = c->line.y0 < c->line.y1 ? c->line.y1 : c->line.y0;
+            return ( gui_rect_t ){ x0 - t, y0 - t, ( x1 - x0 ) + 2.0f * t, ( y1 - y0 ) + 2.0f * t };
+        }
+        case GUI_CMD_POLYLINE:
+        {
+            const gui_vec2_t* p = s_step.points + c->polyline.pt_offset;
+            f32 x0 = p[ 0 ].x, x1 = p[ 0 ].x, y0 = p[ 0 ].y, y1 = p[ 0 ].y;
+            for ( u32 i = 1; i < c->polyline.pt_count; ++i )
+            {
+                if ( p[ i ].x < x0 ) x0 = p[ i ].x;   if ( p[ i ].x > x1 ) x1 = p[ i ].x;
+                if ( p[ i ].y < y0 ) y0 = p[ i ].y;   if ( p[ i ].y > y1 ) y1 = p[ i ].y;
+            }
+            f32 t = c->polyline.thickness * 0.5f + 1.0f;
+            return ( gui_rect_t ){ x0 - t, y0 - t, ( x1 - x0 ) + 2.0f * t, ( y1 - y0 ) + 2.0f * t };
+        }
+        case GUI_CMD_RECT_LIST:
+        {
+            const gui_rect_col_t* r = s_step.rect_pool + c->rect_list.offset;
+            f32 x0 = r[ 0 ].x, y0 = r[ 0 ].y, x1 = r[ 0 ].x + r[ 0 ].w, y1 = r[ 0 ].y + r[ 0 ].h;
+            for ( u32 i = 1; i < c->rect_list.count; ++i )
+            {
+                if ( r[ i ].x < x0 )            x0 = r[ i ].x;
+                if ( r[ i ].y < y0 )            y0 = r[ i ].y;
+                if ( r[ i ].x + r[ i ].w > x1 ) x1 = r[ i ].x + r[ i ].w;
+                if ( r[ i ].y + r[ i ].h > y1 ) y1 = r[ i ].y + r[ i ].h;
+            }
+            return ( gui_rect_t ){ x0, y0, x1 - x0, y1 - y0 };
+        }
+    }
+    return ( gui_rect_t ){ 0.0f, 0.0f, 0.0f, 0.0f };
+}
+
+bool
+gui_step_cmd_info( u32 index, step_cmd_info_t* out )
+{
+    if ( !g_gui_step_frozen || index >= s_step.cmd_count )
+        return false;
+
+    const gui_cmd_t* c = &s_step.cmds[ index ];
+    out->cmd    = *c;
+    out->bounds = step_cmd_bounds( c );
+    out->clip   = s_step.clip_table[ c->clip_idx ];
+    out->text   = ( c->type == GUI_CMD_TEXT ) ? s_step.text_pool + c->text.off : NULL;
+
+    /* Owning segment tag (linear scan: segments are few and this runs per shell query only). */
+    out->win = 0;  out->z = 0;  out->vp = 0;  out->font = 0;
+    for ( u32 si = 0; si < s_step.seg_count; ++si )
+        if ( index >= s_step.segs[ si ].lo && index < s_step.segs[ si ].hi )
+        {
+            out->win  = s_step.segs[ si ].win;
+            out->z    = s_step.segs[ si ].z;
+            out->vp   = s_step.segs[ si ].vp;
+            out->font = s_step.segs[ si ].font;
+            break;
+        }
+    return true;
+}
+
+u32
+gui_step_seg_count( void )
+{
+    return g_gui_step_frozen ? s_step.seg_count : 0;
+}
+
+bool
+gui_step_seg_info( u32 index, step_seg_info_t* out )
+{
+    if ( !g_gui_step_frozen || index >= s_step.seg_count )
+        return false;
+
+    const gui_cmd_seg_t* sg = &s_step.segs[ index ];
+    out->win  = sg->win;
+    out->z    = sg->z;
+    out->vp   = sg->vp;
+    out->font = sg->font;
+    out->lo   = sg->lo;
+    out->hi   = sg->hi;
+
+    /* Bounds: union of the member commands' bboxes. */
+    gui_rect_t u = ( gui_rect_t ){ 0.0f, 0.0f, 0.0f, 0.0f };
+    for ( u32 i = sg->lo; i < sg->hi; ++i )
+    {
+        gui_rect_t b = step_cmd_bounds( &s_step.cmds[ i ] );
+        if ( b.w <= 0.0f || b.h <= 0.0f )
+            continue;
+        if ( u.w <= 0.0f )
+            u = b;
+        else
+        {
+            f32 x1 = u.x + u.w > b.x + b.w ? u.x + u.w : b.x + b.w;
+            f32 y1 = u.y + u.h > b.y + b.h ? u.y + u.h : b.y + b.h;
+            if ( b.x < u.x ) u.x = b.x;
+            if ( b.y < u.y ) u.y = b.y;
+            u.w = x1 - u.x;
+            u.h = y1 - u.y;
+        }
+    }
+    out->bounds = u;
+    return true;
+}
+
+/*----------------------------------------------------------------------------------------------
     step_capture_build -- start of cache_build_frame: the final segment is closed, every pool is
     complete, nothing has been diffed or tessellated yet.  Copies the live frame and freezes.
 ----------------------------------------------------------------------------------------------*/
