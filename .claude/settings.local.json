@@ -272,7 +272,8 @@
       "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example 2>&1 | Select-Object -Last 15)",
       "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example 2>&1 | Select-Object -Last 12)",
       "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example 2>&1 | Select-Object -Last 6)",
-      "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example 2>&1 | Select-Object -Last 5)"
+      "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example 2>&1 | Select-Object -Last 5)",
+      "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example; Write-Output \"EXIT: $LASTEXITCODE\"; Get-Item bin\\\\sb_gui_example.exe | Select-Object Name,LastWriteTime)"
     ]
   }
 }

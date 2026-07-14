@@ -139,9 +139,17 @@ ex_menu_bar( void )
     /* Explorer menu: bulk close, plus the pointer to the docking test bed. */
     if ( gui()->menu_begin( "Explorer" ) )
     {
-        /* No "Open all": with EX_DEMO_COUNT demos this would exceed the window pool at once. */
+        /* Keep "Open all": with EX_DEMO_COUNT demos to test the exceed window pool case. */
+        if ( gui()->menu_item( "Open all",  NULL, NULL ) ) {
+            for ( i32 i = 0; i < EX_DEMO_COUNT; i++ ) {
+                    ex_set_open( &s_demos[ i ], true );
+                }
+        }
+
         if ( gui()->menu_item( "Close all", NULL, NULL ) )
-            for ( i32 i = 0; i < EX_DEMO_COUNT; i++ ) ex_set_open( &s_demos[ i ], false );
+            for ( i32 i = 0; i < EX_DEMO_COUNT; i++ ) {
+                ex_set_open( &s_demos[ i ], false );
+        }
         gui()->separator();
         gui()->push_item_flag( GUI_ITEM_DISABLED, true );
         gui()->menu_item( "Docking lives in sb_gui_dock", NULL, NULL );

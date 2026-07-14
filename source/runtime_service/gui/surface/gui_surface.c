@@ -26,7 +26,7 @@
 
 /*==============================================================================================
 
-    - Find the window for this id, or create it from the initial geometry.
+    - Find the window for this GUID or create it from the initial geometry.
     - Never returns NULL; an overflowing table falls back to a transient scratch entry.    
 
 ==============================================================================================*/
@@ -44,30 +44,64 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
        window_begin_ex stamps a fresh z on every appearance (first frame and re-opens),
        so new and re-opened windows always land on top with no two starting at the same z. */
 
-    bool pool_full = ( g_ctx->win.count >= g_ctx->win.max );
-    if ( pool_full )
+    gui_window_t* win;
+    if ( g_ctx->win.count < g_ctx->win.max )
     {
-        /* Every overflow window shares the one transient scratch record: it collides on id and
-           loses all persisted state (pos/size/collapse/z).  Non-fatal so the app keeps running,
-           but warn + break-once (same treatment as the backend render-slot overflow) so a
-           too-small pool is not a silent thrash.  Raise via gui_config.max_windows. */
-
-        static bool warned = false;
-        if ( !warned )
-        {
-            printf( "[gui] WARNING: window pool full (%u) -- extra windows share one transient "
-                    "scratch slot and lose persisted state. Raise gui_config.max_windows.\n",
-                    g_ctx->win.max );
-            fflush( stdout );   /* flush the diagnostic before the once-assert can trap */
-            warned = true;
-        }
-        ORB_ASSERT_MSG_ONCE( false, "gui window pool overflow -- more than max_windows persisted "
-                                    "windows; extras fall back to a shared scratch slot. Raise "
-                                    "gui_config.max_windows" );
+        win = &g_ctx->win.pool[ g_ctx->win.count++ ];   /* free slot: append */
     }
-    gui_window_t* win = !pool_full
-                        ? &g_ctx->win.pool[ g_ctx->win.count++ ]
-                        : &g_ctx->win.scratch;   /* table full: transient, not persisted */
+    else
+    {
+        /* Pool full.  The pool is append-only, so it accumulates a slot for EVERY window id ever
+           begun -- a UI with many entry points (menus, tools) but only a handful open at once will
+           exhaust it even though the live set is small.  Reclaim the least-recently-begun DORMANT
+           slot instead of thrashing on the shared scratch: retire that window, losing only its
+           persisted geometry/scroll (re-seeded from the caller's initial values on its next visit);
+           every cross-frame reference to it is by id (window_find, dock tabs, nav) and re-resolves.
+
+           Two slots are off-limits as candidates:
+             - last_frame == this frame: begun already this frame, so it (or a parent whose nested
+               popup/child triggered this call) is live -- evicting it would corrupt the active
+               window.  This is the correctness fence.
+             - viewport != 0: owns an OS floater/native surface; the viewport reconcile tears that
+               surface down once no record targets it, so retiring it here would drop a live window.
+           When NOTHING is evictable, more than max_windows windows are genuinely live on the main
+           surface this frame -- the true "raise max_windows" case -- so fall back to scratch + a
+           break-once assert (same treatment as the backend render-slot overflow). */
+        u32 victim  = g_ctx->win.max;   /* == none found */
+        u32 oldest  = g_ctx->retained.frame;
+        for ( u32 i = 0; i < g_ctx->win.count; ++i )
+        {
+            gui_window_t* c = &g_ctx->win.pool[ i ];
+            if ( c->last_frame == g_ctx->retained.frame || c->viewport != 0 )
+                continue;
+            if ( victim == g_ctx->win.max || c->last_frame < oldest )
+            {
+                victim = i;
+                oldest = c->last_frame;
+            }
+        }
+
+        if ( victim != g_ctx->win.max )
+        {
+            win = &g_ctx->win.pool[ victim ];   /* retire the oldest dormant window in place */
+        }
+        else
+        {
+            static bool warned = false;
+            if ( !warned )
+            {
+                printf( "[gui] WARNING: more than %u windows live on the main surface this frame -- "
+                        "extra windows share one transient scratch slot and lose persisted state. "
+                        "Raise gui_config.max_windows.\n", g_ctx->win.max );
+                fflush( stdout );   /* flush the diagnostic before the once-assert can trap */
+                warned = true;
+            }
+            ORB_ASSERT_MSG_ONCE( false, "gui window pool overflow -- more than max_windows windows "
+                                        "live at once; extras fall back to a shared scratch slot. "
+                                        "Raise gui_config.max_windows" );
+            win = &g_ctx->win.scratch;   /* all slots live: transient, not persisted */
+        }
+    }
     win->id        = id;
     win->x         = x;
     win->y         = y;
