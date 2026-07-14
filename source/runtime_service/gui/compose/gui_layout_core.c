@@ -411,15 +411,25 @@ layout_set_default( layout_frame_t* f )
 static void
 layout_seed_content( layout_frame_t* f, gui_pad_t pad )
 {
+    /* layout_push_region reserves the window border out of the scroll VIEW (view_h =
+       outer.h - WIN_BORDER, view_w = outer.w - 2*WIN_BORDER) but seeds the content band from
+       the raw outer rect. The far edges must reserve the same border here, or a widget that
+       fills the remaining space (canvas(0), a fill grid / pack) reaches an edge the view does
+       not, so content measures exactly WIN_BORDER past the view every frame -- a permanent
+       hairline scroll fragment with nothing to scroll to. Reserve it on the far edges only
+       (top / left origins stay put, so nothing shifts); the fill just stops at the true view
+       edge. Any region that fills to content_avail is otherwise doomed to this phantom bar. */
+    const f32 border = WIN_BORDER;
+
     f->pad           = pad;   /* kept: the pads join the measured canvas at pop */
     f->origin_x      = f->outer.x + pad.l;
     f->origin_y      = f->outer.y + pad.t;
     f->content_x     = f->origin_x - f->scroll->scroll_x;
-    f->content_w     = f->outer.w - pad.l - pad.r - f->sb_w;
+    f->content_w     = f->outer.w - pad.l - pad.r - f->sb_w - 2.0f * border;
     f->pen_y     = f->origin_y - f->scroll->scroll_y;
     f->high_x = f->content_x;   /* seed the highwater at the origin corner -> an empty */
     f->high_y = f->pen_y;   /* body measures 0 on both axes (premeasure sentinel)  */
-    f->band_bottom = f->outer.y + f->outer.h - pad.b - f->sb_h;
+    f->band_bottom = f->outer.y + f->outer.h - pad.b - f->sb_h - border;
 
     /* Fresh nav coordinate: this content column is one container to the keyboard (a window body,
        a child box, a re-inset pad).  The first line dispenses when the first line opens. */

@@ -108,6 +108,10 @@ typedef struct tl_state_s
     f64  view_t1;                       // window right edge (absolute ns)
     f32  drag_x;                        // pan anchor while the canvas item is held
 
+    /* single-frame mode: the window locks to one captured frame; arrows step through history */
+    bool single_frame;                  // view is pinned to exactly one frame
+    u32  frame_sel;                     // distance back from the newest complete frame (0 = newest)
+
     tl_hover_t hover;                   // span under the cursor, found during draw
 } tl_state_t;
 
@@ -224,6 +228,33 @@ tl_batch_rect( f32 x, f32 y, f32 w, f32 h, u32 col )
     if ( g_tl_batch_n == TL_BATCH_CAP )
         tl_batch_flush();
     g_tl_batch[ g_tl_batch_n++ ] = ( gui_rect_col_t ){ x, y, w, h, col };
+}
+
+/* Count of complete frames (intervals between marks) currently held in the frame ring. */
+static u32
+tl_frame_count( void )
+{
+    u32 marks = g_tl.frame_head < TL_FRAME_CAP ? g_tl.frame_head : TL_FRAME_CAP;
+    return marks >= 2 ? marks - 1 : 0;
+}
+
+/* Bounds of the frame `sel` steps back from the newest (0 = newest complete frame). A frame is
+   the interval between two consecutive marks; fills t0/t1/number when it resolves. */
+static bool
+tl_frame_bounds( u32 sel, i64* t0, i64* t1, u32* number )
+{
+    tl_state_t* s     = &g_tl;
+    u32         marks = s->frame_head < TL_FRAME_CAP ? s->frame_head : TL_FRAME_CAP;
+    if ( marks < 2 || sel + 2 > marks )
+        return false;
+
+    tl_frame_mark_t* f1 = &g_tl_frames[ ( s->frame_head - 1 - sel ) & ( TL_FRAME_CAP - 1 ) ];
+    tl_frame_mark_t* f0 = &g_tl_frames[ ( s->frame_head - 2 - sel ) & ( TL_FRAME_CAP - 1 ) ];
+    *t0                 = f0->tick;
+    *t1                 = f1->tick;
+    if ( number )
+        *number = f1->number;
+    return true;
 }
 
 /*==============================================================================================
@@ -378,6 +409,29 @@ tl_view_input( gui_rect_t r )
     /* The whole tracks area is one custom widget: item() gives it hover / press-capture
        exactly like a stock widget, and holding it pans the window. */
     gui_item_state_t st = gui()->item( "##tl_tracks", r );
+
+    /* Single-frame mode: the window is locked to fit exactly one captured frame -- pan / zoom /
+       live are all suspended, and the control-bar arrows step frame_sel through history. The
+       hover item above still resolves so span tooltips keep working. */
+    if ( s->single_frame )
+    {
+        u32 frames = tl_frame_count();
+        if ( s->live )
+            s->frame_sel = 0;                       /* live: follow the newest complete frame */
+        else if ( frames && s->frame_sel > frames - 1 )
+            s->frame_sel = frames - 1;
+
+        i64 t0, t1;
+        if ( tl_frame_bounds( s->frame_sel, &t0, &t1, NULL ) )
+        {
+            f64 dur    = ( f64 )( t1 - t0 );
+            if ( dur < 1.0 )
+                dur = 1.0;
+            s->span_ns = dur * 1.04;               /* a hair of margin so edge bars aren't clipped */
+            s->view_t1 = ( f64 )t1 + dur * 0.02;
+        }
+        return;
+    }
 
     f32 mx, my;
     gui()->get_mouse_pos( &mx, &my );
@@ -735,6 +789,40 @@ tl_controls( void )
     if ( gui()->button( "Clear" ) )
         gui_timeline_clear();
 
+    /* Single-frame mode: pin the window to exactly one frame. It is an independent view mode --
+       Live keeps it following the newest frame each tick, Pause freezes it; same as the wide
+       view. Enabling it lands on the newest complete frame; the arrows walk back / forward. */
+    bool was_single = s->single_frame;
+    gui()->checkbox( "Single frame", &s->single_frame );
+    if ( s->single_frame && !was_single )
+        s->frame_sel = 0;    /* start on the newest complete frame */
+
+    if ( s->single_frame )
+    {
+        u32 frames  = tl_frame_count();
+        u32 max_sel = frames ? frames - 1 : 0;
+
+        bool older = gui()->arrow_button( "##tl_older", GUI_DIR_LEFT );
+        bool newer = gui()->arrow_button( "##tl_newer", GUI_DIR_RIGHT );
+        if ( older || newer )
+            s->live = false;    /* stepping to a chosen frame drops live, like a drag does */
+        if ( older && s->frame_sel < max_sel )
+            s->frame_sel++;     /* step back in time */
+        if ( newer && s->frame_sel > 0 )
+            s->frame_sel--;     /* step forward in time */
+
+        i64 t0, t1;
+        u32 number = 0;
+        if ( tl_frame_bounds( s->frame_sel, &t0, &t1, &number ) )
+        {
+            char dur[ 32 ];
+            tl_fmt_time( ( f64 )( t1 - t0 ), dur, sizeof( dur ) );
+            gui()->textf( "  frame %u  %s  [%u/%u]", number, dur, frames - s->frame_sel, frames );
+        }
+        else
+            gui()->text( "  waiting for two frame marks" );
+    }
+
     u32 drops = 0;
     u32 threads = prof_thread_count();
     if ( threads > PROF_MAX_THREADS )
@@ -743,11 +831,15 @@ tl_controls( void )
         drops += prof_thread_dropped( t );
     drops = drops > s->drop_base ? drops - s->drop_base : 0;
 
+    const char* mode = s->single_frame && s->live  ? "   [single frame -- live, following newest]"
+                     : s->single_frame             ? "   [single frame -- arrows step, capture stopped]"
+                     : s->live                     ? ""
+                                                   : "   [paused -- capture stopped; drag to pan, wheel to zoom]";
+
     char span[ 32 ];
     tl_fmt_time( s->span_ns, span, sizeof( span ) );
     gui()->textf( "  view %s   events %llu   drops %u%s", span,
-                  ( unsigned long long )s->drained, drops,
-                  s->live ? "" : "   [paused -- capture stopped; drag to pan, wheel to zoom]" );
+                  ( unsigned long long )s->drained, drops, mode );
 }
 
 void
@@ -772,7 +864,7 @@ gui_timeline_window( void )
         /* Reserve all three bands first (canvas only reserves + returns the rect), resolve
            this frame's view from input on the tracks band, THEN draw -- so the ruler and the
            bars always agree on the window instead of lagging each other by a frame. */
-        gui_rect_t strip_r  = gui()->canvas( 30.0f );
+        gui_rect_t strip_r  = gui()->canvas( 60.0f );
         gui_rect_t ruler_r  = gui()->canvas( 18.0f );
         gui_rect_t tracks_r = gui()->canvas( 0.0f );
 
