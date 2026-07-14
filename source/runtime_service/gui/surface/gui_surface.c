@@ -24,22 +24,48 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
-    window_get -- find the window for this id, or create it from the initial geometry.
-    Never returns NULL; an overflowing table falls back to a transient scratch entry.
-----------------------------------------------------------------------------------------------*/
+/*==============================================================================================
+
+    - Find the window for this id, or create it from the initial geometry.
+    - Never returns NULL; an overflowing table falls back to a transient scratch entry.    
+
+==============================================================================================*/
 
 static gui_window_t*
 window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
 {
-    for ( u32 i = 0; i < g_ctx->win.count; ++i )
+    /* Existing window found */
+    for ( u32 i = 0; i < g_ctx->win.count; ++i ) {
         if ( g_ctx->win.pool[ i ].id == id )
             return &g_ctx->win.pool[ i ];
+    }
 
     /* First time seen: seed from the caller's initial geometry.  z is left 0 here;
        window_begin_ex stamps a fresh z on every appearance (first frame and re-opens),
        so new and re-opened windows always land on top with no two starting at the same z. */
-    gui_window_t* win = ( g_ctx->win.count < g_ctx->win.max )
+
+    bool pool_full = ( g_ctx->win.count >= g_ctx->win.max );
+    if ( pool_full )
+    {
+        /* Every overflow window shares the one transient scratch record: it collides on id and
+           loses all persisted state (pos/size/collapse/z).  Non-fatal so the app keeps running,
+           but warn + break-once (same treatment as the backend render-slot overflow) so a
+           too-small pool is not a silent thrash.  Raise via gui_config.max_windows. */
+
+        static bool warned = false;
+        if ( !warned )
+        {
+            printf( "[gui] WARNING: window pool full (%u) -- extra windows share one transient "
+                    "scratch slot and lose persisted state. Raise gui_config.max_windows.\n",
+                    g_ctx->win.max );
+            fflush( stdout );   /* flush the diagnostic before the once-assert can trap */
+            warned = true;
+        }
+        ORB_ASSERT_MSG_ONCE( false, "gui window pool overflow -- more than max_windows persisted "
+                                    "windows; extras fall back to a shared scratch slot. Raise "
+                                    "gui_config.max_windows" );
+    }
+    gui_window_t* win = !pool_full
                         ? &g_ctx->win.pool[ g_ctx->win.count++ ]
                         : &g_ctx->win.scratch;   /* table full: transient, not persisted */
     win->id        = id;

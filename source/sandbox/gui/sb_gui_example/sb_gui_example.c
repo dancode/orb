@@ -64,7 +64,8 @@ main( int argc, char** argv )
        in -- this is the explorer, it needs them all. */
     gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB -- gui example",
-        .w     = 1280, .h = 720,
+        .x = 128, .y = 128,
+        .w     = 1920, .h = 1080,
         .font  = GUI_FONT_JETBRAINS_16,
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,

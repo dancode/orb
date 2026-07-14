@@ -389,7 +389,9 @@ cache_diff_windows( void )
         {
             /* Overflow: a window past RENDER_MAX_WIN gets no record, no slot, and never
                tessellates -- it is DROPPED from rendering this frame, not just uncached.
-               Warn once so a too-small cap is not silently invisible windows. */
+               Warn once (log + break-once assert, same treatment as the draw-list overflow
+               below) so a too-small cap is not silently invisible windows.  Non-fatal: skip
+               past the assert (or a release build) and the surviving windows still render. */
             if ( s_cache.cur_n >= RENDER_MAX_WIN )
             {
                 static bool warned = false;
@@ -397,8 +399,12 @@ cache_diff_windows( void )
                 {
                     printf( "[gui] WARNING: more than %u windows this frame -- extra windows "
                             "are not rendered. Raise RENDER_MAX_WIN.\n", RENDER_MAX_WIN );
+                    fflush( stdout );   /* flush the diagnostic before the once-assert can trap */
                     warned = true;
                 }
+                ORB_ASSERT_MSG_ONCE( false, "gui window overflow -- more than RENDER_MAX_WIN "
+                                            "windows; extra windows dropped. Raise RENDER_MAX_WIN "
+                                            "(gui_backend.h)" );
                 continue;
             }
             s_cache.cur[ bi ] = ( render_win_hash_t ){ win, 2166136261u, 0, 0, 0, false, false };

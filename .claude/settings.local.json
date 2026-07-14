@@ -267,7 +267,12 @@
       "Bash(echo \"[exit: $?]\")",
       "Bash(timeout 4 ./bin/sb_host_runtime.exe)",
       "Bash(./bin/build_tool.exe -config Debug -monolithic -target sb_host_server)",
-      "Bash(./bin/build_tool.exe -doctor)"
+      "Bash(./bin/build_tool.exe -doctor)",
+      "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example)",
+      "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example 2>&1 | Select-Object -Last 15)",
+      "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example 2>&1 | Select-Object -Last 12)",
+      "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example 2>&1 | Select-Object -Last 6)",
+      "PowerShell(.\\\\bin\\\\build_tool.exe -config Debug -target sb_gui_example 2>&1 | Select-Object -Last 5)"
     ]
   }
 }

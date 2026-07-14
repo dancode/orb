@@ -15,7 +15,7 @@
 static void
 ex_widgets_basic( void )
 {
-    if ( ex_begin( "Basic Widgets", 60, 60, 400, 560, GUI_WIN_NONE ) )
+    if ( ex_begin( "Basic Widgets", 128, 96, 640, 640, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Every widget returns true on the frame it fires." );

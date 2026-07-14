@@ -77,6 +77,7 @@ editor_ready( void )
    a user should trigger from the focused editor) would instead read app()->key_pressed, fenced by
    gui()->want_capture_keyboard -- see gui_api.h.  These three are not that; they are console-gated
    on purpose. */
+
 static void
 editor_handle_shortcuts( void )
 {

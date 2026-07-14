@@ -635,7 +635,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     /* ---- caller-driven path ------------------------------------------ */
 
     if ( desc->loop_mode == RUN_LOOP_NONE )
-        return 0;
+         return 0;
 
     /* ---- loop -------------------------------------------------------- */
 

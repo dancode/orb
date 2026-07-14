@@ -136,11 +136,10 @@ ex_menu_bar( void )
     if ( !gui()->main_menu_bar_begin() )
         return;
 
-    /* Explorer menu: bulk open/close, plus the pointer to the docking test bed. */
+    /* Explorer menu: bulk close, plus the pointer to the docking test bed. */
     if ( gui()->menu_begin( "Explorer" ) )
     {
-        if ( gui()->menu_item( "Open all",  NULL, NULL ) )
-            for ( i32 i = 0; i < EX_DEMO_COUNT; i++ ) ex_set_open( &s_demos[ i ], true );
+        /* No "Open all": with EX_DEMO_COUNT demos this would exceed the window pool at once. */
         if ( gui()->menu_item( "Close all", NULL, NULL ) )
             for ( i32 i = 0; i < EX_DEMO_COUNT; i++ ) ex_set_open( &s_demos[ i ], false );
         gui()->separator();
