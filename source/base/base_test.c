@@ -419,6 +419,165 @@ test_math_rng( void )
 }
 
 /*==============================================================================================
+    math: vectors
+==============================================================================================*/
+
+#define test_near( a, b )   test_true( f32_nearly_equal( ( a ), ( b ), 1e-4f ) )
+
+static void
+test_math_vec( void )
+{
+    // layout: field / sub-vector / index aliases share storage; vec4 is 16-aligned
+    test_equal( 16, ORB_ALIGNOF( vec4_t ) );
+    vec4_t v = vec4_make( 1, 2, 3, 4 );
+    test_near( v.e[ 2 ], 3.0f );
+    test_near( v.xyz.y, 2.0f );
+    test_near( v.zw.x, 3.0f );
+
+    // vec2
+    vec2_t a2 = vec2_make( 3, 4 );
+    test_near( vec2_len( a2 ), 5.0f );
+    test_near( vec2_dot( vec2_make( 1, 0 ), vec2_make( 0, 1 ) ), 0.0f );
+    test_near( vec2_cross( vec2_make( 1, 0 ), vec2_make( 0, 1 ) ), 1.0f );
+    vec2_t n2 = vec2_normalize( a2 );
+    test_near( vec2_len( n2 ), 1.0f );
+    test_near( vec2_len( vec2_normalize( vec2_zero() ) ), 0.0f );    // degenerate -> zero
+
+    // vec3
+    vec3_t x = vec3_make( 1, 0, 0 ), y = vec3_make( 0, 1, 0 );
+    vec3_t z = vec3_cross( x, y );
+    test_near( z.z, 1.0f );                                          // x cross y = z (right-handed)
+    test_near( vec3_dot( x, y ), 0.0f );
+    test_near( vec3_len( vec3_make( 2, 3, 6 ) ), 7.0f );
+    vec3_t lp = vec3_lerp( vec3_zero(), vec3_make( 10, 20, 30 ), 0.5f );
+    test_near( lp.x, 5.0f ); test_near( lp.y, 10.0f ); test_near( lp.z, 15.0f );
+
+    // reflect off the +Y plane inverts only y
+    vec3_t r = vec3_reflect( vec3_make( 1, -1, 0 ), vec3_make( 0, 1, 0 ) );
+    test_near( r.x, 1.0f ); test_near( r.y, 1.0f );
+
+    // vec4 + widen/narrow round-trip
+    test_near( vec4_dot( vec4_make( 1, 2, 3, 4 ), vec4_make( 1, 1, 1, 1 ) ), 10.0f );
+    test_near( vec3_to_vec4( vec3_make( 7, 8, 9 ), 1.0f ).w, 1.0f );
+    test_near( vec4_to_vec3( v ).z, 3.0f );
+
+    // vec2i
+    test_true( vec2i_eq( vec2i_add( vec2i_make( 1, 2 ), vec2i_make( 3, 4 ) ), vec2i_make( 4, 6 ) ) );
+}
+
+/*==============================================================================================
+    math: matrices
+==============================================================================================*/
+
+static void
+test_math_mat( void )
+{
+    test_equal( 16, ORB_ALIGNOF( mat4_t ) );
+
+    // identity is the multiplicative unit
+    mat4_t id = mat4_identity();
+    mat4_t t  = mat4_translation( vec3_make( 5, 6, 7 ) );
+    mat4_t ti = mat4_mul( id, t );
+    for ( i32 i = 0; i < 16; i++ ) test_near( ti.m[ i ], t.m[ i ] );
+
+    // translation moves a point but not a direction
+    test_near( mat4_transform_point( t, vec3_make( 1, 1, 1 ) ).x, 6.0f );
+    test_near( mat4_transform_dir( t, vec3_make( 1, 1, 1 ) ).x, 1.0f );
+
+    // compose reads right-to-left: scale-then-translate
+    mat4_t s  = mat4_scaling( vec3_make( 2, 2, 2 ) );
+    mat4_t ts = mat4_mul( t, s );
+    vec3_t p  = mat4_transform_point( ts, vec3_make( 1, 0, 0 ) );
+    test_near( p.x, 7.0f );                                          // 1*2 + 5
+    test_near( p.y, 6.0f );
+
+    // inverse: M * M^-1 == I  (use a non-trivial rotation+translation)
+    mat4_t r   = mat4_rotation_axis( vec3_make( 0, 1, 0 ), MATH_PI_OVER_4 );
+    mat4_t trm = mat4_mul( t, r );
+    mat4_t inv = mat4_inverse( trm );
+    mat4_t ii  = mat4_mul( trm, inv );
+    for ( i32 i = 0; i < 16; i++ ) test_near( ii.m[ i ], id.m[ i ] );
+
+    // transpose is an involution
+    mat4_t tt = mat4_transpose( mat4_transpose( trm ) );
+    for ( i32 i = 0; i < 16; i++ ) test_near( tt.m[ i ], trm.m[ i ] );
+
+    // singular matrix -> identity fallback
+    mat4_t zero = ( mat4_t ){ 0 };
+    mat4_t zinv = mat4_inverse( zero );
+    test_near( zinv.m[ 0 ], 1.0f );
+
+    // ortho_2d maps top-left pixel origin to NDC (-1,-1), bottom-right to (+1,+1)
+    mat4_t o  = mat4_ortho_2d( 800, 600 );
+    vec3_t tl = mat4_transform_point( o, vec3_make( 0, 0, 0 ) );
+    vec3_t br = mat4_transform_point( o, vec3_make( 800, 600, 0 ) );
+    test_near( tl.x, -1.0f ); test_near( tl.y, -1.0f );
+    test_near( br.x,  1.0f ); test_near( br.y,  1.0f );
+
+    // perspective: points on the near plane land at NDC z=0 after the w-divide
+    mat4_t proj = mat4_perspective( MATH_PI_OVER_2, 1.0f, 0.5f, 100.0f );
+    vec4_t cn   = mat4_mul_vec4( proj, vec4_make( 0, 0, -0.5f, 1 ) );
+    test_near( cn.z / cn.w, 0.0f );
+    vec4_t cf   = mat4_mul_vec4( proj, vec4_make( 0, 0, -100.0f, 1 ) );
+    test_near( cf.z / cf.w, 1.0f );
+
+    // look_at: eye down +Z looking at origin sees the origin straight ahead (view z < 0)
+    mat4_t view = mat4_look_at( vec3_make( 0, 0, 10 ), vec3_zero(), vec3_make( 0, 1, 0 ) );
+    vec3_t vo   = mat4_transform_point( view, vec3_zero() );
+    test_near( vo.z, -10.0f );
+}
+
+/*==============================================================================================
+    math: quaternions
+==============================================================================================*/
+
+static void
+test_math_quat( void )
+{
+    test_equal( 16, ORB_ALIGNOF( quat_t ) );
+
+    // identity rotates nothing
+    vec3_t v = vec3_make( 1, 2, 3 );
+    vec3_t r = quat_rotate_vec3( quat_identity(), v );
+    test_near( r.x, 1.0f ); test_near( r.y, 2.0f ); test_near( r.z, 3.0f );
+
+    // 90deg about +Z sends +X to +Y
+    quat_t qz = quat_from_axis_angle( vec3_make( 0, 0, 1 ), MATH_PI_OVER_2 );
+    vec3_t rx = quat_rotate_vec3( qz, vec3_make( 1, 0, 0 ) );
+    test_near( rx.x, 0.0f ); test_near( rx.y, 1.0f );
+
+    // quat_to_mat4 agrees with quat_rotate_vec3
+    mat4_t m  = quat_to_mat4( qz );
+    vec3_t mx = mat4_transform_dir( m, vec3_make( 1, 0, 0 ) );
+    test_near( mx.x, 0.0f ); test_near( mx.y, 1.0f );
+
+    // compose: q then its conjugate is identity
+    quat_t qc = quat_mul( qz, quat_conjugate( qz ) );
+    test_near( qc.w, 1.0f ); test_near( qc.x, 0.0f );
+
+    // from_euler matches an equivalent axis-angle (yaw about Y)
+    quat_t qe = quat_from_euler( 0.0f, MATH_PI_OVER_2, 0.0f );
+    quat_t qy = quat_from_axis_angle( vec3_make( 0, 1, 0 ), MATH_PI_OVER_2 );
+    test_near( f32_abs( quat_dot( qe, qy ) ), 1.0f );               // same orientation
+
+    // slerp endpoints are exact; midpoint stays unit
+    quat_t s0 = quat_slerp( quat_identity(), qz, 0.0f );
+    quat_t s1 = quat_slerp( quat_identity(), qz, 1.0f );
+    quat_t sh = quat_slerp( quat_identity(), qz, 0.5f );
+    test_near( s0.w, 1.0f );
+    test_near( f32_abs( quat_dot( s1, qz ) ), 1.0f );
+    test_near( quat_len( sh ), 1.0f );
+
+    // mat4_trs: scale, rotate, translate combined
+    mat4_t trs = mat4_trs( vec3_make( 10, 0, 0 ), qz, vec3_make( 2, 2, 2 ) );
+    vec3_t tp  = mat4_transform_point( trs, vec3_make( 1, 0, 0 ) );
+    test_near( tp.x, 10.0f );                                        // (1*2) rotated to +Y, +10 x
+    test_near( tp.y, 2.0f );
+}
+
+#undef test_near
+
+/*==============================================================================================
     bit: popcount
 ==============================================================================================*/
 
@@ -653,6 +812,9 @@ base_run_tests( void )
     test_register( "math_lerp", test_math_lerp );
     test_register( "math_sign_align", test_math_sign_align );
     test_register( "math_rng", test_math_rng );
+    test_register( "math_vec", test_math_vec );
+    test_register( "math_mat", test_math_mat );
+    test_register( "math_quat", test_math_quat );
 
     test_register( "bit_popcount", test_bit_popcount );
     test_register( "bit_clz_ctz", test_bit_clz_ctz );
