@@ -23,7 +23,7 @@ ex_windows_playground( void )
     static i32  drag_mode   = GUI_WIN_DRAG_TITLEBAR;
 
     /* --- the control window (this demo's primary; default resizable like all demos) ------- */
-    if ( ex_begin( "Window Playground", 60, 60, 420, 720, GUI_WIN_NONE ) )
+    if ( ex_begin( "Window Playground", 420, 720, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Flags below apply to the 'Flag Test Subject'" );
@@ -92,7 +92,6 @@ ex_windows_playground( void )
     gui()->window_end();
 
     /* --- the test subject ------------------------------------------------------------------ */
-    gui()->window_set_next_pos ( 520, 80, GUI_COND_ONCE );
     gui()->window_set_next_size( 320, 300, GUI_COND_ONCE );
     if ( gui()->window_begin( "Flag Test Subject", (gui_win_flags_t)flags ) )
     {
@@ -126,7 +125,7 @@ ex_windows_playground( void )
 static void
 ex_windows_multi( void )
 {
-    if ( ex_begin( "Default Window", 80, 80, 280, 200, GUI_WIN_NONE ) )
+    if ( ex_begin( "Default Window", 280, 200, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Default flags (+ the demo X)." );
@@ -134,8 +133,6 @@ ex_windows_multi( void )
         gui()->text( "Click another window to raise it." );
     }
     gui()->window_end();
-
-    gui()->window_set_next_pos ( 220, 180, GUI_COND_ONCE );
     gui()->window_set_next_size( 280, 180, GUI_COND_ONCE );
     if ( gui()->window_begin( "No Title Bar", GUI_WIN_NOTITLEBAR ) )
     {
@@ -145,8 +142,6 @@ ex_windows_multi( void )
         gui()->checkbox( "a toggle", &t );
     }
     gui()->window_end();
-
-    gui()->window_set_next_pos ( 360, 280, GUI_COND_ONCE );
     gui()->window_set_next_size( 260, 160, GUI_COND_ONCE );
     if ( gui()->window_begin( "Fixed", GUI_WIN_NORESIZE | GUI_WIN_NOMOVE ) )
     {
@@ -157,7 +152,6 @@ ex_windows_multi( void )
     gui()->window_end();
 
     /* A closeable window + a control window that re-opens it on demand. */
-    gui()->window_set_next_pos ( 500, 120, GUI_COND_ONCE );
     gui()->window_set_next_size( 260, 150, GUI_COND_ONCE );
     if ( gui()->window_begin( "Closeable", GUI_WIN_CLOSEABLE ) )
     {
@@ -168,8 +162,6 @@ ex_windows_multi( void )
         gui()->text( "window below." );
     }
     gui()->window_end();
-
-    gui()->window_set_next_pos ( 500, 290, GUI_COND_ONCE );
     gui()->window_set_next_size( 260, 110, GUI_COND_ONCE );
     if ( gui()->window_begin( "Window Control", GUI_WIN_NONE ) )
     {
@@ -193,7 +185,6 @@ static void
 ex_windows_autosize( void )
 {
     /* (a) A window that always hugs its content -- the row count drives its height. */
-    gui()->window_set_next_pos( 60, 60, GUI_COND_ONCE );
     if ( gui()->window_begin( "Always Auto-size", GUI_WIN_ALWAYS_AUTOSIZE | GUI_WIN_CLOSEABLE ) )
     {
         static i32 rows = 3;
@@ -211,7 +202,6 @@ ex_windows_autosize( void )
     gui()->window_end();
 
     /* (b) A normal window with a corner grip; double-click it to fit. */
-    gui()->window_set_next_pos ( 360, 60, GUI_COND_ONCE );
     gui()->window_set_next_size( 300, 320, GUI_COND_ONCE );
     if ( gui()->window_begin( "Double-click grip", GUI_WIN_CAN_AUTOSIZE ) )
     {
@@ -224,7 +214,6 @@ ex_windows_autosize( void )
     gui()->window_end();
 
     /* (c) Auto-height child (h <= 0) + content_avail(). */
-    gui()->window_set_next_pos ( 360, 420, GUI_COND_ONCE );
     gui()->window_set_next_size( 320, 260, GUI_COND_ONCE );
     if ( gui()->window_begin( "Auto child", GUI_WIN_NONE ) )
     {
@@ -254,7 +243,7 @@ ex_windows_popups( void )
 {
     static const char* s_last = "(none)";
 
-    if ( ex_begin( "Popups & Modals", 100, 100, 440, 560, GUI_WIN_NONE ) )
+    if ( ex_begin( "Popups & Modals", 440, 560, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -347,7 +336,7 @@ ex_windows_popups( void )
 static void
 ex_windows_tooltips( void )
 {
-    if ( ex_begin( "Tooltips", 130, 130, 400, 360, GUI_WIN_NONE ) )
+    if ( ex_begin( "Tooltips", 400, 360, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -423,7 +412,7 @@ ex_windows_menus( void )
 
     gui()->push_style_var( GUI_VAR_MENU_CHECK, boxed_check ? 1.0f : 0.0f );
 
-    if ( ex_begin( "Menu Bars", 160, 160, 440, 380, GUI_WIN_MENUBAR ) )
+    if ( ex_begin( "Menu Bars", 440, 380, GUI_WIN_MENUBAR ) )
     {
         if ( gui()->menu_bar_begin() )
         {

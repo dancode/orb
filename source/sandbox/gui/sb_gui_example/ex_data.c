@@ -27,7 +27,7 @@ ex_item_sort_value( i32 row, i32 col, gui_table_sort_value_t* out, void* user )
 static void
 ex_data_tables( void )
 {
-    if ( ex_begin( "Tables", 60, 60, 520, 700, GUI_WIN_NONE ) )
+    if ( ex_begin( "Tables", 520, 700, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -172,7 +172,7 @@ ex_data_tables( void )
 static void
 ex_data_debug( void )
 {
-    if ( ex_begin( "Debug & Stats", 90, 90, 460, 700, GUI_WIN_NONE ) )
+    if ( ex_begin( "Debug & Stats", 460, 700, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->textf( "debug hotkey driver: %s", gui()->debug_is_enabled() ? "armed" : "off" );

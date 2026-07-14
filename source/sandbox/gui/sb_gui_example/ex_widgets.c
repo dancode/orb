@@ -15,7 +15,7 @@
 static void
 ex_widgets_basic( void )
 {
-    if ( ex_begin( "Basic Widgets", 128, 96, 640, 640, GUI_WIN_NONE ) )
+    if ( ex_begin( "Basic Widgets", 640, 640, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Every widget returns true on the frame it fires." );
@@ -135,7 +135,7 @@ ex_tree_rec( i32 depth, i32 max_depth, i32 breadth )
 static void
 ex_widgets_text( void )
 {
-    if ( ex_begin( "Text & Trees", 90, 90, 420, 560, GUI_WIN_NONE ) )
+    if ( ex_begin( "Text & Trees", 420, 560, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Plain text line." );
@@ -209,7 +209,7 @@ ex_input_on_change( char* buf, u32 len, u32 bufsz, void* user )
 static void
 ex_widgets_input_text( void )
 {
-    if ( ex_begin( "Text Inputs", 120, 120, 420, 420, GUI_WIN_NONE ) )
+    if ( ex_begin( "Text Inputs", 420, 420, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -253,7 +253,7 @@ ex_widgets_input_text( void )
 static void
 ex_widgets_numeric( void )
 {
-    if ( ex_begin( "Numeric Inputs", 150, 150, 440, 460, GUI_WIN_NONE ) )
+    if ( ex_begin( "Numeric Inputs", 440, 460, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Fields parse on Enter or focus loss; step != 0" );
@@ -301,7 +301,7 @@ ex_widgets_numeric( void )
 static void
 ex_widgets_sliders( void )
 {
-    if ( ex_begin( "Sliders & Drags", 180, 180, 440, 560, GUI_WIN_NONE ) )
+    if ( ex_begin( "Sliders & Drags", 440, 560, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -366,7 +366,7 @@ ex_widgets_sliders( void )
 static void
 ex_widgets_color( void )
 {
-    if ( ex_begin( "Color Editors", 210, 210, 420, 400, GUI_WIN_NONE ) )
+    if ( ex_begin( "Color Editors", 420, 400, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -409,7 +409,7 @@ ex_widgets_color( void )
 static void
 ex_widgets_selection( void )
 {
-    if ( ex_begin( "Selection & Lists", 240, 60, 420, 640, GUI_WIN_NONE ) )
+    if ( ex_begin( "Selection & Lists", 420, 640, GUI_WIN_NONE ) )
     {
         gui()->stack();
 

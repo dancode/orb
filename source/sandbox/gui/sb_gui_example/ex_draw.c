@@ -44,7 +44,7 @@ ex_draw_lines( void )
     static const gui_stroke_align_t align_mode[ 4 ]  = {
         GUI_STROKE_CENTER_BIASED, GUI_STROKE_CENTER, GUI_STROKE_INSIDE, GUI_STROKE_OUTSIDE };
 
-    if ( ex_begin( "Lines & Paths", 80, 40, 500, 680, GUI_WIN_NONE ) )
+    if ( ex_begin( "Lines & Paths", 500, 680, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "draw_line / draw_polyline / path_stroke into a canvas()." );
@@ -226,7 +226,7 @@ ex_sym_box( gui_rect_t c, f32 sz )
 static void
 ex_draw_shapes( void )
 {
-    if ( ex_begin( "Shape Primitives", 110, 70, 460, 720, GUI_WIN_NONE ) )
+    if ( ex_begin( "Shape Primitives", 460, 720, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Each row: one draw_* primitive on the left," );
@@ -453,7 +453,7 @@ ex_draw_icons( void )
         ex_make_gear  ( buf, 32 ); ic_gear   = gui()->register_icon( "ex_gear",   32, 32, buf );
     }
 
-    if ( ex_begin( "Icons & Images", 140, 100, 400, 480, GUI_WIN_NONE ) )
+    if ( ex_begin( "Icons & Images", 400, 480, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "register_icon -> tinted quads, same flush as text." );
@@ -504,7 +504,7 @@ ex_draw_icons( void )
 static void
 ex_draw_custom( void )
 {
-    if ( ex_begin( "Custom Widgets", 170, 130, 440, 560, GUI_WIN_NONE ) )
+    if ( ex_begin( "Custom Widgets", 440, 560, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "A custom widget = a rect + item() + draw_* --" );
@@ -616,7 +616,7 @@ ex_volatile_block_cb( bool is_replay )
 static void
 ex_draw_volatile( void )
 {
-    if ( ex_begin( "Volatile Widgets", 200, 160, 440, 380, GUI_WIN_NONE ) )
+    if ( ex_begin( "Volatile Widgets", 440, 380, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text_wrapped( "The block below is wrapped in volatile_cb: on idle frames the rest "

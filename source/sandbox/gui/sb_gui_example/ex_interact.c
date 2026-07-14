@@ -19,7 +19,7 @@ ex_interact_dragdrop( void )
     static bool peek        = false;
     static bool no_preview  = false;
 
-    if ( ex_begin( "Drag & Drop", 60, 60, 440, 460, GUI_WIN_NONE ) )
+    if ( ex_begin( "Drag & Drop", 440, 460, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Drag a color source onto a slot below." );
@@ -99,7 +99,7 @@ ex_interact_dragdrop( void )
 static void
 ex_interact_queries( void )
 {
-    if ( ex_begin( "Item Queries", 90, 90, 420, 560, GUI_WIN_NONE ) )
+    if ( ex_begin( "Item Queries", 420, 560, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Each is_item_* reports on the widget just" );
@@ -186,7 +186,7 @@ ex_interact_keyboard( void )
     static char field[ 64 ]   = "";
     static char history[ 64 ] = "previous command";
 
-    if ( ex_begin( "Keyboard & Focus", 120, 120, 440, 560, GUI_WIN_NONE ) )
+    if ( ex_begin( "Keyboard & Focus", 440, 560, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -245,7 +245,7 @@ ex_interact_keyboard( void )
 static void
 ex_interact_mouse( void )
 {
-    if ( ex_begin( "Mouse & Cursor", 150, 150, 440, 560, GUI_WIN_NONE ) )
+    if ( ex_begin( "Mouse & Cursor", 440, 560, GUI_WIN_NONE ) )
     {
         gui()->stack();
 

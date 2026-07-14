@@ -15,7 +15,7 @@
 static void
 ex_style_themes( void )
 {
-    if ( ex_begin( "Themes", 60, 60, 400, 420, GUI_WIN_NONE ) )
+    if ( ex_begin( "Themes", 400, 420, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "A theme is the root layer every push/pop" );
@@ -80,7 +80,7 @@ static const ex_var_row_t s_var_rows[] = {
 static void
 ex_style_stacks( void )
 {
-    if ( ex_begin( "Style Stacks", 90, 90, 440, 680, GUI_WIN_NONE ) )
+    if ( ex_begin( "Style Stacks", 440, 680, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -156,7 +156,7 @@ ex_style_stacks( void )
 static void
 ex_style_shape_tags( void )
 {
-    if ( ex_begin( "Widget Shape Tags", 120, 120, 420, 520, GUI_WIN_NONE ) )
+    if ( ex_begin( "Widget Shape Tags", 420, 520, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Style tags force a shape on the widget emitting." );
@@ -245,7 +245,7 @@ ex_style_fonts( void )
         s_loaded = true;
     }
 
-    if ( ex_begin( "Fonts", 150, 150, 460, 560, GUI_WIN_NONE ) )
+    if ( ex_begin( "Fonts", 460, 560, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->textf( "active font id: %u", gui()->font_active_id() );

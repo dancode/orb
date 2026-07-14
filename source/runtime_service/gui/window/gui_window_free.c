@@ -916,17 +916,54 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     return !collapsed;
 }
 
+/* Default spawn cascade: each window that first appears WITHOUT an explicit position lands one
+   title-bar step down-right of the previous default spawn, OS-style, so windows opened in
+   sequence stagger instead of stacking on one point.  The run starts at a fixed inset below the
+   viewport work area (caption band + main menu bar, window_work_top) and wraps back to that
+   first slot once the next position would cross half the viewport extent on either axis. */
+static void
+window_default_spawn( u32 viewport, f32* out_x, f32* out_y )
+{
+    const gui_viewport_t* vp = &g_ctx->vp.pool[ viewport ];
+    const f32 inset = 60.0f;
+    const f32 step  = WIN_TITLE_H;
+    const f32 top   = window_work_top( vp );
+
+    f32 x = inset + step * (f32)g_ctx->win.cascade;
+    f32 y = top + inset + step * (f32)g_ctx->win.cascade;
+    if ( x > vp_w( vp ) * 0.5f || y > top + vp_h( vp ) * 0.5f )
+    {
+        g_ctx->win.cascade = 0;
+        x = inset;
+        y = top + inset;
+    }
+    ++g_ctx->win.cascade;
+
+    *out_x = window_snap( x );
+    *out_y = window_snap( y );
+}
+
 bool
 gui_window_begin( const char* title, gui_win_flags_t flags )
 {
-    /* The default spawn position hangs off the viewport work area -- below the native caption
-       band and the main menu bar (window_work_top), not the raw surface corner, where a fixed
-       offset lands the titlebar under the bar once both chrome strips are live.  Read from the
-       ambient viewport (what a new record inherits); only the very first appearance uses it
-       (window_get seeds the record once), and explicit placement still goes through
-       window_set_next_pos. */
-    f32 top = window_work_top( &g_ctx->vp.pool[ s_build.win.viewport ] );
-    return window_begin_ex( id_hash( title ), title, 60.0f, top + 60.0f, 240.0f, 320.0f, flags );
+    gui_id_t id = id_hash( title );
+
+    /* Only a window appearing for the FIRST time with no queued explicit position consumes a
+       cascade slot: a re-begin of an existing record ignores the passed geometry (the registry
+       owns it), and a window_set_next_pos seed lands where it asked -- neither should advance
+       the cascade.  The spawn viewport is the queued one when set, else the ambient the new
+       record will inherit. */
+    f32 x = 60.0f, y = 60.0f;
+    if ( !window_find( id ) && !s_next_win.has_pos && g_ctx->win.count < g_ctx->win.max )
+    {
+        /* The pool-full guard keeps a scratch-hosted overflow window (window_find never sees it,
+           so it reads as appearing EVERY frame) from advancing the cascade and walking across
+           the screen; it takes the fixed fallback above instead. */
+        u32 vp = s_next_win.has_viewport ? s_next_win.viewport : s_build.win.viewport;
+        window_default_spawn( vp, &x, &y );
+    }
+
+    return window_begin_ex( id, title, x, y, 240.0f, 320.0f, flags );
 }
 
 /*----------------------------------------------------------------------------------------------

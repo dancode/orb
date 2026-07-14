@@ -15,7 +15,7 @@
 static void
 ex_layout_rows( void )
 {
-    if ( ex_begin( "Rows & Columns", 60, 60, 460, 560, GUI_WIN_NONE ) )
+    if ( ex_begin( "Rows & Columns", 460, 560, GUI_WIN_NONE ) )
     {
         gui()->stack();                         /* heading lines sit in a plain stack */
         gui()->text( "One overloaded f32 sizes every track:" );
@@ -95,7 +95,7 @@ ex_layout_fields( void )
     static f32  f_volume     = 7.0f;
     static bool f_enabled    = true;
 
-    if ( ex_begin( "Field Forms", 90, 90, 420, 520, GUI_WIN_NONE ) )
+    if ( ex_begin( "Field Forms", 420, 520, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -148,7 +148,7 @@ ex_layout_fields( void )
 static void
 ex_layout_grid( void )
 {
-    if ( ex_begin( "Grid", 120, 120, 440, 480, GUI_WIN_NONE ) )
+    if ( ex_begin( "Grid", 440, 480, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "grid_cells( nc, nr ): bounded matrix, row-major," );
@@ -194,7 +194,7 @@ ex_layout_grid( void )
 static void
 ex_layout_align( void )
 {
-    if ( ex_begin( "Align & Spacing", 150, 150, 420, 540, GUI_WIN_NONE ) )
+    if ( ex_begin( "Align & Spacing", 420, 540, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -251,7 +251,7 @@ ex_layout_align( void )
 static void
 ex_layout_sublayout( void )
 {
-    if ( ex_begin( "Sub-layout", 180, 180, 420, 380, GUI_WIN_NONE ) )
+    if ( ex_begin( "Sub-layout", 420, 380, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "row_cols_n( 0, 2 ): col 0 is a sub-layout" );
@@ -297,7 +297,7 @@ ex_layout_sublayout( void )
 static void
 ex_layout_pack( void )
 {
-    if ( ex_begin( "Pack & Bars", 210, 210, 460, 460, GUI_WIN_NONE ) )
+    if ( ex_begin( "Pack & Bars", 460, 460, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Pack mode: the widget sizes itself (vs cells" );
@@ -360,7 +360,7 @@ ex_layout_pack( void )
 static void
 ex_layout_children( void )
 {
-    if ( ex_begin( "Child Regions", 240, 60, 400, 620, GUI_WIN_NONE ) )
+    if ( ex_begin( "Child Regions", 400, 620, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "List box (scrolls independently):" );
@@ -422,7 +422,7 @@ ex_layout_children( void )
 static void
 ex_layout_sizing( void )
 {
-    if ( ex_begin( "Sizing Helpers", 270, 90, 440, 520, GUI_WIN_NONE ) )
+    if ( ex_begin( "Sizing Helpers", 440, 520, GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->text( "Intent -> pixels; every value below is live." );
@@ -470,7 +470,7 @@ ex_layout_sizing( void )
 static void
 ex_layout_carve( void )
 {
-    if ( ex_begin( "Split & Carve", 300, 120, 500, 640, GUI_WIN_NONE ) )
+    if ( ex_begin( "Split & Carve", 500, 640, GUI_WIN_NONE ) )
     {
         gui()->stack();
 

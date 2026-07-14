@@ -878,6 +878,7 @@ typedef struct gui_context_t
         u32           max;          // capacity
         gui_window_t  scratch;      // transient fallback when the pool is full; stays embedded
         u32           z_counter;    // monotonic paint-order dispenser
+        u32           cascade;      // default-spawn cascade slot (window_default_spawn)
     } win;
 
     struct                          /* frame/ -- render surfaces */

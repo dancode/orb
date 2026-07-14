@@ -287,7 +287,9 @@
       "Bash(powershell -NoProfile -Command \"\\(Get-Item F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\\).LastWriteTime = Get-Date; \\(Get-Item F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui_backend.c\\).LastWriteTime = Get-Date\")",
       "Bash(powershell -NoProfile -Command \"\\(Get-Item F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui_backend.c\\).LastWriteTime = Get-Date\")",
       "PowerShell(\\(Get-Item \"F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui)",
-      "PowerShell(\\(Get-Item \"F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui; echo \"exit=$LASTEXITCODE\")"
+      "PowerShell(\\(Get-Item \"F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui; echo \"exit=$LASTEXITCODE\")",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui_example; echo \"exit=$LASTEXITCODE\")",
+      "PowerShell(\\(Get-Item \"F:\\\\orb\\\\source\\\\runtime_service\\\\gui\\\\gui.c\"\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_gui_example; echo \"exit=$LASTEXITCODE\")"
     ]
   }
 }

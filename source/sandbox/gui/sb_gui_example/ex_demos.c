@@ -26,14 +26,15 @@
     Shared helpers -- used by every demo file included below.
 ==============================================================================================*/
 
-/* Open a demo's primary window: seed its first-appearance geometry, then begin it CLOSEABLE
-   (the titlebar X hides it; the registry re-syncs the menu check).  Demo windows keep the
-   default edge-resize behavior on both axes -- only the Window Playground opts out, by passing
-   its own interactive flag set through `extra`. */
+/* Open a demo's primary window: seed its first-appearance size, then begin it CLOSEABLE
+   (the titlebar X hides it; the registry re-syncs the menu check).  Position is deliberately
+   NOT seeded: the window takes the engine default spawn, which hangs below the viewport chrome
+   (caption band + main menu bar) -- an authored absolute position here would land back under
+   the bar.  Demo windows keep the default edge-resize behavior on both axes -- only the Window
+   Playground opts out, by passing its own interactive flag set through `extra`. */
 static bool
-ex_begin( const char* title, f32 x, f32 y, f32 w, f32 h, gui_win_flags_t extra )
+ex_begin( const char* title, f32 w, f32 h, gui_win_flags_t extra )
 {
-    gui()->window_set_next_pos ( x, y, GUI_COND_ONCE );
     gui()->window_set_next_size( w, h, GUI_COND_ONCE );
     return gui()->window_begin( title, GUI_WIN_CLOSEABLE | extra );
 }
