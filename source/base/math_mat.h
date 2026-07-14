@@ -222,6 +222,31 @@ mat4_inverse( mat4_t a )
 }
 
 /*==============================================================================================
+    mat4 -- fast shape-specific inverses
+
+    When you know the matrix is a pure rigid or affine transform, skip the full cofactor inverse.
+    inverse_rigid assumes an orthonormal 3x3 (rotation only, no scale) -- ideal for view matrices.
+    inverse_affine tolerates rotation + non-uniform scale but still no perspective row.
+==============================================================================================*/
+
+// Inverse of translation*rotation (orthonormal upper 3x3): transpose R, negate the rotated t.
+ORB_INLINE mat4_t
+mat4_inverse_rigid( mat4_t a )
+{
+    mat4_t o = mat4_identity();
+    // R^-1 = R^T : mirror the upper-left 3x3.
+    o.m[ 0 ] = a.m[ 0 ]; o.m[ 1 ] = a.m[ 4 ]; o.m[ 2 ]  = a.m[ 8 ];
+    o.m[ 4 ] = a.m[ 1 ]; o.m[ 5 ] = a.m[ 5 ]; o.m[ 6 ]  = a.m[ 9 ];
+    o.m[ 8 ] = a.m[ 2 ]; o.m[ 9 ] = a.m[ 6 ]; o.m[ 10 ] = a.m[ 10 ];
+    // t' = -R^T * t
+    vec3_t t = ( vec3_t ){ .x = a.m[ 12 ], .y = a.m[ 13 ], .z = a.m[ 14 ] };
+    o.m[ 12 ] = -( o.m[ 0 ] * t.x + o.m[ 4 ] * t.y + o.m[ 8 ]  * t.z );
+    o.m[ 13 ] = -( o.m[ 1 ] * t.x + o.m[ 5 ] * t.y + o.m[ 9 ]  * t.z );
+    o.m[ 14 ] = -( o.m[ 2 ] * t.x + o.m[ 6 ] * t.y + o.m[ 10 ] * t.z );
+    return o;
+}
+
+/*==============================================================================================
     mat3
 ==============================================================================================*/
 
@@ -250,6 +275,91 @@ mat3_mul_vec3( mat3_t a, vec3_t v )
         .y = a.m[ 1 ] * v.x + a.m[ 4 ] * v.y + a.m[ 7 ] * v.z,
         .z = a.m[ 2 ] * v.x + a.m[ 5 ] * v.y + a.m[ 8 ] * v.z,
     };
+}
+
+ORB_INLINE mat3_t
+mat3_transpose( mat3_t a )
+{
+    mat3_t o;
+    for ( i32 c = 0; c < 3; c++ )
+        for ( i32 r = 0; r < 3; r++ )
+            o.m[ c * 3 + r ] = a.m[ r * 3 + c ];
+    return o;
+}
+
+// out = a * b  (apply b first, then a).
+ORB_INLINE mat3_t
+mat3_mul( mat3_t a, mat3_t b )
+{
+    mat3_t o;
+    for ( i32 c = 0; c < 3; c++ )
+        for ( i32 r = 0; r < 3; r++ )
+            o.m[ c * 3 + r ] = a.m[ 0 * 3 + r ] * b.m[ c * 3 + 0 ]
+                             + a.m[ 1 * 3 + r ] * b.m[ c * 3 + 1 ]
+                             + a.m[ 2 * 3 + r ] * b.m[ c * 3 + 2 ];
+    return o;
+}
+
+ORB_INLINE f32
+mat3_determinant( mat3_t a )
+{
+    const f32* m = a.m;
+    return m[ 0 ] * ( m[ 4 ] * m[ 8 ] - m[ 7 ] * m[ 5 ] )
+         - m[ 3 ] * ( m[ 1 ] * m[ 8 ] - m[ 7 ] * m[ 2 ] )
+         + m[ 6 ] * ( m[ 1 ] * m[ 5 ] - m[ 4 ] * m[ 2 ] );
+}
+
+// Cofactor inverse.  Returns the identity if the matrix is singular (|det| < epsilon).
+ORB_INLINE mat3_t
+mat3_inverse( mat3_t a )
+{
+    const f32* m = a.m;
+    // Cofactors (column-major output: o.m[ col*3 + row ]).
+    f32 c00 = m[ 4 ] * m[ 8 ] - m[ 7 ] * m[ 5 ];
+    f32 c01 = m[ 7 ] * m[ 2 ] - m[ 1 ] * m[ 8 ];
+    f32 c02 = m[ 1 ] * m[ 5 ] - m[ 4 ] * m[ 2 ];
+    f32 det = m[ 0 ] * c00 + m[ 3 ] * c01 + m[ 6 ] * c02;
+    if ( f32_abs( det ) < F32_EPSILON )
+        return mat3_identity();
+
+    f32 inv_det = 1.0f / det;
+    mat3_t o;
+    o.m[ 0 ] = c00 * inv_det;
+    o.m[ 1 ] = c01 * inv_det;
+    o.m[ 2 ] = c02 * inv_det;
+    o.m[ 3 ] = ( m[ 6 ] * m[ 5 ] - m[ 3 ] * m[ 8 ] ) * inv_det;
+    o.m[ 4 ] = ( m[ 0 ] * m[ 8 ] - m[ 6 ] * m[ 2 ] ) * inv_det;
+    o.m[ 5 ] = ( m[ 3 ] * m[ 2 ] - m[ 0 ] * m[ 5 ] ) * inv_det;
+    o.m[ 6 ] = ( m[ 3 ] * m[ 7 ] - m[ 6 ] * m[ 4 ] ) * inv_det;
+    o.m[ 7 ] = ( m[ 6 ] * m[ 1 ] - m[ 0 ] * m[ 7 ] ) * inv_det;
+    o.m[ 8 ] = ( m[ 0 ] * m[ 4 ] - m[ 3 ] * m[ 1 ] ) * inv_det;
+    return o;
+}
+
+// Normal matrix: inverse-transpose of a model's upper 3x3.  Transforms normals correctly under
+// non-uniform scale.  (For a pure rotation this equals the 3x3 itself.)
+ORB_INLINE mat3_t mat3_normal_matrix( mat4_t model ) { return mat3_transpose( mat3_inverse( mat3_from_mat4( model ) ) ); }
+
+/*==============================================================================================
+    mat4 -- affine inverse (needs mat3_inverse, so it trails the mat3 section)
+
+    Inverts rotation + non-uniform scale + translation (no perspective).  Cheaper and more stable
+    than the full cofactor mat4_inverse when you know the bottom row is (0,0,0,1).
+==============================================================================================*/
+
+ORB_INLINE mat4_t
+mat4_inverse_affine( mat4_t a )
+{
+    mat3_t inv3 = mat3_inverse( mat3_from_mat4( a ) );
+    vec3_t t    = ( vec3_t ){ .x = a.m[ 12 ], .y = a.m[ 13 ], .z = a.m[ 14 ] };
+    vec3_t nt   = vec3_neg( mat3_mul_vec3( inv3, t ) );
+
+    mat4_t o = mat4_identity();
+    o.m[ 0 ] = inv3.m[ 0 ]; o.m[ 1 ] = inv3.m[ 1 ]; o.m[ 2 ]  = inv3.m[ 2 ];
+    o.m[ 4 ] = inv3.m[ 3 ]; o.m[ 5 ] = inv3.m[ 4 ]; o.m[ 6 ]  = inv3.m[ 5 ];
+    o.m[ 8 ] = inv3.m[ 6 ]; o.m[ 9 ] = inv3.m[ 7 ]; o.m[ 10 ] = inv3.m[ 8 ];
+    o.m[ 12 ] = nt.x; o.m[ 13 ] = nt.y; o.m[ 14 ] = nt.z;
+    return o;
 }
 
 // clang-format on

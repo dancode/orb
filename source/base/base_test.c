@@ -158,9 +158,9 @@ test_mem_set_zero( void )
     {
         i32 x, y;
         f32 z;
-    } vec3i_t;
+    } zero_struct_t;
 
-    vec3i_t v = { 1, 2, 3.0f };
+    zero_struct_t v = { 1, 2, 3.0f };
     mem_zero_struct( &v );
     test_equal( 0, v.x );
     test_equal( 0, v.y );
@@ -575,6 +575,254 @@ test_math_quat( void )
     test_near( tp.y, 2.0f );
 }
 
+/*==============================================================================================
+    math: scalar helpers (rounding, transcendentals, saturate, angles)
+==============================================================================================*/
+
+static void
+test_math_scalar( void )
+{
+    // rounding / fractional
+    test_near( f32_floor( 2.7f ), 2.0f );
+    test_near( f32_ceil( 2.1f ), 3.0f );
+    test_near( f32_round( 2.5f ), 3.0f );
+    test_near( f32_trunc( -2.7f ), -2.0f );
+    test_near( f32_fract( 2.25f ), 0.25f );
+    test_near( f32_mod( 7.0f, 3.0f ), 1.0f );
+
+    // transcendentals + rsqrt
+    test_near( f32_pow( 2.0f, 10.0f ), 1024.0f );
+    test_near( f32_exp( 0.0f ), 1.0f );
+    test_near( f32_log( 1.0f ), 0.0f );
+    test_near( f32_log2( 8.0f ), 3.0f );
+    test_near( f32_rsqrt( 4.0f ), 0.5f );
+    test_near( f32_copysign( 3.0f, -1.0f ), -3.0f );
+
+    // saturate / step / move_toward / ping_pong
+    test_near( f32_saturate( 2.0f ), 1.0f );
+    test_near( f32_saturate( -1.0f ), 0.0f );
+    test_near( f32_saturate( 0.5f ), 0.5f );
+    test_near( f32_step( 1.0f, 0.5f ), 0.0f );
+    test_near( f32_step( 1.0f, 1.5f ), 1.0f );
+    test_near( f32_move_toward( 0.0f, 10.0f, 3.0f ), 3.0f );
+    test_near( f32_move_toward( 0.0f, 10.0f, 100.0f ), 10.0f );
+    test_near( f32_ping_pong( 0.5f, 1.0f ), 0.5f );
+    test_near( f32_ping_pong( 1.5f, 1.0f ), 0.5f );
+    test_near( f32_ping_pong( 2.0f, 1.0f ), 0.0f );
+
+    // angles
+    test_near( f32_deg_to_rad( 180.0f ), MATH_PI );
+    test_near( f32_rad_to_deg( MATH_PI ), 180.0f );
+    test_near( f32_wrap_pi( MATH_TAU ), 0.0f );
+    test_near( f32_abs( f32_wrap_pi( MATH_PI * 3.0f ) ), MATH_PI );  // 3PI == PI == -PI (range boundary)
+    test_near( f32_angle_diff( 0.1f, 0.3f ), 0.2f );
+    // shortest path across the +/-PI seam: from just below PI to just above -PI is a small step
+    test_true( f32_abs( f32_angle_diff( MATH_PI - 0.1f, -MATH_PI + 0.1f ) ) < 0.5f );
+}
+
+/*==============================================================================================
+    math: easing / smoothing
+==============================================================================================*/
+
+static void
+test_math_ease( void )
+{
+    // smoothstep: clamps, symmetric, midpoint at 0.5
+    test_near( f32_smoothstep( 0.0f, 1.0f, -1.0f ), 0.0f );
+    test_near( f32_smoothstep( 0.0f, 1.0f, 2.0f ), 1.0f );
+    test_near( f32_smoothstep( 0.0f, 1.0f, 0.5f ), 0.5f );
+    test_near( f32_smoothstep01( 0.0f ), 0.0f );
+    test_near( f32_smoothstep01( 1.0f ), 1.0f );
+    test_near( f32_smootherstep01( 0.5f ), 0.5f );
+
+    // damp: moves toward the target without overshoot, frame-rate independent
+    f32 d = f32_damp( 0.0f, 10.0f, 5.0f, 0.1f );
+    test_true( d > 0.0f && d < 10.0f );
+
+    // easing curves anchor at the endpoints
+    test_near( f32_ease_in_cubic( 0.0f ), 0.0f );  test_near( f32_ease_in_cubic( 1.0f ), 1.0f );
+    test_near( f32_ease_out_quad( 0.0f ), 0.0f );  test_near( f32_ease_out_quad( 1.0f ), 1.0f );
+    test_near( f32_ease_inout_sine( 0.0f ), 0.0f ); test_near( f32_ease_inout_sine( 1.0f ), 1.0f );
+    test_near( f32_ease_inout_sine( 0.5f ), 0.5f );
+    test_near( f32_ease_out_bounce( 1.0f ), 1.0f );
+    test_near( f32_ease_out_elastic( 1.0f ), 1.0f );
+    test_near( f32_ease_in_expo( 0.0f ), 0.0f );   test_near( f32_ease_in_expo( 1.0f ), 1.0f );
+}
+
+/*==============================================================================================
+    math: vector / matrix / quat additions
+==============================================================================================*/
+
+static void
+test_math_extras( void )
+{
+    // vec3 project / reject split a vector into parallel + perpendicular parts
+    vec3_t a  = vec3_make( 2, 3, 0 );
+    vec3_t b  = vec3_make( 1, 0, 0 );
+    vec3_t pr = vec3_project( a, b );
+    vec3_t rj = vec3_reject( a, b );
+    test_near( pr.x, 2.0f ); test_near( pr.y, 0.0f );
+    test_near( rj.x, 0.0f ); test_near( rj.y, 3.0f );
+
+    // angle between orthogonal axes is 90 degrees
+    test_near( vec3_angle_between( vec3_make( 1, 0, 0 ), vec3_make( 0, 1, 0 ) ), MATH_PI_OVER_2 );
+
+    // move_toward / clamp_length respect the cap
+    vec3_t mt = vec3_move_toward( vec3_zero(), vec3_make( 10, 0, 0 ), 3.0f );
+    test_near( mt.x, 3.0f );
+    vec3_t cl = vec3_clamp_length( vec3_make( 10, 0, 0 ), 4.0f );
+    test_near( vec3_len( cl ), 4.0f );
+
+    test_true( vec3_nearly_equal( vec3_make( 1, 2, 3 ), vec3_make( 1, 2, 3 ), 1e-5f ) );
+
+    // integer vectors
+    test_true( vec3i_eq( vec3i_add( vec3i_make( 1, 2, 3 ), vec3i_make( 4, 5, 6 ) ), vec3i_make( 5, 7, 9 ) ) );
+    test_true( vec4i_eq( vec4i_sub( vec4i_make( 5, 5, 5, 5 ), vec4i_make( 1, 2, 3, 4 ) ), vec4i_make( 4, 3, 2, 1 ) ) );
+
+    // rigid inverse: view = translate * rotate, inverse composes back to identity
+    mat4_t t  = mat4_translation( vec3_make( 3, -2, 5 ) );
+    mat4_t r  = mat4_rotation_axis( vec3_make( 0, 1, 0 ), MATH_PI_OVER_4 );
+    mat4_t tr = mat4_mul( t, r );
+    mat4_t ri = mat4_inverse_rigid( tr );
+    mat4_t i1 = mat4_mul( tr, ri );
+    mat4_t id = mat4_identity();
+    for ( i32 i = 0; i < 16; i++ ) test_near( i1.m[ i ], id.m[ i ] );
+
+    // affine inverse: with non-uniform scale too
+    mat4_t s  = mat4_scaling( vec3_make( 2, 3, 4 ) );
+    mat4_t trs = mat4_mul( tr, s );
+    mat4_t ai = mat4_inverse_affine( trs );
+    mat4_t i2 = mat4_mul( trs, ai );
+    for ( i32 i = 0; i < 16; i++ ) test_near( i2.m[ i ], id.m[ i ] );
+
+    // mat3 inverse round-trip; normal matrix of a pure rotation equals the 3x3 itself
+    mat3_t m3  = mat3_from_mat4( r );
+    mat3_t m3i = mat3_inverse( m3 );
+    mat3_t m3p = mat3_mul( m3, m3i );
+    mat3_t m3id = mat3_identity();
+    for ( i32 i = 0; i < 9; i++ ) test_near( m3p.m[ i ], m3id.m[ i ] );
+    mat3_t nm = mat3_normal_matrix( r );
+    for ( i32 i = 0; i < 9; i++ ) test_near( nm.m[ i ], m3.m[ i ] );
+
+    // quat: look_rotation, from_to, angle, euler round-trip, from_mat4
+    quat_t lr = quat_look_rotation( vec3_make( 0, 0, -1 ), vec3_make( 0, 1, 0 ) );
+    test_near( f32_abs( quat_dot( lr, quat_identity() ) ), 1.0f );   // facing -Z is identity
+    vec3_t fwd = quat_rotate_vec3( quat_look_rotation( vec3_make( 1, 0, 0 ), vec3_make( 0, 1, 0 ) ), vec3_make( 0, 0, -1 ) );
+    test_near( fwd.x, 1.0f );                                        // -Z rotated to +X
+
+    quat_t ft = quat_from_to( vec3_make( 1, 0, 0 ), vec3_make( 0, 1, 0 ) );
+    vec3_t ftv = quat_rotate_vec3( ft, vec3_make( 1, 0, 0 ) );
+    test_near( ftv.y, 1.0f );
+
+    test_near( quat_angle( quat_from_axis_angle( vec3_make( 0, 1, 0 ), MATH_PI_OVER_2 ) ), MATH_PI_OVER_2 );
+
+    quat_t qe = quat_from_euler( 0.3f, 0.5f, -0.2f );
+    vec3_t ee = quat_to_euler( qe );
+    test_near( ee.x, 0.3f ); test_near( ee.y, 0.5f ); test_near( ee.z, -0.2f );
+
+    quat_t qm = quat_from_mat4( quat_to_mat4( qe ) );
+    test_near( f32_abs( quat_dot( qm, qe ) ), 1.0f );
+}
+
+/*==============================================================================================
+    math: geometry & intersection
+==============================================================================================*/
+
+static void
+test_math_geo( void )
+{
+    // rect2
+    rect2_t r = rect2_from_center_size( vec2_make( 0, 0 ), vec2_make( 4, 4 ) );
+    test_true( rect2_contains_point( r, vec2_make( 1, 1 ) ) );
+    test_false( rect2_contains_point( r, vec2_make( 3, 0 ) ) );
+    test_true( rect2_intersects( r, rect2_make( vec2_make( 1, 1 ), vec2_make( 5, 5 ) ) ) );
+
+    // aabb basics + merge
+    aabb_t b = aabb_from_center_extents( vec3_zero(), vec3_splat( 1 ) );      // [-1,1]^3
+    test_true( aabb_contains_point( b, vec3_make( 0.5f, -0.5f, 0 ) ) );
+    test_false( aabb_contains_point( b, vec3_make( 2, 0, 0 ) ) );
+    aabb_t bm = aabb_merge_point( b, vec3_make( 3, 0, 0 ) );
+    test_near( bm.max.x, 3.0f );
+
+    // aabb transform: translate the box by (10,0,0)
+    aabb_t bt = aabb_transform( b, mat4_translation( vec3_make( 10, 0, 0 ) ) );
+    test_near( aabb_center( bt ).x, 10.0f );
+    test_near( aabb_extents( bt ).x, 1.0f );
+
+    // sphere
+    sphere_t sp = sphere_make( vec3_zero(), 2.0f );
+    test_true( sphere_contains_point( sp, vec3_make( 1, 1, 0 ) ) );
+    test_true( sphere_intersects_aabb( sp, aabb_from_center_extents( vec3_make( 2.5f, 0, 0 ), vec3_splat( 1 ) ) ) );
+    test_false( sphere_intersects_aabb( sp, aabb_from_center_extents( vec3_make( 5, 0, 0 ), vec3_splat( 1 ) ) ) );
+
+    // ray vs aabb: shoot down -X into the box from +X
+    f32   ht;
+    ray_t rx = ray_make( vec3_make( 5, 0, 0 ), vec3_make( -1, 0, 0 ) );
+    test_true( ray_vs_aabb( rx, b, &ht ) );
+    test_near( ht, 4.0f );                                            // hits x=1 after 4 units
+    ray_t miss = ray_make( vec3_make( 5, 5, 0 ), vec3_make( -1, 0, 0 ) );
+    test_false( ray_vs_aabb( miss, b, &ht ) );
+
+    // ray vs plane (z=0 plane), ray vs sphere, ray vs triangle
+    plane_t pl = plane_from_point( vec3_make( 0, 0, 1 ), vec3_zero() );
+    ray_t   rp = ray_make( vec3_make( 0, 0, 5 ), vec3_make( 0, 0, -1 ) );
+    test_true( ray_vs_plane( rp, pl, &ht ) );
+    test_near( ht, 5.0f );
+    test_true( ray_vs_sphere( rp, sphere_make( vec3_zero(), 1.0f ), &ht ) );
+    test_near( ht, 4.0f );
+    b32 tri = ray_vs_triangle( rp, vec3_make( -1, -1, 0 ), vec3_make( 1, -1, 0 ), vec3_make( 0, 1, 0 ), &ht );
+    test_true( tri );
+    test_near( ht, 5.0f );
+
+    // frustum: point in front of the camera is inside, behind is out, far is out
+    mat4_t view = mat4_look_at( vec3_zero(), vec3_make( 0, 0, -1 ), vec3_make( 0, 1, 0 ) );
+    mat4_t proj = mat4_perspective( MATH_PI_OVER_2, 1.0f, 0.1f, 100.0f );
+    frustum_t fr = frustum_from_mat4( mat4_mul( proj, view ) );
+    test_true( frustum_vs_point( fr, vec3_make( 0, 0, -5 ) ) );
+    test_false( frustum_vs_point( fr, vec3_make( 0, 0, 5 ) ) );       // behind camera
+    test_false( frustum_vs_point( fr, vec3_make( 0, 0, -500 ) ) );    // beyond far
+    test_true( frustum_vs_sphere( fr, sphere_make( vec3_make( 0, 0, -5 ), 1.0f ) ) );
+    test_true( frustum_vs_aabb( fr, aabb_from_center_extents( vec3_make( 0, 0, -5 ), vec3_splat( 1 ) ) ) );
+}
+
+/*==============================================================================================
+    math: color
+==============================================================================================*/
+
+static void
+test_math_color( void )
+{
+    // pack layout: R in the low byte, A in the high byte
+    u32 c = color_rgba8( 255, 128, 64, 32 );
+    test_equal( 255u, color_get_r( c ) );
+    test_equal( 128u, color_get_g( c ) );
+    test_equal( 64u, color_get_b( c ) );
+    test_equal( 32u, color_get_a( c ) );
+
+    // integer channels survive an unpack/pack round-trip
+    test_equal( c, color_pack( color_unpack( c ) ) );
+    test_near( color_unpack( c ).r, 1.0f );
+
+    // with_alpha replaces only alpha
+    test_equal( 200u, color_get_a( color_with_alpha( c, 200 ) ) );
+    test_equal( 255u, color_get_r( color_with_alpha( c, 200 ) ) );
+
+    // lerp midpoint of black->white is grey
+    u32 mid = color_lerp( color_rgba8( 0, 0, 0, 255 ), color_rgba8( 255, 255, 255, 255 ), 0.5f );
+    test_true( color_get_r( mid ) >= 127u && color_get_r( mid ) <= 128u );
+
+    // sRGB <-> linear round-trip
+    test_near( f32_linear_to_srgb( f32_srgb_to_linear( 0.5f ) ), 0.5f );
+
+    // HSV <-> RGB: pure red round-trips; red is ( h=0, s=1, v=1 )
+    vec3_t red = color_hsv_to_rgb( vec3_make( 0.0f, 1.0f, 1.0f ) );
+    test_near( red.x, 1.0f ); test_near( red.y, 0.0f ); test_near( red.z, 0.0f );
+    vec3_t hsv = color_rgb_to_hsv( vec3_make( 1, 0, 0 ) );
+    test_near( hsv.y, 1.0f ); test_near( hsv.z, 1.0f );
+    vec3_t rt = color_hsv_to_rgb( color_rgb_to_hsv( vec3_make( 0.2f, 0.6f, 0.4f ) ) );
+    test_near( rt.x, 0.2f ); test_near( rt.y, 0.6f ); test_near( rt.z, 0.4f );
+}
+
 #undef test_near
 
 /*==============================================================================================
@@ -812,9 +1060,14 @@ base_run_tests( void )
     test_register( "math_lerp", test_math_lerp );
     test_register( "math_sign_align", test_math_sign_align );
     test_register( "math_rng", test_math_rng );
+    test_register( "math_scalar", test_math_scalar );
+    test_register( "math_ease", test_math_ease );
     test_register( "math_vec", test_math_vec );
     test_register( "math_mat", test_math_mat );
     test_register( "math_quat", test_math_quat );
+    test_register( "math_extras", test_math_extras );
+    test_register( "math_geo", test_math_geo );
+    test_register( "math_color", test_math_color );
 
     test_register( "bit_popcount", test_bit_popcount );
     test_register( "bit_clz_ctz", test_bit_clz_ctz );

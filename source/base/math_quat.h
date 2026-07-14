@@ -111,6 +111,118 @@ quat_to_mat4( quat_t q )
     return o;
 }
 
+// Build a quaternion from an orthonormal rotation matrix (upper-left 3x3 of `m`).
+ORB_INLINE quat_t
+quat_from_mat4( mat4_t m )
+{
+    f32 r00 = m.m[ 0 ], r10 = m.m[ 1 ], r20 = m.m[ 2 ];
+    f32 r01 = m.m[ 4 ], r11 = m.m[ 5 ], r21 = m.m[ 6 ];
+    f32 r02 = m.m[ 8 ], r12 = m.m[ 9 ], r22 = m.m[ 10 ];
+    f32 trace = r00 + r11 + r22;
+
+    quat_t q;
+    if ( trace > 0.0f )
+    {
+        f32 s = f32_sqrt( trace + 1.0f ) * 2.0f;    // s = 4w
+        q.w = 0.25f * s;
+        q.x = ( r21 - r12 ) / s;
+        q.y = ( r02 - r20 ) / s;
+        q.z = ( r10 - r01 ) / s;
+    }
+    else if ( r00 > r11 && r00 > r22 )
+    {
+        f32 s = f32_sqrt( 1.0f + r00 - r11 - r22 ) * 2.0f;   // s = 4x
+        q.w = ( r21 - r12 ) / s;
+        q.x = 0.25f * s;
+        q.y = ( r01 + r10 ) / s;
+        q.z = ( r02 + r20 ) / s;
+    }
+    else if ( r11 > r22 )
+    {
+        f32 s = f32_sqrt( 1.0f + r11 - r00 - r22 ) * 2.0f;   // s = 4y
+        q.w = ( r02 - r20 ) / s;
+        q.x = ( r01 + r10 ) / s;
+        q.y = 0.25f * s;
+        q.z = ( r12 + r21 ) / s;
+    }
+    else
+    {
+        f32 s = f32_sqrt( 1.0f + r22 - r00 - r11 ) * 2.0f;   // s = 4z
+        q.w = ( r10 - r01 ) / s;
+        q.x = ( r02 + r20 ) / s;
+        q.y = ( r12 + r21 ) / s;
+        q.z = 0.25f * s;
+    }
+    return quat_normalize( q );
+}
+
+/*==============================================================================================
+    Derived rotations
+==============================================================================================*/
+
+// Total rotation angle of a unit quaternion, in radians [0, PI].
+ORB_INLINE f32 quat_angle( quat_t q ) { return 2.0f * f32_acos( f32_min( f32_abs( q.w ), 1.0f ) ); }
+
+// Shortest rotation that turns unit vector `from` onto unit vector `to`.
+ORB_INLINE quat_t
+quat_from_to( vec3_t from, vec3_t to )
+{
+    vec3_t a = vec3_normalize( from );
+    vec3_t b = vec3_normalize( to );
+    f32    d = vec3_dot( a, b );
+
+    if ( d >= 1.0f - F32_EPSILON )                  // already aligned
+        return quat_identity();
+    if ( d <= -1.0f + F32_EPSILON )                 // opposite: 180 about any perpendicular axis
+    {
+        vec3_t axis = vec3_cross( vec3_make( 1, 0, 0 ), a );
+        if ( vec3_len_sq( axis ) < F32_EPSILON ) axis = vec3_cross( vec3_make( 0, 1, 0 ), a );
+        axis = vec3_normalize( axis );
+        return ( quat_t ){ .x = axis.x, .y = axis.y, .z = axis.z, .w = 0.0f };
+    }
+    vec3_t c = vec3_cross( a, b );
+    return quat_normalize( ( quat_t ){ .x = c.x, .y = c.y, .z = c.z, .w = 1.0f + d } );
+}
+
+// Orientation whose -Z axis points along `forward` and whose +Y aligns with `up` (camera-style,
+// matching mat4_look_at).  quat_to_mat4 of this equals the look_at rotation.
+ORB_INLINE quat_t
+quat_look_rotation( vec3_t forward, vec3_t up )
+{
+    vec3_t f = vec3_normalize( forward );
+    vec3_t s = vec3_normalize( vec3_cross( f, up ) );   // right
+    vec3_t u = vec3_cross( s, f );                      // true up
+
+    mat4_t basis = mat4_identity();                     // columns: right, up, -forward
+    basis.m[ 0 ] = s.x; basis.m[ 1 ] = s.y; basis.m[ 2 ]  = s.z;
+    basis.m[ 4 ] = u.x; basis.m[ 5 ] = u.y; basis.m[ 6 ]  = u.z;
+    basis.m[ 8 ] = -f.x; basis.m[ 9 ] = -f.y; basis.m[ 10 ] = -f.z;
+    return quat_from_mat4( basis );
+}
+
+// Extract intrinsic Tait-Bryan angles (radians) matching quat_from_euler: (pitch X, yaw Y, roll Z).
+// Returned as a vec3 ( .x=pitch, .y=yaw, .z=roll ).
+ORB_INLINE vec3_t
+quat_to_euler( quat_t q )
+{
+    mat4_t m = quat_to_mat4( q );
+    f32    r12 = m.m[ 9 ];
+    vec3_t e;
+    if ( r12 < 1.0f - F32_EPSILON && r12 > -1.0f + F32_EPSILON )
+    {
+        e.x = f32_asin( -r12 );                     // pitch (X)
+        e.y = f32_atan2( m.m[ 8 ], m.m[ 10 ] );     // yaw   (Y)
+        e.z = f32_atan2( m.m[ 1 ], m.m[ 5 ] );      // roll  (Z)
+    }
+    else                                            // gimbal lock: pitch at +/-90, fold roll into yaw
+    {
+        e.x = -r12 > 0.0f ? MATH_PI_OVER_2 : -MATH_PI_OVER_2;
+        e.y = f32_atan2( -m.m[ 2 ], m.m[ 0 ] );
+        e.z = 0.0f;
+    }
+    return e;
+}
+
 /*==============================================================================================
     Interpolation
 ==============================================================================================*/

@@ -55,6 +55,18 @@ typedef union vec2i_s
     i32 e[ 2 ];
 } vec2i_t;
 
+typedef union vec3i_s
+{
+    struct { i32 x, y, z; };
+    i32 e[ 3 ];
+} vec3i_t;
+
+typedef union vec4i_s
+{
+    struct { i32 x, y, z, w; };
+    i32 e[ 4 ];
+} vec4i_t;
+
 /*==============================================================================================
     Constructors
 ==============================================================================================*/
@@ -107,6 +119,12 @@ vec2_normalize( vec2_t a )
 ORB_INLINE vec2_t vec2_lerp( vec2_t a, vec2_t b, f32 t ) { return vec2_add( vec2_scale( a, 1.0f - t ), vec2_scale( b, t ) ); }
 ORB_INLINE vec2_t vec2_min ( vec2_t a, vec2_t b ) { return ( vec2_t ){ .x = f32_min( a.x, b.x ), .y = f32_min( a.y, b.y ) }; }
 ORB_INLINE vec2_t vec2_max ( vec2_t a, vec2_t b ) { return ( vec2_t ){ .x = f32_max( a.x, b.x ), .y = f32_max( a.y, b.y ) }; }
+ORB_INLINE vec2_t vec2_abs ( vec2_t a )           { return ( vec2_t ){ .x = f32_abs( a.x ), .y = f32_abs( a.y ) }; }
+
+ORB_INLINE f32 vec2_dist_sq( vec2_t a, vec2_t b ) { return vec2_len_sq( vec2_sub( a, b ) ); }
+ORB_INLINE f32 vec2_dist   ( vec2_t a, vec2_t b ) { return vec2_len   ( vec2_sub( a, b ) ); }
+
+ORB_INLINE b32 vec2_nearly_equal( vec2_t a, vec2_t b, f32 eps ) { return f32_abs( a.x - b.x ) <= eps && f32_abs( a.y - b.y ) <= eps; }
 
 /*==============================================================================================
     vec3
@@ -147,6 +165,43 @@ ORB_INLINE vec3_t vec3_max    ( vec3_t a, vec3_t b ) { return ( vec3_t ){ .x = f
 // Reflect incident vector i about a unit normal n:  i - 2*(i.n)*n.
 ORB_INLINE vec3_t vec3_reflect( vec3_t i, vec3_t n ) { return vec3_sub( i, vec3_scale( n, 2.0f * vec3_dot( i, n ) ) ); }
 
+ORB_INLINE vec3_t vec3_abs    ( vec3_t a )           { return ( vec3_t ){ .x = f32_abs( a.x ), .y = f32_abs( a.y ), .z = f32_abs( a.z ) }; }
+ORB_INLINE f32    vec3_dist_sq( vec3_t a, vec3_t b ) { return vec3_len_sq( vec3_sub( a, b ) ); }
+
+// Project a onto b (component of a along b); reject is the remainder perpendicular to b.
+ORB_INLINE vec3_t vec3_project( vec3_t a, vec3_t b ) { f32 d = vec3_dot( b, b ); return d > F32_EPSILON ? vec3_scale( b, vec3_dot( a, b ) / d ) : vec3_zero(); }
+ORB_INLINE vec3_t vec3_reject ( vec3_t a, vec3_t b ) { return vec3_sub( a, vec3_project( a, b ) ); }
+
+// Unsigned angle between two vectors, in radians [0, PI].
+ORB_INLINE f32
+vec3_angle_between( vec3_t a, vec3_t b )
+{
+    f32 d = vec3_len( a ) * vec3_len( b );
+    if ( d < F32_EPSILON ) return 0.0f;
+    return f32_acos( f32_clamp( vec3_dot( a, b ) / d, -1.0f, 1.0f ) );
+}
+
+// Move `current` toward `target` by at most `max_delta` in length (never overshoots).
+ORB_INLINE vec3_t
+vec3_move_toward( vec3_t current, vec3_t target, f32 max_delta )
+{
+    vec3_t d   = vec3_sub( target, current );
+    f32    len = vec3_len( d );
+    if ( len <= max_delta || len < F32_EPSILON ) return target;
+    return vec3_add( current, vec3_scale( d, max_delta / len ) );
+}
+
+// Clamp a vector's magnitude to `max_len` (direction preserved).
+ORB_INLINE vec3_t
+vec3_clamp_length( vec3_t a, f32 max_len )
+{
+    f32 len = vec3_len( a );
+    if ( len <= max_len || len < F32_EPSILON ) return a;
+    return vec3_scale( a, max_len / len );
+}
+
+ORB_INLINE b32 vec3_nearly_equal( vec3_t a, vec3_t b, f32 eps ) { return f32_abs( a.x - b.x ) <= eps && f32_abs( a.y - b.y ) <= eps && f32_abs( a.z - b.z ) <= eps; }
+
 /*==============================================================================================
     vec4
 ==============================================================================================*/
@@ -170,15 +225,30 @@ vec4_normalize( vec4_t a )
 }
 
 ORB_INLINE vec4_t vec4_lerp( vec4_t a, vec4_t b, f32 t ) { return vec4_add( vec4_scale( a, 1.0f - t ), vec4_scale( b, t ) ); }
+ORB_INLINE vec4_t vec4_min ( vec4_t a, vec4_t b ) { return ( vec4_t ){ .x = f32_min( a.x, b.x ), .y = f32_min( a.y, b.y ), .z = f32_min( a.z, b.z ), .w = f32_min( a.w, b.w ) }; }
+ORB_INLINE vec4_t vec4_max ( vec4_t a, vec4_t b ) { return ( vec4_t ){ .x = f32_max( a.x, b.x ), .y = f32_max( a.y, b.y ), .z = f32_max( a.z, b.z ), .w = f32_max( a.w, b.w ) }; }
+
+ORB_INLINE b32 vec4_nearly_equal( vec4_t a, vec4_t b, f32 eps ) { return f32_abs( a.x - b.x ) <= eps && f32_abs( a.y - b.y ) <= eps && f32_abs( a.z - b.z ) <= eps && f32_abs( a.w - b.w ) <= eps; }
 
 /*==============================================================================================
-    vec2i
+    Integer vectors  (grid coords, pixel extents, indices -- no float ops)
 ==============================================================================================*/
 
 ORB_INLINE vec2i_t vec2i_make( i32 x, i32 y )      { return ( vec2i_t ){ .x = x, .y = y }; }
 ORB_INLINE vec2i_t vec2i_add ( vec2i_t a, vec2i_t b ) { return ( vec2i_t ){ .x = a.x + b.x, .y = a.y + b.y }; }
 ORB_INLINE vec2i_t vec2i_sub ( vec2i_t a, vec2i_t b ) { return ( vec2i_t ){ .x = a.x - b.x, .y = a.y - b.y }; }
+ORB_INLINE vec2i_t vec2i_scale( vec2i_t a, i32 s )    { return ( vec2i_t ){ .x = a.x * s, .y = a.y * s }; }
 ORB_INLINE b32     vec2i_eq  ( vec2i_t a, vec2i_t b ) { return a.x == b.x && a.y == b.y; }
+
+ORB_INLINE vec3i_t vec3i_make( i32 x, i32 y, i32 z ) { return ( vec3i_t ){ .x = x, .y = y, .z = z }; }
+ORB_INLINE vec3i_t vec3i_add ( vec3i_t a, vec3i_t b ) { return ( vec3i_t ){ .x = a.x + b.x, .y = a.y + b.y, .z = a.z + b.z }; }
+ORB_INLINE vec3i_t vec3i_sub ( vec3i_t a, vec3i_t b ) { return ( vec3i_t ){ .x = a.x - b.x, .y = a.y - b.y, .z = a.z - b.z }; }
+ORB_INLINE b32     vec3i_eq  ( vec3i_t a, vec3i_t b ) { return a.x == b.x && a.y == b.y && a.z == b.z; }
+
+ORB_INLINE vec4i_t vec4i_make( i32 x, i32 y, i32 z, i32 w ) { return ( vec4i_t ){ .x = x, .y = y, .z = z, .w = w }; }
+ORB_INLINE vec4i_t vec4i_add ( vec4i_t a, vec4i_t b ) { return ( vec4i_t ){ .x = a.x + b.x, .y = a.y + b.y, .z = a.z + b.z, .w = a.w + b.w }; }
+ORB_INLINE vec4i_t vec4i_sub ( vec4i_t a, vec4i_t b ) { return ( vec4i_t ){ .x = a.x - b.x, .y = a.y - b.y, .z = a.z - b.z, .w = a.w - b.w }; }
+ORB_INLINE b32     vec4i_eq  ( vec4i_t a, vec4i_t b ) { return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w; }
 
 // clang-format on
 /*============================================================================================*/

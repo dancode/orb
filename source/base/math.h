@@ -42,7 +42,19 @@
     #define f32_tan( x )        __builtin_tanf( x )
     #define f32_acos( x )       __builtin_acosf( x )
     #define f32_asin( x )       __builtin_asinf( x )
+    #define f32_atan( x )       __builtin_atanf( x )
     #define f32_atan2( y, x )   __builtin_atan2f( y, x )
+    #define f32_floor( x )      __builtin_floorf( x )
+    #define f32_ceil( x )       __builtin_ceilf( x )
+    #define f32_round( x )      __builtin_roundf( x )
+    #define f32_trunc( x )      __builtin_truncf( x )
+    #define f32_mod( x, y )     __builtin_fmodf( x, y )
+    #define f32_pow( x, y )     __builtin_powf( x, y )
+    #define f32_exp( x )        __builtin_expf( x )
+    #define f32_exp2( x )       __builtin_exp2f( x )
+    #define f32_log( x )        __builtin_logf( x )
+    #define f32_log2( x )       __builtin_log2f( x )
+    #define f32_copysign( m, s ) __builtin_copysignf( m, s )
 #endif
 
 #if COMPILER_MSVC
@@ -54,8 +66,26 @@ ORB_INLINE f32 f32_cos   ( f32 x )        { return cosf   ( x );    }
 ORB_INLINE f32 f32_tan   ( f32 x )        { return tanf   ( x );    }
 ORB_INLINE f32 f32_acos  ( f32 x )        { return acosf  ( x );    }
 ORB_INLINE f32 f32_asin  ( f32 x )        { return asinf  ( x );    }
+ORB_INLINE f32 f32_atan  ( f32 x )        { return atanf  ( x );    }
 ORB_INLINE f32 f32_atan2 ( f32 y, f32 x ) { return atan2f ( y, x ); }
+ORB_INLINE f32 f32_floor ( f32 x )        { return floorf ( x );    }
+ORB_INLINE f32 f32_ceil  ( f32 x )        { return ceilf  ( x );    }
+ORB_INLINE f32 f32_round ( f32 x )        { return roundf ( x );    }
+ORB_INLINE f32 f32_trunc ( f32 x )        { return truncf ( x );    }
+ORB_INLINE f32 f32_mod   ( f32 x, f32 y ) { return fmodf  ( x, y ); }
+ORB_INLINE f32 f32_pow   ( f32 x, f32 y ) { return powf   ( x, y ); }
+ORB_INLINE f32 f32_exp   ( f32 x )        { return expf   ( x );    }
+ORB_INLINE f32 f32_exp2  ( f32 x )        { return exp2f  ( x );    }
+ORB_INLINE f32 f32_log   ( f32 x )        { return logf   ( x );    }
+ORB_INLINE f32 f32_log2  ( f32 x )        { return log2f  ( x );    }
+ORB_INLINE f32 f32_copysign( f32 mag, f32 sign ) { return copysignf( mag, sign ); }
 #endif
+
+// Reciprocal square root (1/sqrt).  Scalar today; a fast approximation can drop in behind this.
+ORB_INLINE f32 f32_rsqrt( f32 x ) { return 1.0f / f32_sqrt( x ); }
+
+// Fractional part: x - floor(x), always in [0, 1).
+ORB_INLINE f32 f32_fract( f32 x ) { return x - f32_floor( x ); }
 
 /*==============================================================================================
     Min / Max
@@ -122,6 +152,52 @@ f32_remap( f32 in_lo, f32 in_hi, f32 out_lo, f32 out_hi, f32 v )
 {
     return f32_lerp( out_lo, out_hi, f32_unlerp( in_lo, in_hi, v ) );
 }
+
+// Clamp to [0, 1] -- the shader `saturate`.  The common case for factors/weights/colors.
+ORB_INLINE f32 f32_saturate( f32 x ) { return f32_clamp( x, 0.0f, 1.0f ); }
+
+// Step: 0 below the edge, 1 at or above it (the GLSL `step`).
+ORB_INLINE f32 f32_step( f32 edge, f32 x ) { return x < edge ? 0.0f : 1.0f; }
+
+// Move `current` toward `target` by at most `max_delta` (never overshoots).
+ORB_INLINE f32
+f32_move_toward( f32 current, f32 target, f32 max_delta )
+{
+    f32 d = target - current;
+    if ( f32_abs( d ) <= max_delta ) return target;
+    return current + f32_copysign( max_delta, d );
+}
+
+// Triangle wave: bounces v back and forth in [0, length] (period 2*length).
+ORB_INLINE f32
+f32_ping_pong( f32 v, f32 length )
+{
+    if ( length <= 0.0f ) return 0.0f;
+    f32 t = f32_mod( f32_abs( v ), 2.0f * length );
+    return t <= length ? t : 2.0f * length - t;
+}
+
+/*==============================================================================================
+    Angles  (radians)
+==============================================================================================*/
+
+ORB_INLINE f32 f32_deg_to_rad( f32 deg ) { return deg * MATH_DEG_TO_RAD; }
+ORB_INLINE f32 f32_rad_to_deg( f32 rad ) { return rad * MATH_RAD_TO_DEG; }
+
+// Wrap an angle into (-PI, PI].
+ORB_INLINE f32
+f32_wrap_pi( f32 a )
+{
+    a = f32_mod( a + MATH_PI, MATH_TAU );
+    if ( a < 0.0f ) a += MATH_TAU;
+    return a - MATH_PI;
+}
+
+// Shortest signed delta from `a` to `b`, result in (-PI, PI].
+ORB_INLINE f32 f32_angle_diff( f32 a, f32 b ) { return f32_wrap_pi( b - a ); }
+
+// Interpolate along the shortest arc from `a` to `b`.
+ORB_INLINE f32 f32_lerp_angle( f32 a, f32 b, f32 t ) { return a + f32_angle_diff( a, b ) * t; }
 
 /*==============================================================================================
     Sign / Compare
