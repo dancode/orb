@@ -21,11 +21,68 @@
 ==============================================================================================*/
 // clang-format off
 
-/* Deferred chrome: titlebar background, collapse arrow (+ double-click-to-collapse), the
-   close and detach buttons marching in from the right, native caption buttons, and the fitted
-   title text -- painted last under the outer window clip so they overdraw any content that
-   scrolled beneath them while still merging into the one window draw command.  A NOTITLEBAR
-   window (title_h 0) skips the bar entirely and keeps only the border. */
+/* Minimized shelf chip: the title bar alone, parked on the surface's bottom shelf by
+   window_begin_ex.  A restore button (the two-box restore glyph) sits at the right edge, with
+   the close X outside it when CLOSEABLE; a plain click anywhere else on the chip also restores.
+   The bar background was already filled by the caller (window_end_titlebar). */
+static void
+window_end_chip( gui_window_t* win, f32 title_h )
+{
+    f32 right_limit = s_build.win.x + s_build.win.w - WIDGET_PAD;
+    f32 btn_x       = s_build.win.x + s_build.win.w;
+
+    /* Close stays reachable from the chip -- outermost, exactly where the expanded bar has it. */
+    if ( s_build.win.flags & GUI_WIN_CLOSEABLE )
+    {
+        btn_x -= title_h;
+        gui_rect_t       cl_r  = { btn_x, s_build.win.y, title_h, title_h };
+        gui_id_t         cl_id = id_combine( s_build.win.id, GUI_CLOSE_SALT );
+        gui_item_state_t cl_st = widget_behavior( cl_id, cl_r, GUI_WIDGET_KIND_BUTTON );
+        if ( cl_st.hover || cl_st.active )
+        {
+            draw_set_rounding( ROUND_WIDGET );
+            draw_push_rect_filled( cl_r.x, cl_r.y, cl_r.w, cl_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+        }
+        draw_close_x( cl_r, cl_st.hover ? COL_TEXT : COL_TEXT_DIM );
+        if ( cl_st.clicked && win )
+        {
+            win->closed = true;
+            g_ctx->retained.wants_redraw = true;
+        }
+        right_limit = cl_r.x - WIDGET_PAD;
+    }
+
+    /* Restore button: pop the window back to its normal rect (or the maximize pin). */
+    btn_x -= title_h;
+    gui_rect_t       re_r  = { btn_x, s_build.win.y, title_h, title_h };
+    gui_id_t         re_id = id_combine( s_build.win.id, GUI_MINIMIZE_SALT );
+    gui_item_state_t re_st = widget_behavior( re_id, re_r, GUI_WIDGET_KIND_BUTTON );
+    if ( re_st.hover || re_st.active )
+    {
+        draw_set_rounding( ROUND_WIDGET );
+        draw_push_rect_filled( re_r.x, re_r.y, re_r.w, re_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+    }
+    native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, re_r, true, re_st.hover ? COL_TEXT : COL_TEXT_DIM );
+    right_limit = re_r.x - WIDGET_PAD;
+
+    /* A press anywhere else on the chip restores too -- the whole chip is the affordance. */
+    gui_rect_t bar_r     = { s_build.win.x, s_build.win.y, s_build.win.w, title_h };
+    bool       bar_press = interact_hover_bare( s_build.win.id ) && rect_hit( bar_r )
+                        && s_io.mouse_pressed[ 0 ];
+    if ( ( re_st.clicked || bar_press ) && win )
+        window_minimize_set( win, false );
+
+    f32 text_x = s_build.win.x + WIDGET_PAD;
+    draw_text_fit_n( text_x, text_center_y( s_build.win.y, title_h ), COL_TEXT, s_build.win.title,
+                     0xFFFFFFFFu, right_limit - text_x );
+}
+
+/* Deferred chrome: titlebar background, collapse arrow, the close / maximize / minimize / detach
+   buttons marching in from the right, native caption buttons, the double-click toggle
+   (maximize when offered, else collapse), and the fitted title text -- painted last under the
+   outer window clip so they overdraw any content that scrolled beneath them while still merging
+   into the one window draw command.  A NOTITLEBAR window (title_h 0) skips the bar entirely and
+   keeps only the border; a minimized window swaps in the shelf-chip chrome. */
 static void
 window_end_titlebar( gui_window_t* win, bool native )
 {
@@ -34,13 +91,31 @@ window_end_titlebar( gui_window_t* win, bool native )
         f32 title_h = s_build.win.title_h;
         draw_push_rect_filled( s_build.win.x, s_build.win.y, s_build.win.w, title_h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_TITLE_BG );
 
+        /* Shelf chip: its own reduced chrome (restore + close), nothing else on the bar. */
+        if ( s_build.win.minimized )
+        {
+            window_end_chip( win, title_h );
+            return;
+        }
+
+        /* Maximize / minimize offer, shared by the buttons and the double-click below: a movable
+           regular floater, opted out per control by the same NO_* flags that gate the native
+           caption pair.  ALWAYS_AUTOSIZE owns its geometry, so it never maximizes. */
+        bool can_max = win && !native && !win->overlay
+                    && !( s_build.win.flags & ( GUI_WIN_NOMOVE | GUI_WIN_NO_MAXIMIZE | GUI_WIN_ALWAYS_AUTOSIZE ) );
+        bool can_min = win && !native && !win->overlay
+                    && !( s_build.win.flags & ( GUI_WIN_NOMOVE | GUI_WIN_NO_MINIMIZE ) );
+
         /* Collapse toggle: a triangle in a title-bar-height square at the bar's left edge.  A
            click flips win->collapsed, taking effect next frame like the drag grab.  Claiming
            hover/active here also keeps the title-bar drag grab below from firing on the same
-           press.  Omitted (and the title slides left to the padding) when NOCOLLAPSE is set.
+           press.  Omitted (and the title slides left to the padding) when NOCOLLAPSE is set or
+           while maximized (window_begin_ex pins a maximized window expanded).
            The icon is drawn from this frame's state so it matches the body shown this frame. */
-        f32 text_x = s_build.win.x + WIDGET_PAD;
-        if ( !( s_build.win.flags & GUI_WIN_NOCOLLAPSE ) && !native )
+        f32  text_x       = s_build.win.x + WIDGET_PAD;
+        bool can_collapse = !( s_build.win.flags & GUI_WIN_NOCOLLAPSE ) && !native
+                         && !( win && win->maximized );
+        if ( can_collapse )
         {
             gui_rect_t   arrow_r  = { s_build.win.x, s_build.win.y, title_h, title_h };
             gui_id_t     arrow_id = id_combine( s_build.win.id, GUI_COLLAPSE_SALT );
@@ -52,17 +127,27 @@ window_end_titlebar( gui_window_t* win, bool native )
             }
             draw_collapse_arrow( arrow_r, s_build.win.collapsed, arrow_st.hover ? COL_TEXT : COL_TEXT_DIM );
             text_x = s_build.win.x + title_h;   /* title follows the arrow square */
+        }
 
-            /* Double-click anywhere on the bar (but not the arrow, which hovers, nor a hot
-               resize edge) does the same toggle -- the familiar "double-click titlebar to
-               collapse" gesture.  hover_id == NONE excludes the arrow; resize_hot excludes
-               the edges; the toggle lands next frame like the arrow click and the drag grab. */
+        /* Double-click anywhere on the bare bar (not a button, which hovers, nor a hot resize
+           edge): the maximize toggle when the window offers it (OS convention), else the old
+           collapse toggle.  hover_id == NONE excludes the buttons; resize_hot excludes the
+           edges; press_defer_cancel drops the move latch press-1 armed on a maximized window
+           (mirroring the native bar) so the toggle wins over the deferred grab. */
+        if ( !native )
+        {
             gui_rect_t bar_r = { s_build.win.x, s_build.win.y, s_build.win.w, title_h };
             bool on_bare_bar = interact_hover_bare( s_build.win.id ) && rect_hit( bar_r );
             if ( s_io.mouse_double[ 0 ] && !s_scope.resize_hot && on_bare_bar )
             {
-                win->collapsed = !win->collapsed;
-                g_ctx->retained.wants_redraw = true;
+                press_defer_cancel();
+                if ( can_max )
+                    window_maximize_set( win, !win->maximized );
+                else if ( can_collapse )
+                {
+                    win->collapsed = !win->collapsed;
+                    g_ctx->retained.wants_redraw = true;
+                }
             }
         }
 
@@ -101,12 +186,55 @@ window_end_titlebar( gui_window_t* win, bool native )
             right_limit = cl_r.x - WIDGET_PAD;
         }
 
+        /* Maximize / restore, then minimize, march in next (right-to-left: close, max, min --
+           the order an OS caption reads left-to-right).  Both reuse the native caption glyphs;
+           the toggles land next frame like the collapse arrow (window_begin_ex applies the
+           geometry), and the setters raise / restore + flag the redraw themselves. */
+        if ( can_max )
+        {
+            btn_x -= title_h;
+            gui_rect_t       mx_r  = { btn_x, s_build.win.y, title_h, title_h };
+            gui_id_t         mx_id = id_combine( s_build.win.id, GUI_MAXIMIZE_SALT );
+            gui_item_state_t mx_st = widget_behavior( mx_id, mx_r, GUI_WIDGET_KIND_BUTTON );
+            if ( mx_st.hover || mx_st.active )
+            {
+                draw_set_rounding( ROUND_WIDGET );
+                draw_push_rect_filled( mx_r.x, mx_r.y, mx_r.w, mx_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+            }
+            native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, mx_r, win->maximized,
+                                   mx_st.hover ? COL_TEXT : COL_TEXT_DIM );
+            if ( mx_st.clicked )
+                window_maximize_set( win, !win->maximized );
+
+            right_limit = mx_r.x - WIDGET_PAD;
+        }
+
+        if ( can_min )
+        {
+            btn_x -= title_h;
+            gui_rect_t       mn_r  = { btn_x, s_build.win.y, title_h, title_h };
+            gui_id_t         mn_id = id_combine( s_build.win.id, GUI_MINIMIZE_SALT );
+            gui_item_state_t mn_st = widget_behavior( mn_id, mn_r, GUI_WIDGET_KIND_BUTTON );
+            if ( mn_st.hover || mn_st.active )
+            {
+                draw_set_rounding( ROUND_WIDGET );
+                draw_push_rect_filled( mn_r.x, mn_r.y, mn_r.w, mn_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+            }
+            native_btn_draw_glyph( NATIVE_BTN_MINIMIZE, mn_r, false,
+                                   mn_st.hover ? COL_TEXT : COL_TEXT_DIM );
+            if ( mn_st.clicked )
+                window_minimize_set( win, true );
+
+            right_limit = mn_r.x - WIDGET_PAD;
+        }
+
         /* Detach / reattach button: a square at the title bar's right edge that pops the window out
            into its own OS window (when it sits on the main surface) or back into the main surface
            (when it is floating).  Movable windows only -- NOMOVE (popups, modals, fixed panels)
            never show it.  Mirrors the collapse arrow on the left: claiming hover/active here keeps
            the title-bar drag and double-click-collapse from also firing on the same press. */
-        bool detachable = !( s_build.win.flags & ( GUI_WIN_NOMOVE | GUI_WIN_NO_DETACH ) );
+        bool detachable = !( s_build.win.flags & ( GUI_WIN_NOMOVE | GUI_WIN_NO_DETACH ) )
+                       && !( win && win->maximized );   /* restore first, then pop out */
         if ( detachable && !native )
         {
             btn_x -= title_h;
@@ -161,7 +289,8 @@ window_end_titlebar( gui_window_t* win, bool native )
 static void
 window_end_size_grip( gui_window_t* win, bool native, u8 hot_edges )
 {
-    if ( ( s_build.win.flags & GUI_WIN_CAN_AUTOSIZE ) && !s_build.win.collapsed && win )
+    if ( ( s_build.win.flags & GUI_WIN_CAN_AUTOSIZE ) && !s_build.win.collapsed && win
+         && !win->maximized )
     {
         f32          g         = WIDGET_H;           /* grip leg length */
         gui_rect_t gr        = { s_build.win.x + s_build.win.w - g, s_build.win.y + s_build.win.h - g, g, g };
@@ -227,7 +356,7 @@ window_end_size_grip( gui_window_t* win, bool native, u8 hot_edges )
 static void
 window_end_move_grab( gui_window_t* win, bool native, bool frame_only )
 {
-    bool movable = !( s_build.win.flags & GUI_WIN_NOMOVE );
+    bool movable = !( s_build.win.flags & GUI_WIN_NOMOVE ) && !s_build.win.minimized;
     if ( movable && s_interaction.hover_win == s_build.win.id && interact_idle() )
     {
         gui_rect_t title_r     = { s_build.win.x, s_build.win.y, s_build.win.w, s_build.win.title_h };
@@ -261,6 +390,16 @@ window_end_move_grab( gui_window_t* win, bool native, bool frame_only )
             if ( !frame_only && s_io.mouse_pressed[ 2 ] )
                 move_grab( s_build.win.id, 2, s_build.win.x, s_build.win.y );
         }
+        else if ( win && win->maximized )
+        {
+            /* Maximized panel: only the title bar grabs, and the press is deferred behind the
+               drag threshold (same latch as the native bar) -- committing on press-1 would
+               swallow press-2 before the double-click restore can be tested.  Once the cursor
+               actually moves, the poll below restores the window under the cursor and converts
+               to a normal gui drag. */
+            if ( s_io.mouse_pressed[ 0 ] && s_interaction.hover_id == GUI_ID_NONE && rect_hit( title_r ) )
+                press_defer_arm( s_build.win.id );
+        }
         else
         {
             /* Regular panel: immediate drag grab.  The left button obeys the drag mode and only
@@ -289,6 +428,19 @@ window_end_titlebar_poll( gui_window_t* win, bool frame_only )
         if ( frame_only )
         {
             app()->window_start_move( os );
+        }
+        else if ( win && win->maximized && !window_is_native( win, s_build.win.flags ) )
+        {
+            /* gui-maximized panel: restore first, placing the restored title bar under the
+               cursor at the same proportional x (OS drag-off-maximize behavior), then continue
+               as a normal gui drag -- window_begin applies it from next frame, when the
+               maximize pin no longer holds the geometry. */
+            f32 frac = s_build.win.w > 1.0f ? ( s_io.mouse_x - s_build.win.x ) / s_build.win.w : 0.5f;
+            window_maximize_set( win, false );
+            win->x = window_snap( s_io.mouse_x - win->w * frac );
+            win->y = window_snap( s_io.mouse_y - s_build.win.title_h * 0.5f );
+            window_clamp( win );
+            move_grab( s_build.win.id, 0, win->x, win->y );
         }
         else
         {

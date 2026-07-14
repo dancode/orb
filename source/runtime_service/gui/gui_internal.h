@@ -160,6 +160,17 @@ typedef struct gui_window_t
     bool       collapsed;       // title-bar-only when set; toggled by the arrow
     bool       closed;          // CLOSEABLE: hidden by the X until re-opened
 
+    /* Maximize / minimize for a regular (non-native, non-docked) floater -- state transitions in
+       gui_window_free.c (window_maximize_set / window_minimize_set), chrome in gui_window_end.c.
+       Maximized pins the window to its surface work area every frame; minimized parks it as a
+       title-bar chip on a shelf along the surface's bottom edge.  norm is the saved normal rect
+       both states restore to; shelf_slot orders the chips (taken at minimize time, compacted to
+       a paint position each frame as neighbours restore). */
+    bool       maximized;
+    bool       minimized;
+    u32        shelf_slot;
+    struct { f32 x, y, w, h; } norm;
+
     /* Re-open of a CLOSEABLE floater: closing it lets the abandoned-teardown free its OS window,
        reverting this record to viewport 0.  `floater` remembers it was one so the next begin
        re-spawns it.  The geometry is the floater's RESTORE (normal) state, sampled every frame it
@@ -496,6 +507,7 @@ typedef struct
     gui_id_t    id;            // id of the window currently between begin/window_end
     const char* title;         // title string, cached for window_end's deferred chrome
     bool        collapsed;     // current window is collapsed (title bar only this frame)
+    bool        minimized;     // current window is a shelf chip (title bar only, chip chrome)
     bool        hidden;        // CLOSEABLE + closed: begin emitted nothing, end early-outs
     gui_win_flags_t flags;     // behavior flags supplied to window_begin
     f32         title_h;       // title bar height (0 if NOTITLEBAR)
@@ -744,6 +756,13 @@ typedef struct
        Sticky: NOT cleared each frame -- persists from the last frame the native shell was active so
        viewport_update always has a valid top bound regardless of build ordering. */
     f32 caption_inset;
+
+    /* Main-menu-bar band on this surface: its height plus the frame it last emitted.  Emit-gated
+       like a dockspace (bar_seen_frame against the current frame, one-frame tolerance) so a host
+       code path that stops emitting the bar releases the band; window_work_top
+       (gui_window_free.c) adds it to caption_inset to bound a maximized window's work area. */
+    f32 bar_inset;
+    u32 bar_seen_frame;
 
     /* Additional top band (pixels) the host reserves above the dock area -- a main menu bar, a
        toolbar strip -- published via gui()->dockspace_inset() before dockspace_over_viewport.

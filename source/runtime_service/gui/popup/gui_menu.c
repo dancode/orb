@@ -264,6 +264,11 @@ gui_main_menu_bar_begin( void )
        the bar stays pinned to the top edge as before. */
     f32 top = g_ctx->vp.pool[ 0 ].caption_inset;
 
+    /* Publish the bar band to the surface, frame-stamped (emit-gated like a dockspace): a
+       maximized window's work area starts below it -- window_work_top, gui_window_free.c. */
+    g_ctx->vp.pool[ 0 ].bar_inset      = h;
+    g_ctx->vp.pool[ 0 ].bar_seen_frame = g_ctx->retained.frame;
+
     gui_window_set_next_pos ( 0.0f, top, GUI_COND_ALWAYS );
     gui_window_set_next_size( (f32)s_io.display_w, h, GUI_COND_ALWAYS );
 

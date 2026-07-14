@@ -1169,16 +1169,23 @@ typedef enum
        buttons show by default (opt-out, like the NO* flags above); a window drops the ones it does
        not support and the title bar reflects that, reclaiming the freed space for the title text.
 
-       NO_MINIMIZE / NO_MAXIMIZE gate the OS minimize / maximize caption buttons and so apply only to
-       a native window (GUI_WIN_NATIVE or a detached floater) -- a non-native panel has no such OS
-       state and never drew them.  The close (main) / pop-in (floater) primary button is never
-       suppressed: close is essential and pop-in is a floater's only route back to the main surface.
+       NO_MINIMIZE / NO_MAXIMIZE gate the minimize / maximize pair everywhere it appears: the OS
+       caption buttons of a native window (GUI_WIN_NATIVE or a detached floater), and the gui
+       title-bar buttons every movable regular floater shows by default.  On a regular floater,
+       maximize pins the window to its surface's work area (below the native caption band and the
+       main menu bar) and raises it over everything else; minimize parks it as a title-bar chip on
+       a shelf along the surface's bottom edge -- click the chip (or its restore button) to bring
+       it back.  Double-click on the title bar toggles maximize when it is offered (the collapse
+       toggle then lives on the arrow alone); dragging a maximized title bar restores first, OS
+       style.  ALWAYS_AUTOSIZE windows own their geometry and never maximize.  The close (main) /
+       pop-in (floater) primary button is never suppressed: close is essential and pop-in is a
+       floater's only route back to the main surface.
 
        NO_DETACH removes the pop-out path for any window -- it hides the non-native detach button and
        blocks the drag tear-off -- independent of NOMOVE (a window may move yet refuse to pop out). */
 
-    GUI_WIN_NO_MINIMIZE       = 1 << 14,   /* native: no minimize caption button */
-    GUI_WIN_NO_MAXIMIZE       = 1 << 15,   /* native: no maximize / restore caption button */
+    GUI_WIN_NO_MINIMIZE       = 1 << 14,   /* no minimize button (native caption or gui title bar) */
+    GUI_WIN_NO_MAXIMIZE       = 1 << 15,   /* no maximize / restore button (native or gui) */
     GUI_WIN_NO_DETACH         = 1 << 16,   /* no pop-out: hide detach button, block tear-off drag */
 
     /* Closeable -- add a close (X) button at the title bar's right edge.  Clicking it hides the

@@ -42,6 +42,11 @@
 /* Close button (title-bar right edge, outermost): a distinct stable per-window widget id. */
 #define GUI_CLOSE_SALT      0xC105E00Du
 
+/* Maximize / minimize buttons (between close and detach): distinct stable per-window widget
+   ids.  The minimize salt doubles as the shelf chip's restore button id. */
+#define GUI_MAXIMIZE_SALT   0xB166E557u
+#define GUI_MINIMIZE_SALT   0x53A11E57u
+
 /* The native-borderless (GUI_WIN_NATIVE) machinery -- window_is_native / window_native_id, the
    caption-button layout + glyphs, window_sync_native, vp_request_button, and the caption strip
    window_end calls (native_caption_chrome) -- lives in gui_window_native.c, included just
@@ -97,6 +102,136 @@ window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
     const gui_viewport_t* vp = &g_ctx->vp.pool[ win->viewport ];
     *out_max_w = vp_w( vp ) - win->x;
     *out_max_h = vp_h( vp ) - win->y;
+}
+
+/*----------------------------------------------------------------------------------------------
+    Maximize / minimize (regular floaters)
+
+    Window-record state, resolved every frame in window_begin_ex ahead of the drag / resize
+    gestures (both are suppressed while either state holds the geometry).  Maximized pins the
+    window to its surface work area -- below the native caption band and the main menu bar -- so
+    it tracks live surface resizes; minimized parks it as a title-bar chip on a shelf packing
+    left-to-right along the surface's bottom edge, rendering through the collapsed
+    (title-bar-only) path.  The buttons, the double-click toggle, and the chip chrome live in
+    gui_window_end.c; a native window uses the OS states instead and a docked window never
+    offers either (the node owns its chrome).
+----------------------------------------------------------------------------------------------*/
+
+/* Top of the maximize work area: the native caption band plus the main-menu-bar band on frames
+   the host emits one.  One-frame tolerance -- the bar may emit after this window builds, the
+   same lag hover_win runs on. */
+static f32
+window_work_top( const gui_viewport_t* vp )
+{
+    f32 top = vp->caption_inset;
+    if ( vp->bar_seen_frame != 0u && vp->bar_seen_frame + 1u >= g_ctx->retained.frame )
+        top += vp->bar_inset;
+    return top;
+}
+
+/* Shelf chip width -- wide enough for a legible title, resting on the grid lattice. */
+static f32
+window_shelf_chip_w( void ) { return lat_ceil( WIN_TITLE_H * 7.0f, s_style.grid_quantum ); }
+
+/* A window occupies a shelf slot only while LIVE: minimized and emitted this frame or last (the
+   window_begin recency test `appearing` uses).  A closed chip (its last_frame deliberately
+   freezes) or one the host stopped emitting releases its slot while hidden -- otherwise its
+   ghost would hold the shelf position and every later chip would pack one slot too far right. */
+static bool
+window_shelf_occupies( const gui_window_t* o, const gui_window_t* win )
+{
+    return o != win && o->id != 0 && o->minimized && o->viewport == win->viewport
+        && o->last_frame + 1u >= g_ctx->retained.frame;
+}
+
+/* Chip paint position on the shelf: the count of live minimized windows on this surface ahead of
+   this one -- ordered by the slot key taken at minimize time, compacting as neighbours restore. */
+static u32
+window_shelf_order( const gui_window_t* win )
+{
+    u32 order = 0;
+    for ( u32 i = 0; i < g_ctx->win.count; ++i )
+    {
+        const gui_window_t* o = &g_ctx->win.pool[ i ];
+        if ( window_shelf_occupies( o, win ) && o->shelf_slot < win->shelf_slot )
+            ++order;
+    }
+    return order;
+}
+
+/* Next free shelf slot on win's surface -- one past the highest live occupant. */
+static u32
+window_shelf_take_slot( const gui_window_t* win )
+{
+    u32 slot = 0;
+    for ( u32 i = 0; i < g_ctx->win.count; ++i )
+    {
+        const gui_window_t* o = &g_ctx->win.pool[ i ];
+        if ( window_shelf_occupies( o, win ) && o->shelf_slot >= slot )
+            slot = o->shelf_slot + 1u;
+    }
+    return slot;
+}
+
+/* Toggle maximize.  Entering saves the normal rect and raises the window so it covers everything
+   on its surface (bodies are opaque, so occlusion and hover both follow from z); leaving
+   restores that rect -- unless minimized, which owns the restore then.  The pin itself runs
+   every frame in window_begin_ex. */
+static void
+window_maximize_set( gui_window_t* win, bool on )
+{
+    if ( win->maximized == on )
+        return;
+
+    if ( on )
+    {
+        if ( !win->minimized )
+        {
+            win->norm.x = win->x;  win->norm.y = win->y;
+            win->norm.w = win->w;  win->norm.h = win->h;
+        }
+        win->z = surface_z_raise( win->z );
+    }
+    else if ( !win->minimized )
+    {
+        win->x = win->norm.x;  win->y = win->norm.y;
+        win->w = win->norm.w;  win->h = win->norm.h;
+    }
+
+    win->maximized = on;
+    g_ctx->retained.wants_redraw = true;   /* takes effect next frame; force one more build */
+}
+
+/* Toggle minimize.  Entering saves the normal rect (unless maximized already holds it) and takes
+   the next free shelf slot on this surface; leaving restores the rect -- or hands the geometry
+   back to the maximize pin -- and raises the window. */
+static void
+window_minimize_set( gui_window_t* win, bool on )
+{
+    if ( win->minimized == on )
+        return;
+
+    if ( on )
+    {
+        if ( !win->maximized )
+        {
+            win->norm.x = win->x;  win->norm.y = win->y;
+            win->norm.w = win->w;  win->norm.h = win->h;
+        }
+        win->shelf_slot = window_shelf_take_slot( win );
+    }
+    else
+    {
+        if ( !win->maximized )
+        {
+            win->x = win->norm.x;  win->y = win->norm.y;
+            win->w = win->norm.w;  win->h = win->norm.h;
+        }
+        win->z = surface_z_raise( win->z );
+    }
+
+    win->minimized = on;
+    g_ctx->retained.wants_redraw = true;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -507,6 +642,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     gui_window_t* win = window_get( id, x, y, w, h );
     win->flags            = flags;
     s_build.win.hidden    = false;   /* default; the CLOSEABLE branch below flips it */
+    s_build.win.minimized = false;   /* default; the shelf-chip branch below flips it */
 
     /* Closeable + closed: the window is fully hidden this frame -- no chrome, no body, no hover.
        begin returns false (the caller skips its widgets) and window_end early-outs on win_hidden.
@@ -605,17 +741,62 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     if ( native )
         window_sync_native( win, flags );
 
-    bool can_collapse = has_titlebar && !( flags & GUI_WIN_NOCOLLAPSE ) && !native;
+    /* Maximize / minimize live on a regular floater's title bar only: a native window has the OS
+       states, an overlay (popup / tooltip) has no such chrome.  A window that loses eligibility
+       while in either state (flag change, turned native) exits through the setters so its normal
+       geometry comes back. */
+    if ( !has_titlebar || native || win->overlay )
+    {
+        window_minimize_set( win, false );
+        window_maximize_set( win, false );
+    }
+
+    bool can_collapse = has_titlebar && !( flags & GUI_WIN_NOCOLLAPSE ) && !native && !win->maximized;
     if ( !can_collapse ) win->collapsed = false;
-    bool collapsed = win->collapsed;
+    bool collapsed = win->collapsed || win->minimized;
 
     /* ALWAYS_AUTOSIZE owns its own geometry: it cannot be user-resized and shows no scrollbars
        (the body always fits), and its size is recomputed below from the measured content.  The
        body region is opened with NOSCROLL (in window_open_body) so it never reserves a gutter. */
     bool autosize = ( flags & GUI_WIN_ALWAYS_AUTOSIZE ) != 0;
 
-    window_apply_drag( win, id );                             /* in-progress title-bar drag */
-    window_apply_tearoff_gesture( win, id, title, flags );    /* tear-off / merge-back / drag-to-dock */
+    /* State-pinned geometry, refreshed every frame so both states track live surface resizes.
+       Minimized: a title-bar chip on the surface's bottom shelf, packing left-to-right (the body
+       renders through the collapsed path via `collapsed` above).  Maximized: fill the work area
+       below the caption band + main menu bar.  While pinned, the drag / tear-off gestures below
+       are skipped -- a title drag of a maximized window instead restores it first and re-grabs
+       (window_end_titlebar_poll, gui_window_end.c). */
+    bool pinned = win->minimized || win->maximized;
+    if ( win->minimized )
+    {
+        /* A re-appearing chip (re-opened after close, or the host resumed emitting it) re-takes
+           the next free slot: its old slot was released while hidden and may be occupied now --
+           two chips sharing a slot key would tie in window_shelf_order and paint on top of each
+           other. */
+        if ( appearing )
+            win->shelf_slot = window_shelf_take_slot( win );
+
+        const gui_viewport_t* vp     = &g_ctx->vp.pool[ win->viewport ];
+        f32                     chip_w = window_shelf_chip_w();
+        win->x = (f32)window_shelf_order( win ) * ( chip_w + WIDGET_GAP );
+        win->y = vp_h( vp ) - title_h;
+        win->w = chip_w;
+    }
+    else if ( win->maximized )
+    {
+        const gui_viewport_t* vp  = &g_ctx->vp.pool[ win->viewport ];
+        f32                     top = window_work_top( vp );
+        win->x = 0.0f;
+        win->y = top;
+        win->w = vp_w( vp );
+        win->h = vp_h( vp ) - top;
+    }
+
+    if ( !pinned )
+    {
+        window_apply_drag( win, id );                           /* in-progress title-bar drag */
+        window_apply_tearoff_gesture( win, id, title, flags );  /* tear-off / merge-back / drag-to-dock */
+    }
 
     /* Apply an in-progress edge resize (mutually exclusive with the drag apply above). */
     window_apply_resize_gesture( win, id, native, title_h );
@@ -624,7 +805,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        collapsed (the title-bar-only height is preserved) and on the very first appearance, before
        any content has been measured -- then the caller's initial w/h stands for one frame. */
     f32 fit_mb_h = ( flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
-    if ( autosize && !collapsed && win->scroll.content_h > 0.0f )
+    if ( autosize && !collapsed && !win->maximized && win->scroll.content_h > 0.0f )
     {
         f32 max_w, max_h;
         window_fit_bounds( win, &max_w, &max_h );
@@ -643,7 +824,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        Gated on hover_win (last frame's front-most), so only the top window's edges go hot. */
     gui_rect_t disp_r    = { win->x, win->y, win->w, disp_h };
     gui_id_t   resize_id = id_combine( id, GUI_RESIZE_SALT );
-    bool         resizeable = !( flags & GUI_WIN_NORESIZE ) && !autosize && !native;
+    bool         resizeable = !( flags & GUI_WIN_NORESIZE ) && !autosize && !native && !pinned;
     u8 resize_hot = window_resolve_resize_hot( id, win, flags, disp_r, collapsed, resizeable, resize_id );
 
     /* Nominate this window as the one under the cursor (front-most by z wins).  A resizeable
@@ -702,6 +883,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     s_scope.win           = id;      /* interaction scope: this window owns the items that follow */
     s_build.win.title     = title;   /* cached for window_end's deferred chrome */
     s_build.win.collapsed = collapsed;
+    s_build.win.minimized = win->minimized;   /* shelf chip: window_end swaps in the chip chrome */
     s_build.win.flags     = flags;   /* window_end reads these for chrome + resize grab */
     s_build.win.title_h   = title_h; /* 0 when NOTITLEBAR */
     s_build.win.rec       = win;     /* collapse write-back target for window_end */
