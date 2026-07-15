@@ -104,6 +104,8 @@ bool            icon_atlas_init         ( void );   // enable icon registration 
 void            icon_atlas_shutdown     ( void );   // clear the icon table
 
 gui_icon_id_t   icon_register           ( const char* name, u32 w, u32 h, const u8* coverage );
+gui_icon_id_t   icon_load_file          ( const char* name, const char* path );  // decode PNG/... -> R8 coverage -> icon_register
+void            icon_load_builtins      ( void );                                // register the engine's built-in icon set from disk
 gui_icon_id_t   icon_find               ( const char* name );
 bool            icon_get                ( gui_icon_id_t id,
                                           f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );

@@ -136,7 +136,7 @@ gui_draw_text_clipped( gui_rect_t r, gui_align_t align, u32 col, const char* s )
 /*----------------------------------------------------------------------------------------------
     Icons -- thin public surface over the runtime icon atlas (gui_icon.c, backend unit).
 
-    register_icon / find_icon / icon_size pass straight through; image is a layout widget that
+    register_icon / load_icon / find_icon / icon_size pass straight through; image is a layout widget that
     reserves a box and fills it; draw_icon_in is the custom-draw placement primitive (the icon
     analogue of draw_text_in) for a rect the caller already holds -- a table cell, a button label,
     a canvas cut.  Both draw helpers aspect-fit the icon centered in the rect so a non-square box
@@ -147,6 +147,12 @@ gui_icon_id_t
 gui_register_icon( const char* name, u32 w, u32 h, const u8* coverage )
 {
     return icon_register( name, w, h, coverage );
+}
+
+gui_icon_id_t
+gui_load_icon( const char* name, const char* path )
+{
+    return icon_load_file( name, path );
 }
 
 gui_icon_id_t

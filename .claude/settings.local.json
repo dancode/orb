@@ -298,7 +298,11 @@
       "Bash(bin/font_tool.exe info *)",
       "PowerShell(& \"F:\\\\orb\\\\bootstrap_build_tool.bat\" 2>&1 | Select-Object -Last 20)",
       "Bash(bin/font_tool.exe CascadiaMono 16 /tmp/smoke_ct.orb_font)",
-      "PowerShell(& cmd.exe /c bake_builtin_fonts.bat 2>&1 | Select-Object -Last 45)"
+      "PowerShell(& cmd.exe /c bake_builtin_fonts.bat 2>&1 | Select-Object -Last 45)",
+      "Bash(awk '/^target /{t=$2} /dep asset/{print t\" -> asset\"} /dep gui/{print t\" -> gui\"}' orb.targets)",
+      "Bash(awk '{print $1}')",
+      "Bash(awk '/^target /{t=$2} /asset/{print t\": \"$0}' orb.targets)",
+      "Bash(awk '/^target /{t=$2} /[[:space:]]gui\\([[:space:]]|$\\)/{print t\": \"$0}' orb.targets)"
     ]
   }
 }

@@ -86,6 +86,7 @@ font_load_builtin( gui_builtin_font_t font )
         // slot 0 = the default font
         if ( font_internal_load_into( 0, path ) )
             return true;
+
         return font_internal_load_into( 0, s_builtin_font_path[ font ] );
     }
 

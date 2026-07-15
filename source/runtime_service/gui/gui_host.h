@@ -346,6 +346,7 @@ void gui_draw_text_clipped( gui_rect_t r, gui_align_t align, u32 col, const char
 
 /* icons -- runtime icon atlas */
 gui_icon_id_t gui_register_icon( const char* name, u32 w, u32 h, const u8* coverage );
+gui_icon_id_t gui_load_icon( const char* name, const char* path );
 gui_icon_id_t gui_find_icon( const char* name );
 gui_vec2_t gui_icon_size( gui_icon_id_t id );
 void gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col );

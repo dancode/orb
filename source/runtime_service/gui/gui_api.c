@@ -298,6 +298,7 @@ const gui_api_t g_gui_api_struct =
     .draw_text_in                       = gui_draw_text_in,
     .draw_text_clipped                  = gui_draw_text_clipped,
     .register_icon                      = gui_register_icon,
+    .load_icon                          = gui_load_icon,
     .find_icon                          = gui_find_icon,
     .icon_size                          = gui_icon_size,
     .image                              = gui_image,

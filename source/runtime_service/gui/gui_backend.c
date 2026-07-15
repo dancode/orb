@@ -29,6 +29,7 @@
     resource/gui_font_internal.c    -- font registry state + .orb_font loader (all static)
     resource/gui_font.c             -- font unit's public API: font_load/use, font_glyph (gui_backend.h)
     resource/gui_icon.c             -- runtime icon atlas: icon_register/find/get, icon_atlas_idx
+    resource/gui_icon_load.c        -- icon pixel sourcing: decode PNG/... -> R8 coverage -> register
 
     pipeline/gui_shader.h           -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
     pipeline/gui_emit_draw.c        -- EMIT: CPU draw list: draw_reset, draw_push_* (incl. draw_push_icon), s_draw
@@ -80,6 +81,7 @@ static gui_backend_caps_t s_caps;
 #include "runtime_service/gui/backend/resource/gui_font_internal.c"
 #include "runtime_service/gui/backend/resource/gui_font.c"
 #include "runtime_service/gui/backend/resource/gui_icon.c"
+#include "runtime_service/gui/backend/resource/gui_icon_load.c"
 
 // pipeline/ -- types and embedded shader bytecode only, no logic.
 #include "runtime_service/gui/backend/pipeline/gui_shader.h"
@@ -154,6 +156,11 @@ gui_backend_init( gui_backend_caps_t caps )
         gui_render_shutdown();
         return false;
     }
+
+    /* Load the engine's built-in icon set from disk (one pass over s_builtin_icons).  Non-fatal:
+       a missing icon file leaves that name unregistered, it does not fail backend init. */
+    if ( s_caps.icons )
+        icon_load_builtins();
 
     return true;
 }

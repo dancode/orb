@@ -1317,13 +1317,17 @@ typedef struct gui_api_s
 
     /* Icons -- a runtime-built R8 atlas of arbitrary symbols (folder, gear, check, editor glyphs).
        register_icon packs a raw monochrome bitmap (row-major coverage, w*h bytes) and returns a
-       handle (0 = atlas full); the pixels live in the same flush as text and tint by `col`.  Pixel
-       sourcing is the caller's (procedural now, the asset pipeline later).  find_icon looks one up
-       by the name it was registered with; icon_size is its native pixel size (for layout).
-       image is a layout widget (reserve w x h, draw centered/fit); draw_icon_in places an icon in
-       a rect the caller already holds (cell / button label / canvas cut).  col 0 means white. */
+       handle (0 = atlas full); the pixels live in the same flush as text and tint by `col`.
+       load_icon is the from-disk source: it decodes an image file (PNG and the other stb_image
+       formats) to R8 coverage -- alpha channel when present, else luminance -- and registers it the
+       same way, so a loaded icon is identical to a procedural one downstream.  find_icon looks one
+       up by the name it was registered with (built-in icons register at gui init); icon_size is its
+       native pixel size (for layout).  image is a layout widget (reserve w x h, draw centered/fit);
+       draw_icon_in places an icon in a rect the caller already holds (cell / button label / canvas
+       cut).  col 0 means white. */
 
     gui_icon_id_t ( *register_icon )( const char* name, u32 w, u32 h, const u8* coverage );
+    gui_icon_id_t ( *load_icon     )( const char* name, const char* path );
     gui_icon_id_t ( *find_icon     )( const char* name );
     gui_vec2_t    ( *icon_size     )( gui_icon_id_t id );
     void          ( *image         )( gui_icon_id_t id, f32 w, f32 h, u32 col );
