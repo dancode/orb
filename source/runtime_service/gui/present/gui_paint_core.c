@@ -292,21 +292,23 @@ static u32 widget_bg_color( gui_item_state_t st )
 }
 
 /* Animated background for a pushbutton-like widget: widget_bg_color with the hover/active
-   transitions smoothed through the animation service (interact/gui_anim.c).  Two damper channels --
-   a hot layer (hover / nav focus) and an active layer -- run at their own rates through gui_anim_f32,
-   then composite over the palette: BG -> HOT by the hot channel, then that -> ACT by the active one.
-   The primitive owns all the storage, settle, and wants_redraw bookkeeping; an idle widget with no
-   history reads both channels at 0 (no stamp) and lands on COL_WIDGET_BG. */
+   transitions smoothed through the animation service (interact/gui_anim.c).  Two damper channels in
+   one gui_anim4 slot -- a hot layer (hover / nav focus) at speed 10 and an active layer (pressed) at
+   speed 20 -- both rest at 0 so they ramp up from the palette base; the spare two channels sit unused
+   (0/0/0) and are free for a widget-specific flourish later.  Composite over the palette: BG -> HOT by
+   the hot channel, then that -> ACT by the active one.  The primitive owns all storage, settle, and
+   wants_redraw bookkeeping in a single peek; an idle widget with no history lands on COL_WIDGET_BG. */
 
-#define ANIM_TAG_HOT  0xA501u   /* id_combine salts: keep the two channels distinct from each other */
-#define ANIM_TAG_ACT  0xA502u   /* and from all other per-widget state in the keyed pool */
+#define ANIM_TAG_BG  0xA501u   /* id_combine salt: keeps this slot distinct from all other per-widget state */
 
 static u32
 widget_bg_color_anim( gui_id_t id, gui_item_state_t st )
 {
-    f32 hot = gui_anim_f32_from( id_combine( id, ANIM_TAG_HOT ), 0.0f, ( st.hover || st.nav ) ? 1.0f : 0.0f, 10.0f );
-    f32 act = gui_anim_f32_from( id_combine( id, ANIM_TAG_ACT ), 0.0f, st.active              ? 1.0f : 0.0f, 20.0f );
-    return col_lerp( col_lerp( COL_WIDGET_BG, COL_WIDGET_HOT, hot ), COL_WIDGET_ACT, act );
+    gui_anim4_t rest   = { 0.0f, 0.0f, 0.0f, 0.0f };
+    gui_anim4_t target = { ( st.hover || st.nav ) ? 1.0f : 0.0f, st.active ? 1.0f : 0.0f, 0.0f, 0.0f };
+    gui_anim4_t speed  = { 10.0f, 20.0f, 0.0f, 0.0f };
+    gui_anim4_t a      = gui_anim4( id_combine( id, ANIM_TAG_BG ), rest, target, speed );
+    return col_lerp( col_lerp( COL_WIDGET_BG, COL_WIDGET_HOT, a.x ), COL_WIDGET_ACT, a.y );
 }
 
 /*----------------------------------------------------------------------------------------------

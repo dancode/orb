@@ -79,6 +79,58 @@ gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed )
 }
 
 /*----------------------------------------------------------------------------------------------
+    gui_anim4 -- four independent damper channels in ONE keyed slot
+
+    The storage unit for any animated widget value.  gui_anim_f32_from keys one probe per channel, so
+    an N-channel widget costs N peeks and N pool entries; this packs four channels behind a single key
+    -- one peek, one stamp, one 16-byte slot -- so a two-channel hover/active blend, a four-channel
+    RGBA color, or an x/y/w/h rect each cost exactly one probe, and spare channels are free scratch.
+
+    Per channel: seed from rest on first sight, damp toward target at speed (Hz-like; see gui_anim_f32).
+    speed <= 0 SNAPS the channel to target -- the "no animation" path, and the safe way to leave an
+    unused channel (rest == target == 0 then costs nothing and never pins wants_redraw).  The whole
+    slot persists while ANY channel is moving or parked away from its rest, and goes cold only when all
+    four sit at rest, so a held non-rest value (a steady hover) never re-ramps after an eviction.
+----------------------------------------------------------------------------------------------*/
+
+static gui_anim4_t
+gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed )
+{
+    const gui_anim4_t* peek = (const gui_anim4_t*)gui_state_peek( id );
+    gui_anim4_t        cur  = peek ? *peek : rest;
+    f32                dt   = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
+
+    /* gui_anim4_t is four contiguous floats -- index the channels through a flat view. */
+    f32*       c = (f32*)&cur;
+    const f32* r = (const f32*)&rest;
+    const f32* t = (const f32*)&target;
+    const f32* s = (const f32*)&speed;
+
+    bool moved = false, persist = false;
+    for ( u32 i = 0; i < 4; ++i )
+    {
+        if ( s[ i ] <= 0.0f )                          /* instant / unused channel: snap */
+            c[ i ] = t[ i ];
+        else if ( fabsf( t[ i ] - c[ i ] ) >= 0.001f ) /* moving: one damper step */
+        {
+            c[ i ] += ( t[ i ] - c[ i ] ) * ( 1.0f - expf( -s[ i ] * dt ) );
+            moved = true;
+        }
+        else                                           /* settled: snap exactly onto target */
+            c[ i ] = t[ i ];
+
+        if ( fabsf( c[ i ] - r[ i ] ) >= 0.001f )      /* away from rest -> keep the slot warm */
+            persist = true;
+    }
+
+    if ( moved )
+        g_ctx->retained.wants_redraw = true;
+    if ( moved || persist )
+        *GUI_STATE( gui_anim4_t, id ) = cur;
+    return cur;
+}
+
+/*----------------------------------------------------------------------------------------------
     gui_anim_timer -- fixed-duration from/to easing (the timed-tween model)
 
     The complement to gui_anim_f32's exponential damping: instead of chasing a moving target at a
@@ -182,39 +234,40 @@ gui_api_anim_ease( gui_id_t id, gui_ease_t ease, bool* out_active )
     return gui_anim_timer( id, gui_ease_lookup( ease ), out_active );
 }
 
-/* Damped ABGR blend: each of the four channels chases its target through gui_anim_f32, so the color
-   glides to target_abgr at `speed` (Hz-like, see gui_anim_f32).  Per-channel ids are derived from a
-   single caller id so the four slots never collide with each other or with other per-widget state. */
+/* The typed channels are all "chase" animations -- glide to a new data state, no intro from a rest
+   value -- so each rides gui_anim4 with rest == target (snap on first sight, then damp on change) at
+   one uniform speed across its channels.  One peek / one 16-byte slot apiece; unused channels (vec2's
+   z/w) sit at 0 with rest == target and cost nothing. */
+
+/* Damped ABGR blend: the four color channels glide to target_abgr at `speed` (Hz-like, gui_anim_f32). */
 static u32
 gui_api_anim_color( gui_id_t id, u32 target_abgr, f32 speed )
 {
-    f32 r = gui_anim_f32( id_combine( id, 0x51u ), (f32)( ( target_abgr       ) & 0xFF ), speed );
-    f32 g = gui_anim_f32( id_combine( id, 0x52u ), (f32)( ( target_abgr >>  8 ) & 0xFF ), speed );
-    f32 b = gui_anim_f32( id_combine( id, 0x53u ), (f32)( ( target_abgr >> 16 ) & 0xFF ), speed );
-    f32 a = gui_anim_f32( id_combine( id, 0x54u ), (f32)( ( target_abgr >> 24 ) & 0xFF ), speed );
-    return (u32)( r + 0.5f ) | ( (u32)( g + 0.5f ) << 8 ) | ( (u32)( b + 0.5f ) << 16 ) | ( (u32)( a + 0.5f ) << 24 );
+    gui_anim4_t tgt = { (f32)( ( target_abgr ) & 0xFF ), (f32)( ( target_abgr >> 8 ) & 0xFF ),
+                        (f32)( ( target_abgr >> 16 ) & 0xFF ), (f32)( ( target_abgr >> 24 ) & 0xFF ) };
+    gui_anim4_t sp  = { speed, speed, speed, speed };
+    gui_anim4_t o   = gui_anim4( id, tgt, tgt, sp );
+    return (u32)( o.x + 0.5f ) | ( (u32)( o.y + 0.5f ) << 8 ) | ( (u32)( o.z + 0.5f ) << 16 ) | ( (u32)( o.w + 0.5f ) << 24 );
 }
 
-/* Damped 2D point: x and y chase independently off one caller id. */
+/* Damped 2D point: x/y glide to target; z/w unused. */
 static gui_vec2_t
 gui_api_anim_vec2( gui_id_t id, gui_vec2_t target, f32 speed )
 {
-    gui_vec2_t out;
-    out.x = gui_anim_f32( id_combine( id, 0x61u ), target.x, speed );
-    out.y = gui_anim_f32( id_combine( id, 0x62u ), target.y, speed );
-    return out;
+    gui_anim4_t tgt = { target.x, target.y, 0.0f, 0.0f };
+    gui_anim4_t sp  = { speed, speed, 0.0f, 0.0f };
+    gui_anim4_t o   = gui_anim4( id, tgt, tgt, sp );
+    return ( gui_vec2_t ){ o.x, o.y };
 }
 
-/* Damped rect: four independent dampers off one caller id (position + extent glide together). */
+/* Damped rect: x/y/w/h glide together (position + extent) in one slot. */
 static gui_rect_t
 gui_api_anim_rect( gui_id_t id, gui_rect_t target, f32 speed )
 {
-    gui_rect_t out;
-    out.x = gui_anim_f32( id_combine( id, 0x71u ), target.x, speed );
-    out.y = gui_anim_f32( id_combine( id, 0x72u ), target.y, speed );
-    out.w = gui_anim_f32( id_combine( id, 0x73u ), target.w, speed );
-    out.h = gui_anim_f32( id_combine( id, 0x74u ), target.h, speed );
-    return out;
+    gui_anim4_t tgt = { target.x, target.y, target.w, target.h };
+    gui_anim4_t sp  = { speed, speed, speed, speed };
+    gui_anim4_t o   = gui_anim4( id, tgt, tgt, sp );
+    return ( gui_rect_t ){ o.x, o.y, o.z, o.w };
 }
 
 // clang-format on

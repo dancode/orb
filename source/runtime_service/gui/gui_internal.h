@@ -993,6 +993,7 @@ void gui_popup_close_current( void );
    files.  Forward-declared so size_animate can reach it across the unity TU. */
 static f32 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 static f32 gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed );
+static gui_anim4_t gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed );
 
 /* The region engine (compose/gui_scroll.c) emits the scrollbar widget into the gutter
    it reserved at layout_pop_region -- but the widget lives above it (widgets/gui_scrollbar.c),

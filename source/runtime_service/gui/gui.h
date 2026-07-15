@@ -116,6 +116,11 @@ typedef struct { f32 x, y, w, h; }  gui_rect_t;
 /* one entry of a draw_rects batch: a solid fill plus its color (see GUI_CMD_RECT_LIST) */
 typedef struct { f32 x, y, w, h; u32 abgr; } gui_rect_col_t;
 
+/* Four independent animation channels -- the fixed storage unit the animation service (gui_anim4)
+   steps in one keyed slot.  A widget packs what it needs (2 for a hover/active blend, 4 for a color
+   or an x/y/w/h rect) and leaves the rest at 0; the layout is four contiguous floats. */
+typedef struct { f32 x, y, z, w; } gui_anim4_t;
+
 /* Easing shapers for the fixed-duration tween (anim_ease).  Named across the public boundary as an
    enum so callers never reach into the base math_ease.h symbols and the gui owns the canonical
    curve table.  The short menu is the set worth naming for UI transitions; add here as needed. */
