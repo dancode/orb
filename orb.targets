@@ -332,6 +332,14 @@ target dev_font
     unit        dev_font.c
     dep         sys
 
+target dev_image
+
+    type        static
+    root        source/developer/dev_image
+    folder      07_DEVELOPER
+    unit        dev_image.c
+    dep         sys
+
 # ==============================================================================
 # 08_Host : Shared Host Executable Libraries
 # ==============================================================================
@@ -767,6 +775,15 @@ target shader_tool
     flag        is_tool
     dep         sys
 
+target image_tool
+
+    type        exe
+    root        source/tools/image_tool
+    folder      08_TOOL
+    unit        image_tool.c
+    flag        is_tool
+    dep         dev_image sys
+
 # ==============================================================================
 # DEV : Development Solution Wihout Any Sandbox or Test Code
 # ==============================================================================
@@ -1008,7 +1025,9 @@ solution orb_build
 	add 		font_tool
 	add 		asset_tool
 	add 		shader_tool
+	add 		image_tool
 	add 		dev_font		#used by font_tool
+	add 		dev_image		#used by image_tool
 
 # ==============================================================================
 # FULL SOLUTION
@@ -1033,7 +1052,7 @@ solution orb_all
 	
     add         example sb_ref_dll sb_gen_dll
     add         game nav game_example
-    add         dev_build dev_hot dev_font
+    add         dev_build dev_hot dev_font dev_image
 	
     add         host_common
 	
@@ -1072,6 +1091,7 @@ solution orb_all
 	add 		font_tool
 	add 		asset_tool
 	add 		shader_tool
+	add 		image_tool
 
 # ==============================================================================
 # FULL SOLUTION : MONOLITHIC

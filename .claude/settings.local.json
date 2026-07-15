@@ -304,7 +304,10 @@
       "Bash(awk '/^target /{t=$2} /asset/{print t\": \"$0}' orb.targets)",
       "Bash(awk '/^target /{t=$2} /[[:space:]]gui\\([[:space:]]|$\\)/{print t\": \"$0}' orb.targets)",
       "Bash(xxd assets/icon/folder_icon.png)",
-      "Bash(xxd -s 0x10 -l 8 assets/icon/folder_icon.png)"
+      "Bash(xxd -s 0x10 -l 8 assets/icon/folder_icon.png)",
+      "Bash(curl -sL -o \"C:/Users/dangold/AppData/Local/Temp/claude/F--orb/74767bed-c45d-44f9-b83e-c0bbbfda1a60/scratchpad/stb_image_write.h\" https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target image_tool)",
+      "PowerShell($scratch = \"C:\\\\Users\\\\dangold\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--orb\\\\74767bed-c45d-44f9-b83e-c0bbbfda1a60\\\\scratchpad\"; bin\\\\image_tool.exe split \"$scratch\\\\test_sheet.png\" 5 2; Write-Host \"exit=$LASTEXITCODE\")"
     ]
   }
 }
