@@ -30,8 +30,7 @@
 #include "runtime_service/draw/draw_host.h"
 #include "runtime_service/asset/asset_host.h"
 #include "runtime_service/asset/loaders/asset_image.h"
-#include "engine/fs/fs_zip.h"        /* miniz config -- must precede vendor/miniz.h */
-#include "vendor/miniz.h"            /* build a pack.zip for the "served from a .zip" mode */
+#include "engine/pack/pack_host.h"   /* build a pack.zip for the "served from a .zip" mode */
 
 // clang-format off
 
@@ -52,20 +51,17 @@ build_png_zip( const char* zip_path, const char* src_png )
     if ( !fd.ok )
         return false;
 
-    mz_zip_archive za;
-    memset( &za, 0, sizeof( za ) );
-    bool ok = mz_zip_writer_init_heap( &za, 0, 0 ) &&
-              mz_zip_writer_add_mem( &za, src_png, fd.data, fd.size, ( mz_uint )MZ_DEFAULT_COMPRESSION );
+    pack_zip_writer_t* zw = pack_zip_writer_begin();
+    bool ok = zw && pack_zip_writer_add( zw, src_png, fd.data, fd.size, PACK_LEVEL_DEFAULT );
 
-    void*  buf = NULL;
-    size_t sz  = 0;
+    void* buf = NULL;
+    u32   sz  = 0;
+    if ( zw )
+        ok = pack_zip_writer_end( zw, &buf, &sz ) && ok;
     if ( ok )
-        ok = mz_zip_writer_finalize_heap_archive( &za, &buf, &sz );
-    if ( ok )
-        ok = sys_file_write_entire( zip_path, buf, ( u32 )sz );
+        ok = sys_file_write_entire( zip_path, buf, sz );
 
-    free( buf );                 // finalize handed us ownership of the heap block
-    mz_zip_writer_end( &za );
+    free( buf );                 // writer_end handed us ownership of the heap block
     sys_file_free( &fd );
     return ok;
 }
@@ -105,6 +101,7 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( pack );
     mod_static( fs );
     mod_static( app );
     mod_static( core );

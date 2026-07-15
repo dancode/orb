@@ -4,7 +4,7 @@
 
     Compiled as its own object in the shader_tool target (not folded into shader_tool.c) so the
     library's ~7k lines and file-scope statics stay isolated from the tool's own code, matching
-    the asset_tool_miniz.c precedent.  shader_tool.c calls the spvReflect* API (declared in
+    the pack_miniz.c precedent.  shader_tool.c calls the spvReflect* API (declared in
     vendor/spirv_reflect.h) to extract descriptor bindings, push constant layouts, and vertex
     inputs from compiled SPIR-V; the definitions live here.
 

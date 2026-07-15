@@ -1,17 +1,21 @@
 /*==============================================================================================
 
-    engine/fs/fs_zip_miniz.c -- implementation TU for the vendored miniz amalgamation.
+    engine/pack/pack_miniz.c -- implementation TU for the vendored miniz amalgamation.
 
-    Compiled as its own object in the fs target (NOT folded into fs.c's unity build) so miniz's
-    ~10k lines and its file-scope statics stay isolated from the engine's own code.  fs.c (inside
-    fs's unity TU) calls the mz_zip_* reader API declared in vendor/miniz.h; the definitions live
-    here.  fs_zip.h sets the shared miniz configuration for both sides.
+    Compiled as its own object in the pack target (NOT folded into pack.c's unity build) so
+    miniz's ~10k lines and its file-scope statics stay isolated from the engine's own code.
+    pack.c (inside pack's unity TU) calls the mz_* API declared in vendor/miniz.h; the
+    definitions live here.  pack_miniz.h sets the shared miniz configuration for both sides.
+
+    This is the single engine-wide copy of miniz.  Every client -- fs's ZIP mounts,
+    asset_tool's bundle writer, sandbox test archives -- reaches it through the pack API, so
+    two configurations (or two sets of mz_* symbols in one link) cannot exist.
 
     Vendored miniz 3.0.2 (public domain / MIT); see vendor/miniz_LICENSE.txt.
 
 ==============================================================================================*/
 
-#include "engine/fs/fs_zip.h"        /* MINIZ_NO_STDIO -- must precede the amalgamation */
+#include "engine/pack/pack_miniz.h"  /* MINIZ_NO_STDIO -- must precede the amalgamation */
 
 /* Vendored third-party code: silence its warnings so the engine's /WX (warnings-as-error) does
    not fail on miniz's own style (const-init, constant conditionals, narrowing).  Our own code

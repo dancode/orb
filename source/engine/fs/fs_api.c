@@ -43,9 +43,9 @@ fs_mod_init( void* state, get_api_fn get_api )
 {
     UNUSED( state );
     UNUSED( get_api );
-    /* fs is a leaf module (deps: sys, statically linked alongside it in the host).  Bring up
-       the mount table + catalog, then publish fs_api_t through the standard gateway for every
-       module loaded after it. */
+    /* fs is a leaf module (deps: sys + pack, statically linked alongside it in the host).
+       Bring up the mount table + catalog, then publish fs_api_t through the standard gateway
+       for every module loaded after it. */
     fs_system_init();
     return true;
 }
@@ -65,8 +65,8 @@ fs_get_mod_desc( void )
         .state_size    = 0,
         .func_api_size = sizeof( fs_api_t ),
         .func_api      = ( void* )&g_fs_api_struct,
-        .deps          = { "sys" },
-        .dep_count     = 1,
+        .deps          = { "sys", "pack" },
+        .dep_count     = 2,
         .init          = fs_mod_init,
         .exit          = fs_mod_exit,
         .reload        = NULL,

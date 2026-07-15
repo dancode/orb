@@ -24,6 +24,7 @@
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
+#include "engine/pack/pack_host.h"
 #include "engine/fs/fs_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 #include "runtime_service/asset/asset_host.h"
@@ -212,7 +213,8 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
-    mod_static( fs );       // virtual filesystem: leaf on sys, asset depends on it
+    mod_static( pack );     // compression: leaf, fs zip mounts go through it
+    mod_static( fs );       // virtual filesystem: leaf on sys+pack, asset depends on it
     mod_static( app );
     mod_static( core );
     mod_static( rhi );      // asset now depends on rhi (image loader); registered but not init'd here

@@ -73,7 +73,9 @@ source/engine/        -- root engine libraries, listed lowest to highest
   sys/                -- OS abstractions: files, threads, time, DLL loading, paths (leaf, no deps)
   ref/                -- reflection registry: types, fields, schema hash (leaf, no deps)
   prof/               -- profiler: SID zones, SPSC rings, trace dump (dep: sys)
-  fs/                 -- virtual file system: mounts, zip bundles (dep: sys)
+  pack/               -- compression: deflate/inflate, crc32, zip read/write; owns the single
+                         engine-wide miniz copy (leaf, no deps)
+  fs/                 -- virtual file system: mounts, zip bundles (deps: sys, pack)
   job/                -- job system: worker pool (dep: sys)
   net/                -- UDP transport: handshake, channels, fragmentation (dep: sys)
   core/               -- engine orchestration layer: arenas, logging, cvars, cmd/console, config, SIDs
@@ -93,8 +95,8 @@ source/project/       -- game-specific code (sample_game)
 third_party/          -- vendored libraries (freetype-2.14.3)
 ```
 
-Engine libraries (`mod`, `sys`, `ref`, `prof`, `fs`, `job`, `net`, `core`, `app`) are always
-statically linked into the host. Never in a DLL.
+Engine libraries (`mod`, `sys`, `ref`, `prof`, `pack`, `fs`, `job`, `net`, `core`, `app`) are
+always statically linked into the host. Never in a DLL.
 
 ## Libraries
 
@@ -119,7 +121,7 @@ Every engine library uses a three-header split:
 
 **mod** has four files (self-hosting): `mod_import.h`, `mod_api.h`, `mod_host.h`, `mod_export.h`.
 
-Existing header sets: `mod_*`, `sys.*`, `ref.*`, `prof.*`, `fs.*`, `job.*`, `net.*`, `core.*`, `app.*`.
+Existing header sets: `mod_*`, `sys.*`, `ref.*`, `prof.*`, `pack.*`, `fs.*`, `job.*`, `net.*`, `core.*`, `app.*`.
 
 ## Module System
 

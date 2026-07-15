@@ -36,7 +36,8 @@
 #include "engine/sys/sys_host.h"        // system: auto-wired on every DLL load
 #include "engine/ref/ref_host.h"        // reflection: auto-wired on every DLL load
 #include "engine/prof/prof_host.h"      // profiler: leaf capture kernel, always present
-#include "engine/fs/fs_host.h"          // virtual filesystem: leaf on sys, mount + read bytes
+#include "engine/pack/pack_host.h"      // compression: leaf, pure memory transforms
+#include "engine/fs/fs_host.h"          // virtual filesystem: leaf on sys+pack, mount + read bytes
 #include "engine/job/job_host.h"        // task system: floor -- spawns no threads until configured
 #include "engine/net/net_host.h"        // UDP transport: floor -- opens no sockets until peer_create
 #include "engine/app/app_host.h"        // windowing/input: floor -- opens no window until window_open

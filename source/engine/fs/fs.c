@@ -14,9 +14,8 @@
 #include <stdio.h>
 
 #include "orb.h"
-#include "engine/fs/fs_host.h"        /* types + direct decls (fs is a sys-only leaf) */
-#include "engine/fs/fs_zip.h"         /* miniz config -- must precede vendor/miniz.h */
-#include "vendor/miniz.h"             /* mz_zip_* reader (impl in fs_zip_miniz.c) */
+#include "engine/fs/fs_host.h"        /* types + direct decls (fs is a sys+pack leaf) */
+#include "engine/pack/pack_host.h"    /* pack_zip_* reader over the in-memory archive */
 #include "engine/sys/sys_host.h"      /* sys_file_read_entire / _exists / _size / _time / _glob */
 
 /* Catalog hash: case-insensitive FNV-1a over the vpath.  fs sits below core, so it cannot call
@@ -45,7 +44,7 @@ fs_hash( const char* str, size_t len )
 typedef enum fs_mount_kind_e
 {
     FS_MOUNT_DIR = 0,   // real names a directory on disk
-    FS_MOUNT_ZIP,       // real names a .zip; entries served via miniz
+    FS_MOUNT_ZIP,       // real names a .zip; entries served via pack
 
 } fs_mount_kind_t;
 
@@ -61,7 +60,7 @@ typedef struct fs_mount_s
        alive for the mount's lifetime so the reader can extract by name on demand.  Every entry
        reports the .zip's own mtime -- a bundle is immutable in place, so this is stable and
        hot-reload never re-runs a loader for a zip-backed asset (a loose shadow does that). */
-    mz_zip_archive* zip;
+    pack_zip_t*     zip;
     void*           zip_bytes;
     u64             zip_mtime;
 
@@ -155,7 +154,7 @@ fs_build_real( const fs_mount_t* m, const char* vpath, char* out )
 }
 
 /*==============================================================================================
-    ZIP backing  (miniz reader over an in-memory archive)
+    ZIP backing  (pack reader over an in-memory archive)
 ==============================================================================================*/
 
 /* True if `path` ends in ".zip" (case-insensitive) -- how fs_mount tells a bundle from a dir. */
@@ -184,7 +183,7 @@ fs_zip_locate( const fs_mount_t* m, const char* rel )
 {
     if ( !m->zip || !rel[ 0 ] )
         return -1;
-    return mz_zip_reader_locate_file( m->zip, rel, NULL, 0 );
+    return pack_zip_find( m->zip, rel );
 }
 
 /* Size (and the mount's stable mtime) for a ZIP entry named `rel`.  Returns false if absent. */
@@ -195,12 +194,12 @@ fs_zip_meta( const fs_mount_t* m, const char* rel, u32* out_size, u64* out_mtime
     if ( idx < 0 )
         return false;
 
-    mz_zip_archive_file_stat st;
-    if ( !mz_zip_reader_file_stat( m->zip, ( mz_uint )idx, &st ) )
+    pack_zip_stat_t st;
+    if ( !pack_zip_stat( m->zip, idx, &st ) )
         return false;
 
     if ( out_size )
-        *out_size = ( u32 )st.m_uncomp_size;
+        *out_size = st.size;
     if ( out_mtime )
         *out_mtime = m->zip_mtime;    // per-entry time is not tracked; the bundle's is stable
     return true;
@@ -216,16 +215,16 @@ fs_zip_read( const fs_mount_t* m, const char* rel, u32* out_size )
     if ( idx < 0 )
         return NULL;
 
-    mz_zip_archive_file_stat st;
-    if ( !mz_zip_reader_file_stat( m->zip, ( mz_uint )idx, &st ) )
+    pack_zip_stat_t st;
+    if ( !pack_zip_stat( m->zip, idx, &st ) )
         return NULL;
 
-    size_t size = ( size_t )st.m_uncomp_size;
+    size_t size = ( size_t )st.size;
     char*  buf  = ( char* )malloc( size + 1 );
     if ( !buf )
         return NULL;
 
-    if ( size && !mz_zip_reader_extract_to_mem( m->zip, ( mz_uint )idx, buf, size, 0 ) )
+    if ( size && !pack_zip_extract( m->zip, idx, buf, ( u32 )size ) )
     {
         free( buf );
         return NULL;
@@ -433,8 +432,7 @@ fs_mount_free_zip( fs_mount_t* m )
         return;
     if ( m->zip )
     {
-        mz_zip_reader_end( m->zip );
-        free( m->zip );
+        pack_zip_close( m->zip );
         m->zip = NULL;
     }
     free( m->zip_bytes );
@@ -457,7 +455,7 @@ fs_system_exit( void )
     Mounts
 ==============================================================================================*/
 
-/* Read a .zip whole into memory (sys owns disk I/O) and open a miniz reader over it.  Fills the
+/* Read a .zip whole into memory (sys owns disk I/O) and open a pack reader over it.  Fills the
    ZIP fields of `m` and returns true, or frees whatever it took and returns false. */
 static bool
 fs_mount_zip_open( fs_mount_t* m, const char* zip_path )
@@ -468,17 +466,16 @@ fs_mount_zip_open( fs_mount_t* m, const char* zip_path )
         return false;
     }
 
-    mz_zip_archive* za = ( mz_zip_archive* )calloc( 1, sizeof( mz_zip_archive ) );
-    if ( !za || !mz_zip_reader_init_mem( za, fd.data, fd.size, 0 ) )
+    pack_zip_t* za = pack_zip_open( fd.data, fd.size );
+    if ( !za )
     {
-        free( za );
         free( fd.data );
         return false;
     }
 
     m->kind      = FS_MOUNT_ZIP;
     m->zip       = za;
-    m->zip_bytes = fd.data;               // must outlive the reader (init_mem does not copy)
+    m->zip_bytes = fd.data;               // must outlive the reader (pack_zip_open borrows)
     m->zip_mtime = sys_file_time( zip_path );
     return true;
 }

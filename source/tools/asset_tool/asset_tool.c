@@ -37,9 +37,10 @@
 
         base            (headers only -- unity built in)
         sys             (file_io, clock, process spawn, dir walk/make -- statically linked)
+        pack            (ZIP bundle writer -- the engine-wide compression library)
 
-    Plus tool-local vendored code compiled straight in: stb_image (source decode -> .tex) and
-    miniz (ZIP pack writer, in asset_tool_miniz.c).  No core, no module system, no app.
+    Plus tool-local vendored code compiled straight in: stb_image (source decode -> .tex).
+    No core, no module system, no app.
 
 ==============================================================================================*/
 
@@ -56,10 +57,8 @@
 #define STBI_NO_STDIO
 #include "vendor/stb_image.h"
 
-/* miniz ZIP writer for -pack (implementation in asset_tool_miniz.c). MINIZ_NO_STDIO must match
-   that TU so the declarations agree; the archive is built in a heap block and written via sys. */
-#define MINIZ_NO_STDIO
-#include "vendor/miniz.h"
+/* pack ZIP writer for -pack: the archive is built in a heap block and written via sys. */
+#include "engine/pack/pack_host.h"
 
 /*============================================================================================*/
 
@@ -674,8 +673,8 @@ cook_tree( const char* src_arg, const char* dst_arg, bool force )
 /* cook_pack -- read the cook_manifest.txt in <dir> and bundle every listed cooked output into
    <out_zip>, using the manifest rel-path as the in-archive name.  core/fs mounts a ".zip" as a
    bundle, and a loose mount at higher priority still shadows it -- so a shipped pack can be
-   overridden file-by-file for local iteration.  The archive is built in a heap block (miniz
-   NO_STDIO) and written whole through sys, matching how the engine reads zips. */
+   overridden file-by-file for local iteration.  The archive is built in a heap block (pack
+   never touches the disk) and written whole through sys, matching how the engine reads zips. */
 static int
 cook_pack( const char* dir_arg, const char* out_zip )
 {
@@ -698,9 +697,8 @@ cook_pack( const char* dir_arg, const char* out_zip )
         return 1;
     }
 
-    mz_zip_archive za;
-    memset( &za, 0, sizeof( za ) );
-    if ( !mz_zip_writer_init_heap( &za, 0, 0 ) )
+    pack_zip_writer_t* zw = pack_zip_writer_begin();
+    if ( !zw )
     {
         fprintf( stderr, "asset_tool: error: could not init zip writer\n" );
         sys_file_free( &man );
@@ -746,7 +744,7 @@ cook_pack( const char* dir_arg, const char* out_zip )
             continue;
         }
 
-        if ( mz_zip_writer_add_mem( &za, rel, fd.data, fd.size, ( mz_uint )MZ_DEFAULT_COMPRESSION ) )
+        if ( pack_zip_writer_add( zw, rel, fd.data, fd.size, PACK_LEVEL_DEFAULT ) )
         {
             printf( "asset_tool:   pack %s (%u bytes)\n", rel, fd.size );
             ++packed;
@@ -760,13 +758,12 @@ cook_pack( const char* dir_arg, const char* out_zip )
     }
     sys_file_free( &man );
 
-    void*  buf = NULL;
-    size_t sz  = 0;
-    bool   ok  = mz_zip_writer_finalize_heap_archive( &za, &buf, &sz );
+    void* buf = NULL;
+    u32   sz  = 0;
+    bool  ok  = pack_zip_writer_end( zw, &buf, &sz );
     if ( ok )
-        ok = sys_file_write_entire( out_zip, buf, ( u32 )sz );
-    free( buf );                 /* finalize handed us ownership of the heap block */
-    mz_zip_writer_end( &za );
+        ok = sys_file_write_entire( out_zip, buf, sz );
+    free( buf );                 /* writer_end handed us ownership of the heap block */
     if ( !ok )
     {
         fprintf( stderr, "asset_tool: error: could not finalize/write %s\n", out_zip );
@@ -775,7 +772,7 @@ cook_pack( const char* dir_arg, const char* out_zip )
 
     i64 ms = sys_tick_milliseconds() - start;
     printf( "asset_tool: pack %s -> %s: %d entries, %d failed, %u bytes (%d ms)\n", dir, out_zip, packed,
-            failed, ( u32 )sz, ( int )ms );
+            failed, sz, ( int )ms );
     return failed ? 1 : 0;
 }
 

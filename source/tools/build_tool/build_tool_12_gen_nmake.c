@@ -697,7 +697,7 @@ is_unit_file( const target_info_t* target, const char* path )
         if ( *p == '/' || *p == '\\' ) filename = p + 1;
     for ( int j = 0; target->units[ j ]; ++j )
     {
-        // A unit may carry a subdirectory prefix (e.g. "fs/fs_zip_miniz.c"). Compare by
+        // A unit may carry a subdirectory prefix (e.g. "pack/pack_miniz.c"). Compare by
         // basename -- matching how the object is named (<basename>.obj) -- so a subdir unit
         // is still recognized as a compile unit, not misfiled as a non-compiled include.
         const char* uname = target->units[ j ];

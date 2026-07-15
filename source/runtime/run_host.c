@@ -411,8 +411,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     /* Engine floor -- the root engine libraries, always loaded regardless of k_modules[].
        They are cheap to init and create no OS resources on load: sys (clock+sleep), ref
-       (reflection), prof (zone capture -- static rings), fs (virtual filesystem, opens no
-       files), job (task system -- spawns NO threads until job_configure below), net (UDP
+       (reflection), prof (zone capture -- static rings), pack (compression -- stateless
+       transforms), fs (virtual filesystem, opens no files), job (task system -- spawns NO
+       threads until job_configure below), net (UDP
        transport -- opens no sockets until peer_create), app (windowing/input -- creates no
        window until window_open), core (logging/cvars/cmd), run (frame clock).  The loop and
        module lifecycle dereference these unconditionally, so they carry no if() guard.  app
@@ -422,6 +423,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     if ( !mod_static_load( "sys",  sys_get_mod_desc() )  ||
          !mod_static_load( "ref",  ref_get_mod_desc() )  ||
          !mod_static_load( "prof", prof_get_mod_desc() ) ||
+         !mod_static_load( "pack", pack_get_mod_desc() ) ||
          !mod_static_load( "fs",   fs_get_mod_desc() )   ||
          !mod_static_load( "job",  job_get_mod_desc() )  ||
          !mod_static_load( "net",  net_get_mod_desc() )  ||

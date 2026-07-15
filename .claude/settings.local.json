@@ -307,7 +307,12 @@
       "Bash(xxd -s 0x10 -l 8 assets/icon/folder_icon.png)",
       "Bash(curl -sL -o \"C:/Users/dangold/AppData/Local/Temp/claude/F--orb/74767bed-c45d-44f9-b83e-c0bbbfda1a60/scratchpad/stb_image_write.h\" https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h)",
       "PowerShell(bin\\\\build_tool.exe -config Debug -target image_tool)",
-      "PowerShell($scratch = \"C:\\\\Users\\\\dangold\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--orb\\\\74767bed-c45d-44f9-b83e-c0bbbfda1a60\\\\scratchpad\"; bin\\\\image_tool.exe split \"$scratch\\\\test_sheet.png\" 5 2; Write-Host \"exit=$LASTEXITCODE\")"
+      "PowerShell($scratch = \"C:\\\\Users\\\\dangold\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--orb\\\\74767bed-c45d-44f9-b83e-c0bbbfda1a60\\\\scratchpad\"; bin\\\\image_tool.exe split \"$scratch\\\\test_sheet.png\" 5 2; Write-Host \"exit=$LASTEXITCODE\")",
+      "Bash(sed -i -E '/^[ \\\\t]*dep[ \\\\t]/ s/\\\\bfs\\\\b/fs pack/' orb.targets)",
+      "Bash(sed -i 's/add         sys ref prof mod app core job net fs/add         sys ref prof mod app core job net fs pack/' orb.targets)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_fs)",
+      "PowerShell(bin\\\\build_tool.exe -doctor)",
+      "PowerShell(bin\\\\sb_mod.exe; Write-Host \"exit=$LASTEXITCODE\")"
     ]
   }
 }

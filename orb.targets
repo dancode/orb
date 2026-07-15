@@ -113,14 +113,22 @@ target net
     dep         sys
     flag        host_only
 
+target pack
+
+    type        static
+    root        source/engine/pack
+    folder      02_ENGINE
+    unit        pack.c
+    unit        pack_miniz.c    # vendored miniz amalgamation (engine-wide single copy); own TU, not pack unity
+    flag        host_only
+
 target fs
 
     type        static
     root        source/engine/fs
     folder      02_ENGINE
     unit        fs.c
-    unit        fs_zip_miniz.c    # vendored miniz (ZIP mount reader); own TU, not fs unity
-    dep         sys
+    dep         sys pack
     flag        host_only
 
 # ==============================================================================
@@ -300,7 +308,7 @@ target template_game				# source template for -create <name> -type project
     folder      06_PROJECT
     unit        main.c
 	dep 		mod ref sys core job app net
-    dep         run prof rhi draw fs
+    dep         run prof rhi draw fs pack
 	mono_dep	render
 
 # ==============================================================================
@@ -358,7 +366,7 @@ target host_game
     folder      08_HOST
     unit        host_game_main.c
 	dep         mod ref sys core job app net host_common
-    dep         run prof rhi draw fs
+    dep         run prof rhi draw fs pack
 	mono_dep	render game
 	
 target host_editor
@@ -368,7 +376,7 @@ target host_editor
     folder      08_HOST
     unit        host_editor_main.c
 	dep         mod ref sys core job app net host_common
-    dep         run prof rhi draw gui fs
+    dep         run prof rhi draw gui fs pack
 	mono_dep	render game
 	
 target host_tool
@@ -469,7 +477,7 @@ target sb_fs
     root        source/sandbox/engine/sb_fs
     folder      09_SANDBOX/ENGINE
     unit        sb_fs.c
-    dep         sys fs mod
+    dep         sys fs pack mod
 
 # ==============================================================================
 # 09_SANDBOX -- RUNTIME (runtime service tests)
@@ -481,7 +489,7 @@ target sb_asset_test						# asset service registry + hot reload
     root        source/sandbox/runtime/sb_asset_test
     folder      09_SANDBOX/RUNTIME
     unit        sb_asset_test.c
-    dep         asset core sys ref mod rhi app fs
+    dep         asset core sys ref mod rhi app fs pack
 
 target sb_asset_image						# asset service Phase 3: PNG -> bindless texture -> on-screen quad
 
@@ -490,7 +498,7 @@ target sb_asset_image						# asset service Phase 3: PNG -> bindless texture -> o
     folder      09_SANDBOX/RUNTIME
     unit        sb_asset_image.c
     dep         sys ref mod core app
-    dep         rhi draw asset fs
+    dep         rhi draw asset fs pack
 
 target sb_asset_shader						# shader system Phase 5: asset_tool .hlsl cook -> .oshd asset -> hash-gated hot reload
 
@@ -499,7 +507,7 @@ target sb_asset_shader						# shader system Phase 5: asset_tool .hlsl cook -> .o
     folder      09_SANDBOX/RUNTIME
     unit        sb_asset_shader.c
     dep         sys ref mod core app
-    dep         rhi asset fs
+    dep         rhi asset fs pack
 
 target sb_input								# input action service: binds -> +/- cmds -> action state
 
@@ -577,7 +585,7 @@ target sb_vulkan						# vulkan development and testing
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
     dep         sys ref mod core job app net
-	dep 		run prof rhi draw gui fs
+	dep 		run prof rhi draw gui fs pack
 	dep         dev_font
 	mono_dep 	render
   # flag        reflect
@@ -602,7 +610,7 @@ target sb_gui
     folder      09_SANDBOX/GUI
     unit        sb_gui.c
     dep         sys ref mod core job app net
-	dep 		run prof rhi draw gui fs
+	dep 		run prof rhi draw gui fs pack
 	dep         dev_font
 	mono_dep 	render
 
@@ -631,7 +639,7 @@ target sb_gui_editor					# game-engine editor shell over the gui library
     folder      09_SANDBOX/GUI
     unit        sb_gui_editor.c
     dep         sys ref mod core job app net
-	dep 		run prof rhi draw gui fs
+	dep 		run prof rhi draw gui fs pack
 	dep         dev_font
 	mono_dep 	render
 
@@ -663,7 +671,7 @@ target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
     folder      09_SANDBOX/GUI
     unit        sb_gui_font.c
     dep         sys ref mod core job app net
-	dep 		run prof rhi draw gui fs
+	dep 		run prof rhi draw gui fs pack
 	dep         dev_font
 	mono_dep 	render
 
@@ -678,7 +686,7 @@ target sb_host_runtime
     folder      09_SANDBOX/HOST
     unit        sb_host_runtime.c
 	dep 		mod ref sys core job app net 	# static engine
-    dep         run prof rhi draw fs 				# static runtime + services
+    dep         run prof rhi draw fs pack 				# static runtime + services
 	mono_dep	render
 
 target sb_host_tool
@@ -688,7 +696,7 @@ target sb_host_tool
     folder      09_SANDBOX/HOST
     unit        sb_host_tool.c
 	dep 		mod ref sys core job app net
-    dep         run prof fs
+    dep         run prof fs pack
 	mono_dep	render rhi draw
 
 target sb_host_server
@@ -698,7 +706,7 @@ target sb_host_server
     folder      09_SANDBOX/HOST
     unit        sb_host_server.c
 	dep 		mod ref sys core job app net
-    dep         run prof fs
+    dep         run prof fs pack
 	mono_dep	render rhi draw example
 
 target sb_host_editor
@@ -708,7 +716,7 @@ target sb_host_editor
     folder      09_SANDBOX/HOST
     unit        sb_host_editor.c
 	dep 		mod ref sys core job app net
-    dep         run prof rhi draw gui fs
+    dep         run prof rhi draw gui fs pack
 	mono_dep	render
 
 target sb_host_game
@@ -718,7 +726,7 @@ target sb_host_game
     folder      09_SANDBOX/HOST
     unit        sb_host_game.c
 	dep 		mod ref sys core job app net
-    dep         run prof rhi draw input fs
+    dep         run prof rhi draw input fs pack
 	mono_dep	render
 
 target sb_host_runtime_proj			# BYPASS PROOF: drives run_project.h directly -- no game framework in k_modules
@@ -728,7 +736,7 @@ target sb_host_runtime_proj			# BYPASS PROOF: drives run_project.h directly -- n
     folder      09_SANDBOX/HOST
     unit        sb_host_runtime_proj.c
 	dep 		mod ref sys core job app net
-    dep         run prof rhi draw fs
+    dep         run prof rhi draw fs pack
 	mono_dep	render
 
 target sb_proj_runtime					# framework-BYPASS project DLL -- core+render only; sb_host_runtime_proj drives it
@@ -761,9 +769,8 @@ target asset_tool
     root        source/tools/asset_tool
     folder      08_TOOL
     unit        asset_tool.c
-    unit        asset_tool_miniz.c    # vendored miniz (ZIP pack writer); own TU, not asset_tool unity
     flag        is_tool
-    dep         sys
+    dep         sys pack
 
 target shader_tool
 
@@ -846,7 +853,7 @@ solution orb_editor
 	#			--- LIBRARIES ---
 	
 	add         base
-	add         sys ref prof mod app core job net fs
+	add         sys ref prof mod app core job net fs pack
 
 	add 		run
 	add 		rhi						# vulkan render library
@@ -951,7 +958,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
 	startup     sb_vulkan
 
     add         base
-	add         sys ref prof mod app core job net fs
+	add         sys ref prof mod app core job net fs pack
 
 	add 		run
 	add 		rhi						# vulkan render library
@@ -987,7 +994,7 @@ solution orb_sandbox_engine				# developing engine libraries
 	
 	add 		base
 
-	add         sys ref prof mod app core job net fs
+	add         sys ref prof mod app core job net fs pack
 	add         rhi
 	add         asset
 	add         input
@@ -1028,6 +1035,7 @@ solution orb_build
 	add 		image_tool
 	add 		dev_font		#used by font_tool
 	add 		dev_image		#used by image_tool
+	add 		pack			#used by asset_tool
 
 # ==============================================================================
 # FULL SOLUTION
@@ -1039,7 +1047,7 @@ solution orb_all
 # 	nav 		source
 
 	add 		base
-    add         sys ref prof mod app core job net fs
+    add         sys ref prof mod app core job net fs pack
 
     add         run
     add         rhi

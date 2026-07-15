@@ -33,6 +33,7 @@
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
+#include "engine/pack/pack_host.h"
 #include "engine/fs/fs_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 #include "runtime_service/asset/asset_host.h"
@@ -101,6 +102,7 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( pack );
     mod_static( fs );
     mod_static( app );
     mod_static( core );

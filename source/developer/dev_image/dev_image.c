@@ -7,8 +7,8 @@
     TU -- the gui backend (gui_icon_load.c) and the asset service (asset_image.c) carry their
     own stb_image copies, and a host linking all three must not see them collide.  miniz was
     considered for the PNG writer but rejected: the vendored miniz.h hard-defines MINIZ_EXPORT
-    with no static option, so a client linking dev_image next to fs (which compiles its own
-    miniz for the ZIP reader) would hit duplicate symbols.
+    with no static option, so this library would either collide with the engine's copy (owned
+    by engine/pack) or drag pack in as a dependency for one encoder.
 
     File reads go through a raw stdio slurp + stbi_load_from_memory (matching gui_icon_load.c);
     stb_image_write keeps its own stdio path for output.  sys is used only for directory

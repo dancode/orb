@@ -17,8 +17,7 @@
 #include "engine/mod/mod_host.h"    // module-gateway test: mod_static / mod_init_all
 #include "engine/sys/sys_host.h"    // sys_file_* / sys_dir_make for scratch fixtures
 #include "engine/fs/fs_host.h"      // the library under test (direct calls + fs() gateway)
-#include "engine/fs/fs_zip.h"       // miniz config -- must precede vendor/miniz.h
-#include "vendor/miniz.h"           // mz_zip_writer_* to build a test bundle in memory
+#include "engine/pack/pack_host.h"  // pack_zip_writer_* to build a test bundle in memory
 
 /*==============================================================================================
     Check helper (matches sb_net / sb_prof house style)
@@ -108,24 +107,22 @@ build_test_zip( const char* path )
     const char* shared = "FROM ZIP";
     const char* late   = "FROM ZIP LATE";
 
-    mz_zip_archive za;
-    memset( &za, 0, sizeof( za ) );
-    if ( !mz_zip_writer_init_heap( &za, 0, 0 ) )
+    pack_zip_writer_t* zw = pack_zip_writer_begin();
+    if ( !zw )
         return false;
 
-    /* MZ_BEST_COMPRESSION -> payloads are DEFLATE'd, so reads exercise the inflate path. */
-    mz_zip_writer_add_mem( &za, "docs/readme.txt", readme, strlen( readme ), MZ_BEST_COMPRESSION );
-    mz_zip_writer_add_mem( &za, "shared.txt", shared, strlen( shared ), MZ_BEST_COMPRESSION );
-    mz_zip_writer_add_mem( &za, "late.txt", late, strlen( late ), MZ_BEST_COMPRESSION );
+    /* PACK_LEVEL_BEST -> payloads are DEFLATE'd, so reads exercise the inflate path. */
+    pack_zip_writer_add( zw, "docs/readme.txt", readme, ( u32 )strlen( readme ), PACK_LEVEL_BEST );
+    pack_zip_writer_add( zw, "shared.txt", shared, ( u32 )strlen( shared ), PACK_LEVEL_BEST );
+    pack_zip_writer_add( zw, "late.txt", late, ( u32 )strlen( late ), PACK_LEVEL_BEST );
 
-    void*  buf = NULL;
-    size_t sz  = 0;
-    bool   ok  = mz_zip_writer_finalize_heap_archive( &za, &buf, &sz );
+    void* buf = NULL;
+    u32   sz  = 0;
+    bool  ok  = pack_zip_writer_end( zw, &buf, &sz );
     if ( ok )
-        ok = sys_file_write_entire( path, buf, ( u32 )sz );
+        ok = sys_file_write_entire( path, buf, sz );
 
-    free( buf );    // finalize transfers ownership of the heap block to us
-    mz_zip_writer_end( &za );
+    free( buf );    // writer_end transfers ownership of the heap block to us
     return ok;
 }
 
@@ -323,8 +320,8 @@ fs_test_module( void )
     printf( "  -- fs() module gateway --\n" );
 
     mod_system_init();
-    bool loaded = mod_static( sys ) && mod_static( fs );    // fs deps sys
-    sb_check( loaded, "register sys + fs as static modules" );
+    bool loaded = mod_static( sys ) && mod_static( pack ) && mod_static( fs );    // fs deps sys + pack
+    sb_check( loaded, "register sys + pack + fs as static modules" );
     sb_check( mod_init_all(), "mod_init_all (runs fs_system_init via fs_mod_init)" );
 
     /* fs() resolves to the static gateway here (sb_fs declares 'dep fs' -> FS_STATIC). */

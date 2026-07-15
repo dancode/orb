@@ -8,7 +8,7 @@
     Include engine/fs/fs_api.h for the runtime vtable + fs() gateway (DLL modules).
     Include engine/fs/fs_host.h for direct function calls (host exes / sandboxes).
 
-    fs is a leaf engine library (deps: sys only), modeled on engine/prof: it sits below core
+    fs is a leaf engine library (deps: sys + pack), modeled on engine/prof: it sits below core
     so core, mod, app, and everything above them can read bytes by a virtual path without
     reaching back up into a higher layer.
 
