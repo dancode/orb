@@ -10,40 +10,21 @@
 
     The .orb_font is currently the only font source format gui loads, so we assume it.
 
-    Every atlas is finalized the same way (font_finalize_atlas): a white texel row and
-    GUI_DASH_PATTERN_COUNT stipple rows are painted into the bottom ORB_FONT_RESERVED_ROWS rows of
-    the atlas -- a band the baker (font_tool.c / dev_font.c) never lets the packer touch -- so the
-    active font alone backs solid fills, dashed strokes, and text in one texture with no runtime
-    growth beyond the baked atlas_w x atlas_h.
+    A loaded font is no longer its own GPU texture: its baked glyph atlas is packed as a tenant of
+    the one shared resource atlas (gui_res_atlas.h), and the solid-fill white texel + dashed-line
+    rows live once in that atlas's assist band rather than per font.  A font slot therefore holds
+    only a tenant handle into the shared atlas; glyph UVs are rebased through res_atlas_origin at
+    dispatch time.  v3 .orb_font atlases are pure glyph coverage; a legacy v2 atlas carries a blank
+    trailing band that is simply copied in as dead space (both load identically).
 
 ==============================================================================================*/
 #pragma once
 
 #include "tools/font_tool/orb_font.h" /* orb_font_glyph_t and the .orb_font on-disk format */
-#include "runtime_service/gui/backend/resource/gui_atlas.h" /* gui_atlas_t -- the owned GPU atlas */
 
 // clang-format off
-/*==============================================================================================
-    
-    Atlas reserved band: white texel + dash patterns
 
-    A fixed set of full-width 1-row stipple patterns lives in the bottom ORB_FONT_RESERVED_ROWS
-    rows of every atlas, just above the white texel row.  Each row encodes ONE dash period: the
-    leftmost `duty * atlas_w` texels are opaque (the "on" run), the rest zero.  Tessellated dashed
-    lines sample these as a single oriented quad whose U spans 0..len/period; with REPEAT
-    addressing on U the row tiles along the line -- O(1) geometry instead of one quad per dash.
-    Glyph U coords never leave [0,1], so REPEAT does not affect text sampling.
-
-==============================================================================================*/
-
-#define GUI_DASH_PATTERN_COUNT 4
-
-/* ORB_FONT_RESERVED_ROWS (orb_font.h) is the bake-time contract this count feeds -- keep them in
-   sync so the baker reserves exactly as many rows as the loader paints into. */
-_Static_assert( ORB_FONT_RESERVED_ROWS == 1u + GUI_DASH_PATTERN_COUNT,
-                "ORB_FONT_RESERVED_ROWS must equal 1 (white) + GUI_DASH_PATTERN_COUNT" );
-
-/* Capacity of the loaded-font registry (gui_font_internal.c).  
+/* Capacity of the loaded-font registry (gui_font_internal.c).
    Slot 0 is the default; loaded fonts occupy ids 1..GUI_FONT_REGISTRY_MAX-1. */
 
 #define GUI_FONT_REGISTRY_MAX 16
@@ -64,36 +45,16 @@ typedef struct
 } font_typography_t;
 
 /*==============================================================================================
-
-    font_atlas_sample_t -- resolved atlas-sampling parameters: what the tessellator reads
-    (font_atlas_idx / font_white_uv / font_dash_v) to place a glyph, fill, or dashed-line quad.
-    Kept separate from font_typography_t so "what size is this font" and "how do I sample its
-    atlas" are not the same struct -- one is typography, the other is GPU-atlas bookkeeping.
-
-==============================================================================================*/
-
-typedef struct
-{
-    u32  atlas_idx;     // bindless texture index -- mirrors slot->atlas.atlas_idx (see font_slot_t)
-
-    f32  white_u;       // UV of a guaranteed-opaque texel in this atlas (solid-fill draws)
-    f32  white_v;       // sampling it gives r=1.0 so the vertex color drives the draw
-
-    f32  inv_atlas_w;   // 1 / atlas pixel width   -- precomputed so glyph dispatch avoids a divide
-    f32  inv_atlas_h;   // 1 / atlas pixel height  -- per-glyph UV scale, constant per font
-
-    f32  dash_v[ GUI_DASH_PATTERN_COUNT ]; // center V of each reserved-band dash pattern row
-
-} font_atlas_sample_t;
-
-/*==============================================================================================
     font_metrics_t -- everything the active-font accessors (s_font) read, resolved once at load.
+
+    Only typography lives here now: the atlas-sampling parameters (bindless index, white texel, UV
+    scale, dash rows) are properties of the shared resource atlas, not of a font, and are read
+    directly from gui_res_atlas.h.  A font's only atlas state is its tenant handle (font_slot_t).
 ==============================================================================================*/
 
 typedef struct
 {
     font_typography_t   type;               // s_font->type.char_h, etc.
-    font_atlas_sample_t atlas;              // s_font->atlas.atlas_idx, etc.
 
 } font_metrics_t;
 
@@ -107,7 +68,7 @@ typedef struct
 
     bool                used;               // slot occupied
 
-    gui_atlas_t         atlas;              // owned GPU atlas (metrics.atlas.atlas_idx mirrors atlas.atlas_idx)
+    u32                 atlas_tenant;       // handle into the shared resource atlas (0 = none)
 
     i32                 ascent;             // pixels above baseline (positive)
     i32                 descent;            // pixels below baseline (negative)

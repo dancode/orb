@@ -88,9 +88,8 @@ typedef struct
 
 static raw_glyph_t  s_raw   [ GLYPH_MAX ];
 static stbrp_node   s_nodes [ ATLAS_MAX ];
-/* Worst case is non-square: ATLAS_MAX wide by (ATLAS_MAX + ORB_FONT_RESERVED_ROWS) tall, when the
-   reserved-band-aware fit fails at the top tier and falls back to full-height + tacked-on rows. */
-static u8           s_atlas [ ATLAS_MAX * ( ATLAS_MAX + ORB_FONT_RESERVED_ROWS ) ];
+/* Square atlas, at most ATLAS_MAX per side (glyphs are packed full-height; no reserved band). */
+static u8           s_atlas [ ATLAS_MAX * ATLAS_MAX ];
 
 /*==============================================================================================
     Module state
@@ -412,19 +411,12 @@ bake_font( const char* ttf_path, int size_px, const char* out_path )
     free( font_data );
 
     /*------------------------------------------------------------------------------------------
-        Pass 2 -- pack glyph rects into the smallest atlas (ATLAS_MIN..ATLAS_MAX per side) that
-        fits every glyph.  A fixed 512x512 canvas wastes most of its area for small fonts, so try
-        progressively larger square sizes and stop at the first that works.
-        GLYPH_PAD adds a 1-pixel gap between neighbours to prevent bilinear filter bleed.
-
-        Every candidate size is tried twice:
-          1. Packing height reduced by ORB_FONT_RESERVED_ROWS -- if the glyphs still fit, the
-             reserved band (gui's white texel + dash rows, painted in at load time) slots into
-             existing slack for free, no extra rows needed.
-          2. Full-height packing, then ORB_FONT_RESERVED_ROWS extra rows tacked on afterward --
-             used only when attempt 1 fails (the glyphs alone already fill the candidate square
-             edge-to-edge).  This keeps growth to exactly the rows needed instead of jumping to
-             the next size tier and quadrupling the area over a handful of rows.
+        Pass 2 -- pack glyph rects into the smallest square atlas (ATLAS_MIN..ATLAS_MAX per side)
+        that fits every glyph.  A fixed 512x512 canvas wastes most of its area for small fonts, so
+        try progressively larger square sizes and stop at the first that works.
+        GLYPH_PAD adds a 1-pixel gap between neighbours to prevent bilinear filter bleed.  The atlas
+        is pure glyph coverage -- gui draws its white texel + dash rows from a shared runtime atlas,
+        so no reserved band is packed here.
     ------------------------------------------------------------------------------------------*/
 
     stbrp_rect rects[ GLYPH_MAX ];
@@ -450,8 +442,7 @@ bake_font( const char* ttf_path, int size_px, const char* out_path )
             for ( int i = 0; i < rect_count; ++i )
                 rects[ i ].was_packed = 0;
 
-            stbrp_init_target( &pack_ctx, (int)try_size, (int)( try_size - ORB_FONT_RESERVED_ROWS ),
-                                s_nodes, (int)try_size );
+            stbrp_init_target( &pack_ctx, (int)try_size, (int)try_size, s_nodes, (int)try_size );
             /* BL (the default heuristic) does not check the height bound while searching for a
                placement -- only BF does (see stb_rect_pack.h stbrp__skyline_find_best_pos).
                Without this, a "successful" pack can silently place a rect below the requested
@@ -460,18 +451,6 @@ bake_font( const char* ttf_path, int size_px, const char* out_path )
             if ( stbrp_pack_rects( &pack_ctx, rects, rect_count ) )
             {
                 atlas_w = atlas_h = try_size;
-                break;
-            }
-
-            for ( int i = 0; i < rect_count; ++i )
-                rects[ i ].was_packed = 0;
-
-            stbrp_init_target( &pack_ctx, (int)try_size, (int)try_size, s_nodes, (int)try_size );
-            stbrp_setup_heuristic( &pack_ctx, STBRP_HEURISTIC_Skyline_BF_sortHeight );
-            if ( stbrp_pack_rects( &pack_ctx, rects, rect_count ) )
-            {
-                atlas_w = try_size;
-                atlas_h = try_size + ORB_FONT_RESERVED_ROWS;
                 break;
             }
         }

@@ -37,81 +37,20 @@ static font_slot_t*     s_active    = NULL;                     // active slot (
 static u32              s_active_id = 0;                        // active slot id (0 = default, 1..MAX-1 = user-loaded)
 static font_metrics_t*  s_font      = NULL;                     // active font's metrics (read by every accessor)
 
-/* On-fraction (dash / period) of each baked dash row; a dashed line picks the nearest at tess time. */
-static const f32        s_dash_duty[ GUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0.7f };
-
-/*==============================================================================================
-    Atlas finalize -- the white texel + dash rows every font carries.
-==============================================================================================*/
-
-/* Paint the dash pattern rows into `pixels` (R8, width `w`) starting at pixel row `row0`. */
-static void
-font_paint_dash_rows( u8* pixels, u32 w, u32 row0 )
-{
-    for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
-    {
-        u8* row = &pixels[ ( row0 + p ) * w ];
-        u32 on  = (u32)( s_dash_duty[ p ] * (f32)w + 0.5f );
-        if ( on < 1 ) on = 1;
-        if ( on > w ) on = w;
-        memset( row, 0x00, w  );   /* gap    */
-        memset( row, 0xFF, on );   /* on-run */
-    }
-}
-
-/* Fill dash_v[]: pattern row p sits at pixel row row0 + p in an `atlas_h`-tall atlas. */
-static void
-font_dash_row_v( f32* dash_v, u32 row0, u32 atlas_h )
-{
-    for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
-        dash_v[ p ] = ( (f32)( row0 + p ) + 0.5f ) / (f32)atlas_h;
-}
-
-/* Finalize a staged R8 atlas: paint the white texel row and the dash pattern rows into the bottom
-   ORB_FONT_RESERVED_ROWS rows of the atlas, then resolve the metrics fields that describe them
-   (white UV, per-glyph UV scale, dash row V coords).  That band is guaranteed blank on disk --
-   the baker (font_tool.c / dev_font.c) never lets the packer place a glyph there -- so this never
-   overlaps packed glyph pixels and the atlas never grows past hdr.atlas_w x hdr.atlas_h. */
-
-static void
-font_finalize_atlas( u8* pixels, u32 atlas_w, u32 atlas_h, font_metrics_t* m )
-{
-    u32 white_row = atlas_h - GUI_DASH_PATTERN_COUNT - 1u;
-    u32 dash_row0 = atlas_h - GUI_DASH_PATTERN_COUNT;
-
-    /* White texel strip: fill the first reserved row opaque, then the dash pattern rows. */
-    memset( &pixels[ white_row * atlas_w ], 0xFF, atlas_w );
-    font_paint_dash_rows( pixels, atlas_w, dash_row0 );
-
-    /* White texel: center of the first reserved row. */
-    m->atlas.white_u = 0.5f / (f32)atlas_w;
-    m->atlas.white_v = ( (f32)white_row + 0.5f ) / (f32)atlas_h;
-
-    /* Per-glyph UV scale, constant per font -- folds the divide out of the glyph path. */
-    m->atlas.inv_atlas_w = 1.0f / (f32)atlas_w;
-    m->atlas.inv_atlas_h = 1.0f / (f32)atlas_h;
-
-    /* Dash pattern rows follow the white row. */
-    font_dash_row_v( m->atlas.dash_v, dash_row0, atlas_h );
-}
-
 /*==============================================================================================
     The .orb_font loader.
-==============================================================================================*/
 
-/* Release a slot's owned GPU atlas. */
-static void
-font_slot_free_gpu( font_slot_t* slot )
-{
-    gui_atlas_destroy( &slot->atlas );
-}
+    A font's glyph atlas is packed into the shared resource atlas (gui_res_atlas.c) as a tenant; the
+    white texel + dash rows are the shared atlas's assist band, not per font, so there is no per-font
+    finalize step anymore.  The slot keeps only its tenant handle plus type/glyph metrics.
+==============================================================================================*/
 
 /*----------------------------------------------------------------------------------------------
     font_slot_load -- load a .orb_font from disk into `slot`.  Does not activate the slot.
 
-    On success the slot owns a freshly created GPU atlas and metrics describe a proportional font;
-    any atlas the slot previously owned is released only after the new one is fully built, so a
-    failed load leaves the slot's previous font intact.
+    On success the slot's glyph pixels are resident in the shared atlas and metrics describe a
+    proportional font.  A slot that already holds a font (a live re-bake) updates its existing
+    tenant in place; a failed load leaves the slot's previous font intact.
 ----------------------------------------------------------------------------------------------*/
 
 static bool
@@ -121,14 +60,16 @@ font_slot_load( font_slot_t* slot, const char* path )
     if ( !f )
         return false;
 
-    /* Validate orb font format header. */
+    /* Validate orb font format header.  v3 (pure glyph coverage) and v2 (legacy, trailing reserved
+       band) are byte-compatible on disk -- the band, if present, just rides along as dead space in
+       this font's packed rect -- so accept either. */
 
     orb_font_header_t hdr;
     if ( fread( &hdr, sizeof( hdr ), 1, f ) != 1
          || hdr.magic   != ORB_FONT_MAGIC
-         || hdr.version != ORB_FONT_VERSION
+         || ( hdr.version != 3u && hdr.version != 2u )
          || hdr.glyph_count == 0 || hdr.glyph_count > 256
-         || hdr.atlas_w == 0     || hdr.atlas_h <= ORB_FONT_RESERVED_ROWS )
+         || hdr.atlas_w == 0     || hdr.atlas_h == 0 )
     {
         fclose( f );
         return false;
@@ -146,8 +87,9 @@ font_slot_load( font_slot_t* slot, const char* path )
             lookup[ g.codepoint - 32 ] = g;
     }
 
-    /* Read the full baked atlas -- glyph pixels plus the guaranteed-blank reserved band the baker
-       left at the bottom (see orb_font.h / ORB_FONT_RESERVED_ROWS). */
+    /* Read the full baked atlas.  v3 fonts are pure glyph coverage; a legacy v2 font also carries a
+       blank bottom band, which just rides along as dead space inside this font's packed rect (assists
+       are atlas-level now).  hdr.atlas_h is the packed rect height fed to the shared atlas. */
 
     u32 pixel_count = hdr.atlas_w * hdr.atlas_h;
     u8* pixels      = (u8*)malloc( pixel_count );
@@ -161,54 +103,45 @@ font_slot_load( font_slot_t* slot, const char* path )
     }
     fclose( f );
 
-    /* Build the metrics scale-free fields here; the scale-dependent fields below are exact (a
-       loaded .orb_font has no integer upscale). */
-    font_metrics_t metrics = ( font_metrics_t ){
+    /* Pack the glyph pixels into the shared resource atlas.  A fresh slot adds a new tenant; a
+       reload (slot already used) updates its existing tenant in place -- the persistent texture and
+       stable bindless slot mean no per-frame create/destroy churn and no device drain here (the
+       deferred flush at frame_begin sequences the GPU upload to a safe between-frames point). */
+    u32 tenant;
+    if ( slot->used && slot->atlas_tenant )
+    {
+        if ( !res_atlas_update( slot->atlas_tenant, pixels, hdr.atlas_w, hdr.atlas_h ) )
+        {
+            free( pixels );
+            return false;   // slot keeps its previous font intact
+        }
+        tenant = slot->atlas_tenant;
+    }
+    else
+    {
+        tenant = res_atlas_add( pixels, hdr.atlas_w, hdr.atlas_h );
+        if ( tenant == 0 )
+        {
+            free( pixels );
+            return false;
+        }
+    }
+    free( pixels );
+
+    /* Commit into the slot (a loaded .orb_font has no integer upscale, so metrics are exact). */
+    slot->ascent  = hdr.ascent;
+    slot->descent = hdr.descent;
+    memcpy( slot->lookup, lookup, sizeof( lookup ) );
+
+    slot->atlas_tenant = tenant;
+    slot->used         = true;
+    slot->metrics      = ( font_metrics_t ){
         .type = {
             .char_h = (f32)( hdr.ascent - hdr.descent ),
             .line_h = (f32)( hdr.ascent - hdr.descent + hdr.line_gap ),
             .size   = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
         },
     };
-
-    /* Paint the white texel + dash rows into the reserved band and resolve white/dash/UV-scale
-       metrics. */
-    font_finalize_atlas( pixels, hdr.atlas_w, hdr.atlas_h, &metrics );
-
-    /* Reload swap-safety: when this slot already holds an atlas, in-flight frames may still be
-       sampling it (and hold the bindless set bound).  Re-baking a font live -- e.g. the font
-       browser dragging the size slider -- otherwise creates/destroys an atlas and rewrites its
-       bindless slot every frame, and the deferred reclaim races the GPU under that churn,
-       eventually faulting the device (VK_ERROR_DEVICE_LOST).  Drain the GPU first so the old
-       atlas has no live readers before we build and register its replacement and tear it down.
-       Reloads are rare and human-triggered, so the full stall is imperceptible. */
-    if ( slot->used )
-        rhi()->device_wait_idle();
-
-    /* Create the render texture and upload the atlas pixels. */
-
-    gui_atlas_t atlas;
-    if ( !gui_atlas_create( &atlas, hdr.atlas_w, hdr.atlas_h, pixels, "gui_font_atlas" ) )
-    {
-        free( pixels );
-        return false;
-    }
-    free( pixels );
-
-    /* All GPU work succeeded -- commit into the slot.  Release any atlas it held only now, so a
-       failed load above leaves the previous font intact. */
-
-    font_slot_free_gpu( slot );
-
-    slot->ascent  = hdr.ascent;
-    slot->descent = hdr.descent;
-    memcpy( slot->lookup, lookup, sizeof( lookup ) );
-
-    slot->atlas = atlas;
-    slot->used  = true;
-
-    metrics.atlas.atlas_idx = atlas.atlas_idx;
-    slot->metrics           = metrics;
 
     printf( "[gui] loaded font '%s' (char_h=%.1f line_h=%.1f)\n",
             path, slot->metrics.type.char_h, slot->metrics.type.line_h );
@@ -234,12 +167,15 @@ font_slot_glyph( const font_slot_t* slot, u8 ch,
 {
     if ( ch < 32 || ch > 126 ) ch = (u8)'?';
     const orb_font_glyph_t* g = &slot->lookup[ ch - 32 ];
-    const font_atlas_sample_t* m = &slot->metrics.atlas;
 
-    f32 iw = m->inv_atlas_w;            /* precomputed at load -- no per-glyph divide */
-    f32 ih = m->inv_atlas_h;
-    *u0 = (f32)g->atlas_x * iw;
-    *v0 = (f32)g->atlas_y * ih;
+    /* Glyph atlas_x/atlas_y are in the font's own baked pixel space; rebase by the font's live
+       page origin in the shared atlas (valid across repacks) and scale by the shared atlas dims. */
+    u32 px, py;
+    res_atlas_origin( slot->atlas_tenant, &px, &py );
+    f32 iw = res_atlas_inv_w();
+    f32 ih = res_atlas_inv_h();
+    *u0 = (f32)( px + g->atlas_x ) * iw;
+    *v0 = (f32)( py + g->atlas_y ) * ih;
     *u1 = *u0 + (f32)g->w * iw;
     *v1 = *v0 + (f32)g->h * ih;
 
@@ -372,9 +308,8 @@ font_shutdown( void )
     /* Drop any deferred reloads that never reached a frame_begin flush. */
     memset( s_reload_q, 0, sizeof( s_reload_q ) );
 
-    /* Release every slot's owned atlas. */
-    for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
-        font_slot_free_gpu( &s_fonts[ i ] );
+    /* Fonts own no GPU resource of their own -- their glyph pixels live in the shared resource
+       atlas, torn down once by res_atlas_shutdown (gui_backend_exit).  Just clear the registry. */
     memset( s_fonts, 0, sizeof( s_fonts ) );
     s_active    = NULL;
     s_active_id = 0;
@@ -397,47 +332,25 @@ font_init( void )
 }
 
 /*==============================================================================================
-    BACKEND-INTERNAL -- consumed by gui_build_tess.c (atlas index / white texel / dash rows)
-    and gui_debug_overlay.c (atlas index / white texel), and gui_render.c (memory
-    stats).
+    BACKEND-INTERNAL -- consumed by gui_build_tess.c (atlas index / white texel / dash rows) and
+    gui_debug_overlay.c (atlas index / white texel), and gui_render.c (memory stats).
+
+    Fonts, icons and solid/dash assists all share ONE resource atlas now, so these are thin
+    redirects to gui_res_atlas.c.  Keeping the font_* names means the tessellation hot path
+    (gui_build_tess.c) is unchanged -- every tex_idx it emits is the shared atlas, so text, fills,
+    dashes and icons batch into one draw per clip/viewport scope.
 ==============================================================================================*/
 
-static u32 
-font_atlas_idx( void ) { return s_font->atlas.atlas_idx; }
+static u32  font_atlas_idx  ( void )               { return res_atlas_idx();   }
+static void font_white_uv   ( f32* u, f32* v )     { res_atlas_white_uv( u, v ); }
+static f32  font_dash_v     ( f32 duty )           { return res_atlas_dash_v( duty ); }
 
-/* UV of the active atlas's white texel (appended bottom row) for solid-color draws. */
-
-static void 
-font_white_uv( f32* u, f32* v ) { *u = s_font->atlas.white_u; *v = s_font->atlas.white_v; }
-
-/* Center V of the dash pattern row whose baked on-fraction is closest to `duty`.  Tessellated
-   dashed lines sample this row, tiling it along the line via REPEAT addressing on U. */
-
-static f32
-font_dash_v( f32 duty )
-{
-    u32 best  = 0;
-    f32 bestd = 1e30f;
-    for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
-    {
-        f32 d = s_dash_duty[ p ] - duty;
-        if ( d < 0.0f ) d = -d;
-        if ( d < bestd ) { bestd = d; best = p; }
-    }
-    return s_font->atlas.dash_v[ best ];
-}
-
-/* Total bytes of GPU memory held by font atlas textures (R8_UNORM, 1 byte/pixel): each loaded
-   font's owned atlas in the registry. */
-
+/* Total GPU bytes held by the shared resource atlas (R8_UNORM, 1 byte/pixel) -- one texture now,
+   not one per font. */
 static u32
 font_atlas_bytes( void )
 {
-    u32 bytes = 0;
-    for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
-        if ( s_fonts[ i ].used )
-            bytes += s_fonts[ i ].atlas.atlas_w * s_fonts[ i ].atlas.atlas_h;
-    return bytes;
+    return res_atlas_bytes();
 }
 
 // clang-format on

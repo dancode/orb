@@ -251,10 +251,10 @@ gui_frame_begin( f32 dt )
     if ( gui_font_flush_deferred() )
         s_frame_dirty = true;
 
-    /* Push any icons registered since last frame to the GPU -- every frame the icons layer is on,
-       since host code can register icons between frames independent of the widget emit. */
-    if ( s_init_caps.icons )
-        icon_atlas_flush_upload();
+    /* Push any resource-atlas changes (a font (re)load above, or icons registered since last frame)
+       to the GPU at this safe between-frames point.  Unconditional: fonts pack into the shared atlas
+       too, so the flush must run even when the icons layer is off. */
+    res_atlas_flush_upload();
 
     if ( s_frame_dirty )
     {

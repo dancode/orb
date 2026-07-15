@@ -15,14 +15,15 @@
 
 /* 'OFNT' -- bytes O,F,N,T in little-endian memory order */
 #define ORB_FONT_MAGIC    0x544E464Fu
-#define ORB_FONT_VERSION  2u
 
-/* Bakers (font_tool.c, dev_font.c) never let the packer place a glyph in the bottom
-   ORB_FONT_RESERVED_ROWS rows of the atlas -- that band is left blank on disk so gui's loader can
-   paint its white texel + dash-pattern rows there at load time without ever risking overlap with
-   packed glyph pixels.  Must equal 1 (white) + GUI_DASH_PATTERN_COUNT (gui_font.h); a
-   _Static_assert next to GUI_DASH_PATTERN_COUNT enforces that. */
-#define ORB_FONT_RESERVED_ROWS  5u
+/* Format versions:
+     3  Glyphs are packed full-height; the atlas is pure glyph coverage, no reserved band.  The gui
+        runtime draws its white texel + dash-pattern rows from a shared resource atlas
+        (gui_res_atlas.c), so a font no longer carries drawing assists of its own.
+     2  (legacy, still loadable) Left the bottom 5 rows blank for gui to paint assists into at load.
+   The on-disk structure is byte-identical across 2 and 3 -- only atlas_h differs (v2 carries the
+   trailing band) -- so the loader accepts either version. */
+#define ORB_FONT_VERSION  3u
 
 typedef struct
 {

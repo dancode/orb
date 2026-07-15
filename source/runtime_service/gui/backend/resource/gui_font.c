@@ -150,29 +150,29 @@ font_valid( void )
     return s_font != NULL;
 }
 
-/* Bindless atlas index currently backing font id `id` (0 for an empty / out-of-range slot).
+/* Bindless index of the atlas backing font id `id` (0 for an empty / out-of-range slot).
 
-   The retained render cache folds this into its per-window hash.  A font id is a stable handle,
-   but font_load_into() can swap a *different* atlas under that same id -- the id is unchanged yet
-   the bindless index baked into already-tessellated geometry now names a retired atlas.  Hashing
-   the live atlas index (not just the id) makes that swap register as a change, forcing the window
-   to re-tessellate against the new atlas instead of replaying vertices that sample a freed one. */
+   Every loaded font now shares the one resource atlas, so this is the shared bindless slot for any
+   used font.  A texture preview (sb_gui) draws this index -- it shows the whole shared atlas (all
+   fonts + icons), which is the intent.  Cache invalidation on a live re-bake is handled separately
+   by res_atlas_generation (folded into the retained cache's per-window hash), since the shared
+   bindless slot is stable across reloads while glyph UVs may shift on a repack. */
 u32
 font_slot_atlas_idx( u32 id )
 {
-    if ( id >= GUI_FONT_REGISTRY_MAX )
+    if ( id >= GUI_FONT_REGISTRY_MAX || !s_fonts[ id ].used )
         return 0;
-    return s_fonts[ id ].metrics.atlas.atlas_idx;
+    return res_atlas_idx();
 }
 
-/* Live atlas pixel dimensions backing font id `id` (0,0 for an empty / out-of-range slot).  The
-   companion read font_slot_atlas_idx doesn't carry size, so a texture preview needs both. */
+/* Pixel dimensions of the atlas backing font id `id` (0,0 for an empty / out-of-range slot) -- the
+   shared resource atlas dimensions.  A texture preview needs size alongside font_slot_atlas_idx. */
 gui_vec2_t
 font_slot_atlas_size( u32 id )
 {
-    if ( id >= GUI_FONT_REGISTRY_MAX )
+    if ( id >= GUI_FONT_REGISTRY_MAX || !s_fonts[ id ].used )
         return ( gui_vec2_t ){ 0.0f, 0.0f };
-    return ( gui_vec2_t ){ (f32)s_fonts[ id ].atlas.atlas_w, (f32)s_fonts[ id ].atlas.atlas_h };
+    return ( gui_vec2_t ){ (f32)GUI_RES_ATLAS_W, (f32)GUI_RES_ATLAS_H };
 }
 
 /*==============================================================================================

@@ -68,11 +68,14 @@ static gui_backend_caps_t s_caps;
     Unity build
 ==============================================================================================*/
 
-// resource/ -- foundation: shared GPU-atlas helper, then fonts + icons built on it.
-// Independent of each other; each owns its own atlas instance, CPU staging, and deferred-upload
-// lifecycle -- gui_atlas.h/.c only factors out the create/upload/destroy sequence they share.
+// resource/ -- foundation: the shared GPU-atlas helper, then the single shared resource atlas, then
+// fonts + icons built on it.  gui_atlas.h/.c factors out the raw create/upload/destroy of one GPU
+// texture; gui_res_atlas.h/.c owns THE shared R8 atlas (one texture, one bindless slot) that fonts
+// and icons pack into as tenants so all core UI draws share tex_idx and batch together.
 #include "runtime_service/gui/backend/resource/gui_atlas.h"
 #include "runtime_service/gui/backend/resource/gui_atlas.c"
+#include "runtime_service/gui/backend/resource/gui_res_atlas.h"
+#include "runtime_service/gui/backend/resource/gui_res_atlas.c"
 #include "runtime_service/gui/backend/resource/gui_font.h"
 #include "runtime_service/gui/backend/resource/gui_font_internal.c"
 #include "runtime_service/gui/backend/resource/gui_font.c"
@@ -131,13 +134,23 @@ gui_backend_init( gui_backend_caps_t caps )
 {
     s_caps = caps;
 
-    if ( !gui_render_init() )   /* shared pipeline / sampler / atlas (gui_render.c) */
+    if ( !gui_render_init() )   /* shared pipeline / sampler (gui_render.c) */
         return false;
 
-    /* Icon atlas is an optional layer over the core font/render pipeline -- stood up here (not
-       inside font_init) so a caller that never touches icons never pays for it. */
+    /* The shared resource atlas is core, not optional: fonts pack into it too, so it must exist
+       before the host's first font_load.  One owned R8 texture + bindless slot; created here after
+       the render pipeline (which owns the sampler) and before any font/icon registration. */
+    if ( !res_atlas_init() )
+    {
+        gui_render_shutdown();
+        return false;
+    }
+
+    /* Icons are an optional layer over the shared atlas -- their registration API is stood up here
+       (gated on s_caps.icons) so a caller that never touches icons never reserves the packer. */
     if ( s_caps.icons && !icon_atlas_init() )
     {
+        res_atlas_shutdown();
         gui_render_shutdown();
         return false;
     }
@@ -150,6 +163,7 @@ gui_backend_exit( void )
 {
     if ( s_caps.icons )
         icon_atlas_shutdown();
+    res_atlas_shutdown();
     gui_render_shutdown();
 }
 

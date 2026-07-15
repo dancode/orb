@@ -411,17 +411,18 @@ cache_diff_windows( void )
             ++s_cache.cur_n;
         }
 
-        /* Fold z, vp, font, and atlas index into the hash.  The font id alone is not enough:
-           font_load_into() can swap a different atlas under the same id, leaving the id stable
-           while cached geometry references a retired atlas slot.  Folding the live atlas index
-           catches this and forces re-tessellation. */
-        u32 atlas = font_slot_atlas_idx( segs[ si ].font );
-        u32 h     = s_cache.cur[ bi ].hash;
+        /* Fold z, vp, font, and the shared-atlas generation into the hash.  The font id alone is not
+           enough: a live re-bake (font_load_into) changes glyph geometry, and a shared-atlas repack
+           can shift every tenant's UVs, all while the font id and the (now shared, stable) bindless
+           index are unchanged.  res_atlas_generation bumps on any such structural change, so folding
+           it forces the affected windows to re-tessellate against the new packing. */
+        u32 gen = res_atlas_generation();
+        u32 h   = s_cache.cur[ bi ].hash;
         h = fnv1a_u32( h, segs[ si ].z    );
         h = fnv1a_u32( h, segs[ si ].vp   );
         h = fnv1a_u32( h, segs[ si ].font );
         h = fnv1a_u32( h, segs[ si ].band );   /* band flip must re-tessellate (slot changes ends) */
-        h = fnv1a_u32( h, atlas            );
+        h = fnv1a_u32( h, gen              );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
         {
             /* A volatile-tagged command NEVER participates in its window's hash -- the block is

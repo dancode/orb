@@ -1,21 +1,20 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/resource/gui_atlas.h -- Shared GPU-atlas asset (type + lifecycle).
+    runtime_service/gui/backend/resource/gui_atlas.h -- Owned GPU-texture asset (type + lifecycle).
 
-    Both font slots (gui_font_internal.c) and the runtime icon atlas (gui_icon.c) are the same shape
-    underneath: a CPU-authored R8 coverage bitmap uploaded once to an owned GPU texture and
-    registered for bindless sampling.  RHI itself tracks neither the pairing nor the lifetime --
-    texture_create / register_texture hand back a raw handle + index and leave ownership entirely
-    to the caller (see rhi_api.h).  gui_atlas_t is that caller-side pairing, extracted once so the
-    two call sites do not each hand-roll the same create/upload/register/unregister sequence.
+    A CPU-authored R8 coverage bitmap uploaded to an owned GPU texture and registered for bindless
+    sampling.  RHI itself tracks neither the pairing nor the lifetime -- texture_create /
+    register_texture hand back a raw handle + index and leave ownership entirely to the caller (see
+    rhi_api.h).  gui_atlas_t is that caller-side pairing, so the create/upload/register/unregister
+    sequence is written once.  The shared resource atlas (gui_res_atlas.c) composes one of these for
+    its single texture; nothing else owns a gui_atlas_t directly anymore.
 
     This is deliberately NOT a general asset system: it has no name table, no refcounting, no
-    hot-reload.  It is the one thing font and icon both needed today.  A real asset pipeline (see
-    the "asset pipeline later" notes in gui_api.h and gui_icon.c) is a different, larger
-    problem -- indexing/streaming/dependency tracking across many asset kinds -- and should not be
-    backed into this atlas-sized helper.
+    hot-reload.  A real asset pipeline (see the "asset pipeline later" notes in gui_api.h and
+    gui_icon.c) is a different, larger problem -- indexing/streaming/dependency tracking across many
+    asset kinds -- and should not be backed into this texture-sized helper.
 
-    Included by gui_backend.c before resource/gui_font.h and resource/gui_icon.c.
+    Included by gui_backend.c before resource/gui_res_atlas.h.
 
 ==============================================================================================*/
 #pragma once

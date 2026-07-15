@@ -81,18 +81,27 @@ void font_glyph             ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
                                      f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
 
 /*==============================================================================================
-    Runtime icon atlas (resource/gui_icon.c)
+    Shared resource atlas (resource/gui_res_atlas.c)
 
-    A second R8 coverage texture, built at runtime: callers register raw monochrome bitmaps and
-    the atlas packs them with stb_rect_pack, handing back an gui_icon_id_t.  draw_push_icon
-    (pipeline/gui_emit_draw.c, EMIT section below) draws through the existing textured-quad path
-    using icon_get's cached UVs, so icons batch in the same flush as text and tint by vertex
-    color.  GPU re-upload is deferred to frame_begin (icon_atlas_flush_upload).
+    THE one R8 texture core UI draws from: fonts, icons and the solid/dash assists all pack into it,
+    so they share a bindless slot and batch into one draw per clip/viewport scope.  The UI unit only
+    needs the deferred-upload flush; everything else (packing, sampling accessors) is backend-
+    internal and reached through the font_/icon_ accessors below.
 ==============================================================================================*/
 
-bool            icon_atlas_init         ( void );   // create the R8 atlas texture + bindless index
-void            icon_atlas_shutdown     ( void );   // destroy the atlas, free CPU staging
-void            icon_atlas_flush_upload ( void );   // re-upload the CPU atlas to the GPU if dirty
+void            res_atlas_flush_upload  ( void );   // re-upload the resident atlas to the GPU if dirty
+
+/*==============================================================================================
+    Runtime icon set (resource/gui_icon.c)
+
+    Callers register raw monochrome bitmaps (icon_register) that pack into the shared resource atlas
+    as tenants, handing back a gui_icon_id_t.  draw_push_icon (pipeline/gui_emit_draw.c, EMIT section
+    below) draws through the existing textured-quad path using icon_get's UVs, so icons batch in the
+    same draw as the text and fills around them and tint by vertex color.
+==============================================================================================*/
+
+bool            icon_atlas_init         ( void );   // enable icon registration (shared atlas owns GPU)
+void            icon_atlas_shutdown     ( void );   // clear the icon table
 
 gui_icon_id_t   icon_register           ( const char* name, u32 w, u32 h, const u8* coverage );
 gui_icon_id_t   icon_find               ( const char* name );
