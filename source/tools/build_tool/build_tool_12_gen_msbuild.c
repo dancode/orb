@@ -174,6 +174,32 @@ write_msbuild_clcompile_group( FILE* f, config_t config, target_info_t* target )
         fprintf( f, "      <SubSystem>%s</SubSystem>\n", subsystem );
         fprintf( f, "      <GenerateDebugInformation>%s</GenerateDebugInformation>\n", gen_debug );
         fprintf( f, "      <AdditionalDependencies>user32.lib;shell32.lib;gdi32.lib;advapi32.lib;%%(AdditionalDependencies)</AdditionalDependencies>\n" );
+
+        // Per-target 'link_flag' directives (e.g. font_tool's freetype.lib) -- appended verbatim to
+        // the linker command line, mirroring the NMake link path (build_tool_08_link.c) so this
+        // solution links the same libs the real build does.  A bare relative path (a .lib) is
+        // anchored to the repo root via $(ProjectDir)<root_prefix> -- the MSBuild link task's CWD is
+        // the project dir, not the repo root the NMake build runs from -- while a raw switch (/STACK,
+        // etc.) or an already-absolute path is emitted as-is.  NMake filters these by compiler only
+        // (not config), so emit them in every config here too.
+        char link_opts[ 1024 ] = { 0 };
+        size_t lo_used = 0;
+        for ( int i = 0; i < target->extra_link_flag_count; ++i )
+        {
+            const extra_flag_t* ef = &target->extra_link_flags[ i ];
+            if ( ef->compiler != COMPILE_MSVC && ef->compiler != COMPILE_ALL )
+                continue;
+
+            char tok[ PATH_MAX ];
+            if ( ef->flag[ 0 ] == '/' || ef->flag[ 0 ] == '-' || platform_is_abs_path( ef->flag ) )
+                snprintf( tok, sizeof( tok ), "%s", ef->flag );                                // raw switch / absolute
+            else
+                snprintf( tok, sizeof( tok ), "$(ProjectDir)%s%s", s_ctx.root_prefix, ef->flag ); // repo-relative lib
+            gen_list_append( link_opts, sizeof( link_opts ), &lo_used, ' ', tok );
+        }
+        if ( link_opts[ 0 ] )
+            fprintf( f, "      <AdditionalOptions>%s %%(AdditionalOptions)</AdditionalOptions>\n", link_opts );
+
         fprintf( f, "    </Link>\n" );
     }
 

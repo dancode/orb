@@ -38,10 +38,11 @@
 
 // clang-format off
 
-/* One owned R8 texture, 1 byte / pixel.  1024x1024 = 1 MiB resident CPU + 1 MiB GPU: holds ~12
-   font atlases (128/256 square) plus several icon pages with room to spare. */
-#define GUI_RES_ATLAS_W            1024u
-#define GUI_RES_ATLAS_H            1024u
+/* One owned R8 texture, 1 byte / pixel.  512x512 = 256 KiB resident CPU + 256 KiB GPU: fits the
+   default UI font(s) plus the editor icon set with room to spare.  Bump to 1024 (or larger) if a
+   build packs many large fonts/icons and res_atlas_add starts reporting the atlas full. */
+#define GUI_RES_ATLAS_W            512u
+#define GUI_RES_ATLAS_H            512u
 
 /* Max distinct packed rects: font slots (<= GUI_FONT_REGISTRY_MAX) + icons (<= ICON_MAX). */
 #define GUI_RES_ATLAS_MAX_TENANTS  320u

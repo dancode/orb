@@ -118,9 +118,7 @@ typedef struct { int count; } info_ctx_t;
 static void
 info_print_header( void )
 {
-    printf( "legend: ver=format version  aw/ah=atlas width/height px  size=nominal em px  "
-            "asc/desc=ascent/descent px  gap=extra line gap px  glyphs=glyph count\n" );
-    printf( "%-40s %3s %5s %5s %5s %5s %5s %5s %7s\n",
+    printf( "\n%-40s %3s %5s %5s %5s %5s %5s %5s %7s\n",
             "file", "ver", "aw", "ah", "size", "asc", "desc", "gap", "glyphs" );
 }
 
