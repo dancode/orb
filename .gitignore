@@ -87,6 +87,9 @@ cmake-build-*/
 # Child project engine root marker (machine-local)
 .orb_engine
 
+# Scratch space for tests / tools (sandboxes create + clean temp/, debris never commits)
+/temp/
+
 # Assets
 /assets
 

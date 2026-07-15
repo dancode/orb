@@ -106,6 +106,11 @@ int sys_file_glob( const char* dir, const char* pattern, sys_glob_fn cb, void* u
 
 bool sys_dir_make( const char* path );
 
+/* Delete a single empty directory. Fails (returns false) if the directory is missing or still
+   contains entries -- delete the contents first. Not recursive by design. */
+
+bool sys_dir_delete( const char* path );
+
 /* Recursively enumerate every file under `root`, descending into all subdirectories. Calls `cb`
    once per file (see sys_glob_fn) with its bare name and absolute path; subdirectories are
    traversed but never reported themselves. Stops early if `cb` returns false. Returns the total

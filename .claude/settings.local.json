@@ -312,7 +312,11 @@
       "Bash(sed -i 's/add         sys ref prof mod app core job net fs/add         sys ref prof mod app core job net fs pack/' orb.targets)",
       "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_fs)",
       "PowerShell(bin\\\\build_tool.exe -doctor)",
-      "PowerShell(bin\\\\sb_mod.exe; Write-Host \"exit=$LASTEXITCODE\")"
+      "PowerShell(bin\\\\sb_mod.exe; Write-Host \"exit=$LASTEXITCODE\")",
+      "Bash(awk '{print $5, $9}')",
+      "PowerShell(\\(Get-Item source\\\\engine\\\\sys\\\\sys.c\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target sb_fs)",
+      "PowerShell(bin\\\\sb_fs.exe; \"exit=$LASTEXITCODE\"; ls -Name | Select-String \"sb_fs\")",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_fs; if \\($?\\) { bin\\\\sb_fs.exe; \"exit=$LASTEXITCODE\"; if \\(Test-Path temp\\) { \"temp/ LEFT BEHIND:\"; Get-ChildItem -Recurse temp | Select-Object FullName } else { \"temp/ cleaned up\" } })"
     ]
   }
 }

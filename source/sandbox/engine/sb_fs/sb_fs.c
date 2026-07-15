@@ -4,8 +4,9 @@
 
     Not a real host; a headless place to exercise the fs library and verify it works.  Covers
     the DIR read path, the ZIP bundle reader, loose-over-bundle priority + hot-reload, glob,
-    unmount, and the fs() module gateway.  Every scratch file/dir is built here and cleaned up,
-    so the suite leaves nothing committed and needs no fixtures.
+    unmount, and the fs() module gateway.  Every scratch file/dir is built under temp/sb_fs/
+    (never loose in the repo root) and cleaned up, so the suite leaves nothing committed and
+    needs no fixtures.
 
 ==============================================================================================*/
 
@@ -22,6 +23,10 @@
 /*==============================================================================================
     Check helper (matches sb_net / sb_prof house style)
 ==============================================================================================*/
+
+/* All scratch fixtures live under this root so a crashed or aborted run can never litter the
+   repository -- worst case, `temp/` holds the debris and is safe to wipe wholesale. */
+#define SB_TEMP "temp/sb_fs"
 
 static int s_checks = 0;
 static int s_fails  = 0;
@@ -56,28 +61,28 @@ fs_test_dir( void )
 
     fs_system_init();
 
-    const char* probe_real = "sb_fs_probe.tmp";              // in the current working dir
+    const char* probe_real = SB_TEMP "/probe.tmp";
     const char* payload    = "orb vfs dir-mount probe\n";
     u32         plen       = ( u32 )strlen( payload );
     sb_check( sys_file_write_entire( probe_real, payload, plen ), "write probe file" );
 
-    /* Map the virtual prefix "data/" onto the current working directory. */
-    sb_check( fs_mount( "data/", "", 0 ), "mount data/ -> CWD" );
+    /* Map the virtual prefix "data/" onto the scratch directory. */
+    sb_check( fs_mount( "data/", SB_TEMP "/", 0 ), "mount data/ -> temp scratch" );
 
     /* exists + stat through the vpath (no bytes read yet). */
     fs_stat_t st = { 0 };
-    sb_check( fs_exists( "data/sb_fs_probe.tmp" ), "exists via vpath" );
-    sb_check( fs_stat( "data/sb_fs_probe.tmp", &st ) && st.ok, "stat ok" );
+    sb_check( fs_exists( "data/probe.tmp" ), "exists via vpath" );
+    sb_check( fs_stat( "data/probe.tmp", &st ) && st.ok, "stat ok" );
     sb_check( st.size == plen, "stat size == payload size" );
 
     /* read + byte-compare; the blob carries a hidden trailing NUL. */
-    fs_blob_t b = fs_read( "data/sb_fs_probe.tmp" );
+    fs_blob_t b = fs_read( "data/probe.tmp" );
     sb_check( blob_is( &b, payload ), "read bytes match payload" );
     sb_check( ( ( const char* )b.data )[ b.size ] == '\0', "blob is NUL-terminated" );
     fs_free( &b );
 
     /* second read is served from the catalog; one file cached. */
-    fs_blob_t b2 = fs_read( "data/sb_fs_probe.tmp" );
+    fs_blob_t b2 = fs_read( "data/probe.tmp" );
     sb_check( b2.ok, "second (cached) read ok" );
     sb_check( fs_file_count() == 1, "catalog holds one entry" );
     fs_free( &b2 );
@@ -89,7 +94,7 @@ fs_test_dir( void )
     fs_free( &miss );
 
     /* backslashes + case fold to the same file (case-insensitive vpath, Win FS). */
-    sb_check( fs_exists( "Data\\SB_FS_PROBE.TMP" ), "backslash + case alt-form resolves" );
+    sb_check( fs_exists( "Data\\PROBE.TMP" ), "backslash + case alt-form resolves" );
 
     sys_file_delete( probe_real );
     fs_system_exit();
@@ -164,12 +169,12 @@ fs_test_shadow( const char* zip_path )
 {
     printf( "  -- loose-over-bundle priority + hot-reload --\n" );
 
-    const char* shadow_rel = "shared.txt";    // loose file in CWD; DIR mount "pak/"->"" serves it
+    const char* shadow_rel = SB_TEMP "/shared.txt";    // loose file the DIR mount serves over the zip
     sys_file_write_entire( shadow_rel, "FROM LOOSE", 10 );
 
     fs_system_init();
     fs_mount( "pak/", zip_path, 0 );           // bundle at low priority
-    fs_mount( "pak/", "", 10 );                // loose CWD at high priority -> shadows the bundle
+    fs_mount( "pak/", SB_TEMP "/", 10 );       // loose scratch dir at high priority -> shadows the bundle
 
     fs_blob_t win = fs_read( "pak/shared.txt" );
     sb_check( blob_is( &win, "FROM LOOSE" ), "loose file shadows bundle entry" );
@@ -198,7 +203,7 @@ fs_test_shadow( const char* zip_path )
 
     fs_stat_t l1 = { 0 }, l2 = { 0 };
     fs_stat( "pak/late.txt", &l1 );
-    sys_file_write_entire( "late.txt", "FROM LOOSE LATE", 15 );
+    sys_file_write_entire( SB_TEMP "/late.txt", "FROM LOOSE LATE", 15 );
     fs_stat( "pak/late.txt", &l2 );
     sb_check( l1.mtime != l2.mtime, "late-shadow stat re-resolves to loose" );
 
@@ -206,7 +211,7 @@ fs_test_shadow( const char* zip_path )
     sb_check( blob_is( &post, "FROM LOOSE LATE" ), "late loose override now wins" );
     fs_free( &post );
 
-    sys_file_delete( "late.txt" );
+    sys_file_delete( SB_TEMP "/late.txt" );
     fs_blob_t back = fs_read( "pak/late.txt" );
     sb_check( blob_is( &back, "FROM ZIP LATE" ), "evict-on-vanish falls back to bundle" );
     fs_free( &back );
@@ -225,15 +230,15 @@ fs_test_priority( void )
 {
     printf( "  -- multi-mount priority + unmount --\n" );
 
-    sys_dir_make( "sb_fs_lo" );
-    sys_dir_make( "sb_fs_hi" );
-    sys_file_write_entire( "sb_fs_lo/pick.txt", "LOW", 3 );
-    sys_file_write_entire( "sb_fs_hi/pick.txt", "HIGH", 4 );
-    sys_file_write_entire( "sb_fs_lo/only_lo.txt", "ONLY LOW", 8 );
+    sys_dir_make( SB_TEMP "/lo" );
+    sys_dir_make( SB_TEMP "/hi" );
+    sys_file_write_entire( SB_TEMP "/lo/pick.txt", "LOW", 3 );
+    sys_file_write_entire( SB_TEMP "/hi/pick.txt", "HIGH", 4 );
+    sys_file_write_entire( SB_TEMP "/lo/only_lo.txt", "ONLY LOW", 8 );
 
     fs_system_init();
-    fs_mount( "res/", "sb_fs_lo/", 0 );        // low priority
-    fs_mount( "res/", "sb_fs_hi/", 10 );       // high priority
+    fs_mount( "res/", SB_TEMP "/lo/", 0 );     // low priority
+    fs_mount( "res/", SB_TEMP "/hi/", 10 );    // high priority
 
     fs_blob_t hi = fs_read( "res/pick.txt" );
     sb_check( blob_is( &hi, "HIGH" ), "higher-priority mount wins collision" );
@@ -253,9 +258,11 @@ fs_test_priority( void )
 
     fs_system_exit();
 
-    sys_file_delete( "sb_fs_lo/pick.txt" );
-    sys_file_delete( "sb_fs_lo/only_lo.txt" );
-    sys_file_delete( "sb_fs_hi/pick.txt" );
+    sys_file_delete( SB_TEMP "/lo/pick.txt" );
+    sys_file_delete( SB_TEMP "/lo/only_lo.txt" );
+    sys_file_delete( SB_TEMP "/hi/pick.txt" );
+    sys_dir_delete( SB_TEMP "/lo" );
+    sys_dir_delete( SB_TEMP "/hi" );
 }
 
 /*==============================================================================================
@@ -287,13 +294,13 @@ fs_test_glob( void )
 {
     printf( "  -- glob over a dir mount --\n" );
 
-    sys_dir_make( "sb_fs_glob" );
-    sys_file_write_entire( "sb_fs_glob/alpha.gtxt", "a", 1 );
-    sys_file_write_entire( "sb_fs_glob/beta.gtxt", "b", 1 );
-    sys_file_write_entire( "sb_fs_glob/gamma.other", "g", 1 );
+    sys_dir_make( SB_TEMP "/glob" );
+    sys_file_write_entire( SB_TEMP "/glob/alpha.gtxt", "a", 1 );
+    sys_file_write_entire( SB_TEMP "/glob/beta.gtxt", "b", 1 );
+    sys_file_write_entire( SB_TEMP "/glob/gamma.other", "g", 1 );
 
     fs_system_init();
-    fs_mount( "g/", "sb_fs_glob/", 0 );
+    fs_mount( "g/", SB_TEMP "/glob/", 0 );
 
     glob_ctx_t c = { 0 };
     int        n = fs_glob( "g/*.gtxt", glob_cb, &c );
@@ -304,9 +311,10 @@ fs_test_glob( void )
 
     fs_system_exit();
 
-    sys_file_delete( "sb_fs_glob/alpha.gtxt" );
-    sys_file_delete( "sb_fs_glob/beta.gtxt" );
-    sys_file_delete( "sb_fs_glob/gamma.other" );
+    sys_file_delete( SB_TEMP "/glob/alpha.gtxt" );
+    sys_file_delete( SB_TEMP "/glob/beta.gtxt" );
+    sys_file_delete( SB_TEMP "/glob/gamma.other" );
+    sys_dir_delete( SB_TEMP "/glob" );
 }
 
 /*==============================================================================================
@@ -326,14 +334,14 @@ fs_test_module( void )
 
     /* fs() resolves to the static gateway here (sb_fs declares 'dep fs' -> FS_STATIC). */
     const char* payload = "through the gateway";
-    sys_file_write_entire( "sb_fs_gw.tmp", payload, ( u32 )strlen( payload ) );
-    sb_check( fs()->mount( "gw/", "", 0 ), "fs()->mount" );
+    sys_file_write_entire( SB_TEMP "/gw.tmp", payload, ( u32 )strlen( payload ) );
+    sb_check( fs()->mount( "gw/", SB_TEMP "/", 0 ), "fs()->mount" );
 
-    fs_blob_t b = fs()->read( "gw/sb_fs_gw.tmp" );
+    fs_blob_t b = fs()->read( "gw/gw.tmp" );
     sb_check( blob_is( &b, payload ), "fs()->read returns the bytes" );
     fs()->free( &b );
 
-    sys_file_delete( "sb_fs_gw.tmp" );
+    sys_file_delete( SB_TEMP "/gw.tmp" );
     mod_system_exit();    // fs_mod_exit -> fs_system_exit
 }
 
@@ -347,7 +355,11 @@ main( int argc, char** argv )
     UNUSED( argc );
     UNUSED( argv );
 
-    const char* zip_path = "sb_fs_pak.zip";
+    /* Sandbox rule: every scratch file/dir goes under temp/ so a failed run can never
+       scatter debris through the repository root. */
+    sys_dir_make( SB_TEMP );
+
+    const char* zip_path = SB_TEMP "/pak.zip";
 
     printf( "========================================\n" );
     printf( " fs -- dir mounts\n" );
@@ -374,6 +386,10 @@ main( int argc, char** argv )
     fs_test_priority();
     fs_test_glob();
     fs_test_module();
+
+    /* Tear down the scratch root; the outer temp/ is only removed if nothing else lives there. */
+    sys_dir_delete( SB_TEMP );
+    sys_dir_delete( "temp" );
 
     printf( "\n%d checks, %d failures\n", s_checks, s_fails );
     printf( s_fails == 0 ? "ALL PASS\n" : "FAILED\n" );
