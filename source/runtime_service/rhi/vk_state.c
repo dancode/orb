@@ -355,6 +355,8 @@ typedef struct vk_state_s
 /* Default values for the global singleton.
    global_epoch starts at 1 so upload_flush_epoch=0 fires the flush on the very first frame. */
 
+#if ( 1 ) /* debug validation + utils on */
+
 static vk_state_t vk =
 {
     .use_vsync                  = false,
@@ -366,6 +368,22 @@ static vk_state_t vk =
     .use_vk_layer_monitor       = true,
     .global_epoch               = 1,    /* starts at 1 so upload_flush_epoch=0 triggers the very first flush */
 };
+
+#else /* debug validation + utils off */
+
+static vk_state_t vk =
+{
+    .use_vsync                  = false,
+    .use_vrr_if_available       = true,
+    .use_pipeline_cache         = true,
+    .use_vk_alloc_cb            = false,
+    .use_vk_ext_debug_utils     = false,
+    .use_vk_layer_validation    = false,
+    .use_vk_layer_monitor       = false,
+    .global_epoch               = 1,    /* starts at 1 so upload_flush_epoch=0 triggers the very first flush */
+};
+
+#endif 
 
 /*==============================================================================================
     vk_ctx_get is defined in vk_init.c (included last); forward-declared here so all

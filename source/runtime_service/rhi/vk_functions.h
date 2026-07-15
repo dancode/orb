@@ -7,14 +7,20 @@
     Each section #undefs its macro after its entries so the next inclusion starts clean.
 
     Load levels (must be resolved in order):
-      VK_EXPORTED_FUNCTION       -- exported from vulkan-1.dll; retrieved via GetProcAddress
-      VK_GLOBAL_LEVEL_FUNCTION   -- vkGetInstanceProcAddr( NULL, ... ); pre-instance helpers
-      VK_INSTANCE_LEVEL_FUNCTION -- vkGetInstanceProcAddr( instance, ... ); post-CreateInstance
-      VK_DEVICE_LEVEL_FUNCTION   -- vkGetDeviceProcAddr( device, ... ); post-CreateDevice
+      VK_EXPORTED_FUNCTION        -- exported from vulkan-1.dll; retrieved via GetProcAddress
+      VK_GLOBAL_LEVEL_FUNCTION    -- vkGetInstanceProcAddr( NULL, ... ); pre-instance helpers
+      VK_INSTANCE_LEVEL_FUNCTION  -- vkGetInstanceProcAddr( instance, ... ); post-CreateInstance
+      VK_DEVICE_LEVEL_FUNCTION    -- vkGetDeviceProcAddr( device, ... ); post-CreateDevice
 
     VK 1.3 target: dynamic rendering + synchronization2 + descriptor indexing are core.
-    Extension functions (push descriptors, debug utils) follow the same load path because
-    the loader exposes them via vkGetInstanceProcAddr / vkGetDeviceProcAddr.
+
+    The _OPTIONAL variants of the instance/device macros are for functions belonging to an
+    extension that may not be enabled on this instance/device (debug utils requires
+    use_vk_ext_debug_utils; push descriptors requires the VK_KHR_push_descriptor device
+    extension). A disabled extension makes vkGet*ProcAddr legitimately return NULL for its
+    entry points -- that is not a loader failure, so these entries do not abort vk_lib_init.
+    Every call site for an _OPTIONAL function already gates on the owning capability flag
+    before calling through the pointer, so a NULL pointer here is simply never invoked.
 
 ==============================================================================================*/
 #ifdef OS_WINDOWS
@@ -98,11 +104,19 @@ VK_INSTANCE_LEVEL_FUNCTION( vkEnumerateDeviceLayerProperties )
 VK_INSTANCE_LEVEL_FUNCTION( vkGetPhysicalDeviceFormatProperties )
 VK_INSTANCE_LEVEL_FUNCTION( vkGetPhysicalDeviceImageFormatProperties )
 
-/* Debug utils (VK_EXT_debug_utils; debug builds only, but loaded unconditionally) */
-VK_INSTANCE_LEVEL_FUNCTION( vkCreateDebugUtilsMessengerEXT )
-VK_INSTANCE_LEVEL_FUNCTION( vkDestroyDebugUtilsMessengerEXT )
-
 #undef VK_INSTANCE_LEVEL_FUNCTION
+
+/*============================================================================================*/
+
+#if !defined( VK_INSTANCE_LEVEL_FUNCTION_OPTIONAL )
+    #define VK_INSTANCE_LEVEL_FUNCTION_OPTIONAL( fun )
+#endif
+
+/* Debug utils (VK_EXT_debug_utils) -- only present when use_vk_ext_debug_utils enabled it */
+VK_INSTANCE_LEVEL_FUNCTION_OPTIONAL( vkCreateDebugUtilsMessengerEXT )
+VK_INSTANCE_LEVEL_FUNCTION_OPTIONAL( vkDestroyDebugUtilsMessengerEXT )
+
+#undef VK_INSTANCE_LEVEL_FUNCTION_OPTIONAL
 
 /*==========================================================================================*/
 
@@ -244,9 +258,6 @@ VK_DEVICE_LEVEL_FUNCTION( vkAllocateDescriptorSets )
 VK_DEVICE_LEVEL_FUNCTION( vkUpdateDescriptorSets )
 VK_DEVICE_LEVEL_FUNCTION( vkCmdBindDescriptorSets )
 
-/* Push descriptors (VK_KHR_push_descriptor; check device caps before use) */
-VK_DEVICE_LEVEL_FUNCTION( vkCmdPushDescriptorSetKHR )
-
 /* Swapchain */
 VK_DEVICE_LEVEL_FUNCTION( vkCreateSwapchainKHR )
 VK_DEVICE_LEVEL_FUNCTION( vkDestroySwapchainKHR )
@@ -254,12 +265,23 @@ VK_DEVICE_LEVEL_FUNCTION( vkGetSwapchainImagesKHR )
 VK_DEVICE_LEVEL_FUNCTION( vkAcquireNextImageKHR )
 VK_DEVICE_LEVEL_FUNCTION( vkQueuePresentKHR )
 
-/* Debug utils -- object naming + GPU labels (VK_EXT_debug_utils) */
-VK_DEVICE_LEVEL_FUNCTION( vkSetDebugUtilsObjectNameEXT )
-VK_DEVICE_LEVEL_FUNCTION( vkCmdBeginDebugUtilsLabelEXT )
-VK_DEVICE_LEVEL_FUNCTION( vkCmdEndDebugUtilsLabelEXT )
-VK_DEVICE_LEVEL_FUNCTION( vkCmdInsertDebugUtilsLabelEXT )
-
 #undef VK_DEVICE_LEVEL_FUNCTION
+
+/*============================================================================================*/
+
+#if !defined( VK_DEVICE_LEVEL_FUNCTION_OPTIONAL )
+    #define VK_DEVICE_LEVEL_FUNCTION_OPTIONAL( fun )
+#endif
+
+/* Push descriptors (VK_KHR_push_descriptor; not always an enabled device extension) */
+VK_DEVICE_LEVEL_FUNCTION_OPTIONAL( vkCmdPushDescriptorSetKHR )
+
+/* Debug utils -- object naming + GPU labels (VK_EXT_debug_utils) */
+VK_DEVICE_LEVEL_FUNCTION_OPTIONAL( vkSetDebugUtilsObjectNameEXT )
+VK_DEVICE_LEVEL_FUNCTION_OPTIONAL( vkCmdBeginDebugUtilsLabelEXT )
+VK_DEVICE_LEVEL_FUNCTION_OPTIONAL( vkCmdEndDebugUtilsLabelEXT )
+VK_DEVICE_LEVEL_FUNCTION_OPTIONAL( vkCmdInsertDebugUtilsLabelEXT )
+
+#undef VK_DEVICE_LEVEL_FUNCTION_OPTIONAL
 
 /*============================================================================================*/

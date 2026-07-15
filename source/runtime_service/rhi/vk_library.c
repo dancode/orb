@@ -21,10 +21,12 @@
     Declare all vulkan function pointers as file-scope statics
 ==============================================================================================*/
 
-#define VK_EXPORTED_FUNCTION( fun )       static PFN_##fun fun;
-#define VK_GLOBAL_LEVEL_FUNCTION( fun )   static PFN_##fun fun;
-#define VK_INSTANCE_LEVEL_FUNCTION( fun ) static PFN_##fun fun;
-#define VK_DEVICE_LEVEL_FUNCTION( fun )   static PFN_##fun fun;
+#define VK_EXPORTED_FUNCTION( fun )                static PFN_##fun fun;
+#define VK_GLOBAL_LEVEL_FUNCTION( fun )            static PFN_##fun fun;
+#define VK_INSTANCE_LEVEL_FUNCTION( fun )          static PFN_##fun fun;
+#define VK_INSTANCE_LEVEL_FUNCTION_OPTIONAL( fun ) static PFN_##fun fun;
+#define VK_DEVICE_LEVEL_FUNCTION( fun )            static PFN_##fun fun;
+#define VK_DEVICE_LEVEL_FUNCTION_OPTIONAL( fun )   static PFN_##fun fun;
 
 #include "runtime_service/rhi/vk_functions.h"
 
@@ -91,6 +93,12 @@ vk_lib_instance_entry_points()
         goto exit;                                                      \
     }
 
+/* Optional: belongs to an extension that may not be enabled on this instance (e.g. debug
+   utils when use_vk_ext_debug_utils is off) -- vkGetInstanceProcAddr legitimately returns
+   NULL then, so a miss here is not a load failure. Callers already gate on the owning flag. */
+#define VK_INSTANCE_LEVEL_FUNCTION_OPTIONAL( fun )                     \
+    fun = ( PFN_##fun )vkGetInstanceProcAddr( vk.instance, #fun );
+
 #include "runtime_service/rhi/vk_functions.h"
 
     return true;
@@ -114,6 +122,12 @@ vk_lib_device_entry_points()
         func = #fun;                                                    \
         goto exit;                                                      \
     }
+
+/* Optional: belongs to a device extension that may not be enabled (debug utils when
+   use_vk_ext_debug_utils is off; push descriptors when VK_KHR_push_descriptor isn't
+   enabled) -- a NULL here is expected, not a load failure. Callers gate on the owning flag. */
+#define VK_DEVICE_LEVEL_FUNCTION_OPTIONAL( fun )                       \
+    fun = ( PFN_##fun )vkGetDeviceProcAddr( vk.device, #fun );
 
 #include "runtime_service/rhi/vk_functions.h"
 
