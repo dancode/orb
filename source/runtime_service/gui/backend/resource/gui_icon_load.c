@@ -95,8 +95,10 @@ icon_load_file( const char* name, const char* path )
     if ( !file )
         return GUI_ICON_NONE;   // missing / unreadable -- quiet
 
-    /* Decode to RGBA8 (req_comp = 4); `comp` reports the SOURCE channel layout so we know whether
-       the file actually carried an alpha channel or is greyscale/RGB. */
+    /* Decode to RGBA8 (req_comp = 4).  stb resolves transparency for us regardless of how the
+       source spelled it -- a real alpha channel, or an RGB/paletted image with a tRNS color-key --
+       into the decoded alpha channel, so we read alpha from the pixels rather than trusting the
+       source component count (`comp`), which would report 3 for a tRNS-keyed RGB icon and miss it. */
     int      w = 0, h = 0, comp = 0;
     stbi_uc* rgba = stbi_load_from_memory( file, (int)size, &w, &h, &comp, STBI_rgb_alpha );
     free( file );
@@ -107,20 +109,51 @@ icon_load_file( const char* name, const char* path )
         return GUI_ICON_NONE;
     }
 
-    /* Reduce RGBA -> R8 coverage.  Sources with alpha (RGBA / grey+alpha) use the alpha channel --
-       the natural coverage for icon art drawn on transparency.  Sources without alpha (RGB / grey)
-       fall back to luminance, which for an expanded greyscale mask is just the red channel. */
-    bool has_alpha = ( comp == 4 || comp == 2 );
-    u32  count     = (u32)w * (u32)h;
-    u8*  coverage  = (u8*)malloc( count );
+    u32 count = (u32)w * (u32)h;
+
+    /* Pick the coverage channel.  An icon's shape lives in alpha when the image carries any
+       transparency (a real alpha channel, or an RGB/paletted source whose tRNS key stb already
+       folded into the decoded alpha); a fully-opaque image has no alpha to read, so its shape is
+       the luminance of the colour instead.  Deciding from the decoded pixels -- not the source
+       component count -- is what makes tRNS-keyed icons work: they report comp==3 yet do carry
+       alpha here. */
+    bool use_alpha = false;
+    for ( u32 i = 0; i < count; ++i )
+        if ( rgba[ i * 4 + 3 ] != 255 ) { use_alpha = true; break; }
+
+    u8* coverage = (u8*)malloc( count );
     if ( !coverage )
     {
         stbi_image_free( rgba );
         return GUI_ICON_NONE;
     }
+
+    u8 peak = 0;   // brightest coverage byte -- 0 means the icon is entirely blank
     for ( u32 i = 0; i < count; ++i )
-        coverage[ i ] = has_alpha ? rgba[ i * 4 + 3 ] : rgba[ i * 4 + 0 ];
+    {
+        const u8* px = &rgba[ i * 4 ];
+        u8        c;
+        if ( use_alpha )
+        {
+            c = px[ 3 ];                                  // alpha = coverage
+        }
+        else
+        {
+            c = px[ 0 ];                                  // luminance = brightest colour channel
+            if ( px[ 1 ] > c ) c = px[ 1 ];
+            if ( px[ 2 ] > c ) c = px[ 2 ];
+        }
+        coverage[ i ] = c;
+        if ( c > peak ) peak = c;
+    }
     stbi_image_free( rgba );
+
+    /* A completely blank result is almost always a bad export (e.g. an all-transparent PNG, or a
+       flat-colour image whose shape was meant to be in an alpha channel that is not there) rather
+       than intended art -- say so, since it would otherwise register a valid-but-invisible icon. */
+    if ( peak == 0 )
+        printf( "[gui] icon '%s' has no visible pixels -- '%s' decoded fully %s (%dx%d)\n",
+                name, path, use_alpha ? "transparent" : "black", w, h );
 
     gui_icon_id_t id = icon_register( name, (u32)w, (u32)h, coverage );
     free( coverage );

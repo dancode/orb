@@ -302,7 +302,9 @@
       "Bash(awk '/^target /{t=$2} /dep asset/{print t\" -> asset\"} /dep gui/{print t\" -> gui\"}' orb.targets)",
       "Bash(awk '{print $1}')",
       "Bash(awk '/^target /{t=$2} /asset/{print t\": \"$0}' orb.targets)",
-      "Bash(awk '/^target /{t=$2} /[[:space:]]gui\\([[:space:]]|$\\)/{print t\": \"$0}' orb.targets)"
+      "Bash(awk '/^target /{t=$2} /[[:space:]]gui\\([[:space:]]|$\\)/{print t\": \"$0}' orb.targets)",
+      "Bash(xxd assets/icon/folder_icon.png)",
+      "Bash(xxd -s 0x10 -l 8 assets/icon/folder_icon.png)"
     ]
   }
 }

@@ -1021,6 +1021,7 @@ show_toolbar_demo( bool* p_open )
     static gui_icon_id_t ic_grid = GUI_ICON_NONE;
     static gui_icon_id_t ic_wire = GUI_ICON_NONE;
     static gui_icon_id_t ic_view = GUI_ICON_NONE;
+    static gui_icon_id_t ic_dl   = GUI_ICON_NONE;   // loaded from disk (PNG), not procedural
     if ( ic_save == GUI_ICON_NONE )
     {
         static u8 buf[ 32 * 32 ];
@@ -1028,6 +1029,16 @@ show_toolbar_demo( bool* p_open )
         tb_make_grid( buf, 32 ); ic_grid = gui()->register_icon( "tb_grid", 32, 32, buf );
         tb_make_wire( buf, 32 ); ic_wire = gui()->register_icon( "tb_wire", 32, 32, buf );
         tb_make_view( buf, 32 ); ic_view = gui()->register_icon( "tb_view", 32, 32, buf );
+
+        /* Demonstrate the from-disk icon path: decode assets/icon/folder_icon.png to R8
+           coverage and register it exactly like the procedural icons above.  Resolve engine-
+           relative (exe dir + "/..") like the built-in fonts, with a CWD-relative fallback. */
+        char dir[ 512 ], path[ 576 ];
+        sys_exe_dir( dir, (int)sizeof( dir ) );
+        snprintf( path, sizeof( path ), "%s/../assets/icon/folder_icon.png", dir );
+        ic_dl = gui()->load_icon( "folder", path );
+        if ( ic_dl == GUI_ICON_NONE )
+            ic_dl = gui()->load_icon( "folder", "assets/icon/folder_icon.png" );
     }
 
     static bool grid_snap   = true;
@@ -1048,6 +1059,9 @@ show_toolbar_demo( bool* p_open )
             save_clicks++;
         gui()->toolbar_toggle( "##grid", ic_grid, &grid_snap, "Grid Snap" );
         gui()->toolbar_toggle( "##wire", ic_wire, &wireframe, "Wireframe" );
+        gui()->toolbar_separator();
+        if ( gui()->toolbar_button( "##folder", ic_dl, "Folder (loaded from folder_icon.png)" ) )
+            save_clicks++;
         gui()->toolbar_separator();
         if ( gui()->toolbar_dropdown_begin( "##view", ic_view, "View Mode" ) )
         {
