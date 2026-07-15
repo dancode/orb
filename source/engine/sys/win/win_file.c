@@ -28,6 +28,36 @@ sys_exe_dir( char* out, int size )
 
 /*============================================================================================*/
 
+const char*
+sys_root_dir( void )
+{
+    static char s_root[ 256 ] = { 0 };
+
+    if ( !s_root[ 0 ] )
+    {
+        char exe_dir[ 512 ];
+        sys_exe_dir( exe_dir, sizeof( exe_dir ) );
+
+        // Trim any trailing slashes from the executable directory path.
+        int len = ( int )strlen( exe_dir );
+        while ( len > 0 && ( exe_dir[ len - 1 ] == '\\' || exe_dir[ len - 1 ] == '/' ) )
+            exe_dir[ --len ] = '\0';
+
+        // Strip the last path component and terminate the string to get the root.
+        char* slash = strrchr( exe_dir, '\\' );
+        if (  slash == NULL )
+              slash = strrchr( exe_dir, '/' );
+        if (  slash != NULL )
+             *slash = '\0';
+
+        snprintf( s_root, sizeof( s_root ), "%s", exe_dir );
+    }
+    return s_root;
+}
+
+
+/*============================================================================================*/
+
 uint64_t
 sys_time_ms( void )
 {

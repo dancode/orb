@@ -1008,6 +1008,8 @@ tb_make_view( u8* p, i32 n )
 static void
 show_toolbar_demo( bool* p_open )
 {
+    // F:\orb>bin\image_tool.exe split assets/icon_source/general_1.png 8 8 -key -out assets/icon_dump/
+
     static const char* WIN = "Toolbar Icons";
     if ( !gui()->window_begin( WIN, GUI_WIN_CLOSEABLE | GUI_WIN_CAN_AUTOSIZE ) )
     {
@@ -1031,14 +1033,9 @@ show_toolbar_demo( bool* p_open )
         tb_make_view( buf, 32 ); ic_view = gui()->register_icon( "tb_view", 32, 32, buf );
 
         /* Demonstrate the from-disk icon path: decode assets/icon/folder_icon.png to R8
-           coverage and register it exactly like the procedural icons above.  Resolve engine-
-           relative (exe dir + "/..") like the built-in fonts, with a CWD-relative fallback. */
-        char dir[ 512 ], path[ 576 ];
-        sys_exe_dir( dir, (int)sizeof( dir ) );
-        snprintf( path, sizeof( path ), "%s/../assets/icon/folder_icon.png", dir );
-        ic_dl = gui()->load_icon( "folder", path );
-        if ( ic_dl == GUI_ICON_NONE )
-            ic_dl = gui()->load_icon( "folder", "assets/icon/folder_icon.png" );
+           coverage and register it exactly like the procedural icons above.  load_icon resolves
+           the path itself (asset_path, engine-relative like the built-in fonts). */
+        ic_dl = gui()->load_icon( "folder", "assets/icon/audio2.png" );
     }
 
     static bool grid_snap   = true;

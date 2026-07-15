@@ -39,6 +39,9 @@ void gui_print_mem_stats( void );
 /* font */
 u32  gui_font_load( const char* path );
 
+/* asset_path -- resolve a path relative to the engine's assets/ root (see gui_api.h) */
+void gui_asset_path( const char* relative, char* out, int out_size );
+
 /* frame -- frame_begin returns frame_dirty: emit the UI build only when true.  set_frame_hooks
    hands gui the OS clock / sleep / wait callbacks it cannot reach itself (typically
    sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms); frame_pace is the

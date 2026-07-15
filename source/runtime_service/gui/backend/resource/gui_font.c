@@ -13,7 +13,7 @@
 ==============================================================================================*/
 // clang-format off
 
-#include "engine/sys/sys_host.h"    // sys_exe_dir -- built-in presets resolve engine-relative
+#include "engine/sys/sys_host.h"    // sys_root_dir -- built-in presets resolve root-relative
 
 /*==============================================================================================
 
@@ -74,20 +74,13 @@ font_load_builtin( gui_builtin_font_t font )
 
     if ( valid_font )
     {
-        /* Built-in presets are engine assets at <engine>/assets/font, one level above the
-           exe dir -- resolve there so hosts work from any working directory (a child game
-           project's root when launched via F5, for example).  Fall back to the plain
-           CWD-relative path for relocated layouts. */
+        /* Built-in presets are engine assets at <root>/assets/font -- resolve against
+           sys_root_dir() so hosts work from any working directory (a child game project's
+           root when launched via F5, for example). */
         char path[ 576 ];
-        char dir[ 512 ];
-        sys_exe_dir( dir, ( int )sizeof( dir ) );
-        snprintf( path, sizeof( path ), "%s/../%s", dir, s_builtin_font_path[ font ] );
+        snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), s_builtin_font_path[ font ] );
 
-        // slot 0 = the default font
-        if ( font_internal_load_into( 0, path ) )
-            return true;
-
-        return font_internal_load_into( 0, s_builtin_font_path[ font ] );
+        return font_internal_load_into( 0, path );   // slot 0 = the default font
     }
 
     return false;

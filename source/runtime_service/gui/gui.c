@@ -179,6 +179,8 @@
 
 #include "orb.h"
 
+#include "engine/sys/sys_host.h"   // sys_root_dir -- disk assets (load_icon, asset_path) resolve root-relative
+
 // API GUI render-backend
 #include "runtime_service/gui/gui_backend.h"
 

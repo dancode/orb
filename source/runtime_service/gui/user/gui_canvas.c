@@ -152,7 +152,9 @@ gui_register_icon( const char* name, u32 w, u32 h, const u8* coverage )
 gui_icon_id_t
 gui_load_icon( const char* name, const char* path )
 {
-    return icon_load_file( name, path );
+    char resolved[ 576 ];
+    snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), path );
+    return icon_load_file( name, resolved );
 }
 
 gui_icon_id_t

@@ -23,6 +23,7 @@ const gui_api_t g_gui_api_struct =
     .init                               = gui_init,
     .shutdown                           = gui_shutdown,
     .font_load                          = gui_font_load,
+    .asset_path                         = gui_asset_path,
     .boot                               = gui_boot,
     .mem_stats                          = gui_mem_stats,
     .print_mem_stats                    = gui_print_mem_stats,

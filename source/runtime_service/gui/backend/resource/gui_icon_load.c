@@ -21,13 +21,12 @@
     copy (asset_image.c), and a host that links both must not see the two collide.
 
     Included by gui_backend.c after resource/gui_icon.c (needs icon_register) and after
-    resource/gui_font.c (which pulled in sys_host.h for sys_exe_dir).
+    resource/gui_font.c (which pulled in sys_host.h for sys_root_dir).
 
 ==============================================================================================*/
 // clang-format off
 
-#include <stdlib.h>                 // malloc / free
-#include "engine/sys/sys_host.h"    // sys_exe_dir -- built-in icons resolve engine-relative
+#include <stdlib.h>   // malloc / free
 
 /* stb_image: memory-only decode (no fopen path of its own); STATIC so the symbols do not clash
    with the asset service's external copy when a host links both libraries. */
@@ -163,9 +162,9 @@ icon_load_file( const char* name, const char* path )
 /*----------------------------------------------------------------------------------------------
     Built-in icon set -- declared upfront here and loaded in one pass at backend init.
 
-    Add engine icons by dropping a PNG under <engine>/assets/icons and naming it here; look one up
-    at draw time with gui()->find_icon( "<name>" ).  Paths are engine-relative and resolved like the
-    built-in fonts (sys_exe_dir + "/../"), so hosts work from any working directory.  A host or the
+    Add engine icons by dropping a PNG under <root>/assets/icons and naming it here; look one up
+    at draw time with gui()->find_icon( "<name>" ).  Paths are root-relative, resolved against
+    sys_root_dir() like the built-in fonts, so hosts work from any working directory.  A host or the
     editor can register its OWN icons on top of these at runtime via gui()->load_icon.
 ----------------------------------------------------------------------------------------------*/
 
@@ -190,20 +189,13 @@ static const gui_icon_decl_t s_builtin_icons[] =
 void
 icon_load_builtins( void )
 {
-    char dir[ 512 ];
-    sys_exe_dir( dir, (int)sizeof( dir ) );
-
     u32 loaded = 0;
     for ( u32 i = 0; i < ARRAY_COUNT( s_builtin_icons ); ++i )
     {
-        /* Prefer the engine-relative location (one level above the exe dir, matching fonts);
-           fall back to a plain CWD-relative path for relocated layouts. */
         char path[ 576 ];
-        snprintf( path, sizeof( path ), "%s/../%s", dir, s_builtin_icons[ i ].path );
+        snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), s_builtin_icons[ i ].path );
 
         gui_icon_id_t id = icon_load_file( s_builtin_icons[ i ].name, path );
-        if ( id == GUI_ICON_NONE )
-            id = icon_load_file( s_builtin_icons[ i ].name, s_builtin_icons[ i ].path );
         if ( id != GUI_ICON_NONE )
             ++loaded;
     }

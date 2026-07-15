@@ -49,13 +49,19 @@ typedef struct gui_api_s
                        succeeds without text).
         shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
         font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
-                       call after init(). Returns the new id (>= 1), or 0 on failure. */
+                       call after init(). Returns the new id (>= 1), or 0 on failure.
+        asset_path() -- resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
+                       the build root, one level above the executable -- the same convention
+                       load_icon and the built-in font/icon presets resolve through. Writes the
+                       resolved path into `out` (out_size bytes); for a caller that wants the
+                       absolute path itself (e.g. a plain fopen) rather than a load_icon call. */
 
     void                ( *init_config_back  )( gui_backend_caps_t caps );
     void                ( *init_config_front )( gui_forward_caps_t caps );
     bool                ( *init      )( gui_builtin_font_t font );
     void                ( *shutdown  )( void );
     u32                 ( *font_load )( const char* path );
+    void                ( *asset_path )( const char* relative, char* out, int out_size );
 
     /* boot() -- TEST-BED tier: the one-call alternative to the block above for sandboxes, demos,
        and quick tools whose main window IS a gui surface -- gui owns the window + render context
@@ -1320,7 +1326,9 @@ typedef struct gui_api_s
        handle (0 = atlas full); the pixels live in the same flush as text and tint by `col`.
        load_icon is the from-disk source: it decodes an image file (PNG and the other stb_image
        formats) to R8 coverage -- alpha channel when present, else luminance -- and registers it the
-       same way, so a loaded icon is identical to a procedural one downstream.  find_icon looks one
+       same way, so a loaded icon is identical to a procedural one downstream.  `path` is resolved
+       through asset_path -- a plain path relative to the assets root ("assets/icon/foo.png"), no
+       need to call asset_path yourself first.  find_icon looks one
        up by the name it was registered with (built-in icons register at gui init); icon_size is its
        native pixel size (for layout).  image is a layout widget (reserve w x h, draw centered/fit);
        draw_icon_in places an icon in a rect the caller already holds (cell / button label / canvas
