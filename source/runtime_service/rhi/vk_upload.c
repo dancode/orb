@@ -112,12 +112,17 @@ static u32              g_upload_active_slot = 0;
 
 /* Queue-family ownership transfer (QFOT) acquires.
 
-   A QFOT is strictly one release : one acquire.  The release is recorded into the active
-   transfer command buffer by vk_upload_texture / vk_upload_buffer, but it is not *submitted*
-   to the transfer queue until the next vk_upload_flush().  An acquire is only legal once its
-   matching release has been submitted, so acquires move through two stages:
+   A QFOT is strictly one release : one acquire.  vk_upload_texture / vk_upload_buffer only
+   *register* the resource in recorded[]; the release barriers themselves are recorded once,
+   deduplicated, by vk_upload_flush() just before it submits the batch.  Deferring the release
+   to flush time is what allows the same resource to be uploaded more than once in a single
+   batch (e.g. the GUI shared atlas created and then re-flushed in the same boot frame):
+   per-upload releases would produce duplicate acquires, and the second acquire's
+   TRANSFER_DST oldLayout no longer matches the image's tracked layout (VUID 01197).
+   An acquire is only legal once its matching release has been submitted, so acquires move
+   through two stages:
 
-     recorded[]  -- appended as releases are recorded, before the flush submits them.
+     recorded[]  -- unique resources uploaded since the last flush (release not yet recorded).
      pending[]   -- promoted from recorded[] by vk_upload_flush() at the instant it submits
                     the releases.  Drained exactly once by vk_upload_apply_acquires() into the
                     first graphics command buffer recorded after the flush.
@@ -440,31 +445,14 @@ vk_upload_buffer( rhi_buffer_t dst, const void* data, u32 size )
 
     if ( vk.transfer_queue_family != vk.graphics_queue_family )
     {
-        /* Dedicated transfer queue: release ownership to the graphics family.
-           The release barrier relinquishes ownership after the copy and declares the
-           intended access pattern; the matching acquire in vk_upload_apply_acquires
-           completes the handshake on the graphics queue side. */
+        /* Dedicated transfer queue: register the buffer for a QFOT release.  The release
+           barrier itself is recorded by vk_upload_flush, once per unique buffer, so a buffer
+           uploaded twice in one batch still gets exactly one release : one acquire. */
 
-        VkBufferMemoryBarrier2 release  = { 0 };
-        release.sType                   = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-        release.srcStageMask            = VK_PIPELINE_STAGE_2_COPY_BIT;
-        release.srcAccessMask           = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        release.dstStageMask            = VK_PIPELINE_STAGE_2_NONE;
-        release.dstAccessMask           = 0;
-        release.srcQueueFamilyIndex     = vk.transfer_queue_family;
-        release.dstQueueFamilyIndex     = vk.graphics_queue_family;
-        release.buffer                  = dst_buf;
-        release.offset                  = 0;
-        release.size                    = VK_WHOLE_SIZE;
+        for ( u32 i = 0; i < g_recorded_buffer_count; ++i )
+            if ( g_recorded_buffer_acquires[ i ] == dst_buf )
+                return true;
 
-        VkDependencyInfo dep_rel         = { 0 };
-        dep_rel.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep_rel.bufferMemoryBarrierCount = 1;
-        dep_rel.pBufferMemoryBarriers    = &release;
-        vkCmdPipelineBarrier2( cmd, &dep_rel );
-
-        /* Queue the acquire as recorded (not pending): it becomes eligible for injection only
-           once vk_upload_flush submits this release to the transfer queue. */
         if ( g_recorded_buffer_count < VK_MAX_UPLOAD_ACQUIRES )
             g_recorded_buffer_acquires[ g_recorded_buffer_count++ ] = dst_buf;
         else
@@ -496,12 +484,14 @@ vk_upload_texture( rhi_texture_t dst, const void* data, u32 data_size, u16 mip, 
 
     /* Transition the image from UNDEFINED to TRANSFER_DST_OPTIMAL so the GPU can write
        into it.  UNDEFINED discards whatever was there before, which is correct since we
-       are about to overwrite the entire mip/layer. */
+       are about to overwrite the entire mip/layer.  srcStageMask/srcAccessMask cover COPY
+       writes so a second upload to the same image within one batch orders against the
+       first copy (WAW hazard) instead of racing it. */
 
     VkImageMemoryBarrier2 to_dst               = { 0 };
     to_dst.sType                               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-    to_dst.srcStageMask                        = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-    to_dst.srcAccessMask                       = 0;
+    to_dst.srcStageMask                        = VK_PIPELINE_STAGE_2_COPY_BIT;
+    to_dst.srcAccessMask                       = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     to_dst.dstStageMask                        = VK_PIPELINE_STAGE_2_COPY_BIT;
     to_dst.dstAccessMask                       = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     to_dst.oldLayout                           = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -535,29 +525,18 @@ vk_upload_texture( rhi_texture_t dst, const void* data, u32 data_size, u16 mip, 
 
     if ( vk.transfer_queue_family != vk.graphics_queue_family )
     {
-        /* Dedicated transfer queue: release ownership to the graphics family and declare
-           the intended final layout (SHADER_READ_ONLY_OPTIMAL).  The acquire barrier in
-           vk_upload_apply_acquires uses the same layout pair to complete the transition
-           on the graphics queue, where shaders will read the image. */
+        /* Dedicated transfer queue: register the subresource for a QFOT release.  The release
+           barrier (TRANSFER_DST -> SHADER_READ_ONLY, transfer -> graphics family) is recorded
+           by vk_upload_flush, once per unique subresource, so an image uploaded twice in one
+           batch still gets exactly one release : one acquire. */
 
-        VkImageMemoryBarrier2 release           = to_dst;
-        release.srcStageMask                    = VK_PIPELINE_STAGE_2_COPY_BIT;
-        release.srcAccessMask                   = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        release.dstStageMask                    = VK_PIPELINE_STAGE_2_NONE;
-        release.dstAccessMask                   = 0;
-        release.oldLayout                       = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        release.newLayout                       = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        release.srcQueueFamilyIndex             = vk.transfer_queue_family;
-        release.dstQueueFamilyIndex             = vk.graphics_queue_family;
+        for ( u32 i = 0; i < g_recorded_image_count; ++i )
+        {
+            vk_image_acquire_t* e = &g_recorded_image_acquires[ i ];
+            if ( e->image == tex->image && e->mip == mip && e->layer == layer )
+                return true;
+        }
 
-        VkDependencyInfo dep_rel                = { 0 };
-        dep_rel.sType                           = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep_rel.imageMemoryBarrierCount         = 1;
-        dep_rel.pImageMemoryBarriers            = &release;
-        vkCmdPipelineBarrier2( cmd, &dep_rel );
-
-        /* Queue the acquire as recorded (not pending): it becomes eligible for injection only
-           once vk_upload_flush submits this release to the transfer queue. */
         if ( g_recorded_image_count < VK_MAX_UPLOAD_ACQUIRES )
             g_recorded_image_acquires[ g_recorded_image_count++ ] = (vk_image_acquire_t){ tex->image, mip, layer };
         else
@@ -605,6 +584,64 @@ vk_upload_flush( void )
 
     if ( up->is_recording )
     {
+        /* Record the QFOT release barriers for everything uploaded this batch -- one per
+           unique subresource / buffer, regardless of how many times it was uploaded.  The
+           matching acquires (same layout pair, same family pair) are injected on the
+           graphics queue by vk_upload_apply_acquires after this submit. */
+
+        if ( g_recorded_image_count > 0 || g_recorded_buffer_count > 0 )
+        {
+            static VkImageMemoryBarrier2 img_rel[ VK_MAX_UPLOAD_ACQUIRES ];
+            for ( u32 i = 0; i < g_recorded_image_count; ++i )
+            {
+                vk_image_acquire_t*    e = &g_recorded_image_acquires[ i ];
+                VkImageMemoryBarrier2* b = &img_rel[ i ];
+
+                *b = (VkImageMemoryBarrier2){ 0 };
+                b->sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+                b->srcStageMask                    = VK_PIPELINE_STAGE_2_COPY_BIT;
+                b->srcAccessMask                   = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                b->dstStageMask                    = VK_PIPELINE_STAGE_2_NONE;
+                b->dstAccessMask                   = 0;
+                b->oldLayout                       = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                b->newLayout                       = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                b->srcQueueFamilyIndex             = vk.transfer_queue_family;
+                b->dstQueueFamilyIndex             = vk.graphics_queue_family;
+                b->image                           = e->image;
+                b->subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+                b->subresourceRange.baseMipLevel   = e->mip;
+                b->subresourceRange.levelCount     = 1;
+                b->subresourceRange.baseArrayLayer = e->layer;
+                b->subresourceRange.layerCount     = 1;
+            }
+
+            static VkBufferMemoryBarrier2 buf_rel[ VK_MAX_UPLOAD_ACQUIRES ];
+            for ( u32 i = 0; i < g_recorded_buffer_count; ++i )
+            {
+                VkBufferMemoryBarrier2* b = &buf_rel[ i ];
+
+                *b = (VkBufferMemoryBarrier2){ 0 };
+                b->sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                b->srcStageMask        = VK_PIPELINE_STAGE_2_COPY_BIT;
+                b->srcAccessMask       = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                b->dstStageMask        = VK_PIPELINE_STAGE_2_NONE;
+                b->dstAccessMask       = 0;
+                b->srcQueueFamilyIndex = vk.transfer_queue_family;
+                b->dstQueueFamilyIndex = vk.graphics_queue_family;
+                b->buffer              = g_recorded_buffer_acquires[ i ];
+                b->offset              = 0;
+                b->size                = VK_WHOLE_SIZE;
+            }
+
+            VkDependencyInfo dep_rel         = { 0 };
+            dep_rel.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dep_rel.imageMemoryBarrierCount  = g_recorded_image_count;
+            dep_rel.pImageMemoryBarriers     = img_rel;
+            dep_rel.bufferMemoryBarrierCount = g_recorded_buffer_count;
+            dep_rel.pBufferMemoryBarriers    = buf_rel;
+            vkCmdPipelineBarrier2( up->cmd, &dep_rel );
+        }
+
         /* Close the command buffer and submit it to the transfer queue.
            Signal upload_timeline at ++upload_counter when the DMA batch completes.
            The graphics queue waits on that value in frame_end before running shaders. */
@@ -652,11 +689,38 @@ vk_upload_flush( void )
 
         for ( u32 i = 0; i < g_recorded_image_count
                          && g_pending_image_count < VK_MAX_UPLOAD_ACQUIRES; ++i )
-            g_pending_image_acquires[ g_pending_image_count++ ] = g_recorded_image_acquires[ i ];
+        {
+            /* Skip entries already pending from an undrained earlier flush: a resource
+               re-uploaded before any graphics frame ran still needs only ONE acquire, and a
+               duplicate acquire barrier would trip layout validation (VUID 01197). */
+            vk_image_acquire_t* e   = &g_recorded_image_acquires[ i ];
+            bool                dup = false;
+            for ( u32 j = 0; j < g_pending_image_count; ++j )
+            {
+                vk_image_acquire_t* p = &g_pending_image_acquires[ j ];
+                if ( p->image == e->image && p->mip == e->mip && p->layer == e->layer )
+                {
+                    dup = true;
+                    break;
+                }
+            }
+            if ( !dup )
+                g_pending_image_acquires[ g_pending_image_count++ ] = *e;
+        }
 
         for ( u32 i = 0; i < g_recorded_buffer_count
                          && g_pending_buffer_count < VK_MAX_UPLOAD_ACQUIRES; ++i )
-            g_pending_buffer_acquires[ g_pending_buffer_count++ ] = g_recorded_buffer_acquires[ i ];
+        {
+            bool dup = false;
+            for ( u32 j = 0; j < g_pending_buffer_count; ++j )
+                if ( g_pending_buffer_acquires[ j ] == g_recorded_buffer_acquires[ i ] )
+                {
+                    dup = true;
+                    break;
+                }
+            if ( !dup )
+                g_pending_buffer_acquires[ g_pending_buffer_count++ ] = g_recorded_buffer_acquires[ i ];
+        }
 
         g_recorded_image_count  = 0;
         g_recorded_buffer_count = 0;
