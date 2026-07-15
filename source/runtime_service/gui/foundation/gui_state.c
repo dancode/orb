@@ -26,12 +26,14 @@
 ORB_STATIC_ASSERT( sizeof( gui_region_t ) <= GUI_STATE_CAP,
                    "gui_region_t is the small class's sizing tenant; grow GUI_STATE_CAP" );
 
+/*============================================================================================*/
 /* The one probe, walked over either class: `base` is the slot array, `stride` the slot size in
    bytes.  Both slot types begin with the gui_state_hdr_t prefix (id, seen_frame); the payload
    follows it.  Live hit: restamp and return the payload.  Absent: settle into the first empty
    slot on the chain -- or a tombstone (two+ frames cold) passed on the way.  A wall-to-wall
    live table (no empty, no tombstone) clobbers the home bucket: a rare degradation rather than
    an overflow. */
+
 static void*
 state_probe( u8* base, u32 stride, u32 count, u32 mask, gui_id_t id )
 {
@@ -67,8 +69,10 @@ state_probe( u8* base, u32 stride, u32 count, u32 mask, gui_id_t id )
     return dst + sizeof( gui_state_hdr_t );
 }
 
+/*============================================================================================*/
 /* Stable storage for `id`: the same pointer every frame the id stays live, zeroed the frame it is
    first seen or recycled.  `size` picks the class; it must fit GUI_STATE_BIG_CAP.  Never NULL. */
+
 static void*
 gui_state_get( gui_id_t id, u32 size )
 {
@@ -83,9 +87,12 @@ gui_state_get( gui_id_t id, u32 size )
                         GUI_STATE_BIG_SLOTS, g_ctx->retained.big_mask, id );
 }
 
+/*============================================================================================*/
 /* Typed sugar: a zero-on-create T* persisted by id.  sizeof(T) must be <= GUI_STATE_BIG_CAP. */
+
 #define GUI_STATE( T, id ) ( (T*)gui_state_get( ( id ), (u32)sizeof( T ) ) )
 
+/*============================================================================================*/
 /* Read-only, non-allocating, non-stamping probe for `id` in the SMALL class (every current
    caller peeks a small tenant -- the animation types).  Returns a pointer to the slot's data
    payload when the slot exists in the pool (regardless of freshness), else NULL.
@@ -104,6 +111,7 @@ gui_state_peek( gui_id_t id )
     return NULL;
 }
 
+/*============================================================================================*/
 /* Animation utilities (gui_anim_f32, ...) live in interact/gui_anim.c,
    included after present/gui_paint_core.c which provides the color palette they blend. */
 

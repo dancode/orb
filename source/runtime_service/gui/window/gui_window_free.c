@@ -160,14 +160,16 @@ window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
    wide preference like idle-skip, not per-context -- see gui_window_anim_enable in the API block. */
 static bool s_win_anim = true;
 
-/* One gui_anim_timer slot per window, salted off the window id so it never collides with a widget's
-   state inside the window. */
-#define GUI_WIN_ANIM_SALT   0x0A417800u
+/* One gui_anim_timer slot per window per animated quantity, salted off the window id so they never
+   collide with each other or with a widget's state inside the window: the rect tween (max / min /
+   restore) and the collapse height tween run on independent clocks. */
+#define GUI_WIN_ANIM_SALT       0x0A417800u
+#define GUI_WIN_COLLAPSE_SALT   0x0A417801u
 
 /* Transition duration (seconds) and the easing shaper.  ease_out_cubic decelerates into the target:
    a quick departure that reads as responsive, easing to a soft stop.  ~180 ms is long enough to
    read the motion, short enough to never feel in the way. */
-#define GUI_WIN_ANIM_SECS   0.18f
+#define GUI_WIN_ANIM_SECS   1.18f // 0.18f
 static f32 window_anim_ease( f32 t ) { return f32_ease_out_cubic( t ); }
 
 /* Begin a transition: capture the current rect as the tween's FROM, mark the window animating, and
@@ -179,7 +181,8 @@ window_anim_begin( gui_window_t* win )
 {
     win->anim_from.x = win->x;  win->anim_from.y = win->y;
     win->anim_from.w = win->w;  win->anim_from.h = win->h;
-    win->state_anim  = true;
+    win->state_anim   = true;
+    win->collapse_anim = false;   /* the rect transition owns the geometry now; drop any collapse tween */
     gui_anim_timer_start( id_combine( win->id, GUI_WIN_ANIM_SALT ), s_win_anim ? GUI_WIN_ANIM_SECS : 0.0f );
     g_ctx->retained.wants_redraw = true;
 }
@@ -207,6 +210,45 @@ window_anim_step( gui_window_t* win, gui_id_t id, gui_rect_t target )
 
     if ( !active )
         win->state_anim = false;
+}
+
+/* Toggle collapse with a height tween.  Snapshots the height currently shown (shown_h) as the tween's
+   start -- so a toggle mid-tween continues seamlessly from where it is -- flips the logical state, and
+   arms the collapse clock (zero duration when animation is off -> the next window_collapse_h snaps).
+   The single choke point the arrow click and the double-click both route through. */
+static void
+window_collapse_set( gui_window_t* win, bool on )
+{
+    if ( win->collapsed == on )
+        return;
+
+    win->collapse_from = win->shown_h;
+    win->collapsed     = on;
+    win->collapse_anim = true;
+    gui_anim_timer_start( id_combine( win->id, GUI_WIN_COLLAPSE_SALT ), s_win_anim ? GUI_WIN_ANIM_SECS : 0.0f );
+    g_ctx->retained.wants_redraw = true;
+}
+
+/* The body height shown this frame for a normal (non-min, non-max) window: title_h when collapsed,
+   win->h when open, or the eased value between the two while a collapse tween runs.  The single timer
+   t drives the one height channel; on the tween's final frame the timer forces t == 1, so the value
+   lands exactly on the target and the flag drops.  window_open_body clips the full-height body to
+   this, so the content is revealed / hidden by the growing / shrinking clip. */
+static f32
+window_collapse_h( gui_window_t* win, gui_id_t id, f32 title_h )
+{
+    f32 target = win->collapsed ? title_h : win->h;
+    if ( !win->collapse_anim )
+        return target;
+
+    bool active = false;
+    f32  t      = gui_anim_timer( id_combine( id, GUI_WIN_COLLAPSE_SALT ), window_anim_ease, &active );
+    if ( !active )
+    {
+        win->collapse_anim = false;
+        return target;
+    }
+    return f32_lerp( win->collapse_from, target, t );
 }
 
 /* Public toggle for window state-transition animation (maximize / minimize / restore).  A global
@@ -848,8 +890,12 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     }
 
     bool can_collapse = has_titlebar && !( flags & GUI_WIN_NOCOLLAPSE ) && !native && !win->maximized;
-    if ( !can_collapse ) win->collapsed = false;
-    bool collapsed = win->collapsed || win->minimized;
+    if ( !can_collapse ) { win->collapsed = false; win->collapse_anim = false; }
+
+    /* Logical collapse: the state the arrow reflects and the autosize refit respects.  The VISUAL
+       collapse (title-bar only this frame) is resolved below from disp_h once the height tween has
+       run -- during a collapse animation the two differ, the window still showing a shrinking body. */
+    bool logical_collapsed = win->collapsed || win->minimized;
 
     /* ALWAYS_AUTOSIZE owns its own geometry: it cannot be user-resized and shows no scrollbars
        (the body always fits), and its size is recomputed below from the measured content.  The
@@ -914,7 +960,8 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        collapsed (the title-bar-only height is preserved) and on the very first appearance, before
        any content has been measured -- then the caller's initial w/h stands for one frame. */
     f32 fit_mb_h = ( flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
-    if ( autosize && !collapsed && !win->maximized && !win->state_anim && win->scroll.content_h > 0.0f )
+    if ( autosize && !logical_collapsed && !win->collapse_anim && !win->maximized && !win->state_anim
+         && win->scroll.content_h > 0.0f )
     {
         f32 max_w, max_h;
         window_fit_bounds( win, &max_w, &max_h );
@@ -922,10 +969,21 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
                          max_w, max_h, &win->w, &win->h );
     }
 
-    /* Collapsed windows shrink to just their title bar, freeing the space below; win->h is
-       preserved so reopening restores the previous size.  disp_h is the height actually
-       shown this frame and drives the hover rect, clip, and border. */
-    f32 disp_h = collapsed ? title_h : win->h;
+    /* disp_h is the body height actually shown this frame -- it drives the hover rect, clip, and
+       border.  A minimized chip and a maximized window take their pinned heights directly; a normal
+       window runs the collapse height tween (window_collapse_h), which eases between win->h and
+       title_h so a collapse / expand animates instead of snapping.  win->h is preserved throughout
+       so an expand restores the previous size.  shown_h caches it for the next collapse toggle's
+       start-of-tween snapshot.  `collapsed` is then the VISUAL fact -- no body space left this frame
+       -- which balances window_open_body's region against window_end and gates the caller's body
+       emit; while the tween still shows a sliver of body it stays false so the content clips through. */
+    f32 disp_h;
+    if ( win->minimized )       disp_h = title_h;
+    else if ( win->maximized )  disp_h = win->h;
+    else                        disp_h = window_collapse_h( win, id, title_h );
+    win->shown_h = disp_h;
+
+    bool collapsed = disp_h <= title_h + 0.5f;
 
     /* Edge resize, resolved here so it pre-empts the scrollbar and collapse arrow (resolved in
        window_end) underneath: while the cursor sits on a hot edge, s_scope.resize_hot suppresses
@@ -934,7 +992,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     gui_rect_t disp_r    = { win->x, win->y, win->w, disp_h };
     gui_id_t   resize_id = id_combine( id, GUI_RESIZE_SALT );
     bool         resizeable = !( flags & GUI_WIN_NORESIZE ) && !autosize && !native && !pinned
-                              && !win->state_anim;
+                              && !win->state_anim && !win->collapse_anim;
     u8 resize_hot = window_resolve_resize_hot( id, win, flags, disp_r, collapsed, resizeable, resize_id );
 
     /* Nominate this window as the one under the cursor (front-most by z wins).  A resizeable

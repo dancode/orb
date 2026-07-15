@@ -132,11 +132,12 @@ window_end_titlebar( gui_window_t* win, bool native )
             gui_id_t     arrow_id = id_combine( s_build.win.id, GUI_COLLAPSE_SALT );
             gui_item_state_t arrow_st = widget_behavior( arrow_id, arrow_r, GUI_WIDGET_KIND_BUTTON );
             if ( arrow_st.clicked )
-            {
-                win->collapsed = !win->collapsed;
-                g_ctx->retained.wants_redraw = true;  /* toggle takes effect next frame; force one more build */
-            }
-            draw_collapse_arrow( arrow_r, s_build.win.collapsed, arrow_st.hover ? COL_TEXT : COL_TEXT_DIM );
+                window_collapse_set( win, !win->collapsed );   /* tweens the height next frame */
+            /* Arrow reflects the LOGICAL state (win->collapsed) so it flips the instant you click,
+               even while the body is still easing shut -- s_build.win.collapsed is the visual fact and
+               lags during the tween. */
+            draw_collapse_arrow( arrow_r, win ? win->collapsed : s_build.win.collapsed,
+                                 arrow_st.hover ? COL_TEXT : COL_TEXT_DIM );
             text_x = s_build.win.x + title_h;   /* title follows the arrow square */
         }
 
@@ -155,10 +156,7 @@ window_end_titlebar( gui_window_t* win, bool native )
                 if ( can_max )
                     window_maximize_set( win, !win->maximized );
                 else if ( can_collapse )
-                {
-                    win->collapsed = !win->collapsed;
-                    g_ctx->retained.wants_redraw = true;
-                }
+                    window_collapse_set( win, !win->collapsed );
             }
         }
 

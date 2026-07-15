@@ -181,6 +181,17 @@ typedef struct gui_window_t
     bool       state_anim;
     struct { f32 x, y, w, h; } anim_from;
 
+    /* Collapse transition: the arrow / double-click toggles win->collapsed, and window_begin_ex tweens
+       the SHOWN body height (disp_h) between the full height and the title bar rather than snapping --
+       a single-channel height ease on its own gui_anim_timer clock (window_collapse_h /
+       window_collapse_set in gui_window_free.c).  collapse_from is the height shown when the toggle
+       fired (the tween's start, snapshotted from shown_h so an interrupted toggle is seamless);
+       shown_h is the body height actually displayed last frame, kept for that snapshot.  Cancelled
+       when a maximize / minimize / restore takes over the geometry (window_anim_begin). */
+    bool       collapse_anim;
+    f32        collapse_from;
+    f32        shown_h;
+
     /* Re-open of a CLOSEABLE floater: closing it lets the abandoned-teardown free its OS window,
        reverting this record to viewport 0.  `floater` remembers it was one so the next begin
        re-spawns it.  The geometry is the floater's RESTORE (normal) state, sampled every frame it

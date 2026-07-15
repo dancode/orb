@@ -105,7 +105,7 @@ gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active )
     }
 
     gui_anim_timer_t* a  = GUI_STATE( gui_anim_timer_t, id );   /* restamp seen_frame */
-    f32               dt = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
+    f32 dt = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
     a->elapsed += dt;
 
     if ( a->elapsed >= a->duration )
