@@ -294,7 +294,8 @@
       "Bash(echo \"EXIT:$?\")",
       "Bash(tasklist *)",
       "Bash(taskkill *)",
-      "Bash(bin/font_tool.exe assets/font_source/Roboto-Regular.ttf 16 C:/Users/dangold/AppData/Local/Temp/claude/F--orb/6ad11acd-a22b-4aea-a206-7b0ad58dc24f/scratchpad/roboto_v3.orb_font)"
+      "Bash(bin/font_tool.exe assets/font_source/Roboto-Regular.ttf 16 C:/Users/dangold/AppData/Local/Temp/claude/F--orb/6ad11acd-a22b-4aea-a206-7b0ad58dc24f/scratchpad/roboto_v3.orb_font)",
+      "Bash(bin/font_tool.exe info *)"
     ]
   }
 }

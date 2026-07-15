@@ -8,6 +8,7 @@
 
     Usage:
         font_tool.exe <input.ttf> <size_px> <output.orb_font>
+        font_tool.exe info [<file.orb_font> | <dir>]...   -- print .orb_font header internals
 
     Bakes ASCII printable range U+0020..U+007F (96 glyphs; DEL synthesized as solid block).
     .orb_font output atlas is R8 grayscale, sized to the smallest power-of-two square
@@ -104,15 +105,123 @@ path_has_orb_font_ext( const char* path )
 }
 
 /*==============================================================================================
+    info subcommand -- read .orb_font headers and print their internals as a table.
+
+    Read-only diagnostic companion to the bake path: `font_tool info [<file.orb_font> | <dir>]...`.
+    With no argument it lists the engine font dir (assets/font); a .orb_font argument prints that one
+    file; any other argument is treated as a directory and globbed for *.orb_font.
+==============================================================================================*/
+
+typedef struct { int count; } info_ctx_t;
+
+/* Column header (with a one-line legend), printed once above the rows. */
+static void
+info_print_header( void )
+{
+    printf( "legend: ver=format version  aw/ah=atlas width/height px  size=nominal em px  "
+            "asc/desc=ascent/descent px  gap=extra line gap px  glyphs=glyph count\n" );
+    printf( "%-40s %3s %5s %5s %5s %5s %5s %5s %7s\n",
+            "file", "ver", "aw", "ah", "size", "asc", "desc", "gap", "glyphs" );
+}
+
+/* Read one .orb_font header and print its row (or a short note if it is not a valid atlas). */
+static void
+info_print_file( const char* label, const char* path )
+{
+    FILE* f = fopen( path, "rb" );
+    if ( !f )
+    {
+        printf( "%-40s  (cannot open)\n", label );
+        return;
+    }
+    orb_font_header_t h;
+    size_t got = fread( &h, 1, sizeof( h ), f );
+    fclose( f );
+
+    if ( got != sizeof( h ) || h.magic != ORB_FONT_MAGIC )
+    {
+        printf( "%-40s  (not an .orb_font)\n", label );
+        return;
+    }
+    printf( "%-40s %3u %5u %5u %5u %5d %5d %5d %7u\n",
+            label, h.version, h.atlas_w, h.atlas_h, h.font_size,
+            h.ascent, h.descent, h.line_gap, h.glyph_count );
+}
+
+/* sys_file_glob callback: print each matched file, keep going. */
+static bool
+info_glob_cb( const char* filename, const char* full_path, void* userdata )
+{
+    info_ctx_t* c = (info_ctx_t*)userdata;
+    info_print_file( filename, full_path );
+    ++c->count;
+    return true;
+}
+
+/* basename of a path (after the last '/' or '\\'). */
+static const char*
+path_base( const char* p )
+{
+    const char* base = p;
+    for ( const char* q = p; *q; ++q )
+        if ( *q == '/' || *q == '\\' )
+            base = q + 1;
+    return base;
+}
+
+static int
+run_info( int npaths, char** paths )
+{
+    /* Initialize dev_font up front so its one-line init banner prints before the table, not
+       between the column titles and the rows. */
+    dev_font_init( NULL );
+
+    info_print_header();
+    info_ctx_t ctx = { 0 };
+
+    if ( npaths == 0 )
+    {
+        /* No argument -- default to the engine's font output dir (assets/font). */
+        char dir[ 512 ];
+        if ( dev_font_dir( dir, sizeof( dir ) ) )
+            sys_file_glob( dir, "*.orb_font", info_glob_cb, &ctx );
+    }
+    else
+    {
+        for ( int i = 0; i < npaths; ++i )
+        {
+            if ( path_has_orb_font_ext( paths[ i ] ) )
+            {
+                info_print_file( path_base( paths[ i ] ), paths[ i ] );
+                ++ctx.count;
+            }
+            else
+            {
+                sys_file_glob( paths[ i ], "*.orb_font", info_glob_cb, &ctx );
+            }
+        }
+    }
+
+    if ( ctx.count == 0 )
+        printf( "(no .orb_font files found)\n" );
+    return 0;
+}
+
+/*==============================================================================================
     main
 ==============================================================================================*/
 
 int
 main( int argc, char** argv )
 {
+    /* Subcommand: `info` prints .orb_font header internals (read-only diagnostic). */
+    if ( argc >= 2 && strcmp( argv[ 1 ], "info" ) == 0 )
+        return run_info( argc - 2, argv + 2 );
+
     if ( argc < 3 || argc > 4 )
     {
         fprintf( stderr, "usage: font_tool <input.ttf | \"Font Name\"> <size_px> [output.orb_font]\n" );
+        fprintf( stderr, "       font_tool info [<file.orb_font> | <dir>]...   (print header internals)\n" );
         fprintf( stderr, "       input may be a path, a bare filename, or an installed font name\n" );
         fprintf( stderr, "       output defaults to assets/font/<name>_<size>px.orb_font\n" );
         return 1;
