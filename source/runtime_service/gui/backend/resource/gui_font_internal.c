@@ -77,14 +77,14 @@ font_slot_load( font_slot_t* slot, const char* path )
 
     /* Build the lookup table from glyph records. */
 
-    orb_font_glyph_t lookup[ 95 ];
+    orb_font_glyph_t lookup[ ORB_FONT_CP_COUNT ];
     memset( lookup, 0, sizeof( lookup ) );
     for ( u32 i = 0; i < hdr.glyph_count; ++i )
     {
         orb_font_glyph_t g;
         if ( fread( &g, sizeof( g ), 1, f ) != 1 ) { fclose( f ); return false; }
-        if ( g.codepoint >= 32 && g.codepoint <= 126 )
-            lookup[ g.codepoint - 32 ] = g;
+        if ( g.codepoint >= ORB_FONT_CP_FIRST && g.codepoint <= ORB_FONT_CP_LAST )
+            lookup[ g.codepoint - ORB_FONT_CP_FIRST ] = g;
     }
 
     /* Read the full baked atlas.  v3 fonts are pure glyph coverage; a legacy v2 font also carries a
@@ -156,8 +156,8 @@ font_slot_load( font_slot_t* slot, const char* path )
 static f32
 font_slot_char_advance( const font_slot_t* slot, u8 ch )
 {
-    if ( ch < 32 || ch > 126 ) ch = (u8)'?';
-    return (f32)slot->lookup[ ch - 32 ].advance;
+    if ( ch < ORB_FONT_CP_FIRST || ch > ORB_FONT_CP_LAST ) ch = (u8)'?';
+    return (f32)slot->lookup[ ch - ORB_FONT_CP_FIRST ].advance;
 }
 
 static void
@@ -165,8 +165,8 @@ font_slot_glyph( const font_slot_t* slot, u8 ch,
                  f32* u0, f32* v0, f32* u1, f32* v1,
                  f32* ox, f32* oy, f32* gw, f32* gh, f32* advance )
 {
-    if ( ch < 32 || ch > 126 ) ch = (u8)'?';
-    const orb_font_glyph_t* g = &slot->lookup[ ch - 32 ];
+    if ( ch < ORB_FONT_CP_FIRST || ch > ORB_FONT_CP_LAST ) ch = (u8)'?';
+    const orb_font_glyph_t* g = &slot->lookup[ ch - ORB_FONT_CP_FIRST ];
 
     /* Glyph atlas_x/atlas_y are in the font's own baked pixel space; rebase by the font's live
        page origin in the shared atlas (valid across repacks) and scale by the shared atlas dims. */

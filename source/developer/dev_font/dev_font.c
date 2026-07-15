@@ -44,9 +44,7 @@ POP_WARNINGS
     Constants
 ==============================================================================================*/
 
-#define GLYPH_FIRST   32u
-#define GLYPH_LAST    126u
-#define GLYPH_MAX     ( GLYPH_LAST - GLYPH_FIRST + 1u )  /* 95 */
+/* Baked codepoint range comes from the format contract (orb_font.h): ORB_FONT_CP_FIRST/LAST/COUNT. */
 #define GLYPH_PAD     1
 #define ATLAS_MIN     64        // smallest atlas size attempted (px, square)
 #define ATLAS_MAX     512       // largest atlas size attempted (px, square); also static buffer cap
@@ -65,31 +63,14 @@ POP_WARNINGS
 #endif
 
 /*==============================================================================================
-    Internal types
-==============================================================================================*/
-
-/* Rasterized glyph before atlas placement. */
-
-typedef struct
-{
-    u32  codepoint;
-    u8*  bitmap;    /* stbtt_GetCodepointBitmap result; free with stbtt_FreeBitmap */
-    int  w;
-    int  h;
-    int  ox;        /* bearing_x: cursor-to-left-edge offset, pixels */
-    int  oy;        /* stbtt y-offset from baseline to bitmap top (negative = above baseline) */
-    int  advance;   /* horizontal advance, pixels */
-
-} raw_glyph_t;
-
-/*==============================================================================================
     Static storage (atlas lives in BSS, not the stack)
 ==============================================================================================*/
 
-static raw_glyph_t  s_raw   [ GLYPH_MAX ];
-static stbrp_node   s_nodes [ ATLAS_MAX ];
+static stbrp_node       s_nodes  [ ATLAS_MAX ];
 /* Square atlas, at most ATLAS_MAX per side (glyphs are packed full-height; no reserved band). */
-static u8           s_atlas [ ATLAS_MAX * ATLAS_MAX ];
+static u8               s_atlas  [ ATLAS_MAX * ATLAS_MAX ];
+/* Rasterized-glyph scratch handed to dev_font_bake_write (BSS, not the stack). */
+static dev_font_glyph_t s_glyphs [ ORB_FONT_CP_COUNT ];
 
 /*==============================================================================================
     Module state
@@ -302,7 +283,157 @@ resolve_ttf( const char* ttf_path, char* out, int size )
 }
 
 /*==============================================================================================
-    bake_font -- rasterize, pack, and write a .orb_font to out_path.
+    dev_font_bake_write -- shared bake back-end (pack + blit + write), used by both bakers.
+
+    The front-end (stb_truetype here, FreeType in font_tool) rasterizes glyphs into a
+    dev_font_glyph_t[] and hands them here; this owns the packing heuristic and the .orb_font file
+    layout so neither is duplicated.  The caller retains ownership of each glyph bitmap.
+==============================================================================================*/
+
+bool
+dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 count,
+                     int ascent, int descent, int line_gap, int size_px, const char* label )
+{
+    if ( count > ORB_FONT_CP_COUNT )
+    {
+        set_error( "glyph count %u exceeds baked range %u", count, (u32)ORB_FONT_CP_COUNT );
+        return false;
+    }
+
+    /*------------------------------------------------------------------------------------------
+        Pass 2 -- pack glyph rects into the smallest square atlas (ATLAS_MIN..ATLAS_MAX per side)
+        that fits every glyph.  A fixed 512x512 canvas wastes most of its area for small fonts, so
+        try progressively larger square sizes and stop at the first that works.  Bitmap-less glyphs
+        (whitespace) are skipped -- they carry no coverage to place.
+        GLYPH_PAD adds a 1-pixel gap between neighbours to prevent bilinear filter bleed.  The atlas
+        is pure glyph coverage -- gui draws its white texel + dash rows from a shared runtime atlas,
+        so no reserved band is packed here.
+    ------------------------------------------------------------------------------------------*/
+
+    stbrp_rect rects[ ORB_FONT_CP_COUNT ];
+    int        rect_count = 0;
+
+    for ( u32 i = 0; i < count; ++i )
+    {
+        if ( !glyphs[ i ].bitmap ) continue;
+        rects[ rect_count ].id = (int)i;
+        rects[ rect_count ].w  = (stbrp_coord)( glyphs[ i ].w + GLYPH_PAD );
+        rects[ rect_count ].h  = (stbrp_coord)( glyphs[ i ].h + GLYPH_PAD );
+        ++rect_count;
+    }
+
+    stbrp_context pack_ctx;
+    u32           atlas_w = ATLAS_MIN, atlas_h = ATLAS_MIN;
+
+    if ( rect_count > 0 )
+    {
+        atlas_w = atlas_h = 0;
+        for ( u32 try_size = ATLAS_MIN; try_size <= ATLAS_MAX; try_size *= 2 )
+        {
+            for ( int i = 0; i < rect_count; ++i )
+                rects[ i ].was_packed = 0;
+
+            stbrp_init_target( &pack_ctx, (int)try_size, (int)try_size, s_nodes, (int)try_size );
+            /* BL (the default heuristic) does not check the height bound while searching for a
+               placement -- only BF does (see stb_rect_pack.h stbrp__skyline_find_best_pos).
+               Without this, a "successful" pack can silently place a rect below the requested
+               height. */
+            stbrp_setup_heuristic( &pack_ctx, STBRP_HEURISTIC_Skyline_BF_sortHeight );
+            if ( stbrp_pack_rects( &pack_ctx, rects, rect_count ) )
+            {
+                atlas_w = atlas_h = try_size;
+                break;
+            }
+        }
+
+        if ( atlas_w == 0 )
+        {
+            set_error( "%ux%u atlas too small for %u glyphs at %d px -- try a smaller size",
+                       ATLAS_MAX, ATLAS_MAX, count, size_px );
+            return false;
+        }
+    }
+
+    /*------------------------------------------------------------------------------------------
+        Pass 3 -- blit bitmaps into atlas; build glyph records.
+    ------------------------------------------------------------------------------------------*/
+
+    memset( s_atlas, 0, (size_t)atlas_w * atlas_h );
+
+    u32 packed_area = 0;
+
+    orb_font_glyph_t out_glyphs[ ORB_FONT_CP_COUNT ];
+    memset( out_glyphs, 0, sizeof( out_glyphs ) );
+
+    /* Pre-fill every record with codepoint and advance; non-bitmapped glyphs (whitespace) keep
+       zero atlas coords and zero dimensions, which the renderer treats as invisible. */
+    for ( u32 i = 0; i < count; ++i )
+    {
+        out_glyphs[ i ].codepoint = glyphs[ i ].codepoint;
+        out_glyphs[ i ].advance   = (u16)glyphs[ i ].advance;
+    }
+
+    for ( int ri = 0; ri < rect_count; ++ri )
+    {
+        if ( !rects[ ri ].was_packed ) continue;
+
+        const dev_font_glyph_t* r  = &glyphs[ rects[ ri ].id ];
+        orb_font_glyph_t*       og = &out_glyphs[ rects[ ri ].id ];
+
+        og->atlas_x   = (u16)rects[ ri ].x;
+        og->atlas_y   = (u16)rects[ ri ].y;
+        og->w         = (u16)r->w;
+        og->h         = (u16)r->h;
+        og->bearing_x = (i16)r->bearing_x;
+        og->bearing_y = (i16)r->bearing_y;
+
+        packed_area += (u32)( r->w * r->h );
+
+        for ( int row = 0; row < r->h; ++row )
+        {
+            const u8* src = r->bitmap + row * r->w;
+            u8*       dst = s_atlas + ( (u32)rects[ ri ].y + (u32)row ) * atlas_w
+                                    + (u32)rects[ ri ].x;
+            memcpy( dst, src, (size_t)r->w );
+        }
+    }
+
+    /*------------------------------------------------------------------------------------------
+        Write .orb_font.
+    ------------------------------------------------------------------------------------------*/
+
+    FILE* out = fopen( out_path, "wb" );
+    if ( !out )
+    {
+        set_error( "cannot write cache file '%s'", out_path );
+        return false;
+    }
+
+    orb_font_header_t hdr;
+    memset( &hdr, 0, sizeof( hdr ) );
+    hdr.magic       = ORB_FONT_MAGIC;
+    hdr.version     = ORB_FONT_VERSION;
+    hdr.atlas_w     = atlas_w;
+    hdr.atlas_h     = atlas_h;
+    hdr.font_size   = (u32)size_px;
+    hdr.ascent      = ascent;
+    hdr.descent     = descent;
+    hdr.line_gap    = line_gap;
+    hdr.glyph_count = count;
+
+    fwrite( &hdr,       sizeof( hdr ),              1,         out );
+    fwrite( out_glyphs, sizeof( orb_font_glyph_t ), count,     out );
+    fwrite( s_atlas,    1,                           (size_t)atlas_w * atlas_h, out );
+    fclose( out );
+
+    f32 usage_pct = 100.0f * (f32)packed_area / ( (f32)atlas_w * (f32)atlas_h );
+    printf( "[dev_font] baked '%s' %d px -> '%s' (%u glyphs, %ux%u atlas, %.1f%% used, ascent %d, descent %d)\n",
+            label, size_px, out_path, count, atlas_w, atlas_h, usage_pct, ascent, descent );
+    return true;
+}
+
+/*==============================================================================================
+    bake_font -- stb_truetype front-end: rasterize glyphs, then hand off to dev_font_bake_write.
 ==============================================================================================*/
 
 static bool
@@ -369,24 +500,22 @@ bake_font( const char* ttf_path, int size_px, const char* out_path )
     int line_gap_px = (int)roundf( (float)stbtt_line_gap_u * scale );
 
     /*------------------------------------------------------------------------------------------
-        Pass 1 -- rasterize glyphs.
+        Pass 1 -- rasterize glyphs into the shared dev_font_glyph_t scratch.
 
         stbtt coordinate convention:
             ox  = bearing_x (cursor-to-left-edge, pixels)
             oy  = y-offset from baseline to bitmap top (negative = above baseline)
-        orb_font_glyph_t uses the FreeType convention for bearing_y (positive = above
+        dev_font_glyph_t uses the orb_font/FreeType convention for bearing_y (positive = above
         baseline), so we store -oy.
     ------------------------------------------------------------------------------------------*/
 
-    memset( s_raw, 0, sizeof( s_raw ) );
+    memset( s_glyphs, 0, sizeof( s_glyphs ) );
     u32 raw_count = 0;
 
-    for ( u32 cp = GLYPH_FIRST; cp <= GLYPH_LAST; ++cp )
+    for ( u32 cp = ORB_FONT_CP_FIRST; cp <= ORB_FONT_CP_LAST; ++cp )
     {
-        raw_glyph_t* r = &s_raw[ raw_count ];
-        r->codepoint   = cp;
-        r->bitmap      = NULL;
-        r->w = r->h = r->ox = r->oy = 0;
+        dev_font_glyph_t* r = &s_glyphs[ raw_count++ ];
+        r->codepoint        = cp;
 
         int adv_u, lsb_u;
         stbtt_GetCodepointHMetrics( &font_info, (int)cp, &adv_u, &lsb_u );
@@ -396,160 +525,32 @@ bake_font( const char* ttf_path, int size_px, const char* out_path )
         u8* bm = stbtt_GetCodepointBitmap( &font_info, 0, scale, (int)cp, &w, &h, &ox, &oy );
         if ( bm && w > 0 && h > 0 )
         {
-            r->bitmap = bm;
-            r->w = w;  r->h = h;
-            r->ox = ox; r->oy = oy;
+            r->bitmap    = bm;
+            r->w         = w;
+            r->h         = h;
+            r->bearing_x = ox;
+            r->bearing_y = -oy;   /* orb_font convention: positive = above baseline */
         }
         else if ( bm )
         {
             stbtt_FreeBitmap( bm, NULL );
         }
-
-        ++raw_count;
     }
 
     free( font_data );
 
-    /*------------------------------------------------------------------------------------------
-        Pass 2 -- pack glyph rects into the smallest square atlas (ATLAS_MIN..ATLAS_MAX per side)
-        that fits every glyph.  A fixed 512x512 canvas wastes most of its area for small fonts, so
-        try progressively larger square sizes and stop at the first that works.
-        GLYPH_PAD adds a 1-pixel gap between neighbours to prevent bilinear filter bleed.  The atlas
-        is pure glyph coverage -- gui draws its white texel + dash rows from a shared runtime atlas,
-        so no reserved band is packed here.
-    ------------------------------------------------------------------------------------------*/
-
-    stbrp_rect rects[ GLYPH_MAX ];
-    int        rect_count = 0;
+    /* Pass 2 + 3 + write live in the shared back-end. */
+    bool ok = dev_font_bake_write( out_path, s_glyphs, raw_count,
+                                   ascent_px, descent_px, line_gap_px, size_px, ttf_path );
 
     for ( u32 i = 0; i < raw_count; ++i )
-    {
-        if ( !s_raw[ i ].bitmap ) continue;
-        rects[ rect_count ].id = (int)i;
-        rects[ rect_count ].w  = (stbrp_coord)( s_raw[ i ].w + GLYPH_PAD );
-        rects[ rect_count ].h  = (stbrp_coord)( s_raw[ i ].h + GLYPH_PAD );
-        ++rect_count;
-    }
-
-    stbrp_context pack_ctx;
-    u32           atlas_w = ATLAS_MIN, atlas_h = ATLAS_MIN;
-
-    if ( rect_count > 0 )
-    {
-        atlas_w = atlas_h = 0;
-        for ( u32 try_size = ATLAS_MIN; try_size <= ATLAS_MAX; try_size *= 2 )
+        if ( s_glyphs[ i ].bitmap )
         {
-            for ( int i = 0; i < rect_count; ++i )
-                rects[ i ].was_packed = 0;
-
-            stbrp_init_target( &pack_ctx, (int)try_size, (int)try_size, s_nodes, (int)try_size );
-            /* BL (the default heuristic) does not check the height bound while searching for a
-               placement -- only BF does (see stb_rect_pack.h stbrp__skyline_find_best_pos).
-               Without this, a "successful" pack can silently place a rect below the requested
-               height. */
-            stbrp_setup_heuristic( &pack_ctx, STBRP_HEURISTIC_Skyline_BF_sortHeight );
-            if ( stbrp_pack_rects( &pack_ctx, rects, rect_count ) )
-            {
-                atlas_w = atlas_h = try_size;
-                break;
-            }
+            stbtt_FreeBitmap( s_glyphs[ i ].bitmap, NULL );
+            s_glyphs[ i ].bitmap = NULL;
         }
 
-        if ( atlas_w == 0 )
-        {
-            for ( u32 i = 0; i < raw_count; ++i )
-                if ( s_raw[ i ].bitmap ) stbtt_FreeBitmap( s_raw[ i ].bitmap, NULL );
-            set_error( "%ux%u atlas too small for %u glyphs at %d px -- try a smaller size",
-                       ATLAS_MAX, ATLAS_MAX, raw_count, size_px );
-            return false;
-        }
-    }
-
-    /*------------------------------------------------------------------------------------------
-        Pass 3 -- blit bitmaps into atlas; build glyph records.
-    ------------------------------------------------------------------------------------------*/
-
-    memset( s_atlas, 0, (size_t)atlas_w * atlas_h );
-
-    u32 packed_area = 0;
-
-    orb_font_glyph_t out_glyphs[ GLYPH_MAX ];
-    memset( out_glyphs, 0, sizeof( out_glyphs ) );
-
-    /* Pre-fill every record with codepoint and advance; non-bitmapped glyphs (whitespace) keep
-       zero atlas coords and zero dimensions, which the renderer treats as invisible. */
-    for ( u32 i = 0; i < raw_count; ++i )
-    {
-        out_glyphs[ i ].codepoint = s_raw[ i ].codepoint;
-        out_glyphs[ i ].advance   = (u16)s_raw[ i ].advance;
-    }
-
-    for ( int ri = 0; ri < rect_count; ++ri )
-    {
-        if ( !rects[ ri ].was_packed ) continue;
-
-        raw_glyph_t*      r  = &s_raw[ rects[ ri ].id ];
-        orb_font_glyph_t* og = &out_glyphs[ rects[ ri ].id ];
-
-        og->atlas_x   = (u16)rects[ ri ].x;
-        og->atlas_y   = (u16)rects[ ri ].y;
-        og->w         = (u16)r->w;
-        og->h         = (u16)r->h;
-        og->bearing_x = (i16)r->ox;
-        og->bearing_y = (i16)( -r->oy );   /* FT convention: positive = above baseline */
-
-        packed_area += (u32)( r->w * r->h );
-
-        for ( int row = 0; row < r->h; ++row )
-        {
-            const u8* src = r->bitmap + row * r->w;
-            u8*       dst = s_atlas + ( (u32)rects[ ri ].y + (u32)row ) * atlas_w
-                                    + (u32)rects[ ri ].x;
-            memcpy( dst, src, (size_t)r->w );
-        }
-    }
-
-    for ( u32 i = 0; i < raw_count; ++i )
-    {
-        if ( s_raw[ i ].bitmap )
-        {
-            stbtt_FreeBitmap( s_raw[ i ].bitmap, NULL );
-            s_raw[ i ].bitmap = NULL;
-        }
-    }
-
-    /*------------------------------------------------------------------------------------------
-        Write .orb_font.
-    ------------------------------------------------------------------------------------------*/
-
-    FILE* out = fopen( out_path, "wb" );
-    if ( !out )
-    {
-        set_error( "cannot write cache file '%s'", out_path );
-        return false;
-    }
-
-    orb_font_header_t hdr;
-    memset( &hdr, 0, sizeof( hdr ) );
-    hdr.magic       = ORB_FONT_MAGIC;
-    hdr.version     = ORB_FONT_VERSION;
-    hdr.atlas_w     = atlas_w;
-    hdr.atlas_h     = atlas_h;
-    hdr.font_size   = (u32)size_px;
-    hdr.ascent      = ascent_px;
-    hdr.descent     = descent_px;
-    hdr.line_gap    = line_gap_px;
-    hdr.glyph_count = raw_count;
-
-    fwrite( &hdr,       sizeof( hdr ),              1,         out );
-    fwrite( out_glyphs, sizeof( orb_font_glyph_t ), raw_count, out );
-    fwrite( s_atlas,    1,                           (size_t)atlas_w * atlas_h, out );
-    fclose( out );
-
-    f32 usage_pct = 100.0f * (f32)packed_area / ( (f32)atlas_w * (f32)atlas_h );
-    printf( "[dev_font] baked '%s' %d px -> '%s' (%u glyphs, %ux%u atlas, %.1f%% used, ascent %d, descent %d)\n",
-            ttf_path, size_px, out_path, raw_count, atlas_w, atlas_h, usage_pct, ascent_px, descent_px );
-    return true;
+    return ok;
 }
 
 /*==============================================================================================

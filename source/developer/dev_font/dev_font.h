@@ -49,6 +49,20 @@ typedef struct
 
 } dev_font_settings_t;
 
+/* One rasterized glyph handed to dev_font_bake_write.  The front-end fills this: stb_truetype in
+   dev_font's own baker, FreeType in font_tool.  bearing_y follows the orb_font convention
+   (positive = above baseline); a front-end using a different sign converts before filling this. */
+typedef struct
+{
+    u32  codepoint;
+    u8*  bitmap;      // row-major coverage, w*h bytes; NULL for whitespace / empty glyphs
+    int  w, h;        // bitmap dimensions in pixels
+    int  bearing_x;   // cursor-to-left-edge offset, pixels
+    int  bearing_y;   // baseline-to-top offset, pixels (positive = above baseline)
+    int  advance;     // horizontal advance, pixels
+
+} dev_font_glyph_t;
+
 /* Initialize.  Must be called once before dev_font_get().  Returns false on error. */
 bool        dev_font_init( const dev_font_settings_t* settings );
 void        dev_font_shutdown( void );
@@ -68,6 +82,15 @@ bool        dev_font_get( const char* ttf_path, int size_px,
    the same inputs as the runtime stb baker.  Requires dev_font_init(); returns false and sets
    dev_font_last_error() when the font cannot be found. */
 bool        dev_font_resolve( const char* request, char* out_path, int out_path_size );
+
+/* Shared bake back-end: pack `glyphs` into the smallest square atlas that fits and write an
+   .orb_font to out_path.  Both bakers call this after rasterizing (dev_font via stb_truetype,
+   font_tool via FreeType) so the packing heuristic and file layout live in one place.  The caller
+   owns each glyph's bitmap and frees it after this returns.  `label` names the source in the log
+   line.  Returns false and sets dev_font_last_error() on failure. */
+bool        dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 count,
+                                 int ascent, int descent, int line_gap, int size_px,
+                                 const char* label );
 
 const char* dev_font_last_error( void );
 

@@ -12,11 +12,11 @@
 ==============================================================================================*/
 // clang-format off
 
-/* stb_rect_pack is vendored under font_tool; this TU owns the runtime implementation (the icon
-   atlas used to, before packing moved here).  font_tool compiles its own copy into a separate
-   executable, so there is no duplicate-symbol conflict. */
+/* stb_rect_pack is vendored under dev_font (the single canonical copy); this TU owns the runtime
+   implementation (the icon atlas used to, before packing moved here).  dev_font compiles its own
+   implementation with STBRP_STATIC into a separate static lib, so there is no symbol conflict. */
 #define STB_RECT_PACK_IMPLEMENTATION
-#include "tools/font_tool/stb_rect_pack.h"
+#include "developer/dev_font/stb_rect_pack.h"
 
 /* Assist band: one white row + the dash rows, full-width, pinned to the bottom of the texture so
    the packer (which works the top region) never touches it and its UVs never move on a repack. */

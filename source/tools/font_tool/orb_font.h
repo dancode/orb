@@ -25,6 +25,13 @@
    trailing band) -- so the loader accepts either version. */
 #define ORB_FONT_VERSION  3u
 
+/* Baked codepoint range -- the ASCII printable span U+0020 (space) .. U+007E (tilde).  This is the
+   format contract shared by both bakers (dev_font, font_tool) and the runtime loader, so the glyph
+   count and the codepoint->slot mapping have exactly one definition. */
+#define ORB_FONT_CP_FIRST  32u
+#define ORB_FONT_CP_LAST   126u
+#define ORB_FONT_CP_COUNT  ( ORB_FONT_CP_LAST - ORB_FONT_CP_FIRST + 1u )   /* 95 */
+
 typedef struct
 {
     uint32_t magic;

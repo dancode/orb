@@ -72,7 +72,7 @@ typedef struct
 
     i32                 ascent;             // pixels above baseline (positive)
     i32                 descent;            // pixels below baseline (negative)
-    orb_font_glyph_t    lookup[ 95 ];       // codepoints 32..126; advance == 0 marks a missing glyph
+    orb_font_glyph_t    lookup[ ORB_FONT_CP_COUNT ];  // codepoints 32..126; advance == 0 marks a missing glyph
 
 } font_slot_t;
 
