@@ -297,7 +297,8 @@
       "Bash(bin/font_tool.exe assets/font_source/Roboto-Regular.ttf 16 C:/Users/dangold/AppData/Local/Temp/claude/F--orb/6ad11acd-a22b-4aea-a206-7b0ad58dc24f/scratchpad/roboto_v3.orb_font)",
       "Bash(bin/font_tool.exe info *)",
       "PowerShell(& \"F:\\\\orb\\\\bootstrap_build_tool.bat\" 2>&1 | Select-Object -Last 20)",
-      "Bash(bin/font_tool.exe CascadiaMono 16 /tmp/smoke_ct.orb_font)"
+      "Bash(bin/font_tool.exe CascadiaMono 16 /tmp/smoke_ct.orb_font)",
+      "PowerShell(& cmd.exe /c bake_builtin_fonts.bat 2>&1 | Select-Object -Last 45)"
     ]
   }
 }
