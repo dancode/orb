@@ -194,6 +194,29 @@ typedef struct gui_api_s
     void ( *window_anim_enable     )( bool on );
     bool ( *window_anim_is_enabled )( void );
 
+    /* Animation service -- the general value-stepping surface any interface drives transitions with.
+       Two models, both keyed on a caller-owned gui_id_t (compose with id_combine to avoid slot
+       collisions); storage is proportional to in-flight animations and self-evicts once settled.
+       Every call that steps a value raises wants_redraw, so animations keep frames coming under
+       idle-skip / frame_pace with no caller bookkeeping.
+
+         anim_f32  -- exponential-decay damper: chase a moving `target` at `speed` (Hz-like; 10 ~=
+                      250 ms to 95%, 20 ~= 150 ms).  No definite end -- ideal for hover/state blends
+                      and "glide to wherever the target is now".  Retargets smoothly mid-flight.
+         anim_start / anim_ease -- fixed-duration eased tween.  anim_start seeds a clock on `id` for
+                      `secs` (<= 0 == instant: the next anim_ease reads settled and the caller snaps);
+                      anim_ease advances it and returns eased progress in [0,1] to lerp your own
+                      from/to with.  Several channels on one id share the clock (depart + ARRIVE
+                      together) and the tween has a definite end (*out_active goes false at t==1).
+         anim_color / anim_vec2 / anim_rect -- typed dampers (one anim_f32 per component) so a color,
+                      point, or rect glides to a new data state without hand-rolling the blend. */
+    f32      ( *anim_f32    )( gui_id_t id, f32 target, f32 speed );
+    void     ( *anim_start  )( gui_id_t id, f32 secs );
+    f32      ( *anim_ease   )( gui_id_t id, gui_ease_t ease, bool* out_active );
+    u32      ( *anim_color  )( gui_id_t id, u32 target_abgr, f32 speed );
+    gui_vec2_t ( *anim_vec2 )( gui_id_t id, gui_vec2_t target, f32 speed );
+    gui_rect_t ( *anim_rect )( gui_id_t id, gui_rect_t target, f32 speed );
+
     /* Viewport management.  A viewport is a render surface backed by an OS window.  One frame's build
        gathers every window's geometry into a single draw list; render() dispatches each window's
        partition to the viewport it is assigned to (window_set_next_viewport, or inherited from

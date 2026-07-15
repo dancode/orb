@@ -121,5 +121,75 @@ gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active )
     return ease ? ease( t ) : t;
 }
 
+/*----------------------------------------------------------------------------------------------
+    Public animation surface (gui_api_t)
+
+    The two primitives above are the whole engine; these are the callable face of them.  anim_f32 and
+    anim_start are the primitives verbatim (same signature, assigned straight onto the vtable in
+    gui_api.c).  The rest are thin: anim_ease maps the public gui_ease_t enum onto a shaper before
+    calling gui_anim_timer; the typed channels run one damper per component so a color, a point, or a
+    rect glides to a new data state without every caller re-deriving the blend.
+----------------------------------------------------------------------------------------------*/
+
+/* Map the public enum onto the base math_ease shapers.  NULL == linear (gui_anim_timer treats a NULL
+   shaper as the identity), so GUI_EASE_LINEAR and any out-of-range value fall through to it. */
+static gui_ease_fn
+gui_ease_lookup( gui_ease_t e )
+{
+    switch ( e )
+    {
+        case GUI_EASE_SMOOTH:      return f32_smoothstep01;
+        case GUI_EASE_IN_CUBIC:    return f32_ease_in_cubic;
+        case GUI_EASE_OUT_CUBIC:   return f32_ease_out_cubic;
+        case GUI_EASE_INOUT_CUBIC: return f32_ease_inout_cubic;
+        case GUI_EASE_OUT_EXPO:    return f32_ease_out_expo;
+        case GUI_EASE_OUT_BACK:    return f32_ease_out_back;
+        default:                   return NULL;   /* GUI_EASE_LINEAR + guard */
+    }
+}
+
+/* Public tween sampler: advance the timer on `id` and return eased progress in [0,1].  Pair with
+   anim_start (== gui_anim_timer_start) which seeds the clock; *out_active is false once settled. */
+static f32
+gui_api_anim_ease( gui_id_t id, gui_ease_t ease, bool* out_active )
+{
+    return gui_anim_timer( id, gui_ease_lookup( ease ), out_active );
+}
+
+/* Damped ABGR blend: each of the four channels chases its target through gui_anim_f32, so the color
+   glides to target_abgr at `speed` (Hz-like, see gui_anim_f32).  Per-channel ids are derived from a
+   single caller id so the four slots never collide with each other or with other per-widget state. */
+static u32
+gui_api_anim_color( gui_id_t id, u32 target_abgr, f32 speed )
+{
+    f32 r = gui_anim_f32( id_combine( id, 0x51u ), (f32)( ( target_abgr       ) & 0xFF ), speed );
+    f32 g = gui_anim_f32( id_combine( id, 0x52u ), (f32)( ( target_abgr >>  8 ) & 0xFF ), speed );
+    f32 b = gui_anim_f32( id_combine( id, 0x53u ), (f32)( ( target_abgr >> 16 ) & 0xFF ), speed );
+    f32 a = gui_anim_f32( id_combine( id, 0x54u ), (f32)( ( target_abgr >> 24 ) & 0xFF ), speed );
+    return (u32)( r + 0.5f ) | ( (u32)( g + 0.5f ) << 8 ) | ( (u32)( b + 0.5f ) << 16 ) | ( (u32)( a + 0.5f ) << 24 );
+}
+
+/* Damped 2D point: x and y chase independently off one caller id. */
+static gui_vec2_t
+gui_api_anim_vec2( gui_id_t id, gui_vec2_t target, f32 speed )
+{
+    gui_vec2_t out;
+    out.x = gui_anim_f32( id_combine( id, 0x61u ), target.x, speed );
+    out.y = gui_anim_f32( id_combine( id, 0x62u ), target.y, speed );
+    return out;
+}
+
+/* Damped rect: four independent dampers off one caller id (position + extent glide together). */
+static gui_rect_t
+gui_api_anim_rect( gui_id_t id, gui_rect_t target, f32 speed )
+{
+    gui_rect_t out;
+    out.x = gui_anim_f32( id_combine( id, 0x71u ), target.x, speed );
+    out.y = gui_anim_f32( id_combine( id, 0x72u ), target.y, speed );
+    out.w = gui_anim_f32( id_combine( id, 0x73u ), target.w, speed );
+    out.h = gui_anim_f32( id_combine( id, 0x74u ), target.h, speed );
+    return out;
+}
+
 // clang-format on
 /*============================================================================================*/

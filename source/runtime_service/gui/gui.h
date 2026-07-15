@@ -116,6 +116,21 @@ typedef struct { f32 x, y, w, h; }  gui_rect_t;
 /* one entry of a draw_rects batch: a solid fill plus its color (see GUI_CMD_RECT_LIST) */
 typedef struct { f32 x, y, w, h; u32 abgr; } gui_rect_col_t;
 
+/* Easing shapers for the fixed-duration tween (anim_ease).  Named across the public boundary as an
+   enum so callers never reach into the base math_ease.h symbols and the gui owns the canonical
+   curve table.  The short menu is the set worth naming for UI transitions; add here as needed. */
+typedef enum
+{
+    GUI_EASE_LINEAR = 0,   // no shaping
+    GUI_EASE_SMOOTH,       // smoothstep01 -- gentle in/out, the everyday default
+    GUI_EASE_IN_CUBIC,     // accelerate from rest
+    GUI_EASE_OUT_CUBIC,    // decelerate into the target
+    GUI_EASE_INOUT_CUBIC,  // accelerate then decelerate, stronger than SMOOTH
+    GUI_EASE_OUT_EXPO,     // sharp arrival, long tail-in (snappy panels)
+    GUI_EASE_OUT_BACK,     // slight overshoot past the target then settle
+    GUI_EASE_COUNT
+} gui_ease_t;
+
 /* Edge insets, in pixels. Region padding -- the gap between a region's box and where its layout
    starts (see gui_pad).  Breathing room *inside* a widget's frame is a per-widget style concern
    (WIDGET_PAD), not a layout one; spacing *between* cells is gap_x / gap_y. */
