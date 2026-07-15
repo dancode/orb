@@ -292,51 +292,21 @@ static u32 widget_bg_color( gui_item_state_t st )
 }
 
 /* Animated background for a pushbutton-like widget: widget_bg_color with the hover/active
-   transitions smoothed through the keyed state pool (foundation/gui_state.c).  Both blend
-   channels share one 8-byte slot keyed via an internal salt, so the widget needs no knowledge
-   of animation storage.  Fast path: an idle widget with no prior animation history returns
-   COL_WIDGET_BG with zero state-pool operations. */
+   transitions smoothed through the animation service (interact/gui_anim.c).  Two damper channels --
+   a hot layer (hover / nav focus) and an active layer -- run at their own rates through gui_anim_f32,
+   then composite over the palette: BG -> HOT by the hot channel, then that -> ACT by the active one.
+   The primitive owns all the storage, settle, and wants_redraw bookkeeping; an idle widget with no
+   history reads both channels at 0 (no stamp) and lands on COL_WIDGET_BG. */
 
-typedef struct { f32 t_hot; f32 t_active; } gui_hover_anim_t;
-
-#define ANIM_TAG_BG  0xA501u   /* id_combine salt; keeps this slot distinct from all other per-widget state */
+#define ANIM_TAG_HOT  0xA501u   /* id_combine salts: keep the two channels distinct from each other */
+#define ANIM_TAG_ACT  0xA502u   /* and from all other per-widget state in the keyed pool */
 
 static u32
 widget_bg_color_anim( gui_id_t id, gui_item_state_t st )
 {
-    gui_id_t                anim_id    = id_combine( id, ANIM_TAG_BG );
-    bool                      needs_anim = st.hover || st.nav || st.active;
-    const gui_hover_anim_t* peek       = (const gui_hover_anim_t*)gui_state_peek( anim_id );
-
-    if ( !needs_anim && !peek )
-        return COL_WIDGET_BG;
-
-    f32 hot_t    = peek ? peek->t_hot    : 0.0f;
-    f32 active_t = peek ? peek->t_active : 0.0f;
-    f32 dt       = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
-
-    f32 hot_tgt = ( st.hover || st.nav ) ? 1.0f : 0.0f;
-    f32 act_tgt = st.active ? 1.0f : 0.0f;
-
-    f32 new_hot = fabsf( hot_tgt - hot_t ) < 0.001f
-                ? hot_tgt
-                : hot_t + ( hot_tgt - hot_t ) * ( 1.0f - expf( -10.0f * dt ) );
-    f32 new_act = fabsf( act_tgt - active_t ) < 0.001f
-                ? act_tgt
-                : active_t + ( act_tgt - active_t ) * ( 1.0f - expf( -20.0f * dt ) );
-
-    bool settled = ( new_hot == hot_tgt ) && ( new_act == act_tgt );
-
-    if ( !settled || needs_anim )
-    {
-        gui_hover_anim_t* s = GUI_STATE( gui_hover_anim_t, anim_id );
-        s->t_hot    = new_hot;
-        s->t_active = new_act;
-        if ( !settled ) g_ctx->retained.wants_redraw = true;
-    }
-    /* settled && !needs_anim: do not stamp -- slot evicts via seen_frame within 1-2 frames. */
-
-    return col_lerp( col_lerp( COL_WIDGET_BG, COL_WIDGET_HOT, new_hot ), COL_WIDGET_ACT, new_act );
+    f32 hot = gui_anim_f32_from( id_combine( id, ANIM_TAG_HOT ), 0.0f, ( st.hover || st.nav ) ? 1.0f : 0.0f, 10.0f );
+    f32 act = gui_anim_f32_from( id_combine( id, ANIM_TAG_ACT ), 0.0f, st.active              ? 1.0f : 0.0f, 20.0f );
+    return col_lerp( col_lerp( COL_WIDGET_BG, COL_WIDGET_HOT, hot ), COL_WIDGET_ACT, act );
 }
 
 /*----------------------------------------------------------------------------------------------

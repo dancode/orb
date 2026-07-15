@@ -992,6 +992,7 @@ void gui_popup_close_current( void );
    animation pool, whose primitive (gui_anim_f32) lives in interact/gui_anim.c -- included AFTER the layout
    files.  Forward-declared so size_animate can reach it across the unity TU. */
 static f32 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
+static f32 gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed );
 
 /* The region engine (compose/gui_scroll.c) emits the scrollbar widget into the gutter
    it reserved at layout_pop_region -- but the widget lives above it (widgets/gui_scrollbar.c),

@@ -35,21 +35,47 @@
 
 typedef struct { f32 current; } gui_anim_f32_t;
 
+/* gui_anim_f32_from -- damper seeded from an explicit rest value on first sight.
+
+   The primitive above assumes a channel with no history is already AT its target -- correct when a
+   value's first appearance should not animate (size_animate: a widget shows at its natural size and
+   eases only on later changes).  A transient highlight is the opposite: its rest state (`rest`) is
+   the natural start and the target is the passing state, so first sight must ramp FROM rest, not
+   snap to target.  This variant seeds `current` from `rest` when there is no slot; gui_anim_f32 is
+   just this with rest == target.  Give hover/press/focus channels rest = their off value (0). */
+static f32
+gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed )
+{
+    const gui_anim_f32_t* peek = (const gui_anim_f32_t*)gui_state_peek( anim_id );
+    f32 current = peek ? peek->current : rest;
+
+    bool moving = fabsf( target - current ) >= 0.001f;
+    if ( moving )
+    {
+        f32 dt = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
+        current += ( target - current ) * ( 1.0f - expf( -speed * dt ) );
+        g_ctx->retained.wants_redraw = true;   /* value changed this frame -- keep frames coming */
+    }
+    else
+    {
+        current = target;   /* settled: snap exactly onto the target */
+    }
+
+    /* Persist the slot while the value sits away from rest (moving, or parked on a non-rest hold like
+       a steady hover) so peek keeps it warm and it never re-ramps from rest after an eviction.  Only
+       when parked exactly AT rest do we skip the stamp and let the slot go cold: reseeding from rest
+       then reproduces the same value, so eviction is invisible.  gui_anim_f32 (rest == target) always
+       takes that cold path once settled, preserving its original evict-when-idle behavior. */
+    if ( moving || fabsf( current - rest ) >= 0.001f )
+        GUI_STATE( gui_anim_f32_t, anim_id )->current = current;
+
+    return current;
+}
+
 static f32
 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed )
 {
-    const gui_anim_f32_t* peek = (const gui_anim_f32_t*)gui_state_peek( anim_id );
-    f32 current = peek ? peek->current : target;
-
-    if ( fabsf( target - current ) < 0.001f )
-        return target;   /* settled: do not stamp; slot evicts via seen_frame */
-
-    f32 dt   = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
-    current += ( target - current ) * ( 1.0f - expf( -speed * dt ) );
-
-    GUI_STATE( gui_anim_f32_t, anim_id )->current = current;
-    g_ctx->retained.wants_redraw = true;
-    return current;
+    return gui_anim_f32_from( anim_id, target, target, speed );
 }
 
 /*----------------------------------------------------------------------------------------------
