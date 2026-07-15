@@ -538,19 +538,22 @@ typedef struct gui_api_s
     void ( *menu_end   )( void );
     bool ( *menu_item  )( const char* label, const char* shortcut, bool* selected );
 
-    /* Toolbar -- an icon strip built on bar() (compose/) + GUI_SCALE_BAR (the density step
-       authored for icon toolbars).  toolbar_begin id-scopes the strip so two toolbars' buttons
-       never collide, then opens a bar() run at the BAR row height; toolbar_end pops both.  Emit
-       inside any window / child -- it owns no window of its own, matching bar() itself.
+    /* Toolbar -- an icon strip built on bar() (compose/).  toolbar_begin id-scopes the strip so
+       two toolbars' buttons never collide, then opens a bar() run; toolbar_end pops it.  Emit
+       inside any window / child -- it owns no window of its own, matching bar() itself.  It does
+       NOT push a scale -- wrap it in the caller's own scale_push/scale_pop (GUI_SCALE_BAR is the
+       density step authored for icon toolbars, but any GUI_SCALE_* works) so a single app can mix
+       toolbar sizes, e.g. a large main-panel strip next to a regular-scale one.
 
        toolbar_button / toolbar_toggle are square icon cells (press / latched-on); their id_str is
        the id only ("##save") -- pass a display label there and it is still just the id, nothing
-       is drawn from it.  toolbar_dropdown_begin/end is the split-button form: the icon plus a
-       small corner chevron, opening an arbitrary-widget popup below the button -- the same
+       is drawn from it.  toolbar_dropdown_begin/end is the split-button form: the icon plus an
+       adjacent down-arrow column, opening an arbitrary-widget popup below the button -- the same
        anchor / dismiss mechanics as combo_begin/combo_end, so put ANY widgets in the body,
        including menu_item rows for the icon + label + shortcut three-column layout menus already
        give you. tooltip may be NULL.
 
+           gui()->scale_push( GUI_SCALE_BAR );
            gui()->toolbar_begin( "main" );
                if ( gui()->toolbar_button( "##save", icon_save, "Save (Ctrl+S)" ) ) save();
                gui()->toolbar_toggle( "##wire", icon_wire, &wireframe, "Wireframe" );
@@ -560,7 +563,8 @@ typedef struct gui_api_s
                    gui()->menu_item( "Wireframe", NULL, NULL );
                    gui()->toolbar_dropdown_end();
                }
-           gui()->toolbar_end(); */
+           gui()->toolbar_end();
+           gui()->scale_pop(); */
 
     bool ( *toolbar_begin           )( const char* str_id );
     void ( *toolbar_end             )( void );

@@ -932,12 +932,13 @@ show_style_editor( bool* p_open )
 /*============================================================================================*/
 /* Toolbar icon strip demo                                                                     */
 /*                                                                                              */
-/* Exercises gui_toolbar.c end to end: toolbar_begin/end (id scope + GUI_SCALE_BAR bar()),      */
-/* toolbar_button (press), toolbar_toggle (latched state), toolbar_separator, and               */
-/* toolbar_dropdown_begin/end (a split button opening an arbitrary-widget popup -- here plain   */
-/* menu_item rows, proving the popup body is not limited to a fixed row type).  A second strip  */
-/* reuses the same icon ids and widget id strings to prove toolbar_begin's id scope keeps two   */
-/* strips from colliding.                                                                       */
+/* Exercises gui_toolbar.c end to end: toolbar_begin/end (id scope + bar(), caller-scaled via    */
+/* scale_push/scale_pop), toolbar_button (press), toolbar_toggle (latched state),                */
+/* toolbar_separator, and toolbar_dropdown_begin/end (a split button opening an arbitrary-widget */
+/* popup -- here plain menu_item rows, proving the popup body is not limited to a fixed row      */
+/* type).  A second strip reuses the same icon ids and widget id strings to prove                */
+/* toolbar_begin's id scope keeps two strips from colliding, scaled larger to prove mixed        */
+/* toolbar sizes coexist.                                                                        */
 /*============================================================================================*/
 
 static void
@@ -1045,12 +1046,15 @@ show_toolbar_demo( bool* p_open )
     static const char* const view_names[] = { "Lit", "Unlit", "Wireframe" };
 
     gui()->stack();
-    gui()->text_wrapped( "toolbar_begin/end brackets a GUI_SCALE_BAR bar() run, id-scoped so two "
-                         "strips never collide.  toolbar_button presses, toolbar_toggle latches, "
-                         "toolbar_dropdown_begin/end opens an arbitrary-widget popup (here, plain "
-                         "menu_item rows) anchored below the split button." );
+    gui()->text_wrapped( "toolbar_begin/end brackets a bar() run, id-scoped so two strips never "
+                         "collide.  It does not push a scale itself -- the caller wraps it in "
+                         "scale_push/scale_pop, so one app can mix toolbar sizes.  toolbar_button "
+                         "presses, toolbar_toggle latches, toolbar_dropdown_begin/end opens an "
+                         "arbitrary-widget popup (here, plain menu_item rows) anchored below the "
+                         "split button." );
     gui()->separator();
 
+    gui()->scale_push( GUI_SCALE_BAR );
     gui()->toolbar_begin( "main" );
         if ( gui()->toolbar_button( "##save", ic_save, "Save (Ctrl+S)" ) )
             save_clicks++;
@@ -1071,6 +1075,7 @@ show_toolbar_demo( bool* p_open )
             gui()->toolbar_dropdown_end();
         }
     gui()->toolbar_end();
+    gui()->scale_pop();
 
     gui()->separator();
     gui()->textf( "save clicks: %d", save_clicks );
@@ -1079,14 +1084,17 @@ show_toolbar_demo( bool* p_open )
     gui()->textf( "view mode: %s", view_names[ view_mode ] );
 
     /* A second strip, same icon ids and widget id strings -- proves toolbar_begin's push_id
-       scope keeps it from colliding with the first strip's state. */
-    gui()->separator_text( "Second strip (independent id scope)" );
+       scope keeps it from colliding with the first strip's state.  Scaled GUI_SCALE_ROOMY
+       (larger than the first strip's GUI_SCALE_BAR) to prove mixed toolbar sizes coexist. */
+    gui()->separator_text( "Second strip (independent id scope, larger scale)" );
     static bool locked = false;
+    gui()->scale_push( GUI_SCALE_ROOMY );
     gui()->toolbar_begin( "secondary" );
         gui()->toolbar_toggle( "##grid", ic_grid, &locked, "Lock" );
         if ( gui()->toolbar_button( "##save", ic_save, "Save (secondary)" ) )
             save_clicks++;
     gui()->toolbar_end();
+    gui()->scale_pop();
 
     gui()->window_end();
 }

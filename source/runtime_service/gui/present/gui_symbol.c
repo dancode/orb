@@ -163,6 +163,25 @@ draw_check_mark( gui_rect_t box, u32 color )
     gui_draw_line( bx, by, cx, cy, t, color );
 }
 
+/* Dropdown-arrow glyph: a soft downward 'v' -- two open strokes, not a filled triangle (that reads
+   as the collapse/expand glyph) -- fitted and centered in `box` (the toolbar split-button's
+   affordance mark).  Scales off min(w,h) like draw_check_mark rather than off box.h alone like
+   draw_arrow, so it drops cleanly into a narrow side column without overrunning the column width.
+   Fixed DOWN orientation -- unlike draw_arrow it is not a general direction glyph and does not
+   follow GUI_VAR_ARROW_STYLE; the toolbar affordance stays this one mark regardless of theme. */
+static void
+draw_dropdown_arrow( gui_rect_t box, u32 color )
+{
+    f32 sz = box.w < box.h ? box.w : box.h;
+    f32 cx = box.x + box.w * 0.5f;
+    f32 cy = box.y + box.h * 0.5f;
+    f32 s  = floorf( sz * 0.22f );          /* half-extent */
+    f32 t  = floorf( sz * 0.15f );  if ( t < 1.5f ) t = 1.5f;   /* stroke thickness */
+
+    gui_draw_line( cx - s, cy - s * 0.4f, cx, cy + s * 0.6f, t, color );
+    gui_draw_line( cx, cy + s * 0.6f, cx + s, cy - s * 0.4f, t, color );
+}
+
 /* Bullet glyph: a small filled disc centered at (cx,cy) (Dear ImGui RenderBullet).  The round
    sibling of the square bullet -- the bullet widget picks between them on GUI_VAR_BULLET_STYLE. */
 static void

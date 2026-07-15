@@ -151,7 +151,7 @@
     popup/gui_popup.c            -- popups / context menus / tooltips: overlay windows on a reserved z-band
     popup/gui_combo.c     -- combo box + list box: a popup dropdown / a scrolling child of selectables
     popup/gui_menu.c      -- menu bar + menu items: built directly on the popup internals
-    popup/gui_toolbar.c   -- icon toolbar strip: bar() + GUI_SCALE_BAR, dropdown built on the popup internals
+    popup/gui_toolbar.c   -- icon toolbar strip: bar(), caller-scaled; dropdown built on the popup internals
 
     nav/gui_nav.c                -- keyboard nav cursor + menu-bar mode (reads/drives the popup stack)
 
