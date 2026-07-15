@@ -178,6 +178,8 @@
 #include <math.h>   /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
 
 #include "orb.h"
+#include "base/math.h"        // f32_lerp -- from/to interpolation for the animation service
+#include "base/math_ease.h"   // f32_ease_* shapers -- the easing curves the animation service applies
 
 #include "engine/sys/sys_host.h"   // sys_root_dir -- disk assets (load_icon, asset_path) resolve root-relative
 

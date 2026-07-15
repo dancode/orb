@@ -52,6 +52,9 @@ void gui_frame_end( void );
 void gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms );   /* 0 opts that sleep out */
 void gui_set_idle_skip( bool on );
 bool gui_idle_skip( void );
+
+void gui_window_anim_enable( bool on );
+bool gui_window_anim_is_enabled( void );
 void gui_ctx_begin( gui_ctx_id_t ctx );
 void gui_ctx_end( void );
 void gui_render( gui_vp_t vp, rhi_cmd_t cmd );

@@ -188,6 +188,12 @@ typedef struct gui_api_s
     void ( *set_idle_skip )( bool on );
     bool ( *idle_skip     )( void );
 
+    /* Window state-transition animation (maximize / minimize / restore).  On by default: the window
+       tweens between rects through the gui() animation service.  Off snaps instantly.  A global
+       preference, not per-context. */
+    void ( *window_anim_enable     )( bool on );
+    bool ( *window_anim_is_enabled )( void );
+
     /* Viewport management.  A viewport is a render surface backed by an OS window.  One frame's build
        gathers every window's geometry into a single draw list; render() dispatches each window's
        partition to the viewport it is assigned to (window_set_next_viewport, or inherited from

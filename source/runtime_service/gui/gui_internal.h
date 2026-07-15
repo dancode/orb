@@ -171,6 +171,16 @@ typedef struct gui_window_t
     u32        shelf_slot;
     struct { f32 x, y, w, h; } norm;
 
+    /* Maximize / minimize / restore transition: while state_anim is set, window_begin_ex eases the
+       live rect (x/y/w/h) from anim_from toward the current state target, all four channels sharing
+       one gui_anim_timer clock so they arrive together, then clears the flag once the timer reports
+       done (window_anim_step in gui_window_free.c).  anim_from is the rect captured at the moment the
+       transition started; the target is recomputed every frame (so a live surface resize retargets
+       mid-flight).  With window animation disabled the timer settles on frame one -- an instant snap
+       through the same path.  See s_win_anim / gui_window_anim_enable. */
+    bool       state_anim;
+    struct { f32 x, y, w, h; } anim_from;
+
     /* Re-open of a CLOSEABLE floater: closing it lets the abandoned-teardown free its OS window,
        reverting this record to viewport 0.  `floater` remembers it was one so the next begin
        re-spawns it.  The geometry is the floater's RESTORE (normal) state, sampled every frame it
