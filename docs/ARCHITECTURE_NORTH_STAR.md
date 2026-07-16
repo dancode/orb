@@ -75,11 +75,11 @@ future system must. They are the reason the stack stays simple.
                     app [SOLID]
   ---- host-only statics, never inside a DLL -------------------------------------
    T0  BASE         math/rng [SOLID]  str/str_buf/str_arena [SOLID]  mem/bit/char
-                    [SOLID]  test [SOLID]  containers [MISSING]  hash [MISSING]
+                    [SOLID]  test [SOLID]
   ---- stateless, no globals, links into host AND every DLL ----------------------
 
    HOSTS (orthogonal column, one per product shape):
-       host_game [SOLID]  host_editor [SOLID]  host_tool [STALE]  host_sandbox [STALE]
+       host_game [SOLID]  host_editor [SOLID]
        host_common (launch params, project resolve) [SOLID]
 ```
 
@@ -226,13 +226,15 @@ The full outsider journey, end to end, with nothing else to learn:
   and a `content/` dir. That is the whole mental model.
 - `template_game` stays the canonical source; sample_game stays the living reference.
 
-### Hosts -- four shapes, all real
+### Hosts -- two shapes, both real
 - **host_game**: shipping shape. Monolithic build, packed VFS bundle, hot-reload and
   console compiled out. Already a policy shell; packaging makes it a product.
 - **host_editor**: dev shape. Grows only by delegating to the editor framework.
-- **host_tool**: headless engine-CLI shape (RUN_LOOP_ONCE) for cook/verify jobs that
-  need engine services -- catch it up to run_host_main like host_editor was.
-- **host_sandbox**: shared main for sb_* targets -- same catch-up.
+- No generic tool/sandbox host. Each tool and each sb_* sandbox is its own
+  standalone exe (build_tool makes a new target cheap) -- a shared dynamic-dispatch
+  host was tried (host_tool, host_sandbox) and removed: the flexibility it bought
+  wasn't worth the dependency-graph and dynamic-loading complexity for short-lived,
+  build-time-known binaries.
 
 ### Tools -- close the ring
 - **package_tool**: cook (asset_tool) + pack (zip bundle) + monolithic host_game +
@@ -266,10 +268,7 @@ Guard rails against nuance creep -- rejections are as architectural as additions
 ## 6. Roadmap (dependency order, each phase ships something runnable)
 
 **M1 -- Foundations catch-up** *(unblocks everything, all small)*
-- base containers + hash; adopt in one existing system to prove the shapes.
-- host_tool / host_sandbox onto run_host_main (host_editor already paved this).
-- Delete or seed dead wood: game/framework junk file, empty tool dirs get README
-  stubs stating their target verb set.
+- Delete dead wood: game/framework junk file.
 
 **M2 -- The world** *(the keystone; sec. 3)*
 - ent_t + pools + component registry over ref_; world in game-module state.
