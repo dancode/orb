@@ -116,7 +116,7 @@ gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed 
             c[ i ] += ( t[ i ] - c[ i ] ) * ( 1.0f - expf( -s[ i ] * dt ) );
             moved = true;
         }
-        else                  //c                         /* settled: snap exactly onto target */
+        else                                           /* settled: snap exactly onto target */
             c[ i ] = t[ i ];
 
         if ( fabsf( c[ i ] - r[ i ] ) >= 0.001f )      /* away from rest -> keep the slot warm */

@@ -110,8 +110,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     s_build.win.menubar_rect = ( gui_rect_t ){ win->x, win->y + title_h, win->w, 0.0f };
 
     /* Open the body over the node's content rect -- the same region machinery a free window uses. */
-    layout_push_region( id, node->content, REGION_PAD_DEFAULT, flags, &win->scroll,
-                        /* own_clip */ false );
+    layout_push_region( id, node->content, REGION_PAD_DEFAULT, flags, &win->scroll, /* own_clip */ false );
     return true;
 }
 
