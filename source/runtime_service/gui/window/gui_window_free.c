@@ -169,7 +169,7 @@ static bool s_win_anim = true;
 /* Transition duration (seconds) and the easing shaper.  ease_out_cubic decelerates into the target:
    a quick departure that reads as responsive, easing to a soft stop.  ~180 ms is long enough to
    read the motion, short enough to never feel in the way. */
-#define GUI_WIN_ANIM_SECS   1.18f // 0.18f
+#define GUI_WIN_ANIM_SECS   0.2f // 0.18f
 static f32 window_anim_ease( f32 t ) { return f32_ease_out_cubic( t ); }
 
 /* Begin a transition: capture the current rect as the tween's FROM, mark the window animating, and
