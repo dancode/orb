@@ -2,22 +2,23 @@
 
     host_editor_main.c -- the developer "editor.exe" host.
 
-    The real editor executable.  Same driving as sb_host_editor -- gui() as an OPTIONAL
-    SERVICE under run_host_main: the host owns the borderless window (with the gui-drawn chrome
-    shell), the rhi context, the loop, and the pacing; the descriptor wires gui's font / caps /
-    debug, and the UI is emitted in on_gui (called only on dirty frames -- retained-cache skip).
-    render draws the scene behind the gui composite (render path A); the host flushes gui over it.
+    The real editor executable.  gui() as an OPTIONAL SERVICE under run_host_main: the host
+    owns the borderless window (with the gui-drawn chrome shell), the rhi context, the loop,
+    and the pacing; the descriptor wires gui's font / caps / debug.
 
-    What makes this the HOST and not the sandbox: it parses launch params up front (host_common,
-    pre-engine) -- -project/-module select a project DLL that the runtime loads at boot and the
-    game framework runner drives; this editor is pure POLICY (Play/Stop/Pause/Step buttons ->
-    game() session calls, one tick per frame).  Idle-sleep pacing is always on, but a live
-    session suspends it via the run_host realtime gate (see editor_update) -- Play must tick
-    in realtime; Stop returns the loop to blocking on OS input.
-    Everything below the arg parse is the same modern stack sb_host_editor validates.
+    The editor FRAMEWORK is the editor static service (source/editor): menu bar, dockspace,
+    the official editor windows, and the scene viewport's play-in-editor plumbing.  This host
+    is pure POLICY -- it parses launch params up front (host_common, pre-engine; -project /
+    -module select the project DLL the runtime loads at boot), forwards update/build_gui to
+    editor(), and drives the session: one game()->tick per frame whose run_view_t carries the
+    editor's scene viewport target (editor()->view_ctx) instead of the window's swapchain --
+    the game renders INTO the docked Viewport panel.
 
-    Q/R/D are developer hotkeys read from the CONSOLE (terminal focus only, via RUN_HOST_CONSOLE)
-    so they can't be fumbled from the editor window -- see editor_handle_shortcuts.
+    Idle-sleep pacing is always on, but a live session suspends it via the run_host realtime
+    gate, and the same liveness pins gui's force-redraw so panels track the sim every frame.
+
+    Q/R/D are developer hotkeys read from the CONSOLE (terminal focus only, via
+    RUN_HOST_CONSOLE) so they can't be fumbled from the editor window.
 
     Loop:  RUN_LOOP_RUN
     Flags: RUN_HOST_WINDOWED | RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD | RUN_HOST_BORDERLESS | RUN_HOST_EDITOR_SLEEP
@@ -42,20 +43,19 @@
 #include "runtime/run_api.h"
 #include "runtime/run_host.h"
 
+#include "editor/editor_api.h"
+
 #include "host/common/host_common.h"
 
 MOD_USE_APP;
 MOD_USE_RUN;
-MOD_USE_GUI;
-MOD_USE_GAME;
+/* game's api pointer is owned by the editor service (editor.c MOD_USE_GAME) -- this TU
+   reads the same global through game_api.h's extern. */
 
 // clang-format off
 /*==============================================================================================
     Host state
 ==============================================================================================*/
-
-static bool s_show_scene = true;    /* submit the scene rect behind the gui                   */
-static bool s_show_stats;           /* frame-clock readout window                             */
 
 static host_project_t s_proj;    /* resolved -project/-module; the runner owns the session */
 
@@ -66,26 +66,20 @@ static host_project_t s_proj;    /* resolved -project/-module; the runner owns t
 static void
 editor_ready( void )
 {
-    /* All build in engine features have init -- the editor is last in the list */
-
-    /* gui and run are static services here -- their gateways bind directly, no fetch needed. */
+    /* gui, run, and editor are static services here -- their gateways bind directly.
+       game() was fetched by the editor service's dep-ordered init. */
     printf( "[editor] ready\n" );
     printf( "Dev keys (terminal focus): Q=quit  R=reload all  D=toggle sleep debug\n" );
 
     /* game() is the framework runner -- it resolves the project's stable api slot and owns
-       the play session; this editor only issues session calls (Play/Stop/Pause/Step). */
+       the play session; this host only issues session calls (Play/Stop/Pause/Step). */
 
-    MOD_HOST_FETCH_API( game );
-
-    if ( s_proj.present ) {   
-
-        /* the project/module game name is copied into game_state_t 
-           and its run_project_api_t callbacks */
-
-        /* Note: A project module API is a run_project_api_t */
-
-        if ( game() && game()->project_bind( s_proj.name ) ) {
-             printf( "[editor] project '%s' loaded -- use Play to start it\n", s_proj.name );
+    if ( s_proj.present )
+    {
+        if ( game() && game()->project_bind( s_proj.name ) )
+        {
+            printf( "[editor] project '%s' loaded -- use Play to start it\n", s_proj.name );
+            editor()->set_project( s_proj.name );
         }
     }
 }
@@ -107,6 +101,7 @@ editor_handle_shortcuts( void )
         printf( "[editor] Q -- quit\n" );
         if ( game() )
             game()->stop();    /* run_host_quit is final -- close_request never runs */
+        editor()->shutdown();  /* free GPU-backed editor resources before device teardown */
         run_host_quit();
         return;
     }
@@ -121,159 +116,61 @@ editor_handle_shortcuts( void )
          run_host_sleep_debug_toggle();
 }
 
-/* Viewport scene feed -- the editor's per-frame render submission.  render()->draw_scene replays
-   whatever is submitted here behind the gui composite (frame_cmd hand-off in run_host_main).  Kept
-   separate from shell input above: this is the seam the real editor grows into (world tick ->
-   visible-set cull -> submit).  A static rect proves the scene-under-gui path for now. */
-
-static void
-editor_submit_scene( void )
-{
-    if ( !render() || !s_show_scene )
-        return;
-
-    i32 ctx = run_host_ctx();
-    i32 w = 0, h = 0;
-    if ( rhi()->context_size( ctx, &w, &h ) && w > 0 && h > 0 )
-    {
-        const f32 slate[ 4 ] = { 0.16f, 0.20f, 0.28f, 1.0f };
-        render()->submit_rect( ctx, ( f32 )w * 0.5f, ( f32 )h * 0.5f, ( f32 )w * 0.6f, ( f32 )h * 0.6f, slate );
-    }
-}
-
 /*==============================================================================================
     Host Callbacks : General Tick (State Update + Render)
 ==============================================================================================*/
 
 /* Per-frame host update -- every frame, widget-free (widgets go in on_gui, which the retained
-   cache may skip).  Editor shell input, then the viewport scene feed -- each in its own helper. */
+   cache may skip).  Shell input, the session tick, then the editor's own maintenance. */
 
 static void
 editor_update( f32 dt )
 {
     editor_handle_shortcuts();
 
-    /* background render before GUI paints over it */
-    editor_submit_scene();
-
     /* The one per-frame runner call -- a no-op while GAME_STOPPED.  View rebuilt every
-       frame: surface size tracks resizes and a hot-reloaded project can never hold a
-       stale handle.  This is also the future play-in-editor seam: swap render_ctx for a
-       viewport context, no contract change. */
+       frame: the render target is the editor's SCENE VIEWPORT (a docked panel), not the
+       window swapchain -- this is the play-in-editor seam run_project.h names.  -1 =
+       headless (viewport hidden or not yet sized); the project skips its draws. */
 
     if ( game() )
     {
         run_view_t view = {
             .version    = RUN_VIEW_VERSION,
-            .render_ctx = run_host_ctx(),
+            .render_ctx = editor()->view_ctx(),
         };
-        app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
+        editor()->view_size( &view.surface_w, &view.surface_h );
         game()->tick( dt, &view );
     }
 
+    /* Editor maintenance AFTER the tick filled the target's submission bucket and BEFORE
+       the gui emit bakes the target's texture index (the flip lives in here). */
+    editor()->update( dt );
+
     /* Realtime gate -- core to Play/Stop.  A live session (playing OR paused: the scene
        still draws every frame) suspends editor idle-sleep so the sim ticks without
-       waiting on OS input; Stop returns the loop to blocking.  Re-derived from session
-       state every frame so it survives every transition -- the Play/Stop buttons, the
-       Q/close-request stops, and a project ending its own session. */
+       waiting on OS input; Stop returns the loop to blocking.  The same liveness pins
+       gui's force-redraw: the viewport image changes every frame, so clean-frame skips
+       would freeze it.  Re-derived from session state every frame so it survives every
+       transition -- buttons, Q/close-request stops, a project ending its own session. */
 
-    run_host_realtime_set( game() && game()->state() != GAME_STOPPED );
+    bool live = game() && game()->state() != GAME_STOPPED;
+    run_host_realtime_set( live );
+    gui()->set_force_redraw( live );
 }
 
 /*==============================================================================================
     Host Callbacks : GUI Emit
 ==============================================================================================*/
 
-/* UI emission -- dirty frames only.  The chrome shell is already emitted by run_host (first in
-   this context's build); everything here lays out below its caption band. */
+/* UI emission -- dirty frames only.  The chrome shell is already emitted by run_host (first
+   in this context's build); the editor framework builds everything else. */
 
 static void
 editor_gui( f32 dt )
 {
-    UNUSED( dt );
-
-    if ( gui()->main_menu_bar_begin() )
-    {
-        if ( gui()->menu_begin( "File" ) )
-        {
-            bool quit = false;
-            if ( gui()->menu_item( "Quit", NULL, &quit ) )
-                run_host_quit();
-            gui()->menu_end();
-        }
-        if ( gui()->menu_begin( "View" ) )
-        {
-            gui()->menu_item( "Scene rect", NULL, &s_show_scene );
-            gui()->menu_item( "Frame stats", NULL, &s_show_stats );
-            gui()->menu_end();
-        }
-        gui()->main_menu_bar_end();
-    }
-
-    f32 caption_h = gui()->viewport_caption_h( run_host_vp() );
-
-    gui()->window_set_next_pos ( 40.0f, caption_h + 60.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 360.0f, 220.0f, GUI_COND_ONCE );
-    if ( gui()->window_begin( "Editor", GUI_WIN_NONE ) )
-    {
-        gui()->stack();
-
-        /* Project controls -- session calls into the game framework runner.  Play/Stop
-           restart the session (the sample's score reset proves it), Pause freezes the sim
-           while the scene keeps drawing, Step advances exactly one sim tick. */
-        if ( s_proj.present && game() )
-        {
-            i32 st = game()->state();
-
-            gui()->textf( "project: %s", s_proj.name );
-
-            if ( gui()->button( st == GAME_STOPPED ? "Play" : "Stop" ) )
-            {
-                if ( st == GAME_STOPPED )
-                    game()->play();
-                else
-                    game()->stop();
-            }
-
-            if ( st != GAME_STOPPED )
-            {
-                if ( gui()->button( st == GAME_PAUSED ? "Resume" : "Pause" ) )
-                    game()->pause( st != GAME_PAUSED );
-
-                if ( st == GAME_PAUSED && gui()->button( "Step" ) )
-                    game()->step();
-            }
-
-            gui()->textf( "state  %s", st == GAME_PLAYING ? "PLAYING"
-                                     : st == GAME_PAUSED  ? "PAUSED"
-                                                          : "stopped" );
-        }
-        else
-        {
-            gui()->textf( "no project (-project <dir>)" );
-        }
-
-        gui()->separator();
-        gui()->checkbox( "Scene rect (behind gui)", &s_show_scene );
-    }
-    gui()->window_end();
-
-    if ( s_show_stats )
-    {
-        gui()->window_set_next_pos ( 420.0f, caption_h + 60.0f, GUI_COND_ONCE );
-        gui()->window_set_next_size( 300.0f, 160.0f, GUI_COND_ONCE );
-        if ( gui()->window_begin( "Frame Stats", GUI_WIN_NONE ) )
-        {
-            gui()->stack();
-            const run_clock_t* clk = run()->clock();
-            gui()->textf( "frame  %llu", ( unsigned long long )clk->frame_number );
-            gui()->textf( "time   %.1fs", clk->app_time );
-            gui()->textf( "dt     %.2f ms", clk->dt * 1000.0f );
-        }
-        gui()->window_end();
-    }
+    editor()->build_gui( dt );
 }
-
 
 /*==============================================================================================
     Host : Close Request (X pressed)
@@ -288,6 +185,7 @@ editor_close_request( void )
     if ( game() )
          game()->stop();
 
+    editor()->shutdown();    /* free GPU-backed editor resources before device teardown */
     return true;
 }
 
@@ -296,11 +194,12 @@ editor_close_request( void )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( rhi    ),    /* GPU backend -- static service                 */
-    RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend */
-    RUN_SERVICE( gui    ),    /* immediate mode GUI -- OPTIONAL static service */
-    RUN_MODULE ( render ),    /* scene frame owner -- gui composites over it   */
-    RUN_MODULE ( game   ),    /* game framework runner -- drives project DLLs   */
+    RUN_SERVICE( rhi    ),    /* GPU backend -- static service                    */
+    RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend    */
+    RUN_SERVICE( gui    ),    /* immediate mode GUI -- OPTIONAL static service    */
+    RUN_MODULE ( render ),    /* scene frame owner -- draws the viewport targets  */
+    RUN_MODULE ( game   ),    /* game framework runner -- drives project DLLs     */
+    RUN_SERVICE( editor ),    /* editor framework -- shell, windows, viewport     */
     { 0 }
 };
 

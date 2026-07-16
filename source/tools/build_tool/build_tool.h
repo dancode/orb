@@ -198,7 +198,7 @@ typedef void* platform_thread_t;
     Loops iterate with an `i < TARGET_MAX_SLOTS` bound so a fully-filled array
     (no NULL terminator) cannot read into adjacent struct fields. */
 
-#define TARGET_MAX_SLOTS            16
+#define TARGET_MAX_SLOTS            32
 
 /*  Capacity of the dynamic target and solution pools in build_tool_02_data.c.
     build_tool and reflect_tool are hardcoded; all others are loaded from orb.targets. */

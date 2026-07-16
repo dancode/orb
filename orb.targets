@@ -266,6 +266,7 @@ target 	editor
     root        source/editor
     folder      05_EDITOR
     unit        editor.c
+	dep         core gui run editor_viewport
 
 # ==============================================================================
 
@@ -275,6 +276,7 @@ target 	editor_viewport
     root        source/editor_service/viewport
     folder      05_EDITOR/SERVICE
     unit        viewport.c
+	dep         core gui
 
 target 	editor_example
 
@@ -377,6 +379,7 @@ target host_editor
     unit        host_editor_main.c
 	dep         mod ref sys core job app net host_common
     dep         run prof rhi draw gui fs pack
+    dep         editor editor_viewport
 	mono_dep	render game
 	
 # ==============================================================================

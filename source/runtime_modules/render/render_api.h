@@ -61,6 +61,26 @@ typedef struct render_api_s
     /* ---- Per-context settings ---- */
     void ( *set_clear_color )( i32 ctx_id, f32 r, f32 g, f32 b, f32 a );
 
+    /* ---- Offscreen targets ---- */
+    /* A target is a double-buffered offscreen color texture the scene can render into
+       instead of a swapchain: target ids live in [RENDER_TARGET_ID_BASE..+MAX) and are
+       valid anywhere a render_ctx i32 is accepted (submit_rect, run_view_t.render_ctx) --
+       the editor's scene viewport hands one to the project in place of the window ctx.
+       draw_scene drains every pending target into its texture (own pass, barriers to
+       SHADER_READ) before the swapchain pass, so hosts never touch the command list.
+
+       target_texture returns the bindless index of the CURRENT buffer for sampling
+       (gui()->image_texture); 0 = none.  target_flip advances the write buffer -- call it
+       once per frame that will draw, BEFORE the gui emit bakes the index, so in-flight
+       frames keep sampling the previous buffer untouched.  target_resize waits for the
+       device to idle and recreates -- callers debounce (settle) live drags themselves. */
+    i32  ( *target_create  )( i32 w, i32 h );                /* -> target id, or -1        */
+    void ( *target_destroy )( i32 target_id );
+    bool ( *target_resize  )( i32 target_id, i32 w, i32 h );
+    u32  ( *target_texture )( i32 target_id );               /* bindless idx of cur, 0=none */
+    void ( *target_flip    )( i32 target_id );
+    void ( *target_size    )( i32 target_id, i32* w, i32* h );
+
     /* ---- Frame command list access ---- */
     /* The live command list between begin_frame and end_frame; RHI_CMD_INVALID otherwise.
        The host composite point: after draw_scene the scene pass is closed, so overlays
