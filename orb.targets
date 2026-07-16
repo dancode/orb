@@ -379,26 +379,6 @@ target host_editor
     dep         run prof rhi draw gui fs pack
 	mono_dep	render game
 	
-target host_tool
-
-    type        exe
-    root        source/host/tool
-    folder      08_HOST
-    unit        host_tool_main.c
-	dep         mod ref sys core job app net host_common
-    dep         run prof fs pack
-	mono_dep	render
-
-target host_sandbox
-
-    type        exe
-    root        source/host/sandbox
-    folder      08_HOST
-    unit        host_sandbox_main.c
-	dep         mod ref sys core job app net host_common
-    dep         run prof fs pack
-
-	
 # ==============================================================================
 # 09_SANDBOX -- BASE
 # ==============================================================================
@@ -880,9 +860,7 @@ solution orb_editor
 
 	add 		host_common
 	add 		host_game
-	add 		host_editor 
-	add 		host_sandbox 
-	add 		host_tool
+	add 		host_editor
 
 	# 			--- PROJECT ---
 	add 		sample_game sample_game_play
@@ -919,8 +897,6 @@ solution orb_sandbox_host
 
 	add 		host_game
 	add 		host_editor
-	add 		host_sandbox
-	add 		host_tool
 
 # ==============================================================================
 # SANDBOX: Running/debugging unit-style tets for specific engine layer
@@ -1083,10 +1059,8 @@ solution orb_all
 	add 		sb_reflect sb_ref_exe sb_gen_exe
 	
 	add 		host_game
-	add 		host_editor 
-	add 		host_sandbox 
-	add 		host_tool
-	
+	add 		host_editor
+
 	add 		sb_host_tool
 	add 		sb_host_server
 	add 		sb_host_editor
