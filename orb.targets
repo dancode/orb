@@ -381,20 +381,22 @@ target host_editor
 	
 target host_tool
 
-    type        static
+    type        exe
     root        source/host/tool
     folder      08_HOST
     unit        host_tool_main.c
-	dep         mod sys ref core job app
-	mono_dep	render draw
+	dep         mod ref sys core job app net host_common
+    dep         run prof fs pack
+	mono_dep	render
 
 target host_sandbox
 
-    type        static
+    type        exe
     root        source/host/sandbox
     folder      08_HOST
     unit        host_sandbox_main.c
-    dep         mod sys ref core job app
+	dep         mod ref sys core job app net host_common
+    dep         run prof fs pack
 
 	
 # ==============================================================================

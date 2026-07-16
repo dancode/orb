@@ -8,6 +8,10 @@
     It has no built-in assumptions about what modules it will run, but it does have
     hot-reload and console input handling built in.
 
+    Boots through run_host_main headless (RUN_LOOP_NONE): the engine floor loads, then
+    the caller (this file) would drive the requested sandbox module and shut down --
+    module-loading itself is not implemented yet (see TODO below).
+
 ==============================================================================================*/
 
 #include <stdio.h>
@@ -17,14 +21,14 @@
 
 #include "host/common/host_common.h"
 #include "engine/mod/mod_host.h"
-#include "engine/mod/mod_import.h"
 #include "engine/sys/sys_host.h"
 #include "engine/core/core_host.h"
-#include "engine/app/app_host.h"
 
-// MOD_USE_APP;
+#include "runtime/run_host.h"
 
 /*============================================================================================*/
+
+static const run_module_entry_t k_modules[] = { { 0 } };
 
 int
 main( int argc, char** argv )
@@ -34,25 +38,19 @@ main( int argc, char** argv )
     // launch_params_t params;
     // host_args_parse( argc, argv, &params );
 
-    mod_system_init();
-    mod_static( sys );
-    mod_static( core );
-    // mod_static( app );
+    const run_host_desc_t desc = {
+        .name      = "host_sandbox",
+        .flags     = 0,               /* headless -- no window */
+        .loop_mode = RUN_LOOP_NONE,   /* boot, return, caller drives, then shuts down */
+        .modules   = k_modules,
+    };
 
-    if ( !mod_init_all() )
-    {
-        fprintf( stderr, "[sandbox] mod_init_all failed: %s\n", mod_last_error() );
-        mod_system_exit();
+    if ( run_host_main( &desc, argc, argv ) != 0 )
         return 1;
-    }
-
-    /* Route mod and app output through core's logger now that core is live. */
-    // mod_set_log_fn( core_log_fn );
-    // app_set_log_fn( core_log_fn );
 
     /* TODO: load and drive sandbox module specified by params.module_override */
 
-    mod_system_exit();
+    run_host_shutdown();
     return 0;
 }
 
