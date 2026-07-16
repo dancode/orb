@@ -80,47 +80,36 @@ static const ex_var_row_t s_var_rows[] = {
 static void
 ex_style_stacks( void )
 {
-    if ( ex_begin( "Style Stacks", 440, 680, GUI_WIN_NONE ) )
+    /* col_on/col_sel/... must outlive this window's body: the push wraps a SECOND window
+       (the sample), spawned after this one closes, so the pushed slot/value has to survive
+       past window_end below. */
+    static i32  col_sel      = GUI_COL_WIDGET_BG;
+    static f32  col_val[ 4 ] = { 0.8f, 0.2f, 0.2f, 1.0f };
+    static bool col_on       = true;
+    static i32  var_sel      = 0;
+    static f32  var_val      = 8.0f;
+    static bool var_on       = false;
+
+    if ( ex_begin( "Style Stacks", 440, 460, GUI_WIN_NONE ) )
     {
         gui()->stack();
+        gui()->text( "The overrides below bracket the WHOLE 'Style Stacks Sample'" );
+        gui()->text( "window -- chrome, background, and every widget in it -- so" );
+        gui()->text( "it is obvious at a glance what a slot does and does not touch." );
 
-        /* --- color override: pick a slot + a color, pushed around the sample block ---------- */
-        gui()->separator_text( "push_style_color (scoped below)" );
-        static i32 col_sel      = GUI_COL_WIDGET_BG;
-        static f32 col_val[ 4 ] = { 0.8f, 0.2f, 0.2f, 1.0f };
-        static bool col_on      = true;
+        /* --- color override: pick a slot + a color, pushed around the sample window --------- */
+        gui()->separator_text( "push_style_color (scopes the sample window)" );
         gui()->checkbox( "Push the color", &col_on );
         gui()->combo( "slot", &col_sel, s_col_names, GUI_COL_COUNT );
         gui()->color_edit4( "color", col_val, GUI_COLOR_EDIT_NONE );
 
         /* --- var override: pick a metric + value ------------------------------------------- */
-        gui()->separator_text( "push_style_var (scoped below)" );
-        static i32  var_sel = 0;
-        static f32  var_val = 8.0f;
-        static bool var_on  = false;
+        gui()->separator_text( "push_style_var (scopes the sample window)" );
         gui()->checkbox( "Push the var", &var_on );
         static const char* var_names[ 7 ];
         for ( i32 i = 0; i < 7; i++ ) var_names[ i ] = s_var_rows[ i ].name;
         gui()->combo( "var", &var_sel, var_names, 7 );
         gui()->slider_float( "value", &var_val, s_var_rows[ var_sel ].lo, s_var_rows[ var_sel ].hi );
-
-        /* --- the sample block the overrides bracket ---------------------------------------- */
-        gui()->separator_text( "Sample block" );
-        u32 abgr = GUI_COLOR( (u8)( col_val[ 0 ] * 255.0f ), (u8)( col_val[ 1 ] * 255.0f ),
-                              (u8)( col_val[ 2 ] * 255.0f ), (u8)( col_val[ 3 ] * 255.0f ) );
-        if ( col_on ) gui()->push_style_color( (gui_col_t)col_sel, abgr );
-        if ( var_on ) gui()->push_style_var( s_var_rows[ var_sel ].var, var_val );
-
-        gui()->button( "sample button" );
-        static bool sb = true;
-        gui()->checkbox( "sample checkbox", &sb );
-        static f32 sv = 5.0f;
-        gui()->slider_float( "sample slider", &sv, 0.0f, 10.0f );
-        static char stxt[ 24 ] = "sample";
-        gui()->input_text( "sample input", stxt, sizeof( stxt ) );
-
-        if ( var_on ) gui()->pop_style_var( 1 );
-        if ( col_on ) gui()->pop_style_color( 1 );
 
         /* --- next_style_color / next_style_var: one widget only, no pop -------------------- */
         gui()->separator_text( "next_style_color (one-shot)" );
@@ -147,6 +136,66 @@ ex_style_stacks( void )
         }
     }
     gui()->window_end();
+
+    /* --- the sample window: pushed BEFORE window_begin and popped AFTER window_end, so the
+       override brackets the window's own chrome (WINDOW_BG / TITLE_BG / BORDER) as well as
+       every widget kind inside it -- a slot that only affects hover/active/focus states or
+       only shows on a specific widget kind is now easy to tell apart from one that simply
+       does not apply here, instead of guessing from one cramped block of 4 widgets. */
+    u32 abgr = GUI_COLOR( (u8)( col_val[ 0 ] * 255.0f ), (u8)( col_val[ 1 ] * 255.0f ),
+                          (u8)( col_val[ 2 ] * 255.0f ), (u8)( col_val[ 3 ] * 255.0f ) );
+    if ( col_on ) gui()->push_style_color( (gui_col_t)col_sel, abgr );
+    if ( var_on ) gui()->push_style_var( s_var_rows[ var_sel ].var, var_val );
+
+    if ( ex_begin( "Style Stacks Sample", 380, 620, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+
+        gui()->separator_text( "Text (COL_TEXT vs COL_TEXT_DIM)" );
+        gui()->text( "Plain text -- COL_TEXT" );
+        gui()->text_disabled( "Disabled/dim text -- COL_TEXT_DIM" );
+
+        gui()->separator_text( "Buttons (COL_WIDGET_BG / _HOT / _ACT, label = COL_TEXT)" );
+        gui()->button( "Sample button (hover/press me)" );
+        static bool small_sb = true;
+        gui()->small_button( "small" ); gui()->same_line( 8.0f );
+        gui()->checkbox( "small_button's sibling", &small_sb );
+
+        gui()->separator_text( "Checkbox / radio (box = COL_WIDGET_BG, mark = COL_CHECK_MARK)" );
+        static bool sb = true;
+        gui()->checkbox( "Sample checkbox (label = COL_TEXT)", &sb );
+        static i32 mode = 0;
+        gui()->radio_button( "A", &mode, 0 ); gui()->same_line( -1.0f );
+        gui()->radio_button( "B", &mode, 1 ); gui()->same_line( -1.0f );
+        gui()->radio_button( "C", &mode, 2 );
+
+        gui()->separator_text( "Slider / input (field label = COL_TEXT_DIM, border = COL_BORDER)" );
+        static f32 sv = 5.0f;
+        gui()->slider_float( "sample slider", &sv, 0.0f, 10.0f );
+        static char stxt[ 24 ] = "sample";
+        gui()->input_text( "sample input (click to focus)", stxt, sizeof( stxt ) );
+
+        gui()->separator_text( "Combo / selectable (row hover/select = COL_WIDGET_HOT/_ACT)" );
+        static i32          combo_sel      = 0;
+        static const char*  combo_items[]  = { "Alpha", "Beta", "Gamma" };
+        gui()->combo( "sample combo", &combo_sel, combo_items, 3 );
+        static bool sel_a = false, sel_b = true;
+        gui()->selectable( "selectable row A", &sel_a );
+        gui()->selectable( "selectable row B", &sel_b );
+
+        gui()->separator_text( "Progress + child region (COL_WIDGET_FG / COL_CHILD_BG)" );
+        gui()->progress_bar( 0.66f, NULL );
+        if ( gui()->child_begin( "sample child", 0, 60.0f, GUI_WIN_NONE ) )
+        {
+            gui()->stack();
+            gui()->text( "child region body -- COL_CHILD_BG" );
+        }
+        gui()->child_end();
+    }
+    gui()->window_end();
+
+    if ( var_on ) gui()->pop_style_var( 1 );
+    if ( col_on ) gui()->pop_style_color( 1 );
 }
 
 /*==============================================================================================
