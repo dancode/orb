@@ -24,6 +24,9 @@ void test_core_cvar( int argc, char** argv );    // ... temporary code ...
 static int s_checks = 0;
 static int s_fails  = 0;
 
+/* Scratch root for generated cfg files (sandbox rule: all runtime debris under temp/). */
+#define SB_TEMP "temp/sb_core"
+
 static void
 sb_check( bool ok, const char* what )
 {
@@ -101,13 +104,16 @@ log_channel_test( void )
     sb_check(  log_probe( ORB_LOG_WARN,  "boat" ),  "log reset clears boat override" );
 
     /* writeconfig round trip: overrides persist like binds (log reset + log lines),
-       and exec replays them through the ordinary command buffer. */
+       and exec replays them through the ordinary command buffer.  Scratch cfg under
+       temp/ like every other generated file (this test runs after the main block has
+       already cleaned it, so it makes and cleans its own). */
+    sys_dir_make( SB_TEMP );
     con_exec( "log boat debug" );
     con_exec( "log heron off" );
-    con_exec( "writeconfig test_log.cfg" );
+    con_exec( "writeconfig " SB_TEMP "/test_log.cfg" );
     con_exec( "log reset" );
     sb_check( !log_probe( ORB_LOG_DEBUG, "boat" ), "override cleared before exec" );
-    con_exec( "exec test_log.cfg" );
+    con_exec( "exec " SB_TEMP "/test_log.cfg" );
     cmd_pump();
     sb_check(  log_probe( ORB_LOG_DEBUG, "boat" ),  "exec restores boat debug" );
     sb_check( !log_probe( ORB_LOG_ERROR, "heron" ), "exec restores heron off" );
@@ -120,6 +126,10 @@ log_channel_test( void )
     con_exec( "log" );
 
     printf( "\nlog channels: %d checks, %d failed\n", s_checks, s_fails );
+
+    sys_file_delete( SB_TEMP "/test_log.cfg" );
+    sys_dir_delete( SB_TEMP );
+    sys_dir_delete( "temp" );
 
     con_exit();
     cmd_system_exit();
@@ -207,11 +217,14 @@ core_test( void )
         cmd_pump();    // frame 3: frame two
 
         /* exec round trip: archive current values, change one, exec the file to restore it.
-           The file text runs through the buffer, so "seta" works like any command. */
+           The file text runs through the buffer, so "seta" works like any command.
+           Scratch cfg files go under temp/ (sandbox rule -- no debris at the repo root). */
 
-        con_exec( "writeconfig test_exec.cfg" );
+        sys_dir_make( SB_TEMP );
+
+        con_exec( "writeconfig " SB_TEMP "/test_exec.cfg" );
         con_exec( "s_volume 0.9" );
-        con_exec( "exec test_exec.cfg" );    // queues the file at the buffer front
+        con_exec( "exec " SB_TEMP "/test_exec.cfg" );    // queues the file at the buffer front
         cmd_pump();
         con_exec( "s_volume" );              // expect 0.25 restored from the file
 
@@ -240,10 +253,10 @@ core_test( void )
         cmd_pump();
 
         con_exec( "bind j" );                // query form
-        con_exec( "writeconfig test_bind.cfg" );
+        con_exec( "writeconfig " SB_TEMP "/test_bind.cfg" );
         con_exec( "unbindall" );
         con_exec( "bindlist" );              // expect 0 binds
-        con_exec( "exec test_bind.cfg" );    // restores them through the buffer
+        con_exec( "exec " SB_TEMP "/test_bind.cfg" );    // restores them through the buffer
         cmd_pump();
         con_exec( "bindlist" );              // expect j + k back
 
@@ -261,12 +274,22 @@ core_test( void )
         con_exec( "unalias hi" );            // expect "not aliased"
 
         /* Self-referential exec: must trip the per-pump budget with one clear message,
-           not spend the frame re-opening the file hundreds of times. */
-        con_exec( "exec test_selfref.cfg" );
+           not spend the frame re-opening the file hundreds of times.  The fixture is
+           generated here: a cfg whose only line execs itself. */
+        static const char selfref[] = "exec " SB_TEMP "/test_selfref.cfg\n";
+        sys_file_write_entire( SB_TEMP "/test_selfref.cfg", selfref, sizeof( selfref ) - 1 );
+        con_exec( "exec " SB_TEMP "/test_selfref.cfg" );
         cmd_pump();
 
         printf( "scrollback: %u lines, history: %u entries\n",
                 con_line_count(), con_history_count() );
+
+        /* Clean the scratch cfgs; the outer temp/ only goes if nothing else lives there. */
+        sys_file_delete( SB_TEMP "/test_exec.cfg" );
+        sys_file_delete( SB_TEMP "/test_bind.cfg" );
+        sys_file_delete( SB_TEMP "/test_selfref.cfg" );
+        sys_dir_delete( SB_TEMP );
+        sys_dir_delete( "temp" );
 
         con_exit();
         cmd_system_exit();

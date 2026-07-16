@@ -258,8 +258,8 @@ Guard rails against nuance creep -- rejections are as architectural as additions
   thin explicit vtable. Revisit only when a real scene proves the need.
 - **No general plugin marketplace machinery.** Module tiers + `-create` cover
   extension. Every module is in-tree or in the project.
-- **No cross-layer convenience includes.** engine_api.h / orb.h umbrellas are for
-  hosts and projects, not for layers to peek upward.
+- **No cross-layer convenience includes.** The orb.h umbrella is for hosts and
+  projects, not for layers to peek upward.
 - **No second GUI or tool UI toolkit.** The in-house gui is the only UI, editor
   included. Tools that need UI become hosts.
 

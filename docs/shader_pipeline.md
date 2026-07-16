@@ -361,7 +361,7 @@ The off switch is therefore: delete `bin\shaders`. No build flag, no cvar, no ho
 (gui and draw are static libs always linked into hosts, so they can call `sys_exe_dir`
 directly to locate the exe -- rhi.c set that precedent.)
 
-`cook_shaders.bat` at the repo root cooks all six shaders through asset_tool's stage-tag
+`scriptsok_shaders.bat` cooks all six shaders through asset_tool's stage-tag
 dispatch into `bin\shaders`. Run it after editing an HLSL twin; skip it entirely and the
 engine runs on the frozen arrays.
 
@@ -459,7 +459,7 @@ yields identical layout hashes; and `sb_asset_shader` demonstrates both hot-relo
 
 ## Part 9: Quick reference
 
-**Cook the engine shaders:** `cook_shaders.bat` (repo root; needs `bin\asset_tool.exe`,
+**Cook the engine shaders:** `scriptsok_shaders.bat` (needs `bin\asset_tool.exe`,
 `bin\shader_tool.exe`, and dxc from `%VULKAN_SDK%`)
 
 **Turn the cooked path off:** delete (or rename) `bin\shaders`

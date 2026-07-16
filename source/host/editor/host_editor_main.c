@@ -159,19 +159,13 @@ static const run_gui_desc_t k_gui_desc = {
     .debug = true,            /* P/O/F10 overlays, I idle skip, etc. */
 };
 
-/*
-    host_game.exe   -project F:\orb\my_project     -> plays my_project.dll
-    host_game.exe   -module  sample_game           -> plays sample_game.dll from engine bin
-    host_editor.exe -project F:\orb\my_project     -> loads it; Play/Stop drives it
-*/
-
 int
 main( int argc, char** argv )
 {
-    /* Pre-engine launch params (host_common): -project/-module select the game project
-       DLL, -dev arms idle-sleep pacing.  An absent project is fine -- the editor runs
-       standalone; an INVALID one (bad path, missing dll, reserved name) is a hard error
-       so a typo can't silently launch a projectless editor. */
+    /* Pre-engine launch params (host_common; cheat sheet in host_common.h): -project/-module
+       select the game project DLL, -dev arms idle-sleep pacing.  An absent project is fine --
+       the editor runs standalone; an INVALID one (bad path, missing dll, reserved name) is a
+       hard error so a typo can't silently launch a projectless editor. */
     launch_params_t params;
     host_args_parse( argc, argv, &params );
 

@@ -2,17 +2,17 @@
 rem bootstrap_project.bat -- install build tool forwarder and helpers in a child project.
 rem
 rem Usage (from the child project root):
-rem     ..\bootstrap_project.bat
+rem     <engine>\scripts\bootstrap_project.bat
 rem
 rem After running:
 rem     bin\build_tool.bat -gen
 rem     bin\build_tool.bat -config Debug
 rem     clean_build.bat
 
-rem %~dp0 expands to the engine root with a trailing backslash; strip it.
+rem This script lives in <engine>\scripts; resolve the engine root as its parent
+rem (no trailing backslash).
 setlocal
-set ENGINE_ROOT=%~dp0
-if "%ENGINE_ROOT:~-1%"=="\" set ENGINE_ROOT=%ENGINE_ROOT:~0,-1%
+for %%i in ("%~dp0..") do set ENGINE_ROOT=%%~fi
 
 if not exist bin mkdir bin
 
@@ -24,7 +24,7 @@ rem Install the build_tool forwarder.
 
 rem Copy the clean script from the engine. It reads .orb_engine at runtime
 rem so it works regardless of where this project or the engine lives.
-copy /y "%ENGINE_ROOT%\clean_build_project.bat" clean_build.bat > nul
+copy /y "%ENGINE_ROOT%\scripts\clean_build_project.bat" clean_build.bat > nul
 
 echo [orb] project bootstrapped.
 echo        Run: bin\build_tool.bat -gen

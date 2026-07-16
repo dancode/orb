@@ -255,11 +255,14 @@ editor_mod_reload( void* state, get_api_fn get_api )
     return true;
 }
 
+/* Module teardown funnels through the public shutdown: stop a live session, then release
+   the viewport's GPU resources.  Hosts that already called editor()->shutdown() (quit key,
+   close request) make this a no-op -- both paths are idempotent. */
 static void
 editor_mod_exit( void* state )
 {
     UNUSED( state );
-    ed_viewport_shutdown();
+    editor_shutdown();
 }
 
 static mod_desc_t s_editor_mod_desc = {

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    run_perf.c -- Host-side perf HUD (draw backend).
+    run_perf.c -- Host-side diagnostics: perf HUD (draw backend) + profiler capture verbs.
 
     The runtime host owns a per-phase frame profiler the gui knows nothing about: the integer
     microsecond timings stamped through the main loop (events / update / gui / render / work /
@@ -25,7 +25,9 @@
                                     already-open draw pass at a render composite point.
 
     plus host_perf_active(), so the host can skip opening a composite pass it would fill with
-    nothing.  Toggle HOST_PERF_KEY (F8) cycles the tier:
+    nothing.  The profiler capture verbs (prof_dump / prof_hitch) and the sys/app key-table
+    invariants live at the bottom of this unit -- the host loop's diagnostic machinery, kept
+    out of run_host.c.  Toggle HOST_PERF_KEY (F8) cycles the tier:
 
         0  off
         1  FPS + frame period
@@ -190,6 +192,148 @@ host_draw_perf_content( i32 win_w, i32 win_h )
     for ( int i = 1; i < n; ++i )
         draw()->text( tx, ty + ( f32 )i * line_px, scale, HOST_PERF_WHITE, line[ i ] );
 }
+
+/*==============================================================================================
+    Profiler capture verbs -- registered by the host loop via host_prof_commands_register().
+
+    "prof_dump [frames] [path]"
+        Starts a Chrome-trace capture of the next N frames (default 120) into path (default
+        artifacts/prof_dump.json); load the file in chrome://tracing or
+        https://ui.perfetto.dev.  While active the loop drains every frame through
+        host_prof_frame_flush -- the host is the profiler's single drain consumer.
+        Re-running the command stops an active capture early.
+
+    "prof_hitch [ms] [prefix]"
+        Arms the profiler's hitch capture: every frame host_prof_hitch_frame folds events
+        into the rolling history, and any frame whose WORK time (pacing wait excluded)
+        crosses the threshold (default 33.3 ms -- two missed 60 Hz periods) auto-writes
+        "<prefix>_<frame>.json" (default prefix artifacts/hitch).  Re-running disarms.
+
+    Both default into artifacts/ -- the repo's gitignored dump folder for generated files --
+    created on demand so a fresh checkout works.
+==============================================================================================*/
+
+static i32 s_prof_dump_frames = 0;    /* frames left in an active capture; 0 = idle */
+
+static void
+host_cmd_prof_dump( int argc, char** argv )
+{
+    if ( prof_dump_active() )
+    {
+        prof_dump_end();
+        s_prof_dump_frames = 0;
+        printf( "[host] prof_dump: capture stopped early\n" );
+        return;
+    }
+
+    i32         frames = argc > 1 ? atoi( argv[ 1 ] ) : 0;
+    const char* path   = argc > 2 ? argv[ 2 ] : "artifacts/prof_dump.json";
+    if ( frames <= 0 )
+        frames = 120;
+
+    if ( argc <= 2 )
+        sys_dir_make( "artifacts" );
+
+    if ( !prof_dump_begin( path ) )
+    {
+        printf( "[host] prof_dump: cannot open '%s'\n", path );
+        return;
+    }
+
+    s_prof_dump_frames = frames;
+    printf( "[host] prof_dump: capturing %d frames to '%s'\n", frames, path );
+}
+
+static void
+host_cmd_prof_hitch( int argc, char** argv )
+{
+    if ( prof_hitch_armed() )
+    {
+        prof_hitch_arm( 0.0, NULL );
+        printf( "[host] prof_hitch: disarmed\n" );
+        return;
+    }
+
+    f64         ms     = argc > 1 ? atof( argv[ 1 ] ) : 0.0;
+    const char* prefix = argc > 2 ? argv[ 2 ] : "artifacts/hitch";
+    if ( ms <= 0.0 )
+        ms = 33.3;
+
+    if ( argc <= 2 )
+        sys_dir_make( "artifacts" );
+
+    prof_hitch_arm( ms, prefix );
+    if ( prof_hitch_armed() )
+        printf( "[host] prof_hitch: armed at %.1f ms (captures to '%s_<frame>.json')\n", ms, prefix );
+    else
+        printf( "[host] prof_hitch: unavailable (ORB_PROFILE_HITCH compiled out)\n" );
+}
+
+/* Install both verbs; called once at boot after core's cmd system is live. */
+void
+host_prof_commands_register( void )
+{
+    s_prof_dump_frames = 0;
+    cmd_register( "prof_dump", host_cmd_prof_dump,
+                  "Capture N frames to a Chrome trace (prof_dump [frames] [path])" );
+    cmd_register( "prof_hitch", host_cmd_prof_hitch,
+                  "Auto-capture a trace when frame work exceeds a threshold (prof_hitch [ms] [prefix])" );
+}
+
+/* Drain an active prof_dump capture: move this frame's events (all rings) into the trace
+   file, closing it on the last frame.  Called once per frame by the host loop; a cheap
+   branch while idle. */
+void
+host_prof_frame_flush( void )
+{
+    if ( s_prof_dump_frames <= 0 )
+        return;
+
+    prof_dump_flush();
+    if ( --s_prof_dump_frames == 0 )
+    {
+        prof_dump_end();
+        printf( "[host] prof_dump: capture complete\n" );
+    }
+}
+
+/* Feed the hitch monitor this frame's WORK milliseconds (pacing wait excluded -- deliberate
+   idling is not a hitch).  Two cheap branches per frame while disarmed. */
+void
+host_prof_hitch_frame( f64 work_ms )
+{
+    u32 hitch_events = prof_hitch_update( work_ms );
+    if ( hitch_events )
+        printf( "[host] prof_hitch: %.1f ms frame -- wrote '%s' (%u events)\n",
+                work_ms, prof_hitch_last_path(), hitch_events );
+}
+
+/*==============================================================================================
+    Console / windowed key-table agreement
+
+    sys_key_t values are pinned to app_key_t for the shared range so console-input polling
+    (sys_key_pressed) and windowed input (app()->key_pressed) agree on key constants -- the
+    host loop and its dev hotkeys rely on it.  C5287 (newer MSVC) flags the mixed-enum
+    comparison even through the casts; comparing the two tables is the whole point here, so
+    it is silenced for this block only.
+==============================================================================================*/
+
+#ifdef _MSC_VER
+#pragma warning( push )
+#pragma warning( disable : 5287 )
+#endif
+_Static_assert( ( i32 )PLATFORM_KEY_A      == ( i32 )APP_KEY_A,      "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_Z      == ( i32 )APP_KEY_Z,      "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_0      == ( i32 )APP_KEY_0,      "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_9      == ( i32 )APP_KEY_9,      "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_F1     == ( i32 )APP_KEY_F1,     "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_F12    == ( i32 )APP_KEY_F12,    "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_ESCAPE == ( i32 )APP_KEY_ESCAPE, "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_ENTER  == ( i32 )APP_KEY_ENTER,  "sys/app key tables diverged" );
+_Static_assert( ( i32 )PLATFORM_KEY_SPACE  == ( i32 )APP_KEY_SPACE,  "sys/app key tables diverged" );
+#ifdef _MSC_VER
+#pragma warning( pop )
+#endif
 
 // clang-format on
 /*============================================================================================*/

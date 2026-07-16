@@ -6,7 +6,7 @@
 
         1. mod_system_init()                        -- registry online
         2. ref_wire_mod_callbacks()                 -- install hooks; no code fires yet
-        3. mod_static_load( sys, ref, prof, fs, job, net, app, core, run ) -- PASSIVE: engine floor registered
+        3. mod_static_load( <engine root libraries> )   -- PASSIVE: engine floor registered
         4. load_all( desc->modules )                -- PASSIVE: every entry registered
            mod_dynamic_load_dir( project )          -- PASSIVE: optional project DLL (desc->project_name)
         5. mod_init_all()                           -- pass 1: load callbacks fire in dep order (ref frames pushed, reflection live)
@@ -26,13 +26,13 @@
     (reflection, profilers) in that order. The ref frame stack therefore matches the
     dep graph -- dependencies below, dependents above.
 
-    The engine floor ( sys + ref + prof + fs + job + net + app + core + run ) is loaded by the
-    host and is always present regardless of what k_modules[] declares.  These root engine
-    libraries are cheap to init and create no OS resources on load (job spawns no threads until
-    configured, net opens no sockets until peer_create, app opens no window until window_open),
-    so the loop dereferences them unguarded.  The higher layers with real init cost -- rhi,
-    draw, gui, render, and eventually game / editor services -- are declared by the host
-    descriptor and guarded with if ( svc() ) at their call sites.
+    The engine floor ( every root library in source/engine ) is loaded by the host and is
+    always present regardless of what k_modules[] declares.  These root engine libraries are
+    cheap to init and create no OS resources on load (job spawns no threads until configured,
+    net opens no sockets until peer_create, app opens no window until window_open), so the
+    loop dereferences them unguarded.  The higher layers with real init cost -- rhi, draw,
+    gui, render, and eventually game / editor services -- are declared by the host descriptor
+    and guarded with if ( svc() ) at their call sites.
 
     Frame order
     -----------
@@ -155,109 +155,25 @@ run_host_realtime( void )
 ==============================================================================================*/
 
 MOD_USE_RUN;
-
 MOD_USE_RHI;
 MOD_USE_RENDER;
 MOD_USE_DRAW;
 MOD_USE_GUI;
 MOD_USE_INPUT;
 
-/* Host-side perf HUD -- defined in run_perf.c, included after this unit in the runtime unity
+/* Host-side diagnostics -- defined in run_perf.c, included after this unit in the runtime unity
    build (run.c).  host_perf_tick polls the toggle + folds this frame's stats (every frame);
    host_perf_active reports whether the overlay is on; host_draw_perf_content paints it (through
-   draw's built-in bitmap font) inside an already-open draw pass at a render composite point. */
+   draw's built-in bitmap font) inside an already-open draw pass at a render composite point.
+   host_prof_commands_register installs the prof_dump / prof_hitch capture verbs;
+   host_prof_frame_flush drains an active capture (once per frame); host_prof_hitch_frame feeds
+   the hitch monitor this frame's work time. */
 void host_perf_tick( void );
 bool host_perf_active( void );
 void host_draw_perf_content( i32 win_w, i32 win_h );
-
-/*==============================================================================================
-    Profiler capture command -- "prof_dump [frames] [path]"
-
-    Starts a Chrome-trace capture of the next N frames (default 120) into path (default
-    prof_dump.json next to the working dir); load the file in chrome://tracing or
-    https://ui.perfetto.dev. While active the loop flushes every frame -- the host is the
-    profiler's single drain consumer. Re-running the command stops an active capture early.
-==============================================================================================*/
-
-static i32 s_prof_dump_frames = 0;    /* frames left in an active capture; 0 = idle */
-
-static void
-host_cmd_prof_dump( int argc, char** argv )
-{
-    if ( prof_dump_active() )
-    {
-        prof_dump_end();
-        s_prof_dump_frames = 0;
-        printf( "[host] prof_dump: capture stopped early\n" );
-        return;
-    }
-
-    i32         frames = argc > 1 ? atoi( argv[ 1 ] ) : 0;
-    const char* path   = argc > 2 ? argv[ 2 ] : "prof_dump.json";
-    if ( frames <= 0 )
-        frames = 120;
-
-    if ( !prof_dump_begin( path ) )
-    {
-        printf( "[host] prof_dump: cannot open '%s'\n", path );
-        return;
-    }
-
-    s_prof_dump_frames = frames;
-    printf( "[host] prof_dump: capturing %d frames to '%s'\n", frames, path );
-}
-
-/*==============================================================================================
-    Hitch monitor command -- "prof_hitch [ms] [prefix]"
-
-    Arms the profiler's hitch capture: every frame the loop folds events into the rolling
-    history, and any frame whose WORK time (pacing wait excluded) crosses the threshold
-    (default 33.3 ms -- two missed 60 Hz periods) auto-writes "<prefix>_<frame>.json" for
-    chrome://tracing / https://ui.perfetto.dev. Re-running the command disarms.
-==============================================================================================*/
-
-static void
-host_cmd_prof_hitch( int argc, char** argv )
-{
-    if ( prof_hitch_armed() )
-    {
-        prof_hitch_arm( 0.0, NULL );
-        printf( "[host] prof_hitch: disarmed\n" );
-        return;
-    }
-
-    f64         ms     = argc > 1 ? atof( argv[ 1 ] ) : 0.0;
-    const char* prefix = argc > 2 ? argv[ 2 ] : "hitch";
-    if ( ms <= 0.0 )
-        ms = 33.3;
-
-    prof_hitch_arm( ms, prefix );
-    if ( prof_hitch_armed() )
-        printf( "[host] prof_hitch: armed at %.1f ms (captures to '%s_<frame>.json')\n", ms, prefix );
-    else
-        printf( "[host] prof_hitch: unavailable (ORB_PROFILE_HITCH compiled out)\n" );
-}
-
-/* sys_key_t values are pinned to app_key_t for the shared range so console-input polling
-   (sys_key_pressed) and windowed input (app()->key_pressed) agree on key constants.
-   C5287 (newer MSVC) flags the mixed-enum comparison even through the casts; comparing
-   the two tables is the whole point here, so it is silenced for this block only. */
-#ifdef _MSC_VER
-#pragma warning( push )
-#pragma warning( disable : 5287 )
-#endif
-_Static_assert( ( i32 )PLATFORM_KEY_A      == ( i32 )APP_KEY_A,      "sys/app key tables diverged" );
-_Static_assert( ( i32 )PLATFORM_KEY_Z      == ( i32 )APP_KEY_Z,      "sys/app key tables diverged" );
-_Static_assert( ( i32 )PLATFORM_KEY_0      == ( i32 )APP_KEY_0,      "sys/app key tables diverged" );
-_Static_assert( ( i32 )PLATFORM_KEY_9      == ( i32 )APP_KEY_9,      "sys/app key tables diverged" );
-_Static_assert( ( i32 )PLATFORM_KEY_F1     == ( i32 )APP_KEY_F1,     "sys/app key tables diverged" );
-_Static_assert( ( i32 )PLATFORM_KEY_F12    == ( i32 )APP_KEY_F12,    "sys/app key tables diverged" );
-_Static_assert( ( i32 )PLATFORM_KEY_ESCAPE == ( i32 )APP_KEY_ESCAPE, "sys/app key tables diverged" );
-_Static_assert( ( i32 )PLATFORM_KEY_ENTER  == ( i32 )APP_KEY_ENTER,  "sys/app key tables diverged" );
-_Static_assert( ( i32 )PLATFORM_KEY_SPACE  == ( i32 )APP_KEY_SPACE,  "sys/app key tables diverged" );
-#ifdef _MSC_VER
-#pragma warning( pop )
-#endif
+void host_prof_commands_register( void );
+void host_prof_frame_flush( void );
+void host_prof_hitch_frame( f64 work_ms );
 
 /*==============================================================================================
     Host state -- tracks what has been initialized so run_host_shutdown() tears down exactly
@@ -316,6 +232,30 @@ host_perf_composite_draw( rhi_cmd_t cmd )
     draw()->begin_overlay( cmd, dw, dh );
     host_draw_perf_content( dw, dh );
     draw()->end_pass();
+}
+
+/*==============================================================================================
+    Main-surface clear color -- read ONLY by the host-driven render paths (B: gui composite,
+    C: draw-only), where the host opens the frame and must clear the swapchain itself; path A
+    never sees it (render's draw_scene owns its own clear).  desc->gui->clear overrides when
+    set; alpha 0 reads as "unset" (a cleared swapchain is always opaque) -> default dark.
+==============================================================================================*/
+
+static void
+host_clear_color( const run_gui_desc_t* gd, f32 out[ 4 ] )
+{
+    out[ 0 ] = RHI_CLEAR_DEFAULT_R;
+    out[ 1 ] = RHI_CLEAR_DEFAULT_G;
+    out[ 2 ] = RHI_CLEAR_DEFAULT_B;
+    out[ 3 ] = RHI_CLEAR_DEFAULT_A;
+
+    if ( gd && gd->clear[ 3 ] > 0.0f )
+    {
+        out[ 0 ] = gd->clear[ 0 ];
+        out[ 1 ] = gd->clear[ 1 ];
+        out[ 2 ] = gd->clear[ 2 ];
+        out[ 3 ] = gd->clear[ 3 ];
+    }
 }
 
 /*==============================================================================================
@@ -409,17 +349,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     core_wire_mod_callbacks();
 
-    /* Engine floor -- the root engine libraries, always loaded regardless of k_modules[].
-       They are cheap to init and create no OS resources on load: sys (clock+sleep), ref
-       (reflection), prof (zone capture -- static rings), pack (compression -- stateless
-       transforms), fs (virtual filesystem, opens no files), job (task system -- spawns NO
-       threads until job_configure below), net (UDP
-       transport -- opens no sockets until peer_create), app (windowing/input -- creates no
-       window until window_open), core (logging/cvars/cmd), run (frame clock).  The loop and
-       module lifecycle dereference these unconditionally, so they carry no if() guard.  app
-       being always present is why "windowed" is now explicit host policy (RUN_HOST_WINDOWED)
-       rather than an app()-presence inference.  Real cost lives one layer up in the runtime
-       services (rhi builds a Vulkan device, etc.) -- those stay opt-in in k_modules[]. */
+    /* Engine floor -- every engine root library (source/engine), always loaded regardless of
+       k_modules[].  They are cheap to init and create no OS resources on load (job spawns NO
+       threads until job_configure below, net opens no sockets until peer_create, app creates
+       no window until window_open).  The loop and module lifecycle dereference these
+       unconditionally, so they carry no if() guard.  app being always present is why
+       "windowed" is explicit host policy (RUN_HOST_WINDOWED) rather than an app()-presence
+       inference.  Real cost lives one layer up in the runtime services (rhi builds a Vulkan
+       device, etc.) -- those stay opt-in in k_modules[]. */
     if ( !mod_static_load( "sys",  sys_get_mod_desc() )  ||
          !mod_static_load( "ref",  ref_get_mod_desc() )  ||
          !mod_static_load( "prof", prof_get_mod_desc() ) ||
@@ -496,12 +433,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        "bind f5 quicksave" and "bind pad_a +jump" round-trip. */
     cmd_bind_wire_names( app_key_names(), APP_SRC_COUNT );
 
-    /* Profiler capture verb -- see host_cmd_prof_dump above the key asserts. */
-    s_prof_dump_frames = 0;
-    cmd_register( "prof_dump", host_cmd_prof_dump,
-                  "Capture N frames to a Chrome trace (prof_dump [frames] [path])" );
-    cmd_register( "prof_hitch", host_cmd_prof_hitch,
-                  "Auto-capture a trace when frame work exceeds a threshold (prof_hitch [ms] [prefix])" );
+    /* Profiler capture verbs (prof_dump / prof_hitch) -- see run_perf.c. */
+    host_prof_commands_register();
 
     /* ---- cache engine module APIs ------------------------------------- */
     /*
@@ -645,20 +578,6 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
          return 0;
 
     /* ---- frame loop -------------------------------------------------- */
-
-    /* TODO: this feels awkward being here, its not an elegant clean solution... */
-    /* Main-surface clear color for the gui-composite render path; alpha 0 in the desc reads
-       as "unset" (a cleared swapchain is always opaque) -- default dark, same rule as boot. */
-
-    f32 gui_clear[ 4 ] = { 
-        RHI_CLEAR_DEFAULT_R, RHI_CLEAR_DEFAULT_G, RHI_CLEAR_DEFAULT_B, RHI_CLEAR_DEFAULT_A };
-    if ( desc->gui && desc->gui->clear[ 3 ] > 0.0f )
-    {
-        gui_clear[ 0 ] = desc->gui->clear[ 0 ];
-        gui_clear[ 1 ] = desc->gui->clear[ 1 ];
-        gui_clear[ 2 ] = desc->gui->clear[ 2 ];
-        gui_clear[ 3 ] = desc->gui->clear[ 3 ];
-    }
 
     /* Internal tick is integer microseconds; the absolute deadline accumulator keeps
        the average frame rate exact -- Sleep()'s truncation and overshoot self-correct
@@ -886,11 +805,13 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( rhi_cmd_valid( cmd ) )
                 {
                     /* Clear so gui composites over a fresh background (not last frame). */
+                    f32 clear[ 4 ];
+                    host_clear_color( desc->gui, clear );
                     rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
                         .texture  = { .id = RHI_SWAPCHAIN_COLOR },
                         .load_op  = RHI_LOAD_OP_CLEAR,
                         .store_op = RHI_STORE_OP_STORE,
-                        .clear    = { gui_clear[ 0 ], gui_clear[ 1 ], gui_clear[ 2 ], gui_clear[ 3 ] },
+                        .clear    = { clear[ 0 ], clear[ 1 ], clear[ 2 ], clear[ 3 ] },
                     }, 1, NULL );
                     rhi()->cmd_end_rendering( cmd );
                     gui()->render( s_vp0, cmd );
@@ -907,9 +828,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 rhi_cmd_t cmd = rhi()->frame_begin( s_ctx_id );
                 if ( rhi_cmd_valid( cmd ) )
                 {
+                    f32 clear[ 4 ];
+                    host_clear_color( desc->gui, clear );
                     i32 dw = 0, dh = 0;
                     app()->window_get_size( s_win_id, &dw, &dh );
-                    draw()->begin_pass( cmd, dw, dh, gui_clear );
+                    draw()->begin_pass( cmd, dw, dh, clear );
                     host_draw_perf_content( dw, dh );
                     draw()->end_pass();
                     rhi()->frame_end( s_ctx_id );
@@ -931,15 +854,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* While a prof_dump capture is live the host is the drain consumer: move this
            frame's events (all rings) into the trace file, closing it on the last frame. */
-        if ( s_prof_dump_frames > 0 )
-        {
-            prof_dump_flush();
-            if ( --s_prof_dump_frames == 0 )
-            {
-                prof_dump_end();
-                printf( "[host] prof_dump: capture complete\n" );
-            }
-        }
+        host_prof_frame_flush();
 
         /* -- hot-reload -------------------------------------------------- */
 
@@ -1023,17 +938,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         PROF_COUNTER_SET( "host/frame_us", stats.frame_us );
 
         /* Hitch monitor -- armed via "prof_hitch". Work time only: the pacing wait above
-           (editor input block, budget sleep) is deliberate idling, not a hitch. Two cheap
-           branches per frame while disarmed. */
-        u32 hitch_events = prof_hitch_update( ( f64 )stats.work_us / 1000.0 );
-        if ( hitch_events )
-            printf( "[host] prof_hitch: %.1f ms frame -- wrote '%s' (%u events)\n",
-                    ( f64 )stats.work_us / 1000.0, prof_hitch_last_path(), hitch_events );
+           (editor input block, budget sleep) is deliberate idling, not a hitch. */
+        host_prof_hitch_frame( ( f64 )stats.work_us / 1000.0 );
 
         run_clock_stats_submit( &stats );
     }
-
-    // core()->cmd_execute_string( "prof_dump 120 prof_dump.json" );
 
 loop_exit:
     

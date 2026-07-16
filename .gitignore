@@ -90,6 +90,9 @@ cmake-build-*/
 # Scratch space for tests / tools (sandboxes create + clean temp/, debris never commits)
 /temp/
 
+# Generated runtime artifacts (profiler traces, hitch captures, future dumps)
+/artifacts/
+
 # Assets
 /assets
 

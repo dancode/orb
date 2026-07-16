@@ -52,12 +52,8 @@ MOD_USE_GAME;
    HOST_PROJECT=<name> + mono_dep <name>).  The project is compiled in as a static lib and
    registered through run_host_desc_t.project_get_mod_desc -- exactly one project, no DLL
    on disk, hot-reload a no-op.  Plain host_game (no define) is untouched by this block. */
-#define HOST_XSTR( x )      HOST_STR( x )
-#define HOST_STR( x )       #x
-#define HOST_XPASTE( a, b ) HOST_PASTE( a, b )
-#define HOST_PASTE( a, b )  a##b
 mod_desc_t* HOST_XPASTE( HOST_PROJECT, _get_mod_desc )( void );
-#define HOST_PROJECT_NAME   HOST_XSTR( HOST_PROJECT )
+#define HOST_PROJECT_NAME HOST_XSTR( HOST_PROJECT )
 #endif
 
 // clang-format off
@@ -156,15 +152,10 @@ static const run_module_entry_t k_modules[] = {
     { 0 }
 };
 
-/*
-    host_game.exe   -project F:\orb\my_project     -> plays my_project.dll
-    host_game.exe   -module  sample_game           -> plays sample_game.dll from engine bin
-    host_editor.exe -project F:\orb\my_project     -> loads it; Play/Stop drives it
-*/
-
 int
 main( int argc, char** argv )
 {
+    /* Launch shapes: see the cheat sheet in host_common.h. */
     launch_params_t params;
     host_args_parse( argc, argv, &params );
 

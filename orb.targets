@@ -3,25 +3,24 @@
 # ==============================================================================
 #
 # source/
-# ├── base/               # Stateless stdlib (math, strings, memory) — no global state
-# ├── engine/             # Stateful static libs: sys, core, ref, net, mod, app
-# ├── runtime/            # Host runtime scaffolding (runtime_host)
-# ├── runtime_service/    # Static services: jobs, rhi
-# ├── runtime_modules/    # Dynamic DLL modules: render, audio, physics
-# ├── developer/          # Dev-only tools: dev_build, dev_hot, dev_reflect_gen
-# ├── game/               # Reusable game framework (world, entity, component, actor)
-# ├── game_service/       # Game-specific static services
-# ├── game_modules/       # Game-specific dynamic modules
-# ├── project/            # User game project implementations (e.g. sample_game)
-# ├── editor/             # Editor framework (windows, panels, tools)
-# ├── editor_service/     # Editor-specific static services
-# ├── editor_modules/     # Editor-specific dynamic modules
-# ├── tools/              # Standalone utilities (build_tool, asset pipeline)
-# ├── sandbox/            # Layer-specific verification targets (sb_*)
-# ├── host/               # ← Executable entry points (you are here)
-# ├── vendor/             # Third-party dependencies
-# ├── engine_api.h        # Aggregator header for engine APIs
-# └── orb.h               # Top-level umbrella header
+# +-- base/               # Stateless stdlib (math, strings, memory) -- no global state
+# +-- engine/             # Engine root libraries: mod, sys, ref, prof, pack, fs, job, net, core, app
+# +-- runtime/            # Host runtime scaffolding (run_host)
+# +-- runtime_service/    # Static services: rhi, draw, gui, input, asset, ahi
+# +-- runtime_modules/    # Dynamic DLL modules: render, audio, physics
+# +-- developer/          # Dev-only libs: dev_build, dev_font, dev_hot, dev_image
+# +-- game/               # Reusable game framework (runner; world, entity, component to come)
+# +-- game_service/       # Game-specific static services
+# +-- game_modules/       # Game-specific dynamic modules
+# +-- project/            # User game project implementations (e.g. sample_game)
+# +-- editor/             # Editor framework (windows, panels, tools)
+# +-- editor_service/     # Editor-specific static services
+# +-- editor_modules/     # Editor-specific dynamic modules
+# +-- tools/              # Standalone utilities (build_tool, asset pipeline)
+# +-- sandbox/            # Layer-specific verification targets (sb_*)
+# +-- host/               # Executable entry points
+# +-- vendor/             # Third-party dependencies
+# +-- orb.h               # Top-level umbrella header
 #
 # ==============================================================================
 #
@@ -101,12 +100,12 @@ target job
     root        source/engine/job
     folder      02_ENGINE
     unit        job.c
-	dep 		sys
+    dep         sys
     flag        host_only
 
 target net
 
-	type        static
+    type        static
     root        source/engine/net
     folder      02_ENGINE
     unit        net.c
@@ -119,7 +118,7 @@ target pack
     root        source/engine/pack
     folder      02_ENGINE
     unit        pack.c
-    unit        pack_miniz.c    # vendored miniz amalgamation (engine-wide single copy); own TU, not pack unity
+    unit        pack_miniz.c   # vendored miniz amalgamation (engine-wide single copy); own TU, not pack unity
     flag        host_only
 
 target fs
@@ -141,7 +140,7 @@ target run
     root        source/runtime
     folder      03_RUNTIME
     unit        run.c
-	dep         mod sys ref job prof net app core   # engine floor: run.c loads all of these in run_host_main
+    dep         mod sys ref prof job net app core   # engine floor: run.c loads all of these in run_host_main
 
 # ==============================================================================
 # 03_RUNTIME_SERVICE
@@ -154,7 +153,7 @@ target rhi
     folder      03_RUNTIME/SERVICE
     unit        rhi.c
     dep         sys app core
-	inc         %VULKAN_SDK%/Include
+    inc         %VULKAN_SDK%/Include
 
 target draw
 
@@ -162,16 +161,16 @@ target draw
     root        source/runtime_service/draw
     folder      03_RUNTIME/SERVICE
     unit        draw.c
-	dep 		rhi
-	
+    dep         rhi
+
 target gui
 
-	type        static
+    type        static
     root        source/runtime_service/gui
     folder      03_RUNTIME/SERVICE
-    unit        gui.c             # UI / core unit
-    unit        gui_backend.c     # render backend unit
-	dep 		rhi app
+    unit        gui.c   # UI / core unit
+    unit        gui_backend.c   # render backend unit
+    dep         app rhi
 
 target asset
 
@@ -179,7 +178,7 @@ target asset
     root        source/runtime_service/asset
     folder      03_RUNTIME/SERVICE
     unit        asset.c
-    dep         core rhi fs
+    dep         fs core rhi
 
 target input
 
@@ -187,7 +186,7 @@ target input
     root        source/runtime_service/input
     folder      03_RUNTIME/SERVICE
     unit        input.c
-    dep         core app
+    dep         app core
 
 target ahi									# audio hardware interface: WASAPI device + mixer
 
@@ -266,7 +265,7 @@ target 	editor
     root        source/editor
     folder      05_EDITOR
     unit        editor.c
-	dep         core gui run editor_viewport
+    dep         core run gui editor_viewport
 
 # ==============================================================================
 
@@ -276,7 +275,7 @@ target 	editor_viewport
     root        source/editor_service/viewport
     folder      05_EDITOR/SERVICE
     unit        viewport.c
-	dep         core gui
+    dep         core gui
 
 target 	editor_example
 
@@ -310,9 +309,9 @@ target sample_game_ship				# single-exe ship shape: build with -monolithic; proj
     folder      06_PROJECT
     unit        host_game_main.c
     define      HOST_PROJECT=sample_game
-	dep         mod ref sys core job app net host_common
-    dep         run prof rhi draw fs pack
-	mono_dep	render game sample_game
+    dep         mod sys ref prof pack fs job net app core run
+    dep         host_common rhi draw
+    mono_dep    render game sample_game
 
 
 target template_game				# source template for -create <name> -type project
@@ -321,9 +320,9 @@ target template_game				# source template for -create <name> -type project
     root        source/project/template_game
     folder      06_PROJECT
     unit        main.c
-	dep 		mod ref sys core job app net
-    dep         run prof rhi draw fs pack
-	mono_dep	render
+    dep         mod sys ref prof pack fs job net app core run
+    dep         rhi draw
+    mono_dep    render
 
 # ==============================================================================
 # 07_Developer
@@ -379,25 +378,24 @@ target host_game
     root        source/host/game
     folder      08_HOST
     unit        host_game_main.c
-	dep         mod ref sys core job app net host_common
-    dep         run prof rhi draw fs pack
-	mono_dep	render game
-	
+    dep         mod sys ref prof pack fs job net app core run
+    dep         host_common rhi draw
+    mono_dep    render game
+
 target host_editor
 
     type        exe
     root        source/host/editor
     folder      08_HOST
     unit        host_editor_main.c
-	dep         mod ref sys core job app net host_common
-    dep         run prof rhi draw gui fs pack
-    dep         editor editor_viewport
-	mono_dep	render game
-	
+    dep         mod sys ref prof pack fs job net app core run
+    dep         host_common rhi draw gui editor editor_viewport
+    mono_dep    render game
+
 # ==============================================================================
 # 09_SANDBOX -- BASE
 # ==============================================================================
-	
+
 target sb_base
 
     type        exe
@@ -416,9 +414,9 @@ target sb_mod
     root        source/sandbox/engine/sb_mod
     folder      09_SANDBOX/ENGINE
     unit        sb_mod.c
-    dep         sys mod ref
+    dep         mod sys ref
     dep         dev_build dev_hot
-	mono_dep 	example 
+    mono_dep    example
 
 target sb_sys
 
@@ -434,7 +432,7 @@ target sb_app
     root        source/sandbox/engine/sb_app
     folder      09_SANDBOX/ENGINE
     unit        sb_app.c
-    dep         sys mod app
+    dep         mod sys app
 
 target sb_core
 
@@ -442,7 +440,7 @@ target sb_core
     root        source/sandbox/engine/sb_core
     folder      09_SANDBOX/ENGINE
     unit        sb_core.c
-    dep         core sys
+    dep         sys core
 
 target sb_job
 
@@ -474,7 +472,7 @@ target sb_fs
     root        source/sandbox/engine/sb_fs
     folder      09_SANDBOX/ENGINE
     unit        sb_fs.c
-    dep         sys fs pack mod
+    dep         mod sys pack fs
 
 # ==============================================================================
 # 09_SANDBOX -- RUNTIME (runtime service tests)
@@ -486,7 +484,7 @@ target sb_asset_test						# asset service registry + hot reload
     root        source/sandbox/runtime/sb_asset_test
     folder      09_SANDBOX/RUNTIME
     unit        sb_asset_test.c
-    dep         asset core sys ref mod rhi app fs pack
+    dep         mod sys ref pack fs app core asset rhi
 
 target sb_asset_image						# asset service Phase 3: PNG -> bindless texture -> on-screen quad
 
@@ -494,8 +492,8 @@ target sb_asset_image						# asset service Phase 3: PNG -> bindless texture -> o
     root        source/sandbox/runtime/sb_asset_image
     folder      09_SANDBOX/RUNTIME
     unit        sb_asset_image.c
-    dep         sys ref mod core app
-    dep         rhi draw asset fs pack
+    dep         mod sys ref pack fs app core
+    dep         rhi draw asset
 
 target sb_asset_shader						# shader system Phase 5: asset_tool .hlsl cook -> .oshd asset -> hash-gated hot reload
 
@@ -503,8 +501,8 @@ target sb_asset_shader						# shader system Phase 5: asset_tool .hlsl cook -> .o
     root        source/sandbox/runtime/sb_asset_shader
     folder      09_SANDBOX/RUNTIME
     unit        sb_asset_shader.c
-    dep         sys ref mod core app
-    dep         rhi asset fs pack
+    dep         mod sys ref pack fs app core
+    dep         rhi asset
 
 target sb_input								# input action service: binds -> +/- cmds -> action state
 
@@ -512,7 +510,7 @@ target sb_input								# input action service: binds -> +/- cmds -> action state
     root        source/sandbox/runtime/sb_input
     folder      09_SANDBOX/RUNTIME
     unit        sb_input.c
-    dep         input core sys ref mod app
+    dep         mod sys ref app core input
 
 target sb_audio								# audio stack: ahi service + audio module
 
@@ -520,7 +518,7 @@ target sb_audio								# audio stack: ahi service + audio module
     root        source/sandbox/runtime/sb_audio
     folder      09_SANDBOX/RUNTIME
     unit        sb_audio.c
-    dep         ahi core sys ref mod
+    dep         mod sys ref core ahi
     mono_dep    audio
 
 # ==============================================================================
@@ -534,7 +532,7 @@ target sb_reflect							# dll test code
     folder      09_SANDBOX/REFLECT
     unit        sb_reflect_unit.c
     dep         ref
-	
+
 target sb_ref_dll						# a dll that has reflected types
 
     type        dynamic
@@ -542,7 +540,7 @@ target sb_ref_dll						# a dll that has reflected types
     folder      09_SANDBOX/REFLECT
     unit        sb_ref_dll.c
     flag        reflect
-	
+
 target sb_gen_dll							# REF_MODULE() usage
 
     type        dynamic
@@ -550,15 +548,15 @@ target sb_gen_dll							# REF_MODULE() usage
     folder      09_SANDBOX/REFLECT
     unit        sb_gen_dll.c
     flag        reflect
-	
+
 target sb_ref_exe					# load a dll with reflected types
 
     type        exe
     root        source/sandbox/reflect/sb_ref_exe
     folder      09_SANDBOX/REFLECT
     unit        sb_ref_exe.c
-    dep         sys ref mod core 
-	mono_dep 	sb_ref_dll
+    dep         mod sys ref core
+    mono_dep    sb_ref_dll
 
 target sb_gen_exe						# load a REF_MODULE() dll
 
@@ -566,8 +564,8 @@ target sb_gen_exe						# load a REF_MODULE() dll
     root        source/sandbox/reflect/sb_gen_exe
     folder      09_SANDBOX/REFLECT
     unit        sb_gen_exe.c
-    dep         sys ref mod core
-	mono_dep 	sb_gen_dll
+    dep         mod sys ref core
+    mono_dep    sb_gen_dll
     flag        reflect
 
 # ==============================================================================
@@ -581,10 +579,9 @@ target sb_vulkan						# vulkan development and testing
     folder      09_SANDBOX/RHI
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
-    dep         sys ref mod core job app net
-	dep 		run prof rhi draw gui fs pack
-	dep         dev_font
-	mono_dep 	render
+    dep         mod sys ref prof pack fs job net app core run
+    dep         rhi draw gui dev_font
+    mono_dep    render
   # flag        reflect
 
 target sb_vulkan_stress					# multi-context rhi sync stress test
@@ -593,8 +590,8 @@ target sb_vulkan_stress					# multi-context rhi sync stress test
     root        source/sandbox/rhi/sb_vulkan_stress
     folder      09_SANDBOX/RHI
     unit        sb_vulkan_stress.c
-    dep         sys ref mod core job app
-	dep 		rhi
+    dep         mod sys ref job app core
+    dep         rhi
 
 # ==============================================================================
 # 09_SANDBOX -- GUI
@@ -606,10 +603,9 @@ target sb_gui
     root        source/sandbox/gui/sb_gui
     folder      09_SANDBOX/GUI
     unit        sb_gui.c
-    dep         sys ref mod core job app net
-	dep 		run prof rhi draw gui fs pack
-	dep         dev_font
-	mono_dep 	render
+    dep         mod sys ref prof pack fs job net app core run
+    dep         rhi draw gui dev_font
+    mono_dep    render
 
 target sb_gui_console					# Quake-style dev console over core cvar/console
 
@@ -617,8 +613,8 @@ target sb_gui_console					# Quake-style dev console over core cvar/console
     root        source/sandbox/gui/sb_gui_console
     folder      09_SANDBOX/GUI
     unit        sb_gui_console.c
-    dep         sys ref mod core job app
-	dep 		rhi gui
+    dep         mod sys ref job app core
+    dep         rhi gui
 
 target sb_gui_dock						# docking test bed: dockspace / split / tabs / drag-to-dock
 
@@ -626,8 +622,8 @@ target sb_gui_dock						# docking test bed: dockspace / split / tabs / drag-to-d
     root        source/sandbox/gui/sb_gui_dock
     folder      09_SANDBOX/GUI
     unit        sb_gui_dock.c
-    dep         sys ref mod core job app
-	dep 		rhi gui
+    dep         mod sys ref job app core
+    dep         rhi gui
 
 target sb_gui_editor					# game-engine editor shell over the gui library
 
@@ -635,10 +631,9 @@ target sb_gui_editor					# game-engine editor shell over the gui library
     root        source/sandbox/gui/sb_gui_editor
     folder      09_SANDBOX/GUI
     unit        sb_gui_editor.c
-    dep         sys ref mod core job app net
-	dep 		run prof rhi draw gui fs pack
-	dep         dev_font
-	mono_dep 	render
+    dep         mod sys ref prof pack fs job net app core run
+    dep         rhi draw gui dev_font
+    mono_dep    render
 
 target sb_gui_example					# gui feature explorer: end-to-end demos of every feature group
 
@@ -647,8 +642,8 @@ target sb_gui_example					# gui feature explorer: end-to-end demos of every feat
     folder      09_SANDBOX/GUI
     unit        sb_gui_example.c
     unit        ex_demos.c
-    dep         sys ref mod core job app
-	dep 		rhi gui
+    dep         mod sys ref job app core
+    dep         rhi gui
 
 target sb_gui_timeline					# prof timeline overlay (flame graph) + synthetic workload
 
@@ -658,8 +653,8 @@ target sb_gui_timeline					# prof timeline overlay (flame graph) + synthetic wor
     unit        sb_gui_timeline.c
     unit        gui_timeline.c
     unit        tl_workload.c
-    dep         sys ref mod core job app
-	dep 		prof rhi gui
+    dep         mod sys ref prof job app core
+    dep         rhi gui
 
 target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
 
@@ -667,10 +662,9 @@ target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
     root        source/sandbox/gui/sb_gui_font
     folder      09_SANDBOX/GUI
     unit        sb_gui_font.c
-    dep         sys ref mod core job app net
-	dep 		run prof rhi draw gui fs pack
-	dep         dev_font
-	mono_dep 	render
+    dep         mod sys ref prof pack fs job net app core run
+    dep         rhi draw gui dev_font
+    mono_dep    render
 
 # ==============================================================================
 # 09_SANDBOX -- HOST (host functionality tests, one per host shape)
@@ -682,9 +676,9 @@ target sb_host_runtime
     root        source/sandbox/host/sb_host_runtime
     folder      09_SANDBOX/HOST
     unit        sb_host_runtime.c
-	dep 		mod ref sys core job app net 	# static engine
-    dep         run prof rhi draw fs pack 				# static runtime + services
-	mono_dep	render
+    dep         mod sys ref job net app core   # static engine
+    dep         prof pack fs run rhi draw   # static runtime + services
+    mono_dep    render
 
 target sb_host_tool
 
@@ -692,9 +686,8 @@ target sb_host_tool
     root        source/sandbox/host/sb_host_tool
     folder      09_SANDBOX/HOST
     unit        sb_host_tool.c
-	dep 		mod ref sys core job app net
-    dep         run prof fs pack
-	mono_dep	render rhi draw
+    dep         mod sys ref prof pack fs job net app core run
+    mono_dep    render rhi draw
 
 target sb_host_server
 
@@ -702,9 +695,8 @@ target sb_host_server
     root        source/sandbox/host/sb_host_server
     folder      09_SANDBOX/HOST
     unit        sb_host_server.c
-	dep 		mod ref sys core job app net
-    dep         run prof fs pack
-	mono_dep	render rhi draw example
+    dep         mod sys ref prof pack fs job net app core run
+    mono_dep    render rhi draw example
 
 target sb_host_editor
 
@@ -712,9 +704,9 @@ target sb_host_editor
     root        source/sandbox/host/sb_host_editor
     folder      09_SANDBOX/HOST
     unit        sb_host_editor.c
-	dep 		mod ref sys core job app net
-    dep         run prof rhi draw gui fs pack
-	mono_dep	render
+    dep         mod sys ref prof pack fs job net app core run
+    dep         rhi draw gui
+    mono_dep    render
 
 target sb_host_game
 
@@ -722,9 +714,9 @@ target sb_host_game
     root        source/sandbox/host/sb_host_game
     folder      09_SANDBOX/HOST
     unit        sb_host_game.c
-	dep 		mod ref sys core job app net
-    dep         run prof rhi draw input fs pack
-	mono_dep	render
+    dep         mod sys ref prof pack fs job net app core run
+    dep         rhi draw input
+    mono_dep    render
 
 target sb_host_runtime_proj			# BYPASS PROOF: drives run_project.h directly -- no game framework in k_modules
 
@@ -732,9 +724,9 @@ target sb_host_runtime_proj			# BYPASS PROOF: drives run_project.h directly -- n
     root        source/sandbox/host/sb_host_runtime_proj
     folder      09_SANDBOX/HOST
     unit        sb_host_runtime_proj.c
-	dep 		mod ref sys core job app net
-    dep         run prof rhi draw fs pack
-	mono_dep	render
+    dep         mod sys ref prof pack fs job net app core run
+    dep         rhi draw
+    mono_dep    render
 
 target sb_proj_runtime					# framework-BYPASS project DLL -- core+render only; sb_host_runtime_proj drives it
 
@@ -756,7 +748,7 @@ target font_tool
     folder      08_TOOL
     unit        font_tool.c
     flag        is_tool
-    dep         dev_font sys
+    dep         sys dev_font
     inc         third_party/freetype-2.14.3/include
     link_flag   msvc third_party/freetype-2.14.3/objs/x64/Release/freetype.lib
 
@@ -775,7 +767,7 @@ target shader_tool
     root        source/tools/shader_tool
     folder      08_TOOL
     unit        shader_tool.c
-    unit        shader_tool_spirv_reflect.c    # vendored SPIRV-Reflect; own TU, not shader_tool unity
+    unit        shader_tool_spirv_reflect.c   # vendored SPIRV-Reflect; own TU, not shader_tool unity
     flag        is_tool
     dep         sys
 
@@ -786,7 +778,7 @@ target image_tool
     folder      08_TOOL
     unit        image_tool.c
     flag        is_tool
-    dep         dev_image sys
+    dep         sys dev_image
 
 # ==============================================================================
 # DEV : Development Solution Wihout Any Sandbox or Test Code
@@ -796,35 +788,35 @@ solution orb_runtime
 
     out         build/proj
 # 	nav 		source
-	startup 	sb_host_runtime
+    startup     sb_host_runtime
 
-	# 			--- STANDARD LIBRARY --- 
-	add 		base
+	# 			--- STANDARD LIBRARY ---
+    add         base
 
 	# 			--- ENGINE ---
     add         sys ref prof mod app core job net
-	
-	# 			--- RUNTIME --- 
+
+	# 			--- RUNTIME ---
     add         run
 
 	# 			--- RUNTIME SERVICES ---
     add         rhi
-	add         draw
-	add         gui
-	add         ahi
+    add         draw
+    add         gui
+    add         ahi
 
 	# 			--- RUNTIME MODULES ---
     add         render audio physics
 
-	# 			--- GAME SERVICES --- 
-    add         game 
-	add 		nav 
-	
-	# 			--- GAME MODULES --- 
-	add 		game_example
+	# 			--- GAME SERVICES ---
+    add         game
+    add         nav
+
+	# 			--- GAME MODULES ---
+    add         game_example
 
 	# 			--- PROJECT ---
-	add 		sample_game sample_game_play
+    add         sample_game sample_game_play
 
 	# 			--- DEVELOPER ---
     add         dev_build dev_hot dev_font
@@ -833,62 +825,62 @@ solution orb_runtime
     add         host_common
 
 	#			--- EXECUTABLE ---
-	add 		sb_host_runtime
-	add 		sb_host_editor
-	add 		sb_host_server
-	add 		sb_host_tool
-	add 		sb_host_game
+    add         sb_host_runtime
+    add         sb_host_editor
+    add         sb_host_server
+    add         sb_host_tool
+    add         sb_host_game
 
 # ==============================================================================
 # EDITOR : Editor development
 # ==============================================================================
 
-solution orb_editor 
+solution orb_editor
 
     out         build/proj
 
 	#			--- LIBRARIES ---
-	
-	add         base
-	add         sys ref prof mod app core job net fs pack
 
-	add 		run
-	add 		rhi						# vulkan render library
-	add 		draw 					# drawing using the rhi
-	add 		gui 					# gui lbrary
-	add 		asset 					# asset service (image loader)
-	
-	add 		render 					# render dll
-	add 		dev_font				# dev-only font baker
-	
+    add         base
+    add         sys ref prof mod app core job net fs pack
+
+    add         run
+    add         rhi   # vulkan render library
+    add         draw   # drawing using the rhi
+    add         gui   # gui lbrary
+    add         asset   # asset service (image loader)
+
+    add         render   # render dll
+    add         dev_font   # dev-only font baker
+
 	#			--- GAME ---
-	
-	add 		game 
-		
+
+    add         game
+
 	#			--- EDITOR ---
-	
-	add 		editor
-	add 		editor_viewport
-	add 		editor_example
-	
+
+    add         editor
+    add         editor_viewport
+    add         editor_example
+
 	#			--- LIBRARIES ---
 
-	add 		host_common
-	add 		host_game
-	add 		host_editor
+    add         host_common
+    add         host_game
+    add         host_editor
 
 	# 			--- PROJECT ---
-	add 		sample_game sample_game_play
+    add         sample_game sample_game_play
 
 	# add 		my_project
 
 	#			--- EXECUTABLE ---
 
-	add 		sb_host_runtime
-	add 		sb_host_editor
-	add 		sb_host_server
-	add 		sb_host_tool
-	add 		sb_host_game
+    add         sb_host_runtime
+    add         sb_host_editor
+    add         sb_host_server
+    add         sb_host_tool
+    add         sb_host_game
 
 # ==============================================================================
 # HOST SANDBOX: host functionality tests, one per host shape
@@ -898,24 +890,24 @@ solution orb_sandbox_host
 
     out         build/proj
 
-	add 		run
+    add         run
 
-	add 		sb_host_tool
-	add 		sb_host_server
-	add 		sb_host_editor
-	add 		sb_host_game
-	add 		sb_host_runtime
-	add 		sb_host_runtime_proj
-	add 		sb_proj_runtime
+    add         sb_host_tool
+    add         sb_host_server
+    add         sb_host_editor
+    add         sb_host_game
+    add         sb_host_runtime
+    add         sb_host_runtime_proj
+    add         sb_proj_runtime
 
 	#			--- project types by host types ---
 
-	add 		host_game
-	add 		host_editor
+    add         host_game
+    add         host_editor
 
 # ==============================================================================
 # SANDBOX: Running/debugging unit-style tets for specific engine layer
-# ==============================================================================	
+# ==============================================================================
 
 solution orb_sandbox_reflect			# developing reflection
 
@@ -923,17 +915,17 @@ solution orb_sandbox_reflect			# developing reflection
     startup     sb_gen_exe
 
     add         base
-	add         sys ref mod app core job net
+    add         sys ref mod app core job net
 
-	add 		sb_reflect				# unit test reflection (hand rolled)
-	
-	add 		sb_gen_dll				# test reflected REF_MODULE
-	add 		sb_ref_dll			# test module with reflected types
-	
-	add 		sb_gen_exe			# test loading REF_MODULE		
-	add 		sb_ref_exe		# test reading reflected types
+    add         sb_reflect   # unit test reflection (hand rolled)
 
-	add 		reflect_tool
+    add         sb_gen_dll   # test reflected REF_MODULE
+    add         sb_ref_dll   # test module with reflected types
+
+    add         sb_gen_exe   # test loading REF_MODULE
+    add         sb_ref_exe   # test reading reflected types
+
+    add         reflect_tool
 
 solution orb_sandbox_job				# developing reflection
 
@@ -941,75 +933,75 @@ solution orb_sandbox_job				# developing reflection
     startup     sb_job
 
     add         base
-	add         sys ref mod app core job net
+    add         sys ref mod app core job net
 
-	add 		sb_job 			# test job system	
+    add         sb_job   # test job system
 
 solution orb_sandbox_vulkan				# developing rendering / vulkan
 
     out         build/proj
-	startup     sb_vulkan
+    startup     sb_vulkan
 
     add         base
-	add         sys ref prof mod app core job net fs pack
+    add         sys ref prof mod app core job net fs pack
 
-	add 		run
-	add 		rhi						# vulkan render library
-	add 		draw 					# drawing using the rhi
-	add 		gui 					# gui lbrary
-	add 		asset 					# asset service (image loader)
-	
-	add 		render 					# render dll
-	add 		dev_font				# dev-only font baker
+    add         run
+    add         rhi   # vulkan render library
+    add         draw   # drawing using the rhi
+    add         gui   # gui lbrary
+    add         asset   # asset service (image loader)
 
-	add 		sb_vulkan				# exe
-	add 		sb_asset_image			# asset image loader proof
-	add 		sb_asset_shader			# shader asset + hot-reload proof
-	add 		sb_gui					# gui demo
-	add 		sb_gui_example			# gui feature explorer (end-to-end demos)
-	add 		sb_gui_console			# quake-style dev console
-	add 		sb_gui_dock				# docking test bed
-	add 		sb_gui_timeline			# prof timeline overlay + workload
-	add 		sb_gui_editor			# game-engine editor shell
-	add 		sb_gui_font				# font find/bake/preview/export bench
-	add 		sb_vulkan_stress		# multi-context sync stress exe
+    add         render   # render dll
+    add         dev_font   # dev-only font baker
 
-	add 		sb_host_runtime			# runtime test
-	add 		sb_host_editor 			# editor test
-	add 		sb_host_game 			# game test
-	add 		sb_host_server 			# no rendering.
-	
+    add         sb_vulkan   # exe
+    add         sb_asset_image   # asset image loader proof
+    add         sb_asset_shader   # shader asset + hot-reload proof
+    add         sb_gui   # gui demo
+    add         sb_gui_example   # gui feature explorer (end-to-end demos)
+    add         sb_gui_console   # quake-style dev console
+    add         sb_gui_dock   # docking test bed
+    add         sb_gui_timeline   # prof timeline overlay + workload
+    add         sb_gui_editor   # game-engine editor shell
+    add         sb_gui_font   # font find/bake/preview/export bench
+    add         sb_vulkan_stress   # multi-context sync stress exe
+
+    add         sb_host_runtime   # runtime test
+    add         sb_host_editor   # editor test
+    add         sb_host_game   # game test
+    add         sb_host_server   # no rendering.
+
 
 solution orb_sandbox_engine				# developing engine libraries
 
     out         build/proj
     startup     sb_gen_exe
-	
-	add 		base
 
-	add         sys ref prof mod app core job net fs pack
-	add         rhi
-	add         asset
-	add         input
-	add         ahi audio
+    add         base
+
+    add         sys ref prof mod app core job net fs pack
+    add         rhi
+    add         asset
+    add         input
+    add         ahi audio
 
 	# 			--- SANDBOX : BASE --
 
     add         sb_base
     add         sb_mod
-	add 		sb_sys
-	add 		sb_core
-	add 		sb_job
-	add 		sb_app
-	add 		sb_net
-	add 		sb_prof
-	add 		sb_fs
+    add         sb_sys
+    add         sb_core
+    add         sb_job
+    add         sb_app
+    add         sb_net
+    add         sb_prof
+    add         sb_fs
 
 	# 			--- SANDBOX : RUNTIME SERVICES --
 
-	add 		sb_asset_test
-	add 		sb_input
-	add 		sb_audio
+    add         sb_asset_test
+    add         sb_input
+    add         sb_audio
 
 	# TOOD: engine test
 
@@ -1021,14 +1013,14 @@ solution orb_build
 
     out         build/proj
     add         build_tool
-	add 		reflect_tool
-	add 		font_tool
-	add 		asset_tool
-	add 		shader_tool
-	add 		image_tool
-	add 		dev_font		#used by font_tool
-	add 		dev_image		#used by image_tool
-	add 		pack			#used by asset_tool
+    add         reflect_tool
+    add         font_tool
+    add         asset_tool
+    add         shader_tool
+    add         image_tool
+    add         dev_font   # used by font_tool
+    add         dev_image   # used by image_tool
+    add         pack   # used by asset_tool
 
 # ==============================================================================
 # FULL SOLUTION
@@ -1039,7 +1031,7 @@ solution orb_all
     out         build/proj
 # 	nav 		source
 
-	add 		base
+    add         base
     add         sys ref prof mod app core job net fs pack
 
     add         run
@@ -1050,47 +1042,47 @@ solution orb_all
     add         ahi
 
     add         render audio physics
-	
+
     add         example sb_ref_dll sb_gen_dll
     add         game nav game_example
     add         dev_build dev_hot dev_font dev_image
-	
-    add         host_common
-	
-	add         sb_mod
-	add 		sb_sys
-	add 		sb_core
-	add 		sb_job
-	add 		sb_app
-	add 		sb_prof
-	add 		sb_fs
 
-	add 		sb_asset_test
-	add 		sb_input
-	add 		sb_audio
+    add         host_common
+
+    add         sb_mod
+    add         sb_sys
+    add         sb_core
+    add         sb_job
+    add         sb_app
+    add         sb_prof
+    add         sb_fs
+
+    add         sb_asset_test
+    add         sb_input
+    add         sb_audio
 
 
 	# 			reflection testing
-	add 		sb_reflect sb_ref_exe sb_gen_exe
-	
-	add 		host_game
-	add 		host_editor
+    add         sb_reflect sb_ref_exe sb_gen_exe
 
-	add 		sb_host_tool
-	add 		sb_host_server
-	add 		sb_host_editor
-	add 		sb_host_game
-	add 		sb_host_runtime
-	add 		sb_host_runtime_proj
-	add 		sb_proj_runtime
+    add         host_game
+    add         host_editor
 
-	add 		sample_game sample_game_play sample_game_ship
-	add 		template_game
+    add         sb_host_tool
+    add         sb_host_server
+    add         sb_host_editor
+    add         sb_host_game
+    add         sb_host_runtime
+    add         sb_host_runtime_proj
+    add         sb_proj_runtime
 
-	add 		font_tool
-	add 		asset_tool
-	add 		shader_tool
-	add 		image_tool
+    add         sample_game sample_game_play sample_game_ship
+    add         template_game
+
+    add         font_tool
+    add         asset_tool
+    add         shader_tool
+    add         image_tool
 
 # ==============================================================================
 # FULL SOLUTION : MONOLITHIC

@@ -7,7 +7,7 @@
 :: Debug) plus dxc.exe from %%VULKAN_SDK%%.  asset_tool derives each dxc profile from the
 :: .vs/.ps stage tag in the filename and forwards to shader_tool.
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 if not exist bin\asset_tool.exe (
     echo cook_shaders: bin\asset_tool.exe not found -- build it first ^(build_tool -config Debug^)

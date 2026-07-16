@@ -104,7 +104,7 @@ typedef enum run_loop_mode_e
     Module entries
 
     k_modules[] declares only the layers ABOVE the engine floor.  run_host_main always loads
-    the floor itself -- sys, ref, prof, fs, job, net, app, core, run -- regardless of what a
+    the floor itself -- every engine root library (source/engine) -- regardless of what a
     host declares; these root engine libraries are cheap and create no OS resources on load
     (job spawns no threads until job_workers configures the pool, net opens no sockets, app
     opens no window).  A host lists only the services with real init cost: rhi, draw, gui,

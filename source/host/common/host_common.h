@@ -27,6 +27,20 @@
 #define HOST_MODULE_MAX 64
 #define HOST_PATH_MAX   260
 
+/* Token stringize / paste -- for ship exes that bake a project in via a HOST_PROJECT
+   define (HOST_XPASTE( HOST_PROJECT, _get_mod_desc ), HOST_XSTR( HOST_PROJECT )). */
+#define HOST_XSTR( x )      HOST_STR( x )
+#define HOST_STR( x )       #x
+#define HOST_XPASTE( a, b ) HOST_PASTE( a, b )
+#define HOST_PASTE( a, b )  a##b
+
+/* Launch cheat sheet (both hosts share the same -project / -module resolution):
+
+       host_game.exe   -project <dir>                 plays <dir>/bin/<name>.dll (name = dir basename)
+       host_game.exe   -module  sample_game           plays sample_game.dll from the engine bin
+       host_game.exe   -project <dir> -module <name>  -module overrides the basename
+       host_editor.exe -project <dir>                 loads it; Play/Stop drives it              */
+
 /*==============================================================================================
     Launch Parameters
 ==============================================================================================*/

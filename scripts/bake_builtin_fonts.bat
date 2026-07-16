@@ -12,7 +12,7 @@ rem  the exact path the engine loads each preset from.
 rem ============================================================================
 
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 set "FONT_TOOL=bin\font_tool.exe"
 if not exist "%FONT_TOOL%" (

@@ -22,7 +22,7 @@ Custom C build orchestrator (`build_tool.exe`) -- not CMake or MSBuild. Directly
 
 ```bat
 bootstrap_build_tool.bat    :: compile build_tool.exe only
-bootstrap_gen.bat           :: compile + run -gen
+bootstrap_then_gen.bat      :: compile + run -gen
 ```
 
 **Daily workflow:**

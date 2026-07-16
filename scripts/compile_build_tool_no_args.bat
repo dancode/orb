@@ -1,5 +1,6 @@
 @echo off
 setlocal
+cd /d "%~dp0.."
 
 :: Recompile build_tool.exe without reading build_tool_debug.args at startup.
 :: Use this instead of bootstrap_build_tool.bat when you want to step through
