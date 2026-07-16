@@ -15,7 +15,7 @@
 static void
 ex_widgets_basic( void )
 {
-    if ( ex_begin( "Basic Widgets", 640, 640, GUI_WIN_NONE ) )
+    if ( ex_begin( "Basic Widgets", 640, 640, GUI_WIN_HSCROLL ) )
     {
         gui()->stack();
         gui()->text( "Every widget returns true on the frame it fires." );
@@ -27,7 +27,7 @@ ex_widgets_basic( void )
             clicks++;
         gui()->same_line( -1.0f );
         gui()->textf( "clicked %d time(s)", clicks );
-
+        
         gui()->text( "small_button packs onto a text line:" );
         gui()->same_line( -1.0f );
         static i32 small_clicks = 0;
@@ -35,7 +35,7 @@ ex_widgets_basic( void )
             small_clicks++;
         gui()->same_line( -1.0f );
         gui()->textf( "%d", small_clicks );
-
+        
         /* arrow_button spinners -- BUTTON_REPEAT makes a held button fire repeatedly. */
         gui()->separator_text( "arrow_button + GUI_ITEM_BUTTON_REPEAT" );
         static bool repeat = true;
@@ -48,18 +48,18 @@ ex_widgets_basic( void )
         gui()->pop_item_flag();
         gui()->same_line( 12.0f );
         gui()->textf( "value: %d", spin );
-
+        
         /* checkbox / radio_button -- the two toggle shapes. */
         gui()->separator_text( "checkbox / radio_button" );
         static bool checked = true;
         gui()->checkbox( "Enable feature", &checked );
-
+        
         static i32 mode = 0;
         gui()->radio_button( "Off",    &mode, 0 ); gui()->same_line( -1.0f );
         gui()->radio_button( "Low",    &mode, 1 ); gui()->same_line( -1.0f );
         gui()->radio_button( "High",   &mode, 2 );
         gui()->textf( "mode = %d", mode );
-
+        
         /* progress_bar -- fraction + overlay caption, with an interactive driver. */
         gui()->separator_text( "progress_bar" );
         static bool p_anim    = false;
@@ -81,16 +81,16 @@ ex_widgets_basic( void )
         gui()->radio_button( "\"NN%\" caption", &p_overlay, 0 ); gui()->same_line( -1.0f );
         gui()->radio_button( "Custom",          &p_overlay, 1 ); gui()->same_line( -1.0f );
         gui()->radio_button( "No text",         &p_overlay, 2 );
-
+        
         char p_buf[ 32 ];
         snprintf( p_buf, sizeof( p_buf ), "%.0f / 100 units", p_frac * 100.0f );
         gui()->progress_bar( p_frac, p_overlay == 0 ? NULL : ( p_overlay == 1 ? p_buf : "" ) );
-
+        
         /* label_text -- read-only value rows that align like the editable widgets. */
         gui()->separator_text( "label_text" );
         gui()->label_text( "Backend", "vulkan" );
         gui()->label_text( "Status",  checked ? "enabled" : "disabled" );
-
+        
         /* disabled scope -- inert + dimmed, honored by every widget. */
         gui()->separator_text( "disabled_begin / disabled_end" );
         static bool section_off = true;

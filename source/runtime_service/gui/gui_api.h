@@ -1503,6 +1503,13 @@ typedef struct gui_api_s
     void ( *set_retained_skip )( bool on );
     bool ( *retained_skip     )( void );
 
+    /* Content-rect overlay: outline every scrollable region's measured content bounds (the
+       highwater the scrollbars size against) in magenta, in the region's current scrolled screen
+       position -- with and without a vertical bar showing, so a content-size mismeasurement is
+       visible directly instead of inferred from scrollbar feel. */
+    void ( *debug_show_content_rect )( bool on );
+    bool ( *debug_content_rect_shown )( void );
+
     /*===================  user/ -- queries: io snapshot readers, item state, redraw state  ====================*/
 
     /* IO accessors -- the frame-coherent input snapshot the widgets see, for UI / tool code that

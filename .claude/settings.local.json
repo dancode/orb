@@ -325,7 +325,10 @@
       "Skill(run)",
       "PowerShell(bin\\\\build_tool.exe -config Debug -target gui)",
       "PowerShell(bin\\\\build_tool.exe -config Debug -target gui; if \\($?\\) { \"BUILD OK\" })",
-      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1 | Select-Object -Last 15)"
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1 | Select-Object -Last 15)",
+      "Bash(timeout 5 bin/sb_gui_example.exe)",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(bin/sb_gui_example.exe)"
     ]
   }
 }

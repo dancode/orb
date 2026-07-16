@@ -360,6 +360,8 @@ const gui_api_t g_gui_api_struct =
     .debug_dump_geometry                = gui_build_dump_geometry,
     .set_retained_skip                  = gui_build_set_retained_skip,
     .retained_skip                      = gui_build_retained_skip,
+    .debug_show_content_rect            = gui_debug_show_content_rect,
+    .debug_content_rect_shown           = gui_debug_content_rect_shown,
 
     /*===================  user/ -- queries: io snapshot readers, item state, redraw state  ====================*/
 

@@ -479,8 +479,20 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     f->origin_x      = f->outer.x + pad.l;
     f->origin_y      = f->outer.y + pad.t;
     f->content_x     = f->origin_x - f->scroll->scroll_x;
-    f->content_w     = f->outer.w - pad.l - pad.r - f->sb_w - 2.0f * border;
     f->pen_y     = f->origin_y - f->scroll->scroll_y;
+
+    /* Track width: the view width, widened to last frame's measured content when that content ran
+       wider.  scroll_clamp (layout_push_region) already lets scroll_x range across that extra width
+       regardless of the HSCROLL flags -- a wheel or bar can reach it -- so a track pinned to the view
+       would leave every fill-type widget (separator, slider, input) stopping short of ground the
+       region can actually scroll to, and force any text longer than the view into a permanent,
+       unreachable ellipsis no scroll offset ever uncovers.  Only a genuine last-frame overflow widens
+       it, so a region that fits exactly still measures flush to the view (no phantom bar). */
+    f32 view_content_w = f->outer.w - pad.l - pad.r - f->sb_w - 2.0f * border;
+    f32 content_w       = view_content_w;
+    f32 last_items_w    = ( f->scroll->content_w > 0.0f ) ? f->scroll->content_w - pad.l - pad.r : 0.0f;
+    if ( last_items_w > content_w ) content_w = last_items_w;
+    f->content_w = content_w;
     f->high_x = f->content_x;   /* seed the highwater at the origin corner -> an empty */
     f->high_y = f->pen_y;   /* body measures 0 on both axes (premeasure sentinel)  */
     f->band_bottom = f->outer.y + f->outer.h - pad.b - f->sb_h - border;
@@ -697,7 +709,19 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
     gui_rect_t r = cell_fit_resolve( f, f->tmpl.cellx[ c ], f->tmpl.cellw[ c ], natural_w, f->line.cross, f->line.ext );
 
     f->line.main = r.x + r.w + mod_gap_x( f );    /* pen past the cell -- the same_line handoff */
-    content_reach( f, r.x + r.w, r.y + r.h );   /* pen + highwater to the cell's far corner */
+
+    /* A cell that FILLED to the track width (r.w >= the track, e.g. a separator / slider / input
+       with no natural width of its own) reports no real content: its width is just whatever the
+       track happened to be, which is itself derived from the region's OWN view width.  Folding
+       that into the x highwater makes content_w chase view_w -- and the two are decided a frame
+       apart (view_w this frame vs. content_w read back next frame), so a vertical scrollbar
+       toggling on/off (changing the track by its gutter width) reads as a bogus one-frame swing
+       in horizontal content, flickering a horizontal bar that has nothing real to scroll to.  Only
+       a cell that actually SHRANK to its natural width is real content; grow the x highwater from
+       that, but a filled cell contributes no more x than its own left edge (already covered by the
+       region's seed / earlier columns) -- content_reach still runs for the y advance either way. */
+    f32 x_reach = ( r.w < f->tmpl.cellw[ c ] ) ? r.x + r.w : f->tmpl.cellx[ c ];
+    content_reach( f, x_reach, r.y + r.h );
 
     if ( ++f->line.col >= f->tmpl.ncols )
         line_commit( f );                        /* row full -> fold it; col back to 0 */

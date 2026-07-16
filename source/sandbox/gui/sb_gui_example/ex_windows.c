@@ -50,6 +50,11 @@ ex_windows_playground( void )
         ex_flag_checkbox( "HSCROLL",        &flags, GUI_WIN_HSCROLL );
         ex_flag_checkbox( "ALWAYS_VSCROLL", &flags, GUI_WIN_ALWAYS_VSCROLL );
         ex_flag_checkbox( "ALWAYS_HSCROLL", &flags, GUI_WIN_ALWAYS_HSCROLL );
+        {
+            bool show_rect = gui()->debug_content_rect_shown();
+            if ( gui()->checkbox( "debug: outline measured content rect", &show_rect ) )
+                gui()->debug_show_content_rect( show_rect );
+        }
 
         gui()->separator_text( "Input" );
         ex_flag_checkbox( "NO_INPUT (click-through)", &flags, GUI_WIN_NO_INPUT );

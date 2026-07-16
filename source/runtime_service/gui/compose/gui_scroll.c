@@ -43,6 +43,18 @@ region_get( gui_id_t id )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Content-rect debug overlay -- draws the measured content bounding box (the raw highwater
+    span, before the pad is added back for the scroll canvas) over every scrollable region, so a
+    content-size bug is visible instead of inferred from scrollbar feel.  Green when it fits the
+    view on that axis, red when it does not (matching whichever bar would show).  Toggled via
+    gui()->debug_show_content_rect -- off by default, no per-frame cost when disabled. */
+
+static bool s_debug_content_rect;
+
+void gui_debug_show_content_rect( bool on ) { s_debug_content_rect = on; }
+bool gui_debug_content_rect_shown( void )   { return s_debug_content_rect; }
+
+/*----------------------------------------------------------------------------------------------
     scroll_clamp -- pin a scroll offset into [0, content - view].  The one place the scroll range
     is defined; shared by the gutter reservation (push), the wheel (pop), and any future caller.
 ----------------------------------------------------------------------------------------------*/
@@ -227,6 +239,17 @@ layout_pop_region( void )
     f32 content_w = ( items_w > 0.0f ) ? items_w + f->pad.l + f->pad.r : 0.0f;
     f->scroll->content_h = content_h;
     f->scroll->content_w = content_w;
+
+    /* Content-rect debug overlay: outline the raw highwater span (content_x..high_x,
+       (origin_y - scroll_y)..high_y) in the SAME scrolled screen space the content itself just
+       drew in, so the box lands exactly on the emitted geometry's true bounds -- if it doesn't
+       hug the longest visible line, the highwater measurement (not the eye) is wrong. */
+    if ( s_debug_content_rect )
+    {
+        f32 top = f->origin_y - f->scroll->scroll_y;
+        draw_push_rect_outline( f->content_x, top, f->high_x - f->content_x, f->high_y - top,
+                                2.0f, 0, GUI_COLOR( 0xFF, 0x00, 0xFF, 0xFF ) );
+    }
 
     /* Pop the region's own clip if it pushed one (a child); the window body pushed none and
        leaves the whole-window clip in place for the bars + chrome.  Restore the enclosing

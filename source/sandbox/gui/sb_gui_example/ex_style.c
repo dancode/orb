@@ -96,6 +96,8 @@ ex_style_stacks( void )
         gui()->text( "The overrides below bracket the WHOLE 'Style Stacks Sample'" );
         gui()->text( "window -- chrome, background, and every widget in it -- so" );
         gui()->text( "it is obvious at a glance what a slot does and does not touch." );
+        if ( gui()->button( "Re-open sample window" ) )
+            gui()->window_set_open( "Style Stacks Sample", true );
 
         /* --- color override: pick a slot + a color, pushed around the sample window --------- */
         gui()->separator_text( "push_style_color (scopes the sample window)" );
