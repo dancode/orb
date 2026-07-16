@@ -322,7 +322,9 @@
       "PowerShell(\\(Get-Item source\\\\runtime_service\\\\rhi\\\\rhi.c\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target rhi)",
       "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui)",
       "Bash(./bin/build_tool.exe *)",
-      "Skill(run)"
+      "Skill(run)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target gui)",
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target gui; if \\($?\\) { \"BUILD OK\" })"
     ]
   }
 }

@@ -24,6 +24,11 @@
 ==============================================================================================*/
 // clang-format off
 
+/* The printf format slider_float / slider_float_step render their value with.  Named so the
+   keyboard-step floor below and the snprintf that draws the value stay pinned to the same
+   precision -- raise the decimals here and the arrow step widens to match automatically. */
+#define SLIDER_FLOAT_FMT "%.3f"
+
 /* Smallest step fmt's own decimal precision can actually show, e.g. "%.1f" -> 0.1, "%.3f" -> 0.001.
    0.0f (no floor) when fmt has no explicit ".N" precision -- printf's default (6 places) is fine
    enough that nothing needs flooring.  Used to keep drag_float_box's keyboard step natural: raise
@@ -136,11 +141,16 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
     }
 
     /* Keyboard value edit (activation captured this slider -- st.nav_adjust): each Left/Right
-       repeat steps one increment, the quantize step when set, else 1% of the range. */
+       repeat steps one increment, the quantize step when set, else 1% of the range -- but never
+       a nudge smaller than SLIDER_FLOAT_FMT can show, or a small-range slider (hi - lo < 0.1)
+       would step by an amount the printed value only reflects every other press.  The slider
+       twin of drag_float_box's fmt_decimal_step floor. */
     if ( st.nav_adjust != 0 )
     {
-        f32 stp = ( step > 0.0f ) ? step : ( hi - lo ) * 0.01f;
-        f32 nv  = *v + (f32)st.nav_adjust * stp;
+        f32 stp      = ( step > 0.0f ) ? step : ( hi - lo ) * 0.01f;
+        f32 min_step = fmt_decimal_step( SLIDER_FLOAT_FMT );
+        if ( min_step > stp ) stp = min_step;
+        f32 nv = *v + (f32)st.nav_adjust * stp;
         if ( nv < lo ) nv = lo;
         if ( nv > hi ) nv = hi;
         if ( nv != *v )
@@ -152,7 +162,7 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
 
     f32  t_cur = ( hi > lo ) ? ( ( *v - lo ) / ( hi - lo ) ) : 0.0f;
     char buf[ 32 ];
-    snprintf( buf, sizeof( buf ), "%.3f", *v );
+    snprintf( buf, sizeof( buf ), SLIDER_FLOAT_FMT, *v );
     slider_render( track_r, st, t_cur, buf );
     return changed;
 }
