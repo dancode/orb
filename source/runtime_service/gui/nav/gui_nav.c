@@ -1070,6 +1070,17 @@ nav_new_frame( void )
                 break;
             }
 
+    /* Alt as a pointer modifier is not a menu request.  Alt+drag fine-tunes a slider / drag box
+       (drag_speed_scale, gui_widget_slider.c) and Alt+click is a modified click; in either case the
+       hold ends over a widget, and toggling the menu bar on its release would fight the gesture.  A
+       held mouse button or an in-flight widget grab (active_id) during the Alt hold marks it "used"
+       -- the same flag Alt+letter sets -- so only a CLEAN Alt tap (no pointer interaction, no
+       mnemonic) still toggles the menu.  Mirrors how the drag modifier and the menu key coexist in
+       Dear ImGui. */
+    if ( alt && ( s_interaction.active_id != GUI_ID_NONE
+                  || s_io.mouse_down[ 0 ] || s_io.mouse_down[ 1 ] || s_io.mouse_down[ 2 ] ) )
+        s_nav_alt_used = true;
+
     if ( ( s_io.keys_released[ APP_KEY_LALT ] || s_io.keys_released[ APP_KEY_RALT ] )
          && !s_nav_alt_used )
     {
