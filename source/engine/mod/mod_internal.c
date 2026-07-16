@@ -11,7 +11,7 @@
 ==============================================================================================*/
 
 #define MODULE_NAME_MAX 32  /* max module name length including null terminator */
-#define MAX_MODULES     16  /* max concurrently registered modules */
+#define MAX_MODULES     32  /* max concurrently registered modules */
 #define MAX_PENDING     16  /* max modules awaiting debounced reload */
 #define MAX_EXT_DIRS    4   /* max unique external module dirs (shared pool, see g_ext_dirs) */
 #define DEBOUNCE_MS     200 /* milliseconds to wait after last file change before reloading */

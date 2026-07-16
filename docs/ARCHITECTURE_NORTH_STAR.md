@@ -156,11 +156,10 @@ payoff and the reason ref_ was built as a leaf module.
 ## 4. Target shape, layer by layer
 
 ### T0 base -- complete the stdlib
-- **containers**: fixed-capacity and arena-backed `array`, `pool`, `map` (open
-  addressing), plus hash primitives (fnv1a/xx) and sort. No general allocator use --
-  caller passes memory, matching mem.h.
 - Everything else stays as-is. base stays stateless; it is the only code shared
   verbatim by host and every DLL.
+- Many systems use bespoke isolated no-dependency data-structures, like pool and index hashes.
+  This is ok, and part of the engine design.
 
 ### T1 engine -- one addition, no reshaping
 - **async file IO**: `sys` gains overlapped reads; `job` gains an IO-completion path.

@@ -1025,8 +1025,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         run_clock_stats_submit( &stats );
     }
 
-loop_exit:
+    // core()->cmd_execute_string( "prof_dump 120 prof_dump.json" );
 
+loop_exit:
+    
     /* ---- shutdown ---------------------------------------------------- */
 
     run_host_shutdown();
