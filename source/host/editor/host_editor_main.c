@@ -152,6 +152,8 @@ static void
 editor_update( f32 dt )
 {
     editor_handle_shortcuts();
+
+    /* background render before GUI paints over it */
     editor_submit_scene();
 
     /* The one per-frame runner call -- a no-op while GAME_STOPPED.  View rebuilt every
@@ -284,7 +286,8 @@ editor_close_request( void )
 {
     printf( "[editor] close requested -- allowing\n" );
     if ( game() )
-        game()->stop();
+         game()->stop();
+
     return true;
 }
 
