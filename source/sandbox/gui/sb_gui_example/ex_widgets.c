@@ -340,8 +340,18 @@ ex_widgets_sliders( void )
 
         f32 dlo = bounded ? lo : 0.0f;
         f32 dhi = bounded ? hi : 0.0f;      /* min == max = unbounded */
+
+        /* units/px must scale WITH the span, not just be proportional to it (the earlier attempt's
+           mistake): pixels-to-cross-the-whole-range is (span / v_speed), so a flat or span-scaled-up
+           multiplier still shrinks that pixel distance as span shrinks -- exactly the "un" repro,
+           where the default 0..10 span was already only ~10px wide.  Dividing by span instead makes
+           pixels-to-cross equal (10.0f / speed) regardless of span: the drag always takes the same
+           throw to sweep min..max, whether that range is 0..3 or 0..300.  10.0f is both the
+           reference span (the default lo/hi here) and the fallback for unbounded/inverted dlo/dhi,
+           so the demo's out-of-the-box feel at those defaults is unchanged. */
+        f32 int_span = ( dhi > dlo ) ? ( dhi - dlo ) : 10.0f;
         static i32 di = 50;
-        gui()->drag_int( "drag int", &di, speed * 20.0f, (i32)dlo, (i32)dhi, "%d units" );
+        gui()->drag_int( "drag int", &di, speed * int_span / 10.0f, (i32)dlo, (i32)dhi, "%d units" );
         static f32 df = 1.0f;
         gui()->drag_float( "drag float", &df, speed, dlo, dhi, NULL );
 
