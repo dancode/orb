@@ -112,8 +112,27 @@ num_step_button( gui_id_t id, gui_rect_t r, bool is_minus )
     return st.clicked;
 }
 
+/* Floor a step increment at what the display can actually show, so a [-]/[+] click always moves
+   the rendered value instead of nudging it by a sub-display amount (e.g. step 0.001 against "%.1f"
+   would leave the printed "0.1" unchanged for ten clicks).  Only the magnitude is raised, so the
+   button's direction is preserved.  Integer formats have no sub-unit resolution and a whole-number
+   step already clears their display, so they pass through.  The double-domain, increment-side twin
+   of nav_step_f32's value-side floor (gui_widget_slider.c) -- both read the one display-resolution
+   primitive, fmt_decimal_step. */
+static double
+num_step_visible( double inc, const char* fmt, bool is_int )
+{
+    if ( is_int ) return inc;
+    double min_step = (double)fmt_decimal_step( fmt );
+    double mag      = ( inc < 0.0 ) ? -inc : inc;
+    if ( mag < min_step )
+        inc = ( inc < 0.0 ) ? -min_step : min_step;
+    return inc;
+}
+
 /* Shared label-split + interaction for a single numeric value.
-   step == 0 suppresses the [-][+] buttons; step_fast applies when Ctrl is held. */
+   step == 0 suppresses the [-][+] buttons; step_fast applies when Ctrl is held.  Whichever step
+   applies is floored (num_step_visible) so every click produces a visible change. */
 static bool
 input_scalar( const char* label, double cur, double* out,
               double step, double step_fast, const char* fmt, bool is_int )
@@ -136,6 +155,7 @@ input_scalar( const char* label, double cur, double* out,
     {
         bool ctrl_held = io_ctrl();
         double inc = ( ctrl_held && step_fast > 0.0 ) ? step_fast : step;
+        inc = num_step_visible( inc, fmt, is_int );
 
         f32 bx = ctrl.x + ctrl.w - btn_w;
         gui_rect_t minus_r = { bx,            ctrl.y, WIDGET_H, ctrl.h };
