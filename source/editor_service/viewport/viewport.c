@@ -80,6 +80,7 @@ ed_viewport_update( bool live )
     /* Flip only on frames whose scene pass will write (a live session submitted this
        frame): in-flight frames keep sampling the untouched previous buffer, and on idle
        frames the panel's command hash stays stable so the gui retained cache can clean. */
+
     if ( live && s_vp.target_id >= 0 )
         render()->target_flip( s_vp.target_id );
 }

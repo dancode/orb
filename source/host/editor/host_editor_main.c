@@ -36,7 +36,8 @@
 #include "runtime_service/draw/draw_host.h"
 #include "runtime_service/gui/gui_api.h"
 #include "runtime_modules/render/render_api.h"
-#include "game/game_api.h"                 /* RUN_MODULE( game ) decl in monolithic builds */
+
+#include "game/game_api.h" /* RUN_MODULE( game ) decl in monolithic builds */
 
 #include "runtime/run_api.h"
 #include "runtime/run_host.h"
