@@ -583,33 +583,6 @@ nav_move_chrome( i32 cur )
     }
 }
 
-/* Body-lane horizontal step: the neighboring placed item on the cursor's own (region, line),
-   ordinal.  A line end is a wall -- a horizontal move can never read as a vertical jump. */
-static void
-nav_move_horizontal( i32 cur, gui_nav_item_t c )
-{
-    gui_nav_state_t* nav = &g_ctx->nav;
-
-    i32 step = ( nav->move_dir == GUI_DIR_LEFT ) ? -1 : 1;
-    for ( i32 i = cur + step; i >= 0 && i < (i32)nav->item_count; i += step )
-    {
-        if ( nav->items[ i ].chrome ) continue;
-        if ( nav->items[ i ].region != c.region || nav->items[ i ].line != c.line )
-            break;                       /* ran off the line -- wall */
-        nav_adopt( i, false );
-        return;
-    }
-
-    /* Wall with nothing to step to: Left/Right had no navigation meaning here anyway, so a lone
-       DRAG widget on its row (slider, drag box) auto-adjusts instead of doing nothing -- no
-       Enter/Space capture needed, and Up/Down stay untouched (unlike edit_id capture, which fences
-       them).  A widget sharing its row with a neighbor keeps requiring the explicit capture, since
-       Left/Right there still has to walk the row.  edit_dir is consumed this same frame by
-       nav_item_register (interact/gui_item.c) via nav.solo_drag_id, resolved fresh in nav_finish. */
-    if ( c.drag_kind )
-        nav->edit_dir = step;
-}
-
 /* True when items[cur] has no row neighbor (same region + line) in either direction -- the row-solo
    test that lets a lone DRAG widget auto-adjust on Left/Right (nav_move_horizontal) instead of
    requiring the explicit edit_id capture. */
@@ -630,6 +603,36 @@ nav_row_is_solo( i32 cur )
         }
     }
     return true;
+}
+
+/* Body-lane horizontal step: the neighboring placed item on the cursor's own (region, line),
+   ordinal.  A line end is a wall -- a horizontal move can never read as a vertical jump. */
+static void
+nav_move_horizontal( i32 cur, gui_nav_item_t c )
+{
+    gui_nav_state_t* nav = &g_ctx->nav;
+
+    i32 step = ( nav->move_dir == GUI_DIR_LEFT ) ? -1 : 1;
+    for ( i32 i = cur + step; i >= 0 && i < (i32)nav->item_count; i += step )
+    {
+        if ( nav->items[ i ].chrome ) continue;
+        if ( nav->items[ i ].region != c.region || nav->items[ i ].line != c.line )
+            break;                       /* ran off the line -- wall */
+        nav_adopt( i, false );
+        return;
+    }
+
+    /* Wall with nothing to step to in THIS direction: only auto-adjust if the item is a lone DRAG
+       widget on its row in BOTH directions (nav_row_is_solo) -- not merely at this edge.  The last
+       box of a multi-component row (vec2/vec3/vec4, a min/max pair) hits this same wall stepping
+       off its far end, but it still has a neighbor the other way, so Left/Right there still means
+       "walk the row" and must keep requiring the explicit capture.  A truly solo widget has no
+       neighbor either way, so Left/Right had no navigation meaning here at all and auto-adjusts
+       instead of doing nothing -- no Enter/Space capture needed, and Up/Down stay untouched (unlike
+       edit_id capture, which fences them).  edit_dir is consumed this same frame by
+       nav_item_register (interact/gui_item.c) via nav.solo_drag_id, resolved fresh in nav_finish. */
+    if ( c.drag_kind && nav_row_is_solo( cur ) )
+        nav->edit_dir = step;
 }
 
 /* Body-lane vertical step (Up/Down).  Choose the target LINE geometrically over the structural
@@ -718,7 +721,22 @@ nav_resolve_move( void )
     if ( cur < 0 )
     {
         for ( u32 i = 0; i < nav->item_count; ++i )
-            if ( !nav->items[ i ].chrome ) { nav_adopt( (i32)i, false ); return; }
+        {
+            if ( nav->items[ i ].chrome ) continue;
+            nav_adopt( (i32)i, false );
+
+            /* First engagement (no prior cursor -- keyboard just took over from the mouse): this
+               same keypress establishes the cursor here, so Left/Right on a solo DRAG widget landed
+               on this way should not need a second press to actually adjust it.  Resolve THIS
+               frame's horizontal move against the freshly adopted item through the exact same call
+               an already-existing cursor uses (nav_move_horizontal owns the wall/solo test), rather
+               than re-deriving the rule here where it can drift out of sync.  Up/Down keep the
+               plain "first press just lands" convention -- there is no keypress-consuming step to
+               reproduce on that axis. */
+            if ( nav->move_dir == GUI_DIR_LEFT || nav->move_dir == GUI_DIR_RIGHT )
+                nav_move_horizontal( (i32)i, nav->items[ i ] );
+            return;
+        }
         return;
     }
 

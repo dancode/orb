@@ -24,6 +24,9 @@
 ==============================================================================================*/
 // clang-format off
 
+/* Keyboard-nudge multiplier for drag_float_box's Left/Right step -- see the comment at its use. */
+#define DRAG_KEY_STEP_SCALE 10.0f
+
 /* Draw a slider's track, the fill bar up to t (0..1), the knob, and -- unless GUI_ITEM_NO_VALUE_TEXT
    is set -- value_text centered on top, fitted to the inner width. */
 static void
@@ -242,6 +245,12 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
         }
     }
 
+    /* A repeat-driven step lands between two key-repeat ticks with no other input in between, so
+       nothing else guarantees a follow-up frame -- force one, the same "isolated change, nothing
+       else marks the retained cache dirty" nudge checkbox/radio_button use (gui_button.c). */
+    if ( changed )
+        g_ctx->retained.wants_redraw = true;
+
     u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
     draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
     draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
@@ -310,10 +319,15 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
         }
     }
 
-    /* Keyboard value edit: one v_speed unit (one pixel of drag) per Left/Right repeat. */
+    /* Keyboard value edit: a raw per-pixel v_speed suits a multi-pixel mouse drag, but one key
+       repeat moving *v by less than fmt's decimal places can show makes every other press look
+       like nothing happened (e.g. v_speed 0.05 against "%.1f": 0.00->0.05 reads as "0.1", but
+       0.05->0.10 reads as the SAME "0.1" -- the printed text only ticks over every other step).
+       Scale the keyboard nudge up so one press reliably clears that rounding -- the float twin of
+       drag_int_box's "at least one whole unit" floor just below. */
     if ( st.nav_adjust != 0 )
     {
-        f32 nv = *v + (f32)st.nav_adjust * v_speed;
+        f32 nv = *v + (f32)st.nav_adjust * v_speed * DRAG_KEY_STEP_SCALE;
         if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
         if ( nv != *v )
         {
@@ -321,6 +335,13 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
             changed = true;
         }
     }
+
+    /* A repeat-driven step lands between two key-repeat ticks with no other input in between, so
+       nothing else guarantees a follow-up frame -- force one, the same "isolated change, nothing
+       else marks the retained cache dirty" nudge checkbox/radio_button use (gui_button.c). */
+
+    if ( changed )
+        g_ctx->retained.wants_redraw = true;
 
     u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
     draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
@@ -330,9 +351,11 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
     char buf[ 64 ];
     snprintf( buf, sizeof( buf ), fmt, *v );
     f32 tw = font_text_w_n( buf, 0xFFFFFFFFu );
+
     /* Floor-bias the center: the odd remainder pixel goes consistently to the right margin, so the
        glyph run lands on a whole pixel (no sub-pixel shimmer) and steps monotonically on resize
        rather than the two margins alternately absorbing it. */
+
     f32 tx = floorf( box_r.x + ( box_r.w - tw ) * 0.5f );
     if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
     draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu,
