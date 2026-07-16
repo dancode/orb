@@ -245,12 +245,6 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
         }
     }
 
-    /* A repeat-driven step lands between two key-repeat ticks with no other input in between, so
-       nothing else guarantees a follow-up frame -- force one, the same "isolated change, nothing
-       else marks the retained cache dirty" nudge checkbox/radio_button use (gui_button.c). */
-    if ( changed )
-        g_ctx->retained.wants_redraw = true;
-
     u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
     draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
     draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
@@ -324,7 +318,7 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
        like nothing happened (e.g. v_speed 0.05 against "%.1f": 0.00->0.05 reads as "0.1", but
        0.05->0.10 reads as the SAME "0.1" -- the printed text only ticks over every other step).
        Scale the keyboard nudge up so one press reliably clears that rounding -- the float twin of
-       drag_int_box's "at least one whole unit" floor just below. */
+       drag_int_box's "at least one whole unit" floor above. */
     if ( st.nav_adjust != 0 )
     {
         f32 nv = *v + (f32)st.nav_adjust * v_speed * DRAG_KEY_STEP_SCALE;
@@ -335,13 +329,6 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
             changed = true;
         }
     }
-
-    /* A repeat-driven step lands between two key-repeat ticks with no other input in between, so
-       nothing else guarantees a follow-up frame -- force one, the same "isolated change, nothing
-       else marks the retained cache dirty" nudge checkbox/radio_button use (gui_button.c). */
-
-    if ( changed )
-        g_ctx->retained.wants_redraw = true;
 
     u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
     draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
