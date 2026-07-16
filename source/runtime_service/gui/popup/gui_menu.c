@@ -295,7 +295,16 @@ gui_main_menu_bar_begin( void )
     style_pop_var( 1 );
 
     if ( vis )
+    {
         gui_bar();        /* the menu labels pack horizontally */
+
+        /* Center the entry row in the band.  The window body opens with REGION_PAD_DEFAULT (top pad
+           WIDGET_GAP), which seats the WIDGET_H row flush against the bottom of the WIDGET_H +
+           WIDGET_GAP band -- 8px above, 0 below, so the labels sit visibly low.  The band carries
+           exactly one gap of slack over the row height; lift the pen by half of it so the slack
+           splits evenly above and below. */
+        layout_pen_jump( lf(), lf()->pen_y - WIDGET_GAP * 0.5f );
+    }
     return vis;
 }
 
@@ -350,8 +359,10 @@ gui_menu_bar_begin( void )
     s_scope.clip = ( gui_rect_t ){ s_build.win.x, s_build.win.y, s_build.win.w, s_build.win.h };
 
     s_menubar_sink = ( gui_scroll_link_t ){ 0 };
+    /* Split the band's one-gap slack evenly above and below the WIDGET_H entry row, so the strip's
+       labels sit centered -- matching the main menu bar (which centers via a pen lift). */
     layout_push_region( id_combine( s_build.win.id, GUI_MENUBAR_SALT ), bar,
-                        ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIN_BORDER, 0.0f },
+                        ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP * 0.5f, WIDGET_GAP * 0.5f },
                         GUI_WIN_NOSCROLL, &s_menubar_sink,
                         /* own_clip */ false );
     gui_bar();            /* the menu labels pack horizontally */
