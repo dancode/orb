@@ -357,7 +357,7 @@ ex_windows_tooltips( void )
 
         gui()->separator_text( "tooltip_begin (rich body)" );
         gui()->button( "Hover for a rich tooltip" );
-        if ( gui()->tooltip_begin() )
+        if ( gui()->is_item_hovered() && gui()->tooltip_begin() )
         {
             gui()->stack();
             gui()->text( "Tooltips lay out like a window body:" );

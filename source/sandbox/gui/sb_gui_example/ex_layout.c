@@ -254,10 +254,14 @@ ex_layout_sublayout( void )
     if ( ex_begin( "Sub-layout", 420, 380, GUI_WIN_NONE ) )
     {
         gui()->stack();
-        gui()->text( "row_cols_n( 0, 2 ): col 0 is a sub-layout" );
+        gui()->text( "row_cols_n( sz_rows_h(4), 2 ): col 0 is a sub-layout" );
         gui()->separator();
 
-        gui()->row_cols_n( 0, 2 );
+        /* A sub-layout does not grow its parent row (see push_layout) -- fitting its content inside
+           the cell handed to it is the caller's job.  Column 0 stacks 4 lines (a label + 3 buttons),
+           so the row height is declared up front instead of left auto (auto would take column 0's
+           bare cell request, one line, and the sub-layout's extra content would overflow it). */
+        gui()->row_cols_n( gui()->sz_rows_h( 4 ), 2 );
 
         /* Column 0: open a sub-layout and stack three buttons inside the single cell. */
         gui()->push_layout();
