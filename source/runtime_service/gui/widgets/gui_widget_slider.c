@@ -24,8 +24,24 @@
 ==============================================================================================*/
 // clang-format off
 
-/* Keyboard-nudge multiplier for drag_float_box's Left/Right step -- see the comment at its use. */
-#define DRAG_KEY_STEP_SCALE 10.0f
+/* Smallest step fmt's own decimal precision can actually show, e.g. "%.1f" -> 0.1, "%.3f" -> 0.001.
+   0.0f (no floor) when fmt has no explicit ".N" precision -- printf's default (6 places) is fine
+   enough that nothing needs flooring.  Used to keep drag_float_box's keyboard step natural: raise
+   v_speed only up to the display's own resolution, never past it. */
+static f32
+fmt_decimal_step( const char* fmt )
+{
+    const char* dot = fmt ? strchr( fmt, '.' ) : NULL;
+    if ( !dot ) return 0.0f;
+
+    i32 digits = 0;
+    for ( const char* p = dot + 1; *p >= '0' && *p <= '9'; ++p ) ++digits;
+    if ( digits <= 0 ) return 0.0f;
+
+    f32 step = 1.0f;
+    for ( i32 i = 0; i < digits; ++i ) step *= 0.1f;
+    return step;
+}
 
 /* Draw a slider's track, the fill bar up to t (0..1), the knob, and -- unless GUI_ITEM_NO_VALUE_TEXT
    is set -- value_text centered on top, fitted to the inner width. */
@@ -317,11 +333,16 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
        repeat moving *v by less than fmt's decimal places can show makes every other press look
        like nothing happened (e.g. v_speed 0.05 against "%.1f": 0.00->0.05 reads as "0.1", but
        0.05->0.10 reads as the SAME "0.1" -- the printed text only ticks over every other step).
-       Scale the keyboard nudge up so one press reliably clears that rounding -- the float twin of
-       drag_int_box's "at least one whole unit" floor above. */
+       Floor the step at fmt's own resolution -- never lower it, and never raise it past what
+       v_speed already clears -- so the keyboard nudge stays the natural per-press increment
+       everywhere it can, and only widens exactly enough to clear the display where it can't; the
+       float twin of drag_int_box's "at least one whole unit" floor above. */
     if ( st.nav_adjust != 0 )
     {
-        f32 nv = *v + (f32)st.nav_adjust * v_speed * DRAG_KEY_STEP_SCALE;
+        f32 key_step = v_speed;
+        f32 min_step = fmt_decimal_step( fmt );
+        if ( min_step > key_step ) key_step = min_step;
+        f32 nv = *v + (f32)st.nav_adjust * key_step;
         if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
         if ( nv != *v )
         {
