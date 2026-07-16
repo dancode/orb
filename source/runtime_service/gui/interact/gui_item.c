@@ -159,8 +159,9 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_k
         it->rect     = r;
         it->region   = placed ? s_scope.nav.region : 0;
         it->line     = placed ? s_scope.nav.line   : 0;
-        it->chrome   = !placed;
-        it->label[0] = 0;   /* type-ahead opt-in: nav_item_stamp_label fills it in, if called */
+        it->chrome    = !placed;
+        it->drag_kind = ( kind == GUI_WIDGET_KIND_DRAG );
+        it->label[0]  = 0;   /* type-ahead opt-in: nav_item_stamp_label fills it in, if called */
     }
 
     /* Current item: draw the outline ring whenever a nav cursor exists (even in mouse mode, so it
@@ -187,7 +188,8 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_k
                 nav_scroll_chase( r );
         }
 
-        draw_nav_ring( r );
+        bool captured = ( g_ctx->nav.edit_id == id || g_ctx->nav.solo_drag_id == id );
+        draw_nav_ring( r, captured );
 
         if ( g_ctx->nav.highlight )
         {
@@ -218,12 +220,18 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_k
             }
         }
 
-        /* Captured for value edit: keep the fill on (even if a mouse move dropped nav_highlight)
-           and hand the widget this frame's arrow step to apply to its value. */
-        if ( g_ctx->nav.edit_id == id )
+        /* Captured for value edit -- explicitly (edit_id, via Enter/Space) or implicitly (solo_drag_id,
+           a lone DRAG widget on its row -- see gui_nav.c): keep the fill on (even if a mouse move
+           dropped nav_highlight) and hand the widget this frame's arrow step to apply to its value.
+           st->focused mirrors the FOCUSABLE meaning ("owns keyboard input right now") onto DRAG
+           widgets, so slider/drag presentation can reuse the same focused-border convention as
+           text/numeric fields (gui_input.c, gui_widget_numeric.c) instead of inventing a second
+           visual language. */
+        if ( captured )
         {
             st->nav        = true;
             st->nav_adjust = g_ctx->nav.edit_dir;
+            st->focused    = true;
         }
     }
 }

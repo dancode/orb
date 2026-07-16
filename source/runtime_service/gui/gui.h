@@ -198,6 +198,7 @@ typedef enum
     GUI_COL_INPUT_FOCUS,    /* focused text input field background         */
     GUI_COL_CURSOR,         /* text input caret                           */
     GUI_COL_NAV_HIGHLIGHT,  /* keyboard-nav focus ring around the nav item */
+    GUI_COL_NAV_CAPTURE,    /* nav ring when the item has captured keyboard value-edit input */
     GUI_COL_FOCUS_BORDER,   /* outline around the keyboard-focused window  */
 
     GUI_COL_COUNT,          /* slot count -- not a color                   */

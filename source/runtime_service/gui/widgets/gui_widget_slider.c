@@ -38,8 +38,11 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
     u32 track_col = ( st.hover || st.nav || st.active ) ? COL_INPUT_FOCUS : COL_SLIDER_TRACK;
     draw_push_rect_filled( track_r.x, track_r.y, track_r.w, track_r.h,
                            0,0,1,1, 0, track_col );
+    /* Captured for keyboard value edit (st.focused -- see nav_item_register) gets the same border
+       lift text/numeric fields use on focus, so going from nav highlight to Left/Right-adjust reads
+       as a real state change instead of an invisible one. */
     draw_push_rect_outline( track_r.x, track_r.y, track_r.w, track_r.h,
-                            WIN_BORDER, 0, COL_BORDER );
+                            WIN_BORDER, 0, st.focused ? COL_WIDGET_HOT : COL_BORDER );
 
     /* Fill bar up to t.  Round only the start (left) corners to match the track frame; keep the
        leading (right) edge facing the knob square, so a rounded leading edge never leaves a gap
@@ -241,7 +244,8 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
 
     u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
     draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0, COL_BORDER );
+    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
+                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
 
     char buf[ 64 ];
     snprintf( buf, sizeof( buf ), format, *v );
@@ -320,7 +324,8 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
 
     u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
     draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0, COL_BORDER );
+    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
+                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
 
     char buf[ 64 ];
     snprintf( buf, sizeof( buf ), fmt, *v );

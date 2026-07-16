@@ -320,7 +320,8 @@
       "Bash(./bin/build_tool.exe -config Debug -target sb_gui)",
       "Bash(timeout 3 bin/host_editor.exe)",
       "PowerShell(\\(Get-Item source\\\\runtime_service\\\\rhi\\\\rhi.c\\).LastWriteTime = Get-Date; bin\\\\build_tool.exe -config Debug -target rhi)",
-      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui)"
+      "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui)",
+      "Bash(./bin/build_tool.exe *)"
     ]
   }
 }

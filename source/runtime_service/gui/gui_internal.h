@@ -239,6 +239,7 @@ typedef struct
     u32        region;   // region sequence that placed it (a window body / child / strip region)
     u32        line;     // line sequence within the frame -- monotonic, so order == reading order
     bool       chrome;   // not layout-placed (title button, dock tab): the F6 chrome lane
+    bool       drag_kind; // GUI_WIDGET_KIND_DRAG (slider / drag box): eligible for row-solo auto-adjust
 
     /* Type-ahead label (gui_nav.c): lowercased, truncated, stamped by an opt-in widget right after
        it registers (gui_selectable) -- empty ("") means this item does not participate.  Kept on
@@ -287,6 +288,14 @@ typedef struct
        gui_item_state_t.nav_adjust and Enter/Space/Esc (or a mouse press) release. */
     gui_id_t    edit_id;       // DRAG widget captured for keyboard value edit; 0 = none
     i32         edit_dir;      // value-edit arrow step this frame: -1 / +1 / 0
+
+    /* Row-solo auto-adjust: a DRAG widget with no row neighbor on either side has nothing for
+       Left/Right to navigate to, so those keys step its value directly instead of doing nothing --
+       no Enter/Space capture required.  Up/Down are untouched (never fenced), unlike edit_id
+       capture.  Resolved once per frame in nav_finish (last frame's list, before it resets) and
+       consumed by nav_item_register during this frame's emission to mirror edit_id's captured
+       presentation (st->focused, the COL_NAV_CAPTURE ring) and to gate st->nav_adjust. */
+    gui_id_t    solo_drag_id;
 
     bool        id_seen;       // id was emitted in win this frame (else it went stale)
     gui_id_t    first_item;    // first layout-placed item this frame (first-focus / recovery)

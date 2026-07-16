@@ -323,13 +323,17 @@ widget_bg_color_anim( gui_id_t id, gui_item_state_t st )
 #define NAV_RING 2.0f
 
 /* Keyboard-nav focus ring: an outline just outside the item rect, painted before the item's
-   own background so the fill leaves the border visible (nav_item_register invokes it). */
+   own background so the fill leaves the border visible (nav_item_register invokes it).
+   captured selects the ring color: plain nav-highlight (COL_NAV) vs. a value widget that has
+   captured the keyboard for Left/Right editing (COL_NAV_CAPTURE) -- this is the one adornment
+   every widget passes through, so it is the single place that makes "input captured" read as a
+   real, theme-wide-consistent state change instead of looking identical to plain nav focus. */
 static void
-draw_nav_ring( gui_rect_t r )
+draw_nav_ring( gui_rect_t r, bool captured )
 {
     draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
                             r.w + 2.0f * NAV_RING, r.h + 2.0f * NAV_RING,
-                            WIN_BORDER, 0, COL_NAV );
+                            WIN_BORDER, 0, captured ? COL_NAV_CAPTURE : COL_NAV );
 }
 
 /* Focused-window frame: a bolder, accent-coloured outline painted over the window's own border to

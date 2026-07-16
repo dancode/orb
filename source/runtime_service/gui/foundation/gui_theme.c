@@ -67,6 +67,7 @@ static u32 s_font_size = 0;
     [ GUI_COL_INPUT_FOCUS  ] = GUI_COLOR( 0x20, 0x50, 0x70, 0xFF ), \
     [ GUI_COL_CURSOR       ] = GUI_COLOR( 0xF0, 0xF0, 0x50, 0xFF ), \
     [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF ), \
+    [ GUI_COL_NAV_CAPTURE  ] = GUI_COLOR( 0xF0, 0xA0, 0x20, 0xFF ), \
     [ GUI_COL_FOCUS_BORDER ] = GUI_COLOR( 0x40, 0xA0, 0xF0, 0xFF )
 
 /* The light palette -- a soft neutral-grey desktop look (never a white glare): the window sits on
@@ -90,6 +91,7 @@ static u32 s_font_size = 0;
     [ GUI_COL_INPUT_FOCUS  ] = GUI_COLOR( 0xCF, 0xDE, 0xF1, 0xFF ), \
     [ GUI_COL_CURSOR       ] = GUI_COLOR( 0x22, 0x28, 0x40, 0xFF ), \
     [ GUI_COL_NAV_HIGHLIGHT] = GUI_COLOR( 0x44, 0x6C, 0xA6, 0xFF ), \
+    [ GUI_COL_NAV_CAPTURE  ] = GUI_COLOR( 0xC8, 0x8A, 0x20, 0xFF ), \
     [ GUI_COL_FOCUS_BORDER ] = GUI_COLOR( 0x44, 0x6C, 0xA6, 0xFF )
 
 /* The density ramp is identical across every built-in theme (STD mirrors the base metrics). */

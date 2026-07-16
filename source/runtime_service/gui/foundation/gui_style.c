@@ -310,6 +310,7 @@ style_new_frame( void )
 #define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS   )
 #define COL_CURSOR       style_col( GUI_COL_CURSOR        )
 #define COL_NAV          style_col( GUI_COL_NAV_HIGHLIGHT )
+#define COL_NAV_CAPTURE  style_col( GUI_COL_NAV_CAPTURE   )
 #define COL_FOCUS_BORDER style_col( GUI_COL_FOCUS_BORDER  )
 
 // clang-format on

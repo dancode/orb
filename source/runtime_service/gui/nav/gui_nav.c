@@ -599,6 +599,37 @@ nav_move_horizontal( i32 cur, gui_nav_item_t c )
         nav_adopt( i, false );
         return;
     }
+
+    /* Wall with nothing to step to: Left/Right had no navigation meaning here anyway, so a lone
+       DRAG widget on its row (slider, drag box) auto-adjusts instead of doing nothing -- no
+       Enter/Space capture needed, and Up/Down stay untouched (unlike edit_id capture, which fences
+       them).  A widget sharing its row with a neighbor keeps requiring the explicit capture, since
+       Left/Right there still has to walk the row.  edit_dir is consumed this same frame by
+       nav_item_register (interact/gui_item.c) via nav.solo_drag_id, resolved fresh in nav_finish. */
+    if ( c.drag_kind )
+        nav->edit_dir = step;
+}
+
+/* True when items[cur] has no row neighbor (same region + line) in either direction -- the row-solo
+   test that lets a lone DRAG widget auto-adjust on Left/Right (nav_move_horizontal) instead of
+   requiring the explicit edit_id capture. */
+static bool
+nav_row_is_solo( i32 cur )
+{
+    gui_nav_state_t* nav = &g_ctx->nav;
+    gui_nav_item_t   c   = nav->items[ cur ];
+
+    for ( i32 dir = -1; dir <= 1; dir += 2 )
+    {
+        for ( i32 i = cur + dir; i >= 0 && i < (i32)nav->item_count; i += dir )
+        {
+            if ( nav->items[ i ].chrome ) continue;
+            if ( nav->items[ i ].region != c.region || nav->items[ i ].line != c.line )
+                break;
+            return false;   /* a row neighbor exists in this direction */
+        }
+    }
+    return true;
 }
 
 /* Body-lane vertical step (Up/Down).  Choose the target LINE geometrically over the structural
@@ -834,6 +865,18 @@ nav_finish( void )
 
     if ( g_ctx->nav.type_dirty )
         nav_resolve_typeahead();
+
+    /* Row-solo resolve: whatever nav.id settled on above (an adoption may have just moved it),
+       decide once here -- against the list about to be discarded -- whether it is a lone DRAG
+       widget on its row, so this frame's emission (nav_item_register) can show the same captured
+       presentation edit_id gets, without actually fencing Up/Down the way edit_id does. */
+    {
+        i32 cur = nav_list_find( g_ctx->nav.id );
+        g_ctx->nav.solo_drag_id = GUI_ID_NONE;
+        if ( cur >= 0 && !g_ctx->nav.items[ cur ].chrome && g_ctx->nav.items[ cur ].drag_kind
+             && nav_row_is_solo( cur ) )
+            g_ctx->nav.solo_drag_id = g_ctx->nav.id;
+    }
 
     g_ctx->nav.item_count = 0;   /* fresh list; this frame's items append during emission */
     nav_choose_window();
