@@ -60,22 +60,39 @@ static bool s_show_stats;           /* frame-clock readout window               
 static host_project_t s_proj;    /* resolved -project/-module; the runner owns the session */
 
 /*==============================================================================================
-    Editor Host Functions
+    Editor : Ready To Init Callback
 ==============================================================================================*/
 
 static void
 editor_ready( void )
 {
+    /* All build in engine features have init -- the editor is last in the list */
+
     /* gui and run are static services here -- their gateways bind directly, no fetch needed. */
     printf( "[editor] ready\n" );
     printf( "Dev keys (terminal focus): Q=quit  R=reload all  D=toggle sleep debug\n" );
 
     /* game() is the framework runner -- it resolves the project's stable api slot and owns
        the play session; this editor only issues session calls (Play/Stop/Pause/Step). */
+
     MOD_HOST_FETCH_API( game );
-    if ( s_proj.present && game() && game()->project_bind( s_proj.name ) )
-        printf( "[editor] project '%s' loaded -- use Play to start it\n", s_proj.name );
+
+    if ( s_proj.present ) {   
+
+        /* the project/module game name is copied into game_state_t 
+           and its run_project_api_t callbacks */
+
+        /* Note: A project module API is a run_project_api_t */
+
+        if ( game() && game()->project_bind( s_proj.name ) ) {
+             printf( "[editor] project '%s' loaded -- use Play to start it\n", s_proj.name );
+        }
+    }
 }
+
+/*==============================================================================================
+    Host Callbacks
+==============================================================================================*/
 
 /* Developer hotkeys.  DELIBERATELY read the CONSOLE (sys_key_pressed, terminal focus only) rather
    than the editor window, so these destructive dev actions can't be fumbled while working in the
@@ -125,7 +142,7 @@ editor_submit_scene( void )
 }
 
 /*==============================================================================================
-    Host Callbacks
+    Host Callbacks : General Tick (State Update + Render)
 ==============================================================================================*/
 
 /* Per-frame host update -- every frame, widget-free (widgets go in on_gui, which the retained
@@ -141,6 +158,7 @@ editor_update( f32 dt )
        frame: surface size tracks resizes and a hot-reloaded project can never hold a
        stale handle.  This is also the future play-in-editor seam: swap render_ctx for a
        viewport context, no contract change. */
+
     if ( game() )
     {
         run_view_t view = {
@@ -148,7 +166,6 @@ editor_update( f32 dt )
             .render_ctx = run_host_ctx(),
         };
         app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
-
         game()->tick( dt, &view );
     }
 
@@ -157,8 +174,13 @@ editor_update( f32 dt )
        waiting on OS input; Stop returns the loop to blocking.  Re-derived from session
        state every frame so it survives every transition -- the Play/Stop buttons, the
        Q/close-request stops, and a project ending its own session. */
+
     run_host_realtime_set( game() && game()->state() != GAME_STOPPED );
 }
+
+/*==============================================================================================
+    Host Callbacks : GUI Emit
+==============================================================================================*/
 
 /* UI emission -- dirty frames only.  The chrome shell is already emitted by run_host (first in
    this context's build); everything here lays out below its caption band. */
@@ -249,6 +271,11 @@ editor_gui( f32 dt )
         gui()->window_end();
     }
 }
+
+
+/*==============================================================================================
+    Host : Close Request (X pressed)
+==============================================================================================*/
 
 /* Main-window X pressed -- the veto point for "unsaved changes" flows.  Stop the session
    if one is active, then allow the close. */

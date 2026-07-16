@@ -639,12 +639,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     if ( desc->loop_mode == RUN_LOOP_NONE )
          return 0;
 
-    /* ---- loop -------------------------------------------------------- */
+    /* ---- frame loop -------------------------------------------------- */
 
+    /* TODO: this feels awkward being here, its not an elegant clean solution... */
     /* Main-surface clear color for the gui-composite render path; alpha 0 in the desc reads
        as "unset" (a cleared swapchain is always opaque) -- default dark, same rule as boot. */
-    f32 gui_clear[ 4 ] = { RHI_CLEAR_DEFAULT_R, RHI_CLEAR_DEFAULT_G,
-                           RHI_CLEAR_DEFAULT_B, RHI_CLEAR_DEFAULT_A };
+
+    f32 gui_clear[ 4 ] = { 
+        RHI_CLEAR_DEFAULT_R, RHI_CLEAR_DEFAULT_G, RHI_CLEAR_DEFAULT_B, RHI_CLEAR_DEFAULT_A };
     if ( desc->gui && desc->gui->clear[ 3 ] > 0.0f )
     {
         gui_clear[ 0 ] = desc->gui->clear[ 0 ];
@@ -656,6 +658,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     /* Internal tick is integer microseconds; the absolute deadline accumulator keeps
        the average frame rate exact -- Sleep()'s truncation and overshoot self-correct
        against it instead of drifting the period toward work + frame_ms. */
+
     const i64 frame_us    = ( i64 )frame_ms * 1000;
     i64       deadline_us = sys_tick_microseconds() + frame_us;
 

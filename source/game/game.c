@@ -75,6 +75,7 @@ game_project_bind( const char* name )
         return false;
     }
 
+    /* game project api struct is the runtime api */
     const run_project_api_t* proj = ( const run_project_api_t* )g_get_api( name );
     if ( !proj )
     {
@@ -85,8 +86,7 @@ game_project_bind( const char* name )
     /* bounded copy by hand -- base's str.c is not linked into monolithic host exes,
        and one copy does not justify adding that dependency */
     size_t n = 0;
-    while ( name[ n ] && n < sizeof( s->project ) - 1 )
-    {
+    while ( name[ n ] && n < sizeof( s->project ) - 1 ) {
         s->project[ n ] = name[ n ];
         n++;
     }
