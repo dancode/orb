@@ -25,38 +25,13 @@
 
 #define NUM_BUF_CAP 64
 
-typedef struct
-{
-    gui_id_t id;
-    char       text[ NUM_BUF_CAP ];
-} num_scratch_t;
-
-static num_scratch_t s_num_scratch;
-
-/* Format a double into buf.  is_int casts to (int) first so "%d" does not UB. */
-static void
-num_format( char* buf, u32 cap, const char* fmt, double val, bool is_int )
-{
-    if ( is_int ) snprintf( buf, cap, fmt, (int)val );
-    else          snprintf( buf, cap, fmt, val );
-}
-
-/* Inner body: framed text box for one numeric component.
-   Seeds the scratch on focus gain; edits it while focused; parses on Enter or focus loss.
-   Returns true and writes *out only when a value commit happens. */
+/* Inner body: framed text box for one numeric component.  The seed / edit / parse cycle is the
+   shared num_edit_field (gui_text_edit.c); this wrapper owns only the input-style frame draw and,
+   when not focused, the static value display.  Returns true and writes *out only on a commit. */
 static bool
 input_num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
                  const char* fmt, bool is_int, double cur, double* out )
 {
-    bool committed = false;
-
-    /* Focus gain: seed the scratch with the current formatted value. */
-    if ( st.focused && s_num_scratch.id != id )
-    {
-        num_format( s_num_scratch.text, NUM_BUF_CAP, fmt, cur, is_int );
-        s_num_scratch.id = id;
-    }
-
     /* Box background and border. */
     draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
                            0, 0, 1, 1, 0,
@@ -65,33 +40,19 @@ input_num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
                             WIN_BORDER, 0,
                             st.focused ? COL_WIDGET_HOT : COL_BORDER );
 
-    if ( st.focused )
+    /* input_* seed the editor with the same format they display, so the field opens on the value
+       exactly as it was shown. */
+    bool committed = num_edit_field( id, box_r, st, fmt, is_int, cur, out );
+
+    /* Not focused: input_field_edit drew nothing this frame, so paint the static value.  No
+       per-widget clip: a static value never scrolls and fits the box in the common case, and the
+       window's clip rect already bounds any overflow -- so the field never forces a batch split,
+       and a rare over-long value is clipped by the window edge rather than ellipsized. */
+    if ( !st.focused )
     {
-        /* Text editing from the scratch; Enter commits, Escape reverts via undo ring. */
-        input_field_result_t res =
-            input_field_edit( id, box_r, st, s_num_scratch.text, NUM_BUF_CAP, NULL, NULL );
-        if ( res.enter )
-        {
-            double parsed = strtod( s_num_scratch.text, NULL );
-            if ( parsed != cur ) { *out = parsed; committed = true; }
-            s_num_scratch.id = GUI_ID_NONE;
-        }
-    }
-    else
-    {
-        /* Focus loss: if the scratch was ours, parse and commit. */
-        if ( s_num_scratch.id == id )
-        {
-            double parsed = strtod( s_num_scratch.text, NULL );
-            if ( parsed != cur ) { *out = parsed; committed = true; }
-            s_num_scratch.id = GUI_ID_NONE;
-        }
-        /* Display the current (or freshly committed) value.  No per-widget clip: a static value
-           never scrolls and fits the box in the common case, and the window's clip rect already
-           bounds any overflow -- so the field never forces a batch split, and a rare over-long
-           value is clipped by the window edge rather than ellipsized. */
         char disp[ NUM_BUF_CAP ];
-        num_format( disp, NUM_BUF_CAP, fmt, committed ? *out : cur, is_int );
+        if ( is_int ) snprintf( disp, NUM_BUF_CAP, fmt, (int)( committed ? *out : cur ) );
+        else          snprintf( disp, NUM_BUF_CAP, fmt, committed ? *out : cur );
         draw_push_text( box_r.x + WIDGET_PAD, text_center_y( box_r.y, box_r.h ),
                         COL_TEXT, disp );
     }

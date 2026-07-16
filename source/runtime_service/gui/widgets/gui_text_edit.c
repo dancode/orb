@@ -868,5 +868,76 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
     return res;
 }
 
+/*----------------------------------------------------------------------------------------------
+    num_edit_field -- shared numeric text-entry over a caller-drawn box.
+
+    The seed / edit / parse cycle every numeric text field runs, factored here (above both its
+    users in the unity include order) so there is one implementation: the numeric inputs
+    (input_int / input_float / input_double, gui_widget_numeric.c) and a drag / slider box switched
+    into text entry by a Ctrl+Click (gui_widget_slider.c) share it.
+
+      - Focus gain (st.focused, scratch not yet ours): seed the scratch from cur via seed_fmt.
+      - Focused: run input_field_edit on the scratch; on Enter, parse it back with strtod (decimal
+        or scientific, e.g. "1e+8") and commit if it differs from cur.
+      - Focus loss with the scratch still ours: parse and commit the same way.
+
+    One scratch slot keyed by id -- only one field is focused at a time, the same single-owner
+    reason the undo ring is one global.  seed_fmt is the format used ONLY to seed the editable text
+    (input_* pass their display format; a drag box passes a decoration-free "%d" / "%g" so a
+    captioned display like "HP: %d" does not seed an unparseable buffer).  is_int casts through int
+    so "%d" seeding does not UB.  Returns true and writes *out only on a committed change; the
+    caller owns the box frame draw and the not-focused static value display.
+----------------------------------------------------------------------------------------------*/
+
+#define GUI_NUM_EDIT_CAP 64
+
+static char     s_num_edit_buf[ GUI_NUM_EDIT_CAP ];
+static gui_id_t s_num_edit_id = GUI_ID_NONE;
+
+/* True while `id` owns the numeric scratch: focused and typing, or the one blur frame still
+   pending its parse.  A caller (a drag box) uses it to stay in text-entry presentation until the
+   commit lands, one frame after focus is lost. */
+static bool
+num_edit_active( gui_id_t id )
+{
+    return s_num_edit_id == id;
+}
+
+static bool
+num_edit_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
+                const char* seed_fmt, bool is_int, double cur, double* out )
+{
+    bool committed = false;
+
+    /* Focus gain: seed the scratch with the current value in the (decoration-free) seed format. */
+    if ( st.focused && s_num_edit_id != id )
+    {
+        if ( is_int ) snprintf( s_num_edit_buf, GUI_NUM_EDIT_CAP, seed_fmt, (int)cur );
+        else          snprintf( s_num_edit_buf, GUI_NUM_EDIT_CAP, seed_fmt, cur );
+        s_num_edit_id = id;
+    }
+
+    if ( st.focused )
+    {
+        input_field_result_t res =
+            input_field_edit( id, box_r, st, s_num_edit_buf, GUI_NUM_EDIT_CAP, NULL, NULL );
+        if ( res.enter )
+        {
+            double parsed = strtod( s_num_edit_buf, NULL );
+            if ( parsed != cur ) { *out = parsed; committed = true; }
+            s_num_edit_id = GUI_ID_NONE;
+        }
+    }
+    else if ( s_num_edit_id == id )
+    {
+        /* Focus loss: the scratch was ours -- parse and commit. */
+        double parsed = strtod( s_num_edit_buf, NULL );
+        if ( parsed != cur ) { *out = parsed; committed = true; }
+        s_num_edit_id = GUI_ID_NONE;
+    }
+
+    return committed;
+}
+
 // clang-format on
 /*============================================================================================*/

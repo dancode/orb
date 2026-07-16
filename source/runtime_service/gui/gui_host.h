@@ -295,6 +295,10 @@ bool gui_radio_button( const char* label, i32* v, i32 value );
 bool gui_slider_float( const char* label, f32* v, f32 lo, f32 hi );
 bool gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step );
 bool gui_slider_int( const char* label, i32* v, i32 lo, i32 hi );
+/* Drag widgets: v_speed is value units per pixel dragged.  Pass v_speed <= 0 for the range-relative
+   default -- the whole [v_min,v_max] span is swept over a fixed drag distance, so every bounded drag
+   feels the same regardless of range (recommended; pass an explicit v_speed only for a specific
+   per-pixel feel).  Alt drags finer, Shift faster, Ctrl+Click edits the value as text. */
 bool gui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format );
 bool gui_drag_float( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );
 bool gui_drag_float2( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt );

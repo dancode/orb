@@ -248,57 +248,171 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
 
     Mouse capture works exactly like slider_float: widget_behavior claims active_id on the press
     (GUI_WIDGET_KIND_DRAG), so the drag stays bound to this widget while the cursor sweeps off it and
-    no neighbour can steal it.  The press anchor is s_click_x[0] (recorded by the input snapshot)
-    paired with the value captured here at press time; re-deriving from that anchor every frame
-    keeps the drag exact and drift-free.
+    no neighbour can steal it.  The value is re-derived every frame from an anchor (value +
+    mouse x) captured at the press, which keeps the drag exact and drift-free; the anchor is re-set
+    mid-drag whenever the rate modifier changes so the value never jumps.
+
+    Modifiers (Dear ImGui parity, drag_speed_scale / drag_text_enter below):
+        Alt   + drag  -- finer (v_speed x 0.1)
+        Shift + drag  -- faster (v_speed x 10)
+        Ctrl  + click -- switch the box to a text-entry field (num_edit_field) instead of dragging
+
+    Range-relative speed: v_speed is units of value per pixel dragged, but a fixed per-pixel speed
+    feels wildly different across ranges -- a 0.5/px drag crawls over a 0..1000 field and instantly
+    clamps a 50..68 one.  So the API treats v_speed <= 0 as "auto" and derives it from the value
+    range (drag_resolve_speed), making every bounded drag take the same wrist travel end to end no
+    matter how wide its range.  A caller that needs an exact per-pixel feel still passes an explicit
+    v_speed > 0.  This is the one consistent range->feel rule for every drag widget.
 ----------------------------------------------------------------------------------------------*/
 
-/* Value at the press that started the active drag.  Single-slot: only one widget owns active_id
-   at a time, the same reason the resize / repeat scratch state is a lone static. */
+/* Drag rate modifiers (Dear ImGui parity): Alt drags finer, Shift drags faster.  Returned as a
+   multiplier on the resolved v_speed; neither held leaves it at 1.  Alt wins if both are down.
+   Named so the feel is tunable in one place, and shared by drag_int_box and drag_float_box alike. */
+#define DRAG_SPEED_FINE 0.1f
+#define DRAG_SPEED_FAST 10.0f
+
+static f32
+drag_speed_scale( void )
+{
+    if ( io_alt() )   return DRAG_SPEED_FINE;
+    if ( io_shift() ) return DRAG_SPEED_FAST;
+    return 1.0f;
+}
+
+/* Pixels of horizontal drag that sweep a bounded value across its whole range -- the single global
+   knob tying "range" to "drag feel".  Bigger = more deliberate; the Shift / Alt modifiers scale
+   around it.  (A #define rather than a style var by design: the range->speed relationship is a
+   behavior contract every drag shares, not a per-theme metric.) */
+#define DRAG_RANGE_SPAN_PX 200.0f
+
+/* Resolve the per-pixel drag speed.  A caller-supplied v_speed > 0 is honored verbatim.  v_speed
+   <= 0 is the "auto" signal: a bounded value (range > 0) gets range / DRAG_RANGE_SPAN_PX, so its
+   whole span takes the same drag distance as any other; an unbounded one falls back to a fixed
+   per-pixel default (no range to divide).  Both drag_int and drag_float route through here, so the
+   rule is identical for every drag widget. */
+static f32
+drag_resolve_speed( f32 v_speed, f32 range, f32 unbounded_default )
+{
+    if ( v_speed > 0.0f ) return v_speed;
+    if ( range   > 0.0f ) return range / DRAG_RANGE_SPAN_PX;
+    return unbounded_default;
+}
+
+/* Value at the press that started the active drag, plus the mouse x and rate scale it was anchored
+   at.  Single-slot: only one widget owns active_id at a time, the same reason the resize / repeat
+   scratch state is a lone static.  s_drag_anchor_x / s_drag_scale are shared by the int and float
+   boxes (one drag at a time) and re-set mid-drag whenever the rate modifier changes, so the value
+   continues smoothly from where it is instead of rescaling the whole press-to-now offset. */
 static i32 s_drag_anchor_v;
+static f32 s_drag_anchor_x;
+static f32 s_drag_scale = 1.0f;
+
+/* Draw the framed drag value text, centered and clipped to the box.  Shared by the int and float
+   boxes and by their one-frame text-entry blur.  Floor-bias the center: the odd remainder pixel
+   goes consistently to the right margin, so the glyph run lands on a whole pixel (no sub-pixel
+   shimmer) and steps monotonically on resize rather than the two margins alternately absorbing it. */
+static void
+drag_value_text( gui_rect_t box_r, const char* buf )
+{
+    f32 tw = font_text_w_n( buf, 0xFFFFFFFFu );
+    f32 tx = floorf( box_r.x + ( box_r.w - tw ) * 0.5f );
+    if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
+    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf,
+                           0xFFFFFFFFu, box_r.x, box_r.x + box_r.w - WIDGET_PAD );
+}
+
+/* Enter text-entry mode when the box is Ctrl+Clicked (ImGui parity): focus it for keyboard input
+   instead of starting a drag, reflecting the focus locally this frame so it seeds + edits at once
+   (a FOCUSABLE field gets focus the same frame as its focus-gaining click).  st is passed by
+   pointer so the caller sees the focus this frame. */
+static void
+drag_text_enter( gui_id_t id, gui_item_state_t* st )
+{
+    if ( st->pressed && io_ctrl() )
+    {
+        s_interaction.focused_id = id;
+        st->focused              = true;
+    }
+}
+
+/* Draw the input-style frame a drag box wears in text-entry mode -- distinct from the slider-track
+   frame so the mode switch reads at a glance, and identical to the numeric input field. */
+static void
+drag_text_frame( gui_rect_t box_r, gui_item_state_t st )
+{
+    draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0,
+                            st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
+    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
+                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
+}
 
 static bool
 drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format )
 {
     gui_item_state_t st = widget_behavior( id, box_r, GUI_WIDGET_KIND_DRAG );
+    drag_text_enter( id, &st );
 
-    if ( st.pressed )
-        s_drag_anchor_v = *v;
+    bool changed   = false;
+    bool text_mode = st.focused || num_edit_active( id );
 
-    bool changed = false;
-    if ( st.active )
+    if ( text_mode )
     {
-        f32 acc = (f32)s_drag_anchor_v + ( s_io.mouse_x - s_click_x[ 0 ] ) * v_speed;
-        i32 nv  = (i32)floorf( acc + 0.5f );
-        if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
-        if ( nv != *v )
+        /* Text entry: a plain "%d" seeds the editor even when `format` carries a caption. */
+        drag_text_frame( box_r, st );
+        double out;
+        if ( num_edit_field( id, box_r, st, "%d", true, (double)*v, &out ) )
         {
-            *v      = nv;
+            *v      = (i32)out;
             changed = true;
         }
     }
+    else
+    {
+        if ( st.pressed )
+        {
+            s_drag_anchor_v = *v;
+            s_drag_anchor_x = s_io.mouse_x;
+            s_drag_scale    = drag_speed_scale();
+        }
+        if ( st.active )
+        {
+            f32 scale = drag_speed_scale();
+            if ( scale != s_drag_scale )     /* modifier changed mid-drag: re-anchor, no jump */
+            {
+                s_drag_anchor_v = *v;
+                s_drag_anchor_x = s_io.mouse_x;
+                s_drag_scale    = scale;
+            }
+            f32 acc = (f32)s_drag_anchor_v + ( s_io.mouse_x - s_drag_anchor_x ) * v_speed * scale;
+            i32 nv  = (i32)floorf( acc + 0.5f );
+            if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
+            if ( nv != *v )
+            {
+                *v      = nv;
+                changed = true;
+            }
+        }
 
-    /* Keyboard value edit: v_speed rounded to whole units per Left/Right repeat.  nav_step_i32
-       floors it at one unit, so a v_speed below 1 still advances rather than rounding to no change. */
-    if ( st.nav_adjust != 0
-         && nav_step_i32( v, st.nav_adjust, (i32)( v_speed + 0.5f ), v_min, v_max ) )
-        changed = true;
+        /* Keyboard value edit: v_speed rounded to whole units per Left/Right repeat.  nav_step_i32
+           floors it at one unit, so a v_speed below 1 still advances rather than rounding to no
+           change. */
+        if ( st.nav_adjust != 0
+             && nav_step_i32( v, st.nav_adjust, (i32)( v_speed + 0.5f ), v_min, v_max ) )
+            changed = true;
 
-    u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
-    draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
-                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
+        u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
+        draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
+        draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
+                                st.focused ? COL_WIDGET_HOT : COL_BORDER );
+    }
 
-    char buf[ 64 ];
-    snprintf( buf, sizeof( buf ), format, *v );
-    f32 tw = font_text_w_n( buf, 0xFFFFFFFFu );
-    /* Floor-bias the center: the odd remainder pixel goes consistently to the right margin, so the
-       glyph run lands on a whole pixel (no sub-pixel shimmer) and steps monotonically on resize
-       rather than the two margins alternately absorbing it. */
-    f32 tx = floorf( box_r.x + ( box_r.w - tw ) * 0.5f );
-    if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
-    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 
-                          0xFFFFFFFFu, box_r.x, box_r.x + box_r.w - WIDGET_PAD );
+    /* Value text -- unless the focused editor already painted its own (and caret). */
+    if ( !st.focused )
+    {
+        char buf[ 64 ];
+        snprintf( buf, sizeof( buf ), format, *v );
+        drag_value_text( box_r, buf );
+    }
 
     return changed;
 }
@@ -306,7 +420,8 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
 bool
 gui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format )
 {
-    if ( v_speed <= 0.0f ) v_speed = 1.0f;
+    /* Auto (v_speed <= 0): span the [v_min,v_max] range over DRAG_RANGE_SPAN_PX; unbounded -> 1/px. */
+    v_speed = drag_resolve_speed( v_speed, (f32)( v_max - v_min ), 1.0f );
     if ( !format || !format[ 0 ] ) format = "%d";
 
     gui_id_t   id    = widget_id( label );
@@ -325,60 +440,85 @@ gui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, cons
 ----------------------------------------------------------------------------------------------*/
 
 /* Float anchor captured at the press that started the active drag -- the float counterpart of
-   s_drag_anchor_v, a lone static since only one widget owns active_id at a time. */
+   s_drag_anchor_v (s_drag_anchor_x / s_drag_scale are shared), a lone static since only one widget
+   owns active_id at a time. */
 static f32 s_drag_anchor_f;
 
 /* One drag-float box in box_r (no label split): the shared interaction + frame draw for a single
-   component, so drag_float and the drag_floatN row both reduce to placing boxes and calling this. */
+   component, so drag_float and the drag_floatN row both reduce to placing boxes and calling this.
+   Modifiers and Ctrl+Click text entry match drag_int_box (see the section header). */
 static bool
 drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
                 f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
 {
     gui_item_state_t st = widget_behavior( id, box_r, GUI_WIDGET_KIND_DRAG );
+    drag_text_enter( id, &st );
 
-    /* Capture the value at the grab, then re-derive from the anchor each frame (drift-free). */
-    if ( st.pressed )
-        s_drag_anchor_f = *v;
+    bool changed   = false;
+    bool text_mode = st.focused || num_edit_active( id );
 
-    bool changed = false;
-    if ( st.active )
+    if ( text_mode )
     {
-        f32 nv = s_drag_anchor_f + ( s_io.mouse_x - s_click_x[ 0 ] ) * v_speed;
-        if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
-        if ( nv != *v )
+        /* Text entry: seed with a decoration-free "%g" (fmt may carry a caption like "X: %.2f"). */
+        drag_text_frame( box_r, st );
+        double out;
+        if ( num_edit_field( id, box_r, st, "%g", false, (double)*v, &out ) )
         {
-            *v      = nv;
+            *v      = (f32)out;
             changed = true;
         }
     }
+    else
+    {
+        /* Capture value + mouse x + rate at the grab, then re-derive from the anchor each frame
+           (drift-free), re-anchoring when the rate modifier changes so the value never jumps. */
+        if ( st.pressed )
+        {
+            s_drag_anchor_f = *v;
+            s_drag_anchor_x = s_io.mouse_x;
+            s_drag_scale    = drag_speed_scale();
+        }
+        if ( st.active )
+        {
+            f32 scale = drag_speed_scale();
+            if ( scale != s_drag_scale )
+            {
+                s_drag_anchor_f = *v;
+                s_drag_anchor_x = s_io.mouse_x;
+                s_drag_scale    = scale;
+            }
+            f32 nv = s_drag_anchor_f + ( s_io.mouse_x - s_drag_anchor_x ) * v_speed * scale;
+            if ( v_min < v_max ) nv = nv < v_min ? v_min : ( nv > v_max ? v_max : nv );
+            if ( nv != *v )
+            {
+                *v      = nv;
+                changed = true;
+            }
+        }
 
-    /* Keyboard value edit: a raw per-pixel v_speed suits a multi-pixel mouse drag, but one key
-       repeat moving *v by less than fmt's decimal places can show makes every other press look
-       like nothing happened (e.g. v_speed 0.05 against "%.1f": 0.00->0.05 reads as "0.1", but
-       0.05->0.10 reads as the SAME "0.1" -- the printed text only ticks over every other step).
-       nav_step_f32 floors the step at fmt's own resolution -- never lower, never past what v_speed
-       already clears -- so the nudge stays the natural per-press increment everywhere it can and
-       only widens exactly enough to clear the display where it can't. */
-    if ( st.nav_adjust != 0 && nav_step_f32( v, st.nav_adjust, v_speed, fmt, v_min, v_max ) )
-        changed = true;
+        /* Keyboard value edit: a raw per-pixel v_speed suits a multi-pixel mouse drag, but one key
+           repeat moving *v by less than fmt's decimal places can show makes every other press look
+           like nothing happened (e.g. v_speed 0.05 against "%.1f": 0.00->0.05 reads as "0.1", but
+           0.05->0.10 reads as the SAME "0.1" -- the printed text only ticks over every other step).
+           nav_step_f32 floors the step at fmt's own resolution -- never lower, never past what
+           v_speed already clears -- so the nudge stays the natural per-press increment everywhere
+           it can and only widens exactly enough to clear the display where it can't. */
+        if ( st.nav_adjust != 0 && nav_step_f32( v, st.nav_adjust, v_speed, fmt, v_min, v_max ) )
+            changed = true;
 
-    u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
-    draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
-                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
+        u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
+        draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
+        draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
+                                st.focused ? COL_WIDGET_HOT : COL_BORDER );
+    }
 
-    char buf[ 64 ];
-    snprintf( buf, sizeof( buf ), fmt, *v );
-    f32 tw = font_text_w_n( buf, 0xFFFFFFFFu );
-
-    /* Floor-bias the center: the odd remainder pixel goes consistently to the right margin, so the
-       glyph run lands on a whole pixel (no sub-pixel shimmer) and steps monotonically on resize
-       rather than the two margins alternately absorbing it. */
-
-    f32 tx = floorf( box_r.x + ( box_r.w - tw ) * 0.5f );
-    if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
-    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf, 0xFFFFFFFFu,
-                           box_r.x, box_r.x + box_r.w - WIDGET_PAD );
+    /* Value text -- unless the focused editor already painted its own (and caret). */
+    if ( !st.focused )
+    {
+        char buf[ 64 ];
+        snprintf( buf, sizeof( buf ), fmt, *v );
+        drag_value_text( box_r, buf );
+    }
 
     return changed;
 }
@@ -386,7 +526,8 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
 bool
 gui_drag_float( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
 {
-    if ( v_speed <= 0.0f ) v_speed = 1.0f;
+    /* Auto (v_speed <= 0): span the [v_min,v_max] range over DRAG_RANGE_SPAN_PX; unbounded -> 1/px. */
+    v_speed = drag_resolve_speed( v_speed, v_max - v_min, 1.0f );
     if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
 
     gui_id_t   id    = widget_id( label );
@@ -400,7 +541,8 @@ gui_drag_float( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, co
 static bool
 drag_float_n( const char* label, f32* v, u32 n, f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
 {
-    if ( v_speed <= 0.0f ) v_speed = 1.0f;
+    /* Auto (v_speed <= 0): span the shared [v_min,v_max] range over DRAG_RANGE_SPAN_PX. */
+    v_speed = drag_resolve_speed( v_speed, v_max - v_min, 1.0f );
     if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
 
     gui_id_t   id   = widget_id( label );
