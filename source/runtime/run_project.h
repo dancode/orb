@@ -9,10 +9,12 @@
     (source/project/<name> in-tree, or a child project created with
     `build_tool -create <name> -type project`), but the contract is deliberately
     runtime-level: a project may skip the game framework entirely and depend on just
-    core + render (a visualizer, a tool, a demo scene).  It is a Tier-3 FORCE-DYNAMIC
-    module: always a DLL, even under BUILD_STATIC -- the runtime loads it at boot with
-    mod_dynamic_load_dir( name, dir ) from the -project / -module launch args and
-    hot-reloads it, but never calls into it.  A DRIVER does:
+    core + render (a visualizer, a tool, a demo scene).  In modular builds it is a Tier-3
+    dynamic module: the runtime loads it at boot with mod_dynamic_load_dir( name, dir )
+    from the -project / -module launch args and hot-reloads it.  Ship exes may instead
+    link the project statically and hand its descriptor to the runtime
+    (run_host_desc_t.project_get_mod_desc) -- same registration, no DLL, no hot-reload.
+    The runtime never calls into it either way.  A DRIVER does:
 
         const run_project_api_t* proj = mod_get_api( name );   // stable across hot-reload
         proj->on_start();

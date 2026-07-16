@@ -24,6 +24,7 @@
 ==============================================================================================*/
 
 #include <stdio.h>
+#include <string.h>
 #include "orb.h"
 
 #include "engine/sys/sys_host.h"
@@ -45,6 +46,19 @@
 MOD_USE_APP;
 MOD_USE_RUN;
 MOD_USE_GAME;
+
+#if defined( BUILD_STATIC ) && defined( HOST_PROJECT )
+/* Ship shape: this exe is a per-project monolithic target (orb.targets: define
+   HOST_PROJECT=<name> + mono_dep <name>).  The project is compiled in as a static lib and
+   registered through run_host_desc_t.project_get_mod_desc -- exactly one project, no DLL
+   on disk, hot-reload a no-op.  Plain host_game (no define) is untouched by this block. */
+#define HOST_XSTR( x )      HOST_STR( x )
+#define HOST_STR( x )       #x
+#define HOST_XPASTE( a, b ) HOST_PASTE( a, b )
+#define HOST_PASTE( a, b )  a##b
+mod_desc_t* HOST_XPASTE( HOST_PROJECT, _get_mod_desc )( void );
+#define HOST_PROJECT_NAME   HOST_XSTR( HOST_PROJECT )
+#endif
 
 // clang-format off
 /*==============================================================================================
@@ -154,6 +168,22 @@ main( int argc, char** argv )
     launch_params_t params;
     host_args_parse( argc, argv, &params );
 
+#if defined( BUILD_STATIC ) && defined( HOST_PROJECT )
+    /* Ship path: the project is compiled in, not on disk -- host_resolve_project's
+       missing-dll check would hard-error, so it is skipped.  Args may only confirm the
+       baked project, never select another. */
+    if ( params.project_path[ 0 ] ||
+         ( params.module_override[ 0 ] &&
+           strcmp( params.module_override, HOST_PROJECT_NAME ) != 0 ) )
+    {
+        fprintf( stderr, "[host_game] ship build carries one project ('%s'); "
+                         "-project/-module cannot select another\n", HOST_PROJECT_NAME );
+        return 1;
+    }
+    snprintf( s_proj.name, sizeof( s_proj.name ), "%s", HOST_PROJECT_NAME );
+    s_proj.dir[ 0 ] = '\0';
+    s_proj.present  = true;
+#else
     char err[ 512 ];
     if ( !host_resolve_project( &params, &s_proj, err, sizeof( err ) ) )
     {
@@ -166,6 +196,7 @@ main( int argc, char** argv )
                          "       host_game.exe -module <name>\n" );
         return 1;
     }
+#endif
 
     u32 flags = RUN_HOST_WINDOWED | RUN_HOST_CONSOLE | RUN_HOST_HOT_RELOAD;
 
@@ -178,6 +209,9 @@ main( int argc, char** argv )
         .modules          = k_modules,
         .project_name     = s_proj.name,
         .project_dir      = s_proj.dir,
+#if defined( BUILD_STATIC ) && defined( HOST_PROJECT )
+        .project_get_mod_desc = HOST_XPASTE( HOST_PROJECT, _get_mod_desc ),
+#endif
         .on_ready         = game_host_ready,
         .on_update        = game_host_update,
         .on_gui           = game_gui,

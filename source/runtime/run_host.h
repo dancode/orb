@@ -158,15 +158,18 @@ typedef struct run_host_desc_s
     const run_module_entry_t* modules;            // null-terminated array
     const run_gui_desc_t*     gui;                // optional gui config; NULL = defaults
 
-    /* Optional game project DLL -- Tier-3, always dynamic, loaded with mod_dynamic_load_dir
-       AFTER modules[] registers and BEFORE mod_init_all (one dep-ordered init pass covers
-       it; its higher-layer deps -- game/render -- must be in modules[]; core is baseline).
-       The runtime is contract-
-       agnostic: it loads and hot-reloads the DLL but never calls into it.  Drivers fetch the
-       vtable via mod_get_api( project_name ) and drive it (see runtime/run_project.h). */
+    /* Optional game project -- registered AFTER modules[] and BEFORE mod_init_all (one
+       dep-ordered init pass covers it; its higher-layer deps -- game/render -- must be in
+       modules[]; core is baseline).  A DLL in modular builds, loaded with
+       mod_dynamic_load_dir and hot-reloaded; ship hosts may instead link it statically and
+       pass its descriptor via project_get_mod_desc (project_dir is then ignored and
+       hot-reload is a no-op).  The runtime is contract-agnostic either way: it never calls
+       into the project.  Drivers fetch the vtable via mod_get_api( project_name ) and
+       drive it (see runtime/run_project.h). */
 
-    const char*               project_name;       // project DLL base name; NULL = none
+    const char*               project_name;       // project module name; NULL = none
     const char*               project_dir;        // dir holding <name>.dll; NULL = exe dir
+    run_get_mod_desc_fn       project_get_mod_desc; // non-NULL -> project links statically
 
     void ( *on_ready )( void );                   // after init + window creation
     void ( *on_update )( f32 dt );                // each frame — game logic, no widgets

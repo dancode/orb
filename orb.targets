@@ -303,6 +303,18 @@ target sample_game_play				# F5 launcher: builds sample_game.dll, plays it under
     folder      06_PROJECT
     run         host_game -module sample_game
 
+target sample_game_ship				# single-exe ship shape: build with -monolithic; project compiled in
+
+    type        exe
+    root        source/host/game
+    folder      06_PROJECT
+    unit        host_game_main.c
+    define      HOST_PROJECT=sample_game
+	dep         mod ref sys core job app net host_common
+    dep         run prof rhi draw fs pack
+	mono_dep	render game sample_game
+
+
 target template_game				# source template for -create <name> -type project
 
     type        exe
@@ -1072,7 +1084,7 @@ solution orb_all
 	add 		sb_host_runtime_proj
 	add 		sb_proj_runtime
 
-	add 		sample_game sample_game_play
+	add 		sample_game sample_game_play sample_game_ship
 	add 		template_game
 
 	add 		font_tool
@@ -1090,4 +1102,29 @@ solution orb_all_mono
     flag        monolithic
     add         orb_all
 
+# ==============================================================================
+# PATTERN : per-project monolithic ship exe (see sample_game_ship)
+# ==============================================================================
+#
+# A shippable game gets its OWN exe target -- one generic host source
+# (host_game_main.c), the project baked in at compile time.  Build it with
+# -monolithic: the project archives as a static lib (mono_dep links it) and
+# registers through run_host_desc_t.project_get_mod_desc -- single exe, no
+# project DLL, hot-reload a no-op.  Without -monolithic the define is inert
+# and the target behaves as a plain host_game.
+#
+# target <name>_ship				# single-exe ship shape: build with -monolithic
+#
+#     type        exe
+#     root        source/host/game
+#     folder      06_PROJECT
+#     unit        host_game_main.c
+#     define      HOST_PROJECT=<name>
+#     dep         mod ref sys core job app net host_common
+#     dep         run prof rhi draw fs pack
+#     mono_dep    render game <name>
+#
+# NOTE: bin/ and obj/ are shared between modular and monolithic builds --
+# always pass -force when switching modes or stale objects poison the link.
+#
 # =============================================================================

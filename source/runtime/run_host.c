@@ -443,14 +443,19 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         return 1;
     }
 
-    /* Optional game project DLL -- registered after modules[] so its deps (core, game,
+    /* Optional game project -- registered after modules[] so its deps (core, game,
        render) are all present, before mod_init_all so the single dep-ordered init pass
-       covers it.  Loaded from an external dir when given (a child project's bin/); the
-       mod system hot-reloads it there like any other dynamic module.  The runtime never
-       calls into it -- hosts drive it via mod_get_api( project_name ). */
+       covers it.  Dynamic path: loaded from an external dir when given (a child project's
+       bin/); the mod system hot-reloads it there like any other dynamic module.  Static
+       path (ship exes): the host linked the project in and passes its descriptor --
+       registered like any other static module, hot-reload a no-op.  The runtime never
+       calls into it either way -- hosts drive it via mod_get_api( project_name ). */
     if ( desc->project_name && desc->project_name[ 0 ] )
     {
-        if ( !mod_dynamic_load_dir( desc->project_name, desc->project_dir ) )
+        bool ok = desc->project_get_mod_desc
+                      ? mod_static_load( desc->project_name, desc->project_get_mod_desc() )
+                      : mod_dynamic_load_dir( desc->project_name, desc->project_dir );
+        if ( !ok )
         {
             fprintf( stderr, "[host] failed to load project '%s' (dir: %s): %s\n",
                      desc->project_name,
