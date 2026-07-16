@@ -76,7 +76,7 @@ game_host_ready( void )
 }
 
 static void
-game_host_update( f32 dt )
+game_handle_shortcuts( void )
 {
     /* Developer hotkeys -- CONSOLE input on purpose (terminal focus only; can't be
        fumbled from the game window).  See host_editor_main.c for the full rationale. */
@@ -93,6 +93,12 @@ game_host_update( f32 dt )
         printf( "[host_game] R -- reload all\n" );
         mod_reload_all();
     }
+}
+
+static void
+game_host_update( f32 dt )
+{
+    game_handle_shortcuts();
 
     /* The one per-frame runner call.  The view is rebuilt every frame -- surface size
        tracks resizes and a hot-reloaded project can never hold a stale handle.  The
@@ -103,8 +109,15 @@ game_host_update( f32 dt )
         .render_ctx = run_host_ctx(),
     };
     app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
-
     game()->tick( dt, &view );
+}
+
+/* convenience UI for cheat and developer debug */
+
+static void
+game_gui( f32 dt )
+{
+    // gamer()->build_gui( dt );
 }
 
 /* Window X pressed: stop the session, then allow the close.  (Q-quit stops it too; the
@@ -167,6 +180,7 @@ main( int argc, char** argv )
         .project_dir      = s_proj.dir,
         .on_ready         = game_host_ready,
         .on_update        = game_host_update,
+        .on_gui           = game_gui,
         .on_close_request = game_host_close_request,
     };
 

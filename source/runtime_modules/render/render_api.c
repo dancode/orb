@@ -75,7 +75,7 @@ static render_state_t* g_state = NULL;
 ==============================================================================================*/
 
 static void
-render_context_register_impl( i32 ctx_id )
+render_context_register( i32 ctx_id )
 {
     if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
@@ -91,7 +91,7 @@ render_context_register_impl( i32 ctx_id )
 }
 
 static void
-render_context_unregister_impl( i32 ctx_id )
+render_context_unregister( i32 ctx_id )
 {
     if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
@@ -183,7 +183,7 @@ target_alloc( render_target_t* t, i32 w, i32 h )
 }
 
 static i32
-render_target_create_impl( i32 w, i32 h )
+render_target_create( i32 w, i32 h )
 {
     if ( !g_state || w <= 0 || h <= 0 )
         return -1;
@@ -211,7 +211,7 @@ render_target_create_impl( i32 w, i32 h )
 }
 
 static void
-render_target_destroy_impl( i32 target_id )
+render_target_destroy( i32 target_id )
 {
     render_target_t* t = target_slot( target_id );
     if ( !t )
@@ -223,7 +223,7 @@ render_target_destroy_impl( i32 target_id )
 }
 
 static bool
-render_target_resize_impl( i32 target_id, i32 w, i32 h )
+render_target_resize( i32 target_id, i32 w, i32 h )
 {
     render_target_t* t = target_slot( target_id );
     if ( !t || w <= 0 || h <= 0 )
@@ -243,14 +243,14 @@ render_target_resize_impl( i32 target_id, i32 w, i32 h )
 }
 
 static u32
-render_target_texture_impl( i32 target_id )
+render_target_texture( i32 target_id )
 {
     render_target_t* t = target_slot( target_id );
     return t ? t->bindless[ t->cur ] : 0;
 }
 
 static void
-render_target_flip_impl( i32 target_id )
+render_target_flip( i32 target_id )
 {
     render_target_t* t = target_slot( target_id );
     if ( t )
@@ -258,7 +258,7 @@ render_target_flip_impl( i32 target_id )
 }
 
 static void
-render_target_size_impl( i32 target_id, i32* w, i32* h )
+render_target_size( i32 target_id, i32* w, i32* h )
 {
     render_target_t* t = target_slot( target_id );
     if ( w ) *w = t ? t->w : 0;
@@ -339,7 +339,7 @@ render_draw_targets( rhi_cmd_t cmd )
 ==============================================================================================*/
 
 static bool
-render_begin_frame_impl( i32 ctx_id )
+render_begin_frame( i32 ctx_id )
 {
     if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return false;
@@ -359,7 +359,7 @@ render_begin_frame_impl( i32 ctx_id )
 }
 
 static void
-render_submit_rect_impl( i32 ctx_id, f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 ] )
+render_submit_rect( i32 ctx_id, f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 ] )
 {
     /* Offscreen target ids route to the target's own bucket -- drained by draw_scene's
        target pre-pass instead of the swapchain pass. */
@@ -400,7 +400,7 @@ render_submit_rect_impl( i32 ctx_id, f32 cx, f32 cy, f32 w, f32 h, const f32 rgb
 }
 
 static void
-render_draw_scene_impl( i32 ctx_id, f32 dt )
+render_draw_scene( i32 ctx_id, f32 dt )
 {
     if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
@@ -472,7 +472,7 @@ render_draw_scene_impl( i32 ctx_id, f32 dt )
 }
 
 static void
-render_end_frame_impl( i32 ctx_id )
+render_end_frame( i32 ctx_id )
 {
     if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
@@ -490,7 +490,7 @@ render_end_frame_impl( i32 ctx_id )
 }
 
 static rhi_cmd_t
-render_frame_cmd_impl( i32 ctx_id )
+render_frame_cmd( i32 ctx_id )
 {
     if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return RHI_CMD_INVALID;
@@ -499,7 +499,7 @@ render_frame_cmd_impl( i32 ctx_id )
 }
 
 static void
-render_set_clear_color_impl( i32 ctx_id, f32 r, f32 g, f32 b, f32 a )
+render_set_clear_color( i32 ctx_id, f32 r, f32 g, f32 b, f32 a )
 {
     if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
@@ -516,20 +516,20 @@ render_set_clear_color_impl( i32 ctx_id, f32 r, f32 g, f32 b, f32 a )
 ==============================================================================================*/
 
 const render_api_t g_render_api_struct = {
-    .context_register   = render_context_register_impl,
-    .context_unregister = render_context_unregister_impl,
-    .begin_frame        = render_begin_frame_impl,
-    .draw_scene         = render_draw_scene_impl,
-    .end_frame          = render_end_frame_impl,
-    .submit_rect        = render_submit_rect_impl,
-    .set_clear_color    = render_set_clear_color_impl,
-    .frame_cmd          = render_frame_cmd_impl,
-    .target_create      = render_target_create_impl,
-    .target_destroy     = render_target_destroy_impl,
-    .target_resize      = render_target_resize_impl,
-    .target_texture     = render_target_texture_impl,
-    .target_flip        = render_target_flip_impl,
-    .target_size        = render_target_size_impl,
+    .context_register   = render_context_register,
+    .context_unregister = render_context_unregister,
+    .begin_frame        = render_begin_frame,
+    .draw_scene         = render_draw_scene,
+    .end_frame          = render_end_frame,
+    .submit_rect        = render_submit_rect,
+    .set_clear_color    = render_set_clear_color,
+    .frame_cmd          = render_frame_cmd,
+    .target_create      = render_target_create,
+    .target_destroy     = render_target_destroy,
+    .target_resize      = render_target_resize,
+    .target_texture     = render_target_texture,
+    .target_flip        = render_target_flip,
+    .target_size        = render_target_size,
 };
 
 /*==============================================================================================

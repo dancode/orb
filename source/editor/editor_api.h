@@ -6,14 +6,16 @@
 
     The editor framework: a STATIC SERVICE (RUN_SERVICE in the host's module list) that
     owns the editor shell -- main menu bar, dockspace, the official editor windows -- and
-    the scene viewport's play-in-editor plumbing.  The host stays policy: it forwards
-    update/build_gui and builds the project's run_view_t from view_ctx/view_size, keeping
-    session verbs (game()->play/stop) host-visible.
+    ALL interaction with the game runner: project bind, the per-frame session tick (whose
+    run_view_t carries the scene viewport's render target), and the session verbs behind
+    the Game window.  The host is a configuration/launch shell: it boots the runtime,
+    forwards the loop callbacks here, and never touches game() itself -- keeping
+    host_editor shaped like host_game with the editor service layered on top.
 
-        editor()->set_project( name );          // on_ready, after game()->project_bind
-        editor()->update( dt );                 // on_update, AFTER game()->tick
-        editor()->build_gui( dt );              // on_gui
-        view.render_ctx = editor()->view_ctx(); // scene viewport target, or -1 headless
+        editor()->project_bind( name );   // on_ready, from -project/-module args
+        editor()->update( dt );           // on_update: session tick + viewport + pacing
+        editor()->build_gui( dt );        // on_gui
+        editor()->shutdown();             // every quit path, before run_host teardown
 
 ==============================================================================================*/
 
@@ -27,20 +29,21 @@
 
 typedef struct editor_api_s
 {
-    void ( *set_project )( const char* name );   /* bound project display name; NULL = none  */
-    void ( *update      )( f32 dt );             /* pre-gui maintenance (scene viewport)     */
-    void ( *build_gui   )( f32 dt );             /* menu bar + dockspace + editor windows    */
+    /* Bind the loaded project DLL to the game runner and adopt it as the editor's
+       session subject.  false = the project has no api (not loaded / wrong contract). */
+    bool ( *project_bind )( const char* name );
 
-    /* The play-in-editor seam: what the host writes into the project's run_view_t each
-       frame.  view_ctx is the scene viewport's render target id, or -1 (headless) while
-       no target exists or the viewport window is hidden. */
-    i32  ( *view_ctx    )( void );
-    void ( *view_size   )( i32* w, i32* h );
+    /* Per-frame, from the host's on_update: ticks the session (run_view_t built here --
+       render_ctx is the scene viewport's target, the play-in-editor seam), maintains the
+       viewport target, and drives the pacing gates (run_host realtime, gui force-redraw). */
+    void ( *update       )( f32 dt );
 
-    /* Release GPU-backed editor resources (the scene viewport target).  Call on every
-       host quit path BEFORE run_host teardown destroys the device -- the module-exit
-       backstop runs after rhi shutdown, too late to free cleanly.  Idempotent. */
-    void ( *shutdown    )( void );
+    void ( *build_gui    )( f32 dt );            /* menu bar + dockspace + editor windows */
+
+    /* Stop any live session and release GPU-backed editor resources (the scene viewport
+       target).  Call on every host quit path BEFORE run_host teardown destroys the
+       device -- the module-exit backstop runs after rhi shutdown, too late.  Idempotent. */
+    void ( *shutdown     )( void );
 
 } editor_api_t;
 
