@@ -238,6 +238,7 @@ editor_mod_init( void* state, get_api_fn get_api )
 
     /* render() is the runtime host's pointer, populated after mod_init_all -- not
        fetched here (init order); the viewport lib NULL-guards until it lands. */
+
     return true;
 }
 
@@ -249,6 +250,7 @@ editor_mod_reload( void* state, get_api_fn get_api )
 
     if ( !MOD_FETCH_GAME )
         return false;
+
     return true;
 }
 

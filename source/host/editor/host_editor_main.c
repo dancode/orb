@@ -100,8 +100,8 @@ editor_handle_shortcuts( void )
     {
         printf( "[editor] Q -- quit\n" );
         if ( game() )
-            game()->stop();    /* run_host_quit is final -- close_request never runs */
-        editor()->shutdown();  /* free GPU-backed editor resources before device teardown */
+             game()->stop();    /* run_host_quit is final -- close_request never runs */
+        editor()->shutdown();   /* free GPU-backed editor resources before device teardown */
         run_host_quit();
         return;
     }
