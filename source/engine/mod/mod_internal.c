@@ -235,8 +235,12 @@ path_dll( const mod_info_t* m, char* out, size_t size )
 static void
 path_shadow( const mod_info_t* m, uint32_t counter, char* out, size_t size )
 {
-    /* "<root>\<name>.tmp_<counter>.dll" */
-    snprintf( out, size, "%s%c%s.tmp_%u.dll", slot_root( m ), PATH_SEP, m->name, counter );
+    /* "<root>\<name>.tmp_<pid>_<counter>.dll" -- the pid keeps concurrent processes over
+       the same dll dir (editor + Play Standalone) from colliding on shadow names: the
+       counter restarts at 0 in every process, so without the pid the second boot tries
+       to overwrite a shadow the first still holds loaded (locked) and fails to load. */
+    snprintf( out, size, "%s%c%s.tmp_%u_%u.dll", slot_root( m ), PATH_SEP, m->name,
+              sys_process_id(), counter );
 }
 
 static uint64_t

@@ -13,11 +13,12 @@
     The original DLL is never loaded directly — the build tool would lock it and block
     recompilation. We copy it to a uniquely-named shadow file and load that instead.
     A counter increments on each reload so the new shadow never collides with the
-    still-loaded previous copy.
+    still-loaded previous copy, and the process id keeps concurrent processes over the
+    same dll dir (editor + standalone game) off each other's shadows.
 
         Original : <exe_dir>\render.dll
-        Shadow 0 : <exe_dir>\render.tmp_0.dll
-        Shadow 1 : <exe_dir>\render.tmp_1.dll  (shadow 0 deleted after unload)
+        Shadow 0 : <exe_dir>\render.tmp_<pid>_0.dll
+        Shadow 1 : <exe_dir>\render.tmp_<pid>_1.dll  (shadow 0 deleted after unload)
 
     State ownership
     ---------------
