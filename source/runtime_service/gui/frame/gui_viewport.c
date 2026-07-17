@@ -68,6 +68,21 @@ gui_viewport_caption_h( gui_vp_t vp )
     return g_ctx->vp.pool[ vp ].caption_inset;
 }
 
+/* A viewport's current drawable size (disp_w/disp_h) -- the query twin of viewport_resize.
+   Either out pointer may be NULL; an invalid viewport reports 0 x 0. */
+void
+gui_viewport_size( gui_vp_t vp, i32* out_w, i32* out_h )
+{
+    i32 w = 0, h = 0;
+    if ( g_ctx && vp < g_ctx->vp.max )
+    {
+        w = g_ctx->vp.pool[ vp ].disp_w;
+        h = g_ctx->vp.pool[ vp ].disp_h;
+    }
+    if ( out_w ) *out_w = w;
+    if ( out_h ) *out_h = h;
+}
+
 /* Update a viewport's drawable size.  Call on OS resize BEFORE frame_begin.
    Works identically for the primary (0) and secondary viewports.  GUI_VP_INVALID is a no-op. */
 void

@@ -71,6 +71,8 @@ void       gui_viewport_close ( gui_vp_t vp );
 void       gui_viewport_resize( gui_vp_t vp, i32 w, i32 h );
 f32        gui_viewport_shell ( gui_vp_t vp, const char* title, gui_win_flags_t flags );
 f32        gui_viewport_caption_h( gui_vp_t vp );
+void       gui_viewport_size( gui_vp_t vp, i32* out_w, i32* out_h );
+f32        gui_viewport_content_y( gui_vp_t vp );
 
 /* boot-tier host front end (gui_boot.c) */
 gui_vp_t    gui_boot( const gui_boot_desc_t* desc );

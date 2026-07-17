@@ -2,15 +2,24 @@
 
     tools/launch_tool/launch_ui.c -- launcher UI and command invocation.
 
-    Three panes: Engine (root readout + actions), Projects (registry list -- empty until the
-    registry lands), Output (captured stdout of the last synchronous command).  Every action
-    is a spawned command line against the engine's bin/ tools; nothing is re-implemented.
+    Menu-driven: every action lives in the main menu bar, and each pane (Engine, Projects,
+    Output) is a window toggled from the Windows menu.  Visual arrangement is deliberately
+    plain for now -- free windows placed below the viewport chrome (viewport_content_y).
+    Every action is a spawned command line against the engine's bin/ tools; nothing is
+    re-implemented.
 
 ==============================================================================================*/
 
 // clang-format off
 
 static launch_state_t s_launch;
+
+/* Pane visibility -- menu-toggled; all on by default until a real arrangement lands. */
+static bool s_show_engine   = true;
+static bool s_show_projects = true;
+static bool s_show_output   = true;
+
+static gui_vp_t s_main_vp = 0;  /* the main viewport hosting the chrome shell and free windows */
 
 /*==============================================================================================
     Command invocation
@@ -26,6 +35,7 @@ launch_run_capture( const char* label, const char* command_line, const char* wor
     snprintf( s_launch.log_title, sizeof( s_launch.log_title ), "%s", label );
     s_launch.log[ 0 ]   = '\0';
     s_launch.log_valid  = true;
+    s_show_output       = true;    /* an action's output must be visible */
 
     if ( !sys_process_run_capture( command_line, working_dir,
                                    s_launch.log, sizeof( s_launch.log ), NULL, &result ) )
@@ -43,6 +53,7 @@ launch_spawn( const char* label, const char* command_line, const char* working_d
 {
     snprintf( s_launch.log_title, sizeof( s_launch.log_title ), "%s", label );
     s_launch.log_valid = true;
+    s_show_output      = true;
 
     if ( sys_process_spawn( command_line, working_dir ) )
         snprintf( s_launch.log, sizeof( s_launch.log ), "[launch] spawned: %s\n", command_line );
@@ -67,42 +78,79 @@ launch_ui_init( void )
 }
 
 /*==============================================================================================
+    Menu -- all actions live here; panes are just readouts
+==============================================================================================*/
+
+static void
+launch_show_menu( gui_vp_t vp )
+{
+    if ( !gui()->main_menu_bar_begin() )
+        return;
+
+    char cmd[ LAUNCH_PATH_MAX * 2 ];
+
+    if ( gui()->menu_begin( "Engine" ) )
+    {
+        if ( gui()->menu_item( "Run Doctor", NULL, NULL ) )
+        {
+            snprintf( cmd, sizeof( cmd ), "\"%s/bin/build_tool.exe\" -doctor", s_launch.engine_root );
+            launch_run_capture( "build_tool -doctor", cmd, s_launch.engine_root );
+        }
+        if ( gui()->menu_item( "Launch Editor", NULL, NULL ) )
+        {
+            snprintf( cmd, sizeof( cmd ), "\"%s/bin/host_editor.exe\"", s_launch.engine_root );
+            launch_spawn( "host_editor", cmd, s_launch.engine_root );
+        }
+        gui()->separator();
+        if ( gui()->menu_item( "Exit", NULL, NULL ) )
+            app()->window_request_close( ( i32 )vp );
+        gui()->menu_end();
+    }
+
+    if ( gui()->menu_begin( "Windows" ) )
+    {
+        gui()->menu_item( "Engine",   NULL, &s_show_engine );
+        gui()->menu_item( "Projects", NULL, &s_show_projects );
+        gui()->menu_item( "Output",   NULL, &s_show_output );
+        gui()->menu_end();
+    }
+
+    gui()->main_menu_bar_end();
+}
+
+/*==============================================================================================
     Panes
 ==============================================================================================*/
 
 static void
-launch_show_engine_pane( void )
-{
-    gui()->window_set_next_pos ( 20, 20, GUI_COND_ONCE );
-    gui()->window_set_next_size( 640, 300, GUI_COND_ONCE );
+launch_show_engine_pane()
+{    
+    i32 w, h; gui()->viewport_size( s_main_vp, &w, &h );
+    f32 top = gui()->viewport_content_y( s_main_vp );
+    f32 width = (f32)w / 2;
+    f32 height = (f32)h / 2;
+
+    gui()->window_set_next_pos ( 8, top + 8, GUI_COND_ONCE );
+    gui()->window_set_next_size( width - 16, height - 8, GUI_COND_ONCE );
     if ( gui()->window_begin( "Engine", GUI_WIN_NONE ) )
     {
         gui()->stack();
         gui()->textf( "Root:        %s", s_launch.engine_root );
         gui()->textf( "build_tool:  %s", s_launch.build_tool_present ? "found" : "MISSING (run bootstrap_build_tool.bat)" );
-        gui()->separator();
-
-        char cmd[ LAUNCH_PATH_MAX * 2 ];
-
-        if ( gui()->button( "Run Doctor" ) )
-        {
-            snprintf( cmd, sizeof( cmd ), "\"%s/bin/build_tool.exe\" -doctor", s_launch.engine_root );
-            launch_run_capture( "build_tool -doctor", cmd, s_launch.engine_root );
-        }
-        if ( gui()->button( "Launch Editor" ) )
-        {
-            snprintf( cmd, sizeof( cmd ), "\"%s/bin/host_editor.exe\"", s_launch.engine_root );
-            launch_spawn( "host_editor", cmd, s_launch.engine_root );
-        }
     }
     gui()->window_end();
 }
 
 static void
-launch_show_projects_pane( void )
-{
-    gui()->window_set_next_pos ( 680, 20, GUI_COND_ONCE );
-    gui()->window_set_next_size( 580, 300, GUI_COND_ONCE );
+launch_show_projects_pane()
+{    
+    i32 w, h; gui()->viewport_size( s_main_vp, &w, &h );
+    f32 top = gui()->viewport_content_y( s_main_vp );
+    f32 width = (f32)w / 2;
+    f32 height = (f32)h / 2;
+
+    gui()->window_set_next_pos ( width + 8, top + 8, GUI_COND_ONCE );
+    gui()->window_set_next_size( width - 16, height - 8, GUI_COND_ONCE );
     if ( gui()->window_begin( "Projects", GUI_WIN_NONE ) )
     {
         gui()->stack();
@@ -128,10 +176,15 @@ launch_show_projects_pane( void )
 }
 
 static void
-launch_show_output_pane( void )
+launch_show_output_pane()
 {
-    gui()->window_set_next_pos ( 20, 340, GUI_COND_ONCE );
-    gui()->window_set_next_size( 1240, 360, GUI_COND_ONCE );
+    i32 w, h; gui()->viewport_size( s_main_vp, &w, &h );
+    f32 top = gui()->viewport_content_y( s_main_vp );
+    f32 width = (f32)w / 2;
+    f32 height = (f32)h / 2;
+
+    gui()->window_set_next_pos ( 8, top + height + 8, GUI_COND_ONCE );
+    gui()->window_set_next_size( width * 2 - 16, height - top - 16, GUI_COND_ONCE );
     if ( gui()->window_begin( "Output", GUI_WIN_NONE ) )
     {
         gui()->stack();
@@ -167,10 +220,15 @@ launch_show_output_pane( void )
 void
 launch_ui_frame( gui_vp_t vp )
 {
-    UNUSED( vp );
-    launch_show_engine_pane();
-    launch_show_projects_pane();
-    launch_show_output_pane();
+    /* Menu first (popup frame-ordering), then place panes below the viewport chrome --
+       caption band (gui-shelled native window) + the menu bar just emitted. */
+    launch_show_menu( vp );
+    
+    s_main_vp = vp;
+
+    if ( s_show_engine )   launch_show_engine_pane();
+    if ( s_show_projects ) launch_show_projects_pane();
+    if ( s_show_output )   launch_show_output_pane();
 }
 
 /*============================================================================================*/

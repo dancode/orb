@@ -252,13 +252,24 @@ typedef struct gui_api_s
        viewport_caption_h() -- the caption band height (px) a chrome shell published on this
                             viewport; 0 for an OS-chrome window.  The query twin of
                             viewport_shell's return, for hosts on the boot path (where the shell
-                            is emitted internally) that stack pinned strips below the caption. */
+                            is emitted internally) that stack pinned strips below the caption.
+       viewport_size()      -- the viewport's current drawable size (disp_w/disp_h) -- the query
+                            twin of viewport_resize.  Either out pointer may be NULL; an invalid
+                            viewport reports 0 x 0.
+       viewport_content_y() -- the y where host content starts on this viewport: 0 for an
+                            OS-chrome window, the caption band on a gui-shelled native window,
+                            plus the main menu bar when one was emitted (this frame or last --
+                            emit the bar before querying).  The same bound the maximize pin and
+                            free-window clamp use, published so hosts place windows below the
+                            viewport chrome without summing the parts themselves. */
 
     gui_vp_t    ( *viewport_open      )( i32 win_id );
     void        ( *viewport_close     )( gui_vp_t vp );
     void        ( *viewport_resize    )( gui_vp_t vp, i32 w, i32 h );
     f32         ( *viewport_shell     )( gui_vp_t vp, const char* title, gui_win_flags_t flags );
     f32         ( *viewport_caption_h )( gui_vp_t vp );
+    void        ( *viewport_size      )( gui_vp_t vp, i32* out_w, i32* out_h );
+    f32         ( *viewport_content_y )( gui_vp_t vp );
 
     /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
        to flush into, these own the OS window + rhi context end to end -- gui creates them on

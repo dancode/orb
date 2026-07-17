@@ -77,6 +77,16 @@ window_work_top( const gui_viewport_t* vp )
     return top;
 }
 
+/* Public query twin of window_work_top (gui_api.h viewport_content_y): where host content
+   starts on a viewport -- 0 OS-chrome, + caption band gui-shelled, + menu bar when emitted. */
+f32
+gui_viewport_content_y( gui_vp_t vp )
+{
+    if ( !g_ctx || vp >= g_ctx->vp.max )
+        return 0.0f;
+    return window_work_top( &g_ctx->vp.pool[ vp ] );
+}
+
 /* Keep a dragged window reachable: clamp so its top edge stays on-screen and at
    least one title-bar's worth of the window remains within the display bounds.
    Uses the window's own viewport dimensions so dragging on a secondary surface
