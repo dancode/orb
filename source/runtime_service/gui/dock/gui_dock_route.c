@@ -38,6 +38,18 @@ window_route_resolve( gui_id_t id, const char* title, gui_window_t* win )
     if ( !route.node->floating && !dock_vp_emitted( route.node->viewport ) )
         return route;   /* route.active stays false */
 
+    /* A settled dockspace-maximized leaf covers the whole tree: every OTHER node's windows are
+       fully obscured, so they suppress exactly like tabs in a dormant tree.  Only once SETTLED --
+       while the cover tween is still in flight the siblings peek out around it and keep emitting
+       (dock_max_settled, stamped by dockspace_over_viewport's step).  Floating groups stack above
+       the tiles at their own z and are exempt, like everywhere else. */
+    if ( !route.node->floating )
+    {
+        const gui_viewport_t* v = &g_ctx->vp.pool[ route.node->viewport ];
+        if ( v->dock_max_settled && v->dock_max_id != route.node->id )
+            return route;   /* obscured -- route.active stays false */
+    }
+
     route.active = ( route.node->active_tab < route.node->tab_count
                      && route.node->tabs[ route.node->active_tab ] == id );
 

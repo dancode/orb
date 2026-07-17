@@ -95,6 +95,11 @@ dock_free_viewport_tree( u32 vp )
              && !g_ctx->dock.pool[ i ].floating )
             dock_node_free( &g_ctx->dock.pool[ i ] );
     g_ctx->vp.pool[ vp ].dock_root = GUI_DOCK_REF_NONE;
+
+    /* Any dockspace-maximize referenced a node just freed -- session state, never serialized. */
+    g_ctx->vp.pool[ vp ].dock_max_id      = 0;
+    g_ctx->vp.pool[ vp ].dock_max_on      = false;
+    g_ctx->vp.pool[ vp ].dock_max_settled = false;
 }
 
 /* Public DESTROY verb: free viewport vp's whole dock tree and clear its root.  Every tree-docked

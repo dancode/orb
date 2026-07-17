@@ -403,6 +403,13 @@ typedef struct gui_api_s
                                     moving it out of any node it was already in; it becomes active.
        dock_undock()             -- remove a window from its node, returning it to free-floating.
        window_is_docked()        -- true while the window is tabbed into some node (dormant included).
+       dock_window_maximize()    -- maximize the window's node over its WHOLE dockspace (fullscreen
+                                    the docked pane -- the other nodes are obscured and stop emitting)
+                                    or restore the tiled layout; animated like the floater maximize
+                                    (window_anim_enable gates it).  GUI_WIN_DOCK_MAXIMIZE gates only
+                                    the tab strip's button; this verb works regardless, so a host can
+                                    bind fullscreen-toggle to a hotkey without offering the chrome.
+       window_is_dock_maximized() -- true while the window's node holds the dockspace maximize.
 
        A dockspace is EMIT-GATED like every immediate-mode element: on frames the host does not call
        dockspace_over_viewport, the viewport's tree is DORMANT -- retained but inert.  Windows tabbed
@@ -428,6 +435,8 @@ typedef struct gui_api_s
     void ( *dock_window )( const char* title, gui_dock_id_t node );
     void ( *dock_undock )( const char* title );
     bool ( *window_is_docked )( const char* title );
+    void ( *dock_window_maximize )( const char* title, bool on );
+    bool ( *window_is_dock_maximized )( const char* title );
 
     /* Floating tab groups -- tabbing WITHOUT split panes.  window_tab() merges window `title` onto
        window `onto_title`'s frame: a free target grows a floating tab group around itself (shared

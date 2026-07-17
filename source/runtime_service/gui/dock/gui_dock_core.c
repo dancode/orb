@@ -34,6 +34,9 @@
    salt (DOCK_TAB_SALT) lives in gui_dock_drag.c, next to the tab-strip chrome that uses it. */
 #define DOCK_SPLIT_SALT 0xD0C5B17u
 
+/* Salt for a node's maximize-over-dockspace anim timer slot (see dock_max_set below). */
+#define DOCK_MAX_SALT   0xD0C3A400u
+
 /*----------------------------------------------------------------------------------------------
     Node pool
 
@@ -124,6 +127,63 @@ dock_find_window_node( gui_id_t win )
                 return n;
     }
     return NULL;
+}
+
+/*----------------------------------------------------------------------------------------------
+    Maximize over the dockspace
+
+    One leaf of a viewport's tree may be pinned over the WHOLE dock area (the docked twin of the
+    floater maximize): its rect eases between the tree slot and the full dockspace through the
+    same timed tween the floater states use, and while the cover is settled every other tree
+    node's windows suppress -- they are fully obscured, so emitting them would be pure waste
+    (window_route_resolve applies the inactive-tab semantics; the state lives on the viewport,
+    see dock_max_* in gui_internal.h).  The per-frame tween step runs in dockspace_over_viewport
+    (gui_dock.c), after the tree layout resolves the restore target.
+----------------------------------------------------------------------------------------------*/
+
+/* The viewport's maximized leaf, validated -- or NULL, clearing any stale state (the node was
+   emptied and collapsed, or the tree was cleared / reloaded from a blob).  Ids are the stable
+   handle (never reused within a session), so a freed slot can never false-match. */
+static gui_dock_node_t*
+dock_max_node( gui_viewport_t* v )
+{
+    if ( v->dock_max_id == 0 )
+        return NULL;
+
+    gui_dock_node_t* n = dock_node_find( v->dock_max_id );
+    if ( !n || n->split != GUI_DOCK_SPLIT_NONE || n->floating || &g_ctx->vp.pool[ n->viewport ] != v )
+    {
+        v->dock_max_id      = 0;
+        v->dock_max_on      = false;
+        v->dock_max_settled = false;
+        return NULL;
+    }
+    return n;
+}
+
+/* Toggle leaf n's maximize-over-dockspace.  The single choke point the strip button, the strip
+   double-click, and the programmatic verb (gui_dock_window_maximize) all route through -- like
+   the floater's window_maximize_set.  Captures the current rect as the tween's FROM and arms the
+   shared window-anim clock (zero duration when animation is off, so the next step snaps);
+   entering also raises the node's z so the cover paints over the sibling tiles while it grows
+   (and over the free floaters while fullscreen -- occlusion follows from z, floater-style).
+   The tween itself runs in dockspace_over_viewport; leaving eases back toward the tree rect the
+   layout re-resolves every frame, and the settle drops z back to the tile floor. */
+static void
+dock_max_set( gui_dock_node_t* n, bool on )
+{
+    gui_viewport_t* v = &g_ctx->vp.pool[ n->viewport ];
+
+    if ( on )
+    {
+        v->dock_max_id = n->id;   /* takes over from any other maxed node, which snaps back */
+        n->z           = surface_z_raise( n->z );
+    }
+    v->dock_max_on      = on;
+    v->dock_max_settled = false;
+    v->dock_max_from    = n->rect;
+    gui_anim_timer_start( id_combine( n->id, DOCK_MAX_SALT ), s_win_anim ? GUI_WIN_ANIM_SECS : 0.0f );
+    g_ctx->retained.wants_redraw = true;   /* takes effect next frame; force one more build */
 }
 
 /*----------------------------------------------------------------------------------------------

@@ -140,7 +140,10 @@ show_panels( void )
     }
     gui()->window_end();
 
-    if ( gui()->window_begin( "Viewport", GUI_WIN_NONE ) )
+    /* DOCK_MAXIMIZE: while docked, the node's tab strip offers a maximize button (double-click
+       the strip's empty band works too) that pins this pane over the WHOLE dockspace -- the
+       other panels suppress while covered.  The Dock Lab readout shows them flip state. */
+    if ( gui()->window_begin( "Viewport", GUI_WIN_DOCK_MAXIMIZE ) )
     {
         gui()->stack();
         gui()->text( "Central viewport panel." );
@@ -150,7 +153,14 @@ show_panels( void )
         gui()->text( "Drag a tab OUT to pop it into a floater." );
         gui()->text( "Drag the Palette window onto a pane to dock." );
         gui()->separator();
+        gui()->text( "Maximize (strip button / double-click) fills" );
+        gui()->text( "the dockspace; the other panels suppress." );
+        gui()->separator();
         gui()->text( "Lifecycle controls live in the Dock menu." );
+
+        bool maxed = gui()->window_is_dock_maximized( "Viewport" );
+        if ( gui()->button( maxed ? "Restore dock view" : "Fullscreen this pane" ) )
+            gui()->dock_window_maximize( "Viewport", !maxed );
     }
     gui()->window_end();
 

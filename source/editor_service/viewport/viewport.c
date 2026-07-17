@@ -98,7 +98,12 @@ ed_viewport_update( bool live )
 void
 ed_viewport_panel( void )
 {
-    if ( !gui()->window_begin( "Viewport", GUI_WIN_NOSCROLL ) )
+    /* DOCK_MAXIMIZE: while docked, the tab strip offers a maximize button (double-click the
+       strip's empty band too) that pins the pane over the whole dockspace -- fullscreen scene
+       view vs the tiled editor layout.  The panel body is size-agnostic (it publishes whatever
+       content_avail hands it), so the target resize protocol below rides the transition as it
+       would any resize. */
+    if ( !gui()->window_begin( "Viewport", GUI_WIN_NOSCROLL | GUI_WIN_DOCK_MAXIMIZE ) )
     {
         gui()->window_end();
         return;

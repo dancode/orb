@@ -1258,6 +1258,17 @@ typedef enum
 
     GUI_WIN_DEBUG_BAND        = 1 << 23,   /* diagnostic UI: debug arena band + stats/dirty exempt */
 
+    /* Docked maximize -- opt-in: while this window is its dock node's ACTIVE tab, the node's tab
+       strip offers a maximize / restore button (double-click on the strip's empty band toggles
+       too).  Maximizing pins the node over the WHOLE dockspace, fully obscuring the other docked
+       nodes -- their windows suppress (window_begin returns false, inactive-tab semantics) until
+       restore -- while the tab strip stays usable on top.  The transition eases like the floater
+       maximize and obeys the same global switch (window_anim_enable).  Opt-in because it suits
+       fullscreen-able content (a 3D viewport toggling between full view and its dock pane), not
+       ordinary panels; dock_window_maximize is the programmatic twin and ignores the flag. */
+
+    GUI_WIN_DOCK_MAXIMIZE     = 1 << 24,   /* docked: offer maximize-over-dockspace on the tab strip */
+
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
        ( GUI_WIN_OVERLAY | GUI_WIN_NOMOUSESCROLL ) and a window's resolved behavior is identical

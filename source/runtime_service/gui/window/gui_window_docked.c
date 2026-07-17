@@ -45,10 +45,12 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
 
     f32 title_h = node->rect.h - node->content.h;   /* tab strip height (= WIN_TITLE_H, node-clamped) */
 
-    /* Route to the node's surface: a tree node draws at a low z so docked content sits behind the
-       free-floating windows; a floating group stacks among them at its own z. */
+    /* Route to the node's surface: a tree node holds z 0, so docked content sits behind the
+       free-floating windows; a floating group stacks among them at its own z -- as does a
+       dockspace-maximized leaf, whose raised z paints its cover over the sibling tiles while
+       the transition slides it across them (dock_max_set). */
     draw_set_window( id );                  /* cache key: docked windows share z=0 but not their id */
-    draw_set_sort_key( node->floating ? node->z : 0 );
+    draw_set_sort_key( node->z );
     draw_set_viewport( node->viewport );
     draw_set_band( ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
     s_build.win.viewport = node->viewport;
@@ -85,7 +87,9 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
         }
         else
         {
-            surface_hover_nominate( id, node->rect, 0u, node->viewport );
+            /* node->z: 0 for a plain tile; the raised cover z while dockspace-maximized, so the
+               fullscreen content wins hover over anything its cover paints across. */
+            surface_hover_nominate( id, node->rect, node->z, node->viewport );
         }
     }
 

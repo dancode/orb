@@ -67,17 +67,54 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
     if ( area.h < 0.0f ) area.h = 0.0f;
     dock_node_layout( root, area );
 
-    /* Chrome on this surface, below the free-floating windows (z 0), clipped to the surface. */
-    draw_set_viewport ( vp );
-    draw_set_sort_key ( 0 );
-    draw_set_root_clip( dw, dh );
-    dock_tree_placeholders( root );
-    dock_tree_splitters   ( root, vp );
+    /* Chrome on this surface, below the free-floating windows (z 0), clipped to the surface.
+       Skipped while a maximized leaf's cover is settled: everything it would draw sits fully
+       obscured under the cover (during the tween the siblings still peek out, so it keeps
+       drawing then -- from the PURE tree rects, before the override below moves the leaf). */
+    if ( !v->dock_max_settled )
+    {
+        draw_set_viewport ( vp );
+        draw_set_sort_key ( 0 );
+        draw_set_root_clip( dw, dh );
+        dock_tree_placeholders( root );
+        dock_tree_splitters   ( root, vp );
 
-    /* Restore the ambient build state for the windows emitted next. */
-    draw_set_sort_key ( 0 );
-    draw_set_viewport ( 0 );
-    draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+        /* Restore the ambient build state for the windows emitted next. */
+        draw_set_sort_key ( 0 );
+        draw_set_viewport ( 0 );
+        draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+    }
+
+    /* Maximized leaf: override its tree rect with the eased cover.  Runs AFTER the splitter
+       chrome so the gutters keep their tree positions while the cover slides over them.  The
+       target re-aims every frame -- the full dock area while maximized (so it tracks a live
+       surface resize), the tree rect the layout above just resolved while restoring -- and the
+       timer forces t == 1 on its final frame, landing the lerp exactly on the target.  Once a
+       restore settles the node is a plain tile again: z back to the dock floor, id cleared. */
+    gui_dock_node_t* mx = dock_max_node( v );
+    if ( mx )
+    {
+        gui_rect_t target = v->dock_max_on ? area : mx->rect;
+        bool       active = false;
+        f32        t      = gui_anim_timer( id_combine( mx->id, DOCK_MAX_SALT ), window_anim_ease, &active );
+
+        mx->rect.x = f32_lerp( v->dock_max_from.x, target.x, t );
+        mx->rect.y = f32_lerp( v->dock_max_from.y, target.y, t );
+        mx->rect.w = f32_lerp( v->dock_max_from.w, target.w, t );
+        mx->rect.h = f32_lerp( v->dock_max_from.h, target.h, t );
+
+        /* Re-carve the tab strip off the moved rect, exactly like dock_node_layout's leaf case. */
+        f32 th = WIN_TITLE_H;
+        if ( th > mx->rect.h ) th = mx->rect.h;
+        mx->content = ( gui_rect_t ){ mx->rect.x, mx->rect.y + th, mx->rect.w, mx->rect.h - th };
+
+        v->dock_max_settled = v->dock_max_on && !active;
+        if ( !v->dock_max_on && !active )
+        {
+            mx->z          = 0;   /* restore settled: back among the tiles */
+            v->dock_max_id = 0;
+        }
+    }
 
     return root->id;
 }
@@ -232,6 +269,44 @@ bool
 gui_window_is_docked( const char* title )
 {
     return title != NULL && dock_find_window_node( id_hash( title ) ) != NULL;
+}
+
+/* Maximize (or restore) a docked window's node over its whole dockspace -- the programmatic twin
+   of the tab strip's maximize button (GUI_WIN_DOCK_MAXIMIZE gates only the button; this verb works
+   regardless, so a host can bind fullscreen to a hotkey without offering the chrome).  Maximizing
+   also makes the window its node's active tab -- fullscreening a background tab should show it.
+   No-op if the window is not tree-docked (free-floating and floating tab groups have the floater
+   maximize instead). */
+void
+gui_dock_window_maximize( const char* title, bool on )
+{
+    if ( !title )
+        return;
+    gui_id_t         wid = id_hash( title );
+    gui_dock_node_t* n   = dock_find_window_node( wid );
+    if ( !n || n->floating )
+        return;
+
+    if ( on )
+        for ( u32 i = 0; i < n->tab_count; ++i )
+            if ( n->tabs[ i ] == wid ) { n->active_tab = i; break; }
+
+    gui_viewport_t* v = &g_ctx->vp.pool[ n->viewport ];
+    if ( ( v->dock_max_id == n->id && v->dock_max_on ) != on )
+        dock_max_set( n, on );
+}
+
+/* True while the window's node holds (or is entering) the dockspace maximize. */
+bool
+gui_window_is_dock_maximized( const char* title )
+{
+    if ( !title )
+        return false;
+    gui_dock_node_t* n = dock_find_window_node( id_hash( title ) );
+    if ( !n || n->floating )
+        return false;
+    const gui_viewport_t* v = &g_ctx->vp.pool[ n->viewport ];
+    return v->dock_max_id == n->id && v->dock_max_on;
 }
 
 // clang-format on

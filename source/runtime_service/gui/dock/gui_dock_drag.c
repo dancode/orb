@@ -250,6 +250,11 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     gui_dock_node_t* root = dock_at( g_ctx->vp.pool[ vp ].dock_root );
     if ( !root || !dock_vp_emitted( vp ) )
         return;
+
+    /* A settled maximized leaf covers the dockspace: the tree's rects are all obscured, so no
+       drop chips are offered while fullscreen -- restore first, then dock. */
+    if ( g_ctx->vp.pool[ vp ].dock_max_settled )
+        return;
     gui_dock_node_t* leaf = dock_leaf_at( root, s_io.mouse_x, s_io.mouse_y );
     if ( !leaf )
         return;
@@ -573,6 +578,35 @@ dock_window_chrome( gui_dock_node_t* node )
         }
 
         tx += tw;
+    }
+
+    /* Dockspace maximize (GUI_WIN_DOCK_MAXIMIZE, tree nodes only): a maximize / restore button at
+       the strip's right edge -- the docked twin of the floater title-bar pair, gated by the ACTIVE
+       tab's flag (this chrome runs from its window_end, so s_build.win.flags is that window's).
+       Toggling pins the node over the whole dockspace (dock_max_set; the tween + sibling
+       suppression run in dockspace_over_viewport / the route seam).  Double-click on the strip's
+       empty band toggles too, the floater title-bar convention -- tabs claim their own hover, so
+       the bare-hover gate excludes them. */
+    if ( !node->floating && ( s_build.win.flags & GUI_WIN_DOCK_MAXIMIZE ) )
+    {
+        gui_viewport_t* v     = &g_ctx->vp.pool[ node->viewport ];
+        bool            maxed = ( v->dock_max_id == node->id && v->dock_max_on );
+
+        gui_rect_t       mx_r  = { x + w - th, y, th, th };
+        gui_id_t         mx_id = id_combine( node->id, GUI_MAXIMIZE_SALT );
+        gui_item_state_t mx_st = widget_behavior( mx_id, mx_r, GUI_WIDGET_KIND_BUTTON );
+        if ( mx_st.hover || mx_st.active )
+        {
+            draw_set_rounding( ROUND_WIDGET );
+            draw_push_rect_filled( mx_r.x, mx_r.y, mx_r.w, mx_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+        }
+        native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, mx_r, maxed, mx_st.hover ? COL_TEXT : COL_TEXT_DIM );
+
+        gui_rect_t band = { tx, y, mx_r.x - tx, th };
+        bool band_double = band.w > 1.0f && s_io.mouse_double[ 0 ]
+                        && interact_hover_bare( s_build.win.id ) && rect_hit( band );
+        if ( mx_st.clicked || band_double )
+            dock_max_set( node, !maxed );
     }
 
     /* Floating group (gui_dock_float.c): the strip's empty band doubles as the group's title-bar

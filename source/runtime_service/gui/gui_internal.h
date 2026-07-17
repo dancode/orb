@@ -820,6 +820,20 @@ typedef struct
        corrupting it; only dock_clear destroys it. */
     u32 dock_seen_frame;
 
+    /* Dockspace maximize: one LEAF pinned over the whole dock area (dock_max_id; 0 = none), fully
+       obscuring the other tree nodes.  dock_max_on is the logical state -- false while the restore
+       tween eases the node back to its tree rect, after which the id clears.  dock_max_settled is
+       stamped by dockspace_over_viewport's tween step each emitted frame: only once the cover has
+       SETTLED do the obscured nodes' windows suppress (inactive-tab semantics via the route seam)
+       and the splitter / placeholder chrome stop emitting -- during the tween the siblings are
+       still partially visible and keep drawing.  dock_max_from is the rect tween's FROM (captured
+       at toggle); the target re-aims every frame, so a live surface resize is tracked mid-flight.
+       Driven by dock_max_set / dock_max_node (gui_dock_core.c). */
+    gui_dock_id_t dock_max_id;
+    bool          dock_max_on;
+    bool          dock_max_settled;
+    gui_rect_t    dock_max_from;
+
 } gui_viewport_t;
 
 /*==============================================================================================
