@@ -281,7 +281,14 @@ main( int argc, char** argv )
         if ( str_icmp( argv[ i ], "-doctor"           ) == 0 ) should_doctor = true;
 
         // module / project creation (scaffolding)
-        if ( str_icmp( argv[ i ], "-create" ) == 0 && arg_has_value( argc, argv, i ) ) { should_create = true; create_name = argv[ ++i ]; }
+        // Presence of -create commits to the create path regardless of a valid name: an
+        // incomplete/ill-formed -create must report its error and exit, never fall through
+        // to build-all.  The name is grabbed only when a real value follows (validated below).
+        if ( str_icmp( argv[ i ], "-create" ) == 0 )
+        {
+            should_create = true;
+            if ( arg_has_value( argc, argv, i ) ) create_name = argv[ ++i ];
+        }
         if ( str_icmp( argv[ i ], "-dir"    ) == 0 && arg_has_value( argc, argv, i ) ) { create_dir  = argv[ ++i ]; }
         if ( str_icmp( argv[ i ], "-type"   ) == 0 && arg_has_value( argc, argv, i ) ) { create_type = argv[ ++i ]; }
         

@@ -61,6 +61,47 @@ launch_spawn( const char* label, const char* command_line, const char* working_d
 }
 
 /*==============================================================================================
+    Per-project actions -- all against the selected project's path
+==============================================================================================*/
+
+/* Run the engine's build_tool inside a project directory: build_tool reads the CWD's
+   orb.targets, so the working dir IS the project selector.  Captured (fast, want the log). */
+static void
+launch_project_build_tool( launch_project_t* prj, const char* label, const char* args )
+{
+    char cmd[ LAUNCH_PATH_MAX * 2 ];
+    snprintf( cmd, sizeof( cmd ), "\"%s/bin/build_tool.exe\" %s", s_launch.engine_root, args );
+
+    char full_label[ 160 ];
+    snprintf( full_label, sizeof( full_label ), "%s: %s", prj->name, label );
+    launch_run_capture( full_label, cmd, prj->path );
+}
+
+/* Launch an engine host on a project: host <exe> -project "<abs path>".  Spawned (long-lived,
+   owns its own window); the host resolves assets relative to its own exe, so the engine root
+   is the working dir. */
+static void
+launch_project_host( launch_project_t* prj, const char* host_exe, const char* label )
+{
+    char cmd[ LAUNCH_PATH_MAX * 2 ];
+    snprintf( cmd, sizeof( cmd ), "\"%s/bin/%s.exe\" -project \"%s\"",
+              s_launch.engine_root, host_exe, prj->path );
+
+    char full_label[ 160 ];
+    snprintf( full_label, sizeof( full_label ), "%s: %s", prj->name, label );
+    launch_spawn( full_label, cmd, s_launch.engine_root );
+}
+
+/* Open the project folder in the OS file browser (Windows Explorer). */
+static void
+launch_project_open_folder( launch_project_t* prj )
+{
+    char cmd[ LAUNCH_PATH_MAX + 32 ];
+    snprintf( cmd, sizeof( cmd ), "explorer \"%s\"", prj->path );
+    launch_spawn( "open folder", cmd, prj->path );
+}
+
+/*==============================================================================================
     Init -- resolve the engine root and probe the toolchain
 ==============================================================================================*/
 
@@ -189,6 +230,43 @@ launch_show_projects_pane()
                 if ( gui()->selectable( label, &sel ) )
                     s_launch.selected = sel ? ( i32 )i : -1;
                 gui()->pop_id();
+            }
+        }
+
+        /* Actions for the selected project.  Present-guarded: a missing project can still be
+           opened in a file browser (to find where it went) but cannot be built or run. */
+        if ( s_launch.selected >= 0 && s_launch.selected < ( i32 )s_launch.project_count )
+        {
+            launch_project_t* prj = &s_launch.projects[ s_launch.selected ];
+
+            gui()->separator();
+            gui()->textf( "Actions -- %s", prj->name );
+
+            if ( !prj->present )
+            {
+                gui()->text( "(project folder is missing)" );
+                if ( gui()->button( "Open Folder" ) )
+                    launch_project_open_folder( prj );
+            }
+            else
+            {
+                if ( gui()->button( "Open in Editor" ) )
+                    launch_project_host( prj, "host_editor", "editor" );
+                gui()->same_line( 0.0f );
+                if ( gui()->button( "Play" ) )
+                    launch_project_host( prj, "host_game", "play" );
+
+                if ( gui()->button( "Build" ) )
+                    launch_project_build_tool( prj, "build", "-config Debug" );
+                gui()->same_line( 0.0f );
+                if ( gui()->button( "Generate" ) )
+                    launch_project_build_tool( prj, "gen", "-gen" );
+                gui()->same_line( 0.0f );
+                if ( gui()->button( "Doctor" ) )
+                    launch_project_build_tool( prj, "doctor", "-doctor" );
+
+                if ( gui()->button( "Open Folder" ) )
+                    launch_project_open_folder( prj );
             }
         }
 
