@@ -51,7 +51,8 @@
     [gui platform sync]       gui()->viewport_update() -- when gui loaded
     [render]                  see Render paths below
     [hot-reload]              mod_check_reloads + flush, if RUN_HOST_HOT_RELOAD
-    [frame pacing]            sleep or editor wait (gui wants_redraw keeps animations smooth)
+    [frame pacing]            game: sleep toward deadline; editor: input-wakeable wait --
+                              frame cadence while the gui settles, long block once clean.
 
     Render paths
     ------------
@@ -83,7 +84,11 @@
     Pacing runs against an absolute deadline accumulator (deadline_us += frame_us each
     frame), so Sleep()'s millisecond truncation and overshoot self-correct instead of
     drifting the period toward work + frame_ms.  A frame that overruns its whole next
-    budget resyncs the deadline forward rather than spiraling to catch up.
+    budget resyncs the deadline forward rather than spiraling to catch up.  The exact-
+    average guarantee holds for game-mode pacing; the editor's input-wakeable waits
+    trade it away deliberately -- frames cut short by input do not bank credit (the
+    deadline is clamped to one period ahead), so responsiveness never mortgages a later
+    animation frame.
 
     Per-phase timings (events, update, gui, render, work, wait, frame) are stamped
     through the loop and published every frame via run()->frame_stats().
@@ -619,6 +624,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( rhi() ) rhi()->event( &ev );
                 if ( gui() && gui()->event( &ev ) )
                     continue;
+
                 if ( desc->on_event && desc->on_event( &ev ) )
                     continue;
 
@@ -845,8 +851,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            Each floater drives its own rhi context frame internally. No-op when
            no floaters are alive; safe to call unconditionally. */
         if ( s_gui_inited )
-            gui()->viewport_render_floaters();
-        PROF_ZONE_END();
+             gui()->viewport_render_floaters();
+
+        PROF_ZONE_END(); // render
 
         i64 t_render_us = sys_tick_microseconds();
         stats.render_us = t_render_us - t_gui_us;
@@ -876,11 +883,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            (Sleep granularity); the deadline accumulator below absorbs truncation and
            overshoot so the average rate holds exactly -- event pump and every other
            phase count against the budget because the deadline is absolute.
-           Editor mode: block until OS input arrives, capped by editor_timeout_ms
-           so hot-reload checks and other periodic work still run.
+           Editor mode: input-wakeable waits at two timeouts -- the remaining frame
+           budget while the gui settles, editor_timeout_ms once it is clean (capped so
+           hot-reload checks and other periodic work still run).  Either wait returns
+           the moment OS input arrives.
            Realtime gate: a live play/simulate session (run_host_realtime_set) suspends
-           the editor block entirely -- the session must tick every frame regardless of
+           the editor waits entirely -- the session must tick every frame regardless of
            OS input, so the loop paces like a game host until the session stops. */
+
         i64 work_end_us = sys_tick_microseconds();
         i64 remain_us   = deadline_us - work_end_us;
 
@@ -889,8 +899,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         PROF_ZONE_BEGIN( "host/wait" );
         if ( editor_sleep && !g_realtime )
         {
-            /* Run at frame_ms cadence -- rather than blocking on OS input -- while the gui has not
-               SETTLED, then block until input.  "Not settled" is two things:
+            /* Run at frame_ms cadence -- rather than the long input block -- while the gui has
+               not SETTLED, then block until input.  "Not settled" is two things:
 
                  wants_redraw : an animated widget is still mid-transition (play it out smoothly).
                  frame_dirty  : this frame still emitted widgets.  This is the one the old
@@ -936,15 +946,19 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* Advance the deadline by exactly one period; if this frame overran the whole
            next budget (load spike, editor wait), resync forward instead of running
-           back-to-back catch-up frames.  Clamp the other direction too: the editor's
-           settle wait wakes EARLY on input, and letting those short frames bank credit
-           would push the deadline far ahead of real time -- the first quiet frame after
-           an input burst would then stall an animation for the whole banked surplus. */
+           back-to-back catch-up frames.  The editor's input-wakeable waits also clamp
+           the OTHER direction: they return early whenever input arrives, and banking
+           that credit would push the deadline far ahead of real time -- the first
+           quiet frame after an input burst would then stall an animation for the whole
+           banked surplus.  Game mode must NOT take that clamp: its Sleep wakes early
+           only by request truncation (remain_us / 1000), and carrying that sub-
+           millisecond credit forward is exactly how the accumulator keeps the average
+           rate exact. */
         i64 t_end_us = sys_tick_microseconds();
         deadline_us += frame_us;
         if ( deadline_us < t_end_us )
              deadline_us = t_end_us + frame_us;
-        else if ( deadline_us > t_end_us + frame_us )
+        else if ( editor_sleep && !g_realtime && deadline_us > t_end_us + frame_us )
              deadline_us = t_end_us + frame_us;
 
         stats.wait_us  = t_end_us - work_end_us;
