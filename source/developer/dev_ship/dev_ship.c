@@ -222,13 +222,36 @@ ship_validate( const dev_ship_desc_t* desc )
    in orb.targets (render game <project>).  TODO: parse that list instead of mirroring it. */
 static const char* s_runtime_modules[] = { "render", "game" };
 
+/* Human label for the ship shape -- used in build logs and the manifest header. */
+static const char*
+ship_shape_name( const dev_ship_desc_t* desc )
+{
+    if ( desc->flags & DEV_SHIP_NO_ENGINE ) return "project-only";
+    if ( desc->flags & DEV_SHIP_MODULAR )   return "modular";
+    return "monolithic";
+}
+
+/* Engine root: supplies build_tool, and (with-engine) the host exe, module DLLs, and assets.
+   Returns desc->root_dir when engine_dir is unset -- an engine-resident target, where the two
+   roots coincide.  A child project sets engine_dir (from .orb_engine), so the returned pointer
+   differs from root_dir: that inequality is exactly the "is this a child project?" test. */
+static const char*
+ship_engine_root( const dev_ship_desc_t* desc )
+{
+    return ( desc->engine_dir && desc->engine_dir[ 0 ] ) ? desc->engine_dir : desc->root_dir;
+}
+
 static bool
 ship_build_target( const dev_ship_desc_t* desc, const char* target, bool monolithic )
 {
+    /* build_tool.exe lives in the ENGINE bin (a child project's bin holds only a forwarder bat).
+       Run it with the project root as the working dir so it reads that project's orb.targets. */
+    const char* eng = ship_engine_root( desc );
+
     char cmd[ 1024 ];
     snprintf( cmd, sizeof( cmd ),
               "\"%s" PATH_SEP "bin" PATH_SEP BUILD_TOOL_EXE "\"%s -config %s -target %s",
-              desc->root_dir, monolithic ? " -monolithic" : "", desc->config, target );
+              eng, monolithic ? " -monolithic" : "", desc->config, target );
 
     printf( "[build]   %s\n", cmd );
 
@@ -255,6 +278,34 @@ ship_build( const dev_ship_desc_t* desc )
         return true;
     }
 
+    if ( desc->flags & DEV_SHIP_NO_ENGINE )
+    {
+        /* Light shape: just the project's own game DLL -- no host, no engine modules. */
+        if ( !ship_build_target( desc, desc->project, false ) )
+            return false;
+        printf( "[build]   %s %s (project-only) built\n", desc->project, desc->config );
+        return true;
+    }
+
+    /* With-engine child ship: the engine is a prebuilt "known quantity" -- its host exe and
+       module DLLs already sit in the engine bin, so only the project's own DLL is ours to
+       build.  Monolithic needs a <project>_ship target the child does not have, so require
+       modular (host_game + engine DLLs + <project>.dll copied from their respective bins). */
+    if ( ship_engine_root( desc ) != desc->root_dir )
+    {
+        if ( !( desc->flags & DEV_SHIP_MODULAR ) )
+        {
+            ship_set_error( "monolithic ship of a child project needs a '%s_ship' target; "
+                            "use -modular (host_game + engine DLLs + %s.dll)",
+                            desc->project, desc->project );
+            return false;
+        }
+        if ( !ship_build_target( desc, desc->project, false ) )
+            return false;
+        printf( "[build]   %s %s (with engine, modular) built\n", desc->project, desc->config );
+        return true;
+    }
+
     if ( desc->flags & DEV_SHIP_MODULAR )
     {
         if ( !ship_build_target( desc, "host_game", false ) )
@@ -273,8 +324,7 @@ ship_build( const dev_ship_desc_t* desc )
             return false;
     }
 
-    printf( "[build]   %s %s (%s) built\n", desc->project, desc->config,
-            ( desc->flags & DEV_SHIP_MODULAR ) ? "modular" : "monolithic" );
+    printf( "[build]   %s %s (%s) built\n", desc->project, desc->config, ship_shape_name( desc ) );
     return true;
 }
 
@@ -304,15 +354,16 @@ ship_cook( const dev_ship_desc_t* desc )
     loader and .pdb references resolve) plus a launcher .bat carrying the -module argument.
 ==============================================================================================*/
 
-/* Copy <root>/bin/<name> to <out>/bin/<dst_name> (NULL = keep the name); with DEV_SHIP_PDB
+/* Copy <src_root>/bin/<name> to <out>/bin/<dst_name> (NULL = keep the name); with DEV_SHIP_PDB
    also copy the like-named .pdb, under its BUILD name so the exe's embedded reference still
-   resolves.  `required` distinguishes "not built" (error) from optional extras. */
+   resolves.  `required` distinguishes "not built" (error) from optional extras.  src_root lets
+   engine binaries come from the engine bin and the project DLL from the project bin. */
 static bool
-ship_stage_binary( const dev_ship_desc_t* desc, const char* out, const char* name,
-                   const char* dst_name, bool required )
+ship_stage_binary( const dev_ship_desc_t* desc, const char* src_root, const char* out,
+                   const char* name, const char* dst_name, bool required )
 {
     char src[ 512 ], dst[ 512 ];
-    snprintf( src, sizeof( src ), "%s" PATH_SEP "bin" PATH_SEP "%s", desc->root_dir, name );
+    snprintf( src, sizeof( src ), "%s" PATH_SEP "bin" PATH_SEP "%s", src_root, name );
     snprintf( dst, sizeof( dst ), "%s" PATH_SEP "bin" PATH_SEP "%s", out,
               dst_name ? dst_name : name );
 
@@ -344,12 +395,14 @@ ship_stage_binary( const dev_ship_desc_t* desc, const char* out, const char* nam
     return true;
 }
 
-/* Copy a data subtree; 0 files is a warning, not an error (meager-content projects). */
+/* Copy a data subtree; 0 files is a warning, not an error (meager-content projects).
+   src_root is the tree the data comes from (the engine tree for a child project's assets). */
 static bool
-ship_stage_tree( const dev_ship_desc_t* desc, const char* out, const char* rel )
+ship_stage_tree( const dev_ship_desc_t* desc, const char* src_root, const char* out, const char* rel )
 {
+    (void)desc;
     char src[ 512 ], dst[ 512 ];
-    snprintf( src, sizeof( src ), "%s" PATH_SEP "%s", desc->root_dir, rel );
+    snprintf( src, sizeof( src ), "%s" PATH_SEP "%s", src_root, rel );
     snprintf( dst, sizeof( dst ), "%s" PATH_SEP "%s", out, rel );
 
     int copied = 0;
@@ -383,21 +436,38 @@ ship_stage( const dev_ship_desc_t* desc )
         return false;
     }
 
+    /* Light "without engine" shape: only the project's own game DLL rides along -- no host
+       exe, engine module DLLs, assets, or launcher.  The recipient runs it under their own
+       engine (host_game -project <dir>), so nothing engine-side is bundled. */
+    /* Engine root supplies the host exe, engine module DLLs, and assets; the project bin
+       supplies the project's own DLL.  For an engine-resident target the two coincide. */
+    const char* eng = ship_engine_root( desc );
+
+    if ( desc->flags & DEV_SHIP_NO_ENGINE )
+    {
+        char dll[ 512 ];
+        snprintf( dll, sizeof( dll ), "%s.dll", desc->project );
+        if ( !ship_stage_binary( desc, desc->root_dir, out, dll, NULL, true ) )
+            return false;
+        printf( "[stage]   project-only: recipient supplies the engine\n" );
+        return true;
+    }
+
     /* Executables + module DLLs. */
     bool modular = ( desc->flags & DEV_SHIP_MODULAR ) != 0;
     char name[ 512 ];
     if ( modular )
     {
-        if ( !ship_stage_binary( desc, out, "host_game.exe", NULL, true ) )
+        if ( !ship_stage_binary( desc, eng, out, "host_game.exe", NULL, true ) )
             return false;
         for ( int i = 0; i < (int)ARRAY_COUNT( s_runtime_modules ); ++i )
         {
             snprintf( name, sizeof( name ), "%s.dll", s_runtime_modules[ i ] );
-            if ( !ship_stage_binary( desc, out, name, NULL, true ) )
+            if ( !ship_stage_binary( desc, eng, out, name, NULL, true ) )
                 return false;
         }
         snprintf( name, sizeof( name ), "%s.dll", desc->project );
-        if ( !ship_stage_binary( desc, out, name, NULL, true ) )
+        if ( !ship_stage_binary( desc, desc->root_dir, out, name, NULL, true ) )
             return false;
     }
     else
@@ -405,19 +475,19 @@ ship_stage( const dev_ship_desc_t* desc )
         char dst_name[ 512 ];
         snprintf( name, sizeof( name ), "%s_ship.exe", desc->project );
         snprintf( dst_name, sizeof( dst_name ), "%s.exe", desc->project );
-        if ( !ship_stage_binary( desc, out, name, dst_name, true ) )
+        if ( !ship_stage_binary( desc, eng, out, name, dst_name, true ) )
             return false;
     }
 
-    /* Cooked runtime data.  Sources and caches (font_source, font_cache, icon_source, ...)
-       deliberately stay home; cooked shaders ride along when present (missing is fine --
-       the embedded SPIR-V fallback covers them). */
-    if ( !ship_stage_tree( desc, out, "assets" PATH_SEP "font" ) ) return false;
-    if ( !ship_stage_tree( desc, out, "assets" PATH_SEP "icon" ) ) return false;
-    if ( !ship_stage_tree( desc, out, "config" ) )                 return false;
+    /* Cooked runtime data, from the engine tree.  Sources and caches (font_source, font_cache,
+       icon_source, ...) deliberately stay home; cooked shaders ride along when present (missing
+       is fine -- the embedded SPIR-V fallback covers them). */
+    if ( !ship_stage_tree( desc, eng, out, "assets" PATH_SEP "font" ) ) return false;
+    if ( !ship_stage_tree( desc, eng, out, "assets" PATH_SEP "icon" ) ) return false;
+    if ( !ship_stage_tree( desc, eng, out, "config" ) )                 return false;
     {
         char src[ 512 ], dst[ 512 ];
-        snprintf( src, sizeof( src ), "%s" PATH_SEP "bin" PATH_SEP "shaders", desc->root_dir );
+        snprintf( src, sizeof( src ), "%s" PATH_SEP "bin" PATH_SEP "shaders", eng );
         snprintf( dst, sizeof( dst ), "%s" PATH_SEP "bin" PATH_SEP "shaders", out );
         int copied = 0;
         if ( !ship_copy_tree( src, dst, &copied ) )
@@ -520,8 +590,7 @@ ship_package( const dev_ship_desc_t* desc )
     SysDateTime dt;
     sys_datetime_local( &dt );
     fprintf( fp, "# %s %s (%s) -- built %04u-%02u-%02u %02u:%02u:%02u\n",
-             desc->project, desc->config,
-             ( desc->flags & DEV_SHIP_MODULAR ) ? "modular" : "monolithic",
+             desc->project, desc->config, ship_shape_name( desc ),
              dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second );
     fprintf( fp, "# crc32    size       path\n" );
 

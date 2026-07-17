@@ -27,6 +27,17 @@ static gui_vp_t s_main_vp = 0;  /* the main viewport hosting the chrome shell an
    top level once the menu bar has ended. */
 static bool s_req_create_popup = false;
 
+/* Ship-section options for the selected project (session-scoped, like the import row). */
+static const char* k_ship_configs[] = { "Release", "Debug" };
+static i32  s_ship_mode    = 0;    /* 0 = project-only (light), 1 = with engine (full) */
+static i32  s_ship_config  = 0;    /* index into k_ship_configs */
+static bool s_ship_modular = true;  /* with-engine: host + module DLLs vs monolithic exe.
+                                       Default on: child projects have no <name>_ship target,
+                                       so modular is the only with-engine shape they support. */
+static bool s_ship_pdb     = false;
+static bool s_ship_clean   = false;
+static char s_ship_deploy[ LAUNCH_PATH_MAX ];
+
 /*==============================================================================================
     Command invocation
 ==============================================================================================*/
@@ -121,6 +132,43 @@ launch_project_open_folder( launch_project_t* prj )
     char cmd[ LAUNCH_PATH_MAX + 32 ];
     snprintf( cmd, sizeof( cmd ), "explorer \"%s\"", prj->path );
     launch_spawn( "open folder", cmd, prj->path );
+}
+
+/* Build the ship_tool command for the selected project from the Ship-section options (same
+   string the pane previews and the Ship button runs, so they cannot drift).  ship_tool runs
+   with the project dir as its cwd, so it reads the project's orb.targets and resolves the
+   engine root from its .orb_engine -- the launcher passes neither. */
+static void
+launch_ship_command( char* out, u32 out_sz, launch_project_t* prj )
+{
+    int n = snprintf( out, out_sz, "\"%s/bin/ship_tool.exe\" %s -config %s",
+                      s_launch.engine_root, prj->name, k_ship_configs[ s_ship_config ] );
+    u32 used = ( n > 0 && ( u32 )n < out_sz ) ? ( u32 )n : 0;
+
+    if ( s_ship_mode == 0 )
+        used += ( u32 )snprintf( out + used, out_sz - used, " -no-engine" );
+    else if ( s_ship_modular )
+        used += ( u32 )snprintf( out + used, out_sz - used, " -modular" );
+
+    if ( s_ship_pdb )
+        used += ( u32 )snprintf( out + used, out_sz - used, " -pdb" );
+    if ( s_ship_clean )
+        used += ( u32 )snprintf( out + used, out_sz - used, " -clean" );
+    if ( s_ship_deploy[ 0 ] )
+        snprintf( out + used, out_sz - used, " -deploy \"%s\"", s_ship_deploy );
+}
+
+/* Spawn ship_tool for the selected project (detached, owns its own console -- shipping runs a
+   build and can be long, so it does not block the UI; mirrors the editor's Deploy window). */
+static void
+launch_project_ship( launch_project_t* prj )
+{
+    char cmd[ LAUNCH_PATH_MAX * 3 ];
+    launch_ship_command( cmd, sizeof( cmd ), prj );
+
+    char label[ 160 ];
+    snprintf( label, sizeof( label ), "%s: ship", prj->name );
+    launch_spawn( label, cmd, prj->path );
 }
 
 /*==============================================================================================
@@ -346,6 +394,43 @@ launch_show_projects_pane()
 
                 if ( gui()->button( "Open Folder" ) )
                     launch_project_open_folder( prj );
+
+                /* Ship: wraps ship_tool.  Project-only (light) works today -- ships just the
+                   game DLL for dev sharing.  With-engine (full deliverable: host + engine DLLs
+                   + assets) is maturing for child projects. */
+                gui()->separator();
+                gui()->text( "Ship" );
+
+                gui()->radio_button( "Project only", &s_ship_mode, 0 );
+                gui()->same_line( 0.0f );
+                gui()->radio_button( "With engine", &s_ship_mode, 1 );
+
+                gui()->combo( "Config", &s_ship_config, k_ship_configs,
+                              ( i32 )( sizeof( k_ship_configs ) / sizeof( k_ship_configs[ 0 ] ) ) );
+
+                if ( s_ship_mode == 1 )
+                {
+                    gui()->checkbox( "Modular", &s_ship_modular );
+                    gui()->same_line( 0.0f );
+                }
+                gui()->checkbox( "PDB", &s_ship_pdb );
+                gui()->same_line( 0.0f );
+                gui()->checkbox( "Clean", &s_ship_clean );
+
+                gui()->input_text_with_hint( "##ship_deploy", "deploy dir (optional)...",
+                                             s_ship_deploy, sizeof( s_ship_deploy ) );
+
+                char ship_cmd[ LAUNCH_PATH_MAX * 3 ];
+                launch_ship_command( ship_cmd, sizeof( ship_cmd ), prj );
+                gui()->text_wrapped( ship_cmd );
+
+                if ( gui()->button( "Ship" ) )
+                    launch_project_ship( prj );
+                if ( s_ship_mode == 0 )
+                {
+                    gui()->same_line( 0.0f );
+                    gui()->text( "(game DLL only; recipient supplies the engine)" );
+                }
             }
         }
 

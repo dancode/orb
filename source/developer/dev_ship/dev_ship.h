@@ -51,7 +51,10 @@ typedef struct
 {
     const char* project;     /* project name, e.g. "sample_game"; ship target = <project>_ship */
     const char* config;      /* build configuration: "Debug" or "Release" */
-    const char* root_dir;    /* engine root (directory holding orb.targets) */
+    const char* root_dir;    /* project root (dir holding orb.targets): the engine root for an
+                                engine-resident target, the child project dir for a child */
+    const char* engine_dir;  /* engine root supplying build_tool (and, with-engine, the host,
+                                module DLLs, and assets); NULL or "" = same as root_dir */
     const char* out_dir;     /* staging root; "" or NULL = <root>/build/ship/<project> */
     const char* deploy_dir;  /* deploy destination; "" or NULL = deploy stage is a no-op */
     u32         flags;       /* DEV_SHIP_* */
@@ -64,6 +67,12 @@ typedef struct
 #define DEV_SHIP_SKIP_BUILD  ( 1u << 2 )    /* stage prebuilt bin/ output; do not compile */
 #define DEV_SHIP_MODULAR     ( 1u << 3 )    /* ship host_game.exe + module DLLs instead of
                                                the monolithic single exe (the default) */
+#define DEV_SHIP_NO_ENGINE   ( 1u << 4 )    /* light "without engine" shape: ship only the
+                                               project's own game DLL -- no host exe, no engine
+                                               module DLLs, no assets, no launcher.  The recipient
+                                               supplies the engine (host_game -project <dir>).
+                                               Fast; for dev sharing, not a platform deliverable.
+                                               Takes precedence over DEV_SHIP_MODULAR. */
 
 /* Pipeline stages, in execution order.  DEV_SHIP_STAGE_COUNT sizes iteration. */
 typedef enum

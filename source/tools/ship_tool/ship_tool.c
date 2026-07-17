@@ -9,7 +9,7 @@
     would use.
 
     Usage:
-        ship_tool <project> [-config <Debug|Release>] [-out <dir>] [-modular]
+        ship_tool <project> [-config <Debug|Release>] [-out <dir>] [-modular] [-no-engine]
                             [-deploy <dir>] [-only <build|cook|stage|package|deploy>]
                             [-skip-build] [-pdb] [-clean]
 
@@ -19,6 +19,10 @@
         -out          staging root (default: build/ship/<project>)
         -modular      ship host_game.exe + module DLLs instead of the monolithic
                       single exe (the "final correct" default)
+        -no-engine    light shape: ship only the project's game DLL -- no host, engine
+                      DLLs, or assets; the recipient supplies the engine (dev sharing)
+        -engine       engine root supplying build_tool (and, with-engine, host + DLLs +
+                      assets); default: read from the project's .orb_engine, else <root>
         -deploy       destination directory to mirror the staged build into; without
                       it the deploy stage is a no-op (the staged dir is the deliverable)
         -only         run a single pipeline stage instead of the full sequence
@@ -48,10 +52,35 @@ static int
 usage( void )
 {
     fprintf( stderr,
-             "usage: ship_tool <project> [-config <Debug|Release>] [-out <dir>] [-modular]\n"
+             "usage: ship_tool <project> [-config <Debug|Release>] [-out <dir>] [-modular] [-no-engine]\n"
              "                 [-deploy <dir>] [-only <build|cook|stage|package|deploy>]\n"
              "                 [-skip-build] [-pdb] [-clean]\n" );
     return 1;
+}
+
+/* A child project records its engine root in .orb_engine (line 1).  ship_tool runs from the
+   project root, so read it there; an engine-resident target has no such file, engine_dir stays
+   NULL, and dev_ship falls back to root_dir.  Static buffer: the desc borrows it for the run. */
+static char s_engine_dir[ 512 ];
+static const char*
+resolve_engine_dir( void )
+{
+    FILE* f = fopen( ".orb_engine", "r" );
+    if ( !f )
+        return NULL;
+
+    const char* out = NULL;
+    if ( fgets( s_engine_dir, sizeof( s_engine_dir ), f ) )
+    {
+        size_t n = strlen( s_engine_dir );
+        while ( n > 0 && ( s_engine_dir[ n - 1 ] == '\n' || s_engine_dir[ n - 1 ] == '\r' ||
+                           s_engine_dir[ n - 1 ] == ' ' ) )
+            s_engine_dir[ --n ] = '\0';
+        if ( s_engine_dir[ 0 ] )
+            out = s_engine_dir;
+    }
+    fclose( f );
+    return out;
 }
 
 /*==============================================================================================
@@ -66,10 +95,11 @@ main( int argc, char** argv )
 
     dev_ship_desc_t desc =
     {
-        .project  = argv[ 1 ],
-        .config   = "Release",
-        .root_dir = ".",        /* run from the engine root; dev_ship validates */
-        .out_dir  = NULL,
+        .project    = argv[ 1 ],
+        .config     = "Release",
+        .root_dir   = ".",        /* run from the project root; dev_ship validates orb.targets */
+        .engine_dir = NULL,       /* resolved from .orb_engine below, or -engine */
+        .out_dir    = NULL,
     };
 
     dev_ship_stage_t only      = DEV_SHIP_STAGE_COUNT;    /* COUNT = run the full pipeline */
@@ -81,6 +111,8 @@ main( int argc, char** argv )
             desc.config = argv[ ++i ];
         else if ( strcmp( argv[ i ], "-out" ) == 0 && i + 1 < argc )
             desc.out_dir = argv[ ++i ];
+        else if ( strcmp( argv[ i ], "-engine" ) == 0 && i + 1 < argc )
+            desc.engine_dir = argv[ ++i ];
         else if ( strcmp( argv[ i ], "-deploy" ) == 0 && i + 1 < argc )
             desc.deploy_dir = argv[ ++i ];
         else if ( strcmp( argv[ i ], "-only" ) == 0 && i + 1 < argc )
@@ -101,6 +133,8 @@ main( int argc, char** argv )
         }
         else if ( strcmp( argv[ i ], "-modular" ) == 0 )
             desc.flags |= DEV_SHIP_MODULAR;
+        else if ( strcmp( argv[ i ], "-no-engine" ) == 0 )
+            desc.flags |= DEV_SHIP_NO_ENGINE;
         else if ( strcmp( argv[ i ], "-skip-build" ) == 0 )
             desc.flags |= DEV_SHIP_SKIP_BUILD;
         else if ( strcmp( argv[ i ], "-pdb" ) == 0 )
@@ -113,6 +147,9 @@ main( int argc, char** argv )
             return usage();
         }
     }
+
+    if ( !desc.engine_dir )
+        desc.engine_dir = resolve_engine_dir();
 
     printf( "ship_tool: %s (%s)%s%s\n", desc.project, desc.config,
             have_only ? " stage: " : "",
