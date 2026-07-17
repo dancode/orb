@@ -544,9 +544,76 @@ ship_package( const dev_ship_desc_t* desc )
 /*==============================================================================================
     deploy -- publish the packaged layout to its destination.
 
-    v0 is a directory publish: mirror the staged tree into desc->deploy_dir.  With no
-    destination set this is a stated no-op -- the staged dir already is the deliverable.
+    A directory publish that RECONCILES rather than clears.  Blanket-wiping a user-supplied
+    destination is the one line a packaging tool must never have: a mistyped path destroys
+    data, it deletes legitimate neighbors of a shipped game (saves, logs), and a recursive
+    mass-delete is the access pattern EDR heuristics flag.  Instead the manifest is the
+    record of what we shipped last time:
+
+        1. checks first, no mutation: the staged manifest must exist (package ran), and the
+           destination must be empty, absent, or carry a manifest of ours -- a non-empty
+           dir without one is refused, not overwritten
+        2. delete exactly the files the OLD manifest lists that the NEW one does not --
+           exact paths, no wildcards, never anything we did not previously ship
+        3. copy the staged tree over
+
+    The old destination manifest is deleted between 2 and 3, so an interrupted deploy
+    tends to leave a visibly manifest-less (= invalid) build rather than a plausible one.
 ==============================================================================================*/
+
+/* Iterate manifest payload lines in place.  `*cursor` walks a writable NUL-terminated
+   buffer (sys_file_read_entire guarantees the terminator); each call terminates the
+   current line and returns its path column, skipping '#' comments.  Lines are fixed
+   format -- "%08x %10u %s" -- so the path starts at column 20 (paths may contain spaces,
+   which is why the format is fixed-width, not token-split). */
+static const char*
+ship_manifest_next_path( char** cursor )
+{
+    while ( **cursor )
+    {
+        char* line = *cursor;
+        char* nl   = strchr( line, '\n' );
+        if ( nl )
+            *nl = '\0';
+        *cursor = nl ? nl + 1 : line + strlen( line );
+
+        if ( line[ 0 ] != '#' && strlen( line ) > 20 )
+            return line + 20;
+    }
+    return NULL;
+}
+
+/* True if `path` appears in the manifest text (probed fresh per call; counts are tiny). */
+static bool
+ship_manifest_contains( const char* manifest_text, u32 text_size, const char* path )
+{
+    /* Work on a stack copy of the line-iterated state: re-scan from the start each call
+       by searching for the fixed-format line tail directly. */
+    char needle[ 512 ];
+    snprintf( needle, sizeof( needle ), " %s\n", path );
+    const char* hit = manifest_text;
+    size_t      nlen = strlen( needle );
+    (void)text_size;
+    while ( ( hit = strstr( hit, needle ) ) != NULL )
+    {
+        /* Column check: the path column starts at offset 20 into its line. */
+        const char* line = hit + 1;
+        while ( line > manifest_text && line[ -1 ] != '\n' )
+            --line;
+        if ( ( hit + 1 ) - line == 20 )
+            return true;
+        hit += nlen;
+    }
+    return false;
+}
+
+static bool
+ship_count_files_cb( const char* filename, const char* full_path, void* userdata )
+{
+    (void)filename; (void)full_path;
+    ++*(int*)userdata;
+    return true;
+}
 
 static bool
 ship_deploy( const dev_ship_desc_t* desc )
@@ -557,19 +624,72 @@ ship_deploy( const dev_ship_desc_t* desc )
         return true;
     }
 
-    char out[ 512 ];
+    char out[ 512 ], new_path[ 512 ], old_path[ 512 ];
     ship_out_dir( desc, out, sizeof( out ) );
+    snprintf( new_path, sizeof( new_path ), "%s" PATH_SEP "manifest.txt", out );
+    snprintf( old_path, sizeof( old_path ), "%s" PATH_SEP "manifest.txt", desc->deploy_dir );
+
+    /* --- checks first: nothing at the destination is touched until all pass --- */
+
+    sys_file_data_t new_man = sys_file_read_entire( new_path );
+    if ( !new_man.ok )
+    {
+        ship_set_error( "no staged manifest '%s' (run the package stage first)", new_path );
+        return false;
+    }
+
+    sys_file_data_t old_man = sys_file_read_entire( old_path );
+    if ( !old_man.ok )
+    {
+        /* No manifest: only an empty or absent destination is safe to adopt.  Anything
+           else is not a build we deployed -- refuse rather than overwrite. */
+        int existing = 0;
+        sys_dir_walk( desc->deploy_dir, ship_count_files_cb, &existing );
+        if ( existing > 0 )
+        {
+            ship_set_error( "'%s' has %d files but no manifest.txt -- not a deployed build;"
+                            " refusing to modify it (choose an empty or new directory)",
+                            desc->deploy_dir, existing );
+            sys_file_free( &new_man );
+            return false;
+        }
+    }
+
+    /* --- reconcile: remove exactly what the old manifest shipped and the new one drops --- */
+
+    int removed = 0;
+    if ( old_man.ok )
+    {
+        char*       cursor = (char*)old_man.data;
+        const char* rel;
+        while ( ( rel = ship_manifest_next_path( &cursor ) ) != NULL )
+        {
+            if ( ship_manifest_contains( (const char*)new_man.data, new_man.size, rel ) )
+                continue;
+
+            char victim[ 512 ];
+            snprintf( victim, sizeof( victim ), "%s" PATH_SEP "%s", desc->deploy_dir, rel );
+            if ( sys_file_delete( victim ) )
+            {
+                printf( "[deploy]  removed stale %s\n", rel );
+                ++removed;
+            }
+        }
+
+        /* Old manifest last: while the copy below runs, the destination has no manifest,
+           so an interrupted deploy reads as invalid instead of plausible. */
+        sys_file_delete( old_path );
+    }
+    sys_file_free( &old_man );
+    sys_file_free( &new_man );
+
+    /* --- publish --- */
 
     int copied = 0;
     if ( !ship_copy_tree( out, desc->deploy_dir, &copied ) )
         return false;
-    if ( copied == 0 )
-    {
-        ship_set_error( "nothing staged in '%s' (run the stage stage first)", out );
-        return false;
-    }
 
-    printf( "[deploy]  %s (%d files)\n", desc->deploy_dir, copied );
+    printf( "[deploy]  %s (%d files, %d stale removed)\n", desc->deploy_dir, copied, removed );
     return true;
 }
 

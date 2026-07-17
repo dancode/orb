@@ -20,8 +20,11 @@
         stage     gather the runtime file set into a clean directory in the shipped layout
         package   write <out>/manifest.txt (build stamp + crc32/size/path per staged file);
                   zip-bundling assets lands here later
-        deploy    mirror the staged tree into deploy_dir; no destination = stated no-op
-                  (the staged dir already is the deliverable)
+        deploy    reconciled directory publish into deploy_dir: manifests diffed first,
+                  files the previous deploy shipped but this one drops are deleted (exact
+                  paths only -- never a blanket clear), then the staged tree copies over.
+                  A non-empty destination without our manifest is refused, not overwritten.
+                  No destination = stated no-op (the staged dir already is the deliverable)
 
     The staged directory is itself the shippable output: zip it and send it.  Its layout
     mirrors the dev tree because sys_root_dir() resolves the asset root as ONE LEVEL ABOVE
