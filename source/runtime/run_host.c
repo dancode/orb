@@ -96,6 +96,7 @@
     reload flush.
 
 ==============================================================================================*/
+// clang-format off
 /*==============================================================================================
     Quit flag (headless path)
 ==============================================================================================*/
@@ -908,26 +909,42 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             if ( gui_settling )
             {
                 if ( g_sleep_debug ) printf( "[host] settle frame  (no block)\n" );
+
+                /* Pace at frame cadence but stay AWAKE to input: a deaf Sleep here adds a
+                   full frame of latency to every stage of an in-flight gesture (hover promote,
+                   press arm, threshold cross, the posted start-move) while the physical mouse
+                   keeps going.  On the native-borderless caption that lag let the posted
+                   start-move overtake the real button-up already sitting in the queue -- the
+                   OS move loop then started after the release and ate the next caption click.
+                   Waking on input collapses the gesture pipeline to event rate; with no input
+                   this times out at the same cadence the Sleep gave (animations still pace). */
                 if ( remain_us >= 1000 )
-                    sys()->sleep_milliseconds( ( i32 )( remain_us / 1000 ) );
+                    sys()->wait_for_os_events_ms( ( i32 )( remain_us / 1000 ) );
             }
             else
             {
-                if ( g_sleep_debug ) printf( "[host] editor sleep  (timeout %d ms)\n", editor_timeout_ms );
+                if ( g_sleep_debug ) { printf( "[host] editor sleep  (timeout %d ms)\n", editor_timeout_ms ); }
                 sys()->wait_for_os_events_ms( editor_timeout_ms );
-                if ( g_sleep_debug ) printf( "[host] editor wakeup (frame %llu)\n", (unsigned long long)run()->clock()->frame_number );
+                if ( g_sleep_debug ) { printf( "[host] editor wakeup (frame %llu)\n", (unsigned long long)run()->clock()->frame_number ); }
             }
         }
         else if ( remain_us >= 1000 )
+        {
             sys()->sleep_milliseconds( ( i32 )( remain_us / 1000 ) );
+        }
         PROF_ZONE_END();
 
         /* Advance the deadline by exactly one period; if this frame overran the whole
            next budget (load spike, editor wait), resync forward instead of running
-           back-to-back catch-up frames. */
+           back-to-back catch-up frames.  Clamp the other direction too: the editor's
+           settle wait wakes EARLY on input, and letting those short frames bank credit
+           would push the deadline far ahead of real time -- the first quiet frame after
+           an input burst would then stall an animation for the whole banked surplus. */
         i64 t_end_us = sys_tick_microseconds();
         deadline_us += frame_us;
         if ( deadline_us < t_end_us )
+             deadline_us = t_end_us + frame_us;
+        else if ( deadline_us > t_end_us + frame_us )
              deadline_us = t_end_us + frame_us;
 
         stats.wait_us  = t_end_us - work_end_us;
@@ -953,3 +970,4 @@ loop_exit:
 }
 
 /*============================================================================================*/
+// clang-format on

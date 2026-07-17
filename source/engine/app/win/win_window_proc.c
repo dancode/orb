@@ -32,6 +32,22 @@ win_proc_mouse( app_window_t* win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
                 if ( win->relative.enabled )
                     return true;
 
+                /* Reconcile latched button state with the live button bits this message carries.
+                   A release can be lost to a window we don't own the messages of (an OS move /
+                   size modal loop, a release outside the window before capture engaged); the
+                   stale "held" state then turns the next cursor motion into a phantom drag.
+                   Only releases are synthesized -- a down we never saw must not become a click. */
+                {
+                    static const struct { u32 mk; app_mouse_button_t btn; } k_sync[ 3 ] = {
+                        { MK_LBUTTON, APP_MOUSE_LEFT   },
+                        { MK_RBUTTON, APP_MOUSE_RIGHT  },
+                        { MK_MBUTTON, APP_MOUSE_MIDDLE },
+                    };
+                    for ( int i = 0; i < 3; ++i )
+                        if ( g_input.current_mouse[ k_sync[ i ].btn ] && !( wp & k_sync[ i ].mk ) )
+                            input_handle_mouse_button( k_sync[ i ].btn, false, x, y, win->id );
+                }
+
                 /* Capture directs all mouse input here while any button is held,
                    even when the cursor leaves the client area (e.g. viewport drag). */
                 u32 btns = MK_LBUTTON | MK_MBUTTON | MK_RBUTTON | MK_XBUTTON1 | MK_XBUTTON2;
@@ -448,14 +464,20 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
                That loop consumes the real WM_LBUTTONUP without delivering it to our proc,
                leaving gui with stale mouse-held state that silently drops the next click. */
             SendMessageW( hwnd, WM_LBUTTONUP, 0, 0 );
-            SendMessageW( hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0 );
+            /* The post races the physical release: a quick flick can lift the button before
+               this message is pumped (the editor's idle-block batching widens the window).
+               Entering the modal loop with the button already up leaves a stale keyboard-move
+               style loop that silently eats the NEXT caption gesture -- skip it instead. */
+            if ( GetKeyState( VK_LBUTTON ) < 0 )
+                SendMessageW( hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0 );
             return 0;
 
         case APP_WM_START_RESIZE:
             ReleaseCapture();
             win->state.captured = 0;
-            SendMessageW( hwnd, WM_LBUTTONUP, 0, 0 );  /* same reason as APP_WM_START_MOVE */
-            SendMessageW( hwnd, WM_NCLBUTTONDOWN, wp /* HT* code */, 0 );
+            SendMessageW( hwnd, WM_LBUTTONUP, 0, 0 );  /* same reasons as APP_WM_START_MOVE */
+            if ( GetKeyState( VK_LBUTTON ) < 0 )
+                SendMessageW( hwnd, WM_NCLBUTTONDOWN, wp /* HT* code */, 0 );
             return 0;
 
         case APP_WM_TITLE_EVENT:

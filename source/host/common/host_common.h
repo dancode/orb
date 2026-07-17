@@ -23,8 +23,8 @@
     Constants
 ==============================================================================================*/
 
-#define HOST_NAME_MAX   64
-#define HOST_MODULE_MAX 64
+#define HOST_NAME_MAX   32      /* mod_internal.c: MODULE_NAME_MAX = 32 */
+#define HOST_MODULE_MAX 32      /* mod_internal.c: MODULE_NAME_MAX = 32 */
 #define HOST_PATH_MAX   260
 
 /* Token stringize / paste -- for ship exes that bake a project in via a HOST_PROJECT

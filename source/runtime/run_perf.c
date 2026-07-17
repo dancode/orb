@@ -303,9 +303,10 @@ void
 host_prof_hitch_frame( f64 work_ms )
 {
     u32 hitch_events = prof_hitch_update( work_ms );
-    if ( hitch_events )
+    if ( hitch_events ) {
         printf( "[host] prof_hitch: %.1f ms frame -- wrote '%s' (%u events)\n",
                 work_ms, prof_hitch_last_path(), hitch_events );
+    }
 }
 
 /*==============================================================================================

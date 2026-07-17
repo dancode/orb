@@ -165,7 +165,7 @@ sys_wait_for_os_events_ms( i32 timeout_ms )
        timeout_ms elapses.  MWMO_INPUTAVAILABLE makes it return immediately when input is already
        queued but not yet removed.  QS_TIMER is intentionally excluded so the 1 ms fiber timer
        does not defeat the sleep while the editor UI is idle. */
-    MsgWaitForMultipleObjectsEx( 0, NULL, (DWORD)timeout_ms,
+    MsgWaitForMultipleObjectsEx( 0, NULL, (DWORD)timeout_ms, // INFINITE
                                  QS_INPUT | QS_POSTMESSAGE | QS_PAINT | QS_SENDMESSAGE,
                                  MWMO_INPUTAVAILABLE );
 
