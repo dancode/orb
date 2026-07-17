@@ -29,8 +29,11 @@
 
 /* Maintain the target between frames: lazy create once the panel publishes its first
    size, settle-debounced recreate on resize, and -- on frames that will draw (live) --
-   flip the write buffer so in-flight frames keep sampling the previous one. */
-void ed_viewport_update( bool live );
+   flip the write buffer so in-flight frames keep sampling the previous one.
+   Returns true when the target was (re)created this frame: the caller must force a gui
+   rebuild so the panel re-bakes the new bindless index -- a clean-frame replay of the
+   retained draw list would keep sampling the old one past its deferred destruction. */
+bool ed_viewport_update( bool live );
 
 /* The scene viewport window: publishes its content size as the wanted target size and
    displays the target's current buffer.  Visibility is the caller's (Window menu). */

@@ -39,11 +39,13 @@ static ed_viewport_state_t s_vp = { .target_id = -1 };
 
 /*============================================================================================*/
 
-void
+bool
 ed_viewport_update( bool live )
 {
+    bool recreated = false;
+
     if ( !render() )
-        return;
+        return false;
 
     i32 w = s_vp.want_w, h = s_vp.want_h;
     if ( w >= ED_VIEWPORT_MIN && h >= ED_VIEWPORT_MIN )
@@ -55,7 +57,10 @@ ed_viewport_update( bool live )
         {
             s_vp.target_id = render()->target_create( w, h );
             if ( s_vp.target_id >= 0 )
+            {
                 LOG_INFO( "scene target created %dx%d", w, h );
+                recreated = true;
+            }
         }
         else
         {
@@ -69,7 +74,10 @@ ed_viewport_update( bool live )
                 /* target_resize waits for the device to idle; the settle gate above
                    keeps that hitch off live drag frames. */
                 if ( render()->target_resize( s_vp.target_id, w, h ) )
+                {
                     LOG_INFO( "scene target resized %dx%d", w, h );
+                    recreated = true;
+                }
                 else
                     s_vp.target_id = -1;
                 s_vp.stable_frames = 0;
@@ -83,6 +91,8 @@ ed_viewport_update( bool live )
 
     if ( live && s_vp.target_id >= 0 )
         render()->target_flip( s_vp.target_id );
+
+    return recreated;
 }
 
 void

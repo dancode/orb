@@ -82,14 +82,20 @@ editor_update( f32 dt )
 
     /* AFTER the tick filled the target's submission bucket, BEFORE the gui emit bakes
        the target's texture index (the buffer flip lives in here). */
-    ed_viewport_update( live && s_show_viewport );
+    bool recreated = ed_viewport_update( live && s_show_viewport );
 
     /* Pacing gates -- a live session must tick without blocking on OS input (realtime),
        and the viewport image changes every frame so clean-frame emit skips would freeze
        it (force-redraw).  Re-derived every frame so they survive every transition --
-       buttons, host quits, a project ending its own session. */
+       buttons, host quits, a project ending its own session.
+
+       A target (re)create latches force-redraw for one frame even when stopped: the old
+       textures are destruction-deferred only a couple of epochs, so a clean-frame replay
+       of the retained draw list -- still carrying the old bindless index -- would sample
+       a freed image once reclaim runs (VK_ERROR_DEVICE_LOST).  The forced emit re-bakes
+       the panel with the new index before that window closes. */
     run_host_realtime_set( live );
-    gui()->set_force_redraw( live );
+    gui()->set_force_redraw( live || recreated );
 }
 
 static void
