@@ -103,7 +103,7 @@ ed_viewport_panel( void )
        view vs the tiled editor layout.  The panel body is size-agnostic (it publishes whatever
        content_avail hands it), so the target resize protocol below rides the transition as it
        would any resize. */
-    if ( !gui()->window_begin( "Viewport", GUI_WIN_NOSCROLL | GUI_WIN_DOCK_MAXIMIZE ) )
+    if ( !gui()->window_begin( "Viewport", GUI_WIN_NOSCROLL | GUI_WIN_DOCK_MAXIMIZE | GUI_WIN_CLOSEABLE ) )
     {
         gui()->window_end();
         return;

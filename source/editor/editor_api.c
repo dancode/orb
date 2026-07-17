@@ -15,7 +15,9 @@
         Deploy        ship-pipeline front-end (File > Deploy...): configures and spawns
                       ship_tool detached, the batch-job heart -- no pipeline logic here
 
-    Window visibility lives in the Window menu -- one source of truth, no close boxes yet.
+    Window visibility lives in the s_show_* flags: the Window menu toggles them and each
+    window's close (X) button clears them back (CLOSEABLE + window_is_open sync, the
+    pipeline-dashboard pattern), so menu checks and close boxes never disagree.
     The panel set is deliberately flat for now; it becomes a registry when panels grow
     past a handful (per the north star: registry + selection + undo land with the world).
 
@@ -158,7 +160,9 @@ editor_play_standalone( void )
 static void
 editor_game_window( void )
 {
-    if ( gui()->window_begin( "Game", GUI_WIN_NONE ) )
+    /* The shell flag says show: revive the pool entry if the X button hid it earlier. */
+    gui()->window_set_open( "Game", true );
+    if ( gui()->window_begin( "Game", GUI_WIN_CLOSEABLE ) )
     {
         gui()->stack();
 
@@ -198,6 +202,10 @@ editor_game_window( void )
         }
     }
     gui()->window_end();
+
+    /* The X button closed it this frame: report back so the menu toggle stays in sync. */
+    if ( !gui()->window_is_open( "Game" ) )
+        s_show_game = false;
 }
 
 /* Deploy -- configure and launch the ship pipeline (build -> cook -> stage -> package ->
@@ -207,15 +215,19 @@ editor_game_window( void )
 static void
 editor_ship( void )
 {
+    /* Run through cmd.exe with a trailing pause so the console survives after the pipeline
+       finishes -- otherwise the window closes before the log can be read. */
     char cmd[ 1024 ];
-    int  n = snprintf( cmd, sizeof( cmd ), "\"%s\\bin\\ship_tool.exe\" %s -config %s",
+    int  n = snprintf( cmd, sizeof( cmd ), "cmd.exe /c \"\"%s\\bin\\ship_tool.exe\" %s -config %s",
                        sys_root_dir(), s_project, s_ship_configs[ s_ship_config ] );
 
     if ( s_ship_modular ) n += snprintf( cmd + n, sizeof( cmd ) - n, " -modular" );
     if ( s_ship_pdb )     n += snprintf( cmd + n, sizeof( cmd ) - n, " -pdb" );
     if ( s_ship_clean )   n += snprintf( cmd + n, sizeof( cmd ) - n, " -clean" );
     if ( s_ship_deploy_dir[ 0 ] )
-        snprintf( cmd + n, sizeof( cmd ) - n, " -deploy \"%s\"", s_ship_deploy_dir );
+        n += snprintf( cmd + n, sizeof( cmd ) - n, " -deploy \"%s\"", s_ship_deploy_dir );
+
+    snprintf( cmd + n, sizeof( cmd ) - n, " & pause\"" );
 
     if ( sys_process_spawn( cmd, sys_root_dir() ) )
         LOG_INFO( "ship launched: %s", cmd );
@@ -226,9 +238,10 @@ editor_ship( void )
 static void
 editor_deploy_window( void )
 {
+    gui()->window_set_open( "Deploy", true );
     gui()->window_set_next_pos ( 460.0f, 160.0f, GUI_COND_ONCE );
     gui()->window_set_next_size( 340.0f, 240.0f, GUI_COND_ONCE );
-    if ( gui()->window_begin( "Deploy", GUI_WIN_NONE ) )
+    if ( gui()->window_begin( "Deploy", GUI_WIN_CLOSEABLE ) )
     {
         gui()->stack();
 
@@ -255,14 +268,18 @@ editor_deploy_window( void )
         }
     }
     gui()->window_end();
+
+    if ( !gui()->window_is_open( "Deploy" ) )
+        s_show_deploy = false;
 }
 
 static void
 editor_stats_window( void )
 {
+    gui()->window_set_open( "Frame Stats", true );
     gui()->window_set_next_pos ( 420.0f, 120.0f, GUI_COND_ONCE );
     gui()->window_set_next_size( 300.0f, 160.0f, GUI_COND_ONCE );
-    if ( gui()->window_begin( "Frame Stats", GUI_WIN_NONE ) )
+    if ( gui()->window_begin( "Frame Stats", GUI_WIN_CLOSEABLE ) )
     {
         gui()->stack();
         const run_clock_t* clk = run()->clock();
@@ -271,6 +288,9 @@ editor_stats_window( void )
         gui()->textf( "dt     %.2f ms", clk->dt * 1000.0f );
     }
     gui()->window_end();
+
+    if ( !gui()->window_is_open( "Frame Stats" ) )
+        s_show_stats = false;
 }
 
 /*==============================================================================================
@@ -322,7 +342,14 @@ editor_build_gui( f32 dt )
         s_dock_built = true;
     }
 
-    if ( s_show_viewport ) ed_viewport_panel();
+    if ( s_show_viewport )
+    {
+        /* The panel lives in editor_service; the open handshake stays here with the flag. */
+        gui()->window_set_open( "Viewport", true );
+        ed_viewport_panel();
+        if ( !gui()->window_is_open( "Viewport" ) )
+            s_show_viewport = false;
+    }
     if ( s_show_game     ) editor_game_window();
     if ( s_show_stats    ) editor_stats_window();
     if ( s_show_deploy   ) editor_deploy_window();
@@ -355,7 +382,7 @@ editor_mod_init( void* state, get_api_fn get_api )
     UNUSED( state );
     UNUSED( get_api );
 
-    if ( !MOD_FETCH_GAME )
+    if ( !MOD_FETCH_GAME || !MOD_FETCH_RUN )
         return false;
 
     /* render() is the runtime host's pointer, populated after mod_init_all -- not
@@ -369,7 +396,7 @@ editor_mod_reload( void* state, get_api_fn get_api )
     UNUSED( state );
     UNUSED( get_api );
 
-    if ( !MOD_FETCH_GAME )
+    if ( !MOD_FETCH_GAME || !MOD_FETCH_RUN )
         return false;
     return true;
 }
@@ -389,8 +416,8 @@ static mod_desc_t s_editor_mod_desc = {
     .state_size    = 0,
     .func_api_size = sizeof( editor_api_t ),
     .func_api      = &g_editor_api_struct,
-    .dep_count     = 4,
-    .deps          = { "core", "gui", "render", "game" },
+    .dep_count     = 5,
+    .deps          = { "core", "gui", "render", "game", "run" },
     .init          = editor_mod_init,
     .reload        = editor_mod_reload,
     .exit          = editor_mod_exit,
