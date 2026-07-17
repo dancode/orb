@@ -299,6 +299,7 @@ launch_show_menu( gui_vp_t vp )
     {
         gui()->menu_item( "Engine",   NULL, &s_show_engine );
         gui()->menu_item( "Projects", NULL, &s_show_projects );
+        gui()->separator();
         gui()->menu_item( "Output",   NULL, &s_show_output );
         gui()->menu_end();
     }

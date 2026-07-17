@@ -300,12 +300,13 @@ gui_new_line( f32 h )
     widget_next_rect( h >= 0.0f ? h : font_char_h() );
 }
 
-/* A horizontal rule: a thin line spanning the cell width, centered in a standard-height cell.
+/* A horizontal rule: a thin line spanning the cell width, centered in a half-height cell -- a
+   full line of dead air reads as a section break, not a divider (worst under the roomy ramp).
    Solid by default; a dashed rule when GUI_VAR_SEPARATOR_STYLE selects it (draw_rule). */
 void
 gui_separator( void )
 {
-    gui_rect_t r  = widget_next_rect( WIDGET_H );
+    gui_rect_t r  = widget_next_rect( WIDGET_H * 0.5f );
     gui_rect_t ln = rect_align( r, r.w, WIN_BORDER, GUI_ALIGN_VCENTER );
     draw_rule( ln.x, ln.y + ln.h * 0.5f, ln.w, WIN_BORDER, COL_BORDER );
 }

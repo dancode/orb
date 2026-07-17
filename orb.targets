@@ -265,7 +265,7 @@ target editor
     root        source/editor
     folder      05_EDITOR
     unit        editor.c
-    dep         core gui
+    dep         core gui run
 	dep 		editor_viewport
 
 # ==============================================================================

@@ -642,10 +642,15 @@ doctor_check_module_descs( bool registry_ok )
 
         char names[ 256 ];
 
+        /* Only static dep targets expect a 'dep' echo: a descriptor dep on a dynamic
+           module is load-order/gateway-only (link happens via host mono_dep, if ever). */
         names[ 0 ] = '\0';
         for ( int j = 0; j < d->name_count; ++j )
-            if ( find_target( d->deps[ j ] ) && !doc_target_links( t, d->deps[ j ] ) )
+        {
+            const target_info_t* dep_t = find_target( d->deps[ j ] );
+            if ( dep_t && dep_t->type == TARGET_STATIC_LIB && !doc_target_links( t, d->deps[ j ] ) )
                 doc_name_append( names, sizeof( names ), d->deps[ j ] );
+        }
         if ( names[ 0 ] )
         {
             doc_warn( "target '%s': descriptor declares dep(s) orb.targets does not link:%s",
