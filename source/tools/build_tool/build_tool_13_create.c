@@ -758,6 +758,69 @@ create_emit_project_gitignore( const char* path )
     printf( ORB_INDENT "  wrote  %s\n", path );
 }
 
+/* Register the project in <engine>/build/.orb_projects -- the machine-local, gitignored
+   engine->projects index (the reverse direction of a project's .orb_engine).  One absolute
+   path per line; the launcher lists, opens, and prunes it.  Append-if-missing; best effort,
+   registration failure never fails the create. */
+
+/* Path equality with Windows semantics: case-insensitive, slash-kind-insensitive. */
+static bool
+create_registry_path_eq( const char* a, const char* b )
+{
+    for ( ;; ++a, ++b )
+    {
+        char ca = ( *a == '\\' ) ? '/' : ( *a >= 'A' && *a <= 'Z' ) ? ( char )( *a + 32 ) : *a;
+        char cb = ( *b == '\\' ) ? '/' : ( *b >= 'A' && *b <= 'Z' ) ? ( char )( *b + 32 ) : *b;
+        if ( ca != cb )   return false;
+        if ( ca == '\0' ) return true;
+    }
+}
+
+static void
+create_register_project( const char* project_abs )
+{
+    static const char k_reg[] = "build" PATH_SEP ".orb_projects";
+    ensure_dir( "build" );
+
+    /* Scan the existing registry for this path (one platform_map_file pass; missing file = empty). */
+    platform_mapped_file_t mf;
+    if ( platform_map_file( k_reg, &mf ) && mf.data )
+    {
+        const char* p   = mf.data;
+        const char* end = mf.data + mf.size;
+        while ( p < end )
+        {
+            const char* nl  = memchr( p, '\n', ( size_t )( end - p ) );
+            size_t      len = nl ? ( size_t )( nl - p ) : ( size_t )( end - p );
+            while ( len > 0 && ( p[ len - 1 ] == '\r' || p[ len - 1 ] == ' ' ) ) --len;
+
+            char line[ PATH_MAX ];
+            if ( len > 0 && len < sizeof( line ) )
+            {
+                memcpy( line, p, len );
+                line[ len ] = '\0';
+                if ( create_registry_path_eq( line, project_abs ) )
+                {
+                    platform_unmap_file( &mf );
+                    return;    /* already registered */
+                }
+            }
+            p = nl ? nl + 1 : end;
+        }
+        platform_unmap_file( &mf );
+    }
+
+    FILE* f = fopen( k_reg, "a" );
+    if ( !f )
+    {
+        printf( ORB_INDENT "[orb warn]  cannot update project registry: %s\n", k_reg );
+        return;
+    }
+    fprintf( f, "%s\n", project_abs );
+    fclose( f );
+    printf( ORB_INDENT "  registered in %s\n", k_reg );
+}
+
 /* ---- Project entry point ---- */
 
 static bool
@@ -833,6 +896,13 @@ cmd_create_project( const char* name, const char* dir )
             printf( ORB_INDENT "  wrote  %s\n", path );
         }
         else printf( ORB_INDENT "[orb error] cannot create: %s\n", path );
+    }
+
+    /* Register in the engine's machine-local project index (re-running repairs it too). */
+    {
+        char project_abs[ PATH_MAX ];
+        if ( platform_fullpath( project_abs, dir, sizeof( project_abs ) ) )
+            create_register_project( project_abs );
     }
 
     printf( "\n" );

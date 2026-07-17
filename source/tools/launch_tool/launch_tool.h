@@ -52,11 +52,17 @@ typedef struct launch_state_s
 } launch_state_t;
 
 /*==============================================================================================
-    Units (implemented in launch_ui.c)
+    Units
 ==============================================================================================*/
 
+/* launch_ui.c */
 void launch_ui_init( void );
 void launch_ui_frame( gui_vp_t vp );
+
+/* launch_registry.c -- machine-local project index (<engine>/build/.orb_projects) */
+void launch_registry_load( void );
+bool launch_registry_add( const char* path );
+void launch_registry_remove_missing( void );
 
 /*============================================================================================*/
 #endif    // LAUNCH_TOOL_H

@@ -12,8 +12,6 @@
 
 // clang-format off
 
-static launch_state_t s_launch;
-
 /* Pane visibility -- menu-toggled; all on by default until a real arrangement lands. */
 static bool s_show_engine   = true;
 static bool s_show_projects = true;
@@ -75,6 +73,8 @@ launch_ui_init( void )
     char probe[ LAUNCH_PATH_MAX + 32 ];
     snprintf( probe, sizeof( probe ), "%s/bin/build_tool.exe", s_launch.engine_root );
     s_launch.build_tool_present = ( sys_file_time( probe ) != 0 );
+
+    launch_registry_load();
 }
 
 /*==============================================================================================
@@ -104,6 +104,15 @@ launch_show_menu( gui_vp_t vp )
         gui()->separator();
         if ( gui()->menu_item( "Exit", NULL, NULL ) )
             app()->window_request_close( ( i32 )vp );
+        gui()->menu_end();
+    }
+
+    if ( gui()->menu_begin( "Projects" ) )
+    {
+        if ( gui()->menu_item( "Rescan", NULL, NULL ) )
+            launch_registry_load();
+        if ( gui()->menu_item( "Remove Missing", NULL, NULL ) )
+            launch_registry_remove_missing();
         gui()->menu_end();
     }
 
@@ -151,26 +160,50 @@ launch_show_projects_pane()
 
     gui()->window_set_next_pos ( width + 8, top + 8, GUI_COND_ONCE );
     gui()->window_set_next_size( width - 16, height - 8, GUI_COND_ONCE );
+    /* Import row state: pasted path + last attempt's verdict. */
+    static char        s_import_path[ LAUNCH_PATH_MAX ];
+    static const char* s_import_status = NULL;
+
     if ( gui()->window_begin( "Projects", GUI_WIN_NONE ) )
     {
         gui()->stack();
+
         if ( s_launch.project_count == 0 )
         {
             gui()->text( "No projects registered." );
-            gui()->separator();
-            gui()->text_wrapped( "The project registry (machine-local list of created/imported "
-                                 "projects) is the next step -- see the launcher design notes. "
-                                 "Until then, create projects from the command line:" );
+            gui()->text_wrapped( "Create one from the engine root -- it self-registers here:" );
             gui()->text( "    bin\\build_tool.exe -create <name> -type project" );
         }
         else
         {
             for ( u32 i = 0; i < s_launch.project_count; ++i )
             {
-                launch_project_t* p = &s_launch.projects[ i ];
-                gui()->textf( "%s  --  %s%s", p->name, p->path, p->present ? "" : "  (missing)" );
+                launch_project_t* p   = &s_launch.projects[ i ];
+                bool              sel = ( s_launch.selected == ( i32 )i );
+
+                char label[ LAUNCH_PATH_MAX + 96 ];
+                snprintf( label, sizeof( label ), "%s  --  %s%s",
+                          p->name, p->path, p->present ? "" : "  (MISSING)" );
+
+                gui()->push_id_int( ( i32 )i );
+                if ( gui()->selectable( label, &sel ) )
+                    s_launch.selected = sel ? ( i32 )i : -1;
+                gui()->pop_id();
             }
         }
+
+        /* Import: paste a project root (a dir holding orb.targets) and Add. */
+        gui()->separator();
+        gui()->input_text( "##import_path", s_import_path, sizeof( s_import_path ) );
+        if ( gui()->button( "Add Project" ) )
+        {
+            bool ok         = launch_registry_add( s_import_path );
+            s_import_status = ok ? "added" : "not a project (no orb.targets there)";
+            if ( ok )
+                s_import_path[ 0 ] = '\0';
+        }
+        if ( s_import_status )
+            gui()->textf( "Import: %s", s_import_status );
     }
     gui()->window_end();
 }
