@@ -449,6 +449,31 @@ ship_stage( const dev_ship_desc_t* desc )
         snprintf( dll, sizeof( dll ), "%s.dll", desc->project );
         if ( !ship_stage_binary( desc, desc->root_dir, out, dll, NULL, true ) )
             return false;
+
+        /* A run.bat so the project-only drop is still launchable: it runs under the engine's
+           host, referenced by its ship-time absolute path (project-only is same-setup dev
+           sharing -- edit the path for another install).  -project points the host at this
+           staged dir; -module pins the DLL name regardless of the dir's name.  Only emitted
+           for a child project, where the engine root is a real absolute path. */
+        if ( eng != desc->root_dir )
+        {
+            char bat_path[ 512 ], bat[ 1024 ];
+            snprintf( bat_path, sizeof( bat_path ), "%s" PATH_SEP "%s.bat", out, desc->project );
+            int n = snprintf( bat, sizeof( bat ),
+                              "@echo off\r\n"
+                              "rem project-only drop: runs under the engine it was shipped from.\r\n"
+                              "cd /d \"%%~dp0\"\r\n"
+                              "\"%s" PATH_SEP "bin" PATH_SEP "host_game.exe\""
+                              " -project \"%%~dp0.\" -module %s %%*\r\n",
+                              eng, desc->project );
+            if ( !sys_file_write_entire( bat_path, bat, ( u32 )n ) )
+            {
+                ship_set_error( "could not write launcher '%s'", bat_path );
+                return false;
+            }
+            printf( "[stage]   %s.bat\n", desc->project );
+        }
+
         printf( "[stage]   project-only: recipient supplies the engine\n" );
         return true;
     }

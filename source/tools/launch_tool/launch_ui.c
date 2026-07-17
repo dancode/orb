@@ -36,6 +36,7 @@ static bool s_ship_modular = true;  /* with-engine: host + module DLLs vs monoli
                                        so modular is the only with-engine shape they support. */
 static bool s_ship_pdb     = false;
 static bool s_ship_clean   = false;
+static bool s_ship_keep_console = true;   /* keep the spawned console open so output is readable */
 static char s_ship_deploy[ LAUNCH_PATH_MAX ];
 
 /*==============================================================================================
@@ -159,7 +160,9 @@ launch_ship_command( char* out, u32 out_sz, launch_project_t* prj )
 }
 
 /* Spawn ship_tool for the selected project (detached, owns its own console -- shipping runs a
-   build and can be long, so it does not block the UI; mirrors the editor's Deploy window). */
+   build and can be long, so it does not block the UI; mirrors the editor's Deploy window).
+   The spawned console closes when ship_tool exits; with "keep console open", wrap in cmd /k so
+   the window stays up and the full output + any error stay readable until closed by hand. */
 static void
 launch_project_ship( launch_project_t* prj )
 {
@@ -168,7 +171,15 @@ launch_project_ship( launch_project_t* prj )
 
     char label[ 160 ];
     snprintf( label, sizeof( label ), "%s: ship", prj->name );
-    launch_spawn( label, cmd, prj->path );
+
+    if ( s_ship_keep_console )
+    {
+        char wrapped[ LAUNCH_PATH_MAX * 3 + 32 ];
+        snprintf( wrapped, sizeof( wrapped ), "cmd /k \"%s\"", cmd );
+        launch_spawn( label, wrapped, prj->path );
+    }
+    else
+        launch_spawn( label, cmd, prj->path );
 }
 
 /*==============================================================================================
@@ -416,6 +427,8 @@ launch_show_projects_pane()
                 gui()->checkbox( "PDB", &s_ship_pdb );
                 gui()->same_line( 0.0f );
                 gui()->checkbox( "Clean", &s_ship_clean );
+
+                gui()->checkbox( "Keep console open", &s_ship_keep_console );
 
                 gui()->input_text_with_hint( "##ship_deploy", "deploy dir (optional)...",
                                              s_ship_deploy, sizeof( s_ship_deploy ) );
