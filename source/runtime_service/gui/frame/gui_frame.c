@@ -405,6 +405,11 @@ gui_ctx_end( void )
         debug_overlays_emit();
     }
 
+    /* End-of-build dock bookkeeping: recompute each pane's hidden state (all its tabbed windows
+       stopped emitting) now that every window's begin has run for this context; a transition sets
+       wants_redraw so the collapsed / revived tiling lands next frame (gui_dock_core.c). */
+    dock_hidden_refresh();
+
     /* Captured after the overlay emit so an overlay's own animation (if any) counts too. */
     s_any_redraw |= g_ctx->retained.wants_redraw;
 

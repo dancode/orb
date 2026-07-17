@@ -887,6 +887,15 @@ typedef struct gui_dock_node_t
     bool floating;
     u32  z;
 
+    /* Hidden pane: every window tabbed into this leaf stopped emitting (menu-hidden, X-closed);
+       on a split, both children are hidden.  Refreshed at ctx_end (dock_hidden_refresh,
+       gui_dock_core.c) from the windows' last_frame stamps; dock_node_layout collapses a hidden
+       child to a zero-extent slice so the visible sibling absorbs its space -- tree structure and
+       ratio stay untouched, so a window that re-emits gets its exact pane back.  Derived state:
+       recomputed every build, never serialized.  Always false on a floating group (not reachable
+       from any dock_root; a group tears down through the float paths instead). */
+    bool hidden;
+
 } gui_dock_node_t;
 
 /*==============================================================================================

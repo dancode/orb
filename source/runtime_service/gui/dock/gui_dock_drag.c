@@ -392,10 +392,14 @@ dock_drag_commit( gui_id_t win_id, const char* title )
         }
         else if ( s_dock_drag.outer )
         {
-            /* Edge drop: split the whole tree so the new pane spans a full viewport edge. */
-            gui_dock_id_t side = gui_dock_split_root( s_dock_drag.viewport,
-                                                          dock_zone_dir( (dock_zone_t)s_dock_drag.zone ),
-                                                          0.5f );
+            /* Edge drop: split the whole tree so the new pane spans a full viewport edge -- unless
+               a hidden pane already sits on that edge, which the drop revives instead of stacking
+               a second (invisible-neighbour) split beside it (dock_hidden_reuse, gui_dock_core.c). */
+            gui_dir_t        dir   = dock_zone_dir( (dock_zone_t)s_dock_drag.zone );
+            gui_dock_node_t* root  = dock_node_find( s_dock_drag.target );
+            gui_dock_node_t* reuse = root ? dock_hidden_reuse( root, dir ) : NULL;
+            gui_dock_id_t    side  = reuse ? reuse->id
+                                           : gui_dock_split_root( s_dock_drag.viewport, dir, 0.5f );
             if ( side != GUI_DOCK_NONE )
                 gui_dock_window( title, side );
         }
@@ -410,9 +414,14 @@ dock_drag_commit( gui_id_t win_id, const char* title )
                 }
                 else
                 {
-                    gui_dock_id_t side = gui_dock_split( leaf->id,
-                                                             dock_zone_dir( (dock_zone_t)s_dock_drag.zone ),
-                                                             0.5f, NULL );
+                    /* Side drop: if the space this would carve is exactly where a hidden pane sits
+                       (its windows stopped emitting and the target absorbed its extent), tab into
+                       that pane instead of splitting -- the hidden window later revives as a
+                       sibling tab there rather than beside a duplicate pane. */
+                    gui_dir_t        dir   = dock_zone_dir( (dock_zone_t)s_dock_drag.zone );
+                    gui_dock_node_t* reuse = dock_hidden_reuse( leaf, dir );
+                    gui_dock_id_t    side  = reuse ? reuse->id
+                                                   : gui_dock_split( leaf->id, dir, 0.5f, NULL );
                     if ( side != GUI_DOCK_NONE )
                         gui_dock_window( title, side );
                 }
@@ -469,7 +478,11 @@ dock_strip_reorder( gui_dock_node_t* node, gui_id_t wid, f32 strip_x )
     f32 t0 = strip_x;
     for ( u32 i = 0; i < node->tab_count; ++i )
     {
-        tw[ i ] = font_text_w( node->names[ i ] ) + 2.0f * WIDGET_PAD;
+        /* Hidden tabs draw no chip (dock_window_chrome) -- width 0 keeps the trigger points
+           aligned with the strip as drawn; the dragged tab slides past them freely. */
+        tw[ i ] = dock_tab_seen( node->tabs[ i ] )
+                    ? font_text_w( node->names[ i ] ) + 2.0f * WIDGET_PAD
+                    : 0.0f;
         if ( i < from )
             t0 += tw[ i ];
     }
@@ -540,6 +553,12 @@ dock_window_chrome( gui_dock_node_t* node )
     f32 tx = x;
     for ( u32 i = 0; i < node->tab_count; ++i )
     {
+        /* A hidden tab (its window stopped emitting -- menu-hidden, X-closed) keeps its
+           membership but offers no chip: selecting it would front a window that renders
+           nothing.  The chip returns the moment the window re-emits (dock_tab_seen). */
+        if ( !dock_tab_seen( node->tabs[ i ] ) )
+            continue;
+
         const char*  nm = node->names[ i ];
         f32          tw = font_text_w( nm ) + 2.0f * WIDGET_PAD;
         gui_rect_t tr = { tx, y, tw, th };

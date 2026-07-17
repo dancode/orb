@@ -130,6 +130,121 @@ dock_find_window_node( gui_id_t win )
 }
 
 /*----------------------------------------------------------------------------------------------
+    Hidden panes -- a leaf whose windows all stopped emitting collapses out of the layout.
+
+    Tab membership is deliberately retained when a window stops being emitted (menu toggle, X
+    close, conditional emission): the tree must revive intact when the window comes back.  But a
+    leaf whose EVERY tab went silent should not keep reserving screen space as a hole -- its
+    sibling absorbs the extent instead (dock_node_layout below), with structure and ratio frozen
+    so re-emission restores the pane exactly.  The state is refreshed once per build at ctx_end
+    (dock_hidden_refresh), after all windows have begun, from the window records' last_frame
+    stamps; a transition forces a redraw so the collapsed tiling lands next frame.
+----------------------------------------------------------------------------------------------*/
+
+/* True when tab window `wid` was begun this frame or the one before.  "Or the one before" keeps
+   the state stable for a host that closes and re-opens the same context mid-frame (the second
+   build's windows have not begun yet at the first ctx_end); the cost is one extra frame of
+   latency on a hide.  A tab with no window record yet (layout built or loaded before the window's
+   first begin) counts as seen -- its pane stays reserved until the window shows up. */
+static bool
+dock_tab_seen( gui_id_t wid )
+{
+    const gui_window_t* w = window_find( wid );
+    return !w || w->last_frame + 1u >= g_ctx->retained.frame;
+}
+
+/* Post-order refresh of one subtree's hidden flags; returns the subtree's own state (a split is
+   hidden only when BOTH children are).  An empty leaf (tab_count 0) is never hidden -- a bare
+   pane awaiting a dock_window keeps its placeholder.  Any change requests a redraw so the next
+   build re-tiles. */
+static bool
+dock_hidden_refresh_node( gui_dock_node_t* n )
+{
+    if ( !n )
+        return false;
+
+    bool hidden;
+    if ( n->split == GUI_DOCK_SPLIT_NONE )
+    {
+        hidden = ( n->tab_count > 0 );
+        u32 first_seen = n->tab_count;
+        for ( u32 i = 0; i < n->tab_count; ++i )
+            if ( dock_tab_seen( n->tabs[ i ] ) )
+            {
+                hidden = false;
+                if ( first_seen == n->tab_count )
+                    first_seen = i;
+            }
+
+        /* The active tab must be a window that renders: when the selected window hides while
+           visible siblings remain, the first seen tab takes the pane over -- otherwise the node
+           shows an empty body with every live tab buried inactive behind it. */
+        if ( !hidden && n->tab_count > 0 && n->active_tab < n->tab_count
+             && !dock_tab_seen( n->tabs[ n->active_tab ] ) )
+        {
+            n->active_tab                = first_seen;
+            g_ctx->retained.wants_redraw = true;
+        }
+    }
+    else
+    {
+        bool h0 = dock_hidden_refresh_node( dock_at( n->child[ 0 ] ) );
+        bool h1 = dock_hidden_refresh_node( dock_at( n->child[ 1 ] ) );
+        hidden  = h0 && h1;
+    }
+
+    if ( hidden != n->hidden )
+    {
+        n->hidden                    = hidden;
+        g_ctx->retained.wants_redraw = true;
+    }
+    return hidden;
+}
+
+/* Refresh every viewport tree of the bound context.  Called from gui_ctx_end while the closing
+   context is still bound -- the one point where every window's begin has run for this build.
+   Floating groups are not reachable from any dock_root and are never marked. */
+static void
+dock_hidden_refresh( void )
+{
+    if ( !g_ctx->dock.pool )
+        return;
+    for ( u32 vp = 0; vp < g_ctx->vp.count; ++vp )
+        dock_hidden_refresh_node( dock_at( g_ctx->vp.pool[ vp ].dock_root ) );
+}
+
+/* The hidden pane a `dir` drop beside `n` should REVIVE instead of carving a new split: when the
+   space a drop would take is exactly where a hidden pane already sits, the window tabs into that
+   pane (and the hidden window, on re-emission, comes back as a sibling tab there).  `n` is the
+   drop target -- the leaf under the cursor for an inner chip, the tree root for an edge chip.
+   Matches one level: a split on the drop axis with `n` on the far side and a hidden subtree on
+   the drop side (or, for the root itself, its own drop-side child).  Descends the hidden subtree
+   toward the shared edge to a leaf.  NULL when there is nothing hidden there (or the leaf's tab
+   list is full) -- the caller falls back to a real split. */
+static gui_dock_node_t*
+dock_hidden_reuse( gui_dock_node_t* n, gui_dir_t dir )
+{
+    u8  axis = ( dir == GUI_DIR_LEFT || dir == GUI_DIR_RIGHT ) ? GUI_DOCK_SPLIT_X : GUI_DOCK_SPLIT_Y;
+    u32 side = ( dir == GUI_DIR_LEFT || dir == GUI_DIR_UP ) ? 0u : 1u;
+
+    gui_dock_node_t* sib = NULL;
+    if ( n->split == axis )   /* edge drop on the root: its own drop-side child may be hidden */
+        sib = dock_at( n->child[ side ] );
+    else
+    {
+        gui_dock_node_t* p = dock_at( n->parent );
+        if ( p && p->split == axis && p->child[ side ^ 1u ] == dock_ref( n ) )
+            sib = dock_at( p->child[ side ] );
+    }
+    if ( !sib || !sib->hidden )
+        return NULL;
+
+    while ( sib && sib->split != GUI_DOCK_SPLIT_NONE )   /* to the leaf nearest the shared edge */
+        sib = dock_at( sib->child[ side ^ 1u ] );
+    return ( sib && sib->tab_count < GUI_DOCK_TABS_MAX ) ? sib : NULL;
+}
+
+/*----------------------------------------------------------------------------------------------
     Maximize over the dockspace
 
     One leaf of a viewport's tree may be pinned over the WHOLE dock area (the docked twin of the
@@ -314,6 +429,29 @@ dock_node_layout( gui_dock_node_t* n, gui_rect_t r )
         return;
     }
 
+    /* One child hidden (all its windows stopped emitting): the visible sibling absorbs the whole
+       rect, no gutter; the hidden child lays out as a zero-extent slice pinned at its own edge so
+       its descendants keep sane rects.  The ratio is NOT touched -- it encodes the pane's revival
+       extent.  Both-hidden falls through to the normal split: the parent already collapsed this
+       whole subtree (or the entire tree is hidden and lays out inert behind nothing drawn). */
+    {
+        gui_dock_node_t* c0 = dock_at( n->child[ 0 ] );
+        gui_dock_node_t* c1 = dock_at( n->child[ 1 ] );
+        bool h0 = c0 && c0->hidden;
+        bool h1 = c1 && c1->hidden;
+        if ( h0 != h1 )
+        {
+            bool x = ( n->split == GUI_DOCK_SPLIT_X );
+            gui_rect_t e0 = x ? ( gui_rect_t ){ r.x,       r.y,       0.0f, r.h  }
+                              : ( gui_rect_t ){ r.x,       r.y,       r.w,  0.0f };
+            gui_rect_t e1 = x ? ( gui_rect_t ){ r.x + r.w, r.y,       0.0f, r.h  }
+                              : ( gui_rect_t ){ r.x,       r.y + r.h, r.w,  0.0f };
+            dock_node_layout( c0, h0 ? e0 : r );
+            dock_node_layout( c1, h1 ? e1 : r );
+            return;
+        }
+    }
+
     f32 thick = DOCK_SPLITTER;
     if ( n->split == GUI_DOCK_SPLIT_X )
     {
@@ -362,13 +500,19 @@ static f32
 dock_shrink_capacity( gui_dock_node_t* n, u8 axis, u32 side )
 {
     if ( !n ) return 0.0f;
+    if ( n->hidden ) return 1.0e9f;   /* collapsed to zero extent -- poses no MIN_PANE constraint */
     if ( n->split == GUI_DOCK_SPLIT_NONE )
     {
         f32 c = dock_axis_ext( n, axis ) - DOCK_MIN_PANE;
         return c > 0.0f ? c : 0.0f;
     }
     if ( n->split == axis )   /* only the near child shrinks; the far one keeps its pixels */
-        return dock_shrink_capacity( dock_at( n->child[ side ] ), axis, side );
+    {
+        gui_dock_node_t* c = dock_at( n->child[ side ] );
+        if ( c && c->hidden )   /* collapsed near child: the chain continues in the visible one */
+            c = dock_at( n->child[ side ^ 1u ] );
+        return dock_shrink_capacity( c, axis, side );
+    }
     /* Cross split: both children shrink by the full delta -- the tighter one limits. */
     f32 a = dock_shrink_capacity( dock_at( n->child[ 0 ] ), axis, side );
     f32 b = dock_shrink_capacity( dock_at( n->child[ 1 ] ), axis, side );
@@ -380,14 +524,27 @@ dock_shrink_capacity( gui_dock_node_t* n, u8 axis, u32 side )
 static void
 dock_absorb_delta( gui_dock_node_t* n, u8 axis, u32 side, f32 delta )
 {
-    if ( !n || n->split == GUI_DOCK_SPLIT_NONE || delta == 0.0f )
-        return;
+    if ( !n || n->split == GUI_DOCK_SPLIT_NONE || delta == 0.0f || n->hidden )
+        return;   /* a hidden subtree's ratios are frozen -- they encode its revival extents */
     if ( n->split != axis )
     {
         dock_absorb_delta( dock_at( n->child[ 0 ] ), axis, side, delta );
         dock_absorb_delta( dock_at( n->child[ 1 ] ), axis, side, delta );
         return;
     }
+
+    /* Same-axis split with a collapsed child: this node's ratio also stays frozen (it is the
+       hidden pane's revival share); the visible child spans the whole extent and absorbs alone. */
+    {
+        gui_dock_node_t* c0 = dock_at( n->child[ 0 ] );
+        gui_dock_node_t* c1 = dock_at( n->child[ 1 ] );
+        if ( ( c0 && c0->hidden ) || ( c1 && c1->hidden ) )
+        {
+            dock_absorb_delta( ( c0 && c0->hidden ) ? c1 : c0, axis, side, delta );
+            return;
+        }
+    }
+
     f32 avail_new = dock_axis_ext( n, axis ) - DOCK_SPLITTER + delta;
     if ( avail_new < 1.0f ) avail_new = 1.0f;
 
@@ -467,10 +624,17 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
 static void
 dock_tree_splitters( gui_dock_node_t* n, u32 vp )
 {
-    if ( !n || n->split == GUI_DOCK_SPLIT_NONE )
+    if ( !n || n->split == GUI_DOCK_SPLIT_NONE || n->hidden )
         return;
     dock_tree_splitters( dock_at( n->child[ 0 ] ), vp );
     dock_tree_splitters( dock_at( n->child[ 1 ] ), vp );
+
+    /* A gutter beside a collapsed (hidden) child does not exist this frame: the visible sibling
+       spans the whole rect and there is nothing to drag between. */
+    gui_dock_node_t* c0 = dock_at( n->child[ 0 ] );
+    gui_dock_node_t* c1 = dock_at( n->child[ 1 ] );
+    if ( ( c0 && c0->hidden ) || ( c1 && c1->hidden ) )
+        return;
     dock_splitter( n, vp );
 }
 

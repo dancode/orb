@@ -259,7 +259,7 @@ target game_example
 # 05_EDITOR
 # ==============================================================================
 
-target 	editor
+target editor
 
     type        static
     root        source/editor
@@ -296,6 +296,7 @@ target sample_game					# canonical project DLL -- host_game -module sample_game;
     folder      06_PROJECT
     unit        sample_game.c
     run         host_editor -module sample_game
+	dep 		editor
 
 target sample_game_play				# F5 launcher: builds sample_game.dll, plays it under host_game
 
