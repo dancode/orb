@@ -12,7 +12,7 @@
     forwards the loop callbacks here, and never touches game() itself -- keeping
     host_editor shaped like host_game with the editor service layered on top.
 
-        editor()->project_bind( name );   // on_ready, from -project/-module args
+        editor()->project_bind( name, dir );  // on_ready, from -project/-module args
         editor()->update( dt );           // on_update: session tick + viewport + pacing
         editor()->build_gui( dt );        // on_gui
         editor()->shutdown();             // every quit path, before run_host teardown
@@ -30,8 +30,10 @@
 typedef struct editor_api_s
 {
     /* Bind the loaded project DLL to the game runner and adopt it as the editor's
-       session subject.  false = the project has no api (not loaded / wrong contract). */
-    bool ( *project_bind )( const char* name );
+       session subject.  `dir` is the directory holding <name>.dll ("" or NULL = host exe
+       dir) -- kept so Play Standalone can hand the same project to host_game.exe.
+       false = the project has no api (not loaded / wrong contract). */
+    bool ( *project_bind )( const char* name, const char* dir );
 
     /* Per-frame, from the host's on_update: ticks the session (run_view_t built here --
        render_ctx is the scene viewport's target, the play-in-editor seam), maintains the

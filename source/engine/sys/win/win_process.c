@@ -128,4 +128,45 @@ sys_process_run_capture( const char*           command_line,
     return true;
 }
 
+/*==============================================================================================
+
+    Detached spawn -- fire-and-forget for launching sibling executables (the editor's
+    Play Standalone).  CREATE_NEW_CONSOLE gives the child its OWN console so its stdio
+    and console dev keys (Q/R) can't tangle with the parent's; both handles are closed
+    immediately, so the child outlives the parent freely and never zombies.
+
+==============================================================================================*/
+
+bool
+sys_process_spawn( const char* command_line, const char* working_dir )
+{
+    if ( command_line == NULL || *command_line == '\0' )
+        return false;
+
+    /* CreateProcessA mutates the command-line buffer, so copy it first. */
+    char cmd[ 4096 ];
+    snprintf( cmd, sizeof( cmd ), "%s", command_line );
+
+    STARTUPINFOA        si = { 0 };
+    PROCESS_INFORMATION pi = { 0 };
+    si.cb                  = sizeof( si );
+
+    BOOL ok = CreateProcessA( NULL,               /* lpApplicationName */
+                              cmd,                /* lpCommandLine (mutable) */
+                              NULL,               /* lpProcessAttributes */
+                              NULL,               /* lpThreadAttributes */
+                              FALSE,              /* bInheritHandles */
+                              CREATE_NEW_CONSOLE, /* dwCreationFlags */
+                              NULL,               /* lpEnvironment */
+                              working_dir,        /* lpCurrentDirectory */
+                              &si, &pi );
+
+    if ( !ok )
+        return false;
+
+    CloseHandle( pi.hProcess );
+    CloseHandle( pi.hThread );
+    return true;
+}
+
 /*============================================================================================*/

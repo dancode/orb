@@ -298,10 +298,10 @@ void sys_atomic_write_64( volatile i64* target, i64 value );
 
 /*==============================================================================================
 
-    Process - Synchronous child process execution with optional output capture
+    Process - Child process execution: synchronous run (+ capture) and detached spawn
 
-    Used by the hot-reload build invoker. Output capture uses a temp file to avoid
-    pipe deadlocks with long build logs.
+    Used by the hot-reload build invoker (run/capture) and the editor's Play Standalone
+    (spawn). Output capture uses a temp file to avoid pipe deadlocks with long build logs.
 
 ==============================================================================================*/
 
@@ -326,6 +326,11 @@ bool sys_process_run_capture( const char*           command_line,
                               int                   out_buffer_size,
                               int*                  out_written,
                               sys_process_result_t* result );
+
+/* Spawn a command detached and return immediately (fire-and-forget). The child gets its
+   own console window and its lifetime is independent of the caller's -- no handle is kept.
+   Returns false only if the process could not be launched at all. */
+bool sys_process_spawn( const char* command_line, const char* working_dir );
 
 /*==============================================================================================
 

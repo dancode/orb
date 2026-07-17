@@ -28,6 +28,7 @@
 #define LOG_CH "editor"
 
 #include "engine/mod/mod_export.h"
+#include "engine/sys/sys_host.h"    /* sys_exe_dir + sys_process_spawn (Play Standalone) */
 #include "engine/core/core_api.h"
 
 #include "runtime_service/gui/gui_api.h"

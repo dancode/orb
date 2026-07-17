@@ -9,7 +9,8 @@
         Viewport      the scene viewport (editor_service/viewport): the game's offscreen
                       render target in a docked panel; the play-in-editor surface
         Game          session controls over the game framework runner: Play / Stop /
-                      Pause / Step + state readout
+                      Pause / Step + state readout, plus Play Standalone (spawns the
+                      project under host_game.exe as its own process)
         Frame Stats   run clock readout (floating, off by default)
 
     Window visibility lives in the Window menu -- one source of truth, no close boxes yet.
@@ -42,18 +43,20 @@ static bool s_show_game     = true;
 static bool s_show_stats    = false;
 static bool s_dock_built    = false;     /* default layout carved once             */
 static char s_project[ 64 ];             /* bound project display name; "" = none  */
+static char s_project_dir[ 260 ];        /* dir holding <name>.dll; "" = exe dir   */
 
 /*==============================================================================================
     API implementations
 ==============================================================================================*/
 
 static bool
-editor_project_bind( const char* name )
+editor_project_bind( const char* name, const char* dir )
 {
     if ( !name || !name[ 0 ] || !game() || !game()->project_bind( name ) )
         return false;
 
     snprintf( s_project, sizeof( s_project ), "%s", name );
+    snprintf( s_project_dir, sizeof( s_project_dir ), "%s", dir ? dir : "" );
     LOG_INFO( "project '%s' bound -- use Play to start it", s_project );
     return true;
 }
@@ -111,9 +114,34 @@ editor_shutdown( void )
     Windows
 ==============================================================================================*/
 
+/* Play Standalone -- spawn the bound project under host_game.exe as its OWN process (own
+   window, own console, own hot-reload watcher).  Rebuilds the launch args from the bind:
+   a dll dir round-trips through -project (host_resolve_project finds <dir>/<name>.dll),
+   an exe-dir project needs only -module.  Fire-and-forget: the editor keeps no handle,
+   and both processes may run the same session side by side. */
+static void
+editor_play_standalone( void )
+{
+    char exe_dir[ 260 ];
+    sys_exe_dir( exe_dir, sizeof( exe_dir ) );
+
+    char cmd[ 1024 ];
+    if ( s_project_dir[ 0 ] )
+        snprintf( cmd, sizeof( cmd ), "\"%s\\host_game.exe\" -project \"%s\" -module %s",
+                  exe_dir, s_project_dir, s_project );
+    else
+        snprintf( cmd, sizeof( cmd ), "\"%s\\host_game.exe\" -module %s", exe_dir, s_project );
+
+    if ( sys_process_spawn( cmd, NULL ) )
+        LOG_INFO( "standalone launched: %s", cmd );
+    else
+        LOG_WARN( "standalone launch FAILED: %s", cmd );
+}
+
 /* Session controls -- the host's policy surface, unchanged behavior: Play/Stop restart
    the session, Pause freezes the sim while the scene keeps drawing, Step advances one
-   sim tick while paused. */
+   sim tick while paused.  Play Standalone is session-independent -- it spawns a separate
+   process and never touches the in-editor state. */
 static void
 editor_game_window( void )
 {
@@ -147,6 +175,9 @@ editor_game_window( void )
             gui()->textf( "state  %s", st == GAME_PLAYING ? "PLAYING"
                                      : st == GAME_PAUSED  ? "PAUSED"
                                                           : "stopped" );
+
+            if ( gui()->button( "Play Standalone" ) )
+                editor_play_standalone();
         }
         else
         {
@@ -219,6 +250,12 @@ editor_build_gui( f32 dt )
     if ( s_show_viewport ) ed_viewport_panel();
     if ( s_show_game     ) editor_game_window();
     if ( s_show_stats    ) editor_stats_window();
+
+    /* F11: fullscreen the scene viewport over the dockspace (and back) -- the hotkey twin of
+       the tab strip's maximize button.  A function key, so no capture fence needed: the key
+       router only hands it here when nothing below claimed it. */
+    if ( s_show_viewport && gui()->is_key_pressed( APP_KEY_F11 ) )
+        gui()->dock_window_maximize( "Viewport", !gui()->window_is_dock_maximized( "Viewport" ) );
 }
 
 /*==============================================================================================

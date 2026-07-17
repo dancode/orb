@@ -67,8 +67,9 @@ editor_ready( void )
     printf( "Dev keys (terminal focus): Q=quit  R=reload all  D=toggle sleep debug\n" );
 
     /* Hand the loaded project to the editor -- it binds the game runner and owns the
-       session from here (Play/Stop/Pause/Step live in its Game window). */
-    if ( s_proj.present && !editor()->project_bind( s_proj.name ) )
+       session from here (Play/Stop/Pause/Step live in its Game window; the dll dir feeds
+       Play Standalone's host_game.exe launch args). */
+    if ( s_proj.present && !editor()->project_bind( s_proj.name, s_proj.dir ) )
         fprintf( stderr, "[editor] project '%s' has no api\n", s_proj.name );
 }
 
