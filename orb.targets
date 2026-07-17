@@ -799,6 +799,16 @@ target ship_tool
     flag        is_tool
     dep         sys pack dev_ship
 
+target launch_tool						# project manager / command hub -- the one gui()-driven tool
+
+    type        exe
+    root        source/tools/launch_tool
+    folder      08_TOOL
+    unit        launch_tool.c
+    flag        is_tool
+    dep         mod sys ref job app core
+    dep         rhi gui
+
 # ==============================================================================
 # DEV : Development Solution Wihout Any Sandbox or Test Code
 # ==============================================================================
@@ -898,6 +908,7 @@ solution orb_editor
 	#			--- TOOL ---
 
 	add 		ship_tool 
+	add 		launch_tool
 
 	#			--- EXECUTABLE ---
 
@@ -1044,6 +1055,7 @@ solution orb_build
     add         shader_tool
     add         image_tool
     add         ship_tool
+    add         launch_tool
     add         dev_font   # used by font_tool
     add         dev_image   # used by image_tool
     add         dev_ship   # used by ship_tool
@@ -1111,6 +1123,7 @@ solution orb_all
     add         shader_tool
     add         image_tool
     add         ship_tool
+    add         launch_tool
 
 # ==============================================================================
 # FULL SOLUTION : MONOLITHIC
