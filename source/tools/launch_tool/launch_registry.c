@@ -55,6 +55,53 @@ registry_probe( launch_project_t* prj )
     prj->present = sys_file_exists( probe );
 }
 
+/* Resolve the project's identity from the FIRST 'target' block in its orb.targets -- that name
+   is what was passed to -create and what names the built DLL (<name>.dll), which need NOT equal
+   the directory name (e.g. -create new_project -dir F:\orb_project).  The launcher's DLL guard,
+   host launch, and display all key off this, so it must be the real target name, not the folder.
+   Falls back to the directory basename when orb.targets is unreadable or declares no target.
+   Keyword must sit at column 0, matching the .targets format (blocks begin at column 0). */
+static void
+registry_resolve_name( launch_project_t* prj )
+{
+    snprintf( prj->name, sizeof( prj->name ), "%s", registry_basename( prj->path ) );  /* fallback */
+
+    char tpath[ LAUNCH_PATH_MAX + 16 ];
+    snprintf( tpath, sizeof( tpath ), "%s/orb.targets", prj->path );
+
+    sys_file_data_t fd = sys_file_read_entire( tpath );
+    if ( !fd.ok )
+        return;
+
+    const char* p = ( const char* )fd.data;   /* NUL-terminated by contract */
+    while ( *p )
+    {
+        /* p is at a line start each iteration; match "target" + whitespace + <name>. */
+        if ( strncmp( p, "target", 6 ) == 0 && ( p[ 6 ] == ' ' || p[ 6 ] == '\t' ) )
+        {
+            const char* q = p + 6;
+            while ( *q == ' ' || *q == '\t' ) ++q;
+
+            char   name[ 64 ];
+            size_t n = 0;
+            while ( q[ n ] && q[ n ] != ' ' && q[ n ] != '\t' && q[ n ] != '\r' &&
+                    q[ n ] != '\n' && q[ n ] != '#' && n + 1 < sizeof( name ) )
+            {
+                name[ n ] = q[ n ];
+                ++n;
+            }
+            name[ n ] = '\0';
+            if ( n > 0 )
+                snprintf( prj->name, sizeof( prj->name ), "%s", name );
+            break;
+        }
+        const char* nl = strchr( p, '\n' );
+        if ( !nl ) break;
+        p = nl + 1;
+    }
+    sys_file_free( &fd );
+}
+
 static bool
 registry_save( void )
 {
@@ -104,8 +151,8 @@ launch_registry_load( void )
         {
             launch_project_t* prj = &s_launch.projects[ s_launch.project_count++ ];
             snprintf( prj->path, sizeof( prj->path ), "%s", p );
-            snprintf( prj->name, sizeof( prj->name ), "%s", registry_basename( prj->path ) );
             registry_probe( prj );
+            registry_resolve_name( prj );
         }
         if ( !nl ) break;
         p = nl + 1;
@@ -152,8 +199,8 @@ launch_registry_add( const char* path_in )
 
     launch_project_t* prj = &s_launch.projects[ s_launch.project_count++ ];
     snprintf( prj->path, sizeof( prj->path ), "%s", s );
-    snprintf( prj->name, sizeof( prj->name ), "%s", registry_basename( prj->path ) );
     registry_probe( prj );
+    registry_resolve_name( prj );
 
     s_launch.selected = ( i32 )( s_launch.project_count - 1 );
     return registry_save();

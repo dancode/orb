@@ -36,9 +36,9 @@
 
 /* Launch cheat sheet (both hosts share the same -project / -module resolution):
 
-       host_game.exe   -project <dir>                 plays <dir>/bin/<name>.dll (name = dir basename)
+       host_game.exe   -project <dir>                 plays <dir>/bin/<name>.dll (name = orb.targets target)
        host_game.exe   -module  sample_game           plays sample_game.dll from the engine bin
-       host_game.exe   -project <dir> -module <name>  -module overrides the basename
+       host_game.exe   -project <dir> -module <name>  -module overrides the target name
        host_editor.exe -project <dir>                 loads it; Play/Stop drives it              */
 
 /*==============================================================================================
@@ -78,9 +78,9 @@ void host_args_parse( int argc, char** argv, launch_params_t* out );
 /* Resolve -project/-module into a loadable (name, dir) pair:
 
        -module <name>              name only, dll expected in the host exe dir
-       -project <path>             name = dir basename, dll at <path>/bin/<name>.dll
-                                   (falls back to <path>/<name>.dll if no bin/)
-       -project <path> -module <n> -module overrides the basename
+       -project <path>             name = <path>/orb.targets target (dir basename fallback),
+                                   dll at <path>/bin/<name>.dll (or <path>/<name>.dll if no bin/)
+       -project <path> -module <n> -module overrides the target name
 
    Returns true with out->present=false when neither flag was given (a host that requires
    a project checks .present).  Returns false with a message in err on invalid input:

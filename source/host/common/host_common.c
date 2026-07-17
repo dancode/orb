@@ -80,6 +80,49 @@ project_file_exists( const char* path )
     return true;
 }
 
+/* Read the project's authoritative module name from its orb.targets: the first
+   'target <name>' block (blocks begin at column 0).  That name is what -create passed
+   and what names the built dll, and it need NOT match the directory -- e.g.
+   '-create widget_game -dir games/dircheck' builds widget_game.dll under games/dircheck.
+   The directory basename is only a fallback for a project without a readable orb.targets.
+   Returns true and fills out on a hit.  Stays stdlib-only like the rest of this file. */
+static bool
+project_name_from_targets( const char* proj_root, char* out, size_t out_size )
+{
+    char tpath[ HOST_PATH_MAX + 16 ];
+    snprintf( tpath, sizeof( tpath ), "%s%corb.targets", proj_root, HOST_PATH_SEP );
+
+    FILE* f = fopen( tpath, "r" );
+    if ( !f )
+        return false;
+
+    bool found = false;
+    char line[ 512 ];
+    while ( fgets( line, sizeof( line ), f ) )
+    {
+        /* Keyword must sit at column 0 (a 'run host_game -project .' value never does). */
+        if ( strncmp( line, "target", 6 ) != 0 || ( line[ 6 ] != ' ' && line[ 6 ] != '\t' ) )
+            continue;
+
+        const char* q = line + 6;
+        while ( *q == ' ' || *q == '\t' ) ++q;
+
+        size_t n = 0;
+        while ( q[ n ] && q[ n ] != ' ' && q[ n ] != '\t' && q[ n ] != '\r' &&
+                q[ n ] != '\n' && q[ n ] != '#' && n + 1 < out_size )
+            ++n;
+
+        if ( n > 0 )
+        {
+            snprintf( out, out_size, "%.*s", ( int )n, q );
+            found = true;
+        }
+        break;    /* the first target block is the game dll target */
+    }
+    fclose( f );
+    return found;
+}
+
 bool
 host_resolve_project( const launch_params_t* params, host_project_t* out,
                       char* err, size_t err_size )
@@ -135,8 +178,17 @@ host_resolve_project( const launch_params_t* params, host_project_t* out,
             return false;
         }
 
-        snprintf( out->name, sizeof( out->name ), "%s",
-                  has_module ? params->module_override : base );
+        /* Default the module name from the project's orb.targets (authoritative: it is
+           what -create named the target and thus the dll), and fall back to the directory
+           basename only when orb.targets is unreadable or declares no target.  An explicit
+           -module always wins, so a mismatched or missing targets file can still be run. */
+        char targets_name[ HOST_MODULE_MAX ];
+        if ( has_module )
+            snprintf( out->name, sizeof( out->name ), "%s", params->module_override );
+        else if ( project_name_from_targets( abs, targets_name, sizeof( targets_name ) ) )
+            snprintf( out->name, sizeof( out->name ), "%s", targets_name );
+        else
+            snprintf( out->name, sizeof( out->name ), "%s", base );
 
         /* Project layout: dll in <path>/bin (the child-project build output), else
            flat beside the project files. */
@@ -186,7 +238,7 @@ host_resolve_project( const launch_params_t* params, host_project_t* out,
         {
             snprintf( err, err_size,
                       "project dll not found: %s (build the project, or pass -module <name> "
-                      "if the dll name differs from the directory name)",
+                      "if the dll name differs from the orb.targets target)",
                       dll );
             return false;
         }

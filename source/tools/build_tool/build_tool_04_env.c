@@ -38,6 +38,24 @@ static bool s_vcvars_cache_enabled = true;
 
 #define VCVARS_CACHE_PATH  BUILD_DIR "\\.vcvars_x64"
 
+/* The vcvars cache captures a machine-wide VS environment -- it is not project-specific.  When
+   this run builds a CHILD project, g_engine_root is set (from the 'engine' directive) and the CWD
+   is the project, whose build/ has no cache; the ENGINE's cache is the one to use.  Resolving the
+   cache under g_engine_root lets a plain-terminal or launcher-driven child build reuse the engine's
+   seeded cache instead of dropping into safe mode.  The engine's own build (g_engine_root empty)
+   keeps the original CWD-relative path. */
+static const char*
+vcvars_cache_path( void )
+{
+    static char path[ PATH_MAX ];
+    if ( g_engine_root[ 0 ] )
+    {
+        snprintf( path, sizeof( path ), "%s" PATH_SEP BUILD_DIR PATH_SEP ".vcvars_x64", g_engine_root );
+        return path;
+    }
+    return VCVARS_CACHE_PATH;
+}
+
 /*==============================================================================================
     locate_vcvarsall()
 
@@ -169,7 +187,14 @@ vcvars_cache_load( const char* path )
 static int
 vcvars_cache_save_current_env( const char* cache_path )
 {
-    ensure_dir( BUILD_DIR );
+    /* Ensure the cache file's own directory exists -- BUILD_DIR under the CWD for the engine's
+       build, or the engine's build/ when cache_path is engine-rooted (child project build). */
+    char dir[ PATH_MAX ];
+    snprintf( dir, sizeof( dir ), "%s", cache_path );
+    char* sep = strrchr( dir, '\\' );
+    if ( !sep ) sep = strrchr( dir, '/' );
+    if ( sep ) { *sep = '\0'; ensure_dir( dir ); }
+    else       ensure_dir( BUILD_DIR );
 
     char tmp_path[ PATH_MAX ];
     snprintf( tmp_path, sizeof( tmp_path ), "%s.%lu.tmp", cache_path,
@@ -302,6 +327,9 @@ build_setup_vc_env( void )
     // already wired up an x64 target compiler without setting VSCMD_ARG_TGT_ARCH.
     // A path check is necessary because VS may also inject HostX86\x86\cl.exe into
     // PATH without vcvars -- accepting that one silently produces 32-bit output.
+    /* Resolve once: engine-rooted for a child build, CWD-relative for the engine's own. */
+    const char* cache_path = vcvars_cache_path();
+
     const char* tgt_arch  = getenv( "VSCMD_ARG_TGT_ARCH" );
     bool        env_ready = ( tgt_arch && strcmp( tgt_arch, "x64" ) == 0 );
     if ( !env_ready )
@@ -318,9 +346,9 @@ build_setup_vc_env( void )
         // staleness probe) keeps this path free of vswhere/_popen and avoids
         // rewrite races across VS's parallel per-project build_tool spawns.
         // Delete the file (or -clean, or a normal import) to force a re-seed.
-        if ( s_vcvars_cache_enabled && platform_get_mtime( VCVARS_CACHE_PATH ) == 0 )
+        if ( s_vcvars_cache_enabled && platform_get_mtime( cache_path ) == 0 )
         {
-            int n = vcvars_cache_save_current_env( VCVARS_CACHE_PATH );
+            int n = vcvars_cache_save_current_env( cache_path );
             if ( n > 0 && ( g_out_flags & ORB_OUT_VCVARS ) )
                 printf( ORB_INDENT "[orb vcvars] cache seeded from current env (%d variables)\n", n );
         }
@@ -337,12 +365,12 @@ build_setup_vc_env( void )
     // is trusted as-is: worst case is stale paths, fixed by re-seeding.
     if ( s_vcvars_cache_enabled )
     {
-        platform_mtime_t cache_mtime = platform_get_mtime( VCVARS_CACHE_PATH );
+        platform_mtime_t cache_mtime = platform_get_mtime( cache_path );
         bool cache_ok = ( cache_mtime > 0 ) &&
                         ( !have_vcvars || cache_mtime >= platform_get_mtime( vcvars_path ) );
         if ( cache_ok )
         {
-            int n = vcvars_cache_load( VCVARS_CACHE_PATH );
+            int n = vcvars_cache_load( cache_path );
             if ( n > 0 )
             {
                 if ( g_out_flags & ORB_OUT_VCVARS )
@@ -356,7 +384,7 @@ build_setup_vc_env( void )
 #if defined( BUILD_SAFE_MODE )
     /* vcvarsall auto-import uses _popen(cmd.exe) -- disabled in safe mode. */
     printf( ORB_INDENT "[orb warn] BUILD_SAFE_MODE: vcvarsall auto-import disabled and no cache (%s).\n",
-            VCVARS_CACHE_PATH );
+            cache_path );
     printf( ORB_INDENT "           Run any build_tool command once from a Developer Command Prompt\n" );
     printf( ORB_INDENT "           to seed the cache; plain-terminal builds work from then on.\n" );
     return;
@@ -370,7 +398,7 @@ build_setup_vc_env( void )
     if ( g_out_flags & ORB_OUT_VCVARS )
         printf( ORB_INDENT "[orb vcvars] importing from %s\n", vcvars_path );
 
-    const char* write_cache = s_vcvars_cache_enabled ? VCVARS_CACHE_PATH : NULL;
+    const char* write_cache = s_vcvars_cache_enabled ? cache_path : NULL;
     int n = import_vcvars_env( vcvars_path, write_cache );
     if ( g_out_flags & ORB_OUT_VCVARS )
     {

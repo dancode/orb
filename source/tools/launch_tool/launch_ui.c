@@ -19,6 +19,14 @@ static bool s_show_output   = true;
 
 static gui_vp_t s_main_vp = 0;  /* the main viewport hosting the chrome shell and free windows */
 
+#define LAUNCH_CREATE_POPUP "Create Project"   /* shared id: popup_open + popup_modal_begin */
+
+/* Deferred open request: popup_open records at the CURRENT popup nesting depth, so calling it
+   from inside a menu dropdown (itself a popup) would nest the modal under the menu -- which then
+   closes and takes the modal with it.  The menu item sets this flag; the frame opens the popup at
+   top level once the menu bar has ended. */
+static bool s_req_create_popup = false;
+
 /*==============================================================================================
     Command invocation
 ==============================================================================================*/
@@ -79,10 +87,24 @@ launch_project_build_tool( launch_project_t* prj, const char* label, const char*
 
 /* Launch an engine host on a project: host <exe> -project "<abs path>".  Spawned (long-lived,
    owns its own window); the host resolves assets relative to its own exe, so the engine root
-   is the working dir. */
+   is the working dir.  Guarded on the project DLL: a host given an unbuilt project loads no
+   game module and exits at once (a console flash), so we report "Build first" instead. */
 static void
 launch_project_host( launch_project_t* prj, const char* host_exe, const char* label )
 {
+    char dll[ LAUNCH_PATH_MAX + 96 ];
+    snprintf( dll, sizeof( dll ), "%s/bin/%s.dll", prj->path, prj->name );
+    if ( !sys_file_exists( dll ) )
+    {
+        snprintf( s_launch.log_title, sizeof( s_launch.log_title ), "%s: %s", prj->name, label );
+        snprintf( s_launch.log, sizeof( s_launch.log ),
+                  "[launch] %s.dll not built yet -- run Build first, then %s.\n", prj->name, label );
+        s_launch.log_valid      = true;
+        s_launch.last_exit_code = 0;
+        s_show_output           = true;
+        return;
+    }
+
     char cmd[ LAUNCH_PATH_MAX * 2 ];
     snprintf( cmd, sizeof( cmd ), "\"%s/bin/%s.exe\" -project \"%s\"",
               s_launch.engine_root, host_exe, prj->path );
@@ -99,6 +121,60 @@ launch_project_open_folder( launch_project_t* prj )
     char cmd[ LAUNCH_PATH_MAX + 32 ];
     snprintf( cmd, sizeof( cmd ), "explorer \"%s\"", prj->path );
     launch_spawn( "open folder", cmd, prj->path );
+}
+
+/*==============================================================================================
+    Create Project -- wraps build_tool -create <name> -type project
+==============================================================================================*/
+
+/* Client-side twin of build_tool's create_valid_name: a project name is a C identifier
+   (letters, digits, underscore; not starting with a digit).  Pre-validating gates the Create
+   button so an obviously-bad name never reaches a spawn; build_tool re-checks authoritatively. */
+static bool
+launch_name_valid( const char* s )
+{
+    if ( !s || !s[ 0 ] )                     return false;
+    if ( s[ 0 ] >= '0' && s[ 0 ] <= '9' )    return false;
+    for ( const char* p = s; *p; ++p )
+    {
+        bool ok = ( *p >= 'a' && *p <= 'z' ) || ( *p >= 'A' && *p <= 'Z' ) ||
+                  ( *p >= '0' && *p <= '9' ) || ( *p == '_' );
+        if ( !ok ) return false;
+    }
+    return true;
+}
+
+/* Build the create command into `out` (same string the dialog previews and runs), so the
+   preview can never drift from what actually executes.  -dir is omitted when `dir` is empty:
+   build_tool then defaults the project directory to the name, relative to the engine root. */
+static void
+launch_create_command( char* out, u32 out_sz, const char* name, const char* dir )
+{
+    int n = snprintf( out, out_sz, "\"%s/bin/build_tool.exe\" -create %s -type project",
+                      s_launch.engine_root, name );
+    if ( n > 0 && ( u32 )n < out_sz && dir && dir[ 0 ] )
+        snprintf( out + n, out_sz - ( u32 )n, " -dir \"%s\"", dir );
+}
+
+/* Run the create (from the engine root -- cmd_create_project requires it) and, on success,
+   reload the registry (build_tool self-registered the project) and select the new entry. */
+static void
+launch_run_create( const char* name, const char* dir )
+{
+    char cmd[ LAUNCH_PATH_MAX * 2 ];
+    launch_create_command( cmd, sizeof( cmd ), name, dir );
+
+    char label[ 128 ];
+    snprintf( label, sizeof( label ), "create project %s", name );
+    launch_run_capture( label, cmd, s_launch.engine_root );
+
+    if ( s_launch.last_exit_code != 0 )
+        return;
+
+    launch_registry_load();
+    for ( u32 i = 0; i < s_launch.project_count; ++i )
+        if ( strcmp( s_launch.projects[ i ].name, name ) == 0 )
+            s_launch.selected = ( i32 )i;
 }
 
 /*==============================================================================================
@@ -150,6 +226,9 @@ launch_show_menu( gui_vp_t vp )
 
     if ( gui()->menu_begin( "Projects" ) )
     {
+        if ( gui()->menu_item( "New Project...", NULL, NULL ) )
+            s_req_create_popup = true;    /* opened at top level after the menu bar (see frame) */
+        gui()->separator();
         if ( gui()->menu_item( "Rescan", NULL, NULL ) )
             launch_registry_load();
         if ( gui()->menu_item( "Remove Missing", NULL, NULL ) )
@@ -329,6 +408,70 @@ launch_show_output_pane()
 }
 
 /*==============================================================================================
+    Create Project dialog -- modal; emitted every frame, visible only while open
+==============================================================================================*/
+
+static void
+launch_show_create_dialog( void )
+{
+    static char name[ 64 ];
+    static char dir [ LAUNCH_PATH_MAX ];
+
+    if ( !gui()->popup_modal_begin( LAUNCH_CREATE_POPUP, "Create Project", GUI_WIN_NONE ) )
+        return;
+
+    gui()->stack();
+    gui()->text( "A standalone project built on this engine (its own orb.targets)." );
+    gui()->separator();
+
+    gui()->field_label_left( 90.0f );
+    gui()->input_text( "Name", name, sizeof( name ) );
+    gui()->input_text_with_hint( "Directory", "defaults to the name", dir, sizeof( dir ) );
+
+    const bool valid = launch_name_valid( name );
+    if ( name[ 0 ] && !valid )
+        gui()->text( "Name must be letters, digits, or underscore; not start with a digit." );
+
+    /* Preview the exact command that will run -- the launcher wraps the CLI, it does not hide it. */
+    gui()->separator();
+    if ( valid )
+    {
+        char preview[ LAUNCH_PATH_MAX * 2 ];
+        launch_create_command( preview, sizeof( preview ), name, dir );
+        gui()->text_wrapped( preview );
+    }
+    else
+    {
+        gui()->text( "Enter a valid project name to continue." );
+    }
+    gui()->separator();
+
+    gui()->disabled_begin( !valid );
+    if ( gui()->button( "Create" ) )
+    {
+        launch_run_create( name, dir );
+        if ( s_launch.last_exit_code == 0 )
+        {
+            name[ 0 ] = '\0';
+            dir [ 0 ] = '\0';
+            gui()->popup_close_current();
+        }
+        /* On failure the dialog stays open; the Output pane shows why. */
+    }
+    gui()->disabled_end();
+
+    gui()->same_line( 0.0f );
+    if ( gui()->button( "Cancel" ) )
+    {
+        name[ 0 ] = '\0';
+        dir [ 0 ] = '\0';
+        gui()->popup_close_current();
+    }
+
+    gui()->popup_end();
+}
+
+/*==============================================================================================
     Frame
 ==============================================================================================*/
 
@@ -338,12 +481,23 @@ launch_ui_frame( gui_vp_t vp )
     /* Menu first (popup frame-ordering), then place panes below the viewport chrome --
        caption band (gui-shelled native window) + the menu bar just emitted. */
     launch_show_menu( vp );
-    
+
+    /* Honor a deferred create request at top-level depth (0), now the menu bar has ended --
+       so the modal registers as a root popup, not nested under the just-closed menu. */
+    if ( s_req_create_popup )
+    {
+        gui()->popup_open( LAUNCH_CREATE_POPUP );
+        s_req_create_popup = false;
+    }
+
     s_main_vp = vp;
 
     if ( s_show_engine )   launch_show_engine_pane();
     if ( s_show_projects ) launch_show_projects_pane();
     if ( s_show_output )   launch_show_output_pane();
+
+    /* Modal: emitted unconditionally, self-gated on its open state (menu opens it). */
+    launch_show_create_dialog();
 }
 
 /*============================================================================================*/
