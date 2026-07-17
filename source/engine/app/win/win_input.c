@@ -7,11 +7,20 @@
     Per device (keys, mouse buttons): `current` and `previous` bool arrays.
     WndProc handlers update `current` as messages arrive.  pump_events() calls
     input_snapshot() at the top of each frame, which copies `current` into
-    `previous`.  Mouse query results:
+    `previous`.
+
+    Mouse buttons carry sticky per-frame transition flags (`pressed_mouse` /
+    `released_mouse`), set as the down/up messages arrive and cleared each frame in
+    input_snapshot -- the Quake key-state model.  A press and release that both land
+    inside one pump interval (fast click, stalled pump) still read back as a click; a
+    current/previous edge alone would miss it.  Query results:
 
         button_down(b)     = current[b]
-        button_pressed(b)  = current[b] && !previous[b]
-        button_released(b) = !current[b] && previous[b]
+        button_pressed(b)  = pressed_mouse[b]
+        button_released(b) = released_mouse[b] || (!current[b] && previous[b])
+
+    (released keeps the edge OR'd in: focus loss zeroes `current` directly with no
+    up message, and the edge is what reports that as a release.)
 
     Keys carry two per-frame flag arrays, cleared each frame in input_snapshot and
     set as WM_KEYDOWNs arrive: `pressed_keys` on an initial press, `repeat_keys` on
@@ -60,6 +69,8 @@ typedef struct app_input_s
 
     bool current_mouse  [ APP_MOUSE_BUTTON_COUNT ];
     bool previous_mouse [ APP_MOUSE_BUTTON_COUNT ];
+    bool pressed_mouse  [ APP_MOUSE_BUTTON_COUNT ];    // a down message arrived this frame
+    bool released_mouse [ APP_MOUSE_BUTTON_COUNT ];    // an up message arrived this frame
 
     i32  mouse_x;
     i32  mouse_y;
@@ -441,6 +452,14 @@ input_handle_mouse_button( app_mouse_button_t btn, bool down, i16 x, i16 y, win_
 
     g_input.current_mouse[ btn ] = down;
 
+    /* Sticky per-frame transition flags (same model as pressed_keys): a press and release
+       that both land inside one pump interval still read back as a click.  A current/previous
+       edge cannot see that -- current is back to false before the snapshot ever samples it --
+       and a stalled pump (long frame, editor wait) makes the window wide enough to lose real
+       clicks. */
+    if ( down ) g_input.pressed_mouse[ btn ]  = true;
+    else        g_input.released_mouse[ btn ] = true;
+
     app_event_t ev               = win_make_event( down ? APP_EV_MOUSE_DOWN : APP_EV_MOUSE_UP, win_id );
     ev.data.mouse_btn.button     = ( i32 )btn;
     ev.data.mouse_btn.x          = x;
@@ -488,7 +507,9 @@ input_clear_all_state( void )
     for ( int i = 0; i < APP_SRC_COUNT; ++i ) g_input.current_keys[ i ] = false;
     for ( int i = 0; i < APP_SRC_COUNT; ++i ) g_input.pressed_keys[ i ] = false;
     for ( int i = 0; i < APP_SRC_COUNT; ++i ) g_input.repeat_keys[ i ]  = false;
-    for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i ) g_input.current_mouse[ i ] = false;
+    for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i ) g_input.current_mouse[ i ]  = false;
+    for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i ) g_input.pressed_mouse[ i ]  = false;
+    for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i ) g_input.released_mouse[ i ] = false;
 }
 
 /*==============================================================================================
@@ -507,6 +528,10 @@ input_snapshot( void )
 
     for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i )
         g_input.previous_mouse[ i ] = g_input.current_mouse[ i ];
+
+    /* Clear the per-frame mouse transition flags; this frame's message drain re-sets them. */
+    for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i ) g_input.pressed_mouse[ i ]  = false;
+    for ( int i = 0; i < APP_MOUSE_BUTTON_COUNT; ++i ) g_input.released_mouse[ i ] = false;
 
     /* Raw deltas re-accumulate from zero during this frame's message drain. */
     g_input.raw_dx = 0.0f;
@@ -585,7 +610,7 @@ app_mouse_button_pressed( app_mouse_button_t btn )
 {
     if ( ( int )btn < 0 || ( int )btn >= APP_MOUSE_BUTTON_COUNT )
         return false;
-    return g_input.current_mouse[ btn ] && !g_input.previous_mouse[ btn ];
+    return g_input.pressed_mouse[ btn ];   /* sticky flag -- survives a same-frame release */
 }
 
 static bool
@@ -593,7 +618,10 @@ app_mouse_button_released( app_mouse_button_t btn )
 {
     if ( ( int )btn < 0 || ( int )btn >= APP_MOUSE_BUTTON_COUNT )
         return false;
-    return !g_input.current_mouse[ btn ] && g_input.previous_mouse[ btn ];
+    /* Flag catches a press+release inside one pump; the edge still covers transitions with
+       no up message (focus loss zeroes current directly in input_clear_all_state). */
+    return g_input.released_mouse[ btn ]
+        || ( !g_input.current_mouse[ btn ] && g_input.previous_mouse[ btn ] );
 }
 
 static void
