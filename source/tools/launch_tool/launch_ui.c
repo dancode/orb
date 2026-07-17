@@ -194,7 +194,11 @@ launch_show_projects_pane()
 
         /* Import: paste a project root (a dir holding orb.targets) and Add. */
         gui()->separator();
-        gui()->input_text( "##import_path", s_import_path, sizeof( s_import_path ) );
+        gui()->text_wrapped( "Add an existing project by its root folder\n(the one holding orb.targets):" );    
+        // gui()->text( "Add an existing project by its root folder\n(the one holding orb.targets):" );
+        gui()->text( "    e.g.  F:\\games\\my_project" );
+        gui()->input_text_with_hint( "##import_path", "project folder path...",
+                                     s_import_path, sizeof( s_import_path ) );
         if ( gui()->button( "Add Project" ) )
         {
             bool ok         = launch_registry_add( s_import_path );
