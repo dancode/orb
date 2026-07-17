@@ -265,7 +265,8 @@ target 	editor
     root        source/editor
     folder      05_EDITOR
     unit        editor.c
-    dep         core run gui editor_viewport
+    dep         core gui
+	dep 		editor_viewport
 
 # ==============================================================================
 
@@ -367,7 +368,7 @@ target dev_ship
     root        source/developer/dev_ship
     folder      07_DEVELOPER
     unit        dev_ship.c
-    dep         sys
+    dep         sys pack
 
 # ==============================================================================
 # 08_Host : Shared Host Executable Libraries
@@ -795,7 +796,7 @@ target ship_tool
     folder      08_TOOL
     unit        ship_tool.c
     flag        is_tool
-    dep         sys dev_ship
+    dep         sys pack dev_ship
 
 # ==============================================================================
 # DEV : Development Solution Wihout Any Sandbox or Test Code
@@ -861,14 +862,16 @@ solution orb_editor
     add         base
     add         sys ref prof mod app core job net fs pack
 
-    add         run
-    add         rhi   # vulkan render library
-    add         draw   # drawing using the rhi
-    add         gui   # gui lbrary
-    add         asset   # asset service (image loader)
-
-    add         render   # render dll
-    add         dev_font   # dev-only font baker
+    add         run			# runtime host
+    add         rhi   		# vulkan render library
+    add         draw   		# drawing using the rhi
+    add         gui   		# gui lbrary
+    add         asset   	# asset service (image loader)
+	
+    add         render   	# render dll
+	
+    add         dev_font   	# dev-only font baker
+	add 		dev_ship	#  
 
 	#			--- GAME ---
 
@@ -890,6 +893,10 @@ solution orb_editor
     add         sample_game sample_game_play
 
 	# add 		my_project
+
+	#			--- TOOL ---
+
+	add 		ship_tool 
 
 	#			--- EXECUTABLE ---
 

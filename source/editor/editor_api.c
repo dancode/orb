@@ -12,6 +12,8 @@
                       Pause / Step + state readout, plus Play Standalone (spawns the
                       project under host_game.exe as its own process)
         Frame Stats   run clock readout (floating, off by default)
+        Deploy        ship-pipeline front-end (File > Deploy...): configures and spawns
+                      ship_tool detached, the batch-job heart -- no pipeline logic here
 
     Window visibility lives in the Window menu -- one source of truth, no close boxes yet.
     The panel set is deliberately flat for now; it becomes a registry when panels grow
@@ -41,9 +43,20 @@ MOD_USE_RUN;
 static bool s_show_viewport = true;
 static bool s_show_game     = true;
 static bool s_show_stats    = false;
+static bool s_show_deploy   = false;
 static bool s_dock_built    = false;     /* default layout carved once             */
 static char s_project[ 64 ];             /* bound project display name; "" = none  */
 static char s_project_dir[ 260 ];        /* dir holding <name>.dll; "" = exe dir   */
+
+/* Deploy window options -- mirror ship_tool's CLI; the window is a front-end that spawns
+   the tool, never a second implementation of the pipeline. */
+static i32  s_ship_config  = 0;          /* index into s_ship_configs               */
+static bool s_ship_modular = false;      /* host_game.exe + DLLs instead of mono exe */
+static bool s_ship_pdb     = false;
+static bool s_ship_clean   = true;       /* fresh stage by default: no stale-mix     */
+static char s_ship_deploy_dir[ 260 ];    /* optional publish destination; "" = none  */
+
+static const char* s_ship_configs[] = { "Release", "Debug" };
 
 /*==============================================================================================
     API implementations
@@ -187,6 +200,63 @@ editor_game_window( void )
     gui()->window_end();
 }
 
+/* Deploy -- configure and launch the ship pipeline (build -> cook -> stage -> package ->
+   deploy) for the bound project.  At its heart a batch job: the window only assembles a
+   ship_tool command line and spawns it detached (own console shows the pipeline log),
+   exactly the Play Standalone pattern.  The editor keeps no handle and no pipeline state. */
+static void
+editor_ship( void )
+{
+    char cmd[ 1024 ];
+    int  n = snprintf( cmd, sizeof( cmd ), "\"%s\\bin\\ship_tool.exe\" %s -config %s",
+                       sys_root_dir(), s_project, s_ship_configs[ s_ship_config ] );
+
+    if ( s_ship_modular ) n += snprintf( cmd + n, sizeof( cmd ) - n, " -modular" );
+    if ( s_ship_pdb )     n += snprintf( cmd + n, sizeof( cmd ) - n, " -pdb" );
+    if ( s_ship_clean )   n += snprintf( cmd + n, sizeof( cmd ) - n, " -clean" );
+    if ( s_ship_deploy_dir[ 0 ] )
+        snprintf( cmd + n, sizeof( cmd ) - n, " -deploy \"%s\"", s_ship_deploy_dir );
+
+    if ( sys_process_spawn( cmd, sys_root_dir() ) )
+        LOG_INFO( "ship launched: %s", cmd );
+    else
+        LOG_WARN( "ship launch FAILED: %s", cmd );
+}
+
+static void
+editor_deploy_window( void )
+{
+    gui()->window_set_next_pos ( 460.0f, 160.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 340.0f, 240.0f, GUI_COND_ONCE );
+    if ( gui()->window_begin( "Deploy", GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+
+        if ( s_project[ 0 ] )
+        {
+            gui()->textf( "project: %s", s_project );
+
+            gui()->combo( "config", &s_ship_config, s_ship_configs,
+                          (i32)( sizeof( s_ship_configs ) / sizeof( s_ship_configs[ 0 ] ) ) );
+            gui()->checkbox( "modular (host + DLLs)", &s_ship_modular );
+            gui()->checkbox( "include pdbs",          &s_ship_pdb );
+            gui()->checkbox( "clean stage",           &s_ship_clean );
+            gui()->input_text_with_hint( "deploy to", "(optional dir)",
+                                         s_ship_deploy_dir, sizeof( s_ship_deploy_dir ) );
+
+            if ( gui()->button( "Ship It" ) )
+                editor_ship();
+
+            gui()->textf( "-> build\\ship\\%s", s_project );
+        }
+        else
+        {
+            gui()->textf( "no project bound" );
+        }
+    }
+    gui()->window_end();
+}
+
 static void
 editor_stats_window( void )
 {
@@ -218,6 +288,10 @@ editor_build_gui( f32 dt )
     {
         if ( gui()->menu_begin( "File" ) )
         {
+            bool deploy = false;
+            if ( gui()->menu_item( "Deploy...", NULL, &deploy ) )
+                s_show_deploy = true;
+
             bool quit = false;
             if ( gui()->menu_item( "Quit", NULL, &quit ) )
                 run_host_quit();
@@ -228,6 +302,7 @@ editor_build_gui( f32 dt )
             gui()->menu_item( "Viewport",    NULL, &s_show_viewport );
             gui()->menu_item( "Game",        NULL, &s_show_game     );
             gui()->menu_item( "Frame Stats", NULL, &s_show_stats    );
+            gui()->menu_item( "Deploy",      NULL, &s_show_deploy   );
             gui()->menu_end();
         }
         gui()->main_menu_bar_end();
@@ -250,6 +325,7 @@ editor_build_gui( f32 dt )
     if ( s_show_viewport ) ed_viewport_panel();
     if ( s_show_game     ) editor_game_window();
     if ( s_show_stats    ) editor_stats_window();
+    if ( s_show_deploy   ) editor_deploy_window();
 
     /* F11: fullscreen the scene viewport over the dockspace (and back) -- the hotkey twin of
        the tab strip's maximize button.  A function key, so no capture fence needed: the key

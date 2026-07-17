@@ -9,18 +9,22 @@
     would use.
 
     Usage:
-        ship_tool <project> [-config <Debug|Release>] [-out <dir>]
-                            [-only <build|cook|stage|package|deploy>]
+        ship_tool <project> [-config <Debug|Release>] [-out <dir>] [-modular]
+                            [-deploy <dir>] [-only <build|cook|stage|package|deploy>]
                             [-skip-build] [-pdb] [-clean]
 
-        <project>     project name; the ship exe target is <project>_ship (see the
-                      PATTERN block in orb.targets)
+        <project>     project name; the monolithic ship exe target is <project>_ship
+                      (see the PATTERN block in orb.targets)
         -config       build configuration (default: Release)
         -out          staging root (default: build/ship/<project>)
+        -modular      ship host_game.exe + module DLLs instead of the monolithic
+                      single exe (the "final correct" default)
+        -deploy       destination directory to mirror the staged build into; without
+                      it the deploy stage is a no-op (the staged dir is the deliverable)
         -only         run a single pipeline stage instead of the full sequence
         -skip-build   stage prebuilt bin/ output; do not invoke build_tool
         -pdb          include .pdb files in the staged layout
-        -clean        wipe the staging dir before staging
+        -clean        delete staged files before staging
 
     Run from the engine root (the directory holding orb.targets).
 
@@ -44,8 +48,8 @@ static int
 usage( void )
 {
     fprintf( stderr,
-             "usage: ship_tool <project> [-config <Debug|Release>] [-out <dir>]\n"
-             "                 [-only <build|cook|stage|package|deploy>]\n"
+             "usage: ship_tool <project> [-config <Debug|Release>] [-out <dir>] [-modular]\n"
+             "                 [-deploy <dir>] [-only <build|cook|stage|package|deploy>]\n"
              "                 [-skip-build] [-pdb] [-clean]\n" );
     return 1;
 }
@@ -77,6 +81,8 @@ main( int argc, char** argv )
             desc.config = argv[ ++i ];
         else if ( strcmp( argv[ i ], "-out" ) == 0 && i + 1 < argc )
             desc.out_dir = argv[ ++i ];
+        else if ( strcmp( argv[ i ], "-deploy" ) == 0 && i + 1 < argc )
+            desc.deploy_dir = argv[ ++i ];
         else if ( strcmp( argv[ i ], "-only" ) == 0 && i + 1 < argc )
         {
             const char* name = argv[ ++i ];
@@ -93,6 +99,8 @@ main( int argc, char** argv )
                 return usage();
             }
         }
+        else if ( strcmp( argv[ i ], "-modular" ) == 0 )
+            desc.flags |= DEV_SHIP_MODULAR;
         else if ( strcmp( argv[ i ], "-skip-build" ) == 0 )
             desc.flags |= DEV_SHIP_SKIP_BUILD;
         else if ( strcmp( argv[ i ], "-pdb" ) == 0 )

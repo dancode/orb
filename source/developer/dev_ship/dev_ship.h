@@ -12,23 +12,32 @@
 
     Stages (each independently callable; dev_ship_run drives them in order):
 
-        build     compile the ship-shape exe: shells out to build_tool for the
-                  <project>_ship target (-monolithic single exe, project baked in)
+        build     compile the ship exe set: shells out to build_tool.  Default is the
+                  monolithic <project>_ship single exe (the "final correct" shape);
+                  DEV_SHIP_MODULAR ships host_game.exe + the module DLLs instead
         cook      convert source assets to runtime formats (font/shader/asset tools);
                   currently a no-op -- all cooking is offline and committed
-        stage     gather the runtime file set into a clean directory laid out the way the
-                  shipped game expects (exe at root, assets/ + config/ beside it)
-        package   write the manifest (file list + size + crc) and, later, bundle assets
-                  into zip packs the fs layer mounts
-        deploy    publish the packaged layout to its destination directory
+        stage     gather the runtime file set into a clean directory in the shipped layout
+        package   write <out>/manifest.txt (build stamp + crc32/size/path per staged file);
+                  zip-bundling assets lands here later
+        deploy    mirror the staged tree into deploy_dir; no destination = stated no-op
+                  (the staged dir already is the deliverable)
 
-    The staged directory is itself the shippable output: zip it and send it.
+    The staged directory is itself the shippable output: zip it and send it.  Its layout
+    mirrors the dev tree because sys_root_dir() resolves the asset root as ONE LEVEL ABOVE
+    the executable -- shipped exes find assets/ and config/ with zero path changes:
+
+        <out>/<project>.bat      launcher (root convenience; exe lives in bin/)
+        <out>/bin/               exe (+ module DLLs when modular, + shaders/ when cooked)
+        <out>/assets/font/       cooked runtime assets only -- sources and caches stay home
+        <out>/assets/icon/
+        <out>/config/
 
     All stages take the same immutable dev_ship_desc_t.  Paths are resolved against
     desc->root_dir, which must be the engine root (the directory holding orb.targets);
     ship_tool validates this before dispatching.
 
-    Link deps: sys (process run, file copy, dir walk)
+    Link deps: sys (process run, file copy, dir walk), pack (crc32 for the manifest)
 
 ==============================================================================================*/
 
@@ -41,14 +50,17 @@ typedef struct
     const char* config;      /* build configuration: "Debug" or "Release" */
     const char* root_dir;    /* engine root (directory holding orb.targets) */
     const char* out_dir;     /* staging root; "" or NULL = <root>/build/ship/<project> */
+    const char* deploy_dir;  /* deploy destination; "" or NULL = deploy stage is a no-op */
     u32         flags;       /* DEV_SHIP_* */
 
 } dev_ship_desc_t;
 
 /* dev_ship flags */
 #define DEV_SHIP_PDB         ( 1u << 0 )    /* stage .pdb files alongside the exe */
-#define DEV_SHIP_CLEAN       ( 1u << 1 )    /* wipe the staging dir before staging */
+#define DEV_SHIP_CLEAN       ( 1u << 1 )    /* delete staged files before staging */
 #define DEV_SHIP_SKIP_BUILD  ( 1u << 2 )    /* stage prebuilt bin/ output; do not compile */
+#define DEV_SHIP_MODULAR     ( 1u << 3 )    /* ship host_game.exe + module DLLs instead of
+                                               the monolithic single exe (the default) */
 
 /* Pipeline stages, in execution order.  DEV_SHIP_STAGE_COUNT sizes iteration. */
 typedef enum
