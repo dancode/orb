@@ -361,6 +361,14 @@ target dev_image
     unit        dev_image.c
     dep         sys
 
+target dev_ship
+
+    type        static
+    root        source/developer/dev_ship
+    folder      07_DEVELOPER
+    unit        dev_ship.c
+    dep         sys
+
 # ==============================================================================
 # 08_Host : Shared Host Executable Libraries
 # ==============================================================================
@@ -780,6 +788,15 @@ target image_tool
     flag        is_tool
     dep         sys dev_image
 
+target ship_tool
+
+    type        exe
+    root        source/tools/ship_tool
+    folder      08_TOOL
+    unit        ship_tool.c
+    flag        is_tool
+    dep         sys dev_ship
+
 # ==============================================================================
 # DEV : Development Solution Wihout Any Sandbox or Test Code
 # ==============================================================================
@@ -1018,8 +1035,10 @@ solution orb_build
     add         asset_tool
     add         shader_tool
     add         image_tool
+    add         ship_tool
     add         dev_font   # used by font_tool
     add         dev_image   # used by image_tool
+    add         dev_ship   # used by ship_tool
     add         pack   # used by asset_tool
 
 # ==============================================================================
@@ -1045,7 +1064,7 @@ solution orb_all
 
     add         example sb_ref_dll sb_gen_dll
     add         game nav game_example
-    add         dev_build dev_hot dev_font dev_image
+    add         dev_build dev_hot dev_font dev_image dev_ship
 
     add         host_common
 
@@ -1083,6 +1102,7 @@ solution orb_all
     add         asset_tool
     add         shader_tool
     add         image_tool
+    add         ship_tool
 
 # ==============================================================================
 # FULL SOLUTION : MONOLITHIC
