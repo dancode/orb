@@ -68,10 +68,7 @@ dock_float_group_create( gui_window_t* target, gui_id_t target_id, const char* t
     n->floating = true;
     n->z        = surface_z_raise( n->z );
     n->rect     = ( gui_rect_t ){ target->x, target->y, target->w, target->h };
-
-    f32 th = WIN_TITLE_H;
-    if ( th > n->rect.h ) th = n->rect.h;
-    n->content = ( gui_rect_t ){ n->rect.x, n->rect.y + th, n->rect.w, n->rect.h - th };
+    dock_leaf_carve_content( n );
 
     dock_leaf_tab_add( n, target_id, target_title );
     return n;
@@ -119,6 +116,8 @@ dock_float_hit( gui_id_t drag_id, u32 vp, gui_dock_node_t** out_node, gui_id_t* 
         {
             if ( n->tab_count == 0 || n->tabs[ n->active_tab ] != w->id )
                 continue;   /* probe each group once, through its active tab */
+            if ( n->tab_count >= GUI_DOCK_TABS_MAX )
+                continue;   /* group full -- never offer a join the drop would refuse */
             band = ( gui_rect_t ){ n->rect.x, n->rect.y, n->rect.w, WIN_TITLE_H };
             z    = n->z;
         }
@@ -238,11 +237,7 @@ dock_float_resolve( gui_dock_node_t* node, gui_id_t active_win_id )
     }
 
     dock_float_clamp( node );
-
-    f32 th = WIN_TITLE_H;
-    if ( th > node->rect.h ) th = node->rect.h;
-    node->content = ( gui_rect_t ){ node->rect.x, node->rect.y + th,
-                                      node->rect.w, node->rect.h - th };
+    dock_leaf_carve_content( node );
 
     /* Resize hover-and-grab through the resize_item protocol, with hover gated on the active tab
        (the group's hover nominee) -- the same shape as window_resolve_resize_hot, minus the

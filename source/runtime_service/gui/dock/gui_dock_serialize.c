@@ -158,10 +158,19 @@ dock_parse_node( dock_reader_t* r, u32 vp )
         n->ratio = ratio;
         gui_dock_node_t* c0 = dock_parse_node( r, vp );
         gui_dock_node_t* c1 = dock_parse_node( r, vp );
+        if ( !c0 || !c1 )
+        {
+            /* Truncated / corrupt blob: a split missing a side cannot lay out, collapse, or hang a
+               splitter sanely.  Heal in place -- the surviving child takes this node's slot in the
+               tree (the caller links its parent), so every split in a LOADED tree has two children,
+               the same invariant every runtime edit maintains. */
+            dock_node_free( n );
+            return c0 ? c0 : c1;
+        }
         n->child[ 0 ] = dock_ref( c0 );
         n->child[ 1 ] = dock_ref( c1 );
-        if ( c0 ) c0->parent = dock_ref( n );
-        if ( c1 ) c1->parent = dock_ref( n );
+        c0->parent    = dock_ref( n );
+        c1->parent    = dock_ref( n );
         return n;
     }
 

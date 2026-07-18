@@ -104,9 +104,7 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
         mx->rect.h = f32_lerp( v->dock_max_from.h, target.h, t );
 
         /* Re-carve the tab strip off the moved rect, exactly like dock_node_layout's leaf case. */
-        f32 th = WIN_TITLE_H;
-        if ( th > mx->rect.h ) th = mx->rect.h;
-        mx->content = ( gui_rect_t ){ mx->rect.x, mx->rect.y + th, mx->rect.w, mx->rect.h - th };
+        dock_leaf_carve_content( mx );
 
         v->dock_max_settled = v->dock_max_on && !active;
         if ( !v->dock_max_on && !active )

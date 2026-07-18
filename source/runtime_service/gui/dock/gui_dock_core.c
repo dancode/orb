@@ -257,8 +257,11 @@ dock_hidden_reuse( gui_dock_node_t* n, gui_dir_t dir )
 ----------------------------------------------------------------------------------------------*/
 
 /* The viewport's maximized leaf, validated -- or NULL, clearing any stale state (the node was
-   emptied and collapsed, or the tree was cleared / reloaded from a blob).  Ids are the stable
-   handle (never reused within a session), so a freed slot can never false-match. */
+   emptied and collapsed, the tree was cleared / reloaded from a blob, or every window of the leaf
+   stopped emitting -- a settled cover that draws nothing would otherwise suppress the whole
+   dockspace).  Ids are the stable handle (never reused within a session), so a freed slot can
+   never false-match.  A node that outlives its maximize (split, hidden) drops the raised cover z
+   here, so it re-tiles as a plain node when it next lays out. */
 static gui_dock_node_t*
 dock_max_node( gui_viewport_t* v )
 {
@@ -266,8 +269,11 @@ dock_max_node( gui_viewport_t* v )
         return NULL;
 
     gui_dock_node_t* n = dock_node_find( v->dock_max_id );
-    if ( !n || n->split != GUI_DOCK_SPLIT_NONE || n->floating || &g_ctx->vp.pool[ n->viewport ] != v )
+    if ( !n || n->split != GUI_DOCK_SPLIT_NONE || n->floating || &g_ctx->vp.pool[ n->viewport ] != v
+         || n->hidden )
     {
+        if ( n && !n->floating )
+            n->z = 0;   /* back to the tile floor -- the settle path only resets a LIVE maximize */
         v->dock_max_id      = 0;
         v->dock_max_on      = false;
         v->dock_max_settled = false;
@@ -291,7 +297,15 @@ dock_max_set( gui_dock_node_t* n, bool on )
 
     if ( on )
     {
-        v->dock_max_id = n->id;   /* takes over from any other maxed node, which snaps back */
+        /* Take over from any other maxed node: it snaps back to a plain tile, so the cover z it
+           held must drop with it (the settle path only ever resets the CURRENT dock_max_id). */
+        if ( v->dock_max_id != 0 && v->dock_max_id != n->id )
+        {
+            gui_dock_node_t* prev = dock_node_find( v->dock_max_id );
+            if ( prev )
+                prev->z = 0;
+        }
+        v->dock_max_id = n->id;
         n->z           = surface_z_raise( n->z );
     }
     v->dock_max_on      = on;
@@ -315,7 +329,9 @@ dock_leaf_remove_tab( gui_dock_node_t* n, u32 idx )
         memcpy( n->names[ i ], n->names[ i + 1 ], GUI_DOCK_NAME_CAP );
     }
     n->tab_count--;
-    if ( n->active_tab >= n->tab_count )
+    if ( n->active_tab > idx )
+        n->active_tab--;   /* slots below shifted down -- keep the SAME window selected */
+    else if ( n->active_tab >= n->tab_count )
         n->active_tab = n->tab_count ? n->tab_count - 1 : 0;
 }
 
@@ -414,18 +430,29 @@ dock_leaf_tab_add( gui_dock_node_t* n, gui_id_t wid, const char* name )
     resize or a splitter drag re-tiles immediately.
 ----------------------------------------------------------------------------------------------*/
 
+/* Carve a leaf's tab strip off the top of its rect: content = rect minus a WIN_TITLE_H band,
+   clamped so a sliver-thin node keeps a sane (possibly zero-height) body.  The one place the
+   strip/body division is defined -- every path that moves a leaf rect outside the tree layout
+   (maximize tween, floating-group drag/resize) re-carves through here. */
+static void
+dock_leaf_carve_content( gui_dock_node_t* n )
+{
+    f32 th = WIN_TITLE_H;
+    if ( th > n->rect.h ) th = n->rect.h;
+    n->content = ( gui_rect_t ){ n->rect.x, n->rect.y + th, n->rect.w, n->rect.h - th };
+}
+
 static void
 dock_node_layout( gui_dock_node_t* n, gui_rect_t r )
 {
-    if ( !n )   /* defensive: a corrupt/truncated loaded blob could leave a split child NULL */
+    if ( !n )   /* defensive only -- load heals missing split children (dock_parse_node), and the
+                   runtime edits never produce a one-armed split */
         return;
     n->rect = r;
 
     if ( n->split == GUI_DOCK_SPLIT_NONE )
     {
-        f32 th = WIN_TITLE_H;
-        if ( th > r.h ) th = r.h;
-        n->content = ( gui_rect_t ){ r.x, r.y + th, r.w, r.h - th };
+        dock_leaf_carve_content( n );
         return;
     }
 

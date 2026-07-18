@@ -179,6 +179,49 @@ dock_zone_region( gui_rect_t r, dock_zone_t z )
     }
 }
 
+/* Enter the overlay's draw scope: its own synthetic slot on the reserved topmost z-band, clipped
+   to the dockspace surface, chips rounded as control surfaces.  Paired with dock_overlay_end,
+   which restores the ambient build state for the windows emitted next. */
+static void
+dock_overlay_begin( u32 vp )
+{
+    const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
+    draw_set_window   ( DOCK_OVERLAY_WIN );
+    draw_set_viewport ( vp );
+    draw_set_sort_key ( DOCK_OVERLAY_Z );
+    draw_set_root_clip( vp_w( v ), vp_h( v ) );
+    draw_set_rounding ( ROUND_WIDGET );
+}
+
+static void
+dock_overlay_end( void )
+{
+    draw_set_window   ( 0 );
+    draw_set_sort_key ( 0 );
+    draw_set_viewport ( 0 );
+    draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+}
+
+/* One drop chip: filled square + border, lit when it is the armed drop. */
+static void
+dock_chip_draw( gui_rect_t cr, bool on )
+{
+    draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, on ? COL_WIDGET_HOT : COL_WIDGET_BG );
+    draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
+}
+
+/* The "tab here" glyph: a small square inset in a center chip (kept square while the chip itself
+   rounds; restores the ambient chip rounding after). */
+static void
+dock_chip_tab_glyph( gui_rect_t cr )
+{
+    f32 ins = cr.w * 0.28f;
+    draw_set_rounding( 0.0f );
+    draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
+                            WIN_BORDER, 0, COL_TEXT );
+    draw_set_rounding( ROUND_WIDGET );
+}
+
 /* Tab-onto-window pre-empt: another free window's title bar -- or an existing floating group's
    strip -- under the cursor takes priority over the dockspace chips (the strip sits visually above
    them).  When one is hit, arm s_dock_drag for a tab / float-join drop, draw one center chip
@@ -204,29 +247,17 @@ dock_drag_float_target( gui_id_t win_id, u32 vp, f32 s )
     s_dock_drag.target     = fnode ? fnode->id : GUI_DOCK_NONE;
     s_dock_drag.float_win  = fwin;
 
-    const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
-    draw_set_window   ( DOCK_OVERLAY_WIN );
-    draw_set_viewport ( vp );
-    draw_set_sort_key ( DOCK_OVERLAY_Z );
-    draw_set_root_clip( vp_w( v ), vp_h( v ) );
-    draw_set_rounding ( ROUND_WIDGET );
+    dock_overlay_begin( vp );
 
     draw_push_rect_filled ( base.x, base.y, base.w, base.h, 0, 0, 1, 1, 0, DOCK_OVERLAY_FILL );
     draw_push_rect_outline( base.x, base.y, base.w, base.h, WIN_BORDER, 0, DOCK_OVERLAY_LINE );
 
     /* The hot center chip with its "tab here" glyph, over the title band. */
     gui_rect_t cr = { base.x + base.w * 0.5f - s * 0.5f, base.y + ( WIN_TITLE_H - s ) * 0.5f, s, s };
-    draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
-    draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
-    f32 ins = cr.w * 0.28f;
-    draw_set_rounding( 0.0f );
-    draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
-                            WIN_BORDER, 0, COL_TEXT );
+    dock_chip_draw( cr, true );
+    dock_chip_tab_glyph( cr );
 
-    draw_set_window   ( 0 );
-    draw_set_sort_key ( 0 );
-    draw_set_viewport ( 0 );
-    draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+    dock_overlay_end();
     return true;
 }
 
@@ -289,10 +320,14 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
             if ( rect_hit( dock_outer_chip_rect( root->rect, (dock_zone_t)z, s, margin ) ) )
                 { outer_zone = (dock_zone_t)z; break; }
 
+    /* A tab drop (strip band or center chip) needs a free slot in the leaf's tab list -- a full
+       leaf offers neither, so the preview never promises a drop the commit would refuse. */
+    bool leaf_can_tab = leaf && ( leaf->tab_count < GUI_DOCK_TABS_MAX );
+
     /* Tab-strip drop: the cursor over the leaf's TAB BAND is the "merge into these tabs" gesture
        -- the same drop a floating group's strip offers -- so it tabs in directly, without having
        to reach the center chip.  Only offered where a strip is visible (the leaf has tabs). */
-    bool strip_drop = ( outer_zone == DOCK_ZONE_NONE ) && leaf && ( leaf->tab_count > 0 )
+    bool strip_drop = ( outer_zone == DOCK_ZONE_NONE ) && leaf_can_tab && ( leaf->tab_count > 0 )
                    && ( s_io.mouse_y < leaf->content.y );
 
     /* Edge chips win over the inner 5-way: when the cursor is on an edge chip, that is the intent.
@@ -303,7 +338,11 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         zone = DOCK_ZONE_CENTER;
     else if ( leaf && outer_zone == DOCK_ZONE_NONE )
         for ( i32 z = DOCK_ZONE_CENTER; z <= zone_last; ++z )
+        {
+            if ( z == DOCK_ZONE_CENTER && !leaf_can_tab )
+                continue;
             if ( rect_hit( dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g ) ) ) { zone = (dock_zone_t)z; break; }
+        }
 
     bool outer = ( outer_zone != DOCK_ZONE_NONE );
     s_dock_drag.viewport = vp;
@@ -313,13 +352,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     s_dock_drag.active   = ( s_dock_drag.zone != DOCK_ZONE_NONE );
 
     /* Overlay in its own slot on the reserved topmost z-band, clipped to the surface. */
-    const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
-    draw_set_window   ( DOCK_OVERLAY_WIN );
-    draw_set_viewport ( vp );
-    draw_set_sort_key ( DOCK_OVERLAY_Z );
-    draw_set_root_clip( vp_w( v ), vp_h( v ) );
-
-    draw_set_rounding( ROUND_WIDGET );   /* drop preview + chips read as control surfaces */
+    dock_overlay_begin( vp );
 
     /* Preview the band the window would take: a full viewport edge for an outer drop, else the half
        (or whole, for center) of the leaf under the cursor. */
@@ -338,36 +371,24 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         f32          sh = leaf->content.y - leaf->rect.y;
         gui_rect_t cr = { leaf->rect.x + leaf->rect.w * 0.5f - s * 0.5f,
                             leaf->rect.y + ( sh - s ) * 0.5f, s, s };
-        draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
-        draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
-        f32 ins = cr.w * 0.28f;
-        draw_set_rounding( 0.0f );   /* small glyph box stays square */
-        draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
-                                WIN_BORDER, 0, COL_TEXT );
-        draw_set_rounding( ROUND_WIDGET );
+        dock_chip_draw( cr, true );
+        dock_chip_tab_glyph( cr );
     }
 
     /* Per-leaf 5-way -- only where a leaf sits under the cursor (over a gutter it simply drops,
-       leaving the viewport edge chips below as the offer). */
+       leaving the viewport edge chips below as the offer).  The center chip drops with a full
+       tab list (leaf_can_tab). */
     if ( leaf )
         for ( i32 z = DOCK_ZONE_CENTER; z <= zone_last; ++z )
         {
+            if ( z == DOCK_ZONE_CENTER && !leaf_can_tab )
+                continue;
             gui_rect_t cr = dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g );
-            bool         on = ( !outer && (dock_zone_t)z == zone );
-            draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, on ? COL_WIDGET_HOT : COL_WIDGET_BG );
-            draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
+            dock_chip_draw( cr, !outer && (dock_zone_t)z == zone );
             if ( z == DOCK_ZONE_CENTER )
-            {
-                f32 ins = cr.w * 0.28f;   /* inner square = the "tab here" glyph */
-                draw_set_rounding( 0.0f );   /* small glyph box stays square */
-                draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
-                                        WIN_BORDER, 0, COL_TEXT );
-                draw_set_rounding( ROUND_WIDGET );   /* restore for the remaining chips */
-            }
+                dock_chip_tab_glyph( cr );
             else
-            {
                 draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT );
-            }
         }
 
     /* Edge chips: drawn against the dockspace edges, each pointing outward to read as "full side". */
@@ -375,16 +396,11 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         for ( i32 z = DOCK_ZONE_LEFT; z <= DOCK_ZONE_BOTTOM; ++z )
         {
             gui_rect_t cr = dock_outer_chip_rect( root->rect, (dock_zone_t)z, s, margin );
-            bool         on = ( outer && (dock_zone_t)z == outer_zone );
-            draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, on ? COL_WIDGET_HOT : COL_WIDGET_BG );
-            draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
+            dock_chip_draw( cr, outer && (dock_zone_t)z == outer_zone );
             draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT );
         }
 
-    draw_set_window   ( 0 );
-    draw_set_sort_key ( 0 );
-    draw_set_viewport ( 0 );
-    draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
+    dock_overlay_end();
 }
 
 /* Execute the drop computed by dock_drag_detect: tab into the target leaf (center) or split it and
