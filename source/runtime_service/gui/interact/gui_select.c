@@ -403,22 +403,50 @@ select_paint_under( void )
         font_use( saved );   /* the covered-range walks measure with each run's font */
 }
 
-/* The live marquee outline, painted at window_end so it reads OVER the widgets the box is
-   sweeping across (its fill sits under them, from select_paint_under). */
+/* The over-content half of the highlight, painted at window_end: a LIGHT translucent band per
+   covered run, plus the live marquee outline.  The translucent bands exist for text drawn BY
+   widgets -- a button's background fill paints after select_paint_under and hides the opaque
+   under-band beneath its label, so this pass is the only highlight that reads there.  Over
+   plain text (where the solid under-band already shows) the same hue at low alpha just deepens
+   the band slightly instead of washing the glyphs out. */
 static void
-select_paint_overlay( gui_rect_t body )
+select_paint_overlay( gui_id_t win, gui_rect_t body )
 {
-    if ( !( s_select.rect_mode && s_select.dragging ) )
+    bool live_box = s_select.rect_mode && s_select.dragging;
+    if ( !select_exists() && !live_box )
         return;
 
     select_span_t span = select_span( body );
-    if ( span.x1 <= span.x0 || span.y1 <= span.y0 )
-        return;
 
     f32 save_round = draw_rounding();
     draw_set_rounding( 0.0f );
-    draw_push_rect_outline( span.x0, span.y0, span.x1 - span.x0, span.y1 - span.y0,
-                            1.0f, 0, ( COL_WIDGET_ACT & 0x00FFFFFFu ) | 0xC0000000u );
+
+    if ( select_exists() )
+    {
+        u32 tint = ( COL_CHECK_MARK & 0x00FFFFFFu ) | 0x50000000u;   // 0x50000000u;   /* ~30% alpha */
+        // u32 tint = ( COL_WIDGET_ACT & 0x00FFFFFFu ) | 0x48000000u;   /* ~28% alpha */
+        u32 n    = select_run_count();
+        for ( u32 i = 0; i < n; ++i )
+        {
+            const gui_select_run_t* r = select_run( i );
+            u32 lo, hi;
+            if ( r->win != win || !select_run_covered( r, &span, &lo, &hi ) )
+                continue;
+
+            f32 rx0 = select_x_at( r, lo );
+            f32 rx1 = select_x_at( r, hi );
+            gui_rect_t band = rect_intersect(
+                ( gui_rect_t ){ rx0, r->y, rx1 - rx0, font_char_h() }, r->clip );
+            if ( band.w > 0.0f && band.h > 0.0f )
+                draw_push_rect_filled( band.x, band.y, band.w, band.h, 0, 0, 1, 1, 0, tint );
+        }
+    }
+
+    /* Marquee outline over everything (its fill sits under the content, from paint_under). */
+    if ( live_box && span.x1 > span.x0 && span.y1 > span.y0 )
+        draw_push_rect_outline( span.x0, span.y0, span.x1 - span.x0, span.y1 - span.y0,
+                                1.0f, 0, ( COL_WIDGET_ACT & 0x00FFFFFFu ) | 0xC0000000u );
+
     draw_set_rounding( save_round );
 }
 
@@ -558,10 +586,11 @@ select_window_end( void )
             select_clear();
     }
 
-    /* The selection bands painted UNDER the content at window_begin (select_paint_under); only
-       the live marquee outline paints here, over the widgets the box sweeps across. */
+    /* The opaque bands painted UNDER the content at window_begin (select_paint_under) carry
+       the highlight for plain text; this over-pass tints widget-covered runs and draws the
+       live marquee outline. */
     if ( s_select.win == win )
-        select_paint_overlay( body );
+        select_paint_overlay( win, body );
 
     if ( font_active_id() != saved )
         font_use( saved );   /* metric walks may have switched fonts; later chrome must not see it */

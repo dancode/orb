@@ -85,7 +85,6 @@ main( int argc, char** argv )
 
     launch_ui_init();
 
-
     gui()->debug_enable( true ); /* hotkeys: P=perf, O=state, F10=pipeline dashboard */
 
     f32 dt = 0.0f;
