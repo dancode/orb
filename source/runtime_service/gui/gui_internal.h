@@ -896,17 +896,6 @@ typedef struct gui_dock_node_t
        from any dock_root; a group tears down through the float paths instead). */
     bool hidden;
 
-    /* Hidden-pane collapse / reveal ease (dock_node_layout).  An internal split whose ONE child hides
-       does not snap that pane to zero -- it eases closed while the sibling grows, and eases back open
-       on re-emission (the docked twin of a window's collapse anim, same s_win_anim gate).  hide_side
-       is which child (0/1) is closing -- remembered so the reveal, when both read visible again but
-       the tween has not finished, grows the right pane; hide_open is this build's eased fraction (1 =
-       the full split with gutter, 0 = the child fully collapsed, no gutter), read by the splitter
-       pass to hide the gutter mid-tween.  On the node (not the anim pool) so it survives the idle a
-       settled hidden pane triggers.  Both derived, recomputed every build, never serialized. */
-    u8  hide_side;
-    f32 hide_open;
-
 } gui_dock_node_t;
 
 /*==============================================================================================
