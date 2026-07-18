@@ -27,7 +27,8 @@
     edge, dock_drag_commit (from window_end) tabs the window
     into the leaf (center or strip) or splits the leaf and docks it on a side -- reusing the tree edits in
     gui_dock_core.c (via the public verbs in gui_dock.c: gui_dock_split / gui_dock_window).
-    The overlay paints on a reserved z-band above everything (popups sit at 0x80000000).
+    The overlay paints in its own synthetic draw slot (DOCK_OVERLAY_WIN) on the topmost z band,
+    above every popup, foreground region, and splitter (see the band map in gui_surface.c).
 
     Tab drag: a press on a tab rides the generic drag machine (drag_from_chrome, interact/gui_drag.c),
     publishing a "gui.dock_tab" payload.  While the cursor stays inside the strip band the drag
@@ -42,7 +43,15 @@
 #define DOCK_TAB_SALT   0xD0C7AB00u
 
 #define DOCK_TAB_DRAG_THRESH    12.0f                               /* px a tab must move before it undocks     */
-#define DOCK_OVERLAY_Z          0xF0000000u                         /* above the popup z-band (0x80000000)     */
+
+/* The drop overlay owns its own draw slot at the topmost z band (see the band map in
+   gui_surface.c): a synthetic window id keeps its high z from riding on whatever segment happens
+   to be open when window_begin runs the gesture (the win-0 background, whose splitters and host
+   draws must NOT be hoisted along), and the z sits strictly ABOVE every other band -- popups
+   (0x80000000+) and foreground regions (0xF0000000) included -- so the drop graphic can never
+   lose a tie to a splitter gutter or any other chrome it overlaps. */
+#define DOCK_OVERLAY_WIN        ( (gui_id_t)0xD0C0DA6u )            /* synthetic slot id, draw-side only */
+#define DOCK_OVERLAY_Z          0xF8000000u                         /* topmost band -- above GUI_REGION_FG_Z    */
 #define DOCK_OVERLAY_FILL       GUI_COLOR( 90, 160, 245,  64 )      /* translucent drop-region preview   */
 #define DOCK_OVERLAY_LINE       GUI_COLOR( 90, 160, 245, 200 )      /* its outline                       */
 
@@ -196,6 +205,7 @@ dock_drag_float_target( gui_id_t win_id, u32 vp, f32 s )
     s_dock_drag.float_win  = fwin;
 
     const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
+    draw_set_window   ( DOCK_OVERLAY_WIN );
     draw_set_viewport ( vp );
     draw_set_sort_key ( DOCK_OVERLAY_Z );
     draw_set_root_clip( vp_w( v ), vp_h( v ) );
@@ -213,6 +223,7 @@ dock_drag_float_target( gui_id_t win_id, u32 vp, f32 s )
     draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
                             WIN_BORDER, 0, COL_TEXT );
 
+    draw_set_window   ( 0 );
     draw_set_sort_key ( 0 );
     draw_set_viewport ( 0 );
     draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
@@ -297,8 +308,9 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     s_dock_drag.zone     = outer ? outer_zone : zone;
     s_dock_drag.active   = ( s_dock_drag.zone != DOCK_ZONE_NONE );
 
-    /* Overlay on the reserved high z-band, clipped to the surface. */
+    /* Overlay in its own slot on the reserved topmost z-band, clipped to the surface. */
     const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
+    draw_set_window   ( DOCK_OVERLAY_WIN );
     draw_set_viewport ( vp );
     draw_set_sort_key ( DOCK_OVERLAY_Z );
     draw_set_root_clip( vp_w( v ), vp_h( v ) );
@@ -362,6 +374,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
             draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT );
         }
 
+    draw_set_window   ( 0 );
     draw_set_sort_key ( 0 );
     draw_set_viewport ( 0 );
     draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );

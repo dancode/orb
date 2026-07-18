@@ -248,6 +248,8 @@ window_apply_next( gui_window_t* win, bool appearing )
         0x40000000   GUI_REGION_Z       default root-region band: over windows, under popups
         0x80000000+  GUI_Z_OVERLAY      overlay band: popup depth d at OVERLAY + d, tooltip above
         0xF0000000   GUI_REGION_FG_Z    foreground regions -- above every popup depth
+        0xF8000000   DOCK_OVERLAY_Z     drag-to-dock drop overlay (gui_dock_drag.c) -- topmost,
+                                        in its own synthetic slot so nothing ties or outdraws it
 
     The dispenser never climbs anywhere near the fixed bands.  A record placed in the overlay
     band also carries win->overlay -- the TYPE fact ("an anchored overlay, not a window") the
