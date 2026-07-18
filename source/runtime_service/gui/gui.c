@@ -264,6 +264,11 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/present/gui_symbol.c"
 #include "runtime_service/gui/interact/gui_resize.c"
 
+// Window text selection (GUI_WIN_TEXT_SELECT): press/sweep protocol, highlight paint, Ctrl+C
+// copy over the backend's captured runs (backend/gui_select_capture.c).  Here in interact/ --
+// it writes s_interaction (a fallback press consumer) -- called from window/gui_window_end.c.
+#include "runtime_service/gui/interact/gui_select.c"
+
 // Composition (spacing metrics in, rects out)
 #include "runtime_service/gui/compose/gui_layout_core.c"
 #include "runtime_service/gui/compose/gui_scroll.c"

@@ -512,6 +512,10 @@ gui_window_end( void )
         if ( s_build.win.dock_active )
         {
             item_flags_chrome_reset();
+            /* Text selection (GUI_WIN_TEXT_SELECT): mark for this frame's run capture and run
+               the sweep protocol + highlight while the content clip is still active. */
+            if ( s_build.win.flags & GUI_WIN_TEXT_SELECT )
+                select_window_end();
             layout_pop_region();        /* measure content, draw scrollbars, pop the inner clip */
             window_route_chrome( node ); /* tab strip + tabs + node border, under the window clip */
             draw_pop_clip_rect();       /* balance the clip pushed in window_begin_docked */
@@ -534,6 +538,14 @@ gui_window_end( void )
        item.  layout_pop_region resets too, but a collapsed window opens no region and skips it, so
        reset here to cover that case and the deferred chrome either way. */
     item_flags_chrome_reset();
+
+    /* Text selection (GUI_WIN_TEXT_SELECT): mark for this frame's run capture and run the sweep
+       protocol + highlight inside the content clip, before the region pop below pops it.  No
+       contest with the scrollbars drawn there: a sweep only claims a press that lands ON a text
+       run, and runs never extend into the scrollbar gutter. */
+    if ( ( s_build.win.flags & GUI_WIN_TEXT_SELECT )
+      && !s_build.win.collapsed && !s_build.win.minimized )
+        select_window_end();
 
     /* Close the body scroll region (expanded only -- a collapsed window opened none).  This
        measures the content extent, pops the inner content clip, draws the scrollbars, and

@@ -119,6 +119,11 @@ static gui_backend_caps_t s_caps;
 // s_volatile, s_tess_gen_next).
 #include "runtime_service/gui/backend/gui_dash_capture.c"
 
+// TEXT-SELECTION run capture: copies flagged windows' text commands into a persistent run
+// buffer at the build seam for the UI unit's selection controller (interact/gui_select.c).
+// Always compiled (a product feature).  Last (with the captures below) so it sees s_draw.
+#include "runtime_service/gui/backend/gui_select_capture.c"
+
 // COMMAND STEPPER capture + frozen-frame replay: snapshots the band-0 command list at the build
 // seam and pre-loads it back at every draw_reset while frozen.  Compiled out unless
 // GUI_CMD_STEPPER.  Last (with the dash capture) so it sees the emit statics it copies (s_draw).

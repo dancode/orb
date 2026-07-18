@@ -344,7 +344,7 @@ launch_show_projects_pane()
     static char        s_import_path[ LAUNCH_PATH_MAX ];
     static const char* s_import_status = NULL;
 
-    if ( gui()->window_begin( "Projects", GUI_WIN_NONE ) )
+    if ( gui()->window_begin( "Projects", GUI_WIN_TEXT_SELECT )) // GUI_WIN_NONE ) )
     {
         gui()->stack();
 
@@ -478,7 +478,10 @@ launch_show_output_pane()
 
     gui()->window_set_next_pos ( 8, top + height + 8, GUI_COND_ONCE );
     gui()->window_set_next_size( width * 2 - 16, height - top - 16, GUI_COND_ONCE );
-    if ( gui()->window_begin( "Output", GUI_WIN_NONE ) )
+    /* TEXT_SELECT: the pane's whole point is reading command output -- make it selectable
+       (click-drag + Ctrl+C).  The Copy All button grabs the entire captured buffer,
+       including anything scrolled out of view. */
+    if ( gui()->window_begin( "Output", GUI_WIN_TEXT_SELECT ) )
     {
         gui()->stack();
         if ( !s_launch.log_valid )
@@ -488,6 +491,9 @@ launch_show_output_pane()
         else
         {
             gui()->textf( "$ %s    (exit %d)", s_launch.log_title, s_launch.last_exit_code );
+            gui()->same_line( 0.0f );
+            if ( gui()->button( "Copy All" ) )
+                app()->clipboard_set( s_launch.log );
             gui()->separator();
 
             /* Emit the captured buffer line by line; the window scrolls the overflow. */

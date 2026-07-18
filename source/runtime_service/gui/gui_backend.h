@@ -160,6 +160,39 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
                                   f32 clip_x0, f32 clip_x1 );
 
 /*==============================================================================================
+    TEXT-SELECTION run capture (backend/gui_select_capture.c)
+
+    The backend half of window text selection (GUI_WIN_TEXT_SELECT): at the build seam --
+    segments closed, every emit pool complete -- the GUI_CMD_TEXT commands of each window
+    marked this frame are copied into a persistent run buffer that survives draw_reset, so
+    the UI unit's selection controller (interact/gui_select.c) can hit-test, highlight and
+    copy against them one frame behind the emit that produced them (the standard
+    self-measurement lag).  ONE shared buffer serves every flagged window; runs are tagged
+    with their owning window id.  Always compiled -- a product feature, not a debug layer.
+==============================================================================================*/
+
+#define GUI_SELECT_MAX_RUNS   512      /* text runs held for selection across flagged windows */
+#define GUI_SELECT_TEXT_POOL  32768    /* bytes of captured run text (runs past the cap drop) */
+
+typedef struct
+{
+    gui_id_t   win;      /* owning window (segment tag) */
+    u32        vp;       /* viewport the run renders on */
+    u32        font;     /* font id active for the run's segment (measure with THIS font) */
+    f32        x, y;     /* glyph-run origin (top-left of the glyph box) */
+    u32        off, len; /* byte range into the capture text pool (select_run_text) */
+    gui_rect_t clip;     /* scissor rect the run rendered under */
+
+} gui_select_run_t;
+
+void select_capture_mark   ( gui_id_t win );  /* flag `win` for capture at this frame's build */
+void select_capture_build  ( void );          /* hook at cache_build_frame (segments closed)  */
+u32  select_capture_serial ( void );          /* bumped per capture; revalidate anchors on change */
+u32  select_run_count      ( void );
+const gui_select_run_t* select_run     ( u32 i );                        /* NULL past count  */
+const char*             select_run_text( const gui_select_run_t* run );  /* NUL-terminated   */
+
+/*==============================================================================================
     BUILD: retained frame-geometry cache (pipeline/gui_build_cache.c)
 ==============================================================================================*/
 

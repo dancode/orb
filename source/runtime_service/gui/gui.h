@@ -1269,6 +1269,20 @@ typedef enum
 
     GUI_WIN_DOCK_MAXIMIZE     = 1 << 24,   /* docked: offer maximize-over-dockspace on the tab strip */
 
+    /* Text selection -- opt-in: every text run this window draws becomes selectable, including
+       text drawn BY widgets (button labels, tree rows).  Two gestures: click-drag ON text
+       sweeps a linear web-style highlight (multi-line); click-drag on window-background dead
+       space rubber-bands a marquee box that selects every character it covers, over widgets
+       and all.  Ctrl+C copies the covered runs to the OS clipboard (newline between lines),
+       Escape or a plain click clears.  Widgets stay untouched -- the selection is a fallback
+       consumer of presses no widget claimed, so buttons / selectables / scrollbars always win
+       (but the marquee does consume body dead-space drags, so it shadows GUI_WIN_DRAG_BODY).
+       ONE selection exists at a time across all flagged windows; what is copied is what is
+       DRAWN (an ellipsized run copies its truncated bytes; scrolled-away lines are not part
+       of the selection). */
+
+    GUI_WIN_TEXT_SELECT       = 1 << 25,   /* window text runs are selectable / copyable */
+
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
        ( GUI_WIN_OVERLAY | GUI_WIN_NOMOUSESCROLL ) and a window's resolved behavior is identical

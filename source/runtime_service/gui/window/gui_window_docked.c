@@ -115,6 +115,11 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
 
     /* Open the body over the node's content rect -- the same region machinery a free window uses. */
     layout_push_region( id, node->content, REGION_PAD_DEFAULT, flags, &win->scroll, /* own_clip */ false );
+
+    /* Text selection (GUI_WIN_TEXT_SELECT): selection bands under the content, as in the free
+       path (window_open_body); interaction and the marquee outline run at window_end. */
+    if ( flags & GUI_WIN_TEXT_SELECT )
+        select_paint_under();
     return true;
 }
 

@@ -851,6 +851,11 @@ cache_build_frame( void )
        A no-op unless GUI_CMD_STEPPER and a capture was requested (gui_step_capture). */
     STEP_CAPTURE_BUILD();
 
+    /* Text-selection run capture: same seam.  Rebuilds the selection run buffer for any window
+       marked GUI_WIN_TEXT_SELECT this frame; a two-branch no-op while no flagged window is
+       live.  See backend/gui_select_capture.c. */
+    select_capture_build();
+
     /* Step 1: hash-diff all windows, fill s_cache, accumulate cmd_count stats. */
     cache_diff_windows();
 

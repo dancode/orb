@@ -768,6 +768,12 @@ window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 tit
         gui_rect_t body = { win->x, win->y + title_h + mb_h, win->w, win->h - title_h - mb_h };
         layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags, &win->scroll,
                             /* own_clip */ false );
+
+        /* Text selection (GUI_WIN_TEXT_SELECT): paint the selection bands UNDER the content
+           about to emit (opaque, editor-style, from last frame's captured runs); interaction
+           and the marquee outline run at window_end. */
+        if ( flags & GUI_WIN_TEXT_SELECT )
+            select_paint_under();
     }
     else
     {
