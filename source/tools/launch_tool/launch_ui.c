@@ -356,19 +356,23 @@ launch_show_projects_pane()
         }
         else
         {
+            /* One button per project -- reads as a proper list entry (bordered, clickable)
+               where a lone selectable looked naked.  Click selects, click again deselects;
+               the "###" suffix keys the id off the index so the selection marker changing
+               the visible label never changes the widget id.  Revisit as a real list widget
+               if the registry grows long. */
             for ( u32 i = 0; i < s_launch.project_count; ++i )
             {
                 launch_project_t* p   = &s_launch.projects[ i ];
                 bool              sel = ( s_launch.selected == ( i32 )i );
 
                 char label[ LAUNCH_PATH_MAX + 96 ];
-                snprintf( label, sizeof( label ), "%s  --  %s%s",
-                          p->name, p->path, p->present ? "" : "  (MISSING)" );
+                snprintf( label, sizeof( label ), "%s%s  --  %s%s###proj_%u",
+                          sel ? "* " : "", p->name, p->path,
+                          p->present ? "" : "  (MISSING)", i );
 
-                gui()->push_id_int( ( i32 )i );
-                if ( gui()->selectable( label, &sel ) )
-                    s_launch.selected = sel ? ( i32 )i : -1;
-                gui()->pop_id();
+                if ( gui()->button( label ) )
+                    s_launch.selected = sel ? -1 : ( i32 )i;
             }
         }
 
@@ -391,16 +395,16 @@ launch_show_projects_pane()
             {
                 if ( gui()->button( "Open in Editor" ) )
                     launch_project_host( prj, "host_editor", "editor" );
-                gui()->same_line( 0.0f );
+                gui()->same_line( -1.0f );
                 if ( gui()->button( "Play" ) )
                     launch_project_host( prj, "host_game", "play" );
 
                 if ( gui()->button( "Build" ) )
                     launch_project_build_tool( prj, "build", "-config Debug" );
-                gui()->same_line( 0.0f );
+                gui()->same_line( -1.0f  );
                 if ( gui()->button( "Generate" ) )
                     launch_project_build_tool( prj, "gen", "-gen" );
-                gui()->same_line( 0.0f );
+                gui()->same_line( -1.0f  );
                 if ( gui()->button( "Doctor" ) )
                     launch_project_build_tool( prj, "doctor", "-doctor" );
 
@@ -414,7 +418,7 @@ launch_show_projects_pane()
                 gui()->text( "Ship" );
 
                 gui()->radio_button( "Project only", &s_ship_mode, 0 );
-                gui()->same_line( 0.0f );
+                gui()->same_line( -1.0f  );
                 gui()->radio_button( "With engine", &s_ship_mode, 1 );
 
                 gui()->combo( "Config", &s_ship_config, k_ship_configs,
@@ -423,12 +427,12 @@ launch_show_projects_pane()
                 if ( s_ship_mode == 1 )
                 {
                     gui()->checkbox( "Modular", &s_ship_modular );
-                    gui()->same_line( 0.0f );
+                    gui()->same_line( -1.0f  );
                 }
                 gui()->checkbox( "PDB", &s_ship_pdb );
-                gui()->same_line( 0.0f );
+                gui()->same_line( -1.0f  );
                 gui()->checkbox( "Clean", &s_ship_clean );
-
+                gui()->same_line( -1.0f  );
                 gui()->checkbox( "Keep console open", &s_ship_keep_console );
 
                 gui()->input_text_with_hint( "##ship_deploy", "deploy dir (optional)...",
@@ -442,7 +446,7 @@ launch_show_projects_pane()
                     launch_project_ship( prj );
                 if ( s_ship_mode == 0 )
                 {
-                    gui()->same_line( 0.0f );
+                    gui()->same_line( -1.0f  );
                     gui()->text( "(game DLL only; recipient supplies the engine)" );
                 }
             }
