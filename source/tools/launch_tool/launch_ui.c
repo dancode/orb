@@ -344,7 +344,7 @@ launch_show_projects_pane()
     static char        s_import_path[ LAUNCH_PATH_MAX ];
     static const char* s_import_status = NULL;
 
-    if ( gui()->window_begin( "Projects", GUI_WIN_TEXT_SELECT )) // GUI_WIN_NONE ) )
+    if ( gui()->window_begin( "Projects", GUI_WIN_TEXT_SELECT ))
     {
         gui()->stack();
 

@@ -353,20 +353,31 @@ nav_line_pick( u32 region, u32 line, f32 goal )
    as three separate one-letter jumps (c, then a, then t), not a failed four-letter prefix. */
 #define GUI_TYPEAHEAD_TIMEOUT 1.0
 
-/* True when last frame's item list (the same one-frame-lagged list the resolver scans) has at
-   least one labeled, non-chrome candidate -- i.e. type-ahead could actually land somewhere in the
-   current nav window.  A window with no selectables (a form of sliders/checkboxes/text fields,
-   like the font-tool bench) has none, so there is nothing for a typed letter to ever match; without
-   this check nav_typeahead_feed still claimed the key and raised nav.highlight purely because a
-   window was focused, silently eating every letter keystroke -- including app-level hotkeys like
-   'P' -- for a search that could never succeed. */
+/* Case-sensitive prefix compare against an already-lowercased label (nav_item_stamp_label lower-
+   cased it at registration; the query is lowercased as it accumulates in nav_typeahead_feed). */
 static bool
-nav_has_typeahead_targets( void )
+nav_label_has_prefix( const char* label, const char* query, u32 qlen )
+{
+    for ( u32 i = 0; i < qlen; ++i )
+        if ( label[ i ] != query[ i ] ) return false;
+    return true;
+}
+
+/* True when last frame's item list (the same one-frame-lagged list the resolver scans) has at
+   least one labeled, non-chrome candidate the query would land on.  Checked per keystroke BEFORE
+   the key is claimed: a letter that cannot match anything in the current nav window -- whether the
+   window has no selectables at all (a form of sliders, the font-tool bench) or its labels simply
+   don't start with that letter (the launcher's Projects list vs 'P') -- must fall through to
+   app-level hotkeys instead of being silently eaten, and must not raise nav.highlight, for a
+   search that could never succeed. */
+static bool
+nav_typeahead_query_matches( const char* query, u32 qlen )
 {
     for ( u32 i = 0; i < g_ctx->nav.item_count; ++i )
     {
         const gui_nav_item_t* it = &g_ctx->nav.items[ i ];
-        if ( !it->chrome && it->label[ 0 ] != 0 )
+        if ( it->chrome || it->label[ 0 ] == 0 ) continue;
+        if ( nav_label_has_prefix( it->label, query, qlen ) )
             return true;
     }
     return false;
@@ -380,10 +391,10 @@ static void
 nav_typeahead_feed( const char* text )
 {
     if ( !text[ 0 ] ) return;
-    if ( !nav_has_typeahead_targets() ) return;   /* nothing here can match -- let the key fall through */
     gui_nav_state_t* nav = &g_ctx->nav;
 
-    bool first = true;
+    bool first    = true;
+    bool consumed = false;
     for ( const char* ch = text; *ch; ++ch )
     {
         char c = *ch;
@@ -396,8 +407,17 @@ nav_typeahead_feed( const char* text )
             nav->type_len = 0;
         first = false;
 
-        if ( nav->type_len < (u32)sizeof( nav->type_buf ) - 1 )
-            nav->type_buf[ nav->type_len++ ] = c;
+        if ( nav->type_len >= (u32)sizeof( nav->type_buf ) - 1 ) continue;   /* query full */
+
+        /* Probe before committing: only a keystroke that keeps the query matching some label is
+           nav's to take.  A non-matching letter is left uncommitted and unclaimed so it falls
+           through to app-level hotkeys ('P' over a list with no P-entries still toggles the perf
+           overlay). */
+        nav->type_buf[ nav->type_len ] = c;
+        if ( !nav_typeahead_query_matches( nav->type_buf, nav->type_len + 1 ) )
+            continue;
+        nav->type_len++;
+        consumed = true;
 
         /* This character is now nav's -- claim the key edge so the same press cannot also fall
            through to an app-level hotkey later in the frame (tier 2 of the model in
@@ -406,7 +426,7 @@ nav_typeahead_feed( const char* text )
                                                 : (app_key_t)( APP_KEY_0 + ( c - '0' ) );
         key_claim( k );
     }
-    if ( first ) return;   /* nothing usable in this chunk (punctuation / control chars only) */
+    if ( !consumed ) return;   /* nothing matched (or only punctuation) -- nav state untouched */
 
     nav->type_buf[ nav->type_len ] = 0;
     nav->type_last_t = s_io.time;
@@ -418,16 +438,6 @@ nav_typeahead_feed( const char* text )
        chase behind active/highlight, so a typed jump would silently have no visible effect. */
     nav->active    = true;
     nav->highlight = true;
-}
-
-/* Case-sensitive prefix compare against an already-lowercased label (nav_item_stamp_label lower-
-   cased it at registration; the query is lowercased as it accumulates in nav_typeahead_feed). */
-static bool
-nav_label_has_prefix( const char* label, const char* query, u32 qlen )
-{
-    for ( u32 i = 0; i < qlen; ++i )
-        if ( label[ i ] != query[ i ] ) return false;
-    return true;
 }
 
 /* Resolve this frame's query against last frame's item list.  A single-char query (the repeat-
@@ -1148,7 +1158,7 @@ nav_new_frame( void )
     /* Claim the motion keys nav actually took, so the same press cannot also drive a Tier-3 binding
        (the per-key half of the model in gui_want_capture_keyboard).  Gated on there being a nav
        target this frame: an empty item list resolves nothing, so an arrow over a targetless window
-       falls through instead of being silently eaten -- the same lesson as nav_has_typeahead_targets.
+       falls through instead of being silently eaten -- the same lesson as nav_typeahead_query_matches.
        Enter/Space are NOT claimed here; they are taken at the activation seam (nav_item_register,
        interact/gui_item.c), the only place that knows an item actually consumed the activation.  Esc
        is left to the popup / menu-bar branches below, which run under want_capture_keyboard's hard
