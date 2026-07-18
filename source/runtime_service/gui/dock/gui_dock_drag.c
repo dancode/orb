@@ -266,8 +266,12 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
        drop chips are offered while fullscreen -- restore first, then dock. */
     if ( g_ctx->vp.pool[ vp ].dock_max_settled )
         return;
+    /* Over a splitter gutter no leaf contains the cursor.  That must NOT drop the whole overlay:
+       the viewport edge chips target the ROOT and stay offered anywhere inside the dockspace, so
+       a NULL leaf only suppresses the per-leaf 5-way below.  Fully outside the dockspace area
+       there is nothing to offer. */
     gui_dock_node_t* leaf = dock_leaf_at( root, s_io.mouse_x, s_io.mouse_y );
-    if ( !leaf )
+    if ( !leaf && !rect_hit( root->rect ) )
         return;
 
     /* NO_SPLIT dockspace: tab docking only -- the center chip stands alone, no side or edge chips. */
@@ -288,7 +292,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     /* Tab-strip drop: the cursor over the leaf's TAB BAND is the "merge into these tabs" gesture
        -- the same drop a floating group's strip offers -- so it tabs in directly, without having
        to reach the center chip.  Only offered where a strip is visible (the leaf has tabs). */
-    bool strip_drop = ( outer_zone == DOCK_ZONE_NONE ) && ( leaf->tab_count > 0 )
+    bool strip_drop = ( outer_zone == DOCK_ZONE_NONE ) && leaf && ( leaf->tab_count > 0 )
                    && ( s_io.mouse_y < leaf->content.y );
 
     /* Edge chips win over the inner 5-way: when the cursor is on an edge chip, that is the intent.
@@ -297,14 +301,14 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     dock_zone_t zone      = DOCK_ZONE_NONE;
     if ( strip_drop )
         zone = DOCK_ZONE_CENTER;
-    else if ( outer_zone == DOCK_ZONE_NONE )
+    else if ( leaf && outer_zone == DOCK_ZONE_NONE )
         for ( i32 z = DOCK_ZONE_CENTER; z <= zone_last; ++z )
             if ( rect_hit( dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g ) ) ) { zone = (dock_zone_t)z; break; }
 
     bool outer = ( outer_zone != DOCK_ZONE_NONE );
     s_dock_drag.viewport = vp;
     s_dock_drag.outer    = outer;
-    s_dock_drag.target   = outer ? root->id : leaf->id;
+    s_dock_drag.target   = outer ? root->id : leaf ? leaf->id : GUI_DOCK_NONE;
     s_dock_drag.zone     = outer ? outer_zone : zone;
     s_dock_drag.active   = ( s_dock_drag.zone != DOCK_ZONE_NONE );
 
@@ -343,25 +347,28 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         draw_set_rounding( ROUND_WIDGET );
     }
 
-    for ( i32 z = DOCK_ZONE_CENTER; z <= zone_last; ++z )
-    {
-        gui_rect_t cr = dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g );
-        bool         on = ( !outer && (dock_zone_t)z == zone );
-        draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, on ? COL_WIDGET_HOT : COL_WIDGET_BG );
-        draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
-        if ( z == DOCK_ZONE_CENTER )
+    /* Per-leaf 5-way -- only where a leaf sits under the cursor (over a gutter it simply drops,
+       leaving the viewport edge chips below as the offer). */
+    if ( leaf )
+        for ( i32 z = DOCK_ZONE_CENTER; z <= zone_last; ++z )
         {
-            f32 ins = cr.w * 0.28f;   /* inner square = the "tab here" glyph */
-            draw_set_rounding( 0.0f );   /* small glyph box stays square */
-            draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
-                                    WIN_BORDER, 0, COL_TEXT );
-            draw_set_rounding( ROUND_WIDGET );   /* restore for the remaining chips */
+            gui_rect_t cr = dock_chip_rect( leaf->rect, (dock_zone_t)z, s, g );
+            bool         on = ( !outer && (dock_zone_t)z == zone );
+            draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, on ? COL_WIDGET_HOT : COL_WIDGET_BG );
+            draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
+            if ( z == DOCK_ZONE_CENTER )
+            {
+                f32 ins = cr.w * 0.28f;   /* inner square = the "tab here" glyph */
+                draw_set_rounding( 0.0f );   /* small glyph box stays square */
+                draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
+                                        WIN_BORDER, 0, COL_TEXT );
+                draw_set_rounding( ROUND_WIDGET );   /* restore for the remaining chips */
+            }
+            else
+            {
+                draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT );
+            }
         }
-        else
-        {
-            draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT );
-        }
-    }
 
     /* Edge chips: drawn against the dockspace edges, each pointing outward to read as "full side". */
     if ( has_outer )
