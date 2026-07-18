@@ -175,6 +175,7 @@ gui_perf_overlay( int mode )
             gui_textf( "tris    %6u", rs.tri_count  );
             gui_textf( "batches %6u", rs.draw_calls );
             gui_textf( "cmds    %6u", rs.cmd_count  );
+            gui_textf( "clips   %6u", rs.clip_count );
 
             bool show_retained_rows = ( mode >= 4 );
             if ( show_retained_rows )

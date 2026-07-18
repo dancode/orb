@@ -1621,8 +1621,9 @@ typedef struct
 
 typedef struct
 {
-    u32 cmd_count;      // semantic draw commands the UI emitted                        
-    u32 vert_count;     // tessellated vertices (total, including retained)             
+    u32 cmd_count;      // semantic draw commands the UI emitted
+    u32 clip_count;     // clip table entries referenced by those commands (debug band excluded)
+    u32 vert_count;     // tessellated vertices (total, including retained)
     u32 tri_count;      // tessellated triangles (total, including retained)            
     u32 draw_calls;     // GPU indexed draw calls (batches), summed over surfaces       
 

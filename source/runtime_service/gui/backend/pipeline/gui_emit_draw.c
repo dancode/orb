@@ -236,9 +236,15 @@ draw_reset( i32 display_w, i32 display_h )
     Clip stack
 ----------------------------------------------------------------------------------------------*/
 
-/* Append r to the clip table and return its index.  On overflow (table full) the index saturates
-   to the second-to-last slot -- commands share a slightly wrong clip rather than writing OOB.
-   Slot GUI_MAX_CLIP_RECTS-1 is reserved as an invalid sentinel and is never written. */
+/* Append r to the clip table and return its index -- or the index of an existing identical rect.
+   Dedup keeps the table at "distinct scissors this frame": the root set/restore swap around every
+   window and same-rect region pushes would otherwise mint a fresh entry per call (the table is
+   append-only -- entries are immutable once a command holds their index -- so reuse is the only
+   way to collapse them).  Safe by design: the retained cache hashes the clip VALUE, not the index
+   (draw_hash_cmd), and tess groups by index, so collapsing duplicates can only merge batches.
+   On overflow (table full) the index saturates to the second-to-last slot -- commands share a
+   slightly wrong clip rather than writing OOB.  Slot GUI_MAX_CLIP_RECTS-1 is reserved as an
+   invalid sentinel and is never written. */
 static u8
 clip_append( gui_rect_t r )
 {
@@ -247,11 +253,19 @@ clip_append( gui_rect_t r )
        rect -- so any command stamped with it (all suppressed anyway) stays sane. */
     if ( STEP_EMIT_SUPPRESSED() )
         return 0;
+    u32 h = fnv1a( 2166136261u, &r, sizeof( gui_rect_t ) );
+    for ( u32 i = 0; i < s_draw.clip_table_n; ++i )
+        if ( s_draw.clip_hash_cache[ i ] == h )
+        {
+            const gui_rect_t* t = &s_draw.clip_table[ i ];
+            if ( t->x == r.x && t->y == r.y && t->w == r.w && t->h == r.h )
+                return (u8)i;
+        }
     if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
     {
         u8 ci = (u8)s_draw.clip_table_n++;
         s_draw.clip_table      [ ci ] = r;
-        s_draw.clip_hash_cache [ ci ] = fnv1a( 2166136261u, &r, sizeof( gui_rect_t ) );
+        s_draw.clip_hash_cache [ ci ] = h;
         return ci;
     }
     return (u8)( GUI_MAX_CLIP_RECTS - 2u );
@@ -319,9 +333,11 @@ draw_pop_clip_rect( void )
 
 /* Set the base clip (clip_stack[0]) -- the rect every window clip intersects against -- to the
    given surface size.  draw_reset seeds it to the main display; window_begin overwrites it with
-   its viewport's drawable size (window_end restores the main display).  A fresh clip table entry
-   is always appended: commands already emitted reference the old root index, so overwriting it
-   would corrupt them.  clip_idx_stack[0] is updated so subsequent pushes inherit the new root. */
+   its viewport's drawable size (window_end restores the main display).  The table entry comes
+   from clip_append -- never an in-place overwrite of the old root's slot, since commands already
+   emitted reference that index -- and dedup there makes the common set/restore ping-pong (main-
+   display windows swap display -> display) reuse one slot instead of minting entries per window.
+   clip_idx_stack[0] is updated so subsequent pushes inherit the new root. */
 void
 draw_set_root_clip( f32 w, f32 h )
 {

@@ -372,6 +372,7 @@ cache_diff_windows( void )
        cmd_count is summed here to avoid a separate pass over segs later. */
     s_cache.cur_n = 0;
     u32 total_cmd = 0;
+    u8  clip_used[ GUI_MAX_CLIP_RECTS ] = { 0 };   /* clip table entries a band-0 command references */
     for ( u32 si = 0; si < nseg; ++si )
     {
         if ( segs[ si ].lo == segs[ si ].hi ) continue;   // empty span
@@ -425,6 +426,11 @@ cache_diff_windows( void )
         h = fnv1a_u32( h, gen              );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
         {
+            /* Clip usage is marked before the volatile skip below -- a volatile command still
+               draws under its clip, it only stays out of the window hash. */
+            if ( segs[ si ].band == 0 )
+                clip_used[ s_draw.cmds[ i ].clip_idx ] = 1;
+
             /* A volatile-tagged command NEVER participates in its window's hash -- the block is
                presentation-only by contract and patched out of band (gui_update_volatile on idle
                frames, volatile_patch_reused_window on reused real frames), so its ever-drifting
@@ -498,6 +504,14 @@ cache_diff_windows( void )
     s_cache.prev_n = s_cache.cur_n;
 
     s_stats.accum.cmd_count = total_cmd;
+
+    /* Distinct clip rects the main band drew under this frame.  Counted by command reference, not
+       raw table size (s_draw.clip_table_n): the raw table also holds debug-band pushes and pushes
+       no surviving command references, so it overstates what the application itself costs. */
+    u32 total_clip = 0;
+    for ( u32 ci = 0; ci < GUI_MAX_CLIP_RECTS; ++ci )
+        total_clip += clip_used[ ci ];
+    s_stats.accum.clip_count = total_clip;
 
     if ( s_caps.stats_trace && s_cache.any_changed )
         printf( "[gui] cache: %u/%u windows unchanged\n", s_cache.unchanged, s_cache.cur_n );

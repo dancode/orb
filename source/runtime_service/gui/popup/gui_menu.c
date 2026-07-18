@@ -296,14 +296,16 @@ gui_main_menu_bar_begin( void )
 
     if ( vis )
     {
-        gui_bar();        /* the menu labels pack horizontally */
-
         /* Center the entry row in the band.  The window body opens with REGION_PAD_DEFAULT (top pad
            WIDGET_GAP), which seats the WIDGET_H row flush against the bottom of the WIDGET_H +
            WIDGET_GAP band -- 8px above, 0 below, so the labels sit visibly low.  The band carries
            exactly one gap of slack over the row height; lift the pen by half of it so the slack
-           splits evenly above and below. */
+           splits evenly above and below.  Must run BEFORE gui_bar(): the pack line latches its y
+           (line.cross) when it opens, so a lift after the fact moves only the pen and the entries
+           still place at the stale, flush-bottom line. */
         layout_pen_jump( lf(), lf()->pen_y - WIDGET_GAP * 0.5f );
+
+        gui_bar();        /* the menu labels pack horizontally */
     }
     return vis;
 }
