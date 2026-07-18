@@ -321,7 +321,7 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
     emitted by debug_overlays_emit(), called from ctx_end while the DEFAULT context is still
     bound -- last in its build, so they draw on top and their cost is counted like any widget.
 
-        F1-F5   debug overlay layers (window / interact / resize / clip / layout)
+        NP1-NP6 debug layers (window / interact / resize / layout / clip / content rects)
         F8      command stepper: freeze the frame (opens the control window) / release
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
@@ -337,7 +337,8 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
                 (picking a command under the mouse is the stepper window's Pick toggle -- a
                 hotkey fought the focused window's keyboard nav / type-ahead)
 
-    Letter keys are fenced by want_capture_keyboard so typing in a text field never toggles them.
+    Letter and numpad keys are fenced by want_capture_keyboard so typing in a text field never
+    toggles them (numpad digits are text input with Num Lock on).
 
     NOTE (F): a host that writes set_force_redraw itself every frame (sb_gui_editor pins it for
     play mode / always-emit) owns the flag -- its per-frame write overrides the hotkey toggle.
@@ -406,17 +407,23 @@ debug_hotkeys( void )
     }
 #endif
 
-    /* F1-F5 toggle the debug overlay layer mask (window / interact / resize / clip / layout).  Read
-       from the frame IO here like every other debug hotkey -- initial-press only, so holding a key no
-       longer flickers the layer -- rather than the old event-time path in gui_event (foundation/
-       gui_io.c), which was a second, separately-fenced consumption channel for the same feature.  The
-       layer setters compile to no-ops in Release (backend/gui_debug_overlay.c), so no build guard is
-       needed here.  Function keys, so no want_capture_keyboard fence -- they are never text input. */
+    /* Letter and numpad keys: fenced so a focused text field owns them (numpad digits ARE text
+       input with Num Lock on, unlike the function keys above). */
+    if ( gui_want_capture_keyboard() )
+        return;
+
+    /* NP1-NP6 toggle the debug layer mask (window / interact / resize / layout / clip / content).
+       Read from the frame IO like every other debug hotkey -- initial-press only, so holding a
+       key never flickers the layer.  The layer setters compile to no-ops in Release
+       (backend/gui_debug_overlay.c), so no build guard is needed here.  CONTENT differs from the
+       rest in where it draws -- the MAIN list at region pop (gui_scroll.c), not the overlay list,
+       so that toggle changes every scrollable window's emitted commands; the shared wants_redraw
+       below makes the flip land instead of sitting behind the clean-frame emit skip. */
     {
         static const struct { app_key_t key; u32 layer; } k_dbg_layer[] = {
-            { APP_KEY_F1, GUI_DBG_WINDOW   }, { APP_KEY_F2, GUI_DBG_INTERACT },
-            { APP_KEY_F3, GUI_DBG_RESIZE   }, { APP_KEY_F4, GUI_DBG_CLIP     },
-            { APP_KEY_F5, GUI_DBG_LAYOUT   },
+            { APP_KEY_NP_1, GUI_DBG_WINDOW   }, { APP_KEY_NP_2, GUI_DBG_INTERACT },
+            { APP_KEY_NP_3, GUI_DBG_RESIZE   }, { APP_KEY_NP_4, GUI_DBG_LAYOUT   },
+            { APP_KEY_NP_5, GUI_DBG_CLIP     }, { APP_KEY_NP_6, GUI_DBG_CONTENT  },
         };
         for ( u32 i = 0; i < sizeof( k_dbg_layer ) / sizeof( k_dbg_layer[ 0 ] ); ++i )
             if ( gui_is_key_pressed( k_dbg_layer[ i ].key ) )
@@ -425,10 +432,6 @@ debug_hotkeys( void )
                 g_ctx->retained.wants_redraw = true;
             }
     }
-
-    /* Letter keys: fenced so a focused text field owns them. */
-    if ( gui_want_capture_keyboard() )
-        return;
 
     if ( gui_is_key_pressed( APP_KEY_P ) )
     {

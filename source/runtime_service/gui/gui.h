@@ -1659,8 +1659,11 @@ typedef enum
     GUI_DBG_RESIZE   = 1 << 2,    // window edge-resize grab bands; hot when armed        }
     GUI_DBG_CLIP     = 1 << 3,    // clip (scissor) rectangle stack, colored by depth     }
     GUI_DBG_LAYOUT   = 1 << 4,    // layout allocated space per widget                    }
+    GUI_DBG_CONTENT  = 1 << 5,    // measured content rect per scrollable region -- drawn }
+                                  // in the MAIN list so it scrolls with its content      }
 
-    GUI_DBG_ALL      = GUI_DBG_WINDOW | GUI_DBG_INTERACT | GUI_DBG_RESIZE | GUI_DBG_CLIP | GUI_DBG_LAYOUT,
+    GUI_DBG_ALL      = GUI_DBG_WINDOW | GUI_DBG_INTERACT | GUI_DBG_RESIZE | GUI_DBG_CLIP | GUI_DBG_LAYOUT
+                     | GUI_DBG_CONTENT,
 
 } gui_dbg_layer_t;
 

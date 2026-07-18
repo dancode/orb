@@ -1488,8 +1488,10 @@ typedef struct gui_api_s
     /* Master debug switch.  When on, gui owns the debug hotkeys and overlay emission -- the host
        adds nothing to its loop:
 
-         F1-F5   debug overlay layers (window frames / interaction rects / resize bands / clips /
-                 layout; Debug builds -- consumed at event time)
+         NP1-NP5 debug overlay layers (window frames / interaction rects / resize bands / layout /
+                 clips; Debug builds)
+         NP6     content-rect outlines over scrollable regions (GUI_DBG_CONTENT -- drawn in
+                 the main list so the box scrolls with the content it measures)
          F9      render mode: normal -> wireframe -> batch tint
          F10     pipeline dashboard window (backend memory maps / uploads / batches)
          P       perf overlay tier   (off / FPS / +timings / +counts & lever status / +retained)
@@ -1522,13 +1524,6 @@ typedef struct gui_api_s
        or confirm that the hash-upfront path produces identical output to the reference. */
     void ( *set_retained_skip )( bool on );
     bool ( *retained_skip     )( void );
-
-    /* Content-rect overlay: outline every scrollable region's measured content bounds (the
-       highwater the scrollbars size against) in magenta, in the region's current scrolled screen
-       position -- with and without a vertical bar showing, so a content-size mismeasurement is
-       visible directly instead of inferred from scrollbar feel. */
-    void ( *debug_show_content_rect )( bool on );
-    bool ( *debug_content_rect_shown )( void );
 
     /*===================  user/ -- queries: io snapshot readers, item state, redraw state  ====================*/
 

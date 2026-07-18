@@ -80,6 +80,11 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tie
     draw_set_sort_key( z );
     draw_set_viewport( 0 );
     draw_set_band( ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
+    s_build.win.viewport = 0;   /* ambient tracks the draw viewport, exactly like window_begin_ex:
+                                   the debug overlay tags every captured rect (clip/widget/layout)
+                                   with the ambient, so a stale value from the last window routes
+                                   this region's debug rects to that window's surface instead of
+                                   the main surface the region actually paints on. */
 
     /* s_scope.win is the id every widget_behavior call in this region compares against
        hover_win to decide hot/active -- draw_set_window alone only stamps the retained-cache
