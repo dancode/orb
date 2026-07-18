@@ -37,6 +37,12 @@
 /* Salt for a node's maximize-over-dockspace anim timer slot (see dock_max_set below). */
 #define DOCK_MAX_SALT   0xD0C3A400u
 
+/* Damper rate for the hidden-pane collapse / reveal ease (dock_node_layout).  Picked to feel like
+   GUI_WIN_ANIM_SECS (~0.2s): 16 Hz ~ 190 ms to 95% of the target.  The eased value lives ON THE NODE
+   (hide_open), not the keyed anim pool, so it survives the long idle a settled hidden pane triggers
+   -- a pool slot would be evicted mid-idle and snap the reveal on the next change. */
+#define DOCK_HIDE_SPEED 16.0f
+
 /*----------------------------------------------------------------------------------------------
     Node pool
 
@@ -73,9 +79,10 @@ dock_node_alloc( u32 viewport )
         n = &g_ctx->dock.pool[ g_ctx->dock.count++ ];
     }
     memset( n, 0, sizeof *n );
-    n->id       = ++g_ctx->dock.id_seq;   /* monotonic; never 0 */
-    n->viewport = viewport;
-    n->ratio    = 0.5f;
+    n->id        = ++g_ctx->dock.id_seq;   /* monotonic; never 0 */
+    n->viewport  = viewport;
+    n->ratio     = 0.5f;
+    n->hide_open = 1.0f;   /* a fresh split starts fully open -- the hidden-pane ease rests here */
     /* GUI_DOCK_REF_NONE is 0xFFFF, not 0 -- index 0 is a real pool slot -- so the memset above does
        NOT leave these "unlinked"; they must be set explicitly. */
     n->parent   = GUI_DOCK_REF_NONE;
@@ -412,6 +419,13 @@ dock_leaf_tab_add( gui_dock_node_t* n, gui_id_t wid, const char* name )
     window's body draws).  A split divides its rect by `ratio` (child[0]'s fraction of the axis),
     reserving the DOCK_SPLITTER gutter between the two children.  Resolved fresh every frame so an OS
     resize or a splitter drag re-tiles immediately.
+
+    The ONE animated transition is a hidden pane collapsing / revealing (a docked window toggled off
+    or back on while its node stays in the tree): the split eases `open` so the sibling glides into
+    the vacated space and back, the polished twin of a window's collapse anim.  Every OTHER size
+    change -- a splitter drag, an OS resize, a structural add/remove (dock_split / dock_collapse) --
+    resolves instantly, which reads cleaner than a lone pane sliding to a new size with no visible
+    counterpart.  So the ease lives only in the one-child-hidden branch, keyed off the split node.
 ----------------------------------------------------------------------------------------------*/
 
 static void
@@ -429,43 +443,81 @@ dock_node_layout( gui_dock_node_t* n, gui_rect_t r )
         return;
     }
 
-    /* One child hidden (all its windows stopped emitting): the visible sibling absorbs the whole
-       rect, no gutter; the hidden child lays out as a zero-extent slice pinned at its own edge so
-       its descendants keep sane rects.  The ratio is NOT touched -- it encodes the pane's revival
-       extent.  Both-hidden falls through to the normal split: the parent already collapsed this
-       whole subtree (or the entire tree is hidden and lays out inert behind nothing drawn). */
+    /* One child hidden (all its windows stopped emitting): the visible sibling grows to absorb the
+       hidden pane's space instead of it snapping shut.  A per-node damper eases `open` -- 1 = the
+       full split (both panes, gutter between), 0 = the hidden child collapsed to a zero-extent slice
+       pinned at its own edge (no gutter), the exact rect a re-emission revives.  `open` chases 0
+       while one child is hidden and 1 once both read visible again, so the SAME value plays both the
+       close and the re-open; hide_side remembers which child is closing so the reveal (both visible,
+       tween unfinished) still grows the right pane.  The value lives ON THE NODE (hide_open), not the
+       keyed anim pool: a pane sits hidden and settled for a long idle, and a pool slot would be
+       evicted mid-idle and snap the reveal -- the node survives.  s_win_anim is the global gate (off
+       snaps to the target: the original instant behavior + collapses any in-flight tween next frame).
+       The ratio is NOT touched -- it encodes the pane's revival extent.  Both-hidden falls through as
+       open == 1 (the parent already collapsed this subtree, or the tree is inert behind nothing). */
+    gui_dock_node_t* c0 = dock_at( n->child[ 0 ] );
+    gui_dock_node_t* c1 = dock_at( n->child[ 1 ] );
+    bool h0 = c0 && c0->hidden;
+    bool h1 = c1 && c1->hidden;
+    bool one_hidden = ( h0 != h1 );
+    if ( one_hidden )
+        n->hide_side = h0 ? 0u : 1u;   /* the child that is closing */
+
+    f32 open_target = one_hidden ? 0.0f : 1.0f;
+    f32 open        = n->hide_open;
+    if ( !s_win_anim || fabsf( open_target - open ) < 0.001f )
     {
-        gui_dock_node_t* c0 = dock_at( n->child[ 0 ] );
-        gui_dock_node_t* c1 = dock_at( n->child[ 1 ] );
-        bool h0 = c0 && c0->hidden;
-        bool h1 = c1 && c1->hidden;
-        if ( h0 != h1 )
+        open = open_target;   /* animation off, or already settled: land exactly on the target */
+    }
+    else
+    {
+        f32 dt = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
+        open += ( open_target - open ) * ( 1.0f - expf( -DOCK_HIDE_SPEED * dt ) );
+        g_ctx->retained.wants_redraw = true;   /* value moved this frame -- keep frames coming */
+    }
+    n->hide_open = open;   /* persisted for next frame + read by the splitter pass (gutter hide) */
+
+    bool x     = ( n->split == GUI_DOCK_SPLIT_X );
+    f32  ext   = x ? r.w : r.h;
+    f32  thick = DOCK_SPLITTER;
+    f32  avail = ext - thick; if ( avail < 0.0f ) avail = 0.0f;
+
+    /* Settled open (the common case): the plain proportional split, gutter reserved between. */
+    if ( open >= 0.999f )
+    {
+        f32 e0 = floorf( avail * n->ratio );
+        if ( x )
         {
-            bool x = ( n->split == GUI_DOCK_SPLIT_X );
-            gui_rect_t e0 = x ? ( gui_rect_t ){ r.x,       r.y,       0.0f, r.h  }
-                              : ( gui_rect_t ){ r.x,       r.y,       r.w,  0.0f };
-            gui_rect_t e1 = x ? ( gui_rect_t ){ r.x + r.w, r.y,       0.0f, r.h  }
-                              : ( gui_rect_t ){ r.x,       r.y + r.h, r.w,  0.0f };
-            dock_node_layout( c0, h0 ? e0 : r );
-            dock_node_layout( c1, h1 ? e1 : r );
-            return;
+            dock_node_layout( c0, ( gui_rect_t ){ r.x,              r.y, e0,               r.h } );
+            dock_node_layout( c1, ( gui_rect_t ){ r.x + e0 + thick, r.y, r.w - e0 - thick, r.h } );
         }
+        else
+        {
+            dock_node_layout( c0, ( gui_rect_t ){ r.x, r.y,              r.w, e0               } );
+            dock_node_layout( c1, ( gui_rect_t ){ r.x, r.y + e0 + thick, r.w, r.h - e0 - thick } );
+        }
+        return;
     }
 
-    f32 thick = DOCK_SPLITTER;
-    if ( n->split == GUI_DOCK_SPLIT_X )
+    /* Mid-tween (or fully collapsed at open == 0): the hidden pane keeps `open` of its normal share
+       and the gutter scales with it, so the sibling grows continuously and, at open == 0, spans the
+       whole rect with the hidden child a zero slice at its edge (descendants keep sane rects). */
+    f32 norm0    = floorf( avail * n->ratio );
+    f32 hid_norm = ( n->hide_side == 0u ) ? norm0 : ( avail - norm0 );
+    f32 gut      = open * thick;
+    f32 hid      = open * hid_norm;
+    f32 vis      = ext - gut - hid; if ( vis < 0.0f ) vis = 0.0f;
+    f32 e0       = ( n->hide_side == 0u ) ? hid : vis;   /* child[0]'s extent this frame */
+    f32 e1       = ( n->hide_side == 0u ) ? vis : hid;
+    if ( x )
     {
-        f32 avail = r.w - thick; if ( avail < 0.0f ) avail = 0.0f;
-        f32 w0    = floorf( avail * n->ratio );
-        dock_node_layout( dock_at( n->child[ 0 ] ), ( gui_rect_t ){ r.x,             r.y, w0,               r.h } );
-        dock_node_layout( dock_at( n->child[ 1 ] ), ( gui_rect_t ){ r.x + w0 + thick, r.y, r.w - w0 - thick, r.h } );
+        dock_node_layout( c0, ( gui_rect_t ){ r.x,             r.y, e0, r.h } );
+        dock_node_layout( c1, ( gui_rect_t ){ r.x + e0 + gut,  r.y, e1, r.h } );
     }
-    else /* GUI_DOCK_SPLIT_Y */
+    else
     {
-        f32 avail = r.h - thick; if ( avail < 0.0f ) avail = 0.0f;
-        f32 h0    = floorf( avail * n->ratio );
-        dock_node_layout( dock_at( n->child[ 0 ] ), ( gui_rect_t ){ r.x, r.y,             r.w, h0               } );
-        dock_node_layout( dock_at( n->child[ 1 ] ), ( gui_rect_t ){ r.x, r.y + h0 + thick, r.w, r.h - h0 - thick } );
+        dock_node_layout( c0, ( gui_rect_t ){ r.x, r.y,            r.w, e0 } );
+        dock_node_layout( c1, ( gui_rect_t ){ r.x, r.y + e0 + gut, r.w, e1 } );
     }
 }
 
@@ -630,10 +682,12 @@ dock_tree_splitters( gui_dock_node_t* n, u32 vp )
     dock_tree_splitters( dock_at( n->child[ 1 ] ), vp );
 
     /* A gutter beside a collapsed (hidden) child does not exist this frame: the visible sibling
-       spans the whole rect and there is nothing to drag between. */
+       spans the whole rect and there is nothing to drag between.  hide_open < 1 catches the reveal
+       leg too -- neither child reads hidden yet, but the pane is still easing back open, so the
+       gutter stays hidden until the split settles (dock_node_layout stamps hide_open each build). */
     gui_dock_node_t* c0 = dock_at( n->child[ 0 ] );
     gui_dock_node_t* c1 = dock_at( n->child[ 1 ] );
-    if ( ( c0 && c0->hidden ) || ( c1 && c1->hidden ) )
+    if ( ( c0 && c0->hidden ) || ( c1 && c1->hidden ) || n->hide_open < 0.999f )
         return;
     dock_splitter( n, vp );
 }
