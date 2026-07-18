@@ -532,6 +532,17 @@ target sb_audio								# audio stack: ahi service + audio module
     mono_dep    audio
 
 # ==============================================================================
+# 09_SANDBOX -- GAME
+# ==============================================================================
+
+target sb_world								# world framework: ent/comp pools, queries, rebind
+    type        exe
+    root        source/sandbox/game/sb_world
+    folder      09_SANDBOX/GAME
+    unit        sb_world.c
+    dep         mod sys ref core
+
+# ==============================================================================
 # 09_SANDBOX -- REFLECT
 # ==============================================================================
 
@@ -900,6 +911,7 @@ solution orb_editor
     add         host_game
     add         host_editor
 
+	
 	# 			--- PROJECT ---
     add         sample_game sample_game_play
 
@@ -911,6 +923,8 @@ solution orb_editor
 	add 		launch_tool
 
 	#			--- EXECUTABLE ---
+
+	add 		sb_world
 
     add         sb_host_runtime
     add         sb_host_editor
@@ -1038,6 +1052,7 @@ solution orb_sandbox_engine				# developing engine libraries
     add         sb_asset_test
     add         sb_input
     add         sb_audio
+    add         sb_world
 
 	# TOOD: engine test
 
@@ -1099,6 +1114,7 @@ solution orb_all
     add         sb_asset_test
     add         sb_input
     add         sb_audio
+    add         sb_world
 
 
 	# 			reflection testing
