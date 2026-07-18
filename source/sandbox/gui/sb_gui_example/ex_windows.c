@@ -51,9 +51,10 @@ ex_windows_playground( void )
         ex_flag_checkbox( "ALWAYS_VSCROLL", &flags, GUI_WIN_ALWAYS_VSCROLL );
         ex_flag_checkbox( "ALWAYS_HSCROLL", &flags, GUI_WIN_ALWAYS_HSCROLL );
         {
-            bool show_rect = gui()->debug_content_rect_shown();
+            u32  layers    = gui()->debug_get_layers();
+            bool show_rect = ( layers & GUI_DBG_CONTENT ) != 0;
             if ( gui()->checkbox( "debug: outline measured content rect", &show_rect ) )
-                gui()->debug_show_content_rect( show_rect );
+                gui()->debug_set_layers( layers ^ GUI_DBG_CONTENT );
         }
 
         gui()->separator_text( "Input" );
