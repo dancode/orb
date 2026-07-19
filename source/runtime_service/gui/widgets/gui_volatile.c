@@ -57,7 +57,7 @@ gui_volatile_cb( const char* label, gui_volatile_fn fn )
 {
     gui_id_t id = id_combine( id_seed(), id_hash( label ) );
     gui_volatile_cb_open( id );
-    fn( false );
+    fn( id, false );
     gui_volatile_cb_close( fn );
 }
 
@@ -134,6 +134,13 @@ volatile_layout_push( f32 x, f32 y, f32 w )
     f->high_x = x;
     f->high_y = y;
     f->band_bottom = y + 1.0e6f;
+
+    /* The stack slot is reused memory and layout_set_default resets only the template/modifier
+       state -- a stale gap_pending left by an earlier build would open the first line at
+       pen_y + gap, but the stamped y is absolute (the real emit's gap is already applied in it),
+       so the replay must open flush at the pen. */
+    f->gap_pending  = false;
+    f->nav_line_pin = false;
 
     layout_set_default( f );
 }

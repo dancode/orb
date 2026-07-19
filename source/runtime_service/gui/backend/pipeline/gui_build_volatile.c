@@ -441,6 +441,33 @@ volatile_patch_reused_window( gui_id_t win )
     return patched;
 }
 
+/* Registered row count -- the perf overlay's "vol rows" readout against GUI_MAX_VOLATILE. */
+u32
+gui_volatile_row_count( void )
+{
+    return s_volatile_count;
+}
+
+/* True while at least one row would actually patch on an idle frame -- the same filter
+   gui_update_volatile applies (active, on screen, window slot live at the captured generation).
+   gui_frame_pace reads this to keep presenting at the animation cadence instead of blocking on
+   OS input: a volatile block only advances when a frame runs, so a blocking wait freezes it
+   until a timeout/spurious wakeup and the animation stutters at the wait interval. */
+bool
+gui_volatile_live( void )
+{
+    for ( u32 i = 0; i < s_volatile_count; ++i )
+    {
+        gui_volatile_slot_t* row = &s_volatile[ i ];
+        if ( !row->active || row->hidden || !row->fn )
+            continue;
+        u32 vb, ib, cb, gen;
+        if ( cache_slot_lookup( row->win, &vb, &ib, &cb, &gen ) && gen == row->tess_gen )
+            return true;
+    }
+    return false;
+}
+
 /* Host entry point for a clean frame (gui_frame_dirty() == false): re-invoke every live row's
    callback standalone inside a minimal replay scope and patch its reserved region in place.
    Rows whose window has no live slot, or whose slot was re-tessellated without them (generation
@@ -515,7 +542,7 @@ gui_update_volatile( void )
         s_draw.clip_depth          = 1;
 
         gui_replay_scope_enter( row->id, row->x, row->y, row->w );
-        row->fn( true );
+        row->fn( row->id, true );
         u32 cmd_hi = s_draw.cmd_count;
 
         bool ok = volatile_patch( row, cmd_ck, cmd_hi );

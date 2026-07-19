@@ -1107,8 +1107,9 @@ show_toolbar_demo( bool* p_open )
    replay internally) with no other widget emit, no layout, no re-tessellation of anything else. */
 
 static void
-demo_volatile_pulse_cb( bool is_replay )
+demo_volatile_pulse_cb( gui_id_t id, bool is_replay )
 {
+    (void)id;
     (void)is_replay;
     gui()->volatile_begin();
     f32 t = (f32)sys_tick_seconds();

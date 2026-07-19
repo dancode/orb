@@ -288,8 +288,10 @@ gui_present_end( void )
                          structural change lands instead of stalling.  16 ~= 60 Hz; 0 = free-run.
 
     With idle skip on (I, or set_idle_skip) and the UI settled, the loop blocks on OS input instead
-    (500 ms safety cap), so a static UI burns no frames.  Requires the sleep / wait hooks from
-    set_frame_hooks; without them this is a no-op (the host loop just spins).
+    (500 ms safety cap), so a static UI burns no frames -- unless live volatile blocks are on
+    screen (gui_volatile_live), which keep the anim_sleep_ms cadence so their idle-frame patches
+    actually present.  Requires the sleep / wait hooks from set_frame_hooks; without them this is
+    a no-op (the host loop just spins).
 
     The hooks (s_hook_sleep / s_hook_wait), s_idle_skip, and s_any_redraw live in
     gui_frame_overlay.c / gui_frame.c -- both included before this unit, so they are in scope here.
@@ -308,6 +310,15 @@ gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
         {
             if ( s_hook_sleep && anim_sleep_ms > 0 )
                 s_hook_sleep( anim_sleep_ms );   /* settling: pump frames until it goes clean */
+        }
+        else if ( gui_volatile_live() )
+        {
+            /* Clean frame, but volatile blocks are on screen: they advance only when a frame
+               runs, so a blocking wait would freeze them until a timeout / spurious wakeup --
+               stutter at the wait interval.  Keep presenting at the animation cadence instead;
+               these frames stay on the cheap path (patch + upload, no emit, no full tess). */
+            if ( s_hook_sleep && anim_sleep_ms > 0 )
+                s_hook_sleep( anim_sleep_ms );
         }
         else
         {

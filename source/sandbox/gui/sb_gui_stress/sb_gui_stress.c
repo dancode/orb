@@ -477,16 +477,18 @@ stress_layout_roulette( i32 rows )
 ==============================================================================================*/
 
 /* CONTRACT: fixed layout footprint -- the canvas height and command count never change;
-   only pixel content (fill width, arc angle, color) animates. */
+   only pixel content (fill width, arc angle, color) animates.  All per-block variety derives
+   from the block id (stable at real emit AND on replay) -- never from the canvas rect, which
+   legitimately moves under resize/relayout and would re-roll color/phase with every pixel. */
 static void
-stress_swarm_block_cb( bool is_replay )
+stress_swarm_block_cb( gui_id_t id, bool is_replay )
 {
     UNUSED( is_replay );
     gui()->volatile_begin();
 
     gui_rect_t r = gui()->canvas( 26.0f );
     f32        t = ( f32 )sys_tick_seconds();
-    u32        h = stress_hash( ( ( u32 )r.x << 10 ) ^ ( u32 )r.y );
+    u32        h = stress_hash( ( u32 )id );
     f32        ph = ( f32 )( h % 628 ) * 0.01f;
     f32        s  = 0.5f + 0.5f * sinf( t * ( 2.0f + ( f32 )( h & 3 ) ) + ph );
 

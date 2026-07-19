@@ -988,7 +988,12 @@ typedef struct
     the frame cursor); do not put volatile blocks there.
 ==============================================================================================*/
 
-typedef void ( *gui_volatile_fn )( bool is_replay );
+/* `id` is the block's registry id -- the volatile_cb label hashed against the call site's id
+   scope -- identical at real emit and on replay, so a SHARED callback serving many blocks can
+   derive stable per-block variety (colors, phases) from it.  Position must not be used for
+   that: the rect a block occupies legitimately moves (resize, relayout) and anything derived
+   from it re-rolls with every pixel. */
+typedef void ( *gui_volatile_fn )( gui_id_t id, bool is_replay );
 
 /*==============================================================================================
     Semantic draw commands

@@ -275,6 +275,9 @@ void     gui_volatile_cb_open ( gui_id_t id );                 // (re)open row `
 void     gui_volatile_stamp   ( f32 x, f32 y, f32 w );          // fill win/z/vp/font/clip + cursor stamp for the open row
 void     gui_volatile_cb_close( gui_volatile_fn fn );           // cmd_hi + fn for the open row; tags the command range
 void     gui_update_volatile  ( void );
+u32      gui_volatile_row_count( void );                        // registered registry rows (perf overlay, vs GUI_MAX_VOLATILE)
+bool     gui_volatile_live    ( void );                         // any row patchable RIGHT NOW -- gui_frame_pace must keep
+                                                                //   presenting at cadence instead of block-waiting on input
 
 /* Implemented in the UI unit (widgets/gui_volatile.c); called only from gui_update_volatile. */
 void     gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w );

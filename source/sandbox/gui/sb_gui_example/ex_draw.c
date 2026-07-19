@@ -590,8 +590,9 @@ ex_draw_custom( void )
    clean frames.  CONTRACT: fixed layout footprint -- pixels may change, size must not (the
    fixed-width formats + the fixed canvas keep it constant). */
 static void
-ex_volatile_block_cb( bool is_replay )
+ex_volatile_block_cb( gui_id_t id, bool is_replay )
 {
+    UNUSED( id );
     UNUSED( is_replay );
     gui()->volatile_begin();
 

@@ -189,6 +189,7 @@ gui_perf_overlay( int mode )
                 gui_textf( "verts ret %u/%u", rs.vert_retained, rs.vert_count  );
                 gui_textf( "tris ret  %u/%u", rs.tri_retained,  rs.tri_count   );
                 gui_textf( "vol patch %u",    rs.volatile_patched              );
+                gui_textf( "vol rows  %u/%u", gui_volatile_row_count(), GUI_MAX_VOLATILE );
 
                 /* Upload stats: GPU memory bandwidth. */
                 gui_new_line( 2.0f );
