@@ -40,9 +40,22 @@
 /* Per-context default pool sizes -- used to wire the static default context (slot 0).
    Secondary contexts may use different sizes passed via gui_ctx_config_t. */
 
+#ifdef GUI_STRESS_TEST
+
+/* Stress-bench build (gui_stress lib): 4x the load-bearing pools; the sensible defaults below
+   stay the shipping values.  Popup depth and dock nodes are not load axes and keep theirs. */
+
+#define GUI_DEFAULT_MAX_WINDOWS     128
+#define GUI_DEFAULT_STATE_SLOTS     2048
+
+#else
+
 #define GUI_DEFAULT_MAX_WINDOWS     32      // default persisted window pool (32)
+#define GUI_DEFAULT_STATE_SLOTS     512     // default keyed state pool capacity
+
+#endif
+
 #define GUI_DEFAULT_POPUP_DEPTH     8       // default max nested popups
-#define GUI_DEFAULT_STATE_SLOTS     512     // default keyed state pool capacity (power of two)
 #define GUI_DEFAULT_DOCK_NODES      48      // default dock-tree nodes
 
 /* Non-per-context capacities -- these size non-context structs and stay as fixed constants. */
@@ -61,7 +74,11 @@
                                             //   open_frame stamps -- the one-or-two-word renters)
 #define GUI_STATE_CAP               24      // small-class payload bytes (max tenant: gui_region_t)
 #define GUI_STATE_BIG_CAP           96      // big-class payload bytes (max tenant: gui_table_persist_t)
+#ifdef GUI_STRESS_TEST
+#define GUI_STATE_BIG_SLOTS         128     // stress-bench build: 4x
+#else
 #define GUI_STATE_BIG_SLOTS         32      // big-class capacity (tables are the main tenant)
+#endif
 
 /* Render-surface ceiling: one gui viewport rides one OS window + one rhi context, so the pool
    default, the per-context cap, and the GPU buffer regions (allocated once at init, before any
@@ -254,7 +271,11 @@ typedef struct
 /* List capacity.  Every emitted item of the nav window registers -- including rows scrolled out
    of view (they still emit; only their draw is clipped) -- so this bounds the navigable item
    count of one window; overflow items simply drop off the keyboard map for that frame. */
+#ifdef GUI_STRESS_TEST
+#define GUI_NAV_ITEMS_MAX 4096   /* stress-bench build: 4x */
+#else
 #define GUI_NAV_ITEMS_MAX 1024
+#endif
 
 typedef struct
 {

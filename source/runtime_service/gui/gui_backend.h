@@ -198,8 +198,13 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
 
 /* Retained-cache capacities.  Here (not in the .c files) because the dashboard snapshot types
    below size their arrays with them; both unity units see one definition. */
+#ifdef GUI_STRESS_TEST
+#define RENDER_MAX_WIN    128   // stress-bench build: 4x window tracking (see gui.h pools note)
+#define GUI_MAX_VOLATILE  64
+#else
 #define RENDER_MAX_WIN    32    // distinct windows tracked per frame (32)
 #define GUI_MAX_VOLATILE  16    // registered volatile sub-slot rows
+#endif
 #define SLOT_VERT_PAD     64u   // per-slot vertex headroom: absorbs minor growth in-place
 #define SLOT_IDX_PAD      128u  // per-slot index headroom (~2x vertex count for quads)
 

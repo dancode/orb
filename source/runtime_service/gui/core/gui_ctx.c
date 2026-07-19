@@ -401,11 +401,18 @@ ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
     return ctx;
 }
 
-/* Allocate the default context (slot 0) with editor-profile defaults; called from gui_init. */
+/* Allocate the default context (slot 0) at the internal maxima -- the compile-time caps the
+   library is built with (GUI_STRESS_TEST scales these); no preset overrides them. */
 static void
 ctx_pool_init( void )
 {
-    gui_ctx_config_t c = GUI_CTX_CONFIG_EDITOR;
+    gui_ctx_config_t c = {
+        .max_windows    = GUI_DEFAULT_MAX_WINDOWS,
+        .state_slots    = GUI_DEFAULT_STATE_SLOTS,
+        .popup_depth    = GUI_DEFAULT_POPUP_DEPTH,
+        .max_viewports  = GUI_MAX_VIEWPORTS,
+        .max_dock_nodes = GUI_DEFAULT_DOCK_NODES,
+    };
     gui_context_t* ctx = ctx_alloc_slot( &c, c.state_slots, 0 );
     ORB_ASSERT( ctx != NULL );   /* no gui without a default context */
     ctx->listening = true;       /* default context listens to input */
@@ -744,15 +751,16 @@ gui_ctx_set_listening( gui_ctx_id_t ctx, bool listen )
         s_ctx_pool[ ctx ]->listening = listen;
 }
 
-/* Allocate a fresh secondary context sized to `cfg` (NULL = editor defaults).
+/* Allocate a fresh secondary context sized to `cfg` (NULL = the internal maxima).
    Each gets a unique id_salt so same-named widgets do not alias across contexts.
    Returns GUI_CTX_INVALID when the pool is full.  Call between frames. */
 gui_ctx_id_t
 gui_ctx_create( const gui_ctx_config_t* cfg )
 {
-    /* Resolve config: NULL or zero fields fall back to editor defaults.
-       max_dock_nodes == 0 is valid (disables docking); do not default it. */
-    gui_ctx_config_t c = cfg ? *cfg : GUI_CTX_CONFIG_EDITOR;
+    /* Resolve config: zero fields fall back to the internal caps.  max_dock_nodes == 0 in an
+       EXPLICIT cfg is valid (disables docking); only a NULL cfg gets the dock default. */
+    gui_ctx_config_t c = cfg ? *cfg
+                             : ( gui_ctx_config_t ){ .max_dock_nodes = GUI_DEFAULT_DOCK_NODES };
     if ( !c.max_windows   ) c.max_windows   = GUI_DEFAULT_MAX_WINDOWS;
     if ( !c.state_slots   ) c.state_slots   = GUI_DEFAULT_STATE_SLOTS;
     if ( !c.popup_depth   ) c.popup_depth   = GUI_DEFAULT_POPUP_DEPTH;

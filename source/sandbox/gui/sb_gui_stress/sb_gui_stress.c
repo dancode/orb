@@ -43,11 +43,24 @@
     Bench state
 ==============================================================================================*/
 
+/* This target compiles against the gui_stress lib variant (orb.targets), where GUI_STRESS_TEST
+   raises the library's pool caps ~4x -- the slider ceilings scale to match.  The stock-cap
+   ceilings remain so the bench still builds against the plain gui lib if ever repointed. */
+#ifdef GUI_STRESS_TEST
+#define STRESS_FLOOD_MAX   120     // test 1 window cap (window pool is 128 here)
+#define STRESS_WALL_MAX    4000    // test 2 row cap
+#define STRESS_TABLE_MAX   20000   // test 3 row cap
+#define STRESS_STORM_MAX   80000   // test 4 primitive cap
+#define STRESS_CHURN_MAX   2400    // test 5 damper cap
+#define STRESS_TINY_SLOTS  2048    // mirrors GUI_DEFAULT_STATE_SLOTS in the gui_stress lib
+#else
 #define STRESS_FLOOD_MAX   80      // test 1 window cap
 #define STRESS_WALL_MAX    1000    // test 2 row cap
 #define STRESS_TABLE_MAX   5000    // test 3 row cap
 #define STRESS_STORM_MAX   20000   // test 4 primitive cap
-#define STRESS_CHURN_MAX   600     // test 5 damper cap (tiny state class is 512 by default)
+#define STRESS_CHURN_MAX   600     // test 5 damper cap
+#define STRESS_TINY_SLOTS  512     // mirrors GUI_DEFAULT_STATE_SLOTS in the stock gui lib
+#endif
 
 static i32  s_test        = 0;     // active routine, 0 = idle
 static i32  s_flood_count = 40;
@@ -234,9 +247,10 @@ stress_state_churn( void )
     if ( gui()->window_begin( "State Churn", GUI_WIN_NONE ) )
     {
         gui()->stack();
-        gui()->text( "Each chip = one anim_f32 damper on a unique id.  Default tiny state" );
-        gui()->text( "class is 512 slots -- push the count past it and watch 'st tiny' in" );
-        gui()->text( "the perf overlay (debug hotkeys are live in this bench)." );
+        gui()->textf( "Each chip = one anim_f32 damper on a unique id.  Tiny state class" );
+        gui()->textf( "here is %d slots -- push the count past it and watch 'st tiny' in",
+                      STRESS_TINY_SLOTS );
+        gui()->text ( "the perf overlay (debug hotkeys are live in this bench)." );
 
         f32        avail = gui()->view_avail().y;
         gui_rect_t c     = gui()->canvas( avail > 40.0f ? avail : 40.0f );

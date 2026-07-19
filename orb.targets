@@ -172,6 +172,17 @@ target gui
     unit        gui_backend.c   # render backend unit
     dep         app rhi
 
+target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the load bench
+
+    type        static
+    root        source/runtime_service/gui
+    folder      03_RUNTIME/SERVICE
+    unit        gui.c   # UI / core unit
+    unit        gui_backend.c   # render backend unit
+    dep         app rhi
+    define      GUI_STRESS_TEST
+    define      GUI_STATIC   # target name derives GUI_STRESS_STATIC; the gateway switch needs GUI_STATIC
+
 target asset
 
     type        static
@@ -694,7 +705,9 @@ target sb_gui_stress					# gui load-limit bench: 5 routines on number keys, 0 = 
     folder      09_SANDBOX/GUI
     unit        sb_gui_stress.c
     dep         mod sys ref job app core
-    dep         rhi gui
+    dep         rhi gui_stress   # the 4x-caps gui variant, NOT the stock lib
+    define      GUI_STRESS_TEST
+    define      GUI_STATIC   # dep name derives GUI_STRESS_STATIC; the gateway switch needs GUI_STATIC
 
 # ==============================================================================
 # 09_SANDBOX -- HOST (host functionality tests, one per host shape)
@@ -994,9 +1007,9 @@ solution orb_sandbox_job				# developing reflection
     add         base
     add         sys ref mod app core job net
 
-    add         sb_job   # test job system
+    add         sb_job   			# test job system
 
-solution orb_sandbox_vulkan				# developing rendering / vulkan
+solution orb_sandbox_vulkan			# developing rendering / vulkan
 
     out         build/proj
     startup     sb_vulkan
@@ -1005,34 +1018,34 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
     add         sys ref prof mod app core job net fs pack
 
     add         run
-    add         rhi   # vulkan render library
-    add         draw   # drawing using the rhi
-    add         gui   # gui lbrary
-    add         asset   # asset service (image loader)
+    add         rhi   				# vulkan render library
+    add         draw   				# drawing using the rhi
+    add         gui   				# gui lbrary
+    add         asset   			# asset service (image loader)
 
-    add         render   # render dll
-    add         dev_font   # dev-only font baker
+    add         render   			# render dll
+    add         dev_font   			# dev-only font baker
 
-    add         sb_vulkan   # exe
-    add         sb_asset_image   # asset image loader proof
-    add         sb_asset_shader   # shader asset + hot-reload proof
-    add         sb_gui   # gui demo
-    add         sb_gui_example   # gui feature explorer (end-to-end demos)
-    add         sb_gui_console   # quake-style dev console
-    add         sb_gui_dock   # docking test bed
-    add         sb_gui_timeline   # prof timeline overlay + workload
-    add         sb_gui_editor   # game-engine editor shell
-    add         sb_gui_font   # font find/bake/preview/export bench
-    add         sb_gui_stress   # gui load-limit stress bench
-    add         sb_vulkan_stress   # multi-context sync stress exe
+    add         sb_vulkan   		# exe
+    add         sb_asset_image   	# asset image loader proof
+    add         sb_asset_shader   	# shader asset + hot-reload proof
+    add         sb_gui   			# gui demo
+    add         sb_gui_example   	# gui feature explorer (end-to-end demos)
+    add         sb_gui_console   	# quake-style dev console
+    add         sb_gui_dock   		# docking test bed
+    add         sb_gui_timeline   	# prof timeline overlay + workload
+    add         sb_gui_editor   	# game-engine editor shell
+    add         sb_gui_font   		# font find/bake/preview/export bench
+    add         sb_gui_stress   	# gui load-limit stress bench
+    add         sb_vulkan_stress   	# multi-context sync stress exe
 
-    add         sb_host_runtime   # runtime test
-    add         sb_host_editor   # editor test
-    add         sb_host_game   # game test
-    add         sb_host_server   # no rendering.
+    add         sb_host_runtime   	# runtime test
+    add         sb_host_editor  	# editor test
+    add         sb_host_game   		# game test
+    add         sb_host_server   	# no rendering.
 
 
-solution orb_sandbox_engine				# developing engine libraries
+solution orb_sandbox_engine			# developing engine libraries
 
     out         build/proj
     startup     sb_gen_exe

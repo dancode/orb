@@ -84,25 +84,24 @@ typedef i32 gui_ctx_id_t;
     GUI: Context Configuration
 
     Context configuration -- sizes the per-context resource pools at creation time.
-    Pass to ctx_create(); NULL or zero fields default to the EDITOR preset (32 windows,
-    512 state slots, 8 popup depth, 4 viewports, 48 dock nodes).
-    max_dock_nodes == 0 is valid and disables docking for that context.
+    Pass to ctx_create(); zero fields (and a NULL cfg) mean "the internal maximum" -- the
+    compile-time caps the library was built with.  The default context (slot 0) always uses
+    those maxima; a config only ever scales a secondary context DOWN.
+    max_dock_nodes == 0 in an explicit cfg is valid and disables docking for that context.
 ==============================================================================================*/
 
 typedef struct
 {
-    u32  max_windows;    // persisted window pool (default 32)
-    u32  state_slots;    // keyed state pool: tiny-class slot count (default 512); the small
-                         //   class gets 3/4 of it, the big class is fixed (GUI_STATE_BIG_SLOTS)
-    u32  popup_depth;    // max popup nesting (default 8)
-    u32  max_viewports;  // render surfaces (default 4)
-    u32  max_dock_nodes; // dock-tree node pool; 0 = no docking (default 48)
+    u32  max_windows;    // persisted window pool
+    u32  state_slots;    // keyed state pool: tiny-class slot count; the small class gets
+                         //   3/4 of it, the big class is fixed (GUI_STATE_BIG_SLOTS)
+    u32  popup_depth;    // max popup nesting
+    u32  max_viewports;  // render surfaces
+    u32  max_dock_nodes; // dock-tree node pool; 0 = no docking (NULL cfg keeps the default)
 
 } gui_ctx_config_t;
 
-/* Pre-built configs -- scale context memory usage for how heavy the UI contents are */
-#define GUI_CTX_CONFIG_EDITOR  \
-    ( ( gui_ctx_config_t ){ 32, 512, 8, 4, 48 } ) // 32
+/* Pre-built config -- a deliberately small profile for lightweight in-game UI contexts */
 #define GUI_CTX_CONFIG_GAME_UI \
     ( ( gui_ctx_config_t ){ 8, 64, 4, 1, 0 } )
 
@@ -1584,9 +1583,32 @@ typedef struct
    matters if the VB/IB are ever moved off HOST_COHERENT memory, in which case regions
    would need rounding up to nonCoherentAtomSize to flush apart. */
 
-#define GUI_MAX_VERTS      ( 32 * 1024 )
+#ifdef GUI_STRESS_TEST
+
+/* Stress-bench build (the gui_stress lib variant, sb_gui_stress): the per-frame pools scale
+       ~4x so the bench can push past shipping load without tripping caps.  Two are ceiling-bound,
+       not 4x: verts stop just under 64K (u16 indices) and the clip table at 256 (u8 index). */
+
+#define GUI_MAX_VERTS           ( 60 * 1024 )
+#define GUI_MAX_CMDS            8192
+#define GUI_MAX_PATH_PTS        32768
+#define GUI_MAX_RECT_ENTRIES    16384
+#define GUI_MAX_TEXT_POOL       ( 64 * 1024 )
+#define GUI_MAX_CLIP_RECTS      256
+
+#else
+
+#define GUI_MAX_VERTS           ( 32 * 1024 )
+#define GUI_MAX_CMDS            1024
+#define GUI_MAX_PATH_PTS        2048                 /* per-frame total polyline/path point pool */
+#define GUI_MAX_RECT_ENTRIES    4096               /* per-frame total draw_rects batch pool */
+#define GUI_MAX_TEXT_POOL       ( 16 * 1024 )        /* per-frame flat string copy pool for text cmds */
+#define GUI_MAX_CLIP_RECTS  64                   /* per-frame clip table entries; u8 index so max is 256 */
+
+#endif
+
 #define GUI_MAX_IDX        ( GUI_MAX_VERTS * 3 )
-#define GUI_MAX_CMDS       1024
+#define GUI_CLIP_DEPTH     32
 
 /* Command segments: one contiguous span of the command list per (z, vp) the emit path stamps, cut
    wherever draw_set_sort_key / draw_set_viewport change the tag.  The render backend orders these
@@ -1594,11 +1616,6 @@ typedef struct
    segment, plus the open one, so the cap is the command cap + 1. */
 
 #define GUI_MAX_SEGS       ( GUI_MAX_CMDS + 1 )
-#define GUI_MAX_PATH_PTS   8192                 /* per-frame total polyline/path point pool */
-#define GUI_MAX_RECT_ENTRIES 4096               /* per-frame total draw_rects batch pool */
-#define GUI_MAX_TEXT_POOL  ( 16 * 1024 )        /* per-frame flat string copy pool for text cmds */
-#define GUI_CLIP_DEPTH     32
-#define GUI_MAX_CLIP_RECTS 64                   /* per-frame clip table entries; u8 index so max is 256 */
 
 /*==============================================================================================
     Memory usage breakdown (bytes), reported by gui()->mem_stats().

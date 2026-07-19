@@ -294,7 +294,8 @@ typedef struct gui_api_s
     /* Multi-context -- isolated per-context retained state (windows, nav, popups, keyed widget state,
        id namespace).  The primary context (GUI_CTX_DEFAULT / 0) is always live after init().
 
-       ctx_create()       -- allocate a fresh secondary context, sized to `cfg` (NULL = editor defaults).
+       ctx_create()       -- allocate a fresh secondary context, sized to `cfg` (NULL / zero fields =
+                             the internal maxima the library was compiled with).
                              Each gets a unique id_salt so same-named widgets in different contexts
                              never alias.  Returns GUI_CTX_INVALID on pool exhaustion.  Between frames.
        ctx_destroy()      -- free a secondary context; rebinds the default if it was current.  Never
