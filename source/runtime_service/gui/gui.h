@@ -567,10 +567,14 @@ gui_rect_cut_bottom( gui_rect_t* r, f32 a )
         > 1.0         fixed pixels
         == 1.0        fill -- an equal share of the leftover (several fills split it evenly)
         (0.0, 1.0)    fraction of the gap-adjusted available extent
-        == 0.0        natural size -- the item's own content size.  Only pack mode resolves per
-                      item with content in hand; a pre-divided column / grid track has none at
-                      resolve time, so 0 there collapses to a zero-width track -- use fill /
-                      fraction / px in columns + grid instead.
+        == 0.0        natural size -- the item's own content size.  Pack resolves it per item
+                      with content in hand.  A pre-divided COLUMN track (cols / grid columns)
+                      has none at resolve time, so it resolves against MEASURED FEEDBACK: the
+                      widest natural item placed in that column last frame (one-frame lag, the
+                      same feedback autosize windows run on; floored at the minimum cell width
+                      until something measures).  The label-sized form column:
+                      cols( (f32[]){ 0, 1.0f, GUI_END } ).  Grid ROW tracks have no vertical
+                      measure and still collapse to zero -- use fill / fraction / px there.
         <  0.0        GUI_END, the track-list terminator
 
     Gaps sit *between* cells and are subtracted before distribution, so a widget never sees or

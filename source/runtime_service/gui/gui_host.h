@@ -199,6 +199,7 @@ void gui_strip( void );
 
 void gui_pack_size( f32 unit );
 void gui_pack_nextline( void );
+void gui_pack_wrap( void );
 
 /* layout - save/restore the declared shape around a scoped header change */
 void gui_push_layout_state( void );
@@ -206,6 +207,8 @@ void gui_pop_layout_state( void );
 
 void gui_align( gui_align_t a );
 void gui_next_item_fit( f32 unit );
+void gui_next_item_h( f32 unit );
+void gui_next_item_align( gui_align_t a );
 void gui_same_line( f32 spacing );
 void gui_stack_same_line( f32 spacing );
 void gui_skip( void );

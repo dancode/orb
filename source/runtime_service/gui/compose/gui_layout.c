@@ -177,7 +177,26 @@ gui_form( gui_label_side_t side, f32 label_w )
 void
 gui_align( gui_align_t a )
 {
-    lf()->mod.align = (u8)a;
+    layout_frame_t* f = lf();
+    f->mod.align = (u8)a;
+    f->line.align_swap = f->line.align_armed = false;   /* explicit set: nothing left to restore */
+}
+
+/* next_item_align -- one-shot alignment for the very next item only (flexbox's align-self), over
+   the region's persistent align().  The override rides mod.align through the item's own draw
+   (widgets seat their content by it at paint time) and the base alignment is restored at the
+   following emit -- so call it immediately before the item; a template install in between drops
+   the pending restore.
+
+       gui()->next_item_align( GUI_ALIGN_RIGHT );  gui()->button( "Apply" );   // this one right */
+void
+gui_next_item_align( gui_align_t a )
+{
+    layout_frame_t* f = lf();
+    if ( !f->line.align_swap ) f->line.align_restore = f->mod.align;   /* first set saves the base */
+    f->mod.align        = (u8)a;
+    f->line.align_swap  = true;
+    f->line.align_armed = true;
 }
 
 /* next_item_fit -- override how big the very next cell item is (STACK / COLUMNS / GRID; pack has
@@ -189,6 +208,18 @@ gui_align( gui_align_t a )
        gui()->next_item_fit( 1.0f ); gui()->button( "Save" );   // stretch a button across its column
        gui()->next_item_fit( 0.0f ); gui()->slider_float(...);  // shrink a field to its own width */
 void gui_next_item_fit( f32 unit ) { lf()->line.fit_next = unit; }
+
+/* next_item_h -- one-shot override of the very next item's HEIGHT, the vertical twin of
+   next_item_fit.  Overloaded unit resolved against the room left below the pen (from the next
+   line down to the region bottom): >1 px, 1 fill the rest of the region, (0,1) a fraction of it,
+   0 the widget's own h.  Flow: it lands when the item OPENS its row (an auto-height row takes the
+   first item's h) and is ignored mid-row (the open row's height is already fixed).  Pack: a bar
+   takes it as the item's cross extent, a strip as its main advance.  A grid cell carries the
+   matrix height and ignores it.
+
+       gui()->next_item_h( 1.0f );              gui()->button( "Fill" );  // rest of the region
+       gui()->next_item_h( gui()->sz_u( 16 ) ); gui()->button( "Tall" );  // a 16-quantum row */
+void gui_next_item_h( f32 unit ) { lf()->line.h_next = unit; }
 
 /* Grid mode: partition the band from the pen to the region bottom into desc.cols x desc.rows
    (both GUI_END-terminated, overloaded units).  Uses cols, rows, gaps, and align; row_h is
@@ -241,6 +272,7 @@ gui_pack( gui_pack_dir_t dir )
     f->mode      = GUI_MODE_PACK;
     f->line.pack_dir  = (u8)dir;
     f->tmpl.ncols = 1;                 /* non-zero: pack bypasses the column walk */
+    f->tmpl.nat_mask = 0;              /* pack has no columns -- nothing measures back */
 
     /* Open the first line at the pen: the main pen runs along dir from the line origin, the
        cross axis sits at the gap-before position below prior content / the content edge. */
@@ -278,19 +310,19 @@ gui_pack_nextline( void )
 {
     layout_frame_t* f = lf();
     if ( f->mode != GUI_MODE_PACK ) return;
+    pack_line_break( f );   /* the shared break (gui_layout_core.c) -- auto-wrap uses it too */
+}
 
-    bool horiz     = ( f->line.pack_dir == GUI_PACK_HORIZONTAL );
-    f32  gap       = horiz ? mod_gap_y( f ) : mod_gap_x( f );
-    f32  new_cross = f->line.cross + f->line.ext + gap;   /* past the line just laid */
-
-    line_commit( f );              /* close the line -- its extent is already in the highwater */
-
-    f->line.cross = new_cross;
-    f->line.main  = f->line.origin;
-    f->line.ext   = 0.0f;
-    f->line.open  = true;
-    f->nav_line   = ++s_build.nav_line_seq;   /* the broken-to line is a fresh nav line */
-    f->line.prev_item  = ( gui_rect_t ){ 0 };
+/* pack_wrap -- opt the current pack run into auto-wrap: an item whose natural / fixed measure
+   overruns the line breaks to a fresh one first (the flex-wrap toolbar / tag-row behavior).  A
+   fill / fraction item resolves to the space left on its line, so it always fits and never
+   wraps; an item wider than a whole empty line places anyway (no loop).  Call after bar() /
+   strip(); cleared when another template is installed.  No-op outside pack mode. */
+void
+gui_pack_wrap( void )
+{
+    layout_frame_t* f = lf();
+    if ( f->mode == GUI_MODE_PACK ) f->line.wrap = true;
 }
 
 /*----------------------------------------------------------------------------------------------

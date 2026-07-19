@@ -373,6 +373,8 @@ typedef struct
     u32 ncols;                      // column count
     u32 nrows;                      // row count; 0 => flow mode, else grid
     f32 row_h;                      // flow row height: 0 = auto, >0 = pixels
+    u32 seq;                        // install ordinal within the region -- keys the natural-track measures
+    u8  nat_mask;                   // bit per column: a natural (0) track resolved from last frame's measure
     f32 cols[ GUI_LAYOUT_COLS ];    // source column units, kept so indent can re-resolve
 
     f32 cellx[ GUI_LAYOUT_COLS ];   // resolved cell left edges
@@ -426,6 +428,15 @@ typedef struct
     u8  pack_dir;                   // gui_pack_dir_t: 0 horizontal (bar), 1 vertical (strip)
     f32 pack_size_next;             // pending main-axis size unit; < 0 = unset (natural)
     f32 fit_next;                   // pending cell-item fit unit; < 0 = unset (implicit)
+    f32 h_next;                     // pending one-shot item-height unit; < 0 = unset (caller's h)
+
+    /* One-shot next_item_align: the verb swaps the override into mod.align (so the item's own
+       paint reads it too) and arms the next emit; the emit AFTER that one restores the base. */
+    u8   align_restore;             // mod.align to restore once the armed item has emitted
+    bool align_swap;                // an override sits in mod.align (restore pending)
+    bool align_armed;               // ... and its item has not emitted yet
+
+    bool wrap;                      // pack: auto-break the line when the next item overruns it
 
 } layout_line_t;
 
@@ -468,6 +479,7 @@ typedef struct
     layout_tmpl_t tmpl;     // the installed shape (persists until replaced)
     layout_mod_t  mod;      // orthogonal modifiers (persist across installs)
     layout_line_t line;     // iteration cursor + the open line (re-zeroed per install)
+    u32           tmpl_seq; // install-ordinal dispenser (tmpl.seq source; 0 each region open)
 
     /* Keyboard-nav structural coordinate (see gui_nav_item_t).  nav_region is dispensed once per
        region open (layout_seed_content); nav_line is re-dispensed from the frame-global counter

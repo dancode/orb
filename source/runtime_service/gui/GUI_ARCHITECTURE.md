@@ -229,7 +229,10 @@ For any size value `t`:
 - `t > 1`   : fixed pixels (never floored -- explicit px is authored intent)
 - `t == 1`  : fill (equal share of leftover; multiple fills split it)
 - `0 < t < 1`: fraction of the gap-adjusted extent
-- `t == 0`  : natural (widget's own measure; zero in pre-divide track lists)
+- `t == 0`  : natural (widget's own measure).  A pre-divided COLUMN track resolves it from
+  measured feedback: the widest natural item placed in that column last frame (one-frame lag,
+  floored at `WIDGET_MIN_W`); grid ROW tracks and the pure-math callers (field_split, split,
+  carve) have no measure and it collapses to zero there
 - `t < 0`   : unset/terminator (`GUI_END = -1.0f` ends track lists)
 
 Two resolvers only: `layout_resolve_tracks` (lists) and `unit_resolve` (scalar). Flex/fraction
@@ -245,12 +248,15 @@ The first layout header names the mode. A widget emitted before ANY header is a 
 | `stack()` / `row(h)` | STACK | one flex column, rows accumulate + scroll (the default list) |
 | `cols(tracks)` / `cols_n(n)` / `row2/3/4(...)` / `row_cols(h,tracks)` | COLUMNS | repeating pre-divided column template; wraps row-major |
 | `grid(desc)` / `grid_cells(nc,nr)` | GRID | fixed cols x rows matrix from pen to region bottom, both axes resolved up front; no scroll; overflow clamps to last cell |
-| `bar()` / `strip()` | PACK | print run: items at natural size along the axis; `pack_size(u)` overrides next item; `pack_nextline()` breaks |
+| `bar()` / `strip()` | PACK | print run: items at natural size along the axis; `pack_size(u)` overrides next item; `pack_nextline()` breaks; `pack_wrap()` opts the run into auto-wrap at the line edge |
 
 Flow cell sizing: a widget with a natural width (button, checkbox, text) shrinks to it and is
 seated by `align()`; one without (slider, input) fills the track. `next_item_fit(u)` is a
 one-shot per-item override (1.0 = stretch, 0.0 = natural). Auto-height rows take the FIRST
-item's height for the whole row.
+item's height for the whole row. Two more one-shots ride the same seam: `next_item_h(u)`
+overrides the next item's height (resolved against the room left below the pen; 1.0 = fill the
+rest of the region), and `next_item_align(a)` is align-self for one item (restored at the
+following emit).
 
 Modifiers are orthogonal to the template and persist across header installs: `align(a)`,
 `field_split(side, label, control)` / `field_label_left(w)` / `form(side, label_w)` (labeled

@@ -570,4 +570,46 @@ ex_layout_carve( void )
     gui()->window_end();
 }
 
+/*==============================================================================================
+    Natural & Wrap -- measured natural columns, the next_item_* one-shots, pack auto-wrap.
+==============================================================================================*/
+
+static void
+ex_layout_natural( void )
+{
+    if ( ex_begin( "Natural & Wrap", 460, 560, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text( "A natural (0) column sizes to its widest" );
+        gui()->text( "natural item -- measured feedback, one frame." );
+
+        /* The 0 track hugs the widest button below; the fill track takes the rest. */
+        gui()->separator_text( "cols( {0, 1} ) -- natural label column" );
+        gui()->cols( ( f32[] ){ 0, 1.0f, GUI_END } );
+        gui()->button( "Ok" );                gui()->text( "<- fill track" );
+        gui()->button( "A longer label" );    gui()->text( "column = widest" );
+        gui()->button( "Mid one" );           gui()->text( "left edge aligned" );
+        gui()->stack();
+
+        /* One-shots: this item only, the region's align / auto height come right back. */
+        gui()->separator_text( "next_item_align / next_item_h" );
+        gui()->next_item_align( GUI_ALIGN_RIGHT );
+        gui()->button( "align-self RIGHT" );
+        gui()->button( "back on region align" );
+        gui()->next_item_h( gui()->sz_u( 12 ) );
+        gui()->button( "next_item_h( sz_u( 12 ) )" );
+
+        /* Auto-wrap: natural-width items break to a fresh line at the edge -- resize me. */
+        gui()->separator_text( "bar() + pack_wrap() -- resize the window" );
+        gui()->bar();
+        gui()->pack_wrap();
+        static const char* tags[] = { "alpha", "beta", "gamma", "delta", "epsilon",
+                                      "zeta", "eta", "theta", "iota", "kappa" };
+        for ( u32 i = 0; i < 10; i++ )
+            gui()->button( tags[ i ] );
+        gui()->stack();
+    }
+    gui()->window_end();
+}
+
 /*============================================================================================*/

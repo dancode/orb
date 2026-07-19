@@ -724,7 +724,9 @@ typedef struct gui_api_s
        gui()->bar();  gui()->button("Save");  gui()->button("Open");   // a toolbar
        bar() / strip() -- open a run: horizontal (the toolbar) / vertical.
        pack_size()  -- next packed item's main-axis size (0 natural, 1 fill, (0,1) frac, >1 px).
-       pack_nextline() -- break the run to a new line. */
+       pack_nextline() -- break the run to a new line.
+       pack_wrap()  -- opt the run into auto-wrap: a natural / fixed item that overruns the line
+                       breaks to a fresh one first (flex-wrap; a fill always fits, never wraps). */
 
     void ( *layout_default    )( void );
     void ( *stack             )( void );
@@ -746,6 +748,7 @@ typedef struct gui_api_s
     void ( *strip             )( void );
     void ( *pack_size         )( f32 unit );
     void ( *pack_nextline     )( void );
+    void ( *pack_wrap         )( void );
 
     /* push_layout_state / pop_layout_state -- save the region's declared shape (mode + template +
        modifiers) and restore it later, so a helper that switches into bar() / grid() / whatever
@@ -777,6 +780,17 @@ typedef struct gui_api_s
 
            gui()->next_item_fit( 1.0f ); gui()->button( "Save" );  // stretch across its column
 
+       next_item_h() -- one-shot override of the next item's HEIGHT (the vertical twin), resolved
+                      against the room left below the pen: >1 px, 1 fill the rest of the region,
+                      (0,1) a fraction of it, 0 the widget's own h.  Flow: lands when the item
+                      opens its row; ignored mid-row and in grid cells (the matrix height wins).
+
+           gui()->next_item_h( 1.0f ); gui()->button( "Fill" );    // rest of the region
+
+       next_item_align() -- one-shot align for the next item only (flexbox's align-self), over the
+                      region's persistent align(); restored at the following emit, so call it
+                      immediately before the item.
+
        same_line() -- keep the next widget on the line just emitted instead of breaking to a new
                       row; it takes its natural width.  `spacing` is a gap, not a track size: its
                       own natural is a literal 0 (flush), and < 0 defers to the theme default gap.
@@ -792,6 +806,8 @@ typedef struct gui_api_s
 
     void ( *align      )( gui_align_t a );
     void ( *next_item_fit )( f32 unit );
+    void ( *next_item_h )( f32 unit );
+    void ( *next_item_align )( gui_align_t a );
     void ( *same_line  )( f32 spacing );
     void ( *stack_same_line )( f32 spacing );
     void ( *skip       )( void );

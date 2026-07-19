@@ -86,6 +86,7 @@ static ex_demo_t s_demos[] =
     { "Layout",   "Align & Spacing",  "Align & Spacing",  "align / same_line / new_line / next_item_fit",      ex_layout_align,        false },
     { "Layout",   "Sub-layout",       "Sub-layout",       "push_layout / pop_layout in one cell",              ex_layout_sublayout,    false },
     { "Layout",   "Pack & Bars",      "Pack & Bars",      "bar / strip / pack_size / pack_nextline",           ex_layout_pack,         false },
+    { "Layout",   "Natural & Wrap",   "Natural & Wrap",   "natural (0) cols / next_item_h + _align / pack_wrap", ex_layout_natural,    false },
     { "Layout",   "Child Regions",    "Child Regions",    "child_begin / resize grips / size constraints",     ex_layout_children,     false },
     { "Layout",   "Sizing Helpers",   "Sizing Helpers",   "sz_* family / content_avail / empty",               ex_layout_sizing,       false },
     { "Layout",   "Split & Carve",    "Split & Carve",    "split_begin / split / carve / anchor / overlay",    ex_layout_carve,        false },

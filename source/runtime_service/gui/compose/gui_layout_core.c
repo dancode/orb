@@ -127,6 +127,75 @@ quant_ceil( f32 v )
 
 /*==============================================================================================
 
+    Natural (== 0) column tracks -- resolved from MEASURED FEEDBACK.
+
+    The engine is single-pass, so a pre-divided track has no content in hand at resolve time.
+    Instead each natural column remembers the widest natural_w placed into it, and the NEXT
+    frame's install resolves the track to that measure -- the same one-frame lag the region
+    content extent and autosize windows already run on.  Slots live in the keyed state pool,
+    keyed per (region, template install ordinal, column): re-installing the same shape later in
+    the region measures independently, and a vanished template's slots age out on their own.
+    The resolve floors at WIDGET_MIN_W so a first appearance (nothing measured yet) opens
+    usable instead of collapsed.  Flow columns and grid COLUMNS feed back; grid ROWS have no
+    vertical natural signal and still collapse (see gui_layout_t).
+
+==============================================================================================*/
+
+typedef struct
+{
+    f32 stable;   // last completed frame's max -- what an install resolves against
+    f32 accum;    // running max of this frame's placements
+    u32 frame;    // retained-frame stamp of accum (rolls the pair once per frame)
+
+} nat_track_t;
+
+/* The column's slot, rolled to the current frame (stable <- last frame's accum, once).  A
+   transient sub-layout has no region id; its frame-order nav_region stands in -- stable while
+   the UI is stable, and a mis-key after a structural change just re-measures for a frame. */
+static nat_track_t*
+nat_track_touch( layout_frame_t* f, u32 col )
+{
+    gui_id_t base = ( f->region_id != GUI_ID_NONE ) ? f->region_id
+                                                    : id_combine( 0x4E415455u, f->nav_region );
+    nat_track_t* t = GUI_STATE( nat_track_t, id_combine( base, ( f->tmpl.seq << 3 ) | col ) );
+
+    u32 now = g_ctx->retained.frame;
+    if ( t->frame != now ) { t->stable = t->accum; t->accum = 0.0f; t->frame = now; }
+    return t;
+}
+
+/* Fold one placed item's natural width into its column's running measure (flow + grid cells).
+   A fill widget (no natural width) contributes nothing -- the column sizes to the items that
+   do carry one. */
+static void
+nat_track_note( layout_frame_t* f, u32 col, f32 natural_w )
+{
+    if ( !( ( f->tmpl.nat_mask >> col ) & 1u ) || natural_w <= 0.0f ) return;
+    nat_track_t* t = nat_track_touch( f, col );
+    f32 w = quant_ceil( natural_w );
+    if ( w > t->accum ) t->accum = w;
+}
+
+/* Substitute every natural (== 0) track in `tracks` with last frame's measure (floored at the
+   minimum cell width) and record which columns feed the measure back.  Runs at install, before
+   the resolve, so layout_resolve_tracks and indent's reflow only ever see px for these tracks. */
+static void
+nat_tracks_substitute( layout_frame_t* f, f32* tracks, u32 n )
+{
+    f->tmpl.seq      = ++f->tmpl_seq;
+    f->tmpl.nat_mask = 0;
+    for ( u32 i = 0; i < n; ++i )
+    {
+        if ( tracks[ i ] != 0.0f ) continue;
+        f->tmpl.nat_mask |= (u8)( 1u << i );
+        f32 m  = nat_track_touch( f, i )->stable;
+        f32 mn = WIDGET_MIN_W;
+        tracks[ i ] = ( m > mn ) ? m : mn;
+    }
+}
+
+/*==============================================================================================
+
     Layout engine -- carve a region's content area into cells from a repeating row template.
 
     One resolver does both axes (here, only columns are wired); the row template lives on the
@@ -139,7 +208,9 @@ quant_ceil( f32 v )
    from `origin` across `extent`, with `gap` between each.  Units (see gui_layout_t): >1 fixed px,
    ==1 fill (equal share of the leftover -- several fills split it), (0,1) fraction of the gap-
    adjusted extent, ==0 natural.  This is a pre-divide (up-front) resolve with no content in hand,
-   so a 0/natural track collapses to zero width here -- natural only has a measure in pack mode.
+   so a 0/natural track collapses to zero width HERE -- the column installers substitute measured
+   px for natural tracks before resolving (nat_tracks_substitute above), so a 0 only reaches this
+   function from the callers with no measure (field_split, split, carve), where it collapses.
    Gaps are removed before the split, so a fraction is of usable space and cells tile exactly.
 
    Minimum width: a fill / fraction track that the available space squeezes below WIDGET_MIN_W is
@@ -310,6 +381,29 @@ layout_next_y( layout_frame_t* f )
 }
 
 /*============================================================================================*/
+/* Break a pack run to a fresh line: commit the one just laid and open the next past it, with the
+   main pen back at the line start.  An empty line still advances by one gap (a deliberate blank
+   line).  The shared body of gui_pack_nextline (gui_layout.c) and the opt-in auto-wrap in
+   line_place_pen below. */
+
+static void
+pack_line_break( layout_frame_t* f )
+{
+    bool horiz     = ( f->line.pack_dir == GUI_PACK_HORIZONTAL );
+    f32  gap       = horiz ? mod_gap_y( f ) : mod_gap_x( f );
+    f32  new_cross = f->line.cross + f->line.ext + gap;   /* past the line just laid */
+
+    line_commit( f );              /* close the line -- its extent is already in the highwater */
+
+    f->line.cross = new_cross;
+    f->line.main  = f->line.origin;
+    f->line.ext   = 0.0f;
+    f->line.open  = true;
+    f->nav_line   = ++s_build.nav_line_seq;   /* the broken-to line is a fresh nav line */
+    f->line.prev_item = ( gui_rect_t ){ 0 };
+}
+
+/*============================================================================================*/
 /* Reposition the pen to an explicit y -- an imperative host taking authority over the flow (a table
    stepping row to row, a menu bar restoring the pen it borrowed).  The pen is authoritative: no line
    is open and no gap is owed, so the next line opens exactly here.  This moves the PEN alone: the
@@ -378,7 +472,8 @@ layout_template_reset( layout_frame_t* f )
 {
     f->tmpl.nrows = 0;   /* flow until a grid installs rows */
     f->line       = ( layout_line_t ){ .pack_size_next = -1.0f,    /* unset -> natural */
-                                       .fit_next       = -1.0f };  /* unset -> own natural_w */
+                                       .fit_next       = -1.0f,    /* unset -> own natural_w */
+                                       .h_next         = -1.0f };  /* unset -> caller's h */
     /* gap_pending is NOT reset: content committed above still owes its gap to the next line. */
 }
 
@@ -486,6 +581,7 @@ layout_set_default( layout_frame_t* f )
     f->mode            = GUI_MODE_STACK;
     f->tmpl.ncols      = 1;
     f->tmpl.row_h      = 0.0f;
+    f->tmpl.nat_mask   = 0;               /* one flex track -- nothing measures back */
     f->tmpl.cols[ 0 ]  = 1.0f;            /* single flex track, kept so indent can re-resolve */
     f->tmpl.cellx[ 0 ] = f->content_x;    /* one flex column == the whole content width */
     f->tmpl.cellw[ 0 ] = f->content_w;
@@ -537,6 +633,7 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
        a child box, a re-inset pad).  The first line dispenses when the first line opens. */
     f->nav_region = ++s_build.nav_region_seq;
     f->nav_line   = 0;
+    f->tmpl_seq   = 0;   /* install ordinals restart with the region (natural-track keys) */
 
     layout_clear( f );   /* content re-seeded -> the template opens undeclared; declare a header */
 }
@@ -564,6 +661,7 @@ layout_set( const f32* cols, f32 row_h, f32 gap_x, f32 gap_y )
 
     f32 tracks[ GUI_LAYOUT_COLS ];
     f->tmpl.ncols = layout_copy_tracks( cols, tracks );
+    nat_tracks_substitute( f, tracks, f->tmpl.ncols );   /* natural (0) -> last frame's measure */
     for ( u32 i = 0; i < f->tmpl.ncols; ++i ) f->tmpl.cols[ i ] = tracks[ i ];   /* kept for indent reflow */
     layout_resolve_tracks( tracks, f->tmpl.ncols, f->content_x, f->content_w, mod_gap_x( f ),
                            f->tmpl.cellx, f->tmpl.cellw );
@@ -603,6 +701,7 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
        content bottom.  An empty band (content already overflowed) clamps to zero. */
     f32 tracks[ GUI_LAYOUT_COLS ];
     f->tmpl.ncols = layout_copy_tracks( cols, tracks );
+    nat_tracks_substitute( f, tracks, f->tmpl.ncols );   /* columns measure back; rows cannot */
     layout_resolve_tracks( tracks, f->tmpl.ncols, f->content_x, f->content_w, mod_gap_x( f ),
                            f->tmpl.cellx, f->tmpl.cellw );
 
@@ -661,6 +760,8 @@ grid_next_rect( layout_frame_t* f, f32 natural_w )
     if ( c == 0 && rr > 0 )
         f->nav_line = ++s_build.nav_line_seq;
 
+    nat_track_note( f, c, natural_w );   /* a natural column measures its widest item */
+
     gui_rect_t r  = cell_fit_resolve( f, f->tmpl.cellx[ c ], f->tmpl.cellw[ c ], natural_w, f->tmpl.rowy[ rr ], f->tmpl.rowh[ rr ] );
 
     if ( ++f->line.col >= f->tmpl.ncols )   /* next slot, row-major */
@@ -701,11 +802,35 @@ line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
     f32 nat_main  = horiz ? ( natural_w > 0.0f ? natural_w : 0.0f ) : h;
     f32 cross_ext = horiz ? h : ( natural_w > 0.0f ? natural_w : f->content_w );
 
-    f32 main_avail = ( horiz ? ( f->content_x + f->content_w ) : f->band_bottom ) - f->line.main;
+    f32 unit = f->line.pack_size_next;
+    f->line.pack_size_next = -1.0f;   /* consume -> next item is natural */
+
+    f32 main_edge  = horiz ? ( f->content_x + f->content_w ) : f->band_bottom;
+    f32 main_avail = main_edge - f->line.main;
     if ( main_avail < 0.0f ) main_avail = 0.0f;
 
-    f32 main_ext      = unit_resolve( f->line.pack_size_next, nat_main, main_avail );
-    f->line.pack_size_next = -1.0f;   /* consume -> next item is natural */
+    f32 main_ext = unit_resolve( unit, nat_main, main_avail );
+
+    /* Opt-in auto-wrap (pack_wrap): a natural / fixed item that overruns the line breaks to a
+       fresh one first -- never on a still-empty line (an oversized item places rather than
+       looping), and a fill / fraction resolves to the space left so it always fits.  The size
+       unit re-resolves against the fresh line, so a pending fraction is of the full run.
+
+       The wrap edge is the VISIBLE track (view width from the line origin), not main_edge:
+       content_w inherits last frame's overflow so fill widgets can span scrollable ground, but
+       wrapping against that widened edge means one unwrapped long line re-justifies its own
+       width forever and the run never wraps again once the window shrinks back.  The view width
+       is scroll-free and honest, and it keeps every line of the run the same length.  A strip's
+       band_bottom is already view-derived. */
+    f32 wrap_edge = horiz ? f->content_x + ( f->view.w - f->pad.l - f->pad.r ) : f->band_bottom;
+    if ( f->line.wrap && f->mode == GUI_MODE_PACK && f->line.ext > 0.0f
+         && f->line.main + main_ext > wrap_edge )
+    {
+        pack_line_break( f );
+        main_avail = main_edge - f->line.main;
+        if ( main_avail < 0.0f ) main_avail = 0.0f;
+        main_ext   = unit_resolve( unit, nat_main, main_avail );
+    }
 
     /* Assemble the rect by mapping (main, cross) onto (x, y): a bar runs main along x, a strip along
        y.  The pen advance, the line's cross-extent max, and the watermark grow are axis-agnostic
@@ -749,6 +874,7 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
     }
 
     u32        c = f->line.col;
+    nat_track_note( f, c, natural_w );   /* a natural column measures its widest item */
     gui_rect_t r = cell_fit_resolve( f, f->tmpl.cellx[ c ], f->tmpl.cellw[ c ], natural_w, f->line.cross, f->line.ext );
 
     f->line.main = r.x + r.w + mod_gap_x( f );    /* pen past the cell -- the same_line handoff */
@@ -762,8 +888,16 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
        in horizontal content, flickering a horizontal bar that has nothing real to scroll to.  Only
        a cell that actually SHRANK to its natural width is real content; grow the x highwater from
        that, but a filled cell contributes no more x than its own left edge (already covered by the
-       region's seed / earlier columns) -- content_reach still runs for the y advance either way. */
-    f32 x_reach = ( r.w < f->tmpl.cellw[ c ] ) ? r.x + r.w : f->tmpl.cellx[ c ];
+       region's seed / earlier columns) -- content_reach still runs for the y advance either way.
+
+       A shrunk cell claims its WIDTH from the track ORIGIN (cellx + r.w), never its seated
+       position (r.x + r.w): an align( RIGHT / HCENTER ) seat derives from the track width, which
+       itself derives from last frame's measured content -- folding the seated corner in makes the
+       widened canvas re-justify itself forever (content_w can grow but never shrink back, and a
+       right-aligned item parks off-view for good).  Width from origin is position-independent, so
+       the measure collapses the frame the wide content disappears.  Left-aligned the two spellings
+       are identical. */
+    f32 x_reach = ( r.w < f->tmpl.cellw[ c ] ) ? f->tmpl.cellx[ c ] + r.w : f->tmpl.cellx[ c ];
     content_reach( f, x_reach, r.y + r.h );
 
     if ( ++f->line.col >= f->tmpl.ncols )
@@ -786,6 +920,15 @@ cell_next_w( f32 natural_w, f32 h )
 {
     layout_frame_t* f = lf();
 
+    /* Restore a one-shot next_item_align: the armed item keeps its override through its own
+       draw (widgets read mod.align at paint time), so the base align comes back HERE, at the
+       following emit, before this item resolves anything. */
+    if ( f->line.align_swap )
+    {
+        if ( f->line.align_armed ) f->line.align_armed = false;   /* this is the override's item */
+        else { f->mod.align = f->line.align_restore; f->line.align_swap = false; }
+    }
+
     /* An item is being emitted: resolve its flags (stack + the one-shot next-item override) and
        latch them for item_state / the widget to read.  This is the single per-item seam every
        widget passes through, so the push-model needs no plumbing at the individual call sites. */
@@ -799,6 +942,17 @@ cell_next_w( f32 natural_w, f32 h )
     {
         ORB_ASSERT( f->mode != GUI_MODE_NONE );   /* declare a mode (stack/columns/grid/...) first */
         layout_set_default( f );                    /* release fallback: behave as a plain stack */
+    }
+
+    /* One-shot next_item_h: resolve the caller's h against the room left below the pen, at the
+       shared seam so every mode sees the final h (a grid cell carries the matrix height and
+       ignores h by construction). */
+    if ( f->line.h_next >= 0.0f )
+    {
+        f32 avail_h = f->band_bottom - layout_next_y( f );
+        if ( avail_h < 0.0f ) avail_h = 0.0f;
+        h = unit_resolve( f->line.h_next, h, avail_h );
+        f->line.h_next = -1.0f;
     }
 
     gui_rect_t r;
