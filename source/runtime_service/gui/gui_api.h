@@ -1684,6 +1684,14 @@ typedef struct gui_api_s
        external per-emit work such as a scene-texture flip with an actual emit). */
     bool ( *frame_dirty )( void );
 
+    /* volatile_live -- true while at least one volatile block (volatile_cb) would actually patch
+       on an idle frame: registered, on screen, its window's cached slot current.  A host that
+       runs its OWN pacing and block-waits on input once wants_redraw/frame_dirty settle must add
+       this to the gate: volatile blocks advance only when a frame runs, so a blocking wait
+       freezes them until a timeout / spurious wakeup and the animation stutters at the wait
+       interval.  frame_pace folds this in internally, same as wants_redraw. */
+    bool ( *volatile_live )( void );
+
     /* set_force_redraw -- pins frame_dirty (and so frame_begin's return) true every frame,
        defeating the retained-cache clean-frame skip so the UI rebuilds and re-renders
        unconditionally.  Off by default.  Two uses: a debug lever to isolate a "did not update

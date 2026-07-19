@@ -914,8 +914,15 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
                So keep ticking until a genuinely CLEAN frame is produced (nothing left to draw),
                then block; OS input wakes it, capped by editor_timeout_ms.  Cost is at most one
-               extra clean-check frame after interaction stops -- then it idles at zero cost. */
-            bool gui_settling = s_gui_inited && gui() && ( gui()->wants_redraw() || gui()->frame_dirty() );
+               extra clean-check frame after interaction stops -- then it idles at zero cost.
+
+                 volatile_live : live volatile blocks (gui volatile_cb) patch on idle frames but
+                                 advance only when a frame RUNS -- blocking here freezes them
+                                 until a timeout / spurious wakeup, stuttering the animation at
+                                 the wait interval.  Keep frame cadence while any are on screen;
+                                 the moment they leave (window closed / scrolled out / dormant)
+                                 this drops false and the zero-cost block resumes. */
+            bool gui_settling = s_gui_inited && gui() && ( gui()->wants_redraw() || gui()->frame_dirty() || gui()->volatile_live() );
             if ( gui_settling )
             {
                 if ( g_sleep_debug ) printf( "[host] settle frame  (no block)\n" );

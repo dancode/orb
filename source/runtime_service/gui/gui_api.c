@@ -405,6 +405,7 @@ const gui_api_t g_gui_api_struct =
     .set_edit_key_hook                  = gui_set_edit_key_hook,
     .wants_redraw                       = gui_wants_redraw,
     .frame_dirty                        = gui_frame_dirty,
+    .volatile_live                      = gui_volatile_live,
     .set_force_redraw                   = gui_set_force_redraw,
     .force_redraw                       = gui_force_redraw,
 };
