@@ -515,6 +515,7 @@ extern gui_id_t g_gui_dash_window_id;
                                               s_draw with the frozen prefix at every draw_reset
                                               while frozen; live band-0 pushes are suppressed
                                               at the source (STEP_EMIT_SUPPRESSED).
+
         debug/gui_frame_overlay.c hotkeys  -- phase-1 controls (F8 freeze/release, , . step);
                                               a stepper window replaces them in a later phase.
 
