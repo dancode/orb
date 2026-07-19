@@ -880,17 +880,25 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
 static void
 nav_finish( void )
 {
-    if ( g_ctx->nav.lane )
-        nav_resolve_lane();
-    else if ( g_ctx->nav.tab != 0 )
-        nav_resolve_tab();
-    else if ( g_ctx->nav.page != 0 )
-        nav_resolve_page();
-    else if ( g_ctx->nav.home != 0 )
-        nav_resolve_home();
-    else if ( g_ctx->nav.move_dir >= 0 )
-        nav_resolve_move();
+    /* Structural resolvers only run against a COMPLETE list.  A dormant frame builds a partial
+       (type-ahead-labels-only) list -- see nav.reg_all below -- so a wake keypress (Tab/arrow,
+       which set nav.active this frame) resolves to nothing here and instead lands next frame
+       through the first-focus recovery, against the full list this frame's emission builds. */
+    bool full = g_ctx->nav.list_full;
 
+    if ( g_ctx->nav.lane )
+        { if ( full ) nav_resolve_lane(); }
+    else if ( g_ctx->nav.tab != 0 )
+        { if ( full ) nav_resolve_tab(); }
+    else if ( g_ctx->nav.page != 0 )
+        { if ( full ) nav_resolve_page(); }
+    else if ( g_ctx->nav.home != 0 )
+        { if ( full ) nav_resolve_home(); }
+    else if ( g_ctx->nav.move_dir >= 0 )
+        { if ( full ) nav_resolve_move(); }
+
+    /* Type-ahead is exempt: its domain is exactly the labeled items, which register on dormant
+       frames too, so its view of the list is identical either way. */
     if ( g_ctx->nav.type_dirty )
         nav_resolve_typeahead();
 
@@ -908,6 +916,17 @@ nav_finish( void )
 
     g_ctx->nav.item_count = 0;   /* fresh list; this frame's items append during emission */
     nav_choose_window();
+
+    /* Decide the registration gate for the emission about to run: while the keyboard is fully
+       disengaged, plain widgets skip the list append (nav_item_register) and only type-ahead
+       candidates enter (nav_item_stamp_label).  Any engagement -- a nav key set active this
+       frame, a live cursor, menu-bar mode, a value edit -- builds the full list.  list_full
+       tells NEXT frame's resolvers what kind of list they are looking at. */
+    g_ctx->nav.reg_all = ( g_ctx->nav.active
+                        || g_ctx->nav.id      != GUI_ID_NONE
+                        || g_ctx->nav.bar_win != GUI_ID_NONE
+                        || g_ctx->nav.edit_id != GUI_ID_NONE );
+    g_ctx->nav.list_full = g_ctx->nav.reg_all;
 }
 
 /*----------------------------------------------------------------------------------------------

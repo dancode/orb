@@ -138,6 +138,15 @@ nav_scroll_chase( gui_rect_t r )
 static void
 nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kind_t kind )
 {
+    /* Dormant gate: while the keyboard is fully disengaged (nav_finish cleared reg_all -- no
+       cursor, not active, no menu bar, no value edit) the list append below is bookkeeping no
+       resolver will read, so skip it.  Everything below is inert anyway then (no cursor means
+       is_cur can never hit).  Type-ahead candidates still enter via nav_item_stamp_label, and
+       the first Tab/arrow sets nav.active so the NEXT emission registers fully and the
+       first-focus recovery lands the cursor -- one frame, the lag nav already runs on. */
+    if ( !g_ctx->nav.reg_all )
+        return;
+
     bool is_cur = ( id == g_ctx->nav.id );
     if ( is_cur )
         g_ctx->nav.id_seen = true;
@@ -152,7 +161,22 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kin
     if ( placed && g_ctx->nav.first_item == GUI_ID_NONE )
         g_ctx->nav.first_item = id;   /* first-focus / recovery landing spot */
 
-    if ( g_ctx->nav.item_count < GUI_NAV_ITEMS_MAX )
+    if ( g_ctx->nav.item_count >= GUI_NAV_ITEMS_MAX )
+    {
+        /* List full: items past the cap never register, so Tab / arrows silently cannot reach
+           them.  Warn once so a keyboard dead zone in a huge window traces to this cap (and to
+           rows_clip as the usual fix) instead of reading as a nav bug. */
+        static bool warned = false;
+        if ( !warned )
+        {
+            printf( "[gui] WARNING: nav item list full (%u) -- further items are unreachable by "
+                    "keyboard nav this frame. Virtualize rows (rows_clip) or raise "
+                    "GUI_NAV_ITEMS_MAX (gui_internal.h).\n", (unsigned)GUI_NAV_ITEMS_MAX );
+            fflush( stdout );
+            warned = true;
+        }
+    }
+    else
     {
         gui_nav_item_t* it = &g_ctx->nav.items[ g_ctx->nav.item_count++ ];
         it->id       = id;
@@ -245,6 +269,27 @@ static void
 nav_item_stamp_label( gui_id_t id, const char* label )
 {
     if ( s_scope.flags & GUI_ITEM_NO_TYPEAHEAD ) return;
+
+    /* Dormant-frame append: nav_item_register skipped this item (keyboard disengaged), but a
+       LABELED item is a type-ahead candidate and type-ahead must be able to engage nav from
+       cold -- so the labeled subset always registers.  Mirror the item_state early-outs that
+       would have prevented the registration (disabled / deaf / replay / wrong nav window). */
+    if ( !g_ctx->nav.reg_all )
+    {
+        if ( s_scope.win != g_ctx->nav.win ) return;
+        if ( ( s_scope.flags & GUI_ITEM_DISABLED ) || !g_ctx->listening || s_replay_mode ) return;
+        if ( g_ctx->nav.item_count >= GUI_NAV_ITEMS_MAX ) return;
+
+        gui_nav_item_t* nit = &g_ctx->nav.items[ g_ctx->nav.item_count++ ];
+        nit->id        = id;
+        nit->rect      = s_scope.last_rect;
+        nit->region    = s_scope.nav.placed ? s_scope.nav.region : 0;
+        nit->line      = s_scope.nav.placed ? s_scope.nav.line   : 0;
+        nit->chrome    = !s_scope.nav.placed;
+        nit->drag_kind = false;   /* a labeled selectable is never an ITEM_DRAG widget */
+        nit->label[ 0 ] = 0;      /* filled below */
+    }
+
     if ( g_ctx->nav.item_count == 0 ) return;
 
     gui_nav_item_t* it = &g_ctx->nav.items[ g_ctx->nav.item_count - 1 ];

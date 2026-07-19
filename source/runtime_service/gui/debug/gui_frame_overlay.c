@@ -203,6 +203,18 @@ gui_perf_overlay( int mode )
                 gui_textf( "st tiny  %u/%u/%u", su.tiny_live,  su.tiny_used,  su.tiny_cap  );
                 gui_textf( "st small %u/%u/%u", su.small_live, su.small_used, su.small_cap );
                 gui_textf( "st big   %u/%u/%u", su.big_live,   su.big_used,   su.big_cap   );
+
+                /* Fixed-pool pressure: used vs cap for the per-frame emit pools that fail
+                   silently (or nearly so) when they fill.  Watch these approach their caps
+                   under load and raise the caps BEFORE labels drop / clips go wrong / nav
+                   items fall off the list.  nav is this frame's live count (the overlay
+                   emits last, after every window has registered its items). */
+                gui_new_line( 2.0f );
+                gui_textf( "cmds  %u/%u", rs.cmd_count,      (u32)GUI_MAX_CMDS       );
+                gui_textf( "segs  %u/%u", rs.seg_count,      (u32)GUI_MAX_SEGS       );
+                gui_textf( "clips %u/%u", rs.clip_count,     (u32)GUI_MAX_CLIP_RECTS );
+                gui_textf( "text  %u/%u", rs.text_pool_used, (u32)GUI_MAX_TEXT_POOL  );
+                gui_textf( "nav   %u/%u", g_ctx->nav.item_count, (u32)GUI_NAV_ITEMS_MAX );
             }
         }
 

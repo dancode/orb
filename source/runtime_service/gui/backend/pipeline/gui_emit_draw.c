@@ -268,6 +268,24 @@ clip_append( gui_rect_t r )
         s_draw.clip_hash_cache [ ci ] = h;
         return ci;
     }
+
+    /* Saturation is a VISUAL corruption, not a drop: every clip past the cap shares slot cap-2's
+       rect, so content scissors against some other region's box.  Without a report this reads as
+       an inexplicable clipping glitch, so warn once (the loud-overflow rule every other pool
+       already follows). */
+    {
+        static bool warned = false;
+        if ( !warned )
+        {
+            printf( "[gui] WARNING: clip table full (%u distinct scissor rects this frame) -- "
+                    "further clips share a wrong rect. Raise GUI_MAX_CLIP_RECTS (gui.h).\n",
+                    (unsigned)GUI_MAX_CLIP_RECTS );
+            fflush( stdout );
+            warned = true;
+        }
+        ORB_ASSERT_MSG_ONCE( false, "gui clip table saturated -- clips share a wrong scissor rect; "
+                                    "raise GUI_MAX_CLIP_RECTS (gui.h)" );
+    }
     return (u8)( GUI_MAX_CLIP_RECTS - 2u );
 }
 
@@ -921,7 +939,22 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     /* Copy into the text pool so callers can use stack-local buffers (textf, snprintf labels).
        The pool pointer is valid until draw_reset clears it at the top of the next frame_begin. */
     if ( s_draw.text_pool_used + len + 1 > GUI_MAX_TEXT_POOL )
-        return;   /* pool exhausted: drop the label rather than store a dangling pointer */
+    {
+        /* Pool exhausted: drop the label rather than store a dangling pointer -- but never
+           silently.  Text vanishing with rects still painting reads as a font bug, not a pool
+           cap, so name the real cause once (the loud-overflow rule). */
+        static bool warned = false;
+        if ( !warned )
+        {
+            printf( "[gui] WARNING: frame text pool full (%u bytes) -- further text this frame "
+                    "is dropped. Raise GUI_MAX_TEXT_POOL (gui.h).\n", (unsigned)GUI_MAX_TEXT_POOL );
+            fflush( stdout );
+            warned = true;
+        }
+        ORB_ASSERT_MSG_ONCE( false, "gui text pool exhausted -- labels dropped; raise "
+                                    "GUI_MAX_TEXT_POOL (gui.h)" );
+        return;
+    }
     u32   off = s_draw.text_pool_used;   /* offset stored in the cmd; pointer stays local */
     char* dst = s_draw.text_pool + off;
     memcpy( dst, str, len );

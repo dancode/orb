@@ -1688,6 +1688,8 @@ typedef struct
 {
     u32 cmd_count;      // semantic draw commands the UI emitted
     u32 clip_count;     // clip table entries referenced by those commands (debug band excluded)
+    u32 seg_count;      // command segments cut this frame (per-(win,z,vp,font,band) spans)
+    u32 text_pool_used; // bytes of the per-frame text pool consumed (cap: GUI_MAX_TEXT_POOL)
     u32 vert_count;     // tessellated vertices (total, including retained)
     u32 tri_count;      // tessellated triangles (total, including retained)            
     u32 draw_calls;     // GPU indexed draw calls (batches), summed over surfaces       

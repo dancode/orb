@@ -351,6 +351,17 @@ typedef struct
     gui_nav_item_t items[ GUI_NAV_ITEMS_MAX ];
     u32            item_count;
 
+    /* Registration gate (decided per frame in nav_finish for the emission about to run).  While
+       the keyboard is fully disengaged (no cursor, not active, no menu bar, no value edit) plain
+       widgets skip the per-item list append -- pure bookkeeping waste in a mouse-only session.
+       Type-ahead candidates (labeled selectables) still enter via nav_item_stamp_label, so a
+       typed letter engages exactly as before; the first Tab/arrow engages and lands through the
+       first-focus recovery one frame later.  list_full records whether the list the RESOLVERS
+       see (last frame's) was built ungated -- a partial (labels-only) list must never be used
+       for structural moves. */
+    bool        reg_all;    // emission side: register every item this frame
+    bool        list_full;  // resolve side: last frame's list was complete
+
     /* Menu-bar navigation -- a small state machine layered on the nav cursor + popup stack, entered
        by Alt (toggle) or an Alt+letter mnemonic.  While active, nav lives either on the bar entries
        (in_menus false: win is the bar window, a highlighted entry drops its menu) or inside the open
