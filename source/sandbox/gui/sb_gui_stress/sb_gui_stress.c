@@ -176,18 +176,17 @@ stress_widget_wall( i32 rows )
     gui()->window_set_next_size( 560.0f, 620.0f, GUI_COND_ONCE );
     if ( gui()->window_begin( "Widget Wall", GUI_WIN_NONE ) )
     {
+        /* Fixed row pitch for BOTH paths (rows_clip needs one, and bare cols() auto rows would
+           key off the first item's text height) -- so the toggle A/Bs cost, not geometry. */
+        f32 rh = gui()->sz_rows_h( 1 ) - 2.0f * gui()->sz_row_gap();   /* one WIDGET_H row */
+        gui()->row_cols( rh, ( f32[] ){ 70.0f, 60.0f, 1.0f, 60.0f, GUI_END } );
+
         i32 first = 0, last = rows;
         if ( s_clip )
         {
-            /* Clipped: pin the row pitch (rows_clip needs fixed pitch; bare cols() auto rows key
-               off the first item, a text run) and emit only the visible span. */
-            f32 rh = gui()->sz_rows_h( 1 ) - 2.0f * gui()->sz_row_gap();   /* one WIDGET_H row */
-            gui()->row_cols( rh, ( f32[] ){ 70.0f, 60.0f, 1.0f, 60.0f, GUI_END } );
             gui_span_t s = gui()->rows_clip( rows, rh );
             first = s.first;  last = s.last;
         }
-        else
-            gui()->cols( ( f32[] ){ 70.0f, 60.0f, 1.0f, 60.0f, GUI_END } );
 
         for ( i32 i = first; i < last; ++i )
         {

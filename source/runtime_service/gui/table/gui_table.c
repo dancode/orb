@@ -563,7 +563,9 @@ table_draw_header( gui_table_t* t )
         f32 hvx1 = t->outer_rect.x + t->outer_rect.w;
         draw_set_text_clip_x( lblx > hvx0 ? lblx : hvx0,
                               lblx + lblw < hvx1 ? lblx + lblw : hvx1 );
-        draw_text_fit_n( lblx, hy + (f32)WIDGET_GAP, COL_TEXT, lbl, 0xFFFFFFFFu, lblw );
+        /* Vertically centered in the strip (a fixed gap offset drifts whenever the metric ramp
+           changes the header height / glyph size ratio). */
+        draw_text_fit_n( lblx, hy + ( hh - font_char_h() ) * 0.5f, COL_TEXT, lbl, 0xFFFFFFFFu, lblw );
 
         /* Sort indicator triangle on the active sort column. */
         if ( sort_col == (i8)i )
