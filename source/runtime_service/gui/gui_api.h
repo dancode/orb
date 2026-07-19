@@ -1168,9 +1168,10 @@ typedef struct gui_api_s
        focus-gain content and leaves).  Arrow keys move the caret in 2D with a sticky
        preferred column, Home/End are line-local (Ctrl jumps to the buffer ends), PageUp/Dn
        page by the visible height.  Selection, clipboard, and undo/redo match input_text;
-       paste keeps newlines.  No word wrap: long lines pan, chasing the caret, and vertical
-       overflow scrolls line-snapped behind a right-edge scrollbar (wheel works over the
-       box).  Returns true on any frame that modifies the buffer. */
+       paste keeps newlines.  No word wrap: long lines pan, chasing the caret.  The box is a
+       child region (the listbox recipe), so vertical overflow gets the standard region
+       scrollbar / wheel / clipping, and the label trails the box's right edge.  Returns true
+       on any frame that modifies the buffer. */
     bool ( *input_text_multiline )( const char* label, char* buf, u32 bufsz, f32 h );
 
     /* input_int / _float / _double -- numeric text field that parses on Enter or focus loss.

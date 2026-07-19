@@ -70,7 +70,7 @@ ex_flag_checkbox( const char* label, u32* flags, u32 bit )
 static ex_demo_t s_demos[] =
 {
     /* category    menu item          window title        description                                          fn                      open */
-    { "Widgets",  "Basic Widgets",    "Basic Widgets",    "button / checkbox / radio / progress / repeat",     ex_widgets_basic,       true  },
+    { "Widgets",  "Basic Widgets",    "Basic Widgets",    "button / checkbox / radio / progress / repeat",     ex_widgets_basic,       false  },
     { "Widgets",  "Text & Trees",     "Text & Trees",     "text runs / wrapping / headers / tree nodes",       ex_widgets_text,        false },
     { "Widgets",  "Text Inputs",      "Text Inputs",      "input_text / hints / change callback / focus",      ex_widgets_input_text,  false },
     { "Widgets",  "Numeric Inputs",   "Numeric Inputs",   "input_int/float/double / steps / vector rows",      ex_widgets_numeric,     false },
@@ -78,7 +78,7 @@ static ex_demo_t s_demos[] =
     { "Widgets",  "Color Editors",    "Color Editors",    "color_edit3/4 + display flags",                     ex_widgets_color,       false },
     { "Widgets",  "Selection & Lists","Selection & Lists","selectable / combo / listbox + begin/end forms",    ex_widgets_selection,   false },
     { "Widgets",  "Tab Bar",          "Tab Bar",          "tab_bar_begin / tab_item_begin + closeable tabs",   ex_widgets_tabs,        false },
-    { "Widgets",  "Multiline Text",   "Multiline Text",   "input_text_multiline -- text area / 2D caret",      ex_widgets_multiline,   false },
+    { "Widgets",  "Multiline Text",   "Multiline Text",   "input_text_multiline -- text area / 2D caret",      ex_widgets_multiline,   true  },
 
     { "Layout",   "Rows & Columns",   "Rows & Columns",   "stack / row / cols / row2..4 / layout desc",        ex_layout_rows,         false },
     { "Layout",   "Field Forms",      "Field Forms",      "form / field_split / field_label_left/right",       ex_layout_fields,       false },

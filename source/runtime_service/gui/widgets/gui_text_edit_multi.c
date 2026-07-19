@@ -9,29 +9,26 @@
     column), Home / End are line-local with Ctrl jumping to the buffer ends, and selection /
     clipboard / undo mirror the single-line engine byte-for-byte where the semantics agree.
 
-    Layout: one field-label row of caller-chosen height (0 = eight lines); the box scrolls
-    internally in both axes rather than growing.  No word wrap (like Dear ImGui): long lines
-    pan horizontally, chasing the caret the same way the single-line field does.
-
-    Vertical scroll is LINE-SNAPPED: there is no vertical text clip primitive, so a row is
-    drawn fully inside the box interior or not at all, and snapping the scroll to whole lines
-    keeps that from reading as pop-in (the terminal model).  Horizontal overflow reuses the
-    glyph-level clip window (draw_push_text_clip_n) per row, so the widget never opens a
-    scissor and stays merged in the window batch -- the self-fit-over-clips rule.  When the
-    content overflows vertically a scrollbar_widget rides in a reserved gutter at the right
-    edge (inside the box, outside the text hit rect), and the wheel scrolls the hovered box
-    through the same innermost-wins claim the region engine uses (s_build.wheel_used).
+    Structure: the box is a CHILD REGION (the listbox recipe) whose body is one canvas cell
+    spanning the full text content -- the region engine owns everything scroll-shaped:
+    vertical scrollbar in its reserved gutter, wheel claim (innermost wins), scroll clamping,
+    and the view scissor plus the interaction clip that lets the bar win hover over content
+    beneath it.  The editor never touches a scrollbar or the wheel; it only writes the
+    region's scroll_y to chase the caret (next frame, the standard region settle).  No word
+    wrap (like Dear ImGui): long lines pan horizontally inside the cell, chasing the caret
+    through the same glyph-level clip window the single-line field uses, so the widget adds
+    no scissor of its own.
 
     Undo / redo is a private ring (the single-line ring is 256 bytes -- too small here) with
     the same shape: snapshots after each committed edit, char-burst grouping, Escape-revert
     copy taken at focus gain.  A buffer too large for a snapshot slot marks the history dead
     until the next focus gain, so undo never restores a truncated buffer.
 
-    Per-id persisted state (caret, anchor, both scrolls, preferred column, blink) rents a
+    Per-id persisted state (caret, anchor, horizontal pan, preferred column, blink) rents a
     big-class slot from the keyed state pool.  Included by gui.c after widgets/gui_input.c so
     the single-line engine's byte-offset helpers (char_class, word_bounds, word_click_off,
-    edit_strlen, text_x_at, text_offset_at), scrollbar_widget, and the paint helpers are all
-    in scope.
+    edit_strlen, text_x_at, text_offset_at) and the paint helpers are all in scope; the child
+    bracket resolves through the gui_host.h declarations like every other compound widget.
 
 ==============================================================================================*/
 // clang-format off
@@ -40,10 +37,10 @@
     Multiline edit state -- persisted per-id across frames (big-class keyed state slot).
 
     cursor / anchor are byte offsets with the same selection contract as the single-line field:
-    [min,max) highlighted, equal means a bare caret.  scroll_x chases the caret; scroll_y is
-    line-snapped and owned jointly by the caret chase, the wheel, and the gutter scrollbar.
-    pref_x is the sticky preferred column for vertical caret movement (the x the caret aims for
-    when Up / Down crosses a shorter line); pref_valid gates it because 0.0 is a real column.
+    [min,max) highlighted, equal means a bare caret.  scroll_x is the horizontal pan chasing
+    the caret (vertical scroll belongs to the child region, not this widget).  pref_x is the
+    sticky preferred column for vertical caret movement (the x the caret aims for when Up /
+    Down crosses a shorter line); pref_valid gates it because 0.0 is a real column.
 ----------------------------------------------------------------------------------------------*/
 
 typedef struct
@@ -53,15 +50,14 @@ typedef struct
     u32  anchor;       /* passive end of the selection; cursor == anchor -> none */
     u32  dbl_lo;       /* word start of the double-clicked word (word-drag mode) */
     u32  dbl_hi;       /* word end of the double-clicked word  (word-drag mode)  */
-    f32  scroll_x;     /* horizontal pixel scroll (caret chase) */
-    f32  scroll_y;     /* vertical pixel scroll, snapped to whole lines */
+    f32  scroll_x;     /* horizontal pixel pan (caret chase) */
     f32  pref_x;       /* preferred caret column (pixels) for vertical movement */
     u8   word_sel;     /* nonzero while in word-select drag (set by double-click) */
     u8   pref_valid;   /* pref_x holds a live column (0.0 is a real column, so a flag) */
     u8   _pad[ 2 ];
 
 } gui_medit_state_t;
-/* 40 bytes -- big-class tenant (GUI_STATE_BIG_CAP). */
+/* 36 bytes -- big-class tenant (GUI_STATE_BIG_CAP). */
 
 /* Selection bounds from the caret/anchor pair (u32 twin of edit_sel). */
 static void
@@ -642,19 +638,21 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
 /*----------------------------------------------------------------------------------------------
     Mouse -- 2D click-to-caret, Shift-extend, double-click word select, drag select.
 
-    The same capture model as the single-line field: st.active holds the drag past the box
-    edges, and medit_offset_at clamps the out-of-range row / x, so sweeping above or below
-    the box extends the selection line by line (the caret chase then scrolls it into view).
+    `content` is the canvas cell rect (already offset by the region scroll), so the mapping is
+    plain rect-local math plus the horizontal pan.  The same capture model as the single-line
+    field: st.active holds the drag past the box edges, and medit_offset_at clamps the
+    out-of-range row / x, so sweeping above or below the box extends the selection line by
+    line (the caret chase then scrolls it into view).
 ----------------------------------------------------------------------------------------------*/
 
 static void
-medit_apply_mouse( gui_rect_t box, gui_item_state_t st, char* buf, u32 len,
+medit_apply_mouse( gui_rect_t content, gui_item_state_t st, char* buf, u32 len,
                    gui_medit_state_t* es, bool shift, f32 line_h, bool* blink_io )
 {
     if ( !( st.pressed || st.active ) ) return;
 
-    f32 px  = s_io.mouse_x - ( box.x + WIDGET_PAD ) + es->scroll_x;
-    f32 py  = s_io.mouse_y - ( box.y + WIDGET_PAD ) + es->scroll_y;
+    f32 px  = s_io.mouse_x - ( content.x + WIDGET_PAD ) + es->scroll_x;
+    f32 py  = s_io.mouse_y - content.y;
     i32 row = ( py < 0.0f ) ? -1 : (i32)( py / line_h );
     u32 off = medit_offset_at( buf, len, row, px );
 
@@ -713,84 +711,72 @@ medit_apply_mouse( gui_rect_t box, gui_item_state_t st, char* buf, u32 len,
 }
 
 /*----------------------------------------------------------------------------------------------
-    Scroll + paint -- wheel / caret-chase / scrollbar folded into the line-snapped scroll_y,
-    then per-row selection highlight, glyph-clipped text, and the blinking caret.
+    Caret chase + paint -- the editor's only scroll writes, then per-row selection highlight,
+    pan-clipped text, and the blinking caret into the canvas cell.
 
-    `follow` is this frame's caret activity (any key or click): only then does the vertical
-    chase run, so wheel and scrollbar scrolling are free to leave the caret off-screen.
+    Vertical: on caret activity the region's scroll_y is written to bring the caret's row into
+    the view; the region clamps and applies it next frame (the standard one-frame settle every
+    region scroll has).  Wheel and scrollbar scrolling belong to the region and are free to
+    leave the caret off-screen.  Horizontal: scroll_x pans within the cell, chasing the caret
+    through the glyph clip window every frame like the single-line field.
+
+    Painting iterates only the rows intersecting the region view (the child's scissor would
+    clip the rest anyway; the walk just skips the work).  Partial rows at the view edges are
+    correct because the child clips -- no line snapping needed.
 ----------------------------------------------------------------------------------------------*/
 
 static void
-medit_scroll_and_paint( gui_id_t id, gui_rect_t box, char* buf, u32 len, gui_medit_state_t* es,
-                        gui_item_state_t st, bool focused, bool follow, bool vbar, u32 vis_rows )
+medit_chase_and_paint( gui_rect_t content, char* buf, u32 len, gui_medit_state_t* es,
+                       bool focused, bool follow )
 {
     const f32 line_h = font_line_h();
     const f32 char_h = font_char_h();
-    u32       nlines = medit_line_count( buf, len );
 
-    f32 x0    = box.x + WIDGET_PAD;
-    f32 y0    = box.y + WIDGET_PAD;
-    f32 vis_w = box.w - 2.0f * WIDGET_PAD - ( vbar ? SLIDER_KNOB_W + WIN_BORDER : 0.0f );
-    if ( vis_w < 0.0f ) vis_w = 0.0f;
+    layout_frame_t* f      = lf();
+    f32             view_h = f->view_h;
 
-    f32 view_h     = (f32)vis_rows * line_h;
-    f32 max_scroll = ( nlines > vis_rows ) ? (f32)( nlines - vis_rows ) * line_h : 0.0f;
-
-    /* Wheel over the box: the same innermost-wins claim the region engine uses, so the
-       parent window does not also scroll. */
-    if ( st.hover && !s_build.wheel_used && interact_idle() && s_io.mouse_wheel != 0.0f )
-    {
-        es->scroll_y      -= s_io.mouse_wheel * 3.0f * line_h;
-        s_build.wheel_used = true;
-    }
-
-    /* Vertical caret chase, line-granular: scroll the caret's row fully into view. */
+    /* Vertical caret chase: write the region's scroll target (applied next frame). */
     u32 crow; f32 cx;
     medit_caret_rowx( buf, es->cursor, &crow, &cx );
-    if ( follow )
+    if ( follow && f->scroll )
     {
-        if ( (f32)crow * line_h < es->scroll_y )
-            es->scroll_y = (f32)crow * line_h;
-        if ( (f32)( crow + 1u ) * line_h > es->scroll_y + view_h )
-            es->scroll_y = (f32)( crow + 1u ) * line_h - view_h;
+        f32 cy = (f32)crow * line_h;
+        f32 sy = f->scroll->scroll_y;
+        if ( cy < sy )                   sy = cy;
+        if ( cy + line_h > sy + view_h ) sy = cy + line_h - view_h;
+        f32 max_sy = (f32)medit_line_count( buf, len ) * line_h - view_h;
+        if ( max_sy < 0.0f ) max_sy = 0.0f;
+        if ( sy > max_sy )   sy = max_sy;
+        if ( sy < 0.0f )     sy = 0.0f;
+        f->scroll->scroll_y = sy;
     }
 
-    /* Gutter scrollbar (widgets/gui_scrollbar.c owns the grab and the paint). */
-    if ( vbar )
-    {
-        gui_rect_t track = { box.x + box.w - WIN_BORDER - SLIDER_KNOB_W, box.y + WIN_BORDER,
-                             SLIDER_KNOB_W, box.h - 2.0f * WIN_BORDER };
-        scrollbar_widget( id, track, true, (f32)nlines * line_h, view_h, &es->scroll_y );
-    }
-
-    /* Clamp, then snap to whole lines: with no vertical clip primitive a row draws fully or
-       not at all, and the snap keeps that from reading as pop-in.  max_scroll is a line
-       multiple by construction, so the snap cannot push past it. */
-    if ( es->scroll_y > max_scroll ) es->scroll_y = max_scroll;
-    if ( es->scroll_y < 0.0f )       es->scroll_y = 0.0f;
-    es->scroll_y = (f32)(u32)( es->scroll_y / line_h + 0.5f ) * line_h;
-
-    /* Horizontal caret chase, every frame like the single-line field. */
+    /* Horizontal caret chase within the cell, every frame like the single-line field. */
+    f32 vis_w = content.w - 2.0f * WIDGET_PAD;
+    if ( vis_w < 0.0f ) vis_w = 0.0f;
     if ( cx - es->scroll_x < 0.0f )  es->scroll_x = cx;
     if ( cx - es->scroll_x > vis_w ) es->scroll_x = cx - vis_w;
 
-    f32 text_x  = x0 - es->scroll_x;
-    f32 clip_x0 = x0;
-    f32 clip_x1 = x0 + vis_w;
+    f32 text_x  = content.x + WIDGET_PAD - es->scroll_x;
+    f32 clip_x0 = content.x + WIDGET_PAD;
+    f32 clip_x1 = content.x + content.w - WIDGET_PAD;
 
     u32  sel_lo, sel_hi;
     bool has_sel;
     medit_sel( es, &sel_lo, &sel_hi, &has_sel );
 
-    /* Row walk: visible lines only, each hard-cut to the horizontal clip window at emit time
-       (no scissor, no batch split -- the single-line field's glyph clip, once per row). */
-    u32 first = (u32)( es->scroll_y / line_h + 0.5f );
-    u32 ls    = medit_row_start( buf, len, first );
+    /* Visible row band from the interaction clip (the child view); the scissor makes edge
+       rows correct, this walk just skips the fully hidden ones. */
+    f32 band_y0 = s_scope.clip.y;
+    f32 band_y1 = s_scope.clip.y + s_scope.clip.h;
+    f32 rel     = band_y0 - content.y;
+    u32 first   = ( rel > 0.0f ) ? (u32)( rel / line_h ) : 0u;
+    u32 ls      = medit_row_start( buf, len, first );
 
     for ( u32 row = first; ; ++row )
     {
-        f32 ry = y0 + (f32)( row - first ) * line_h;
-        if ( ry + char_h > box.y + box.h - WIDGET_PAD + 0.5f ) break;
+        f32 ry = content.y + (f32)row * line_h;
+        if ( ry > band_y1 ) break;
 
         u32 le = medit_line_end( buf, len, ls );
 
@@ -830,35 +816,30 @@ medit_scroll_and_paint( gui_id_t id, gui_rect_t box, char* buf, u32 len, gui_med
 }
 
 /*----------------------------------------------------------------------------------------------
-    medit_field_edit -- the multiline engine over a caller-carved box.
+    medit_field_edit -- the editor body inside the open child region.
 
-    Owns the item claim (hit rect excludes the scrollbar gutter so a bar press never seats
-    the caret), the box frame draw, and the keyboard / mouse / scroll / paint sequence.
-    Returns true on any buffer modification this frame.
+    Reserves one canvas cell spanning the full text content (at least the view, so a click in
+    the empty area below the last line still lands on the editor), claims it with the standard
+    item protocol -- the interaction clip and emission order then arbitrate against the
+    region's own scrollbar exactly as they do for every widget -- and runs the keyboard /
+    mouse / chase / paint sequence.  Returns true on any buffer modification this frame.
 ----------------------------------------------------------------------------------------------*/
 
 static bool
-medit_field_edit( gui_id_t id, gui_rect_t box, char* buf, u32 bufsz )
+medit_field_edit( gui_id_t id, char* buf, u32 bufsz )
 {
     gui_medit_state_t* es  = GUI_STATE( gui_medit_state_t, id );
     u32                len = edit_strlen( buf, bufsz );
 
-    const f32 line_h = font_line_h();
-    f32       vis_h  = box.h - 2.0f * WIDGET_PAD;
-    u32       vis_rows = (u32)( vis_h / line_h );
-    if ( vis_rows < 1u ) vis_rows = 1u;
+    const f32 line_h    = font_line_h();
+    f32       content_h = (f32)medit_line_count( buf, len ) * line_h;
+    f32       avail_h   = gui_content_avail().y;
+    gui_rect_t content  = cell_next( content_h > avail_h ? content_h : avail_h );
 
-    /* Gutter decision from this frame's pre-edit content (an overflowing edit shows the bar
-       next frame -- the same one-frame settle the region gutters have). */
-    bool vbar = (f32)medit_line_count( buf, len ) * line_h > vis_h + 0.5f;
+    gui_item_state_t st = item_state( id, content, ITEM_FOCUSABLE );
 
-    gui_rect_t hit = box;
-    if ( vbar ) hit.w -= SLIDER_KNOB_W + WIN_BORDER;
-
-    gui_item_state_t st = item_state( id, hit, ITEM_FOCUSABLE );
-
-    draw_fill( box, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );
-    draw_outline( box, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
+    /* Field-tinted fill under the text: the input-box read on top of the child's own frame. */
+    draw_fill( content, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );
 
     /* I-beam over the text area, held through a selection drag (st.active). */
     if ( st.hover || st.active )
@@ -876,17 +857,19 @@ medit_field_edit( gui_id_t id, gui_rect_t box, char* buf, u32 bufsz )
         if ( s_medit_undo.for_id != id )
             medit_undo_init( &s_medit_undo, id, buf, es->cursor, es->anchor );
 
-        bool shift = io_shift();
-        bool ctrl  = io_ctrl();
+        bool shift    = io_shift();
+        bool ctrl     = io_ctrl();
+        u32  vis_rows = (u32)( lf()->view_h / line_h );
+        if ( vis_rows < 1u ) vis_rows = 1u;
 
         medit_apply_keys( buf, bufsz, es, ctrl, shift, vis_rows, &len, &changed, &blink_reset );
-        medit_apply_mouse( box, st, buf, len, es, shift, line_h, &blink_reset );
+        medit_apply_mouse( content, st, buf, len, es, shift, line_h, &blink_reset );
 
         if ( blink_reset ) es->blink_t = 0.0f;
         else               es->blink_t += s_io.dt;
     }
 
-    medit_scroll_and_paint( id, box, buf, len, es, st, st.focused, blink_reset, vbar, vis_rows );
+    medit_chase_and_paint( content, buf, len, es, st.focused, blink_reset );
 
     /* Accumulate the edit flag for is_item_deactivated_after_edit (user/gui_query.c). */
     if ( changed )
@@ -896,7 +879,10 @@ medit_field_edit( gui_id_t id, gui_rect_t box, char* buf, u32 bufsz )
 }
 
 /*----------------------------------------------------------------------------------------------
-    input_text_multiline -- public entry: label split + box carve over the engine above.
+    input_text_multiline -- public entry: a child region (the listbox recipe) over the engine.
+
+    The child owns the frame, the scrollbar, the wheel, and the clip; the trailing label draws
+    past the box's right edge under the parent clip, exactly like listbox_end.
 ----------------------------------------------------------------------------------------------*/
 
 bool
@@ -905,10 +891,37 @@ gui_input_text_multiline( const char* label, char* buf, u32 bufsz, f32 h )
     if ( h <= 0.0f )
         h = font_line_h() * 8.0f + 2.0f * WIDGET_PAD;
 
-    gui_id_t   id    = item_id( label );
-    gui_rect_t box_r = draw_field_label( cell_next( h ), label,
-                                         font_char_h() * 3.0f, COL_TEXT_DIM );
-    return medit_field_edit( id, box_r, buf, bufsz );
+    /* Box width: fill the line after reserving the trailing label (the listbox sizing) -- but
+       never wider than the VISIBLE view.  content_avail reports the content column, and an
+       overflowing sibling (a long unwrapped text run) grows that column past the view; sizing
+       to it would seat this box under the window's scrollbar gutter and border, where its
+       opaque fill and hit rect fight the window chrome.  Passive rows can ride the overgrown
+       column (the bar overpaints and out-claims them); an interactive surface must not, so
+       clamp to the view right edge, mirrored by the same inset the column keeps on the left. */
+    layout_frame_t* pf    = lf();
+    f32             pen_x = gui_cursor_screen_pos().x;
+    f32             inset = pf->content_x - ( pf->outer.x + WIN_BORDER );
+    f32             w_vis = ( pf->outer.x + WIN_BORDER + pf->view_w ) - pen_x - inset;
+    f32             avail = gui_content_avail().x;
+    if ( avail > w_vis ) avail = w_vis;
+
+    f32 lab_w = ( label_vis_len( label ) > 0 ) ? label_width( label ) + WIDGET_PAD : 0.0f;
+    f32 w     = avail - lab_w;
+    if ( w < WIDGET_H * 4.0f ) w = WIDGET_H * 4.0f;
+
+    gui_child_begin( label, w, h, GUI_WIN_NONE );
+    gui_rect_t box = lf()->outer;                 /* the child's box, for the trailing label */
+    gui_stack();
+
+    bool changed = medit_field_edit( item_id( "##medit" ), buf, bufsz );
+
+    gui_child_end();
+
+    if ( label_vis_len( label ) > 0 )
+        draw_label( box.x + box.w + WIDGET_PAD, text_center_y( box.y, WIDGET_H ),
+                    COL_TEXT, label );
+
+    return changed;
 }
 
 // clang-format on

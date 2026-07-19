@@ -243,7 +243,7 @@ gui_listbox_end( void )
     --s_listbox_sp;
     u32          slot  = s_listbox_sp < LISTBOX_DEPTH ? s_listbox_sp : LISTBOX_DEPTH - 1;
     const char*  label = s_listbox_stack[ slot ].label;
-    gui_rect_t box   = s_listbox_stack[ slot ].box;
+    gui_rect_t   box   = s_listbox_stack[ slot ].box;
 
     /* Trailing label, drawn past the box's right edge and aligned to its first row (markers
        stripped by draw_label, like every label).  Drawn under the parent clip after child_end. */

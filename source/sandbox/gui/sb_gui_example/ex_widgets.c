@@ -609,11 +609,11 @@ ex_widgets_tabs( void )
 static void
 ex_widgets_multiline( void )
 {
-    if ( ex_begin( "Multiline Text", 560, 560, 0 ) )
+    if ( ex_begin( "Multiline Text", 560, 560, GUI_WIN_HSCROLL ))
     {
         gui()->stack();
         gui()->text( "Enter inserts a newline; Escape reverts and drops focus." );
-        gui()->text( "Arrows/PageUp/PageDn move in 2D; Home/End are line-local (Ctrl = ends)." );
+        gui()->text( "Arrows/PageUp/PageDn move in 2D; Home/End line-local." );
         gui()->separator();
 
         /* Default height (eight lines), labeled.  Change count shows the per-frame edit flag. */
