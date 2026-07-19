@@ -109,7 +109,17 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     else
     {
         layout_row_break( parent );       /* a flow child starts on its own line */
-        if ( w <= 0.0f ) w = parent->content_w;   /* default: fill the remaining content width */
+        if ( w <= 0.0f )
+        {
+            /* Default: fill the content width -- clamped to the visible track.  The content
+               column can run wider than the view (an overflowing sibling widened it), and a
+               child is an opaque interactive surface: defaulted to the full column it would
+               seat itself under the parent's scrollbar gutter and border.  The safe fill is
+               the glass, so passing 0 always "just works". */
+            w = parent->content_w;
+            f32 vis = parent->view.w - parent->pad.l - parent->pad.r;
+            if ( w > vis ) w = vis;
+        }
 
         /* A resizeable axis takes its size from the persisted user value, seeded once from the
            incoming w/h (a sensible 8-row default when h <= 0 -- RESIZE_Y supersedes auto-size). */

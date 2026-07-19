@@ -64,8 +64,7 @@ sublayout_open( gui_rect_t cell )
 
     f->sb_w = f->sb_h = 0.0f;
     f->show_v = f->show_h = false;
-    f->view_w = cell.w;
-    f->view_h = cell.h;
+    f->view   = cell;   /* the whole cell is visible: no border, no gutters */
 
     /* Content area = the whole cell (no pad, no scroll bias through the zeroed sink); opens
        undeclared -- declare a mode inside.  band_bottom lands on the cell bottom, so a grid

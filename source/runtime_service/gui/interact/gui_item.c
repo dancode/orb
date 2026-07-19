@@ -96,30 +96,30 @@ nav_scroll_chase( gui_rect_t r )
         layout_frame_t* f = &s_layout_stack[ i ];
         if ( f->flags & GUI_WIN_NOSCROLL ) continue;
 
-        f32 vx0 = f->outer.x + WIN_BORDER;   /* view box: the same gutter-adjusted extents the */
-        f32 vy0 = f->outer.y;                /* region's own scrollbars are sized against      */
+        f32 vx0 = f->view.x;   /* the region's resolved view rect: the same gutter-adjusted */
+        f32 vy0 = f->view.y;   /* extents the region's own scrollbars are sized against     */
 
         /* Overshoot per axis: pull the near edge in (top-aligning an item taller than the view),
            else the far edge.  Clamped into the scroll range measured last frame, so a chase can
            never scroll past the content -- the same clamp the wheel applies. */
         f32 dy = 0.0f;
-        if ( r.h > f->view_h - 2.0f * pad || r.y < vy0 + pad )
+        if ( r.h > f->view.h - 2.0f * pad || r.y < vy0 + pad )
             dy = r.y - ( vy0 + pad );
-        else if ( r.y + r.h > vy0 + f->view_h - pad )
-            dy = ( r.y + r.h ) - ( vy0 + f->view_h - pad );
+        else if ( r.y + r.h > vy0 + f->view.h - pad )
+            dy = ( r.y + r.h ) - ( vy0 + f->view.h - pad );
 
-        f32 max_y  = f->scroll->content_h - f->view_h;
+        f32 max_y  = f->scroll->content_h - f->view.h;
         if ( max_y < 0.0f ) max_y = 0.0f;
         f32 want_y = clampf( f->scroll->scroll_y + dy, 0.0f, max_y );
         dy = want_y - f->scroll->scroll_y;
 
         f32 dx = 0.0f;
-        if ( r.w > f->view_w - 2.0f * pad || r.x < vx0 + pad )
+        if ( r.w > f->view.w - 2.0f * pad || r.x < vx0 + pad )
             dx = r.x - ( vx0 + pad );
-        else if ( r.x + r.w > vx0 + f->view_w - pad )
-            dx = ( r.x + r.w ) - ( vx0 + f->view_w - pad );
+        else if ( r.x + r.w > vx0 + f->view.w - pad )
+            dx = ( r.x + r.w ) - ( vx0 + f->view.w - pad );
 
-        f32 max_x  = f->scroll->content_w - f->view_w;
+        f32 max_x  = f->scroll->content_w - f->view.w;
         if ( max_x < 0.0f ) max_x = 0.0f;
         f32 want_x = clampf( f->scroll->scroll_x + dx, 0.0f, max_x );
         dx = want_x - f->scroll->scroll_x;

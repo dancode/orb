@@ -172,6 +172,7 @@ const gui_api_t g_gui_api_struct =
     .sz_fit_row                         = gui_sz_fit_row,
     .sz_fit_col                         = gui_sz_fit_col,
     .content_avail                      = gui_content_avail,
+    .view_avail                         = gui_view_avail,
     .cursor_screen_pos                  = gui_cursor_screen_pos,
     .empty                              = gui_empty,
     .content_rect                       = gui_content_rect,

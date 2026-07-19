@@ -209,14 +209,16 @@ static u32 s_listbox_sp;
 bool
 gui_listbox_begin( const char* label, f32 w, f32 h )
 {
-    /* Defaults: ~7 rows tall, and wide enough to fill the line after reserving the trailing label. */
+    /* Defaults: ~7 rows tall, and wide enough to fill the line after reserving the trailing
+       label.  view_avail, not content_avail: the box must stay inside the visible track even
+       when a sibling has widened the content column past the view. */
     if ( h <= 0.0f )
         h = combo_rows_h( 7 );
 
     f32 lab_w = ( label_vis_len( label ) > 0 ) ? label_width( label ) + WIDGET_PAD : 0.0f;
     if ( w <= 0.0f )
     {
-        w = gui_content_avail().x - lab_w;
+        w = gui_view_avail().x - lab_w;
         if ( w < WIDGET_H * 4.0f ) w = WIDGET_H * 4.0f;
     }
 

@@ -499,22 +499,18 @@ layout_set_default( layout_frame_t* f )
 /* Seed the frame's content column + pen from its outer box and a pad inset, leaving the template
    UNDECLARED.  The one derivation of the content geometry: layout_push_region (region open),
    sublayout_open (transient cell frame), and gui_pad (re-inset) all route through here.  Requires
-   outer, scroll, and the gutter reservation (sb_w / sb_h) already set on the frame.  The live pen
+   outer, scroll, and the resolved view rect (f->view) already set on the frame.  The live pen
    is biased by -scroll so widgets slide under the clip, while origin_* stays unscrolled so the
    content extent measures cleanly at pop; band_bottom is the grid band end / view bottom. */
 static void
 layout_seed_content( layout_frame_t* f, gui_pad_t pad )
 {
-    /* layout_push_region reserves the window border out of the scroll VIEW (view_h =
-       outer.h - WIN_BORDER, view_w = outer.w - 2*WIN_BORDER) but seeds the content band from
-       the raw outer rect. The far edges must reserve the same border here, or a widget that
-       fills the remaining space (canvas(0), a fill grid / pack) reaches an edge the view does
-       not, so content measures exactly WIN_BORDER past the view every frame -- a permanent
-       hairline scroll fragment with nothing to scroll to. Reserve it on the far edges only
-       (top / left origins stay put, so nothing shifts); the fill just stops at the true view
-       edge. Any region that fills to content_avail is otherwise doomed to this phantom bar. */
-
-    const f32 border = WIN_BORDER;
+    /* The content band's far edges derive from f->view (set before this runs), never from the
+       raw outer rect: the view already excludes the border and the reserved gutters, so a
+       widget that fills the remaining space (canvas(0), a fill grid / pack) stops exactly at
+       the true visible edge.  Deriving from outer here while the bars size against the view
+       is how content used to measure a hairline past the view every frame -- a permanent
+       phantom scroll fragment with nothing to scroll to. */
 
     f->pad           = pad;   /* kept: the pads join the measured canvas at pop */
     f->origin_x      = f->outer.x + pad.l;
@@ -530,14 +526,14 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
        unreachable ellipsis no scroll offset ever uncovers.  Only a genuine last-frame overflow widens
        it, so a region that fits exactly still measures flush to the view (no phantom bar). */
 
-    f32 view_content_w = f->outer.w - pad.l - pad.r - f->sb_w - 2.0f * border;
+    f32 view_content_w = f->view.w - pad.l - pad.r;
     f32 content_w       = view_content_w;
     f32 last_items_w    = ( f->scroll->content_w > 0.0f ) ? f->scroll->content_w - pad.l - pad.r : 0.0f;
     if ( last_items_w > content_w ) content_w = last_items_w;
     f->content_w = content_w;
     f->high_x = f->content_x;   /* seed the highwater at the origin corner -> an empty */
     f->high_y = f->pen_y;   /* body measures 0 on both axes (premeasure sentinel)  */
-    f->band_bottom = f->outer.y + f->outer.h - pad.b - f->sb_h - border;
+    f->band_bottom = f->view.y + f->view.h - pad.b;
 
     /* Fresh nav coordinate: this content column is one container to the keyboard (a window body,
        a child box, a re-inset pad).  The first line dispenses when the first line opens. */

@@ -733,7 +733,7 @@ medit_chase_and_paint( gui_rect_t content, char* buf, u32 len, gui_medit_state_t
     const f32 char_h = font_char_h();
 
     layout_frame_t* f      = lf();
-    f32             view_h = f->view_h;
+    f32             view_h = f->view.h;
 
     /* Vertical caret chase: write the region's scroll target (applied next frame). */
     u32 crow; f32 cx;
@@ -859,7 +859,7 @@ medit_field_edit( gui_id_t id, char* buf, u32 bufsz )
 
         bool shift    = io_shift();
         bool ctrl     = io_ctrl();
-        u32  vis_rows = (u32)( lf()->view_h / line_h );
+        u32  vis_rows = (u32)( lf()->view.h / line_h );
         if ( vis_rows < 1u ) vis_rows = 1u;
 
         medit_apply_keys( buf, bufsz, es, ctrl, shift, vis_rows, &len, &changed, &blink_reset );
@@ -891,21 +891,13 @@ gui_input_text_multiline( const char* label, char* buf, u32 bufsz, f32 h )
     if ( h <= 0.0f )
         h = font_line_h() * 8.0f + 2.0f * WIDGET_PAD;
 
-    /* Box width: fill the line after reserving the trailing label (the listbox sizing) -- but
-       never wider than the VISIBLE track.  content_avail reports the content column, and an
-       overflowing sibling (a long unwrapped text run) grows that column past the view; sizing
-       to it would seat this box under the window's scrollbar gutter and border, where its
-       opaque fill and hit rect fight the window chrome.  w_vis is the unexpanded track width
-       (the layout_seed_content view_content_w derivation), a CONTENT-SPACE constant: anchoring
-       to screen edges instead would let a horizontal scroll stretch the box, pinning its right
-       edge (bar, trailing label) to the glass while its body scrolled away. */
-    layout_frame_t* pf    = lf();
-    f32             w_vis = pf->outer.w - pf->pad.l - pf->pad.r - pf->sb_w - 2.0f * WIN_BORDER;
-    f32             avail = gui_content_avail().x;
-    if ( avail > w_vis ) avail = w_vis;
-
+    /* Box width: fill the line after reserving the trailing label (the listbox sizing).
+       view_avail, not content_avail: the box is an opaque interactive surface and must stay
+       inside the visible track even when a sibling has widened the content column past the
+       view.  view_avail is also scroll-free, so the box keeps a constant width while the
+       parent scrolls. */
     f32 lab_w = ( label_vis_len( label ) > 0 ) ? label_width( label ) + WIDGET_PAD : 0.0f;
-    f32 w     = avail - lab_w;
+    f32 w     = gui_view_avail().x - lab_w;
     if ( w < WIDGET_H * 4.0f ) w = WIDGET_H * 4.0f;
 
     gui_child_begin( label, w, h, GUI_WIN_NONE );

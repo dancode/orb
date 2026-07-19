@@ -852,6 +852,13 @@ typedef struct gui_api_s
        GetContentRegionAvail analogue -- size a child_begin to the leftover, or lay out by hand. */
     gui_vec2_t ( *content_avail )( void );
 
+    /* view_avail() -- content_avail clamped to the visible view.  The content column can run wider
+       than the view when a sibling overflowed horizontally; content_avail reports that full column
+       (right for passive rows), this never exceeds the visible track (right for sizing an opaque
+       interactive surface -- a child box, a text editor -- which must not seat itself under the
+       scrollbar gutter).  Scroll-free: a box sized by it keeps its width while the region scrolls. */
+    gui_vec2_t ( *view_avail )( void );
+
     /* cursor_screen_pos -- screen position where the next item would land (GetCursorScreenPos): anchor
        custom draw_* geometry to the pen.  empty -- reserve a w x h block and return its screen rect
        (the ImGui Dummy analogue): blank space, or a slot to fill with custom draw / make clickable

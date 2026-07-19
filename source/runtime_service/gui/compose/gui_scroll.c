@@ -147,8 +147,10 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     f->sb_h   = show_h ? knob : 0.0f;
     f->show_v = show_v;
     f->show_h = show_h;
-    f->view_w = view_w;
-    f->view_h = view_h;
+
+    /* THE view rect (see layout_frame_t): the one screen-space "visible" answer every consumer
+       below reads -- clips, content track, bars, scroll chase.  Sized here and only here. */
+    f->view = ( gui_rect_t ){ outer.x + WIN_BORDER, outer.y, view_w, view_h };
 
     /* Clamp scroll against the gutter-adjusted views (last frame's content). */
     scroll_clamp( &scroll->scroll_y, last_h, view_h );
@@ -167,12 +169,11 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
        chrome it draws last overpaints content that scrolled under the title bar. */
     if ( own_clip )
     {
-        /* Bound the box by the parent's interaction clip, not just the enclosing draw clip: the
+        /* Bound the view by the parent's interaction clip, not just the enclosing draw clip: the
            window's draw clip spans the whole window (so the chrome overpaint trick works for the
            body), but a child box scrolled up must scissor at the body seam -- its rows never
            paint across the title bar.  Draw clip and hit-test clip are then the same rect. */
-        gui_rect_t clip = rect_intersect( ( gui_rect_t ){ outer.x + WIN_BORDER, outer.y, view_w, view_h },
-                                          f->parent_clip );
+        gui_rect_t clip = rect_intersect( f->view, f->parent_clip );
         draw_push_clip_rect( clip.x, clip.y, clip.w, clip.h );
         f->pushed_clip = true;
         s_scope.clip = clip;
@@ -182,13 +183,12 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
         f->pushed_clip  = false;
         /* No draw clip pushed; the window's single outer clip stays live so the chrome drawn last
            in window_end can overpaint content that scrolled under the title bar.  But for hit-
-           testing, narrow the scope clip to the gutter-adjusted VIEW (the same rect the own_clip
-           branch uses): a widget scrolled under the title bar cannot be clicked through it, and
-           nothing in the body -- widget or child region -- can claim hover or a press in the
-           reserved scrollbar gutters, which belong to the bars alone.  layout_pop_region restores
-           parent_clip so the bars (drawn after the restore) hit-test against the full window rect. */
-        s_scope.clip = rect_intersect( f->parent_clip,
-                                       ( gui_rect_t ){ outer.x + WIN_BORDER, outer.y, view_w, view_h } );
+           testing, narrow the scope clip to the view: a widget scrolled under the title bar cannot
+           be clicked through it, and nothing in the body -- widget or child region -- can claim
+           hover or a press in the reserved scrollbar gutters, which belong to the bars alone.
+           layout_pop_region restores parent_clip so the bars (drawn after the restore) hit-test
+           against the full window rect. */
+        s_scope.clip = rect_intersect( f->parent_clip, f->view );
     }
 }
 
@@ -252,19 +252,19 @@ layout_pop_region( void )
         draw_pop_clip_rect();
     s_scope.clip = f->parent_clip;
 
-    /* Bars: inset by the border, in the reserved gutters, clear of the corner.  Compose ends at
-       the track rect -- the widget (widgets/gui_scrollbar.c) owns the grab and the paint. */
+    /* Bars: in the reserved gutters, sitting exactly on the view's right / bottom edges (the
+       gutters are what the view reservation carved out, so "just past the view" IS the gutter),
+       clear of the corner.  Compose ends at the track rect -- the widget (widgets/gui_scrollbar.c)
+       owns the grab and the paint. */
     if ( f->show_v )
     {
-        gui_rect_t track = { f->outer.x + f->outer.w - WIN_BORDER - f->sb_w,
-                               f->outer.y, f->sb_w, f->view_h };
-        scrollbar_widget( f->region_id, track, true, content_h, f->view_h, &f->scroll->scroll_y );
+        gui_rect_t track = { f->view.x + f->view.w, f->view.y, f->sb_w, f->view.h };
+        scrollbar_widget( f->region_id, track, true, content_h, f->view.h, &f->scroll->scroll_y );
     }
     if ( f->show_h )
     {
-        gui_rect_t track = { f->outer.x + WIN_BORDER,
-                               f->outer.y + f->outer.h - WIN_BORDER - f->sb_h, f->view_w, f->sb_h };
-        scrollbar_widget( f->region_id, track, false, content_w, f->view_w, &f->scroll->scroll_x );
+        gui_rect_t track = { f->view.x, f->view.y + f->view.h, f->view.w, f->sb_h };
+        scrollbar_widget( f->region_id, track, false, content_w, f->view.w, &f->scroll->scroll_x );
     }
 
     /* Wheel: the hovered region consumes it (vertical by default, horizontal with Shift).
@@ -280,8 +280,8 @@ layout_pop_region( void )
         else         f->scroll->scroll_y -= s_io.mouse_wheel * step;
 
         /* Re-clamp against this frame's measured content. */
-        scroll_clamp( &f->scroll->scroll_y, content_h, f->view_h );
-        scroll_clamp( &f->scroll->scroll_x, content_w, f->view_w );
+        scroll_clamp( &f->scroll->scroll_y, content_h, f->view.h );
+        scroll_clamp( &f->scroll->scroll_x, content_w, f->view.w );
 
         /* The new offset only reaches the screen next frame -- this frame's items were already
            positioned from the pre-update value (layout_push_region seeds the pen from *scroll

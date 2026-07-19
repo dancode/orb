@@ -398,6 +398,27 @@ gui_content_avail( void )
     return ( gui_vec2_t ){ w, h };
 }
 
+/* content_avail clamped to the VISIBLE view.  The content column can run wider than the view
+   (an overflowing sibling -- a long unwrapped text run -- widens it so scroll can reach it);
+   content_avail reports that full column, which is right for passive rows but wrong for sizing
+   an opaque interactive surface (a child box, a text editor): sized to the column, it seats
+   itself under the scrollbar gutter and border.  This query never exceeds the visible track.
+   The pen offset is content-space (pen and column share the scroll bias), so the width carries
+   no scroll term -- a box sized by it keeps a constant width while the region scrolls.  Height
+   is content_avail's own (band_bottom already stops at the view). */
+gui_vec2_t
+gui_view_avail( void )
+{
+    layout_frame_t* f = lf();
+    gui_vec2_t      a = gui_content_avail();
+
+    f32 off   = gui_cursor_screen_pos().x - f->content_x;
+    f32 vis_w = ( f->view.w - f->pad.l - f->pad.r ) - off;
+    if ( vis_w < 0.0f ) vis_w = 0.0f;
+    if ( a.x > vis_w )  a.x = vis_w;
+    return a;
+}
+
 /* Screen position where the next item would be emitted -- the GetCursorScreenPos analogue.  Anchor
    custom draw_* geometry to the layout pen without reserving a cell first; pair with content_avail()
    for the space ahead.  Mode-aware: a pack run (or an armed same_line) reports the running line

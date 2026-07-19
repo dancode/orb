@@ -471,9 +471,19 @@ typedef struct
     gui_win_flags_t flags;              // scroll policy bits (GUI_WIN_*SCROLL), reused
     gui_rect_t      outer;              // the region box in screen space
     gui_pad_t       pad;                // seed inset -- folded into the measured canvas at pop
+
+    /* THE visible view, in screen space: outer inset by the border, minus the reserved
+       scrollbar gutters.  Computed ONCE at push (layout_push_region / sublayout_open) and read
+       everywhere a "what can the user see / hit" rect is needed -- the draw clip, the
+       interaction clip, the content-track derivation (layout_seed_content), the scrollbar
+       tracks (which sit exactly on its right / bottom edges), and the nav scroll chase.
+       Never re-derive these extents from outer; drift between derivations is how content ends
+       up interacting under a scrollbar.  Screen-fixed: contains no scroll bias, so it is safe
+       to size against (content_x / pen are scroll-biased and are not). */
+    gui_rect_t      view;
+
     f32             origin_x;           // unscrolled content origin -- measures content extent
     f32             origin_y;
-    f32             view_w, view_h;     // gutter-adjusted visible extents (must match the bars)
     f32             sb_w, sb_h;         // reserved gutter sizes (0 = no bar this frame)
     bool            show_v, show_h;     // a bar is shown this axis
     bool            pushed_clip;        // a draw clip was pushed (balance at pop)

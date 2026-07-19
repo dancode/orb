@@ -82,8 +82,7 @@ typedef struct
 static gui_rect_t
 select_body_rect( void )
 {
-    layout_frame_t* f = lf();
-    return ( gui_rect_t ){ f->outer.x, f->outer.y, f->view_w, f->view_h };
+    return lf()->view;
 }
 
 /*----------------------------------------------------------------------------------------------
