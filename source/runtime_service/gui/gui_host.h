@@ -168,7 +168,6 @@ bool gui_region_begin( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_ti
 void gui_region_end( void );
 
 /* layout */
-void gui_layout( gui_layout_t desc );
 void gui_layout_default( void );
 
 /* layout - stack */
@@ -190,15 +189,9 @@ void gui_field_split( gui_label_side_t side, f32 label, f32 control );
 void gui_field_label_left( f32 width );
 void gui_field_label_right( f32 width );
 
-/* layout - grids and packing */
-void gui_pad( gui_pad_t region_pad );
-
 /* layout - grid */
 void gui_grid( gui_layout_t desc );
 void gui_grid_cells( u32 ncols, u32 nrows );
-
-/* layout - pack */ 
-void gui_pack( gui_pack_dir_t dir );
 
 /* layout bar + strip */
 void gui_bar( void );

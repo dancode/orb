@@ -243,9 +243,9 @@ The first layout header names the mode. A widget emitted before ANY header is a 
 | Header verb | Mode | Behavior |
 |---|---|---|
 | `stack()` / `row(h)` | STACK | one flex column, rows accumulate + scroll (the default list) |
-| `cols(tracks)` / `cols_n(n)` / `row2/3/4(...)` / `row_cols(h,tracks)` / `layout(desc)` | COLUMNS | repeating pre-divided column template; wraps row-major |
+| `cols(tracks)` / `cols_n(n)` / `row2/3/4(...)` / `row_cols(h,tracks)` | COLUMNS | repeating pre-divided column template; wraps row-major |
 | `grid(desc)` / `grid_cells(nc,nr)` | GRID | fixed cols x rows matrix from pen to region bottom, both axes resolved up front; no scroll; overflow clamps to last cell |
-| `bar()` / `strip()` / `pack(dir)` | PACK | print run: items at natural size along the axis; `pack_size(u)` overrides next item; `pack_nextline()` breaks |
+| `bar()` / `strip()` | PACK | print run: items at natural size along the axis; `pack_size(u)` overrides next item; `pack_nextline()` breaks |
 
 Flow cell sizing: a widget with a natural width (button, checkbox, text) shrinks to it and is
 seated by `align()`; one without (slider, input) fills the track. `next_item_fit(u)` is a
@@ -255,8 +255,7 @@ item's height for the whole row.
 Modifiers are orthogonal to the template and persist across header installs: `align(a)`,
 `field_split(side, label, control)` / `field_label_left(w)` / `form(side, label_w)` (labeled
 value widgets become label-track + control-track rows), gaps. Only `layout_default()` resets
-everything; `pad(p)` re-insets the content box and clears the template back to UNDECLARED
-(declare a header after it).
+everything.
 
 Other flow verbs: `same_line(spacing)` / `stack_same_line` (one-shot pen placement continuing
 the previous item's line), `indent()/unindent()` (shift content column, reflow; flow only),

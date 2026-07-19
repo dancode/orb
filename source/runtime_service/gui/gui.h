@@ -137,7 +137,7 @@ typedef enum
 } gui_ease_t;
 
 /* Edge insets, in pixels. Region padding -- the gap between a region's box and where its layout
-   starts (see gui_pad).  Breathing room *inside* a widget's frame is a per-widget style concern
+   starts (REGION_PAD_DEFAULT).  Breathing room *inside* a widget's frame is a per-widget style concern
    (WIDGET_PAD), not a layout one; spacing *between* cells is gap_x / gap_y. */
 typedef struct { f32 l, r, t, b; }  gui_pad_t;
 
@@ -548,7 +548,7 @@ gui_rect_cut_bottom( gui_rect_t* r, f32 a )
     GUI: Layout Template
 
     A region (a window body or a child_begin box) lays widgets out by carving its content area
-    into cells.  gui_layout() installs a template that *persists and repeats*: every widget
+    into cells.  A layout header installs a template that *persists and repeats*: every widget
     fills the next cell.  A region opens UNDECLARED (no template): the first layout header in its
     body names the mode -- stack() for the single flex column of auto height (the classic vertical
     stack), or columns / grid / form for the others.  See gui_layout_mode_t.

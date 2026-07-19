@@ -55,30 +55,6 @@ ex_layout_rows( void )
         gui()->button( "tall button" );
         gui()->row( 0 );
 
-        /* The full descriptor: tracks + row height + gaps in one struct, gaps live-driven. */
-        gui()->separator_text( "layout() descriptor (parametric gaps)" );
-        static i32 gap_x = 8;
-        static i32 gap_y = 8;
-        gui()->slider_int( "gap_x", &gap_x, 0, 32 );
-        gui()->slider_int( "gap_y", &gap_y, 0, 32 );
-
-        gui_layout_t desc = { 0 };
-        desc.cols[ 0 ] = 1.0f;
-        desc.cols[ 1 ] = 1.0f;
-        desc.cols[ 2 ] = 1.0f;
-        desc.cols[ 3 ] = GUI_END;
-        desc.gap_x     = (f32)gap_x;
-        desc.gap_y     = (f32)gap_y;
-        gui()->layout( desc );
-        for ( i32 i = 0; i < 6; i++ )
-        {
-            gui()->push_id_int( i );
-            char b[ 12 ];
-            snprintf( b, sizeof( b ), "cell %d", i );
-            gui()->button( b );
-            gui()->pop_id();
-        }
-        gui()->layout_default();                /* the single "reset everything" verb */
     }
     gui()->window_end();
 }

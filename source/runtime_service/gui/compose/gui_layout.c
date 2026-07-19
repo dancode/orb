@@ -2,8 +2,8 @@
 
     runtime_service/gui/compose/gui_layout.c -- Public layout API verbs + the sz_ sizing family.
 
-    Defines the per-region template-shaping calls (gui_layout, gui_stack, gui_row,
-    gui_cols, gui_grid, gui_pack, gui_bar, gui_strip, gui_field_split,
+    Defines the per-region template-shaping calls (gui_stack, gui_row,
+    gui_cols, gui_grid, gui_bar, gui_strip, gui_field_split,
     gui_form, gui_indent/unindent, gui_content_avail, etc.).
 
     The scrollable region engine (layout_push/pop_region, gui_region_t, scroll_clamp) is in
@@ -28,15 +28,6 @@
     the column unit rule.  gui_pad sets the region padding -- the inset between the region box
     and where the layout starts -- distinct from the item padding carried in the template.
 ----------------------------------------------------------------------------------------------*/
-
-/* Full flow template: columns, row height, gaps, and alignment in one call.  (rows[] is for grid
-   mode -- use gui_grid; a zero-initialized descriptor is flow, so this ignores rows.) */
-void
-gui_layout( gui_layout_t desc )
-{
-    layout_set( desc.cols, desc.row_h, desc.gap_x, desc.gap_y );
-    lf()->mod.align = (u8)desc.align;   /* full template carries the content alignment too */
-}
 
 /* stack -- the explicit header for a single full-width flex column, rows accumulating + scrolling
    (the everyday vertical list).  This is the canonical name for what a region used to do silently
@@ -230,7 +221,7 @@ gui_grid_cells( u32 nc, u32 nr )
 /*----------------------------------------------------------------------------------------------
     Pack mode -- the print run: place items one after another along an axis at their natural size.
 
-    pack( dir ) opens a run; bar() is the horizontal pack (a toolbar), strip() the vertical one.
+    bar() opens the horizontal run (a toolbar), strip() the vertical one.
     Each widget takes its natural main-axis size unless pack_size() overrides the next one, resolved
     against the space left on the line (0 natural, 1 fill the rest, (0,1) a fraction, >1 px).  A
     widget with no natural width (slider / input / selectable) fills the remainder of the line by
@@ -239,8 +230,8 @@ gui_grid_cells( u32 nc, u32 nr )
 
 /* pack -- open a print run along `dir`.  Finishes any flow row above it, then seeds the pack pen
    at the current layout position: the main axis runs along dir from there, the cross axis from the
-   content edge.  Fill it with widgets (bar / strip are the sugar). */
-void
+   content edge.  Internal: bar / strip are the public names -- one per axis, no dir parameter. */
+static void
 gui_pack( gui_pack_dir_t dir )
 {
     layout_frame_t* f = lf();
@@ -300,17 +291,6 @@ gui_pack_nextline( void )
     f->line.open  = true;
     f->nav_line   = ++s_build.nav_line_seq;   /* the broken-to line is a fresh nav line */
     f->line.prev_item  = ( gui_rect_t ){ 0 };
-}
-
-/* Region padding: re-inset the current region's content area and clear the template back to
-   undeclared at the padded top-left.  Call right after opening a region; declare a mode header
-   (stack / columns / grid / ...) afterward, since pad() leaves the region with no template. */
-void
-gui_pad( gui_pad_t p )
-{
-    /* The same derivation a region open uses (layout_seed_content), against the new inset.  The
-       re-inset clears the template -- declare a mode header (stack / columns / ...) after pad(). */
-    layout_seed_content( lf(), p );
 }
 
 /*----------------------------------------------------------------------------------------------

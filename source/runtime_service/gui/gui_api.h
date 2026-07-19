@@ -696,9 +696,8 @@ typedef struct gui_api_s
        cols_n()     -- n equal flex columns, auto height.
        form()       -- a stack with a fixed-width label track on `side`: the "Label  [control]"
                          form header (label_w <= 0 = plain stack).
-       layout()     -- full flow template (columns, row height, item padding, gaps) in one struct.
        layout_default() -- clear back to a plain stack (one flex column, no field split); the
-                         single "reset everything" verb.  Padding is untouched (use pad()).
+                         single "reset everything" verb.
        row()        -- a stack with an explicit row height (0 = auto).
        row_cols()   -- explicit per-column tracks (GUI_END-terminated) of height row_h: cols + height.
        row_cols_n() -- n equal columns of height row_h: cols_n + height.
@@ -708,7 +707,6 @@ typedef struct gui_api_s
                          out as an aligned "Label  [control]" form from a single call.
        field_label_left() / field_label_right() -- field_split sugar: a fixed-width label column on
                          the left / right with a flex control filling the rest (0 = off).
-       pad()        -- region padding: the inset between the region box and the layout start.
 
        Grid mode -- cols x rows partition a bounded box (the region content from the pen to its
        bottom) into a fixed matrix, both axes resolved up front; widgets fill cells row-major and
@@ -724,12 +722,10 @@ typedef struct gui_api_s
        breaks to a fresh line.  The toolbar / tag-row / inline-controls case.
 
        gui()->bar();  gui()->button("Save");  gui()->button("Open");   // a toolbar
-       pack()       -- open a run along dir (HORIZONTAL / VERTICAL).
-       bar() / strip() -- pack sugar: horizontal (toolbar) / vertical run.
+       bar() / strip() -- open a run: horizontal (the toolbar) / vertical.
        pack_size()  -- next packed item's main-axis size (0 natural, 1 fill, (0,1) frac, >1 px).
        pack_nextline() -- break the run to a new line. */
 
-    void ( *layout            )( gui_layout_t desc );
     void ( *layout_default    )( void );
     void ( *stack             )( void );
     void ( *row               )( f32 row_h );
@@ -744,10 +740,8 @@ typedef struct gui_api_s
     void ( *field_split       )( gui_label_side_t side, f32 label, f32 control );
     void ( *field_label_left  )( f32 width );
     void ( *field_label_right )( f32 width );
-    void ( *pad               )( gui_pad_t region_pad );
     void ( *grid              )( gui_layout_t desc );
     void ( *grid_cells        )( u32 ncols, u32 nrows );
-    void ( *pack              )( gui_pack_dir_t dir );
     void ( *bar               )( void );
     void ( *strip             )( void );
     void ( *pack_size         )( f32 unit );

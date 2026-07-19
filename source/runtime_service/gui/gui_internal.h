@@ -361,7 +361,7 @@ typedef struct
      layout_line_t -- the iteration cursor + open-line record; re-zeroed by every install
                       (layout_template_reset) */
 
-/* Active row template (gui_layout / row sugar).  Persists and repeats: each widget fills the
+/* Active row template (the row / cols headers).  Persists and repeats: each widget fills the
    next cell, wrapping to a fresh row of the same shape when the columns run out.  See
    gui_layout_t in gui.h for the unit rule.  The resolved cell geometry is computed once when a
    template is installed (the source track list is kept only so indent can re-resolve): flow uses
