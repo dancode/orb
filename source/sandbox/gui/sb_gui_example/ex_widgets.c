@@ -536,7 +536,7 @@ ex_widgets_selection( void )
 static void
 ex_widgets_tabs( void )
 {
-    if ( ex_begin( "Tab Bar", 480, 520, GUI_WIN_NONE ) )
+    if ( ex_begin( "Tab Bar", 480, 520, GUI_WIN_HSCROLL ) )
     {
         gui()->stack();
         gui()->text( "Only the selected tab's body is emitted, below the chip strip." );

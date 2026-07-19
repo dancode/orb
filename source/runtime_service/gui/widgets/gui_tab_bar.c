@@ -54,6 +54,7 @@ typedef struct
     gui_tabbar_state_t*  st;          // persisted selection slot
     gui_id_t             first_seen;  // first tab id emitted this frame (fallback default)
     bool                 sel_seen;    // the selected id matched a tab emitted this frame
+    gui_id_t             want;        // tab clicked this frame; committed at tab_bar_end (0 = none)
     gui_tab_bar_flags_t  flags;
 
 } gui_tabbar_ctx_t;
@@ -95,6 +96,7 @@ gui_tab_bar_begin( const char* str_id, gui_tab_bar_flags_t flags )
     ctx->st         = GUI_STATE( gui_tabbar_state_t, id );
     ctx->first_seen = GUI_ID_NONE;
     ctx->sel_seen   = false;
+    ctx->want       = GUI_ID_NONE;
     ctx->flags      = flags;
 
     /* Flat strip band + a thin seam line along its bottom edge; the active chip overpaints the seam
@@ -117,10 +119,20 @@ gui_tab_bar_end( void )
 
     gui_tabbar_ctx_t* ctx = &s_tabbars[ s_tabbar_depth - 1 ];
 
-    /* The selected tab vanished this frame (its item stopped being emitted): fall back to the first
-       tab so the bar is never left showing nothing.  Corrects on the next frame; raise wants_redraw
-       so an idle UI actually repaints with the new selection. */
-    if ( !ctx->sel_seen && ctx->first_seen != GUI_ID_NONE && ctx->st->selected != ctx->first_seen )
+    /* Commit a click made this frame: the pending selection becomes the visible tab NEXT frame, so
+       every frame emits exactly one body.  wants_redraw so an idle UI repaints with the change. */
+    if ( ctx->want != GUI_ID_NONE )
+    {
+        if ( ctx->want != ctx->st->selected )
+        {
+            ctx->st->selected            = ctx->want;
+            g_ctx->retained.wants_redraw = true;
+        }
+    }
+    /* No click, and the selected tab vanished this frame (its item stopped being emitted -- e.g. it
+       was closed): fall back to the first tab so the bar is never left showing nothing. */
+    else if ( !ctx->sel_seen && ctx->first_seen != GUI_ID_NONE
+              && ctx->st->selected != ctx->first_seen )
     {
         ctx->st->selected            = ctx->first_seen;
         g_ctx->retained.wants_redraw = true;
@@ -165,21 +177,28 @@ gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags 
     gui_rect_t tr = { ctx->x, ctx->strip.y, tw, ctx->strip.h };
     ctx->x += tw;
 
+    /* The VISIBLE tab is the committed selection, fixed for the whole frame -- so exactly one tab
+       body emits per frame.  A click only records a PENDING selection (ctx->want) that tab_bar_end
+       commits, taking effect next frame; committing mid-frame would double-emit (the previously
+       active tab, already emitted above, plus this one). */
     bool is_active = ( ctx->st->selected == tid );
-
-    /* Chip interaction.  nav.skip: the chip is not laid out by the layout engine, so it is no
-       keyboard-nav target (mirrors the scrollbar / dock drag strip). */
-    s_scope.nav.skip = true;
-    gui_item_state_t st = item_state( tid, tr, ITEM_BUTTON );
-    if ( st.clicked )
-    {
-        ctx->st->selected            = tid;
-        is_active                    = true;
-        g_ctx->retained.wants_redraw = true;
-    }
-
     if ( is_active )
         ctx->sel_seen = true;
+
+    /* Two non-overlapping hit rects: the chip minus the close cell selects the tab; the close cell
+       (when p_open) is its own target -- otherwise a click on the x would just reselect the tab. */
+    gui_rect_t sel_r   = { tr.x, tr.y, tr.w - close_w, tr.h };
+    gui_rect_t close_r = { tr.x + tr.w - close_w, tr.y, close_w, tr.h };
+
+    /* Chip select.  nav.skip: the chip is not laid out by the layout engine, so it is no
+       keyboard-nav target (mirrors the scrollbar / dock drag strip). */
+    s_scope.nav.skip = true;
+    gui_item_state_t st = item_state( tid, sel_r, ITEM_BUTTON );
+    if ( st.clicked )
+    {
+        ctx->want                    = tid;
+        g_ctx->retained.wants_redraw = true;
+    }
 
     /* Active chip takes the body colour (joined to the content below); the rest sit on the title
        band and lift to the hover colour under the cursor.  Square, like the dock tabs. */
@@ -196,13 +215,13 @@ gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags 
     /* Close (x): a square cell at the chip's right edge, its own click target. */
     if ( p_open )
     {
-        gui_rect_t       cx  = { tr.x + tr.w - close_w, tr.y, close_w, tr.h };
         gui_id_t         cid = id_combine( tid, GUI_TAB_CLOSE_SALT );
         s_scope.nav.skip     = true;
-        gui_item_state_t cst = item_state( cid, cx, ITEM_BUTTON );
+        gui_item_state_t cst = item_state( cid, close_r, ITEM_BUTTON );
         if ( cst.hover || cst.active )
-            draw_push_rect_filled( cx.x, cx.y, cx.w, cx.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
-        gui_draw_close( cx, cst.hover ? COL_TEXT : COL_TEXT_DIM );
+            draw_push_rect_filled( close_r.x, close_r.y, close_r.w, close_r.h, 0, 0, 1, 1, 0,
+                                   COL_WIDGET_HOT );
+        gui_draw_close( close_r, cst.hover ? COL_TEXT : COL_TEXT_DIM );
         if ( cst.clicked )
         {
             *p_open                      = false;
