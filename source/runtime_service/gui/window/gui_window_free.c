@@ -16,7 +16,7 @@
     A window is treated as a large compound widget, so this builds on the shared primitives
     in present/gui_paint_core.c (col_item_bg, the label grammar) and interact/gui_item.c
     (item_state); the style vocabulary (WIDGET_* / WIN_* / COL_*) resolves in
-    foundation/gui_style.c.
+    core/gui_style.c.
 
     Included by gui.c after the widget family files, so the window record (gui_window.c), the
     shared widget core, and the leaf widgets are all in scope.

@@ -925,7 +925,7 @@ nav_new_frame( void )
         return;                             /* not using the keyboard for nav */
 
     /* A deaf (non-listening) context takes no input.  s_io and the interaction record are shared by
-       every context (foundation/gui_ctx.c), so a passive context must not read -- much less key_claim
+       every context (core/gui_ctx.c), so a passive context must not read -- much less key_claim
        -- the keyboard from them, or it would steal keys from whichever context IS listening this
        frame (and, with per-key claim, starve it of the press entirely).  The nav-driver peer of the
        widget-level deaf gate (interact/gui_item.c) and the hover-nomination gate (surface/gui_surface.c). */

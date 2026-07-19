@@ -53,7 +53,7 @@
 #define GUI_DOCK_TABS_MAX           8       // windows co-docked (tabbed) in one leaf node
 #define GUI_DOCK_NAME_CAP           28      // bytes of a tab's display name, copied at dock time
 
-/* Keyed state pool slot payloads -- two size classes over one probe (foundation/gui_state.c).
+/* Keyed state pool slot payloads -- two size classes over one probe (core/gui_state.c).
    gui_state_get picks the class from the requested size; the caps are asserted against their
    largest tenants in gui_state.c / gui_table.c. */
 
@@ -72,10 +72,10 @@ ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
                    "a gui viewport pairs an OS window with an rhi context; the maxes must agree" );
 
 /*==============================================================================================
-    Input snapshot (foundation/gui_io.c)
+    Input snapshot (core/gui_io.c)
 
     The frame's distilled IO state -- not exposed in the public header.  GUI_KEY_COUNT must cover
-    the full app_key_t range; foundation/gui_io.c carries the static assert that verifies this.
+    the full app_key_t range; core/gui_io.c carries the static assert that verifies this.
 ==============================================================================================*/
 
 typedef struct
@@ -522,7 +522,7 @@ typedef struct
 typedef struct { f32 left_h; f32 right_h; } gui_split_entry_t;
 
 /*==============================================================================================
-    Window context (the `win` member of s_build, foundation/gui_ctx.c; stamped in window/)
+    Window context (the `win` member of s_build, core/gui_ctx.c; stamped in window/)
 
     The flat "window currently between window_begin / window_end" record -- everything begin
     stamps and end consumes.  One named struct so the overlay seam (gui_overlay_save_t below)
@@ -560,7 +560,7 @@ typedef struct
 } gui_win_ctx_t;
 
 /*==============================================================================================
-    Interaction scope (the s_scope instance in foundation/gui_ctx.c)
+    Interaction scope (the s_scope instance in core/gui_ctx.c)
 
     The declared contract between composition and behavior.  Everything item_state
     (interact/gui_item.c) consumes about "where is this item emitting" lives here, nowhere
@@ -965,12 +965,12 @@ typedef struct gui_context_t
     hand-placed forward declarations that used to sit in gui.c.
 ==============================================================================================*/
 
-/* The mouse-input path (foundation/gui_io.c) resolves an event's app win_id to the viewport hosting it,
+/* The mouse-input path (core/gui_io.c) resolves an event's app win_id to the viewport hosting it,
    but the viewport pool lives on g_ctx (gui_ctx.c) included later.  Defined after g_ctx. */
 static u32 viewport_index_for_window( i32 win_id );
 
 /* OS resize / close events for an gui-OWNED floater are serviced against the viewport pool, so
-   gui_event (foundation/gui_io.c) delegates them here.  Defined in gui_frame.c after g_ctx; returns
+   gui_event (core/gui_io.c) delegates them here.  Defined in gui_frame.c after g_ctx; returns
    true when win_id is an owned viewport (event consumed). */
 static bool gui_owned_window_event( const app_event_t* ev );
 

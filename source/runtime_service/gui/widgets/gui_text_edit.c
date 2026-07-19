@@ -10,7 +10,7 @@
     then delegates here.  Lifted out of gui_paint_core.c so the editor is one named unit.
 
     The persisted per-id edit state (cursor, anchor, scroll, blink) lives in the keyed state
-    pool (gui_ctx.c); gui_clipboard_set is in foundation/gui_io.c.
+    pool (gui_ctx.c); gui_clipboard_set is in core/gui_io.c.
 
     Included by gui.c after gui_paint_core.c so gui_item_state_t, text_center_y, the COL_*
     palette, WIDGET_PAD / WIN_BORDER, and the draw + font helpers are all in scope.

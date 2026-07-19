@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/foundation/gui_id.c -- Identity service: ID hashing, combining, scope stack.
+    runtime_service/gui/core/gui_id.c -- Identity service: ID hashing, combining, scope stack.
 
     The naming substrate every interaction service keys on.  Three utilities the rest of the
     widget tree is built on:
@@ -13,9 +13,9 @@
 
     It knows nothing about widgets, rects, or input: strings and scopes in, stable ids out.
     The keyed per-widget state pool that these ids address is the companion service in
-    foundation/gui_state.c, included immediately after this file.
+    core/gui_state.c, included immediately after this file.
 
-    Included by gui.c after foundation/gui_ctx.c, which defines g_ctx (needed for g_ctx->retained /
+    Included by gui.c after core/gui_ctx.c, which defines g_ctx (needed for g_ctx->retained /
     gui_context_t) and the id-stack variables (s_id_stack[], s_id_sp) referenced below.
 
 ==============================================================================================*/
@@ -85,7 +85,7 @@ id_pop( void )
 }
 
 /* The keyed state pool (gui_state_get / gui_state_peek / GUI_STATE) is the companion tracking
-   service in foundation/gui_state.c, included next. */
+   service in core/gui_state.c, included next. */
 
 // clang-format on
 /*============================================================================================*/

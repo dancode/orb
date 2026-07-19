@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/foundation/gui_theme.c -- Theme registry + base style state + layout metrics.
+    runtime_service/gui/core/gui_theme.c -- Theme registry + base style state + layout metrics.
 
     Owns the three pieces of style STATE that everything else in gui reads or scales from:
         k_themes     -- the built-in named presets (gui_theme_t), each a complete gui_style_t
@@ -19,7 +19,7 @@
     is included right after this file.
 
     Included by gui.c FIRST among the Tier 0 files -- s_style must already be declared (file-scope
-    static, no header) before foundation/gui_style.c's style_var_base resolver and every
+    static, no header) before core/gui_style.c's style_var_base resolver and every
     later tier's widget code can read it in the same TU.
 
 ==============================================================================================*/

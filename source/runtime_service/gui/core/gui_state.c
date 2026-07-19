@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/foundation/gui_state.c -- Keyed state pool: persistent per-id tracking.
+    runtime_service/gui/core/gui_state.c -- Keyed state pool: persistent per-id tracking.
 
     A pure tracking service: hand it an id, it hands back stable storage.  It does not know
     what it tracks -- animations (interact/gui_anim.c), scroll offsets, persisted child sizes,
@@ -17,8 +17,8 @@
     Zero-on-create is part of the contract: a tenant's fields must make 0 the natural default
     (a "no sort" is 0, not -1), since a reclaimed or fresh slot always starts zeroed.
 
-    Included by gui.c after foundation/gui_id.c (the identity service that mints the keys) --
-    g_ctx / g_ctx->retained come from foundation/gui_ctx.c above both.
+    Included by gui.c after core/gui_id.c (the identity service that mints the keys) --
+    g_ctx / g_ctx->retained come from core/gui_ctx.c above both.
 
 ==============================================================================================*/
 // clang-format off

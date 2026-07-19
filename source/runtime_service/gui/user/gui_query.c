@@ -5,7 +5,7 @@
     The frame-coherent input snapshot the widgets see, exposed for UI / tool code that wants
     to read keys, the mouse, or the clock without re-querying app() -- which bypasses gui's
     frame timing and, more importantly, its input capture.  Pure caller vocabulary: the
-    machinery (foundation/gui_io.c snapshot, interact/gui_item.c last-item latch) stays with the
+    machinery (core/gui_io.c snapshot, interact/gui_item.c last-item latch) stays with the
     services; the readers a user speaks live here.
 
     want_capture_* are the fence: gate any direct app() input read in non-UI code on them, so
@@ -13,7 +13,7 @@
     really a widget / window drag.
 
     Included by gui.c in the user/ tier (last of the tiers); reads s_interaction, s_build,
-    g_ctx->nav, g_ctx->popup.open_count, rect_hit (foundation/gui_ctx.c) and s_io (foundation/gui_io.c), all in
+    g_ctx->nav, g_ctx->popup.open_count, rect_hit (core/gui_ctx.c) and s_io (core/gui_io.c), all in
     scope far above.  Internal readers (the frame overlay's hotkeys, the dashboard's hover
     check) are deliberate dogfooding through the gui_host.h declarations.
 
@@ -41,7 +41,7 @@ gui_want_capture_mouse( void )
       - HARD BLOCK  (this function): true means every key this frame belongs to gui, full stop --
         used only for states where handling must not depend on which key it is (typing captures
         everything so nothing types past a text field; a modal must block everything under it).
-      - key_claim(k) (foundation/gui_io.c): zeroes one key's press/repeat edge the instant a
+      - key_claim(k) (core/gui_io.c): zeroes one key's press/repeat edge the instant a
         consumer actually uses it, so nothing later in the frame also reacts to that same press.
         Unclaimed keys simply survive to the next tier -- there is nothing to opt into.
 
@@ -157,7 +157,7 @@ gui_is_item_visible( void )
 gui_rect_t gui_get_item_rect( void ) { return s_scope.last_rect; }
 
 /* Per-key state from the frame snapshot.  An out-of-range key reads as up; the public app_key_t
-   range is bounded by APP_KEY_COUNT <= GUI_KEY_COUNT (asserted in foundation/gui_io.c).  is_key_pressed
+   range is bounded by APP_KEY_COUNT <= GUI_KEY_COUNT (asserted in core/gui_io.c).  is_key_pressed
    is the initial press this frame; is_key_pressed_repeat also fires on each OS auto-repeat tick (the
    Dear ImGui repeat=true case) -- the user's system rate drives it. */
 static bool key_in_range( app_key_t key ) { return (i32)key >= 0 && (i32)key < APP_KEY_COUNT; }

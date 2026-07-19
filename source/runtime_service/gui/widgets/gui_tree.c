@@ -5,7 +5,7 @@
     collapsing_header (a framed clickable bar that folds a section) and tree_node / tree_pop
     (its unframed sibling, indenting while open) -- the fold-a-block rows behind inspectors,
     outlines, and file explorers.  Open state persists per id in the keyed state pool
-    (foundation/gui_state.c), the same store windows and combos use.
+    (core/gui_state.c), the same store windows and combos use.
 
 ==============================================================================================*/
 // clang-format off

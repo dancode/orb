@@ -7,7 +7,7 @@
     animation-state query.  Viewport open/resize/close and the gui-owned floater surfaces
     (spawn/update/render_floaters) live in gui_viewport.c, included just after this file; memory
     stats and the multi-context lifecycle (ctx_create/destroy/bind/set_listening) live in
-    foundation/gui_ctx.c, next to the context pool they operate on.  The perf / state HUD
+    core/gui_ctx.c, next to the context pool they operate on.  The perf / state HUD
     overlays and the frame-timing helpers the lifecycle here calls live in gui_frame_overlay.c,
     included just before this file.
     Included by gui.c before gui_api.c so the vtable can reference these by name.

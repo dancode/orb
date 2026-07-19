@@ -7,7 +7,7 @@
     and the system adornments.  Both the leaf widgets (widgets/) and the window chrome
     (gui_window_free.c) draw through these, so they live here, ahead of both in the unity
     build.  The style vocabulary (WIDGET_* / WIN_* / COL_* macros) lives with its resolver in
-    foundation/gui_style.c -- this file only consumes it.  
+    core/gui_style.c -- this file only consumes it.  
     
     The interaction state machine (item_state) is a service -- it lives in interact/gui_item.c,
     included immediately after this file so it can invoke the adornment painters below.
@@ -15,7 +15,7 @@
     The shared edge-resize geometry is interact/gui_resize.c and the layout engine
     (track resolver + cell emitters) is compose/gui_layout_core.c.
 
-    Included by gui.c after foundation/gui_ctx.c + foundation/gui_io.c so s_interaction, s_build, s_io, s_style,
+    Included by gui.c after core/gui_ctx.c + core/gui_io.c so s_interaction, s_build, s_io, s_style,
     rect_hit, and the draw helpers are all in scope.  Despite the name, this file has no
     dependency on gui_window.c -- window bookkeeping is a later, optional tier
     (window/gui_window.c).

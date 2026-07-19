@@ -15,15 +15,15 @@
     include list below is THE dependency order, the one the compiler enforces -- directories
     name ROLES, not rungs.  A role only depends on roles included above it, and a role dir is
     also where a future `#ifdef GUI_ENABLE_<role>` would wrap an #include line to compile a
-    feature out entirely.  Order: foundation -> surface -> compose / interact / present
+    feature out entirely.  Order: core -> surface -> compose / interact / present
     (siblings) -> widgets -> table -> window -> dock -> popup -> nav -> user -> debug -> frame.
 
     backend/     -- beside the stack, not a rung in it: the render sink (the second TU,
                     gui_backend.c), reached only through gui_backend.h at flush.
-    foundation/  -- machinery with no opinions: the ambient context records (s_interaction,
+    core/  -- machinery with no opinions: the ambient context records (s_interaction,
                     s_build, s_scope, g_ctx), identity (ids), keyed state tracking, the io
                     snapshot, and the style machinery (theme registry, stacks, resolution).
-                    Owns style MACHINERY, never style MEANING -- no foundation decision reads
+                    Owns style MACHINERY, never style MEANING -- no core decision reads
                     a style value.
     surface/     -- the surface service: window records as placed, stacked, occluding
                     rectangles -- the pool (window_get/window_find), the next-window
@@ -32,7 +32,7 @@
                     the surface reassignment request slot, and open/closed state.  No
                     layout, no chrome, no gestures -- those are window/ policy over these
                     services.  Storage + frame turnover stay with the context
-                    (foundation/gui_ctx.c), the house pattern; viewport (OS surface)
+                    (core/gui_ctx.c), the house pattern; viewport (OS surface)
                     lifecycle stays with the conductor (app()/rhi() operations).
     compose/     -- composition: the only code that turns style spacing metrics
                     (line_size/gap/pad/quantum/scales) into rects.  Track resolver, regions,
@@ -94,13 +94,13 @@
     behavior, hands both results to presentation.  user/ is the public door onto the same
     roles, skin optional -- the game-UI path.
 
-    foundation/gui_theme.c       -- theme registry + base/active style state, theme API, layout_compute
-    foundation/gui_style.c       -- style stacks machinery: style_col/style_var resolution, push/pop/next ops
-    foundation/gui_ctx.c         -- context state: s_interaction, s_build, s_scope, layout_frame_t, gui_context_t,
+    core/gui_theme.c       -- theme registry + base/active style state, theme API, layout_compute
+    core/gui_style.c       -- style stacks machinery: style_col/style_var resolution, push/pop/next ops
+    core/gui_ctx.c         -- context state: s_interaction, s_build, s_scope, layout_frame_t, gui_context_t,
                                       ctx_new_frame, memory stats, multi-context lifecycle (ctx_create/destroy/bind)
-    foundation/gui_io.c          -- io snapshot service: app->IO, io_frame_begin/end, s_io
-    foundation/gui_id.c          -- identity service: id_hash, id_combine, id_seed/push/pop
-    foundation/gui_state.c       -- keyed state tracking service: gui_state_get/peek, GUI_STATE
+    core/gui_io.c          -- io snapshot service: app->IO, io_frame_begin/end, s_io
+    core/gui_id.c          -- identity service: id_hash, id_combine, id_seed/push/pop
+    core/gui_state.c       -- keyed state tracking service: gui_state_get/peek, GUI_STATE
 
     surface/gui_surface.c        -- surface service: window record pool, placement channel, z dispenser,
                                       hover-win contest, surface reassignment slot, open/closed state
@@ -220,8 +220,8 @@ MOD_USE_APP;
 static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav = true };
 
 /* The theme registry, base/active style state (s_style_base, s_style, s_font_size), the theme
-   API, and layout_compute now live in foundation/gui_theme.c -- included first among foundation/ below, so
-   s_style is declared before foundation/gui_style.c's push-stack resolvers (and every later tier) read
+   API, and layout_compute now live in core/gui_theme.c -- included first among core/ below, so
+   s_style is declared before core/gui_style.c's push-stack resolvers (and every later tier) read
    it in this TU.
 
    The shared stateless helpers (saturate, clampf, rect_intersect) live in gui_internal.h as
@@ -246,14 +246,14 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
    backend/gui_debug_overlay) is the SECOND unit -- compiled separately via gui_backend.c.  This
    unit calls into it through the draw_* / font_* / gui_render_* declarations in gui_backend.h. */
 
-// Foundations interleaved with the sibling roles (present/ primitives, interact/
+// Core machinery interleaved with the sibling roles (present/ primitives, interact/
 // services): the include order is dependency-driven, the directories are the conceptual split.
-#include "runtime_service/gui/foundation/gui_theme.c"
-#include "runtime_service/gui/foundation/gui_io.c"
-#include "runtime_service/gui/foundation/gui_style.c"
-#include "runtime_service/gui/foundation/gui_ctx.c"
-#include "runtime_service/gui/foundation/gui_id.c"
-#include "runtime_service/gui/foundation/gui_state.c"
+#include "runtime_service/gui/core/gui_theme.c"
+#include "runtime_service/gui/core/gui_io.c"
+#include "runtime_service/gui/core/gui_style.c"
+#include "runtime_service/gui/core/gui_ctx.c"
+#include "runtime_service/gui/core/gui_id.c"
+#include "runtime_service/gui/core/gui_state.c"
 
 #include "runtime_service/gui/surface/gui_surface.c"
 

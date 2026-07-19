@@ -16,7 +16,7 @@
     This tier composes and never paints: cell_split_field hands out geometry, and its painting
     companion draw_field_label lives with the rest of the label grammar in
     present/gui_paint_core.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD / ...) resolves
-    in foundation/gui_style.c.
+    in core/gui_style.c.
 
     Included by gui.c after gui_paint_core.c (so rect_align and item_flags_resolve are in
     scope) and before gui_layout.c (which calls layout_set / cell_next / the region

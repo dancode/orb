@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/foundation/gui_ctx.c -- Immediate-mode context state and per-frame drivers.
+    runtime_service/gui/core/gui_ctx.c -- Immediate-mode context state and per-frame drivers.
 
     Declares all persistent ambient and frame-scratch state (s_interaction, s_build, gui_nav_state_t,
     layout_frame_t, gui_context_t) and drives the per-frame lifecycle via ctx_new_frame.  Also owns
@@ -9,12 +9,12 @@
     (gui_ctx_create/destroy/bind/set_listening).
 
     ID hashing and the keyed state pool (id_hash, id_combine, id_seed/push/pop, gui_state_get,
-    GUI_STATE) are in foundation/gui_id.c + foundation/gui_state.c, included just after this file.
+    GUI_STATE) are in core/gui_id.c + core/gui_state.c, included just after this file.
 
     Public IO accessors (gui_want_capture_*, gui_is_key_*, gui_is_mouse_*, etc.) are in
     user/gui_query.c, included in the user/ tier below.
 
-    Included by gui.c after foundation/gui_io.c so s_io is in scope.
+    Included by gui.c after core/gui_io.c so s_io is in scope.
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   /* gui_nav_state_t, layout_frame_t, gui_popup_t,
@@ -310,7 +310,7 @@ static u32           s_popup_begin_count;   // current popup nesting depth (rebu
     The store a widget uses to keep a few bytes alive across frames, keyed by its id (a region's
     scroll offset, a tree node's open flag, a combo's popup state).  It is a member of the bound
     context's retained store (gui_retained_t); gui_state_get and the open-addressing / tombstone
-    contract live in foundation/gui_state.c, next to the id system that keys it (foundation/gui_id.c).
+    contract live in core/gui_state.c, next to the id system that keys it (core/gui_id.c).
 ----------------------------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------------------------
@@ -425,7 +425,7 @@ ctx_bind( gui_context_t* ctx )
    secondary contexts share the same OS windows and render surfaces rather than owning separate ones.
    Searches the primary context's viewport array for a live slot (one with GPU buffers) whose
    recorded win_id matches; falls back to 0 (main swapchain) if none found.
-   Forward-declared in gui_internal.h; called by the mouse-input path in foundation/gui_io.c. */
+   Forward-declared in gui_internal.h; called by the mouse-input path in core/gui_io.c. */
 static u32
 viewport_index_for_window( i32 win_id )
 {
@@ -457,7 +457,7 @@ static gui_id_t s_id_stack[ GUI_ID_STACK_DEPTH ];
 static u32        s_id_sp;
 
 /* id_seed / id_push / id_pop / id_hash / id_combine and the keyed-state pool (gui_state_get,
-   GUI_STATE) are in foundation/gui_id.c + foundation/gui_state.c, included just after this file. they operate on s_id_stack / s_id_sp
+   GUI_STATE) are in core/gui_id.c + core/gui_state.c, included just after this file. they operate on s_id_stack / s_id_sp
    and g_ctx->retained (via g_ctx) defined here. */
 
 /*----------------------------------------------------------------------------------------------

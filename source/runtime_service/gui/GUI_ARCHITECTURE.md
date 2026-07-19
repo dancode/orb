@@ -9,7 +9,7 @@ Static lib `gui`, two translation units:
 
 - `gui.c` (UI/core unit): context, id/state pool, input snapshot, layout engine, widgets,
   window/dock/popup/nav/table, frame lifecycle, mod vtable. Unity-includes its constituents;
-  directories name ROLES and the include list in gui.c is THE dependency order (foundation/ ->
+  directories name ROLES and the include list in gui.c is THE dependency order (core/ ->
   surface/ -> compose/ + interact/ + present/ (siblings) -> widgets/ -> table/ -> window/ ->
   dock/ -> popup/ -> nav/ -> user/ -> debug/ -> frame/, the conductor). Include order matters;
   later files may reference statics from earlier ones.
@@ -22,7 +22,7 @@ Static lib `gui`, two translation units:
   contest (`surface_hover_nominate`, entered by windows, floating dock groups, and root regions
   alike), the surface reassignment request slot (tear-off / merge-back, serviced by the
   conductor), and open/closed state. Storage + frame turnover
-  stay in `gui_context_t` (foundation), the house pattern; window GESTURES (drags, grips,
+  stay in `gui_context_t` (core), the house pattern; window GESTURES (drags, grips,
   raise-on-press with its dock exception) are window/ policy over these services.
 - `gui_backend.c` (render unit): fonts, draw list, tessellation, GPU flush, debug overlay.
   UI unit calls it one-way through `gui_backend.h` (`draw_*`, `font_*`, `gui_render_*`).
@@ -37,8 +37,8 @@ Three roles, one contract (the directories carry the same names):
   REQUEST a size through `cell_next_w`; the composer decides placement. Composes and
   never paints. Public face: the layout verbs + the `sz_` sizing family.
 - **Behavior** (`interact/`, public door `user/gui_behavior.c`): widget-agnostic
-  interaction SERVICES over the foundation/ utilities (identity `foundation/gui_id.c`,
-  keyed state tracking `foundation/gui_state.c`, the io snapshot `foundation/gui_io.c`;
+  interaction SERVICES over the core/ utilities (identity `core/gui_id.c`,
+  keyed state tracking `core/gui_state.c`, the io snapshot `core/gui_io.c`;
   the public readers over it are `user/gui_query.c`) -- the drag threshold machine + payload
   transfer (`gui_drag.c`), the move-drag protocol + deferred-press latch (`gui_move.c`:
   `move_grab`/`move_track`, `press_defer_*`), the edge-resize mechanism (`gui_resize.c`:
@@ -56,7 +56,7 @@ Three roles, one contract (the directories carry the same names):
   never write it raw (the popup modal fence claims through `interact_hover_fence`, no
   exceptions).
   Behavior's only inputs beyond (id, rect) are the interaction scope (`s_scope`,
-  `foundation/gui_ctx.c`): the owner window, the interaction clip, the chrome hover
+  `core/gui_ctx.c`): the owner window, the interaction clip, the chrome hover
   suppression, and the per-item flag/nav stamps -- placed there by composition at its seams
   (window/child/popup/table begin, the emit seam `cell_next_w`).  Behavior never reads
   the composer scratch (`s_build`); the scope record IS the composition->behavior contract,
@@ -79,7 +79,7 @@ Three roles, one contract (the directories carry the same names):
 The internal prefix names the seam a widget crosses: `item_id` (identity), `cell_next(_w)` /
 `cell_reach` / `cell_split_field` (composer), `item_state` / `item_grab` (behavior),
 `label_*` / `draw_*` / `col_*` (presentation), `io_*` / `gui_state_*` / `gui_anim*`
-(foundation services).
+(core services).
 
 Static-function charter (how internals stay organized):
 1. The file is the family; the prefix is the file's noun (`nav_*` in gui_nav.c, `dock_*` in
@@ -101,7 +101,7 @@ gui_rect_t       r  = cell_next_w( label_natural_w( label ), WIDGET_H );
 gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 draw_fill( r, col_item_bg_anim( id, st ) );
 ``` The style vocabulary itself
-  (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in `foundation/gui_style.c`
+  (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in `core/gui_style.c`
   since all three roles read it. `widgets/` and the window/dock/popup chrome are its
   CLIENTS -- the stock widget set is written on the same substrate a user widget uses, not a
   privileged layer.

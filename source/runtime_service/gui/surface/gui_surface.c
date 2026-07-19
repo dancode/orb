@@ -11,14 +11,14 @@
     is window/ policy layered on these services.
 
     Following the house pattern, the records themselves live in gui_context_t
-    (foundation/gui_ctx.c owns storage + frame turnover: the window pool g_ctx->win.pool /
+    (core/gui_ctx.c owns storage + frame turnover: the window pool g_ctx->win.pool /
     g_ctx->win.count / g_ctx->win.scratch, the dispenser g_ctx->win.z_counter, and the hover nominee
     fields in s_interaction, promoted to hover_win at frame turnover); this file owns their
     behavior.  The OS half of the surface story -- the viewport records (gui_viewport_t) and
     their open/close lifecycle -- stays with the context and the conductor (gui_frame.c),
     since creating a surface is an app()/rhi() operation the tiers never perform.
 
-    Included by gui.c after foundation/ and before compose/ -- a root region enters the
+    Included by gui.c after core/ and before compose/ -- a root region enters the
     same hover contest a window does, so the contest must sit below both.
 
 ==============================================================================================*/

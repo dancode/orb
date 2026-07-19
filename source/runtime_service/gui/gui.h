@@ -23,7 +23,7 @@
 
     Contents -- sections follow the source tree order (see gui.c's include list):
 
-    foundation  -- ids, context config, geometry, style colors / config / themes / vars
+    core        -- ids, context config, geometry, style colors / config / themes / vars
     compose     -- rect algebra, layout template / alignment / modes, pack, split, field
     interact    -- item flags, drag and drop
     present     -- angle algebra, color packing, stroking, draw vertex, volatile cb,

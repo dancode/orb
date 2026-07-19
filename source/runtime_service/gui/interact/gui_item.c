@@ -20,7 +20,7 @@
     kind).  A widget that needs a different recipe (drag-only, no click) should grow from these
     services, not from a flag on this function.
 
-    The ownership state itself (s_interaction) lives in foundation/gui_ctx.c -- the context owns the
+    The ownership state itself (s_interaction) lives in core/gui_ctx.c -- the context owns the
     record; this file is the service that arbitrates it.  Everything behavior consumes about
     "where is this item emitting" comes from the interaction scope (s_scope, same file): the
     owner window, the interaction clip, the chrome suppression, and the per-item flag/nav stamps,
@@ -271,7 +271,7 @@ gui_set_keyboard_focus( void )
 
 /* Drop keyboard/text focus entirely (Enter commit, Escape revert).  The arbitration verb for
    ending a focus capture -- widgets call this instead of writing the interaction record raw;
-   the record itself stays owned by foundation/gui_ctx.c. */
+   the record itself stays owned by core/gui_ctx.c. */
 static void
 item_focus_release( void )
 {

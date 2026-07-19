@@ -9,7 +9,7 @@
     (present/gui_paint_core.c: col_item_bg_anim), the size ease with the layout engine
     (compose/gui_layout_core.c: size_animate).
 
-    Storage lives in the keyed state pool (foundation/gui_state.c) with peek-then-stamp semantics:
+    Storage lives in the keyed state pool (core/gui_state.c) with peek-then-stamp semantics:
     pool pressure stays proportional to in-flight animations, not total widget count.  Idle
     values with no animation history pay only a single non-stamping probe.
 

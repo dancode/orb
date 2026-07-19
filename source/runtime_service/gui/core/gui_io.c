@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/foundation/gui_io.c -- App input -> gui IO snapshot.
+    runtime_service/gui/core/gui_io.c -- App input -> gui IO snapshot.
 
     The input frame is bracketed like everything else in gui:
 

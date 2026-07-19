@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/foundation/gui_style.c -- Style stacks: colors + layout metrics.
+    runtime_service/gui/core/gui_style.c -- Style stacks: colors + layout metrics.
 
     The push-model theme override the widgets draw through, the ImGui PushStyleColor / PushStyleVar
     analogue.  Three layers resolve into the value a widget sees:
@@ -23,7 +23,7 @@
 
     Included by gui.c after gui_theme.c and before gui_ctx.c (ctx_new_frame drives
     style_new_frame) so the accessors are in scope for the macros and the resolve seam.
-    s_style (foundation/gui_theme.c) and GUI_COLOR (gui.h) are already visible.
+    s_style (core/gui_theme.c) and GUI_COLOR (gui.h) are already visible.
 
 ==============================================================================================*/
 // clang-format off
@@ -261,7 +261,7 @@ style_new_frame( void )
 
     Each read resolves through style_var / style_col above (the theme base with any push_style_*
     / next_style_* override applied), so every call site honors the stacks with no change.  They
-    live here with the resolver -- foundation -- because every tier-2 role consumes them: the
+    live here with the resolver -- core -- because every tier-2 role consumes them: the
     composer sizes cells and gutters with the METRICS group, widgets measure natural sizes and
     seat labels with the same numbers, and presentation paints with the SKIN group.  Grouped by
     the two gui_style_t categories (see gui.h).
