@@ -275,6 +275,11 @@ const gui_api_t g_gui_api_struct =
     .indent                             = gui_indent,
     .unindent                           = gui_unindent,
 
+    .tab_bar_begin                      = gui_tab_bar_begin,
+    .tab_bar_end                        = gui_tab_bar_end,
+    .tab_item_begin                     = gui_tab_item_begin,
+    .tab_item_end                       = gui_tab_item_end,
+
     /*==========================  table/ -- multi-column rows over the layout engine  ==========================*/
 
     .table_begin                        = gui_table_begin,

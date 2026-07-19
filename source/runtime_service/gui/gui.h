@@ -1371,6 +1371,35 @@ typedef enum
 } gui_combo_flags_t;
 
 /*==============================================================================================
+    Tab bar
+
+    tab_bar_begin / tab_item_begin open an in-window tabbed content switcher (the ImGuiTabBar
+    analogue): a strip of clickable chips above the body, with only the selected tab's widgets
+    emitted below it.  Distinct from the docking tab strips, which tab whole windows into a dock
+    node -- this tabs SECTIONS of one window's body.  See gui_api.h for the usage contract.
+
+    0 (GUI_TAB_BAR_NONE / GUI_TAB_ITEM_NONE) is the default no-tweak set; the flag params exist so
+    behavior can grow (reordering, fitting policy) without changing the call sites.
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_TAB_BAR_NONE = 0,     /* default behavior */
+
+    /* Room to grow -- e.g. a future GUI_TAB_BAR_REORDERABLE (drag to reorder tabs),
+       GUI_TAB_BAR_FILL (chips expand to fill the strip width). */
+
+} gui_tab_bar_flags_t;
+
+typedef enum
+{
+    GUI_TAB_ITEM_NONE = 0,    /* default behavior */
+
+    /* Room to grow -- e.g. a future GUI_TAB_ITEM_SET_SELECTED (force this tab active this frame). */
+
+} gui_tab_item_flags_t;
+
+/*==============================================================================================
     Table support
 
     begin_table / end_table open a multi-column layout with independent cell clipping.

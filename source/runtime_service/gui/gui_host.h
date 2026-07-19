@@ -337,6 +337,12 @@ bool gui_collapsing_header( const char* label );
 bool gui_tree_node( const char* label );
 void gui_tree_pop( void );
 
+/* widget - tab bar */
+bool gui_tab_bar_begin( const char* str_id, gui_tab_bar_flags_t flags );
+void gui_tab_bar_end( void );
+bool gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags );
+void gui_tab_item_end( void );
+
 /* widget - formatting */
 void gui_indent( f32 w );
 void gui_unindent( f32 w );

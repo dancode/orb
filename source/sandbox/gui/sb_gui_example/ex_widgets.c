@@ -528,4 +528,78 @@ ex_widgets_selection( void )
     gui()->window_end();
 }
 
+/*==============================================================================================
+    Tab Bar -- an in-window tabbed content switcher: only the selected tab's widgets emit, below
+    a strip of clickable chips.  (Docking, which tabs whole windows, has its own bed: sb_gui_dock.)
+==============================================================================================*/
+
+static void
+ex_widgets_tabs( void )
+{
+    if ( ex_begin( "Tab Bar", 480, 520, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text( "Only the selected tab's body is emitted, below the chip strip." );
+        gui()->separator();
+
+        /* Basic tab bar -- one bar id, several sections; the active selection persists per bar. */
+        gui()->separator_text( "tab_bar_begin / tab_item_begin" );
+        if ( gui()->tab_bar_begin( "demo_tabs", GUI_TAB_BAR_NONE ) )
+        {
+            if ( gui()->tab_item_begin( "General", NULL, GUI_TAB_ITEM_NONE ) )
+            {
+                static bool vsync = true;
+                static i32  quality = 2;
+                gui()->text( "General settings live on this tab." );
+                gui()->checkbox( "Vsync", &vsync );
+                gui()->slider_int( "Quality", &quality, 0, 4 );
+                gui()->tab_item_end();
+            }
+            if ( gui()->tab_item_begin( "Audio", NULL, GUI_TAB_ITEM_NONE ) )
+            {
+                static f32 master = 0.8f, music = 0.5f;
+                gui()->slider_float( "Master", &master, 0.0f, 1.0f );
+                gui()->slider_float( "Music",  &music,  0.0f, 1.0f );
+                gui()->tab_item_end();
+            }
+            if ( gui()->tab_item_begin( "About", NULL, GUI_TAB_ITEM_NONE ) )
+            {
+                gui()->text_wrapped( "Same-named widgets on different tabs never collide: "
+                                     "the active tab opens its own id scope." );
+                gui()->tab_item_end();
+            }
+            gui()->tab_bar_end();
+        }
+
+        /* Closeable tabs -- pass a bool* to get a close (x) on the chip; a "Reopen all" button
+           restores the ones the user closed. */
+        gui()->separator_text( "closeable tabs (p_open)" );
+        static bool open_a = true, open_b = true, open_c = true;
+        if ( gui()->button( "Reopen all" ) )
+            open_a = open_b = open_c = true;
+
+        if ( gui()->tab_bar_begin( "doc_tabs", GUI_TAB_BAR_NONE ) )
+        {
+            if ( open_a && gui()->tab_item_begin( "Document A", &open_a, GUI_TAB_ITEM_NONE ) )
+            {
+                gui()->text( "Contents of A." );
+                gui()->tab_item_end();
+            }
+            if ( open_b && gui()->tab_item_begin( "Document B", &open_b, GUI_TAB_ITEM_NONE ) )
+            {
+                gui()->text( "Contents of B." );
+                gui()->tab_item_end();
+            }
+            if ( open_c && gui()->tab_item_begin( "Document C", &open_c, GUI_TAB_ITEM_NONE ) )
+            {
+                gui()->text( "Contents of C." );
+                gui()->tab_item_end();
+            }
+            gui()->tab_bar_end();
+        }
+        gui()->textf( "open: A=%d B=%d C=%d", open_a, open_b, open_c );
+    }
+    gui()->window_end();
+}
+
 /*============================================================================================*/

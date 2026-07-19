@@ -212,6 +212,7 @@ editor_game_window( void )
    deploy) for the bound project.  At its heart a batch job: the window only assembles a
    ship_tool command line and spawns it detached (own console shows the pipeline log),
    exactly the Play Standalone pattern.  The editor keeps no handle and no pipeline state. */
+
 static void
 editor_ship( void )
 {

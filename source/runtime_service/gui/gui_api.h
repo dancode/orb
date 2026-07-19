@@ -1249,6 +1249,36 @@ typedef struct gui_api_s
     void ( *indent    )( f32 w );
     void ( *unindent  )( f32 w );
 
+    /* Tab bar -- an in-window tabbed content switcher (the ImGuiTabBar analogue): a strip of
+       clickable chips with only the selected tab's body emitted below it.  Distinct from docking,
+       which tabs whole windows into a dock node -- this tabs SECTIONS of one window's body.
+
+       tab_bar_begin opens the bar and reserves the strip row; it always returns true (guard-and-pair
+       like child_begin) -- always call tab_bar_end.  Each tab_item_begin draws one chip and returns
+       true only for the selected tab, so -- like window_begin's collapse -- guard the body on the
+       return and call tab_item_end only then.  The active selection persists per bar id; the first
+       tab is the default.  p_open (optional, may be NULL): when non-NULL a close (x) appears on the
+       chip and clicking it sets *p_open = false (the caller drops the item next frame).
+
+           if ( gui()->tab_bar_begin( "settings", GUI_TAB_BAR_NONE ) )
+           {
+               if ( gui()->tab_item_begin( "General", NULL, GUI_TAB_ITEM_NONE ) )
+               {
+                   gui()->checkbox( "Vsync", &vsync );
+                   gui()->tab_item_end();
+               }
+               if ( gui()->tab_item_begin( "Audio", NULL, GUI_TAB_ITEM_NONE ) )
+               {
+                   gui()->slider_float( "Volume", &vol, 0.0f, 1.0f );
+                   gui()->tab_item_end();
+               }
+               gui()->tab_bar_end();
+           } */
+    bool ( *tab_bar_begin  )( const char* str_id, gui_tab_bar_flags_t flags );
+    void ( *tab_bar_end    )( void );
+    bool ( *tab_item_begin )( const char* label, bool* p_open, gui_tab_item_flags_t flags );
+    void ( *tab_item_end   )( void );
+
 
     /*==========================  table/ -- multi-column rows over the layout engine  ==========================*/
 

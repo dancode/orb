@@ -132,6 +132,7 @@
     widgets/gui_volatile.c       -- volatile widgets: per-frame retessellated text/plots (tess_gen slots)
     widgets/gui_widget_slider.c  -- slider + drag widgets: slider_float/int, drag_int, slider_render
     widgets/gui_widget_numeric.c -- numeric text inputs: input_int/float/double, input_float2/3/4
+    widgets/gui_tab_bar.c        -- in-window tab bar: tab_bar_begin/end, tab_item_begin/end
 
     table/gui_table.c            -- table layout: multi-column rows, self-fitting cells, one table clip (needs only the sibling roles and below)
 
@@ -292,6 +293,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/widgets/gui_volatile.c"
 #include "runtime_service/gui/widgets/gui_widget_slider.c"
 #include "runtime_service/gui/widgets/gui_widget_numeric.c"
+#include "runtime_service/gui/widgets/gui_tab_bar.c"
 
 // Table -- independent optional feature (needs only the sibling roles and below, no window dependency)
 #include "runtime_service/gui/table/gui_table.c"

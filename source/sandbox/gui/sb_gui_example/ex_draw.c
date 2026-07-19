@@ -517,7 +517,7 @@ ex_draw_custom( void )
             gui_rect_t sw  = gui()->empty( 0.0f, 22.0f );
             bool       hot = gui()->is_mouse_hovering_rect( sw );
             if ( hot )
-                gui()->set_mouse_cursor( APP_CURSOR_HAND );   /* a shape gui cannot infer */
+                gui()->cursor_set( APP_CURSOR_HAND );   /* a shape gui cannot infer */
             gui()->draw_rect( sw.x, sw.y, sw.w, sw.h, hot ? EX_CYAN : EX_BG );
             gui()->draw_text_in( sw, GUI_ALIGN_CENTER, EX_INK, "click me (hand cursor on hover)" );
             if ( gui()->invisible_button( "strip##click", sw ) )

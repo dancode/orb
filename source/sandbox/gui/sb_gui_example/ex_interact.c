@@ -296,7 +296,7 @@ ex_interact_mouse( void )
         gui()->draw_text_in( strip, GUI_ALIGN_CENTER, 0xFFE0E0E0u,
                              "hover here for the selected cursor" );
         if ( hot )
-            gui()->set_mouse_cursor( (app_cursor_t)cur_sel );
+            gui()->cursor_set( (app_cursor_t)cur_sel );
         gui()->textf( "current request: %s", cur_names[ gui()->get_mouse_cursor() < 9 ? gui()->get_mouse_cursor() : 0 ] );
 
         gui()->text_disabled( "The widgets already drive resize / I-beam shapes" );
