@@ -34,7 +34,7 @@
     Layout cursor helpers
 ----------------------------------------------------------------------------------------------*/
 
-static f32 widget_right( void ) { return lf()->content_x + lf()->content_w; }
+static f32 content_right( void ) { return lf()->content_x + lf()->content_w; }
 
 /* mod.gap_x / mod.gap_y store the caller's raw request (0 = theme default), not a resolved
    number -- resolved live here, at the moment a gap is actually consumed, the same way tmpl.row_h
@@ -89,14 +89,14 @@ content_reach( layout_frame_t* f, f32 x, f32 y )
 
     The snapping arithmetic itself lives in the lat_* primitives (gui_theme.c, behind the
     GUI_GRID_LATTICE compile switch).  The wrappers below just bind the pitch to the live
-    grid_quantum so call sites stay terse (quant_floor( v ) not lat_floor( v, q )).
+    grid_quantum so call sites stay terse (quant_floor_min( v ) not lat_floor( v, q )).
 ----------------------------------------------------------------------------------------------*/
 
 /* Content size floored onto the live style's lattice, never below one quantum so a live size
    never collapses.  Thin wrapper over the lat_* primitives (gui_theme.c) that binds the pitch to
    the active grid_quantum -- the lattice arithmetic and the GUI_GRID_LATTICE gate live there. */
 static f32
-quant_floor( f32 v )
+quant_floor_min( f32 v )
 {
     return lat_floor_min( v, s_style.grid_quantum );
 }
@@ -104,10 +104,10 @@ quant_floor( f32 v )
 /* Largest lattice multiple <= v (0 allowed -- no one-quantum floor).  For snapping a CUMULATIVE
    track edge onto the grid: sizes are taken as the difference of consecutive snapped edges, so the
    per-edge value must be free to be exactly the running total's lattice point (including 0 for the
-   first edge) or the differences drift.  quant_floor's collapse guard belongs on a standalone size,
+   first edge) or the differences drift.  quant_floor_min's collapse guard belongs on a standalone size,
    not on an edge. */
 static f32
-lattice_floor( f32 v )
+quant_floor( f32 v )
 {
     return lat_floor( v, s_style.grid_quantum );
 }
@@ -171,7 +171,7 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
        Grid snapping is done on CUMULATIVE EDGES, not per-track sizes.  Each flex / fraction track's
        far edge (its running position along avail) is floored onto the lattice, and the track's size
        is the difference from the previous snapped edge.  This is why row track-counts stay
-       consistent: the last flex edge is lattice_floor( its ideal cumulative ) regardless of how many
+       consistent: the last flex edge is quant_floor( its ideal cumulative ) regardless of how many
        tracks preceded it, so a two-column 0.5/0.5 row reaches the SAME right edge as a single full
        -width flex over the same avail -- the rounding loss is one sub-quantum remainder at the row
        end, never one-per-track.  (Per-size flooring, the old form, floored each track independently:
@@ -201,7 +201,7 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
         if ( is_flex_or_fraction_track )
         {
             ideal_cum += sz;
-            f32 edge   = lattice_floor( ideal_cum );   /* snap the cumulative edge, not the size */
+            f32 edge   = quant_floor( ideal_cum );   /* snap the cumulative edge, not the size */
             sz         = edge - snap_cum;
             if ( sz < 0.0f ) sz = 0.0f;
             snap_cum   = edge;
@@ -505,7 +505,7 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     layout_clear( f );   /* content re-seeded -> the template opens undeclared; declare a header */
 }
 
-/* layout_push_scoped / layout_pop_scoped -- a minimal layout-frame push/pop at an explicit
+/* volatile_layout_push / volatile_layout_pop -- a minimal layout-frame push/pop at an explicit
    (x, y, w), used only by the volatile-widget replay scope, now live in widgets/gui_volatile.c
    (gui_replay_scope_enter/_exit) alongside the rest of that feature. Both call
    layout_set_default (below), which is why they must be textually included after this file. */

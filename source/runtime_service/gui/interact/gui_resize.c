@@ -42,7 +42,7 @@ static f32  s_resize_fix_x, s_resize_fix_y;
    the border as well as just inside.  Caller gates on hover_win, so no occlusion test here.
    `pin_v` reports horizontal edges only -- a collapsed window (height pinned to the title bar). */
 static u8
-edge_resize_hit( gui_rect_t r, bool pin_v )
+resize_edge_hit( gui_rect_t r, bool pin_v )
 {
     const f32 in  = RESIZE_BAND_INNER;
     const f32 out = RESIZE_BAND_OUTER;
@@ -143,17 +143,17 @@ resize_item( gui_id_t id, gui_id_t owner_win, gui_rect_t box, u8 allow, bool pin
     if ( s_interaction.active_id == resize_id )
     {
         u8 ce = (u8)( s_resize_edges & allow );
-        if ( ce ) set_mouse_cursor( resize_cursor_for_edges( ce ) );
+        if ( ce ) cursor_set( resize_cursor_for_edges( ce ) );
         *dragging = true;
         return ce;
     }
 
-    u8 hot = (u8)( edge_resize_hit( box, pin_v ) & allow );
+    u8 hot = (u8)( resize_edge_hit( box, pin_v ) & allow );
     if ( hot )
     {
         if ( s_io.mouse_pressed[ 0 ] )
             resize_grab( id, box, hot );
-        set_mouse_cursor( resize_cursor_for_edges( hot ) );
+        cursor_set( resize_cursor_for_edges( hot ) );
     }
     return hot;
 }

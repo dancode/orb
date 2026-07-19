@@ -74,7 +74,7 @@ num_step_button( gui_id_t id, gui_rect_t r, bool is_minus )
    would leave the printed "0.1" unchanged for ten clicks).  Only the magnitude is raised, so the
    button's direction is preserved.  Integer formats have no sub-unit resolution and a whole-number
    step already clears their display, so they pass through.  The double-domain, increment-side twin
-   of nav_step_f32's value-side floor (gui_widget_slider.c) -- both read the one display-resolution
+   of value_step_f32's value-side floor (gui_widget_slider.c) -- both read the one display-resolution
    primitive, fmt_decimal_step. */
 static double
 num_step_visible( double inc, const char* fmt, bool is_int )

@@ -62,7 +62,7 @@ fmt_decimal_step( const char* fmt )
 /* Float: floor the step at fmt's decimal resolution so a small-range slider / slow drag still moves
    the printed value every press (see fmt_decimal_step). */
 static bool
-nav_step_f32( f32* v, i32 nav_adjust, f32 step, const char* fmt, f32 lo, f32 hi )
+value_step_f32( f32* v, i32 nav_adjust, f32 step, const char* fmt, f32 lo, f32 hi )
 {
     f32 min_step = fmt_decimal_step( fmt );
     if ( min_step > step ) step = min_step;
@@ -76,7 +76,7 @@ nav_step_f32( f32* v, i32 nav_adjust, f32 step, const char* fmt, f32 lo, f32 hi 
 
 /* Integer: floor the step at one whole unit so a sub-unit v_speed still advances the value. */
 static bool
-nav_step_i32( i32* v, i32 nav_adjust, i32 step, i32 lo, i32 hi )
+value_step_i32( i32* v, i32 nav_adjust, i32 step, i32 lo, i32 hi )
 {
     if ( step < 1 ) step = 1;
 
@@ -177,13 +177,13 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
     }
 
     /* Keyboard value edit (activation captured this slider -- st.nav_adjust): each Left/Right
-       repeat steps the quantize step when set, else 1% of the range.  nav_step_f32 floors that at
+       repeat steps the quantize step when set, else 1% of the range.  value_step_f32 floors that at
        SLIDER_FLOAT_FMT's resolution and clamps, so a small-range slider still moves the printed
        value every press. */
     if ( st.nav_adjust != 0 )
     {
         f32 base = ( step > 0.0f ) ? step : ( hi - lo ) * 0.01f;
-        if ( nav_step_f32( v, st.nav_adjust, base, SLIDER_FLOAT_FMT, lo, hi ) )
+        if ( value_step_f32( v, st.nav_adjust, base, SLIDER_FLOAT_FMT, lo, hi ) )
             changed = true;
     }
 
@@ -225,7 +225,7 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     }
 
     /* Keyboard value edit: one whole step per Left/Right repeat. */
-    if ( st.nav_adjust != 0 && nav_step_i32( v, st.nav_adjust, 1, lo, hi ) )
+    if ( st.nav_adjust != 0 && value_step_i32( v, st.nav_adjust, 1, lo, hi ) )
         changed = true;
 
     f32  t_cur = ( hi > lo ) ? ( (f32)( *v - lo ) / (f32)( hi - lo ) ) : 0.0f;
@@ -388,11 +388,11 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
             }
         }
 
-        /* Keyboard value edit: v_speed rounded to whole units per Left/Right repeat.  nav_step_i32
+        /* Keyboard value edit: v_speed rounded to whole units per Left/Right repeat.  value_step_i32
            floors it at one unit, so a v_speed below 1 still advances rather than rounding to no
            change. */
         if ( st.nav_adjust != 0
-             && nav_step_i32( v, st.nav_adjust, (i32)( v_speed + 0.5f ), v_min, v_max ) )
+             && value_step_i32( v, st.nav_adjust, (i32)( v_speed + 0.5f ), v_min, v_max ) )
             changed = true;
 
         u32 bg = col_frame_bg( st, COL_SLIDER_TRACK );
@@ -494,10 +494,10 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
            repeat moving *v by less than fmt's decimal places can show makes every other press look
            like nothing happened (e.g. v_speed 0.05 against "%.1f": 0.00->0.05 reads as "0.1", but
            0.05->0.10 reads as the SAME "0.1" -- the printed text only ticks over every other step).
-           nav_step_f32 floors the step at fmt's own resolution -- never lower, never past what
+           value_step_f32 floors the step at fmt's own resolution -- never lower, never past what
            v_speed already clears -- so the nudge stays the natural per-press increment everywhere
            it can and only widens exactly enough to clear the display where it can't. */
-        if ( st.nav_adjust != 0 && nav_step_f32( v, st.nav_adjust, v_speed, fmt, v_min, v_max ) )
+        if ( st.nav_adjust != 0 && value_step_f32( v, st.nav_adjust, v_speed, fmt, v_min, v_max ) )
             changed = true;
 
         u32 bg = col_frame_bg( st, COL_SLIDER_TRACK );

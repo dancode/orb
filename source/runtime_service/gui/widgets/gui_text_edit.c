@@ -813,7 +813,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
     /* I-beam over a text field -- and held through a selection drag (st.active), so it does not flip
        back to the arrow while the cursor sweeps outside the box mid-drag. */
     if ( st.hover || st.active )
-        set_mouse_cursor( APP_CURSOR_TEXT );
+        cursor_set( APP_CURSOR_TEXT );
 
     u32 len = edit_strlen( buf, bufsz );
 
@@ -863,7 +863,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
 
     /* Accumulate the edit flag for is_item_deactivated_after_edit (user/gui_query.c). */
     if ( res.changed )
-        mark_item_edited();
+        item_mark_edited();
 
     return res;
 }

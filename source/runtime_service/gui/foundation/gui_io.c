@@ -7,17 +7,20 @@
         gui_event()          -- during the host's ring drain (BEFORE frame_begin), writes the
                                  event-borne input (typed text, wheel, clipboard paste) straight
                                  into s_io, accumulating across the several events of one frame.
-        input_frame_begin()  -- from gui_frame_begin: samples the POLLED input (mouse position +
+        io_frame_begin()  -- from gui_frame_begin: samples the POLLED input (mouse position +
                                  buttons, per-key state for all APP_KEY_COUNT keys, display size)
                                  and computes s_io_dirty.  Does not touch the event-borne fields --
                                  the drain already filled them.
-        input_frame_end()    -- from gui_frame_end: clears the one-frame fields (text/wheel/paste)
+        io_frame_end()    -- from gui_frame_end: clears the one-frame fields (text/wheel/paste)
                                  so each is non-empty only on the frame its event arrived.
 
     The app event ring is single-consumer; the host drains it (for resize etc.) and hands each
     event to gui_event(), so gui does not drain the ring itself.  Because the drain completes
     before frame_begin, one storage slot per field suffices -- gui_event fills it, widgets read it,
-    input_frame_end clears it -- with no separate pending buffer.  The result lives in s_io.
+    io_frame_end clears it -- with no separate pending buffer.  The result lives in s_io.
+
+    File order: state -> snapshot readers -> event intake -> input frame lifecycle -> the debug
+    layer toggle.
 
     Included by gui.c after gui_emit_draw.c.
 
@@ -34,30 +37,27 @@ ORB_STATIC_ASSERT( APP_KEY_COUNT <= GUI_KEY_COUNT,
 ----------------------------------------------------------------------------------------------*/
 
 /* The per-frame input snapshot the widgets see.  The polled fields are sampled by
-   input_frame_begin(); the event-borne fields (text/wheel/paste) are written straight in by
-   gui_event() during the host's ring drain and cleared by input_frame_end(). */
+   io_frame_begin(); the event-borne fields (text/wheel/paste) are written straight in by
+   gui_event() during the host's ring drain and cleared by io_frame_end(). */
 static gui_io_t s_io;
 
 /* True when any input-state change was detected this frame: mouse moved, button edge,
-   key press/release, wheel, text, paste, or display-size change.  Computed in input_frame_begin
+   key press/release, wheel, text, paste, or display-size change.  Computed in io_frame_begin
    and cleared at the next call.  Read by frame_begin to gate the frontend-dirty check. */
 static bool s_io_dirty;
 
 /* Set by gui_owned_window_event (gui_frame.c, same unity TU) when a floater OS window
-   is resized.  Consumed and cleared by input_frame_begin so the resize marks one frame dirty. */
+   is resized.  Consumed and cleared by io_frame_begin so the resize marks one frame dirty. */
 static bool s_viewport_dirty;
 
 /* Previous primary display size -- compared each frame to detect host-side viewport_resize
-   calls on the main surface (which also change win_w/win_h passed into input_frame_begin). */
+   calls on the main surface (which also change win_w/win_h passed into io_frame_begin). */
 static i32 s_prev_disp_w, s_prev_disp_h;
-
-/* Internal accessors used by gui_frame.c (same unity TU). */
-static bool io_dirty( void ) { return s_io_dirty; }
 
 /* Bookkeeping for the event-borne fields gui_event writes directly into s_io.  s_io_text_len is
    the append cursor into s_io.text (where the next typed char lands, and the bound check);
    s_io_paste_set records that a paste arrived this frame so an empty-string paste is distinguished
-   from no paste.  Both reset by input_frame_end. */
+   from no paste.  Both reset by io_frame_end. */
 static u32  s_io_text_len;
 static bool s_io_paste_set;
 
@@ -67,17 +67,6 @@ static bool s_io_paste_set;
    same window even if the cursor leaves it.  Cleared to invalid on up so it re-learns. */
 static i32  s_pending_mouse_win = APP_WIN_INVALID;
 static bool s_pending_mouse_win_set;
-
-static bool s_debug_enabled;
-void gui_debug_enable( bool enable )
-{
-    s_debug_enabled = enable;
-}
-
-bool gui_debug_is_enabled( void )
-{
-    return s_debug_enabled;
-}
 
 /* Double-click detection.  gui has no clock of its own, so the second press of a pair is
    recognised from the dt fed to frame_begin: a press counts as a double-click when it lands
@@ -89,14 +78,49 @@ bool gui_debug_is_enabled( void )
 static f32 s_click_elapsed[ 3 ] = { 1.0e9f, 1.0e9f, 1.0e9f };   /* start "long ago" */
 static f32 s_click_x[ 3 ], s_click_y[ 3 ];
 
-/*----------------------------------------------------------------------------------------------
-    Clipboard
+/* Debug-layer master toggle (public pair at the bottom of this file); lives beside the
+   snapshot because the hotkey driver reads it on the same polled channel. */
+static bool s_debug_enabled;
 
-    Outbound (cut / copy) goes straight to the OS clipboard through the app module
+/*----------------------------------------------------------------------------------------------
+    Snapshot readers -- the queries later tiers ask of s_io, named once.
+----------------------------------------------------------------------------------------------*/
+
+/* Internal accessor used by gui_frame.c (same unity TU). */
+static bool io_dirty( void ) { return s_io_dirty; }
+
+/* Modifier key helpers: poll both L and R variants so callers need not repeat the pair. */
+static bool io_ctrl ( void ) { return s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_down[ APP_KEY_RCTRL  ]; }
+static bool io_shift( void ) { return s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ]; }
+static bool io_alt  ( void ) { return s_io.keys_down[ APP_KEY_LALT   ] || s_io.keys_down[ APP_KEY_RALT   ]; }
+
+/* Claim a key edge for this frame -- the single choke point every consumer (item activation, nav
+   type-ahead, nav mnemonics, and any future claimant) routes through instead of hand-zeroing s_io
+   fields at its own call site.  Zeroes both the initial-press and repeat edges so neither a plain
+   check nor a repeat-aware check downstream in the same frame sees the key; keys_down / keys_released
+   are untouched on purpose -- a claim silences "was this just pressed", not "is it physically held"
+   (a held key still reads as held for e.g. continuous camera movement even after something claims its
+   press edge).  Returns whether there was actually a live edge to take, so a caller can tell "I used
+   it" from "there was nothing there anyway".  See gui_want_capture_keyboard (user/gui_query.c) for the
+   full per-frame tier order this primitive is tier 2 of. */
+static bool
+key_claim( app_key_t k )
+{
+    bool had_edge = s_io.keys_pressed[ k ] || s_io.keys_pressed_repeat[ k ];
+    s_io.keys_pressed[ k ]        = false;
+    s_io.keys_pressed_repeat[ k ] = false;
+    return had_edge;
+}
+
+/*----------------------------------------------------------------------------------------------
+    Event intake -- gui_event() and the io_add_* feeders it unpacks the app ring through,
+    running during the host's drain, before frame_begin.  Not part of the public widget API.
+
+    Clipboard: outbound (cut / copy) goes straight to the OS clipboard through the app module
     (app()->clipboard_set), so copied text is available to other applications.  Inbound (paste)
     is event-driven: the platform reads the OS clipboard on the paste gesture and posts an
     APP_EV_CLIPBOARD event, which gui_event writes straight into s_io.paste for the focused field
-    to consume this frame; input_frame_end clears it after.  gui owns no clipboard buffer of its
+    to consume this frame; io_frame_end clears it after.  gui owns no clipboard buffer of its
     own -- it is a pure conduit between the OS and the focused field.
 ----------------------------------------------------------------------------------------------*/
 
@@ -116,10 +140,10 @@ gui_clipboard_set( const char* s, u32 n )
 }
 
 /* Write pasted text arriving via APP_EV_CLIPBOARD straight into s_io.paste for the focused field
-   to consume this frame; input_frame_end clears it after.  s_io_paste_set marks that a paste
+   to consume this frame; io_frame_end clears it after.  s_io_paste_set marks that a paste
    happened so an empty-string paste is not mistaken for no paste. */
 static void
-add_paste_text( const char* text )
+io_add_paste( const char* text )
 {
     u32 i = 0;
     if ( text )
@@ -129,13 +153,8 @@ add_paste_text( const char* text )
     s_io_paste_set   = true;
 }
 
-/*----------------------------------------------------------------------------------------------
-    Internal input feeders -- fed by gui_event() as it unpacks the app event ring,
-    before gui_frame_begin() for the same frame.  Not part of the public API.
-----------------------------------------------------------------------------------------------*/
-
 static void
-add_input_char( u32 codepoint )
+io_add_char( u32 codepoint )
 {
     /* Ignore control characters.  Windows posts WM_CHAR for backspace (0x08), tab,
        enter, escape, DEL (0x7F) etc.; those are handled via key state, not inserted
@@ -153,7 +172,7 @@ add_input_char( u32 codepoint )
 }
 
 static void
-add_mouse_wheel( f32 delta )
+io_add_wheel( f32 delta )
 {
     s_io.mouse_wheel += delta;
 }
@@ -170,27 +189,27 @@ gui_event( const app_event_t* ev )
     switch ( ev->type )
     {
         case APP_EV_CHAR:
-            add_input_char( ev->data.text.codepoint );
+            io_add_char( ev->data.text.codepoint );
             return true;
 
         case APP_EV_MOUSE_WHEEL:
             s_pending_mouse_win     = ev->win_id;   /* route the wheel to the cursor's surface */
             s_pending_mouse_win_set = true;
-            add_mouse_wheel( (f32)ev->data.mouse_wheel.delta );
+            io_add_wheel( (f32)ev->data.mouse_wheel.delta );
             return true;
 
         case APP_EV_CLIPBOARD:
-            add_paste_text( ev->data.clipboard.text );
+            io_add_paste( ev->data.clipboard.text );
             return true;
 
-        /* Key state is polled, not event-borne: input_frame_begin samples every key into s_io each
+        /* Key state is polled, not event-borne: io_frame_begin samples every key into s_io each
            frame, and consumers read it through the tier model (key_claim / is_key_pressed).  So key
            events need no handling here -- including the debug layer hotkeys (NP1-NP5), which now live
            with the rest of the debug driver in debug_hotkeys (debug/gui_frame_overlay.c) on the same
            polled channel as F9/F10/P/O, instead of this separate event-time path.  Falls through to
            the default (not consumed), so an unbound F-key still reaches the host's bind system. */
 
-        /* Position + buttons are still resolved by input_frame_begin from the polled snapshot (client
+        /* Position + buttons are still resolved by io_frame_begin from the polled snapshot (client
            coords of the window the cursor is in); these events carry the win_id that identifies
            WHICH window that is, so the host viewport can be resolved.  Not consumed -- the
            mouse-capture fence (want_capture_mouse) decides UI-vs-scene at read time, not here. */
@@ -214,12 +233,16 @@ gui_event( const app_event_t* ev )
     }
 }
 
+/*----------------------------------------------------------------------------------------------
+    Input frame lifecycle -- io_frame_begin / io_frame_end, bracketing the widgets' reads.
+----------------------------------------------------------------------------------------------*/
+
 /* Per-button double-click detection: a press counts as a double-click when it lands within
    DOUBLE_CLICK_TIME of the previous press and within DOUBLE_CLICK_DIST of it.  s_click_elapsed
    grows by dt each frame (gui has no clock of its own) and resets on every fresh press; a detected
    double consumes the timer so a third press is a fresh single.  Writes s_io.mouse_double[]. */
 static void
-input_detect_double_click( f32 dt )
+io_detect_double_click( f32 dt )
 {
     for ( u32 i = 0; i < 3; ++i )
     {
@@ -248,17 +271,15 @@ input_detect_double_click( f32 dt )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
-    input_frame_begin -- sample the polled input into s_io for the current frame.
+/* io_frame_begin -- sample the polled input into s_io for the current frame.
 
-    The head of the input frame, called from gui_frame_begin.  Samples what must be polled (mouse
-    position + buttons, per-key state, display size) and computes s_io_dirty.  The event-borne
-    fields (text/wheel/paste) are NOT touched here -- gui_event already wrote them straight into
-    s_io during the host's ring drain, which runs before frame_begin; input_frame_end clears them.
-----------------------------------------------------------------------------------------------*/
+   The head of the input frame, called from gui_frame_begin.  Samples what must be polled (mouse
+   position + buttons, per-key state, display size) and computes s_io_dirty.  The event-borne
+   fields (text/wheel/paste) are NOT touched here -- gui_event already wrote them straight into
+   s_io during the host's ring drain, which runs before frame_begin; io_frame_end clears them. */
 
 static void
-input_frame_begin( i32 win_w, i32 win_h, f32 dt )
+io_frame_begin( i32 win_w, i32 win_h, f32 dt )
 {
     /* Mouse position (polled): client coords of the window the cursor is in.
        Compare against the previous frame before overwriting to detect movement. */
@@ -297,7 +318,7 @@ input_frame_begin( i32 win_w, i32 win_h, f32 dt )
     }
 
     /* Double-click: a press soon after, and close to, the previous press. */
-    input_detect_double_click( dt );
+    io_detect_double_click( dt );
 
     /* Key state snapshot.  keys_pressed is the initial press; keys_pressed_repeat also catches OS
        auto-repeat ticks (held backspace / arrows in a text field), the caller picking which it reads.
@@ -314,7 +335,7 @@ input_frame_begin( i32 win_w, i32 win_h, f32 dt )
 
     /* Text, scroll and paste were written straight into s_io by gui_event during the host's ring
        drain, which completes before this call -- nothing to promote here.  They stay live for the
-       widgets this frame and are cleared by input_frame_end. */
+       widgets this frame and are cleared by io_frame_end. */
 
     /* Display size change: primary window resized (win_w/win_h changed) or a floater viewport
        was resized (s_viewport_dirty set by gui_owned_window_event).  Either invalidates the
@@ -338,18 +359,16 @@ input_frame_begin( i32 win_w, i32 win_h, f32 dt )
     s_io.time     += (f64)dt;   /* monotonic frame clock for get_time() */
 }
 
-/*----------------------------------------------------------------------------------------------
-    input_frame_end -- clear the one-frame event-borne input.
+/* io_frame_end -- clear the one-frame event-borne input.
 
-    The tail of the input frame, called from gui_frame_end unconditionally (every frame, including
-    clean / idle-skipped ones).  Text, wheel and paste are non-empty only on the frame their event
-    arrived, so they are cleared here after the widgets have read them and before the next drain
-    refills them.  Valid because the host drains the event ring (which fills these fields) before
-    frame_begin -- never between this call and the next input_frame_begin.
-----------------------------------------------------------------------------------------------*/
+   The tail of the input frame, called from gui_frame_end unconditionally (every frame, including
+   clean / idle-skipped ones).  Text, wheel and paste are non-empty only on the frame their event
+   arrived, so they are cleared here after the widgets have read them and before the next drain
+   refills them.  Valid because the host drains the event ring (which fills these fields) before
+   frame_begin -- never between this call and the next io_frame_begin. */
 
 static void
-input_frame_end( void )
+io_frame_end( void )
 {
     s_io.text[ 0 ]   = '\0';
     s_io_text_len    = 0;
@@ -358,27 +377,19 @@ input_frame_end( void )
     s_io_paste_set   = false;
 }
 
-/* Modifier key helpers: poll both L and R variants so callers need not repeat the pair. */
-static bool io_ctrl ( void ) { return s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_down[ APP_KEY_RCTRL  ]; }
-static bool io_shift( void ) { return s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ]; }
-static bool io_alt  ( void ) { return s_io.keys_down[ APP_KEY_LALT   ] || s_io.keys_down[ APP_KEY_RALT   ]; }
+/*----------------------------------------------------------------------------------------------
+    Debug layer toggle -- the public master switch the debug driver (debug_hotkeys,
+    debug/gui_frame_overlay.c) is gated on.
+----------------------------------------------------------------------------------------------*/
 
-/* Claim a key edge for this frame -- the single choke point every consumer (item activation, nav
-   type-ahead, nav mnemonics, and any future claimant) routes through instead of hand-zeroing s_io
-   fields at its own call site.  Zeroes both the initial-press and repeat edges so neither a plain
-   check nor a repeat-aware check downstream in the same frame sees the key; keys_down / keys_released
-   are untouched on purpose -- a claim silences "was this just pressed", not "is it physically held"
-   (a held key still reads as held for e.g. continuous camera movement even after something claims its
-   press edge).  Returns whether there was actually a live edge to take, so a caller can tell "I used
-   it" from "there was nothing there anyway".  See gui_want_capture_keyboard (user/gui_query.c) for the
-   full per-frame tier order this primitive is tier 2 of. */
-static bool
-key_claim( app_key_t k )
+void gui_debug_enable( bool enable )
 {
-    bool had_edge = s_io.keys_pressed[ k ] || s_io.keys_pressed_repeat[ k ];
-    s_io.keys_pressed[ k ]        = false;
-    s_io.keys_pressed_repeat[ k ] = false;
-    return had_edge;
+    s_debug_enabled = enable;
+}
+
+bool gui_debug_is_enabled( void )
+{
+    return s_debug_enabled;
 }
 
 // clang-format on

@@ -61,7 +61,7 @@ static struct
     gui_id_t  next_hover_win; // front-most window nominee gathered this frame
     u32       next_hover_win_z;
 
-    /* Hardware-cursor request.  Widgets nominate a shape during the build (set_mouse_cursor); the
+    /* Hardware-cursor request.  Widgets nominate a shape during the build (cursor_set); the
        last writer wins -- safe because exactly one widget hovers per frame, and the resize bands
        suppress widget hover so a window edge and a widget never both request.  cursor_flush pushes
        it to the OS window under the pointer at the next frame_begin (deferred one frame, like
@@ -72,7 +72,7 @@ static struct
        focused_id_at_frame_start snapshots focused_id at interaction_frame_reset.  At frame_end, if
        focused_id changed this frame, the departing widget's id and edit history are latched into
        focus_ended_* for one frame so the next frame's is_item_deactivated_after_edit can read them.
-       focused_id_edited accumulates while a widget holds focus (set by mark_item_edited in
+       focused_id_edited accumulates while a widget holds focus (set by item_mark_edited in
        input_field_edit); cleared and snapshotted into focus_ended_edited on departure. */
     gui_id_t focused_id_at_frame_start;
     bool     focused_id_edited;
@@ -482,7 +482,7 @@ rect_hit( gui_rect_t r )
 
     gui owns the OS cursor shape only while it owns the mouse (hover_win set, or a widget drag in
     flight) -- the same want_capture_mouse fence non-UI code gates on.  A widget requests a shape for
-    the frame with set_mouse_cursor; cursor_flush (called at frame_begin) pushes the PREVIOUS frame's
+    the frame with cursor_set; cursor_flush (called at frame_begin) pushes the PREVIOUS frame's
     request to the OS window the cursor was over, deferred one frame exactly like hover_win.
 
     app()->window_set_cursor is sticky (it latches win->cursor), so the request is flushed only on a
@@ -491,7 +491,7 @@ rect_hit( gui_rect_t r )
 ----------------------------------------------------------------------------------------------*/
 
 /* Request a hardware cursor shape for this frame.  Last writer wins (one hover per frame). */
-static void set_mouse_cursor( app_cursor_t c ) { s_interaction.mouse_cursor = c; }
+static void cursor_set( app_cursor_t c ) { s_interaction.mouse_cursor = c; }
 
 /* Flush the requested cursor to the OS window under the pointer.  Reads last frame's request +
    hover state (called before interaction_frame_reset promotes the new frame's hover).  Dedupes on
@@ -580,7 +580,7 @@ interaction_frame_reset( void )
    buffer changes.  Accumulates in focused_id_edited (never cleared while focus stays); frame_end
    snapshots it into focus_ended_edited when focus departs so is_item_deactivated_after_edit can
    read it for one frame after the focus moves. */
-static void mark_item_edited( void ) { s_interaction.focused_id_edited = true; }
+static void item_mark_edited( void ) { s_interaction.focused_id_edited = true; }
 
 /* Per-context frame reset: rebuilds the frame-scratch and per-context retained state.
    Called by ctx_begin for every context -- does NOT touch the global s_interaction fields

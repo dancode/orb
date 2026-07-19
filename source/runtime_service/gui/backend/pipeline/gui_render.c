@@ -432,12 +432,12 @@ gui_render_get_mode( void )
     return s_render.debug_mode;
 }
 
-/* batch_debug_color -- a distinct, saturated, fully-opaque color per draw-call index for the BATCH
+/* render_batch_debug_color -- a distinct, saturated, fully-opaque color per draw-call index for the BATCH
    view.  Packed RGBA8 (R low byte), matching the shader's dbg_tint decode and GUI_COLOR byte order.
    A 12-entry table cycles; consecutive entries are spread around the hue wheel so neighbouring
    batches stay easy to tell apart, and the wrap is harmless (it only marks boundaries). */
 static u32
-batch_debug_color( u32 i )
+render_batch_debug_color( u32 i )
 {
     static const u32 palette[ 12 ] = {
         GUI_COLOR( 0xE6, 0x39, 0x46, 0xFF ),   // red
@@ -634,7 +634,7 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
             push.tex_idx  = dc->tex_idx & ~GUI_TEX_RGBA_BIT;
             push.rgba_tex = ( dc->tex_idx & GUI_TEX_RGBA_BIT ) ? 1u : 0u;
             if ( batch_view )
-                push.dbg_tint = batch_debug_color( draw_calls );
+                push.dbg_tint = render_batch_debug_color( draw_calls );
             rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
 
             rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){

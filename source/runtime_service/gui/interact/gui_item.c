@@ -50,7 +50,7 @@
    st.clicked.  Subtracting the threshold (vs zeroing) keeps the cadence steady across uneven dt. */
 
 static bool
-widget_repeat_tick( bool pressed )
+item_repeat_tick( bool pressed )
 {
     if ( pressed )
     {
@@ -396,7 +396,7 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
 
     if ( ( s_scope.flags & GUI_ITEM_BUTTON_REPEAT ) && st.active && s_interaction.hover_id == id )
     {
-        st.clicked = widget_repeat_tick( st.pressed );
+        st.clicked = item_repeat_tick( st.pressed );
 
         /* A held repeat button advances by time alone, not by mouse movement, so it needs a frame
            even when the mouse sits dead still -- without this the idle-skip sees no input change,

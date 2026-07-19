@@ -48,12 +48,12 @@
 #define GUI_MINIMIZE_SALT   0x53A11E57u
 
 /* The native-borderless (GUI_WIN_NATIVE) machinery -- window_is_native / window_native_id, the
-   caption-button layout + glyphs, window_sync_native, vp_request_button, and the caption strip
+   caption-button layout + glyphs, window_sync_native, native_popin_request, and the caption strip
    window_end calls (native_caption_chrome) -- lives in gui_window_native.c, included just
    before this file. */
 
 /* GUI_RESIZE_SALT, the RESIZE_BAND_* grab-band constants, and the record-agnostic resize helpers
-   (edge_resize_hit, resize_grab, resize_apply_edges) live in interact/gui_resize.c (the
+   (resize_edge_hit, resize_grab, resize_apply_edges) live in interact/gui_resize.c (the
    GUI_RESIZE_* edge bits in gui_internal.h, the hot-edge paint in present/gui_paint_core.c:
    draw_resize_highlight), ahead of gui_layout.c, so child_begin reuses the same mechanism (the
    dock splitter does not; it has its own drag path in dock/).  Only the

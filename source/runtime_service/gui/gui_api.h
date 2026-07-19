@@ -1584,11 +1584,11 @@ typedef struct gui_api_s
     f64  ( *get_time                 )( void );
 
     /* Hardware cursor.  The widgets already drive the shape from their own hover (resize edges show
-       the directional sizers, a text field shows the I-beam).  set_mouse_cursor lets UI code request
+       the directional sizers, a text field shows the I-beam).  cursor_set lets UI code request
        a shape gui cannot infer -- e.g. APP_CURSOR_HAND over a custom clickable -- for this frame;
        the last request wins and is flushed to the OS window under the pointer while gui owns the
        mouse, then reset to APP_CURSOR_ARROW next frame.  get_mouse_cursor reads the current request. */
-    void         ( *set_mouse_cursor )( app_cursor_t c );
+    void         ( *cursor_set )( app_cursor_t c );
     app_cursor_t ( *get_mouse_cursor )( void );
 
     /* set_keyboard_focus -- queue a programmatic focus request: the next focusable widget emitted

@@ -12,7 +12,7 @@
         window_is_native / window_native_id -- the identity tests begin and end both gate on
         native_caption_buttons              -- the one layout for holes AND drawn buttons
         window_sync_native                  -- geometry pin + frame publish + restore tracking
-        vp_request_button                   -- button-triggered tear-off / merge-back request
+        native_popin_request                   -- button-triggered tear-off / merge-back request
         native_caption_chrome               -- window_end's caption strip (draw + interact)
 
     Included by gui.c after gui_window.c (gesture policy state) and before
@@ -228,7 +228,7 @@ window_sync_native( gui_window_t* win, gui_win_flags_t flags )
    button in window_end.  Idempotent: a single slot covers the one dragged window at a time, so
    the first caller wins. */
 static void
-vp_request_button( gui_window_t* win )
+native_popin_request( gui_window_t* win )
 {
     if ( s_vp_request.active ) return;
     s_vp_request.active  = true;
@@ -295,7 +295,7 @@ native_caption_chrome( gui_window_t* win, f32 title_h, f32 right_limit )
                     else
                         app()->window_request_close( os );
                     break;
-                case NATIVE_BTN_POPIN: vp_request_button( win ); break;
+                case NATIVE_BTN_POPIN: native_popin_request( win ); break;
             }
         }
     }

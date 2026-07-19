@@ -515,7 +515,7 @@ select_window_end( void )
                 s_select.c_run = run;
                 s_select.c_chr = chr;
             }
-            set_mouse_cursor( APP_CURSOR_TEXT );   /* hold the I-beam through the sweep */
+            cursor_set( APP_CURSOR_TEXT );   /* hold the I-beam through the sweep */
         }
 
         if ( s_io.mouse_released[ 0 ] )
@@ -573,7 +573,7 @@ select_window_end( void )
     {
         u32 run, chr;
         if ( select_pos_from_mouse( win, body, true, &run, &chr ) )
-            set_mouse_cursor( APP_CURSOR_TEXT );
+            cursor_set( APP_CURSOR_TEXT );
     }
 
     /* Keys act only when no text field owns the keyboard (a focused field runs its own

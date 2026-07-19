@@ -79,7 +79,21 @@ Three roles, one contract (the directories carry the same names):
 The internal prefix names the seam a widget crosses: `item_id` (identity), `cell_next(_w)` /
 `cell_reach` / `cell_split_field` (composer), `item_state` / `item_grab` (behavior),
 `label_*` / `draw_*` / `col_*` (presentation), `io_*` / `gui_state_*` / `gui_anim*`
-(foundation services). The canonical leaf widget is four lines, one per seam:
+(foundation services).
+
+Static-function charter (how internals stay organized):
+1. The file is the family; the prefix is the file's noun (`nav_*` in gui_nav.c, `dock_*` in
+   dock/). A second mini-family in the same file gets its own banner section (`press_defer_*`
+   in gui_move.c).
+2. A narrow helper adopts its user's language, not a system prefix (`checkable_cell`,
+   `slider_render`, `carve_skip`).
+3. A shared pure utility moves to gui_internal.h's stateless-helpers section on its SECOND
+   user; single-file utils (`fnv1a`, `rect_empty`) stay local.
+4. The door is at the bottom: pure leaf helpers first, mechanism next (bottom-up), the file's
+   seam / public face last (`cell_next_w` ends gui_layout_core.c, `window_begin_ex` ends
+   gui_window_free.c).
+
+The canonical leaf widget is four lines, one per seam:
 
 ```c
 gui_id_t         id = item_id( label );

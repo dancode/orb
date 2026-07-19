@@ -251,7 +251,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             gui_id_t     det_id = id_combine( s_build.win.id, GUI_DETACH_SALT );
             gui_item_state_t det_st = item_state( det_id, det_r, ITEM_BUTTON );
             if ( det_st.clicked )
-                vp_request_button( win );   /* 0 = main surface -> tear off; else floater -> merge back */
+                native_popin_request( win );   /* 0 = main surface -> tear off; else floater -> merge back */
 
             /* Icon: an outlined box when docked (click to pop out), a filled box when floating
                (click to dock back in). */

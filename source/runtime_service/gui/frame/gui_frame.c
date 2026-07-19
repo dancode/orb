@@ -151,7 +151,7 @@ static gui_context_t* s_ctx_save_stack[ GUI_CTX_STACK_DEPTH ];
 static u32              s_ctx_save_sp;
 
 /* True when the current frame has any input change, in-flight animation, or render delta from last
-   frame.  Computed in frame_begin after input_frame_begin; exposed via gui_frame_dirty().  When false
+   frame.  Computed in frame_begin after io_frame_begin; exposed via gui_frame_dirty().  When false
    the host may skip ctx_begin / widget emit / ctx_end entirely and call render() directly -- the
    previous frame's draw list and tessellation are preserved and reused unchanged. */
 static bool s_frame_dirty = true;   /* start true: forces a full first-frame build */
@@ -211,7 +211,7 @@ gui_frame_begin( f32 dt )
        the field always reflects the last frame the shell was active. */
 
     /* Push last frame's cursor request to the OS BEFORE interaction_frame_reset promotes the new
-       hover_win and input_frame_begin overwrites mouse_viewport -- cursor_flush reads both as the
+       hover_win and io_frame_begin overwrites mouse_viewport -- cursor_flush reads both as the
        previous frame left them, keeping the requested shape and its target window coherent. */
     cursor_flush();
 
@@ -220,7 +220,7 @@ gui_frame_begin( f32 dt )
     gui_build_stats_publish();
 
     /* Refresh the IO snapshot, computing s_io_dirty as a side-effect. */
-    input_frame_begin( disp_w, disp_h, dt );
+    io_frame_begin( disp_w, disp_h, dt );
 
     /* Frontend dirty: true when the frame must emit widgets.
          - io_dirty          : any input change this frame (mouse move/button/key/wheel/text)
@@ -332,7 +332,7 @@ gui_frame_end( void )
 
     /* Clear the one-frame event-borne input (text/wheel/paste) now that the widgets have read it.
        Runs every frame, including clean ones, so it stays cleared before the next ring drain. */
-    input_frame_end();
+    io_frame_end();
 }
 
 /*============================================================================================*/

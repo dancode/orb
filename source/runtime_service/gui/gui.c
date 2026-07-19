@@ -98,7 +98,7 @@
     foundation/gui_style.c       -- style stacks machinery: style_col/style_var resolution, push/pop/next ops
     foundation/gui_ctx.c         -- context state: s_interaction, s_build, s_scope, layout_frame_t, gui_context_t,
                                       ctx_new_frame, memory stats, multi-context lifecycle (ctx_create/destroy/bind)
-    foundation/gui_io.c          -- io snapshot service: app->IO, input_frame_begin/end, s_io
+    foundation/gui_io.c          -- io snapshot service: app->IO, io_frame_begin/end, s_io
     foundation/gui_id.c          -- identity service: id_hash, id_combine, id_seed/push/pop
     foundation/gui_state.c       -- keyed state tracking service: gui_state_get/peek, GUI_STATE
 

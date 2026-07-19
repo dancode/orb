@@ -272,7 +272,7 @@ clip_append( gui_rect_t r )
 }
 
 static gui_rect_t
-draw_current_clip( void )
+clip_current( void )
 {
     return s_draw.clip_stack[ s_draw.clip_depth - 1 ];
 }
@@ -286,7 +286,7 @@ rect_empty( gui_rect_t r )
 
 /* Reject a shape whose axis-aligned bounds cannot touch the current clip -- it would emit a command
    + geometry the GPU then scissors to nothing.  The cull is exact, not heuristic: cur_clip_idx
-   records the active scissor at every emit, so draw_current_clip() IS the scissor the shape renders
+   records the active scissor at every emit, so clip_current() IS the scissor the shape renders
    under; a box fully outside it lights no pixel.  This rejects at the source -- a scrolled-out widget
    (or a whole region clipped to zero) costs no command slot, no string-pool / point-pool space, and
    no tessellation, not merely no draw call.  Conservative: only a box fully past an edge is dropped
@@ -294,7 +294,7 @@ rect_empty( gui_rect_t r )
 static bool
 draw_cull_box( f32 x, f32 y, f32 w, f32 h )
 {
-    gui_rect_t c = draw_current_clip();
+    gui_rect_t c = clip_current();
     if ( rect_empty( c ) )                  return true;   /* nothing in an empty clip is visible */
     if ( x + w <= c.x || x >= c.x + c.w )   return true;   /* fully left / right of the clip      */
     if ( y + h <= c.y || y >= c.y + c.h )   return true;   /* fully above / below the clip        */
@@ -307,7 +307,7 @@ draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
     /* Intersect with the enclosing clip so a nested region can never scissor outside its parent.
        The push always happens -- a clipped-out region pushes a zero rect and draws nothing --
        so every push has a matching pop and the stack stays balanced. */
-    gui_rect_t c  = rect_intersect( ( gui_rect_t ){ x, y, w, h }, draw_current_clip() );
+    gui_rect_t c  = rect_intersect( ( gui_rect_t ){ x, y, w, h }, clip_current() );
     u8         ci = clip_append( c );
 
     if ( s_draw.clip_depth < GUI_CLIP_DEPTH )
@@ -909,7 +909,7 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
        horizontal overflow is left to the GPU scissor and the per-glyph clip in tess_text_n.  Done
        before the pool copy so a culled run costs no string-pool space either. */
     {
-        gui_rect_t cc = draw_current_clip();
+        gui_rect_t cc = clip_current();
         f32          lh = font_line_h();
         if ( rect_empty( cc ) || y + 2.0f * lh <= cc.y || y - lh >= cc.y + cc.h )
             return;

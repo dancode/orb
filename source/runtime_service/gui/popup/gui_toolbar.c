@@ -58,11 +58,11 @@ gui_toolbar_end( void )
     gui_pop_id();
 }
 
-/* tb_icon_rect -- the icon's draw rect, twice the linear size of the plain WIDGET_PAD inset and
+/* toolbar_icon_rect -- the icon's draw rect, twice the linear size of the plain WIDGET_PAD inset and
    centered in the cell (clamped to the cell so an oversized icon never spills past the button's
    own background).  Bigger glyph, same cell footprint -- the button itself does not grow. */
 static gui_rect_t
-tb_icon_rect( gui_rect_t r )
+toolbar_icon_rect( gui_rect_t r )
 {
     // f32 w = ( r.w - 2.0f * WIDGET_PAD ) * 2.0f;
     // f32 h = ( r.h - 2.0f * WIDGET_PAD ) * 2.0f;
@@ -91,7 +91,7 @@ gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, col_item_bg_anim( id, st ) );
-    gui_draw_icon_in( tb_icon_rect( r ), icon, 0xFFFFFFFFu );
+    gui_draw_icon_in( toolbar_icon_rect( r ), icon, 0xFFFFFFFFu );
 
     if ( tooltip && tooltip[ 0 ] )
         gui_set_item_tooltip( tooltip );
@@ -118,7 +118,7 @@ gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char*
     if ( on )
         draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER );
 
-    gui_draw_icon_in( tb_icon_rect( r ), icon, 0xFFFFFFFFu );
+    gui_draw_icon_in( toolbar_icon_rect( r ), icon, 0xFFFFFFFFu );
 
     if ( tooltip && tooltip[ 0 ] )
         gui_set_item_tooltip( tooltip );
@@ -175,7 +175,7 @@ gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* 
 
     gui_rect_t icon_r  = { r.x, r.y, WIDGET_H, r.h };
     gui_rect_t arrow_r = { r.x + WIDGET_H, r.y, TB_DD_ARROW_W, r.h };
-    gui_draw_icon_in( tb_icon_rect( icon_r ), icon, 0xFFFFFFFFu );
+    gui_draw_icon_in( toolbar_icon_rect( icon_r ), icon, 0xFFFFFFFFu );
     draw_dropdown_arrow( arrow_r, COL_TEXT );
 
     if ( tooltip && tooltip[ 0 ] && !this_open )

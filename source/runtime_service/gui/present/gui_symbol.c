@@ -11,7 +11,7 @@
     These compose the *backend* primitives (draw_push_triangle / _circle_filled / _rect_filled /
     _rect_outline / _text, gui_draw_line / gui_draw_polyline) into named marks -- they draw
     through the normal vertex pipeline, NOT the runtime icon atlas (gui_icon.c).  Two routes do
-    the heavy lifting: a triangle fan (fill_convex) fills any convex outline, and a closed / open
+    the heavy lifting: a triangle fan (sym_fill_convex) fills any convex outline, and a closed / open
     polyline strokes it; arcs are sampled from cos / sin once per call.
 
     Most commands carry one abgr, but GUI_CMD_RECT_GRADIENT carries two and lets the GPU's
@@ -71,7 +71,7 @@ sym_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, gui_vec2_t* out )
    command, so a high-segment fill is command-heavy; prefer draw_push_circle_filled for a plain
    disc, which is a single command. */
 static void
-fill_convex( const gui_vec2_t* pts, u32 n, u32 col )
+sym_fill_convex( const gui_vec2_t* pts, u32 n, u32 col )
 {
     for ( u32 i = 1; i + 1 < n; ++i )
         draw_push_triangle( pts[ 0 ].x, pts[ 0 ].y, pts[ i ].x, pts[ i ].y,
@@ -323,7 +323,7 @@ draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
     gui_vec2_t pts[ 4 * 17 + 4 ];
     u32 n = round_rect_perimeter_ex( b, rtl, rtr, rbr, rbl, pts );
     if ( filled )
-        fill_convex( pts, n, col );
+        sym_fill_convex( pts, n, col );
     else
         gui_draw_polyline( pts, n, thickness < 1.0f ? 1.0f : thickness, GUI_STROKE_CENTER, true, col );
 }
@@ -342,7 +342,7 @@ draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness
         pts[ i ] = sv2( cx + cosf( a ) * r, cy + sinf( a ) * r );
     }
     if ( filled )
-        fill_convex( pts, sides, col );
+        sym_fill_convex( pts, sides, col );
     else
         gui_draw_polyline( pts, sides, thickness < 1.0f ? 1.0f : thickness, GUI_STROKE_CENTER, true, col );
 }
@@ -384,7 +384,7 @@ draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )
     gui_vec2_t pts[ 67 ];
     pts[ 0 ] = sv2( cx, cy );
     u32 n = sym_arc( cx, cy, r, a0, a1, pts + 1 );
-    fill_convex( pts, n + 1, col );
+    sym_fill_convex( pts, n + 1, col );
 }
 
 /*----------------------------------------------------------------------------------------------

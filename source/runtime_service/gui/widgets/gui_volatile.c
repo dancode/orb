@@ -20,7 +20,7 @@
             can bracket the exact command range it produces; the callback itself calls
             volatile_begin/end from inside its own body to stamp the layout cursor position.
 
-        layout_push_scoped / layout_pop_scoped
+        volatile_layout_push / volatile_layout_pop
             A minimal layout-frame push/pop at an explicit (x, y, w) -- lighter than
             layout_push_region (no scrollbar gutter, no clip push, no id_push): the replay scope
             gui_replay_scope_enter/_exit installs around a standalone callback invocation.
@@ -95,7 +95,7 @@ gui_volatile_end( void )
 }
 
 /*----------------------------------------------------------------------------------------------
-    layout_push_scoped / layout_pop_scoped -- a minimal layout frame at an explicit (x, y, w),
+    volatile_layout_push / volatile_layout_pop -- a minimal layout frame at an explicit (x, y, w),
     used only by gui_replay_scope_enter/_exit below.  Unlike layout_push_region this reserves no
     scrollbar gutter, pushes no clip, and calls no id_push -- the caller handles id scoping
     itself.  layout_set_default installs a plain single-column stack and resets the
@@ -105,7 +105,7 @@ gui_volatile_end( void )
 ----------------------------------------------------------------------------------------------*/
 
 static void
-layout_push_scoped( f32 x, f32 y, f32 w )
+volatile_layout_push( f32 x, f32 y, f32 w )
 {
     u32 slot = s_layout_sp < GUI_LAYOUT_DEPTH ? s_layout_sp : GUI_LAYOUT_DEPTH - 1;
     ++s_layout_sp;
@@ -121,10 +121,10 @@ layout_push_scoped( f32 x, f32 y, f32 w )
     layout_set_default( f );
 }
 
-/* Pop a scope opened by layout_push_scoped -- no measurement, no scrollbar draw, just unwind
+/* Pop a scope opened by volatile_layout_push -- no measurement, no scrollbar draw, just unwind
    the stack pointer (the replay path never scrolls or reports content size). */
 static void
-layout_pop_scoped( void )
+volatile_layout_pop( void )
 {
     if ( s_layout_sp > 0 ) --s_layout_sp;
 }
@@ -141,14 +141,14 @@ void
 gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w )
 {
     id_push( id );
-    layout_push_scoped( x, y, w );
+    volatile_layout_push( x, y, w );
     s_replay_mode = true;
 }
 
 void
 gui_replay_scope_exit( bool force_redraw )
 {
-    layout_pop_scoped();
+    volatile_layout_pop();
     id_pop();
     s_replay_mode = false;
     if ( force_redraw )
