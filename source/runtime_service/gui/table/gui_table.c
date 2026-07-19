@@ -360,7 +360,13 @@ gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 hei
     gui_id_t id = id_combine( id_seed(), id_hash( id_str ) );
     DBG_NAME( id, id_str );
 
-    f32 w = parent->content_w;
+    /* Box width: the content column, clamped to the visible track.  A table is an opaque
+       interactive surface (headers, resize dividers, its own bars): sized to a column a sibling
+       overflowed, it would seat itself under the parent's scrollbar gutter (invariant 5,
+       GUI_ARCHITECTURE.md) -- the same clamp child_begin's w <= 0 default applies. */
+    f32 w   = parent->content_w;
+    f32 vis = parent->view.w - parent->pad.l - parent->pad.r;
+    if ( w > vis ) w = vis;
     f32 h = ( height > 0.0f ) ? height : ( (f32)WIDGET_H + (f32)WIDGET_GAP ) * 8.0f;
 
     gui_table_t* t = &s_tab;

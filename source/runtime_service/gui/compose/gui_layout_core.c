@@ -36,8 +36,6 @@
 
 ==============================================================================================*/
 
-static f32 content_right( void ) { return lf()->content_x + lf()->content_w; }
-
 /* mod.gap_x / mod.gap_y store the caller's raw request (0 = theme default), not a resolved
    number -- resolved live here, at the moment a gap is actually consumed, the same way tmpl.row_h
    (0 = auto) resolves live against WIDGET_H per row.  This is what lets a scale_push placed after
