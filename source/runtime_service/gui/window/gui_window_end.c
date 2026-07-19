@@ -37,7 +37,7 @@ window_end_chip( gui_window_t* win, f32 title_h )
         btn_x -= title_h;
         gui_rect_t       cl_r  = { btn_x, s_build.win.y, title_h, title_h };
         gui_id_t         cl_id = id_combine( s_build.win.id, GUI_CLOSE_SALT );
-        gui_item_state_t cl_st = widget_behavior( cl_id, cl_r, GUI_WIDGET_KIND_BUTTON );
+        gui_item_state_t cl_st = item_state( cl_id, cl_r, ITEM_BUTTON );
         if ( cl_st.hover || cl_st.active )
         {
             draw_set_rounding( ROUND_WIDGET );
@@ -56,7 +56,7 @@ window_end_chip( gui_window_t* win, f32 title_h )
     btn_x -= title_h;
     gui_rect_t       re_r  = { btn_x, s_build.win.y, title_h, title_h };
     gui_id_t         re_id = id_combine( s_build.win.id, GUI_MINIMIZE_SALT );
-    gui_item_state_t re_st = widget_behavior( re_id, re_r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t re_st = item_state( re_id, re_r, ITEM_BUTTON );
     if ( re_st.hover || re_st.active )
     {
         draw_set_rounding( ROUND_WIDGET );
@@ -130,7 +130,7 @@ window_end_titlebar( gui_window_t* win, bool native )
         {
             gui_rect_t   arrow_r  = { s_build.win.x, s_build.win.y, title_h, title_h };
             gui_id_t     arrow_id = id_combine( s_build.win.id, GUI_COLLAPSE_SALT );
-            gui_item_state_t arrow_st = widget_behavior( arrow_id, arrow_r, GUI_WIDGET_KIND_BUTTON );
+            gui_item_state_t arrow_st = item_state( arrow_id, arrow_r, ITEM_BUTTON );
             if ( arrow_st.clicked )
                 window_collapse_set( win, !win->collapsed );   /* tweens the height next frame */
             /* Arrow reflects the LOGICAL state (win->collapsed) so it flips the instant you click,
@@ -176,7 +176,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             btn_x -= title_h;
             gui_rect_t   cl_r  = { btn_x, s_build.win.y, title_h, title_h };
             gui_id_t     cl_id = id_combine( s_build.win.id, GUI_CLOSE_SALT );
-            gui_item_state_t cl_st = widget_behavior( cl_id, cl_r, GUI_WIDGET_KIND_BUTTON );
+            gui_item_state_t cl_st = item_state( cl_id, cl_r, ITEM_BUTTON );
 
             /* Hover/press background so the control reads as clickable (the glyph stays square). */
             if ( cl_st.hover || cl_st.active )
@@ -204,7 +204,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             btn_x -= title_h;
             gui_rect_t       mx_r  = { btn_x, s_build.win.y, title_h, title_h };
             gui_id_t         mx_id = id_combine( s_build.win.id, GUI_MAXIMIZE_SALT );
-            gui_item_state_t mx_st = widget_behavior( mx_id, mx_r, GUI_WIDGET_KIND_BUTTON );
+            gui_item_state_t mx_st = item_state( mx_id, mx_r, ITEM_BUTTON );
             if ( mx_st.hover || mx_st.active )
             {
                 draw_set_rounding( ROUND_WIDGET );
@@ -223,7 +223,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             btn_x -= title_h;
             gui_rect_t       mn_r  = { btn_x, s_build.win.y, title_h, title_h };
             gui_id_t         mn_id = id_combine( s_build.win.id, GUI_MINIMIZE_SALT );
-            gui_item_state_t mn_st = widget_behavior( mn_id, mn_r, GUI_WIDGET_KIND_BUTTON );
+            gui_item_state_t mn_st = item_state( mn_id, mn_r, ITEM_BUTTON );
             if ( mn_st.hover || mn_st.active )
             {
                 draw_set_rounding( ROUND_WIDGET );
@@ -249,7 +249,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             btn_x -= title_h;
             gui_rect_t   det_r  = { btn_x, s_build.win.y, title_h, title_h };
             gui_id_t     det_id = id_combine( s_build.win.id, GUI_DETACH_SALT );
-            gui_item_state_t det_st = widget_behavior( det_id, det_r, GUI_WIDGET_KIND_BUTTON );
+            gui_item_state_t det_st = item_state( det_id, det_r, ITEM_BUTTON );
             if ( det_st.clicked )
                 vp_request_button( win );   /* 0 = main surface -> tear off; else floater -> merge back */
 

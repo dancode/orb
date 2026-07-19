@@ -5,8 +5,8 @@
     A stock widget with a special placement policy: it is never emitted from the layout pen.
     The region engine (compose/gui_scroll.c) reserves the gutter, computes the track
     rect from it, and invokes this at layout_pop_region once the frame's content is measured.
-    From there it is the standard widget recipe on a handed rect: widget_behavior for the grab
-    (GUI_WIDGET_KIND_DRAG), the drag mapped back into *scroll, then the track + knob paint.
+    From there it is the standard widget recipe on a handed rect: item_state for the grab
+    (ITEM_DRAG), the drag mapped back into *scroll, then the track + knob paint.
     Compose hands the rect and owns the scroll state; this file owns the feel and the look.
 
     Mouse-only by design: keyboard scrolling is the nav cursor's scroll chase
@@ -71,7 +71,7 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
 
     /* Mouse-only: opt out of nav registration for this item (see the file banner). */
     s_scope.nav.skip = true;
-    gui_item_state_t st = widget_behavior( id, track, GUI_WIDGET_KIND_DRAG );
+    gui_item_state_t st = item_state( id, track, ITEM_DRAG );
 
     /* On the press frame, decide whether the cursor landed on the knob (drag from the grabbed
        point) or in the gutter (jump: center the knob under the cursor).  s_sb_grab_off is the
@@ -97,12 +97,12 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
        style var away).  Saved/restored because the scrollbar draws in the chrome context. */
     f32 save_round = draw_rounding();
     draw_set_rounding( ROUND_WIDGET );
-    draw_push_rect_filled( track.x, track.y, track.w, track.h, 0,0,1,1, 0, COL_SLIDER_TRACK );
+    draw_fill( track, COL_SLIDER_TRACK );
     draw_set_rounding( ROUND_GRAB );
     if ( vertical )
-        draw_push_rect_filled( track.x, knob_off, track.w, knob_len, 0,0,1,1, 0, widget_bg_color( st ) );
+        draw_fill( ( gui_rect_t ){ track.x, knob_off, track.w, knob_len }, col_item_bg( st ) );
     else
-        draw_push_rect_filled( knob_off, track.y, knob_len, track.h, 0,0,1,1, 0, widget_bg_color( st ) );
+        draw_fill( ( gui_rect_t ){ knob_off, track.y, knob_len, track.h }, col_item_bg( st ) );
     draw_set_rounding( save_round );
 }
 

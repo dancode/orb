@@ -77,7 +77,7 @@ void
 gui_push_layout( void )
 {
     /* Take the next cell on the parent template -- this advances the parent like any widget emit. */
-    gui_rect_t cell = widget_next_rect( WIDGET_H );
+    gui_rect_t cell = cell_next( WIDGET_H );
     sublayout_open( cell );
 }
 

@@ -595,7 +595,7 @@ extern gui_id_t g_gui_dash_window_id;
        a miss, or on a chrome hit. */
     bool gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index );
 
-    /* Attribution stamp (defined in gui_emit_draw.c): widget_behavior marks each registering
+    /* Attribution stamp (defined in gui_emit_draw.c): item_state marks each registering
        widget so the commands it paints carry its id -- STEP_SET_OWNER compiles away with the
        feature.  Window transitions and draw_reset clear it back to 0 (chrome). */
     void draw_set_cmd_owner( gui_id_t id );

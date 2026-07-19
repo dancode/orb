@@ -364,7 +364,7 @@ gui_popup_close_current( void )
 /*----------------------------------------------------------------------------------------------
     Context menus -- open a popup on a right-click.
 
-    _item binds to the previous widget (its id is latched in s_scope.last_id by widget_behavior);
+    _item binds to the previous widget (its id is latched in s_scope.last_id by item_state);
     _window binds to empty space in the current window.  Both then render through popup_begin.
 ----------------------------------------------------------------------------------------------*/
 
@@ -462,9 +462,9 @@ gui_set_item_tooltip( const char* text )
         u32 lines = text_wrap_walk( text, final_w, false, 0.0f, 0.0f, 0 );
         f32 h     = font_char_h() + (f32)( lines - 1u ) * font_line_h();
 
-        gui_rect_t r = widget_next_rect_w( final_w, h );
+        gui_rect_t r = cell_next_w( final_w, h );
         text_wrap_walk( text, final_w, true, r.x, r.y, COL_TEXT );
-        widget_track_width( r.x + final_w );
+        cell_reach( r.x + final_w );
     }
     gui_tooltip_end();
 }
@@ -479,7 +479,7 @@ gui_set_item_tooltip( const char* text )
         gui()->help_marker( "Disable mouse inputs and interactions." );
 
     It is a leaf item like text(), but registers an id so the tooltip can bind to it -- the
-    glyphs are the hover area.  It never captures the click (purely visual): widget_behavior is
+    glyphs are the hover area.  It never captures the click (purely visual): item_state is
     used only to drive the hover, and the mark brightens from dim to full text while pointed at.
 ----------------------------------------------------------------------------------------------*/
 
@@ -493,13 +493,13 @@ gui_help_marker( const char* text )
     /* Carve a natural-width cell for the mark and place it per the region alignment, like text(). */
     f32          mw = font_text_w( mark );
     f32          mh = font_char_h();
-    gui_rect_t   r  = widget_next_rect_w( mw, mh );
+    gui_rect_t   r  = cell_next_w( mw, mh );
     gui_rect_t   tr = rect_align( r, mw, mh, lf()->mod.align );
 
     /* Hoverable but inert: the returned click is ignored, only st.hover drives the brighten. */
-    gui_item_state_t st = widget_behavior( id, tr, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, tr, ITEM_BUTTON );
     draw_push_text( tr.x, tr.y, st.hover ? COL_TEXT : COL_TEXT_DIM, mark );
-    widget_track_width( tr.x + mw );
+    cell_reach( tr.x + mw );
 
     /* Bind the tooltip to the mark just emitted (s_scope.last_id / hover_id were set above). */
     gui_set_item_tooltip( text );

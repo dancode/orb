@@ -86,7 +86,7 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tie
                                    this region's debug rects to that window's surface instead of
                                    the main surface the region actually paints on. */
 
-    /* s_scope.win is the id every widget_behavior call in this region compares against
+    /* s_scope.win is the id every item_state call in this region compares against
        hover_win to decide hot/active -- draw_set_window alone only stamps the retained-cache
        tag, not this.  A window sets it in window_begin_ex; a region is its own root-level
        context so it must set it too, exactly the same way (win_id alongside, for the chrome

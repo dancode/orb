@@ -2,8 +2,8 @@
 
     runtime_service/gui/widgets/gui_widget_slider.c -- Slider, drag, and color-edit widgets.
 
-    Every value-editing control here shares the drag-value interaction pattern: widget_behavior
-    claims active_id on mouse press (GUI_WIDGET_KIND_DRAG), keeping the drag bound to the widget while
+    Every value-editing control here shares the drag-value interaction pattern: item_state
+    claims active_id on mouse press (ITEM_DRAG), keeping the drag bound to the widget while
     the cursor sweeps off it.  The displayed value changes live while dragging.
 
         slider_float / slider_float_step / slider_int  -- a horizontal track with a knob;
@@ -17,8 +17,8 @@
 
     slider_render is the shared visual: track frame, fill bar, knob, and centered value text.
 
-    Included by gui.c after the widget family files (shares widget_behavior, widget_split_label,
-    widget_next_rect, the COL_* palette, and the WIDGET_/WIN_ layout macros from
+    Included by gui.c after the widget family files (shares item_state, draw_field_label,
+    cell_next, the COL_* palette, and the WIDGET_/WIN_ layout macros from
     gui_paint_core.c).
 
 ==============================================================================================*/
@@ -95,17 +95,15 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
     t = saturate( t );
 
     /* Track frame.  Unlike a button, a slider has a handle on top, so the frame must not take the
-       same hover/active colour the knob does (widget_bg_color below) or the highlight would swallow
+       same hover/active colour the knob does (col_item_bg below) or the highlight would swallow
        the handle.  It lifts to a subtler tint -- distinct from the knob in every state -- so the
        hover still reads as a fill while the knob stays clearly the brighter element. */
     u32 track_col = ( st.hover || st.nav || st.active ) ? COL_INPUT_FOCUS : COL_SLIDER_TRACK;
-    draw_push_rect_filled( track_r.x, track_r.y, track_r.w, track_r.h,
-                           0,0,1,1, 0, track_col );
+    draw_fill( track_r, track_col );
     /* Captured for keyboard value edit (st.focused -- see nav_item_register) gets the same border
        lift text/numeric fields use on focus, so going from nav highlight to Left/Right-adjust reads
        as a real state change instead of an invisible one. */
-    draw_push_rect_outline( track_r.x, track_r.y, track_r.w, track_r.h,
-                            WIN_BORDER, 0, st.focused ? COL_WIDGET_HOT : COL_BORDER );
+    draw_outline( track_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
 
     /* Fill bar up to t.  Round only the start (left) corners to match the track frame; keep the
        leading (right) edge facing the knob square, so a rounded leading edge never leaves a gap
@@ -125,17 +123,16 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
         f32 kcx = knob_x + SLIDER_KNOB_W * 0.5f;
         f32 kcy = track_r.y + track_r.h * 0.5f;
         f32 kr  = track_r.h * 0.5f;
-        draw_circle( kcx, kcy, kr, true,  0.0f,      widget_bg_color( st ) );
+        draw_circle( kcx, kcy, kr, true,  0.0f,      col_item_bg( st ) );
         draw_circle( kcx, kcy, kr, false, WIN_BORDER, COL_BORDER );
     }
     else
     {
         f32 save_round = draw_rounding();
         draw_set_rounding( ROUND_GRAB );
-        draw_push_rect_filled ( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
-                                0,0,1,1, 0, widget_bg_color( st ) );
-        draw_push_rect_outline( knob_x, track_r.y, SLIDER_KNOB_W, track_r.h,
-                                WIN_BORDER, 0, COL_BORDER );
+        gui_rect_t knob_r = { knob_x, track_r.y, SLIDER_KNOB_W, track_r.h };
+        draw_fill   ( knob_r, col_item_bg( st ) );
+        draw_outline( knob_r, WIN_BORDER, COL_BORDER );
         draw_set_rounding( save_round );
     }
 
@@ -154,13 +151,13 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
 bool
 gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
 {
-    gui_id_t   id = widget_id( label );
-    gui_rect_t r  = widget_next_rect( WIDGET_H );
+    gui_id_t   id = item_id( label );
+    gui_rect_t r  = cell_next( WIDGET_H );
 
     /* Track takes the left portion; the label sits at the right.  The min track width keeps the
        knob travel usable when the label is long. */
-    gui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
-    gui_item_state_t st = widget_behavior( id, track_r, GUI_WIDGET_KIND_DRAG );
+    gui_rect_t track_r = draw_field_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
+    gui_item_state_t st = item_state( id, track_r, ITEM_DRAG );
 
     /* Drag: map the cursor's track fraction to a value, snapping to the step grid when asked. */
     bool changed = false;
@@ -207,11 +204,11 @@ gui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
 bool
 gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
 {
-    gui_id_t   id = widget_id( label );
-    gui_rect_t r  = widget_next_rect( WIDGET_H );
+    gui_id_t   id = item_id( label );
+    gui_rect_t r  = cell_next( WIDGET_H );
 
-    gui_rect_t track_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
-    gui_item_state_t st = widget_behavior( id, track_r, GUI_WIDGET_KIND_DRAG );
+    gui_rect_t track_r = draw_field_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
+    gui_item_state_t st = item_state( id, track_r, ITEM_DRAG );
 
     bool changed = false;
     if ( st.active )
@@ -246,8 +243,8 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     ("%d" when NULL/empty; embed a caption like "HP: %d").  Returns true only on the frames the
     drag actually changes the value, so the caller can react to live edits.
 
-    Mouse capture works exactly like slider_float: widget_behavior claims active_id on the press
-    (GUI_WIDGET_KIND_DRAG), so the drag stays bound to this widget while the cursor sweeps off it and
+    Mouse capture works exactly like slider_float: item_state claims active_id on the press
+    (ITEM_DRAG), so the drag stays bound to this widget while the cursor sweeps off it and
     no neighbour can steal it.  The value is re-derived every frame from an anchor (value +
     mouse x) captured at the press, which keeps the drag exact and drift-free; the anchor is re-set
     mid-drag whenever the rate modifier changes so the value never jumps.
@@ -340,16 +337,14 @@ drag_text_enter( gui_id_t id, gui_item_state_t* st )
 static void
 drag_text_frame( gui_rect_t box_r, gui_item_state_t st )
 {
-    draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0,
-                            st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
-                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
+    draw_fill( box_r, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );
+    draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
 }
 
 static bool
 drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format )
 {
-    gui_item_state_t st = widget_behavior( id, box_r, GUI_WIDGET_KIND_DRAG );
+    gui_item_state_t st = item_state( id, box_r, ITEM_DRAG );
     drag_text_enter( id, &st );
 
     bool changed   = false;
@@ -400,10 +395,9 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
              && nav_step_i32( v, st.nav_adjust, (i32)( v_speed + 0.5f ), v_min, v_max ) )
             changed = true;
 
-        u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
-        draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
-        draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
-                                st.focused ? COL_WIDGET_HOT : COL_BORDER );
+        u32 bg = col_frame_bg( st, COL_SLIDER_TRACK );
+        draw_fill( box_r, bg );
+        draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
     }
 
     /* Value text -- unless the focused editor already painted its own (and caret). */
@@ -424,9 +418,9 @@ gui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, cons
     v_speed = drag_resolve_speed( v_speed, (f32)( v_max - v_min ), 1.0f );
     if ( !format || !format[ 0 ] ) format = "%d";
 
-    gui_id_t   id    = widget_id( label );
-    gui_rect_t r     = widget_next_rect( WIDGET_H );
-    gui_rect_t box_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
+    gui_id_t   id    = item_id( label );
+    gui_rect_t r     = cell_next( WIDGET_H );
+    gui_rect_t box_r = draw_field_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
 
     return drag_int_box( id, box_r, v, v_speed, v_min, v_max, format );
 }
@@ -451,7 +445,7 @@ static bool
 drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
                 f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
 {
-    gui_item_state_t st = widget_behavior( id, box_r, GUI_WIDGET_KIND_DRAG );
+    gui_item_state_t st = item_state( id, box_r, ITEM_DRAG );
     drag_text_enter( id, &st );
 
     bool changed   = false;
@@ -506,10 +500,9 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
         if ( st.nav_adjust != 0 && nav_step_f32( v, st.nav_adjust, v_speed, fmt, v_min, v_max ) )
             changed = true;
 
-        u32 bg = frame_bg_color( st, COL_SLIDER_TRACK );
-        draw_push_rect_filled ( box_r.x, box_r.y, box_r.w, box_r.h, 0,0,1,1, 0, bg );
-        draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
-                                st.focused ? COL_WIDGET_HOT : COL_BORDER );
+        u32 bg = col_frame_bg( st, COL_SLIDER_TRACK );
+        draw_fill( box_r, bg );
+        draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
     }
 
     /* Value text -- unless the focused editor already painted its own (and caret). */
@@ -530,9 +523,9 @@ gui_drag_float( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, co
     v_speed = drag_resolve_speed( v_speed, v_max - v_min, 1.0f );
     if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
 
-    gui_id_t   id    = widget_id( label );
-    gui_rect_t r     = widget_next_rect( WIDGET_H );
-    gui_rect_t box_r = widget_split_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
+    gui_id_t   id    = item_id( label );
+    gui_rect_t r     = cell_next( WIDGET_H );
+    gui_rect_t box_r = draw_field_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
 
     return drag_float_box( id, box_r, v, v_speed, v_min, v_max, fmt );
 }
@@ -545,9 +538,9 @@ drag_float_n( const char* label, f32* v, u32 n, f32 v_speed, f32 v_min, f32 v_ma
     v_speed = drag_resolve_speed( v_speed, v_max - v_min, 1.0f );
     if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
 
-    gui_id_t   id   = widget_id( label );
-    gui_rect_t r    = widget_next_rect( WIDGET_H );
-    gui_rect_t ctrl = widget_split_label( r, label, font_char_h() * 3.0f * (f32)n, COL_TEXT_DIM );
+    gui_id_t   id   = item_id( label );
+    gui_rect_t r    = cell_next( WIDGET_H );
+    gui_rect_t ctrl = draw_field_label( r, label, font_char_h() * 3.0f * (f32)n, COL_TEXT_DIM );
 
     bool changed = false;
     for ( u32 i = 0; i < n; ++i )
@@ -626,8 +619,8 @@ color_rgb_to_hsv( f32 r, f32 g, f32 b, f32* h, f32* s, f32* v )
 static bool
 color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
 {
-    gui_id_t id = widget_id( label );
-    gui_rect_t r = widget_next_rect( WIDGET_H );
+    gui_id_t id = item_id( label );
+    gui_rect_t r = cell_next( WIDGET_H );
 
     u32  comps  = ( n == 4 && ( flags & GUI_COLOR_EDIT_NO_ALPHA ) ) ? 3 : n;
     bool is_hsv = ( flags & GUI_COLOR_EDIT_DISPLAY_HSV ) != 0;
@@ -653,24 +646,21 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
     f32 preview_w = (f32)WIDGET_H;
     f32 gap       = (f32)s_style.widget_gap;
     f32 ctrl_min  = preview_w + gap + 44.0f * (f32)comps + gap * (f32)( comps - 1u );
-    gui_rect_t ctrl = widget_split_label( r, label, ctrl_min, COL_TEXT_DIM );
+    gui_rect_t ctrl = draw_field_label( r, label, ctrl_min, COL_TEXT_DIM );
 
     /* Clickable color square -- placed first for fast visual identification. */
     gui_rect_t preview_r = { ctrl.x, ctrl.y, preview_w, ctrl.h };
-    gui_item_state_t pst = widget_behavior( id_combine( id, 1u ), preview_r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t pst = item_state( id_combine( id, 1u ), preview_r, ITEM_BUTTON );
     {
         f32 sv = draw_rounding();
         draw_set_rounding( 2.0f );
-        draw_push_rect_filled( preview_r.x, preview_r.y, preview_r.w, preview_r.h,
-                               0.0f, 0.0f, 1.0f, 1.0f, 0, widget_bg_color( pst ) );
+        draw_fill( preview_r, col_item_bg( pst ) );
         gui_rect_t inner = { preview_r.x + 2.0f, preview_r.y + 2.0f,
                              preview_r.w - 4.0f,  preview_r.h - 4.0f };
         if ( pa < 255u )
             draw_checker( inner, 3.0f, GUI_COLOR( 200, 200, 200, 255 ), GUI_COLOR( 100, 100, 100, 255 ) );
-        draw_push_rect_filled( inner.x, inner.y, inner.w, inner.h,
-                               0.0f, 0.0f, 1.0f, 1.0f, 0, abgr );
-        draw_push_rect_outline( preview_r.x, preview_r.y, preview_r.w, preview_r.h,
-                                WIN_BORDER, 0, pst.hover ? COL_WIDGET_HOT : COL_BORDER );
+        draw_fill( inner, abgr );
+        draw_outline( preview_r, WIN_BORDER, pst.hover ? COL_WIDGET_HOT : COL_BORDER );
         draw_set_rounding( sv );
     }
 
@@ -715,9 +705,8 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
                 if ( pa < 255u )
                     draw_checker( tp, 6.0f, GUI_COLOR( 200, 200, 200, 255 ),
                                   GUI_COLOR( 100, 100, 100, 255 ) );
-                draw_push_rect_filled( tp.x, tp.y, tp.w, tp.h,
-                                       0.0f, 0.0f, 1.0f, 1.0f, 0, abgr );
-                draw_push_rect_outline( tp.x, tp.y, tp.w, tp.h, WIN_BORDER, 0, COL_BORDER );
+                draw_fill( tp, abgr );
+                draw_outline( tp, WIN_BORDER, COL_BORDER );
                 draw_set_rounding( sv );
             }
             gui_text( tip_hex );
@@ -814,9 +803,8 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
             draw_set_rounding( 4.0f );
             if ( pa < 255u )
                 draw_checker( pp, 6.0f, GUI_COLOR( 200, 200, 200, 255 ), GUI_COLOR( 100, 100, 100, 255 ) );
-            draw_push_rect_filled( pp.x, pp.y, pp.w, pp.h,
-                                   0.0f, 0.0f, 1.0f, 1.0f, 0, abgr );
-            draw_push_rect_outline( pp.x, pp.y, pp.w, pp.h, WIN_BORDER, 0, COL_BORDER );
+            draw_fill( pp, abgr );
+            draw_outline( pp, WIN_BORDER, COL_BORDER );
             draw_set_rounding( sv );
         }
 

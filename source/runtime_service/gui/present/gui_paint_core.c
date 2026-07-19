@@ -8,7 +8,7 @@
     (gui_window_free.c) draw through these, so they live here, ahead of both in the unity
     build.  The style vocabulary (WIDGET_* / WIN_* / COL_* macros) lives with its resolver in
     foundation/gui_style.c -- this file only consumes it.  The interaction state machine
-    (widget_behavior) is a service -- it lives in interact/gui_item.c, included immediately
+    (item_state) is a service -- it lives in interact/gui_item.c, included immediately
     after this file so it can invoke the adornment painters below.  The shared edge-resize
     geometry is interact/gui_resize.c and the layout engine (track resolver + cell emitters)
     is compose/gui_layout_core.c.
@@ -19,7 +19,7 @@
     (window/gui_window.c).
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   /* gui_widget_kind_t, gui_item_state_t */
+#include "runtime_service/gui/gui_internal.h"   /* gui_item_kind_t, gui_item_state_t */
 // clang-format off
 
 /* Baseline y to vertically center one line of glyphs in a row of height h starting at y.
@@ -45,6 +45,14 @@ col_lerp( u32 ca, u32 cb, f32 t )
     u32 a  = (u32)( a0 + ( a1 - a0 ) * t );
     return r | ( g << 8 ) | ( b << 16 ) | ( a << 24 );
 }
+
+/* The rect-taking paint floor for the widget tier: a solid fill and a border outline over a
+   gui_rect_t.  Widgets speak rects; only the backend emit layer (draw_push_*) speaks scalar
+   x/y/w/h with UV + texture arguments -- these two carry the untextured white-quad defaults
+   (uv 0,0,1,1, texture 0) so no widget repeats them.  Shapes beyond fill/outline are the
+   symbol palette (gui_symbol.c). */
+static void draw_fill   ( gui_rect_t r, u32 col )        { draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col ); }
+static void draw_outline( gui_rect_t r, f32 t, u32 col ) { draw_push_rect_outline( r.x, r.y, r.w, r.h, t, 0, col ); }
 
 /* Place an extent `len` within the span [org, org+avail) along one axis: centered, against the far
    edge, or (default) the near edge.  The one axis primitive every aligned placement resolves
@@ -91,7 +99,7 @@ rect_align( gui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
     The visible span ends at the first "##".  A "###" additionally re-roots the id hash at that
     "###", so a label whose visible part changes every frame (a counter, a name) keeps one stable
     id.  Every labeled widget routes its display through label_width / draw_label and its id
-    through widget_id, so the grammar is honored uniformly in one place.
+    through item_id, so the grammar is honored uniformly in one place.
 ----------------------------------------------------------------------------------------------*/
 
 /* Visible byte count: up to the first "##" marker, or the whole string. */
@@ -120,7 +128,7 @@ label_id_str( const char* s )
 
 /* The id for a labeled widget: the active scope seed combined with the label's id key. */
 static gui_id_t
-widget_id( const char* label )
+item_id( const char* label )
 {
     gui_id_t id = id_combine( id_seed(), id_hash( label_id_str( label ) ) );
     DBG_NAME( id, label );
@@ -226,7 +234,7 @@ draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
 }
 
 /* Split a labeled widget row into a control rect and its painted label.  The geometry halves
-   live with the composer: field_split_resolve (compose/gui_layout_core.c, forward-declared
+   live with the composer: cell_split_field (compose/gui_layout_core.c, forward-declared
    here -- the one present->compose seam) lays the two tracks when a field split is active; the
    default trailing-label math is local.  This wrapper owns the PAINT: it draws the label and
    returns the control rect, which is why it sits here with the label grammar and not in the
@@ -237,18 +245,18 @@ draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
    The single seam every "control + trailing label" widget (slider_float, input_text, combo,
    drag_float, color_edit) routes through, so row proportions retune in one place. */
 
-static bool field_split_resolve( gui_rect_t cell, f32 min_control_w, f32* out_label_x,
+static bool cell_split_field( gui_rect_t cell, f32 min_control_w, f32* out_label_x,
                                  f32* out_label_w, gui_rect_t* out_control );   /* compose */
 
 static gui_rect_t
-widget_split_label( gui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
+draw_field_label( gui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
 {
     /* Field split mode: the label sits in its track at full strength (the trailing-label dim hint,
        label_color, does not apply -- a field label reads as primary); the control fills the rest.
        The label is fitted to its track width so a narrow (fraction-shrunk) track ellipsizes it. */
     f32          label_x, label_w;
     gui_rect_t control;
-    if ( field_split_resolve( row, min_control_w, &label_x, &label_w, &control ) )
+    if ( cell_split_field( row, min_control_w, &label_x, &label_w, &control ) )
     {
         draw_label_fit( label_x, text_center_y( row.y, row.h ), COL_TEXT, label, label_w );
         return control;
@@ -277,21 +285,21 @@ widget_split_label( gui_rect_t row, const char* label, f32 min_control_w, u32 la
    framed control, not just buttons. */
 
 static u32
-frame_bg_color( gui_item_state_t st, u32 idle_color_enum )
+col_frame_bg( gui_item_state_t st, u32 idle_color_enum )
 {
     if ( st.active )            return COL_WIDGET_ACT;
     if ( st.hover || st.nav )   return COL_WIDGET_HOT;   /* nav cursor lights the body like a hover */
     return idle_color_enum;
 }
 
-/* Background color for a pushbutton / knob style widget: frame_bg_color with the plain widget
+/* Background color for a pushbutton / knob style widget: col_frame_bg with the plain widget
    background as the idle base. */
-static u32 widget_bg_color( gui_item_state_t st )
+static u32 col_item_bg( gui_item_state_t st )
 {
-    return frame_bg_color( st, COL_WIDGET_BG );
+    return col_frame_bg( st, COL_WIDGET_BG );
 }
 
-/* Animated background for a pushbutton-like widget: widget_bg_color with the hover/active
+/* Animated background for a pushbutton-like widget: col_item_bg with the hover/active
    transitions smoothed through the animation service (interact/gui_anim.c).  Two damper channels in
    one gui_anim4 slot -- a hot layer (hover / nav focus) at speed 10 and an active layer (pressed) at
    speed 20 -- both rest at 0 so they ramp up from the palette base; the spare two channels sit unused
@@ -302,7 +310,7 @@ static u32 widget_bg_color( gui_item_state_t st )
 #define ANIM_TAG_BG  0xA501u   /* id_combine salt: keeps this slot distinct from all other per-widget state */
 
 static u32
-widget_bg_color_anim( gui_id_t id, gui_item_state_t st )
+col_item_bg_anim( gui_id_t id, gui_item_state_t st )
 {
     gui_anim4_t rest   = { 0.0f, 0.0f, 0.0f, 0.0f };
     gui_anim4_t target = { ( st.hover || st.nav ) ? 1.0f : 0.0f, st.active ? 1.0f : 0.0f, 0.0f, 0.0f };
@@ -346,7 +354,7 @@ draw_window_focus_border( gui_rect_t r )
 {
     f32 t = WIN_FOCUS_BORDER;
     if ( t <= 0.0f ) return;
-    draw_push_rect_outline( r.x, r.y, r.w, r.h, t, 0, COL_FOCUS_BORDER );
+    draw_outline( r, t, COL_FOCUS_BORDER );
 }
 
 /* Drag-and-drop accept ring: a bolder outline around an open target whose type matched the
@@ -359,8 +367,8 @@ draw_drop_ring( gui_rect_t r )
 
 /* Child box chrome (compose/gui_layout_child.c invokes these around its region): the body
    fill under the region clips at child_begin, the border over the bar tracks at child_end. */
-static void draw_child_bg    ( gui_rect_t r ) { draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0,0,1,1, 0, COL_CHILD_BG ); }
-static void draw_child_border( gui_rect_t r ) { draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER ); }
+static void draw_child_bg    ( gui_rect_t r ) { draw_fill   ( r, COL_CHILD_BG ); }
+static void draw_child_border( gui_rect_t r ) { draw_outline( r, WIN_BORDER, COL_BORDER ); }
 
 /* Paint a bold line over each hot edge of an outline so it is obvious that the border is
    grabbable and which side will move.  Drawn just inside the rect, over the thin border.

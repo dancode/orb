@@ -34,7 +34,7 @@ Three roles, one contract (the directories carry the same names):
 - **Composer** (`compose/`): the ONLY code that POSITIONS rects -- divides regions into
   cells, moves the pen, decides where the next widget lands. Widgets MEASURE themselves with
   the same METRICS vocabulary (a button's natural width is its label plus pad) but only ever
-  REQUEST a size through `widget_next_rect_w`; the composer decides placement. Composes and
+  REQUEST a size through `cell_next_w`; the composer decides placement. Composes and
   never paints. Public face: the layout verbs + the `sz_` sizing family.
 - **Behavior** (`interact/`, public door `user/gui_behavior.c`): widget-agnostic
   interaction SERVICES over the foundation/ utilities (identity `foundation/gui_id.c`,
@@ -42,9 +42,13 @@ Three roles, one contract (the directories carry the same names):
   the public readers over it are `user/gui_query.c`) -- the drag threshold machine + payload
   transfer (`gui_drag.c`), the move-drag protocol + deferred-press latch (`gui_move.c`:
   `move_grab`/`move_track`, `press_defer_*`), the edge-resize mechanism (`gui_resize.c`:
-  `resize_item`), and the standard item protocol (`gui_item.c`: `widget_behavior`, the default
-  composition every stock widget runs, plus `grab_item`, the bare grab for hot chrome that is
-  not a widget -- a dock splitter gutter, a table column boundary). Each service knows a
+  `resize_item`), and the standard item protocol (`gui_item.c`: `item_state`, the default
+  composition every stock widget runs, plus `item_grab`, the bare grab for hot chrome that is
+  not a widget -- a dock splitter gutter, a table column boundary; the compound-widget bracket
+  `gui_item_sub_begin/end` scopes a widget's INNER item emissions so the queries after it
+  report the outer widget, and `gui_item_sub_layout_begin` is its full form -- id scope +
+  sub-layout over the widget's rect, so a widget can emit real widgets inside itself). Each
+  service knows a
   capability (exclusivity, clicks, tracking) over (id, rect); none knows a slider. Consumes
   finished rects, produces interaction state (`hover`/`active`/`pressed`/`clicked`). This tier
   is the ONLY writer of the `s_interaction` arbitration fields: the window/dock/table hosts
@@ -54,7 +58,7 @@ Three roles, one contract (the directories carry the same names):
   Behavior's only inputs beyond (id, rect) are the interaction scope (`s_scope`,
   `foundation/gui_ctx.c`): the owner window, the interaction clip, the chrome hover
   suppression, and the per-item flag/nav stamps -- placed there by composition at its seams
-  (window/child/popup/table begin, the emit seam `widget_next_rect_w`).  Behavior never reads
+  (window/child/popup/table begin, the emit seam `cell_next_w`).  Behavior never reads
   the composer scratch (`s_build`); the scope record IS the composition->behavior contract,
   and behavior publishes its per-item result back into it (`s_scope.last_*`, read by the
   `is_item_*` queries and the context-menu / drag anchors).
@@ -67,7 +71,22 @@ Three roles, one contract (the directories carry the same names):
   policy lives with the skin.
 - **Presentation** (`present/`: label grammar + self-measurement (`label_natural_w`),
   text-fit, frame color policy, system adornments, symbol draws): consumes rect + state + skin
-  and paints; state is a parameter, it never asks behavior. The style vocabulary itself
+  and paints; state is a parameter, it never asks behavior. The widget paint floor is
+  rect-taking (`draw_fill( r, col )` / `draw_outline( r, t, col )` in `gui_paint_core.c`, plus
+  the `draw_*` symbol palette): widgets speak rects; only the backend emit layer
+  (`draw_push_*`) speaks scalar x/y/w/h with UV + texture arguments.
+
+The internal prefix names the seam a widget crosses: `item_id` (identity), `cell_next(_w)` /
+`cell_reach` / `cell_split_field` (composer), `item_state` / `item_grab` (behavior),
+`label_*` / `draw_*` / `col_*` (presentation), `io_*` / `gui_state_*` / `gui_anim*`
+(foundation services). The canonical leaf widget is four lines, one per seam:
+
+```c
+gui_id_t         id = item_id( label );
+gui_rect_t       r  = cell_next_w( label_natural_w( label ), WIDGET_H );
+gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
+draw_fill( r, col_item_bg_anim( id, st ) );
+``` The style vocabulary itself
   (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in `foundation/gui_style.c`
   since all three roles read it. `widgets/` and the window/dock/popup chrome are its
   CLIENTS -- the stock widget set is written on the same substrate a user widget uses, not a
@@ -187,7 +206,7 @@ Model: every window body / region / child owns a `layout_frame_t` with a content
 region pop to decide scrollbars). `content_reach` moves both; only `layout_pen_jump` parts
 them. The frame groups its other state by lifetime: `tmpl` (the installed shape), `mod`
 (orthogonal modifiers), `line` (iteration cursor + the open line, re-zeroed per install).
-Widgets never see the layout shape: each calls `widget_next_rect_w(natural_w, h)` and is
+Widgets never see the layout shape: each calls `cell_next_w(natural_w, h)` and is
 handed the next cell.
 
 ### The one overloaded unit rule (used EVERYWHERE: tracks, splits, fit, pack)

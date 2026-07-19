@@ -597,7 +597,7 @@ gui_anchor( gui_rect_t parent, gui_anchor_t a )
 gui_rect_t
 gui_empty( f32 w, f32 h )
 {
-    return widget_next_rect_w( w, h );
+    return cell_next_w( w, h );
 }
 
 /*----------------------------------------------------------------------------------------------

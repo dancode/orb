@@ -30,14 +30,12 @@ typedef struct { gui_id_t id; gui_rect_t box; gui_item_state_t st; } input_text_
 static input_text_frame_t
 input_text_begin( const char* label )
 {
-    gui_id_t     id    = widget_id( label );
-    gui_rect_t   box_r = widget_split_label( widget_next_rect( WIDGET_H ), label,
+    gui_id_t     id    = item_id( label );
+    gui_rect_t   box_r = draw_field_label( cell_next( WIDGET_H ), label,
                                                font_char_h() * 3.0f, COL_TEXT_DIM );
-    gui_item_state_t st    = widget_behavior( id, box_r, GUI_WIDGET_KIND_FOCUSABLE );
-    draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h, 0, 0, 1, 1, 0,
-                           st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h, WIN_BORDER, 0,
-                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
+    gui_item_state_t st    = item_state( id, box_r, ITEM_FOCUSABLE );
+    draw_fill( box_r, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );
+    draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
     return ( input_text_frame_t ){ id, box_r, st };
 }
 

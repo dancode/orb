@@ -37,7 +37,7 @@ void gui_pop_id     ( void )            { id_pop(); }
 
     push/pop affect every widget until popped (and nest); next_item_flag is a one-shot override the
     very next widget consumes, no pop needed.  The merged value is resolved once per widget at emit
-    time and read by widget_behavior / the widget, so a new flag never touches a call site or the
+    time and read by item_state / the widget, so a new flag never touches a call site or the
     vtable layout consumers see.  See gui_item_flags_t in gui.h for the model and the flags.
 
         gui()->push_item_flag( GUI_ITEM_DISABLED, true );

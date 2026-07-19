@@ -297,7 +297,7 @@ surface_z_overlay( u32 depth )
     promoted to hover_win next frame (frame turnover, gui_ctx.c).  Windows (window_begin),
     floating dock groups, and root regions (gui_region_begin) all compete for hover_win in this
     one contest keyed purely on z; the winner is the single fact that gates all widget
-    hit-testing (widget_behavior's win_hover, via the interaction scope).
+    hit-testing (item_state's win_hover, via the interaction scope).
 
     The cursor lives in exactly one OS window/surface at a time (s_io.mouse_viewport, resolved
     from the win_id on mouse events).  A candidate on any other surface cannot be under the

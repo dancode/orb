@@ -6,7 +6,7 @@
     stepping, slot stamping, and wants_redraw signalling in one function, so callers stay
     simple.  Pure timing -- what a stepped value MEANS (a color blend, an eased extent) is the
     caller's business: the animated background color lives with the skin
-    (present/gui_paint_core.c: widget_bg_color_anim), the size ease with the layout engine
+    (present/gui_paint_core.c: col_item_bg_anim), the size ease with the layout engine
     (compose/gui_layout_core.c: size_animate).
 
     Storage lives in the keyed state pool (foundation/gui_state.c) with peek-then-stamp semantics:
@@ -27,7 +27,7 @@
     20  ~  150 ms to 95% of target
 
     Peek-then-stamp: the pool is not touched when the value has no history or has already
-    settled.  Compose anim_id via id_combine( widget_id, tag ) so each channel occupies its
+    settled.  Compose anim_id via id_combine( item_id, tag ) so each channel occupies its
     own slot without colliding with other per-widget state:
 
         f32 t = gui_anim_f32( id_combine( id, 1u ), hovered ? 1.0f : 0.0f, 10.0f );

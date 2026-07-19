@@ -1357,7 +1357,7 @@ typedef struct gui_api_s
        returned false; frame_end runs the replay internally -- see frame_dirty below).
        `fn` calls ordinary emit functions (text, rect_filled,
        etc) and should bracket them with volatile_begin()/volatile_end() from inside its own body.
-       `label` is hashed the same way widget_id() hashes a label -- combined with the current id
+       `label` is hashed the same way item_id() hashes a label -- combined with the current id
        scope, so it need only be stable and unique within its own call site, same as any other
        widget label.  Interactive widgets are safe to call from `fn` but are inert during replay --
        see gui.h (gui_volatile_fn) for the contract. */

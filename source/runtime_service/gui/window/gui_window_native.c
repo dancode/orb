@@ -56,7 +56,7 @@ static bool window_is_native( const gui_window_t* win, gui_win_flags_t flags )
     ordinary gui widgets unless their rects are punched out as HTCLIENT "holes".  This one
     layout function feeds both halves of that: window_begin publishes the rects as holes (via
     window_set_native_frame) so the OS lets clicks through, and window_end draws the glyphs and
-    runs widget_behavior on the same rects.  Computing the layout in one place keeps the holes
+    runs item_state on the same rects.  Computing the layout in one place keeps the holes
     exactly aligned with the drawn buttons.
 
     Buttons are title-bar-height squares laid out right-to-left from the bar's right edge:
@@ -263,7 +263,7 @@ native_caption_chrome( gui_window_t* win, f32 title_h, f32 right_limit )
         gui_rect_t       br  = btns[ i ].r;
         gui_id_t         bid = id_combine( s_build.win.id,
                                            GUI_NATIVE_BTN_SALT + ( u32 )btns[ i ].kind );
-        gui_item_state_t bs  = widget_behavior( bid, br, GUI_WIDGET_KIND_BUTTON );
+        gui_item_state_t bs  = item_state( bid, br, ITEM_BUTTON );
 
         /* Hover/press background so the control reads as clickable -- a control frame, so it
            takes the widget radius (the glyph itself squares off in native_btn_draw_glyph). */

@@ -569,7 +569,7 @@ dock_strip_reorder( gui_dock_node_t* node, gui_id_t wid, f32 strip_x )
     Tab-strip chrome -- drawn by the active window's window_end in place of a title bar.
 
     Runs while s_build holds the active docked window (its id is hover_win when the cursor is over the
-    node, and its clip is the node rect), so widget_behavior hit-tests the tabs correctly.  Tabs march
+    node, and its clip is the node rect), so item_state hit-tests the tabs correctly.  Tabs march
     left-to-right at natural width; clicking one selects it (takes effect next frame, when that window
     becomes the active tab).  A press dragged past the threshold pops the window out (see below).
     Forward-declared in gui_internal.h for window_end to call.
@@ -601,7 +601,7 @@ dock_window_chrome( gui_dock_node_t* node )
         bool         is_active = ( i == node->active_tab );
 
         gui_id_t     tid = id_combine( node->id, DOCK_TAB_SALT + i );
-        gui_item_state_t st  = widget_behavior( tid, tr, GUI_WIDGET_KIND_BUTTON );
+        gui_item_state_t st  = item_state( tid, tr, ITEM_BUTTON );
 
         /* Active tab takes the body colour so it reads as joined to the content below; the rest stay
            on the title band, lifting to the hover colour under the cursor. */
@@ -649,7 +649,7 @@ dock_window_chrome( gui_dock_node_t* node )
 
         gui_rect_t       mx_r  = { x + w - th, y, th, th };
         gui_id_t         mx_id = id_combine( node->id, GUI_MAXIMIZE_SALT );
-        gui_item_state_t mx_st = widget_behavior( mx_id, mx_r, GUI_WIDGET_KIND_BUTTON );
+        gui_item_state_t mx_st = item_state( mx_id, mx_r, ITEM_BUTTON );
         if ( mx_st.hover || mx_st.active )
         {
             draw_set_rounding( ROUND_WIDGET );
@@ -665,7 +665,7 @@ dock_window_chrome( gui_dock_node_t* node )
     }
 
     /* Floating group (gui_dock_float.c): the strip's empty band doubles as the group's title-bar
-       drag surface -- a press grabs the move (widget_behavior claims the press; move_grab records
+       drag surface -- a press grabs the move (item_state claims the press; move_grab records
        the offsets that keep the grabbed point pinned under the cursor, applied by
        dock_float_resolve's move_track next frame). */
     if ( node->floating )
@@ -675,7 +675,7 @@ dock_window_chrome( gui_dock_node_t* node )
         {
             gui_id_t     gid = id_combine( node->id, DOCK_FLOAT_SALT );
             s_scope.nav.skip = true;   /* pure drag surface -- never a keyboard target */
-            gui_item_state_t st  = widget_behavior( gid, rem, GUI_WIDGET_KIND_BUTTON );
+            gui_item_state_t st  = item_state( gid, rem, ITEM_BUTTON );
             if ( st.pressed )
                 move_grab( gid, 0, x, y );   /* released globally when the left button lifts */
         }

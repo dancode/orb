@@ -10,16 +10,16 @@
           layout_resolve_tracks, the layout_template_reset / layout_modifiers_reset seams,
           layout_seed_content, and layout_set / _grid / _reflow / _clear) -- the "what shape
           is this region" mechanism;
-        - cell emitters (widget_next_rect_w, grid_next_rect, pack_next_rect,
-          field_split_resolve) -- the per-item "hand out the next rect" mechanism.
+        - cell emitters (cell_next_w, grid_next_rect, pack_next_rect,
+          cell_split_field) -- the per-item "hand out the next rect" mechanism.
 
-    This tier composes and never paints: field_split_resolve hands out geometry, and its painting
-    companion widget_split_label lives with the rest of the label grammar in
+    This tier composes and never paints: cell_split_field hands out geometry, and its painting
+    companion draw_field_label lives with the rest of the label grammar in
     present/gui_paint_core.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD / ...) resolves
     in foundation/gui_style.c.
 
     Included by gui.c after gui_paint_core.c (so rect_align and item_flags_resolve are in
-    scope) and before gui_layout.c (which calls layout_set / widget_next_rect / the region
+    scope) and before gui_layout.c (which calls layout_set / cell_next / the region
     helpers).
 
 ==============================================================================================*/
@@ -50,7 +50,7 @@ static f32 mod_gap_y( const layout_frame_t* f ) { return ( f->mod.gap_y > 0.0f )
    compares against each view to decide a scrollbar.  The highwater only ever climbs, so a running
    max over every item's far corner reconstructs a line's full extent -- one call per placement, on
    either axis, in place of the per-axis, per-mode inline updates the emitters used to do.  Does not
-   touch the pen; content_reach moves both, widget_track_width grows the x highwater alone. */
+   touch the pen; content_reach moves both, cell_reach grows the x highwater alone. */
 static void
 extent_track( layout_frame_t* f, f32 x, f32 y )
 {
@@ -63,7 +63,7 @@ extent_track( layout_frame_t* f, f32 x, f32 y )
    horizontal overflow; its vertical extent is the emitter's business.  Grows the x highwater alone,
    so the horizontal bar sees content the cell did not bound.  Every leaf-widget overflow site here. */
 static void
-widget_track_width( f32 right_x )
+cell_reach( f32 right_x )
 {
     if ( right_x > lf()->high_x ) lf()->high_x = right_x;
 }
@@ -423,7 +423,7 @@ layout_modifiers_reset( layout_frame_t* f )
 
 /* Open a region UNDECLARED: zero the template state and leave the mode NONE so the first layout
    header (stack / columns / grid / ...) installs real geometry.  A widget emitted before any
-   header trips the guard in widget_next_rect_w.  Called when a region or sub-layout opens (the
+   header trips the guard in cell_next_w.  Called when a region or sub-layout opens (the
    old silent single-column default is gone) and by gui_pad after re-insetting -- the modifiers
    and iteration state start from a known state every region. */
 static void
@@ -614,7 +614,7 @@ grid_next_rect( layout_frame_t* f, f32 natural_w )
     u32 c = f->line.col, rr = f->line.row;
 
     /* A fresh row's nav line is dispensed HERE, on its first cell, not at the row advance below:
-       widget_next_rect_w latches the stamp after this returns, so an advance-time dispense would
+       cell_next_w latches the stamp after this returns, so an advance-time dispense would
        hand the LAST cell of each row the next row's line -- walling Left/Right one short of the
        edge.  Row 0's line comes from layout_set_grid at install. */
     if ( c == 0 && rr > 0 )
@@ -737,12 +737,12 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
    same_line() can anchor the next widget to this one's line.  This is the per-mode dispatch over
    the line machinery above; the widget just fills the rect it is handed. */
 static gui_rect_t
-widget_next_rect_w( f32 natural_w, f32 h )
+cell_next_w( f32 natural_w, f32 h )
 {
     layout_frame_t* f = lf();
 
     /* An item is being emitted: resolve its flags (stack + the one-shot next-item override) and
-       latch them for widget_behavior / the widget to read.  This is the single per-item seam every
+       latch them for item_state / the widget to read.  This is the single per-item seam every
        widget passes through, so the push-model needs no plumbing at the individual call sites. */
     item_flags_resolve();
 
@@ -779,7 +779,7 @@ widget_next_rect_w( f32 natural_w, f32 h )
         r = line_place_cell( f, natural_w, h );    /* the next template cell */
     }
 
-    /* Latch the item's structural nav coordinate for widget_behavior: which region and line the
+    /* Latch the item's structural nav coordinate for item_state: which region and line the
        cell belongs to.  Latched (not one-shot) on purpose -- a widget that interacts in several
        parts from one cell (a numeric's sub-fields) lists each part as a same-line sibling.
        item_flags_chrome_reset drops it at the chrome seams. */
@@ -792,7 +792,7 @@ widget_next_rect_w( f32 natural_w, f32 h )
 }
 
 /* The common case: fill the track cell (natural_w < 0 => no same_line preference). */
-static gui_rect_t widget_next_rect( f32 h ) { return widget_next_rect_w( -1.0f, h ); }
+static gui_rect_t cell_next( f32 h ) { return cell_next_w( -1.0f, h ); }
 
 /* Resolve a labeled widget's cell into a label position + a control rect when a field split is
    active (field_split / field_label_*).  The label and control are two tracks laid across the cell
@@ -802,7 +802,7 @@ static gui_rect_t widget_next_rect( f32 h ) { return widget_next_rect_w( -1.0f, 
    control is floored at min_control_w so it stays usable (overrunning under the label, as before).
    Returns false when no field split is set, leaving the caller on its default layout. */
 static bool
-field_split_resolve( gui_rect_t cell, f32 min_control_w, f32* out_label_x, f32* out_label_w,
+cell_split_field( gui_rect_t cell, f32 min_control_w, f32* out_label_x, f32* out_label_w,
                      gui_rect_t* out_control )
 {
     layout_frame_t* f = lf();

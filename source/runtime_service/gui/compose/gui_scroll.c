@@ -17,7 +17,7 @@
     reserves its gutter and hands it the track rect + scroll slot at pop, through the forward
     declaration in gui_internal.h.  Compose produces rects; the widget owns feel + look.
 
-    Included by gui.c after gui_layout_core.c (provides widget_next_rect, layout_frame_t, lf,
+    Included by gui.c after gui_layout_core.c (provides cell_next, layout_frame_t, lf,
     layout_clear, layout_set_default, item_flags_chrome_reset) and before gui_layout_child.c
     and gui_layout.c which call layout_push/pop_region.
 
@@ -158,7 +158,7 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
        between the region box and where the layout starts (l/r narrow the column, t offsets the
        first row).  Opens UNDECLARED: the first layout header in the region body (stack / columns /
        grid / ...) installs the geometry; a widget emitted before then trips the guard in
-       widget_next_rect_w. */
+       cell_next_w. */
     layout_seed_content( f, region_pad );
 
     /* Own clip (children only): scissor contents to the gutter-adjusted view; draw_push_clip_rect

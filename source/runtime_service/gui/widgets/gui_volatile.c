@@ -31,7 +31,7 @@
             calls have a valid (if minimal) layout frame and id scope to emit into, without
             running ctx_begin/ctx_new_frame or touching anything else about the real frame's UI
             state.  s_replay_mode itself lives in gui_ctx.c (ambient state, same tier as
-            s_interaction) so widget_behavior (interact/gui_item.c) can read it inline; this file
+            s_interaction) so item_state (interact/gui_item.c) can read it inline; this file
             is the only place that sets it.
 
     Included by gui.c after the widget family files -- needs lf() / layout_frame_t (gui_ctx.c,
@@ -49,7 +49,7 @@
    command range it produces (gui_volatile_cb_open/_close, gui_backend.h); the callback itself
    calls gui_volatile_begin/end from inside its own body, per the caller's own code -- begin
    stamps the layout cursor position the callback started at (needed to reconstruct a matching
-   scope on replay), end is a reserved no-op (see gui_volatile_end).  `label` is hashed the same way widget_id() hashes a
+   scope on replay), end is a reserved no-op (see gui_volatile_end).  `label` is hashed the same way item_id() hashes a
    widget label (id_combine(id_seed(), id_hash(label))) -- callers pass an ordinary string, same as
    any other widget call, rather than manufacturing their own gui_id_t. */
 void
@@ -100,7 +100,7 @@ gui_volatile_end( void )
     scrollbar gutter, pushes no clip, and calls no id_push -- the caller handles id scoping
     itself.  layout_set_default installs a plain single-column stack and resets the
     modifier/template state, so a widget can be placed immediately without tripping the
-    emit-before-header guard in widget_next_rect_w.  band_bottom is set far below y since a
+    emit-before-header guard in cell_next_w.  band_bottom is set far below y since a
     replay frame never opens a grid.
 ----------------------------------------------------------------------------------------------*/
 

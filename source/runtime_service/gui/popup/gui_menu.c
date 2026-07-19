@@ -65,10 +65,10 @@ menu_close_chain( void )
 bool
 gui_menu_item( const char* label, const char* shortcut, bool* selected )
 {
-    gui_id_t   id = widget_id( label );
-    gui_rect_t r  = widget_next_rect( WIDGET_H );
+    gui_id_t   id = item_id( label );
+    gui_rect_t r  = cell_next( WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
     /* Pointing at a leaf row -- by mouse or by the nav cursor -- collapses any submenu open at this
        depth, so moving off a sibling menu_begin onto a plain item closes that submenu: the menu
@@ -78,7 +78,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
 
     /* Row highlight on hover / nav (active tint while pressed). */
     if ( st.hover || st.nav )
-        draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
+        draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, col_item_bg( st ) );
 
     /* A fixed check-mark gutter on the left so checkable and plain items align.  With
        GUI_MENU_CHECK_BOX (default) a bordered idle box is always drawn when the item has a
@@ -93,7 +93,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
         bool draw_box = ( (u32)style_var( GUI_VAR_MENU_CHECK ) == GUI_MENU_CHECK_BOX );
         if ( draw_box )
         {
-            draw_push_rect_filled ( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, widget_bg_color( st ) );
+            draw_push_rect_filled ( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, col_item_bg( st ) );
             draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER );
         }
         if ( *selected )
@@ -112,7 +112,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
        widest row over two frames, like the combo dropdown. */
     f32 natural = lx + label_width( label ) + WIDGET_PAD;
     if ( sw > 0.0f ) natural += WIDGET_PAD + sw;
-    widget_track_width( natural );
+    cell_reach( natural );
 
     if ( st.clicked )
     {
@@ -130,7 +130,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
 bool
 gui_menu_begin( const char* label )
 {
-    gui_id_t id  = widget_id( label );
+    gui_id_t id  = item_id( label );
     gui_id_t pid = id_combine( id, GUI_POPUP_SALT );
 
     /* Orientation from the active layout mode: a bar (pack) renders a horizontal label whose popup
@@ -141,18 +141,18 @@ gui_menu_begin( const char* label )
     f32          anchor_x, anchor_y;
     if ( in_bar )
     {
-        box      = widget_next_rect_w( label_natural_w( label ), WIDGET_H );
+        box      = cell_next_w( label_natural_w( label ), WIDGET_H );
         anchor_x = box.x;
         anchor_y = box.y + box.h;            /* drop below the bar label */
     }
     else
     {
-        box      = widget_next_rect( WIDGET_H );
+        box      = cell_next( WIDGET_H );
         anchor_x = box.x + box.w;            /* open to the right of the row */
         anchor_y = box.y;
     }
 
-    gui_item_state_t st = widget_behavior( id, box, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, box, ITEM_BUTTON );
 
     gui_menu_state_t* ms = GUI_STATE( gui_menu_state_t, id );
     bool was_open     = ( ms->open_frame + 1u == g_ctx->retained.frame );
@@ -213,14 +213,14 @@ gui_menu_begin( const char* label )
 
     if ( in_bar )
     {
-        widget_track_width( box.x + box.w );
+        cell_reach( box.x + box.w );
     }
     else
     {
         /* Submenu marker: a right-pointing arrow boxed at the row's right edge. */
         gui_rect_t arrow = { box.x + box.w - box.h, box.y, box.h, box.h };
         draw_arrow( arrow, GUI_DIR_RIGHT, COL_TEXT );
-        widget_track_width( box.x + WIDGET_PAD + label_width( label ) + box.h + WIDGET_PAD );
+        cell_reach( box.x + WIDGET_PAD + label_width( label ) + box.h + WIDGET_PAD );
     }
 
     /* The submenu is an auto-size, stack-bodied popup keyed off this entry's id. */

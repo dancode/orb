@@ -38,7 +38,7 @@
                     (line_size/gap/pad/quantum/scales) into rects.  Track resolver, regions,
                     children, the public layout verbs + sz_ sizing family.
     interact/    -- behavior: widget-agnostic interaction services -- the standard item
-                    protocol (widget_behavior), bare chrome grab (grab_item), drag threshold +
+                    protocol (item_state), bare chrome grab (item_grab), drag threshold +
                     payload, move-drag + deferred-press (move_grab/move_track, press_defer_*),
                     edge-resize mechanism (resize_item), animation stepping.  Each serves a
                     capability (exclusivity, clicks, tracking) over (id, rect); none knows a
@@ -105,7 +105,7 @@
     surface/gui_surface.c        -- surface service: window record pool, placement channel, z dispenser,
                                       hover-win contest, surface reassignment slot, open/closed state
 
-    compose/gui_layout_core.c    -- layout engine: track resolver + cell emitters (widget_next_rect, grid/pack)
+    compose/gui_layout_core.c    -- layout engine: track resolver + cell emitters (cell_next, grid/pack)
     compose/gui_scroll.c  -- scrollable region engine: gui_region_t, gutters, push/pop_region
     compose/gui_layout_child.c   -- child box lifecycle: child_begin/child_end
     compose/gui_sublayout.c      -- transient sub-layout lifecycle: push/pop_layout, sublayout_open
@@ -113,7 +113,7 @@
     compose/gui_region.c         -- root-level region: a fixed-rect layout primitive, no window chrome
     compose/gui_layout.c         -- public layout API verbs + sz_ sizing: gui_layout, gui_stack, gui_cols
 
-    interact/gui_item.c          -- the standard item protocol: widget_behavior, grab_item, nav registration, repeat
+    interact/gui_item.c          -- the standard item protocol: item_state, item_grab, nav registration, repeat
     interact/gui_drag.c          -- drag service: threshold machine + typed payload transfer (source/target)
     interact/gui_move.c          -- move-drag protocol (move_grab/move_track) + deferred-press latch (press_defer_*)
     interact/gui_resize.c        -- edge-resize mechanism: resize_item protocol, hit-test, grab, edge apply

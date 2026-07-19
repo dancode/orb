@@ -17,7 +17,7 @@
     Focus gain seeds it from the current value; Enter / focus loss parses it back.
 
     Included by gui.c after gui_widget_slider.c (which is after the widget family files, so
-    widget_behavior, widget_split_label, input_field_edit, and the COL_* / WIDGET_ / WIN_
+    item_state, draw_field_label, input_field_edit, and the COL_* / WIDGET_ / WIN_
     style vocabulary from gui_style.c are all in scope).
 
 ==============================================================================================*/
@@ -33,12 +33,8 @@ input_num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
                  const char* fmt, bool is_int, double cur, double* out )
 {
     /* Box background and border. */
-    draw_push_rect_filled( box_r.x, box_r.y, box_r.w, box_r.h,
-                           0, 0, 1, 1, 0,
-                           st.focused ? COL_INPUT_FOCUS : frame_bg_color( st, COL_INPUT_BG ) );
-    draw_push_rect_outline( box_r.x, box_r.y, box_r.w, box_r.h,
-                            WIN_BORDER, 0,
-                            st.focused ? COL_WIDGET_HOT : COL_BORDER );
+    draw_fill( box_r, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );
+    draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
 
     /* input_* seed the editor with the same format they display, so the field opens on the value
        exactly as it was shown. */
@@ -64,9 +60,9 @@ input_num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
 static bool
 num_step_button( gui_id_t id, gui_rect_t r, bool is_minus )
 {
-    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
-    draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0, 0, 1, 1, 0, widget_bg_color( st ) );
-    draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
+    draw_fill( r, col_item_bg( st ) );
+    draw_outline( r, WIN_BORDER, COL_BORDER );
     const char* sym = is_minus ? "-" : "+";
     f32 sw = font_text_w( sym );
     draw_push_text( r.x + ( r.w - sw ) * 0.5f, text_center_y( r.y, r.h ), COL_TEXT, sym );
@@ -98,16 +94,16 @@ static bool
 input_scalar( const char* label, double cur, double* out,
               double step, double step_fast, const char* fmt, bool is_int )
 {
-    gui_id_t   id  = widget_id( label );
-    gui_rect_t r   = widget_next_rect( WIDGET_H );
+    gui_id_t   id  = item_id( label );
+    gui_rect_t r   = cell_next( WIDGET_H );
 
     bool has_steps = ( step != 0.0 );
     f32  btn_w     = has_steps ? 2.0f * WIDGET_H : 0.0f;
     f32  min_ctrl  = font_char_h() * 3.0f + btn_w;
-    gui_rect_t ctrl = widget_split_label( r, label, min_ctrl, COL_TEXT_DIM );
+    gui_rect_t ctrl = draw_field_label( r, label, min_ctrl, COL_TEXT_DIM );
 
     gui_rect_t   box_r = { ctrl.x, ctrl.y, ctrl.w - btn_w, ctrl.h };
-    gui_item_state_t st    = widget_behavior( id, box_r, GUI_WIDGET_KIND_FOCUSABLE );
+    gui_item_state_t st    = item_state( id, box_r, ITEM_FOCUSABLE );
 
     bool   changed = input_num_field( id, box_r, st, fmt, is_int, cur, out );
     double base    = changed ? *out : cur;
@@ -122,23 +118,15 @@ input_scalar( const char* label, double cur, double* out,
         gui_rect_t minus_r = { bx,            ctrl.y, WIDGET_H, ctrl.h };
         gui_rect_t plus_r  = { bx + WIDGET_H, ctrl.y, WIDGET_H, ctrl.h };
 
-        /* Save last_item state so is_item_* after input_int/float reports the text box, not the
-           final step button.  Step buttons call widget_behavior directly and would overwrite it. */
-        gui_id_t       saved_id     = s_scope.last_id;
-        gui_rect_t     saved_rect   = s_scope.last_rect;
-        gui_item_state_t saved_status = s_scope.last_status;
-
-        /* Step buttons call widget_behavior directly (no cell emit), bypassing item_flags_resolve.
-           Set BUTTON_REPEAT on s_scope.flags for the pair, then restore so callers are unaffected. */
-        gui_item_flags_t saved_flags = s_scope.flags;
-        s_scope.flags = saved_flags | GUI_ITEM_BUTTON_REPEAT;
+        /* Bracket the step buttons as sub-items of this widget: is_item_* after input_int/float
+           reports the text box, not the final button, and the BUTTON_REPEAT tweak (the buttons
+           call item_state directly, no cell emit, so item_flags_resolve never runs) stays scoped
+           to the pair. */
+        gui_item_sub_t sub = gui_item_sub_begin();
+        s_scope.flags |= GUI_ITEM_BUTTON_REPEAT;
         if ( num_step_button( id_combine( id, 1u ), minus_r, true  ) ) { *out = base - inc; changed = true; }
         if ( num_step_button( id_combine( id, 2u ), plus_r,  false ) ) { *out = base + inc; changed = true; }
-        s_scope.flags = saved_flags;
-
-        s_scope.last_id     = saved_id;
-        s_scope.last_rect   = saved_rect;
-        s_scope.last_status = saved_status;
+        gui_item_sub_end( sub );
     }
 
     return changed;
@@ -180,9 +168,9 @@ static bool
 input_float_n( const char* label, f32* v, u32 n, const char* fmt )
 {
     if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
-    gui_id_t   id   = widget_id( label );
-    gui_rect_t r    = widget_next_rect( WIDGET_H );
-    gui_rect_t ctrl = widget_split_label( r, label, font_char_h() * 3.0f * (f32)n, COL_TEXT_DIM );
+    gui_id_t   id   = item_id( label );
+    gui_rect_t r    = cell_next( WIDGET_H );
+    gui_rect_t ctrl = draw_field_label( r, label, font_char_h() * 3.0f * (f32)n, COL_TEXT_DIM );
 
     bool changed = false;
     for ( u32 i = 0; i < n; ++i )
@@ -191,7 +179,7 @@ input_float_n( const char* label, f32* v, u32 n, const char* fmt )
         f32 x1 = ctrl.x + (f32)(i + 1u) * ctrl.w / (f32)n;
         gui_rect_t sub  = { floorf( x0 ), ctrl.y, floorf( x1 ) - floorf( x0 ), ctrl.h };
         gui_id_t   sid  = id_combine( id, i + 1u );
-        gui_item_state_t st = widget_behavior( sid, sub, GUI_WIDGET_KIND_FOCUSABLE );
+        gui_item_state_t st = item_state( sid, sub, ITEM_FOCUSABLE );
 
         double out;
         if ( input_num_field( sid, sub, st, fmt, false, (double)v[ i ], &out ) )

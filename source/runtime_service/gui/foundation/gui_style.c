@@ -287,6 +287,10 @@ style_new_frame( void )
 #define ROUND_WIN       style_var( GUI_VAR_WIN_ROUNDING    )
 #define ROUND_WIDGET    style_var( GUI_VAR_WIDGET_ROUNDING )
 #define ROUND_GRAB      style_var( GUI_VAR_GRAB_ROUNDING   )
+
+/* SKIN: check-mark inset inside the checkbox / radio disc.  A raw theme field (no push_style
+   var slot), wrapped so no widget reads s_style directly. */
+#define CHECK_PAD       ( (f32)s_style.checkmark_pad )
 #define WIN_FOCUS_BORDER style_var( GUI_VAR_WIN_FOCUS_BORDER )
 
 /* SKIN: color palette (GUI_COLOR: byte order R,G,B,A in memory = ABGR u32).  Theme defaults

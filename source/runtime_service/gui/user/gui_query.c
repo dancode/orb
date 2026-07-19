@@ -100,7 +100,7 @@ gui_is_mouse_hovering_rect( gui_rect_t r )
     Last-item introspection (the Dear ImGui IsItem* family).
 
     Every reader reports on "the widget just emitted" -- the item whose rect and interaction state
-    widget_behavior latched into s_scope.last_* (interact/gui_item.c).  Call immediately after a
+    item_state latched into s_scope.last_* (interact/gui_item.c).  Call immediately after a
     widget, the way set_item_tooltip / popup_context_item_begin already bind to the previous item:
 
         gui()->button( "Save" );

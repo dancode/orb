@@ -87,7 +87,7 @@ drag_track( gui_id_t id, f32 press_x, f32 press_y )
 }
 
 /* Start (or continue) a drag from non-item chrome -- a dock tab, a custom grab handle -- that
-   never goes through widget_behavior's last-item latch.  The payload is attached on the frame
+   never goes through item_state's last-item latch.  The payload is attached on the frame
    the drag goes live so targets can match it immediately.  Returns true while the drag is live. */
 static bool
 drag_from_chrome( gui_id_t id, f32 press_x, f32 press_y,

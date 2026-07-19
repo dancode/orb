@@ -263,12 +263,12 @@ undo_apply( gui_undo_buf_t* u, i32 logical_idx, char* buf, u32 bufsz,
     Escape reverts the buffer to its content at focus-gain time.
 
     The caller is responsible for:
-        - carving `box` from the layout (widget_next_rect has already been called),
+        - carving `box` from the layout (cell_next has already been called),
         - drawing the box background and border (so the visual treatment is widget-specific),
-        - obtaining `st` from widget_behavior with GUI_WIDGET_KIND_FOCUSABLE.
+        - obtaining `st` from item_state with ITEM_FOCUSABLE.
     On Enter or Escape the function drops focus by clearing s_interaction.focused_id.
 
-    Mouse capture: widget_behavior already claims active_id on the press (for every widget
+    Mouse capture: item_state already claims active_id on the press (for every widget
     kind), and that single mechanism is the engine's general-purpose mouse grab -- while a
     widget owns active_id every other widget is frozen (can_hover is false for them) and no
     hover fires elsewhere, so a drag stays bound to this field until the button is released.
@@ -278,7 +278,7 @@ undo_apply( gui_undo_buf_t* u, i32 logical_idx, char* buf, u32 bufsz,
 
     id          -- widget id; keys the persisted gui_edit_state_t (cursor, anchor, scroll, blink).
     box         -- pixel rect the text renders into; text is inset by WIDGET_PAD on left / right.
-    st          -- interaction state from widget_behavior: focused gates keyboard input, pressed marks
+    st          -- interaction state from item_state: focused gates keyboard input, pressed marks
                    the grab frame, active is held true for the life of the mouse-capture drag.
     buf         -- caller-owned NUL-terminated buffer, modified in-place by keyboard input.
     bufsz       -- total byte capacity of buf, including the NUL terminator.
@@ -668,7 +668,7 @@ edit_apply_mouse( gui_rect_t box, gui_item_state_t st, char* buf, u32 len,
 {
     bool blink_reset = *blink_io;
 
-    /* st.pressed is the grab frame (also the focus-gaining click, since widget_behavior set
+    /* st.pressed is the grab frame (also the focus-gaining click, since item_state set
        focused_id = id by now); st.active stays true for the whole capture, so the drag below
        keeps extending the selection even after the cursor leaves the box.  text_offset_at clamps
        a cursor past either edge to 0 / len, so a drag past the ends selects to start / end. */
@@ -779,8 +779,8 @@ edit_scroll_and_paint( gui_rect_t box, char* buf, gui_edit_state_t* es, bool foc
         if ( sx0 < clip_x0 ) sx0 = clip_x0;
         if ( sx1 > clip_x1 ) sx1 = clip_x1;
         if ( sx1 > sx0 )
-            draw_push_rect_filled( sx0, box.y + 1.0f, sx1 - sx0, box.h - 2.0f,
-                                   0, 0, 1, 1, 0, COL_WIDGET_ACT );
+            draw_fill( ( gui_rect_t ){ sx0, box.y + 1.0f, sx1 - sx0, box.h - 2.0f },
+                       COL_WIDGET_ACT );
     }
 
     draw_push_text_clip_n( text_x, text_y, COL_TEXT, buf, 0xFFFFFFFFu, clip_x0, clip_x1 );
@@ -794,10 +794,10 @@ edit_scroll_and_paint( gui_rect_t box, char* buf, gui_edit_state_t* es, bool foc
         if ( caret_vis )
         {
             f32 cx = text_x + text_x_at( buf, es->cursor );
-            draw_push_rect_filled( cx, box.y + (f32)s_style.cursor_inset,
-                                   (f32)s_style.cursor_w,
-                                   box.h - 2.0f * (f32)s_style.cursor_inset,
-                                   0, 0, 1, 1, 0, COL_CURSOR );
+            draw_fill( ( gui_rect_t ){ cx, box.y + (f32)s_style.cursor_inset,
+                                       (f32)s_style.cursor_w,
+                                       box.h - 2.0f * (f32)s_style.cursor_inset },
+                       COL_CURSOR );
         }
     }
 }

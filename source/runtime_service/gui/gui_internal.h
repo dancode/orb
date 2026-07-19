@@ -106,17 +106,17 @@ typedef struct
     Widget interaction (gui_paint_core.c)
 
     The interaction class picked at the call site.  Only the press-time behavior differs between
-    widgets; everything else (hover/active/click) is uniform.  widget_behavior's per-frame result
+    widgets; everything else (hover/active/click) is uniform.  item_state's per-frame result
     is the PUBLIC gui_item_state_t (gui.h) -- stock widgets and gui()->item() callers read the
     same record, so a custom widget is built on exactly the substrate the built-ins use. */
 
 typedef enum
 {
-    GUI_WIDGET_KIND_BUTTON    = 0,   // press captures active; reports clicked
-    GUI_WIDGET_KIND_DRAG      = 1,   // press captures active; held for dragging
-    GUI_WIDGET_KIND_FOCUSABLE = 2,   // press also claims keyboard focus
+    ITEM_BUTTON    = 0,   // press captures active; reports clicked
+    ITEM_DRAG      = 1,   // press captures active; held for dragging
+    ITEM_FOCUSABLE = 2,   // press also claims keyboard focus
 
-} gui_widget_kind_t;
+} gui_item_kind_t;
 
 /*==============================================================================================
     Scroll link (compose/gui_scroll.c)
@@ -226,10 +226,10 @@ typedef struct gui_window_t
 ==============================================================================================*/
 
 /* One entry of the per-frame nav item list.  Every item of the nav window records itself here
-   (emission order) as it passes through widget_behavior; the resolvers in gui_nav.c consume the
+   (emission order) as it passes through item_state; the resolvers in gui_nav.c consume the
    list at the NEXT nav_new_frame, so a move steps over last frame's items -- the same one-frame
    deferral hover_win uses.  region/line are the structural coordinate the layout engine stamped
-   when it placed the item (widget_next_rect_w), so moves are index math over real rows, not a
+   when it placed the item (cell_next_w), so moves are index math over real rows, not a
    spatial guess over rects; the rect remains only for the goal-column pick. */
 
 typedef struct
@@ -239,7 +239,7 @@ typedef struct
     u32        region;   // region sequence that placed it (a window body / child / strip region)
     u32        line;     // line sequence within the frame -- monotonic, so order == reading order
     bool       chrome;   // not layout-placed (title button, dock tab): the F6 chrome lane
-    bool       drag_kind; // GUI_WIDGET_KIND_DRAG (slider / drag box): eligible for row-solo auto-adjust
+    bool       drag_kind; // ITEM_DRAG (slider / drag box): eligible for row-solo auto-adjust
 
     /* Type-ahead label (gui_nav.c): lowercased, truncated, stamped by an opt-in widget right after
        it registers (gui_selectable) -- empty ("") means this item does not participate.  Kept on
@@ -436,7 +436,7 @@ typedef struct
        bounding-box max the region measures at pop to size its scrollbars / autosize.  Forward
        flow advances both together (content_reach); a pen REPOSITION -- layout_pen_jump for a
        table row or a menu-bar restore -- moves pen_y alone, so the highwater never rewinds.
-       extent_track grows the highwater; widget_track_width is its x-only face for a leaf widget
+       extent_track grows the highwater; cell_reach is its x-only face for a leaf widget
        that overflows its cell.  pen_y is carried live at the exact content end (committed lines
        plus the open line) -- a gap is owed *before* the next line (gap_pending), never appended
        after content, so measurement at pop needs no trailing-gap correction.  gap_pending is the
@@ -562,11 +562,11 @@ typedef struct
 /*==============================================================================================
     Interaction scope (the s_scope instance in foundation/gui_ctx.c)
 
-    The declared contract between composition and behavior.  Everything widget_behavior
+    The declared contract between composition and behavior.  Everything item_state
     (interact/gui_item.c) consumes about "where is this item emitting" lives here, nowhere
     else: composition stamps the record at its seams (window_begin / child_begin / popup / table
     stamp win + clip; the resize/grip resolvers stamp the chrome suppression; the emit seam
-    widget_next_rect_w latches the per-item flags + nav stamp), and behavior reads only this
+    cell_next_w latches the per-item flags + nav stamp), and behavior reads only this
     record plus its own s_interaction -- never the composer scratch (s_build).  Behavior
     publishes its result back into the last_* fields, where the item-query readers
     (user/gui_query.c), drag sourcing, and context-menu anchoring pick it up.  Unlike the
@@ -584,7 +584,7 @@ typedef struct
                              //   GUI_RESIZE_GRIP for the CAN_AUTOSIZE corner) -- any bit set
                              //   suppresses widget hover so the chrome owns the cursor
 
-    /* item -- latched at the emit seam (widget_next_rect_w), dropped at the chrome seams. */
+    /* item -- latched at the emit seam (cell_next_w), dropped at the chrome seams. */
     gui_item_flags_t flags;  // flags resolved for the item being emitted (item_flags_resolve)
 
     /* The nav structural coordinate passes through three roles on its way here: the frame-global
@@ -600,10 +600,10 @@ typedef struct
         u32  line;           // stamp: its line sequence
         bool placed;         // stamp is live (false => the next behavior call is chrome)
         bool skip;           // one-shot: the next behavior call is no keyboard target at all
-                             //   (scrollbar, drag strip) -- consumed by widget_behavior
+                             //   (scrollbar, drag strip) -- consumed by item_state
     } nav;
 
-    /* result -- published by widget_behavior for the most recent item (the Dear ImGui IsItem*
+    /* result -- published by item_state for the most recent item (the Dear ImGui IsItem*
        model): the item-query readers report on "the widget just emitted" with no per-widget
        bookkeeping, the same anchor context menus / tooltips / drag sources hang from. */
     gui_id_t       last_id;      // id of the most recent widget emitted
@@ -1019,6 +1019,34 @@ static bool            window_route_raise  ( gui_id_t id );
 /* gui_popup.c is included after the widgets/ files; selectable calls this to auto-close the enclosing
    popup on click (the Dear ImGui CloseCurrentPopup default behavior). */
 void gui_popup_close_current( void );
+
+/* Compound-widget bracket (interact/gui_item.c) -- the formal seam for "a widget made of
+   widgets".  The outer widget runs item_state for ITS id/rect first, then brackets its inner
+   emissions so the sub-items do not clobber what the outer item published:
+
+     gui_item_sub_t s = gui_item_sub_begin();     // save s_scope.last_* + flags
+     ...inner item_state calls / flag tweaks...   // e.g. |= GUI_ITEM_BUTTON_REPEAT
+     gui_item_sub_end( s );                       // restore: is_item_* reports the OUTER widget
+
+   gui_item_sub_layout_begin is the full compound: the same save plus an id scope rooted at the
+   outer id and a transient sub-layout over the widget's rect (gui_push_layout_overlay), so the
+   body can emit REAL widgets through the normal layout verbs -- the recursive completion of the
+   three-seam recipe (cell -> item -> draw) inside one widget.  End with the same
+   gui_item_sub_end; it unwinds the layout + id scope when `layout` is set. */
+
+typedef struct
+{
+    gui_id_t         last_id;      // s_scope.last_* as published by the outer item's item_state
+    gui_rect_t       last_rect;
+    gui_item_state_t last_status;
+    gui_item_flags_t flags;        // s_scope.flags at begin -- inner tweaks stay scoped
+    bool             layout;       // full bracket: end also pops the sub-layout + id scope
+
+} gui_item_sub_t;
+
+gui_item_sub_t gui_item_sub_begin( void );
+gui_item_sub_t gui_item_sub_layout_begin( gui_id_t id, gui_rect_t r );
+void           gui_item_sub_end( gui_item_sub_t s );
 
 /* The size-animate seam (gui_layout_core.c) eases a remembered extent toward its target through the
    animation pool, whose primitive (gui_anim_f32) lives in interact/gui_anim.c -- included AFTER the layout

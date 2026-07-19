@@ -218,7 +218,7 @@ gui_perf_overlay( int mode )
     A built-in text readout of the live interaction state -- hover/active/focused widget, hover
     window, keyboard nav cursor -- resolved to the source label/title string via the id name
     registry (gui_debug_name, gui_debug_overlay.c) instead of a raw hash.  Debug builds populate
-    that registry at every id mint point (DBG_NAME in widget_id / window_begin_ex / region /
+    that registry at every id mint point (DBG_NAME in item_id / window_begin_ex / region /
     child / table); Release builds leave it empty and every id shows as hex, same shape as
     perf_overlay's always-available-but-more-useful-in-Debug pattern.
 ==============================================================================================*/

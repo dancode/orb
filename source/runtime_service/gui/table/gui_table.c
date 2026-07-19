@@ -37,7 +37,7 @@
                                 table's column/sort state.
 
     Include order (unity build): included by gui.c after gui_layout_child.c so layout_push_region,
-    layout_pop_region, layout_set_default, layout_row_break, layout_resolve_tracks, widget_behavior,
+    layout_pop_region, layout_set_default, layout_row_break, layout_resolve_tracks, item_state,
     lf, s_layout_sp, s_layout_stack, s_build, s_interaction, s_io, and the draw + style macros are
     all in scope.
 
@@ -208,10 +208,10 @@ table_resize_interact( gui_table_t* t )
         gui_id_t   rid = id_combine( t->id, (gui_id_t)( 0x5200u + i ) );
 
         /* Hot when free + front-most and the cursor is over the band; the grab is the bare
-           grab_item protocol (interact/gui_item.c), claiming the left button (released
+           item_grab protocol (interact/gui_item.c), claiming the left button (released
            globally when it lifts, like the dock splitter). */
         bool active = false;
-        if ( grab_item( rid, hr, front, &active ) )
+        if ( item_grab( rid, hr, front, &active ) )
             t->resize_hot = (i8)i;
 
         if ( active )
@@ -282,7 +282,7 @@ table_open_body( gui_table_t* t )
     layout_push_region( t->id, body, ( gui_pad_t ){ 0, 0, 0, 0 }, rflags,
                         link, /* own_clip */ false );
 
-    /* STACK mode so widget_next_rect_w uses tmpl.cellx[0] / tmpl.cellw[0], overridden per column. */
+    /* STACK mode so cell_next_w uses tmpl.cellx[0] / tmpl.cellw[0], overridden per column. */
     layout_set_default( lf() );
 
     /* Resolve from the newly-opened region's content geometry -- content_w already excludes the
@@ -487,7 +487,7 @@ table_header_interact( gui_table_t* t )
 
         gui_id_t     hid = id_combine( t->id, (gui_id_t)( i + 1 ) );
         gui_rect_t   cr  = { t->col_x[ i ], hy, t->col_w[ i ], hh };
-        gui_item_state_t st  = widget_behavior( hid, cr, GUI_WIDGET_KIND_BUTTON );
+        gui_item_state_t st  = item_state( hid, cr, ITEM_BUTTON );
 
         if ( !no_sort && st.hover )  t->hdr_hot = (i8)i;
         if ( !no_sort && st.active ) t->hdr_act = (i8)i;
@@ -645,7 +645,7 @@ gui_table_next_column( void )
     t->cur_col++;
     if ( t->cur_col >= t->ncols ) return false;
 
-    /* Set the layout pen and column geometry so widget_next_rect_w returns the correct cell.
+    /* Set the layout pen and column geometry so cell_next_w returns the correct cell.
        Content stays inside the column because widgets self-fit to tmpl.cellw (text ellipsizes, labeled
        widgets shrink) -- the same contract as the layout engine's columns mode, so no per-cell clip
        is pushed.  The one exterior clip (the body region) bounds the table as a whole. */

@@ -7,12 +7,12 @@
     raw fill/text calls; text_size / draw_text_in / draw_text_clipped measure and place text
     within one; the icon section is the thin public surface over the runtime icon atlas
     (gui_icon.c, backend unit).  None of these consume the row template beyond canvas() and
-    image() -- they act on a rect, not on widget_next_rect's cursor -- so they compose with any
+    image() -- they act on a rect, not on cell_next's cursor -- so they compose with any
     custom layout.  The interaction half of the tier (gui_item / invisible_button) is
     gui_behavior.c, included beside it; together they are the substrate a user widget is written on.
 
     Included by gui.c in the user/ tier (last of the tiers -- pure vocabulary, no state); needs
-    only widget_next_rect / rect_align (core+compose) and the draw_push_* backend calls, all in
+    only cell_next / rect_align (core+compose) and the draw_push_* backend calls, all in
     scope far above.
 
 ==============================================================================================*/
@@ -28,7 +28,7 @@ gui_canvas( f32 height )
 {
     if ( height <= 0.0f )
         height = gui_content_avail().y;
-    return widget_next_rect( height );
+    return cell_next( height );
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -192,7 +192,7 @@ gui_draw_icon_in( gui_rect_t r, gui_icon_id_t id, u32 col )
 void
 gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col )
 {
-    gui_rect_t r = widget_next_rect_w( w, h );   /* reserve a w x h layout slot (like empty) */
+    gui_rect_t r = cell_next_w( w, h );   /* reserve a w x h layout slot (like empty) */
     gui_draw_icon_in( r, id, col );
 }
 
@@ -218,7 +218,7 @@ gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr )
 void
 gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr )
 {
-    gui_rect_t r = widget_next_rect_w( w, h );   /* reserve a w x h layout slot (like image) */
+    gui_rect_t r = cell_next_w( w, h );   /* reserve a w x h layout slot (like image) */
     gui_draw_texture_in( r, bindless_idx, tint_abgr );
 }
 

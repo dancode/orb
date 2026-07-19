@@ -83,7 +83,7 @@ static struct
 
 /* True only while a volatile-widget callback is replayed standalone on an idle frame; set/cleared
    by gui_replay_scope_enter/_exit (widgets/gui_volatile.c).  Ambient frame-phase state, same tier as
-   hover_id/active_id: widget_behavior (interact/gui_item.c) reads it inline to short-circuit before any
+   hover_id/active_id: item_state (interact/gui_item.c) reads it inline to short-circuit before any
    hit-test or write to s_interaction/s_build -- a replay renders against the hover/active/focus the
    last real frame established and can never acquire state or see a fresh click, since interaction is
    resolved only on real frames. */
@@ -116,7 +116,7 @@ static struct
        item_flags is the merged top of the push/pop stack; next_set / next_val are the one-shot
        override for the next widget (which bits it controls + their values); the value resolved for
        the widget currently emitting is latched into s_scope.flags by item_flags_resolve, where
-       widget_behavior and the widgets read it.  All reset to 0 each frame. */
+       item_state and the widgets read it.  All reset to 0 each frame. */
 
     gui_item_flags_t item_flags;       // merged top-of-stack item flags
     gui_item_flags_t next_set;         // bits the next-item override controls
@@ -214,8 +214,8 @@ item_flag_next( gui_item_flags_t flag, bool enable )
 
 /* Resolve the flags for the item now emitting: the stack value with the one-shot next-item override
    applied over it (the override wins on the bits it controls), then clear the override.  Latches the
-   result for widget_behavior / widgets to read, and sets the draw alpha so a disabled item dims with
-   no per-widget code.  Called once per item from widget_next_rect_w (the universal emit seam). */
+   result for item_state / widgets to read, and sets the draw alpha so a disabled item dims with
+   no per-widget code.  Called once per item from cell_next_w (the universal emit seam). */
 static gui_item_flags_t
 item_flags_resolve( void )
 {
@@ -237,7 +237,7 @@ item_flags_resolve( void )
 }
 
 /* Clear the per-item state before chrome runs.  Window/child borders, scrollbars, titlebars, and
-   the collapse arrow are not items -- they never go through widget_next_rect_w, so without this they
+   the collapse arrow are not items -- they never go through cell_next_w, so without this they
    would inherit whatever the last body widget latched (a disabled trailing widget would dim the
    border and deaden the scrollbar).  Called at the chrome seams (begin/window_end, child_begin,
    layout_pop_region) so chrome always interacts undisabled and paints opaque. */

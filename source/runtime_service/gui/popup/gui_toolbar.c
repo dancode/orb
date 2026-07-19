@@ -85,12 +85,12 @@ tb_icon_rect( gui_rect_t r )
 bool
 gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip )
 {
-    gui_id_t   id = widget_id( id_str );
-    gui_rect_t r  = widget_next_rect_w( WIDGET_H, WIDGET_H );
+    gui_id_t   id = item_id( id_str );
+    gui_rect_t r  = cell_next_w( WIDGET_H, WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color_anim( id, st ) );
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, col_item_bg_anim( id, st ) );
     gui_draw_icon_in( tb_icon_rect( r ), icon, 0xFFFFFFFFu );
 
     if ( tooltip && tooltip[ 0 ] )
@@ -107,14 +107,14 @@ gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip 
 bool
 gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip )
 {
-    gui_id_t   id = widget_id( id_str );
-    gui_rect_t r  = widget_next_rect_w( WIDGET_H, WIDGET_H );
+    gui_id_t   id = item_id( id_str );
+    gui_rect_t r  = cell_next_w( WIDGET_H, WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
     bool               on = ( v && *v );
 
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
-                           on ? COL_WIDGET_ACT : widget_bg_color_anim( id, st ) );
+                           on ? COL_WIDGET_ACT : col_item_bg_anim( id, st ) );
     if ( on )
         draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER );
 
@@ -153,10 +153,10 @@ typedef struct { u32 open_frame; } gui_toolbar_dd_state_t;
 bool
 gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* tooltip )
 {
-    gui_id_t   id = widget_id( id_str );
-    gui_rect_t r  = widget_next_rect_w( WIDGET_H + TB_DD_ARROW_W, WIDGET_H );
+    gui_id_t   id = item_id( id_str );
+    gui_rect_t r  = cell_next_w( WIDGET_H + TB_DD_ARROW_W, WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
     gui_id_t                 pid = id_combine( id, GUI_POPUP_SALT );
     gui_toolbar_dd_state_t* ds  = GUI_STATE( gui_toolbar_dd_state_t, id );
@@ -171,7 +171,7 @@ gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* 
 
     bool this_open = popup_is_open_id( pid );
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
-                           this_open ? COL_WIDGET_ACT : widget_bg_color_anim( id, st ) );
+                           this_open ? COL_WIDGET_ACT : col_item_bg_anim( id, st ) );
 
     gui_rect_t icon_r  = { r.x, r.y, WIDGET_H, r.h };
     gui_rect_t arrow_r = { r.x + WIDGET_H, r.y, TB_DD_ARROW_W, r.h };
@@ -206,7 +206,7 @@ gui_toolbar_dropdown_end( void )
 void
 gui_toolbar_separator( void )
 {
-    gui_rect_t r = widget_next_rect_w( WIDGET_PAD * 2.0f + WIN_BORDER, WIDGET_H );
+    gui_rect_t r = cell_next_w( WIDGET_PAD * 2.0f + WIN_BORDER, WIDGET_H );
     f32        x = r.x + ( r.w - WIN_BORDER ) * 0.5f;
     draw_push_rect_filled( x, r.y + WIDGET_PAD, WIN_BORDER, r.h - 2.0f * WIDGET_PAD, 0,0,1,1, 0, COL_BORDER );
 }

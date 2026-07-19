@@ -14,8 +14,8 @@
     window_get and the shared drag/resize state vars -- it declares no long-lived state of its own.
 
     A window is treated as a large compound widget, so this builds on the shared primitives
-    in present/gui_paint_core.c (widget_bg_color, the label grammar) and interact/gui_item.c
-    (widget_behavior); the style vocabulary (WIDGET_* / WIN_* / COL_*) resolves in
+    in present/gui_paint_core.c (col_item_bg, the label grammar) and interact/gui_item.c
+    (item_state); the style vocabulary (WIDGET_* / WIN_* / COL_*) resolves in
     foundation/gui_style.c.
 
     Included by gui.c after the widget family files, so the window record (gui_window.c), the
@@ -634,7 +634,7 @@ window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title,
 /* Resolve this frame's edge-resize / autosize-grip hover-and-grab, before any widget can claim the
    press.  The edge protocol (hover gate, grab band, grab on press, directional cursor) is the
    resize_item service (interact/gui_resize.c) -- owner_win is the window's OWN id, since this
-   resolves before s_build.win.id is stamped.  Sets s_scope.resize_hot (read by widget_behavior +
+   resolves before s_build.win.id is stamped.  Sets s_scope.resize_hot (read by item_state +
    window_end's highlight); a hot autosize grip joins the mask as GUI_RESIZE_GRIP with the R+B
    edge bits promoted alongside it, but never drives the cursor.  Returns the PRE-grip-promotion
    mask -- the debug overlay's outer-band capture wants only the true edge hit. */
@@ -648,7 +648,7 @@ window_resolve_resize_hot( gui_id_t id, gui_window_t* win, gui_win_flags_t flags
         resize_hot = resize_item( id, id, disp_r,
                                   GUI_RESIZE_L | GUI_RESIZE_R | GUI_RESIZE_T | GUI_RESIZE_B,
                                   collapsed, &dragging );
-    s_scope.resize_hot = resize_hot;   /* read by widget_behavior + window_end's highlight */
+    s_scope.resize_hot = resize_hot;   /* read by item_state + window_end's highlight */
 
     /* CAN_AUTOSIZE size-grip: reserve the bottom-right corner ahead of the body's scrollbars the
        same way the edge band reserves the borders.  The grip square overlaps the scroll gutter, but

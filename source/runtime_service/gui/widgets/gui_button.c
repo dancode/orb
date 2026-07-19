@@ -4,8 +4,8 @@
 
     The controls whose story is a press: button / button_fill / small_button / arrow_button,
     checkbox and radio_button, and selectable (the list-row
-    press).  Each takes its rect from widget_next_rect and runs the standard item protocol
-    (widget_behavior, interact/gui_item.c) as GUI_WIDGET_KIND_BUTTON, then paints its face with
+    press).  Each takes its rect from cell_next and runs the standard item protocol
+    (item_state, interact/gui_item.c) as ITEM_BUTTON, then paints its face with
     the present/ helpers -- the canonical compose -> behave -> present combine.
 
     Display-only rows (text, bullets, label_text, progress_bar, spacers) are in gui_text.c,
@@ -20,7 +20,7 @@
    ellipsized fit so an oversized label truncates cleanly instead of spilling past both edges.
    Every pushbutton-style widget (button, button_fill, small_button) draws its face this way --
    centered is a button's one layout difference from the trailing-label widgets below, which is
-   why it is not routed through widget_split_label / rect_align's LEFT default like they are. */
+   why it is not routed through draw_field_label / rect_align's LEFT default like they are. */
 static void
 draw_button_label( gui_rect_t r, const char* label )
 {
@@ -46,14 +46,14 @@ draw_button_label( gui_rect_t r, const char* label )
 bool
 gui_button( const char* label )
 {
-    gui_id_t   id = widget_id( label );
+    gui_id_t   id = item_id( label );
 
     /* Natural width = label + padding.  Shrinks to this in stack and same_line; fills in columns. */
-    gui_rect_t r  = widget_next_rect_w( label_natural_w( label ), WIDGET_H );
+    gui_rect_t r  = cell_next_w( label_natural_w( label ), WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color_anim( id, st ) );
+    draw_fill( r, col_item_bg_anim( id, st ) );
     draw_button_label( r, label );
 
     return st.clicked;
@@ -79,17 +79,17 @@ gui_button( const char* label )
 bool
 gui_button_fill( const char* label )
 {
-    gui_id_t id = widget_id( label );
+    gui_id_t id = item_id( label );
 
     f32 avh = gui_content_avail().y;   /* to the region floor: bottom margin is the region's pad.b */
     if ( avh < WIDGET_H ) avh = WIDGET_H;
 
-    gui_rect_t r = widget_next_rect( WIDGET_H );   /* flow + extent contribution = one row */
+    gui_rect_t r = cell_next( WIDGET_H );   /* flow + extent contribution = one row */
     r.h          = avh;                            /* paint + hit-test over the filled height */
 
-    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color_anim( id, st ) );
+    draw_fill( r, col_item_bg_anim( id, st ) );
     draw_button_label( r, label );
 
     return st.clicked;
@@ -103,15 +103,15 @@ gui_button_fill( const char* label )
 bool
 gui_small_button( const char* label )
 {
-    gui_id_t   id = widget_id( label );
+    gui_id_t   id = item_id( label );
 
     /* Height hugs the glyph (plus 2px so the frame does not touch the text); width is label + pad. */
     f32        h  = font_char_h() + 2.0f;
-    gui_rect_t r  = widget_next_rect_w( label_natural_w( label ), h );
+    gui_rect_t r  = cell_next_w( label_natural_w( label ), h );
 
-    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
+    draw_fill( r, col_item_bg( st ) );
     draw_button_label( r, label );
 
     return st.clicked;
@@ -143,14 +143,14 @@ gui_button_width( const char* label )
 bool
 gui_arrow_button( const char* label, gui_dir_t dir )
 {
-    gui_id_t   id = widget_id( label );
+    gui_id_t   id = item_id( label );
 
     /* Square natural size (row height), so a same_line row of arrows packs tightly. */
-    gui_rect_t r  = widget_next_rect_w( WIDGET_H, WIDGET_H );
+    gui_rect_t r  = cell_next_w( WIDGET_H, WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, widget_bg_color( st ) );
+    draw_fill( r, col_item_bg( st ) );
     draw_arrow( r, dir, COL_TEXT );
 
     return st.clicked;
@@ -187,7 +187,7 @@ checkable_cell( gui_id_t id, const char* label )
        over the cell, so a hugged cell collapses the control track to the CHECKBOX_SZ floor and the
        nav/hit rect shrinks to the bare box instead of spanning the field like input/slider rows. */
     bool       split_on = ( lf()->mod.field_side != 0 );
-    gui_rect_t r  = widget_next_rect_w( split_on ? -1.0f
+    gui_rect_t r  = cell_next_w( split_on ? -1.0f
                                                  : 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD
                                                        + label_width( label ),
                                         WIDGET_H );
@@ -196,16 +196,16 @@ checkable_cell( gui_id_t id, const char* label )
        box sits at the start of the control track.  Default mode keeps the box on the left with the
        label trailing it.  The box only needs CHECKBOX_SZ of the control track.
 
-       Resolved BEFORE widget_behavior so the hit/nav rect can match input_text / slider_float: those
-       route through widget_split_label, which hands widget_behavior the control track alone, starting
-       after the label gutter.  Handing widget_behavior the full (label-gutter-including, left-seated)
+       Resolved BEFORE item_state so the hit/nav rect can match input_text / slider_float: those
+       route through draw_field_label, which hands item_state the control track alone, starting
+       after the label gutter.  Handing item_state the full (label-gutter-including, left-seated)
        cell here instead would put this widget's nav rect at a different X than every other field in
        the same form -- e.g. a checkbox at column 0 next to input/slider fields starting at column 90 --
        so directional nav (which keys off cross-axis overlap) would treat them as different columns. */
     checkable_cell_t c;
     gui_rect_t       control;
     f32              bx;
-    bool             split = field_split_resolve( r, CHECKBOX_SZ, &c.label_x, &c.label_w, &control );
+    bool             split = cell_split_field( r, CHECKBOX_SZ, &c.label_x, &c.label_w, &control );
 
     if ( split )
     {
@@ -218,7 +218,7 @@ checkable_cell( gui_id_t id, const char* label )
         c.label_w  = ( r.x + r.w - side_pad ) - c.label_x;  /* trails to the cell's right edge      */
     }
 
-    c.st      = widget_behavior( id, split ? control : r, GUI_WIDGET_KIND_BUTTON );
+    c.st      = item_state( id, split ? control : r, ITEM_BUTTON );
     f32 by    = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
     c.box     = ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ };
     c.label_y = text_center_y( r.y, r.h );
@@ -228,11 +228,11 @@ checkable_cell( gui_id_t id, const char* label )
 bool
 gui_checkbox( const char* label, bool* v )
 {
-    gui_id_t         id = widget_id( label );
+    gui_id_t         id = item_id( label );
     checkable_cell_t c  = checkable_cell( id, label );
 
-    draw_push_rect_filled ( c.box.x, c.box.y, c.box.w, c.box.h, 0,0,1,1, 0, widget_bg_color( c.st ) );
-    draw_push_rect_outline( c.box.x, c.box.y, c.box.w, c.box.h, WIN_BORDER, 0, COL_BORDER );
+    draw_fill( c.box, col_item_bg( c.st ) );
+    draw_outline( c.box, WIN_BORDER, COL_BORDER );
 
     if ( *v )
     {
@@ -275,7 +275,7 @@ gui_checkbox( const char* label, bool* v )
 bool
 gui_radio_button( const char* label, i32* v, i32 value )
 {
-    gui_id_t         id = widget_id( label );
+    gui_id_t         id = item_id( label );
     checkable_cell_t c  = checkable_cell( id, label );
 
     /* Disc centred in the CHECKBOX_SZ indicator box. */
@@ -288,9 +288,9 @@ gui_radio_button( const char* label, i32* v, i32 value )
 
     /* Border ring, then the well (hover/active tinted like a button knob), then the selected dot. */
     draw_push_circle_filled( cx, cy, rad,              segs, COL_BORDER );
-    draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, widget_bg_color( c.st ) );
+    draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, col_item_bg( c.st ) );
     if ( on )
-        draw_push_circle_filled( cx, cy, rad - (f32)s_style.checkmark_pad, segs, COL_CHECK_MARK );
+        draw_push_circle_filled( cx, cy, rad - CHECK_PAD, segs, COL_CHECK_MARK );
 
     draw_label_fit( c.label_x, c.label_y, COL_TEXT, label, c.label_w );
 
@@ -319,22 +319,21 @@ gui_radio_button( const char* label, i32* v, i32 value )
 bool
 gui_selectable( const char* label, bool* selected )
 {
-    gui_id_t   id = widget_id( label );
-    gui_rect_t r  = widget_next_rect( WIDGET_H );
+    gui_id_t   id = item_id( label );
+    gui_rect_t r  = cell_next( WIDGET_H );
 
-    gui_item_state_t st = widget_behavior( id, r, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
     nav_item_stamp_label( id, label );   /* type-ahead opt-in (GUI_ITEM_NO_TYPEAHEAD to skip) */
 
     /* Fill: selected rows use the active tint, a hovered row the hot tint; otherwise the row
        is transparent so the region background shows through. */
     bool on = ( selected && *selected );
     if ( on || st.hover || st.nav )
-        draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
-                               on ? COL_WIDGET_ACT : COL_WIDGET_HOT );
+        draw_fill( r, on ? COL_WIDGET_ACT : COL_WIDGET_HOT );
 
     /* Label, left-aligned with the standard padding. */
     draw_label( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label );
-    widget_track_width( r.x + WIDGET_PAD + label_width( label ) );   /* natural width may exceed the row */
+    cell_reach( r.x + WIDGET_PAD + label_width( label ) );   /* natural width may exceed the row */
 
     if ( st.clicked && selected )
         *selected = !( *selected );

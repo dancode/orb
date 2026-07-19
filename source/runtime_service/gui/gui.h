@@ -244,7 +244,7 @@ typedef struct gui_scale_metrics_t
      1. METRICS -- the spacing/size vocabulary.  One set of numbers consumed at two moments:
         composition (the composer divides space into cells -- row heights, gaps, region insets,
         scrollbar gutters, title bars) and widget self-measurement (a widget computes the
-        natural size it REQUESTS through widget_next_rect_w, then seats its label / indicator
+        natural size it REQUESTS through cell_next_w, then seats its label / indicator
         inside the finished cell with the same pad).  Only the composer POSITIONS rects;
         widgets only measure and request -- that is the composition contract.
      2. SKIN -- paint-only: colors, corner roundings, mark shapes, caret geometry.  A read of
@@ -795,13 +795,13 @@ typedef enum
     GUI_ITEM_NONE          = 0,
 
     /* inert + dimmed: no hover/active/focus/click, drawn at
-       reduced opacity.  Honored uniformly by widget_behavior and
+       reduced opacity.  Honored uniformly by item_state and
        the draw list, so it applies to every widget at once. */
     GUI_ITEM_DISABLED      = 1 << 0,
 
     /* a held button fires repeatedly: once on press, then after
        an initial delay at a steady rate (spinner / scroll arrows),
-       instead of once on release.  Honored by widget_behavior, so
+       instead of once on release.  Honored by item_state, so
        any button-kind widget under the flag auto-repeats. */
     GUI_ITEM_BUTTON_REPEAT = 1 << 1,
 

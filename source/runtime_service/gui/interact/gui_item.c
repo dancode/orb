@@ -2,7 +2,7 @@
 
     runtime_service/gui/interact/gui_item.c -- The standard item protocol.
 
-    widget_behavior: the default COMPOSITION of the interaction services, run once per item
+    item_state: the default COMPOSITION of the interaction services, run once per item
     over a finished rect.  Every stock widget, chrome control, and gui_item() (user/) obtains
     its interaction state through this one recipe, so they all share the same feel:
 
@@ -70,7 +70,7 @@ widget_repeat_tick( bool pressed )
     return false;
 }
 
-/* Keyboard-nav per-item seam.  Called from widget_behavior for every item that belongs to the nav
+/* Keyboard-nav per-item seam.  Called from item_state for every item that belongs to the nav
    window (s_scope.win == g_ctx->nav.win), the keyboard mirror of the hover hit-test above.  It does
    three things: records the item into the frame's nav list (with the structural region/line stamp
    the layout engine latched when it placed it -- gui_nav.c resolves the next move as index math
@@ -136,14 +136,14 @@ nav_scroll_chase( gui_rect_t r )
 }
 
 static void
-nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_kind_t kind )
+nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kind_t kind )
 {
     bool is_cur = ( id == g_ctx->nav.id );
     if ( is_cur )
         g_ctx->nav.id_seen = true;
 
     /* Append to the nav item list (emission order == Tab order).  A layout-placed item carries
-       the region/line coordinate widget_next_rect_w latched; anything interacting without a
+       the region/line coordinate cell_next_w latched; anything interacting without a
        layout cell -- title-bar buttons, dock tabs -- lists as chrome, the F6 lane: Tab and the
        body arrows skip it, F6 hops onto the strip and Left/Right walk it (gui_nav.c).
        Scrollbars and drag strips never reach here at all (s_scope.nav.skip). */
@@ -160,14 +160,14 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_k
         it->region   = placed ? s_scope.nav.region : 0;
         it->line     = placed ? s_scope.nav.line   : 0;
         it->chrome    = !placed;
-        it->drag_kind = ( kind == GUI_WIDGET_KIND_DRAG );
+        it->drag_kind = ( kind == ITEM_DRAG );
         it->label[0]  = 0;   /* type-ahead opt-in: nav_item_stamp_label fills it in, if called */
     }
 
     /* Current item: draw the outline ring whenever a nav cursor exists (even in mouse mode, so it
        keeps its location), and -- only while the keyboard is the active instrument (nav_highlight)
-       -- give it the fill (st->nav, read by widget_bg_color / frame_bg_color) and apply a pending
-       activation.  The ring is drawn before the widget's own background (widget_behavior runs
+       -- give it the fill (st->nav, read by col_item_bg / col_frame_bg) and apply a pending
+       activation.  The ring is drawn before the widget's own background (item_state runs
        first), inset outward by NAV_RING so the fill leaves the border visible.
 
        LAYERING NOTE: the ring is invoked from here because it is a system adornment that must
@@ -196,7 +196,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_k
             st->nav = true;
             if ( g_ctx->nav.activate )
             {
-                if ( kind == GUI_WIDGET_KIND_DRAG )
+                if ( kind == ITEM_DRAG )
                 {
                     /* A value widget (slider, drag box) does not click -- activation captures it
                        for keyboard editing: Left/Right then step the value (st->nav_adjust below)
@@ -206,7 +206,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_k
                 else
                 {
                     st->pressed = st->clicked = true;
-                    if ( kind == GUI_WIDGET_KIND_FOCUSABLE )
+                    if ( kind == ITEM_FOCUSABLE )
                         s_interaction.focused_id = id;  /* Enter on an input box -> enter text capture */
                 }
 
@@ -236,7 +236,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_widget_k
     }
 }
 
-/* Type-ahead opt-in: called right after widget_behavior by a list-y widget (gui_selectable) to
+/* Type-ahead opt-in: called right after item_state by a list-y widget (gui_selectable) to
    stamp its label onto the nav item entry that call just registered, so gui_nav.c's type-ahead
    resolver can prefix-match it.  A no-op if the item did not register this frame (wrong nav
    window, nav_skip) or GUI_ITEM_NO_TYPEAHEAD opted it out -- its label stays "" (nav_item_register
@@ -257,7 +257,7 @@ nav_item_stamp_label( gui_id_t id, const char* label )
 }
 
 /* Programmatic focus request (public: gui()->set_keyboard_focus).  Latched until the next
-   focusable widget passes through widget_behavior, which takes keyboard focus as if clicked.
+   focusable widget passes through item_state, which takes keyboard focus as if clicked.
    Persisting across frames is deliberate: a request queued after this frame's field has
    already emitted lands on that field next frame. */
 
@@ -283,7 +283,7 @@ item_focus_release( void )
    needs for drawing and value updates. */
 
 static gui_item_state_t
-widget_behavior( gui_id_t id, gui_rect_t r, gui_widget_kind_t kind )
+item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
 {
     gui_item_state_t st = { 0 };
 
@@ -304,7 +304,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, gui_widget_kind_t kind )
     /* Disabled item: inert this frame -- no hover, active, focus, or click.  Returning the zeroed
        state here is the one place that suppresses interaction for every widget, the behavioral half
        of GUI_ITEM_DISABLED (the visual dim is the draw list's global alpha, set at resolve).  The
-       flags were latched by widget_next_rect_w just before this call. */
+       flags were latched by cell_next_w just before this call. */
     if ( s_scope.flags & GUI_ITEM_DISABLED )
     {
         s_scope.last_status = st;      /* a disabled item is still the last item, reported inert */
@@ -357,7 +357,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, gui_widget_kind_t kind )
 
     /* Programmatic focus: a queued set_keyboard_focus request lands on the first focusable
        widget emitted after it -- the keyboard twin of click-to-focus below. */
-    if ( s_focus_request && kind == GUI_WIDGET_KIND_FOCUSABLE )
+    if ( s_focus_request && kind == ITEM_FOCUSABLE )
     {
         s_focus_request          = false;
         s_interaction.focused_id = id;
@@ -368,7 +368,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, gui_widget_kind_t kind )
     {
         s_interaction.active_id = id;
         st.pressed      = true;
-        if ( kind == GUI_WIDGET_KIND_FOCUSABLE )
+        if ( kind == ITEM_FOCUSABLE )
             s_interaction.focused_id = id;
 
         /* Keep the nav ring synced to the last interacted item: a click moves the cursor here, so
@@ -433,7 +433,7 @@ widget_behavior( gui_id_t id, gui_rect_t r, gui_widget_kind_t kind )
    globally when it lifts.  Returns hot; *active reports this id's in-flight grab (true from
    the press frame on). */
 static bool
-grab_item( gui_id_t id, gui_rect_t r, bool gate, bool* active )
+item_grab( gui_id_t id, gui_rect_t r, bool gate, bool* active )
 {
     *active  = interact_held( id );
     bool hot = gate && interact_idle() && rect_hit( r );
@@ -444,6 +444,54 @@ grab_item( gui_id_t id, gui_rect_t r, bool gate, bool* active )
         *active = true;
     }
     return hot;
+}
+
+/*----------------------------------------------------------------------------------------------
+    Compound-widget bracket -- see the contract comment in gui_internal.h.
+
+    A widget made of widgets runs item_state for its OWN id/rect, then brackets its inner
+    emissions: begin snapshots what the outer item published into s_scope (last_* + flags), the
+    body emits sub-items (which overwrite them freely), end restores the snapshot -- so the
+    item-query readers, context menus, and tooltips after the widget report the OUTER item,
+    not the last internal part.  The layout variant additionally roots an id scope at the
+    outer id and opens a transient sub-layout over the widget's rect, so the body can emit
+    real widgets with the normal layout verbs; end unwinds both.
+----------------------------------------------------------------------------------------------*/
+
+gui_item_sub_t
+gui_item_sub_begin( void )
+{
+    gui_item_sub_t s;
+    s.last_id     = s_scope.last_id;
+    s.last_rect   = s_scope.last_rect;
+    s.last_status = s_scope.last_status;
+    s.flags       = s_scope.flags;
+    s.layout      = false;
+    return s;
+}
+
+gui_item_sub_t
+gui_item_sub_layout_begin( gui_id_t id, gui_rect_t r )
+{
+    gui_item_sub_t s = gui_item_sub_begin();
+    s.layout         = true;
+    id_push( id );                    /* inner labels salt against the outer widget id */
+    gui_push_layout_overlay( r );     /* transient frame over the widget's rect; verbs work inside */
+    return s;
+}
+
+void
+gui_item_sub_end( gui_item_sub_t s )
+{
+    if ( s.layout )
+    {
+        gui_pop_layout();
+        id_pop();
+    }
+    s_scope.flags       = s.flags;
+    s_scope.last_id     = s.last_id;
+    s_scope.last_rect   = s.last_rect;
+    s_scope.last_status = s.last_status;
 }
 
 /*----------------------------------------------------------------------------------------------
@@ -479,7 +527,7 @@ interact_hover_bare( gui_id_t win_id )
 }
 
 /* Point the hover-window arbitration at `owner`, making every OTHER window inert for the rest
-   of this frame: widget_behavior gates all hover on s_build.win.id == hover_win, so redirecting
+   of this frame: item_state gates all hover on s_build.win.id == hover_win, so redirecting
    hover_win freezes everything behind the owner with no per-widget code -- the window-scale
    analogue of active_id drag-modality.  The verb behind the popup modal fence
    (popup_apply_modal); exists so this tier stays the only writer of s_interaction. */

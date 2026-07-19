@@ -65,15 +65,15 @@ combo_cap_items( gui_combo_flags_t flags )
 bool
 gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t flags )
 {
-    gui_id_t   id  = widget_id( label );
-    gui_rect_t row = widget_next_rect( WIDGET_H );
+    gui_id_t   id  = item_id( label );
+    gui_rect_t row = cell_next( WIDGET_H );
 
     /* The box takes the control track and the label trails it (or sits in its field-split track),
        exactly like the other labeled value widgets.  The min control width keeps room for the
        arrow plus a little preview text when the cell is squeezed. */
-    gui_rect_t box = widget_split_label( row, label, WIDGET_H + font_char_h() * 2.0f, COL_TEXT_DIM );
+    gui_rect_t box = draw_field_label( row, label, WIDGET_H + font_char_h() * 2.0f, COL_TEXT_DIM );
 
-    gui_item_state_t st = widget_behavior( id, box, GUI_WIDGET_KIND_BUTTON );
+    gui_item_state_t st = item_state( id, box, ITEM_BUTTON );
 
     /* The dropdown is a popup keyed off the combo's widget id, so it inherits the id scope + the
        "###" grammar and never collides with a same-titled combo elsewhere. */
@@ -95,7 +95,7 @@ gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t
 
     /* Box frame: a button-tinted field, a down arrow boxed at the right edge, and the preview text
        fitted into the room before the arrow. */
-    draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0,0,1,1, 0, widget_bg_color( st ) );
+    draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0,0,1,1, 0, col_item_bg( st ) );
     draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER );
 
     gui_rect_t arrow = { box.x + box.w - box.h, box.y, box.h, box.h };
@@ -135,7 +135,7 @@ gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t
         /* An auto-size ("largest") dropdown shrinks to its content; floor its measured width to the
            box so short items still line up under it.  A capped dropdown is already box-wide. */
         if ( cap <= 0 )
-            widget_track_width( lf()->content_x + ( box.w - 2.0f * WIDGET_PAD ) );
+            cell_reach( lf()->content_x + ( box.w - 2.0f * WIDGET_PAD ) );
     }
     return vis;
 }
