@@ -84,8 +84,25 @@ gui_volatile_begin( void )
              && "gui_volatile_cb: callback runs under an ambient push_style_color/var() scope -- "
                 "not reproduced on idle-frame replay" );
 
+    /* The replay scope is a minimal single-column stack at the stamped (x, y, w) -- so the stamp
+       must be the rect of the CELL this block is about to claim, not the frame cursor.  In a
+       multi-column row the frame cursor is the whole row (content_x / full content_w at the pen),
+       so every block of the row would replay full-width and mutually overlapping at the same y --
+       correct on real frames, garbage on idle ones.  For stack / columns flow, peek the pending
+       track the way line_place_cell will resolve it: a row start (col 0) applies the owed gap via
+       layout_next_y, a mid-row cell reuses the open row's top (line.cross).  Grid and pack modes
+       keep the frame-cursor stamp -- their walk state is not reproducible in the minimal replay
+       scope, so volatile blocks there remain flow-only by contract. */
     layout_frame_t* f = lf();
-    gui_volatile_stamp( f->content_x, f->pen_y, f->content_w );
+    f32 x = f->content_x, y = f->pen_y, w = f->content_w;
+    if ( ( f->mode == GUI_MODE_STACK || f->mode == GUI_MODE_COLUMNS ) && f->tmpl.nrows == 0 )
+    {
+        u32 c = f->line.col < f->tmpl.ncols ? f->line.col : 0;
+        x = f->tmpl.cellx[ c ];
+        w = f->tmpl.cellw[ c ];
+        y = ( c == 0 ) ? layout_next_y( f ) : f->line.cross;
+    }
+    gui_volatile_stamp( x, y, w );
 }
 
 void

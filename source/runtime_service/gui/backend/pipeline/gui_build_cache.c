@@ -167,8 +167,17 @@ bool gui_build_retained_skip    ( void )    { return s_caps.retained_cache; }
 
 /* RENDER_MAX_WIN / SLOT_VERT_PAD / SLOT_IDX_PAD live in gui_backend.h (the dashboard snapshot
    types are sized by them). */
-#define WIN_SLOT_CMD_MAX  24    // max GPU draw commands cached per slot; most windows have 2-4,
-                                // a volatile block adds its own commands + reserved dormant pads
+/* Max GPU draw commands cached per slot; most windows have 2-4, but every volatile block adds
+   its own commands + reserved dormant pads (unmergeable across the reservation seams), so a
+   window dense with volatile widgets multiplies fast.  A window that exceeds the cap is NOT
+   truncated -- it goes uncacheable (see cache_slot_tessellate) and re-tessellates every real
+   frame; the cap trades stable-cache memory against how large a window can be and still be
+   retained. */
+#ifdef GUI_STRESS_TEST
+#define WIN_SLOT_CMD_MAX  128   /* stress-bench build: volatile swarms are a load axis */
+#else
+#define WIN_SLOT_CMD_MAX  64
+#endif
 
 /* One cached GPU draw command.  Packed AOS so replaying a slot's commands touches one region.
    z is per-slot (the window's max segment z), not per-command; lvbase/libase are slot-local so
@@ -193,6 +202,9 @@ typedef struct
     u32      cmd_base,  cmd_count;               // range into s_tess.cmds[] for this window
     u32      tess_gen;                           // generation of the tess pass that produced the geometry
     bool     valid;                              // true once geometry has been tessellated at least once
+    bool     cmd_cached;                         // command run fit the stable cache; false = the window
+                                                 //   overflowed WIN_SLOT_CMD_MAX and must re-tessellate
+                                                 //   every real frame instead of reusing (never truncate)
 
 } win_geo_slot_t;
 
@@ -761,7 +773,8 @@ cache_slot_reuse( win_geo_slot_t* slot, win_geo_slot_t* prev, u32 wi )
        tail, so the patch's scratch tessellation cannot land on a later slot's live geometry.  The
        slot fields (incl. tess_gen) set here are what volatile_patch resolves and generation-checks
        against then. */
-    slot->valid = true;
+    slot->cmd_cached = true;   /* reuse only runs when prev cached its full command run */
+    slot->valid      = true;
 }
 
 /* Tessellate a changed / new / unstable window at the current write head (which, in stable mode,
@@ -815,9 +828,21 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh, win_ge
     s_tess.vert_count = slot->vert_base + slot->vert_alloc;
     s_tess.idx_count  = slot->idx_base  + slot->idx_alloc;
 
-    /* Write GPU commands into the stable cache for reuse next retained frame. */
+    /* Write GPU commands into the stable cache for reuse next retained frame.  A run that exceeds
+       the cache must NOT be truncated: dropping trailing commands blanks the window's deferred
+       chrome this frame and, worse, COMPACTS the reuse replay -- the next slot's cmd_base lands
+       right after the truncated run, so a volatile patch whose local_cmd_base lies past the cap
+       rewrites a NEIGHBOUR window's command table (the >8-volatile-block flicker).  The window
+       stays fully drawn and idle-patchable (its dormant pads are live in s_tess); it just goes
+       uncacheable, re-tessellating every real frame until it shrinks back under the cap. */
     u32 nc = slot->cmd_count;
-    if ( nc > WIN_SLOT_CMD_MAX ) nc = WIN_SLOT_CMD_MAX;
+    if ( nc > WIN_SLOT_CMD_MAX )
+    {
+        s_win_cached_count[ wi ] = 0;
+        slot->cmd_cached         = false;
+        slot->valid              = true;
+        return;
+    }
     s_win_cached_count[ wi ] = nc;
     for ( u32 k = 0; k < nc; ++k )
     {
@@ -827,8 +852,8 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh, win_ge
         s_win_cached[ wi ][ k ].lvbase = s_tess.cmd_vbase[ ci ] - slot->vert_base;
         s_win_cached[ wi ][ k ].libase = s_tess.cmd_ibase[ ci ] - slot->idx_base;
     }
-    slot->cmd_count = nc;
-    slot->valid     = true;
+    slot->cmd_cached = true;
+    slot->valid      = true;
 }
 
 /*==============================================================================================
@@ -933,7 +958,10 @@ cache_build_frame( void )
         slot->band  = wh->band; // arena band; band-major sort already placed debug slots last
         slot->valid = false;
 
-        bool reuse_geo = set_stable && s_caps.retained_cache && !wh->changed && prev->valid;
+        /* prev->cmd_cached: a window whose command run overflowed the stable cache last frame has
+           nothing to replay from -- it must re-tessellate even when its content hash matched. */
+        bool reuse_geo = set_stable && s_caps.retained_cache && !wh->changed
+                      && prev->valid && prev->cmd_cached;
 
         bool ovf_before = s_tess.overflow;   /* did the arena already spill before this window? */
 

@@ -980,6 +980,12 @@ typedef struct
     re-tessellates every real frame because the neighbours' positions really did change.  Use
     fixed-size formatting ("%8.3f" with a mono font), a fixed canvas(), or padding to keep the
     footprint constant.
+
+    CONTRACT -- flow layouts only: the replay scope is a minimal single-column stack at the cell
+    the block occupied, so stack and columns call sites replay exactly (a block in a multi-track
+    row must emit ONE item -- its second widget would claim the next track on real frames but
+    stack below on replay).  Grid and pack call sites are not reproduced (the stamp falls back to
+    the frame cursor); do not put volatile blocks there.
 ==============================================================================================*/
 
 typedef void ( *gui_volatile_fn )( bool is_replay );
