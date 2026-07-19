@@ -602,4 +602,45 @@ ex_widgets_tabs( void )
     gui()->window_end();
 }
 
+/*==============================================================================================
+    Multiline Text -- input_text_multiline: 2D caret, per-line scroll, selection, undo.
+==============================================================================================*/
+
+static void
+ex_widgets_multiline( void )
+{
+    if ( ex_begin( "Multiline Text", 560, 560, 0 ) )
+    {
+        gui()->stack();
+        gui()->text( "Enter inserts a newline; Escape reverts and drops focus." );
+        gui()->text( "Arrows/PageUp/PageDn move in 2D; Home/End are line-local (Ctrl = ends)." );
+        gui()->separator();
+
+        /* Default height (eight lines), labeled.  Change count shows the per-frame edit flag. */
+        static char notes[ 2048 ] =
+            "The quick brown fox\n"
+            "jumps over the lazy dog.\n"
+            "\n"
+            "Third paragraph: select across lines with the mouse or Shift+arrows,\n"
+            "double-click drags select by word, Ctrl+Z / Ctrl+Y walk the undo ring.\n"
+            "This line is deliberately long enough to overflow the box so the horizontal\n"
+            "caret chase and the glyph clip window are visible in action.";
+        static i32 edits = 0;
+        if ( gui()->input_text_multiline( "Notes", notes, sizeof( notes ), 0.0f ) )
+            edits++;
+        gui()->textf( "edits: %d   bytes: %d", edits, (i32)strlen( notes ) );
+
+        /* Custom height with a hidden label -- the box takes the full track width.  Enough
+           content to overflow vertically, so the gutter scrollbar and wheel scroll engage. */
+        gui()->separator_text( "custom height (##hidden label)" );
+        static f32  box_h = 120.0f;
+        static char log_text[ 4096 ] =
+            "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\n"
+            "line 09\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16";
+        gui()->slider_float( "Box height", &box_h, 60.0f, 300.0f );
+        gui()->input_text_multiline( "##log", log_text, sizeof( log_text ), box_h );
+    }
+    gui()->window_end();
+}
+
 /*============================================================================================*/

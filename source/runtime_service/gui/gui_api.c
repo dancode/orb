@@ -255,6 +255,7 @@ const gui_api_t g_gui_api_struct =
     .input_text                         = gui_input_text,
     .input_text_ex                      = gui_input_text_ex,
     .input_text_with_hint               = gui_input_text_with_hint,
+    .input_text_multiline               = gui_input_text_multiline,
     .input_int                          = gui_input_int,
     .input_float                        = gui_input_float,
     .input_double                       = gui_input_double,

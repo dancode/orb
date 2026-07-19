@@ -129,6 +129,7 @@
     widgets/gui_button.c         -- press widgets: button family, checkbox, radio_button, selectable
     widgets/gui_tree.c           -- folding widgets: collapsing_header, tree_node/tree_pop
     widgets/gui_input.c          -- single-line text fields: input_text / _ex / _with_hint
+    widgets/gui_text_edit_multi.c -- multiline text editor: input_text_multiline (2D caret, line scroll)
     widgets/gui_volatile.c       -- volatile widgets: per-frame retessellated text/plots (tess_gen slots)
     widgets/gui_widget_slider.c  -- slider + drag widgets: slider_float/int, drag_int, slider_render
     widgets/gui_widget_numeric.c -- numeric text inputs: input_int/float/double, input_float2/3/4
@@ -290,6 +291,7 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/widgets/gui_button.c"
 #include "runtime_service/gui/widgets/gui_tree.c"
 #include "runtime_service/gui/widgets/gui_input.c"
+#include "runtime_service/gui/widgets/gui_text_edit_multi.c"
 #include "runtime_service/gui/widgets/gui_volatile.c"
 #include "runtime_service/gui/widgets/gui_widget_slider.c"
 #include "runtime_service/gui/widgets/gui_widget_numeric.c"

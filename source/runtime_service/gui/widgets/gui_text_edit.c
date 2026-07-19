@@ -97,11 +97,12 @@ text_offset_at( const char* buf, u32 len, f32 px )
 
 /* Character class for double-click word selection: a click extends over the maximal run of
    one class.  0 = whitespace, 1 = word (alphanumeric or underscore), 2 = punctuation/other --
-   the classic "select word, or select a run of symbols" split. */
+   the classic "select word, or select a run of symbols" split.  Newlines count as whitespace
+   for the multiline engine (gui_text_edit_multi.c); a single-line buffer never contains them. */
 static int
 char_class( u8 c )
 {
-    if ( c == ' ' || c == '\t' )                                  return 0;
+    if ( c == ' ' || c == '\t' || c == '\n' || c == '\r' )        return 0;
     if ( ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
          ( c >= '0' && c <= '9' ) || c == '_' )                   return 1;
     return 2;

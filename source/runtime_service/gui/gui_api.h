@@ -1163,6 +1163,16 @@ typedef struct gui_api_s
        when the buffer is empty and the field is not focused.  The hint is never written to buf. */
     bool ( *input_text_with_hint )( const char* label, const char* hint, char* buf, u32 bufsz );
 
+    /* input_text_multiline -- multi-line text editor box of pixel height h (0 = eight lines).
+       Enter inserts a newline (it never submits or drops focus; Escape reverts to the
+       focus-gain content and leaves).  Arrow keys move the caret in 2D with a sticky
+       preferred column, Home/End are line-local (Ctrl jumps to the buffer ends), PageUp/Dn
+       page by the visible height.  Selection, clipboard, and undo/redo match input_text;
+       paste keeps newlines.  No word wrap: long lines pan, chasing the caret, and vertical
+       overflow scrolls line-snapped behind a right-edge scrollbar (wheel works over the
+       box).  Returns true on any frame that modifies the buffer. */
+    bool ( *input_text_multiline )( const char* label, char* buf, u32 bufsz, f32 h );
+
     /* input_int / _float / _double -- numeric text field that parses on Enter or focus loss.
        step != 0 shows [-][+] buttons at the right of the box; Ctrl uses step_fast.
        fmt is the snprintf format for display and focus-seed ("%.3f" / "%d" when NULL).

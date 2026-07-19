@@ -316,6 +316,7 @@ bool gui_color_edit4( const char* label, f32 col[ 4 ], gui_color_edit_flags_t fl
 bool gui_input_text( const char* label, char* buf, u32 bufsz );
 bool gui_input_text_ex( const char* label, char* buf, u32 bufsz, gui_text_cb_fn on_change, void* cb_user );
 bool gui_input_text_with_hint( const char* label, const char* hint, char* buf, u32 bufsz );
+bool gui_input_text_multiline( const char* label, char* buf, u32 bufsz, f32 h );
 bool gui_input_int   ( const char* label, i32* v, i32 step, i32 step_fast );
 bool gui_input_float ( const char* label, f32* v, f32 step, f32 step_fast, const char* fmt );
 bool gui_input_double( const char* label, f64* v, f64 step, f64 step_fast, const char* fmt );
