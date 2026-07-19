@@ -46,9 +46,11 @@ draw_button_label( gui_rect_t r, const char* label )
 bool
 gui_button( const char* label )
 {
-    gui_id_t   id = item_id( label );
+    /* Get this widgets unique identifier */
+    gui_id_t id = item_id( label );
 
-    /* Natural width = label + padding.  Shrinks to this in stack and same_line; fills in columns. */
+    /* Natural width = a react with room for label + padding.  
+       Shrinks to this in stack and in same_line; Columns fills to fit. */
     gui_rect_t r  = cell_next_w( label_natural_w( label ), WIDGET_H );
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
