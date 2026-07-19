@@ -2,7 +2,7 @@
 
     sandbox/gui/sb_gui_stress/sb_gui_stress.c -- gui load-limit stress bench.
 
-    Five routines, each hammering a different axis of the pipeline, switched live with the
+    Ten routines, each hammering a different axis of the pipeline, switched live with the
     number keys (fenced by want_capture_keyboard so typing in a field never switches):
 
       1  WINDOW FLOOD    -- dozens of live floaters with animated content: window records,
@@ -15,10 +15,23 @@
                             vertex volume, the retained cache's dirty path every frame.
       5  STATE CHURN     -- hundreds of anim_f32 dampers on unique ids: tiny-class state
                             slots at/over capacity, probe chains, wants_redraw stepping.
+      6  DOCK CYCLONE    -- a dockspace whose tabs re-shuffle at random every tick and whose
+                            whole tree is torn down + recarved on a timer: dock node churn,
+                            tab strips, active-tab flips, undock/redock, emptied-leaf collapse.
+      7  LAYOUT ROULETTE -- one window whose body layout re-randomizes each generation on a
+                            FRESH id scope: keyed state slots created + orphaned in bulk
+                            (headers/trees/regions), nav re-registration, layout switching.
+      8  VOLATILE SWARM  -- dozens of volatile_cb blocks animating at once while the rest of
+                            the UI goes clean: replay-by-retessellation with many sub-slots,
+                            graceful degrade past GUI_MAX_VOLATILE (overflow blocks freeze).
+      9  FULL SIEGE      -- routines 1-5 all at once at fractional load: mixed dirty windows,
+                            slot sort + segment volume + state pressure in the same frame.
       0  IDLE            -- control panel only; the clean-frame skip should engage.
 
-    Tests 1/4/5 pin force_redraw (time-driven visuals must not idle-skip); 2/3 are static
-    between interactions, so the retained replay path is part of what they measure.
+    Tests 1/4/5/6/7/9 pin force_redraw (time-driven or self-mutating -- they must not
+    idle-skip); 2/3 are static between interactions, so the retained replay path is part of
+    what they measure; 8 deliberately does NOT force redraw -- idle-frame volatile replay IS
+    the thing it measures.
 
     The perf overlay (F1-style debug hotkeys are live: debug_enable + P) is the intended
     readout -- emit ms, tess counts, wins retained, and the st tiny/small/big load rows.
@@ -54,6 +67,9 @@
 #define STRESS_STORM_MAX   3000    // test 4 primitive cap (~30 verts/prim avg vs the 60K vert pool)
 #define STRESS_CHURN_MAX   2400    // test 5 damper cap
 #define STRESS_TINY_SLOTS  2048    // mirrors GUI_DEFAULT_STATE_SLOTS in the gui_stress lib
+#define STRESS_DOCK_MAX    24      // test 6 docked-window cap (5 leaves x 8 tabs would hold 40)
+#define STRESS_MUT_MAX     400     // test 7 row cap (big-class slots are 128 here -- overflows them)
+#define STRESS_SWARM_MAX   96      // test 8 block cap (GUI_MAX_VOLATILE is 64 -- deliberate overflow)
 #else
 #define STRESS_FLOOD_MAX   80      // test 1 window cap
 #define STRESS_WALL_MAX    1000    // test 2 row cap
@@ -61,6 +77,9 @@
 #define STRESS_STORM_MAX   1200    // test 4 primitive cap (~30 verts/prim avg vs the 32K vert pool)
 #define STRESS_CHURN_MAX   600     // test 5 damper cap
 #define STRESS_TINY_SLOTS  512     // mirrors GUI_DEFAULT_STATE_SLOTS in the stock gui lib
+#define STRESS_DOCK_MAX    12      // test 6 docked-window cap
+#define STRESS_MUT_MAX     100     // test 7 row cap (big-class slots are 32 stock -- overflows them)
+#define STRESS_SWARM_MAX   24      // test 8 block cap (GUI_MAX_VOLATILE is 16 -- deliberate overflow)
 #endif
 
 static i32  s_test        = 0;     // active routine, 0 = idle
@@ -69,19 +88,35 @@ static i32  s_wall_rows   = 250;
 static i32  s_table_rows  = 1000;
 static i32  s_storm_count = 800;
 static i32  s_churn_count = 400;
+static i32  s_dock_count  = 10;
+static i32  s_mut_rows    = 60;
+static i32  s_swarm_count = 12;
 
 static f32  s_dt_avg      = 0.0f;  // exponential frame-time average for the readout
 
-/* Per-widget backing for the flood / wall tests (interaction has to write somewhere). */
+/* Per-widget backing for the interactive tests (interaction has to write somewhere). */
 static bool s_flood_check[ STRESS_FLOOD_MAX ];
 static bool s_wall_check [ STRESS_WALL_MAX ];
 static f32  s_wall_value [ STRESS_WALL_MAX ];
+static bool s_dock_check [ STRESS_DOCK_MAX ];
+static bool s_mut_check  [ STRESS_MUT_MAX ];
+static f32  s_mut_value  [ STRESS_MUT_MAX ];
 
 /* Knuth multiplicative hash -- all per-item variety (position, color, phase) derives here. */
 static u32
 stress_hash( u32 i )
 {
     return i * 2654435761u;
+}
+
+/* LCG for the decisions that must differ frame to frame (dock shuffles) -- stress_hash gives
+   the same answer for the same index, which is exactly wrong for a randomized schedule. */
+static u32
+stress_rand( void )
+{
+    static u32 s_rng = 0x9E3779B9u;
+    s_rng = s_rng * 1664525u + 1013904223u;
+    return s_rng >> 8;
 }
 
 static u32
@@ -99,11 +134,11 @@ stress_color( u32 h )
 ==============================================================================================*/
 
 static void
-stress_window_flood( void )
+stress_window_flood( i32 count )
 {
     f64 t = gui()->get_time();
 
-    for ( i32 i = 0; i < s_flood_count; ++i )
+    for ( i32 i = 0; i < count; ++i )
     {
         char title[ 32 ];
         snprintf( title, sizeof( title ), "Flood %02d", i );
@@ -130,14 +165,14 @@ stress_window_flood( void )
 ==============================================================================================*/
 
 static void
-stress_widget_wall( void )
+stress_widget_wall( i32 rows )
 {
     gui()->window_set_next_pos ( 40.0f, 70.0f, GUI_COND_ONCE );
     gui()->window_set_next_size( 560.0f, 620.0f, GUI_COND_ONCE );
     if ( gui()->window_begin( "Widget Wall", GUI_WIN_NONE ) )
     {
         gui()->cols( ( f32[] ){ 70.0f, 60.0f, 1.0f, 60.0f, GUI_END } );
-        for ( i32 i = 0; i < s_wall_rows; ++i )
+        for ( i32 i = 0; i < rows; ++i )
         {
             gui()->push_id_int( i );
             gui()->textf( "row %d", i );
@@ -156,7 +191,7 @@ stress_widget_wall( void )
 ==============================================================================================*/
 
 static void
-stress_table_avalanche( void )
+stress_table_avalanche( i32 rows )
 {
     gui()->window_set_next_pos ( 40.0f, 70.0f, GUI_COND_ONCE );
     gui()->window_set_next_size( 700.0f, 620.0f, GUI_COND_ONCE );
@@ -178,7 +213,7 @@ stress_table_avalanche( void )
             static const char* k_kind [] = { "mesh", "tex", "sfx", "mat", "anim" };
             static const char* k_state[] = { "cold", "warm", "live" };
 
-            for ( i32 i = 0; i < s_table_rows; ++i )
+            for ( i32 i = 0; i < rows; ++i )
             {
                 u32 h = stress_hash( ( u32 )i );
                 gui()->table_next_row( 0.0f );
@@ -200,7 +235,7 @@ stress_table_avalanche( void )
 ==============================================================================================*/
 
 static void
-stress_draw_storm( void )
+stress_draw_storm( i32 count )
 {
     gui()->window_set_next_pos ( 40.0f, 70.0f, GUI_COND_ONCE );
     gui()->window_set_next_size( 820.0f, 620.0f, GUI_COND_ONCE );
@@ -212,7 +247,7 @@ stress_draw_storm( void )
         f32        t     = ( f32 )gui()->get_time();
 
         gui()->push_clip( c.x, c.y, c.w, c.h );
-        for ( i32 i = 0; i < s_storm_count; ++i )
+        for ( i32 i = 0; i < count; ++i )
         {
             u32 h   = stress_hash( ( u32 )i );
             f32 x   = c.x + ( f32 )( h % 1024 )          * ( 1.0f / 1024.0f ) * c.w;
@@ -241,7 +276,7 @@ stress_draw_storm( void )
 ==============================================================================================*/
 
 static void
-stress_state_churn( void )
+stress_state_churn( i32 count )
 {
     gui()->window_set_next_pos ( 40.0f, 70.0f, GUI_COND_ONCE );
     gui()->window_set_next_size( 820.0f, 620.0f, GUI_COND_ONCE );
@@ -258,15 +293,17 @@ stress_state_churn( void )
         f64        t     = gui()->get_time();
 
         gui()->push_clip( c.x, c.y, c.w, c.h );
-        for ( i32 i = 0; i < s_churn_count; ++i )
+        for ( i32 i = 0; i < count; ++i )
         {
+            /* The target must MOVE CONTINUOUSLY: anim_f32 self-evicts once settled and seeds a
+               history-less channel AT its target, so a square-wave target just teleports with
+               zero slots held.  A sine keeps every damper in flight -- one live tiny slot each. */
             u32 h      = stress_hash( ( u32 )i );
-            f32 period = 0.6f + ( f32 )( h % 100 ) * 0.014f;
-            f32 target = ( fmod( t / ( f64 )period + ( f64 )( ( h >> 8 ) & 7 ) * 0.25, 2.0 ) < 1.0 )
-                             ? 0.0f : 1.0f;
-            f32 f      = gui()->anim_f32( 0x53435231u + ( u32 )i, target, 5.0f );
+            f32 freq   = 0.5f + ( f32 )( h % 100 ) * 0.03f;
+            f32 target = 0.5f + 0.5f * sinf( ( f32 )t * freq + ( f32 )( ( h >> 8 ) & 255 ) * 0.025f );
+            f32 f      = gui()->anim_f32( 0x53435231u + ( u32 )i, target, 6.0f );
 
-            f32 lane_h = c.h / ( f32 )s_churn_count;
+            f32 lane_h = c.h / ( f32 )count;
             f32 y      = c.y + ( f32 )i * lane_h;
             f32 x      = c.x + f * ( c.w - 12.0f );
             gui()->draw_rect( x, y, 12.0f, lane_h > 1.0f ? lane_h : 1.0f, stress_color( h ) );
@@ -274,6 +311,240 @@ stress_state_churn( void )
         gui()->pop_clip();
     }
     gui()->window_end();
+}
+
+/*==============================================================================================
+    Test 6 -- DOCK CYCLONE: tabs re-shuffle at random every tick; the whole tree recarves on
+    a timer.  dock_window() with a stale leaf id (the node collapsed when it emptied) is a
+    safe no-op, so the shuffle never validates -- exercising exactly that path is the point.
+==============================================================================================*/
+
+static gui_dock_id_t s_dock_leaf[ 5 ];
+static i32           s_dock_leaf_count = 0;
+static f64           s_dock_rebuild_at = 0.0;   // 0 = rebuild immediately on entry
+static f64           s_dock_shuffle_at = 0.0;
+
+static void
+stress_dock_cyclone( i32 count )
+{
+    f64 t = gui()->get_time();
+
+    /* Timer-driven teardown: destroy the tree wholesale (safe point: top of build, before any
+       docked window's begin).  The empty leaf list below triggers the recarve this frame. */
+    if ( t >= s_dock_rebuild_at )
+    {
+        s_dock_rebuild_at = t + 6.0;
+        gui()->dock_clear( 0 );
+        s_dock_leaf_count = 0;
+    }
+
+    gui_dock_id_t root = gui()->dockspace_over_viewport( 0, GUI_DOCKSPACE_NONE );
+
+    if ( s_dock_leaf_count == 0 && root != GUI_DOCK_NONE )
+    {
+        /* Fresh 5-leaf layout, then scatter every window across it at random. */
+        gui_dock_id_t left   = gui()->dock_split( root, GUI_DIR_LEFT,  0.25f, &root );
+        gui_dock_id_t right  = gui()->dock_split( root, GUI_DIR_RIGHT, 0.30f, &root );
+        gui_dock_id_t bottom = gui()->dock_split( root, GUI_DIR_DOWN,  0.35f, &root );
+        gui_dock_id_t lbot   = gui()->dock_split( left, GUI_DIR_DOWN,  0.50f, &left );
+
+        gui_dock_id_t carve[] = { left, lbot, right, bottom, root };
+        for ( u32 c = 0; c < 5; ++c )
+            if ( carve[ c ] != GUI_DOCK_NONE )
+                s_dock_leaf[ s_dock_leaf_count++ ] = carve[ c ];
+
+        for ( i32 i = 0; i < count; ++i )
+        {
+            char title[ 32 ];
+            snprintf( title, sizeof( title ), "Dock %02d", i );
+            gui()->dock_window( title, s_dock_leaf[ stress_rand() % ( u32 )s_dock_leaf_count ] );
+        }
+        s_dock_shuffle_at = t + 0.35;
+    }
+    else if ( t >= s_dock_shuffle_at && s_dock_leaf_count > 0 )
+    {
+        /* Shuffle tick: move one random window to a random leaf (the add re-tabs it out of its
+           old node and makes it the ACTIVE tab there -- the visible tab flip), or undock it to
+           free-float until a later tick or the next recarve sweeps it back in. */
+        s_dock_shuffle_at = t + 0.35;
+        u32  w = stress_rand() % ( u32 )count;
+        char title[ 32 ];
+        snprintf( title, sizeof( title ), "Dock %02d", ( i32 )w );
+
+        if ( ( stress_rand() & 3 ) == 0 )
+            gui()->dock_undock( title );
+        else
+            gui()->dock_window( title, s_dock_leaf[ stress_rand() % ( u32 )s_dock_leaf_count ] );
+    }
+
+    for ( i32 i = 0; i < count; ++i )
+    {
+        char title[ 32 ];
+        snprintf( title, sizeof( title ), "Dock %02d", i );
+
+        u32 h = stress_hash( ( u32 )i );
+        gui()->window_set_next_pos ( 60.0f + ( f32 )( i % 6 ) * 40.0f,
+                                     90.0f + ( f32 )( i / 6 ) * 40.0f, GUI_COND_ONCE );
+        gui()->window_set_next_size( 260.0f, 180.0f, GUI_COND_ONCE );
+        if ( gui()->window_begin( title, GUI_WIN_NONE ) )
+        {
+            gui()->stack();
+            f32 frac = ( f32 )fmod( t * 0.4 + ( f64 )( h % 100 ) * 0.01, 1.0 );
+            gui()->progress_bar( frac, NULL );
+            gui()->textf( "docked: %s", gui()->window_is_docked( title ) ? "yes" : "no (floating)" );
+            gui()->checkbox( "tick", &s_dock_check[ i ] );
+        }
+        gui()->window_end();
+    }
+}
+
+/*==============================================================================================
+    Test 7 -- LAYOUT ROULETTE: the body re-randomizes each generation under a FRESH id scope,
+    so every stateful widget it spawned last generation (headers, trees, nav entries) orphans
+    its slots and the new generation allocates its own -- bulk create + abandon in the keyed
+    state pool, the failure mode the churn test's stable ids never reach.
+==============================================================================================*/
+
+static void
+stress_layout_roulette( i32 rows )
+{
+    static u32 s_mut_gen  = 0;
+    static f64 s_mut_next = 0.0;
+
+    f64 t = gui()->get_time();
+    if ( t >= s_mut_next )
+    {
+        s_mut_next = t + 0.7;
+        s_mut_gen++;
+    }
+
+    gui()->window_set_next_pos ( 40.0f, 70.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 640.0f, 620.0f, GUI_COND_ONCE );
+    if ( gui()->window_begin( "Layout Roulette", GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->textf( "generation %u -- every id below is scoped to it; watch the st rows in "
+                      "the perf overlay saw-tooth as slots orphan and refill.", s_mut_gen );
+        gui()->separator();
+
+        gui()->push_id_int( ( i32 )s_mut_gen );
+        for ( i32 i = 0; i < rows; ++i )
+        {
+            u32 h = stress_hash( s_mut_gen * 0x01000193u + ( u32 )i );
+
+            /* Re-roll the column layout every few rows -- the layout engine flips between
+               flow and 2/3/4-track grids mid-body, at generation-random seams. */
+            if ( i % 7 == 0 )
+            {
+                i32 tracks = 1 + ( i32 )( ( h >> 9 ) % 4 );
+                if ( tracks == 1 ) gui()->stack();
+                else               gui()->cols_n( tracks );
+            }
+
+            gui()->push_id_int( i );
+            switch ( h % 8 )
+            {
+                case 0: gui()->checkbox( "##c", &s_mut_check[ i ] );                    break;
+                case 1: gui()->slider_float( "##s", &s_mut_value[ i ], 0.0f, 1.0f );    break;
+                case 2: if ( gui()->small_button( "poke" ) )
+                            s_mut_value[ i ] = 1.0f;                                     break;
+                case 3: gui()->textf( "item %04u", h & 0xFFF );                          break;
+                case 4: gui()->progress_bar( ( f32 )( h % 100 ) * 0.01f, NULL );         break;
+                case 5: if ( gui()->collapsing_header( "header" ) )
+                        {
+                            gui()->textf( "payload %08x", h );
+                            gui()->textf( "payload %08x", ~h );
+                        }                                                                break;
+                case 6: if ( gui()->tree_node( "node" ) )
+                        {
+                            gui()->textf( "leaf %04u", h & 0xFFF );
+                            gui()->tree_pop();
+                        }                                                                break;
+                default: gui()->bullet_text( "bullet" );                                 break;
+            }
+            gui()->pop_id();
+        }
+        gui()->pop_id();
+    }
+    gui()->window_end();
+}
+
+/*==============================================================================================
+    Test 8 -- VOLATILE SWARM: many volatile_cb blocks animating while the rest of the UI goes
+    clean.  One shared callback serves every block: on replay a callback gets no index, so all
+    per-block variety derives from the canvas rect it is handed (position is identity here).
+    Deliberately does NOT force redraw -- idle-frame replay of N sub-slots IS the measurement.
+==============================================================================================*/
+
+/* CONTRACT: fixed layout footprint -- the canvas height and command count never change;
+   only pixel content (fill width, arc angle, color) animates. */
+static void
+stress_swarm_block_cb( bool is_replay )
+{
+    UNUSED( is_replay );
+    gui()->volatile_begin();
+
+    gui_rect_t r = gui()->canvas( 26.0f );
+    f32        t = ( f32 )sys_tick_seconds();
+    u32        h = stress_hash( ( ( u32 )r.x << 10 ) ^ ( u32 )r.y );
+    f32        ph = ( f32 )( h % 628 ) * 0.01f;
+    f32        s  = 0.5f + 0.5f * sinf( t * ( 2.0f + ( f32 )( h & 3 ) ) + ph );
+
+    f32 bar_max = r.w - 34.0f > 8.0f ? r.w - 34.0f : 8.0f;
+    gui()->draw_rect( r.x, r.y + 4.0f, 4.0f + bar_max * s, 18.0f, stress_color( h ) );
+    gui()->draw_arc ( r.x + r.w - 22.0f, r.y + 13.0f, 9.0f,
+                      t * 3.0f + ph, t * 3.0f + ph + 4.0f, 2.0f, stress_color( h >> 3 ) );
+
+    gui()->volatile_end();
+}
+
+static void
+stress_volatile_swarm( i32 count )
+{
+    gui()->window_set_next_pos ( 40.0f, 70.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 640.0f, 620.0f, GUI_COND_ONCE );
+    if ( gui()->window_begin( "Volatile Swarm", GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text_wrapped( "Leave the mouse still: the window goes clean, yet every block "
+                             "keeps animating via idle-frame volatile replay.  Blocks past "
+                             "GUI_MAX_VOLATILE degrade gracefully -- they freeze on idle "
+                             "frames instead of replaying." );
+        gui_render_stats_t rs = gui()->render_stats();
+        gui()->textf( "volatile_patched last frame: %u", rs.volatile_patched );
+        gui()->separator();
+
+        gui()->cols_n( 4 );
+        for ( i32 i = 0; i < count; ++i )
+        {
+            gui()->push_id_int( i );
+            gui()->volatile_cb( "swarm_blk", stress_swarm_block_cb );
+            gui()->pop_id();
+        }
+    }
+    gui()->window_end();
+}
+
+/*==============================================================================================
+    Test 9 -- FULL SIEGE: routines 1-5 at once at fractional load.  No single axis peaks; the
+    stress is the mix -- animated floaters dirtying every frame over static walls/tables that
+    want to retain, all contesting slot sort, segments, and the state pool together.
+==============================================================================================*/
+
+static void
+stress_full_siege( void )
+{
+    i32 flood = s_flood_count / 3;   if ( flood < 8   ) flood = 8;
+    i32 wall  = s_wall_rows   / 4;   if ( wall  < 50  ) wall  = 50;
+    i32 table = s_table_rows  / 4;   if ( table < 200 ) table = 200;
+    i32 storm = s_storm_count / 2;   if ( storm < 200 ) storm = 200;
+    i32 churn = s_churn_count / 2;   if ( churn < 100 ) churn = 100;
+
+    stress_window_flood   ( flood );
+    stress_widget_wall    ( wall  );
+    stress_table_avalanche( table );
+    stress_draw_storm     ( storm );
+    stress_state_churn    ( churn );
 }
 
 /*==============================================================================================
@@ -287,13 +558,17 @@ static const char* k_test_name[] = {
     "3  TABLE AVALANCHE",
     "4  DRAW STORM",
     "5  STATE CHURN",
+    "6  DOCK CYCLONE",
+    "7  LAYOUT ROULETTE",
+    "8  VOLATILE SWARM",
+    "9  FULL SIEGE",
 };
 
 static void
 show_control( void )
 {
     gui()->window_set_next_pos ( 900.0f, 70.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 350.0f, 420.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 350.0f, 520.0f, GUI_COND_ONCE );
     if ( gui()->window_begin( "Stress Control", GUI_WIN_NONE ) )
     {
         gui()->stack();
@@ -303,9 +578,9 @@ show_control( void )
         gui()->textf( "dirty: %s", gui()->frame_dirty() ? "yes" : "no (replaying)" );
         gui()->separator();
 
-        gui()->text( "Keys 1-5 select a routine, 0 stops." );
-        gui()->cols_n( 3 );
-        for ( i32 i = 0; i <= 5; ++i )
+        gui()->text( "Keys 1-9 select a routine, 0 stops." );
+        gui()->cols_n( 5 );
+        for ( i32 i = 0; i <= 9; ++i )
         {
             char label[ 8 ];
             snprintf( label, sizeof( label ), "%d", i );
@@ -322,11 +597,15 @@ show_control( void )
         gui()->slider_int( "table rows",  &s_table_rows,  100, STRESS_TABLE_MAX );
         gui()->slider_int( "storm prims", &s_storm_count, 100, STRESS_STORM_MAX );
         gui()->slider_int( "churn chips", &s_churn_count, 50,  STRESS_CHURN_MAX );
+        gui()->slider_int( "dock wins",   &s_dock_count,  4,   STRESS_DOCK_MAX  );
+        gui()->slider_int( "mutate rows", &s_mut_rows,    20,  STRESS_MUT_MAX   );
+        gui()->slider_int( "swarm blks",  &s_swarm_count, 4,   STRESS_SWARM_MAX );
 
         gui()->separator();
         gui()->text_wrapped( "Perf overlay has the real numbers: emit / tess / render ms, "
-                             "windows retained, and state pool load.  Tests 1/4/5 pin "
-                             "force_redraw; 2/3 go clean between interactions." );
+                             "windows retained, and state pool load.  Tests 1/4/5/6/7/9 pin "
+                             "force_redraw; 2/3 go clean between interactions; 8 measures "
+                             "idle-frame volatile replay." );
     }
     gui()->window_end();
 }
@@ -341,22 +620,35 @@ build_frame( void )
     /* Number-key switching, fenced so typing digits into a field never flips the bench. */
     if ( !gui()->want_capture_keyboard() )
     {
-        for ( i32 k = 0; k <= 5; ++k )
+        for ( i32 k = 0; k <= 9; ++k )
             if ( gui()->is_key_pressed( ( app_key_t )( APP_KEY_0 + k ) ) )
                 s_test = k;
     }
 
-    /* Time-driven visuals must not idle-skip; static tests measure the replay path instead. */
-    gui()->set_force_redraw( s_test == 1 || s_test == 4 || s_test == 5 );
+    /* Entering the cyclone re-arms an immediate recarve (its tree may be stale-dormant from a
+       previous visit); leaving lets the dockspace go dormant on its own by not being emitted. */
+    static i32 s_prev_test = 0;
+    if ( s_test == 6 && s_prev_test != 6 )
+        s_dock_rebuild_at = 0.0;
+    s_prev_test = s_test;
+
+    /* Time-driven / self-mutating tests must not idle-skip; static tests measure the replay
+       path instead -- and the swarm (8) measures idle-frame volatile replay itself. */
+    gui()->set_force_redraw( s_test == 1 || s_test == 4 || s_test == 5
+                             || s_test == 6 || s_test == 7 || s_test == 9 );
 
     switch ( s_test )
     {
-        case 1: stress_window_flood();    break;
-        case 2: stress_widget_wall();     break;
-        case 3: stress_table_avalanche(); break;
-        case 4: stress_draw_storm();      break;
-        case 5: stress_state_churn();     break;
-        default:                          break;
+        case 1: stress_window_flood   ( s_flood_count ); break;
+        case 2: stress_widget_wall    ( s_wall_rows   ); break;
+        case 3: stress_table_avalanche( s_table_rows  ); break;
+        case 4: stress_draw_storm     ( s_storm_count ); break;
+        case 5: stress_state_churn    ( s_churn_count ); break;
+        case 6: stress_dock_cyclone   ( s_dock_count  ); break;
+        case 7: stress_layout_roulette( s_mut_rows    ); break;
+        case 8: stress_volatile_swarm ( s_swarm_count ); break;
+        case 9: stress_full_siege     (               ); break;
+        default:                                         break;
     }
 
     show_control();
