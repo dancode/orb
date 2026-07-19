@@ -431,6 +431,75 @@ gui_view_avail( void )
     return a;
 }
 
+/*============================================================================================*/
+/* Fixed-pitch row clipper -- the ListClipper analogue.  Emitting thousands of rows costs the full
+   per-item pipeline (cell resolve, id/state, nav, text measure) whether or not the row is visible;
+   the draw floor's clip cull only drops the geometry, never that work.  This skips the offscreen
+   rows entirely: reserve `count` rows of extent, jump the pen past the culled head, and return the
+   visible [first, last) for the caller to emit.
+
+       gui_span_t s = gui()->rows_clip( count, row_h );
+       for ( i32 i = s.first; i < s.last; ++i ) { ...emit row i... }
+       gui()->rows_clip_end();   // only when content follows the run in the same region
+
+   The rows must be FIXED PITCH: row_h + the region's row gap, every row.  row_h 0 defaults to the
+   template's fixed row_h when one is set (row_cols), else WIDGET_H -- an auto-height template with
+   rows of another height (bare text is font_char_h) needs the true height passed or the culled and
+   emitted pitches drift apart and rows swim under scroll.  The head jump goes through
+   layout_pen_jump and the tail is one up-only highwater touch, so the region measures all `count`
+   rows exactly as if they were emitted: scrollbar range, clamp, and the one-frame extent lag are
+   unchanged.  Nav only sees the emitted rows (keyboard can't walk into the culled range). */
+
+static f32 s_rows_run_end = 0.0f;   // reserved run bottom for rows_clip_end (0 = no open run)
+
+gui_span_t
+gui_rows_clip( i32 count, f32 row_h )
+{
+    layout_frame_t* f = lf();
+    if ( count <= 0 ) return ( gui_span_t ){ 0, 0 };
+
+    f32 h = ( row_h > 0.0f )       ? row_h
+          : ( f->tmpl.row_h > 0.0f ) ? f->tmpl.row_h
+          :                            (f32)WIDGET_H;
+    f32 pitch = h + mod_gap_y( f );
+    f32 top   = layout_next_y( f );   /* where row 0 opens -- the gap owed above applied once */
+
+    /* Reserve the whole run's extent up front (last row's bottom, no trailing gap): the highwater
+       only climbs, so this one touch is all the scroll/extent machinery ever needed from the rows. */
+    f32 run_end = top + (f32)count * pitch - mod_gap_y( f );
+    extent_track( f, f->content_x, run_end );
+    s_rows_run_end = run_end;
+
+    /* Visible band test in screen space: the pen (and top) already carry the scroll bias and
+       f->view is THE screen-space visible rect, so the row range is a straight division. */
+    i32 first = (i32)floorf( ( f->view.y - top ) / pitch );
+    i32 last  = (i32)ceilf ( ( f->view.y + f->view.h - top ) / pitch );
+    if ( first < 0 )     first = 0;
+    if ( first > count ) first = count;
+    if ( last  > count ) last  = count;
+    if ( last  < first ) last  = first;
+
+    /* Skip the culled head: row `first` opens exactly at its true scrolled position.  The jump
+       closes any open line and owes no gap, matching where the unclipped flow would place it. */
+    layout_pen_jump( f, top + (f32)first * pitch );
+
+    return ( gui_span_t ){ first, last };
+}
+
+/* Close a rows_clip run: jump the pen past the reserved tail so content emitted after the run
+   lands below all `count` rows instead of overlapping the culled ones.  Only needed when content
+   follows the run in the same region -- a run that ends the region needs no call (the extent was
+   already reserved).  No-op without an open run. */
+void
+gui_rows_clip_end( void )
+{
+    if ( s_rows_run_end <= 0.0f ) return;
+    layout_frame_t* f = lf();
+    layout_pen_jump( f, s_rows_run_end );
+    f->gap_pending = true;   /* the run's last row owes the usual gap to what follows */
+    s_rows_run_end = 0.0f;
+}
+
 /* Screen position where the next item would be emitted -- the GetCursorScreenPos analogue.  Anchor
    custom draw_* geometry to the layout pen without reserving a cell first; pair with content_avail()
    for the space ahead.  Mode-aware: a pack run (or an armed same_line) reports the running line

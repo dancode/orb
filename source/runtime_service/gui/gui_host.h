@@ -228,6 +228,8 @@ f32 gui_sz_fit_row( f32 content_h );
 f32 gui_sz_fit_col( f32 content_w );
 gui_vec2_t gui_content_avail( void );
 gui_vec2_t gui_view_avail( void );
+gui_span_t gui_rows_clip( i32 count, f32 row_h );
+void       gui_rows_clip_end( void );
 gui_vec2_t gui_cursor_screen_pos( void );
 gui_rect_t gui_content_rect( void );
 u32        gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );

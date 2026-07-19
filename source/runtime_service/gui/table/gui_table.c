@@ -642,6 +642,51 @@ gui_table_next_row( f32 min_h )
     draw_set_rounding( save_round );
 }
 
+/* Fixed-pitch row clipper for tables -- the table face of rows_clip (see gui_layout.c for the
+   full contract).  Call after the header, before the row loop, with the SAME min_h the rows pass
+   to table_next_row (0 = WIDGET_H); the loop then emits only the returned [first, last):
+
+       gui_span_t s = gui()->table_rows_clip( count, 0.0f );
+       for ( i32 i = s.first; i < s.last; ++i ) { gui()->table_next_row( 0.0f ); ... }
+
+   The table is an imperative host (rows step by pen jump, pitch = row_h + WIDGET_GAP), so the
+   skip is one pen jump plus one highwater touch for the tail; cur_row is seeded to the absolute
+   index so row stripes and dividers keep phase across the culled head.  No end call: table_end
+   already measures the reserved extent.  Meant for a SCROLL_Y table -- a non-scrolling table
+   frames only the rows it drew, so clipping one just truncates it. */
+gui_span_t
+gui_table_rows_clip( i32 count, f32 min_h )
+{
+    if ( !s_tab_active || count <= 0 ) return ( gui_span_t ){ 0, 0 };
+    gui_table_t* t = &s_tab;
+
+    if ( !t->header_done )
+        table_open_body( t );
+
+    table_end_row( t );   /* close any row already emitted; the pen is at its bottom + gap */
+
+    layout_frame_t* f     = lf();
+    f32             h     = ( min_h > 0.0f ) ? min_h : (f32)WIDGET_H;
+    f32             pitch = h + (f32)WIDGET_GAP;
+    f32             top   = f->pen_y;   /* imperative host: the pen is authoritative, no gap owed */
+
+    /* Reserve all `count` rows of extent (last row's bottom, no trailing gap) so the scrollbar
+       range and clamp see the full table regardless of how few rows the loop emits. */
+    extent_track( f, f->content_x, top + (f32)count * pitch - (f32)WIDGET_GAP );
+
+    i32 first = (i32)floorf( ( f->view.y - top ) / pitch );
+    i32 last  = (i32)ceilf ( ( f->view.y + f->view.h - top ) / pitch );
+    if ( first < 0 )     first = 0;
+    if ( first > count ) first = count;
+    if ( last  > count ) last  = count;
+    if ( last  < first ) last  = first;
+
+    layout_pen_jump( f, top + (f32)first * pitch );
+    t->cur_row = first - 1;   /* absolute row index: stripes + dividers keep phase over the skip */
+
+    return ( gui_span_t ){ first, last };
+}
+
 bool
 gui_table_next_column( void )
 {

@@ -9,8 +9,8 @@
                             slot sort, hover contest, per-window segments.
       2  WIDGET WALL     -- one window, thousands of interactive widgets in columns: layout
                             engine, keyed state pool, id stack, nav item registration.
-      3  TABLE AVALANCHE -- one striped scrolling table, thousands of rows: the table path
-                            emits every row (no virtualization) -- the honest worst case.
+      3  TABLE AVALANCHE -- one striped scrolling table, thousands of rows: emits every row
+                            with the clip toggle off -- the honest worst case.
       4  DRAW STORM      -- thousands of animated primitives on one canvas: tessellation,
                             vertex volume, the retained cache's dirty path every frame.
       5  STATE CHURN     -- hundreds of anim_f32 dampers on unique ids: tiny-class state
@@ -32,6 +32,10 @@
     idle-skip); 2/3 are static between interactions, so the retained replay path is part of
     what they measure; 8 deliberately does NOT force redraw -- idle-frame volatile replay IS
     the thing it measures.
+
+    The control panel's "clip offscreen rows" toggle (on by default) A/Bs the rows_clip /
+    table_rows_clip virtualization on tests 2/3: on, only the visible span emits and the cost
+    stops scaling with total row count; off is the emit-everything worst case above.
 
     The perf overlay (F1-style debug hotkeys are live: debug_enable + P) is the intended
     readout -- emit ms, tess counts, wins retained, and the st tiny/small/big load rows.
@@ -91,6 +95,7 @@ static i32  s_churn_count = 400;
 static i32  s_dock_count  = 10;
 static i32  s_mut_rows    = 60;
 static i32  s_swarm_count = 12;
+static bool s_clip        = true;  // tests 2/3: virtualize offscreen rows via rows_clip
 
 static f32  s_dt_avg      = 0.0f;  // exponential frame-time average for the readout
 
@@ -171,8 +176,20 @@ stress_widget_wall( i32 rows )
     gui()->window_set_next_size( 560.0f, 620.0f, GUI_COND_ONCE );
     if ( gui()->window_begin( "Widget Wall", GUI_WIN_NONE ) )
     {
-        gui()->cols( ( f32[] ){ 70.0f, 60.0f, 1.0f, 60.0f, GUI_END } );
-        for ( i32 i = 0; i < rows; ++i )
+        i32 first = 0, last = rows;
+        if ( s_clip )
+        {
+            /* Clipped: pin the row pitch (rows_clip needs fixed pitch; bare cols() auto rows key
+               off the first item, a text run) and emit only the visible span. */
+            f32 rh = gui()->sz_rows_h( 1 ) - 2.0f * gui()->sz_row_gap();   /* one WIDGET_H row */
+            gui()->row_cols( rh, ( f32[] ){ 70.0f, 60.0f, 1.0f, 60.0f, GUI_END } );
+            gui_span_t s = gui()->rows_clip( rows, rh );
+            first = s.first;  last = s.last;
+        }
+        else
+            gui()->cols( ( f32[] ){ 70.0f, 60.0f, 1.0f, 60.0f, GUI_END } );
+
+        for ( i32 i = first; i < last; ++i )
         {
             gui()->push_id_int( i );
             gui()->textf( "row %d", i );
@@ -213,7 +230,14 @@ stress_table_avalanche( i32 rows )
             static const char* k_kind [] = { "mesh", "tex", "sfx", "mat", "anim" };
             static const char* k_state[] = { "cold", "warm", "live" };
 
-            for ( i32 i = 0; i < rows; ++i )
+            i32 first = 0, last = rows;
+            if ( s_clip )
+            {
+                gui_span_t s = gui()->table_rows_clip( rows, 0.0f );
+                first = s.first;  last = s.last;
+            }
+
+            for ( i32 i = first; i < last; ++i )
             {
                 u32 h = stress_hash( ( u32 )i );
                 gui()->table_next_row( 0.0f );
@@ -602,6 +626,7 @@ show_control( void )
         gui()->slider_int( "dock wins",   &s_dock_count,  4,   STRESS_DOCK_MAX  );
         gui()->slider_int( "mutate rows", &s_mut_rows,    20,  STRESS_MUT_MAX   );
         gui()->slider_int( "swarm blks",  &s_swarm_count, 4,   STRESS_SWARM_MAX );
+        gui()->checkbox( "clip offscreen rows (2/3)", &s_clip );
 
         gui()->separator();
         gui()->text_wrapped( "Perf overlay has the real numbers: emit / tess / render ms, "

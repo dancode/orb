@@ -113,6 +113,9 @@ typedef struct
 typedef struct { f32 x, y; }        gui_vec2_t;
 typedef struct { f32 x, y, w, h; }  gui_rect_t;
 
+/* visible index range [first, last) returned by the row clippers (rows_clip / table_rows_clip) */
+typedef struct { i32 first, last; } gui_span_t;
+
 /* one entry of a draw_rects batch: a solid fill plus its color (see GUI_CMD_RECT_LIST) */
 typedef struct { f32 x, y, w, h; u32 abgr; } gui_rect_col_t;
 

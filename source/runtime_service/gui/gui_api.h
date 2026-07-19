@@ -870,6 +870,21 @@ typedef struct gui_api_s
        scrollbar gutter).  Scroll-free: a box sized by it keeps its width while the region scrolls. */
     gui_vec2_t ( *view_avail )( void );
 
+    /* rows_clip -- fixed-pitch row virtualization (the ImGuiListClipper analogue).  Reserves
+       `count` rows of layout extent, skips the offscreen head, and returns the visible
+       [first, last) range; the caller emits only those rows, so a 10000-row list costs what its
+       visible slice costs.  Rows must be fixed pitch: row_h 0 defaults to the template's fixed
+       row_h (row_cols) else WIDGET_H -- pass the true height when rows are anything else.  Scroll
+       range and extent measure as if every row emitted; nav only sees the emitted rows.
+
+           gui_span_t s = gui()->rows_clip( count, row_h );
+           for ( i32 i = s.first; i < s.last; ++i ) { ...emit row i... }
+
+       rows_clip_end() -- jump past the reserved tail; needed only when more content follows the
+       run in the same region (a footer), else omit. */
+    gui_span_t ( *rows_clip     )( i32 count, f32 row_h );
+    void       ( *rows_clip_end )( void );
+
     /* cursor_screen_pos -- screen position where the next item would land (GetCursorScreenPos): anchor
        custom draw_* geometry to the pen.  empty -- reserve a w x h block and return its screen rect
        (the ImGui Dummy analogue): blank space, or a slot to fill with custom draw / make clickable
@@ -1370,6 +1385,10 @@ typedef struct gui_api_s
     void ( *table_setup_column     )( const char* label, gui_table_col_flags_t flags, f32 width );
     void ( *table_headers_row      )( void );
     void ( *table_next_row         )( f32 min_h );
+    /* table_rows_clip -- rows_clip's table face: call after the header with the same min_h the
+       rows pass to table_next_row (0 = WIDGET_H), then loop only the returned [first, last).
+       Stripes/dividers keep phase and the scrollbar sees all `count` rows; use with SCROLL_Y. */
+    gui_span_t ( *table_rows_clip  )( i32 count, f32 min_h );
     bool ( *table_next_column      )( void );
     bool ( *table_set_column_index )( i32 col );
     i32  ( *table_get_column_count )( void );
