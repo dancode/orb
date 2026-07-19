@@ -157,6 +157,20 @@ run_host_realtime( void )
 }
 
 /*==============================================================================================
+    Time-unit conversions -- the pacing loop keeps deadlines in microseconds (what
+    sys_tick_microseconds yields) but the OS sleep/wait entry points and the profiler
+    take milliseconds.  These name the * 1000 / / 1000 crossings so a unit change reads
+    as intent rather than a bare literal.  Integer forms truncate toward zero, which is
+    what the pacer wants: never over-sleep past the deadline.
+==============================================================================================*/
+
+#define US_PER_MS 1000
+
+static inline i64  us_from_ms   ( i32 ms ) { return ( i64 )ms * US_PER_MS; }         // ms -> us
+static inline i32  ms_from_us   ( i64 us ) { return ( i32 )( us / US_PER_MS ); }     // us -> ms (trunc)
+static inline f64  ms_from_us_f ( i64 us ) { return ( f64 )us / ( f64 )US_PER_MS; }  // us -> ms (exact)
+
+/*==============================================================================================
     Cached engine module API pointers
 ==============================================================================================*/
 
@@ -589,7 +603,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        the average frame rate exact -- Sleep()'s truncation and overshoot self-correct
        against it instead of drifting the period toward work + frame_ms. */
 
-    const i64 frame_us    = ( i64 )frame_ms * 1000;
+    const i64 frame_us    = us_from_ms( frame_ms );
     i64       deadline_us = sys_tick_microseconds() + frame_us;
 
     PROF_THREAD_NAME( "main" );
@@ -935,8 +949,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                    OS move loop then started after the release and ate the next caption click.
                    Waking on input collapses the gesture pipeline to event rate; with no input
                    this times out at the same cadence the Sleep gave (animations still pace). */
-                if ( remain_us >= 1000 )
-                    sys()->wait_for_os_events_ms( ( i32 )( remain_us / 1000 ) );
+                if ( remain_us >= us_from_ms( 1 ) )
+                    sys()->wait_for_os_events_ms( ms_from_us( remain_us ) );
             }
             else
             {
@@ -945,9 +959,9 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( g_sleep_debug ) { printf( "[host] editor wakeup (frame %llu)\n", (unsigned long long)run()->clock()->frame_number ); }
             }
         }
-        else if ( remain_us >= 1000 )
+        else if ( remain_us >= us_from_ms( 1 ) )
         {
-            sys()->sleep_milliseconds( ( i32 )( remain_us / 1000 ) );
+            sys()->sleep_milliseconds( ms_from_us( remain_us ) );
         }
         PROF_ZONE_END();
 
@@ -958,9 +972,10 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
            that credit would push the deadline far ahead of real time -- the first
            quiet frame after an input burst would then stall an animation for the whole
            banked surplus.  Game mode must NOT take that clamp: its Sleep wakes early
-           only by request truncation (remain_us / 1000), and carrying that sub-
+           only by request truncation (ms_from_us), and carrying that sub-
            millisecond credit forward is exactly how the accumulator keeps the average
            rate exact. */
+
         i64 t_end_us = sys_tick_microseconds();
         deadline_us += frame_us;
         if ( deadline_us < t_end_us )
@@ -977,7 +992,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* Hitch monitor -- armed via "prof_hitch". Work time only: the pacing wait above
            (editor input block, budget sleep) is deliberate idling, not a hitch. */
-        host_prof_hitch_frame( ( f64 )stats.work_us / 1000.0 );
+        host_prof_hitch_frame( ms_from_us_f( stats.work_us ) );
 
         run_clock_stats_submit( &stats );
     }
