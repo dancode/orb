@@ -364,7 +364,7 @@ ex_layout_pack( void )
 static void
 ex_layout_children( void )
 {
-    if ( ex_begin( "Child Regions", 400, 620, GUI_WIN_NONE ) )
+    if ( ex_begin( "Child Regions", 400, 620, GUI_WIN_HSCROLL ) )
     {
         gui()->stack();
         gui()->text( "List box (scrolls independently):" );

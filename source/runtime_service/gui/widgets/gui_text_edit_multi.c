@@ -892,16 +892,15 @@ gui_input_text_multiline( const char* label, char* buf, u32 bufsz, f32 h )
         h = font_line_h() * 8.0f + 2.0f * WIDGET_PAD;
 
     /* Box width: fill the line after reserving the trailing label (the listbox sizing) -- but
-       never wider than the VISIBLE view.  content_avail reports the content column, and an
+       never wider than the VISIBLE track.  content_avail reports the content column, and an
        overflowing sibling (a long unwrapped text run) grows that column past the view; sizing
        to it would seat this box under the window's scrollbar gutter and border, where its
-       opaque fill and hit rect fight the window chrome.  Passive rows can ride the overgrown
-       column (the bar overpaints and out-claims them); an interactive surface must not, so
-       clamp to the view right edge, mirrored by the same inset the column keeps on the left. */
+       opaque fill and hit rect fight the window chrome.  w_vis is the unexpanded track width
+       (the layout_seed_content view_content_w derivation), a CONTENT-SPACE constant: anchoring
+       to screen edges instead would let a horizontal scroll stretch the box, pinning its right
+       edge (bar, trailing label) to the glass while its body scrolled away. */
     layout_frame_t* pf    = lf();
-    f32             pen_x = gui_cursor_screen_pos().x;
-    f32             inset = pf->content_x - ( pf->outer.x + WIN_BORDER );
-    f32             w_vis = ( pf->outer.x + WIN_BORDER + pf->view_w ) - pen_x - inset;
+    f32             w_vis = pf->outer.w - pf->pad.l - pf->pad.r - pf->sb_w - 2.0f * WIN_BORDER;
     f32             avail = gui_content_avail().x;
     if ( avail > w_vis ) avail = w_vis;
 

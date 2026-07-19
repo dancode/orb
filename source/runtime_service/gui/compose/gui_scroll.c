@@ -182,10 +182,13 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
         f->pushed_clip  = false;
         /* No draw clip pushed; the window's single outer clip stays live so the chrome drawn last
            in window_end can overpaint content that scrolled under the title bar.  But for hit-
-           testing, narrow the scope clip to this region's outer rect so a widget scrolled under the
-           title bar cannot be clicked through it.  layout_pop_region restores parent_clip so the
-           scrollbars (drawn after the restore) hit-test against the full window rect. */
-        s_scope.clip = rect_intersect( f->parent_clip, outer );
+           testing, narrow the scope clip to the gutter-adjusted VIEW (the same rect the own_clip
+           branch uses): a widget scrolled under the title bar cannot be clicked through it, and
+           nothing in the body -- widget or child region -- can claim hover or a press in the
+           reserved scrollbar gutters, which belong to the bars alone.  layout_pop_region restores
+           parent_clip so the bars (drawn after the restore) hit-test against the full window rect. */
+        s_scope.clip = rect_intersect( f->parent_clip,
+                                       ( gui_rect_t ){ outer.x + WIN_BORDER, outer.y, view_w, view_h } );
     }
 }
 

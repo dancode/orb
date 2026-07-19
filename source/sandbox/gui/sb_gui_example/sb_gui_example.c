@@ -79,6 +79,7 @@ main( int argc, char** argv )
         goto shutdown;
     }
 
+   gui()->debug_enable( true );
     /* Main loop -- frame_poll pumps the OS and routes events (rhi swapchain resize, gui input
        + floater lifecycle); false on quit or main-window close. */
     f32 dt = 0.0f;
