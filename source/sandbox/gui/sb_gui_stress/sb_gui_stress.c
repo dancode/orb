@@ -46,18 +46,19 @@
 /* This target compiles against the gui_stress lib variant (orb.targets), where GUI_STRESS_TEST
    raises the library's pool caps ~4x -- the slider ceilings scale to match.  The stock-cap
    ceilings remain so the bench still builds against the plain gui lib if ever repointed. */
+
 #ifdef GUI_STRESS_TEST
 #define STRESS_FLOOD_MAX   120     // test 1 window cap (window pool is 128 here)
 #define STRESS_WALL_MAX    4000    // test 2 row cap
 #define STRESS_TABLE_MAX   20000   // test 3 row cap
-#define STRESS_STORM_MAX   80000   // test 4 primitive cap
+#define STRESS_STORM_MAX   3000    // test 4 primitive cap (~30 verts/prim avg vs the 60K vert pool)
 #define STRESS_CHURN_MAX   2400    // test 5 damper cap
 #define STRESS_TINY_SLOTS  2048    // mirrors GUI_DEFAULT_STATE_SLOTS in the gui_stress lib
 #else
 #define STRESS_FLOOD_MAX   80      // test 1 window cap
 #define STRESS_WALL_MAX    1000    // test 2 row cap
 #define STRESS_TABLE_MAX   5000    // test 3 row cap
-#define STRESS_STORM_MAX   20000   // test 4 primitive cap
+#define STRESS_STORM_MAX   1200    // test 4 primitive cap (~30 verts/prim avg vs the 32K vert pool)
 #define STRESS_CHURN_MAX   600     // test 5 damper cap
 #define STRESS_TINY_SLOTS  512     // mirrors GUI_DEFAULT_STATE_SLOTS in the stock gui lib
 #endif
@@ -66,7 +67,7 @@ static i32  s_test        = 0;     // active routine, 0 = idle
 static i32  s_flood_count = 40;
 static i32  s_wall_rows   = 250;
 static i32  s_table_rows  = 1000;
-static i32  s_storm_count = 4000;
+static i32  s_storm_count = 800;
 static i32  s_churn_count = 400;
 
 static f32  s_dt_avg      = 0.0f;  // exponential frame-time average for the readout
@@ -88,7 +89,7 @@ stress_color( u32 h )
 {
     /* Bright-ish opaque ABGR from three hash bytes. */
     u32 r = 96 + ( ( h       ) & 127 );
-    u32 g = 96 + ( ( h >> 8  ) & 127 );
+    u32 g = 96 + ( ( h >> 8  ) & 127 ); 
     u32 b = 96 + ( ( h >> 16 ) & 127 );
     return 0xFF000000u | ( b << 16 ) | ( g << 8 ) | r;
 }
