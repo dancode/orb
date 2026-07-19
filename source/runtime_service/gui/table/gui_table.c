@@ -684,7 +684,14 @@ gui_table_rows_clip( i32 count, f32 min_h )
     if ( last  < first ) last  = first;
 
     layout_pen_jump( f, top + (f32)first * pitch );
-    t->cur_row = first - 1;   /* absolute row index: stripes + dividers keep phase over the skip */
+
+    /* Seed the culled head as the "previous row": absolute cur_row keeps stripe/divider phase,
+       and row_top/row_h must describe the last culled row -- the next table_next_row re-steps the
+       pen from them via table_end_row (row_top + row_h + gap), and left at table_begin's zeros
+       that step would yank the pen to the screen top and strand the whole run above the view. */
+    t->cur_row = first - 1;
+    t->row_top = top + (f32)first * pitch - pitch;
+    t->row_h   = h;
 
     return ( gui_span_t ){ first, last };
 }
