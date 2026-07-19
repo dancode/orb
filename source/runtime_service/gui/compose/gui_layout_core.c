@@ -30,9 +30,11 @@
    the bottom pad scrolls with the content and joins the measured canvas at pop. */
 #define REGION_PAD_DEFAULT ( ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, WIDGET_GAP } )
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
+
     Layout cursor helpers
-----------------------------------------------------------------------------------------------*/
+
+==============================================================================================*/
 
 static f32 content_right( void ) { return lf()->content_x + lf()->content_w; }
 
@@ -42,6 +44,7 @@ static f32 content_right( void ) { return lf()->content_x + lf()->content_w; }
    a region has opened (e.g. inside a combo dropdown body, which combo_begin opens internally)
    still land: an eager resolve at layout_set() time would freeze WIDGET_GAP before the caller ever
    gets a chance to push a different scale. */
+
 static f32 mod_gap_x( const layout_frame_t* f ) { return ( f->mod.gap_x > 0.0f ) ? f->mod.gap_x : WIDGET_GAP; }
 static f32 mod_gap_y( const layout_frame_t* f ) { return ( f->mod.gap_y > 0.0f ) ? f->mod.gap_y : WIDGET_GAP; }
 
@@ -51,6 +54,7 @@ static f32 mod_gap_y( const layout_frame_t* f ) { return ( f->mod.gap_y > 0.0f )
    max over every item's far corner reconstructs a line's full extent -- one call per placement, on
    either axis, in place of the per-axis, per-mode inline updates the emitters used to do.  Does not
    touch the pen; content_reach moves both, cell_reach grows the x highwater alone. */
+
 static void
 extent_track( layout_frame_t* f, f32 x, f32 y )
 {
@@ -62,6 +66,7 @@ extent_track( layout_frame_t* f, f32 x, f32 y )
    the cell it was handed (text to its glyphs, a label past the row edge).  The widget knows only its
    horizontal overflow; its vertical extent is the emitter's business.  Grows the x highwater alone,
    so the horizontal bar sees content the cell did not bound.  Every leaf-widget overflow site here. */
+
 static void
 cell_reach( f32 right_x )
 {
@@ -72,6 +77,7 @@ cell_reach( f32 right_x )
    highwater with it.  The shared advance behind every placement and block emit (a cell, a packed
    item, a popped child box).  The pen and highwater move together here -- only a pen reposition
    (layout_pen_jump) parts them.  pen_y only ever climbs through this seam, so max == the drop. */
+
 static void
 content_reach( layout_frame_t* f, f32 x, f32 y )
 {
@@ -79,7 +85,8 @@ content_reach( layout_frame_t* f, f32 x, f32 y )
     extent_track( f, x, y );                    /* highwater climbs with it     */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
+
     Grid lattice -- the theme's grid_quantum (gui_style_t; 0/1 = off) snaps CONTENT-DRIVEN sizes
     so resolved flex tracks and natural widths land on the same px lattice the theme metrics
     were already quantized to (layout_compute).  Authored sizes are never snapped: a fixed-px
@@ -90,7 +97,8 @@ content_reach( layout_frame_t* f, f32 x, f32 y )
     The snapping arithmetic itself lives in the lat_* primitives (gui_theme.c, behind the
     GUI_GRID_LATTICE compile switch).  The wrappers below just bind the pitch to the live
     grid_quantum so call sites stay terse (quant_floor_min( v ) not lat_floor( v, q )).
-----------------------------------------------------------------------------------------------*/
+
+==============================================================================================*/
 
 /* Content size floored onto the live style's lattice, never below one quantum so a live size
    never collapses.  Thin wrapper over the lat_* primitives (gui_theme.c) that binds the pitch to
@@ -119,13 +127,15 @@ quant_ceil( f32 v )
     return lat_ceil( v, s_style.grid_quantum );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
+
     Layout engine -- carve a region's content area into cells from a repeating row template.
 
     One resolver does both axes (here, only columns are wired); the row template lives on the
     layout frame and persists until changed, so widgets emit cell-by-cell while staying wholly
     agnostic to the layout shape.  See gui_layout_t (gui.h) for the overloaded unit rule.
-----------------------------------------------------------------------------------------------*/
+
+==============================================================================================*/
 
 /* Resolve a track list into pixel [pos,size] pairs along one axis.  `n` tracks (>= 1) are laid
    from `origin` across `extent`, with `gap` between each.  Units (see gui_layout_t): >1 fixed px,
@@ -141,6 +151,7 @@ quant_ceil( f32 v )
    pixel width is taken as intent, even when small.  All fills share one floor and hit it together,
    so a flat post-clamp matches a freeze-and-redistribute here; per-track minimums would need the
    iterative form. */
+
 static void
 layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap,
                        f32* out_pos, f32* out_size )
@@ -181,9 +192,11 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
        ideal_cum tracks the unsnapped running edge; snap_cum the snapped one.  A fixed-px / natural
        track advances both by its exact size (authored intent, never snapped); a flex / fraction
        track advances ideal_cum by its share, then snaps the edge and takes the delta. */
+
     f32 pos      = origin;
     f32 ideal_cum = 0.0f;   /* unsnapped running edge along avail (content only, gaps excluded) */
     f32 snap_cum  = 0.0f;   /* lattice-snapped running edge */
+
     for ( u32 i = 0; i < n; ++i )
     {
         f32 t  = tracks[ i ];
@@ -218,12 +231,14 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
     }
 }
 
+/*============================================================================================*/
 /* Resolve one overloaded size unit against a single span -- the scalar form of the rule
    layout_resolve_tracks applies to a whole list (see gui_layout_t): > 1 fixed px, == 1 fill the
    available extent, (0,1) a fraction of it, == 0 the natural measure.  < 0 (unset) is natural
    with a fill fallback for an item that has no natural measure -- the pack-mode default.  The
    single-value sites (line.pack_size_next, the one-shot cell line.fit_next) resolve through here, so the
    unit rule lives in exactly two functions: this scalar and the track-list resolver. */
+
 static f32
 unit_resolve( f32 u, f32 natural, f32 avail )
 {
@@ -234,6 +249,7 @@ unit_resolve( f32 u, f32 natural, f32 avail )
     return u;                                                       /* fixed px                  */
 }
 
+/*============================================================================================*/
 /* The size-animate seam: turn a remembered extent's `target` into the extent to use this frame,
    optionally easing toward it through the animation pool.  Every panel / child / split routes its
    size here after picking its own target (a user-resized override, or the content it measured), so
@@ -241,17 +257,20 @@ unit_resolve( f32 u, f32 natural, f32 avail )
    passes) is the exact-size fast path -- no pool touch, the target verbatim.  SEAM: the animation hook
    stays inert until a panel opts in with id_combine( panel_id, tag ).  Speed is the gui_anim_f32
    Hz-like rate (10 ~ 250ms). */
+
 static f32
 size_animate( f32 target, gui_id_t anim_id, f32 speed )
 {
     return ( anim_id != GUI_ID_NONE ) ? gui_anim_f32( anim_id, target, speed ) : target;
 }
 
+/*============================================================================================*/
 /* Close the open line and return the column walk to a row start: the next line owes a gap before it
    (gap_pending) rather than one appended after, so pen_y stays the exact content end.  The one
    commit behind flow rows, pack lines, and same_line continuations.  The line's extent is already in
    the watermark -- every item grew it from its far corner via extent_track as it was placed -- so
    there is nothing to fold here.  An empty line (nothing emitted) owes nothing.  No-op when closed. */
+
 static void
 line_commit( layout_frame_t* f )
 {
@@ -262,19 +281,23 @@ line_commit( layout_frame_t* f )
     f->gap_pending = true;
 }
 
+/*============================================================================================*/
 /* True for a line that gui_pack just opened and nothing has been placed on yet (line.ext, the
    cross extent, only grows once an item lands).  Its own position -- not the cursor plus a gap --
    is the next placement point, since the gap was already applied when the line opened. */
+
 static bool
 line_just_opened( const layout_frame_t* f )
 {
     return f->line.open && f->line.ext <= 0.0f;
 }
 
+/*============================================================================================*/
 /* Where the next line -- or block placed at the pen: a child box, a split band, a grid band --
    opens on the cross axis: the content end plus the gap owed by the content above it.  An open
    line owes one too (pen_y already carries its live extent); a fresh, still-empty pack line
    is its own next position (see line_just_opened). */
+
 static f32
 layout_next_y( layout_frame_t* f )
 {
@@ -288,12 +311,14 @@ layout_next_y( layout_frame_t* f )
     return f->pen_y;
 }
 
+/*============================================================================================*/
 /* Reposition the pen to an explicit y -- an imperative host taking authority over the flow (a table
    stepping row to row, a menu bar restoring the pen it borrowed).  The pen is authoritative: no line
    is open and no gap is owed, so the next line opens exactly here.  This moves the PEN alone: the
    highwater is lifted up-only, so a forward jump (a table row extending the body) is still measured,
    while a backward restore (a menu bar handing the pen back) does not rewind the content the region
    already reached. */
+
 static void
 layout_pen_jump( layout_frame_t* f, f32 y )
 {
@@ -304,10 +329,12 @@ layout_pen_jump( layout_frame_t* f, f32 y )
     f->gap_pending = false;
 }
 
+/*============================================================================================*/
 /* Finish the active template's open geometry before it is replaced or a block is placed at the
    pen: commit the open line -- or, leaving a grid, surrender the band.  A grid owns everything
    from its top to the region's content bottom, so once any cell is emitted the pen lands at the
    band bottom (band_bottom); an untouched grid gives the band back.  Safe in any mode. */
+
 static void
 layout_row_break( layout_frame_t* f )
 {
@@ -325,9 +352,11 @@ layout_row_break( layout_frame_t* f )
     line_commit( f );
 }
 
+/*============================================================================================*/
 /* Count an GUI_END-terminated track list into out[] (capped), substituting a single flex track
    for an empty / NULL list.  Returns the count.  The source list is never stored -- callers
    resolve it straight into cell geometry, so the template arrays do not live on the frame. */
+
 static u32
 layout_copy_tracks( const f32* src, f32* out )
 {
@@ -338,12 +367,14 @@ layout_copy_tracks( const f32* src, f32* out )
     return n;
 }
 
+/*============================================================================================*/
 /* Reset the per-template iteration state -- everything a new template must not inherit from the
    shape it replaces: the whole line record (column/row walk, same_line anchor, pack pen, the
    one-shot overrides back to unset).  Every installer (layout_set / _grid / _default, gui_pack)
    runs this after breaking the open row, so "what a fresh template starts from" has exactly one
    answer.  Gaps, field split, and align are modifiers: they persist across installs and only the
    full clears (layout_clear / layout_set_default) reset them via layout_modifiers_reset below. */
+
 static void
 layout_template_reset( layout_frame_t* f )
 {
@@ -353,6 +384,7 @@ layout_template_reset( layout_frame_t* f )
     /* gap_pending is NOT reset: content committed above still owes its gap to the next line. */
 }
 
+/*============================================================================================*/
 /* push_layout_state / pop_layout_state -- save and restore the region's declared shape (mode +
    template + modifiers) around a scoped header change, so a helper that switches the active
    region into bar() / grid() / whatever for its own widgets can hand the caller's shape back
@@ -369,6 +401,7 @@ layout_template_reset( layout_frame_t* f )
    line into pen_y before the save (so a partial row the caller had open is committed, not lost)
    and again before the restore (so whatever the scoped shape emitted is committed too); the
    restored shape then starts a fresh line at the pen, same as any header install. */
+
 #define GUI_LAYOUT_STATE_STACK_MAX 8
 
 typedef struct
@@ -407,10 +440,12 @@ gui_pop_layout_state( void )
     layout_template_reset( f );   /* fresh iteration cursor for the restored shape */
 }
 
+/*============================================================================================*/
 /* Reset the orthogonal modifiers: gaps back to the theme, align to LEFT | TOP, and the field split
    back to the style default -- FIELD_LABEL_W > 0 seeds a fixed left label column for every region so
    forms align window-wide with no per-block call; 0 leaves it off (each label trails at its own
    width).  A local field_split / field_label_* still overrides within its region. */
+
 static void
 layout_modifiers_reset( layout_frame_t* f )
 {
@@ -421,11 +456,13 @@ layout_modifiers_reset( layout_frame_t* f )
                                .field_control = 1.0f };
 }
 
+/*============================================================================================*/
 /* Open a region UNDECLARED: zero the template state and leave the mode NONE so the first layout
    header (stack / columns / grid / ...) installs real geometry.  A widget emitted before any
    header trips the guard in cell_next_w.  Called when a region or sub-layout opens (the
    old silent single-column default is gone) and by gui_pad after re-insetting -- the modifiers
    and iteration state start from a known state every region. */
+
 static void
 layout_clear( layout_frame_t* f )
 {
@@ -438,11 +475,13 @@ layout_clear( layout_frame_t* f )
     layout_template_reset( f );
 }
 
+/*============================================================================================*/
 /* Install the region's default template: one flex column, auto height -- the classic stack, mode
    STACK.  Resolves immediately (content_x/content_w must already be set), so the single column
    fills the content width with no gap.  This is the full reset (clears field split + align too):
    it backs gui_layout_default and the emit-before-header guard's release fallback.  The plain
    stack() header keeps modifiers and routes through layout_set instead. */
+
 static void
 layout_set_default( layout_frame_t* f )
 {
@@ -456,6 +495,7 @@ layout_set_default( layout_frame_t* f )
     layout_template_reset( f );
 }
 
+/*============================================================================================*/
 /* Seed the frame's content column + pen from its outer box and a pad inset, leaving the template
    UNDECLARED.  The one derivation of the content geometry: layout_push_region (region open),
    sublayout_open (transient cell frame), and gui_pad (re-inset) all route through here.  Requires
@@ -473,6 +513,7 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
        hairline scroll fragment with nothing to scroll to. Reserve it on the far edges only
        (top / left origins stay put, so nothing shifts); the fill just stops at the true view
        edge. Any region that fills to content_avail is otherwise doomed to this phantom bar. */
+
     const f32 border = WIN_BORDER;
 
     f->pad           = pad;   /* kept: the pads join the measured canvas at pop */
@@ -488,6 +529,7 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
        region can actually scroll to, and force any text longer than the view into a permanent,
        unreachable ellipsis no scroll offset ever uncovers.  Only a genuine last-frame overflow widens
        it, so a region that fits exactly still measures flush to the view (no phantom bar). */
+
     f32 view_content_w = f->outer.w - pad.l - pad.r - f->sb_w - 2.0f * border;
     f32 content_w       = view_content_w;
     f32 last_items_w    = ( f->scroll->content_w > 0.0f ) ? f->scroll->content_w - pad.l - pad.r : 0.0f;
@@ -505,6 +547,7 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     layout_clear( f );   /* content re-seeded -> the template opens undeclared; declare a header */
 }
 
+/*============================================================================================*/
 /* volatile_layout_push / volatile_layout_pop -- a minimal layout-frame push/pop at an explicit
    (x, y, w), used only by the volatile-widget replay scope, now live in widgets/gui_volatile.c
    (gui_replay_scope_enter/_exit) alongside the rest of that feature. Both call
@@ -532,6 +575,7 @@ layout_set( const f32* cols, f32 row_h, f32 gap_x, f32 gap_y )
                            f->tmpl.cellx, f->tmpl.cellw );
 }
 
+/*============================================================================================*/
 /* Re-resolve a flow template's cells from the current content column -- used after indent /
    unindent shifts content_x / content_w so subsequent rows land at the new inset.  Flow only
    (STACK / COLUMNS); a grid carries a pre-resolved matrix and a pack its own pen, neither of which
@@ -544,6 +588,7 @@ layout_reflow( layout_frame_t* f )
                                mod_gap_x( f ), f->tmpl.cellx, f->tmpl.cellw );
 }
 
+/*============================================================================================*/
 /* Install a grid template on the current frame.  cols x rows partition a bounded box -- from the
    current pen down to the region's content bottom -- into a fixed matrix, both axes resolved up
    front (the defining difference from flow, where the row height resolves lazily per row).
@@ -577,6 +622,7 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
     f->nav_line = ++s_build.nav_line_seq;   /* grid row 0 opens as a fresh nav line */
 }
 
+/*============================================================================================*/
 /* Resolve one cell's horizontal box -- the fit-then-align sequence every cell placement (flow or
    grid) shares: decide how big before align_x decides where.  A one-shot line.fit_next (overloaded
    unit -- see gui_layout_t) always wins when set, taken as authored intent even past the cell
@@ -602,6 +648,7 @@ cell_fit_resolve( layout_frame_t* f, f32 cell_x, f32 cell_w, f32 natural_w, f32 
     return ( gui_rect_t ){ x, y, w, h };
 }
 
+/*============================================================================================*/
 /* Cell a grid hands to a widget: a fixed (col,row) slot of the pre-resolved matrix, then advance
    row-major.  Past the last cell the cursor clamps to it, so overflow widgets stack harmlessly in
    the final slot rather than reading out of bounds.  Row height is the matrix's, not the item's --
@@ -630,6 +677,7 @@ grid_next_rect( layout_frame_t* f, f32 natural_w )
     return r;
 }
 
+/*============================================================================================*/
 /* Place one item at the running pen on the open line -- the shared print-run placement behind
    pack mode (bar / strip) and a same_line continuation in flow.  The widget's natural size feeds
    the main axis (width along a bar or a continued row, height down a strip); the cross axis takes
@@ -679,6 +727,7 @@ line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
     return r;
 }
 
+/*============================================================================================*/
 /* Place one item in the next template cell -- the flow placement.  At a row start (col 0) the
    line opens at the pen (gap-before): an auto-height row (row_h == 0) takes the *first* item's h
    as the whole row's height and every cell conforms -- a running max would retroactively misalign
@@ -730,12 +779,14 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
     return r;
 }
 
+/*============================================================================================*/
 /* Width-aware form.  `natural_w` is the widget's preferred width.  In stack mode a widget that
    carries one (natural_w > 0) shrinks to it instead of filling the cell -- matching Dear ImGui's
    behavior where buttons size to their label while field widgets (slider, input) fill the row.
    In columns / grid mode the track cell always wins.  Every emit records f->line.prev_item so
    same_line() can anchor the next widget to this one's line.  This is the per-mode dispatch over
    the line machinery above; the widget just fills the rect it is handed. */
+
 static gui_rect_t
 cell_next_w( f32 natural_w, f32 h )
 {
@@ -791,9 +842,11 @@ cell_next_w( f32 natural_w, f32 h )
     return r;
 }
 
+/*============================================================================================*/
 /* The common case: fill the track cell (natural_w < 0 => no same_line preference). */
 static gui_rect_t cell_next( f32 h ) { return cell_next_w( -1.0f, h ); }
 
+/*============================================================================================*/
 /* Resolve a labeled widget's cell into a label position + a control rect when a field split is
    active (field_split / field_label_*).  The label and control are two tracks laid across the cell
    by the same resolver columns use, so a field split obeys the overloaded unit rule and adapts to

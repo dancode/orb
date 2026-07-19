@@ -53,6 +53,7 @@ col_lerp( u32 ca, u32 cb, f32 t )
    x/y/w/h with UV + texture arguments -- these two carry the untextured white-quad defaults
    (uv 0,0,1,1, texture 0) so no widget repeats them.  Shapes beyond fill/outline are the
    symbol palette (gui_symbol.c). */
+
 static void draw_fill   ( gui_rect_t r, u32 col )        { draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col ); }
 static void draw_outline( gui_rect_t r, f32 t, u32 col ) { draw_push_rect_outline( r.x, r.y, r.w, r.h, t, 0, col ); }
 
@@ -60,6 +61,7 @@ static void draw_outline( gui_rect_t r, f32 t, u32 col ) { draw_push_rect_outlin
    edge, or (default) the near edge.  The one axis primitive every aligned placement resolves
    through -- rect_align below for a box, and draw_text_in (gui_text.c) per line of a text
    block -- so a centered label, a right-flushed caption, and a bottom-anchored run share one rule. */
+
 static f32
 align_span( f32 org, f32 avail, f32 len, bool center, bool far )
 {
@@ -77,6 +79,7 @@ static f32 align_y( f32 y, f32 h, f32 len, u32 a ) { return align_span( y, h, le
    text run, a separator line -- so every widget edges / centers content the same way and a
    region's align setting flows through one place.  Returns the placed rect (w/h are nat_*).
    Thin alias for the public gui_rect_align (gui.h) so widgets and callers share one rule. */
+
 static gui_rect_t
 rect_align( gui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
 {
@@ -91,7 +94,8 @@ rect_align( gui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
    WIN_BORDER macros and col_lerp defined here, and so every widget file below resolves them by
    name.  The public gui_render_* surface over them is centralized there too. */
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
+
     Widget label grammar  (Dear ImGui style)
 
         "Text"        -> display "Text",  id = hash("Text")
@@ -102,7 +106,8 @@ rect_align( gui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
     "###", so a label whose visible part changes every frame (a counter, a name) keeps one stable
     id.  Every labeled widget routes its display through label_width / draw_label and its id
     through item_id, so the grammar is honored uniformly in one place.
-----------------------------------------------------------------------------------------------*/
+
+==============================================================================================*/
 
 /* Visible byte count: up to the first "##" marker, or the whole string. */
 static u32
@@ -138,13 +143,24 @@ item_id( const char* label )
 }
 
 /* Width / draw of a label's visible span (markers stripped). */
-static f32  label_width( const char* s )                         { return font_text_w_n( s, label_vis_len( s ) ); }
-static void draw_label ( f32 x, f32 y, u32 c, const char* s )    { draw_push_text_n( x, y, c, s, label_vis_len( s ) ); }
+static f32 label_width( const char* s ) 
+{ 
+    return font_text_w_n( s, label_vis_len( s ) ); 
+}
+
+/* draw lebel convenience wrapper for the text label length */
+static void draw_label ( f32 x, f32 y, u32 c, const char* s ) 
+{ 
+    draw_push_text_n( x, y, c, s, label_vis_len( s ) );
+}
 
 /* The natural width a label-sized widget requests from the composer: the visible span plus the
    standard inset on both sides.  THE self-measurement formula -- button, small_button, menu
    items, and the public gui_button_width all speak it through this one helper. */
-static f32  label_natural_w( const char* s )                     { return label_width( s ) + 2.0f * WIDGET_PAD; }
+static f32  label_natural_w( const char* s ) 
+{ 
+    return label_width( s ) + 2.0f * WIDGET_PAD; 
+}
 
 /* Compact truncation ellipsis -- three baseline dots packed into ~1.2 glyph advances instead of
    three full '.' glyph cells.  A literal "..." spends three whole character advances on the cut

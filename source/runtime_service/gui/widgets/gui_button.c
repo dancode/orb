@@ -21,10 +21,11 @@
    Every pushbutton-style widget (button, button_fill, small_button) draws its face this way --
    centered is a button's one layout difference from the trailing-label widgets below, which is
    why it is not routed through draw_field_label / rect_align's LEFT default like they are. */
+
 static void
 draw_button_label( gui_rect_t r, const char* label )
 {
-    f32 lw    = label_width( label );
+    f32 lw = label_width( label );
     f32 avail = r.w - 2.0f * WIDGET_PAD;
     if ( lw <= avail )
     {
