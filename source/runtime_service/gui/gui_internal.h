@@ -40,7 +40,7 @@
 /* Per-context default pool sizes -- used to wire the static default context (slot 0).
    Secondary contexts may use different sizes passed via gui_ctx_config_t. */
 
-#define GUI_DEFAULT_MAX_WINDOWS     32      // default persisted window pool
+#define GUI_DEFAULT_MAX_WINDOWS     32      // default persisted window pool (32)
 #define GUI_DEFAULT_POPUP_DEPTH     8       // default max nested popups
 #define GUI_DEFAULT_STATE_SLOTS     512     // default keyed state pool capacity (power of two)
 #define GUI_DEFAULT_DOCK_NODES      48      // default dock-tree nodes
@@ -57,9 +57,11 @@
    gui_state_get picks the class from the requested size; the caps are asserted against their
    largest tenants in gui_state.c / gui_table.c. */
 
+#define GUI_STATE_TINY_CAP          8       // tiny-class payload bytes (anim dampers/timers, open flags,
+                                            //   open_frame stamps -- the one-or-two-word renters)
 #define GUI_STATE_CAP               24      // small-class payload bytes (max tenant: gui_region_t)
 #define GUI_STATE_BIG_CAP           96      // big-class payload bytes (max tenant: gui_table_persist_t)
-#define GUI_STATE_BIG_SLOTS         32      // big-class capacity, power of two (tables are the main tenant)
+#define GUI_STATE_BIG_SLOTS         32      // big-class capacity (tables are the main tenant)
 
 /* Render-surface ceiling: one gui viewport rides one OS window + one rhi context, so the pool
    default, the per-context cap, and the GPU buffer regions (allocated once at init, before any
@@ -707,10 +709,13 @@ typedef struct
 
     The single store a widget uses to keep bytes alive across frames, keyed by its id (a
     region's scroll, a tree node's open flag, a combo's popup state, a table's column widths),
-    plus the per-context id-salt and frame clock that stamp and age it.  Two open-addressing
-    hash tables -- a small class and a big class -- walked by the one probe in gui_state.c,
-    which also holds the reclamation contract.  Both slot types share the (id, seen_frame)
-    header prefix the probe reads.
+    plus the per-context id-salt and frame clock that stamp and age it.  Three open-addressing
+    hash tables -- a tiny class (the hot one-or-two-word renters: anim dampers / timers, open
+    flags), a small class, and a big class -- walked by the one probe in gui_state.c, which
+    also holds the reclamation contract and picks the class from the requested size.  All slot
+    types share the (id, seen_frame) header prefix the probe reads.  Tiny slots are 16 bytes
+    (4 per cache line), which is the point: lookup cost is probe-chain cache misses, and the
+    tiny class carries the highest-traffic tenants.
 ==============================================================================================*/
 
 typedef struct
@@ -719,6 +724,14 @@ typedef struct
     u32         seen_frame;               // frame last touched -- drives stale reclamation
 
 } gui_state_hdr_t;
+
+typedef struct
+{
+    gui_id_t    id;                       // 0 = empty slot
+    u32         seen_frame;               // frame last touched -- drives stale reclamation
+    u8          data[ GUI_STATE_TINY_CAP ]; // payload; 16-byte slot, 4 per cache line
+
+} gui_state_tiny_slot_t;
 
 typedef struct
 {
@@ -749,12 +762,16 @@ typedef struct
     u32  frame;           // monotonic frame index, bumped each ctx_begin this context is built
     bool wants_redraw;    // set by gui_anim_f32 while mid-transition; cleared at ctx_begin
 
-    gui_state_slot_t*   state;       // open-addressed keyed per-widget state; points into context alloc
-    u32                 state_count; // capacity, power of two
-    u32                 state_mask;  // state_count - 1, for bucket masking
+    /* The three class tables, all pointing into the context alloc.  Counts need not be powers
+       of two: the probe picks its home bucket by multiply-shift range reduction and wraps by
+       increment (gui_state.c), so the partition can be tuned freely (small = 3/4 of tiny). */
 
-    gui_state_big_slot_t* state_big; // big-class slots (GUI_STATE_BIG_SLOTS); points into context alloc
-    u32                 big_mask;    // GUI_STATE_BIG_SLOTS - 1, for bucket masking
+    gui_state_tiny_slot_t* state_tiny;  // tiny class (state_slots slots)
+    u32                    tiny_count;
+    gui_state_slot_t*      state;       // small class (3/4 of state_slots)
+    u32                    state_count;
+    gui_state_big_slot_t*  state_big;   // big class (GUI_STATE_BIG_SLOTS)
+    u32                    big_count;
 
 } gui_retained_t;
 

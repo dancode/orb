@@ -687,6 +687,15 @@ target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
     dep         rhi draw gui dev_font
     mono_dep    render
 
+target sb_gui_stress					# gui load-limit bench: 5 routines on number keys, 0 = idle
+
+    type        exe
+    root        source/sandbox/gui/sb_gui_stress
+    folder      09_SANDBOX/GUI
+    unit        sb_gui_stress.c
+    dep         mod sys ref job app core
+    dep         rhi gui
+
 # ==============================================================================
 # 09_SANDBOX -- HOST (host functionality tests, one per host shape)
 # ==============================================================================
@@ -1014,6 +1023,7 @@ solution orb_sandbox_vulkan				# developing rendering / vulkan
     add         sb_gui_timeline   # prof timeline overlay + workload
     add         sb_gui_editor   # game-engine editor shell
     add         sb_gui_font   # font find/bake/preview/export bench
+    add         sb_gui_stress   # gui load-limit stress bench
     add         sb_vulkan_stress   # multi-context sync stress exe
 
     add         sb_host_runtime   # runtime test

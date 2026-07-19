@@ -194,6 +194,14 @@ gui_perf_overlay( int mode )
                 gui_new_line( 2.0f );
                 gui_textf( "up batch  %u", rs.upload_batches );
                 gui_textf( "up bytes  %u", rs.upload_bytes   );
+
+                /* Keyed state pool load per class: live (touched within a frame) / occupied
+                   (live + unreclaimed tombstones) / capacity.  The partition-tuning metric. */
+                gui_state_usage_t su = gui_state_usage();
+                gui_new_line( 2.0f );
+                gui_textf( "st tiny  %u/%u/%u", su.tiny_live,  su.tiny_used,  su.tiny_cap  );
+                gui_textf( "st small %u/%u/%u", su.small_live, su.small_used, su.small_cap );
+                gui_textf( "st big   %u/%u/%u", su.big_live,   su.big_used,   su.big_cap   );
             }
         }
 

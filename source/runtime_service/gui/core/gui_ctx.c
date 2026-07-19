@@ -351,15 +351,22 @@ static gui_context_t* g_ctx = NULL;   /* bound context */
 static gui_context_t*
 ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
 {
+    /* Keyed-state class partition: tiny gets the full state_slots (the hot renters), small 3/4
+       of it -- counts are free of the power-of-two rule (multiply-shift bucketing, gui_state.c). */
+    u32 slots_small = ( slots / 4u ) * 3u;
+    if ( slots_small == 0 ) slots_small = slots;
+
     #define ALIGN8( x ) ( ( ( x ) + 7u ) & ~7u )
-    u32 sz_state = slots               * (u32)sizeof( gui_state_slot_t     );
+    u32 sz_tiny  = slots               * (u32)sizeof( gui_state_tiny_slot_t );
+    u32 sz_state = slots_small         * (u32)sizeof( gui_state_slot_t     );
     u32 sz_big   = GUI_STATE_BIG_SLOTS * (u32)sizeof( gui_state_big_slot_t );
     u32 sz_pop   = c->popup_depth      * (u32)sizeof( gui_popup_t          );
     u32 sz_win   = c->max_windows      * (u32)sizeof( gui_window_t         );
     u32 sz_vp    = c->max_viewports    * (u32)sizeof( gui_viewport_t       );
     u32 sz_dock  = c->max_dock_nodes   * (u32)sizeof( gui_dock_node_t      );
 
-    u32 off_state = ALIGN8( (u32)sizeof( gui_context_t ) );
+    u32 off_tiny  = ALIGN8( (u32)sizeof( gui_context_t ) );
+    u32 off_state = ALIGN8( off_tiny  + sz_tiny  );
     u32 off_big   = ALIGN8( off_state + sz_state );
     u32 off_pop   = ALIGN8( off_big   + sz_big   );
     u32 off_win   = ALIGN8( off_pop   + sz_pop   );
@@ -373,11 +380,12 @@ ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
     memset( blk, 0, total );
 
     gui_context_t* ctx      = (gui_context_t*)blk;
+    ctx->retained.state_tiny  = (gui_state_tiny_slot_t*)( blk + off_tiny );
+    ctx->retained.tiny_count  = slots;
     ctx->retained.state       = (gui_state_slot_t*)( blk + off_state );
-    ctx->retained.state_count = slots;
-    ctx->retained.state_mask  = slots - 1;
+    ctx->retained.state_count = slots_small;
     ctx->retained.state_big   = (gui_state_big_slot_t*)( blk + off_big );
-    ctx->retained.big_mask    = GUI_STATE_BIG_SLOTS - 1;
+    ctx->retained.big_count   = GUI_STATE_BIG_SLOTS;
     ctx->retained.id_salt     = (u32)slot * 0x9e3779b9u;
     ctx->popup.open           = (gui_popup_t*)   ( blk + off_pop  );
     ctx->popup.depth          = c->popup_depth;
@@ -398,12 +406,7 @@ static void
 ctx_pool_init( void )
 {
     gui_ctx_config_t c = GUI_CTX_CONFIG_EDITOR;
-    u32 slots = c.state_slots;
-    u32 p = 1;
-    while ( p < slots ) p <<= 1;
-    slots = p;
-
-    gui_context_t* ctx = ctx_alloc_slot( &c, slots, 0 );
+    gui_context_t* ctx = ctx_alloc_slot( &c, c.state_slots, 0 );
     ORB_ASSERT( ctx != NULL );   /* no gui without a default context */
     ctx->listening = true;       /* default context listens to input */
 
@@ -755,12 +758,10 @@ gui_ctx_create( const gui_ctx_config_t* cfg )
     if ( !c.popup_depth   ) c.popup_depth   = GUI_DEFAULT_POPUP_DEPTH;
     if ( !c.max_viewports ) c.max_viewports = GUI_MAX_VIEWPORTS;
 
-    /* state_slots must be a power of two for the hash mask to work. */
+    /* Counts are free of the old power-of-two rule (multiply-shift bucketing, gui_state.c);
+       just floor so the small class (3/4 of this) keeps usable headroom. */
     u32 slots = c.state_slots;
     if ( slots < 16 ) slots = 16;
-    u32 p = 1;
-    while ( p < slots ) p <<= 1;
-    slots = p;
 
     /* Find a free pool slot (1..GUI_CTX_POOL_MAX-1). */
     i32 slot = -1;

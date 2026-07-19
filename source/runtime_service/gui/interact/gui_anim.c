@@ -46,7 +46,7 @@ typedef struct { f32 current; } gui_anim_f32_t;
 static f32
 gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed )
 {
-    const gui_anim_f32_t* peek = (const gui_anim_f32_t*)gui_state_peek( anim_id );
+    const gui_anim_f32_t* peek = GUI_STATE_PEEK( gui_anim_f32_t, anim_id );
     f32 current = peek ? peek->current : rest;
 
     bool moving = fabsf( target - current ) >= 0.001f;
@@ -96,7 +96,7 @@ gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed )
 static gui_anim4_t
 gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed )
 {
-    const gui_anim4_t* peek = (const gui_anim4_t*)gui_state_peek( id );
+    const gui_anim4_t* peek = GUI_STATE_PEEK( gui_anim4_t, id );
     gui_anim4_t        cur  = peek ? *peek : rest;
     f32                dt   = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
 
@@ -175,7 +175,7 @@ gui_anim_timer_start( gui_id_t id, f32 duration )
 static f32
 gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active )
 {
-    const gui_anim_timer_t* pk = (const gui_anim_timer_t*)gui_state_peek( id );
+    const gui_anim_timer_t* pk = GUI_STATE_PEEK( gui_anim_timer_t, id );
     if ( !pk || pk->duration <= 0.0f )
     {
         if ( out_active ) *out_active = false;

@@ -92,7 +92,8 @@ typedef i32 gui_ctx_id_t;
 typedef struct
 {
     u32  max_windows;    // persisted window pool (default 32)
-    u32  state_slots;    // keyed state pool, must be power of two (default 512)
+    u32  state_slots;    // keyed state pool: tiny-class slot count (default 512); the small
+                         //   class gets 3/4 of it, the big class is fixed (GUI_STATE_BIG_SLOTS)
     u32  popup_depth;    // max popup nesting (default 8)
     u32  max_viewports;  // render surfaces (default 4)
     u32  max_dock_nodes; // dock-tree node pool; 0 = no docking (default 48)
@@ -101,7 +102,7 @@ typedef struct
 
 /* Pre-built configs -- scale context memory usage for how heavy the UI contents are */
 #define GUI_CTX_CONFIG_EDITOR  \
-    ( ( gui_ctx_config_t ){ 32, 512, 8, 4, 48 } )
+    ( ( gui_ctx_config_t ){ 32, 512, 8, 4, 48 } ) // 32
 #define GUI_CTX_CONFIG_GAME_UI \
     ( ( gui_ctx_config_t ){ 8, 64, 4, 1, 0 } )
 
