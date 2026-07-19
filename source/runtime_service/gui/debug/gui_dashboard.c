@@ -106,7 +106,7 @@ dash_textf( f32 x, f32 y, f32 max_x, u32 abgr, const char* fmt, ... )
     char buf[ 128 ];
     va_list args;
     va_start( args, fmt );
-    vsnprintf( buf, sizeof( buf ), fmt, args );
+    fmt_vsnprintf( buf, sizeof( buf ), fmt, args );
     va_end( args );
     dash_text( x, y, max_x, abgr, buf );
 }
@@ -119,7 +119,7 @@ dash_num( f32 x, f32 y, u32 abgr, const char* fmt, ... )
     char buf[ 64 ];
     va_list args;
     va_start( args, fmt );
-    vsnprintf( buf, sizeof( buf ), fmt, args );
+    fmt_vsnprintf( buf, sizeof( buf ), fmt, args );
     va_end( args );
     gui_draw_text( x, y, abgr, buf );
 }
@@ -144,7 +144,7 @@ dash_name( gui_id_t id, char* buf, u32 bufsz )
 {
     const char* n = gui_debug_name( id );
     if ( n ) return n;
-    snprintf( buf, bufsz, "%08X", id );
+    fmt_snprintf( buf, bufsz, "%08X", id );
     return buf;
 }
 

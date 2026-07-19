@@ -46,6 +46,7 @@
 #include <math.h>
 
 #include "orb.h"
+#include "base/fmt.h"   // fmt_snprintf -- the bench's per-row formatting is part of what emit ms measures
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
 #include "engine/sys/sys_host.h"
@@ -146,7 +147,7 @@ stress_window_flood( i32 count )
     for ( i32 i = 0; i < count; ++i )
     {
         char title[ 32 ];
-        snprintf( title, sizeof( title ), "Flood %02d", i );
+        fmt_snprintf( title, sizeof( title ), "Flood %02d", i );
 
         u32 h = stress_hash( ( u32 )i );
         gui()->window_set_next_pos ( 20.0f + ( f32 )( i % 8 ) * 152.0f,
@@ -379,7 +380,7 @@ stress_dock_cyclone( i32 count )
         for ( i32 i = 0; i < count; ++i )
         {
             char title[ 32 ];
-            snprintf( title, sizeof( title ), "Dock %02d", i );
+            fmt_snprintf( title, sizeof( title ), "Dock %02d", i );
             gui()->dock_window( title, s_dock_leaf[ stress_rand() % ( u32 )s_dock_leaf_count ] );
         }
         s_dock_shuffle_at = t + 0.35;
@@ -392,7 +393,7 @@ stress_dock_cyclone( i32 count )
         s_dock_shuffle_at = t + 0.35;
         u32  w = stress_rand() % ( u32 )count;
         char title[ 32 ];
-        snprintf( title, sizeof( title ), "Dock %02d", ( i32 )w );
+        fmt_snprintf( title, sizeof( title ), "Dock %02d", ( i32 )w );
 
         if ( ( stress_rand() & 3 ) == 0 )
             gui()->dock_undock( title );
@@ -403,7 +404,7 @@ stress_dock_cyclone( i32 count )
     for ( i32 i = 0; i < count; ++i )
     {
         char title[ 32 ];
-        snprintf( title, sizeof( title ), "Dock %02d", i );
+        fmt_snprintf( title, sizeof( title ), "Dock %02d", i );
 
         u32 h = stress_hash( ( u32 )i );
         gui()->window_set_next_pos ( 60.0f + ( f32 )( i % 6 ) * 40.0f,
@@ -608,7 +609,7 @@ show_control( void )
         for ( i32 i = 0; i <= 9; ++i )
         {
             char label[ 8 ];
-            snprintf( label, sizeof( label ), "%d", i );
+            fmt_snprintf( label, sizeof( label ), "%d", i );
             gui()->push_id_int( i );
             if ( gui()->button( label ) )
                 s_test = i;

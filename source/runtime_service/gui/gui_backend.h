@@ -159,6 +159,13 @@ void draw_push_text_n           ( f32 x, f32 y, u32 abgr, const char* str, u32 n
 void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n,
                                   f32 clip_x0, f32 clip_x1 );
 
+/* True when a box cannot touch the active clip -- the exact scissor test every draw_push_* runs
+   before spending a command slot.  Exposed so a widget can skip its whole PAINT PREP (value
+   snprintf, measure walks, fit logic) for a scrolled-out rect in one test, instead of paying the
+   prep and having each push culled individually.  Layout, state, and interaction must still run:
+   this is a paint gate only.  False when no clip is active (an unclipped surface always paints). */
+bool draw_cull_box              ( f32 x, f32 y, f32 w, f32 h );
+
 /*==============================================================================================
     TEXT-SELECTION run capture (backend/gui_select_capture.c)
 

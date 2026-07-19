@@ -155,7 +155,7 @@ gui_perf_overlay( int mode )
                     : fps >= 30.0f ? GUI_COLOR( 0xE0, 0xC0, 0x40, 0xFF )
                     :                GUI_COLOR( 0xEE, 0x55, 0x44, 0xFF );
         char line[ 64 ];
-        snprintf( line, sizeof( line ), "FPS %5.1f  (%4.2f ms)", fps, fps > 0.0f ? 1000.0f / fps : 0.0f );
+        fmt_snprintf( line, sizeof( line ), "FPS %5.1f  (%4.2f ms)", fps, fps > 0.0f ? 1000.0f / fps : 0.0f );
         gui_text_colored( fps_col, line );
 
         bool show_timing_rows = ( mode >= 2 );
@@ -247,7 +247,7 @@ dbg_id_str( gui_id_t id )
 
     char* b = bufs[ next ];
     next    = ( next + 1u ) & 3u;
-    snprintf( b, sizeof( bufs[ 0 ] ), "0x%08X", id );
+    fmt_snprintf( b, sizeof( bufs[ 0 ] ), "0x%08X", id );
     return b;
 }
 

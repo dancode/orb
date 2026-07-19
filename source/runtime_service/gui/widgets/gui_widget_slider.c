@@ -187,10 +187,16 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
             changed = true;
     }
 
-    f32  t_cur = ( hi > lo ) ? ( ( *v - lo ) / ( hi - lo ) ) : 0.0f;
-    char buf[ 32 ];
-    snprintf( buf, sizeof( buf ), SLIDER_FLOAT_FMT, *v );
-    slider_render( track_r, st, t_cur, buf );
+    /* Paint gate: a scrolled-out slider skips its whole render prep (the value snprintf is real
+       per-row cost in a long list) -- state and value edits above already ran, so behavior is
+       untouched; every push in slider_render would have been culled individually anyway. */
+    if ( !draw_cull_box( track_r.x, track_r.y, track_r.w, track_r.h ) )
+    {
+        f32  t_cur = ( hi > lo ) ? ( ( *v - lo ) / ( hi - lo ) ) : 0.0f;
+        char buf[ 32 ];
+        fmt_snprintf( buf, sizeof( buf ), SLIDER_FLOAT_FMT, *v );
+        slider_render( track_r, st, t_cur, buf );
+    }
     return changed;
 }
 
@@ -228,10 +234,14 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     if ( st.nav_adjust != 0 && value_step_i32( v, st.nav_adjust, 1, lo, hi ) )
         changed = true;
 
-    f32  t_cur = ( hi > lo ) ? ( (f32)( *v - lo ) / (f32)( hi - lo ) ) : 0.0f;
-    char buf[ 32 ];
-    snprintf( buf, sizeof( buf ), "%d", *v );
-    slider_render( track_r, st, t_cur, buf );
+    /* Paint gate -- see slider_float_step. */
+    if ( !draw_cull_box( track_r.x, track_r.y, track_r.w, track_r.h ) )
+    {
+        f32  t_cur = ( hi > lo ) ? ( (f32)( *v - lo ) / (f32)( hi - lo ) ) : 0.0f;
+        char buf[ 32 ];
+        fmt_snprintf( buf, sizeof( buf ), "%d", *v );
+        slider_render( track_r, st, t_cur, buf );
+    }
     return changed;
 }
 
@@ -400,11 +410,12 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
         draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
     }
 
-    /* Value text -- unless the focused editor already painted its own (and caret). */
-    if ( !st.focused )
+    /* Value text -- unless the focused editor already painted its own (and caret), or the box is
+       scrolled out (paint gate -- see slider_float_step; skips the snprintf + measure). */
+    if ( !st.focused && !draw_cull_box( box_r.x, box_r.y, box_r.w, box_r.h ) )
     {
         char buf[ 64 ];
-        snprintf( buf, sizeof( buf ), format, *v );
+        fmt_snprintf( buf, sizeof( buf ), format, *v );
         drag_value_text( box_r, buf );
     }
 
@@ -505,11 +516,12 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
         draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
     }
 
-    /* Value text -- unless the focused editor already painted its own (and caret). */
-    if ( !st.focused )
+    /* Value text -- unless the focused editor already painted its own (and caret), or the box is
+       scrolled out (paint gate -- see slider_float_step; skips the snprintf + measure). */
+    if ( !st.focused && !draw_cull_box( box_r.x, box_r.y, box_r.w, box_r.h ) )
     {
         char buf[ 64 ];
-        snprintf( buf, sizeof( buf ), fmt, *v );
+        fmt_snprintf( buf, sizeof( buf ), fmt, *v );
         drag_value_text( box_r, buf );
     }
 
@@ -674,18 +686,18 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
     {
         char tip_hex[ 12 ], tip_vals[ 32 ], tip_alp[ 24 ];
         tip_alp[ 0 ] = '\0';
-        snprintf( tip_hex, sizeof( tip_hex ), "#%02X%02X%02X%02X", pr, pg, pb, pa );
+        fmt_snprintf( tip_hex, sizeof( tip_hex ), "#%02X%02X%02X%02X", pr, pg, pb, pa );
         if ( is_hsv )
-            snprintf( tip_vals, sizeof( tip_vals ), "H:%d  S:%d  V:%d",
+            fmt_snprintf( tip_vals, sizeof( tip_vals ), "H:%d  S:%d  V:%d",
                       (i32)( hsv[0] * 360.0f + 0.5f ),
                       (i32)( hsv[1] * 100.0f + 0.5f ),
                       (i32)( hsv[2] * 100.0f + 0.5f ) );
         else
-            snprintf( tip_vals, sizeof( tip_vals ), "R:%d  G:%d  B:%d",
+            fmt_snprintf( tip_vals, sizeof( tip_vals ), "R:%d  G:%d  B:%d",
                       (i32)pr, (i32)pg, (i32)pb );
         bool tip_has_alpha = ( n == 4 && !( flags & GUI_COLOR_EDIT_NO_ALPHA ) );
         if ( tip_has_alpha )
-            snprintf( tip_alp, sizeof( tip_alp ), "A:%d  (%.0f%%)", (i32)pa, (f64)v[3] * 100.0 );
+            fmt_snprintf( tip_alp, sizeof( tip_alp ), "A:%d  (%.0f%%)", (i32)pa, (f64)v[3] * 100.0 );
 
         f32 tip_w = 72.0f;
         f32 hw = font_text_w_n( tip_hex,  0xFFFFFFFFu ); if ( hw > tip_w ) tip_w = hw;
@@ -784,7 +796,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
 
     /* ---- Picker popup (click on the color square to open) ---- */
     char pid[64];
-    snprintf( pid, sizeof( pid ), "##cpick_%u", id );
+    fmt_snprintf( pid, sizeof( pid ), "##cpick_%u", id );
 
     if ( pst.clicked )
         gui_popup_open( pid );
@@ -811,7 +823,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
         /* Hex string centered under the swatch. */
         {
             char hex[12];
-            snprintf( hex, sizeof( hex ), "#%02X%02X%02X%02X", pr, pg, pb, pa );
+            fmt_snprintf( hex, sizeof( hex ), "#%02X%02X%02X%02X", pr, pg, pb, pa );
             gui_text( hex );
         }
 

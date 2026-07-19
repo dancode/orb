@@ -193,7 +193,7 @@ icon_load_builtins( void )
     for ( u32 i = 0; i < ARRAY_COUNT( s_builtin_icons ); ++i )
     {
         char path[ 576 ];
-        snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), s_builtin_icons[ i ].path );
+        fmt_snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), s_builtin_icons[ i ].path );
 
         gui_icon_id_t id = icon_load_file( s_builtin_icons[ i ].name, path );
         if ( id != GUI_ICON_NONE )

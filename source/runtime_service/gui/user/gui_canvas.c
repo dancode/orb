@@ -153,7 +153,7 @@ gui_icon_id_t
 gui_load_icon( const char* name, const char* path )
 {
     char resolved[ 576 ];
-    snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), path );
+    fmt_snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), path );
     return icon_load_file( name, resolved );
 }
 

@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/widgets/gui_widget_numeric.c -- Numeric text-input widgets.
 
@@ -47,8 +47,8 @@ input_num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
     if ( !st.focused )
     {
         char disp[ NUM_BUF_CAP ];
-        if ( is_int ) snprintf( disp, NUM_BUF_CAP, fmt, (int)( committed ? *out : cur ) );
-        else          snprintf( disp, NUM_BUF_CAP, fmt, committed ? *out : cur );
+        if ( is_int ) fmt_snprintf( disp, NUM_BUF_CAP, fmt, (int)( committed ? *out : cur ) );
+        else          fmt_snprintf( disp, NUM_BUF_CAP, fmt, committed ? *out : cur );
         draw_push_text( box_r.x + WIDGET_PAD, text_center_y( box_r.y, box_r.h ),
                         COL_TEXT, disp );
     }

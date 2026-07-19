@@ -504,7 +504,7 @@ gui_font_load_into( u32 id, const char* path )
 void
 gui_asset_path( const char* relative, char* out, int out_size )
 {
-    snprintf( out, (size_t)out_size, "%s/%s", sys_root_dir(), relative );
+    fmt_snprintf( out, (size_t)out_size, "%s/%s", sys_root_dir(), relative );
 }
 
 void

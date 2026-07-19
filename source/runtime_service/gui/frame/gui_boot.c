@@ -134,7 +134,7 @@ gui_boot( const gui_boot_desc_t* desc )
         s_boot.clear[ 2 ] = RHI_CLEAR_DEFAULT_B;  s_boot.clear[ 3 ] = RHI_CLEAR_DEFAULT_A;
     }
 
-    snprintf( s_boot.title, sizeof( s_boot.title ), "%s", desc->title ? desc->title : "orb" );
+    fmt_snprintf( s_boot.title, sizeof( s_boot.title ), "%s", desc->title ? desc->title : "orb" );
     return vp;
 }
 

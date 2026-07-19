@@ -46,11 +46,11 @@ dock_serialize_node( dock_writer_t* w, gui_dock_node_t* n )
         return;
     if ( n->split == GUI_DOCK_SPLIT_NONE )
     {
-        int k = snprintf( line, sizeof line, "L %u %u\n", n->active_tab, n->tab_count );
+        int k = fmt_snprintf( line, sizeof line, "L %u %u\n", n->active_tab, n->tab_count );
         dw_emit( w, line, (u32)k );
         for ( u32 t = 0; t < n->tab_count; ++t )
         {
-            k = snprintf( line, sizeof line, "T %08x ", n->tabs[ t ] );
+            k = fmt_snprintf( line, sizeof line, "T %08x ", n->tabs[ t ] );
             dw_emit( w, line, (u32)k );
             dw_emit( w, n->names[ t ], (u32)strlen( n->names[ t ] ) );
             dw_emit( w, "\n", 1 );
@@ -58,7 +58,7 @@ dock_serialize_node( dock_writer_t* w, gui_dock_node_t* n )
     }
     else
     {
-        int k = snprintf( line, sizeof line, "S %d %.4f\n",
+        int k = fmt_snprintf( line, sizeof line, "S %d %.4f\n",
                           ( n->split == GUI_DOCK_SPLIT_Y ) ? 1 : 0, n->ratio );
         dw_emit( w, line, (u32)k );
         dock_serialize_node( w, dock_at( n->child[ 0 ] ) );

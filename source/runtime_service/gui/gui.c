@@ -180,6 +180,7 @@
 #include <math.h>   /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
 
 #include "orb.h"
+#include "base/fmt.h"         // fmt_snprintf / fmt_vsnprintf -- CRT-free formatting on the per-frame text paths
 #include "base/math.h"        // f32_lerp -- from/to interpolation for the animation service
 #include "base/math_ease.h"   // f32_ease_* shapers -- the easing curves the animation service applies
 

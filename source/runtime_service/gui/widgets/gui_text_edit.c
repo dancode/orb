@@ -913,8 +913,8 @@ num_edit_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
     /* Focus gain: seed the scratch with the current value in the (decoration-free) seed format. */
     if ( st.focused && s_num_edit_id != id )
     {
-        if ( is_int ) snprintf( s_num_edit_buf, GUI_NUM_EDIT_CAP, seed_fmt, (int)cur );
-        else          snprintf( s_num_edit_buf, GUI_NUM_EDIT_CAP, seed_fmt, cur );
+        if ( is_int ) fmt_snprintf( s_num_edit_buf, GUI_NUM_EDIT_CAP, seed_fmt, (int)cur );
+        else          fmt_snprintf( s_num_edit_buf, GUI_NUM_EDIT_CAP, seed_fmt, cur );
         s_num_edit_id = id;
     }
 

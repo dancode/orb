@@ -52,6 +52,7 @@
 #include <math.h> /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
 
 #include "orb.h"
+#include "base/fmt.h"   // fmt_snprintf / fmt_vsnprintf -- CRT-free formatting on the per-frame text paths
 
 // Shared internal types + the render-backend interface (pulls gui_internal.h + rhi_api.h + app_api.h)
 #include "runtime_service/gui/gui_backend.h"

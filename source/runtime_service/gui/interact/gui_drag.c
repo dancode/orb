@@ -162,7 +162,7 @@ gui_drag_payload_set( const char* type, const void* data, u32 size )
     if ( size > GUI_DRAG_PAYLOAD_CAP )
         return false;
 
-    snprintf( s_drag.type, sizeof s_drag.type, "%s", type );
+    fmt_snprintf( s_drag.type, sizeof s_drag.type, "%s", type );
     if ( data && size )
         memcpy( s_drag.data, data, size );
     s_drag.size        = size;

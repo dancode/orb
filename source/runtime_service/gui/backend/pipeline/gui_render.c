@@ -191,8 +191,8 @@ render_try_oshd_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
     sys_exe_dir( dir, ( int )sizeof( dir ) );
 
     char vs_path[ 576 ], ps_path[ 576 ];
-    snprintf( vs_path, sizeof( vs_path ), "%s/shaders/gui.vs.oshd", dir );
-    snprintf( ps_path, sizeof( ps_path ), "%s/shaders/gui.ps.oshd", dir );
+    fmt_snprintf( vs_path, sizeof( vs_path ), "%s/shaders/gui.vs.oshd", dir );
+    fmt_snprintf( ps_path, sizeof( ps_path ), "%s/shaders/gui.ps.oshd", dir );
 
     /* Probe with fopen first so a missing pair stays silent (the normal fallback case);
        shader_load_oshd would LOG_ERROR on a missing file. */

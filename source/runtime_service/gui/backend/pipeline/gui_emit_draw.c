@@ -291,7 +291,7 @@ rect_empty( gui_rect_t r )
    (or a whole region clipped to zero) costs no command slot, no string-pool / point-pool space, and
    no tessellation, not merely no draw call.  Conservative: only a box fully past an edge is dropped
    (touching counts as visible), and an empty clip rejects everything in it. */
-static bool
+bool
 draw_cull_box( f32 x, f32 y, f32 w, f32 h )
 {
     gui_rect_t c = clip_current();

@@ -131,7 +131,7 @@ gui_textf( const char* fmt, ... )
 
     va_list ap;
     va_start( ap, fmt );
-    vsnprintf( buf, sizeof( buf ), fmt, ap );
+    fmt_vsnprintf( buf, sizeof( buf ), fmt, ap );
     va_end( ap );
 
     gui_text( buf );
@@ -260,7 +260,7 @@ gui_progress_bar( f32 fraction, const char* overlay )
     const char* txt = overlay;
     if ( !txt )
     {
-        snprintf( buf, sizeof( buf ), "%d%%", (int)( fraction * 100.0f + 0.5f ) );
+        fmt_snprintf( buf, sizeof( buf ), "%d%%", (int)( fraction * 100.0f + 0.5f ) );
         txt = buf;
     }
     if ( txt[ 0 ] )

@@ -74,7 +74,7 @@ step_name( gui_id_t id, char* buf, u32 bufsz )
             n += 2;
         return n;
     }
-    snprintf( buf, bufsz, "%08X", id );
+    fmt_snprintf( buf, bufsz, "%08X", id );
     return buf;
 }
 
@@ -95,7 +95,7 @@ step_swatch( gui_rect_t r, f32 x, const char* label, u32 abgr )
     gui_draw_round_rect( ( gui_rect_t ){ x, r.y + 1.0f, r.h - 2.0f, r.h - 2.0f },
                          0.0f, 0.0f, 0.0f, 0.0f, false, 1.0f, STEP_COL_DIM );
     char buf[ 48 ];
-    snprintf( buf, sizeof( buf ), "%s 0x%08X", label, abgr );
+    fmt_snprintf( buf, sizeof( buf ), "%s 0x%08X", label, abgr );
     gui_draw_text( x + r.h + 4.0f, r.y, STEP_COL_DIM, buf );
     return x + r.h + 4.0f + gui_text_size( buf ).x + 16.0f;
 }
@@ -115,55 +115,55 @@ step_cmd_detail( const step_cmd_info_t* ci )
         case GUI_CMD_RECT_FILLED:
             gui_textf( "rect %.0f,%.0f  %.0f x %.0f   round %.1f",
                        c->rect.x, c->rect.y, c->rect.w, c->rect.h, c->rect.rounding );
-            snprintf( b2, sizeof( b2 ), "tex %u%s", c->rect.tex_idx & ~GUI_TEX_RGBA_BIT,
+            fmt_snprintf( b2, sizeof( b2 ), "tex %u%s", c->rect.tex_idx & ~GUI_TEX_RGBA_BIT,
                       ( c->rect.tex_idx & GUI_TEX_RGBA_BIT ) ? "  (rgba)" : "" );
             row2 = b2;
             break;
         case GUI_CMD_RECT_OUTLINE:
             gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->rect_outline.x, c->rect_outline.y,
                        c->rect_outline.w, c->rect_outline.h );
-            snprintf( b2, sizeof( b2 ), "t %.1f   round %.1f", c->rect_outline.t,
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   round %.1f", c->rect_outline.t,
                       c->rect_outline.rounding );
             row2 = b2;
             break;
         case GUI_CMD_TRIANGLE:
             gui_textf( "a %.0f,%.0f   b %.0f,%.0f", c->tri.ax, c->tri.ay, c->tri.bx, c->tri.by );
-            snprintf( b2, sizeof( b2 ), "c %.0f,%.0f", c->tri.cx, c->tri.cy );
+            fmt_snprintf( b2, sizeof( b2 ), "c %.0f,%.0f", c->tri.cx, c->tri.cy );
             row2 = b2;
             break;
         case GUI_CMD_TEXT:
             gui_textf( "pos %.0f,%.0f   len %u%s", c->text.x, c->text.y, c->text.len,
                        ( c->text.clip_x1 < GUI_TEXT_NO_CLIP ) ? "   (glyph-clipped)" : "" );
-            snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
+            fmt_snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
             row2 = b2;
             break;
         case GUI_CMD_CIRCLE_FILLED:
             gui_textf( "center %.0f,%.0f   r %.1f", c->circle.cx, c->circle.cy, c->circle.r );
-            snprintf( b2, sizeof( b2 ), "segs %u", c->circle.segs );
+            fmt_snprintf( b2, sizeof( b2 ), "segs %u", c->circle.segs );
             row2 = b2;
             break;
         case GUI_CMD_LINE:
             gui_textf( "%.0f,%.0f -> %.0f,%.0f", c->line.x0, c->line.y0, c->line.x1, c->line.y1 );
-            snprintf( b2, sizeof( b2 ), "t %.1f", c->line.thickness );
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f", c->line.thickness );
             row2 = b2;
             break;
         case GUI_CMD_POLYLINE:
             gui_textf( "%u pts   %s", c->polyline.pt_count,
                        c->polyline.closed ? "closed" : "open" );
-            snprintf( b2, sizeof( b2 ), "t %.1f   align %u", c->polyline.thickness,
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   align %u", c->polyline.thickness,
                       (u32)c->polyline.align );
             row2 = b2;
             break;
         case GUI_CMD_DASHED_LINE:
             gui_textf( "%.0f,%.0f -> %.0f,%.0f", c->dash.x0, c->dash.y0, c->dash.x1, c->dash.y1 );
-            snprintf( b2, sizeof( b2 ), "t %.1f   period %.1f   duty %.2f", c->dash.thickness,
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   period %.1f   duty %.2f", c->dash.thickness,
                       c->dash.period, c->dash.duty );
             row2 = b2;
             break;
         case GUI_CMD_RECT_GRADIENT:
             gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->gradient.x, c->gradient.y,
                        c->gradient.w, c->gradient.h );
-            snprintf( b2, sizeof( b2 ), "%s", c->gradient.horizontal ? "horizontal" : "vertical" );
+            fmt_snprintf( b2, sizeof( b2 ), "%s", c->gradient.horizontal ? "horizontal" : "vertical" );
             row2 = b2;
             break;
         case GUI_CMD_RECT_LIST:
@@ -397,7 +397,7 @@ gui_step_window( bool* open )
                         break;
                     /* Fields first, name LAST: a "##" inside a window title (an instance suffix)
                        hides the rest of the label, so it may only ever eat the name's tail. */
-                    snprintf( lbl, sizeof( lbl ), "z%-3u vp%u  [%4u..%4u)  %.24s##seg%u",
+                    fmt_snprintf( lbl, sizeof( lbl ), "z%-3u vp%u  [%4u..%4u)  %.24s##seg%u",
                               sg.z, sg.vp, sg.lo, sg.hi,
                               step_name( sg.win, nb, sizeof( nb ) ), si );
                     bool in_seg = ( cur > sg.lo && cur <= sg.hi );

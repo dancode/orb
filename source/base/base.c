@@ -32,4 +32,6 @@
 #include "base/str_buf.c"
 #include "base/str_arena.c"
 
+#include "base/fmt.c"    // the one stb_sprintf implementation -- consumers include base/fmt.h + dep base
+
 /*============================================================================================*/

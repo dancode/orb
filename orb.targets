@@ -170,7 +170,7 @@ target gui
     folder      03_RUNTIME/SERVICE
     unit        gui.c   # UI / core unit
     unit        gui_backend.c   # render backend unit
-    dep         app rhi
+    dep         app rhi base
 
 target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the load bench
 
@@ -179,7 +179,7 @@ target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the lo
     folder      03_RUNTIME/SERVICE
     unit        gui.c   # UI / core unit
     unit        gui_backend.c   # render backend unit
-    dep         app rhi
+    dep         app rhi base
     define      GUI_STRESS_TEST
     define      GUI_STATIC   # target name derives GUI_STRESS_STATIC; the gateway switch needs GUI_STATIC
 
@@ -276,7 +276,7 @@ target editor
     root        source/editor
     folder      05_EDITOR
     unit        editor.c
-    dep         core gui run
+    dep         core gui run base
 	dep 		editor_viewport
 
 # ==============================================================================
@@ -287,7 +287,7 @@ target 	editor_viewport
     root        source/editor_service/viewport
     folder      05_EDITOR/SERVICE
     unit        viewport.c
-    dep         core gui
+    dep         core gui base
 
 target 	editor_example
 
@@ -410,7 +410,7 @@ target host_editor
     folder      08_HOST
     unit        host_editor_main.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         host_common rhi draw gui editor editor_viewport
+    dep         host_common rhi draw gui editor editor_viewport base
     mono_dep    render game
 
 # ==============================================================================
@@ -612,7 +612,7 @@ target sb_vulkan						# vulkan development and testing
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         rhi draw gui dev_font
+    dep         rhi draw gui dev_font base
     mono_dep    render
   # flag        reflect
 
@@ -636,7 +636,7 @@ target sb_gui
     folder      09_SANDBOX/GUI
     unit        sb_gui.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         rhi draw gui dev_font
+    dep         rhi draw gui dev_font base
     mono_dep    render
 
 target sb_gui_console					# Quake-style dev console over core cvar/console
@@ -646,7 +646,7 @@ target sb_gui_console					# Quake-style dev console over core cvar/console
     folder      09_SANDBOX/GUI
     unit        sb_gui_console.c
     dep         mod sys ref job app core
-    dep         rhi gui
+    dep         rhi gui base
 
 target sb_gui_dock						# docking test bed: dockspace / split / tabs / drag-to-dock
 
@@ -655,7 +655,7 @@ target sb_gui_dock						# docking test bed: dockspace / split / tabs / drag-to-d
     folder      09_SANDBOX/GUI
     unit        sb_gui_dock.c
     dep         mod sys ref job app core
-    dep         rhi gui
+    dep         rhi gui base
 
 target sb_gui_editor					# game-engine editor shell over the gui library
 
@@ -664,7 +664,7 @@ target sb_gui_editor					# game-engine editor shell over the gui library
     folder      09_SANDBOX/GUI
     unit        sb_gui_editor.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         rhi draw gui dev_font
+    dep         rhi draw gui dev_font base
     mono_dep    render
 
 target sb_gui_example					# gui feature explorer: end-to-end demos of every feature group
@@ -675,7 +675,7 @@ target sb_gui_example					# gui feature explorer: end-to-end demos of every feat
     unit        sb_gui_example.c
     unit        ex_demos.c
     dep         mod sys ref job app core
-    dep         rhi gui
+    dep         rhi gui base
 
 target sb_gui_timeline					# prof timeline overlay (flame graph) + synthetic workload
 
@@ -686,7 +686,7 @@ target sb_gui_timeline					# prof timeline overlay (flame graph) + synthetic wor
     unit        gui_timeline.c
     unit        tl_workload.c
     dep         mod sys ref prof job app core
-    dep         rhi gui
+    dep         rhi gui base
 
 target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
 
@@ -695,7 +695,7 @@ target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
     folder      09_SANDBOX/GUI
     unit        sb_gui_font.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         rhi draw gui dev_font
+    dep         rhi draw gui dev_font base
     mono_dep    render
 
 target sb_gui_stress					# gui load-limit bench: 5 routines on number keys, 0 = idle
@@ -705,7 +705,7 @@ target sb_gui_stress					# gui load-limit bench: 5 routines on number keys, 0 = 
     folder      09_SANDBOX/GUI
     unit        sb_gui_stress.c
     dep         mod sys ref job app core
-    dep         rhi gui_stress   # the 4x-caps gui variant, NOT the stock lib
+    dep         rhi gui_stress base   # the 4x-caps gui variant, NOT the stock lib
     define      GUI_STRESS_TEST
     define      GUI_STATIC   # dep name derives GUI_STRESS_STATIC; the gateway switch needs GUI_STATIC
 
@@ -748,7 +748,7 @@ target sb_host_editor
     folder      09_SANDBOX/HOST
     unit        sb_host_editor.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         rhi draw gui
+    dep         rhi draw gui base
     mono_dep    render
 
 target sb_host_game
@@ -840,7 +840,7 @@ target launch_tool						# project manager / command hub -- the one gui()-driven 
     unit        launch_tool.c
     flag        is_tool
     dep         mod sys ref job app core
-    dep         rhi gui
+    dep         rhi gui base
 
 # ==============================================================================
 # DEV : Development Solution Wihout Any Sandbox or Test Code

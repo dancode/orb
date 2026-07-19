@@ -123,10 +123,16 @@ typedef struct
 } gui_dbg_name_entry_t;
 
 static gui_dbg_name_entry_t s_dbg_names[ GUI_DBG_NAME_SLOTS ];
+static bool                 s_dbg_names_wanted = false;   /* armed by the first gui_debug_name read */
 
 void
 dbg_name_register( gui_id_t id, const char* str )
 {
+    /* Demand-driven: every labeled widget mints through here every frame, so the probe + copy is
+       real per-item emit cost.  Nothing registers until a reader (gui_debug_name below) arms the
+       registry -- the first frame a debug view opens shows raw hashes, full names from the next
+       mint on.  Sticky once armed: the views re-read every frame they are open. */
+    if ( !s_dbg_names_wanted ) return;
     if ( id == GUI_ID_NONE || !str ) return;
 
     u32 bucket = id & GUI_DBG_NAME_MASK;
@@ -155,6 +161,7 @@ dbg_name_register( gui_id_t id, const char* str )
 const char*
 gui_debug_name( gui_id_t id )
 {
+    s_dbg_names_wanted = true;   /* a reader exists -- arm the registry (see dbg_name_register) */
     if ( id == GUI_ID_NONE ) return NULL;
     u32 bucket = id & GUI_DBG_NAME_MASK;
     for ( u32 i = 0; i < GUI_DBG_NAME_SLOTS; ++i )

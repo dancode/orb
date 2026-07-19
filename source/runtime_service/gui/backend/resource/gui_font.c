@@ -78,7 +78,7 @@ font_load_builtin( gui_builtin_font_t font )
            sys_root_dir() so hosts work from any working directory (a child game project's
            root when launched via F5, for example). */
         char path[ 576 ];
-        snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), s_builtin_font_path[ font ] );
+        fmt_snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), s_builtin_font_path[ font ] );
 
         return font_internal_load_into( 0, path );   // slot 0 = the default font
     }
@@ -200,9 +200,17 @@ font_char_advance( u8 ch )
 f32
 font_text_w_n( const char* str, u32 n )
 {
-    f32 w = 0.0f;
+    /* font_slot_char_advance hand-inlined with the slot hoisted: this is the hottest inner loop
+       in the emit path (every label, cell, and value text measures through it), and a debug
+       build (/Od) pays a real call per character through the helper form. */
+    const font_slot_t* slot = s_active;
+    f32                w    = 0.0f;
     for ( u32 i = 0; i < n && str[ i ]; ++i )
-        w += font_slot_char_advance( s_active, (u8)str[ i ] );
+    {
+        u8 ch = (u8)str[ i ];
+        if ( ch < ORB_FONT_CP_FIRST || ch > ORB_FONT_CP_LAST ) ch = (u8)'?';
+        w += (f32)slot->lookup[ ch - ORB_FONT_CP_FIRST ].advance;
+    }
     return w;
 }
 

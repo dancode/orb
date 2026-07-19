@@ -225,7 +225,7 @@ font_reload_enqueue( u32 id, const char* path )
     {
         if ( s_reload_q[ i ].used && s_reload_q[ i ].id == id )
         {
-            snprintf( s_reload_q[ i ].path, sizeof( s_reload_q[ i ].path ), "%s", path );
+            fmt_snprintf( s_reload_q[ i ].path, sizeof( s_reload_q[ i ].path ), "%s", path );
             return;
         }
         if ( slot < 0 && !s_reload_q[ i ].used )
@@ -236,7 +236,7 @@ font_reload_enqueue( u32 id, const char* path )
 
     s_reload_q[ slot ].used = true;
     s_reload_q[ slot ].id   = id;
-    snprintf( s_reload_q[ slot ].path, sizeof( s_reload_q[ slot ].path ), "%s", path );
+    fmt_snprintf( s_reload_q[ slot ].path, sizeof( s_reload_q[ slot ].path ), "%s", path );
 }
 
 /*==============================================================================================
