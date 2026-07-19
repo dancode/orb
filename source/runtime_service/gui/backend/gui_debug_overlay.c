@@ -59,6 +59,9 @@
 #define DBG_COL_WIN_HOVER   GUI_COLOR( 0xF0, 0x80, 0xF0, 0xFF )
 #define DBG_COL_RESIZE      GUI_COLOR( 0x20, 0xC0, 0xF0, 0xA0 )
 #define DBG_COL_RESIZE_HOT  GUI_COLOR( 0x40, 0xF0, 0xFF, 0xFF )
+#define DBG_COL_VIEW        GUI_COLOR( 0x20, 0xF0, 0xC0, 0xFF )   /* region view outline (teal) */
+#define DBG_COL_GUTTER      GUI_COLOR( 0xF0, 0x90, 0x20, 0x60 )   /* reserved gutter fill (orange) */
+#define DBG_COL_HITCLIP     GUI_COLOR( 0xFF, 0xFF, 0xFF, 0x18 )   /* body interaction clip tint */
 #define DBG_CLIP_FILL_A     0x24u   /* base tint alpha for the outermost clip rect */
 #define DBG_CLIP_FILL_STEP  0x1Cu   /* added per nesting level so a child clip reads bolder */
 #define DBG_CLIP_FILL_MAX   0xA0u   /* cap so deep nesting stays translucent, not opaque */
@@ -230,6 +233,25 @@ dbg_capture_clip( gui_rect_t r, u32 depth )
 
     dbg_push_fill   ( vp, r, ( c & 0x00FFFFFFu ) | ( fill_a << 24 ) );
     dbg_push_outline( vp, r, t, c );
+}
+
+/* Region screen geometry: the view rect (teal outline), the reserved scrollbar gutters that the
+   view reservation carved out (orange fill, sitting exactly on the view's right / bottom edges),
+   and the body's interaction clip (faint white tint -- where widgets can actually hover).  Any
+   content interacting outside the teal box, or a gutter the tint reaches into, is the geometry
+   drift this layer exists to expose at a glance. */
+void
+dbg_capture_region( gui_rect_t view, gui_rect_t hit_clip, f32 sb_w, f32 sb_h )
+{
+    if ( !( s_dbg.layers & GUI_DBG_REGION ) ) return;
+    u32 vp = gui_dbg_build_viewport();
+
+    dbg_push_fill( vp, hit_clip, DBG_COL_HITCLIP );
+    if ( sb_w > 0.0f )
+        dbg_push_fill( vp, ( gui_rect_t ){ view.x + view.w, view.y, sb_w, view.h }, DBG_COL_GUTTER );
+    if ( sb_h > 0.0f )
+        dbg_push_fill( vp, ( gui_rect_t ){ view.x, view.y + view.h, view.w, sb_h }, DBG_COL_GUTTER );
+    dbg_push_outline( vp, view, 1.0f, DBG_COL_VIEW );
 }
 
 void

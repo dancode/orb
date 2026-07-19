@@ -245,6 +245,11 @@ layout_pop_region( void )
                                 2.0f, 0, GUI_COLOR( 0xA0, 0xF0, 0xA0, 0xFF ) );
     }
 
+    /* Region-geometry debug layer (GUI_DBG_REGION): the view rect, the reserved gutters, and
+       the body's interaction clip -- captured before the restore below while s_scope.clip is
+       still the clip the body widgets hit-tested under. */
+    DBG_REGION( f->view, s_scope.clip, f->sb_w, f->sb_h );
+
     /* Pop the region's own clip if it pushed one (a child); the window body pushed none and
        leaves the whole-window clip in place for the bars + chrome.  Restore the enclosing
        interaction clip either way, so the bars (in the gutter, outside a child's box) hit-test. */

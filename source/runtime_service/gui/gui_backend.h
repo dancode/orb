@@ -331,6 +331,7 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
     void dbg_capture_window( gui_rect_t r, bool is_hover );
     void dbg_capture_resize( gui_rect_t band, u8 hot_edges );
     void dbg_capture_layout( gui_rect_t r );
+    void dbg_capture_region( gui_rect_t view, gui_rect_t hit_clip, f32 sb_w, f32 sb_h );
 
     /* Name registry -- records the source string behind an id as it is minted (widget label,
        window/popup title, region/child/table id string), so gui_state_overlay() can show a
@@ -342,6 +343,7 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
     #define DBG_WINDOW( r, is_hover )     dbg_capture_window( ( r ), ( is_hover ) )
     #define DBG_RESIZE( band, hot )       dbg_capture_resize( ( band ), ( hot ) )
     #define DBG_LAYOUT( r )               dbg_capture_layout( ( r ) )
+    #define DBG_REGION( view, hit, sw, sh ) dbg_capture_region( ( view ), ( hit ), ( sw ), ( sh ) )
     #define DBG_NAME( id, str )           dbg_name_register( ( id ), ( str ) )
 
     /* Ambient build viewport (s_build.win.viewport, gui_ctx.c) -- the capture functions live in/usage
@@ -354,6 +356,7 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
     #define DBG_WINDOW( r, is_hover )     ( (void)0 )
     #define DBG_RESIZE( band, hot )       ( (void)0 )
     #define DBG_LAYOUT( r )               ( (void)0 )
+    #define DBG_REGION( view, hit, sw, sh ) ( (void)0 )
     #define DBG_NAME( id, str )           ( (void)0 )
 #endif
 

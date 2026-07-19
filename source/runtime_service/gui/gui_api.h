@@ -1540,6 +1540,8 @@ typedef struct gui_api_s
                  clips; Debug builds)
          NP6     content-rect outlines over scrollable regions (GUI_DBG_CONTENT -- drawn in
                  the main list so the box scrolls with the content it measures)
+         NP7     region screen geometry (GUI_DBG_REGION -- view rect, reserved scrollbar
+                 gutters, body interaction clip)
          F9      render mode: normal -> wireframe -> batch tint
          F10     pipeline dashboard window (backend memory maps / uploads / batches)
          P       perf overlay tier   (off / FPS / +timings / +counts & lever status / +retained)

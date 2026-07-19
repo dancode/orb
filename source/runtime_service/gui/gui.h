@@ -1690,9 +1690,11 @@ typedef enum
     GUI_DBG_LAYOUT   = 1 << 4,    // layout allocated space per widget                    }
     GUI_DBG_CONTENT  = 1 << 5,    // measured content rect per scrollable region -- drawn }
                                   // in the MAIN list so it scrolls with its content      }
+    GUI_DBG_REGION   = 1 << 6,    // per-region screen geometry: view rect, reserved      }
+                                  // scrollbar gutters, and the body's interaction clip   }
 
     GUI_DBG_ALL      = GUI_DBG_WINDOW | GUI_DBG_INTERACT | GUI_DBG_RESIZE | GUI_DBG_CLIP | GUI_DBG_LAYOUT
-                     | GUI_DBG_CONTENT,
+                     | GUI_DBG_CONTENT | GUI_DBG_REGION,
 
 } gui_dbg_layer_t;
 

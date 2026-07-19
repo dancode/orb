@@ -412,7 +412,8 @@ debug_hotkeys( void )
     if ( gui_want_capture_keyboard() )
         return;
 
-    /* NP1-NP6 toggle the debug layer mask (window / interact / resize / layout / clip / content).
+    /* NP1-NP7 toggle the debug layer mask (window / interact / resize / layout / clip / content
+       / region geometry).
        Read from the frame IO like every other debug hotkey -- initial-press only, so holding a
        key never flickers the layer.  The layer setters compile to no-ops in Release
        (backend/gui_debug_overlay.c), so no build guard is needed here.  CONTENT differs from the
@@ -424,6 +425,7 @@ debug_hotkeys( void )
             { APP_KEY_NP_1, GUI_DBG_WINDOW   }, { APP_KEY_NP_2, GUI_DBG_INTERACT },
             { APP_KEY_NP_3, GUI_DBG_RESIZE   }, { APP_KEY_NP_4, GUI_DBG_LAYOUT   },
             { APP_KEY_NP_5, GUI_DBG_CLIP     }, { APP_KEY_NP_6, GUI_DBG_CONTENT  },
+            { APP_KEY_NP_7, GUI_DBG_REGION   },
         };
         for ( u32 i = 0; i < sizeof( k_dbg_layer ) / sizeof( k_dbg_layer[ 0 ] ); ++i )
             if ( gui_is_key_pressed( k_dbg_layer[ i ].key ) )

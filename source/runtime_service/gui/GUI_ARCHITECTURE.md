@@ -279,6 +279,48 @@ measurement lives with the draw family (`text_size`). Placement queries stay unp
 - `push_layout_overlay( rect )` / `pop_layout` -- start a fresh layout frame over an arbitrary
   screen rect (no reservation). THE bridge from rect composition to real widgets.
 
+## Regions, scroll, and clipping -- the invariants
+
+These are load-bearing rules, learned the hard way (2026-07: the multiline editor first
+hand-rolled its own scrollbar and broke hover arbitration, then sized itself to the content
+column and seated itself under the window's scrollbar). A widget that follows them "just
+works"; every exception listed is deliberate.
+
+1. **Regions own everything scroll-shaped.** Gutter reservation, scrollbar emission, wheel
+   claim (innermost-wins via `s_build.wheel_used`), scroll clamping, and both clips belong to
+   `layout_push_region` / `layout_pop_region`. A widget NEVER calls `scrollbar_widget`,
+   claims the wheel, or carves a gutter out of its own box. A widget that needs scrolling IS
+   a child region (the listbox recipe: `child_begin` + content-sized cells); programmatic
+   scrolling writes `lf()->scroll->scroll_y` (applied next frame, like the wheel).
+2. **`f->view` is the single source of visible geometry.** The screen-space view rect (outer
+   inset by the border, minus reserved gutters) is computed once at push. Draw clip,
+   interaction clip, the content track (`view.w - pads`), the bar tracks (which sit exactly
+   on `view`'s right/bottom edges), and the nav scroll chase all READ it. Never re-derive
+   visible extents from `outer` -- drift between two derivations is how content ends up
+   interacting under a scrollbar. (`GUI_DBG_REGION`, numpad 7, draws view/gutters/hit-clip
+   per region to check this at a glance.)
+3. **The interaction clip equals the view.** Both `layout_push_region` branches narrow
+   `s_scope.clip` to `view` (intersected with the parent clip), so no body widget or child
+   region can hover or press inside a gutter or under the title bar -- the bars hit-test
+   after pop restores the parent clip. Bar-over-widget arbitration is therefore structural,
+   not an emission-order accident.
+4. **Two coordinate spaces; never mix them in one formula.** CANVAS values (pen, content
+   column, highwater, every cell rect) carry the -scroll bias; SCREEN values (`outer`,
+   `view`, `origin_*`, `band_bottom`, clips) do not. A width anchored canvas-point-to-screen-
+   edge bakes the live scroll offset into the result (a box that stretches as you scroll).
+   The space of every `layout_frame_t` field is tagged on the struct.
+5. **Passive rows size to the content column; interactive surfaces size to the view.** The
+   column (`content_avail`) can legitimately run wider than the view when a sibling
+   overflowed -- text rows may ride it (the bar overpaints and out-claims them). An opaque
+   interactive surface (child box, text editor, canvas that hit-tests) must not: size it with
+   `view_avail()` (scroll-free, never exceeds the visible track). `child_begin( w <= 0 )`
+   already defaults this way.
+6. **Windows draw unclipped bodies on purpose; children scissor.** A window body pushes no
+   draw clip (one clip, one batch; chrome drawn last overpaints anything scrolled under the
+   title bar), so anything drawn after body content in a window must fully repaint the
+   gutter/border it owns. A child passes `own_clip` and scissors to its view -- content
+   inside it may safely overflow in either axis.
+
 ## Rect composition ("composer") -- pure math, nothing emitted, no state
 
 Single-pass, known-size placement; the companion to the flow templates. All use the same

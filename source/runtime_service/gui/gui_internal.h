@@ -431,6 +431,19 @@ typedef struct
 
 typedef struct
 {
+    /* COORDINATE SPACES.  Every scalar below lives in exactly one of two spaces, and mixing
+       them in one formula is a bug (it splices the scroll offset into the result):
+         CANVAS -- scroll-biased screen coordinates: the content's position after the
+                   -scroll bias, sliding under the view as the region scrolls.  The pen,
+                   content column, and highwater are canvas values; so is every cell rect
+                   handed to a widget.
+         SCREEN -- fixed to the glass: outer, view, origin_*, band_bottom, parent_clip.
+       A width/height derived canvas-from-canvas (content_avail) or screen-from-screen
+       (view.w - pads) is scroll-free; anchoring a canvas point against a screen edge bakes
+       the live scroll into the number -- the multiline box once grew wider as its window
+       scrolled for exactly this reason.  When a rule needs both spaces, convert explicitly
+       through scroll->scroll_x/y. */
+
     /* The PEN (content_x, pen_y; x has no independent motion -- a line always starts at
        content_x) is where the next item goes; the HIGHWATER (high_x, high_y) is the monotonic
        bounding-box max the region measures at pop to size its scrollbars / autosize.  Forward
@@ -443,11 +456,11 @@ typedef struct
        one flow fact that survives a template install: content committed above still owes its gap
        to whatever shape comes next. */
 
-    f32  content_x;         // content column left edge (scroll-biased); lines start here
-    f32  content_w;         // available width from content_x
-    f32  pen_y;             // pen: y the next line opens at (scroll-biased)
-    f32  high_x, high_y;    // highwater: far corner the content reached (scroll-biased)
-    f32  band_bottom;       // bottom of the content area -- grid band end
+    f32  content_x;         // CANVAS: content column left edge; lines start here
+    f32  content_w;         // width of the column (can exceed the view when content overflowed)
+    f32  pen_y;             // CANVAS: pen -- y the next line opens at
+    f32  high_x, high_y;    // CANVAS: highwater -- far corner the content reached
+    f32  band_bottom;       // SCREEN: bottom of the content area (view bottom - pad.b) -- grid band end
     bool gap_pending;       // content committed above -- the next line owes a gap
 
     gui_layout_mode_t mode; // declared next-item methodology; NONE until a header
@@ -469,21 +482,20 @@ typedef struct
 
     gui_id_t        region_id;          // base id for the region's scrollbar widget ids
     gui_win_flags_t flags;              // scroll policy bits (GUI_WIN_*SCROLL), reused
-    gui_rect_t      outer;              // the region box in screen space
-    gui_pad_t       pad;                // seed inset -- folded into the measured canvas at pop
+    gui_rect_t      outer;              // SCREEN: the region box
+    gui_pad_t       pad;                // seed inset (space-free width) -- joins the measured canvas at pop
 
-    /* THE visible view, in screen space: outer inset by the border, minus the reserved
-       scrollbar gutters.  Computed ONCE at push (layout_push_region / sublayout_open) and read
+    /* THE visible view (SCREEN): outer inset by the border, minus the reserved scrollbar
+       gutters.  Computed ONCE at push (layout_push_region / sublayout_open) and read
        everywhere a "what can the user see / hit" rect is needed -- the draw clip, the
        interaction clip, the content-track derivation (layout_seed_content), the scrollbar
        tracks (which sit exactly on its right / bottom edges), and the nav scroll chase.
        Never re-derive these extents from outer; drift between derivations is how content ends
-       up interacting under a scrollbar.  Screen-fixed: contains no scroll bias, so it is safe
-       to size against (content_x / pen are scroll-biased and are not). */
+       up interacting under a scrollbar. */
     gui_rect_t      view;
 
-    f32             origin_x;           // unscrolled content origin -- measures content extent
-    f32             origin_y;
+    f32             origin_x;           // SCREEN: unscrolled content origin (canvas position at
+    f32             origin_y;           //   scroll 0) -- pop measures content extent against it
     f32             sb_w, sb_h;         // reserved gutter sizes (0 = no bar this frame)
     bool            show_v, show_h;     // a bar is shown this axis
     bool            pushed_clip;        // a draw clip was pushed (balance at pop)
@@ -493,7 +505,7 @@ typedef struct
 
     gui_scroll_link_t* scroll;
 
-    gui_rect_t      parent_clip;        // s_scope.clip to restore at pop
+    gui_rect_t      parent_clip;        // SCREEN: s_scope.clip to restore at pop
     u32             id_restore;         // id-scope depth to restore at pop (see id stack below)
 
     /* Child edge-resize (child_begin CHILD_RESIZE_*): the armed/hot edges of this child's border
