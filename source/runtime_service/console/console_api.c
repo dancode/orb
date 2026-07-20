@@ -48,7 +48,7 @@ console_mod_init( void* raw_state, get_api_fn get_api )
        to whole rows in console_show; con_log_level is a string enum applied to core's ambient-log
        floor in console_frame. */
     s_cv_height = core()->cvar_register_f(
-        "con_height", "Developer console height as a fraction of the viewport (0.005..0.5).",
+        "con_height", "Developer console height as a fraction of the viewport (0.1..1.0, 1.0 = full).",
         0.4f, 0.1f, 1.0f, CVAR_ARCHIVE );
 
     static const char* k_log_levels[] = { "trace", "debug", "info", "warn", "error" };

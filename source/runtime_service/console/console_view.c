@@ -17,8 +17,9 @@
       - Scrollback lines are coloured by severity (core con_line_level): errors red, warnings
         amber, debug/trace dim, interactive echo and info in the theme text colour.  con_log_level
         sets how much ambient engine logging is pulled in; `condump` copies it to the clipboard.
-      - Height is con_height: a fraction of the viewport (0.005..0.5), snapped to whole dense
-        rows.  The console runs in a GUI_SCALE_DENSE scope so all sizing is rows_h() row counting.
+      - Height is con_height: a fraction of the space below the viewport chrome (0.1..1.0, 1.0 =
+        full), snapped to whole dense rows.  The console runs in a GUI_SCALE_DENSE scope so all
+        sizing is rows_h() row counting.
 
 ==============================================================================================*/
 
@@ -250,19 +251,23 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
        font arithmetic. */
     gui()->scale_push( GUI_SCALE_DENSE );
 
-    /* con_height sets the drop-down as a fraction of the viewport; snap that to a whole number of
-       dense rows so every line edge still lands on the grid.  input_reserve is the input line plus
-       the window's own top/bottom pad (it must match win_h below); the rest of the target height
-       is scrollback.  base = one row + the child's pad; pitch = each row after the first.  Invert
-       sz_rows_h through those two so the row count tracks the theme's metrics, not a fixed guess. */
+    /* con_height sets the drop-down as a fraction of the space below the viewport chrome (top_y is
+       the caption + menu band the console starts under), so 1.0 fills that space exactly instead
+       of running off the bottom.  Snap the target to a whole number of dense rows so every line
+       edge still lands on the grid.  input_reserve is the input line plus the window's own
+       top/bottom pad (it must match win_h below); the rest is scrollback.  base = one row + the
+       child's pad; pitch = each row after the first.  Invert sz_rows_h through those two so the
+       row count tracks the theme's metrics, not a fixed guess.  The cvar's own min/max bounds the
+       value; clamp here only guards a stray 0/negative. */
     f32 frac = s_cv_height ? core()->cvar_get_float( s_cv_height ) : 0.4f;
-    if ( frac < 0.005f ) frac = 0.005f;
-    if ( frac > 0.5f )   frac = 0.5f;
+    if ( frac <= 0.0f ) frac = 0.1f;
+    if ( frac > 1.0f )  frac = 1.0f;
 
+    const f32 avail_h       = display_h - top_y;
     const f32 input_reserve = gui()->sz_rows_h( 1 ) + gui()->sz_row_gap();
     const f32 base          = gui()->sz_rows_h( 1 );
     const f32 pitch         = gui()->sz_rows_h( 2 ) - base;
-    const f32 hist_avail    = frac * display_h - input_reserve;
+    const f32 hist_avail    = frac * avail_h - input_reserve;
 
     i32 rows = 1;
     if ( hist_avail > base && pitch > 0.0f )
@@ -300,7 +305,10 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
         /* child_begin carves a fixed-height box out of the window's flow: whatever it holds,
            the input line below always lands at the same y, immune to scroll state or content
            inside the child. */
-        if ( gui()->child_begin( "##console_scrollback", 0.0f, hist_h, GUI_WIN_NONE ) ) // GUI_WIN_NOSCROLL
+        /* GUI_WIN_NOSCROLL: the console owns the wheel and scrolls the scrollback itself via
+           s_view_offset, so the child must never raise its own bar -- exact-fit content would
+           otherwise toggle one on from sub-pixel rounding. */
+        if ( gui()->child_begin( "##console_scrollback", 0.0f, hist_h, GUI_WIN_NOSCROLL ) )
         {
             /* Fixed dense rows: every line -- text or separator -- occupies exactly one ramp
                row, so hist_h above is exact and every line edge sits on the grid. */
@@ -367,13 +375,11 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
         }
         gui()->child_end();
 
-        /* Input line: stacked directly below the child in the window's own flow.  The child
-           above always consumes exactly hist_h regardless of its content, so this never
-           shifts.  A two-track row -- a natural-width "]" prompt gutter, then a flex field --
-           pins the prompt at the left so it reads like the "] cmd" echo in the scrollback. */
-        static const f32 input_tracks[] = { 0.0f, 1.0f, GUI_END };
-        gui()->row_cols( gui()->sz_scale_row( GUI_SCALE_DENSE ), input_tracks );
-        gui()->text( "]" );
+        /* Input line: a full-width field stacked directly below the child in the window's own
+           flow.  The child above always consumes exactly hist_h regardless of its content, so
+           this never shifts.  No prompt gutter: the field's text lands at the window content
+           left, the same x as the "] " that the core echoes at the start of every scrollback
+           line, so the live input reads as a continuation of the log rather than an inset box. */
 
         /* Focus is a one-shot EVENT, armed on open (console_set_open): request it here, right
            before the input emits, so the very next focusable widget -- this input -- consumes it
