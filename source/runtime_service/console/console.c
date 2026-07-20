@@ -12,6 +12,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "console_api.h"
 #include "engine/core/core_api.h"

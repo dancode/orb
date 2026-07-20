@@ -27,7 +27,9 @@
     Limits
 ==============================================================================================*/
 
-#define CONSOLE_ROWS      18     // visible scrollback rows in the drop-down
+#define CONSOLE_ROWS      18     // default scrollback rows before con_height sizing resolves
+#define CONSOLE_ROWS_MIN  4      // clamp: never collapse the drop-down below this many rows
+#define CONSOLE_ROWS_MAX  200    // clamp: bound the draw loop (core ring holds CON_LINE_CAP)
 #define CONSOLE_INPUT_MAX 120    // input line capacity (fits CON_HISTORY_LEN)
 
 /*============================================================================================*/

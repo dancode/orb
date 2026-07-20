@@ -43,6 +43,22 @@ console_mod_init( void* raw_state, get_api_fn get_api )
     if ( !MOD_FETCH_GUI )
         return false;
 
+    /* Service-owned cvars (view state stays in file-scope globals; these two drive presentation).
+       Both CVAR_ARCHIVE so writeconfig persists them.  con_height is a viewport fraction snapped
+       to whole rows in console_show; con_log_level is a string enum applied to core's ambient-log
+       floor in console_frame. */
+    s_cv_height = core()->cvar_register_f(
+        "con_height", "Developer console height as a fraction of the viewport (0.005..0.5).",
+        0.4f, 0.1f, 1.0f, CVAR_ARCHIVE );
+
+    static const char* k_log_levels[] = { "trace", "debug", "info", "warn", "error" };
+    s_cv_log_level = core()->cvar_register_s(
+        "con_log_level", "Minimum severity of ambient log lines shown in the console.",
+        k_log_levels, 5, 3 /* default: warn */, CVAR_ARCHIVE );
+
+    core()->cmd_register( "toggleconsole", console_cmd_toggle, "Toggle the developer console." );
+    core()->cmd_register( "condump",       console_cmd_dump,   "Copy the console scrollback to the clipboard." );
+
     return true;
 }
 
@@ -57,6 +73,14 @@ static void
 console_mod_exit( void* raw_state )
 {
     UNUSED( raw_state );
+
+    /* Drop the commands registered in init (the cvar system has no unregister and tears down with
+       core).  Guarded: core() is always valid for a static service, but stay defensive. */
+    if ( core() )
+    {
+        core()->cmd_unregister( "toggleconsole" );
+        core()->cmd_unregister( "condump" );
+    }
 }
 
 /*==============================================================================================
