@@ -1029,6 +1029,12 @@ typedef struct gui_context_t
         u32          depth;         // capacity (max nesting depth)
     } popup;
 
+    struct                          /* window/ -- GUI_WIN_MODAL fence (window_modal_apply) */
+    {
+        gui_id_t     win_id;        // id of the modal overlay window; 0 = none
+        u32          seen_frame;    // frame it last emitted -- fence lapses when it stops
+    } modal;
+
     struct                          /* surface/ + window/ -- the persisted window records */
     {
         gui_window_t* pool;         // persisted window records; ptr into alloc

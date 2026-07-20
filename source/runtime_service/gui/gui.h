@@ -1301,6 +1301,14 @@ typedef enum
 
     GUI_WIN_TEXT_SELECT       = 1 << 25,   /* window text runs are selectable / copyable */
 
+    /* Modal overlay: a top-level window pinned into the overlay z-band (above every normal
+       window) that fences ALL interaction behind it -- every other window goes inert until this
+       one stops being emitted.  The exclusive game-console / modal-dialog primitive, WITHOUT the
+       popup layer's auto-centering and background dim (popup_modal_begin owns that look): the
+       caller positions and sizes the window itself.  Keyboard is not auto-captured -- pair with
+       set_keyboard_focus for a text-entry modal.  Emit it last in the build so it wins z. */
+    GUI_WIN_MODAL             = 1 << 26,
+
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
        ( GUI_WIN_OVERLAY | GUI_WIN_NOMOUSESCROLL ) and a window's resolved behavior is identical

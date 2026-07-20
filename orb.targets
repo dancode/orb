@@ -919,8 +919,10 @@ solution orb_editor
     add         draw   		# drawing using the rhi
     add         gui   		# gui lbrary
     add         asset   	# asset service (image loader)
+	add 		console		# consoel uses gui
 	
     add         render   	# render dll
+	
 	
     add         dev_font   	# dev-only font baker
 	add 		dev_ship	#  

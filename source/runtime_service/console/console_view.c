@@ -24,7 +24,6 @@
 ==============================================================================================*/
 
 static bool s_open           = false;
-static bool s_focus_pending  = false;    // focus the input line on the next emitted frame
 static i32  s_view_offset    = 0;        // scrollback lines above the bottom (0 = live tail)
 static i32  s_history_pos    = -1;       // -1 = editing a live line, else index into history
 static char s_input[ CONSOLE_INPUT_MAX ];
@@ -141,7 +140,7 @@ console_key_hook( u32 key, bool ctrl, bool shift, bool repeat, void* user )
 ==============================================================================================*/
 
 static void
-console_show( f32 display_w )
+console_show( f32 display_w, f32 top_y )
 {
     /* The whole console speaks one step of the theme's scale ramp: DENSE, the text-list step.
        The scope makes every metric read inside -- row heights, gaps, the window and child pads,
@@ -158,10 +157,12 @@ console_show( f32 display_w )
     const f32 win_h  = hist_h + gui()->sz_rows_h( 1 ) + gui()->sz_row_gap();   /* + input row + top pad */
 
     /* window_begin instead of region_begin: a normal window's background (translucent per
-       theme) and border, just stripped of title bar / resize / move / collapse. */
-    gui()->window_set_next_pos( 0.0f, 0.0f, GUI_COND_ALWAYS );
+       theme) and border, just stripped of title bar / resize / move / collapse.  top_y drops
+       the console below the viewport chrome (caption band + menu bar) so the title bar stays
+       grabbable while the console is down -- at y=0 the full-width console would cover it. */
+    gui()->window_set_next_pos( 0.0f, top_y, GUI_COND_ALWAYS );
     gui()->window_set_next_size( display_w, win_h, GUI_COND_ALWAYS );
-    if ( gui()->window_begin( "##console", GUI_WIN_NODECORATION | GUI_WIN_NOMOVE ) )
+    if ( gui()->window_begin( "##console", GUI_WIN_NODECORATION | GUI_WIN_NOMOVE | GUI_WIN_MODAL ) )
     {
         gui()->stack();
 
@@ -209,13 +210,14 @@ console_show( f32 display_w )
            above always consumes exactly hist_h regardless of its content, so this never
            shifts. */
 
-        /* set_keyboard_focus queues focus for the next focusable widget: on open it was
-           requested last frame, after Enter it is requested below for the coming frame. */
-        if ( s_focus_pending )
-        {
-            gui()->set_keyboard_focus();
-            s_focus_pending = false;
-        }
+        /* Hard input steal: while the console is down it OWNS the keyboard, Quake style.  The
+           request lands on the next focusable widget (the input below) -- and because the
+           console emits last (after the host's on_gui), it reclaims focus even if a widget in
+           another window took it earlier this frame.  Re-requesting when the input already has
+           focus is idempotent (it just re-sets focused_id to the same id), so the caret and
+           selection are undisturbed -- this is why an unconditional every-frame steal is safe
+           here where a general widget could not do it. */
+        gui()->set_keyboard_focus();
 
         /* One-shot: the hook must be re-armed each frame, just before the field it is meant for. */
         gui()->set_edit_key_hook( console_key_hook, NULL );
@@ -231,7 +233,6 @@ console_show( f32 display_w )
             s_input[ 0 ]  = '\0';
             s_history_pos = -1;
             s_view_offset = 0;         /* executing snaps the view back to the live tail */
-            s_focus_pending = true;    /* Enter dropped focus; take it back next frame */
         }
     }
     gui()->window_end();
@@ -250,10 +251,7 @@ console_set_open( bool open )
 
     s_open = open;
     if ( s_open )
-    {
-        s_focus_pending = true;    /* capture the keyboard on the next emitted frame */
-        s_view_offset   = 0;       /* open on the live tail */
-    }
+        s_view_offset = 0;    /* open on the live tail (focus is stolen every frame in console_show) */
 }
 
 static void
@@ -310,7 +308,12 @@ console_emit( f32 dt, gui_vp_t vp )
 
     i32 disp_w = 0, disp_h = 0;
     gui()->viewport_size( vp, &disp_w, &disp_h );
-    console_show( ( f32 )disp_w );
+
+    /* Start below the viewport chrome (caption + main menu bar) so the title bar stays
+       draggable.  0 on an OS-chrome window; the host's menu bar, if any, emitted before this. */
+    const f32 top_y = gui()->viewport_content_y( vp );
+
+    console_show( ( f32 )disp_w, top_y );
 }
 
 // clang-format on

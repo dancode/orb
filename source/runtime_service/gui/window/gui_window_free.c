@@ -798,6 +798,19 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     s_build.win.hidden    = false;   /* default; the CLOSEABLE branch below flips it */
     s_build.win.minimized = false;   /* default; the shelf-chip branch below flips it */
 
+    /* GUI_WIN_MODAL: pin into the overlay z-band above every normal window and register the
+       fence so the next ctx_begin makes everything behind inert (window_modal_apply).  Stamped
+       here like the popup layer stamps its overlays before this call -- win->overlay is the TYPE
+       fact that keeps the appearing-raise (below) and raise-on-press from sinking it out of the
+       band.  Cleared implicitly: a modal that stops emitting stops re-stamping seen_frame. */
+    if ( flags & GUI_WIN_MODAL )
+    {
+        win->z       = surface_z_overlay( 0u );
+        win->overlay = true;
+        g_ctx->modal.win_id     = id;
+        g_ctx->modal.seen_frame = g_ctx->retained.frame;
+    }
+
     /* Closeable + closed: the window is fully hidden this frame -- no chrome, no body, no hover.
        begin returns false (the caller skips its widgets) and window_end early-outs on win_hidden.
        The record persists with its geometry intact, so window_set_open revives it where it was.

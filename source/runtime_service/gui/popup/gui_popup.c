@@ -576,5 +576,36 @@ popup_apply_modal( void )
     interact_hover_fence( g_ctx->popup.open[ m ].id );
 }
 
+/*==============================================================================================
+    window_modal_apply -- fence interaction behind a GUI_WIN_MODAL window (the dev console).
+
+    The plain-window sibling of popup_apply_modal: a GUI_WIN_MODAL window (window_begin_ex)
+    registers its id + the frame it emitted; while it keeps emitting, point hover-window
+    arbitration at it so every other window is inert -- the same one-claim fence, no dim / no
+    popup stack.  Called from ctx_begin right BEFORE popup_apply_modal, so a modal popup opened
+    ON TOP of the modal window still wins (popup fences last).  Liveness is implicit: the window
+    stops re-stamping seen_frame when it stops emitting, so the fence lapses the next frame.
+==============================================================================================*/
+
+static void
+window_modal_apply( void )
+{
+    if ( g_ctx->modal.win_id == 0u ||
+         g_ctx->modal.seen_frame != g_ctx->retained.frame - 1u )
+        return;
+
+    /* Chrome exemption: never fence the viewport's own caption/border shell (a GUI_WIN_NATIVE
+       window -- the OS-window stand-in for a borderless viewport, or a detached floater's frame).
+       A modal that froze the window frame would make the app window itself un-movable / un-
+       closable, which is unacceptable; content windows (non-native) still go inert.  When the
+       cursor is over the shell, hover_win is already the shell, so leaving it unfenced lets ONLY
+       the chrome interact -- content below is inert regardless, having lost the hover contest. */
+    gui_window_t* hw = window_find( s_interaction.hover_win );
+    if ( hw && ( hw->flags & GUI_WIN_NATIVE ) )
+        return;
+
+    interact_hover_fence( g_ctx->modal.win_id );
+}
+
 // clang-format on
 /*============================================================================================*/
