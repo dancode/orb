@@ -73,8 +73,24 @@ static struct
        across the slot boundary and corrupt elem_count + first_index tracking). */
     bool force_new_cmd;
 
-    u32  vert_hwm, idx_hwm;              /* lifetime peak of the TOTAL write head (both bands)   */
-    bool overflow, overflow_ever;
+    bool overflow;   /* set per-primitive when a buffer fills; gates the geometry-drop escape path */
+
+} s_tess;
+
+/*----------------------------------------------------------------------------------------------
+    Tessellation diagnostics -- the cold companion to s_tess.
+
+    High-water marks, the sticky overflow flag, and the arena band boundary the dashboard reads.
+    Every field here is written at most once per slot placement / band boundary / frame end --
+    never on the per-vertex path -- so it lives apart from s_tess to keep the hot write cacheline
+    (vert_count / idx_count / cmd_count) small.  Read only by the dashboard capture and the render
+    overlay; overflow itself stays in s_tess because it is written per-primitive on buffer-full.
+----------------------------------------------------------------------------------------------*/
+
+static struct
+{
+    u32  vert_hwm, idx_hwm;   /* lifetime peak of the TOTAL write head (both bands) */
+    bool overflow_ever;       /* sticky: any frame this run overflowed a buffer     */
 
     /* Arena band boundary: the write head right after the last MAIN-band slot placed this frame
        (band-major placement packs every debug-band slot after it).  The dashboard's memory map
@@ -88,7 +104,7 @@ static struct
        separate accumulator, not a subtraction. */
     u32 band0_vert_hwm, band0_idx_hwm;
 
-} s_tess;
+} s_tess_stats;
 
 /*----------------------------------------------------------------------------------------------
     Cached corner geometry -- the rounded-rect optimization.

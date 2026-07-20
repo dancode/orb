@@ -344,9 +344,9 @@ gui_render_shutdown( void )
 {
     // Peak draw-list usage over the run, so the caps can be tuned with real numbers.
     printf( "[gui] peak draw-list usage: verts %u/%u (%.1f%%), idx %u/%u (%.1f%%)%s\n",
-            s_tess.vert_hwm, GUI_MAX_VERTS, 100.0f * s_tess.vert_hwm / (f32)GUI_MAX_VERTS,
-            s_tess.idx_hwm,  GUI_MAX_IDX,   100.0f * s_tess.idx_hwm  / (f32)GUI_MAX_IDX,
-            s_tess.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
+            s_tess_stats.vert_hwm, GUI_MAX_VERTS, 100.0f * s_tess_stats.vert_hwm / (f32)GUI_MAX_VERTS,
+            s_tess_stats.idx_hwm,  GUI_MAX_IDX,   100.0f * s_tess_stats.idx_hwm  / (f32)GUI_MAX_IDX,
+            s_tess_stats.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
 
     // Peak draw calls in a single frame -- a measure of batching effectiveness.
     printf( "[gui] peak draw calls in a frame: %u\n", cache_draw_call_hwm() );

@@ -91,12 +91,12 @@ dash_capture_build( void )
     }
 
     sn->tess_verts     = s_tess.vert_count;   sn->tess_idx = s_tess.idx_count;   /* tess_cmds below */
-    sn->vert_hwm       = s_tess.vert_hwm;     sn->idx_hwm  = s_tess.idx_hwm;
-    sn->overflow_ever  = s_tess.overflow_ever;
-    sn->band0_vert_end = s_tess.band0_vert_end;
-    sn->band0_idx_end  = s_tess.band0_idx_end;
-    sn->band0_vert_hwm = s_tess.band0_vert_hwm;
-    sn->band0_idx_hwm  = s_tess.band0_idx_hwm;
+    sn->vert_hwm       = s_tess_stats.vert_hwm;     sn->idx_hwm  = s_tess_stats.idx_hwm;
+    sn->overflow_ever  = s_tess_stats.overflow_ever;
+    sn->band0_vert_end = s_tess_stats.band0_vert_end;
+    sn->band0_idx_end  = s_tess_stats.band0_idx_end;
+    sn->band0_vert_hwm = s_tess_stats.band0_vert_hwm;
+    sn->band0_idx_hwm  = s_tess_stats.band0_idx_hwm;
 
     /* GPU DRAW commands per band -- what actually dispatches, matching the renderer's draw-call
        count and the perf tracker.  A slot's cmd_count includes dormant volatile-pad commands

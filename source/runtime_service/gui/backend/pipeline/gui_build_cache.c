@@ -1097,8 +1097,8 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
     s_dispatch_count = 0;
 
     tess_reset();
-    s_tess.band0_vert_end = 0;   /* re-derived below as main-band slots place; 0 when none exist */
-    s_tess.band0_idx_end  = 0;
+    s_tess_stats.band0_vert_end = 0;   /* re-derived below as main-band slots place; 0 when none exist */
+    s_tess_stats.band0_idx_end  = 0;
 
     /* Seed the write head at the arena tail: past every live prev reservation, so a fresh
        tessellation can never land inside geometry a later window still wants to reuse.  In
@@ -1184,8 +1184,8 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
                ends here" at this mark; everything past it is the debug band's own footprint. */
             u32 ve = slot->vert_base + slot->vert_alloc;
             u32 ie = slot->idx_base  + slot->idx_alloc;
-            if ( ve > s_tess.band0_vert_end ) s_tess.band0_vert_end = ve;
-            if ( ie > s_tess.band0_idx_end  ) s_tess.band0_idx_end  = ie;
+            if ( ve > s_tess_stats.band0_vert_end ) s_tess_stats.band0_vert_end = ve;
+            if ( ie > s_tess_stats.band0_idx_end  ) s_tess_stats.band0_idx_end  = ie;
         }
 
         s_dispatch[ s_dispatch_count++ ] = slot;
@@ -1268,10 +1268,10 @@ cache_build_frame( void )
 
     /* Track geometry high-water marks and warn once on overflow.  The total (both bands) and the
        main band alone peak independently, so each gets its own accumulator. */
-    if ( s_tess.vert_count     > s_tess.vert_hwm       ) s_tess.vert_hwm      = s_tess.vert_count;
-    if ( s_tess.idx_count      > s_tess.idx_hwm        ) s_tess.idx_hwm       = s_tess.idx_count;
-    if ( s_tess.band0_vert_end > s_tess.band0_vert_hwm ) s_tess.band0_vert_hwm = s_tess.band0_vert_end;
-    if ( s_tess.band0_idx_end  > s_tess.band0_idx_hwm  ) s_tess.band0_idx_hwm  = s_tess.band0_idx_end;
+    if ( s_tess.vert_count           > s_tess_stats.vert_hwm       ) s_tess_stats.vert_hwm       = s_tess.vert_count;
+    if ( s_tess.idx_count            > s_tess_stats.idx_hwm        ) s_tess_stats.idx_hwm        = s_tess.idx_count;
+    if ( s_tess_stats.band0_vert_end > s_tess_stats.band0_vert_hwm ) s_tess_stats.band0_vert_hwm = s_tess_stats.band0_vert_end;
+    if ( s_tess_stats.band0_idx_end  > s_tess_stats.band0_idx_hwm  ) s_tess_stats.band0_idx_hwm  = s_tess_stats.band0_idx_end;
 
     /* Single overflow catch for the whole build: the reservation sites just latch s_tess.overflow
        and drop their primitive (non-fatal -- the frame still submits everything that fit, the app
@@ -1288,7 +1288,7 @@ cache_build_frame( void )
         ps.overflow_at_cmd  = s_tess.cmd_count;
     }
 
-    if ( s_tess.overflow && !s_tess.overflow_ever )
+    if ( s_tess.overflow && !s_tess_stats.overflow_ever )
     {
         /* Name the window that hit the wall (a title in debug, else its hashed id) plus the fill it
            reached, so the report points at the culprit instead of just "something overflowed".  A
@@ -1303,7 +1303,7 @@ cache_build_frame( void )
         fflush( stdout );   /* flush the diagnostic before the once-assert below can trap */
     }
     if ( s_tess.overflow )
-        s_tess.overflow_ever = true;
+        s_tess_stats.overflow_ever = true;
 
     /* Break once (debug) so you can catch which frame / UI blew the caps under the debugger; the
        macro self-latches, so a persistent overflow does not re-trap every frame.  Non-fatal: skip
@@ -1318,8 +1318,8 @@ cache_build_frame( void )
     if ( s_caps.stats_trace && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
     {
         printf( "[gui] geometry: verts %u/%u (peak %u)  idx %u/%u (peak %u)\n",
-                s_tess.vert_count, GUI_MAX_VERTS, s_tess.vert_hwm,
-                s_tess.idx_count,  GUI_MAX_IDX,   s_tess.idx_hwm );
+                s_tess.vert_count, GUI_MAX_VERTS, s_tess_stats.vert_hwm,
+                s_tess.idx_count,  GUI_MAX_IDX,   s_tess_stats.idx_hwm );
         prev_verts = s_tess.vert_count;
         prev_idx   = s_tess.idx_count;
     }
