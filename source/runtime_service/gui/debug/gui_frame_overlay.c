@@ -426,7 +426,7 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
                 everything below is inert until it is armed, and disarming resets every debug mode
                 back to normal (overlays off, render mode normal, layers cleared).
         NP1-NP6 debug layers (window / interact / resize / layout / clip / content rects)
-        F8      command stepper: freeze the frame (opens the control window) / release
+        F8      command stepper: show / hide the control window (Capture there freezes the frame)
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
         P       perf overlay tier  (off / fps / +timings / +counts / +retained)
@@ -534,23 +534,14 @@ debug_hotkeys( void )
     }
 
 #ifdef GUI_CMD_STEPPER
-    /* F8 freezes the current frame's band-0 command list for stepped replay (capture latches and
-       is taken at this frame's build), or releases an active freeze back to live emission.
-       Freezing also opens the control window (gui_step_window.c); releasing leaves it up, and
-       its X button only hides it -- a hidden window never releases the freeze. */
+    /* F8 just shows/hides the control window (gui_step_window.c) -- it does NOT freeze.  Merely
+       opening the stepper leaves the scene live; only the window's Capture button freezes this
+       frame's band-0 command list for stepped replay (the , . step hotkeys scrub a freeze that
+       is already active).  The window's X button hides it and never releases an active freeze. */
     if ( gui_is_key_pressed( APP_KEY_F8 ) )
     {
-        if ( gui_step_frozen() )
-        {
-            gui_step_release();
-            printf( "[gui] command stepper: released\n" );
-        }
-        else
-        {
-            gui_step_capture();
-            s_dbg_step_open = true;
-            printf( "[gui] command stepper: frame frozen (, . step the cursor; shift x16)\n" );
-        }
+        s_dbg_step_open = !s_dbg_step_open;
+        printf( "[gui] command stepper window: %s\n", s_dbg_step_open ? "open" : "closed" );
         g_ctx->retained.wants_redraw = true;
     }
 #endif
