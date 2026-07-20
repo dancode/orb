@@ -713,7 +713,7 @@ static void volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 cmd
    resulting atlas change.  The active font is saved and restored so the BUILD phase leaves the
    global font state (used by the next frame's layout) untouched. */
 static void
-tess_dispatch( const gui_cmd_t* cmds, const u32* order, const u32* fonts, u32 count, gui_id_t win )
+tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 count, gui_id_t win )
 {
     u32 saved_font = font_active_id();
     u32 cur_font   = saved_font;

@@ -195,12 +195,13 @@ typedef struct
 typedef struct
 {
     gui_id_t win;
-    u32      z, vp;
-    u32      band;                               // arena band (0 = main UI, 1 = debug/diagnostic)
+    u32      z;
     u32      vert_base, vert_count, vert_alloc;  // VB: absolute position, actual count, padded reservation
     u32      idx_base,  idx_count,  idx_alloc;   // IB: absolute position, actual count, padded reservation
     u32      cmd_base,  cmd_count;               // range into s_tess.cmds[] for this window
     u32      tess_gen;                           // generation of the tess pass that produced the geometry
+    u8       vp;                                 // viewport (GUI_MAX_VIEWPORTS = 4)
+    u8       band;                               // arena band (0 = main UI, 1 = debug/diagnostic)
     bool     valid;                              // true once geometry has been tessellated at least once
     bool     cmd_cached;                         // command run fit the stable cache; false = the window
                                                  //   overflowed WIN_SLOT_CMD_MAX and must re-tessellate
@@ -351,11 +352,11 @@ typedef struct
     gui_id_t win;
     u32      hash;
     u32      z;              // max segment z this frame (governs slot dispatch order)
-    u32      vp;             // viewport of the last segment this frame
-    u32      band;           // arena band: sticky OR across segments (any debug seg = debug window)
     u16      seg_head;       // this window's segment chain (via s_seg_next); SEG_CHAIN_END = empty.
     u16      seg_tail;       //   Built in pass 1 below so the tess pass walks only ITS segments
                              //   instead of rescanning the whole segment table per window.
+    u8       vp;             // viewport of the last segment this frame (GUI_MAX_VIEWPORTS = 4)
+    u8       band;           // arena band: sticky OR across segments (any debug seg = debug window)
     bool     changed;        // hash mismatched, window is new, or force_changed this frame
     bool     force_changed;  // a volatile row in this window needs a (re)capture -- tessellate
                              // regardless of the hash (which excludes volatile commands entirely)
@@ -671,9 +672,11 @@ tess_volatile_range( u32 i, u32 seg_hi, gui_id_t vid, u32* out_hi, u32* out_anch
 /* Permutation output scratch, reused by every cache_tess_window call (cache_build_frame is
    single-threaded and guarded against re-entry).  s_win_font[] carries the segment's font
    alongside each reordered index because the clip sort crosses segment boundaries -- the font
-   is a per-segment property, not per-command, so it must travel with its commands. */
-static u32 s_win_order[ GUI_MAX_CMDS ];
-static u32 s_win_font [ GUI_MAX_CMDS ];
+   is a per-segment property, not per-command, so it must travel with its commands.
+   u16: order values are command indices (< GUI_MAX_CMDS, asserted u16-safe at gui_cmd_seg_t);
+   font ids are registry slots (< GUI_FONT_REGISTRY_MAX). */
+static u16 s_win_order[ GUI_MAX_CMDS ];
+static u16 s_win_font [ GUI_MAX_CMDS ];
 
 static void
 cache_tess_window( const render_win_hash_t* wh )
@@ -735,7 +738,7 @@ cache_tess_window( const render_win_hash_t* wh )
         for ( u16 si = wh->seg_head; si != SEG_CHAIN_END; si = s_seg_next[ si ] )
             for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
                 if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
-                    { s_win_font[ n ] = segs[ si ].font; s_win_order[ n++ ] = i; }
+                    { s_win_font[ n ] = segs[ si ].font; s_win_order[ n++ ] = (u16)i; }
         tess_dispatch( s_draw.cmds, s_win_order, s_win_font, n, wh->win );
         return;
     }
@@ -769,7 +772,7 @@ cache_tess_window( const render_win_hash_t* wh )
                 if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
                 u32 g = clip_group_of( &cg, ci );
                 s_win_font [ plain_off[ g ] ] = segs[ si ].font;
-                s_win_order[ plain_off[ g ]++ ] = i;
+                s_win_order[ plain_off[ g ]++ ] = (u16)i;
             }
             else
             {
@@ -782,7 +785,7 @@ cache_tess_window( const render_win_hash_t* wh )
                         if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ j ].clip_idx ] ) )
                         {
                             s_win_font [ vol_off[ g ] ] = segs[ si ].font;
-                            s_win_order[ vol_off[ g ]++ ] = j;
+                            s_win_order[ vol_off[ g ]++ ] = (u16)j;
                         }
                 }
                 i = hi - 1;
@@ -1198,7 +1201,7 @@ cache_build_frame( void )
 
     /* Close the still-open final segment so diff and tess see its full [lo, hi) range. */
     if ( s_draw.seg_count > 0 )
-        s_draw.segs[ s_draw.seg_count - 1 ].hi = s_draw.cmd_count;
+        s_draw.segs[ s_draw.seg_count - 1 ].hi = (u16)s_draw.cmd_count;
 
     /* Command-stepper capture: the frame's segments are closed and every emit pool is complete,
        nothing is diffed or tessellated yet -- the exact seam to freeze the live command list.

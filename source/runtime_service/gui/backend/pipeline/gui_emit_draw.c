@@ -44,14 +44,22 @@ typedef struct
     (non-window) draw layer.
 ==============================================================================================*/
 
+/* Packed to 16 bytes: GUI_MAX_SEGS of these live here, and the command stepper keeps two more
+   full copies (segs + disp_segs).  Every narrow field's range is capped by construction: lo/hi
+   by GUI_MAX_CMDS (asserted below), font by GUI_FONT_REGISTRY_MAX (16), vp by GUI_MAX_VIEWPORTS
+   (4), band is 0/1.  z stays u32 -- it carries full sort keys (popup/overlay z-bands). */
 typedef struct
 {
     gui_id_t win;
-    u32      z, vp, font;
-    u32      band;     /* arena band: 0 = main UI, 1 = debug/diagnostic UI (GUI_WIN_DEBUG_BAND) */
-    u32      lo, hi;   /* half-open command range into s_draw.cmds[] */
+    u32      z;
+    u16      lo, hi;   /* half-open command range into s_draw.cmds[] */
+    u16      font;
+    u8       vp;
+    u8       band;     /* arena band: 0 = main UI, 1 = debug/diagnostic UI (GUI_WIN_DEBUG_BAND) */
 
 } gui_cmd_seg_t;
+
+ORB_STATIC_ASSERT( GUI_MAX_CMDS <= 0xFFFF, "gui_cmd_seg_t.lo/hi are u16" );
 
 static struct
 {
@@ -206,7 +214,7 @@ draw_reset( i32 display_w, i32 display_h )
 
     /* Open the first command segment: background (win 0, z 0, main viewport, active font, main band). */
     s_draw.seg_count       = 1;
-    s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ 0, 0, 0, s_draw.cur_font, 0, 0, 0 };
+    s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ .font = (u16)s_draw.cur_font };
 
     /* Seed the clip table: slot 0 = full display rect.  clip_idx_stack[0] and cur_clip_idx both
        start at 0 so every emitter finds the root clip without a push being required first. */
@@ -394,15 +402,17 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font, u32 band )
     {
         cur->win  = win;   /* segment empty so far: retag in place rather than splitting */
         cur->z    = z;
-        cur->vp   = vp;
-        cur->font = font;
-        cur->band = band;
+        cur->vp   = (u8)vp;
+        cur->font = (u16)font;
+        cur->band = (u8)band;
     }
     else if ( s_draw.seg_count < GUI_MAX_SEGS )
     {
-        cur->hi                           = s_draw.cmd_count;   /* close the span here */
+        cur->hi                           = (u16)s_draw.cmd_count;   /* close the span here */
         s_draw.segs[ s_draw.seg_count++ ] =
-            ( gui_cmd_seg_t ){ win, z, vp, font, band, s_draw.cmd_count, s_draw.cmd_count };
+            ( gui_cmd_seg_t ){ .win = win, .z = z, .vp = (u8)vp, .font = (u16)font,
+                               .band = (u8)band, .lo = (u16)s_draw.cmd_count,
+                               .hi = (u16)s_draw.cmd_count };
     }
 
     s_draw.cur_win  = win;

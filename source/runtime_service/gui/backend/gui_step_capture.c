@@ -154,8 +154,8 @@ step_expand_order( bool paint, u32* out_order, gui_cmd_seg_t* out_segs )
         if ( out_segs )
         {
             out_segs[ k ]    = *sg;
-            out_segs[ k ].lo = w;
-            out_segs[ k ].hi = w + n;
+            out_segs[ k ].lo = (u16)w;
+            out_segs[ k ].hi = (u16)( w + n );
         }
         for ( u32 j = 0; j < n; ++j )
             out_order[ w + j ] = sg->lo + j;
@@ -236,8 +236,8 @@ step_capture_build( void )
         memcpy( s_step.cmd_hashes + w, s_draw.cmd_hashes + sg->lo, n * sizeof( u32 ) );
         memcpy( s_step.cmd_owner  + w, s_draw.cmd_owner  + sg->lo, n * sizeof( gui_id_t ) );
         s_step.segs[ ns ]    = *sg;
-        s_step.segs[ ns ].lo = w;
-        s_step.segs[ ns ].hi = w + n;
+        s_step.segs[ ns ].lo = (u16)w;
+        s_step.segs[ ns ].hi = (u16)( w + n );
         ++ns;
         w += n;
     }
@@ -341,10 +341,10 @@ step_restore_emit( void )
             break;
         s_draw.segs[ ns ] = s_step.disp_segs[ si ];
         if ( s_draw.segs[ ns ].hi > cur )
-            s_draw.segs[ ns ].hi = cur;
+            s_draw.segs[ ns ].hi = (u16)cur;
         ++ns;
     }
-    s_draw.segs[ ns++ ] = ( gui_cmd_seg_t ){ 0, 0, 0, s_draw.cur_font, 0, cur, cur };
+    s_draw.segs[ ns++ ] = ( gui_cmd_seg_t ){ .font = (u16)s_draw.cur_font, .lo = (u16)cur, .hi = (u16)cur };
     s_draw.seg_count    = ns;
 }
 

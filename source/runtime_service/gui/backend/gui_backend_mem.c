@@ -52,7 +52,8 @@ gui_backend_memory( u32 live_viewports )
                              + sizeof( s_win_cached_win ) + sizeof( s_win_cached_live )
                              + sizeof( s_cache ) + sizeof( s_stats ) + sizeof( s_seg_next )
                              + sizeof( s_win_order ) + sizeof( s_win_font )
-                             + sizeof( s_volatile ) );
+                             + sizeof( s_volatile )
+                             + sizeof( s_patch_order ) + sizeof( s_patch_font ) );
 
     /* Fonts: registry slots (CPU glyph metrics) + the hot-reload request queue. */
     s.cpu_font_bytes = (u32)( sizeof( s_fonts ) + sizeof( s_reload_q ) );
