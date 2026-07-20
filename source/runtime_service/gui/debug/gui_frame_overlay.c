@@ -201,8 +201,11 @@ gui_perf_overlay( int mode )
        top-left, hugging its content (w/h <= 0 autosize both axes).  NO_INPUT: pure text readout,
        a region is interactive by default and this one has no business entering the hover_win
        contest or eating the mouse wheel.  DEBUG_BAND: a self-measuring readout -- its own
-       ever-changing digits must not count in the stats it displays or poison idle-skip. */
-    gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f, GUI_REGION_MID,
+       ever-changing digits must not count in the stats it displays or poison idle-skip.
+       GUI_REGION_FG: the diagnostic HUD renders in the foreground band (above every popup depth
+       AND a GUI_WIN_MODAL overlay window like the dev console), so it is never occluded -- a debug
+       readout you cannot see is useless. */
+    gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f, GUI_REGION_FG,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
     {
         overlay_backdrop( id_hash( "perf_overlay" ), left_x, top_y );
@@ -350,7 +353,8 @@ gui_state_overlay( int mode )
     /* Fixed offset to the right of perf_overlay's top-left HUD so both can be shown at once
        without overlap -- perf_overlay hugs its content and stays narrow, so a flat offset is
        simpler than coordinating widths through a shared channel. */
-    gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_REGION_MID,
+    /* GUI_REGION_FG: foreground band, above popups and the modal console -- see perf_overlay. */
+    gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_REGION_FG,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
     {
         overlay_backdrop( id_hash( "state_overlay" ), 260.0f, top_y );
@@ -419,7 +423,8 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
     during normal use:
 
         NP_DOT  master arm ('.'): toggle EVERY debug hotkey on / off as a group.  Off by default;
-                everything below is inert until it is armed.
+                everything below is inert until it is armed, and disarming resets every debug mode
+                back to normal (overlays off, render mode normal, layers cleared).
         NP1-NP6 debug layers (window / interact / resize / layout / clip / content rects)
         F8      command stepper: freeze the frame (opens the control window) / release
         F9      render mode: normal -> wireframe -> batch tint
@@ -466,18 +471,47 @@ bool gui_idle_skip( void )        { return s_idle_skip; }
    frame's overlay emit, a mode changed here is one frame too late for THIS frame's draw list; each
    branch that mutates a mode requests g_ctx->retained.wants_redraw so frame_begin sees the frame as
    dirty next time round instead of an idle/retained replay silently sitting on the stale mode. */
+/* Return every debug mode to normal -- called when the master arm is switched off so disarming
+   visibly clears the screen (overlays, layer rects, render mode) and restores the perf levers to
+   their defaults, rather than leaving whatever was toggled on frozen in place.  Idle skip is left
+   as-is: it is an invisible frame-pacing preference a host may own (gui_set_idle_skip), not a
+   debug display state, and there is no per-frame host write to re-assert it after a reset. */
+static void
+debug_reset( void )
+{
+    s_dbg_perf_mode  = 0;      /* perf overlay off  */
+    s_dbg_state_mode = 0;      /* state overlay off */
+    s_dbg_dash_open  = false;  /* dashboard closed  */
+    s_dbg_step_open  = false;  /* stepper window closed */
+
+    gui_render_set_mode( GUI_RENDER_NORMAL );   /* wireframe / batch tint -> normal */
+    gui_debug_set_layers( 0 );                  /* clear all NP1-7 layer rects      */
+    gui_build_set_retained_skip( true );        /* normal: skip tess when unchanged */
+    gui_set_force_redraw( false );              /* normal: allow clean-frame emit skip */
+
+#ifdef GUI_CMD_STEPPER
+    if ( gui_step_frozen() )
+        gui_step_release();                     /* unfreeze back to live emission */
+#endif
+
+    g_ctx->retained.wants_redraw = true;
+}
+
 static void
 debug_hotkeys( void )
 {
     /* Master arm: numpad '.' (APP_KEY_NP_DOT) is the one always-live debug key -- it gates every
        other hotkey below so the broad single-letter (C/F/I/P/O) and function keys are inert during
-       normal use and only respond after an explicit opt-in.  Fenced by want_capture_keyboard like
-       the letter keys (numpad '.' is text input with Num Lock on), so it never fires while a text
-       field is focused.  Chosen because it is rarely bound to anything else. */
+       normal use and only respond after an explicit opt-in.  Disarming resets every debug mode to
+       normal (debug_reset), so one press returns the view to a clean state.  Fenced by
+       want_capture_keyboard like the letter keys (numpad '.' is text input with Num Lock on), so it
+       never fires while a text field is focused.  Chosen because it is rarely bound elsewhere. */
     if ( !gui_want_capture_keyboard() && gui_is_key_pressed( APP_KEY_NP_DOT ) )
     {
         s_dbg_hotkeys_armed = !s_dbg_hotkeys_armed;
         printf( "[gui] debug hotkeys: %s\n", s_dbg_hotkeys_armed ? "ARMED" : "off" );
+        if ( !s_dbg_hotkeys_armed )
+            debug_reset();
         g_ctx->retained.wants_redraw = true;
     }
     if ( !s_dbg_hotkeys_armed )

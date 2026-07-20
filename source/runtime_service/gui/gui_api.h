@@ -1568,7 +1568,8 @@ typedef struct gui_api_s
        single-letter keys never fire during normal use:
 
          NP_DOT  master arm ('.'): toggle every debug hotkey below on / off as a group; off by
-                 default, so nothing below responds until it is armed
+                 default, so nothing below responds until it is armed.  Disarming resets every
+                 debug mode back to normal (overlays off, render mode normal, layers cleared)
          NP1-NP5 debug overlay layers (window frames / interaction rects / resize bands / layout /
                  clips; Debug builds)
          NP6     content-rect outlines over scrollable regions (GUI_DBG_CONTENT -- drawn in

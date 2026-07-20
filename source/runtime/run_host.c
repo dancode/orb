@@ -540,6 +540,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                    before init; the frame hooks are the sys services gui cannot link itself
                    (clock for perf/idle timing, sleep + event-wait for frame_pace) -- the host
                    supplies them but keeps ownership of the loop and its pacing. */
+
                 const run_gui_desc_t* gd = desc->gui;
 
                 if ( gd && gd->caps )

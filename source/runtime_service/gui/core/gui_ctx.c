@@ -40,6 +40,9 @@ static struct
     gui_id_t  active_id_prev;   // active_id as of the end of the previous frame (snapshot at new_frame)
     u8        active_button;    // which button holds active_id (0=left); reset to 0 on release
     gui_id_t  focused_id;       // widget that owns keyboard input
+    gui_id_t  focused_win;      // window that owns focused_id -- drives the exclusive-scope focus lock
+    bool      focus_has_selection; // the focused text field holds a live selection this frame (for
+                                   // the window text-selection copy gate, gui_select.c)
 
     /* Auto-repeat timing for the held button (GUI_ITEM_BUTTON_REPEAT).  Only one widget is active
        at a time, so a single timer suffices: repeat_t accumulates held time since the last fire, and
@@ -541,6 +544,45 @@ cursor_flush( void )
 }
 
 /*==============================================================================================
+    Exclusive input mode (focus scope) -- the game-menu model of UI focus.
+
+    A GUI_WIN_MODAL window is an exclusive input MODE, the immediate-mode analogue of a game's
+    menu screen: while it is up it owns interaction (the hover fence, window_modal_apply) AND
+    keyboard focus.  Two rules make focus behave like a menu selection rather than a desktop
+    caret:
+
+      confine  -- only the mode's own widgets may TAKE focus (focus_allowed, interact/gui_item.c);
+                  no background window can steal it.
+      hold     -- focus is STICKY within the mode: a press on non-focusable space does not clear
+                  it (interaction_frame_reset below).  You cannot "select nothing" inside a menu;
+                  focus only moves when another focusable widget in the mode claims it.
+
+    Both key off modal.win_id + seen_frame, exactly like the hover fence -- one exclusive-mode
+    fact, read three ways.  FUTURE: a stack of modes (nested dialogs) would push/pop this the way
+    the popup layer already stacks; today there is one level, which the console needs.
+==============================================================================================*/
+
+/* An exclusive input mode is live -- a GUI_WIN_MODAL window emitted this frame or last (the
+   console re-stamps modal.seen_frame at its window_begin every frame it is open, so the fence
+   never lapses while it is up and lapses one frame after it closes). */
+bool
+gui_modal_scope_live( void )
+{
+    u32 f = g_ctx->retained.frame;
+    return g_ctx->modal.win_id != 0u &&
+           ( g_ctx->modal.seen_frame == f || g_ctx->modal.seen_frame + 1u == f );
+}
+
+/* True when the live exclusive mode owns `id` -- the focused widget belongs to the modal window.
+   The frame-begin focus-clear consults this to keep the mode's focus sticky. */
+static bool
+focus_scope_holds( gui_id_t id )
+{
+    return id != GUI_ID_NONE && gui_modal_scope_live() &&
+           s_interaction.focused_win == g_ctx->modal.win_id;
+}
+
+/*==============================================================================================
     ctx_new_frame -- reset per-frame hover state; call at the start of each frame
 ==============================================================================================*/
 
@@ -578,9 +620,18 @@ interaction_frame_reset( void )
     }
 
     /* Drop keyboard focus on any press; the widget under the cursor re-claims it immediately
-       (input_text sets focused_id from hover_id + press this same frame). */
-    if ( s_io.mouse_pressed[ 0 ] )
+       (input_text sets focused_id from hover_id + press this same frame).  EXCEPTION -- an
+       exclusive input mode (a GUI_WIN_MODAL window; the dev console) holds its focus the way a
+       game menu holds a selection: you cannot "select nothing" inside it.  While the mode owns the
+       focused widget, a press on non-focusable dead space keeps the focus instead of clearing it;
+       a press on another focusable widget in the mode still moves focus (that widget overwrites
+       focused_id in item_state).  This is what lets the console input keep its caret while the
+       user sweeps a scrollback text selection -- the mode stays "on the input". */
+    if ( s_io.mouse_pressed[ 0 ] && !focus_scope_holds( s_interaction.focused_id ) )
         s_interaction.focused_id = GUI_ID_NONE;
+
+    /* Cleared each frame; the focused text field re-asserts it during its emit (input_field_edit). */
+    s_interaction.focus_has_selection = false;
 
     /* Fresh cursor request for the new frame -- defaults to the arrow until a widget asks otherwise. */
     s_interaction.mouse_cursor = APP_CURSOR_ARROW;
