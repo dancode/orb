@@ -210,6 +210,8 @@ gui_perf_overlay( int mode )
     {
         overlay_backdrop( id_hash( "perf_overlay" ), left_x, top_y );
         gui_stack();
+        gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
+
         /* FPS, graded by health: >=60 green, >=30 amber, else red. */
         u32 fps_col = fps >= 60.0f ? GUI_COLOR( 0x66, 0xDD, 0x55, 0xFF )
                     : fps >= 30.0f ? GUI_COLOR( 0xE0, 0xC0, 0x40, 0xFF )
@@ -296,15 +298,18 @@ gui_perf_overlay( int mode )
 
         /* Debug-lever status (mode >= 3): the emit / tessellation / pacing toggles, live, so
            the console log is not needed to know which regime the numbers above were measured
-           in.  Each line names its hotkey.  Fixed-width states keep the footprint stable. */
+           in.  Toggled from the selector menu (right edge of the viewport), not a hotkey of
+           their own.  Fixed-width states keep the footprint stable. */
         bool show_status_rows = ( mode >= 3 );
         if ( show_status_rows )
         {
             gui_new_line( 2.0f );
-            gui_textf( "emit  %s (F)", gui_force_redraw()        ? "forced  " : "on-dirty" );
-            gui_textf( "tess  %s (C)", gui_build_retained_skip() ? "cached  " : "always  " );
-            gui_textf( "pace  %s (I)", gui_idle_skip()           ? "idleskip" : "spin    " );
+            gui_textf( "emit  %s", gui_force_redraw()        ? "forced  " : "on-dirty" );
+            gui_textf( "tess  %s", gui_build_retained_skip() ? "cached  " : "always  " );
+            gui_textf( "pace  %s", gui_idle_skip()           ? "idleskip" : "spin    " );
         }
+
+        gui_scale_pop();
     }
     gui_region_end();
 }
@@ -359,6 +364,7 @@ gui_state_overlay( int mode )
     {
         overlay_backdrop( id_hash( "state_overlay" ), 260.0f, top_y );
         gui_stack();
+        gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
 
         gui_textf( "Hover   %s", dbg_id_str( s_interaction.hover_id ) );
         gui_textf( "Active  %s (btn %u)", dbg_id_str( s_interaction.active_id ), s_interaction.active_button );
@@ -386,6 +392,8 @@ gui_state_overlay( int mode )
             }
             gui_textf( "Ctx salt 0x%08X", g_ctx->retained.id_salt );
         }
+
+        gui_scale_pop();
     }
     gui_region_end();
 }
@@ -429,17 +437,18 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
         F8      command stepper: show / hide the control window (Capture there freezes the frame)
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
-        P       perf overlay tier  (off / fps / +timings / +counts / +retained)
-        O       state overlay tier (off / ids / +focus,nav / +popups)
-        C       retained skip (tessellation cache) on/off -- RENDER-side: off re-tessellates
-                every window every frame (geometry), emit skip is untouched
-        F       force redraw on/off -- EMIT-side: on pins frame_dirty true so frame_begin never
-                skips the widget emit (the "always dirty" lever; see set_force_redraw)
-        I       idle skip (frame_pace blocks on OS input when idle) on/off
+        NP+     perf overlay tier  (off / fps / +timings / +counts / +retained)
+        NP-     state overlay tier (off / ids / +focus,nav / +popups)
         , .     command stepper (while frozen): step the replay cursor back / forward
                 (repeat-aware, so holding scrubs; shift steps by 16)
                 (picking a command under the mouse is the stepper window's Pick toggle -- a
                 hotkey fought the focused window's keyboard nav / type-ahead)
+
+    While armed, a dense checkbox-list selector (gui_debug_selector_menu, right edge of the
+    viewport) is also up, mirroring NP+ / NP- as sliders alongside the levers that no longer have
+    keys of their own: retained skip (tessellation cache), force redraw, and idle skip -- toggled
+    there now instead of the old C / F / I letters. It is part of debug rendering, so it never
+    perturbs perf-stats or counts (same GUI_WIN_DEBUG_BAND exemption as the overlays).
 
     Letter and numpad keys are fenced by want_capture_keyboard so typing in a text field never
     toggles them (numpad digits are text input with Num Lock on).
@@ -449,12 +458,21 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
 ==============================================================================================*/
 
 
-static int  s_dbg_perf_mode;     /* perf overlay tier, P cycles 0..4                        */
-static int  s_dbg_state_mode;    /* state overlay tier, O cycles 0..3                       */
+static int  s_dbg_perf_mode;     /* perf overlay tier, NP_ADD cycles 0..4                   */
+static int  s_dbg_state_mode;    /* state overlay tier, NP_SUB cycles 0..3                  */
 static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */
 static bool s_dbg_step_open;     /* command stepper window, F8 opens (X button hides)       */
-static bool s_idle_skip;         /* frame_pace: block on OS input when idle, I toggles      */
+static bool s_idle_skip;         /* frame_pace: block on OS input when idle, selector menu toggles */
 static bool s_dbg_hotkeys_armed; /* master arm: every hotkey below is inert until NP_DOT arms it */
+
+/* Remembered selector-menu lever values -- snapshotted by debug_reset() when the arm goes off
+   (so disarming can still force the live flags back to normal) and re-applied by debug_restore()
+   when the arm goes back on, so reopening the menu picks up exactly where it left off instead of
+   the arm's "normal" defaults.  Perf/state tier and idle skip need no separate shadow: they are
+   plain local state (or already left alone -- idle skip) that debug_reset() no longer touches, so
+   they are already sitting at their last value when the menu reopens. */
+static bool s_dbg_force_redraw_saved;
+static bool s_dbg_retained_skip_saved = true;   /* default: cached (skip tess when unchanged) */
 
 /* True while any context that closed this frame still had an animation in flight -- the OR of
    every ctx_end's wants_redraw, reset each frame_begin.  frame_pace reads it to keep pumping
@@ -472,20 +490,24 @@ bool gui_idle_skip( void )        { return s_idle_skip; }
    branch that mutates a mode requests g_ctx->retained.wants_redraw so frame_begin sees the frame as
    dirty next time round instead of an idle/retained replay silently sitting on the stale mode. */
 /* Return every debug mode to normal -- called when the master arm is switched off so disarming
-   visibly clears the screen (overlays, layer rects, render mode) and restores the perf levers to
-   their defaults, rather than leaving whatever was toggled on frozen in place.  Idle skip is left
-   as-is: it is an invisible frame-pacing preference a host may own (gui_set_idle_skip), not a
-   debug display state, and there is no per-frame host write to re-assert it after a reset. */
+   visibly clears the screen (overlays, selector menu, layer rects, render mode) and returns the
+   live perf levers to their defaults, rather than leaving whatever was toggled on frozen in
+   place.  The two levers that are real engine flags (force redraw, retained skip) are snapshotted
+   into s_dbg_*_saved first so debug_restore() can put them back on re-arm -- everything else the
+   selector menu shows (perf/state tier, idle skip) is already plain local state debug_reset()
+   does not touch, so it is untouched here too and simply sits at its last value until the arm's
+   gate (debug_overlays_emit / gui_idle_skip) hides its effect meanwhile. */
 static void
 debug_reset( void )
 {
-    s_dbg_perf_mode  = 0;      /* perf overlay off  */
-    s_dbg_state_mode = 0;      /* state overlay off */
     s_dbg_dash_open  = false;  /* dashboard closed  */
     s_dbg_step_open  = false;  /* stepper window closed */
 
     gui_render_set_mode( GUI_RENDER_NORMAL );   /* wireframe / batch tint -> normal */
     gui_debug_set_layers( 0 );                  /* clear all NP1-7 layer rects      */
+
+    s_dbg_retained_skip_saved = gui_build_retained_skip();
+    s_dbg_force_redraw_saved  = gui_force_redraw();
     gui_build_set_retained_skip( true );        /* normal: skip tess when unchanged */
     gui_set_force_redraw( false );              /* normal: allow clean-frame emit skip */
 
@@ -495,6 +517,17 @@ debug_reset( void )
 #endif
 
     g_ctx->retained.wants_redraw = true;
+}
+
+/* Put the remembered selector-menu lever values back -- called when the master arm is switched
+   back on, so the panel (and the behavior it drives) reopens exactly as the user left it instead
+   of debug_reset()'s normal defaults.  Perf/state tier and idle skip need no restore call: they
+   were never reset, so they are already correct. */
+static void
+debug_restore( void )
+{
+    gui_build_set_retained_skip( s_dbg_retained_skip_saved );
+    gui_set_force_redraw( s_dbg_force_redraw_saved );
 }
 
 static void
@@ -510,7 +543,9 @@ debug_hotkeys( void )
     {
         s_dbg_hotkeys_armed = !s_dbg_hotkeys_armed;
         printf( "[gui] debug hotkeys: %s\n", s_dbg_hotkeys_armed ? "ARMED" : "off" );
-        if ( !s_dbg_hotkeys_armed )
+        if ( s_dbg_hotkeys_armed )
+            debug_restore();
+        else
             debug_reset();
         g_ctx->retained.wants_redraw = true;
     }
@@ -574,37 +609,20 @@ debug_hotkeys( void )
             }
     }
 
-    if ( gui_is_key_pressed( APP_KEY_P ) )
+    /* Perf / state overlay tiers keep a quick keyboard cycle (numpad +/-, away from the letter
+       row so they read as a pair) alongside their checkbox-list slider (gui_debug_selector_menu
+       below) -- these two are flipped often enough while chasing a frame that a click is friction.
+       C/F/I lost their letter keys entirely: single booleans toggled rarely, better discovered as
+       checkboxes than memorized as hotkeys. */
+    if ( gui_is_key_pressed( APP_KEY_NP_ADD ) )
     {
         s_dbg_perf_mode = ( s_dbg_perf_mode + 1 ) % 5;
         g_ctx->retained.wants_redraw = true;
     }
 
-    if ( gui_is_key_pressed( APP_KEY_O ) )
+    if ( gui_is_key_pressed( APP_KEY_NP_SUB ) )
     {
         s_dbg_state_mode = ( s_dbg_state_mode + 1 ) % 4;
-        g_ctx->retained.wants_redraw = true;
-    }
-
-    if ( gui_is_key_pressed( APP_KEY_C ) )
-    {
-        bool on = !gui_build_retained_skip();
-        gui_build_set_retained_skip( on );
-        printf( "[gui] retained skip: %s\n", on ? "on (skip tess if unchanged)" : "off (always tess)" );
-        g_ctx->retained.wants_redraw = true;
-    }
-    if ( gui_is_key_pressed( APP_KEY_F ) )
-    {
-        bool on = !gui_force_redraw();
-        gui_set_force_redraw( on );
-        printf( "[gui] force redraw: %s\n", on ? "on (always emit, frame_dirty pinned)"
-                                               : "off (skip emit on clean frames)" );
-        g_ctx->retained.wants_redraw = true;
-    }
-    if ( gui_is_key_pressed( APP_KEY_I ) )
-    {
-        s_idle_skip = !s_idle_skip;
-        printf( "[gui] idle skip: %s\n", s_idle_skip ? "on (block on input)" : "off (spin)" );
         g_ctx->retained.wants_redraw = true;
     }
 
@@ -633,6 +651,52 @@ debug_hotkeys( void )
 #endif
 }
 
+/*==============================================================================================
+    Debug selector menu -- dense checkbox/slider list, right edge of the viewport
+
+    Where C/F/I/P/O used to be single letters read out of the raw key stream, this is an actual
+    UI: three checkboxes (retained skip, force redraw, idle skip) and the perf/state overlay tier
+    sliders, all dense-packed in one panel.  Shown exactly while the master arm is on (NP_DOT),
+    same as every other debug lever in this file -- press it again and debug_reset() clears the
+    levers back to default the same frame this panel disappears.
+
+    GUI_WIN_DEBUG_BAND (not GUI_WIN_NO_INPUT, unlike the read-only overlays above): this panel
+    must be clickable, but its own geometry still has to stay out of the very stats/counts it is
+    used to tweak -- the same arena-band exemption the perf/state overlays get. */
+static void
+gui_debug_selector_menu( void )
+{
+    f32 top_y = 8.0f;
+    gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
+    if ( mb && mb->last_frame == g_ctx->retained.frame )
+        top_y += mb->h;
+
+    f32 w = 190.0f;
+    f32 x = (f32)s_io.display_w - w - 8.0f;
+
+    gui_region_begin( "debug_selector", x, top_y, w, 0.0f, GUI_REGION_FG,
+                      GUI_WIN_NOSCROLL | GUI_WIN_DEBUG_BAND );
+    {
+        overlay_backdrop( id_hash( "debug_selector" ), x, top_y );
+        gui_stack();
+
+        bool force = gui_force_redraw();
+        if ( gui_checkbox( "Force redraw", &force ) )
+            gui_set_force_redraw( force );
+
+        bool cached = gui_build_retained_skip();
+        if ( gui_checkbox( "Tess cache", &cached ) )
+            gui_build_set_retained_skip( cached );
+
+        gui_checkbox( "Idle skip", &s_idle_skip );
+
+        gui_new_line( 2.0f );
+        gui_slider_int( "Perf tier", &s_dbg_perf_mode,  0, 4 );
+        gui_slider_int( "IO tier",   &s_dbg_state_mode, 0, 3 );
+    }
+    gui_region_end();
+}
+
 /* Emit the debug overlays into the currently bound (default) context -- called from ctx_end
    before it rebinds, so this is exactly where a host used to hand-place them: last in the
    default context's build, drawing on top of everything it emitted. */
@@ -641,8 +705,12 @@ debug_overlays_emit( void )
 {
     gui_pipeline_dashboard( &s_dbg_dash_open );
     gui_step_window( &s_dbg_step_open );
-    gui_perf_overlay( s_dbg_perf_mode );
-    gui_state_overlay( s_dbg_state_mode );
+    if ( s_dbg_hotkeys_armed )
+        gui_debug_selector_menu();
+    /* Tier state is no longer zeroed on disarm (debug_reset) so the selector menu can remember
+       it -- gate visibility on the arm here instead, the same net effect (hidden while off). */
+    gui_perf_overlay ( s_dbg_hotkeys_armed ? s_dbg_perf_mode  : 0 );
+    gui_state_overlay( s_dbg_hotkeys_armed ? s_dbg_state_mode : 0 );
 }
 
 /* NOTE: gui_frame_pace() -- the end-of-loop idle sleep -- moved to gui_boot.c, the boot-tier
