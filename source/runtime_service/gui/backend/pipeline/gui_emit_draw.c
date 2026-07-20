@@ -271,21 +271,12 @@ clip_append( gui_rect_t r )
 
     /* Saturation is a VISUAL corruption, not a drop: every clip past the cap shares slot cap-2's
        rect, so content scissors against some other region's box.  Without a report this reads as
-       an inexplicable clipping glitch, so warn once (the loud-overflow rule every other pool
-       already follows). */
-    {
-        static bool warned = false;
-        if ( !warned )
-        {
-            printf( "[gui] WARNING: clip table full (%u distinct scissor rects this frame) -- "
-                    "further clips share a wrong rect. Raise GUI_MAX_CLIP_RECTS (gui.h).\n",
-                    (unsigned)GUI_MAX_CLIP_RECTS );
-            fflush( stdout );
-            warned = true;
-        }
-        ORB_ASSERT_MSG_ONCE( false, "gui clip table saturated -- clips share a wrong scissor rect; "
-                                    "raise GUI_MAX_CLIP_RECTS (gui.h)" );
-    }
+       an inexplicable clipping glitch. */
+    GUI_WARN_ONCE( "clip table full (%u distinct scissor rects this frame) -- "
+                   "further clips share a wrong rect. Raise GUI_MAX_CLIP_RECTS (gui.h).\n",
+                   (unsigned)GUI_MAX_CLIP_RECTS );
+    ORB_ASSERT_MSG_ONCE( false, "gui clip table saturated -- clips share a wrong scissor rect; "
+                                "raise GUI_MAX_CLIP_RECTS (gui.h)" );
     return (u8)( GUI_MAX_CLIP_RECTS - 2u );
 }
 
@@ -942,15 +933,9 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     {
         /* Pool exhausted: drop the label rather than store a dangling pointer -- but never
            silently.  Text vanishing with rects still painting reads as a font bug, not a pool
-           cap, so name the real cause once (the loud-overflow rule). */
-        static bool warned = false;
-        if ( !warned )
-        {
-            printf( "[gui] WARNING: frame text pool full (%u bytes) -- further text this frame "
-                    "is dropped. Raise GUI_MAX_TEXT_POOL (gui.h).\n", (unsigned)GUI_MAX_TEXT_POOL );
-            fflush( stdout );
-            warned = true;
-        }
+           cap, so name the real cause. */
+        GUI_WARN_ONCE( "frame text pool full (%u bytes) -- further text this frame "
+                       "is dropped. Raise GUI_MAX_TEXT_POOL (gui.h).\n", (unsigned)GUI_MAX_TEXT_POOL );
         ORB_ASSERT_MSG_ONCE( false, "gui text pool exhausted -- labels dropped; raise "
                                     "GUI_MAX_TEXT_POOL (gui.h)" );
         return;

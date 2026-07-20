@@ -164,17 +164,11 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kin
     if ( g_ctx->nav.item_count >= GUI_NAV_ITEMS_MAX )
     {
         /* List full: items past the cap never register, so Tab / arrows silently cannot reach
-           them.  Warn once so a keyboard dead zone in a huge window traces to this cap (and to
+           them.  Warn so a keyboard dead zone in a huge window traces to this cap (and to
            rows_clip as the usual fix) instead of reading as a nav bug. */
-        static bool warned = false;
-        if ( !warned )
-        {
-            printf( "[gui] WARNING: nav item list full (%u) -- further items are unreachable by "
-                    "keyboard nav this frame. Virtualize rows (rows_clip) or raise "
-                    "GUI_NAV_ITEMS_MAX (gui_internal.h).\n", (unsigned)GUI_NAV_ITEMS_MAX );
-            fflush( stdout );
-            warned = true;
-        }
+        GUI_WARN_ONCE( "nav item list full (%u) -- further items are unreachable by "
+                       "keyboard nav this frame. Virtualize rows (rows_clip) or raise "
+                       "GUI_NAV_ITEMS_MAX (gui_internal.h).\n", (unsigned)GUI_NAV_ITEMS_MAX );
     }
     else
     {

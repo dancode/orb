@@ -299,11 +299,12 @@ void     gui_replay_scope_exit ( bool force_redraw );
 
 void                gui_render_flush        ( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
-/* Fill the backend-owned buckets of the memory breakdown: GPU geometry buffers (scaled by the
-   caller-supplied live-surface count), the font atlas texture, and every fixed CPU .bss buffer
-   (draw list, tessellation staging, retained cache, font registry).  The CPU-heap context bytes
-   and the totals are filled by the frontend (gui_mem_stats), which owns the context pool. */
-gui_mem_stats_t     gui_render_memory       ( u32 live_viewports );
+/* Fill the backend-owned buckets of the memory breakdown: GPU device memory (geometry buffers
+   scaled by the caller-supplied live-surface count, atlas textures, debug-overlay buffers) and
+   every fixed CPU static the backend TU defines (see backend/gui_backend_mem.c).  The CPU-heap
+   context bytes and the totals are filled by the frontend (gui_mem_stats), which owns the
+   context pool. */
+gui_mem_stats_t     gui_backend_memory      ( u32 live_viewports );
 
 /* Debug render mode (normal / wireframe / batch-tint) -- backs gui()->debug_set/get_render_mode.
    The flush reads it to pick the fill vs. wireframe pipeline and the per-draw debug push constants. */

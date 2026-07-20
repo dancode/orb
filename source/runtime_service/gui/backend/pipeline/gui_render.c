@@ -371,42 +371,9 @@ gui_render_shutdown( void )
     memset( &s_render, 0, sizeof( s_render ) );
 }
 
-/*==============================================================================================
-    Memory stats
-==============================================================================================*/
-
-// gui_render_memory -- fill the backend-owned buckets of the gui memory breakdown.  Every backend
-// static (s_draw / s_tess / the retained-cache tables / s_fonts) is in scope here: this file is the
-// last include in the gui_backend.c unity TU, after each buffer's defining file.  The GPU geometry
-// buffers are per-surface and fixed, so they scale with live_viewports (each viewport owns one
-// vb + ib of RHI_MAX_FRAMES_IN_FLIGHT regions).  The frontend adds the CPU-heap context bytes and
-// the section totals; those fields are left zero here.
-gui_mem_stats_t
-gui_render_memory( u32 live_viewports )
-{
-    gui_mem_stats_t s;
-    memset( &s, 0, sizeof( s ) );
-
-    /* GPU: per-surface geometry buffers x live surfaces, plus the font atlas textures. */
-    s.viewport_count    = live_viewports;
-    s.gpu_vertex_bytes  = live_viewports * RHI_MAX_FRAMES_IN_FLIGHT * (u32)GUI_VB_REGION_BYTES;
-    s.gpu_index_bytes   = live_viewports * RHI_MAX_FRAMES_IN_FLIGHT * (u32)GUI_IB_REGION_BYTES;
-    s.gpu_texture_bytes = font_atlas_bytes();
-    s.gpu_total         = s.gpu_vertex_bytes + s.gpu_index_bytes + s.gpu_texture_bytes;
-
-    /* CPU .bss: the fixed backend buffers.  cache_bytes sums every retained-cache table -- the two
-       ping-pong slot arrays, the stable GPU-command cache and its counts, the dispatch pointer
-       table, and the per-window diff records (s_cache / s_stats). */
-    s.cpu_drawlist_bytes = (u32)sizeof( s_draw );
-    s.cpu_tess_bytes     = (u32)sizeof( s_tess );
-    s.cpu_cache_bytes    = (u32)( sizeof( s_slots_a ) + sizeof( s_slots_b )
-                                + sizeof( s_win_cached ) + sizeof( s_win_cached_count )
-                                + sizeof( s_dispatch ) + sizeof( s_cache ) + sizeof( s_stats ) );
-    s.cpu_font_bytes     = (u32)sizeof( s_fonts );
-    s.cpu_static_total   = s.cpu_drawlist_bytes + s.cpu_tess_bytes
-                         + s.cpu_cache_bytes + s.cpu_font_bytes;
-    return s;
-}
+/* Memory accounting lives in backend/gui_backend_mem.c (gui_backend_memory) -- the LAST include
+   of the unity TU, so it can sizeof every backend static, including the capture/debug files
+   included after this one. */
 
 /*==============================================================================================
     Debug render mode -- the debug view (normal / wireframe / batch-tint).

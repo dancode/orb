@@ -30,6 +30,28 @@
 
 // clang-format off
 /*==============================================================================================
+    Loud-overflow reporting
+
+    Every fixed pool in the gui follows the same saturation rule: never fail hard, never be
+    silent.  The overflowing site degrades gracefully (drop / share / evict) but reports ONCE
+    per run so the symptom traces to its cap instead of reading as a rendering or input bug.
+    This macro is the report half: printf so the message reaches plain consoles (the engine log
+    may not be up yet), fflush so it lands before a follow-up ORB_ASSERT_MSG_ONCE can trap.
+==============================================================================================*/
+
+#define GUI_WARN_ONCE( ... )                              \
+    do                                                    \
+    {                                                     \
+        static bool s_gui_warned_once;                    \
+        if ( !s_gui_warned_once )                         \
+        {                                                 \
+            printf( "[gui] WARNING: " __VA_ARGS__ );      \
+            fflush( stdout );                             \
+            s_gui_warned_once = true;                     \
+        }                                                 \
+    } while ( 0 )
+
+/*==============================================================================================
     Shared capacities
 
     Fixed-array bounds embedded in the shared record types below.  (GUI_LAYOUT_COLS lives in the

@@ -1636,13 +1636,17 @@ typedef struct
 
     A full accounting of what the gui system holds, split by WHERE it lives:
 
-      - GPU     : device memory -- per-viewport geometry buffers + font atlas textures.  Dynamic:
-                  created at init / viewport_open, released at shutdown / viewport_close.
-      - CPU .bss: fixed-size backend buffers baked into the image -- the draw list, the CPU
-                  tessellation staging, the retained geometry cache, the font registry.  Present
-                  for the whole run whether one window is open or fifty.
-      - CPU heap: one malloc block per live context (header + state / popup / window / viewport /
-                  dock pools).  Dynamic: grows only when a secondary context is created.
+      - GPU       : device memory -- per-viewport geometry buffers, atlas textures, and (Debug)
+                    the debug overlay's own buffers.  Dynamic: created at init / viewport_open,
+                    released at shutdown / viewport_close.
+      - CPU static: EVERY fixed backend buffer baked into the image (.bss/.rdata) -- the draw
+                    list, tessellation staging, retained cache, font/atlas/icon registries,
+                    render state + embedded shaders, capture buffers, debug tooling.  Present
+                    for the whole run whether one window is open or fifty; summed exhaustively
+                    in backend/gui_backend_mem.c (the accounting contract lives there).
+      - CPU heap  : one malloc block per live context (header + state / popup / window /
+                    viewport / dock pools).  Dynamic: grows only when a secondary context is
+                    created.
 
     Every bucket is exact (a sizeof of the backing array, a summed malloc size, or a live-count
     multiply of a fixed region), so the grand total is the true resident footprint -- not a
@@ -1655,15 +1659,22 @@ typedef struct
     u32 gpu_vertex_bytes;   // per-viewport VB regions, summed over live surfaces x frames-in-flight
     u32 gpu_index_bytes;    // per-viewport IB regions, summed over live surfaces x frames-in-flight
     u32 gpu_texture_bytes;  // font atlases (each already includes its white + dash rows)
-    u32 gpu_total;          // sum of the three above
+    u32 gpu_debug_bytes;    // debug-overlay VB/IB (Debug builds; 0 when compiled out / not created)
+    u32 gpu_total;          // sum of the section above
     u32 viewport_count;     // live GPU surfaces contributing to gpu_vertex/index_bytes
 
-    /* --- CPU static memory (.bss; fixed backend buffers, resident the whole run). --- */
-    u32 cpu_drawlist_bytes; // s_draw: command list + hashes + point/segment pools + text + clip tables
-    u32 cpu_tess_bytes;     // s_tess: CPU vertex / index / GPU-command staging
-    u32 cpu_cache_bytes;    // retained cache: ping-pong slot tables + cached GPU cmds + diff records
-    u32 cpu_font_bytes;     // font registry slots (CPU glyph metrics), excluding the GPU atlas
-    u32 cpu_static_total;   // sum of the four above
+    /* --- CPU static memory (.bss + .rdata; fixed backend buffers, resident the whole run). --- */
+    u32 cpu_drawlist_bytes; // EMIT: s_draw (cmds + hashes + point/rect/text/clip pools) + path stroker
+    u32 cpu_tess_bytes;     // BUILD: s_tess CPU vertex / index / GPU-command staging + arc tables
+    u32 cpu_cache_bytes;    // retained cache: slot tables, stable cmd cache, diff records, seg chains,
+                            //   permutation scratch, volatile registry, stats
+    u32 cpu_font_bytes;     // font registry slots (CPU glyph metrics) + reload queue, excl. GPU atlas
+    u32 cpu_res_bytes;      // shared R8 atlas registry (packer/tenants) + icon registry
+    u32 cpu_render_bytes;   // RENDER: pipeline/sampler state + embedded SPIR-V bytecode
+    u32 cpu_select_bytes;   // text-selection run capture buffer (always compiled; a product feature)
+    u32 cpu_debug_bytes;    // debug overlay + name registry + dashboard snapshot + command stepper
+                            //   (each 0 when its feature is compiled out -- Release builds)
+    u32 cpu_static_total;   // sum of the section above
 
     /* --- CPU dynamic memory (heap; one malloc block per live context). --- */
     u32 cpu_context_bytes;  // sum over live contexts of the single ctx block (header + all pools)

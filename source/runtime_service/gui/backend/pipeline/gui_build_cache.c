@@ -458,14 +458,8 @@ cache_diff_windows( void )
                past the assert (or a release build) and the surviving windows still render. */
             if ( s_cache.cur_n >= RENDER_MAX_WIN )
             {
-                static bool warned = false;
-                if ( !warned )
-                {
-                    printf( "[gui] WARNING: more than %u windows this frame -- extra windows "
-                            "are not rendered. Raise RENDER_MAX_WIN.\n", RENDER_MAX_WIN );
-                    fflush( stdout );   /* flush the diagnostic before the once-assert can trap */
-                    warned = true;
-                }
+                GUI_WARN_ONCE( "more than %u windows this frame -- extra windows "
+                               "are not rendered. Raise RENDER_MAX_WIN.\n", RENDER_MAX_WIN );
                 ORB_ASSERT_MSG_ONCE( false, "gui window overflow -- more than RENDER_MAX_WIN "
                                             "windows; extra windows dropped. Raise RENDER_MAX_WIN "
                                             "(gui_backend.h)" );
@@ -674,17 +668,17 @@ tess_volatile_range( u32 i, u32 seg_hi, gui_id_t vid, u32* out_hi, u32* out_anch
     *out_anchor = anchor;
 }
 
+/* Permutation output scratch, reused by every cache_tess_window call (cache_build_frame is
+   single-threaded and guarded against re-entry).  s_win_font[] carries the segment's font
+   alongside each reordered index because the clip sort crosses segment boundaries -- the font
+   is a per-segment property, not per-command, so it must travel with its commands. */
+static u32 s_win_order[ GUI_MAX_CMDS ];
+static u32 s_win_font [ GUI_MAX_CMDS ];
+
 static void
 cache_tess_window( const render_win_hash_t* wh )
 {
     const gui_cmd_seg_t* segs = s_draw.segs;
-
-    /* Permutation output.  win_font[] carries the segment's font alongside each reordered index
-       because the clip sort crosses segment boundaries -- the font is a per-segment property,
-       not per-command, so it must travel with its commands.
-       Static: cache_build_frame is single-threaded and guarded against re-entry. */
-    static u32 win_order[ GUI_MAX_CMDS ];
-    static u32 win_font [ GUI_MAX_CMDS ];
 
     /* Walk 1 -- collect clip groups (first-seen order over every visible command, volatile
        included, so the group layout matches emission) and count each group's populations:
@@ -741,8 +735,8 @@ cache_tess_window( const render_win_hash_t* wh )
         for ( u16 si = wh->seg_head; si != SEG_CHAIN_END; si = s_seg_next[ si ] )
             for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
                 if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
-                    { win_font[ n ] = segs[ si ].font; win_order[ n++ ] = i; }
-        tess_dispatch( s_draw.cmds, win_order, win_font, n, wh->win );
+                    { s_win_font[ n ] = segs[ si ].font; s_win_order[ n++ ] = i; }
+        tess_dispatch( s_draw.cmds, s_win_order, s_win_font, n, wh->win );
         return;
     }
 
@@ -774,8 +768,8 @@ cache_tess_window( const render_win_hash_t* wh )
                 u8 ci = s_draw.cmds[ i ].clip_idx;
                 if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
                 u32 g = clip_group_of( &cg, ci );
-                win_font [ plain_off[ g ] ] = segs[ si ].font;
-                win_order[ plain_off[ g ]++ ] = i;
+                s_win_font [ plain_off[ g ] ] = segs[ si ].font;
+                s_win_order[ plain_off[ g ]++ ] = i;
             }
             else
             {
@@ -787,8 +781,8 @@ cache_tess_window( const render_win_hash_t* wh )
                     for ( u32 j = i; j < hi; ++j )
                         if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ j ].clip_idx ] ) )
                         {
-                            win_font [ vol_off[ g ] ] = segs[ si ].font;
-                            win_order[ vol_off[ g ]++ ] = j;
+                            s_win_font [ vol_off[ g ] ] = segs[ si ].font;
+                            s_win_order[ vol_off[ g ]++ ] = j;
                         }
                 }
                 i = hi - 1;
@@ -796,7 +790,7 @@ cache_tess_window( const render_win_hash_t* wh )
         }
     }
 
-    tess_dispatch( s_draw.cmds, win_order, win_font, n, wh->win );
+    tess_dispatch( s_draw.cmds, s_win_order, s_win_font, n, wh->win );
 }
 
 /*==============================================================================================
@@ -1276,50 +1270,46 @@ cache_build_frame( void )
     if ( s_tess.band0_vert_end > s_tess.band0_vert_hwm ) s_tess.band0_vert_hwm = s_tess.band0_vert_end;
     if ( s_tess.band0_idx_end  > s_tess.band0_idx_hwm  ) s_tess.band0_idx_hwm  = s_tess.band0_idx_end;
 
-    bool check_for_overflow = true;
-    if ( check_for_overflow )
+    /* Single overflow catch for the whole build: the reservation sites just latch s_tess.overflow
+       and drop their primitive (non-fatal -- the frame still submits everything that fit, the app
+       keeps running), so we report ONCE here, after the frame is fully tessellated and about to be
+       submitted.  We name the window that blew the caps (log line + break-once assert below) so a
+       dropped primitive -- classically a window's late-tessellated chrome vanishing -- is traced to
+       its source; the log and the dashboard's OVERFLOWED marker persist even past the assert. */
+    /* Spill outside the per-window loop (a deferred volatile patch): no culprit window was captured,
+       so report the final arena fill rather than a stale zero. */
+    if ( s_tess.overflow && ps.overflow_win == GUI_ID_NONE )
     {
-        /* Single overflow catch for the whole build: the reservation sites just latch s_tess.overflow
-           and drop their primitive (non-fatal -- the frame still submits everything that fit, the app
-           keeps running), so we report ONCE here, after the frame is fully tessellated and about to be
-           submitted.  We name the window that blew the caps (log line + break-once assert below) so a
-           dropped primitive -- classically a window's late-tessellated chrome vanishing -- is traced to
-           its source; the log and the dashboard's OVERFLOWED marker persist even past the assert. */
-        /* Spill outside the per-window loop (a deferred volatile patch): no culprit window was captured,
-           so report the final arena fill rather than a stale zero. */
-        if ( s_tess.overflow && ps.overflow_win == GUI_ID_NONE )
-        {
-            ps.overflow_at_vert = s_tess.vert_count;
-            ps.overflow_at_idx  = s_tess.idx_count;
-            ps.overflow_at_cmd  = s_tess.cmd_count;
-        }
-
-        if ( s_tess.overflow && !s_tess.overflow_ever )
-        {
-            /* Name the window that hit the wall (a title in debug, else its hashed id) plus the fill it
-               reached, so the report points at the culprit instead of just "something overflowed".  A
-               NONE id means the spill happened outside the per-window loop (a deferred volatile patch). */
-            const char* nm = ( ps.overflow_win != GUI_ID_NONE ) ? gui_debug_name( ps.overflow_win ) : NULL;
-            printf( "[gui] WARNING: draw list overflow -- geometry dropped tessellating window '%s' "
-                    "(id 0x%08X); arena filled to %u/%u verts, %u/%u idx, %u/%u gpu cmds. "
-                    "Raise GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS.\n",
-                    nm ? nm : "<unnamed>", (unsigned)ps.overflow_win,
-                    ps.overflow_at_vert, GUI_MAX_VERTS, ps.overflow_at_idx, GUI_MAX_IDX,
-                    ps.overflow_at_cmd, GUI_MAX_CMDS );
-            fflush( stdout );   /* flush the diagnostic before the once-assert below can trap */
-        }
-        if ( s_tess.overflow )
-             s_tess.overflow_ever = true;
-
-        /* Break once (debug) so you can catch which frame / UI blew the caps under the debugger; the
-           macro self-latches, so a persistent overflow does not re-trap every frame.  Non-fatal: skip
-           past it (or a release build) and the app keeps running with the dropped geometry. */
-        ORB_ASSERT_MSG_ONCE( !s_tess.overflow, "gui draw list overflow -- geometry dropped; raise "
-                                               "GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS (gui.h)" );
+        ps.overflow_at_vert = s_tess.vert_count;
+        ps.overflow_at_idx  = s_tess.idx_count;
+        ps.overflow_at_cmd  = s_tess.cmd_count;
     }
 
-    /* Debug trace: print the current geometry counts only when they change (spam prevention)
-       The peak high-water marks are always printed  */
+    if ( s_tess.overflow && !s_tess.overflow_ever )
+    {
+        /* Name the window that hit the wall (a title in debug, else its hashed id) plus the fill it
+           reached, so the report points at the culprit instead of just "something overflowed".  A
+           NONE id means the spill happened outside the per-window loop (a deferred volatile patch). */
+        const char* nm = ( ps.overflow_win != GUI_ID_NONE ) ? gui_debug_name( ps.overflow_win ) : NULL;
+        printf( "[gui] WARNING: draw list overflow -- geometry dropped tessellating window '%s' "
+                "(id 0x%08X); arena filled to %u/%u verts, %u/%u idx, %u/%u gpu cmds. "
+                "Raise GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS.\n",
+                nm ? nm : "<unnamed>", (unsigned)ps.overflow_win,
+                ps.overflow_at_vert, GUI_MAX_VERTS, ps.overflow_at_idx, GUI_MAX_IDX,
+                ps.overflow_at_cmd, GUI_MAX_CMDS );
+        fflush( stdout );   /* flush the diagnostic before the once-assert below can trap */
+    }
+    if ( s_tess.overflow )
+        s_tess.overflow_ever = true;
+
+    /* Break once (debug) so you can catch which frame / UI blew the caps under the debugger; the
+       macro self-latches, so a persistent overflow does not re-trap every frame.  Non-fatal: skip
+       past it (or a release build) and the app keeps running with the dropped geometry. */
+    ORB_ASSERT_MSG_ONCE( !s_tess.overflow, "gui draw list overflow -- geometry dropped; raise "
+                                           "GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS (gui.h)" );
+
+    /* Debug trace (s_caps.stats_trace): print the geometry counts only when they change, so a
+       steady UI does not spam; each line carries the lifetime peak alongside the live count. */
 
     static u32 prev_verts = ~0u, prev_idx = ~0u;
     if ( s_caps.stats_trace && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
@@ -1331,8 +1321,7 @@ cache_build_frame( void )
         prev_idx   = s_tess.idx_count;
     }
 
-    /* Debug trace: print the retained cache counts only when they change (spam prevention)
-       The peak high-water marks are always printed  */
+    /* Debug trace (s_caps.stats_trace): retained-cache effectiveness, again only on change. */
 
     static u32 prev_win_ret = ~0u, prev_vert_ret = ~0u;
     if ( s_caps.stats_trace &&

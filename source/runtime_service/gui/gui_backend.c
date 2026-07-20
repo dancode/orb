@@ -43,6 +43,8 @@
     gui_debug_overlay.c             -- DEBUG OVERLAY: bolt-on second draw list, flushed on top (Debug only).  Stays
                                         at the backend/ root -- it reads resource/ AND pipeline/ internals plus the
                                         UI unit's DBG_* capture calls, so it does not belong to either subfolder.
+    gui_backend_mem.c               -- MEMORY ACCOUNTING: gui_backend_memory sizeof-sums every backend static;
+                                        must be included last so it sees them all.
 
 ==============================================================================================*/
 
@@ -129,6 +131,11 @@ static gui_backend_caps_t s_caps;
 // seam and pre-loads it back at every draw_reset while frozen.  Compiled out unless
 // GUI_CMD_STEPPER.  Last (with the dash capture) so it sees the emit statics it copies (s_draw).
 #include "runtime_service/gui/backend/gui_step_capture.c"
+
+// MEMORY ACCOUNTING: sizeof-sums every backend static into the gui_mem_stats_t buckets.  MUST
+// stay the very last include -- unity visibility only flows downward, and the full-accounting
+// contract is that every static above is in scope here.
+#include "runtime_service/gui/backend/gui_backend_mem.c"
 
 /*==============================================================================================
     Backend lifecycle seam -- the entry point the UI unit (gui_init/gui_shutdown, gui_frame.c)

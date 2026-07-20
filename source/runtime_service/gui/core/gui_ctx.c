@@ -660,7 +660,7 @@ static f32 vp_h( const gui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->d
 
     A full accounting of the gui system's resident footprint, split by where it lives (GPU device
     memory / fixed CPU .bss / per-context CPU heap).  The backend fills its own buckets through
-    gui_render_memory (GPU buffers + the fixed backend buffers); this frontend owns the context
+    gui_backend_memory (GPU buffers + the fixed backend buffers); this frontend owns the context
     pool, so it counts the live GPU surfaces to scale the geometry buffers and sums the per-context
     malloc blocks for the heap total.  See gui_mem_stats_t (gui.h) for the bucket meanings.
 ==============================================================================================*/
@@ -682,7 +682,7 @@ gui_mem_stats( void )
     }
 
     /* Backend fills GPU + CPU .bss; frontend adds the CPU-heap context blocks and the totals. */
-    gui_mem_stats_t s = gui_render_memory( live_viewports );
+    gui_mem_stats_t s = gui_backend_memory( live_viewports );
 
     /* CPU heap: one malloc block per live context (recorded at allocation as _alloc_size). */
     for ( u32 i = 0; i < s_ctx_pool_count; ++i )
@@ -717,13 +717,20 @@ gui_print_mem_stats( void )
     GUI_MEM_ROW( "vertex buffers",   s.gpu_vertex_bytes  );
     GUI_MEM_ROW( "index buffers",    s.gpu_index_bytes   );
     GUI_MEM_ROW( "font atlas texture", s.gpu_texture_bytes );
+    if ( s.gpu_debug_bytes )
+        GUI_MEM_ROW( "debug overlay buffers", s.gpu_debug_bytes );
     GUI_MEM_ROW( "  GPU subtotal",   s.gpu_total         );
 
-    printf( "  -- CPU static (.bss, fixed) ----------------------------\n" );
+    printf( "  -- CPU static (fixed backend buffers) ------------------\n" );
     GUI_MEM_ROW( "draw command list",  s.cpu_drawlist_bytes );
     GUI_MEM_ROW( "tessellation stage", s.cpu_tess_bytes     );
     GUI_MEM_ROW( "retained cache",     s.cpu_cache_bytes    );
     GUI_MEM_ROW( "font registry",      s.cpu_font_bytes     );
+    GUI_MEM_ROW( "atlas + icons",      s.cpu_res_bytes      );
+    GUI_MEM_ROW( "render + shaders",   s.cpu_render_bytes   );
+    GUI_MEM_ROW( "text-select capture", s.cpu_select_bytes  );
+    if ( s.cpu_debug_bytes )
+        GUI_MEM_ROW( "debug tooling",  s.cpu_debug_bytes    );
     GUI_MEM_ROW( "  CPU static subtotal", s.cpu_static_total );
 
     printf( "  -- CPU heap (%u context%s) -----------------------------\n",

@@ -114,17 +114,11 @@ state_probe( state_class_t c, gui_id_t id )
         {
             /* Wall-to-wall live table: no empty slot, no tombstone -- the insert below clobbers
                the home bucket's live tenant.  From the user's side that is a scroll position or
-               animation randomly resetting with nothing in the log, so warn once with the class
+               animation randomly resetting with nothing in the log, so warn with the class
                (identified by stride) so the right GUI_STATE_*_SLOTS partition gets raised. */
-            static bool warned = false;
-            if ( !warned )
-            {
-                printf( "[gui] WARNING: keyed state pool full (class stride %u, %u slots) -- a "
-                        "live entry was evicted; per-widget state (scroll/anim/caret) may reset. "
-                        "Raise the class's slot count (gui_internal.h).\n", c.stride, c.count );
-                fflush( stdout );
-                warned = true;
-            }
+            GUI_WARN_ONCE( "keyed state pool full (class stride %u, %u slots) -- a "
+                           "live entry was evicted; per-widget state (scroll/anim/caret) may reset. "
+                           "Raise the class's slot count (gui_internal.h).\n", c.stride, c.count );
             ORB_ASSERT_MSG_ONCE( false, "gui keyed state pool full -- live state evicted; raise "
                                         "GUI_STATE_*_SLOTS (gui_internal.h)" );
         }

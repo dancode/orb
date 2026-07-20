@@ -884,18 +884,19 @@ nav_finish( void )
        (type-ahead-labels-only) list -- see nav.reg_all below -- so a wake keypress (Tab/arrow,
        which set nav.active this frame) resolves to nothing here and instead lands next frame
        through the first-focus recovery, against the full list this frame's emission builds. */
-    bool full = g_ctx->nav.list_full;
-
-    if ( g_ctx->nav.lane )
-        { if ( full ) nav_resolve_lane(); }
-    else if ( g_ctx->nav.tab != 0 )
-        { if ( full ) nav_resolve_tab(); }
-    else if ( g_ctx->nav.page != 0 )
-        { if ( full ) nav_resolve_page(); }
-    else if ( g_ctx->nav.home != 0 )
-        { if ( full ) nav_resolve_home(); }
-    else if ( g_ctx->nav.move_dir >= 0 )
-        { if ( full ) nav_resolve_move(); }
+    if ( g_ctx->nav.list_full )
+    {
+        if ( g_ctx->nav.lane )
+            nav_resolve_lane();
+        else if ( g_ctx->nav.tab != 0 )
+            nav_resolve_tab();
+        else if ( g_ctx->nav.page != 0 )
+            nav_resolve_page();
+        else if ( g_ctx->nav.home != 0 )
+            nav_resolve_home();
+        else if ( g_ctx->nav.move_dir >= 0 )
+            nav_resolve_move();
+    }
 
     /* Type-ahead is exempt: its domain is exactly the labeled items, which register on dormant
        frames too, so its view of the list is identical either way. */
