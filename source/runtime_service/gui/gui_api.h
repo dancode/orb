@@ -1569,7 +1569,9 @@ typedef struct gui_api_s
 
          NP_DOT  master arm ('.'): toggle every debug hotkey below on / off as a group; off by
                  default, so nothing below responds until it is armed.  Disarming resets every
-                 debug mode back to normal (overlays off, render mode normal, layers cleared)
+                 debug mode back to normal (overlays off, selector menu closed, render mode
+                 normal, layers cleared) and re-arming restores the selector menu's remembered
+                 lever values (debug_restore, gui_frame_overlay.c)
          NP1-NP5 debug overlay layers (window frames / interaction rects / resize bands / layout /
                  clips; Debug builds)
          NP6     content-rect outlines over scrollable regions (GUI_DBG_CONTENT -- drawn in
@@ -1578,20 +1580,28 @@ typedef struct gui_api_s
                  gutters, body interaction clip)
          F9      render mode: normal -> wireframe -> batch tint
          F10     pipeline dashboard window (backend memory maps / uploads / batches)
-         P       perf overlay tier   (off / FPS / +timings / +counts & lever status / +retained)
-         O       state overlay tier  (off / ids / +focus,nav / +popups)
-         C       retained skip on/off -- RENDER-side cache: off re-tessellates every window's
-                 geometry every frame; the emit skip is untouched
-         F       force redraw on/off -- EMIT-side: on pins frame_dirty true so frame_begin never
-                 skips the widget emit (the "always dirty" lever, see set_force_redraw).  A host
-                 that writes set_force_redraw itself every frame owns the flag over the hotkey.
-         I       idle skip on/off (frame_pace blocks on OS input when idle)
+         NP+     perf overlay tier   (off / FPS / +timings / +counts & lever status / +retained)
+         NP-     state overlay tier  (off / ids / +focus,nav / +popups)
+
+       While armed, a dense checkbox/slider selector menu (right edge of the viewport) is also up:
+       retained skip (tessellation cache), force redraw, and idle skip are toggled there now
+       instead of the old C / F / I letters, alongside the NP+/NP- tiers as sliders.  A host that
+       writes set_force_redraw (or set_retained_skip / set_idle_skip) itself every frame should
+       check debug_hotkeys_armed() first and stand down while armed, or its own write will fight
+       the menu's checkbox every frame the two disagree -- see debug_hotkeys_armed below.
 
        The perf / state overlays and the dashboard are emitted internally, last in the default
        context's build (at its ctx_end), so they draw on top and are counted like any widget.
        Letter hotkeys are fenced by want_capture_keyboard, so typing never toggles them. */
     void ( *debug_enable     )( bool enable );
     bool ( *debug_is_enabled )( void );
+
+    /* debug_hotkeys_armed -- true while the NP_DOT master arm is on, i.e. the selector menu is up
+       and owns force redraw / retained skip / idle skip.  A host with its own per-frame lever
+       write (sb_gui_editor's scene-pass set_force_redraw is the reference case) should gate that
+       write on !debug_hotkeys_armed() so the menu's checkbox wins instead of being silently
+       reverted the next time the host's own trigger condition re-fires. */
+    bool ( *debug_hotkeys_armed )( void );
 
     /* Debug render mode -- how the main UI draw list is rasterized (gui_render_mode_t): NORMAL,
        WIREFRAME (triangle edges), or BATCH (per-draw-call color tint).  A pipeline + push-constant

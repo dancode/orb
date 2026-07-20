@@ -330,8 +330,8 @@ target sample_game_ship				# single-exe ship shape: build with -monolithic; proj
     folder      06_PROJECT
     unit        host_game_main.c
     define      HOST_PROJECT=sample_game
-    dep         mod sys ref prof pack fs job net app core run
-    dep         host_common rhi draw
+    dep         base mod sys ref prof pack fs job net app core run
+    dep         host_common rhi draw console gui
     mono_dep    render game sample_game
 
 

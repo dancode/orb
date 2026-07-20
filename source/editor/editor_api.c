@@ -113,7 +113,14 @@ editor_update( f32 dt )
        a freed image once reclaim runs (VK_ERROR_DEVICE_LOST).  The forced emit re-bakes
        the panel with the new index before that window closes. */
     run_host_realtime_set( live );
-    gui()->set_force_redraw( live || recreated );
+
+    if ( gui()->force_redraw() == true && gui()->debug_hotkeys_armed() )
+    {
+        // debug overrdie skips this forced on.
+        return;
+    }
+    
+    gui()->set_force_redraw( live || recreated );    
 }
 
 static void
@@ -316,6 +323,7 @@ editor_build_gui( f32 dt )
             bool quit = false;
             if ( gui()->menu_item( "Quit", NULL, &quit ) )
                 run_host_quit();
+
             gui()->menu_end();
         }
         if ( gui()->menu_begin( "Window" ) )

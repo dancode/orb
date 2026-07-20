@@ -369,6 +369,7 @@ const gui_api_t g_gui_api_struct =
     .debug_get_layers                   = gui_debug_get_layers,
     .debug_enable                       = gui_debug_enable,
     .debug_is_enabled                   = gui_debug_is_enabled,
+    .debug_hotkeys_armed                = gui_debug_hotkeys_armed,
     .debug_set_render_mode              = gui_render_set_mode,
     .debug_get_render_mode              = gui_render_get_mode,
     .debug_dump_geometry                = gui_build_dump_geometry,

@@ -69,6 +69,7 @@ ed_viewport_update( bool live )
 
             if ( w == tw && h == th )
                 s_vp.stable_frames = 0;
+
             else if ( ++s_vp.stable_frames >= ED_VIEWPORT_SETTLE )
             {
                 /* target_resize waits for the device to idle; the settle gate above
@@ -79,7 +80,10 @@ ed_viewport_update( bool live )
                     recreated = true;
                 }
                 else
+                {
                     s_vp.target_id = -1;
+                }
+
                 s_vp.stable_frames = 0;
             }
         }
@@ -90,7 +94,9 @@ ed_viewport_update( bool live )
        frames the panel's command hash stays stable so the gui retained cache can clean. */
 
     if ( live && s_vp.target_id >= 0 )
+    {
         render()->target_flip( s_vp.target_id );
+    }
 
     return recreated;
 }

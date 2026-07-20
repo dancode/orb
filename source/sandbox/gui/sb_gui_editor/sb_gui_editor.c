@@ -168,11 +168,17 @@ main( int argc, char** argv )
            fully clean/retained.
 
            set_force_redraw is written EDGE-TRIGGERED (only when the requirement changes), not
-           every frame: the F debug hotkey toggles the same flag inside gui, and an
-           unconditional per-frame write here would clobber that toggle on the very next frame. */
+           every frame: the debug selector menu's Force redraw checkbox toggles the same flag
+           inside gui, and an unconditional per-frame write here would clobber that toggle the
+           next time ed_scene_changed() flips (any Scene viewport interaction -- hover, camera
+           move, resize).  debug_hotkeys_armed() is the other half: while the menu is up, it owns
+           the flag outright, so this write stands down rather than re-asserting scene_render
+           over whatever the checkbox says.  s_want_force_prev is deliberately left unwritten
+           while stood down, so the first check after the menu closes compares against this
+           editor's own last-asserted value and resyncs immediately if the two now disagree. */
         bool scene_render = g_ed.realtime || g_ed.mode == ED_MODE_PLAY || ed_scene_changed();
         static bool s_want_force_prev = false;
-        if ( scene_render != s_want_force_prev )
+        if ( !gui()->debug_hotkeys_armed() && scene_render != s_want_force_prev )
         {
             gui()->set_force_redraw( scene_render );
             s_want_force_prev = scene_render;

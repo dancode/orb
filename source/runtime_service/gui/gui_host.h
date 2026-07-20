@@ -424,6 +424,7 @@ void gui_debug_set_layers( u32 layers );
 u32  gui_debug_get_layers( void );
 void gui_debug_enable( bool enable );
 bool gui_debug_is_enabled( void );
+bool gui_debug_hotkeys_armed( void );
 
 /* Reverse lookup for the id name registry (gui_debug_overlay.c): the source string an id was
    minted from (widget label, window/popup title, region/child/table id string), or NULL if

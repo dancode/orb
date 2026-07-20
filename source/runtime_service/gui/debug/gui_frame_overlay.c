@@ -350,7 +350,7 @@ gui_state_overlay( int mode )
     if ( mode <= 0 )
         return;
 
-    f32 top_y = 8.0f;
+    f32 top_y = 34.0f;   /* matches perf_overlay's base so the two HUDs share one top edge */
     gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
     if ( mb && mb->last_frame == g_ctx->retained.frame )
         top_y += mb->h;
@@ -464,6 +464,12 @@ static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button wr
 static bool s_dbg_step_open;     /* command stepper window, F8 opens (X button hides)       */
 static bool s_idle_skip;         /* frame_pace: block on OS input when idle, selector menu toggles */
 static bool s_dbg_hotkeys_armed; /* master arm: every hotkey below is inert until NP_DOT arms it */
+
+/* Query for hosts that own a debug lever themselves (e.g. sb_gui_editor's own set_force_redraw
+   write for its scene pass): while armed, the selector menu's checkboxes are the sole owner of
+   force redraw / retained skip / idle skip, so a host's own per-frame write should stand down and
+   let the menu's value stick instead of fighting it every frame it changes. */
+bool gui_debug_hotkeys_armed( void ) { return s_dbg_hotkeys_armed; }
 
 /* Remembered selector-menu lever values -- snapshotted by debug_reset() when the arm goes off
    (so disarming can still force the live flags back to normal) and re-applied by debug_restore()
