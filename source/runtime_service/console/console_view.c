@@ -183,7 +183,7 @@ console_show( f32 display_w, f32 top_y )
         /* child_begin carves a fixed-height box out of the window's flow: whatever it holds,
            the input line below always lands at the same y, immune to scroll state or content
            inside the child. */
-        if ( gui()->child_begin( "##console_scrollback", 0.0f, hist_h, GUI_WIN_NOSCROLL ) )
+        if ( gui()->child_begin( "##console_scrollback", 0.0f, hist_h, GUI_WIN_NONE ) ) // GUI_WIN_NOSCROLL
         {
             /* Fixed dense rows: every line -- text or separator -- occupies exactly one ramp
                row, so hist_h above is exact and every line edge sits on the grid. */
@@ -205,7 +205,7 @@ console_show( f32 display_w, f32 top_y )
             if ( s_view_offset < 0 )
                 s_view_offset = 0;
 
-            for ( i32 row = 0; row < CONSOLE_ROWS; ++row )
+            for ( i32 row = 0; row < CONSOLE_ROWS - 1; ++row )
             {
                 const i32 idx = total - s_view_offset - ( CONSOLE_ROWS - row );
                 gui()->text( ( idx >= 0 ) ? core()->con_line_get( ( u32 )idx ) : " " );
