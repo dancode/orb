@@ -51,6 +51,7 @@
 #include "runtime_service/draw/draw_api.h"
 #include "runtime_service/gui/gui_api.h"
 #include "runtime_service/input/input_api.h"
+#include "runtime_service/console/console_api.h"
 #include "runtime_modules/render/render_api.h"
 
 /*==============================================================================================

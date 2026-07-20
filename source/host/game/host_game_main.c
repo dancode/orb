@@ -34,6 +34,8 @@
 
 #include "runtime_service/rhi/rhi_api.h"
 #include "runtime_service/draw/draw_host.h"
+#include "runtime_service/gui/gui_host.h"
+#include "runtime_service/console/console_host.h"
 #include "runtime_modules/render/render_api.h"
 #include "game/game_api.h"
 #include "runtime/run_project.h"
@@ -145,11 +147,28 @@ game_host_close_request( void )
 ==============================================================================================*/
 
 static const run_module_entry_t k_modules[] = {
-    RUN_SERVICE( rhi    ),    /* GPU backend -- static service                 */
-    RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend */
-    RUN_MODULE ( render ),    /* scene frame owner                             */
-    RUN_MODULE ( game   ),    /* game framework runner -- drives project DLLs   */
+    RUN_SERVICE( rhi     ),   /* GPU backend -- static service                 */
+    RUN_SERVICE( draw    ),   /* immediate primitives -- render's draw backend */
+    RUN_SERVICE( gui     ),   /* immediate mode GUI -- menus, HUD, dev console */
+    RUN_SERVICE( console ),   /* dev console drop-down -- gui front end over core */
+    RUN_MODULE ( render  ),   /* scene frame owner                             */
+    RUN_MODULE ( game    ),   /* game framework runner -- drives project DLLs   */
     { 0 }
+};
+
+/* gui composites over render's scene (the same path host_editor uses).  A font is required
+   for the console (and any menu/HUD) to render text -- GUI_FONT_NONE would draw nothing. */
+static const gui_forward_caps_t k_gui_caps = {
+    .keyboard_nav = true,
+    .tables       = false,
+    .docking      = false,
+};
+
+static const run_gui_desc_t k_gui_desc = {
+    .font  = GUI_FONT_ROBOTO_16,
+    .caps  = &k_gui_caps,
+    .clear = { 0.0f, 0.0f, 0.0f, 0.0f },   /* alpha 0 = render owns the clear (path A) */
+    .debug = false,
 };
 
 int
@@ -198,6 +217,7 @@ main( int argc, char** argv )
         .window_width     = 1280,
         .window_height    = 720,
         .modules          = k_modules,
+        .gui              = &k_gui_desc,
         .project_name     = s_proj.name,
         .project_dir      = s_proj.dir,
 #if defined( BUILD_STATIC ) && defined( HOST_PROJECT )

@@ -35,6 +35,7 @@
 #include "runtime_service/rhi/rhi_api.h"
 #include "runtime_service/draw/draw_host.h"
 #include "runtime_service/gui/gui_api.h"
+#include "runtime_service/console/console_host.h"
 #include "runtime_modules/render/render_api.h"
 
 #include "game/game_api.h" /* RUN_MODULE( game ) decl in monolithic builds */
@@ -141,6 +142,7 @@ static const run_module_entry_t k_modules[] = {
     RUN_SERVICE( rhi    ),    /* GPU backend -- static service                    */
     RUN_SERVICE( draw   ),    /* immediate primitives -- render's draw backend    */
     RUN_SERVICE( gui    ),    /* immediate mode GUI -- OPTIONAL static service    */
+    RUN_SERVICE( console ),   /* dev console drop-down -- gui front end over core */
     RUN_MODULE ( render ),    /* scene frame owner -- draws the viewport targets  */
     RUN_MODULE ( game   ),    /* game framework runner -- drives project DLLs     */
     RUN_SERVICE( editor ),    /* editor framework -- shell, session, viewport     */

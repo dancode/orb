@@ -180,6 +180,7 @@ MOD_USE_RENDER;
 MOD_USE_DRAW;
 MOD_USE_GUI;
 MOD_USE_INPUT;
+MOD_USE_CONSOLE;
 
 /* Host-side diagnostics -- defined in run_perf.c, included after this unit in the runtime unity
    build (run.c).  host_perf_tick polls the toggle + folds this frame's stats (every frame);
@@ -469,6 +470,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
     MOD_HOST_FETCH_API( draw   );
     MOD_HOST_FETCH_API( gui    );
     MOD_HOST_FETCH_API( input  );
+    MOD_HOST_FETCH_API( console );
 
     /* ---- windowed path: explicit host policy ------------------------- */
     /*
@@ -708,6 +710,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         if ( input() )
              input()->frame( dt );
 
+        /* -- dev console housekeeping ------------------------------------ */
+
+        /* Grave/escape toggle + the post-submit redraw pin.  Emits no widgets (those go in
+           the gui build below); polls app keys, so it runs after the event drain.  Guarded:
+           the console is an optional service (deps gui) -- absent on headless hosts. */
+        if ( console() )
+             console()->frame( dt );
+
         /* -- job dispatcher tick --------------------------------------- */
 
         /* job is in the engine floor -- always present.  With no workers this drains the
@@ -756,6 +766,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
                 if ( desc->on_gui )
                      desc->on_gui( dt );
+
+                /* Dev console drop-down, over the host's windows -- emitted last so it draws
+                   on top.  A no-op while closed; spans the main viewport's width. */
+                if ( console() )
+                     console()->emit( dt, s_vp0 );
 
                 gui()->ctx_end();
             }

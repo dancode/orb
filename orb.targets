@@ -199,6 +199,14 @@ target input
     unit        input.c
     dep         app core
 
+target console								# developer console UI: gui front end over core's cvar/console backend
+
+    type        static
+    root        source/runtime_service/console
+    folder      03_RUNTIME/SERVICE
+    unit        console.c
+    dep         app core gui
+
 target ahi									# audio hardware interface: WASAPI device + mixer
 
     type        static
@@ -400,7 +408,7 @@ target host_game
     folder      08_HOST
     unit        host_game_main.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         host_common rhi draw
+    dep         host_common rhi draw gui console base
     mono_dep    render game
 
 target host_editor
@@ -410,7 +418,7 @@ target host_editor
     folder      08_HOST
     unit        host_editor_main.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         host_common rhi draw gui editor editor_viewport base
+    dep         host_common rhi draw gui console editor editor_viewport base
     mono_dep    render game
 
 # ==============================================================================
