@@ -94,9 +94,9 @@ typedef struct gui_api_s
     gui_render_stats_t  ( *render_stats )( void );
 
     /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are no longer emitted
-       by host code.  debug_enable( true ) arms an internal hotkey driver (P / O / F10) and gui
-       emits them itself, last in the default context's build -- see debug_enable below.  The
-       perf overlay's clock arrives once through set_frame_hooks. */
+       by host code.  debug_enable( true ) arms an internal hotkey driver (numpad '.' arms the group,
+       then P / O / F10 ...) and gui emits them itself, last in the default context's build -- see
+       debug_enable below.  The perf overlay's clock arrives once through set_frame_hooks. */
 
     /* Frame hooks -- one-time wiring (after init) of the host OS services gui cannot reach itself
        (gui links only app + rhi, no sys):
@@ -1564,8 +1564,11 @@ typedef struct gui_api_s
     u32  ( *debug_get_layers )( void );
 
     /* Master debug switch.  When on, gui owns the debug hotkeys and overlay emission -- the host
-       adds nothing to its loop:
+       adds nothing to its loop.  Every hotkey below is gated behind a master ARM so the broad
+       single-letter keys never fire during normal use:
 
+         NP_DOT  master arm ('.'): toggle every debug hotkey below on / off as a group; off by
+                 default, so nothing below responds until it is armed
          NP1-NP5 debug overlay layers (window frames / interaction rects / resize bands / layout /
                  clips; Debug builds)
          NP6     content-rect outlines over scrollable regions (GUI_DBG_CONTENT -- drawn in

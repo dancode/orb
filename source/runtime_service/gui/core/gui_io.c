@@ -385,6 +385,8 @@ io_frame_end( void )
 void gui_debug_enable( bool enable )
 {
     s_debug_enabled = enable;
+    if ( enable )
+        printf( "[gui] debug driver on -- press numpad '.' (NP_DOT) to arm the debug hotkeys\n" );
 }
 
 bool gui_debug_is_enabled( void )

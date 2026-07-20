@@ -28,6 +28,9 @@ static i32  s_view_offset    = 0;        // scrollback lines above the bottom (0
 static i32  s_history_pos    = -1;       // -1 = editing a live line, else index into history
 static char s_input[ CONSOLE_INPUT_MAX ];
 static i32  s_redraw_frames  = 0;        // force-redraw window after a queued submit
+static u32  s_mono_font      = 0;        // monospace font id for column-aligned output (0 = unloaded)
+static bool s_mono_tried     = false;    // one-shot: the mono font load was attempted
+static bool s_focus_pending  = false;    // one-shot: seat keyboard focus on the input next emit
 
 /*==============================================================================================
     Input helpers
@@ -162,9 +165,20 @@ console_show( f32 display_w, f32 top_y )
        grabbable while the console is down -- at y=0 the full-width console would cover it. */
     gui()->window_set_next_pos( 0.0f, top_y, GUI_COND_ALWAYS );
     gui()->window_set_next_size( display_w, win_h, GUI_COND_ALWAYS );
-    if ( gui()->window_begin( "##console", GUI_WIN_NODECORATION | GUI_WIN_NOMOVE | GUI_WIN_MODAL ) )
+    /* GUI_WIN_TEXT_SELECT: the scrollback runs are drawn into the window's own segments (a child
+       region is layout, not a separate window id), so flagging the top-level window makes every
+       line it draws sweep/marquee selectable within the scrollback's scissor -- no multiline edit
+       box needed. */
+    if ( gui()->window_begin( "##console",
+                              GUI_WIN_NODECORATION | GUI_WIN_NOMOVE | GUI_WIN_MODAL | GUI_WIN_TEXT_SELECT ) )
     {
         gui()->stack();
+
+        /* Speak the whole console in a fixed-pitch font when one loaded (console_frame): cvarlist
+           and friends lay their output out with printf column padding, which only lines up under a
+           monospace face.  Falls through to the theme font until the load lands. */
+        if ( s_mono_font )
+            gui()->push_font( s_mono_font );
 
         /* child_begin carves a fixed-height box out of the window's flow: whatever it holds,
            the input line below always lands at the same y, immune to scroll state or content
@@ -210,14 +224,18 @@ console_show( f32 display_w, f32 top_y )
            above always consumes exactly hist_h regardless of its content, so this never
            shifts. */
 
-        /* Hard input steal: while the console is down it OWNS the keyboard, Quake style.  The
-           request lands on the next focusable widget (the input below) -- and because the
-           console emits last (after the host's on_gui), it reclaims focus even if a widget in
-           another window took it earlier this frame.  Re-requesting when the input already has
-           focus is idempotent (it just re-sets focused_id to the same id), so the caret and
-           selection are undisturbed -- this is why an unconditional every-frame steal is safe
-           here where a general widget could not do it. */
-        gui()->set_keyboard_focus();
+        /* Focus is a one-shot EVENT, armed on open (console_set_open): request it here, right
+           before the input emits, so the very next focusable widget -- this input -- consumes it
+           the same frame.  The window is GUI_WIN_MODAL, so the gui core confines keyboard focus
+           to it (focus_allowed in interact/gui_item.c): no other window can steal focus while the
+           console is down, so there is no need to re-steal every frame.  Leaving focus alone the
+           rest of the time is what lets a scrollback text selection drop the caret and Ctrl+C
+           copy the selection (a focused field would otherwise own the copy). */
+        if ( s_focus_pending )
+        {
+            s_focus_pending = false;
+            gui()->set_keyboard_focus();
+        }
 
         /* One-shot: the hook must be re-armed each frame, just before the field it is meant for. */
         gui()->set_edit_key_hook( console_key_hook, NULL );
@@ -234,6 +252,8 @@ console_show( f32 display_w, f32 top_y )
             s_history_pos = -1;
             s_view_offset = 0;         /* executing snaps the view back to the live tail */
         }
+        if ( s_mono_font )
+            gui()->pop_font();
     }
     gui()->window_end();
     gui()->scale_pop();   /* close the DENSE scope opened above the sizing math */
@@ -251,7 +271,10 @@ console_set_open( bool open )
 
     s_open = open;
     if ( s_open )
-        s_view_offset = 0;    /* open on the live tail (focus is stolen every frame in console_show) */
+    {
+        s_view_offset   = 0;       /* open on the live tail */
+        s_focus_pending = true;    /* one-shot: seat focus on the input as the console appears */
+    }
 }
 
 static void
@@ -279,6 +302,21 @@ console_frame( f32 dt )
         console_toggle();
     if ( s_open && app()->key_pressed( APP_KEY_ESCAPE ) )
         console_set_open( false );
+
+    /* One-shot monospace load, deferred to the first open: the host boots a proportional theme
+       font, but the console's printf-padded output (cvarlist, cvarinfo) only aligns in a
+       fixed-pitch face.  Loaded here -- console_frame runs before gui()->frame_begin, the safe
+       between-frames point font_load requires -- and pushed around the drop-down in console_show.
+       font_load activates the new font, so save/restore keeps the theme font active for the host. */
+    if ( s_open && !s_mono_tried )
+    {
+        s_mono_tried = true;
+        char path[ 512 ];
+        gui()->asset_path( "assets/font/JetBrainsMonoNL-Regular_16px.orb_font", path, sizeof( path ) );
+        const u32 prev = gui()->font_active_id();
+        s_mono_font = gui()->font_load( path );   /* 0 on failure: console falls back to the theme font */
+        gui()->font_use( prev );
+    }
 
     /* Queued commands print the frame AFTER Enter; hold the emit open briefly so the
        retained-cache clean-frame skip doesn't keep the new scrollback lines offscreen. */

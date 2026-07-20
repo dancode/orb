@@ -415,6 +415,11 @@ gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
     emitted by debug_overlays_emit(), called from ctx_end while the DEFAULT context is still
     bound -- last in its build, so they draw on top and their cost is counted like any widget.
 
+    Every hotkey below is gated behind a master ARM so the broad single-letter keys never fire
+    during normal use:
+
+        NP_DOT  master arm ('.'): toggle EVERY debug hotkey on / off as a group.  Off by default;
+                everything below is inert until it is armed.
         NP1-NP6 debug layers (window / interact / resize / layout / clip / content rects)
         F8      command stepper: freeze the frame (opens the control window) / release
         F9      render mode: normal -> wireframe -> batch tint
@@ -444,6 +449,7 @@ static int  s_dbg_state_mode;    /* state overlay tier, O cycles 0..3           
 static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */
 static bool s_dbg_step_open;     /* command stepper window, F8 opens (X button hides)       */
 static bool s_idle_skip;         /* frame_pace: block on OS input when idle, I toggles      */
+static bool s_dbg_hotkeys_armed; /* master arm: every hotkey below is inert until NP_DOT arms it */
 
 /* True while any context that closed this frame still had an animation in flight -- the OR of
    every ctx_end's wants_redraw, reset each frame_begin.  frame_pace reads it to keep pumping
@@ -463,6 +469,20 @@ bool gui_idle_skip( void )        { return s_idle_skip; }
 static void
 debug_hotkeys( void )
 {
+    /* Master arm: numpad '.' (APP_KEY_NP_DOT) is the one always-live debug key -- it gates every
+       other hotkey below so the broad single-letter (C/F/I/P/O) and function keys are inert during
+       normal use and only respond after an explicit opt-in.  Fenced by want_capture_keyboard like
+       the letter keys (numpad '.' is text input with Num Lock on), so it never fires while a text
+       field is focused.  Chosen because it is rarely bound to anything else. */
+    if ( !gui_want_capture_keyboard() && gui_is_key_pressed( APP_KEY_NP_DOT ) )
+    {
+        s_dbg_hotkeys_armed = !s_dbg_hotkeys_armed;
+        printf( "[gui] debug hotkeys: %s\n", s_dbg_hotkeys_armed ? "ARMED" : "off" );
+        g_ctx->retained.wants_redraw = true;
+    }
+    if ( !s_dbg_hotkeys_armed )
+        return;
+
     /* Function keys are never text input -- no keyboard fence needed. */
     if ( gui_is_key_pressed( APP_KEY_F9 ) )
     {

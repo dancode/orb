@@ -308,6 +308,25 @@ gui_set_keyboard_focus( void )
     s_focus_request = true;
 }
 
+/* Focus exclusivity -- the keyboard twin of the modal hover fence (window_modal_apply in
+   gui_popup.c).  While a GUI_WIN_MODAL window is live, only its own widgets may take keyboard
+   focus: a set exclusive win id denies focus to every other window, exactly as a held active_id
+   denies interaction to every other item during a drag.  This is what lets an exclusive window
+   (the dev console) seat focus once, as an event, instead of re-stealing it every frame -- no
+   background window can grab it away.  "Live" == the modal emitted this frame or last: the
+   console stamps modal.seen_frame at its window_begin, which runs after the host's windows, so
+   during the host's emission the fence reads last frame's stamp and denies host widgets, while
+   the console's own widgets (stamped this frame) pass. */
+
+static bool
+focus_allowed( gui_id_t win )
+{
+    u32  f          = g_ctx->retained.frame;
+    bool modal_live = g_ctx->modal.win_id != 0u &&
+                      ( g_ctx->modal.seen_frame == f || g_ctx->modal.seen_frame + 1u == f );
+    return !modal_live || win == g_ctx->modal.win_id;
+}
+
 /* Drop keyboard/text focus entirely (Enter commit, Escape revert).  The arbitration verb for
    ending a focus capture -- widgets call this instead of writing the interaction record raw;
    the record itself stays owned by core/gui_ctx.c. */
@@ -395,8 +414,10 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
          s_interaction.hover_id = id;
 
     /* Programmatic focus: a queued set_keyboard_focus request lands on the first focusable
-       widget emitted after it -- the keyboard twin of click-to-focus below. */
-    if ( s_focus_request && kind == ITEM_FOCUSABLE )
+       widget emitted after it -- the keyboard twin of click-to-focus below.  Skipped for a
+       window the exclusive fence denies, so the request stays latched and lands on the modal
+       window's own input rather than a background field emitted earlier in the frame. */
+    if ( s_focus_request && kind == ITEM_FOCUSABLE && focus_allowed( s_scope.win ) )
     {
         s_focus_request          = false;
         s_interaction.focused_id = id;
@@ -407,7 +428,7 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
     {
         s_interaction.active_id = id;
         st.pressed      = true;
-        if ( kind == ITEM_FOCUSABLE )
+        if ( kind == ITEM_FOCUSABLE && focus_allowed( s_scope.win ) )
             s_interaction.focused_id = id;
 
         /* Keep the nav ring synced to the last interacted item: a click moves the cursor here, so
