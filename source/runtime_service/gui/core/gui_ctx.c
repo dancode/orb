@@ -665,6 +665,10 @@ static f32 vp_h( const gui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->d
     malloc blocks for the heap total.  See gui_mem_stats_t (gui.h) for the bucket meanings.
 ==============================================================================================*/
 
+/* Frontend statics total, defined in gui_ui_mem.c -- the LAST constituent include of this unity
+   TU, so it can sizeof statics declared after this file.  Forward-declared here (same TU). */
+u32 gui_ui_memory( void );
+
 gui_mem_stats_t
 gui_mem_stats( void )
 {
@@ -681,8 +685,12 @@ gui_mem_stats( void )
                 ++live_viewports;
     }
 
-    /* Backend fills GPU + CPU .bss; frontend adds the CPU-heap context blocks and the totals. */
+    /* Backend fills GPU + CPU .bss; frontend adds its own unit's statics, the CPU-heap context
+       blocks, and the totals. */
     gui_mem_stats_t s = gui_backend_memory( live_viewports );
+
+    s.cpu_frontend_bytes = gui_ui_memory();
+    s.cpu_static_total  += s.cpu_frontend_bytes;
 
     /* CPU heap: one malloc block per live context (recorded at allocation as _alloc_size). */
     for ( u32 i = 0; i < s_ctx_pool_count; ++i )
@@ -731,6 +739,7 @@ gui_print_mem_stats( void )
     GUI_MEM_ROW( "text-select capture", s.cpu_select_bytes  );
     if ( s.cpu_debug_bytes )
         GUI_MEM_ROW( "debug tooling",  s.cpu_debug_bytes    );
+    GUI_MEM_ROW( "frontend statics",   s.cpu_frontend_bytes );
     GUI_MEM_ROW( "  CPU static subtotal", s.cpu_static_total );
 
     printf( "  -- CPU heap (%u context%s) -----------------------------\n",
@@ -739,7 +748,8 @@ gui_print_mem_stats( void )
     GUI_MEM_ROW( "  CPU heap subtotal",   s.cpu_dynamic_total );
 
     printf( "  --------------------------------------------------------\n" );
-    GUI_MEM_ROW( "TOTAL", s.total_bytes );
+    printf( "  %-22s %10u B  (%8.1f KB)  (%.1f MB)\n",
+            "TOTAL", s.total_bytes, s.total_bytes / kb, s.total_bytes / ( kb * kb ) );
 
     #undef GUI_MEM_ROW
 }

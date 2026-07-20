@@ -1674,6 +1674,9 @@ typedef struct
     u32 cpu_select_bytes;   // text-selection run capture buffer (always compiled; a product feature)
     u32 cpu_debug_bytes;    // debug overlay + name registry + dashboard snapshot + command stepper
                             //   (each 0 when its feature is compiled out -- Release builds)
+    u32 cpu_frontend_bytes; // UI-unit statics: io snapshot, style/theme state, layout/id stacks,
+                            //   undo buffers, gesture latches (gui_ui_mem.c) -- small by design;
+                            //   the frontend's real state is the malloc'd context blocks below
     u32 cpu_static_total;   // sum of the section above
 
     /* --- CPU dynamic memory (heap; one malloc block per live context). --- */

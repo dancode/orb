@@ -169,6 +169,8 @@
     frame/gui_viewport.c         -- viewport open/resize/close + gui-owned floater lifecycle (spawn/update/render_floaters)
     frame/gui_boot.c             -- one-call host front end: boot, frame_poll, present_begin/present
 
+    gui_ui_mem.c                 -- frontend memory accounting: gui_ui_memory sizeof-sums this unit's
+                                      statics; must be the last constituent include so it sees them all
     gui_api.c                    -- vtable, mod_desc, MOD_DEFINE_EXPORTS
 
 ==============================================================================================*/
@@ -356,6 +358,11 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 // Boot-tier host front end -- one-call setup (boot) + the canonical loop (frame_poll,
 // present_begin/present).  Last: it composes the lifecycle, viewport, and window layers above.
 #include "runtime_service/gui/frame/gui_boot.c"
+
+// MEMORY ACCOUNTING: sizeof-sums this unit's fixed statics for gui_mem_stats (cpu_frontend_bytes).
+// MUST stay the last constituent include -- unity visibility only flows downward, and the
+// full-accounting contract is that every static aggregate above is in scope here.
+#include "runtime_service/gui/gui_ui_mem.c"
 
 #ifndef GUI_API_C_PRELUDE
     #include "engine/mod/mod_export.h"

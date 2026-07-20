@@ -35,7 +35,7 @@
 ==============================================================================================*/
 
 /* Max rect commands accumulated per frame across all viewports. */
-#define GUI_DBG_MAX_CMDS  2048
+#define GUI_DBG_MAX_CMDS  1024
 
 /* Scratch geometry caps for one viewport flush.  Worst case: every command is an outline
    (4 edge quads) = 16 verts / 24 idx each.  u16 indices are safe up to 65535 verts. */
@@ -73,10 +73,10 @@
 
 typedef struct
 {
-    gui_rect_t r;             /* rect geometry in pixels (x0,y0 = top-left) */
-    u32          abgr;          /* rect color, packed like GUI_COLOR macro */
-    f32          thickness;     /* outline thickness in pixels; 0.0f = filled */
-    u8           vp;            /* target viewport index (GUI_MAX_VIEWPORTS <= 255) */
+    gui_rect_t  r;             /* rect geometry in pixels (x0,y0 = top-left) */
+    u32          abgr;         /* rect color, packed like GUI_COLOR macro */
+    f32          thickness;    /* outline thickness in pixels; 0.0f = filled */
+    u8           vp;           /* target viewport index (GUI_MAX_VIEWPORTS <= 255) */
 } dbg_cmd_t;
 
 /*==============================================================================================

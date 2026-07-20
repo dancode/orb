@@ -109,6 +109,8 @@ main( int argc, char** argv )
         gui()->frame_pace( 4, 16 );
     }
 
+    gui()->print_mem_stats();
+
     ret_code = 0;
 
 shutdown:
