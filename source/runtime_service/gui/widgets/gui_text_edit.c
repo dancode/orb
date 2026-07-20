@@ -846,6 +846,12 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
         bool ctrl        = io_ctrl();
         bool blink_reset = false;
 
+        /* Publish whether this focused field holds a live selection, so a window-level text
+           selection (GUI_WIN_TEXT_SELECT) knows to yield Ctrl+C to the field's own copy and only
+           takes it when the field has none -- the console input keeps focus while the scrollback
+           is swept, and the sweep's copy still fires because the input has no selection. */
+        s_interaction.focus_has_selection = ( es->cursor != es->anchor );
+
         edit_apply_keys( buf, bufsz, es, ctrl, shift, &len, &res, &blink_reset );
         edit_apply_mouse( box, st, buf, len, es, shift, &blink_reset );
 

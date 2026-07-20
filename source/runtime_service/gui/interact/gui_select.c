@@ -575,9 +575,14 @@ select_window_end( void )
             cursor_set( APP_CURSOR_TEXT );
     }
 
-    /* Keys act only when no text field owns the keyboard (a focused field runs its own
-       copy/escape); neither key is claimed -- Escape may also close a popup, and should. */
-    if ( s_select.win == win && select_exists() && s_interaction.focused_id == GUI_ID_NONE )
+    /* Keys act when no text field owns the keyboard, OR one does but has no selection of its own
+       (a focused field with a live selection runs its own copy/cut for it, so the window selection
+       yields to it -- but an exclusive-mode input like the console keeps focus with an empty caret
+       while the scrollback is swept, and there the window selection rightly owns Ctrl+C).  Neither
+       key is claimed -- Escape may also close a popup, and should. */
+    bool keys_for_window_sel = ( s_interaction.focused_id == GUI_ID_NONE )
+                            || !s_interaction.focus_has_selection;
+    if ( s_select.win == win && select_exists() && keys_for_window_sel )
     {
         if ( io_ctrl() && s_io.keys_pressed[ APP_KEY_C ] )
             select_copy( win, body );

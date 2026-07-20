@@ -308,31 +308,35 @@ gui_set_keyboard_focus( void )
     s_focus_request = true;
 }
 
-/* Focus exclusivity -- the keyboard twin of the modal hover fence (window_modal_apply in
-   gui_popup.c).  While a GUI_WIN_MODAL window is live, only its own widgets may take keyboard
-   focus: a set exclusive win id denies focus to every other window, exactly as a held active_id
-   denies interaction to every other item during a drag.  This is what lets an exclusive window
-   (the dev console) seat focus once, as an event, instead of re-stealing it every frame -- no
-   background window can grab it away.  "Live" == the modal emitted this frame or last: the
-   console stamps modal.seen_frame at its window_begin, which runs after the host's windows, so
-   during the host's emission the fence reads last frame's stamp and denies host widgets, while
-   the console's own widgets (stamped this frame) pass. */
+/* Focus confinement -- the CONFINE half of the exclusive input mode (see gui_modal_scope_live in
+   core/gui_ctx.c).  While a GUI_WIN_MODAL window is live, only its own widgets may take keyboard
+   focus: no background window can steal it, exactly as a held active_id denies interaction to
+   every other item during a drag.  This is what lets an exclusive window (the dev console) seat
+   focus once, as an event, instead of re-stealing it every frame.  The HOLD half (sticky focus,
+   "cannot select nothing") lives in interaction_frame_reset. */
 
 static bool
 focus_allowed( gui_id_t win )
 {
-    u32  f          = g_ctx->retained.frame;
-    bool modal_live = g_ctx->modal.win_id != 0u &&
-                      ( g_ctx->modal.seen_frame == f || g_ctx->modal.seen_frame + 1u == f );
-    return !modal_live || win == g_ctx->modal.win_id;
+    return !gui_modal_scope_live() || win == g_ctx->modal.win_id;
 }
 
 /* Drop keyboard/text focus entirely (Enter commit, Escape revert).  The arbitration verb for
    ending a focus capture -- widgets call this instead of writing the interaction record raw;
-   the record itself stays owned by core/gui_ctx.c. */
+   the record itself stays owned by core/gui_ctx.c.
+
+   Exclusive input mode -- the HOLD rule's second half.  Focus can fall to nothing two ways: a
+   press on dead space (guarded in interaction_frame_reset) and a widget releasing its own capture
+   here (Enter submit / Escape).  A game menu honors neither: it always keeps a selection.  So
+   while the live exclusive mode owns the focused widget, this release is a no-op -- the console
+   input keeps its caret after every command instead of going dead until the next click.  A focus
+   MOVE (clicking / tabbing to another field) never comes through here; it overwrites focused_id
+   directly in item_state, so navigation within the mode still works. */
 static void
 item_focus_release( void )
 {
+    if ( gui_modal_scope_live() && s_interaction.focused_win == g_ctx->modal.win_id )
+        return;
     s_interaction.focused_id = GUI_ID_NONE;
 }
 
@@ -442,6 +446,12 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
     st.active  = ( s_interaction.active_id == id );
     st.focused = ( s_interaction.focused_id == id );
     st.clicked = s_io.mouse_released[ 0 ] && s_interaction.hover_id == id && s_interaction.active_id == id;
+
+    /* Record which window owns the keyboard focus, for the exclusive-scope focus lock (a modal
+       input mode holds its focus sticky; see interaction_frame_reset).  Refreshed every frame the
+       focused widget re-emits, so it always names that widget's current window. */
+    if ( st.focused )
+        s_interaction.focused_win = s_scope.win;
 
     /* Keyboard nav: an item in the nav window registers as a candidate and, if it is the nav
        cursor, takes a synthesized click from an Enter/Space activation -- the keyboard mirror of

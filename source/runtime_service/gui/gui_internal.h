@@ -1092,6 +1092,11 @@ static bool interact_idle      ( void );             /* nothing holds the pointe
 static bool interact_held      ( gui_id_t id );      /* id's press-drag gesture is in flight   */
 static bool interact_hover_bare( gui_id_t win_id );  /* cursor on win_id, no widget beneath it */
 
+/* Exclusive input mode (focus scope) -- true while a GUI_WIN_MODAL window is live (emitted this
+   frame or last).  Defined in core/gui_ctx.c; read by focus_allowed (interact/gui_item.c) to
+   confine focus to the mode.  See the exclusive-mode block in gui_ctx.c for the full model. */
+static bool gui_modal_scope_live( void );
+
 /* The window <-> dock route seam (implemented in dock/gui_dock_route.c).
 
    window/ is included BEFORE dock/, yet a window must ask the dock whether it owns placement.

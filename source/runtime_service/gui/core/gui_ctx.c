@@ -553,9 +553,13 @@ cursor_flush( void )
 
       confine  -- only the mode's own widgets may TAKE focus (focus_allowed, interact/gui_item.c);
                   no background window can steal it.
-      hold     -- focus is STICKY within the mode: a press on non-focusable space does not clear
-                  it (interaction_frame_reset below).  You cannot "select nothing" inside a menu;
-                  focus only moves when another focusable widget in the mode claims it.
+      hold     -- focus is STICKY within the mode: it never falls to nothing.  Focus can drop two
+                  ways and the mode blocks both -- a press on non-focusable dead space
+                  (interaction_frame_reset below) and a widget releasing its own capture on Enter /
+                  Escape (item_focus_release, interact/gui_item.c).  You cannot "select nothing"
+                  inside a menu; focus only MOVES when another focusable widget in the mode claims
+                  it (a direct focused_id overwrite, not a release), so the console input keeps its
+                  caret across dead-space clicks AND across every command it submits.
 
     Both key off modal.win_id + seen_frame, exactly like the hover fence -- one exclusive-mode
     fact, read three ways.  FUTURE: a stack of modes (nested dialogs) would push/pop this the way
@@ -565,7 +569,7 @@ cursor_flush( void )
 /* An exclusive input mode is live -- a GUI_WIN_MODAL window emitted this frame or last (the
    console re-stamps modal.seen_frame at its window_begin every frame it is open, so the fence
    never lapses while it is up and lapses one frame after it closes). */
-bool
+static bool
 gui_modal_scope_live( void )
 {
     u32 f = g_ctx->retained.frame;
