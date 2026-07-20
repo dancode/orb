@@ -21,14 +21,14 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_ortho_2d
 
     Fills out[16] with a column-major orthographic projection that maps pixel coordinates
     ([0,w] x [0,h], origin top-left) to Vulkan NDC (x in [-1,+1], y=-1 at top, y=+1 at
     bottom).  z passes through unchanged with a scale of 1 and no translation, so 2D
     primitives at z=0 land at NDC z=0 (mid-depth).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 draw_ortho_2d( f32 out[ 16 ], f32 w, f32 h )
@@ -39,7 +39,7 @@ draw_ortho_2d( f32 out[ 16 ], f32 w, f32 h )
     /* column 3 */ out[ 12 ] = -1.0f;     out[ 13 ] = -1.0f;      out[ 14 ] = 0.0f; out[ 15 ] = 1.0f;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_begin_pass
 
     Canonical frame setup for a 2D overlay pass:
@@ -52,7 +52,7 @@ draw_ortho_2d( f32 out[ 16 ], f32 w, f32 h )
 
     After this call the frame is ready for rect / circle / box calls.  close with
     draw_end_pass() before frame_end().
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 draw_begin_pass( rhi_cmd_t cmd, i32 win_w, i32 win_h, const f32 clear_rgba[ 4 ] )
@@ -84,14 +84,14 @@ draw_begin_pass( rhi_cmd_t cmd, i32 win_w, i32 win_h, const f32 clear_rgba[ 4 ] 
     draw_begin( cmd, vp );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_begin_overlay
 
     Same setup as draw_begin_pass but with a LOAD (not CLEAR) color op, so the pass composites
     ON TOP of whatever is already in the swapchain image -- the overlay case.  Use it at a
     composite point where a scene has already been drawn (e.g. after render()->draw_scene, before
     end_frame) to lay an HUD / debug readout over the finished frame.  Close with draw_end_pass().
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 draw_begin_overlay( rhi_cmd_t cmd, i32 win_w, i32 win_h )
@@ -121,13 +121,13 @@ draw_begin_overlay( rhi_cmd_t cmd, i32 win_w, i32 win_h )
     draw_begin( cmd, vp );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_end_pass
 
     Flush all queued draw calls and close the render pass opened by draw_begin_pass() or
     draw_begin_overlay().  s.cmd is the command list cached in draw_begin; it remains valid
     until frame_end().
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 draw_end_pass( void )

@@ -18,7 +18,24 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/* One GPU command plus its placement -- the AOS command record.  Every consumer (the merge check,
+   the flush loop, the volatile copy-back, the dashboard capture) reads a WHOLE command at a given
+   index; none sweeps a single field across all commands, so the fields that belong to one command
+   live together in one cache line rather than in four parallel arrays keyed on the same index.
+   ibase is explicit (not accumulated from elem_counts at flush) so the index buffer may hold
+   reserved gaps -- volatile block headroom -- between commands.  Mirrors dash_cmd_t (the snapshot
+   type in gui_backend.h), which was AOS from the start; this is the live half catching up. */
+
+typedef struct
+{
+    gui_gpu_cmd_t cmd;      // elem_count, tex_idx, clip_rect -- the GPU draw-call unit
+    u32           vp;       // viewport index for this command
+    u32           vbase;    // vtx slot -- first vertex of command
+    u32           ibase;    // idx slot -- first index of command (its draw call's first_index)
+
+} tess_gpu_cmd_t;
+
+/*==============================================================================================
     Tessellation state -- private vertex/index buffers populated from the semantic command list.
 
     cache_build_frame tessellates the frame's gui_cmd_t list into s_tess (per window, via
@@ -29,23 +46,7 @@
     cur_clip/cur_vp are written by tess_dispatch before each primitive so tess_ensure_gpu_cmd
     can stamp the correct context onto new GPU commands without extra parameters.  cur_clip is
     resolved from s_draw.clip_table[c->clip_idx]; z is per-segment and is not tracked here.
-----------------------------------------------------------------------------------------------*/
-
-/* One GPU command plus its placement -- the AOS command record.  Every consumer (the merge check,
-   the flush loop, the volatile copy-back, the dashboard capture) reads a WHOLE command at a given
-   index; none sweeps a single field across all commands, so the fields that belong to one command
-   live together in one cache line rather than in four parallel arrays keyed on the same index.
-   ibase is explicit (not accumulated from elem_counts at flush) so the index buffer may hold
-   reserved gaps -- volatile block headroom -- between commands.  Mirrors dash_cmd_t (the snapshot
-   type in gui_backend.h), which was AOS from the start; this is the live half catching up. */
-typedef struct
-{
-    gui_gpu_cmd_t cmd;      // elem_count, tex_idx, clip_rect -- the GPU draw-call unit
-    u32           vp;       // viewport index for this command
-    u32           vbase;    // vtx slot -- first vertex of command
-    u32           ibase;    // idx slot -- first index of command (its draw call's first_index)
-
-} tess_gpu_cmd_t;
+==============================================================================================*/
 
 static struct
 {
@@ -86,7 +87,7 @@ static struct
 
 } s_tess;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Tessellation diagnostics -- the cold companion to s_tess.
 
     High-water marks, the sticky overflow flag, and the arena band boundary the dashboard reads.
@@ -94,7 +95,7 @@ static struct
     never on the per-vertex path -- so it lives apart from s_tess to keep the hot write cacheline
     (vert_count / idx_count / cmd_count) small.  Read only by the dashboard capture and the render
     overlay; overflow itself stays in s_tess because it is written per-primitive on buffer-full.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static struct
 {
@@ -115,7 +116,7 @@ static struct
 
 } s_tess_stats;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Cached corner geometry -- the rounded-rect optimization.
 
     A rounded rectangle's four corners are the same quarter circle, only mirrored and translated.
@@ -129,7 +130,7 @@ static struct
     The count is kept to a divisor of GUI_ROUND_SEGS so a coarser arc is just the full table
     STRIDED (k * GUI_ROUND_SEGS/segs) -- a full quarter at lower resolution with no extra trig,
     so the single cached table still serves every tier.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define GUI_ROUND_SEGS 8                                  /* max segments per corner (finest tier) */
 #define GUI_ROUND_PTS  ( 4 * ( GUI_ROUND_SEGS + 1 ) )   /* perimeter point count at the finest tier */
@@ -186,11 +187,11 @@ round_rect_perimeter( f32 x, f32 y, f32 w, f32 h, f32 r, u32 segs, gui_vec2_t* o
     return n;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Tessellation helpers -- mirrors of the draw_push_* functions in gui_emit_draw.c, but writing
     into s_tess instead of s_draw.  These are the backend half of the command-list split.
     Called from tess_dispatch; not called from anywhere else.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 tess_reset( void )
@@ -570,14 +571,14 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
     s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 6;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     tess_stroke_poly_aa -- antialiased polyline tessellation for the render backend.
 
     Mirrors the old stroke_poly_aa (removed from gui_emit_path.c in step 4) but writes into
     s_tess via tess_prim_begin/commit.  abgr is pre-baked (alpha folded in at emit time).
     v2 / seg_normal / stroke_center_offset are defined in gui_emit_path.c (included before
     this file in the unity build) so they are visible here without forward declarations.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 tess_stroke_poly_aa( const gui_vec2_t* pts, u32 n, f32 thickness, f32 center_off,

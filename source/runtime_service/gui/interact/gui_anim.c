@@ -19,7 +19,7 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     gui_anim_f32 -- single-channel exponential-decay animation
 
     Steps a named float toward `target` each frame.  `speed` is in Hz-like units:
@@ -31,7 +31,7 @@
     own slot without colliding with other per-widget state:
 
         f32 t = gui_anim_f32( id_combine( id, 1u ), hovered ? 1.0f : 0.0f, 10.0f );
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct { f32 current; } gui_anim_f32_t;
 
@@ -78,7 +78,7 @@ gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed )
     return gui_anim_f32_from( anim_id, target, target, speed );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     gui_anim4 -- four independent damper channels in ONE keyed slot
 
     The storage unit for any animated widget value.  gui_anim_f32_from keys one probe per channel, so
@@ -91,7 +91,7 @@ gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed )
     unused channel (rest == target == 0 then costs nothing and never pins wants_redraw).  The whole
     slot persists while ANY channel is moving or parked away from its rest, and goes cold only when all
     four sit at rest, so a held non-rest value (a steady hover) never re-ramps after an eviction.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static gui_anim4_t
 gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed )
@@ -130,7 +130,7 @@ gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed 
     return cur;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     gui_anim_timer -- fixed-duration from/to easing (the timed-tween model)
 
     The complement to gui_anim_f32's exponential damping: instead of chasing a moving target at a
@@ -147,7 +147,7 @@ gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed 
     gui_anim_timer call advances and shapes it through `ease` (any f32 shaper: f32_ease_out_cubic,
     f32_smoothstep01, ... or NULL for linear).  A slot that is absent or already finished reads as
     settled at 1.0, so a caller that samples one extra frame still sees the end, never a restart.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct { f32 elapsed; f32 duration; } gui_anim_timer_t;
 typedef f32 ( *gui_ease_fn )( f32 );
@@ -199,7 +199,7 @@ gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active )
     return ease ? ease( t ) : t;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Public animation surface (gui_api_t)
 
     The two primitives above are the whole engine; these are the callable face of them.  anim_f32 and
@@ -207,7 +207,7 @@ gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active )
     gui_api.c).  The rest are thin: anim_ease maps the public gui_ease_t enum onto a shaper before
     calling gui_anim_timer; the typed channels run one damper per component so a color, a point, or a
     rect glides to a new data state without every caller re-deriving the blend.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Map the public enum onto the base math_ease shapers.  NULL == linear (gui_anim_timer treats a NULL
    shaper as the identity), so GUI_EASE_LINEAR and any out-of-range value fall through to it. */

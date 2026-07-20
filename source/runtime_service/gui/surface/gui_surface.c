@@ -124,12 +124,12 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
     return win;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     window_find -- locate an existing window record by id, or NULL.  Unlike window_get this never
     creates one; used by the post-build reconcile (viewport_update) to reach the window a
     tear-off / merge-back gesture named, where creating a phantom record would be wrong.  A
     GUI_ID_NONE query is "no window" and short-circuits -- no real record ever carries that id.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static gui_window_t*
 window_find( gui_id_t id )
@@ -141,7 +141,7 @@ window_find( gui_id_t id )
     return NULL;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Next-window channel -- queued geometry for the next window_begin, consumed and cleared by it.
 
     window_set_next_pos / window_set_next_size write here; the following window_begin applies each
@@ -149,7 +149,7 @@ window_find( gui_id_t id )
     This decouples the value from when it is applied -- the reason the geometry is a side channel
     rather than fixed window_begin parameters.  Only the next window is affected; an unconsumed
     queue (no window_begin follows) simply carries to whichever window is begun next.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static struct
 {
@@ -238,7 +238,7 @@ window_apply_next( gui_window_t* win, bool appearing )
     s_next_win.has_pos = s_next_win.has_size = s_next_win.has_viewport = false;   /* the queue targets only the next window */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     The z band map -- every stacked entity competes in ONE contest (the hover nomination below +
     the draw sort) keyed on a plain u32 z, so the bands are pure ordering policy, all authored
     here:
@@ -254,14 +254,14 @@ window_apply_next( gui_window_t* win, bool appearing )
     The dispenser never climbs anywhere near the fixed bands.  A record placed in the overlay
     band also carries win->overlay -- the TYPE fact ("an anchored overlay, not a window") the
     nav / dock / native tests key on -- so z itself stays pure paint order.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define GUI_REGION_BG_Z  0x00000000u
 #define GUI_REGION_Z     0x40000000u
 #define GUI_Z_OVERLAY    0x80000000u
 #define GUI_REGION_FG_Z  0xF0000000u
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     surface_z_raise -- the z dispenser's single verb: bring a stacked entity to the front.
 
     Returns the z the entity should hold: a fresh top-of-stack value, or its own z unchanged
@@ -271,7 +271,7 @@ window_apply_next( gui_window_t* win, bool appearing )
     This tier is the ONLY author of z values: window/dock raise through this verb, and the
     popup layer stamps the overlay band through surface_z_overlay below -- nothing outside this
     file touches g_ctx->win.z_counter or the band constants raw.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static u32
 surface_z_raise( u32 z )
@@ -292,7 +292,7 @@ surface_z_overlay( u32 depth )
     return GUI_Z_OVERLAY + depth;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     surface_hover_nominate -- keep the front-most (highest z) candidate the cursor is over;
     promoted to hover_win next frame (frame turnover, gui_ctx.c).  Windows (window_begin),
     floating dock groups, and root regions (gui_region_begin) all compete for hover_win in this
@@ -303,7 +303,7 @@ surface_z_overlay( u32 depth )
     from the win_id on mouse events).  A candidate on any other surface cannot be under the
     cursor regardless of where its rect sits in its own surface's coordinate space, so it is
     rejected before the rect test -- the "physical window is a parent hover" rule.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
@@ -324,7 +324,7 @@ surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Surface reassignment request -- one window moving between OS surfaces.
 
     A window dragged by its title bar and released with the cursor outside its host surface's
@@ -337,7 +337,7 @@ surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
     A single slot suffices: only one window can own the drag (active_id) at a time.  `title` is the
     dragged window's title string, borrowed for the same frame to name the spawned OS window (the
     immediate-mode same-frame lifetime makes this safe -- it is consumed before the frame ends).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static struct
 {
@@ -352,7 +352,7 @@ static struct
                             /* reopen.maximized) instead of the cursor / main-relative default.   */
 } s_vp_request;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Closeable windows -- open / query a window's hidden state by title.
 
     A CLOSEABLE window's close (X) button sets win->closed, hiding the window until the host
@@ -360,7 +360,7 @@ static struct
     so the host can drive the open state from a button without holding its own flag.  A window
     that has never been begun has no record yet; window_set_open then no-ops (it already opens
     by default on first begin) and window_is_open reports it open.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_window_set_open( const char* title, bool open )

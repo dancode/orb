@@ -49,7 +49,7 @@ static bool window_is_native( const gui_window_t* win, gui_win_flags_t flags )
         || ( win && win->viewport != 0 && g_ctx->vp.pool[ win->viewport ].owned );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Native caption buttons
 
     The OS owns a native window's caption band (HTCAPTION), so its titlebar buttons cannot be
@@ -63,7 +63,7 @@ static bool window_is_native( const gui_window_t* win, gui_win_flags_t flags )
     minimize, maximize/restore, then a primary action -- close for the main window, pop-in (merge
     back into the main surface) for a detached floater.  GUI_WIN_NO_MINIMIZE / NO_MAXIMIZE drop the
     matching button per-window (the primary is never dropped); the layout closes up around the gap.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef enum
 {
@@ -173,9 +173,9 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
     draw_set_rounding( save_round );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Per-frame sync + the button-request seam
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Sync a native window's geometry to its OS-owned surface and publish the frame layout (caption
    band + resize border) to app() -- the OS drives move/resize/Aero-snap through WM_NCHITTEST, gui
@@ -238,7 +238,7 @@ native_popin_request( gui_window_t* win )
     s_vp_request.title   = s_build.win.title;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     native_caption_chrome -- the caption strip of window_end's deferred chrome.
 
     A native window's titlebar IS the OS caption, so its collapse arrow, detach button and gui
@@ -247,7 +247,7 @@ native_popin_request( gui_window_t* win )
     rather than starting an OS move.  The buttons run right-to-left from the bar's right edge;
     returns the x that bounds the title text (the leftmost button's left edge minus a pad), or
     `right_limit` unchanged when there are no buttons.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static f32
 native_caption_chrome( gui_window_t* win, f32 title_h, f32 right_limit )

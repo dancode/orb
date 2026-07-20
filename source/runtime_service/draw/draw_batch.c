@@ -25,9 +25,9 @@ typedef struct
 
 } draw_batch_t;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_batch_init  --  allocate persistent GPU-visible buffers
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 draw_batch_init( draw_batch_t* b )
@@ -57,7 +57,7 @@ draw_batch_init( draw_batch_t* b )
     return true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_batch_begin_frame  --  select this frame's buffer region before any draw_xxx calls.
     `frame` is the frame-in-flight slot (rhi()->cmd_frame_index).
 
@@ -68,7 +68,7 @@ draw_batch_init( draw_batch_t* b )
     not rewind to the region base and clobber vertex data the first pass's already-recorded draw
     calls will read when the command buffer executes.  Consecutive frames always land on different
     frame-in-flight slots (RHI_MAX_FRAMES_IN_FLIGHT >= 2), so a real new frame always resets.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 draw_batch_begin_frame( draw_batch_t* b, u32 frame )
@@ -84,13 +84,13 @@ draw_batch_begin_frame( draw_batch_t* b, u32 frame )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_batch_push  --  copy geometry into the GPU buffers; returns false if full
 
     On success, *out_base_vertex and *out_first_index are the offsets to pass into
     the draw call record (the geo indices are 0-relative; vertex_offset in the draw
     call adjusts them to the correct position in the buffer).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 draw_batch_push( draw_batch_t* b,
@@ -114,9 +114,9 @@ draw_batch_push( draw_batch_t* b,
     return true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_batch_shutdown
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 draw_batch_shutdown( draw_batch_t* b )

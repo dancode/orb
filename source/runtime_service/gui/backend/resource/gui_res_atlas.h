@@ -54,17 +54,17 @@
 /* Dash-pattern rows in the assist band (was in gui_font.h; assists are atlas-level now). */
 #define GUI_DASH_PATTERN_COUNT     4
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Lifecycle (called from gui_backend_init / gui_backend_exit and frame_begin).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool res_atlas_init          ( void );   // create the texture + resident buffer, paint the assist band
 void res_atlas_shutdown      ( void );   // destroy the texture, free the resident buffer + tenant sources
 void res_atlas_flush_upload  ( void );   // re-upload the resident buffer to the GPU if dirty (deferred)
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Tenant registration -- fonts (gui_font_internal.c) and icons (gui_icon.c) pack through here.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Copy w*h R8 coverage into the atlas and return a 1-based tenant handle (0 = out of room / bad
    args).  Packs incrementally; on a full packer it attempts one repack that folds this tenant in. */
@@ -77,9 +77,9 @@ bool res_atlas_update        ( u32 handle, const u8* src, u32 w, u32 h );
 /* Live pixel origin (top-left) of a tenant in the atlas -- valid across repacks.  0,0 if invalid. */
 void res_atlas_origin        ( u32 handle, u32* ox, u32* oy );
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Sampling accessors -- what the tessellator reads (via the font_/icon_ accessor redirects).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 u32  res_atlas_idx           ( void );          // the single bindless texture slot (0 = not ready)
 void res_atlas_white_uv      ( f32* u, f32* v );// UV of the opaque assist texel (solid-color draws)

@@ -30,9 +30,9 @@
 #define STROKE_CORE_MIN 0.5f    /* min solid-core half-width kept on thin strokes so an angled 1px
                                    line stays a coherent solid run instead of a dotted alpha tent */
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Small vec2 helpers (local -- base/ stays stateless and we only need a couple)
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static gui_vec2_t
 v2( f32 x, f32 y )
@@ -53,9 +53,9 @@ seg_normal( gui_vec2_t a, gui_vec2_t b )
     return v2( -dy * inv, dx * inv );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Retained path scratch -- path_line_to appends, path_stroke consumes (ImGui-style).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static struct
 {
@@ -64,9 +64,9 @@ static struct
 
 } s_path;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Alignment + snapping helpers
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Offset (along the left-hand normal) to slide the path centerline by so the stroke sits per the
    alignment.  The left-hand normal (90 deg CCW from a->b travel) points into the interior of a
@@ -96,14 +96,14 @@ stroke_snap_center( f32 c, f32 thickness )
     return floorf( c + 0.5f );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     stroke_axis_aligned_rect -- crisp fast path for a horizontal / vertical single segment.
 
     A pure H/V line under a centered alignment is just a 1-to-N px thick rectangle; routing it
     through draw_push_rect_filled (which itself snaps the origin to the grid) makes it pixel-exact,
     matching the look of separators and borders.  Returns false (let the antialiased path take it)
     for diagonal lines or the INSIDE / OUTSIDE alignments, whose edges are not symmetric here.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 stroke_axis_aligned_rect( f32 x0, f32 y0, f32 x1, f32 y1, f32 t,

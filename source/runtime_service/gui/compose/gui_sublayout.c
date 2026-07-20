@@ -15,7 +15,7 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     push_layout / pop_layout -- a sub-layout that fills one cell.
 
     Consumes the next cell of the active template exactly as a widget would -- so the parent
@@ -31,7 +31,7 @@
 
     Id scope is left unchanged, so a widget inside the sub-layout shares the parent region's ids;
     use push_id / "##" to disambiguate repeats, exactly as anywhere else.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Sink for a sub-layout's unused scroll / content-measure fields -- it never scrolls and its extent
    feeds nothing back, so this only ever holds zero / discard.  Shared by every push_layout frame. */

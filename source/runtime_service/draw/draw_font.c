@@ -129,11 +129,11 @@ static const u8 s_font5x7[ DRAW_FONT_GLYPHS ][ DRAW_FONT_ROWS ] =
     { GR(0,0,0,0,0), GR(0,0,0,0,0), GR(0,1,0,0,0), GR(1,0,1,0,1), GR(0,0,0,1,0), GR(0,0,0,0,0), GR(0,0,0,0,0) }, /* ~ */
 };
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Pixel-quad accumulator -- one submit (draw call + buffer write) per chunk, not per pixel.
     Static (single-threaded immediate mode); each pixel is a unit quad, so DRAW_FONT_CHUNK_PX
     pixels use CHUNK*4 verts / CHUNK*6 idx, both well under the batch caps.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define DRAW_FONT_CHUNK_PX   256
 
@@ -179,9 +179,9 @@ font_pixel( f32 px, f32 py, f32 scale, const f32 rgba[ 4 ] )
     s_font_ni += 6;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Public (vtable) entry points
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Emit `str` at pixel top-left (x,y), scaled by `scale` (1/2/3...), colour rgba[4] linear.
    '\n' returns to x and drops one line.  Call between draw_begin/draw_end (or begin_pass) like

@@ -337,12 +337,12 @@ col_item_bg_anim( gui_id_t id, gui_item_state_t st )
     return col_lerp( col_lerp( COL_WIDGET_BG, COL_WIDGET_HOT, a.x ), COL_WIDGET_ACT, a.y );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     System adornments -- the uniform highlight rings and edge markers the interaction services
     invoke.  Behavior (interact/) decides WHEN one paints (the protocol point); the paint
     policy -- color, thickness, extent -- lives here with the rest of the skin, so the behavior
     tier never reads a style value to adorn an item.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Focus-ring inset outside the item rect so the item's own fill spares it.  The nav scroll
    chase (interact/gui_item.c) also reads this to keep the ring clear of the view edge. */

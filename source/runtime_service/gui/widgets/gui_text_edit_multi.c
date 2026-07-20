@@ -33,7 +33,7 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Multiline edit state -- persisted per-id across frames (big-class keyed state slot).
 
     cursor / anchor are byte offsets with the same selection contract as the single-line field:
@@ -41,7 +41,7 @@
     the caret (vertical scroll belongs to the child region, not this widget).  pref_x is the
     sticky preferred column for vertical caret movement (the x the caret aims for when Up /
     Down crosses a shorter line); pref_valid gates it because 0.0 is a real column.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct
 {
@@ -68,12 +68,12 @@ medit_sel( const gui_medit_state_t* es, u32* lo, u32* hi, bool* has )
     *has = ( *lo != *hi );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Line geometry -- byte-offset <-> (row, pixel-x) mapping over the '\n'-separated buffer.
 
     All linear scans: an editor-sized buffer (a few KB) rescans in negligible time, and the
     scans only run on frames with caret or paint activity for the focused / visible field.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Number of display lines: '\n' count + 1 (an empty buffer is one empty line). */
 static u32
@@ -141,7 +141,7 @@ medit_offset_at( const char* buf, u32 len, i32 row, f32 px )
     return ls + text_offset_at( buf + ls, le - ls, px > 0.0f ? px : 0.0f );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Undo / redo ring -- private multiline twin of the single-line ring (gui_text_edit.c).
 
     Same shape (snapshots after committed edits, char-burst grouping, Escape-revert copy at
@@ -149,7 +149,7 @@ medit_offset_at( const char* buf, u32 len, i32 row, f32 px )
     marks the whole history DEAD until the next focus gain.  Undo must never restore a
     truncated snapshot over a longer live buffer, so an oversize edit simply switches undo
     off rather than corrupting the text.  revert_ok gates Escape the same way.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define MEDIT_UNDO_SLOTS    8
 #define MEDIT_UNDO_TEXT_MAX 2048
@@ -250,9 +250,9 @@ medit_undo_apply( medit_undo_buf_t* u, i32 logical_idx, char* buf, u32 bufsz,
     return true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Edit primitives -- the two buffer mutations every path shares.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Delete bytes [lo,hi) and collapse the caret to lo. */
 static void
@@ -305,7 +305,7 @@ medit_move_vert( const char* buf, u32 len, gui_medit_state_t* es, i32 drow, bool
     if ( !shift ) es->anchor = es->cursor;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Keyboard -- clipboard, undo / redo, 2D navigation, deletion, insertion, Escape-revert.
 
     Byte-for-byte the single-line contract where the semantics agree (Left / Right, word
@@ -315,7 +315,7 @@ medit_move_vert( const char* buf, u32 len, gui_medit_state_t* es, i32 drow, bool
         - Home / End are line-local; Ctrl+Home / Ctrl+End jump to the buffer ends
         - paste keeps newlines (CRLF / CR normalised to '\n', tabs expand to 4 spaces)
     char_class treats '\n' as whitespace, so the shared word ops cross lines naturally.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool shift,
@@ -635,7 +635,7 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
     *blink_io   = blink;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Mouse -- 2D click-to-caret, Shift-extend, double-click word select, drag select.
 
     `content` is the canvas cell rect (already offset by the region scroll), so the mapping is
@@ -643,7 +643,7 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
     field: st.active holds the drag past the box edges, and medit_offset_at clamps the
     out-of-range row / x, so sweeping above or below the box extends the selection line by
     line (the caret chase then scrolls it into view).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 medit_apply_mouse( gui_rect_t content, gui_item_state_t st, char* buf, u32 len,
@@ -710,7 +710,7 @@ medit_apply_mouse( gui_rect_t content, gui_item_state_t st, char* buf, u32 len,
     *blink_io      = true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Caret chase + paint -- the editor's only scroll writes, then per-row selection highlight,
     pan-clipped text, and the blinking caret into the canvas cell.
 
@@ -723,7 +723,7 @@ medit_apply_mouse( gui_rect_t content, gui_item_state_t st, char* buf, u32 len,
     Painting iterates only the rows intersecting the region view (the child's scissor would
     clip the rest anyway; the walk just skips the work).  Partial rows at the view edges are
     correct because the child clips -- no line snapping needed.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 medit_chase_and_paint( gui_rect_t content, char* buf, u32 len, gui_medit_state_t* es,
@@ -815,7 +815,7 @@ medit_chase_and_paint( gui_rect_t content, char* buf, u32 len, gui_medit_state_t
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     medit_field_edit -- the editor body inside the open child region.
 
     Reserves one canvas cell spanning the full text content (at least the view, so a click in
@@ -823,7 +823,7 @@ medit_chase_and_paint( gui_rect_t content, char* buf, u32 len, gui_medit_state_t
     item protocol -- the interaction clip and emission order then arbitrate against the
     region's own scrollbar exactly as they do for every widget -- and runs the keyboard /
     mouse / chase / paint sequence.  Returns true on any buffer modification this frame.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 medit_field_edit( gui_id_t id, char* buf, u32 bufsz )
@@ -878,12 +878,12 @@ medit_field_edit( gui_id_t id, char* buf, u32 bufsz )
     return changed;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     input_text_multiline -- public entry: a child region (the listbox recipe) over the engine.
 
     The child owns the frame, the scrollbar, the wheel, and the clip; the trailing label draws
     past the box's right edge under the parent clip, exactly like listbox_end.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_input_text_multiline( const char* label, char* buf, u32 bufsz, f32 h )

@@ -29,7 +29,7 @@ gui_want_capture_mouse( void )
     return s_interaction.hover_win != GUI_ID_NONE || s_interaction.active_id != GUI_ID_NONE;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Keyboard routing model
 
     One key press is resolved by exactly one of four tiers, evaluated in this order every frame.
@@ -96,7 +96,7 @@ gui_is_mouse_hovering_rect( gui_rect_t r )
     return can_hover && win_hover && rect_hit( s_scope.clip ) && rect_hit( r );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Last-item introspection (the Dear ImGui IsItem* family).
 
     Every reader reports on "the widget just emitted" -- the item whose rect and interaction state
@@ -110,7 +110,7 @@ gui_is_mouse_hovering_rect( gui_rect_t r )
     The activated / deactivated edges compare this frame's active id against the previous-frame
     baseline (active_id_prev, snapshot at new_frame): activated fires the frame an item first grabs
     active, deactivated the frame it lets go -- the natural seam for "commit on release" handling.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool gui_is_item_hovered ( void ) { return s_scope.last_status.hover;   }
 bool gui_is_item_active  ( void ) { return s_scope.last_status.active;  }

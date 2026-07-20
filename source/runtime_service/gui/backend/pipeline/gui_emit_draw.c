@@ -127,11 +127,11 @@ static struct
 
 } s_draw;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     FNV-1a hash helpers -- defined here (before draw_reset) so clip pre-hashing can use them.
     draw_hash_cmd below also uses them; fnv1a_u32 is visible in gui_build_cache.c (included
     after this file by gui_backend.c).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static inline u32
 fnv1a( u32 h, const void* p, u32 n )
@@ -154,12 +154,12 @@ fnv1a_u32( u32 h, u32 v )
     return h;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_emit_blocked -- the one gate every draw_push_* entry point checks before spending a
     command slot (and, by early-outing first, any pool space): the command list is full, or the
     command stepper is replaying a frozen frame and live main-band emission is suppressed at the
     source (STEP_EMIT_SUPPRESSED, gui_backend.h; capture/replay in backend/gui_step_capture.c).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static inline bool
 draw_emit_blocked( void )
@@ -189,9 +189,9 @@ draw_set_cmd_owner( gui_id_t id )
 }
 #endif
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_reset -- call at the top of the frame (frame_begin)
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_reset( i32 display_w, i32 display_h )
@@ -240,9 +240,9 @@ draw_reset( i32 display_w, i32 display_h )
     STEP_RESTORE_EMIT();
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Clip stack
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Append r to the clip table and return its index -- or the index of an existing identical rect.
    Dedup keeps the table at "distinct scissors this frame": the root set/restore swap around every
@@ -422,11 +422,11 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font, u32 band )
     s_draw.cur_band = band;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_set_window -- stamp subsequent commands with the owning window's stable id (the retained-
     cache key).  Set to win->id in window_begin and back to 0 (background) in window_end; the popup
     layer saves/restores it around an overlay just like the sort key.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_set_window( gui_id_t win )
@@ -434,13 +434,13 @@ draw_set_window( gui_id_t win )
     draw_seg_retag( win, s_draw.cur_z, s_draw.cur_vp, s_draw.cur_font, s_draw.cur_band );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_set_font -- make `font` the atlas batch context for subsequent commands.  Cuts a new
     command segment at the boundary (a font change is a texture switch, hence a draw-batch seam),
     so the tessellator can re-activate the font for that span and every glyph / fill / dashed line
     in it samples the right atlas.  Driven by gui_font_use (push/pop/use_font) alongside the layout
     metric rebuild, so a second font on screen is a per-segment context, not per-command data.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_set_font( u32 font )
@@ -448,10 +448,10 @@ draw_set_font( u32 font )
     draw_seg_retag( s_draw.cur_win, s_draw.cur_z, s_draw.cur_vp, font, s_draw.cur_band );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_set_sort_key -- stamp subsequent commands with this z (window paint order).
     Set to the window's z in window_begin and back to 0 (background) in window_end.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_set_sort_key( u32 z )
@@ -459,14 +459,14 @@ draw_set_sort_key( u32 z )
     draw_seg_retag( s_draw.cur_win, z, s_draw.cur_vp, s_draw.cur_font, s_draw.cur_band );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_set_viewport -- route subsequent commands to viewport `vp` (the surface a window paints).
 
     Set to the window's assigned viewport in window_begin and back to 0 (the main swapchain) in
     window_end, exactly as draw_set_sort_key drives the paint order.  flush replays only the
     commands tagged with its own viewport index, so one context can build every window's geometry
     and dispatch each window to the surface hosting it.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_set_viewport( u32 vp )
@@ -474,14 +474,14 @@ draw_set_viewport( u32 vp )
     draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp, s_draw.cur_font, s_draw.cur_band );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_set_band -- route subsequent commands into arena band `band` (0 = main UI, 1 = debug).
 
     Set from GUI_WIN_DEBUG_BAND at the window/region begin seams and back to 0 at window_end,
     exactly as draw_set_sort_key drives the paint order.  The cache packs debug-band slots after
     every main-band slot and excludes them from stats + the any_changed idle-skip signal, so a
     self-measuring diagnostic never pollutes the arena layout or the metrics it displays.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_set_band( u32 band )
@@ -513,14 +513,14 @@ draw_push_clip_root( void )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Global alpha -- a per-item opacity multiplier folded into every quad / triangle.
 
     draw_set_alpha installs the multiplier (clamped to [0,1]); draw_apply_alpha scales a packed
     color's A byte by it.  The item-flag resolver lowers it for the span of a disabled widget so
     the whole widget dims with no per-widget code, and the frame / chrome seams reset it to 1.0
     (chrome is not an item, so it always paints opaque).  At 1.0 the byte is returned unchanged.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_set_alpha( f32 a )
@@ -537,7 +537,7 @@ draw_apply_alpha( u32 abgr )
     return ( abgr & 0x00FFFFFFu ) | ( a << 24 );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Corner rounding -- the ambient radius folded into filled / outlined rects.
 
     draw_set_rounding installs the radius (clamped non-negative); draw_clamp_rounding fits it to a
@@ -545,7 +545,7 @@ draw_apply_alpha( u32 abgr )
     bars (separators, 1px frames) stay crisply square.  The item / chrome seams drive the radius from
     the resolved rounding category, exactly as draw_set_alpha is driven; grabs and squared marks set
     it locally for one sub-element via draw_set_rounding / draw_rounding (save + restore).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_set_rounding( f32 r )
@@ -561,14 +561,14 @@ draw_rounding( void )
     return s_draw.rounding;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Ambient text-clip window: a horizontal [x0, x1] pixel window that every subsequent
     draw_push_text / draw_push_text_n hard-clips to at the glyph level (straddling glyphs sliced
     with remapped U, interior glyphs whole, no scissor / no batch split).  A seam that draws text
     into a bounded slot -- a table cell at the scroll viewport edge -- sets the window for the
     span and clears it after, exactly as draw_set_alpha / draw_set_rounding bracket their spans.
     Explicit draw_push_text_clip_n callers (the scrolled text input) bypass this and pass their own.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_set_text_clip_x( f32 x0, f32 x1 )
@@ -584,12 +584,12 @@ draw_clear_text_clip( void )
     s_draw.text_clip_x1 = GUI_TEXT_NO_CLIP;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Draw scope -- the paint cursor as one record (gui_draw_scope_t, gui_internal.h): the command
     segment tag (window, sort key, viewport, band -- the ambient font stays global by design)
     plus the ambient text-clip window above.  The overlay seam (overlay_detach / overlay_reattach,
     gui_popup.c) saves and restores it wholesale; the restore is a single segment retag.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 gui_draw_scope_t
 draw_scope( void )
@@ -621,14 +621,14 @@ draw_clamp_rounding( f32 w, f32 h )
     return r < 0.5f ? 0.0f : r;   /* sub-pixel radius -> square fast path */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_push_rect_filled -- emit a filled / textured quad semantic command.
 
     tex_idx == 0 is the solid-color convention (resolved to the atlas white texel at tessellation
     time).  Pixel-grid snapping and GPU batching happen at flush time in the tessellation pass.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     FNV-1a hash helper and per-command hash used by the retained cache.
 
     draw_hash_cmd hashes a fully-filled gui_cmd_t at emit time while the data is still
@@ -640,7 +640,7 @@ draw_clamp_rounding( f32 w, f32 h )
     rect_list.offset) because those values shift whenever an earlier-emitted window changes its
     pool volume, which would falsely dirty an unrelated window.  Their content bytes are folded
     directly instead.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static u32
 draw_hash_cmd( const gui_cmd_t* c )
@@ -724,7 +724,7 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_push_rect_list -- emit N solid rects as ONE semantic command.
 
     The dense-shape escape valve: a caller drawing hundreds of small fills (timeline bars, graph
@@ -733,7 +733,7 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     (the CMD_POLYLINE point-pool pattern) and tessellated into one quad each at flush time.
     Per-entry alpha fold + clip cull happens here so the pool holds only visible work.  Entries
     share the current clip; always square (no rounding), solid color (white texel).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
@@ -765,13 +765,13 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );   /* entries are L1-hot here */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_push_icon -- push one registered icon quad into the draw list.
 
     An icon is just a textured quad sourced from the icon atlas instead of the font atlas, so
     this reuses draw_push_rect_filled wholesale; icon_get / icon_atlas_idx (resource/gui_icon.c)
     supply the cached UVs and the bindless slot.  No-op for an invalid id.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
@@ -782,13 +782,13 @@ draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
     draw_push_rect_filled( x, y, w, h, u0, v0, u1, v1, icon_atlas_idx(), abgr );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_push_rect_gradient -- emit a two-color gradient rectangle as one semantic command.
 
     col_a / col_b sit on opposite edges (horizontal = left->right, else top->bottom); the GPU
     interpolates the per-vertex color between them, so one quad replaces the old banded fill.
     Always square (no rounding) -- the per-vertex blend has no rounded-fan variant.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal )
@@ -817,9 +817,9 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_push_rect_outline -- emit a hollow rectangle semantic command.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr )
@@ -847,9 +847,9 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_push_triangle -- emit a solid triangle semantic command.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr )
@@ -879,9 +879,9 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_push_circle_filled -- emit a filled disc semantic command.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
@@ -907,14 +907,14 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     draw_push_text -- emit a glyph-run semantic command.
 
     str is copied into the frame text pool, so stack-local buffers (textf, snprintf labels) are
     fine; nothing about the caller's string needs to outlive the call.
     n == 0xFFFFFFFF means "entire NUL-terminated string"; a smaller n limits the glyph count
     (used to skip "##label" suffixes).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 clip_x1 )

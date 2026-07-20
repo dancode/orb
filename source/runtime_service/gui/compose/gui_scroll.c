@@ -24,7 +24,7 @@
 ==============================================================================================*/
 
 // clang-format off
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Persistent region state
 
     Child regions need their scroll offset and last-measured content size to survive across
@@ -34,7 +34,7 @@
     table or recycling logic lives here: the pool stamps the slot each frame and reclaims it once
     the id goes cold, and hands back zeroed storage on first sight so a new child opens at the top
     with no measured size.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static gui_region_t*
 region_get( gui_id_t id )
@@ -42,10 +42,10 @@ region_get( gui_id_t id )
     return GUI_STATE( gui_region_t, id );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     scroll_clamp -- pin a scroll offset into [0, content - view].  The one place the scroll range
     is defined; shared by the gutter reservation (push), the wheel (pop), and any future caller.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Sub-quantum spill tolerance.  Lattice-quantized content (auto rows / natural sizes ceil to
    grid_quantum) meeting a free-px container (a dragged window edge, a hand-sized box) can
@@ -72,7 +72,7 @@ scroll_clamp( f32* scroll, f32 content, f32 view )
     *scroll = clampf( *scroll, 0.0f, max );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     layout_push_region -- open a scrollable region.
 
     `outer` is the region box in screen space; `pad` insets the content column from its left
@@ -92,7 +92,7 @@ scroll_clamp( f32* scroll, f32 content, f32 view )
     for that window) so its contents are scissored to the box.  The interaction clip used for
     hit-testing follows the same rule -- a child narrows it, the window body inherits it.  The
     bars are drawn at pop, once this frame's content is measured.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win_flags_t flags,
@@ -192,7 +192,7 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     layout_pop_region -- close the top region: measure, draw bars, restore the parent.
 
     Order matters: measure content from the pen travel, pop the inner content clip and restore
@@ -202,7 +202,7 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     pops run inner-first, so the innermost region under the cursor claims it before its parents.
     A wheel delta therefore takes effect next frame (this frame's pen bias already used the old
     offset), which is imperceptible for scrolling.  Finally advance the parent pen past `outer`.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 layout_pop_region( void )

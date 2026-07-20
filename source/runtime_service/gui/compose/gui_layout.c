@@ -19,7 +19,7 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Public layout API -- shape the active region's repeating row template.
 
     These set the template on the current region; it persists and repeats for every subsequent
@@ -27,7 +27,7 @@
     (one flex column, auto height), and each call simply replaces it.  See gui_layout_t for
     the column unit rule.  gui_pad sets the region padding -- the inset between the region box
     and where the layout starts -- distinct from the item padding carried in the template.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* stack -- the explicit header for a single full-width flex column, rows accumulating + scrolling
    (the everyday vertical list).  This is the canonical name for what a region used to do silently
@@ -249,7 +249,7 @@ gui_grid_cells( u32 nc, u32 nr )
     layout_set_grid( cols, rows, 0.0f, 0.0f );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Pack mode -- the print run: place items one after another along an axis at their natural size.
 
     bar() opens the horizontal run (a toolbar), strip() the vertical one.
@@ -257,7 +257,7 @@ gui_grid_cells( u32 nc, u32 nr )
     against the space left on the line (0 natural, 1 fill the rest, (0,1) a fraction, >1 px).  A
     widget with no natural width (slider / input / selectable) fills the remainder of the line by
     default.  pack_nextline() breaks to a fresh line.  Mode persists like any other until re-set.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* pack -- open a print run along `dir`.  Finishes any flow row above it, then seeds the pack pen
    at the current layout position: the main axis runs along dir from there, the cross axis from the
@@ -325,7 +325,7 @@ gui_pack_wrap( void )
     if ( f->mode == GUI_MODE_PACK ) f->line.wrap = true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Sizing (sz_) -- the one public family that turns intent into a pixel dimension.  Everything
     a caller feeds to row / cols / child_begin / window_set_next_size that is not a fraction or
     a fill comes from here; layout verbs consume sizes, sz_ produces them.
@@ -344,7 +344,7 @@ gui_pack_wrap( void )
         sz_line_h() -- the raw font line advance, for text-shaped custom-draw rects.
 
     Text measurement lives with the draw family (text_size), not here.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* sz_u -- n grid quanta in pixels (grid_quantum, the theme's px lattice; 4 by default).  The
    unit-first way to author any px size -- tracks, row heights, child / window sizes, pack_size --
@@ -564,7 +564,7 @@ gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect
     return n;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     carve -- a whole nested partition from one flat f32 form.
 
     The recursive completion of split(): split() resolves one track list; carve resolves a list
@@ -575,7 +575,7 @@ gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect
     size followed by anything else is a leaf.  The form opens with a leading CUT that fills the
     whole area.  Resolution is a stack walk -- one layout_resolve_tracks per container (the same
     engine cols uses), leaf rects streamed to out[] in reading order -- with no per-leaf storage.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* p points at a GUI_CUT_* sentinel; return the pointer just past the GUI_END that closes the list
    it opens (depth-counted, so nested cuts are skipped whole).  Used to step over a container's
@@ -702,7 +702,7 @@ gui_empty( f32 w, f32 h )
     return cell_next_w( w, h );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     indent / unindent -- shift the active region's content column right (or back), so subsequent
     rows lay out inset.  The single mechanism behind tree_node's nesting, but usable on its own to
     inset any block of widgets.  w <= 0 uses the standard step (one row height, so a tree child
@@ -710,7 +710,7 @@ gui_empty( f32 w, f32 h )
     the pen to the new column edge, and re-resolves the flow template against the narrowed width;
     always balance an indent with an unindent of the same width.  Flow layouts (stack / columns)
     only -- a grid / pack carries its own resolved geometry and ignores the reflow.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_indent( f32 w )

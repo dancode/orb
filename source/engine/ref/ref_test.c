@@ -277,13 +277,13 @@ ref_test_register_entity( void )
     the single global g_ref), but can be toggled individually by the if(0) block in ref_run_tests.
 ==============================================================================================*/
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     test_primitives: all 15 built-in types installed by ref_init()
 
     Verifies: name, type_id == ref_prim_t enum value, size, align, kind, and name-based lookup.
     The enum-value == type_id invariant is load-bearing: callers use REF_PRIM_F32 etc. directly
     as type IDs without going through the hash table.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 test_primitives( void )
@@ -349,13 +349,13 @@ test_primitives( void )
     ref_exit();
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     test_prim_fields: lazy resolution maps every non-void primitive to its REF_PRIM_* type_id
 
     Registers a flat struct with one field per non-void, non-invalid primitive.  After
     ref_finalize_frame each field->type_id must equal the corresponding REF_PRIM_* enum value
     and field->kind must be REF_KIND_PRIM.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 test_prim_fields( void )
@@ -510,14 +510,14 @@ test_prim_fields( void )
     ref_exit();
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     test_mods: all REF_MODS_* values stored and retrieved correctly
 
     Registers one field per modifier shape.  After finalize each field->mods must equal the
     value that was set at registration time.  ARRAY_PTR (0x0102, T(*)[N]) is included here
     even though the reflect_tool parser cannot emit it -- the runtime stores it correctly and
     ref_print_type renders it.  FUNCTION is covered by test_function_sigs.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 test_mods( void )

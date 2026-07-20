@@ -30,9 +30,9 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Constants
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* A popup window is an OVERLAY: win->overlay is stamped every begin (the type fact the native /
    nav / tab-drop tests key on) alongside a z in the reserved overlay band (surface_z_overlay,
@@ -63,9 +63,9 @@
 #define GUI_POPUP_BASE_FLAGS \
     ( GUI_WIN_NOMOVE | GUI_WIN_NORESIZE | GUI_WIN_NOCOLLAPSE | GUI_WIN_ALWAYS_AUTOSIZE )
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Helpers
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Popup window id from the caller's string: scoped through the push_id stack (like any widget id)
    then salted so a popup never shares a window record with a normal window of the same title.
@@ -85,7 +85,7 @@ popup_clamp( f32 pos, f32 size, f32 extent )
     return pos;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Overlay detach / reattach
 
     A popup window is begun inside another window's open layout / clip / paint state.  detach
@@ -95,7 +95,7 @@ popup_clamp( f32 pos, f32 size, f32 extent )
     reused.  The single thing pop would corrupt is the parent's pen advance (layout_pop_region
     advances the enclosing frame past the popup's box, which is meaningless for a floating window);
     restoring the saved parent frame undoes exactly that.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static gui_overlay_save_t
 overlay_detach( void )
@@ -137,12 +137,12 @@ overlay_reattach( gui_overlay_save_t s )
     draw_scope_set( s.draw );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     popup_open -- request the popup `str` open at the current nesting depth.
 
     Opening truncates any sibling/deeper popups (writing at this depth replaces what was there).
     The anchor is the cursor: a regular popup opens where the click landed.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* id-based open core: request `id` open at the current nesting depth, anchored at (ax,ay).  The
    string API anchors at the cursor; the combo widget (gui_combo.c) anchors at its box and
@@ -171,9 +171,9 @@ gui_popup_open( const char* str )
     popup_open_id( popup_id( str ), s_io.mouse_x, s_io.mouse_y );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     popup_is_open -- whether `str` (or an explicit id) is anywhere in the open stack.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 popup_is_open_id( gui_id_t id )
@@ -203,14 +203,14 @@ popup_set_anchor( gui_id_t id, f32 ax, f32 ay )
         }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     popup_begin_common -- shared body of popup_begin / popup_modal_begin.
 
     Returns false (cheaply) when this popup is not open at the current depth, so a closed popup
     costs almost nothing.  When open, detaches the parent context, places + opens the window on
     the popup z-band, and (for an auto-size popup's first frame) parks it off-screen to measure
     invisibly, snapping into place next frame.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bool modal,
@@ -347,12 +347,12 @@ gui_popup_end( void )
     --s_popup_begin_count;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     popup_close_current -- close this popup (and any deeper) from inside its body.
 
     Inside begin/popup_end, begin_count is this popup's depth + 1, so truncating the open stack
     to begin_count - 1 drops this popup and its children.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_popup_close_current( void )
@@ -361,12 +361,12 @@ gui_popup_close_current( void )
         g_ctx->popup.open_count = s_popup_begin_count - 1u;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Context menus -- open a popup on a right-click.
 
     _item binds to the previous widget (its id is latched in s_scope.last_id by item_state);
     _window binds to empty space in the current window.  Both then render through popup_begin.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_popup_context_item_begin( const char* str )
@@ -385,13 +385,13 @@ gui_popup_context_window_begin( const char* str )
     return gui_popup_begin( str, GUI_WIN_NONE );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Tooltips -- a non-interactive overlay at the cursor, shown only while live.
 
     A tooltip carries no open state (it is purely "is the previous item hovered this frame"), so
     it does not use the popup stack; it is just a top-level overlay window on the band above every
     popup.  It still detaches like a popup so it can be raised from inside another window.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static gui_overlay_save_t s_tooltip_save;   /* tooltips do not nest, so one save slot suffices */
 
@@ -469,7 +469,7 @@ gui_set_item_tooltip( const char* text )
     gui_tooltip_end();
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     help_marker -- a dim "(?)" hint that reveals `text` in a tooltip on hover (no click).
 
     The Dear ImGui idiom: emit it on the same line after a control to footnote it.
@@ -481,7 +481,7 @@ gui_set_item_tooltip( const char* text )
     It is a leaf item like text(), but registers an id so the tooltip can bind to it -- the
     glyphs are the hover area.  It never captures the click (purely visual): item_state is
     used only to drive the hover, and the mark brightens from dim to full text while pointed at.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_help_marker( const char* text )
@@ -505,7 +505,7 @@ gui_help_marker( const char* text )
     gui_set_item_tooltip( text );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     popup_close_check -- stale-close + click-outside, run at frame top before any user code.
 
     Stale: an open popup whose popup_begin was not called last frame (the caller stopped emitting
@@ -515,7 +515,7 @@ gui_help_marker( const char* text )
     everything deeper; a press fully outside closes all -- but never at or below the topmost modal
     (whose outside clicks are swallowed, not closing it).  Containment alone resolves nesting: a
     click in a child keeps the chain, a click in a parent body closes just the child.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Count of popups the topmost open modal pins open: one past the last modal in the open stack, 0
    when none is modal.  A modal swallows its own outside clicks, so neither the click-outside check
@@ -553,14 +553,14 @@ popup_close_check( void )
     g_ctx->popup.open_count = keep;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     popup_apply_modal -- fence interaction behind the topmost open modal.
 
     When a modal is open, anything not over the modal (or a popup opened on top of it) must be
     inert.  The fence is one claim through the behavior tier -- interact_hover_fence
     (interact/gui_item.c) points the hover-window arbitration at the modal, freezing every
     window behind it with no per-widget code; see the verb for the mechanism.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 popup_apply_modal( void )

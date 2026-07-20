@@ -10,7 +10,7 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     collapsing_header -- a full-width clickable bar with a fold arrow that toggles a section open
     or closed, returning the open state.  There is no end call: the caller guards its body with the
     return ( if ( header(...) ) { widgets } ), exactly like window_begin's collapse, so a closed
@@ -41,7 +41,7 @@ gui_collapsing_header( const char* label )
     return hs->open;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     tree_node / tree_pop -- a collapsing_header without the frame: an arrow + label row that folds
     a nested block and indents it while open.  The unframed sibling of collapsing_header (no filled
     bar; it highlights only on hover, so a tree reads as rows rather than stacked headers) and the

@@ -21,9 +21,9 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     id_hash -- FNV-1a 32-bit hash of a NUL-terminated string
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static gui_id_t
 id_hash( const char* str )
@@ -37,13 +37,13 @@ id_hash( const char* str )
     return h ? h : 1u;    /* never return GUI_ID_NONE (0) */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     id_combine -- mix a scope seed with a local key into one id (boost-style hash_combine).
 
     The single rule for how an id is namespaced: every sub-id (a leaf widget under a region, a
     child region under its parent, a window's chrome control) is id_combine(scope, key).  Unlike
     a bare XOR it avalanches and is order-dependent, so distinct (scope, key) pairs stay distinct.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static gui_id_t
 id_combine( gui_id_t seed, u32 key )
@@ -52,13 +52,13 @@ id_combine( gui_id_t seed, u32 key )
     return h ? h : 1u;    /* never return GUI_ID_NONE (0) */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Id-scope stack functions
 
     id_seed/push/pop operate on the s_id_stack[] / s_id_sp variables declared in gui_ctx.c.
     The top of the stack is the seed every widget id combines against; regions seed it
     automatically, and push_id / pop_id add temporary levels for repeated widgets in one region.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Current scope seed -- top of the stack, or NONE when empty (a bare top-level widget). */
 static gui_id_t

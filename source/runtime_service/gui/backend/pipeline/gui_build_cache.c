@@ -26,12 +26,12 @@
    compiled out (release) or the id was never registered. */
 const char* gui_debug_name( gui_id_t id );
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Once-per-frame guard.
 
     The first surface flush triggers cache_build_frame and stamps s_frame_built; later surfaces
     reuse the slot and dispatch tables untouched.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool s_frame_built;
 
@@ -41,7 +41,7 @@ gui_build_frame_reset( void )
     s_frame_built = false;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Per-frame render stats.
 
     accum is built by two phases that do NOT run on the same schedule: BUILD (cache_diff_windows /
@@ -60,7 +60,7 @@ gui_build_frame_reset( void )
     collapse to 0 after any idle frame, which read on screen as the retained-window count randomly
     flickering between correct and zero every time the idle-skip kicked in -- nothing was actually
     wrong with retention, only with how the overlay reported it.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static struct
 {
@@ -119,25 +119,25 @@ cache_count_upload( u32 batches, u32 bytes )
     s_stats.accum.upload_bytes   += bytes;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Retained-skip toggle.
 
     When enabled (default: s_caps.retained_cache) a window whose per-command hash matches last
     frame keeps its geometry in place instead of re-tessellating.  Disable to benchmark or verify
     the from-scratch path.  Toggled via gui()->set_retained_skip (key C in sb_vulkan), which flips
     the same s_caps field latched at gui_backend_init -- there is only the one flag.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void gui_build_set_retained_skip( bool on ) { s_caps.retained_cache = on; }
 bool gui_build_retained_skip    ( void )    { return s_caps.retained_cache; }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Build-phase debug toggles.
 
     s_caps.stats_trace (set at gui_backend_init, default off) gates all three prints below; each
     prints a per-frame line only when its value changes, so a steady UI does not spam.  The same
     numbers are live through gui()->render_stats() in the perf overlay regardless of the flag.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Debug-band windows (GUI_WIN_DEBUG_BAND: the perf overlay, the pipeline dashboard, their
    popups/tooltips) are exempted from: (1) the vert/tri/win totals they may themselves display
@@ -178,6 +178,18 @@ bool gui_build_retained_skip    ( void )    { return s_caps.retained_cache; }
 #else
 #define WIN_SLOT_CMD_MAX  64
 #endif
+
+/* Proactive compaction threshold.  The reuse allocator is bump-only: new windows always tessellate
+   at the tail (past every live reservation), so a closed/relocated window's space becomes a hole
+   nothing refills -- a churny UI (dragging across a menu bar, each submenu a fresh window that
+   leaves a hole when it closes) marches the tail up and strands dead space behind it.  Waiting for
+   the arena to hit the cap before repacking means the fill only ever grows during churn.  So once
+   the DEAD (unreserved) space in the used range [0, tail) reaches this percentage, cache_build_frame
+   repacks proactively -- the backend self-compacts on a cheap frame instead of on a user event or a
+   hard overflow.  Padding (vert_alloc - vert_count) is NOT counted as dead, so a freshly repacked
+   arena reads ~0% and the trigger cannot thrash frame-to-frame. */
+#define GUI_REPACK_FRAG_PCT   25
+#define GUI_REPACK_FRAG_FLOOR 2048   /* skip the check below this many dead verts/idx -- noise */
 
 /* One cached GPU draw command.  Packed AOS so replaying a slot's commands touches one region.
    z is per-slot (the window's max segment z), not per-command; lvbase/libase are slot-local so
@@ -1076,6 +1088,7 @@ typedef struct
 {
     u32      vert_retained, tri_retained, win_retained;
     u32      total_vert, total_tri, overlay_win;
+    u32      reserved_vert, reserved_idx;   /* sum of vert_alloc/idx_alloc over ALL placed slots */
     gui_id_t overflow_win;
     u32      overflow_at_vert, overflow_at_idx, overflow_at_cmd;
     gui_id_t reused_volatile_wins[ RENDER_MAX_WIN ];
@@ -1170,6 +1183,11 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
             st->overflow_at_cmd  = s_tess.cmd_count;
         }
 
+        /* Space this slot owns (live count + retained padding).  Summed over every slot, the tail
+           minus this is the dead space the proactive-repack check reclaims. */
+        st->reserved_vert += slot->vert_alloc;
+        st->reserved_idx  += slot->idx_alloc;
+
         /* Accumulate per-slot geometry stats; exclude self-measuring debug-band windows from totals. */
         if ( wh->band != 0 )
             ++st->overlay_win;
@@ -1230,8 +1248,31 @@ cache_build_frame( void )
        an overflow that survives the repack means the content genuinely exceeds the arena. */
     cache_place_stats_t ps;
     cache_place_slots( true, &ps );
-    if ( s_tess.overflow )
+
+    /* Repack triggers, both handled by a single from-scratch re-place (reuse off, pack from 0):
+         1. Overflow -- the reuse path spilled the arena.  Often pure fragmentation (holes from
+            vanished / relocated windows), so a compacting retry usually fits; an overflow that
+            SURVIVES the repack means the content genuinely exceeds the arena.
+         2. Proactive (GUI_REPACK_FRAG_PCT) -- the bump allocator never refills holes, so dead space
+            only grows during churn.  Measure it (tail minus what live slots actually reserve) and
+            compact once it crosses the threshold, so the backend self-heals on a cheap frame
+            instead of waiting for a user event or a hard overflow.  Floored so a near-empty arena
+            never trips on a high percentage of a tiny number. */
+    u32  dead_v = s_tess.vert_count > ps.reserved_vert ? s_tess.vert_count - ps.reserved_vert : 0;
+    u32  dead_i = s_tess.idx_count  > ps.reserved_idx  ? s_tess.idx_count  - ps.reserved_idx  : 0;
+    bool frag   = ( dead_v >= GUI_REPACK_FRAG_FLOOR && dead_v * 100u >= s_tess.vert_count * GUI_REPACK_FRAG_PCT )
+               || ( dead_i >= GUI_REPACK_FRAG_FLOOR && dead_i * 100u >= s_tess.idx_count  * GUI_REPACK_FRAG_PCT );
+
+    if ( s_tess.overflow || frag )
+    {
+        bool was_overflow = s_tess.overflow;    /* tess_reset in the repack clears it -- capture first */
+        u32  pre_v = s_tess.vert_count, pre_i = s_tess.idx_count;
         cache_place_slots( false, &ps );
+        if ( s_caps.stats_trace )
+            printf( "[gui] repack (%s): tail verts %u -> %u, idx %u -> %u  (dead was v=%u i=%u)\n",
+                    was_overflow ? "overflow" : "frag",
+                    pre_v, s_tess.vert_count, pre_i, s_tess.idx_count, dead_v, dead_i );
+    }
 
     /* Deferred volatile patches for reused windows: every slot is now placed and s_tess.vert_count
        is the true tail, so volatile_patch's scratch tessellation lands past all live geometry

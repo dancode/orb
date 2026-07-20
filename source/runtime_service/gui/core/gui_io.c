@@ -32,9 +32,9 @@ ORB_STATIC_ASSERT( APP_KEY_COUNT <= GUI_KEY_COUNT,
                    "GUI_KEY_COUNT too small for APP_KEY_COUNT" );
 
 // clang-format off
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     State
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* The per-frame input snapshot the widgets see.  The polled fields are sampled by
    io_frame_begin(); the event-borne fields (text/wheel/paste) are written straight in by
@@ -82,9 +82,9 @@ static f32 s_click_x[ 3 ], s_click_y[ 3 ];
    snapshot because the hotkey driver reads it on the same polled channel. */
 static bool s_debug_enabled;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Snapshot readers -- the queries later tiers ask of s_io, named once.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Internal accessor used by gui_frame.c (same unity TU). */
 static bool io_dirty( void ) { return s_io_dirty; }
@@ -112,7 +112,7 @@ key_claim( app_key_t k )
     return had_edge;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Event intake -- gui_event() and the io_add_* feeders it unpacks the app ring through,
     running during the host's drain, before frame_begin.  Not part of the public widget API.
 
@@ -122,7 +122,7 @@ key_claim( app_key_t k )
     APP_EV_CLIPBOARD event, which gui_event writes straight into s_io.paste for the focused field
     to consume this frame; io_frame_end clears it after.  gui owns no clipboard buffer of its
     own -- it is a pure conduit between the OS and the focused field.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Copy n bytes of `s` to the OS clipboard, dropping control characters (a single-line field's
    selection never legitimately contains any, but this keeps the published text clean).  Builds
@@ -233,9 +233,9 @@ gui_event( const app_event_t* ev )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Input frame lifecycle -- io_frame_begin / io_frame_end, bracketing the widgets' reads.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Per-button double-click detection: a press counts as a double-click when it lands within
    DOUBLE_CLICK_TIME of the previous press and within DOUBLE_CLICK_DIST of it.  s_click_elapsed
@@ -377,10 +377,10 @@ io_frame_end( void )
     s_io_paste_set   = false;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Debug layer toggle -- the public master switch the debug driver (debug_hotkeys,
     debug/gui_frame_overlay.c) is gated on.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void gui_debug_enable( bool enable )
 {

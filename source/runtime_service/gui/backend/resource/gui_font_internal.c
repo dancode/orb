@@ -45,13 +45,13 @@ static font_metrics_t*  s_font      = NULL;                     // active font's
     finalize step anymore.  The slot keeps only its tenant handle plus type/glyph metrics.
 ==============================================================================================*/
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     font_slot_load -- load a .orb_font from disk into `slot`.  Does not activate the slot.
 
     On success the slot's glyph pixels are resident in the shared atlas and metrics describe a
     proportional font.  A slot that already holds a font (a live re-bake) updates its existing
     tenant in place; a failed load leaves the slot's previous font intact.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 font_slot_load( font_slot_t* slot, const char* path )
@@ -149,9 +149,9 @@ font_slot_load( font_slot_t* slot, const char* path )
     return true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     font_slot_char_advance / font_slot_glyph -- per-glyph metrics and draw parameters for a slot.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static f32
 font_slot_char_advance( const font_slot_t* slot, u8 ch )
@@ -186,7 +186,7 @@ font_slot_glyph( const font_slot_t* slot, u8 ch,
     *advance = (f32)g->advance;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Deferred reload queue.
 
     A live font swap (font_load_into on a slot that already holds a font) builds a fresh GPU atlas
@@ -197,7 +197,7 @@ font_slot_glyph( const font_slot_t* slot, u8 ch,
     once per frame from font_flush_pending(), which the UI unit calls at frame_begin -- a clean
     point between frames, before any context renders.  The slot keeps showing its current font
     until the swap lands, so there is no half-loaded slot to draw.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define GUI_FONT_PATH_MAX 512
 

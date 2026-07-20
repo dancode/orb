@@ -48,7 +48,7 @@ fmt_decimal_step( const char* fmt )
     return step;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Keyboard arrow-step apply -- the shared tail every value widget (slider / drag, float / int)
     runs once its captured nav_adjust (-1 / +1 this frame) is known.  The per-widget code derives
     the BASE step magnitude (its own semantics: a slider's 1%-of-range, a drag's v_speed) and hands
@@ -57,7 +57,7 @@ fmt_decimal_step( const char* fmt )
     to any of those lands on all of them at once.  Returns true and writes *v only on a real change.
     Bounds clamp only when lo < hi (a drag passing v_min == v_max stays unbounded; a slider always
     has lo < hi).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Float: floor the step at fmt's decimal resolution so a small-range slider / slow drag still moves
    the printed value every press (see fmt_decimal_step). */
@@ -245,7 +245,7 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     return changed;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     drag_int -- a framed integer field whose value is changed by dragging left / right (the Dear
     ImGui DragInt analogue).  No track travel: the value is relative to where the press landed,
     so it has no max -- v_speed units of value per pixel dragged.  v_min < v_max bounds it; both
@@ -270,7 +270,7 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     range (drag_resolve_speed), making every bounded drag take the same wrist travel end to end no
     matter how wide its range.  A caller that needs an exact per-pixel feel still passes an explicit
     v_speed > 0.  This is the one consistent range->feel rule for every drag widget.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Drag rate modifiers (Dear ImGui parity): Alt drags finer, Shift drags faster.  Returned as a
    multiplier on the resolved v_speed; neither held leaves it at 1.  Alt wins if both are down.
@@ -436,13 +436,13 @@ gui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, cons
     return drag_int_box( id, box_r, v, v_speed, v_min, v_max, format );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     drag_float -- the floating-point sibling of drag_int: a framed value field changed by a
     left / right drag, v_speed units of value per pixel, with no track and so no travel cap.  The
     Dear ImGui DragFloat analogue.  v_min < v_max bounds the value; both equal leaves it unbounded.
     fmt is the printf form of the displayed value ("%.3f" when NULL).  drag_float2/3/4 lay N equal
     sub-boxes across the control track (a vector edit), each an independent drag.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Float anchor captured at the press that started the active drag -- the float counterpart of
    s_drag_anchor_v (s_drag_anchor_x / s_drag_scale are shared), a lone static since only one widget

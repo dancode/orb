@@ -14,7 +14,7 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     input_text / input_text_ex / input_text_with_hint -- single-line text field variants.
 
     All three share the same layout (label split, one WIDGET_H row) and the same frame draw
@@ -23,7 +23,7 @@
     selection, insertion, deletion, horizontal scroll, rendering) delegates to input_field_edit
     (gui_text_edit.c); the wrapper handles only the label split, box background, border, and
     focus claim.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct { gui_id_t id; gui_rect_t box; gui_item_state_t st; } input_text_frame_t;
 

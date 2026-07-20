@@ -247,7 +247,7 @@ bool                gui_build_any_changed( void );
 
 void                gui_build_dump_geometry( void );
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Volatile widgets -- an inline-emit callback replayed in place on frames the UI build is
     skipped, so a purely cosmetic animation never forces the whole UI to re-run every frame.
 
@@ -276,7 +276,7 @@ void                gui_build_dump_geometry( void );
     callback to emit into, which only the UI unit owns (lf(), the id stack).  gui_replay_scope_enter
     / _exit are the two functions that cross back -- the same kind of unit-seam exception as
     gui_dbg_build_viewport above, just two of them instead of one.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void     gui_volatile_cb_open ( gui_id_t id );                 // (re)open row `id`; cmd_lo = current cmd_count
 void     gui_volatile_stamp   ( f32 x, f32 y, f32 w );          // fill win/z/vp/font/clip + cursor stamp for the open row

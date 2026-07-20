@@ -19,20 +19,20 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     push_id / pop_id -- add a temporary id-scope level for repeated widgets within one region.
 
     Widget ids are already region-seeded, so this is only needed to separate widgets that share a
     label in the same region (e.g. list rows keyed by index).  push_id combines its key onto the
     current scope; pop_id removes one level.  Always balance them -- a region pop restores the
     scope depth anyway, so a stray push cannot escape its region, but balancing keeps ids stable.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void gui_push_id    ( const char* str ) { id_push( id_combine( id_seed(), id_hash( str ) ) ); }
 void gui_push_id_int( i32 i )           { id_push( id_combine( id_seed(), (u32)i ) ); }
 void gui_pop_id     ( void )            { id_pop(); }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     push_item_flag / pop_item_flag / next_item_flag -- the push-model per-item behavior set.
 
     push/pop affect every widget until popped (and nest); next_item_flag is a one-shot override the
@@ -46,13 +46,13 @@ void gui_pop_id     ( void )            { id_pop(); }
 
         gui()->next_item_flag( GUI_ITEM_DISABLED, true );
         gui()->button( "Only this one is disabled" );
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void gui_push_item_flag( gui_item_flags_t flag, bool enable ) { item_flag_push( flag, enable ); }
 void gui_pop_item_flag ( void )                               { item_flag_pop(); }
 void gui_next_item_flag( gui_item_flags_t flag, bool enable ) { item_flag_next( flag, enable ); }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     disabled_begin / disabled_end -- the named-scope shorthand for GUI_ITEM_DISABLED (the ImGui
     BeginDisabled / EndDisabled).  disabled_begin( true ) brackets a run of widgets so they all draw
     dimmed and reject input; disabled_begin( false ) pushes a no-op scope (so a conditional disable
@@ -61,7 +61,7 @@ void gui_next_item_flag( gui_item_flags_t flag, bool enable ) { item_flag_next( 
         gui()->disabled_begin( !has_selection );
         gui()->button( "Delete" );          // inert + dimmed while nothing is selected
         gui()->disabled_end();
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_disabled_begin( bool disabled )
@@ -74,7 +74,7 @@ gui_disabled_begin( bool disabled )
 
 void gui_disabled_end( void ) { item_flag_pop(); }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     push_style_color / push_style_var (+ pop / next) -- the push-model theme override.
 
     push overrides a slot for every widget until the matching pop; pop takes a count, so two pushes
@@ -90,7 +90,7 @@ void gui_disabled_end( void ) { item_flag_pop(); }
         gui()->push_style_var( GUI_VAR_WIDGET_PAD, 20.0f );
         gui()->button( "Roomy" );
         gui()->pop_style_var( 1 );
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void gui_push_style_color( gui_col_t slot, u32 abgr )       { style_push_color( slot, abgr ); }
 void gui_pop_style_color ( u32 count )                        { style_pop_color( count ); }
@@ -100,7 +100,7 @@ void gui_push_style_var( gui_style_var_t var, f32 value )   { style_push_var( va
 void gui_pop_style_var ( u32 count )                          { style_pop_var( count ); }
 void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( var, value ); }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     scale_push / scale_pop -- scope a named density step (the theme's scale ramp, gui_scale_t)
     over the widgets until the matching pop: one declaration instead of per-row pixel sizes.
 
@@ -128,7 +128,7 @@ void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( va
             gui()->scale_pop();
             gui()->combo_end();
         }
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_scale_push( gui_scale_t s )

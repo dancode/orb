@@ -26,9 +26,9 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Combo box
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Persistent per-combo state: the last frame the dropdown body emitted.  Used to tell an "open"
    click (toggle closed) from a "closed" click (open), since popup_close_check has already dropped
@@ -191,7 +191,7 @@ gui_combo( const char* label, i32* current_item, const char* const items[], i32 
     return changed;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     List box
 
     A framed, independently scrolling box of selectable rows with a trailing label.  listbox_begin
@@ -199,7 +199,7 @@ gui_combo( const char* label, i32* current_item, const char* const items[], i32 
     label); the label is captured and drawn to the box's right at listbox_end.  A small stack
     carries the label + box rect across the pair, the same way the tooltip save slot does, so the
     boxes may nest.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define LISTBOX_DEPTH 4   /* nested list boxes (rare, but child_begin nests, so allow a few) */
 

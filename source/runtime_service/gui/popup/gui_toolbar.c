@@ -78,9 +78,9 @@ toolbar_icon_rect( gui_rect_t r )
     return ( gui_rect_t ){ r.x + ( r.w - w ) * 0.5f, r.y + ( r.h - h ) * 0.5f, w, h };
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     toolbar_button -- a square icon cell, pressed like arrow_button.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip )
@@ -99,10 +99,10 @@ gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip 
     return st.clicked;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     toolbar_toggle -- the same cell, latched on *v.  On draws the active tint (+ a border, so it
     still reads as "on" once the hover/active animation settles back to idle).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip )
@@ -134,14 +134,14 @@ gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char*
     return changed;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     toolbar_dropdown_begin / toolbar_dropdown_end -- a split-style button driving a popup.
 
     Same open/anchor/dismiss recipe as gui_combo_begin (popup keyed off the button's widget id,
     box-anchored, was-open guard against the same click closing then reopening it), swapping the
     combo's preview-text-plus-arrow face for an icon plus a flush adjacent arrow column.  The body
     is an ordinary stack popup -- any widgets go in it, not just selectable rows.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct { u32 open_frame; } gui_toolbar_dd_state_t;
 
@@ -198,10 +198,10 @@ gui_toolbar_dropdown_end( void )
     gui_popup_end();
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     toolbar_separator -- a thin vertical rule between button groups (the horizontal-bar mirror
     of separator()'s horizontal rule).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_toolbar_separator( void )

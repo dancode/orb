@@ -14,7 +14,7 @@
 
 #define DRAW_PI 3.14159265358979323846f
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     geo_rect  --  axis-aligned quad in the XY plane (z = 0)
 
         (-hw,-hh)-----(hw,-hh)
@@ -22,7 +22,7 @@
         (-hw, hh)-----(hw, hh)
 
     4 vertices, 6 indices (2 triangles, CCW).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 geo_rect( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
@@ -40,7 +40,7 @@ geo_rect( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
     *ni = 6;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     geo_image  --  textured quad in the XY plane (z = 0)
 
     Same corners and winding as geo_rect, plus a source uv sub-rect: (u0,v0) maps to the
@@ -48,7 +48,7 @@ geo_rect( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
     or a sub-rect to pull one sprite out of an atlas.  tint modulates the sampled texel.
 
     4 vertices, 6 indices (2 triangles, CCW) -- identical topology to geo_rect.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 geo_image( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
@@ -67,12 +67,12 @@ geo_image( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
     *ni = 6;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     geo_box  --  axis-aligned box centered at (cx, cy, cz)
 
     8 unique corner vertices shared across all 6 faces (no per-face normals; colour only).
     36 indices (6 faces x 2 triangles x 3 indices), CCW from outside.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 geo_box( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
@@ -116,13 +116,13 @@ geo_box( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
     *ni = 36;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     geo_circle  --  filled disc in the XY plane (z = 0), triangle fan from centre
 
     segs is clamped to [3, DRAW_CIRCLE_MAX_SEGS].
     Vertices: 1 centre + segs perimeter = segs + 1 total.
     Indices: segs * 3.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 geo_circle( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,

@@ -43,19 +43,19 @@ typedef struct
 
 } gui_push_t;         // total 84 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Per-frame geometry regions.
 
     The CPU records up to RHI_MAX_FRAMES_IN_FLIGHT frames ahead of the GPU, so each surface's VB/IB
     holds one independent region per in-flight slot.  Each frame writes and binds only its own region
     (selected by cmd_frame_index), so this frame's upload never overwrites geometry the GPU is still
     reading for a previous in-flight frame.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define GUI_VB_REGION_BYTES  ( GUI_MAX_VERTS * sizeof( gui_draw_vert_t ) )
 #define GUI_IB_REGION_BYTES  ( GUI_MAX_IDX   * sizeof( u16 ) )
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Shared GPU resources -- created once in gui_render_init, destroyed in gui_render_shutdown.
 
     Immutable across frames and shared by every viewport (and the debug overlay), so never a
@@ -65,7 +65,7 @@ typedef struct
     viewport hosting it.  gui_viewport_t + GUI_MAX_VIEWPORTS live in gui_internal.h; the
     viewport list itself lives in the bound context (gui_ctx.c), so this file only ever touches a
     viewport through a passed pointer.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static struct
 {
@@ -78,12 +78,12 @@ static struct
 
 } s_render;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     render_ortho -- column-major pixel-space orthographic matrix.
 
     Maps pixel coords ([0,w] x [0,h], origin top-left) to Vulkan NDC:
         x: [0,w] -> [-1,+1]   y: [0,h] -> [-1,+1]  (top-left is -1,-1 in Vulkan NDC)
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 render_ortho( f32 out[ 16 ], f32 w, f32 h )
@@ -173,7 +173,7 @@ viewport_destroy( gui_viewport_t* vp )
     Init / shutdown -- the shared GPU resources (pipeline, font sampler, atlas).
 ==============================================================================================*/
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     render_try_oshd_shaders -- the OPTIONAL cooked-shader path.
 
     If cook_shaders.bat has produced bin/shaders/gui.{vs,ps}.oshd next to the exe (cooked from
@@ -182,7 +182,7 @@ viewport_destroy( gui_viewport_t* vp )
     actual SPIR-V.  All-or-nothing: both files must exist and load, or the caller falls back to
     the embedded fallback in gui_shader.h.  Absent files are NOT an error -- the cooked path is
     additive, never a dependency (delete bin/shaders to turn it off).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 render_try_oshd_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )

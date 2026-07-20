@@ -30,9 +30,9 @@
 #define SYM_PI   3.14159265358979f
 #define SYM_TAU  ( 2.0f * SYM_PI )
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Shared geometry helpers
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Forward decl: draw_rule (shapes section) strokes through draw_dashed_line, defined further down. */
 static void draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
@@ -78,9 +78,9 @@ sym_fill_convex( const gui_vec2_t* pts, u32 n, u32 col )
                             pts[ i + 1 ].x, pts[ i + 1 ].y, 0, col );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Glyph marks  (the chrome's symbol set; the Dear ImGui Render* glyphs)
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Chevron glyph: a stroked '>' pointing `dir`, centered in `box` (the open sibling of the filled
    arrow).  Three points -- the two back corners and the apex -- stroked as an open polyline, sized
@@ -265,9 +265,9 @@ draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col )
         draw_push_rect_filled( x, yc - thickness * 0.5f, w, thickness, 0, 0, 1, 1, 0, col );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Shapes  (the convex-fill / polyline-stroke palette)
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Frame / bezel (Dear ImGui RenderFrame): a filled rounded body with an optional border, the basis
    every widget frame shares.  Uses the control-frame rounding (ROUND_WIDGET) so a custom-drawn frame
@@ -387,9 +387,9 @@ draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )
     sym_fill_convex( pts, n + 1, col );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Curves
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define SYM_BEZIER_SEGS 24   /* flattening resolution for a bezier into a polyline */
 
@@ -427,9 +427,9 @@ draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
                          GUI_STROKE_CENTER, false, col );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Patterned lines + fills
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Dashed / dotted line from (x0,y0) to (x1,y1): on-segments of length `dash` separated by `gap`
    (guides, selection marquees).  A small dash with gap == dash reads as dotted.  Backed by a single
@@ -508,9 +508,9 @@ draw_shadow( gui_rect_t box, f32 spread, u32 col )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Text effects + decorations
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Text with a 1px outline: the run drawn in col_outline at the 8 surrounding offsets, then in
    col_text on top -- legible over a busy / variable background. */

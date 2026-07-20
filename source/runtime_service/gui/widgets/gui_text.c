@@ -15,9 +15,9 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     text
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Shared text-run emit: reserve a natural-width cell, place the run by the region's content
    alignment, and draw it in `col`.  text / text_colored / text_disabled differ only by colour. */
@@ -59,11 +59,11 @@ void gui_text( const char* str ) { text_emit( COL_TEXT, str ); }
 void gui_text_colored ( u32 abgr, const char* str ) { text_emit( abgr,         str ); }
 void gui_text_disabled( const char* str )           { text_emit( COL_TEXT_DIM, str ); }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     text_wrapped -- a text run word-wrapped to the region's content width (the ImGui TextWrapped
     analogue), for paragraphs / help blurbs that should reflow instead of clipping or overflowing.
     Breaks on spaces (a word longer than the line hard-breaks before it) and honours explicit '\n'.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Walk s word-wrapped to max_w.  When draw, render each line left-anchored at (x, y0 + i*line_h);
    either way return the line count, so a measure pass can size the cell before the draw pass. */
@@ -119,9 +119,9 @@ gui_text_wrapped( const char* str )
     text_wrap_walk( str, avail, true, r.x, r.y, COL_TEXT );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     textf -- printf-style text label (no overloading, so distinct from text())
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_textf( const char* fmt, ... )
@@ -137,12 +137,12 @@ gui_textf( const char* fmt, ... )
     gui_text( buf );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     bullet_glyph -- the shared mark for bullet / bullet_text: a filled disc (RenderBullet) by
     default, or a square when GUI_VAR_BULLET_STYLE is set.  `br` is the bsz x bsz cell already
     placed in the row; the square draws with rounding forced off so the frame radius cannot bend a
     tiny mark into a dot.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 bullet_glyph( gui_rect_t br, f32 bsz, u32 col )
@@ -160,10 +160,10 @@ bullet_glyph( gui_rect_t br, f32 bsz, u32 col )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     bullet_text -- a bullet glyph followed by a text run, the building block of a bulleted list.
     The bullet is a small mark (disc / square) vertically centered against the glyph line.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_bullet_text( const char* str )
@@ -184,12 +184,12 @@ gui_bullet_text( const char* str )
     cell_reach( r.x + bsz + gap + tw );   /* natural width may exceed the row */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     bullet -- a standalone bullet glyph (the ImGui Bullet analogue): the bullet of bullet_text with
     no trailing text, so a caller can follow it on the same line with any widget(s).
 
         gui()->bullet();  gui()->same_line( 0.0f );  gui()->button( "Action" );
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_bullet( void )
@@ -203,7 +203,7 @@ gui_bullet( void )
     cell_reach( r.x + bsz );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     label_text -- a read-only "value + label" row, the display sibling of the labeled value widgets.
 
     Lays out exactly like input_text / slider_float -- the label takes its side of the cell (its
@@ -214,7 +214,7 @@ gui_bullet( void )
         gui()->form( GUI_LABEL_LEFT, 90.0f );
         gui()->label_text( "Mode",   "Edit" );      // read-only rows...
         gui()->slider_float( "Gain", &gain, 0, 1 ); // ...aligned with editable ones
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_label_text( const char* label, const char* value )
@@ -228,11 +228,11 @@ gui_label_text( const char* label, const char* value )
                      value, 0xFFFFFFFFu, control.w );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     progress_bar -- a filled track showing `fraction` (0..1) of completion with a centered caption
     (the ImGui ProgressBar analogue).  overlay is the text drawn over the bar; NULL shows a "NN%"
     percentage, an empty string shows nothing.  Consumes one standard-height full-width cell.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_progress_bar( f32 fraction, const char* overlay )
@@ -273,7 +273,7 @@ gui_progress_bar( f32 fraction, const char* overlay )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Spacers -- cell-consuming widgets that emit no interaction.
 
     Each takes the next cell from the active template exactly like a real widget, so they compose
@@ -281,7 +281,7 @@ gui_progress_bar( f32 fraction, const char* overlay )
     natural way to step over a grid slot), spacing() inserts a blank gap of a chosen height, and
     separator() draws a thin rule centered in its cell.  That these fall out as one-liners on
     cell_next is the point of the cell model -- "advance one slot" needs no special case.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Consume one cell and draw nothing -- a blank slot of one standard line height. */
 void

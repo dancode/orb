@@ -70,9 +70,9 @@ typedef struct
 
 } select_span_t;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Geometry helpers
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* The window's content view: the body region's gutter-adjusted rect (the window root region is
    still open when select_window_end runs, so lf() is that frame).  The interaction gate for
@@ -85,11 +85,11 @@ select_body_rect( void )
     return lf()->view;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Font-correct measurement.  Runs carry their segment's font id; every metric walk below
     activates it first so a push_font'd run measures true.  select_window_end restores the
     font it entered with before returning, so later chrome (titlebar text) is unaffected.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 select_font_for( const gui_select_run_t* r )
@@ -126,9 +126,9 @@ select_chr_from_x( const gui_select_run_t* r, f32 px )
     return r->len;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Endpoint / coverage resolution
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* True when the run's glyph band lies inside the window body (its font already active) --
    excludes the title text and any chrome run from every walk below. */
@@ -264,9 +264,9 @@ select_run_covered( const gui_select_run_t* r, const select_span_t* s, u32* lo, 
     return *lo < *hi;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Actions
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 select_exists( void )
@@ -449,7 +449,7 @@ select_paint_overlay( gui_id_t win, gui_rect_t body )
     draw_set_rounding( save_round );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     select_window_end -- one frame of the selection protocol for the current window.
 
     Called by gui_window_end for an expanded GUI_WIN_TEXT_SELECT window, inside its content
@@ -459,7 +459,7 @@ select_paint_overlay( gui_id_t win, gui_rect_t body )
     window's widgets have already arbitrated (a press any of them claimed shows in
     active_id); the scrollbars and the window move-grab run after, and both respect an
     active_id this function claims.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 select_window_end( void )

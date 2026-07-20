@@ -29,7 +29,7 @@
 
 ==============================================================================================*/
 // clang-format off
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 1: Literal construction -- zero runtime cost
 
     The STR() macro uses sizeof to compute the length at compile time. The compiler evaluates
@@ -37,7 +37,7 @@
 
         size_t n = strlen("shaders/basic.hlsl");    // runtime loop
         str_t  s = STR( "shaders/basic.hlsl" );     // compile-time constant
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_literal_construction( void )
 {
@@ -65,7 +65,7 @@ test_literal_construction( void )
     printf( "[PASS] literal construction\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 2: Sub-strings are free -- no allocation, no mutation
 
     With raw C strings, taking a sub-string means either:
@@ -75,7 +75,7 @@ test_literal_construction( void )
 
     With str_t, str_sub() just adjusts ptr and len. No allocation, no mutation.
     The sub-view shares memory with the original.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_substrings_and_trim( void )
 {
@@ -117,13 +117,13 @@ test_substrings_and_trim( void )
     printf( "[PASS] substrings and trim\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 3: Comparison and search
 
     str_equal checks length first -- if lengths differ, it returns false with no memcmp.
     This is a significant win over strcmp() when comparing many strings of different lengths
     (e.g., walking a hash table).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_comparison_and_search( void )
 {
@@ -159,7 +159,7 @@ test_comparison_and_search( void )
     printf( "[PASS] comparison and search\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 4: Hashing -- O(n) over exactly the string bytes
 
     str_hash32/64 operates over exactly str.len bytes. There is no strlen call, no
@@ -167,7 +167,7 @@ test_comparison_and_search( void )
 
     Key benefit: you can hash a sub-string extracted with str_sub() without copying it.
     With char*, you would have to null-terminate (mutate) or copy before hashing.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_hashing( void )
 {
@@ -193,7 +193,7 @@ test_hashing( void )
     printf( "[PASS] hashing\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 5: Parsing -- str_t -> number
 
     str_to_i32 / str_to_f64 take str_t directly, so you can parse a sub-string extracted
@@ -202,7 +202,7 @@ test_hashing( void )
     Compare to atoi() / strtol():
       atoi("42abc") returns 42 silently, no error indication.
       str_to_i32(STR("42abc"), &v) returns 0 -- explicit failure.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_parsing( void )
 {
@@ -250,7 +250,7 @@ test_parsing( void )
     printf( "[PASS] parsing\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 6: strbuf_t -- building strings safely
 
     The strbuf_decl macro declares a stack-backed buffer in one line. All append functions
@@ -258,7 +258,7 @@ test_parsing( void )
 
     The buffer is ALWAYS null-terminated after every operation. ptr can be passed to fopen(),
     printf(), any C API, at any point without additional preparation.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_strbuf_basic( void )
 {
@@ -311,7 +311,7 @@ test_strbuf_basic( void )
     printf( "[PASS] strbuf basic\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 7: strbuf_t printf-style formatting
 
     strbuf_appendf appends formatted text into whatever space remains.
@@ -324,7 +324,7 @@ test_strbuf_basic( void )
         strbuf_decl(buf, 64);
         strbuf_fmt(&buf, "pos: %d", x);
         if (!strbuf_ok(buf)) handle_overflow();     -- explicit, recoverable
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_strbuf_format( void )
 {
@@ -387,7 +387,7 @@ test_strbuf_format( void )
     printf( "[PASS] strbuf format\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 8: Overflow detection
 
     Unlike snprintf() which silently truncates, strbuf records overflow and all subsequent
@@ -395,7 +395,7 @@ test_strbuf_format( void )
 
     The buffer is ALWAYS null-terminated in the overflowed state -- the partial string up to
     the available space is preserved and safe to use as a diagnostic message.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_overflow_detection( void )
 {
@@ -437,12 +437,12 @@ test_overflow_detection( void )
     printf( "[PASS] overflow detection\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 9: Editing operations
 
     strbuf_insert, strbuf_remove, strbuf_chop, strbuf_trim, strbuf_strip_trailing.
     These modify the buffer in-place. All maintain the null-terminator invariant.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_editing( void )
 {
@@ -481,12 +481,12 @@ test_editing( void )
     printf( "[PASS] editing\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 10: C string interop
 
     str_to_cstr copies a str_t into a null-terminated buffer for C APIs.
     strbuf_t.ptr can always be passed directly without any extra step.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_cstr_interop( void )
 {
@@ -520,7 +520,7 @@ test_cstr_interop( void )
     printf( "[PASS] C string interop\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 11: The composition pattern
 
     The combination of str_t (view) + strbuf_t (builder) enables a clean, consistent API:
@@ -530,7 +530,7 @@ test_cstr_interop( void )
 
     This mirrors the Rust &str / String split, or C++ string_view / string,
     but with zero runtime overhead from virtual dispatch or allocator abstraction.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_composition( void )
 {
@@ -553,7 +553,7 @@ test_composition( void )
     printf( "[PASS] composition\n" );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     SECTION 12: str_arena_t -- scope-lifetime string building
 
     str_arena_t manages many temporary strings that all share a single flat buffer and
@@ -562,7 +562,7 @@ test_composition( void )
 
     The key benefit over strbuf_t: three strings in one scope = one arena, not three
     separate fixed buffers with three independent overflow checks.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 static void
 test_str_arena( void )
 {

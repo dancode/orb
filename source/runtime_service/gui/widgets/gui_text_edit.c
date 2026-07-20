@@ -18,7 +18,7 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Text edit state -- persisted per-id across frames by input_field_edit.
 
     cursor and anchor together describe the selection: the highlighted range is
@@ -45,7 +45,7 @@
     - Draw clip so scrolled text never bleeds past the box border
     - Escape reverts the buffer to its content at focus-gain time
 
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct
 {
@@ -135,7 +135,7 @@ word_click_off( const char* buf, u32 len, u32 off )
     return off;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Undo / redo ring buffer -- single global, keyed to the focused widget.
 
     Only one text field can hold focus at a time, so a single ring buffer keyed by focused_id
@@ -153,7 +153,7 @@ word_click_off( const char* buf, u32 len, u32 off )
 
     Escape-to-revert uses a separate `revert` copy saved at focus-gain, which survives ring
     wrapping and is always the unmodified field content.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define UNDO_SLOTS    16
 #define UNDO_TEXT_MAX 256
@@ -252,7 +252,7 @@ undo_apply( gui_undo_buf_t* u, i32 logical_idx, char* buf, u32 bufsz,
     return true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     input_field_edit -- generic single-line text editing inside a caller-supplied rect.
 
     Handles: cursor movement (Left / Right / Home / End, Ctrl variants for word jump),
@@ -289,7 +289,7 @@ undo_apply( gui_undo_buf_t* u, i32 logical_idx, char* buf, u32 bufsz,
 
     Returns { .changed = true } on any buffer modification this frame, { .enter = true } when
     Enter is pressed.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Programmatic caret request (public: gui()->set_edit_cursor_end).  Latched until the next
    FOCUSED field passes through input_field_edit, which seats the caret at the end of the
@@ -869,7 +869,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
     return res;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     num_edit_field -- shared numeric text-entry over a caller-drawn box.
 
     The seed / edit / parse cycle every numeric text field runs, factored here (above both its
@@ -888,7 +888,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
     captioned display like "HP: %d" does not seed an unparseable buffer).  is_int casts through int
     so "%d" seeding does not UB.  Returns true and writes *out only on a committed change; the
     caller owns the box frame draw and the not-focused static value display.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define GUI_NUM_EDIT_CAP 64
 

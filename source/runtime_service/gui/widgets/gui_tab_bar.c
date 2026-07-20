@@ -67,11 +67,11 @@ static u32              s_tabbar_depth;
 /* Salt so a tab's close (x) button gets a distinct widget id from the chip it sits on. */
 #define GUI_TAB_CLOSE_SALT 0x7ab0c105u
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     tab_bar_begin -- reserve one strip row and open a bar.  Returns true always (guard-and-pair
     like child_begin): always call tab_bar_end.  The strip band is painted here; the chips paint
     over it in tab_item_begin.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_tab_bar_begin( const char* str_id, gui_tab_bar_flags_t flags )
@@ -142,7 +142,7 @@ gui_tab_bar_end( void )
     gui_pop_id();
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     tab_item_begin -- emit one tab chip and report whether it is the selected tab.  Guard the body
     on the return and call tab_item_end only when true (window_begin's collapse contract):
 
@@ -150,7 +150,7 @@ gui_tab_bar_end( void )
 
     p_open (optional): when non-NULL a close (x) sits at the chip's right edge; clicking it sets
     *p_open = false (the caller stops emitting the item next frame).  The click does not switch tabs.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags )

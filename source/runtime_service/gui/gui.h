@@ -627,7 +627,7 @@ typedef enum
 
 } gui_align_t;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Placement adapters -- position a self-sized box inside an existing rect, the free-placement
     companion to split / carve (which divide a rect into adjacent panels).  These never touch the
     layout pen: they take a parent rect and return a child rect, so they compose with content_rect,
@@ -637,7 +637,7 @@ typedef enum
         gui_rect_t hud = gui()->content_rect();
         draw_minimap( gui_anchor_box( hud, 160, 160, GUI_ALIGN_RIGHT | GUI_ALIGN_TOP,    pad8 ) );
         draw_health ( gui_anchor_box( hud, 220,  18, GUI_ALIGN_LEFT  | GUI_ALIGN_BOTTOM, pad8 ) );
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Seat a self-sized nat_w x nat_h box inside `area` per the gui_align_t flags -- the same rule a
    widget uses to place its label/symbol, now callable on any rect.  0 (LEFT | TOP) hugs the corner. */
@@ -661,7 +661,7 @@ gui_anchor_box( gui_rect_t area, f32 w, f32 h, gui_align_t align, gui_pad_t m )
     return gui_rect_align( gui_rect_inset( area, m ), w, h, align );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Item interaction state
 
     One frame of interaction for one item -- the result of the shared widget interaction state
@@ -669,7 +669,7 @@ gui_anchor_box( gui_rect_t area, f32 w, f32 h, gui_align_t align, gui_pad_t m )
     A user widget takes a rect (canvas cut, split/carve, own math), asks for behavior, and draws
     its own presentation from these flags, exactly as the stock widgets do internally.
     invisible_button( id, r ) is this reduced to its click bit.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct gui_item_state_t
 {
@@ -683,7 +683,7 @@ typedef struct gui_item_state_t
 
 } gui_item_state_t;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Anchor frame -- the general placement (UE4 Slate model): a normalized sub-rect of the parent
     (0..1 per axis) plus pixel offsets, resolved per axis by gui()->anchor.  On an axis where
     min == max the child is point-anchored: the anchor is a single line at that fraction, the child
@@ -691,7 +691,7 @@ typedef struct gui_item_state_t
     far edge), shifted by the offset.  On an axis where min < max the child is stretch-anchored: its
     edges track those two parent fractions and the offsets become per-edge insets (size is ignored).
     This unifies "pin a badge 40% across" and "stretch a bar over the top with 8px margins".
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct
 {
@@ -1321,7 +1321,7 @@ typedef enum
 
 } gui_win_flags_t;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Region z tier (region_begin) -- where a root region sits in the one z contest windows and
     popups compete in (whichever z wins, wins draw order and hover that frame).  A three-way
     choice, so it is a parameter rather than flag bits.
@@ -1334,7 +1334,7 @@ typedef enum
     FG  -- highest tier (above every popup depth).  Always wins draw order and hover, even over
            an open menu/combo/modal -- e.g. an always-on-top HUD button that must remain
            clickable no matter what else is open.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef enum
 {

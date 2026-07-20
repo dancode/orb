@@ -20,9 +20,9 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     State
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Drag configuration.  The window currently being dragged is tracked via active_id == window id;
    the in-flight grab offset lives with the move-drag service (interact/gui_move.c) -- windows
@@ -50,14 +50,14 @@ static bool                 s_vp_merge_armed;
    reads it too, so it cannot live here; only the window-record apply / grab / fit stay in
    gui_window_free.c. */
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     window_raise_on_press -- a press brings the window under the cursor to the front.
 
     hover_win (the window the cursor is over) was resolved last frame, so this runs at the
     top of the frame -- before any window_begin stamps its z -- and the raise therefore
     takes effect this same frame: clicking a window's exposed area brings it up at once.
     Called from gui_ctx_begin() right after ctx_new_frame() promotes hover_win.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 window_raise_on_press( void )
@@ -89,9 +89,9 @@ window_raise_on_press( void )
         }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     window_set_drag -- select the global drag mode; call between frames.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_window_set_drag( gui_win_drag_t mode )

@@ -21,9 +21,9 @@
                                                         gui_retained_t, gui_viewport_t, gui_context_t */
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     State
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* s_build.win.rec points at a live gui_window_t pool record (window types in gui_internal.h; the
    pool is reached through g_ctx) so window_end can write scroll / content extent back into it. */
@@ -151,7 +151,7 @@ static gui_scope_t s_scope;
 u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
 #endif
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Keyboard navigation state (g_ctx->nav)
 
     The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather than
@@ -162,15 +162,15 @@ u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
     layout engine stamped when it placed it), and the next nav_new_frame resolves a move as index
     math over that list -- one frame deferred, exactly as hover_win lags the cursor.  gui_nav.c
     drives it; nav_item_register (interact/gui_item.c) is the per-item seam.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Item-flag stack
 
     push_item_flag saves the current merged value here and pop_item_flag restores it, so a push
     nests cleanly regardless of which bits it touched.  An over-deep push aliases the top slot and
     is still counted truthfully, mirroring the id / layout stacks, so push/pop stay paired.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define GUI_ITEM_FLAG_DEPTH 16
 
@@ -254,14 +254,14 @@ item_flags_chrome_reset( void )
     draw_set_rounding( style_var( GUI_VAR_WIN_ROUNDING ) );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Layout-frame stack
 
     Every scrollable region (a window body or a child_begin box) pushes one frame; the top frame
     owns the layout pen and the content column leaf widgets emit into.  The rest of the frame is the
     resolve context layout_pop_region needs to measure content and draw the region's scrollbars.
     Storage is just the fixed array, so a deep nesting costs nothing beyond these slots.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
 static u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
@@ -281,7 +281,7 @@ lf( void )
     return &s_layout_stack[ i ];
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Popup stack
 
     The open popups form a stack, parent -> child: index 0 is the top-level popup, each deeper index
@@ -298,22 +298,22 @@ lf( void )
     context -- whole-struct copies of the window context, interaction scope, and draw scope, plus the
     parent's top layout frame -- so popup_end restores the parent verbatim; the stack counters
     balance through the normal push/pop, so no slot is reused or lost.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* The open set (g_ctx->popup.open) and its count (g_ctx->popup.open_count) are per-context members reached
    through g_ctx; s_popup_begin_count is per-frame scratch and stays a plain global. */
 static u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per frame)
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Keyed state pool -- persistent per-id widget state.
 
     The store a widget uses to keep a few bytes alive across frames, keyed by its id (a region's
     scroll offset, a tree node's open flag, a combo's popup state).  It is a member of the bound
     context's retained store (gui_retained_t); gui_state_get and the open-addressing / tombstone
     contract live in core/gui_state.c, next to the id system that keys it (core/gui_id.c).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     gui_context_t -- the bound per-context retained state ("bind and use").
 
     A context is the emission session the code binds once and emits ALL its windows into; it owns the
@@ -332,7 +332,7 @@ static u32           s_popup_begin_count;   // current popup nesting depth (rebu
     NOT per context -- they stay global and target whichever context is bound.  The primary context
     (slot 0) owns the OS windows; secondary contexts share the same OS windows and render surfaces
     rather than owning separate ones.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Context pool.  Slot 0 is the default context (heap-allocated and bound at init, freed only at
    shutdown -- never torn down by ctx_destroy at runtime); slots 1..N are secondary contexts from
@@ -449,7 +449,7 @@ viewport_index_for_window( i32 win_id )
     return 0;   /* no live slot matches -> main swapchain surface */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Id-scope stack
 
     The top of this stack is the seed every widget id combines against, so identical labels in
@@ -459,7 +459,7 @@ viewport_index_for_window( i32 win_id )
 
     Over-deep pushes alias the top slot rather than writing past the array, and id_seed clamps its
     read the same way -- mirroring the layout stack, so deep nesting degrades instead of crashing.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define GUI_ID_STACK_DEPTH 32
 
@@ -470,9 +470,9 @@ static u32        s_id_sp;
    GUI_STATE) are in core/gui_id.c + core/gui_state.c, included just after this file. they operate on s_id_stack / s_id_sp
    and g_ctx->retained (via g_ctx) defined here. */
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     rect_hit -- true when the mouse cursor (from s_io) is inside the given rect
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 rect_hit( gui_rect_t r )
@@ -487,7 +487,7 @@ rect_hit( gui_rect_t r )
 /* Directional moves are resolved structurally over the nav item list (gui_nav.c), not scored
    over rects -- the geometric scorer that lived here (nav_score_dir) is gone with it. */
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Hardware cursor
 
     gui owns the OS cursor shape only while it owns the mouse (hover_win set, or a widget drag in
@@ -498,7 +498,7 @@ rect_hit( gui_rect_t r )
     app()->window_set_cursor is sticky (it latches win->cursor), so the request is flushed only on a
     change, and on the frame gui releases the mouse it pushes ARROW once so a stale I-beam / resize
     shape does not linger on that window -- after which the cursor is left to the host (game scene).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Request a hardware cursor shape for this frame.  Last writer wins (one hover per frame). */
 static void cursor_set( app_cursor_t c ) { s_interaction.mouse_cursor = c; }
@@ -540,9 +540,9 @@ cursor_flush( void )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     ctx_new_frame -- reset per-frame hover state; call at the start of each frame
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Reset the per-frame GLOBAL interaction snapshot.  Called ONCE per application frame from
    gui_frame_begin before any ctx_begin -- shared across all contexts (there is one mouse,
@@ -642,7 +642,7 @@ ctx_new_frame( void )
    They read s_interaction, g_ctx->nav, g_ctx->popup.open_count, s_build, s_io, and rect_hit --
    all visible in the unity build at that point. */
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Viewport display-size accessors.
 
     A viewport's stored disp_w / disp_h is the authoritative drawable size once a surface has
@@ -650,7 +650,7 @@ ctx_new_frame( void )
     snapshot -- populated from the primary OS window -- is the best available fallback.  Every
     window-placement and clip-rect computation uses one of these two helpers rather than spelling
     the ternary out inline.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static f32 vp_w( const gui_viewport_t* vp ) { return vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w; }
 static f32 vp_h( const gui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h; }

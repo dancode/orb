@@ -18,14 +18,14 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Constants
 
     The tab strip stands in for a window's title bar, so it shares the title-bar height (WIN_TITLE_H)
     -- a docked window thus reads at the same vertical rhythm as a free one.  The splitter is a thin
     grabbable gutter reserved BETWEEN sibling rects (not over them), so a press on it never collides
     with a docked window's content -- the cursor sits where no window nominates hover.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 #define DOCK_SPLITTER   6.0f                  /* splitter gutter thickness, in pixels            */
 #define DOCK_MIN_PANE   ( WIN_TITLE_H * 2.0f) /* a pane never shrinks below this on the split axis */
@@ -37,12 +37,12 @@
 /* Salt for a node's maximize-over-dockspace anim timer slot (see dock_max_set below). */
 #define DOCK_MAX_SALT   0xD0C3A400u
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Node pool
 
     Fixed per-context array so child / parent pointers stay valid across frames (no compaction).  A
     free slot has id == 0; alloc reuses the first freed hole or appends, and never returns id 0.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* dock_ref/dock_at convert between a live pointer and its pool index (gui_dock_ref_t).  The pool
    never moves or compacts a live slot, so an index survives exactly as long as the pointer it
@@ -129,7 +129,7 @@ dock_find_window_node( gui_id_t win )
     return NULL;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Hidden panes -- a leaf whose windows all stopped emitting collapses out of the layout.
 
     Tab membership is deliberately retained when a window stops being emitted (menu toggle, X
@@ -139,7 +139,7 @@ dock_find_window_node( gui_id_t win )
     so re-emission restores the pane exactly.  The state is refreshed once per build at ctx_end
     (dock_hidden_refresh), after all windows have begun, from the window records' last_frame
     stamps; a transition forces a redraw so the collapsed tiling lands next frame.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* True when tab window `wid` was begun this frame or the one before.  "Or the one before" keeps
    the state stable for a host that closes and re-opens the same context mid-frame (the second
@@ -244,7 +244,7 @@ dock_hidden_reuse( gui_dock_node_t* n, gui_dir_t dir )
     return ( sib && sib->tab_count < GUI_DOCK_TABS_MAX ) ? sib : NULL;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Maximize over the dockspace
 
     One leaf of a viewport's tree may be pinned over the WHOLE dock area (the docked twin of the
@@ -254,7 +254,7 @@ dock_hidden_reuse( gui_dock_node_t* n, gui_dir_t dir )
     (window_route_resolve applies the inactive-tab semantics; the state lives on the viewport,
     see dock_max_* in gui_internal.h).  The per-frame tween step runs in dockspace_over_viewport
     (gui_dock.c), after the tree layout resolves the restore target.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* The viewport's maximized leaf, validated -- or NULL, clearing any stale state (the node was
    emptied and collapsed, the tree was cleared / reloaded from a blob, or every window of the leaf
@@ -315,9 +315,9 @@ dock_max_set( gui_dock_node_t* n, bool on )
     g_ctx->retained.wants_redraw = true;   /* takes effect next frame; force one more build */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Leaf tab edits + tree collapse
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Remove tab `idx` from a leaf, sliding the rest down and keeping active_tab in range. */
 static void
@@ -421,14 +421,14 @@ dock_leaf_tab_add( gui_dock_node_t* n, gui_id_t wid, const char* name )
     n->active_tab = idx;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Layout -- assign every node a rect, top-down from the surface area.
 
     A leaf reserves a WIN_TITLE_H tab strip off its top; the remainder is `content` (where the active
     window's body draws).  A split divides its rect by `ratio` (child[0]'s fraction of the axis),
     reserving the DOCK_SPLITTER gutter between the two children.  Resolved fresh every frame so an OS
     resize or a splitter drag re-tiles immediately.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Carve a leaf's tab strip off the top of its rect: content = rect minus a WIN_TITLE_H band,
    clamped so a sliver-thin node keeps a sane (possibly zero-height) body.  The one place the
@@ -496,7 +496,7 @@ dock_node_layout( gui_dock_node_t* n, gui_rect_t r )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Splitter drag -- move the gutter, do not rescale the rest of the tree.
 
     dock_node_layout stores a split as a RATIO, so a naive ratio drag rescales every descendant
@@ -512,7 +512,7 @@ dock_node_layout( gui_dock_node_t* n, gui_rect_t r )
     the child[1]-most chain; 0 = left/top).  A same-axis descendant split re-ratios so its FAR
     child keeps its pixels and recurses into the near child; a cross-axis split spans the full
     extent on this axis, so both children absorb the same delta.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Node extent in pixels along a split axis (this frame's resolved rect). */
 static f32
@@ -583,7 +583,7 @@ dock_absorb_delta( gui_dock_node_t* n, u8 axis, u32 side, f32 delta )
     dock_absorb_delta( dock_at( n->child[ side ] ), axis, side, delta );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Splitter interaction + draw (one internal node)
 
     The gutter sits between the children and over no window, so hover_win is NONE there unless a
@@ -591,7 +591,7 @@ dock_absorb_delta( gui_dock_node_t* n, u8 axis, u32 side, f32 delta )
     floater drawn on top.  Grab sets active_id (released globally when the button lifts, like a window
     drag); while held, the gutter tracks the cursor as a pixel DELTA absorbed by the adjacent panes
     (see dock_absorb_delta above), clamped so no pane on either near chain shrinks below DOCK_MIN_PANE.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 dock_splitter( gui_dock_node_t* n, u32 vp )

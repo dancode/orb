@@ -31,9 +31,9 @@ gui_canvas( f32 height )
     return cell_next( height );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Low-level draw_rect / draw_text
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr )
@@ -64,12 +64,12 @@ gui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
 /* invisible_button / gui_item -- interaction on an explicit rect -- moved to gui_behavior.c,
    the behavior half of this tier. */
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Text measurement + aligned draw -- the placement primitives for custom drawing.  draw_text gives
     a top-left anchor only; these let a caller size to text and place it within a rect by intent
     (right-align a caption, center a label) instead of hand-computing the anchor -- the arithmetic
     that silently overflows when a constant is wrong.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* text_size -- the laid-out pixel size of s as draw_text_in / draw_text render it: width is the
    widest line, height spans the lines ('\n' breaks; one line is char_h, each extra adds a full line
@@ -133,7 +133,7 @@ gui_draw_text_clipped( gui_rect_t r, gui_align_t align, u32 col, const char* s )
         draw_text_fit_n( r.x, y, col, s, 0xFFFFFFFFu, r.w );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Icons -- thin public surface over the runtime icon atlas (gui_icon.c, backend unit).
 
     register_icon / load_icon / find_icon / icon_size pass straight through; image is a layout widget that
@@ -141,7 +141,7 @@ gui_draw_text_clipped( gui_rect_t r, gui_align_t align, u32 col, const char* s )
     analogue of draw_text_in) for a rect the caller already holds -- a table cell, a button label,
     a canvas cut.  Both draw helpers aspect-fit the icon centered in the rect so a non-square box
     never stretches the art, and default a 0 color to opaque white (icons are usually drawn plain).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 gui_icon_id_t
 gui_register_icon( const char* name, u32 w, u32 h, const u8* coverage )
@@ -196,14 +196,14 @@ gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col )
     gui_draw_icon_in( r, id, col );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
     image) as a full-color quad.  Unlike image() (R8 icon atlas, texel = coverage), the texel IS
     the color: GUI_TEX_RGBA_BIT on the command's tex_idx flips the fragment shader to RGBA
     sampling, with the tint color multiplied in (0 defaults to opaque white = untinted).  The
     caller owns the texture and its bindless registration (rhi register_texture) and must keep
     the slot alive until the frame that last referenced it has retired.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr )

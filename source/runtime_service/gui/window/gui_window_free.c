@@ -24,10 +24,10 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Per-window widget ids -- salted from the window id so a window's chrome controls never
     collide with each other or with a title-hashed widget id inside the same window.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Scrollbar salts (GUI_SCROLLBAR_SALT / GUI_HSCROLLBAR_SALT) and the scrollbar widget
    itself live in widgets/gui_scrollbar.c -- the window body is just a region whose engine
@@ -60,9 +60,9 @@
    window's size policy stays below: the min clamp with far-edge pinning (window_apply_resize) and
    the content auto-fit (window_fit_size). */
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     window_begin / window_end
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Top of the viewport work area: the native caption band plus the main-menu-bar band on frames
    the host emits one (one-frame tolerance -- the bar may emit after this window builds, the
@@ -127,7 +127,7 @@ window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
     *out_max_h = vp_h( vp ) - win->y;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Maximize / minimize (regular floaters)
 
     Window-record state, resolved every frame in window_begin_ex ahead of the drag / resize
@@ -138,12 +138,12 @@ window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
     (title-bar-only) path.  The buttons, the double-click toggle, and the chip chrome live in
     gui_window_end.c; a native window uses the OS states instead and a docked window never
     offers either (the node owns its chrome).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* window_work_top (the caption band + main-menu-bar top bound both the maximize pin and
    window_clamp share) is defined above window_clamp, which needs it first. */
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     State-transition animation
 
     Maximize / minimize / restore do not snap the window between rects: they hand geometry to the
@@ -164,7 +164,7 @@ window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
     Animation is a user choice: s_win_anim (gui_window_anim_enable) gates it globally.  When off,
     window_anim_begin seeds a zero-duration timer, which reads settled on its first sample -- the
     same code path snaps instantly, no branch in the per-frame step.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Global toggle: window state transitions animate when set (default), snap when clear.  A process-
    wide preference like idle-skip, not per-context -- see gui_window_anim_enable in the API block. */
@@ -374,7 +374,7 @@ window_minimize_set( gui_window_t* win, bool on )
     g_ctx->retained.wants_redraw = true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Edge resize
 
     A window may be resized by grabbing a band that straddles any edge or corner -- reaching a
@@ -387,7 +387,7 @@ window_minimize_set( gui_window_t* win, bool on )
     window nominates an outer-expanded rect for hover_win so the cursor still counts as "over"
     it within the outer band -- otherwise the edge would go cold the instant the cursor crossed
     the border.  The expansion is only the few outer pixels, so occlusion is barely affected.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Smallest width a window may be shrunk to. */
 static f32 window_min_w( void ) { return WIN_TITLE_H * 4.0f; }
@@ -405,7 +405,7 @@ static f32 window_min_h( f32 title_h ) { return title_h + WIDGET_H + WIN_BORDER;
    never drags the opposite edge. */
 static f32 window_snap( f32 v ) { return lat_round( v, s_style.grid_quantum ); }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Auto-resize
 
     window_fit_size computes the window geometry that hugs a given content extent.
@@ -422,7 +422,7 @@ static f32 window_snap( f32 v ) { return lat_round( v, s_style.grid_quantum ); }
     remaining from win->x/y to the far edge): a long list should scroll inside the window rather
     than growing it past the screen.  The min clamp runs last so a viewport smaller than the
     minimum size never shrinks the chrome below legibility.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 window_fit_size( const char* title, f32 title_h, f32 mb_h, bool collapsible,
@@ -499,14 +499,14 @@ window_apply_resize( gui_window_t* win, f32 title_h )
 /* window_begin_docked (the docked branch of window_begin) lives in gui_window_docked.c, included
    just before this file, so window_begin_ex below can call it. */
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     window_begin_ex helpers
 
     window_begin_ex is one long linear sequence of independent per-frame resolves (native sync,
     drag, tear-off, resize).  Each stage only touches its own inputs and s_build / g_ctx -- pulled
     out here so each is readable and named on its own, the same way window_clamp / window_apply_resize
     / window_fit_size already are above.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* window_sync_native (the native geometry pin + frame publish) lives in gui_window_native.c. */
 
@@ -1138,7 +1138,7 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
     return window_begin_ex( id, title, x, y, 240.0f, 320.0f, flags );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     viewport_shell -- the chrome for a borderless viewport, as one self-contained emit.
 
     The public front door for GUI_WIN_NATIVE: a frame-only shell window whose titlebar stands in
@@ -1148,7 +1148,7 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
 
     No-op returning 0 when the viewport's OS window has its own chrome: the host calls this
     unconditionally and selects the mode solely with APP_WIN_BORDERLESS at window_open.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 f32
 gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )

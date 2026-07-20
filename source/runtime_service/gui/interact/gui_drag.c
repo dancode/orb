@@ -100,9 +100,9 @@ drag_from_chrome( gui_id_t id, f32 press_x, f32 press_y,
     return true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Public API
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Make the item just emitted a drag source.  Arms on the item's press; once the cursor moves past
    the threshold the drag goes live and this returns true every frame until release.  While true,

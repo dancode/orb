@@ -37,7 +37,7 @@
    (DOCK_TAB_SALT), its resize (GUI_RESIZE_SALT), and any window id. */
 #define DOCK_FLOAT_SALT 0xF10A7B02u
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Group-creation request -- one slot, filled on the drop release, serviced one frame later.
 
     Creating a group needs BOTH windows' display names, but at commit time only the DRAGGED
@@ -45,7 +45,7 @@
     dragged name is copied here and the group forms when the TARGET next begins -- its title is
     then the parameter.  frame stamps the request so a target that never begins again cannot
     resurrect a stale group much later.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static struct
 {
@@ -74,7 +74,7 @@ dock_float_group_create( gui_window_t* target, gui_id_t target_id, const char* t
     return n;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Drop-target probe -- which free window's title bar (or group's strip) is under the cursor.
 
     Called by dock_drag_detect while a free window is title-dragged: a hit means "tab onto this"
@@ -84,7 +84,7 @@ dock_float_group_create( gui_window_t* target, gui_id_t target_id, const char* t
     drop.  Targets must be real interactive windows: alive this frame, titled, not an overlay in
     the popup band, not a native frame shell, not click-through, and not pinned (NOMOVE -- a
     group drags as one, which would quietly un-pin it).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static bool
 dock_float_hit( gui_id_t drag_id, u32 vp, gui_dock_node_t** out_node, gui_id_t* out_win )
@@ -180,14 +180,14 @@ dock_float_service_request( gui_id_t id, const char* title, gui_window_t* win )
         dock_leaf_tab_add( n, s_dock_float_req.dragged, s_dock_float_req.dragged_name );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Per-frame frame resolve -- the group's stand-in for dock_node_layout.
 
     Called by window_begin_docked for the group's ACTIVE tab, before any geometry is read: apply
     the in-flight strip drag / edge resize onto node->rect, keep the strip reachable, refresh the
     content rect, and resolve this frame's resize hover-and-grab (returned for
     s_scope.resize_hot, so widgets defer to a hot edge exactly as in a free window).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Keep the group reachable, mirroring window_clamp: the strip may not slide under the host's
    native caption band or the main menu bar (window_work_top), or fully off the surface. */
@@ -249,9 +249,9 @@ dock_float_resolve( gui_dock_node_t* node, gui_id_t active_win_id )
     return hot;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Public API
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Tab window `title` onto window `onto_title`'s frame -- the programmatic form of the drop
    gesture.  A free target grows a fresh floating group around itself (it must have been begun at

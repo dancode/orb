@@ -208,10 +208,10 @@ gui_step_set_paint_order( bool on )
     T0 -- the two pipeline hooks: capture (build seam) and restore (emit seam).
 ==============================================================================================*/
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     step_capture_build -- start of cache_build_frame: the final segment is closed, every pool is
     complete, nothing has been diffed or tessellated yet.  Copies the live frame and freezes.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 step_capture_build( void )
@@ -266,11 +266,11 @@ step_capture_build( void )
     g_gui_step_frozen = true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     step_restore_emit -- end of draw_reset: the frame state is freshly seeded (background segment
     open, root clip at slot 0, volatile tags zeroed).  Applies a pending release, then while
     frozen replaces the empty frame with the frozen prefix.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 step_restore_emit( void )

@@ -41,9 +41,9 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Volatile widget callback -- see gui.h (gui_volatile_fn) for the full contract.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* gui_volatile_cb wraps one real-emit invocation of `fn` so the backend can bracket the exact
    command range it produces (gui_volatile_cb_open/_close, gui_backend.h); the callback itself
@@ -111,7 +111,7 @@ gui_volatile_end( void )
     /* FUTURE: per-command-type stamping; currently a no-op (paired bookend to gui_volatile_begin). */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     volatile_layout_push / volatile_layout_pop -- a minimal layout frame at an explicit (x, y, w),
     used only by gui_replay_scope_enter/_exit below.  Unlike layout_push_region this reserves no
     scrollbar gutter, pushes no clip, and calls no id_push -- the caller handles id scoping
@@ -119,7 +119,7 @@ gui_volatile_end( void )
     modifier/template state, so a widget can be placed immediately without tripping the
     emit-before-header guard in cell_next_w.  band_bottom is set far below y since a
     replay frame never opens a grid.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 volatile_layout_push( f32 x, f32 y, f32 w )
@@ -153,13 +153,13 @@ volatile_layout_pop( void )
     if ( s_layout_sp > 0 ) --s_layout_sp;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     gui_replay_scope_enter / _exit -- the reverse half of the volatile-widget seam (see
     gui_backend.h).  gui_update_volatile (backend/pipeline/gui_build_volatile.c) calls these around each
     row's standalone replay invocation so the callback's ordinary gui()->text()/rect_filled()/...
     calls have a valid (if minimal) layout frame and id scope to emit into, without running
     ctx_begin/ctx_new_frame or touching anything else about the real frame's UI state.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 void
 gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w )

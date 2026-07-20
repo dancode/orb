@@ -81,9 +81,9 @@ win_set_fillscreen( app_window_t* win, bool enabled )
     fill->is_enabled = enabled;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     API implementations
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 app_window_set_fillscreen( win_id_t id, bool enabled )
@@ -101,14 +101,14 @@ app_window_toggle_fillscreen( win_id_t id )
         win_set_fillscreen( win, !win->fill.is_enabled );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Programmatic geometry / show-state — resize, minimize, restore.
 
     All three drive the OS directly (SetWindowPos / ShowWindow), so the resulting WM_SIZE is
     handled by the normal WndProc path: window state flags are updated and an APP_EV_WIN_RESIZE
     is posted.  Callers therefore see the same event flow whether the user dragged the frame or
     the app requested the change.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 app_window_resize( win_id_t id, i32 w, i32 h )
@@ -173,7 +173,7 @@ app_window_toggle_maximize( win_id_t id )
         ShowWindow( win->hwnd, IsZoomed( win->hwnd ) ? SW_RESTORE : SW_MAXIMIZE );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Native-borderless window actions.
 
     A borderless window has no Win32 non-client area, so the gui titlebar / borders stand in
@@ -185,7 +185,7 @@ app_window_toggle_maximize( win_id_t id )
 
     win_zone_to_win32 lives here because translating the gui zone to a Win32 hit-test code is the
     one piece that belongs to the caller side; the resulting code rides in the posted wParam.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* app_win_zone_t -> Win32 hit-test code.  Indexed directly by zone; order must match the enum. */
 static const LRESULT win_zone_to_win32[ APP_ZONE_COUNT ] = {

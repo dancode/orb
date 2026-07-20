@@ -16,7 +16,7 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Drag-to-dock + undock-by-tab-drag (the mouse gestures)
 
     Drag-to-dock: while a FREE window is title-dragged over a dockspace on the same surface,
@@ -36,7 +36,7 @@
     window out of its node into a free window that follows the cursor -- handled inside
     dock_window_chrome below, grabbed through move_grab (interact/gui_move.c) so the free
     window-drag apply carries it from next frame.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Tab salt: each tab gets a stable per-node widget id distinct from the windows + splitter (see
    DOCK_SPLIT_SALT in gui_dock_core.c). */
@@ -477,14 +477,14 @@ dock_undock_by_id( gui_id_t win )
         dock_node_remove_window( n, win );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Tab reorder -- a tab drag that stays inside the strip band slides the tab through the strip.
 
     Live reorder: while the drag is in flight the dragged tab follows the cursor by crossing into
     its neighbours (edge-triggered, flicker-guarded for unequal widths -- see dock_strip_reorder),
     immediately (no drop step), and stays the active (visible) tab as it moves.  Leaving the strip band vertically is what undocks instead
     (dock_window_chrome below decides which of the two the cursor position means each frame).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 dock_strip_reorder( gui_dock_node_t* node, gui_id_t wid, f32 strip_x )
@@ -565,7 +565,7 @@ dock_strip_reorder( gui_dock_node_t* node, gui_id_t wid, f32 strip_x )
     node->active_tab = to;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Tab-strip chrome -- drawn by the active window's window_end in place of a title bar.
 
     Runs while s_build holds the active docked window (its id is hover_win when the cursor is over the
@@ -573,7 +573,7 @@ dock_strip_reorder( gui_dock_node_t* node, gui_id_t wid, f32 strip_x )
     left-to-right at natural width; clicking one selects it (takes effect next frame, when that window
     becomes the active tab).  A press dragged past the threshold pops the window out (see below).
     Forward-declared in gui_internal.h for window_end to call.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 dock_window_chrome( gui_dock_node_t* node )

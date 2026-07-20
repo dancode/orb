@@ -35,10 +35,10 @@
 #define STBI_NO_STDIO
 #include "vendor/stb_image.h"
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     icon_read_file -- slurp an entire file into a fresh malloc'd buffer (caller frees).  Raw stdio,
     matching font_slot_load; the gui backend does its own resource I/O and takes no fs dependency.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static u8*
 icon_read_file( const char* path, u32* out_size )
@@ -75,13 +75,13 @@ icon_read_file( const char* path, u32* out_size )
     return buf;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     icon_load_file -- decode an image file to R8 coverage and register it as an icon.
 
     Returns the new icon id, or GUI_ICON_NONE if the file is missing, undecodable, or the icon
     atlas is full.  A missing file is a quiet failure (the caller decides whether that matters);
     a present-but-broken file logs, since it signals a real asset problem.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 gui_icon_id_t
 icon_load_file( const char* name, const char* path )
@@ -159,14 +159,14 @@ icon_load_file( const char* name, const char* path )
     return id;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Built-in icon set -- declared upfront here and loaded in one pass at backend init.
 
     Add engine icons by dropping a PNG under <root>/assets/icons and naming it here; look one up
     at draw time with gui()->find_icon( "<name>" ).  Paths are root-relative, resolved against
     sys_root_dir() like the built-in fonts, so hosts work from any working directory.  A host or the
     editor can register its OWN icons on top of these at runtime via gui()->load_icon.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct
 {

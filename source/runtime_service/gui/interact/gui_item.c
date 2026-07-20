@@ -485,7 +485,7 @@ item_grab( gui_id_t id, gui_rect_t r, bool gate, bool* active )
     return hot;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Compound-widget bracket -- see the contract comment in gui_internal.h.
 
     A widget made of widgets runs item_state for its OWN id/rect, then brackets its inner
@@ -495,7 +495,7 @@ item_grab( gui_id_t id, gui_rect_t r, bool gate, bool* active )
     not the last internal part.  The layout variant additionally roots an id scope at the
     outer id and opens a transient sub-layout over the widget's rect, so the body can emit
     real widgets with the normal layout verbs; end unwinds both.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 gui_item_sub_t
 gui_item_sub_begin( void )
@@ -533,14 +533,14 @@ gui_item_sub_end( gui_item_sub_t s )
     s_scope.last_status = s.last_status;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Gate predicates -- the interaction questions every gesture gate asks, named once.
 
     These are the read half of the arbitration state above: pure queries, no writes, so any
     tier may call them (declared in gui_internal.h for the files included before this one).
     They exist so a compound gesture gate reads as a sentence at the call site instead of a
     chain of raw field comparisons.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Nothing holds the pointer capture: no widget, drag, or resize is in flight. */
 static bool

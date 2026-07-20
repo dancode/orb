@@ -62,7 +62,7 @@ gui_button( const char* label )
     return st.clicked;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     button_fill -- a button that fills the remaining height of its containing region.
 
     Identical to button() except the painted height grows to content_avail().y instead of the
@@ -77,7 +77,7 @@ gui_button( const char* label )
     box.  Net: a fill can never push content past the region; content size stays bounded by the
     window, and the slack is what the fill expands into.  A widget emitted after a fill overlaps its
     paint (the fill occupies min in the flow) -- fills are meant to be terminal.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_button_fill( const char* label )
@@ -98,10 +98,10 @@ gui_button_fill( const char* label )
     return st.clicked;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     small_button -- a compact button with no vertical frame padding (the ImGui SmallButton): a
     text-height row instead of the full WIDGET_H, for inline controls packed onto a text line.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_small_button( const char* label )
@@ -128,7 +128,7 @@ gui_button_width( const char* label )
     return label_natural_w( label );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     arrow_button -- a small square button with a directional triangle instead of a text label.
 
     The non-text button: same interaction and framed background as button(), but it draws an arrow
@@ -141,7 +141,7 @@ gui_button_width( const char* label )
         gui()->same_line( spacing );
         if ( gui()->arrow_button( "##right", GUI_DIR_RIGHT ) ) counter++;
         gui()->pop_item_flag();
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_arrow_button( const char* label, gui_dir_t dir )
@@ -159,14 +159,14 @@ gui_arrow_button( const char* label, gui_dir_t dir )
     return st.clicked;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     checkbox / radio_button -- an indicator box + a trailing label.
 
     Both share one cell recipe (natural width, field-split resolve, item protocol) and differ only
     in what they paint into the CHECKBOX_SZ indicator box: a square + check, or a disc.  That recipe
     -- including a subtle nav-rect alignment rule -- lives once in checkable_cell so the two widgets
     stay in step.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 typedef struct
 {
@@ -260,7 +260,7 @@ gui_checkbox( const char* label, bool* v )
     return changed;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     radio_button -- one option of a mutually-exclusive set.  `v` holds the selected value and
     `value` is the one this button stands for: the button shows "on" while *v == value, and a click
     sets *v = value.  Emit several against the same v (commonly with same_line between them) to form
@@ -309,7 +309,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
     return changed;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     selectable -- a full-width row that highlights on hover and fills when selected.
 
     The building block for list boxes: emit one per item (typically inside a child_begin
@@ -317,7 +317,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
     toggles it; pass NULL for a click-only row.  Returns true on the frame it is clicked, so
     a caller managing single-selection can set its own index from the return without relying
     on the toggle.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_selectable( const char* label, bool* selected )

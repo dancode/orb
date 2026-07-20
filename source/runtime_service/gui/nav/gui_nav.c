@@ -44,9 +44,9 @@
 ==============================================================================================*/
 // clang-format off
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     State
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* The keyboard-focused window (click / window_set_nav / Ctrl+Tab / Alt) lives in
    g_ctx->nav.focused_win (gui_internal.h) -- per-context, so two bound contexts never stomp each
@@ -62,10 +62,10 @@ static bool s_nav_alt_used;
    instrument), so the mouse regains the fill while the nav ring keeps its place. */
 static f32 s_nav_mouse_x, s_nav_mouse_y;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Window-pool helpers -- the recurring read over g_ctx->win.pool.  (The lookup by id is the
     surface tier's window_find, in scope here since gui_surface.c is included first.)
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Whether a window may take keyboard focus: not an overlay record (popup / tooltip -- those capture
    nav their own way) and not a GUI_WIN_NATIVE frame-only shell (bare chrome, no body item to focus,
@@ -76,9 +76,9 @@ nav_win_focusable( const gui_window_t* w )
     return !w->overlay && !( w->flags & GUI_WIN_NATIVE );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     nav_choose_window -- pick the window/popup nav is scoped to this frame.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 nav_choose_window( void )
@@ -121,13 +121,13 @@ nav_choose_window( void )
     g_ctx->nav.win   = ( fw && !fw->overlay ) ? g_ctx->nav.focused_win : GUI_ID_NONE;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     nav_cycle_window -- Ctrl+Tab: move the focused window to the next normal window by z.
 
     dir > 0 picks the next-higher z (wrapping to the lowest), dir < 0 the next-lower (wrapping to
     the highest), so repeated Ctrl+Tab walks the window stack.  The chosen window is raised to the
     front so it is visible and usable, and nav_id is cleared so the first item takes focus.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* A window Ctrl+Tab never lands on: an overlay record (popup / tooltip), a GUI_WIN_NATIVE
    frame-only shell (bare chrome, no body), or a docked window hidden behind another tab --
@@ -217,12 +217,12 @@ nav_cycle_window( i32 dir )
     g_ctx->nav.active      = true;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Nav list resolvers -- structural movement over the item list built during last frame's
     emission (see the file header).  All of them run at request time from nav_finish, mutate
     g_ctx->nav.id, and leave the request fields (move_dir / activate) live for the emission-time
     consumers (menu_begin's Right-opens-submenu, the activation in nav_item_register).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* Index of id in the list, or -1.  Linear: the list is small and resolved once per keypress. */
 static i32
@@ -336,7 +336,7 @@ nav_line_pick( u32 region, u32 line, f32 goal )
     return best;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Type-ahead -- jump the nav cursor to the first item (in the current nav window) whose stamped
     label starts with what was just typed, the native listbox/combobox behavior.  Feeds off
     s_io.text (already-composed printable text for the frame, gui_io.c), so it never runs while a
@@ -347,7 +347,7 @@ nav_line_pick( u32 region, u32 line, f32 goal )
     from nav_finish, against the SAME one-frame-lagged item list every other resolver (Up/Down,
     Tab, Home/End) consumes, so it composes with them for free -- no separate registry to keep in
     sync with window/popup lifetime.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* No typing for this long resets the query instead of extending it -- so "cat" typed slowly reads
    as three separate one-letter jumps (c, then a, then t), not a failed four-letter prefix. */
@@ -763,10 +763,10 @@ nav_resolve_move( void )
         nav_move_vertical( c );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     Menu-bar mode -- enter / exit + the bar/menu key handling (issues: bar traversal, Up-to-bar,
     close-returns-to-owner, Alt toggle, Alt+letter mnemonics).
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* The main menu bar window id, or 0 if no main menu bar exists this session. */
 static gui_id_t
@@ -870,12 +870,12 @@ nav_menu_keys( bool down, bool up, bool left, bool esc, gui_id_t first_prev )
     }
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     nav_finish -- the shared tail of nav_new_frame: resolve this frame's surviving move request
     against last frame's item list (the menu / popup handlers above it may have consumed the move
     first), then open a fresh list for the emission about to run and scope nav to its window.
     Every exit path of nav_new_frame funnels through here so the list always resets exactly once.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 nav_finish( void )
@@ -930,10 +930,10 @@ nav_finish( void )
     g_ctx->nav.list_full = g_ctx->nav.reg_all;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     nav_new_frame -- the driver: recover, read keys into a request, resolve, choose nav_win.
     Called from gui_ctx_begin after popup_close_check / popup_apply_modal / window_raise_on_press.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 nav_new_frame( void )

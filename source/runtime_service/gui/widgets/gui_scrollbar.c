@@ -31,14 +31,14 @@
    active (own active_id) at a time, so this covers every bar on every region. */
 static f32 s_sb_grab_off = 0.0f;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     scrollbar_widget -- one scrollbar track + knob along an axis; folds a knob drag into *scroll.
 
     `vertical` picks the axis; `track` is the full track rect, `content`/`view` the measured and
     visible extents along that axis.  The knob length tracks the visible fraction (min-clamped
     so it stays grabbable) and the drag maps the cursor back into scroll, mirroring
     slider_float.  Shared by every region's bars.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,

@@ -42,7 +42,7 @@
    close then immediately reopen (the exact problem combo solves the same way). */
 typedef struct { u32 open_frame; } gui_menu_state_t;
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     menu_close_chain -- dismiss the whole open menu stack down to the topmost modal.
 
     Selecting a command closes every menu and submenu at once.  The popups above a modal are the
@@ -50,7 +50,7 @@ typedef struct { u32 open_frame; } gui_menu_state_t;
     topmost modal closes them all while leaving a modal that hosts the menu open.  popup_begin
     for those popups already ran this frame and returned true, so the bodies still finish rendering;
     they are simply gone next frame.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static void
 menu_close_chain( void )
@@ -58,9 +58,9 @@ menu_close_chain( void )
     g_ctx->popup.open_count = popup_modal_floor();   /* truncate to just past the topmost modal */
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     menu_item -- a leaf command row.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_menu_item( const char* label, const char* shortcut, bool* selected )
@@ -123,9 +123,9 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
     return false;
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     menu_begin / menu_end -- a submenu entry that drives a nested popup.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 bool
 gui_menu_begin( const char* label )
@@ -240,9 +240,9 @@ gui_menu_end( void )
     gui_popup_end();
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     main_menu_bar_begin / main_menu_bar_end -- a helper window pinned across the top of the display.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 /* The bar's band height, published so hosts can stack their own strips (toolbar, dockspace
    inset) below it without re-deriving the sum from font metrics.  Must match the size
@@ -319,14 +319,14 @@ gui_main_menu_bar_end( void )
     style_pop_var( 1 );
 }
 
-/*----------------------------------------------------------------------------------------------
+/*==============================================================================================
     menu_bar_begin / menu_bar_end -- the strip a WIN_MENUBAR window reserved below its title bar.
 
     The strip rect was carved off the top of the body in window_begin_ex and stashed in
     s_build.win.menubar_rect.  We open a transient pack region over it (outside the body's scrolling
     flow) and restore the body pen on pop, so the body content lays out from its own origin
     regardless of the strip region's parent-pen advance.
-----------------------------------------------------------------------------------------------*/
+==============================================================================================*/
 
 static gui_scroll_link_t s_menubar_sink;     /* scroll / content-measure sink: the strip never scrolls */
 static f32          s_menubar_saved_cursor;  /* body pen to restore after the strip region pops        */
