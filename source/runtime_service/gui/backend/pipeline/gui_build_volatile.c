@@ -263,17 +263,18 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 cmd_open )
 
     /* Advance the write heads over the reservation; pad the command run with dormant commands so
        the slot's [cmd_base, cmd_base + cmd_count) range stays dense.  The gap vertices/indices
-       are never referenced: draw calls read elem_count indices from each command's own cmd_ibase. */
+       are never referenced: draw calls read elem_count indices from each command's own ibase. */
     s_tess.vert_count = vb_open + res_v;
     s_tess.idx_count  = ib_open + res_i;
     for ( u32 k = nc; k < res_c; ++k )
     {
         u32 ci = cmd_open + k;
-        s_tess.cmds     [ ci ] = ( gui_gpu_cmd_t ){ .elem_count = 0, .tex_idx = 0,
-                                                    .clip_rect = s_tess.cur_clip };
-        s_tess.cmd_vp   [ ci ] = GUI_VP_INVALID;
-        s_tess.cmd_vbase[ ci ] = s_tess.vert_count;
-        s_tess.cmd_ibase[ ci ] = s_tess.idx_count;
+        s_tess.gpu_cmds[ ci ] = ( tess_gpu_cmd_t ){
+            .cmd   = { .elem_count = 0, .tex_idx = 0, .clip_rect = s_tess.cur_clip },
+            .vp    = GUI_VP_INVALID,
+            .vbase = s_tess.vert_count,
+            .ibase = s_tess.idx_count,
+        };
     }
     s_tess.cmd_count     = cmd_open + res_c;
     s_tess.force_new_cmd = true;   /* the next window primitive must not merge into a dormant slot */
@@ -380,15 +381,14 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
             if ( k < nc )
             {
                 u32 src = tcmd_ck + k;
-                s_tess.cmds     [ dst ] = s_tess.cmds  [ src ];
-                s_tess.cmd_vp   [ dst ] = s_tess.cmd_vp[ src ];
-                s_tess.cmd_vbase[ dst ] = abs_vb + ( s_tess.cmd_vbase[ src ] - vert_ck );
-                s_tess.cmd_ibase[ dst ] = abs_ib + ( s_tess.cmd_ibase[ src ] - idx_ck  );
+                s_tess.gpu_cmds[ dst ]       = s_tess.gpu_cmds[ src ];   /* cmd + vp ride along */
+                s_tess.gpu_cmds[ dst ].vbase = abs_vb + ( s_tess.gpu_cmds[ src ].vbase - vert_ck );
+                s_tess.gpu_cmds[ dst ].ibase = abs_ib + ( s_tess.gpu_cmds[ src ].ibase - idx_ck  );
             }
             else
             {
-                s_tess.cmds  [ dst ].elem_count = 0;
-                s_tess.cmd_vp[ dst ]            = GUI_VP_INVALID;
+                s_tess.gpu_cmds[ dst ].cmd.elem_count = 0;
+                s_tess.gpu_cmds[ dst ].vp             = GUI_VP_INVALID;
             }
         }
         row->vert_count = (u16)nv;

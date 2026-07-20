@@ -69,12 +69,13 @@ dash_capture_build( void )
     sn->cmd_count = s_tess.cmd_count < GUI_MAX_CMDS ? s_tess.cmd_count : GUI_MAX_CMDS;
     for ( u32 c = 0; c < sn->cmd_count; ++c )
     {
-        sn->cmds[ c ].elem_count = s_tess.cmds     [ c ].elem_count;
-        sn->cmds[ c ].tex_idx    = s_tess.cmds     [ c ].tex_idx;
-        sn->cmds[ c ].clip       = s_tess.cmds     [ c ].clip_rect;
-        sn->cmds[ c ].vp         = s_tess.cmd_vp   [ c ];
-        sn->cmds[ c ].vbase      = s_tess.cmd_vbase[ c ];
-        sn->cmds[ c ].ibase      = s_tess.cmd_ibase[ c ];
+        const tess_gpu_cmd_t* gc = &s_tess.gpu_cmds[ c ];
+        sn->cmds[ c ].elem_count = gc->cmd.elem_count;
+        sn->cmds[ c ].tex_idx    = gc->cmd.tex_idx;
+        sn->cmds[ c ].clip       = gc->cmd.clip_rect;
+        sn->cmds[ c ].vp         = gc->vp;
+        sn->cmds[ c ].vbase      = gc->vbase;
+        sn->cmds[ c ].ibase      = gc->ibase;
     }
 
     sn->vol_count = s_volatile_count < GUI_MAX_VOLATILE ? s_volatile_count : GUI_MAX_VOLATILE;
@@ -111,9 +112,9 @@ dash_capture_build( void )
         u32 live = 0;
         for ( u32 k = 0; k < sl->cmd_count && sl->cmd_base + k < s_tess.cmd_count; ++k )
         {
-            u32 ci = sl->cmd_base + k;
-            if ( s_tess.cmd_vp[ ci ] == GUI_VP_INVALID ) continue;   /* dormant volatile pad     */
-            if ( s_tess.cmds[ ci ].elem_count == 0 )    continue;    /* empty -- never dispatched */
+            const tess_gpu_cmd_t* gc = &s_tess.gpu_cmds[ sl->cmd_base + k ];
+            if ( gc->vp == GUI_VP_INVALID )   continue;   /* dormant volatile pad     */
+            if ( gc->cmd.elem_count == 0 )    continue;   /* empty -- never dispatched */
             ++live;
         }
         sn->tess_cmds += live;

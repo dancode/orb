@@ -31,18 +31,27 @@
     resolved from s_draw.clip_table[c->clip_idx]; z is per-segment and is not tracked here.
 ----------------------------------------------------------------------------------------------*/
 
+/* One GPU command plus its placement -- the AOS command record.  Every consumer (the merge check,
+   the flush loop, the volatile copy-back, the dashboard capture) reads a WHOLE command at a given
+   index; none sweeps a single field across all commands, so the fields that belong to one command
+   live together in one cache line rather than in four parallel arrays keyed on the same index.
+   ibase is explicit (not accumulated from elem_counts at flush) so the index buffer may hold
+   reserved gaps -- volatile block headroom -- between commands.  Mirrors dash_cmd_t (the snapshot
+   type in gui_backend.h), which was AOS from the start; this is the live half catching up. */
+typedef struct
+{
+    gui_gpu_cmd_t cmd;      // elem_count, tex_idx, clip_rect -- the GPU draw-call unit
+    u32           vp;       // viewport index for this command
+    u32           vbase;    // vtx slot -- first vertex of command
+    u32           ibase;    // idx slot -- first index of command (its draw call's first_index)
+
+} tess_gpu_cmd_t;
+
 static struct
 {
-    gui_draw_vert_t verts     [ GUI_MAX_VERTS ];    // geometry buffer 
-    u16             indices   [ GUI_MAX_IDX   ];    // geometry buffer
-    gui_gpu_cmd_t   cmds      [ GUI_MAX_CMDS  ];    // gpu command data (4 parallel arrays for cache-friendly AOS)
-    u32             cmd_vp    [ GUI_MAX_CMDS  ];    // viewport index for each command
-    u32             cmd_vbase [ GUI_MAX_CMDS  ];    // vtx slot -- first vertex of command
-    u32             cmd_ibase [ GUI_MAX_CMDS  ];    // idx slot -- first index of command
-
-    /* index-buffer slot where this cmd's indices start (its draw call's first_index).  
-       Explicit rather than accumulated from elem_counts at flush time so the index buffer 
-       may contain reserved gaps (volatile block headroom) between commands. */
+    gui_draw_vert_t verts    [ GUI_MAX_VERTS ];    // geometry buffer
+    u16             indices  [ GUI_MAX_IDX   ];    // geometry buffer
+    tess_gpu_cmd_t  gpu_cmds [ GUI_MAX_CMDS  ];    // gpu draw commands (AOS: cmd + vp/vbase/ibase)
 
     u32 vert_count, idx_count, cmd_count;           // write head cursors
 
@@ -207,8 +216,9 @@ tess_ensure_gpu_cmd( u32 tex_idx )
 {
     if ( s_tess.cmd_count > 0 && !s_tess.force_new_cmd )
     {
-        const gui_gpu_cmd_t* cur = &s_tess.cmds[ s_tess.cmd_count - 1 ];
-        if ( s_tess.cmd_vp[ s_tess.cmd_count - 1 ] == s_tess.cur_vp
+        const tess_gpu_cmd_t* prev = &s_tess.gpu_cmds[ s_tess.cmd_count - 1 ];
+        const gui_gpu_cmd_t*  cur  = &prev->cmd;
+        if ( prev->vp == s_tess.cur_vp
           && cur->tex_idx       == tex_idx
           && cur->clip_rect.x   == s_tess.cur_clip.x
           && cur->clip_rect.y   == s_tess.cur_clip.y
@@ -222,16 +232,14 @@ tess_ensure_gpu_cmd( u32 tex_idx )
         return false;
     }
     s_tess.force_new_cmd = false;
-    s_tess.cmd_vp   [ s_tess.cmd_count ] = s_tess.cur_vp;
     /* Vertex span of this command starts at the current vert_count; the next command's vbase (or
        the final vert_count for the last) bounds it.  Lets a surface upload only its own vertices.
-       cmd_ibase records where this command's indices start -- its draw call's first_index. */
-    s_tess.cmd_vbase[ s_tess.cmd_count ] = s_tess.vert_count;
-    s_tess.cmd_ibase[ s_tess.cmd_count ] = s_tess.idx_count;
-    s_tess.cmds     [ s_tess.cmd_count++ ] = ( gui_gpu_cmd_t ){
-        .elem_count = 0,
-        .tex_idx    = tex_idx,
-        .clip_rect  = s_tess.cur_clip,
+       ibase records where this command's indices start -- its draw call's first_index. */
+    s_tess.gpu_cmds[ s_tess.cmd_count++ ] = ( tess_gpu_cmd_t ){
+        .cmd   = { .elem_count = 0, .tex_idx = tex_idx, .clip_rect = s_tess.cur_clip },
+        .vp    = s_tess.cur_vp,
+        .vbase = s_tess.vert_count,
+        .ibase = s_tess.idx_count,
     };
     return true;
 }
@@ -260,7 +268,7 @@ tess_prim_commit( u32 nv, u32 ni )
 {
     s_tess.vert_count += nv;
     s_tess.idx_count  += ni;
-    s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += ni;
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
 }
 
 /* Tessellate a filled quad into s_tess.  abgr has alpha pre-baked by the emit side. */
@@ -299,7 +307,7 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
     idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
     s_tess.idx_count += 6;
 
-    s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 6;
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 6;
 }
 
 /* Tessellate a two-color gradient quad: col_a / col_b on opposite edges, sampled at the white
@@ -339,7 +347,7 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
     idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
     idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
     s_tess.idx_count += 6;
-    s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 6;
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 6;
 }
 
 /* Tessellate a hollow rectangle as four edge quads.  t is clamped to half the shorter side so a
@@ -425,7 +433,7 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     s_tess.indices[ s_tess.idx_count++ ] = base + 0;
     s_tess.indices[ s_tess.idx_count++ ] = base + 1;
     s_tess.indices[ s_tess.idx_count++ ] = base + 2;
-    s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 3;
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 3;
 }
 
 /* Tessellate a filled disc as a single triangle fan: one centre vertex plus a ring of `segs`
@@ -559,7 +567,7 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
     idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
     idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
     s_tess.idx_count += 6;
-    s_tess.cmds[ s_tess.cmd_count - 1 ].elem_count += 6;
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 6;
 }
 
 /*----------------------------------------------------------------------------------------------

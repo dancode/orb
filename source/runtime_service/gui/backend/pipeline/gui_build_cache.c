@@ -198,7 +198,7 @@ typedef struct
     u32      z;
     u32      vert_base, vert_count, vert_alloc;  // VB: absolute position, actual count, padded reservation
     u32      idx_base,  idx_count,  idx_alloc;   // IB: absolute position, actual count, padded reservation
-    u32      cmd_base,  cmd_count;               // range into s_tess.cmds[] for this window
+    u32      cmd_base,  cmd_count;               // range into s_tess.gpu_cmds[] for this window
     u32      tess_gen;                           // generation of the tess pass that produced the geometry
     u8       vp;                                 // viewport (GUI_MAX_VIEWPORTS = 4)
     u8       band;                               // arena band (0 = main UI, 1 = debug/diagnostic)
@@ -919,10 +919,10 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
     for ( u32 k = 0; k < nc; ++k )
     {
         u32 ci = slot->cmd_base + k;
-        s_tess.cmds    [ ci ]  = s_win_cached[ cache_idx ][ k ].cmd;
-        s_tess.cmd_vp  [ ci ]  = s_win_cached[ cache_idx ][ k ].vp;
-        s_tess.cmd_vbase[ ci ] = slot->vert_base + s_win_cached[ cache_idx ][ k ].lvbase;
-        s_tess.cmd_ibase[ ci ] = slot->idx_base  + s_win_cached[ cache_idx ][ k ].libase;
+        s_tess.gpu_cmds[ ci ].cmd   = s_win_cached[ cache_idx ][ k ].cmd;
+        s_tess.gpu_cmds[ ci ].vp    = s_win_cached[ cache_idx ][ k ].vp;
+        s_tess.gpu_cmds[ ci ].vbase = slot->vert_base + s_win_cached[ cache_idx ][ k ].lvbase;
+        s_tess.gpu_cmds[ ci ].ibase = slot->idx_base  + s_win_cached[ cache_idx ][ k ].libase;
     }
     s_tess.cmd_count += nc;
 
@@ -941,7 +941,7 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
    over another window's live geometry, whatever it turns out to measure.  Then:
 
      - fits its own previous reservation -> the geometry is memcpy'd back into that hole (indices
-       are slot-relative, so only the slot bases and the absolute cmd_vbase/cmd_ibase shift) and
+       are slot-relative, so only the slot bases and the absolute vbase/ibase shift) and
        the tail rewinds -- the steady interactive case (the focused window changing every frame)
        reuses its home and the arena layout is byte-stable.
      - outgrew it (or is new)           -> it keeps the tail position with a fresh reservation
@@ -993,8 +993,8 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
                     slot->idx_count * sizeof( u16 ) );
             for ( u32 k = 0; k < slot->cmd_count; ++k )
             {
-                s_tess.cmd_vbase[ slot->cmd_base + k ] -= dv;
-                s_tess.cmd_ibase[ slot->cmd_base + k ] -= di;
+                s_tess.gpu_cmds[ slot->cmd_base + k ].vbase -= dv;
+                s_tess.gpu_cmds[ slot->cmd_base + k ].ibase -= di;
             }
         }
         slot->vert_base  = prev->vert_base;
@@ -1039,10 +1039,10 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     for ( u32 k = 0; k < nc; ++k )
     {
         u32 ci = slot->cmd_base + k;
-        s_win_cached[ cache_idx ][ k ].cmd    = s_tess.cmds    [ ci ];
-        s_win_cached[ cache_idx ][ k ].vp     = s_tess.cmd_vp  [ ci ];
-        s_win_cached[ cache_idx ][ k ].lvbase = s_tess.cmd_vbase[ ci ] - slot->vert_base;
-        s_win_cached[ cache_idx ][ k ].libase = s_tess.cmd_ibase[ ci ] - slot->idx_base;
+        s_win_cached[ cache_idx ][ k ].cmd    = s_tess.gpu_cmds[ ci ].cmd;
+        s_win_cached[ cache_idx ][ k ].vp     = s_tess.gpu_cmds[ ci ].vp;
+        s_win_cached[ cache_idx ][ k ].lvbase = s_tess.gpu_cmds[ ci ].vbase - slot->vert_base;
+        s_win_cached[ cache_idx ][ k ].libase = s_tess.gpu_cmds[ ci ].ibase - slot->idx_base;
     }
     slot->cmd_cached = true;
     slot->valid      = true;
