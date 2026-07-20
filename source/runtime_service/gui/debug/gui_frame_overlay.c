@@ -4,8 +4,9 @@
 
     Two hidden-chrome debug readouts drawn through the ordinary GUI pipeline, plus the frame-timing
     instrumentation the perf overlay reads.  The timing helpers (perf_frame_begin / perf_frame_end /
-    perf_render_begin / perf_render_end) are the private half of this unit: they are called from the
-    frame lifecycle in gui_frame.c, which is why this file is included BEFORE gui_frame.c in the
+    perf_render_begin / perf_render_end / perf_present_begin / perf_present_end) are the private half
+    of this unit: they are called from the frame lifecycle in gui_frame.c (emit / render) and the
+    boot present pair in gui_boot.c (present), which is why this file is included BEFORE both in the
     unity build (gui.c) -- those statics must be in scope where the lifecycle brackets them.
 
     The overlays are NOT host-called: debug_enable( true ) arms an internal hotkey driver
@@ -23,7 +24,10 @@
     A built-in, hidden-chrome FPS / cost readout (the host used to hand-roll this).  gui owns no
     clock -- it is a leaf of rhi + app -- so the host hands it a monotonic seconds callback through
     perf_overlay(); gui brackets the frame with it.  The emit clock opens at frame_begin and is
-    latched on the first render() of the frame; the render clock sums the render() flush calls.  Both
+    latched on the first render() of the frame; the render clock sums the render() flush calls; the
+    present clock (boot-tier only) times the present pair and subtracts the render flush already
+    counted, so it reports the non-render present overhead -- dominated by the frame_begin fence wait
+    (GPU backpressure).  emit + render + present then account for the whole CPU frame.  All three
     raw measurements are folded into smoothed (EMA) readouts at the next frame_begin, so the panel
     trails the work it describes by one frame -- the standard self-measurement lag for an in-frame
     overlay (the build that reads the numbers is also the one being measured).
@@ -36,9 +40,14 @@ static struct
     f64             emit_ms;            /* this frame: frame_begin -> first render() (ms)     */
     f64             rend_ms;            /* this frame: accumulated render() wall time (ms)    */
     bool            emit_captured;      /* emit_ms latched on the first render() this frame   */
+    f64             t_present_start;    /* clock() at gui_present_begin entry (0 = not armed) */
+    f64             pres_ms;            /* this frame: present pair wall minus render (ms)    */
     f32             fps;                /* smoothed readouts shown by the overlay             */
     f32             s_emit_ms;
     f32             s_rend_ms;
+    f32             s_pres_ms;
+    f32             s_poll_ms;          /* smoothed frame_poll (pump + input) span            */
+    f32             s_wait_ms;          /* smoothed frame_pace sleep / idle wait span         */
 
 } s_perf;
 
@@ -54,13 +63,17 @@ perf_frame_begin( f32 dt )
     }
     f32 em = (f32)s_perf.emit_ms;
     f32 rm = (f32)s_perf.rend_ms;
+    f32 pm = (f32)s_perf.pres_ms;
     s_perf.s_emit_ms = s_perf.s_emit_ms <= 0.0f ? em : s_perf.s_emit_ms * 0.9f + em * 0.1f;
     s_perf.s_rend_ms = s_perf.s_rend_ms <= 0.0f ? rm : s_perf.s_rend_ms * 0.9f + rm * 0.1f;
+    s_perf.s_pres_ms = s_perf.s_pres_ms <= 0.0f ? pm : s_perf.s_pres_ms * 0.9f + pm * 0.1f;
 
-    s_perf.emit_ms       = 0.0;
-    s_perf.rend_ms       = 0.0;
-    s_perf.emit_captured = false;
-    s_perf.t_emit_start  = s_perf.clock ? s_perf.clock() : 0.0;
+    s_perf.emit_ms         = 0.0;
+    s_perf.rend_ms         = 0.0;
+    s_perf.pres_ms         = 0.0;
+    s_perf.emit_captured   = false;
+    s_perf.t_present_start = 0.0;
+    s_perf.t_emit_start    = s_perf.clock ? s_perf.clock() : 0.0;
 }
 
 /* Close the emit phase at frame_end -- "build cost = frame_begin -> frame_end".  Latches emit_ms
@@ -101,6 +114,50 @@ perf_render_end( f64 t0 )
 {
     if ( s_perf.clock && t0 > 0.0 )
         s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
+}
+
+/* Present bracket -- boot-tier only (gui_present_begin / gui_present_end, gui_boot.c).  Arm the
+   clock at present_begin entry so the span covers the whole pair: floater reconcile, the frame_begin
+   fence wait (CPU parks on GPU completion here), swapchain acquire, the gui_render flush, submit,
+   present, and floater presents.  At present_end exit, subtract rend_ms -- the render flush is shown
+   on its own row and lives inside this span -- leaving the NON-render present overhead, which is
+   dominated by the fence wait (GPU backpressure).  emit + render + present then sum to the CPU frame.
+   Attach-path hosts never call the present pair, so pres_ms stays 0 and the row reads zero for them. */
+static void
+perf_present_begin( void )
+{
+    s_perf.t_present_start = s_perf.clock ? s_perf.clock() : 0.0;
+}
+
+static void
+perf_present_end( void )
+{
+    if ( !s_perf.clock || s_perf.t_present_start <= 0.0 )
+        return;
+    f64 span = ( s_perf.clock() - s_perf.t_present_start ) * 1000.0 - s_perf.rend_ms;
+    s_perf.pres_ms = span > 0.0 ? span : 0.0;   /* clamp: render flush can't exceed the pair span */
+}
+
+/* Poll + pace brackets -- boot-tier (gui_frame_poll / gui_frame_pace, gui_boot.c).  These are the
+   last two unmeasured phases of the loop: frame_poll (OS pump + gamepad + input snapshot) and
+   frame_pace (the end-of-loop sleep / idle wait).  The pace span is the "wait time" -- a
+   frame_pace(4,16) sleep otherwise hides ~4 ms from the breakdown, which is exactly what made the
+   totals not add up.  With these, emit + render + present + poll + wait accounts for the whole
+   frame.  Both are single spans per frame (unlike render's accumulator), so they EMA directly at
+   close via perf_span_ema -- open() returns the clock, close folds the span into *dst. */
+static f64
+perf_span_open( void )
+{
+    return s_perf.clock ? s_perf.clock() : 0.0;
+}
+
+static void
+perf_span_ema( f32* dst, f64 t0 )
+{
+    if ( !s_perf.clock || t0 <= 0.0 )
+        return;
+    f32 ms = ( f32 )( ( s_perf.clock() - t0 ) * 1000.0 );
+    *dst = ( *dst <= 0.0f ) ? ms : *dst * 0.9f + ms * 0.1f;
 }
 
 /* Debug-lever state read by the overlay's status rows below; defined further down this file
@@ -162,8 +219,24 @@ gui_perf_overlay( int mode )
         if ( show_timing_rows )
         {
             gui_new_line( 2.0f );
-            gui_textf( "emit   %5.2f ms", s_perf.s_emit_ms );
-            gui_textf( "render %5.2f ms", s_perf.s_rend_ms );
+            gui_textf( "emit    %5.2f ms", s_perf.s_emit_ms );
+            gui_textf( "render  %5.2f ms", s_perf.s_rend_ms );
+
+            /* Full loop breakdown -- tier 2 ONLY.  present = non-render present overhead (fence
+               wait + acquire + submit + present); poll = OS pump + input; wait = frame_pace sleep /
+               idle (the "wait time" -- a paced loop's sleep shows here instead of hiding).  total
+               sums the five phases and should track the FPS ms above (small residual = loop
+               arithmetic + self-measurement lag).  Tiers 3+ trade all this for the deep geometry /
+               pool stats below, where these fence/sleep-dominated numbers are just noise. */
+            if ( mode == 2 )
+            {
+                gui_textf( "present %5.2f ms", s_perf.s_pres_ms );
+                gui_textf( "poll    %5.2f ms", s_perf.s_poll_ms );
+                gui_textf( "wait    %5.2f ms", s_perf.s_wait_ms );
+                gui_textf( "total   %5.2f ms", s_perf.s_emit_ms + s_perf.s_rend_ms
+                                             + s_perf.s_pres_ms + s_perf.s_poll_ms
+                                             + s_perf.s_wait_ms );
+            }
         }
 
         bool show_geometry_rows = ( mode >= 3 );

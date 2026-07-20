@@ -179,6 +179,8 @@ boot_shell_emit( void )
 bool
 gui_frame_poll( f32* out_dt )
 {
+    f64 t_poll = perf_span_open();   /* time the OS pump + input snapshot as the "poll" phase */
+
     if ( !app()->pump_events() )
         return false;
 
@@ -206,6 +208,8 @@ gui_frame_poll( f32* out_dt )
     }
     if ( out_dt )
         *out_dt = dt;
+
+    perf_span_ema( &s_perf.s_poll_ms, t_poll );
     return true;
 }
 
@@ -223,6 +227,7 @@ gui_frame_poll( f32* out_dt )
 bool
 gui_present_begin( rhi_cmd_t* out_cmd )
 {
+    perf_present_begin();   /* arm the present clock: the whole pair, fence wait included */
     gui_viewport_update();
 
     s_present.begun    = true;
@@ -271,6 +276,8 @@ gui_present_end( void )
 
     s_present.begun    = false;
     s_present.cmd_live = false;
+
+    perf_present_end();   /* close the present clock: pair wall - render flush = present overhead */
 }
 
 /*==============================================================================================
@@ -300,6 +307,8 @@ gui_present_end( void )
 void
 gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
 {
+    f64 t_wait = perf_span_open();   /* time the whole pace phase: this IS the loop's "wait time" */
+
     if ( s_idle_skip && s_hook_wait )
     {
         /* Keep pumping while the UI has not settled: animation in flight, or this frame still
@@ -329,6 +338,8 @@ gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
     {
         s_hook_sleep( spin_sleep_ms );           /* spin cadence between frames */
     }
+
+    perf_span_ema( &s_perf.s_wait_ms, t_wait );
 }
 
 // clang-format on

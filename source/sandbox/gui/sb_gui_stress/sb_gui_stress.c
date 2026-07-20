@@ -150,8 +150,8 @@ stress_window_flood( i32 count )
         fmt_snprintf( title, sizeof( title ), "Flood %02d", i );
 
         u32 h = stress_hash( ( u32 )i );
-        gui()->window_set_next_pos ( 20.0f + ( f32 )( i % 8 ) * 152.0f,
-                                     70.0f + ( f32 )( i / 8 ) * 128.0f, GUI_COND_ONCE );
+        gui()->window_set_next_pos ( 20.0f + ( f32 )( i % 12 ) * 152.0f,
+                                     70.0f + ( f32 )( i / 12 ) * 128.0f, GUI_COND_ONCE );
         gui()->window_set_next_size( 144.0f, 118.0f, GUI_COND_ONCE );
         if ( gui()->window_begin( title, GUI_WIN_NONE ) )
         {
@@ -747,7 +747,7 @@ main( int argc, char** argv )
 
         gui()->present_begin( NULL );
         gui()->present_end();
-        gui()->frame_pace( 4, 16 );
+        gui()->frame_pace( 0, 0 ); // ( 4, 16 );
     }
 
     ret_code = 0;

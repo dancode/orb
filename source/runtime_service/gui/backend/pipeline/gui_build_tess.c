@@ -33,23 +33,23 @@
 
 static struct
 {
-    gui_draw_vert_t verts     [ GUI_MAX_VERTS ];
-    u16             indices   [ GUI_MAX_IDX   ];
-    gui_gpu_cmd_t   cmds      [ GUI_MAX_CMDS  ];    // 
-    u32             cmd_vp    [ GUI_MAX_CMDS  ];    // 
+    gui_draw_vert_t verts     [ GUI_MAX_VERTS ];    // geometry buffer 
+    u16             indices   [ GUI_MAX_IDX   ];    // geometry buffer
+    gui_gpu_cmd_t   cmds      [ GUI_MAX_CMDS  ];    // gpu command data (4 parallel arrays for cache-friendly AOS)
+    u32             cmd_vp    [ GUI_MAX_CMDS  ];    // viewport index for each command
     u32             cmd_vbase [ GUI_MAX_CMDS  ];    // vtx slot -- first vertex of command
     u32             cmd_ibase [ GUI_MAX_CMDS  ];    // idx slot -- first index of command
 
-    /* index-buffer slot where this cmd's indices start (its
-       draw call's first_index).  Explicit rather than
-       accumulated from elem_counts at flush time so the
-       index buffer may contain reserved gaps (volatile
-       block headroom) between commands. */
+    /* index-buffer slot where this cmd's indices start (its draw call's first_index).  
+       Explicit rather than accumulated from elem_counts at flush time so the index buffer 
+       may contain reserved gaps (volatile block headroom) between commands. */
 
-    u32 vert_count, idx_count, cmd_count;
+    u32 vert_count, idx_count, cmd_count;           // write head cursors
 
     gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
     u32         cur_vp;     /* viewport baked from the current semantic command                    */
+
+    /* per-slot tesellation context */
 
     /* Vertex base of the window slot currently being tessellated.  Index values emitted during
        tess are (local_vert - slot_vert_base), making them 0-relative within the slot.  At draw
@@ -62,6 +62,7 @@ static struct
        the current absolute position from the live slot table, and stamp slot_tess_gen so a patch
        only ever writes into geometry produced by the exact tessellation pass that captured it
        (see backend/pipeline/gui_build_volatile.c). */
+
     u32 slot_idx_base;
     u32 slot_cmd_base;
     u32 slot_tess_gen;

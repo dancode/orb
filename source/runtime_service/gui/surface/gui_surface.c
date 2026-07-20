@@ -154,7 +154,7 @@ window_find( gui_id_t id )
 static struct
 {
     bool         has_pos, has_size;     /* a value is queued on this axis */
-    gui_cond_t pos_cond, size_cond;   /* when to apply it               */
+    gui_cond_t  pos_cond, size_cond;   /* when to apply it               */
     f32          pos_x, pos_y;
     f32          size_w, size_h;
 
