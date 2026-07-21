@@ -96,7 +96,7 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
     {
         gui_rect_t target = v->dock_max_on ? area : mx->rect;
         bool       active = false;
-        f32        t      = gui_anim_timer( id_combine( mx->id, DOCK_MAX_SALT ), window_anim_ease, &active );
+        f32        t      = gui_anim_timer( id_combine( mx->id, DOCK_MAX_SALT ), feat_ease, &active );
 
         mx->rect.x = f32_lerp( v->dock_max_from.x, target.x, t );
         mx->rect.y = f32_lerp( v->dock_max_from.y, target.y, t );

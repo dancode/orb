@@ -45,19 +45,15 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
 
     f32 title_h = node->rect.h - node->content.h;   /* tab strip height (= WIN_TITLE_H, node-clamped) */
 
-    /* Route to the node's surface: a tree node holds z 0, so docked content sits behind the
-       free-floating windows; a floating group stacks among them at its own z -- as does a
-       dockspace-maximized leaf, whose raised z paints its cover over the sibling tiles while
-       the transition slides it across them (dock_max_set). */
-    draw_set_window( id );                  /* cache key: docked windows share z=0 but not their id */
-    draw_set_sort_key( node->z );
-    draw_set_viewport( node->viewport );
-    draw_set_band( ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
-    s_build.win.viewport = node->viewport;
+    /* The pane open (surface/gui_surface.c), routed to the node's surface: a tree node holds
+       z 0, so docked content sits behind the free-floating windows; a floating group stacks
+       among them at its own z -- as does a dockspace-maximized leaf, whose raised z paints its
+       cover over the sibling tiles while the transition slides it across them (dock_max_set).
+       Docked windows share z=0 but not their id, so the cache key stays per-window.  A docked
+       window IS a pane + node-pinned geometry + the node's chrome. */
+    pane_tag( id, node->z, node->viewport, ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
 
-    /* Commit the docked window context window_end reads. */
-    s_build.win.id          = id;
-    s_scope.win             = id;      /* interaction scope: this window owns the items that follow */
+    /* Commit the docked window context window_end reads (id + scope committed by pane_tag). */
     s_build.win.title       = title;
     s_build.win.collapsed   = false;
     s_build.win.flags       = flags;

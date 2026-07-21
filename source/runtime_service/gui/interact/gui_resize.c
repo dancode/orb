@@ -134,12 +134,10 @@ resize_item( gui_id_t id, gui_id_t owner_win, gui_rect_t box, u8 allow, bool pin
 {
     gui_id_t resize_id = id_combine( id, GUI_RESIZE_SALT );
 
+    /* An in-flight drag is CAPTURED: it follows the cursor wherever it goes, resolved before
+       the hover gate below -- once grabbed, leaving the owner's nominated rect (or crossing
+       another window) must never stall the resize mid-gesture. */
     *dragging = false;
-    if ( owner_win != s_interaction.hover_win )
-        return 0;
-    if ( s_interaction.active_id != GUI_ID_NONE && s_interaction.active_id != resize_id )
-        return 0;
-
     if ( s_interaction.active_id == resize_id )
     {
         u8 ce = (u8)( s_resize_edges & allow );
@@ -147,6 +145,12 @@ resize_item( gui_id_t id, gui_id_t owner_win, gui_rect_t box, u8 allow, bool pin
         *dragging = true;
         return ce;
     }
+
+    /* Arming is hover-gated: only the front-most (hovered) owner's edges go hot / grab. */
+    if ( owner_win != s_interaction.hover_win )
+        return 0;
+    if ( s_interaction.active_id != GUI_ID_NONE )
+        return 0;
 
     u8 hot = (u8)( resize_edge_hit( box, pin_v ) & allow );
     if ( hot )

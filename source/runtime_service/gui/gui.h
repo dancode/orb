@@ -1218,6 +1218,40 @@ typedef enum
 } gui_region_tier_t;
 
 /*==============================================================================================
+    Pane -- the MINIMAL top-level surface occupant: the block every "window" is built from.
+
+    Both servers already run on this cross-section: the interaction server's occlusion contest
+    keys on (id, rect, z, viewport), and the render backend's per-window unit is a command
+    span tagged (id, z, viewport).  A pane is exactly that shared tag plus the io-side rect:
+    identity for hover/active attribution and the retained-cache key, a rect for hit test and
+    base clip, one z that decides BOTH paint order and the hover contest, the hosting OS
+    surface, and whether it competes for input at all.
+
+    Everything called a window is a pane plus policy: + scroll link = scrolling region
+    (region_begin); + persisted rect and chrome = the stock window (window_begin); + overlay
+    z band = popup.  pane_begin (gui_api.h GUI_CORE) opens the raw block for callers building
+    their own chrome; the returned struct is a same-frame value, not a persistent record.
+==============================================================================================*/
+
+/* Edge bits for edge-resize -- the mask a caller hands feat_resize (and the vocabulary the
+   internal edge-resize service, its highlight painter, and the stock window share).  Combine
+   for a corner (GUI_RESIZE_R | GUI_RESIZE_B). */
+#define GUI_RESIZE_L  ( 1u << 0 )
+#define GUI_RESIZE_R  ( 1u << 1 )
+#define GUI_RESIZE_T  ( 1u << 2 )
+#define GUI_RESIZE_B  ( 1u << 3 )
+
+typedef struct gui_pane_s
+{
+    gui_id_t   id;      // identity: hover attribution, state pool key, draw segment tag
+    gui_rect_t rect;    // where it is; hit test + base clip derive from it
+    u32        z;       // one number, two consumers: occlusion contest + paint order
+    u8         vp;      // hosting OS surface (viewport index)
+    u8         input;   // 1 = competes for hover; 0 = pure display (GUI_WIN_NO_INPUT)
+
+} gui_pane_t;
+
+/*==============================================================================================
     Dockspace flags
 
     Passed to dockspace_over_viewport.  0 (GUI_DOCKSPACE_NONE) is the default dockspace that fills

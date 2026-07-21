@@ -181,6 +181,19 @@ void gui_el_meter ( gui_rect_t r, f32 frac, u32 fill_abgr );
 bool gui_el_cycle ( gui_rect_t r, const char* id_str, i32* idx,
                     const char* const* items, i32 count );
 
+/* pane -- the minimal top-level surface occupant: identity + hover/z contest + base clip */
+gui_pane_t gui_pane_begin( const char* id, gui_rect_t r, gui_region_tier_t tier,
+                           gui_vp_t vp, gui_win_flags_t flags );
+void       gui_pane_end( void );
+
+/* feat_* kit -- window features as freestanding id-keyed mechanisms */
+bool gui_feat_move( gui_id_t id, gui_rect_t handle, f32* x, f32* y );
+u8   gui_feat_resize( gui_id_t id, gui_rect_t* r, u8 edges, f32 min_w, f32 min_h );
+f32  gui_feat_collapse( gui_id_t id, bool open, f32 head_h, f32 full_h );
+void gui_feat_maximize( gui_id_t id, bool maximized, gui_rect_t* r, gui_rect_t* restore,
+                        gui_rect_t work );
+void gui_feat_clamp( gui_rect_t* r, gui_rect_t work, f32 margin );
+
 /* root region -- a fixed-rect layout primitive with no window chrome */
 bool gui_region_begin( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
                        gui_win_flags_t flags );

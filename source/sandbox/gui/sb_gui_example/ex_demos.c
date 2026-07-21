@@ -78,7 +78,7 @@ static ex_demo_t s_demos[] =
     { "Widgets",  "Color Editors",    "Color Editors",    "color_edit3/4 + display flags",                     ex_widgets_color,       false },
     { "Widgets",  "Selection & Lists","Selection & Lists","selectable / combo / listbox + begin/end forms",    ex_widgets_selection,   false },
     { "Widgets",  "Tab Bar",          "Tab Bar",          "tab_bar_begin / tab_item_begin + closeable tabs",   ex_widgets_tabs,        false },
-    { "Widgets",  "Multiline Text",   "Multiline Text",   "input_text_multiline -- text area / 2D caret",      ex_widgets_multiline,   true  },
+    { "Widgets",  "Multiline Text",   "Multiline Text",   "input_text_multiline -- text area / 2D caret",      ex_widgets_multiline,   false },
 
     { "Layout",   "Rows & Columns",   "Rows & Columns",   "stack / row / cols / row2..4 / layout desc",        ex_layout_rows,         false },
     { "Layout",   "Field Forms",      "Field Forms",      "form / field_split / field_label_left/right",       ex_layout_fields,       false },
@@ -92,6 +92,8 @@ static ex_demo_t s_demos[] =
     { "Layout",   "Split & Carve",    "Split & Carve",    "split_begin / split / carve / anchor / overlay",    ex_layout_carve,        false },
     { "Layout",   "Flow Seams",       "Flow Seams",       "flow_begin / flow_cell / flow_end -- recursive",    ex_layout_flow,         false },
 
+    { "Windows",  "Raw Pane",         "Raw Pane",         "pane_begin/pane_end -- hand-built chrome vs stock z", ex_windows_pane,      false },
+    { "Windows",  "Feature Kit",      "Feature Kit",      "feat_move/resize/collapse/maximize over a pane",    ex_windows_features,    false },
     { "Windows",  "Window Playground","Window Playground","every window flag, toggled live",                   ex_windows_playground,  false },
     { "Windows",  "Multiple Windows", "Default Window",   "overlap / z-order / closeable / control",           ex_windows_multi,       false },
     { "Windows",  "Auto-size",        "Always Auto-size", "ALWAYS_AUTOSIZE / CAN_AUTOSIZE / auto child",       ex_windows_autosize,    false },

@@ -311,7 +311,7 @@ dock_max_set( gui_dock_node_t* n, bool on )
     v->dock_max_on      = on;
     v->dock_max_settled = false;
     v->dock_max_from    = n->rect;
-    gui_anim_timer_start( id_combine( n->id, DOCK_MAX_SALT ), s_win_anim ? GUI_WIN_ANIM_SECS : 0.0f );
+    gui_anim_timer_start( id_combine( n->id, DOCK_MAX_SALT ), s_win_anim ? FEAT_ANIM_SECS : 0.0f );
     g_ctx->retained.wants_redraw = true;   /* takes effect next frame; force one more build */
 }
 

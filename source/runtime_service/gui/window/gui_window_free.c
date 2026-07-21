@@ -87,33 +87,25 @@ gui_viewport_content_y( gui_vp_t vp )
     return window_work_top( &g_ctx->vp.pool[ vp ] );
 }
 
-/* Keep a dragged window reachable: clamp so its top edge stays on-screen and at
-   least one title-bar's worth of the window remains within the display bounds.
-   Uses the window's own viewport dimensions so dragging on a secondary surface
-   clamps against that surface, not the primary.  The top bound is the viewport
-   work area (window_work_top): a window cannot slide its titlebar under the
-   OS-owned caption band or the main menu bar, where the grab would be lost --
-   both are viewport chrome that paints above windows.  The bound is 0 with no
-   native shell and no menu bar, so the default-chrome path keeps the old
-   top-of-surface behavior.  GUI_WIN_NO_BOUNDARY_CLAMP bypasses this entirely. */
+/* Keep a dragged window reachable within its own viewport's work area.  The geometry is the
+   feat kit's clamp mechanism (gui_feat_clamp, interact/gui_feature.c); this wrapper is the
+   window's POLICY: which surface bounds apply (the window's own viewport, so dragging on a
+   secondary surface clamps against that surface), where the work area starts (window_work_top
+   -- a titlebar may not slide under the OS caption band or the main menu bar, where the grab
+   would be lost), the title-bar margin, and the GUI_WIN_NO_BOUNDARY_CLAMP opt-out. */
 static void
 window_clamp( gui_window_t* win )
 {
     if ( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP )
         return;
 
-    const gui_viewport_t* vp = &g_ctx->vp.pool[ win->viewport ];
-    f32 dw = vp_w( vp );
-    f32 dh = vp_h( vp );
-    const f32 margin = WIN_TITLE_H;
-    const f32 top    = window_work_top( vp );
-    const f32 max_x  = dw - margin;
-    const f32 max_y  = dh - margin;
+    const gui_viewport_t* vp  = &g_ctx->vp.pool[ win->viewport ];
+    const f32             top = window_work_top( vp );
 
-    if ( win->x > max_x )           win->x = max_x;
-    if ( win->y > max_y )           win->y = max_y;
-    if ( win->x < margin - win->w ) win->x = margin - win->w;
-    if ( win->y < top )             win->y = top;
+    gui_rect_t r = { win->x, win->y, win->w, win->h };
+    gui_feat_clamp( &r, ( gui_rect_t ){ 0.0f, top, vp_w( vp ), vp_h( vp ) - top }, WIN_TITLE_H );
+    win->x = r.x;
+    win->y = r.y;
 }
 
 /* Space left between win's current position and the far edge of its viewport -- the ceiling
@@ -146,119 +138,37 @@ window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
 /*==============================================================================================
     State-transition animation
 
-    Maximize / minimize / restore do not snap the window between rects: they hand geometry to the
-    gui() animation service (interact/gui_anim.c) -- specifically its timed-tween primitive
-    (gui_anim_timer), the from/to complement to the exponential damper the skin uses for button
-    color.  One timer per window drives a shared 0->1 eased clock; window_anim_step lerps all four
-    geometry channels (x, y, w, h) from the rect captured at transition start (win->anim_from) toward
-    the current state target with that single t -- so width and height depart and ARRIVE together
-    rather than each settling on its own frame the way an independent per-channel damper would.
+    Maximize / minimize / restore and the collapse height do not snap between states: the rect
+    channel rides the feat kit's pin mechanism (feat_pin, interact/gui_feature.c -- the core
+    under gui_feat_maximize, generalized to this window's three states: normal / maximized /
+    shelf chip) and the body height rides gui_feat_collapse.  Both edge-detect the state bools
+    the setters below flip, capture their tween scratch in the keyed state pool, and ease on
+    the gui_anim_timer clock (FEAT_ANIM_SECS / feat_ease -- the one window-feel constant, so
+    stock chrome and feature-built pane chrome move identically).  The setters are the POLICY
+    choke points every button and double-click routes through: they flip the state, order the
+    z / shelf bookkeeping, and flag the redraw; the geometry is the mechanisms' from here on.
 
-    The target for a pinned state (max / min) is recomputed every frame in window_begin_ex, so the
-    tween re-aims if the surface resizes or the shelf reorders mid-flight; the restore target is the
-    saved normal rect.  The timer forces t == 1 exactly on its final frame, at which point the lerp
-    lands precisely on the target and the flag drops -- the animation service owns the resolution, so
-    the window can never wedge in a half-finished state.  While the tween runs the drag / resize
-    gestures are suppressed (window_begin_ex tests win->state_anim), so it is never fought.
-
-    Animation is a user choice: s_win_anim (gui_window_anim_enable) gates it globally.  When off,
-    window_anim_begin seeds a zero-duration timer, which reads settled on its first sample -- the
-    same code path snaps instantly, no branch in the per-frame step.
+    Animation is a user choice: s_win_anim (gui_window_anim_enable) gates it globally -- the
+    mechanisms read it through gui_window_anim_is_enabled and seed a zero-duration timer when
+    off, so the same code path snaps instantly.
 ==============================================================================================*/
 
 /* Global toggle: window state transitions animate when set (default), snap when clear.  A process-
    wide preference like idle-skip, not per-context -- see gui_window_anim_enable in the API block. */
 static bool s_win_anim = true;
 
-/* One gui_anim_timer slot per window per animated quantity, salted off the window id so they never
-   collide with each other or with a widget's state inside the window: the rect tween (max / min /
-   restore) and the collapse height tween run on independent clocks. */
-#define GUI_WIN_ANIM_SALT       0x0A417800u
-#define GUI_WIN_COLLAPSE_SALT   0x0A417801u
-
-/* Transition duration (seconds) and the easing shaper.  ease_out_cubic decelerates into the target:
-   a quick departure that reads as responsive, easing to a soft stop.  ~180 ms is long enough to
-   read the motion, short enough to never feel in the way. */
-#define GUI_WIN_ANIM_SECS   0.2f // 0.18f
-static f32 window_anim_ease( f32 t ) { return f32_ease_out_cubic( t ); }
-
-/* Begin a transition: capture the current rect as the tween's FROM, mark the window animating, and
-   arm the timer -- zero duration when animation is disabled, so the very next step reads settled and
-   the window snaps straight to its target.  Called by the max / min / restore setters, the single
-   choke points every button and double-click routes through. */
-static void
-window_anim_begin( gui_window_t* win )
-{
-    win->anim_from.x = win->x;  win->anim_from.y = win->y;
-    win->anim_from.w = win->w;  win->anim_from.h = win->h;
-    win->state_anim   = true;
-    win->collapse_anim = false;   /* the rect transition owns the geometry now; drop any collapse tween */
-    gui_anim_timer_start( id_combine( win->id, GUI_WIN_ANIM_SALT ), s_win_anim ? GUI_WIN_ANIM_SECS : 0.0f );
-    g_ctx->retained.wants_redraw = true;
-}
-
-/* Resolve the live rect against `target` this frame.  Not animating -> pin straight to the target
-   (steady state: a maximized / minimized window tracks its surface exactly).  Animating -> sample
-   the shared timer and lerp every channel from anim_from with that one t; when the timer reports
-   done (t forced to 1), the lerp is already exactly at the target, so just drop the flag. */
-static void
-window_anim_step( gui_window_t* win, gui_id_t id, gui_rect_t target )
-{
-    if ( !win->state_anim )
-    {
-        win->x = target.x;  win->y = target.y;  win->w = target.w;  win->h = target.h;
-        return;
-    }
-
-    bool active = false;
-    f32  t = gui_anim_timer( id_combine( id, GUI_WIN_ANIM_SALT ), window_anim_ease, &active );
-
-    win->x = f32_lerp( win->anim_from.x, target.x, t );
-    win->y = f32_lerp( win->anim_from.y, target.y, t );
-    win->w = f32_lerp( win->anim_from.w, target.w, t );
-    win->h = f32_lerp( win->anim_from.h, target.h, t );
-
-    if ( !active )
-        win->state_anim = false;
-}
-
-/* Toggle collapse with a height tween.  Snapshots the height currently shown (shown_h) as the tween's
-   start -- so a toggle mid-tween continues seamlessly from where it is -- flips the logical state, and
-   arms the collapse clock (zero duration when animation is off -> the next window_collapse_h snaps).
-   The single choke point the arrow click and the double-click both route through. */
+/* Toggle collapse.  Flips the logical state and flags the redraw; the height tween is
+   gui_feat_collapse's edge detect on the next window_begin, easing from the height it showed
+   last frame (so a toggle mid-tween continues seamlessly).  The single choke point the arrow
+   click and the double-click both route through. */
 static void
 window_collapse_set( gui_window_t* win, bool on )
 {
     if ( win->collapsed == on )
         return;
 
-    win->collapse_from = win->shown_h;
-    win->collapsed     = on;
-    win->collapse_anim = true;
-    gui_anim_timer_start( id_combine( win->id, GUI_WIN_COLLAPSE_SALT ), s_win_anim ? GUI_WIN_ANIM_SECS : 0.0f );
+    win->collapsed = on;
     g_ctx->retained.wants_redraw = true;
-}
-
-/* The body height shown this frame for a normal (non-min, non-max) window: title_h when collapsed,
-   win->h when open, or the eased value between the two while a collapse tween runs.  The single timer
-   t drives the one height channel; on the tween's final frame the timer forces t == 1, so the value
-   lands exactly on the target and the flag drops.  window_open_body clips the full-height body to
-   this, so the content is revealed / hidden by the growing / shrinking clip. */
-static f32
-window_collapse_h( gui_window_t* win, gui_id_t id, f32 title_h )
-{
-    f32 target = win->collapsed ? title_h : win->h;
-    if ( !win->collapse_anim )
-        return target;
-
-    bool active = false;
-    f32  t      = gui_anim_timer( id_combine( id, GUI_WIN_COLLAPSE_SALT ), window_anim_ease, &active );
-    if ( !active )
-    {
-        win->collapse_anim = false;
-        return target;
-    }
-    return f32_lerp( win->collapse_from, target, t );
 }
 
 /* Public toggle for window state-transition animation (maximize / minimize / restore).  A global
@@ -311,10 +221,11 @@ window_shelf_take_slot( const gui_window_t* win )
     return slot;
 }
 
-/* Toggle maximize.  Entering saves the normal rect and raises the window so it covers everything
-   on its surface (bodies are opaque, so occlusion and hover both follow from z); leaving
-   restores that rect -- unless minimized, which owns the restore then.  The pin itself runs
-   every frame in window_begin_ex. */
+/* Toggle maximize.  Entering raises the window so it covers everything on its surface (bodies
+   are opaque, so occlusion and hover both follow from z).  The rect ease -- and the norm save
+   on the way up -- are feat_pin's edge detect on the next window_begin_ex; a hop to or from
+   the minimized state keeps the pin nonzero, so the first save survives (minimized owns the
+   restore then, exactly the old rule). */
 static void
 window_maximize_set( gui_window_t* win, bool on )
 {
@@ -322,29 +233,15 @@ window_maximize_set( gui_window_t* win, bool on )
         return;
 
     if ( on )
-    {
-        if ( !win->minimized )
-        {
-            win->norm.x = win->x;  win->norm.y = win->y;
-            win->norm.w = win->w;  win->norm.h = win->h;
-        }
         win->z = surface_z_raise( win->z );
-    }
 
-    /* Ease between the normal rect and the work area rather than snapping.  The restore geometry
-       is not written here: window_anim_step tweens toward the target (work area while entering, the
-       saved norm rect while leaving -- resolved from state in window_begin_ex) from the rect
-       window_anim_begin just captured.  Skipped while minimized, which owns the restore then. */
     win->maximized = on;
-    if ( !win->minimized )
-        window_anim_begin( win );
-
     g_ctx->retained.wants_redraw = true;   /* takes effect next frame; force one more build */
 }
 
-/* Toggle minimize.  Entering saves the normal rect (unless maximized already holds it) and takes
-   the next free shelf slot on this surface; leaving restores the rect -- or hands the geometry
-   back to the maximize pin -- and raises the window. */
+/* Toggle minimize.  Entering takes the next free shelf slot on this surface; leaving raises the
+   window.  As with maximize, the rect ease and the norm save / restore are feat_pin's edge
+   detect on the next window_begin_ex. */
 static void
 window_minimize_set( gui_window_t* win, bool on )
 {
@@ -352,25 +249,11 @@ window_minimize_set( gui_window_t* win, bool on )
         return;
 
     if ( on )
-    {
-        if ( !win->maximized )
-        {
-            win->norm.x = win->x;  win->norm.y = win->y;
-            win->norm.w = win->w;  win->norm.h = win->h;
-        }
         win->shelf_slot = window_shelf_take_slot( win );
-    }
     else
-    {
         win->z = surface_z_raise( win->z );
-    }
 
-    /* Ease toward the new state target (the shelf chip while entering; the work area if maximize
-       still holds, else the saved norm rect while leaving) instead of snapping.  As with maximize,
-       the restore geometry is left for window_anim_step to tween from the captured current rect. */
     win->minimized = on;
-    window_anim_begin( win );
-
     g_ctx->retained.wants_redraw = true;
 }
 
@@ -919,7 +802,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     }
 
     bool can_collapse = has_titlebar && !( flags & GUI_WIN_NOCOLLAPSE ) && !native && !win->maximized;
-    if ( !can_collapse ) { win->collapsed = false; win->collapse_anim = false; }
+    if ( !can_collapse ) win->collapsed = false;
 
     /* Logical collapse: the state the arrow reflects and the autosize refit respects.  The VISUAL
        collapse (title-bar only this frame) is resolved below from disp_h once the height tween has
@@ -939,11 +822,15 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        (window_end_titlebar_poll, gui_window_end.c). */
     bool pinned = win->minimized || win->maximized;
 
-    /* Resolve this frame's state target, then ease (or, once settled, snap) the live rect toward it
-       through window_anim_step.  Minimized parks on the shelf; maximized fills the work area; a
-       restore in flight (state_anim set while neither pinned) chases the saved norm rect.  Height is
-       held out of the minimized target -- the body renders title-bar-only via `collapsed`, so win->h
-       is preserved for an instant restore. */
+    /* The rect channel is the feat kit's pin mechanism (feat_pin, interact/gui_feature.c): the
+       target is recomputed here every frame (so a settled pin tracks surface resizes and shelf
+       reorders), the state ordinal is this window's policy fact, and the mechanism edge-detects
+       the setters' flips -- saving / restoring win->norm and easing between the states.  Height
+       is held out of the minimized target -- the body renders title-bar-only via `collapsed`,
+       so win->h is preserved for an instant restore.  pin_live is true while a transition (or
+       the restore) eases -- the gesture gates below suppress on it so the ease is never fought. */
+    gui_rect_t pin_target = { 0 };
+    u32        pin_state  = 0;
     if ( win->minimized )
     {
         /* A re-appearing chip (re-opened after close, or the host resumed emitting it) re-takes
@@ -955,28 +842,26 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
 
         const gui_viewport_t* vp = &g_ctx->vp.pool[ win->viewport ];
         f32 chip_w = window_shelf_chip_w();
-        gui_rect_t target = { 
-            (f32)window_shelf_order( win ) * ( chip_w + WIDGET_GAP ), vp_h( vp ) - title_h, chip_w, win->h 
+        pin_state  = 2u;
+        pin_target = ( gui_rect_t ){
+            (f32)window_shelf_order( win ) * ( chip_w + WIDGET_GAP ), vp_h( vp ) - title_h, chip_w, win->h
         };
-        window_anim_step( win, id, target );
     }
     else if ( win->maximized )
     {
         const gui_viewport_t* vp  = &g_ctx->vp.pool[ win->viewport ];
-        f32  top = window_work_top( vp );
-        gui_rect_t target = { 0.0f, top, vp_w( vp ), vp_h( vp ) - top };
-        window_anim_step( win, id, target );
+        f32  top   = window_work_top( vp );
+        pin_state  = 1u;
+        pin_target = ( gui_rect_t ){ 0.0f, top, vp_w( vp ), vp_h( vp ) - top };
     }
-    else if ( win->state_anim )
-    {
-        /* Restoring: no longer pinned, easing back to the saved normal rect. */
-        gui_rect_t target = { win->norm.x, win->norm.y, win->norm.w, win->norm.h };
-        window_anim_step( win, id, target );
-    }
+
+    gui_rect_t pin_r    = { win->x, win->y, win->w, win->h };
+    bool       pin_live = feat_pin( id, pin_state, &pin_r, &win->norm, pin_target );
+    win->x = pin_r.x;  win->y = pin_r.y;  win->w = pin_r.w;  win->h = pin_r.h;
 
     /* The drag / resize gestures are suppressed while a transition eases so a half-finished
        ease is never fought (a pinned window already suppresses them). */
-    if ( !pinned && !win->state_anim )
+    if ( !pinned && !pin_live )
     {
         window_apply_drag( win, id );                           /* in-progress title-bar drag */
         window_apply_tearoff_gesture( win, id, title, flags );  /* tear-off / merge-back / drag-to-dock */
@@ -989,7 +874,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        collapsed (the title-bar-only height is preserved) and on the very first appearance, before
        any content has been measured -- then the caller's initial w/h stands for one frame. */
     f32 fit_mb_h = ( flags & GUI_WIN_MENUBAR ) ? ( WIDGET_H + WIDGET_GAP ) : 0.0f;
-    if ( autosize && !logical_collapsed && !win->collapse_anim && !win->maximized && !win->state_anim
+    if ( autosize && !logical_collapsed && !feat_collapse_live( id ) && !win->maximized && !pin_live
          && win->scroll.content_h > 0.0f )
     {
         f32 max_w, max_h;
@@ -1000,17 +885,19 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
 
     /* disp_h is the body height actually shown this frame -- it drives the hover rect, clip, and
        border.  A minimized chip and a maximized window take their pinned heights directly; a normal
-       window runs the collapse height tween (window_collapse_h), which eases between win->h and
-       title_h so a collapse / expand animates instead of snapping.  win->h is preserved throughout
-       so an expand restores the previous size.  shown_h caches it for the next collapse toggle's
-       start-of-tween snapshot.  `collapsed` is then the VISUAL fact -- no body space left this frame
-       -- which balances window_open_body's region against window_end and gates the caller's body
-       emit; while the tween still shows a sliver of body it stays false so the content clips through. */
+       window runs the collapse height tween (gui_feat_collapse, interact/gui_feature.c), which
+       eases between win->h and title_h so a collapse / expand animates instead of snapping.  win->h
+       is preserved throughout so an expand restores the previous size.  The mechanism is sampled
+       EVERY frame -- pinned states included, discarding the value -- so its edge latch stays in
+       step with win->collapsed (a forced re-open while maximized consumes its tween invisibly).
+       `collapsed` is then the VISUAL fact -- no body space left this frame -- which balances
+       window_open_body's region against window_end and gates the caller's body emit; while the
+       tween still shows a sliver of body it stays false so the content clips through. */
+    f32 tween_h = gui_feat_collapse( id, !win->collapsed, title_h, win->h );
     f32 disp_h;
     if ( win->minimized )       disp_h = title_h;
     else if ( win->maximized )  disp_h = win->h;
-    else                        disp_h = window_collapse_h( win, id, title_h );
-    win->shown_h = disp_h;
+    else                        disp_h = tween_h;
 
     bool collapsed = disp_h <= title_h + 0.5f;
 
@@ -1021,7 +908,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     gui_rect_t disp_r    = { win->x, win->y, win->w, disp_h };
     gui_id_t   resize_id = id_combine( id, GUI_RESIZE_SALT );
     bool         resizeable = !( flags & GUI_WIN_NORESIZE ) && !autosize && !native && !pinned
-                              && !win->state_anim && !win->collapse_anim;
+                              && !pin_live && !feat_collapse_live( id );
     u8 resize_hot = window_resolve_resize_hot( id, win, flags, disp_r, collapsed, resizeable, resize_id );
 
     /* Nominate this window as the one under the cursor (front-most by z wins).  A resizeable
@@ -1044,15 +931,13 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
                                    win->viewport );
     }
 
-    /* All of this window's geometry is stamped with its z so flush can paint
-       windows back-to-front regardless of window_begin call order, and with its
-       viewport so flush dispatches it to the surface hosting this window.
-       cur_viewport is updated first so DBG_RESIZE below captures to the correct per-viewport list. */
-    draw_set_window( id );                  /* stable cache key: all this window's spans share it */
-    draw_set_sort_key( win->z );
-    draw_set_viewport( win->viewport );
-    draw_set_band( ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
-    s_build.win.viewport = win->viewport;   /* update ambient so new windows created after this inherit it */
+    /* The pane open (surface/gui_surface.c): all of this window's geometry is stamped with its
+       z so flush can paint windows back-to-front regardless of window_begin call order, and
+       with its viewport so flush dispatches it to the hosting surface; the interaction scope
+       is committed alongside (this window owns the items that follow).  Ordered before
+       DBG_RESIZE so the capture lands on the correct per-viewport list.  A free window IS a
+       pane + the persisted record + the chrome policy below. */
+    pane_tag( id, win->z, win->viewport, ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
 
     /* Debug overlay: show the outer edge-resize grab band (the catch region just outside the
        border), brightened while an edge is armed.  Only meaningful for a resizeable window. */
@@ -1073,11 +958,10 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        window's trailing widget left, so this window paints opaque and its chrome interacts. */
     item_flags_chrome_reset();
 
-    /* Commit window chrome state for the widgets and window_end.  The layout pen, content
-       column, scroll, and scrollbars are all owned by the body region opened below -- the
-       window no longer resolves any of that itself; it is just the root region plus chrome. */
-    s_build.win.id        = id;
-    s_scope.win           = id;      /* interaction scope: this window owns the items that follow */
+    /* Commit window chrome state for the widgets and window_end (id + interaction scope were
+       committed by pane_tag above).  The layout pen, content column, scroll, and scrollbars
+       are all owned by the body region opened below -- the window no longer resolves any of
+       that itself; it is just the root region plus chrome. */
     s_build.win.title     = title;   /* cached for window_end's deferred chrome */
     s_build.win.collapsed = collapsed;
     s_build.win.minimized = win->minimized;   /* shelf chip: window_end swaps in the chip chrome */

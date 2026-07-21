@@ -73,26 +73,11 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tie
           : ( tier == GUI_REGION_FG ) ? GUI_REGION_FG_Z
           :                             GUI_REGION_Z;
 
-    /* Stamp the draw state a window would: a stable id for the retained-cache key, this region's
-       z tier, the main surface (a root region paints only on viewport 0; FUTURE: other viewports), and its
-       arena band (a diagnostic HUD like the perf overlay tags GUI_WIN_DEBUG_BAND). */
-    draw_set_window( id );
-    draw_set_sort_key( z );
-    draw_set_viewport( 0 );
-    draw_set_band( ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
-    s_build.win.viewport = 0;   /* ambient tracks the draw viewport, exactly like window_begin_ex:
-                                   the debug overlay tags every captured rect (clip/widget/layout)
-                                   with the ambient, so a stale value from the last window routes
-                                   this region's debug rects to that window's surface instead of
-                                   the main surface the region actually paints on. */
-
-    /* s_scope.win is the id every item_state call in this region compares against
-       hover_win to decide hot/active -- draw_set_window alone only stamps the retained-cache
-       tag, not this.  A window sets it in window_begin_ex; a region is its own root-level
-       context so it must set it too, exactly the same way (win_id alongside, for the chrome
-       and dock bookkeeping that reads the composer scratch). */
-    s_build.win.id = id;
-    s_scope.win    = id;
+    /* The pane open (surface/gui_surface.c): stamp the draw state with this region's tag
+       (retained-cache key, z tier, the main surface -- a root region paints only on viewport 0;
+       FUTURE: other viewports, arena band) and commit the interaction scope so item_state
+       attributes this region's widgets against hover_win.  A region IS a pane + scroll layout. */
+    pane_tag( id, z, 0, ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
 
     /* Interactive by default -- enter the same hover_win contest a window does, at this region's
        z tier, so its widgets can go hot/active.  Opt out with GUI_WIN_NO_INPUT for a pure HUD. */

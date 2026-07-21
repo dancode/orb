@@ -114,7 +114,19 @@ gui_el_button( gui_rect_t r, const char* label )
     gui_draw_frame( r, s_el_style.col[ GUI_EL_BG ][ s ],
                     ( st.hover || st.nav ) ? EL_COL( BORDER, HOT ) : EL_COL( BORDER, IDLE ),
                     s_el_style.border_w );
-    gui_draw_text_in( r, GUI_ALIGN_CENTER, EL_COL( TEXT, IDLE ), label );
+
+    /* Display honors the label grammar: the "##id" suffix carries identity, never pixels. */
+    const char* text = label;
+    char        vis[ 128 ];
+    u32         n = label_vis_len( label );
+    if ( label[ n ] != '\0' )
+    {
+        if ( n >= sizeof( vis ) ) n = sizeof( vis ) - 1;
+        for ( u32 i = 0; i < n; ++i ) vis[ i ] = label[ i ];
+        vis[ n ] = '\0';
+        text = vis;
+    }
+    gui_draw_text_in( r, GUI_ALIGN_CENTER, EL_COL( TEXT, IDLE ), text );
 
     /* A click is a host state change this build cannot show yet -- ask for the next emit, or
        the retained cache replays the stale screen until the mouse moves. */

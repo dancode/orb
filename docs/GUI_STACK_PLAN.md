@@ -1,9 +1,9 @@
 # GUI Stack Plan -- from one grab bag to a stack of small libraries
 
-Status: PHASE 1 DONE (2026-07-21) -- migration increments 1-6 (the on-ramp: vtable TOC,
-rect leaf, flow seams, element library + style strata, kits + on_hud) are built.  The
-STRUCTURAL BODY is not: the pane (section 5), the chrome feature kit (section 6), and the
-physical per-library TU split (section 7) remain -- staged as increments 7-10 below.
+Status: PHASE 1 DONE (2026-07-21); PHASE 2 increments 7-9 DONE (2026-07-21) -- the pane
+(section 5), the chrome feature kit (section 6), and the stock-window recipe re-seat are
+built: gui_window_t now IS pane + feat_* + titlebar policy, its record shrunk to the fields
+chrome owns.  Remaining: increment 10, the physical per-library TU split (section 7).
 Companion to the rect-first campaign proven by sb_gui_diablo.
 Goal: break the ~200-entry gui() surface into named sub-libraries, each a small digestible
 center with a public header, a one-way dependency, and utilities placed where they belong.
@@ -399,6 +399,26 @@ Real build_tool targets can come later if wanted; the boundary is the header, no
                     re-seated).  Acceptance: a raw pane with hand-drawn chrome competes for
                     hover/z correctly beside stock windows, and region_begin/window_begin
                     are re-expressed as pane + policy internally with zero call-site change.
+                    DONE 2026-07-21.  gui_pane_t public in gui.h (same-frame value, not a
+                    record).  The internal core is pane_tag( id, z, vp, band ) in
+                    surface/gui_surface.c -- the four draw stamps (window/sort_key/viewport/
+                    band) + the ambient-viewport + s_build.win.id + s_scope.win commit that
+                    every top-level occupant was doing by hand.  All THREE existing openers
+                    now route through it with zero call-site change: region_begin (compose/),
+                    window_begin_ex free path, and window_begin_docked (which also covers
+                    popups, since the popup layer reuses window_begin_ex).  Hover nomination
+                    stays the separate surface_hover_nominate verb ON PURPOSE: the nominated
+                    rect is policy (resize-band padding, collapsed title-band, frame-only
+                    caption), not part of the block.  Public pane_begin( id, rect, tier, vp,
+                    flags ) = pane_tag + nominate + base clip (draw clip AND hit clip to the
+                    rect, the docked-window pair; root clip seeded per viewport) + chrome
+                    reset; honors NO_INPUT / NO_CLIP / DEBUG_BAND; root-level, never nests;
+                    pane_end pops the clip and restores the main root clip like window_end.
+                    Two vtable entries in GUI_CORE surfaces (func_api_size GREW: hosts
+                    restart).  Acceptance demo: sb_gui_example "Windows > Raw Pane" --
+                    hand-built chrome (rect cuts + el_button/el_check/el_label) over a pane
+                    with a live tier cycle (MID/BG/FG) beside a draggable stock window.
+                    Full Debug build green; 6s canaries sb_gui_example + host_editor clean.
   8. FEATURES    -- build section 6: carve the A-features out of gui_window_t/window_end.c
                     as freestanding feat_* mechanisms (collapse, open latch, next-channel,
                     max/min + clamp as B with the work area passed IN), each usable over any
@@ -406,10 +426,59 @@ Real build_tool targets can come later if wanted; the boundary is the header, no
                     move/resize/press-defer/scroll are already mechanism-shaped: bless their
                     names, don't rewrite them.  Acceptance: the section-6 sketch (a window
                     widget assembled feature by feature) runs in a sandbox demo.
+                    DONE 2026-07-21.  NEW interact/gui_feature.c (unity after gui_anim.c):
+                    5 vtable entries in a GUI_CORE "window features as mechanisms" section
+                    (func_api_size GREW: hosts restart).  feat_move + feat_resize are thin
+                    public forms over the EXISTING move/resize/press-defer services (blessed,
+                    not rewritten -- feat_resize rides resize_item + resize_apply_edges with a
+                    min floor re-anchored against the grabbed edge's pinned far side);
+                    feat_collapse is the carved height tween (caller bool + keyed tween
+                    scratch; same 0.2s ease_out_cubic feel and window_anim_enable preference
+                    as stock chrome); feat_maximize (B) swaps rect <-> passed-in work area
+                    with a caller-owned restore slot, tweened both ways, tracking a resizing
+                    work area; feat_clamp (B) is the stock boundary policy over passed-in
+                    bounds.  State rule held: in-flight = active_id singleton; persistent =
+                    caller pointers; only tween scratch (edge latch + from-value) in the keyed
+                    pool.  Hover gating reads the ambient scope, so features are called inside
+                    the owning pane/window bracket.  GUI_RESIZE_L/R/T/B moved gui_internal.h
+                    -> gui.h (public edge-mask vocabulary; GRIP stays internal).  Open latch
+                    and scroll deliberately have NO mechanism (a caller bool / region_begin) --
+                    documented in the section.  NOT yet re-seated: the stock window still runs
+                    its own collapse/maximize/clamp code paths -- that swap is increment 9's
+                    recipe work.  Acceptance demo: sb_gui_example "Windows > Feature Kit" --
+                    the section-6 sketch live (pane + maximize/clamp shaping the rect,
+                    collapse tween, dragging title band with cut-off buttons, R|B resize,
+                    close as a plain static bool).  Full build green; 6s canary clean.
   9. RECIPE      -- gui_window_t becomes the stock RECIPE: one policy file assembling pane +
                     feat_* + titlebar composite; its persisted record shrinks toward the
                     policy fields chrome actually owns.  Behavior-identical by construction;
                     dock membership stays a system.
+                    DONE 2026-07-21.  The stock window's duplicated mechanisms are gone; what
+                    remains in window/ is policy.  (1) window_clamp wraps gui_feat_clamp (the
+                    viewport + work-top resolve and the NO_BOUNDARY_CLAMP opt-out are the
+                    policy; the geometry is the mechanism).  (2) The collapse height tween is
+                    gui_feat_collapse, sampled EVERY begin -- pinned states discard the value
+                    -- so its edge latch tracks win->collapsed; window_collapse_set slimmed to
+                    flag + redraw.  (3) The max/min/restore rect channel is feat_pin, the
+                    3-state GENERALIZATION of feat_maximize's core (state ordinal 0=normal /
+                    1=work-area / 2=shelf-chip; public feat_maximize is now sugar over it):
+                    entering a pin from normal saves *restore, pinned-to-pinned hops re-aim
+                    without touching the save (= the old "minimized owns the restore" rule),
+                    returning to 0 tweens back with a restoring latch, settled pins snap-track
+                    live targets.  Setters slimmed to state flip + z/shelf policy + redraw.
+                    Gesture gates ride feat_pin's tween-live return + feat_collapse_live (a
+                    non-advancing GUI_STATE_PEEK of the timer slot -- a second gui_anim_timer
+                    sample would double-step the clock).  Record SHRANK: state_anim, anim_from,
+                    collapse_anim, collapse_from, shown_h deleted; norm is now gui_rect_t.
+                    GUI_WIN_ANIM_SECS/window_anim_ease deleted -- FEAT_ANIM_SECS/feat_ease are
+                    THE feel constants (dock's maximize ease re-pointed onto them; s_win_anim
+                    preference unchanged).  FINDING -- next-channel stays policy: a staging
+                    channel only exists because the RECORD owns geometry between frames;
+                    caller-owned pane state needs no stage (you just write your variable), so
+                    there is no mechanism to carve.  Shelf target (population/order) stayed
+                    chrome per its C class; only its rect channel moved into feat_pin.
+                    No public API change (vtable layout unchanged).  Full Debug build green;
+                    6s canaries sb_gui_example + host_editor clean.
   10. TU SPLIT   -- finish section 7: per-library unity units in dependency order, done
                     LAST because increments 7-9 churn exactly the files (window/, interact/,
                     surface/) whose statics the split must extern.  Per-library, never

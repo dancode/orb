@@ -225,7 +225,22 @@ typedef struct gui_api_s
     gui_vec2_t ( *anim_vec2 )( gui_id_t id, gui_vec2_t target, f32 speed );
     gui_rect_t ( *anim_rect )( gui_id_t id, gui_rect_t target, f32 speed );
 
-    /*===================================  surfaces -- root regions + scroll  ===================================*/
+    /*===================================  surfaces -- panes, root regions + scroll  ===================================*/
+
+    /* pane_begin / pane_end -- the MINIMAL top-level surface occupant (gui_pane_t, gui.h): the
+       raw block every window is built from, for callers assembling their own chrome.  Opens
+       identity (items inside attribute to this pane), enters the hover/z contest at the tier's
+       band (same contest windows and popups compete in), and pushes the base clip (draw + hit)
+       to the rect -- NOTHING else: no pool record, no persistence, no layout, no background
+       paint, no scroll.  The caller owns every pixel (el_* / draw_* over carved rects) and any
+       cross-frame state; open flow inside with flow_begin( pane.rect ) if wanted.  Flags
+       honored: GUI_WIN_NO_INPUT (pure display), GUI_WIN_NO_CLIP, GUI_WIN_DEBUG_BAND.  vp
+       GUI_VP_INVALID = primary surface.  Root-level, never nests; always pair with pane_end.
+       region_begin below = this + persisted scroll + a layout; window_begin = this + the
+       persisted record + stock chrome. */
+    gui_pane_t ( *pane_begin )( const char* id, gui_rect_t r, gui_region_tier_t tier,
+                                gui_vp_t vp, gui_win_flags_t flags );
+    void       ( *pane_end   )( void );
 
     /* region_begin / region_end -- a root-level layout region: an explicit screen rect with no
        window chrome (no title, no drag/resize, no dock, no z-order competition, no pool record).
@@ -248,6 +263,47 @@ typedef struct gui_api_s
        -- no one-frame lag, unlike the wheel.  Pairs with GUI_WIN_ANCHOR_BOTTOM to drive a console's
        wheel + PageUp/Down + jump-to-tail keys without any offset bookkeeping in the caller. */
     void       ( *scroll_by     )( f32 dx, f32 dy );
+
+    /*=================================  window features as mechanisms  =================================*/
+
+    /* The feat_* kit (GUI_STACK_PLAN section 6): every window feature as a freestanding
+       id-keyed mechanism, so chrome is assembled feature by feature over a pane -- anything
+       can be a move handle, a collapse, or a maximize.  State rule: in-flight gesture state
+       is arbitrated by active_id (one drag at a time); PERSISTENT state is the caller's
+       pointers -- you see every byte.  Call these inside the owning pane/window bracket
+       (hover gating reads the ambient scope).  The open latch needs no mechanism: it is a
+       caller bool your close button clears; scroll is region_begin ("region owns scroll").
+
+           gui_pane_t p     = gui()->pane_begin( "tool", st->rect, GUI_REGION_MID, 0, 0 );
+           gui_rect_t r     = p.rect;
+           gui_rect_t title = gui_rect_cut_top( &r, 26.0f );          // titlebar = a band...
+           gui()->feat_move( p.id, title, &st->rect.x, &st->rect.y ); // ...that drags
+           if ( gui()->el_button( gui_rect_cut_right( &title, title.h ), "x##c" ) )
+               st->open = false;                                      // close = your bool
+           r.h = gui()->feat_collapse( p.id, !st->folded, 26.0f, r.h ) - 26.0f;
+           gui()->feat_resize( p.id, &st->rect, GUI_RESIZE_R | GUI_RESIZE_B, 120, 80 );
+           ... body: carve r, or flow_begin( r ) ...
+           gui()->pane_end();
+
+       feat_move     -- drag handle over any rect: press in `handle` (deferred: click vs
+                        drag) grabs; the caller-owned origin follows the cursor.  True on
+                        frames it moved.
+       feat_resize   -- edge-resize the caller-owned rect: `edges` masks the exposed sides
+                        (GUI_RESIZE_L/R/T/B), min_w/h floors against the grabbed edge's
+                        pinned far side.  Returns the live (hot/dragging) edges.
+       feat_collapse -- tweened height channel over a caller bool: full_h open, head_h
+                        closed, eased between after YOUR toggle.  Returns this frame's height.
+       feat_maximize -- rect <-> work-area swap (work passed IN -- the B rule): saves *r
+                        into *restore on the way up, tweens both directions, tracks a
+                        resizing work area while maximized.  Writes *r every call.
+       feat_clamp    -- boundary policy over passed-in bounds: the handle row stays
+                        reachable (never above work's top; `margin` sliver at other edges). */
+    bool ( *feat_move     )( gui_id_t id, gui_rect_t handle, f32* x, f32* y );
+    u8   ( *feat_resize   )( gui_id_t id, gui_rect_t* r, u8 edges, f32 min_w, f32 min_h );
+    f32  ( *feat_collapse )( gui_id_t id, bool open, f32 head_h, f32 full_h );
+    void ( *feat_maximize )( gui_id_t id, bool maximized, gui_rect_t* r, gui_rect_t* restore,
+                             gui_rect_t work );
+    void ( *feat_clamp    )( gui_rect_t* r, gui_rect_t work, f32 margin );
 
     /*=================================  identity + item flags + drag and drop  =================================*/
 

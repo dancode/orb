@@ -89,9 +89,16 @@ const gui_api_t g_gui_api_struct =
 
     /* surfaces -- root regions + scroll */
 
+    .pane_begin                         = gui_pane_begin,
+    .pane_end                           = gui_pane_end,
     .region_begin                       = gui_region_begin,
     .region_end                         = gui_region_end,
     .scroll_by                          = gui_scroll_by,
+    .feat_move                          = gui_feat_move,
+    .feat_resize                        = gui_feat_resize,
+    .feat_collapse                      = gui_feat_collapse,
+    .feat_maximize                      = gui_feat_maximize,
+    .feat_clamp                         = gui_feat_clamp,
 
     /* identity + item flags + drag and drop */
 

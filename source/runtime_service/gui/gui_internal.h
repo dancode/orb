@@ -54,6 +54,11 @@ extern const u8 g_gui_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ];
    With no override and no kit overwrite this equals style_col( slot ) exactly. */
 u32 style_el_col( u8 role, u8 state );
 
+/* present/gui_paint_core.c: the label grammar's visible span -- bytes up to the first "##"
+   marker.  el_button displays through it so "x##close"-style labels render as "x" in the
+   element tier exactly as in stock chrome; the rule stays authored in one place. */
+u32 label_vis_len( const char* s );
+
 /*==============================================================================================
     Loud-overflow reporting
 
@@ -239,32 +244,15 @@ typedef struct gui_window_t
        Maximized pins the window to its surface work area every frame; minimized parks it as a
        title-bar chip on a shelf along the surface's bottom edge.  norm is the saved normal rect
        both states restore to; shelf_slot orders the chips (taken at minimize time, compacted to
-       a paint position each frame as neighbours restore). */
+       a paint position each frame as neighbours restore).  These three fields are the POLICY --
+       the rect tween between the states (and the norm save / restore), and the collapse height
+       tween off `collapsed` above, are the feat kit's mechanisms (feat_pin / gui_feat_collapse,
+       interact/gui_feature.c), keyed off the window id: their edge latches and from-values live
+       in the keyed state pool, not on this record. */
     bool       maximized;
     bool       minimized;
     u32        shelf_slot;
-    struct { f32 x, y, w, h; } norm;
-
-    /* Maximize / minimize / restore transition: while state_anim is set, window_begin_ex eases the
-       live rect (x/y/w/h) from anim_from toward the current state target, all four channels sharing
-       one gui_anim_timer clock so they arrive together, then clears the flag once the timer reports
-       done (window_anim_step in gui_window_free.c).  anim_from is the rect captured at the moment the
-       transition started; the target is recomputed every frame (so a live surface resize retargets
-       mid-flight).  With window animation disabled the timer settles on frame one -- an instant snap
-       through the same path.  See s_win_anim / gui_window_anim_enable. */
-    bool       state_anim;
-    struct { f32 x, y, w, h; } anim_from;
-
-    /* Collapse transition: the arrow / double-click toggles win->collapsed, and window_begin_ex tweens
-       the SHOWN body height (disp_h) between the full height and the title bar rather than snapping --
-       a single-channel height ease on its own gui_anim_timer clock (window_collapse_h /
-       window_collapse_set in gui_window_free.c).  collapse_from is the height shown when the toggle
-       fired (the tween's start, snapshotted from shown_h so an interrupted toggle is seamless);
-       shown_h is the body height actually displayed last frame, kept for that snapshot.  Cancelled
-       when a maximize / minimize / restore takes over the geometry (window_anim_begin). */
-    bool       collapse_anim;
-    f32        collapse_from;
-    f32        shown_h;
+    gui_rect_t norm;
 
     /* Re-open of a CLOSEABLE floater: closing it lets the abandoned-teardown free its OS window,
        reverting this record to viewport 0.  `floater` remembers it was one so the next begin
@@ -1213,15 +1201,10 @@ static gui_anim4_t gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target,
 static void scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
                               f32 content, f32 view, f32* scroll );
 
-/* Edge bits shared by the edge-resize service (interact/gui_resize.c: hit test, grab, apply),
-   its highlight painter (present/gui_paint_core.c: draw_resize_highlight), and the tier-4
-   consumers.  Combined on a corner grab (e.g. R|B).  GRIP is the CAN_AUTOSIZE corner triangle --
-   a resize affordance like the edges, carried in the same s_scope.resize_hot mask (the highlight
-   painter ignores it; the R|B edge bits are promoted alongside it so the corner still bolds). */
-#define GUI_RESIZE_L     ( 1u << 0 )
-#define GUI_RESIZE_R     ( 1u << 1 )
-#define GUI_RESIZE_T     ( 1u << 2 )
-#define GUI_RESIZE_B     ( 1u << 3 )
+/* The GUI_RESIZE_L/R/T/B edge bits moved to gui.h (public: feat_resize's edge mask).  GRIP
+   stays internal: the CAN_AUTOSIZE corner triangle -- a resize affordance like the edges,
+   carried in the same s_scope.resize_hot mask (the highlight painter ignores it; the R|B
+   edge bits are promoted alongside it so the corner still bolds). */
 #define GUI_RESIZE_GRIP  ( 1u << 4 )
 
 /*==============================================================================================

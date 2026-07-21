@@ -484,4 +484,181 @@ ex_windows_menus( void )
     gui()->pop_style_var( 1 );
 }
 
+/*==============================================================================================
+    Raw Pane -- pane_begin / pane_end: the minimal top-level surface occupant (GUI_STACK_PLAN
+    section 5), with ALL chrome hand-built from rect cuts + el_* cores.  The acceptance check:
+    the pane competes for hover/z correctly beside stock windows -- drag the control window
+    over it and cycle the tier to watch the one z contest resolve both paint order and input.
+==============================================================================================*/
+
+static void
+ex_windows_pane( void )
+{
+    static i32  tier   = 0;      /* index into GUI_REGION_MID / BG / FG          */
+    static bool input  = true;   /* off = GUI_WIN_NO_INPUT: pure display         */
+    static bool check  = false;
+    static i32  clicks = 0;
+
+    /* Control window (stock chrome) -- also the occlusion sparring partner. */
+    if ( ex_begin( "Raw Pane", 420, 260, GUI_WIN_NONE ))
+    {
+        gui()->stack();
+        gui()->text( "the pane to the right is pane_begin + hand-built chrome:" );
+        gui()->text( "no pool record, no layout, no stock paint -- rect cuts + el_*." );
+        gui()->text( "drag THIS window over it: MID floats above every window," );
+        gui()->text( "BG sinks under any raised window, FG tops even popups." );
+
+        static const char* tiers[] = { "MID (over windows)", "BG (window floor)", "FG (topmost)" };
+        gui()->combo( "tier", &tier, tiers, 3 );
+        gui()->checkbox( "input (hover contest)", &input );
+        gui()->textf( "pane clicks: %d", clicks );
+    }
+    gui()->window_end();
+
+    /* The raw pane, root-level (never inside a window bracket -- a pane IS a root surface).
+       Position/size are caller-owned values; a real HUD would compute them from the viewport. */
+    gui_region_tier_t t = ( tier == 1 ) ? GUI_REGION_BG
+                        : ( tier == 2 ) ? GUI_REGION_FG
+                        :                 GUI_REGION_MID;
+
+    gui_rect_t r = { 620.0f, 240.0f, 250.0f, 180.0f };
+    gui_pane_t p = gui()->pane_begin( "ex_raw_pane", r, t, 0,
+                                      input ? GUI_WIN_NONE : GUI_WIN_NO_INPUT );
+
+    /* Hand-built chrome: backdrop, title band, body rows -- every rect accounted for. */
+    gui_rect_t body = p.rect;
+    gui()->draw_frame( body, GUI_COLOR( 0x16, 0x1A, 0x22, 0xF0 ),
+                             GUI_COLOR( 0x4F, 0xC3, 0xF7, 0xFF ), 1.0f );
+
+    gui_rect_t title = gui_rect_cut_top( &body, 26.0f );
+    gui()->draw_rect( title.x, title.y, title.w, title.h, GUI_COLOR( 0x20, 0x2A, 0x38, 0xFF ) );
+    gui()->el_label( gui_rect_pad( title, 6.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+                     input ? "raw pane" : "raw pane (display only)" );
+
+    body = gui_rect_pad( body, 10.0f );
+    gui_rect_t row = gui_rect_cut_top( &body, 30.0f );
+    if ( gui()->el_button( row, "click me##pane" ) )
+        clicks++;
+
+    gui_rect_cut_top( &body, 8.0f );   /* gap */
+    row = gui_rect_cut_top( &body, 24.0f );
+    gui()->el_check( gui_rect_cut_left( &row, 24.0f ), "##pane_chk", &check );
+    gui()->el_label( gui_rect_pad( row, 4.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+                     check ? "checked" : "unchecked" );
+
+    gui_rect_t foot = gui_rect_cut_bottom( &body, 20.0f );
+    char zbuf[ 48 ];
+    snprintf( zbuf, sizeof( zbuf ), "z 0x%08X  vp %u", p.z, (u32)p.vp );
+    gui()->el_label( foot, GUI_ALIGN_LEFT | GUI_ALIGN_BOTTOM, zbuf );
+
+    gui()->pane_end();
+}
+
+/*==============================================================================================
+    Feature Kit -- the GUI_STACK_PLAN section-6 acceptance sketch, live: a window assembled
+    feature by feature over a pane.  feat_maximize + feat_clamp shape the rect (B-features:
+    the work area is passed IN), feat_collapse tweens the height off a caller bool, the title
+    band drags through feat_move, the edges resize through feat_resize, and close is nothing
+    but a static bool a hand-placed el_button clears.  Every persistent byte is a demo static;
+    gui holds only tween scratch.
+==============================================================================================*/
+
+static void
+ex_windows_features( void )
+{
+    static gui_rect_t rect      = { 620.0f, 300.0f, 300.0f, 220.0f };
+    static gui_rect_t restore;             /* feat_maximize's save slot (caller-owned too) */
+    static bool       open      = true;
+    static bool       folded    = false;
+    static bool       maximized = false;
+    static i32        clicks    = 0;
+    static bool       check     = false;
+
+    const gui_id_t feat_id = 0x0FEA0001u;  /* mechanisms key on any caller-owned id */
+    const f32      title_h = 26.0f;
+
+    /* Control window: the open latch's re-open side + state readout. */
+    if ( ex_begin( "Feature Kit", 400, 220, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text( "a window assembled feature by feature over a pane:" );
+        gui()->text( "feat_maximize/clamp shape the rect, feat_collapse" );
+        gui()->text( "tweens the height, the title band drags (feat_move)," );
+        gui()->text( "edges resize (feat_resize), close is a plain bool." );
+        gui()->disabled_begin( open );
+        if ( gui()->button( "re-open the feature window" ) )
+            open = true;
+        gui()->disabled_end();
+        gui()->textf( "clicks %d   folded %d   maximized %d", clicks, folded, maximized );
+    }
+    gui()->window_end();
+
+    if ( !open )
+        return;
+
+    /* Work area of the main viewport -- B-features take it as a PARAMETER. */
+    i32 vw = 0, vh = 0;
+    gui()->viewport_size( 0, &vw, &vh );
+    f32        top  = gui()->viewport_content_y( 0 );
+    gui_rect_t work = { 0.0f, top, (f32)vw, (f32)vh - top };
+
+    gui()->feat_maximize( feat_id, maximized, &rect, &restore, work );
+    if ( !maximized )
+        gui()->feat_clamp( &rect, work, title_h );
+
+    f32 disp_h = gui()->feat_collapse( feat_id, !folded, title_h, rect.h );
+
+    gui_pane_t p = gui()->pane_begin( "ex_feat_pane",
+                                      ( gui_rect_t ){ rect.x, rect.y, rect.w, disp_h },
+                                      GUI_REGION_MID, 0, GUI_WIN_NONE );
+
+    /* Edge resize FIRST, all four edges, so an edge grab pre-empts the title-band move arm
+       (stock chrome resolves resize before its drag for the same reason -- the T band and
+       the titlebar overlap by a few px). */
+    if ( !maximized && !folded )
+        gui()->feat_resize( feat_id, &rect,
+                            GUI_RESIZE_L | GUI_RESIZE_R | GUI_RESIZE_T | GUI_RESIZE_B,
+                            160.0f, 120.0f );
+
+    /* Hand-built chrome over the pane rect. */
+    gui_rect_t body = p.rect;
+    gui()->draw_frame( body, GUI_COLOR( 0x16, 0x1A, 0x22, 0xF4 ),
+                             GUI_COLOR( 0xFF, 0xB0, 0x40, 0xFF ), 1.0f );
+
+    gui_rect_t title = gui_rect_cut_top( &body, title_h );
+    gui()->draw_rect( title.x, title.y, title.w, title.h, GUI_COLOR( 0x2C, 0x24, 0x18, 0xFF ) );
+
+    /* Title buttons BEFORE feat_move, cut off the band so the drag handle excludes them (and
+       a press they claim blocks the move arm -- the same order stock chrome resolves). */
+    if ( gui()->el_button( gui_rect_cut_right( &title, title_h ), "x##feat_close" ) )
+        open = false;                                       /* the open latch: just a bool */
+    if ( gui()->el_button( gui_rect_cut_right( &title, title_h ), maximized ? "v##feat_max"
+                                                                            : "^##feat_max" ) )
+        maximized = !maximized;
+    if ( gui()->el_button( gui_rect_cut_right( &title, title_h ), folded ? ">##feat_fold"
+                                                                         : "-##feat_fold" ) )
+        folded = !folded;
+
+    if ( !maximized )
+        gui()->feat_move( feat_id, title, &rect.x, &rect.y );
+    gui()->el_label( gui_rect_pad( title, 6.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+                     "feature window" );
+
+    /* Body -- only when the collapse tween has left room. */
+    if ( disp_h > title_h + 8.0f )
+    {
+        body = gui_rect_pad( body, 10.0f );
+        gui_rect_t row = gui_rect_cut_top( &body, 30.0f );
+        if ( gui()->el_button( row, "click me##feat" ) )
+            clicks++;
+        gui_rect_cut_top( &body, 8.0f );
+        row = gui_rect_cut_top( &body, 24.0f );
+        gui()->el_check( gui_rect_cut_left( &row, 24.0f ), "##feat_chk", &check );
+        gui()->el_label( gui_rect_pad( row, 4.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+                         "assembled from mechanisms" );
+    }
+
+    gui()->pane_end();
+}
+
 /*============================================================================================*/

@@ -303,6 +303,8 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 /*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
 // the animation service (placed here in static-visibility order).
 #include "runtime_service/gui/interact/gui_anim.c"
+// the feat_* kit: window features as freestanding id-keyed mechanisms (rides move/resize/anim).
+#include "runtime_service/gui/interact/gui_feature.c"
 
 /*----------------------------------  LIBRARY: GUI_CHROME  ----------------------------------*/
 // widgets/ + table/ + window/ + dock/ + popup/ + nav/.  NOTE: nav/ is core-classified

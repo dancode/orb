@@ -109,8 +109,10 @@ rect_align( gui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
 
 ==============================================================================================*/
 
-/* Visible byte count: up to the first "##" marker, or the whole string. */
-static u32
+/* Visible byte count: up to the first "##" marker, or the whole string.  Non-static: a
+   cross-unit seam (gui_internal.h) -- the element unit's el_button honors the same label
+   grammar, so the rule stays authored in one place. */
+u32
 label_vis_len( const char* s )
 {
     u32 i = 0;
