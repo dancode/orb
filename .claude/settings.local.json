@@ -328,7 +328,12 @@
       "PowerShell(bin\\\\build_tool.exe -config Debug -target sb_gui 2>&1 | Select-Object -Last 15)",
       "Bash(timeout 5 bin/sb_gui_example.exe)",
       "Bash(echo \"exit code: $?\")",
-      "Bash(bin/sb_gui_example.exe)"
+      "Bash(bin/sb_gui_example.exe)",
+      "Bash(claude --version)",
+      "Bash(curl -s --max-time 15 https://downloads.claude.ai/claude-code-releases/latest)",
+      "Read(//c/ProgramData/ClaudeCode/**)",
+      "Bash(node -e 'const s=JSON.parse\\(require\\(\"fs\"\\).readFileSync\\(\"F:/orb/.claude/settings.local.json\",\"utf8\"\\)\\);console.log\\(s.permissions.allow.slice\\(0,20\\).join\\(\"\\\\n\"\\)\\);')",
+      "Bash(node -e ' *)"
     ]
   }
 }

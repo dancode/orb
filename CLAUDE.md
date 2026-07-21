@@ -178,11 +178,6 @@ Include `ref.h` in DLL modules; `ref_host.h` in hosts, unity entries, sandboxes.
 
 ## Code Style
 
-`.clang-format` (Google base, customized):
-- 4-space indentation, spaces only, 110-column limit
-- All braces on their own line (`BreakBeforeBraces: Custom`)
-- Pointer alignment left: `int* ptr`
-- Spaces inside parentheses: `func( arg1, arg2 )`
-- `SortIncludes: false` -- keep include order as written
+`.clang-format` (Google base, customized) governs formatting -- run it; don't hand-format.
 - Comments show intent concisely at each block.
 - Comments use cpp style // after fields, but c style for larger blocks.
