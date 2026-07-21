@@ -137,7 +137,120 @@ Canonical nesting (the acceptance test):
 Scrolling is NOT flow's business: when a carved area needs scroll/clip/persistence, open a
 core surface first (region_begin) and flow inside it -- "region owns scroll" stands.
 
-## 5. Public faces
+## 5. The pane -- the minimal "window"
+
+What is a window, really?  Strip the chrome and both servers already answer in their own
+code.  The interaction server's whole occlusion contest runs on one signature:
+
+    surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
+
+and the render backend's whole per-window unit is one 16-byte tag over a command span:
+
+    gui_cmd_seg_t { gui_id_t win;  u32 z;  u16 lo, hi;  u16 font;  u8 vp;  u8 band; }
+
+So the fundamental building block -- the PANE -- is a (id, z, vp) TAG shared by both
+servers, plus one side-specific payload each:
+
+    /* interaction server: the io-side window.  Everything that competes for the mouse,
+       owns an id namespace, and establishes a base clip is exactly this. */
+    typedef struct gui_pane_t
+    {
+        gui_id_t   id;      // identity: hover/active attribution, state pool, segment tag
+        gui_rect_t rect;    // where it is; hit test + base clip derive from it
+        u32        z;       // one number, two consumers: occlusion contest + paint order
+        u8         vp;      // which OS surface
+        u8         input;   // competes for hover? (the GUI_WIN_NO_INPUT bit)
+    } gui_pane_t;
+
+    /* render server: the draw-side window.  Already exists as gui_cmd_seg_t -- a pane tag
+       plus a command range.  Clip stays per-command; font/band are batch context. */
+
+The shared cross-section is the KEY (id, z, vp): interaction adds `rect` (hit), render
+adds `[lo, hi)` (payload).  z is banded (background / windows / overlay / debug arena),
+so "a region with a z" is exactly right -- region_begin is today's closest exposed form.
+
+Everything called a window is a pane plus policy, a strict composition ladder:
+
+    pane                                        -- the block above
+     + gui_scroll_link_t                        -> scrolling region      (region_begin)
+     + persisted rect ownership + flags         -> free window record
+     + titlebar/resize/collapse/max-min chrome  -> the stock window      (gui_window_t)
+     + dock membership                          -> docked pane
+    pane + overlay bit + overlay-band z         -> popup / tooltip
+    pane wrapping the OS window itself          -> viewport_shell
+
+Five different window widgets with totally different chrome are five policies over one
+pane: allocate the tag, nominate for hover, push the base clip, emit commands under the
+tag, optionally attach a scroll link.  gui_core owns gui_pane_t; gui_chrome owns every
+rung above it.  gui_window_t's remaining ~30 fields are chrome policy and stay in chrome.
+
+## 6. The chrome feature kit -- window features as id-keyed policies
+
+Every window feature becomes its own API section, usable alone, so a window widget is
+built feature by feature -- and "anything can be a collapse, or a titlebar, or a max-min:
+they just work over an id."  The tree already proves the shape twice: interact/gui_move.c
+and interact/gui_resize.c are record-agnostic mechanisms (id + rect + cursor in, geometry
+out) with the policy left to the caller -- windows, resizable children, and floating dock
+groups already share them.  The kit generalizes that split to the rest of the chrome.
+
+State rule (what makes a feature freestanding): IN-FLIGHT state is a service singleton
+arbitrated by active_id (one drag at a time -- the existing pattern).  PERSISTENT state is
+either a caller-owned pointer (mechanism form, diablo-style: you see every byte) or an
+id-keyed pool blob (convenience form).  Mechanisms take pointers; wrappers persist by id.
+
+Dependency classes -- how a feature can stand alone vs when it cannot:
+
+  A. FREESTANDING     -- inputs are (id, rect, io) only; state is a small blob.
+  B. ENVIRONMENT-DEP  -- must query the work area / viewport (clamp, maximize, tear-off).
+  C. POPULATION-DEP   -- must enumerate siblings (z contest, shelf packing, tab targets).
+  D. COMPOSITE        -- no state of its own; wires A-features + paint into a look.
+
+The features, sectioned:
+
+  | Feature      | Class | API sketch (mechanism form)                     | Today          |
+  |--------------|-------|-------------------------------------------------|----------------|
+  | move         |  A    | feat_move( id, handle_rect, &x, &y )            | gui_move.c OK  |
+  | resize       |  A    | feat_resize( id, &rect, edge_mask, min_w/h )    | gui_resize.c OK|
+  | press-defer  |  A    | click vs drag vs double-click disambiguation    | gui_move.c OK  |
+  | collapse     |  A    | h = feat_collapse( id, &open, full_h ) tweened  | window fields  |
+  | open latch   |  A    | caller bool (el_close_button sets it)           | by-title pair  |
+  | next-channel |  A    | staged rect + cond mask over any persisted rect | window fields  |
+  | scroll       |  A    | scroll_link_t attach to any pane                | 3 callers OK   |
+  | max/min      |  B    | feat_maximize( id, &rect, &norm, work_area )    | window fields  |
+  | clamp        |  B    | rect vs work area (viewport_content_y)          | window_clamp   |
+  | tear-off     |  B    | move past threshold -> viewport_spawn           | window/frame   |
+  | raise/front  |  C    | pane z via surface tier (its only writer)       | surface/ OK    |
+  | shelf        |  C    | minimized chip parking (needs sibling order)    | window fields  |
+  | titlebar     |  D    | a cut band + feat_move + el buttons; no state   | window_end.c   |
+  | dock         | SYS   | stays a system (tree + membership), not a feat  | dock/ OK       |
+
+The class tells you the cost of reuse: an A-feature moves anywhere for free; a B-feature
+carries one query parameter (pass the work area IN -- do not let the feature find the
+viewport); a C-feature only makes sense where a population exists (chrome keeps it); a
+D-composite is a recipe, not a mechanism -- document it as one.
+
+Building a window widget from scratch, feature by feature (the acceptance sketch):
+
+    gui_pane_t p     = pane_begin( "tool", rect, z_band, vp );      // the block
+    gui_rect_t r     = p.rect;
+    gui_rect_t title = rect_cut_top( &r, ui_u( 1.5f ) );            // titlebar = a band...
+    feat_move( p.id, title, &st->x, &st->y );                       // ...that drags
+    if ( el_button( rect_cut_right( &title, title.h ), "x" ) )      // close = your bool
+        st->open = false;
+    r.h = feat_collapse( p.id, &st->collapsed, r.h );               // height tween by id
+    feat_resize( p.id, &st->rect, GUI_RESIZE_R | GUI_RESIZE_B, min );// edges you choose
+    /* ... body: flow_begin( r ) or carve on ... */
+    pane_end();
+
+gui_window_t then stops being a definition and becomes the stock RECIPE: pane + move +
+resize + collapse + max/min + shelf + next-channel + titlebar composite -- one policy
+file assembling kit features, with five-different-window-widgets equally legitimate.
+
+Not super modular on purpose: the kit stays inside gui_core/gui_chrome as sections, not
+seven micro-libraries.  The win is the CLASSIFICATION -- knowing each feature's true
+inputs -- not maximal decoupling.
+
+## 7. Public faces
 
 One module vtable stays (gui_api_t -- the mod system needs a single func_api struct), but
 it becomes a TABLE OF CONTENTS of the libraries: sections ordered draw -> core -> rect ->
@@ -158,7 +271,7 @@ Physical form: keep ONE build target (gui lib) but grow from 2 TUs to ~7 unity T
 per library, each including only the headers below it -- the compiler enforces the graph.
 Real build_tool targets can come later if wanted; the boundary is the header, not the .lib.
 
-## 6. Migration increments (each builds + runs)
+## 8. Migration increments (each builds + runs)
 
   1. SKELETON    -- write the library headers as curated declaration groupings (no code
                     motion); resection gui_api.h to match.  Pure reorganization.
