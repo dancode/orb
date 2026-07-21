@@ -1,13 +1,13 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_backend_mem.c -- Backend memory accounting.
+    runtime_service/gui/render/gui_render_mem.c -- Backend memory accounting.
 
     Fills the backend-owned buckets of gui_mem_stats_t (gui.h): the GPU device memory the
     backend created, and every fixed CPU static the backend unity TU defines -- the resident
     footprint the image pays whether one window is open or fifty.  The frontend (gui_mem_stats,
     core/gui_ctx.c) adds the per-context heap blocks and the totals.
 
-    MUST be the LAST include in gui_backend.c: every bucket below is a sizeof over another
+    MUST be the LAST include in gui_render.c: every bucket below is a sizeof over another
     file's static, and unity visibility only flows downward.  Adding a static to the backend?
     Add it to a bucket here -- the full-accounting contract is that the grand total is the true
     resident footprint, not a sampling of the big arrays.
@@ -29,7 +29,7 @@ gui_backend_memory( u32 live_viewports )
     s.viewport_count    = live_viewports;
     s.gpu_vertex_bytes  = live_viewports * RHI_MAX_FRAMES_IN_FLIGHT * (u32)GUI_VB_REGION_BYTES;
     s.gpu_index_bytes   = live_viewports * RHI_MAX_FRAMES_IN_FLIGHT * (u32)GUI_IB_REGION_BYTES;
-    s.gpu_texture_bytes = font_atlas_bytes();
+    s.gpu_texture_bytes = res_atlas_bytes();
 #ifdef GUI_DEBUG_OVERLAY
     /* The overlay's own VB/IB (one region per viewport per frame-in-flight, gui_debug_init). */
     if ( rhi_handle_valid( s_dbg.vb ) )
@@ -55,11 +55,12 @@ gui_backend_memory( u32 live_viewports )
                              + sizeof( s_volatile )
                              + sizeof( s_patch_order ) + sizeof( s_patch_font ) );
 
-    /* Fonts: registry slots (CPU glyph metrics) + the hot-reload request queue. */
-    s.cpu_font_bytes = (u32)( sizeof( s_fonts ) + sizeof( s_reload_q ) );
+    /* Fonts + icons are the DRAW unit's statics now (registry slots, reload queue, icon
+       tables) -- reported through its seam so the bucket stays populated. */
+    s.cpu_font_bytes = gui_draw_unit_mem_bytes();
 
-    /* Shared resource atlas (packer + tenant bookkeeping) + the icon registry. */
-    s.cpu_res_bytes = (u32)( sizeof( s_res ) + sizeof( s_icons ) + sizeof( s_builtin_icons ) );
+    /* Shared resource atlas (packer + tenant bookkeeping). */
+    s.cpu_res_bytes = (u32)sizeof( s_res );
 
     /* RENDER: pipeline/sampler/push state + the embedded SPIR-V bytecode (.rdata). */
     s.cpu_render_bytes = (u32)( sizeof( s_render )

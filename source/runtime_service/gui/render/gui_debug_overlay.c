@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_debug_overlay.c -- Bolt-on debug overlay.
+    runtime_service/gui/render/gui_debug_overlay.c -- Bolt-on debug overlay.
 
     A second, independent draw list that is emitted from inside the regular gui code (via the
     DBG_* capture macros in gui.c) and flushed LAST, on top of the finished UI.  It visualizes
@@ -21,7 +21,7 @@
 
     Active layers are chosen at runtime with gui()->debug_set_layers( gui_dbg_layer_t mask ).
 
-    Included by gui_backend.c last, after gui_render.c so s_render, render_ortho, gui_push_t,
+    Included by gui_render.c last, after gui_render.c so s_render, render_ortho, gui_push_t,
     and the font_* atlas helpers are in scope.  The ambient build viewport it tags rects with lives
     in the UI unit (s_build), reached across the unit seam via gui_dbg_build_viewport().
 
@@ -361,7 +361,7 @@ gui_debug_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     u32 vc = 0, ic = 0;
 
     f32 wu, wv_uv;
-    font_white_uv( &wu, &wv_uv );
+    res_atlas_white_uv( &wu, &wv_uv );
 
     /* Filter and expand commands for this viewport into scratch geometry. */
     for ( u32 i = 0; i < s_dbg.cmd_count; ++i )
@@ -430,7 +430,7 @@ gui_debug_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     gui_push_t push;
     render_ortho( push.mvp, (f32)win_w, (f32)win_h );
     push.samp_idx = s_render.font_sampler_idx;
-    push.tex_idx  = font_atlas_idx();
+    push.tex_idx  = res_atlas_idx();
     push.dbg_flat = 0u;   /* the overlay always renders normally, never flat/batch-tinted */
     push.dbg_tint = 0u;
     push.rgba_tex = 0u;   /* overlay draws are all font-atlas coverage */

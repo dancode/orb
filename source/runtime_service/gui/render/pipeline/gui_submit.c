@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/pipeline/gui_render.c -- GPU resources + draw submission (RENDER phase).
+    runtime_service/gui/render/pipeline/gui_submit.c -- GPU resources + draw submission (RENDER phase).
 
     The last of the three render phases (see gui_build_cache.c for the full map):
 
@@ -18,7 +18,7 @@
         upload this surface's slice of the shared geometry and emit one indexed draw call per cached
         GPU command, back-to-front in dispatch order.
 
-    Included by gui_backend.c after gui_build_cache.c (cache_build_frame, s_dispatch, the slot
+    Included by gui_render.c after gui_build_cache.c (cache_build_frame, s_dispatch, the slot
     types, the stats accessors) -- which in turn follows gui_build_tess.c (s_tess) and
     gui_emit_draw.c (s_draw).  gui_debug_overlay.c follows this file and reuses s_render + render_ortho.
 
@@ -325,17 +325,9 @@ gui_render_init( void )
     }
     s_render.font_sampler_idx = rhi()->register_sampler( s_render.font_sampler );
 
-    /* Font atlas texture -- handled by gui_font_internal.c.  Each atlas carries an opaque white texel
-       (appended row) that solid-color draws sample, so no separate white texture is needed --
-       solids and text share the atlas and merge into one draw. */
-    if ( !font_init() )
-    {
-        rhi()->unregister_sampler( s_render.font_sampler_idx );
-        rhi()->sampler_destroy( s_render.font_sampler );
-        rhi()->pipeline_destroy( s_render.pipeline );
-        return false;
-    }
-
+    /* Fonts boot in the DRAW unit now (gui_draw_boot, after the whole server stands up) --
+       the shared atlas carries the opaque white texel solid-color draws sample, so solids
+       and text still share one texture and merge into one draw. */
     return true;
 }
 
@@ -355,7 +347,8 @@ gui_render_shutdown( void )
        (font textures, samplers, pipelines) are immediate, so drain the device first. */
     rhi()->device_wait_idle();
 
-    font_shutdown();
+    /* font_shutdown moved to gui_draw_shutdown (the draw unit tears its resources down
+       before the frame orchestrator exits the render server). */
 
     if ( s_render.font_sampler_idx )
         rhi()->unregister_sampler( s_render.font_sampler_idx );
@@ -371,7 +364,7 @@ gui_render_shutdown( void )
     memset( &s_render, 0, sizeof( s_render ) );
 }
 
-/* Memory accounting lives in backend/gui_backend_mem.c (gui_backend_memory) -- the LAST include
+/* Memory accounting lives in render/gui_render_mem.c (gui_backend_memory) -- the LAST include
    of the unity TU, so it can sizeof every backend static, including the capture/debug files
    included after this one. */
 

@@ -11,8 +11,8 @@
         present/ paint primitives, the user/ vocabulary, frame lifecycle, the module vtable.
         Owns s_build / s_scope / s_io / s_interaction / g_ctx and the stacks.
 
-      - the render backend (gui_backend.c): fonts, draw list, tessellation, GPU flush, debug
-        overlay.  Owns s_draw / s_tess / s_font / s_render.  Called through gui_backend.h.
+      - the render backend (gui_render.c): fonts, draw list, tessellation, GPU flush, debug
+        overlay.  Owns s_draw / s_tess / s_font / s_render.  Called through gui_render.h.
 
       - the element unit (element/gui_element.c): the el_* rect-consuming widget cores;
         public surface + the style_active() seam only.
@@ -31,8 +31,8 @@
     it.  Order here: core -> surface -> present / interact (siblings) -> flow's seam gap ->
     anim + feat kit -> user -> frame.
 
-    backend/     -- beside the stack, not a rung in it: the render sink (the second TU,
-                    gui_backend.c), reached only through gui_backend.h at flush.
+    render/     -- beside the stack, not a rung in it: the render sink (the second TU,
+                    gui_render.c), reached only through gui_render.h at flush.
     core/  -- machinery with no opinions: the ambient context records (s_interaction,
                     s_build, s_scope, g_ctx), identity (ids), keyed state tracking, the io
                     snapshot, and the style machinery (theme registry, stacks, resolution).
@@ -116,11 +116,11 @@
 
     present/gui_paint_core.c    -- shared presentation primitives: COL_* palette, layout macros, label
                                       grammar, system adornments (nav/drop rings, resize highlight)
-    present/gui_symbol.c         -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
+    draw/gui_symbol.c (DRAW unit)  -- symbol + shape draw primitives (moved R3)
 
     user/gui_stacks.c            -- bracketing vocabulary: push/pop id, item flags, style color/var, scale, disabled
     user/gui_behavior.c          -- public behavior on caller rects: gui_item, invisible_button
-    user/gui_canvas.c            -- custom-draw surface: canvas, draw_rect/text, text measure, icons
+    draw/gui_canvas.c (DRAW unit)  -- custom-draw surface (moved R3)
     user/gui_query.c             -- public readers: want_capture_*, is_item_*, is_key_*, is_mouse_*, get_mouse_pos
 
     debug/gui_frame_overlay.c    -- built-in perf / state HUD overlays + the frame-timing helpers they read
@@ -149,7 +149,7 @@
 #include "engine/sys/sys_host.h"   // sys_root_dir -- disk assets (load_icon, asset_path) resolve root-relative
 
 // API GUI render-backend
-#include "runtime_service/gui/gui_backend.h"
+#include "runtime_service/gui/render/gui_render.h"
 
 // API function headers + access pointers -- wired at startup.
 #include "runtime_service/rhi/rhi_api.h"
@@ -162,13 +162,13 @@ MOD_USE_APP;
     Debug Overlay
 
     The debug-overlay build switch (GUI_DEBUG_OVERLAY) and the DBG_* capture macros live in
-    gui_backend.h: both units (this one and gui_backend.c, which defines the capture targets)
+    gui_render.h: both units (this one and gui_render.c, which defines the capture targets)
     must agree on them.  The widget / chrome files below invoke DBG_WIDGET / DBG_WINDOW / DBG_RESIZE;
     in Debug they call across to the overlay's capture functions in the backend unit.
 
     #define GUI_DEBUG_OVERLAY 1    -- currently auto enabled in Debug builds 
     
-    see: gui_backend.h for the capture macros
+    see: gui_render.h for the capture macros
 
 ==============================================================================================*/
 
@@ -176,7 +176,7 @@ MOD_USE_APP;
     Capability flags -- latched by gui_init_config_front (gui_frame.c), read directly (same TU)
     by any file below that owns an optional feature boundary: gui_table.c (tables),
     gui_dock*.c (docking), gui_nav.c (keyboard_nav).  Declared here, before every tier include, so
-    all of them see it -- the gui_backend.c s_caps placement, mirrored for this unit.  A compound
+    all of them see it -- the gui_render.c s_caps placement, mirrored for this unit.  A compound
     literal is not a valid static initializer (see gui_frame.c's s_init_caps comment), so this
     repeats GUI_FORWARD_CAPS_DEFAULT's fields by hand; gui_init_config_front overwrites it before
     init().
@@ -206,10 +206,10 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
     Unity build
 ==============================================================================================*/
 
-/* The render backend (backend/resource/gui_atlas, gui_font, gui_icon; backend/pipeline/gui_shader,
+/* The render backend (render/resource/gui_atlas, gui_font, gui_icon; render/pipeline/gui_shader,
    gui_emit_draw, gui_emit_path, gui_build_tess, gui_build_volatile, gui_build_cache, gui_render;
-   backend/gui_debug_overlay) is the SECOND unit -- compiled separately via gui_backend.c.  This
-   unit calls into it through the draw_* / font_* / gui_render_* declarations in gui_backend.h. */
+   render/gui_debug_overlay) is the SECOND unit -- compiled separately via gui_render.c.  This
+   unit calls into it through the draw_* / font_* / gui_render_* declarations in gui_render.h. */
 
 /*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
 // core/ + surface/ + interact/ + present/ paint primitives.  NOTE the cross-cut: the
@@ -230,11 +230,11 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 #include "runtime_service/gui/interact/gui_item.c"
 #include "runtime_service/gui/interact/gui_drag.c"
 #include "runtime_service/gui/interact/gui_move.c"
-#include "runtime_service/gui/present/gui_symbol.c"
+/* gui_symbol.c moved to the draw unit (gui_draw.c, R3) */
 #include "runtime_service/gui/interact/gui_resize.c"
 
 // Window text selection (GUI_WIN_TEXT_SELECT): press/sweep protocol, highlight paint, Ctrl+C
-// copy over the backend's captured runs (backend/gui_select_capture.c).  Here in interact/ --
+// copy over the backend's captured runs (render/gui_select_capture.c).  Here in interact/ --
 // it writes s_interaction (a fallback press consumer) -- called from window/gui_window_end.c.
 #include "runtime_service/gui/interact/gui_select.c"
 
@@ -267,7 +267,7 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 // through gui_host.h declarations).
 #include "runtime_service/gui/user/gui_stacks.c"
 #include "runtime_service/gui/user/gui_behavior.c"
-#include "runtime_service/gui/user/gui_canvas.c"
+/* gui_canvas.c moved to the draw unit (gui_draw.c, R3) */
 #include "runtime_service/gui/user/gui_query.c"
 
 // element/ -- GUI_ELEMENT is its OWN translation unit (element/gui_element.c): the compiler
@@ -278,7 +278,7 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 /*----------------------------------  LIBRARY: GUI_DEBUG  ----------------------------------*/
 
 // GUI_DEBUG is its OWN translation unit (debug/gui_debug.c, the fourth beside this one,
-// gui_backend.c, and element/gui_element.c): the pipeline dashboard + command stepper reach
+// gui_render.c, and element/gui_element.c): the pipeline dashboard + command stepper reach
 // gui only through the public surface, the backend capture API, and the gui_internal.h seams.
 // gui_frame_overlay.c stays HERE (frame group below): it carries the frame-timing helpers
 // the lifecycle calls -- conductor code, not severable tooling.

@@ -596,7 +596,7 @@ debug_hotkeys( void )
        / region geometry).
        Read from the frame IO like every other debug hotkey -- initial-press only, so holding a
        key never flickers the layer.  The layer setters compile to no-ops in Release
-       (backend/gui_debug_overlay.c), so no build guard is needed here.  CONTENT differs from the
+       (render/gui_debug_overlay.c), so no build guard is needed here.  CONTENT differs from the
        rest in where it draws -- the MAIN list at region pop (gui_scroll.c), not the overlay list,
        so that toggle changes every scrollable window's emitted commands; the shared wants_redraw
        below makes the flip land instead of sitting behind the clean-frame emit skip. */

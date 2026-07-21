@@ -31,7 +31,7 @@ typedef struct gui_api_s
 {
 
     /*============================================================================================================
-        GUI_DRAW -- render server  (backend/ + present/)
+        GUI_DRAW -- render server  (render/ + present/)
         Fonts, icons, textures, the draw_* primitive set, paths, clips, volatile blocks.
         S0 style stratum: NO ambient style -- every call takes explicit colors / widths.
         Draws what it is told under the ambient clip / z; never asks how a rect was made.
@@ -1636,7 +1636,7 @@ typedef struct gui_api_s
 
     /* GPU resource lifecycle.
         init_config_back()  -- OPTIONAL; call before init() to override which BACKEND (render unit,
-                       gui_backend.c) capability layers (gui_backend_caps_t, gui.h) are compiled
+                       gui_render.c) capability layers (gui_backend_caps_t, gui.h) are compiled
                        into the running instance -- icons, retained caching, debug render mode,
                        stats-trace printfs.  Skip it entirely to accept GUI_CAPS_DEFAULT (every
                        layer on except stats_trace).

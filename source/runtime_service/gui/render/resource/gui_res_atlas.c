@@ -1,12 +1,12 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/resource/gui_res_atlas.c -- The shared GUI resource atlas.
+    runtime_service/gui/render/resource/gui_res_atlas.c -- The shared GUI resource atlas.
 
     See gui_res_atlas.h for the rationale.  This file owns the one R8 texture, the resident CPU
     buffer, the master stb_rect_pack area, the fixed assist band, and the tenant table (one retained
     pixel copy per packed font/icon so a repack can re-blit without going back to disk).
 
-    Included by gui_backend.c after resource/gui_atlas.c and before resource/gui_font.h so fonts and
+    Included by gui_render.c after resource/gui_atlas.c and before resource/gui_font.h so fonts and
     icons -- which pack into it -- see these entry points.
 
 ==============================================================================================*/

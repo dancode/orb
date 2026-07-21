@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/pipeline/gui_build_cache.c -- Retained frame-geometry cache (BUILD phase).
+    runtime_service/gui/render/pipeline/gui_build_cache.c -- Retained frame-geometry cache (BUILD phase).
 
     The render pipeline has three phases.  This file is the middle one:
 
@@ -165,7 +165,7 @@ bool gui_build_retained_skip    ( void )    { return s_caps.retained_cache; }
     absorbs minor in-place growth without touching adjacent slots.
 ==============================================================================================*/
 
-/* RENDER_MAX_WIN / SLOT_VERT_PAD / SLOT_IDX_PAD live in gui_backend.h (the dashboard snapshot
+/* RENDER_MAX_WIN / SLOT_VERT_PAD / SLOT_IDX_PAD live in gui_render.h (the dashboard snapshot
    types are sized by them). */
 /* Max GPU draw commands cached per slot; most windows have 2-4, but every volatile block adds
    its own commands + reserved dormant pads (unmergeable across the reservation seams), so a
@@ -274,7 +274,7 @@ static win_geo_slot_t*  s_dispatch [ RENDER_MAX_WIN ];
 static u32              s_dispatch_count;
 
 /* Volatile widgets (gui_volatile_cb_open/_stamp/_close, gui_update_volatile, the registry and
-   volatile_patch) live in their own file -- backend/pipeline/gui_build_volatile.c, included right
+   volatile_patch) live in their own file -- render/pipeline/gui_build_volatile.c, included right
    before this one; see that file's header for the full feature description.  The pieces that stay HERE
    are the three helpers it forward-declares (cache_count_volatile_patch above,
    cache_slot_lookup / cache_invalidate_window below) because they touch s_slots / s_cache /
@@ -475,7 +475,7 @@ cache_diff_windows( void )
                                "are not rendered. Raise RENDER_MAX_WIN.\n", RENDER_MAX_WIN );
                 ORB_ASSERT_MSG_ONCE( false, "gui window overflow -- more than RENDER_MAX_WIN "
                                             "windows; extra windows dropped. Raise RENDER_MAX_WIN "
-                                            "(gui_backend.h)" );
+                                            "(gui_render.h)" );
                 continue;
             }
             s_cache.cur[ bi ] = ( render_win_hash_t ){ .win  = win, .hash = 2166136261u,
@@ -1228,7 +1228,7 @@ cache_build_frame( void )
 
     /* Text-selection run capture: same seam.  Rebuilds the selection run buffer for any window
        marked GUI_WIN_TEXT_SELECT this frame; a two-branch no-op while no flagged window is
-       live.  See backend/gui_select_capture.c. */
+       live.  See render/gui_select_capture.c. */
     select_capture_build();
 
     /* Step 1: hash-diff all windows, fill s_cache, accumulate cmd_count stats. */

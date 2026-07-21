@@ -6,10 +6,10 @@
     inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
     any other code, no special behavior.  On an idle frame (frame_begin returned false, no
     ctx_begin/emit ran), gui_frame_end calls gui_update_volatile internally; the backend (BUILD unit,
-    backend/pipeline/gui_build_volatile.c) re-invokes the same callback standalone, re-tessellates its
+    render/pipeline/gui_build_volatile.c) re-invokes the same callback standalone, re-tessellates its
     output, and patches it into the padded region reserved for the block inside its window's
     cached geometry (any output that fits is accepted; only outgrowing the reservation costs a
-    real frame) -- see gui.h (gui_volatile_fn) for the full contract and gui_backend.h for the
+    real frame) -- see gui.h (gui_volatile_fn) for the full contract and gui_render.h for the
     unit-seam declarations shared with the backend half.
 
     Everything in THIS file is the UI-unit side of the seam:
@@ -46,7 +46,7 @@
 ==============================================================================================*/
 
 /* gui_volatile_cb wraps one real-emit invocation of `fn` so the backend can bracket the exact
-   command range it produces (gui_volatile_cb_open/_close, gui_backend.h); the callback itself
+   command range it produces (gui_volatile_cb_open/_close, gui_render.h); the callback itself
    calls gui_volatile_begin/end from inside its own body, per the caller's own code -- begin
    stamps the layout cursor position the callback started at (needed to reconstruct a matching
    scope on replay), end is a reserved no-op (see gui_volatile_end).  `label` is hashed the same way item_id() hashes a
@@ -155,7 +155,7 @@ volatile_layout_pop( void )
 
 /*==============================================================================================
     gui_replay_scope_enter / _exit -- the reverse half of the volatile-widget seam (see
-    gui_backend.h).  gui_update_volatile (backend/pipeline/gui_build_volatile.c) calls these around each
+    gui_render.h).  gui_update_volatile (render/pipeline/gui_build_volatile.c) calls these around each
     row's standalone replay invocation so the callback's ordinary gui()->text()/rect_filled()/...
     calls have a valid (if minimal) layout frame and id scope to emit into, without running
     ctx_begin/ctx_new_frame or touching anything else about the real frame's UI state.

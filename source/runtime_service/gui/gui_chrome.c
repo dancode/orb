@@ -7,10 +7,10 @@
     policy -- the stock RECIPE over the feat_* kit), dock/, popup/, and nav/ (core-classified
     as a peer focus service, but it reads/drives the popup stack, so it lives here).
 
-    The sixth translation unit (beside gui.c, gui_backend.c, element/gui_element.c,
+    The sixth translation unit (beside gui.c, gui_render.c, element/gui_element.c,
     debug/gui_debug.c, compose/gui_flow.c).  The compiler enforces the boundary: everything
     resolves through the public gui_* surface (gui_host.h), the backend draw API
-    (gui_backend.h), and the gui_internal.h cross-unit sections -- the ambient records, the
+    (gui_render.h), and the gui_internal.h cross-unit sections -- the ambient records, the
     core service seams (item / id / io / state / style / paint / gesture services), and the
     flow unit's emit surface.  Chrome's few core-facing definitions (scrollbar_widget, the
     viewport request slot) are seams the other direction.
@@ -31,14 +31,14 @@
 #include "base/math.h"
 #include "base/math_ease.h"
 
-#include "runtime_service/gui/gui_backend.h"
+#include "runtime_service/gui/render/gui_render.h"
 
 #include "runtime_service/rhi/rhi_api.h"
 #include "engine/app/app_api.h"
 MOD_USE_RHI;
 MOD_USE_APP;
 
-/* gui_backend.h pulls gui_internal.h in via gui_host.h on this path; include it directly for
+/* gui_render.h pulls gui_internal.h in via gui_host.h on this path; include it directly for
    the cross-unit seam sections regardless. */
 #include "runtime_service/gui/gui_internal.h"
 

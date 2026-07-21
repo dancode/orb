@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/user/gui_canvas.c -- Custom-draw / canvas surface of the user tier.
+    runtime_service/gui/draw/gui_canvas.c -- Custom-draw / canvas surface of the user tier.
 
     Placement primitives for a rect the caller already holds, rather than a self-laying-out
     control: canvas() reserves the rect (a cell like any widget); draw_rect / draw_text are the
@@ -222,7 +222,7 @@ gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr )
     gui_draw_texture_in( r, bindless_idx, tint_abgr );
 }
 
-/* Font atlas access -- bridges the font registry (gui_font.h / gui_backend.h) to the RGBA texture
+/* Font atlas access -- bridges the font registry (gui_font.h / gui_render.h) to the RGBA texture
    primitives above, so a caller can preview a font's live GPU atlas (a texture like any other) via
    image_texture / draw_texture_in without reaching into the backend's internal font_slot_t. */
 

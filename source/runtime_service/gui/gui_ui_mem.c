@@ -2,7 +2,7 @@
 
     runtime_service/gui/gui_ui_mem.c -- Frontend (UI unit) memory accounting.
 
-    The UI-unit counterpart of backend/gui_backend_mem.c: sizeof-sums every fixed static the
+    The UI-unit counterpart of render/gui_render_mem.c: sizeof-sums every fixed static the
     gui.c unity TU defines into one bucket (cpu_frontend_bytes), read by gui_mem_stats
     (core/gui_ctx.c, which forward-declares gui_ui_memory).  Unlike the backend there are no
     big arenas here -- the frontend's real state lives in the malloc'd context blocks, already

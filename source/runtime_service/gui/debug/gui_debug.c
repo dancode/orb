@@ -5,11 +5,11 @@
     Dev tooling OVER the system, not part of it (severable -- a ship build could drop this
     unit and lose nothing but the diagnostics): the pipeline dashboard and the command
     stepper, each an ordinary debug-band window painted through the standard draw API over a
-    snapshot the backend unit captured (backend/gui_dash_capture.c / gui_step_capture.c).
+    snapshot the backend unit captured (render/gui_dash_capture.c / gui_step_capture.c).
 
-    The fourth translation unit (beside gui.c, gui_backend.c, element/gui_element.c) -- the
+    The fourth translation unit (beside gui.c, gui_render.c, element/gui_element.c) -- the
     compiler enforces that the debug tier reaches the rest of gui only through the public
-    gui_* surface (gui_host.h), the backend capture API (gui_backend.h), and the seams
+    gui_* surface (gui_host.h), the backend capture API (gui_render.h), and the seams
     declared in gui_internal.h's cross-unit section.
 
     gui_frame_overlay.c stays in gui.c ON PURPOSE: it carries the frame-timing helpers the
@@ -24,7 +24,7 @@
 #include "base/fmt.h"
 
 #include "runtime_service/gui/gui_internal.h"   /* -> gui_host.h -> gui_api.h -> gui.h */
-#include "runtime_service/gui/gui_backend.h"    /* capture snapshots + draw_* backend API  */
+#include "runtime_service/gui/render/gui_render.h"    /* capture snapshots + draw_* backend API  */
 
 /* Pipeline dashboard -- debug-band window + panel painters over the dash capture. */
 #include "runtime_service/gui/debug/gui_dashboard.c"

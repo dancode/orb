@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/pipeline/gui_build_volatile.c -- Volatile widgets, BUILD-unit half.
+    runtime_service/gui/render/pipeline/gui_build_volatile.c -- Volatile widgets, BUILD-unit half.
 
     An inline-emit callback replayed in place on frames the UI build is skipped entirely
     (gui_frame_dirty() false) -- see gui.h (gui_volatile_fn) for the full contract and
@@ -57,7 +57,7 @@
     gui_render_stats_t.volatile_patched -- reported separately from win_retained precisely so a
     window with an animating volatile widget still correctly counts as retained.
 
-    Included by gui_backend.c after gui_build_tess.c (needs s_tess, tess_dispatch, and
+    Included by gui_render.c after gui_build_tess.c (needs s_tess, tess_dispatch, and
     s_volatile_patching, defined there) and before gui_build_cache.c (which defines the
     cache_* helpers forward-declared below and calls volatile_row_needs_capture /
     volatile_patch_reused_window; gui_render_flush uploads the patched spans for free since a
@@ -66,7 +66,7 @@
 ==============================================================================================*/
 // clang-format off
 
-/* GUI_MAX_VOLATILE lives in gui_backend.h (the dashboard snapshot types are sized by it). */
+/* GUI_MAX_VOLATILE lives in gui_render.h (the dashboard snapshot types are sized by it). */
 #define VOL_VERT_PAD      128u   /* vertex headroom reserved past a block's live geometry        */
 #define VOL_IDX_PAD       192u   /* index headroom (~1.5x vertices for quad-heavy content)       */
 #define VOL_CMD_PAD       2u     /* dormant GPU-command slots reserved past the block's live run */

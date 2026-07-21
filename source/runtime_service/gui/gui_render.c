@@ -1,12 +1,15 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_backend.c -- Unity build entry for the gui RENDER BACKEND.
+    runtime_service/gui/gui_render.c -- GUI_RENDER translation unit: the RENDER SERVER.
 
-    The second of gui's two translation units (see gui_backend.h for the unit split).  This
-    one owns the pixel pipeline: font management, the CPU draw list, path stroking, the CPU
-    tessellator, the GPU flush, and the debug overlay.  It produces no UI -- the UI unit (gui.c)
-    calls the draw_* / font_* primitives declared in gui_backend.h, and this unit turns that
-    semantic command list into vertices and submits them.
+    The 2d batch renderer (GUI_SERVER_PLAN.md): a narrow primitive foundation any 2d utility
+    can emit to.  This unit owns the pixel pipeline: the CPU draw list, path stroking, the
+    CPU tessellator, the GPU flush, and the debug overlay -- plus, until R3 moves them up to
+    the draw unit, the font/icon resources (the server proper renders from a pushed atlas
+    and does not know what a font is).  It produces no UI -- the layers above call the
+    draw_* / font_* primitives declared in render/gui_render.h, and this unit turns that
+    semantic command list into vertices and submits them.  It never sees the interact
+    server: ids, widget state, and style stay above the seam.
 
     It does NOT define the module API pointer storage (MOD_USE_RHI / MOD_USE_APP): those globals
     live in gui.c and are fetched once at module init; this unit reads them through the same
@@ -27,7 +30,7 @@
     resource/gui_atlas.h/.c         -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
     resource/gui_font.h             -- font types shared between the two font files below
     resource/gui_font_internal.c    -- font registry state + .orb_font loader (all static)
-    resource/gui_font.c             -- font unit's public API: font_load/use, font_glyph (gui_backend.h)
+    resource/gui_font.c             -- font unit's public API: font_load/use, font_glyph (gui_render.h)
     resource/gui_icon.c             -- runtime icon atlas: icon_register/find/get, icon_atlas_idx
     resource/gui_icon_load.c        -- icon pixel sourcing: decode PNG/... -> R8 coverage -> register
 
@@ -35,15 +38,15 @@
     pipeline/gui_emit_draw.c        -- EMIT: CPU draw list: draw_reset, draw_push_* (incl. draw_push_icon), s_draw
     pipeline/gui_emit_path.c        -- EMIT: line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
     pipeline/gui_build_tess.c       -- BUILD: CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
-    pipeline/gui_build_volatile.c   -- BUILD: volatile-widget inline-emit replay (see gui_backend.h)
+    pipeline/gui_build_volatile.c   -- BUILD: volatile-widget inline-emit replay (see gui_render.h)
     pipeline/gui_build_cache.c      -- BUILD: retained frame-geometry cache: cache_build_frame, s_cache, s_dispatch,
                                         gui_build_* public API
     pipeline/gui_render.c           -- RENDER: GPU resources + flush: viewport_create/destroy, gui_render_* public API
 
     gui_debug_overlay.c             -- DEBUG OVERLAY: bolt-on second draw list, flushed on top (Debug only).  Stays
-                                        at the backend/ root -- it reads resource/ AND pipeline/ internals plus the
+                                        at the render/ root -- it reads resource/ AND pipeline/ internals plus the
                                         UI unit's DBG_* capture calls, so it does not belong to either subfolder.
-    gui_backend_mem.c               -- MEMORY ACCOUNTING: gui_backend_memory sizeof-sums every backend static;
+    gui_render_mem.c               -- MEMORY ACCOUNTING: gui_backend_memory sizeof-sums every backend static;
                                         must be included last so it sees them all.
 
 ==============================================================================================*/
@@ -57,7 +60,7 @@
 #include "base/fmt.h"   // fmt_snprintf / fmt_vsnprintf -- CRT-free formatting on the per-frame text paths
 
 // Shared internal types + the render-backend interface (pulls gui_internal.h + rhi_api.h + app_api.h)
-#include "runtime_service/gui/gui_backend.h"
+#include "runtime_service/gui/render/gui_render.h"
 
 /*==============================================================================================
     Capability flags -- latched by gui_backend_init, read directly (same TU) by any file below
@@ -76,66 +79,64 @@ static gui_backend_caps_t s_caps;
 // fonts + icons built on it.  gui_atlas.h/.c factors out the raw create/upload/destroy of one GPU
 // texture; gui_res_atlas.h/.c owns THE shared R8 atlas (one texture, one bindless slot) that fonts
 // and icons pack into as tenants so all core UI draws share tex_idx and batch together.
-#include "runtime_service/gui/backend/resource/gui_atlas.h"
-#include "runtime_service/gui/backend/resource/gui_atlas.c"
-#include "runtime_service/gui/backend/resource/gui_res_atlas.h"
-#include "runtime_service/gui/backend/resource/gui_res_atlas.c"
-#include "runtime_service/gui/backend/resource/gui_font.h"
-#include "runtime_service/gui/backend/resource/gui_font_internal.c"
-#include "runtime_service/gui/backend/resource/gui_font.c"
-#include "runtime_service/gui/backend/resource/gui_icon.c"
-#include "runtime_service/gui/backend/resource/gui_icon_load.c"
+#include "runtime_service/gui/render/resource/gui_atlas.h"
+#include "runtime_service/gui/render/resource/gui_atlas.c"
+#include "runtime_service/gui/render/resource/gui_res_atlas.h"
+#include "runtime_service/gui/render/resource/gui_res_atlas.c"
+/* Fonts + icons moved to the draw unit (gui_draw.c, GUI_SERVER_PLAN.md R3) -- the server
+   renders from the shared atlas they push into; glyph/icon UV lookups at tess/emit time go
+   through the glyph/sprite source contract in gui_render.h. */
 
 // pipeline/ -- types and embedded shader bytecode only, no logic.
-#include "runtime_service/gui/backend/pipeline/gui_shader.h"
+#include "runtime_service/gui/render/pipeline/gui_shader.h"
 
 // pipeline/ EMIT: the semantic draw list (s_draw) and the line/path stroker built on it.
 // draw_push_icon lives here (not in resource/gui_icon.c): it queues a semantic command like
 // every other draw_push_*, reading icon_get / icon_atlas_idx rather than the resource reaching
 // up into EMIT itself.
-#include "runtime_service/gui/backend/pipeline/gui_emit_draw.c"
-#include "runtime_service/gui/backend/pipeline/gui_emit_path.c"
+#include "runtime_service/gui/render/pipeline/gui_emit_draw.c"
+#include "runtime_service/gui/render/pipeline/gui_emit_path.c"
 
 // pipeline/ BUILD, part A: tessellation primitives (gui_cmd_t -> s_tess geometry).
 // No public surface -- driven entirely from part B (cache_tess_window / cache_build_frame).
-#include "runtime_service/gui/backend/pipeline/gui_build_tess.c"
+#include "runtime_service/gui/render/pipeline/gui_build_tess.c"
 
 // pipeline/ BUILD, part A.5: volatile widgets (inline-emit callback replay) -- see that file's header.
 // After gui_build_tess.c (needs s_tess + tess_dispatch + s_volatile_patching); before
 // gui_build_cache.c (defines the cache_slot_lookup / cache_invalidate_window /
 // cache_count_volatile_patch helpers this file forward-declares).
-#include "runtime_service/gui/backend/pipeline/gui_build_volatile.c"
+#include "runtime_service/gui/render/pipeline/gui_build_volatile.c"
 
 // pipeline/ BUILD, part B: retained cache & orchestration (diff, reuse-or-tessellate, z-sort).
-#include "runtime_service/gui/backend/pipeline/gui_build_cache.c"
+#include "runtime_service/gui/render/pipeline/gui_build_cache.c"
 
 // pipeline/ RENDER: GPU resource lifecycle + the per-surface flush.
-#include "runtime_service/gui/backend/pipeline/gui_render.c"
+#include "runtime_service/gui/render/pipeline/gui_submit.c"
 
 // DEBUG OVERLAY: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY.  Stays at the
-// backend/ root -- see the file banner above for why.
-#include "runtime_service/gui/backend/gui_debug_overlay.c"
+// render/ root -- see the file banner above for why.
+#include "runtime_service/gui/render/gui_debug_overlay.c"
 
 // PIPELINE DASHBOARD capture: snapshots the pipeline at the two capture points for the shell
 // (gui_dashboard.c) to draw with the standard API.  Compiled out unless GUI_PIPELINE_DASHBOARD.
 // Last so it sees every pipeline static it snapshots (s_draw, s_tess, the slot tables,
 // s_volatile, s_tess_gen_next).
-#include "runtime_service/gui/backend/gui_dash_capture.c"
+#include "runtime_service/gui/render/gui_dash_capture.c"
 
 // TEXT-SELECTION run capture: copies flagged windows' text commands into a persistent run
 // buffer at the build seam for the UI unit's selection controller (interact/gui_select.c).
 // Always compiled (a product feature).  Last (with the captures below) so it sees s_draw.
-#include "runtime_service/gui/backend/gui_select_capture.c"
+#include "runtime_service/gui/render/gui_select_capture.c"
 
 // COMMAND STEPPER capture + frozen-frame replay: snapshots the band-0 command list at the build
 // seam and pre-loads it back at every draw_reset while frozen.  Compiled out unless
 // GUI_CMD_STEPPER.  Last (with the dash capture) so it sees the emit statics it copies (s_draw).
-#include "runtime_service/gui/backend/gui_step_capture.c"
+#include "runtime_service/gui/render/gui_step_capture.c"
 
 // MEMORY ACCOUNTING: sizeof-sums every backend static into the gui_mem_stats_t buckets.  MUST
 // stay the very last include -- unity visibility only flows downward, and the full-accounting
 // contract is that every static above is in scope here.
-#include "runtime_service/gui/backend/gui_backend_mem.c"
+#include "runtime_service/gui/render/gui_render_mem.c"
 
 /*==============================================================================================
     Backend lifecycle seam -- the entry point the UI unit (gui_init/gui_shutdown, gui_frame.c)
@@ -161,28 +162,14 @@ gui_backend_init( gui_backend_caps_t caps )
         return false;
     }
 
-    /* Icons are an optional layer over the shared atlas -- their registration API is stood up here
-       (gated on s_caps.icons) so a caller that never touches icons never reserves the packer. */
-    if ( s_caps.icons && !icon_atlas_init() )
-    {
-        res_atlas_shutdown();
-        gui_render_shutdown();
-        return false;
-    }
-
-    /* Load the engine's built-in icon set from disk (one pass over s_builtin_icons).  Non-fatal:
-       a missing icon file leaves that name unregistered, it does not fail backend init. */
-    if ( s_caps.icons )
-        icon_load_builtins();
-
+    /* Fonts and icons are the DRAW unit's resources now -- the frame orchestrator boots them
+       right after this returns (gui_draw_boot), so they register into the atlas created above. */
     return true;
 }
 
 void
 gui_backend_exit( void )
 {
-    if ( s_caps.icons )
-        icon_atlas_shutdown();
     res_atlas_shutdown();
     gui_render_shutdown();
 }

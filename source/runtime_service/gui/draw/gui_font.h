@@ -1,11 +1,11 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/resource/gui_font.h -- Font types shared with gui_backend.h.
+    runtime_service/gui/draw/gui_font.h -- Font types shared with gui_render.h.
 
     Everything declared here is a type, not a function -- these are shared between
     gui_font_internal.c (registry, glyph dispatch, the .orb_font loader -- everything static) and
-    gui_font.c (the public API, gui_backend.h) since both need font_slot_t / font_metrics_t.  The
-    font unit's actual public surface lives in gui_backend.h and gui_font.c; see the header
+    gui_font.c (the public API, gui_render.h) since both need font_slot_t / font_metrics_t.  The
+    font unit's actual public surface lives in gui_render.h and gui_font.c; see the header
     comment in gui_font_internal.c for how the split works.
 
     The .orb_font is currently the only font source format gui loads, so we assume it.

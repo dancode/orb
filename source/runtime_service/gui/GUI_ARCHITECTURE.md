@@ -25,8 +25,8 @@ so each library boundary is compiler-enforced):
   conductor), and open/closed state. Storage + frame turnover
   stay in `gui_context_t` (core), the house pattern; window GESTURES (drags, grips,
   raise-on-press with its dock exception) are window/ policy over these services.
-- `gui_backend.c` (render unit): fonts, draw list, tessellation, GPU flush, debug overlay.
-  UI unit calls it one-way through `gui_backend.h` (`draw_*`, `font_*`, `gui_render_*`).
+- `gui_render.c` (render server unit): fonts, draw list, tessellation, GPU flush, debug overlay.
+  UI unit calls it one-way through `render/gui_render.h` (`draw_*`, `font_*`, `gui_render_*`).
 - `element/gui_element.c` (element unit): the `el_*` rect-consuming widget cores + the
   installed `gui_el_style_t` (see gui_api.h GUI_ELEMENT / docs/GUI_STACK_PLAN.md). Reaches
   the rest of gui ONLY through the public `gui_*` surface plus the `style_active()` seam
@@ -40,7 +40,7 @@ so each library boundary is compiler-enforced):
   Its core-facing definitions (the frame lifecycle's window/popup/nav/dock steps) are seams
   the other direction.
 - `debug/gui_debug.c` (debug unit): the pipeline dashboard + command stepper -- severable
-  tooling over the backend capture snapshots (`gui_frame_overlay.c` stays with the frame
+  tooling over the render server capture snapshots (`gui_frame_overlay.c` stays with the frame
   group: the lifecycle calls its timing helpers).
 
 ## The composer / behavior / presentation split
@@ -89,7 +89,7 @@ Three roles, one contract (the directories carry the same names):
   text-fit, frame color policy, system adornments, symbol draws): consumes rect + state + skin
   and paints; state is a parameter, it never asks behavior. The widget paint floor is
   rect-taking (`draw_fill( r, col )` / `draw_outline( r, t, col )` in `gui_paint_core.c`, plus
-  the `draw_*` symbol palette): widgets speak rects; only the backend emit layer
+  the `draw_*` symbol palette): widgets speak rects; only the render server emit layer
   (`draw_push_*`) speaks scalar x/y/w/h with UV + texture arguments.
 
 The internal prefix names the seam a widget crosses: `item_id` (identity), `cell_next(_w)` /
@@ -392,4 +392,4 @@ I idle skip); host adds M = mem stats.
 
 Build + run: `bin\build_tool.exe -config Debug -target sb_gui && bin\sb_gui.exe`.
 Note: editing a unity-included .c/.h does not rebuild the lib -- touch the unit file
-(`gui.c` / `gui_backend.c`) if the build skips.
+(`gui.c` / `gui_render.c`) if the build skips.

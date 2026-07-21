@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/backend/resource/gui_icon.c -- Runtime icon set.
+    runtime_service/gui/draw/gui_icon.c -- Runtime icon set.
 
     Raw monochrome bitmaps registered at runtime (icon_register) and packed into the shared resource
     atlas (gui_res_atlas.c) as tenants, so icons draw from the same texture -- and batch in the same
@@ -13,7 +13,7 @@
     feeds them in.  The shared atlas owns the resident copy and the deferred GPU upload, so
     registration stays safe to call mid-frame (the upload lands at the next frame_begin flush).
 
-    Included by gui_backend.c after resource/gui_font.c (and after gui_res_atlas.c).
+    Included by gui_render.c after resource/gui_font.c (and after gui_res_atlas.c).
 
 ==============================================================================================*/
 // clang-format off

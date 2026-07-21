@@ -1,10 +1,10 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_select_capture.c -- Text-run capture for text selection.
+    runtime_service/gui/render/gui_select_capture.c -- Text-run capture for text selection.
 
     The backend half of window text selection (GUI_WIN_TEXT_SELECT); the UI half (the
     selection controller: press/drag protocol, highlight paint, Ctrl+C copy) is
-    interact/gui_select.c.  See the section banner in gui_backend.h for the boundary.
+    interact/gui_select.c.  See the section banner in gui_render.h for the boundary.
 
     At the build seam -- segments closed, every emit pool complete, nothing tessellated yet
     (the same seam the command stepper freezes at) -- the GUI_CMD_TEXT commands of each
@@ -20,7 +20,7 @@
     describes.  A flagged window that stops emitting (closed, collapsed) simply stops
     marking, and its runs drop at the next capture.
 
-    Included LAST in gui_backend.c (with the dash / step captures) so s_draw is in scope.
+    Included LAST in gui_render.c (with the dash / step captures) so s_draw is in scope.
 
 ==============================================================================================*/
 // clang-format off

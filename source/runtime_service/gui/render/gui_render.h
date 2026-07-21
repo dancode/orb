@@ -2,14 +2,14 @@
 #define GUI_BACKEND_H
 /*==============================================================================================
 
-    runtime_service/gui/gui_backend.h -- The render-backend interface (the unit seam).
+    runtime_service/gui/render/gui_render.h -- The render-backend interface (the unit seam).
 
     gui is built as TWO unity translation units that link into one static lib:
 
         gui.c          -- the UI / core unit: context, layout, widgets, chrome, popups, nav,
                           input, frame lifecycle, the module vtable.  Owns s_build / s_io /
                           s_interaction / g_ctx and the stacks.
-        gui_backend.c  -- the render backend unit: fonts, the CPU draw list, path stroking,
+        gui_render.c  -- the render backend unit: fonts, the CPU draw list, path stroking,
                           CPU tessellation, the GPU flush, and the debug overlay.  Owns
                           s_draw / s_tess / s_font / s_render.
 
@@ -24,9 +24,9 @@
     have external linkage, defined and fetched once in gui.c (MOD_USE_RHI / MOD_USE_APP); the
     backend unit reads them through the same inline accessors from rhi_api.h / app_api.h.
 
-    Included once at the top of each unity entry (gui.c and gui_backend.c).
+    Included once at the top of each unity entry (gui.c and gui_render.c).
 
-    Sections below are grouped by pipeline stage, matching the include order in gui_backend.c and
+    Sections below are grouped by pipeline stage, matching the include order in gui_render.c and
     named for the function prefix each stage exports.  Tessellation primitives (gui_build_tess.c)
     have no public surface -- driven entirely from within BUILD -- so there is no section for them.
 
@@ -44,10 +44,10 @@
 
 // clang-format off
 /*==============================================================================================
-    Backend lifecycle (gui_backend.c) -- the seam the UI unit calls to stand up / tear down the
+    Backend lifecycle (gui_render.c) -- the seam the UI unit calls to stand up / tear down the
     whole render backend.  `caps` (gui_backend_caps_t, gui.h) latches which optional layers are
     active for this run -- gui_init_config_back()'s value, or GUI_CAPS_DEFAULT if never called; see
-    s_caps at the top of gui_backend.c for how the rest of the unit reads it.  Internally wraps
+    s_caps at the top of gui_render.c for how the rest of the unit reads it.  Internally wraps
     gui_render_init/shutdown (gui_render.c), which are no longer exposed past this header.
 ==============================================================================================*/
 
@@ -55,31 +55,28 @@ bool gui_backend_init( gui_backend_caps_t caps );
 void gui_backend_exit( void );
 
 /*==============================================================================================
-    Fonts (resource/gui_font.c; implementation in resource/gui_font_internal.c)
+    Glyph / sprite source contract -- the data the server resolves at tess/emit time
+
+    The render server renders from the shared atlas that is PUSHED to it; it does not know
+    what a font or an icon IS.  What it does need, mid-pipeline, is a resolver: the
+    tessellator turns a text command into quads via font_glyph and re-activates the segment's
+    font by id (font_use / font_active_id); the emit layer resolves an icon id to its cached
+    UVs (icon_get).  These are implemented by the DRAW unit's resources (draw/gui_font.c,
+    draw/gui_icon.c) over tables that live beside the atlas -- the server consumes the
+    installed source and never manages it.
 ==============================================================================================*/
 
-u32  font_load              ( const char* path );           // load a .orb_font into a new id, activate it (0=fail)
-bool font_load_into         ( u32 id, const char* path );   // load a .orb_font into an existing id (id 0 = default)
-bool font_load_builtin      ( gui_builtin_font_t font );    // load a built-in preset (gui.h) into slot 0; true no-op for GUI_FONT_NONE
-const char* font_builtin_rel_path( gui_builtin_font_t font ); // preset's asset path relative to the root; NULL for NONE / out of range
-void font_use                ( u32 id );                    // make an already-loaded id the active font
-u32  font_active_id         ( void );                       // id of the active font slot (save/restore for push/pop)
-bool font_valid              ( void );                      // true once a font is activated -- gate metric/glyph reads on this
-u32  font_slot_atlas_idx    ( u32 id );                     // live bindless atlas index backing a font id (0 if empty)
-gui_vec2_t font_slot_atlas_size( u32 id );                  // live atlas pixel dimensions backing a font id
-bool font_flush_pending     ( void );                       // commit deferred (re)loads; true if the active font changed
+void font_use      ( u32 id );      // make an already-loaded id the active glyph table
+u32  font_active_id( void );        // id of the active table (segment save/restore)
+bool font_valid    ( void );        // true once a table is installed -- gates glyph reads
 
-f32  font_char_h            ( void );                       // glyph-box height of the active font (ascent+descent)
-f32  font_line_h            ( void );                       // line advance of the active font
-f32  font_em                ( void );                       // nominal type size (em) -- the layout proportion base
-f32  font_char_advance      ( u8 ch );                      // horizontal advance of one glyph
-void font_print_active      ( void );                       // log the active font's name and metrics
-f32  font_text_w            ( const char* str );            // pixel width of a NUL-terminated run
-f32  font_text_w_n          ( const char* str, u32 n );     // pixel width of the first n characters
+/* Glyph lookup: UVs, pen offsets, glyph box, and advance for one character. */
+void font_glyph    ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
+                            f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
 
-/* Glyph atlas lookup: UVs, pen offsets, glyph box, and advance for one character. */
-void font_glyph             ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
-                                     f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
+/* Icon lookup: cached UVs (+ optional pixel size) for a registered icon id. */
+bool icon_get      ( gui_icon_id_t id,
+                     f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );
 
 /*==============================================================================================
     Shared resource atlas (resource/gui_res_atlas.c)
@@ -91,25 +88,6 @@ void font_glyph             ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
 ==============================================================================================*/
 
 void            res_atlas_flush_upload  ( void );   // re-upload the resident atlas to the GPU if dirty
-
-/*==============================================================================================
-    Runtime icon set (resource/gui_icon.c)
-
-    Callers register raw monochrome bitmaps (icon_register) that pack into the shared resource atlas
-    as tenants, handing back a gui_icon_id_t.  draw_push_icon (pipeline/gui_emit_draw.c, EMIT section
-    below) draws through the existing textured-quad path using icon_get's UVs, so icons batch in the
-    same draw as the text and fills around them and tint by vertex color.
-==============================================================================================*/
-
-bool            icon_atlas_init         ( void );   // enable icon registration (shared atlas owns GPU)
-void            icon_atlas_shutdown     ( void );   // clear the icon table
-
-gui_icon_id_t   icon_register           ( const char* name, u32 w, u32 h, const u8* coverage );
-gui_icon_id_t   icon_load_file          ( const char* name, const char* path );  // decode PNG/... -> R8 coverage -> icon_register
-void            icon_load_builtins      ( void );                                // register the engine's built-in icon set from disk
-gui_icon_id_t   icon_find               ( const char* name );
-bool            icon_get                ( gui_icon_id_t id,
-                                          f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );
 
 /*==============================================================================================
     EMIT: CPU draw list (pipeline/gui_emit_draw.c)
@@ -168,7 +146,7 @@ void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n
 bool draw_cull_box              ( f32 x, f32 y, f32 w, f32 h );
 
 /*==============================================================================================
-    TEXT-SELECTION run capture (backend/gui_select_capture.c)
+    TEXT-SELECTION run capture (render/gui_select_capture.c)
 
     The backend half of window text selection (GUI_WIN_TEXT_SELECT): at the build seam --
     segments closed, every emit pool complete -- the GUI_CMD_TEXT commands of each window
@@ -257,7 +235,7 @@ void                gui_build_dump_geometry( void );
 
         widgets/gui_volatile.c            -- UI unit: gui()->volatile_cb/_begin/_end (gui_api.h),
                                              the replay scope (layout + id), gui_replay_scope_enter/_exit.
-        backend/pipeline/gui_build_volatile.c -- BUILD unit: the registry, capture at real emit, and
+        render/pipeline/gui_build_volatile.c -- BUILD unit: the registry, capture at real emit, and
                                              gui_update_volatile (run internally by frame_end).
 
     Forward direction (core -> backend, the normal call direction for this header): gui_volatile_cb
@@ -295,14 +273,14 @@ void     gui_replay_scope_exit ( bool force_redraw );
     RENDER: GPU resources + flush (pipeline/gui_render.c)
 
     gui_render_init/shutdown are NOT declared here -- they're an implementation detail of
-    gui_backend_init/exit (above) now, called directly within the gui_backend.c unity TU.
+    gui_backend_init/exit (above) now, called directly within the gui_render.c unity TU.
 ==============================================================================================*/
 
 void                gui_render_flush        ( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
 /* Fill the backend-owned buckets of the memory breakdown: GPU device memory (geometry buffers
    scaled by the caller-supplied live-surface count, atlas textures, debug-overlay buffers) and
-   every fixed CPU static the backend TU defines (see backend/gui_backend_mem.c).  The CPU-heap
+   every fixed CPU static the backend TU defines (see render/gui_render_mem.c).  The CPU-heap
    context bytes and the totals are filled by the frontend (gui_mem_stats), which owns the
    context pool. */
 gui_mem_stats_t     gui_backend_memory      ( u32 live_viewports );
@@ -378,7 +356,7 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
 #endif
 
 /*==============================================================================================
-    PIPELINE DASHBOARD (backend/gui_dash_capture.c + gui_dashboard.c) -- Debug builds only.
+    PIPELINE DASHBOARD (render/gui_dash_capture.c + gui_dashboard.c) -- Debug builds only.
 
     A visual diagnostic of the render pipeline itself: memory maps of the shared vertex/index
     arena (per-window geometry slots with their padded reservations, volatile sub-slots, the
@@ -393,7 +371,7 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
                                               (GUI_WIN_DEBUG_BAND, gui.h) is what keeps it
                                               honest: its geometry packs after every main-band
                                               slot and the stats/any_changed signals ignore it.
-        backend/gui_dash_capture.c         -- the CAPTURE: copies the snapshot types below at
+        render/gui_dash_capture.c         -- the CAPTURE: copies the snapshot types below at
                                               defined pipeline points (end of cache_build_frame,
                                               end of each surface's flush) for the shell to read
                                               one frame later through gui_dash_snapshot().
@@ -423,7 +401,7 @@ extern gui_id_t g_gui_dash_window_id;
         never mid-mutation, and can freeze it.  These types live in the seam header because the
         SHELL (gui_dashboard.c, UI unit) now draws every panel itself with the standard draw API,
         reading the snapshot through gui_dash_snapshot(); the backend keeps only the capture
-        (backend/gui_dash_capture.c).  Plain data mirrors -- no backend-private type leaks.
+        (render/gui_dash_capture.c).  Plain data mirrors -- no backend-private type leaks.
     ------------------------------------------------------------------------------------------*/
 
     typedef struct                       /* win_geo_slot_t + this frame's diff verdict */
@@ -527,10 +505,10 @@ extern gui_id_t g_gui_dash_window_id;
 
 /*==============================================================================================
     Command stepper -- freeze one frame's semantic command list and replay a prefix of it, so
-    UI generation can be stepped command by command (backend/gui_step_capture.c has the full
+    UI generation can be stepped command by command (render/gui_step_capture.c has the full
     mechanism).  Two halves:
 
-        backend/gui_step_capture.c         -- the CAPTURE + RESTORE: snapshots the band-0
+        render/gui_step_capture.c         -- the CAPTURE + RESTORE: snapshots the band-0
                                               command list at the build seam, then pre-loads
                                               s_draw with the frozen prefix at every draw_reset
                                               while frozen; live band-0 pushes are suppressed

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/resource/gui_res_atlas.h -- The shared GUI resource atlas.
+    runtime_service/gui/render/resource/gui_res_atlas.h -- The shared GUI resource atlas.
 
     ONE owned R8 coverage texture (GUI_RES_ATLAS_W x GUI_RES_ATLAS_H) with a single bindless slot.
     Every core UI draw resource -- font glyph atlases, the runtime icon set, and the solid/dash
@@ -29,12 +29,12 @@
     res_atlas_generation bumps on every structural (UV-affecting) change so the retained render cache
     can fold it into its per-window hash and re-tessellate geometry whose baked UVs went stale.
 
-    Included by gui_backend.c before resource/gui_font.h (fonts + icons are tenants of this atlas).
+    Included by gui_render.c before resource/gui_font.h (fonts + icons are tenants of this atlas).
 
 ==============================================================================================*/
 #pragma once
 
-#include "runtime_service/gui/backend/resource/gui_atlas.h" /* gui_atlas_t -- the owned GPU texture */
+#include "runtime_service/gui/render/resource/gui_atlas.h" /* gui_atlas_t -- the owned GPU texture */
 
 // clang-format off
 

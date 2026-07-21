@@ -15,7 +15,7 @@
 
     Dependency contract: this tier calls gui_core (item, ids, io, redraw) + gui_draw
     (draw_*) + gui_rect only -- NEVER the flow layout engine.  This file is its OWN
-    translation unit (the third, beside gui.c and gui_backend.c) -- the compiler enforces
+    translation unit (the third, beside gui.c and gui_render.c) -- the compiler enforces
     the contract: everything resolves through the public gui_* declarations (gui_host.h)
     plus the one internal seam, style_active() (gui_internal.h).
 

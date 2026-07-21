@@ -25,7 +25,7 @@ ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
                    "a gui viewport pairs an OS window with an rhi context; the maxes must agree" );
 
 /*==============================================================================================
-    Render viewport (behavior in backend/pipeline/gui_render.c + frame/gui_viewport.c)
+    Render viewport (behavior in render/pipeline/gui_submit.c + frame/gui_viewport.c)
 
     One render surface a context drives: GPU buffers + a color target, the OS window hosting it, and
     the routing/ownership bookkeeping for host-provided vs gui-owned (torn-off floater) surfaces.

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/resource/gui_icon_load.c -- Icon pixel SOURCING from disk.
+    runtime_service/gui/draw/gui_icon_load.c -- Icon pixel SOURCING from disk.
 
     gui_icon.c (included just before this file) owns icon bookkeeping and packing but is
     deliberately blind to where the coverage bytes come from -- callers hand it raw R8.  This file
@@ -20,7 +20,7 @@
     private to this (gui backend) translation unit -- the asset service compiles its own external
     copy (asset_image.c), and a host that links both must not see the two collide.
 
-    Included by gui_backend.c after resource/gui_icon.c (needs icon_register) and after
+    Included by gui_render.c after resource/gui_icon.c (needs icon_register) and after
     resource/gui_font.c (which pulled in sys_host.h for sys_root_dir).
 
 ==============================================================================================*/

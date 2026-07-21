@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/backend/pipeline/gui_build_tess.c -- CPU-side tessellation engine.
+    runtime_service/gui/render/pipeline/gui_build_tess.c -- CPU-side tessellation engine.
 
     Translates the frame's semantic gui_cmd_t list (s_draw) into packed vertex/index
     geometry in s_tess.  This is the CPU half of the command-list split: everything here
@@ -11,7 +11,7 @@
     BUILD phase fills it via tess_dispatch) and gui_render.c (gui_render_flush uploads it and
     emits draw calls).  No file above the backend unit touches it.
 
-    Included by gui_backend.c after gui_emit_path.c (provides v2, seg_normal,
+    Included by gui_render.c after gui_emit_path.c (provides v2, seg_normal,
     stroke_center_offset, STROKE_* constants) and before gui_build_cache.c (which drives
     tess_reset / tess_dispatch from cache_build_frame / cache_tess_window).
 
@@ -24,7 +24,7 @@
    live together in one cache line rather than in four parallel arrays keyed on the same index.
    ibase is explicit (not accumulated from elem_counts at flush) so the index buffer may hold
    reserved gaps -- volatile block headroom -- between commands.  Mirrors dash_cmd_t (the snapshot
-   type in gui_backend.h), which was AOS from the start; this is the live half catching up. */
+   type in gui_render.h), which was AOS from the start; this is the live half catching up. */
 
 typedef struct
 {
@@ -71,7 +71,7 @@ static struct
        blocks record their position slot-RELATIVE (never absolute) so a later patch can resolve
        the current absolute position from the live slot table, and stamp slot_tess_gen so a patch
        only ever writes into geometry produced by the exact tessellation pass that captured it
-       (see backend/pipeline/gui_build_volatile.c). */
+       (see render/pipeline/gui_build_volatile.c). */
 
     u32 slot_idx_base;
     u32 slot_cmd_base;
@@ -255,9 +255,9 @@ tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
         s_tess.overflow = true;
         return false;
     }
-    if ( !tess_ensure_gpu_cmd( font_atlas_idx() ) )
+    if ( !tess_ensure_gpu_cmd( res_atlas_idx() ) )
         return false;
-    font_white_uv( wu, wv );
+    res_atlas_white_uv( wu, wv );
     *out_base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     *out_v    = &s_tess.verts  [ s_tess.vert_count ];
     *out_i    = &s_tess.indices[ s_tess.idx_count  ];
@@ -286,8 +286,8 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
     /* tex_idx 0 = solid-color convention: route to the font atlas's white texel. */
     if ( tex_idx == 0 )
     {
-        tex_idx = font_atlas_idx();
-        font_white_uv( &u0, &v0 );
+        tex_idx = res_atlas_idx();
+        res_atlas_white_uv( &u0, &v0 );
         u1 = u0; v1 = v0;
     }
     x = floorf( x + 0.5f );
@@ -323,11 +323,11 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
         return;
     }
     f32 wu, wv;
-    font_white_uv( &wu, &wv );
+    res_atlas_white_uv( &wu, &wv );
 
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
-    if ( !tess_ensure_gpu_cmd( font_atlas_idx() ) )
+    if ( !tess_ensure_gpu_cmd( res_atlas_idx() ) )
         return;
 
     /* Corner colors walk col_a -> col_b along the chosen axis (TL, TR, BR, BL winding). */
@@ -423,8 +423,8 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
         return;
     }
     f32 wu, wv;
-    font_white_uv( &wu, &wv );
-    if ( !tess_ensure_gpu_cmd( font_atlas_idx() ) )
+    res_atlas_white_uv( &wu, &wv );
+    if ( !tess_ensure_gpu_cmd( res_atlas_idx() ) )
         return;
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
@@ -498,7 +498,7 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
             if ( !clipped || ( gx0 >= clip_x0 && gx1 <= clip_x1 ) )
             {
                 /* Whole glyph (or no clipping): emit as-is -- the hot interior path. */
-                tess_rect_filled( gx0, y + oy, gw, gh, u0, v0, u1, v1, font_atlas_idx(), abgr );
+                tess_rect_filled( gx0, y + oy, gw, gh, u0, v0, u1, v1, res_atlas_idx(), abgr );
             }
             else if ( gx1 > clip_x0 && gx0 < clip_x1 )
             {
@@ -516,7 +516,7 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
                     nx1 = clip_x1;
                 }
                 tess_rect_filled( nx0, y + oy, nx1 - nx0, gh, nu0, v0, nu1, v1,
-                                  font_atlas_idx(), abgr );
+                                  res_atlas_idx(), abgr );
             }
             /* else: glyph wholly outside the window -- drop it. */
         }
@@ -551,9 +551,9 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
     f32 nx   = -uy,      ny = ux;                /* unit normal across the line */
     f32 half = thickness * 0.5f;
     f32 umax = len / period;                     /* number of tiled periods -> U span */
-    f32 vv   = font_dash_v( duty );
+    f32 vv   = res_atlas_dash_v( duty );
 
-    if ( !tess_ensure_gpu_cmd( font_atlas_idx() ) )
+    if ( !tess_ensure_gpu_cmd( res_atlas_idx() ) )
         return;
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
@@ -717,8 +717,8 @@ tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     return true;
 }
 
-/* Volatile-widget seam (backend/pipeline/gui_build_volatile.c, included right after this file in
-   the gui_backend.c unity build).  tess_dispatch calls volatile_range_close once a tagged command
+/* Volatile-widget seam (render/pipeline/gui_build_volatile.c, included right after this file in
+   the gui_render.c unity build).  tess_dispatch calls volatile_range_close once a tagged command
    RANGE's vertices/indices/GPU commands are fully written; it records the block's slot-relative
    position, reserves padded headroom past the live geometry (advancing this file's write heads),
    and stamps the slot tessellation generation.  s_volatile_patching is defined HERE (first in the

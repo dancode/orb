@@ -1,6 +1,36 @@
 # GUI SERVER PLAN -- the v2 unit reorganization
 
-Status: R1 (rect) + R1b (header split) DONE 2026-07-21 -- next: R2 (render)
+Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) DONE 2026-07-21 -- next: R4 (core)
+
+R3 DONE: the GUI_DRAW unit exists (root gui_draw.c).  Moved in: draw/gui_paint.c (the paint
+floor + fitted text painters, split out of present/gui_paint_core.c), draw/gui_symbol.c
+(whole palette; its five style-read sites are banner-marked for the R8 parameterization),
+draw/gui_canvas.c, and the FONT + ICON resources (draw/gui_font.h/.c/_internal.c,
+gui_icon.c/_load.c) out of render/resource/.  The server side now speaks the GLYPH/SPRITE
+SOURCE CONTRACT (render/gui_render.h): font_use / font_active_id / font_valid / font_glyph +
+icon_get -- implemented by draw over tables beside the atlas; the old font_atlas_idx /
+font_white_uv / font_dash_v / font_atlas_bytes / icon_atlas_idx delegates died (render call
+sites retargeted to res_atlas_* directly).  Fonts/icons push into the atlas through the
+res_atlas_* API (gui_res_atlas.h).  Lifecycle re-seated per the model: gui_backend_init
+stands up pipeline + atlas only; the orchestrator (frame/gui_frame.c) then calls the NEW
+gui_draw_boot( icons ) (font_init + optional icon layer + builtins), and gui_draw_shutdown()
+tears down before gui_backend_exit -- font/icon boot left gui_submit.c and the render root.
+Memory accounting: NEW gui_draw_unit_mem_bytes() (fonts registry + reload queue + icon
+tables); render's gui_backend_memory fills its font bucket through that seam and keeps only
+sizeof(s_res) + res_atlas_bytes().  paint_core is now grammar (->core R4) + state->color
+projections (style material) + styled adornments (->element R8) only.  Full build clean,
+both canaries clean.  Still deferred: the gui_backend_* lifecycle identifier rename.
+
+R2 DONE: backend/ -> render/ wholesale (git mv; font/icon stay in render/resource/ until R3
+claims them for draw); gui_backend.c -> root unit gui_render.c; gui_backend.h ->
+render/gui_render.h; pipeline/gui_render.c -> pipeline/gui_submit.c (freed the unit name --
+it is the RENDER-phase upload+submit file); gui_backend_mem.c -> gui_render_mem.c.  All
+include paths + comment path references swept repo-wide (incl. sb_vulkan_stress's
+gui_shader.h include); orb.targets unit lines updated.  KEPT for now: the gui_backend_*
+identifiers (gui_backend_init/exit/memory, gui_backend_caps_t) -- gui_render_init already
+names the GPU-resource init in gui_submit.c, so the lifecycle rename needs a deliberate
+naming pass (candidate: gui_render_boot/shutdown at R3 when the unit's contents settle).
+Full build clean; both canaries clean.
 
 R1b DONE: gui_internal.h is now a pure UMBRELLA -- one header per unit, included in stack
 order, so the include list IS the dependency graph.  New headers: core/gui_core.h (server
@@ -166,8 +196,8 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
 ## Increment ladder (one per go-ahead, each builds green)
 
     R1  rect     folder + root unit + move leaf math out of paint_core        <- DONE
-    R2  render   backend/ -> render/; gui_backend.h -> render/gui_render.h; gui_backend.c -> gui_render.c
-    R3  draw     NEW drawing-routine unit: pure wrappers + shape half of gui_symbol.c + canvas
+    R2  render   backend/ -> render/; gui_backend.h -> render/gui_render.h; gui_backend.c -> gui_render.c   <- DONE
+    R3  draw     NEW drawing-routine unit: pure wrappers + shape half of gui_symbol.c + canvas   <- DONE
     R4  core     interact server assembly; core/gui_core.h carved from gui_internal.h; pane re-shape
     R5  style    style/ folder; style/gui_style.h takes the COL_/metric vocabulary
     R6  interact gesture unit gui_interact.c; paint halves pushed up

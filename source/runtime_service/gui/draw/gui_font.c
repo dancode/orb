@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/resource/gui_font.c -- The font unit's public API (gui_backend.h).
+    runtime_service/gui/draw/gui_font.c -- The font unit's public API (gui_render.h).
 
     Every function here is what gui.c (the UI unit) is allowed to call.  gui_font_internal.c,
     included right before this file, holds the registry state and the loader; this file calls

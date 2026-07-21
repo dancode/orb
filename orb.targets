@@ -170,7 +170,8 @@ target gui
     folder      03_RUNTIME/SERVICE
     unit        gui_rect.c  				# GUI_RECT unit: leaf geometry + color primitives
     unit        gui.c   					# UI / core unit
-    unit        gui_backend.c  				# render backend unit
+    unit        gui_render.c  				# GUI_RENDER unit: the render server (batch, atlas, pipeline)
+    unit        gui_draw.c  				# GUI_DRAW unit: drawing routines + font/icon resources over the server
     unit        element/gui_element.c   	# GUI_ELEMENT unit: el_* cores, public-surface-only
     unit        debug/gui_debug.c   		# GUI_DEBUG unit: dashboard + command stepper (severable)
     unit        compose/gui_flow.c   		# GUI_FLOW unit: layout composition (metrics in, rects out)
@@ -185,7 +186,8 @@ target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the lo
     folder      03_RUNTIME/SERVICE
     unit        gui_rect.c   # GUI_RECT unit: leaf geometry + color primitives
     unit        gui.c   # UI / core unit
-    unit        gui_backend.c   # render backend unit
+    unit        gui_render.c   # GUI_RENDER unit: the render server (batch, atlas, pipeline)
+    unit        gui_draw.c   # GUI_DRAW unit: drawing routines + font/icon resources over the server
     unit        element/gui_element.c   # GUI_ELEMENT unit: el_* cores, public-surface-only
     unit        debug/gui_debug.c   # GUI_DEBUG unit: dashboard + command stepper (severable)
     unit        compose/gui_flow.c   # GUI_FLOW unit: layout composition (metrics in, rects out)

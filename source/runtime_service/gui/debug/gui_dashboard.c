@@ -18,7 +18,7 @@
     "Second band" toggle folds the debug band back in (dimmed and marked in the maps, split out in
     the headers) when you want to see the observer's own cost.
 
-    Data comes from the backend capture (backend/gui_dash_capture.c) via gui_dash_snapshot():
+    Data comes from the backend capture (render/gui_dash_capture.c) via gui_dash_snapshot():
     a coherent copy taken at the end of cache_build_frame / gui_render_flush.  The shell emits
     one frame after a capture, so the display lags the pipeline by one frame -- the standard
     self-measurement lag.  Hover tooltips resolve against the same snapshot the bars were drawn
@@ -28,7 +28,7 @@
     ctx_end while debug_enable is on; the F10 hotkey owns the open flag and the window's X
     button writes it back to false.  Included by gui.c after the popup tier (tooltips) and
     before gui_frame_overlay.c / gui_frame.c.  Compiled out unless GUI_PIPELINE_DASHBOARD
-    (gui_backend.h); gui_pipeline_dashboard stays a no-op stub then.
+    (gui_render.h); gui_pipeline_dashboard stays a no-op stub then.
 
 ==============================================================================================*/
 // clang-format off

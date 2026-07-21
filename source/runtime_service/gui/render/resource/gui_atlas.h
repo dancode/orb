@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/resource/gui_atlas.h -- Owned GPU-texture asset (type + lifecycle).
+    runtime_service/gui/render/resource/gui_atlas.h -- Owned GPU-texture asset (type + lifecycle).
 
     A CPU-authored R8 coverage bitmap uploaded to an owned GPU texture and registered for bindless
     sampling.  RHI itself tracks neither the pairing nor the lifetime -- texture_create /
@@ -14,7 +14,7 @@
     gui_icon.c) is a different, larger problem -- indexing/streaming/dependency tracking across many
     asset kinds -- and should not be backed into this texture-sized helper.
 
-    Included by gui_backend.c before resource/gui_res_atlas.h.
+    Included by gui_render.c before resource/gui_res_atlas.h.
 
 ==============================================================================================*/
 #pragma once

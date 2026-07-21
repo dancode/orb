@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_dash_capture.c -- Pipeline dashboard snapshot capture.
+    runtime_service/gui/render/gui_dash_capture.c -- Pipeline dashboard snapshot capture.
 
     The backend half of the pipeline diagnostic dashboard (see gui_dashboard.c for the window
     and every panel painter).  Copies a coherent snapshot of the pipeline at two defined points:
@@ -11,16 +11,16 @@
         dash_capture_flush -- end of each surface's gui_render_flush: frame-in-flight index,
                               upload spans, upload bytes/batches, draw calls.
 
-    The shell reads the snapshot through gui_dash_snapshot() (gui_backend.h) and draws the
+    The shell reads the snapshot through gui_dash_snapshot() (gui_render.h) and draws the
     panels itself with the standard draw API, as an ordinary GUI_WIN_DEBUG_BAND window: the
     band system packs its geometry after every main-band slot and keeps it out of the stats
     and any_changed signals, so the dashboard never pollutes the arena layout or the metrics
     it displays.  Because the shell emits one frame after a capture, the display lags the
     pipeline by one frame -- the standard self-measurement lag.
 
-    Included by gui_backend.c LAST so every pipeline static it reads (s_draw, s_tess,
+    Included by gui_render.c LAST so every pipeline static it reads (s_draw, s_tess,
     s_slots/s_dispatch/s_cache/s_stats, s_volatile, s_tess_gen_next) is in scope.  Compiled out
-    unless GUI_PIPELINE_DASHBOARD (gui_backend.h); the capture hooks compile to (void)0 then.
+    unless GUI_PIPELINE_DASHBOARD (gui_render.h); the capture hooks compile to (void)0 then.
 
 ==============================================================================================*/
 // clang-format off
@@ -169,7 +169,7 @@ dash_capture_build( void )
 
     sn->diff_unchanged = s_cache.unchanged;  sn->any_changed = s_cache.any_changed;
     sn->tess_gen_next  = s_tess_gen_next;
-    sn->font_atlas     = font_atlas_idx();
+    sn->font_atlas     = res_atlas_idx();
 
     sn->stats          = s_stats.published;
     sn->draw_call_hwm  = s_stats.draw_call_hwm;

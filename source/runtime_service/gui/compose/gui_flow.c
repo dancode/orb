@@ -8,9 +8,9 @@
     sz_ sizing family.  Consumes spacing metrics, produces rects; behavior and presentation
     are the sibling roles it never reaches into.
 
-    The fifth translation unit (beside gui.c, gui_backend.c, element/gui_element.c,
+    The fifth translation unit (beside gui.c, gui_render.c, element/gui_element.c,
     debug/gui_debug.c).  The compiler enforces the flow library boundary: everything resolves
-    through the public gui_* surface (gui_host.h), the backend draw/clip API (gui_backend.h),
+    through the public gui_* surface (gui_host.h), the backend draw/clip API (gui_render.h),
     and the seams declared in gui_internal.h's cross-unit sections -- the ambient records
     (g_ctx / s_io / s_style / s_scope / s_build), the core services it composes over, and the
     two upward seams (scrollbar_widget, the region gutter's one widget; gui_anim_f32, the
@@ -30,7 +30,7 @@
 #include "base/math.h"
 
 #include "runtime_service/gui/gui_internal.h"   /* -> gui_host.h -> gui_api.h -> gui.h */
-#include "runtime_service/gui/gui_backend.h"    /* draw_* / clip API                   */
+#include "runtime_service/gui/render/gui_render.h"    /* draw_* / clip API                   */
 
 #include "runtime_service/gui/compose/gui_layout_core.c"
 #include "runtime_service/gui/compose/gui_scroll.c"

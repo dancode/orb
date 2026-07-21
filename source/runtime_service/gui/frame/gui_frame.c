@@ -70,8 +70,16 @@ gui_init( gui_builtin_font_t font )
 
     /* init: shared pipeline / sampler / atlas + optional layers */
 
-    if ( !gui_backend_init( s_init_caps ) )      
+    if ( !gui_backend_init( s_init_caps ) )
         return false;
+
+    /* The draw unit's resources (fonts + optional icons) register into the shared atlas the
+       server just created -- the orchestrator boots them in dependency order. */
+    if ( !gui_draw_boot( s_init_caps.icons ) )
+    {
+        gui_backend_exit();
+        return false;
+    }
 
     /* Optional built-in font (gui.h); non-fatal on failure -- init still succeeds, just without
        text, mirroring the debug-overlay init a few lines below.  font_load_builtin activates the
@@ -99,7 +107,7 @@ gui_init( gui_builtin_font_t font )
 
     /* The pipeline dashboard needs no lifecycle here: it is an ordinary GUI_WIN_DEBUG_BAND
        window drawn through the normal pipeline (gui_dashboard.c); the backend keeps only the
-       snapshot capture, which owns no GPU resources (backend/gui_dash_capture.c). */
+       snapshot capture, which owns no GPU resources (render/gui_dash_capture.c). */
 
     return true;
 }
@@ -123,6 +131,7 @@ gui_shutdown( void )
         for ( u32 v = 0; v < ctx->vp.max; ++v )
             viewport_destroy( &ctx->vp.pool[ v ] );
     }
+    gui_draw_shutdown();      /* draw unit resources (fonts + icons) leave the atlas first */
     gui_backend_exit();       /* shared pipeline / sampler / atlas */
 
     /* Free all context blocks. */
@@ -447,7 +456,7 @@ gui_render( gui_vp_t vp, rhi_cmd_t cmd )
 
     The font registry lives in the render backend unit; 
     
-    This UI-unit API drives it through the font_load / font_use accessors (gui_backend.h) 
+    This UI-unit API drives it through the font_load / font_use accessors (gui_render.h) 
     and rebuilds layout from the active font's metrics (font_em / font_char_h / font_line_h) 
         -- the font -> layout bridge.
 ==============================================================================================*/

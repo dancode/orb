@@ -3,7 +3,7 @@
     runtime_service/gui/interact/gui_select.c -- Window text selection (GUI_WIN_TEXT_SELECT).
 
     The UI half of selectable display text; the backend half (the run capture) is
-    backend/gui_select_capture.c.  A window flagged GUI_WIN_TEXT_SELECT gets two selection
+    render/gui_select_capture.c.  A window flagged GUI_WIN_TEXT_SELECT gets two selection
     gestures over every text run it draws -- including text drawn BY widgets (a button's
     label is an ordinary text command in the window's segments, so it captures like any run):
 

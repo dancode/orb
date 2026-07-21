@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/pipeline/gui_emit_draw.c -- Draw list accumulation.
+    runtime_service/gui/render/pipeline/gui_emit_draw.c -- Draw list accumulation.
 
     All geometry goes through the draw_push_* entry points, which append semantic gui_cmd_t
     records (no vertices yet).  GPU batching happens later, at tessellation time, in
@@ -11,7 +11,7 @@
     exactly like every other draw_push_*, reading the icon resource's icon_get / icon_atlas_idx
     accessors rather than the resource reaching up into EMIT itself.
 
-    Included by gui_backend.c after resource/gui_font.c / resource/gui_icon.c so font_glyph /
+    Included by gui_render.c after resource/gui_font.c / resource/gui_icon.c so font_glyph /
     icon_get / icon_atlas_idx are in scope.
 
 ==============================================================================================*/
@@ -130,7 +130,7 @@ static struct
 /*==============================================================================================
     FNV-1a hash helpers -- defined here (before draw_reset) so clip pre-hashing can use them.
     draw_hash_cmd below also uses them; fnv1a_u32 is visible in gui_build_cache.c (included
-    after this file by gui_backend.c).
+    after this file by gui_render.c).
 ==============================================================================================*/
 
 static inline u32
@@ -158,7 +158,7 @@ fnv1a_u32( u32 h, u32 v )
     draw_emit_blocked -- the one gate every draw_push_* entry point checks before spending a
     command slot (and, by early-outing first, any pool space): the command list is full, or the
     command stepper is replaying a frozen frame and live main-band emission is suppressed at the
-    source (STEP_EMIT_SUPPRESSED, gui_backend.h; capture/replay in backend/gui_step_capture.c).
+    source (STEP_EMIT_SUPPRESSED, gui_render.h; capture/replay in render/gui_step_capture.c).
 ==============================================================================================*/
 
 static inline bool
@@ -178,7 +178,7 @@ draw_emit_blocked( void )
 }
 
 #ifdef GUI_CMD_STEPPER
-/* Called by item_state (STEP_SET_OWNER, gui_backend.h) as each widget registers -- the
+/* Called by item_state (STEP_SET_OWNER, gui_render.h) as each widget registers -- the
    commands it paints right after carry its id.  Reset to 0 (chrome) at window transitions in
    draw_seg_retag; chrome painted after a window's last widget still attributes to that widget
    (a known display-only imprecision). */
@@ -779,7 +779,7 @@ draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
     f32 u0, v0, u1, v1;
     if ( !icon_get( id, &u0, &v0, &u1, &v1, NULL, NULL ) )
         return;
-    draw_push_rect_filled( x, y, w, h, u0, v0, u1, v1, icon_atlas_idx(), abgr );
+    draw_push_rect_filled( x, y, w, h, u0, v0, u1, v1, res_atlas_idx(), abgr );
 }
 
 /*==============================================================================================

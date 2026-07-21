@@ -87,7 +87,7 @@ gui_scope_t s_scope;
 #ifdef GUI_DEBUG_OVERLAY
 /* The debug overlay (gui_debug_overlay.c) lives in the render backend unit and tags each captured rect
    with the ambient build viewport.  s_build is private to this unit, so the overlay reads it
-   across the unit seam through this accessor (declared in gui_backend.h, Debug builds only). */
+   across the unit seam through this accessor (declared in gui_render.h, Debug builds only). */
 u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
 #endif
 

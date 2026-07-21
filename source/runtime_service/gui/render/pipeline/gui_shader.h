@@ -2,7 +2,7 @@
 #define GUI_SHADER_H
 /*==============================================================================================
 
-    runtime_service/gui/backend/pipeline/gui_shader.h -- Embedded SPIR-V for the gui pipeline.
+    runtime_service/gui/render/pipeline/gui_shader.h -- Embedded SPIR-V for the gui pipeline.
 
     FROZEN FALLBACK.  These arrays are the zero-cook-step path: gui_render_init prefers the
     cooked bin/shaders/gui.{vs,ps}.oshd pair (from shaders/gui.{vs,ps}.hlsl via

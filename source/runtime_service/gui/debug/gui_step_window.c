@@ -2,7 +2,7 @@
 
     runtime_service/gui/debug/gui_step_window.c -- Command stepper: control window shell.
 
-    The interactive front end of the command stepper (backend/gui_step_capture.c): Capture /
+    The interactive front end of the command stepper (render/gui_step_capture.c): Capture /
     Release, a transport row ( |<  <  >  >| ), a scrub slider over the frozen command prefix,
     an inspector decoding the current command (type, owning window, clip, per-type fields,
     color swatches), and the frozen segment list -- click a row to seek to its start (shift:
@@ -18,7 +18,7 @@
     content with no extra window or z machinery.
 
     Every control LATCHES its effect (capture at the next build, release / cursor at the next
-    frame's restore -- see gui_backend.h), so each mutating branch raises wants_redraw or the
+    frame's restore -- see gui_render.h), so each mutating branch raises wants_redraw or the
     clean-frame emit skip would sit on the stale request (the deferred-update rule).
 
     Emitted internally (debug_overlays_emit, gui_frame_overlay.c) at the default context's
@@ -26,7 +26,7 @@
     leaves the scene live; the Capture button freezes and Release lets go.  The X button only
     hides the window -- hiding does NOT release an active freeze (Release does).
     The , . step hotkeys keep working alongside (they scrub with key repeat; the buttons do not).
-    Compiled out unless GUI_CMD_STEPPER (gui_backend.h); gui_step_window stays a no-op stub then.
+    Compiled out unless GUI_CMD_STEPPER (gui_render.h); gui_step_window stays a no-op stub then.
 
 ==============================================================================================*/
 // clang-format off

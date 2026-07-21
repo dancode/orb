@@ -10,7 +10,7 @@
 
     Read ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is the
     orientation map: the three state tiers (ambient-singular / per-context retained via g_ctx /
-    frame-scratch), the three unity TUs (gui.c UI unit + gui_backend.c render unit +
+    frame-scratch), the three unity TUs (gui.c UI unit + gui_render.c render unit +
     element/gui_element.c element unit), the
     EMIT -> BUILD -> RENDER pipeline, and the invariants.  Header split follows the house
     convention: this file (types) -> gui_api.h (DLL) -> gui_host.h (hosts/sandboxes).
@@ -1550,7 +1550,7 @@ typedef struct
                     list, tessellation staging, retained cache, font/atlas/icon registries,
                     render state + embedded shaders, capture buffers, debug tooling.  Present
                     for the whole run whether one window is open or fifty; summed exhaustively
-                    in backend/gui_backend_mem.c (the accounting contract lives there).
+                    in render/gui_render_mem.c (the accounting contract lives there).
       - CPU heap  : one malloc block per live context (header + state / popup / window /
                     viewport / dock pools).  Dynamic: grows only when a secondary context is
                     created.

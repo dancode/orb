@@ -9,16 +9,16 @@
     server's emit layer (draw_push_*) speaks scalar x/y/w/h with UV + texture arguments.
     Included by gui_internal.h after style/gui_style.h.
 
-    Definitions live in present/gui_paint_core.c + present/gui_symbol.c today; R3 assembles
-    them (plus user/gui_canvas.c and the font/icon resources -- the render server renders
-    from a pushed atlas and does not know what a font is) into the draw unit proper.
+    Assembled in R3 (gui_draw.c at the gui root): gui_paint.c + gui_symbol.c + gui_canvas.c
+    + the font/icon resources -- the render server renders from a pushed atlas and does not
+    know what a font is, so glyph metrics and baking live here, one level up.
 
 ==============================================================================================*/
 
 // clang-format off
 
 /*==============================================================================================
-    Draw scope (state in backend/pipeline/gui_emit_draw.c; accessors in gui_backend.h)
+    Draw scope (state in render/pipeline/gui_emit_draw.c; accessors in gui_render.h)
 
     The paint cursor as one record: the command segment tag (owning window, sort key,
     viewport, arena band -- the ambient font stays global by design) plus the ambient glyph-clip
@@ -76,6 +76,44 @@ void       draw_resize_highlight( gui_rect_t r, u8 edges );
 void       draw_window_focus_border( gui_rect_t r );
 gui_rect_t draw_field_label( gui_rect_t row, const char* label, f32 min_control_w,
                              u32 label_color );
+
+/*==============================================================================================
+    Unit lifecycle + resources -- fonts and icons live HERE, one level above the render
+    server: glyph metrics and baking write into the shared atlas they hand down.  Booted by
+    the frame orchestrator right after the server (gui_draw_boot), torn down before it.
+==============================================================================================*/
+
+bool gui_draw_boot    ( bool icons );    /* font registry + optional icon layer (gui_draw.c) */
+void gui_draw_shutdown( void );
+u32  gui_draw_unit_mem_bytes( void );    /* the draw unit's fixed statics, for mem stats */
+
+/* Font registry + measurement (draw/gui_font.c; loader in draw/gui_font_internal.c).  The
+   glyph-source half the render server consumes (font_use / font_active_id / font_valid /
+   font_glyph) is declared in render/gui_render.h -- the contract, not here. */
+u32  font_load              ( const char* path );           // load a .orb_font into a new id, activate it (0=fail)
+bool font_load_into         ( u32 id, const char* path );   // load a .orb_font into an existing id (id 0 = default)
+bool font_load_builtin      ( gui_builtin_font_t font );    // load a built-in preset (gui.h) into slot 0; true no-op for GUI_FONT_NONE
+const char* font_builtin_rel_path( gui_builtin_font_t font ); // preset's asset path relative to the root; NULL for NONE / out of range
+u32  font_slot_atlas_idx    ( u32 id );                     // live bindless atlas index backing a font id (0 if empty)
+gui_vec2_t font_slot_atlas_size( u32 id );                  // live atlas pixel dimensions backing a font id
+bool font_flush_pending     ( void );                       // commit deferred (re)loads; true if the active font changed
+
+f32  font_char_h            ( void );                       // glyph-box height of the active font (ascent+descent)
+f32  font_line_h            ( void );                       // line advance of the active font
+f32  font_em                ( void );                       // nominal type size (em) -- the layout proportion base
+f32  font_char_advance      ( u8 ch );                      // horizontal advance of one glyph
+void font_print_active      ( void );                       // log the active font's name and metrics
+f32  font_text_w            ( const char* str );            // pixel width of a NUL-terminated run
+f32  font_text_w_n          ( const char* str, u32 n );     // pixel width of the first n characters
+
+/* Icon registry + loading (draw/gui_icon.c, draw/gui_icon_load.c).  icon_get (the sprite-
+   source half the emit layer consumes) is declared in render/gui_render.h. */
+gui_icon_id_t   icon_register     ( const char* name, u32 w, u32 h, const u8* coverage );
+gui_icon_id_t   icon_load_file    ( const char* name, const char* path );  // decode PNG/... -> R8 coverage -> icon_register
+void            icon_load_builtins( void );                                // register the engine's built-in icon set from disk
+gui_icon_id_t   icon_find         ( const char* name );
+bool            icon_atlas_init   ( void );   // enable icon registration (shared atlas owns GPU)
+void            icon_atlas_shutdown( void );  // clear the icon table
 
 // clang-format on
 /*============================================================================================*/

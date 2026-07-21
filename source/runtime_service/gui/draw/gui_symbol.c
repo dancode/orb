@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/present/gui_symbol.c -- Symbol + shape render primitives.
+    runtime_service/gui/draw/gui_symbol.c -- Symbol + shape render primitives.
 
     The frontend "render route" palette: the small glyph marks the chrome draws (arrows, check,
     bullet, close, pointer beak) plus the broader shape family editor / custom widgets reach for
@@ -20,9 +20,9 @@
     everything else here is pixel-exact.  FUTURE: a multi-corner-color command, or routing the rings
     through gradient quads, would make the shadow exact too -- without changing the public surface.
 
-    Included by gui.c immediately after gui_paint_core.c, so it sees the COL_* / ROUND_* /
-    WIN_BORDER macros, col_lerp, and rect_align defined there, and every widget file below resolves
-    these draw_* helpers by name.  The public gui_draw_* surface over them is at the foot.
+    Compiled in the DRAW unit (gui_draw.c) after gui_paint.c.  A handful of sites still read
+    style (the GUI_VAR_*_STYLE picks, WIN_BORDER, ROUND_WIDGET) -- marked for the R8 element
+    move so draw ends parameter-pure.  The public gui_draw_* surface over them is at the foot.
 
 ==============================================================================================*/
 // clang-format off

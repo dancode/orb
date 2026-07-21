@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/backend/gui_step_capture.c -- Command stepper: frozen-frame capture + replay.
+    runtime_service/gui/render/gui_step_capture.c -- Command stepper: frozen-frame capture + replay.
 
     Freeze one frame's semantic command list and replay a PREFIX of it, so the UI's generation
     can be stepped command by command.  The core trick: there is NO replay-specific tessellation.
@@ -50,8 +50,8 @@
         meanwhile (their tess_gen matches no slot, every patch refuses by the generation check)
         and self-heal on release, when live emit re-tags and forces a recapture.
 
-    Included by gui_backend.c LAST (after gui_dash_capture.c) so every emit static it copies
-    (s_draw and its pools) is in scope.  Compiled out unless GUI_CMD_STEPPER (gui_backend.h);
+    Included by gui_render.c LAST (after gui_dash_capture.c) so every emit static it copies
+    (s_draw and its pools) is in scope.  Compiled out unless GUI_CMD_STEPPER (gui_render.h);
     the pipeline hooks compile to (void)0 then.
 
 ==============================================================================================*/
@@ -173,7 +173,7 @@ step_build_order( void )
 }
 
 /*==============================================================================================
-    Shell seam (gui_backend.h) -- the request setters and state getters the stepper window and
+    Shell seam (gui_render.h) -- the request setters and state getters the stepper window and
     the debug hotkeys drive.  Setters only latch (+ raise s_step_pending); the pipeline hooks
     below apply them at the frame seams.
 ==============================================================================================*/
