@@ -40,14 +40,16 @@
 #include "runtime/run_host.h"
 
 #include "editor_service/viewport/viewport.h"
+#include "editor/ed_kit.h"
 #include "editor/editor_api.h"
 
 /*==============================================================================================
     Unity build
 ==============================================================================================*/
 
-/* Implementation files go here:
-   #include "editor/editor_feature.c" */
+#ifndef ED_KIT_C_PRELUDE
+#include "editor/ed_kit.c"
+#endif
 
 /*==============================================================================================
     Public API wiring  (must be last -- all implementations must be in scope)

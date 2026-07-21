@@ -114,11 +114,21 @@ sb_proj_runtime_on_stop( void )
     LOG_INFO( "on_stop" );
 }
 
+/* Gui-less project: the contract requires every slot non-NULL, so on_hud is an empty stub
+   (this proof's whole point is running without gui in the module list). */
+static void
+sb_proj_runtime_on_hud( f32 dt, const run_view_t* view )
+{
+    UNUSED( dt );
+    UNUSED( view );
+}
+
 const run_project_api_t g_sb_proj_runtime_api_struct = {
     .on_start = sb_proj_runtime_on_start,
     .on_sim   = sb_proj_runtime_on_sim,
     .on_frame = sb_proj_runtime_on_frame,
     .on_draw  = sb_proj_runtime_on_draw,
+    .on_hud   = sb_proj_runtime_on_hud,
     .on_stop  = sb_proj_runtime_on_stop,
 };
 

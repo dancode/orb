@@ -85,9 +85,13 @@ editor_update( f32 dt )
        yet sized); the project skips its draws but the sim still ticks. */
     if ( game() )
     {
+        /* gui_vp -1: the editor never forwards on_hud -- a project HUD over the editor's
+           own chrome is wrong, and HUD-inside-the-viewport-panel needs a rect-scoped form
+           of the hook (future work, GUI_STACK_PLAN inc 6 notes).  Play Standalone shows it. */
         run_view_t view = {
             .version    = RUN_VIEW_VERSION,
             .render_ctx = s_show_viewport ? ed_viewport_render_ctx() : -1,
+            .gui_vp     = -1,
         };
         ed_viewport_surface( &view.surface_w, &view.surface_h );
         game()->tick( dt, &view );
@@ -177,7 +181,7 @@ editor_game_window( void )
         {
             i32 st = game()->state();
 
-            gui()->textf( "project: %s", s_project );
+            ed_prop_text( "project", s_project );
 
             if ( gui()->button( st == GAME_STOPPED ? "Play" : "Stop" ) )
             {
@@ -196,9 +200,9 @@ editor_game_window( void )
                     game()->step();
             }
 
-            gui()->textf( "state  %s", st == GAME_PLAYING ? "PLAYING"
-                                     : st == GAME_PAUSED  ? "PAUSED"
-                                                          : "stopped" );
+            ed_prop_text( "state", st == GAME_PLAYING ? "PLAYING"
+                                 : st == GAME_PAUSED  ? "PAUSED"
+                                                      : "stopped" );
 
             if ( gui()->button( "Play Standalone" ) )
                 editor_play_standalone();
@@ -255,15 +259,31 @@ editor_deploy_window( void )
 
         if ( s_project[ 0 ] )
         {
-            gui()->textf( "project: %s", s_project );
+            /* Property rows (ed_kit): the label column names the option, the value zone
+               holds the stock control -- the editor's inspector idiom. */
+            ed_prop_text( "project", s_project );
 
-            gui()->combo( "config", &s_ship_config, s_ship_configs,
+            ed_prop_begin( "config" );
+            gui()->combo( "##ship_config", &s_ship_config, s_ship_configs,
                           (i32)( sizeof( s_ship_configs ) / sizeof( s_ship_configs[ 0 ] ) ) );
-            gui()->checkbox( "modular (host + DLLs)", &s_ship_modular );
-            gui()->checkbox( "include pdbs",          &s_ship_pdb );
-            gui()->checkbox( "clean stage",           &s_ship_clean );
-            gui()->input_text_with_hint( "deploy to", "(optional dir)",
+            ed_prop_end();
+
+            ed_prop_begin( "modular" );
+            gui()->checkbox( "host + DLLs", &s_ship_modular );
+            ed_prop_end();
+
+            ed_prop_begin( "pdbs" );
+            gui()->checkbox( "include", &s_ship_pdb );
+            ed_prop_end();
+
+            ed_prop_begin( "stage" );
+            gui()->checkbox( "clean first", &s_ship_clean );
+            ed_prop_end();
+
+            ed_prop_begin( "deploy to" );
+            gui()->input_text_with_hint( "##ship_deploy", "(optional dir)",
                                          s_ship_deploy_dir, sizeof( s_ship_deploy_dir ) );
+            ed_prop_end();
 
             if ( gui()->button( "Ship It" ) )
                 editor_ship();

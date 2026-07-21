@@ -34,6 +34,7 @@
 #include "runtime_modules/render/render_api.h"
 
 #include "sample_game.h"
+#include "project/sample_game/game_ui.h"   /* the game kit (S3) -- HUD over gui's el_* tier */
 
 MOD_USE_CORE;
 MOD_USE_RENDER;
@@ -71,6 +72,11 @@ sample_game_on_start( void )
     g_state->score         = 0;      /* session state: every Play starts fresh */
     g_state->time_in_level = 0.0f;
     g_state->angle_prev    = g_state->angle;
+
+    /* Kit rule: install the game look after the host's fonts/theme have landed (boot is
+       long done by Play).  A no-op under gui-less hosts. */
+    game_ui_install();
+
     LOG_INFO( "on_start" );
 }
 
@@ -128,6 +134,34 @@ sample_game_on_draw( f32 alpha, const run_view_t* view )
     }
 }
 
+/* HUD emission -- the one phase where gui() calls are legal (the host calls this from
+   inside its gui frame bracket; see run_project.h).  Pure rect math over the kit: cut a
+   readout block off the screen's top-left, score band over tick-progress meter. */
+static void
+sample_game_on_hud( f32 dt, const run_view_t* view )
+{
+    UNUSED( dt );
+
+    if ( !g_state || !g_state->running || !game_ui_ready() )
+        return;
+    if ( view->version < 2 || view->gui_vp < 0 )
+        return;
+
+    gui_rect_t screen = game_ui_hud_begin( view->gui_vp );
+
+    gui_rect_t block = gui_rect_pad( gui_rect_cut_top( &screen, game_ui_u( 3.0f ) ),
+                                     game_ui_u( 0.5f ) );
+    block.w = game_ui_u( 10.0f );
+
+    gui_rect_t meter = gui_rect_cut_bottom( &block, game_ui_u( 0.4f ) );
+    gui_rect_cut_bottom( &block, game_ui_u( 0.15f ) );    /* gap */
+
+    game_ui_score( block, g_state->score );
+    game_ui_tick_meter( meter, g_state->time_in_level );  /* 0..1: progress to the next point */
+
+    game_ui_hud_end();
+}
+
 static void
 sample_game_on_stop( void )
 {
@@ -143,6 +177,7 @@ const run_project_api_t g_sample_game_api_struct = {
     .on_sim   = sample_game_on_sim,
     .on_frame = sample_game_on_frame,
     .on_draw  = sample_game_on_draw,
+    .on_hud   = sample_game_on_hud,
     .on_stop  = sample_game_on_stop,
 };
 
@@ -153,11 +188,13 @@ const run_project_api_t g_sample_game_api_struct = {
 static bool
 sample_game_init( void* raw_state, get_api_fn get_api )
 {
-    UNUSED( get_api );
     g_state = ( sample_game_state_t* )raw_state;
 
     if ( !MOD_FETCH_CORE )   return false;
     if ( !MOD_FETCH_RENDER ) return false;
+
+    /* Soft: a gui-less host (sb_host_game) is a supported shape -- the kit just stays dark. */
+    game_ui_wire( get_api );
 
     LOG_INFO( "init (deps satisfied)" );
     return true;
@@ -166,11 +203,14 @@ sample_game_init( void* raw_state, get_api_fn get_api )
 static bool
 sample_game_reload( void* raw_state, get_api_fn get_api )
 {
-    UNUSED( get_api );
     g_state = ( sample_game_state_t* )raw_state;
 
     if ( !MOD_FETCH_CORE )   return false;
     if ( !MOD_FETCH_RENDER ) return false;
+
+    game_ui_wire( get_api );
+    if ( g_state->running )
+        game_ui_install();   /* mid-session hot-reload: re-own the look */
 
     LOG_INFO( "reloaded (running=%d angle=%.2f)", g_state->running, g_state->angle );
     return true;

@@ -96,6 +96,7 @@ raw_host_update( f32 dt )
     run_view_t view = {
         .version    = RUN_VIEW_VERSION,
         .render_ctx = run_host_ctx(),
+        .gui_vp     = -1,   /* this driver never calls on_hud (gui-less proof) */
     };
     app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
 

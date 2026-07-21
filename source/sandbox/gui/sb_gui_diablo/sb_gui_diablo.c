@@ -636,6 +636,7 @@ main( int argc, char** argv )
        to slot 0 after.  0 on failure: F2 then just reselects slot 0. */
     u32 font_big = gui()->font_load_builtin( GUI_FONT_CASCADIA_MONO_20 );
     gui()->font_use( 0 );
+    ui_kit_install();   /* the kit owns the element look -- install after every font landing */
 
     f32 dt = 0.0f;
     while ( !s_quit && gui()->frame_poll( &dt ) )
@@ -649,6 +650,7 @@ main( int argc, char** argv )
         if ( s_font_req >= 0 )
         {
             gui()->font_use( s_font_req == 0 ? 0 : font_big );
+            ui_kit_install();   /* font_use re-derived the element style -- re-install the kit */
             s_opt_font = s_font_req;
             s_font_req = -1;
         }

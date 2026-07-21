@@ -45,6 +45,39 @@ ui_style( void )
     return &s_style;
 }
 
+/* The S3 -> S1 compile step: install the ember-gold palette into gui's element style, so the
+   promoted el_* cores (which ui_button / ui_check / ui_slider / ui_cycle / ui_meter now
+   delegate to) render this kit's look.  The theme system re-derives the installed style at
+   every theme / font landing (gui_style_apply), so call this after boot AND after any
+   font_use / theme_set -- the kit owns the element look by having the last word. */
+void
+ui_kit_install( void )
+{
+    gui_el_style_t* e = gui()->el_style();
+
+    e->border_w = s_style.border_w;
+
+    e->col[ GUI_EL_BG     ][ GUI_EL_IDLE   ] = s_style.btn_bg;
+    e->col[ GUI_EL_BG     ][ GUI_EL_HOT    ] = s_style.btn_bg_hover;
+    e->col[ GUI_EL_BG     ][ GUI_EL_ACTIVE ] = s_style.btn_bg_press;
+    e->col[ GUI_EL_BG     ][ GUI_EL_DIM    ] = s_style.slot_bg;
+
+    e->col[ GUI_EL_BORDER ][ GUI_EL_IDLE   ] = s_style.btn_border;
+    e->col[ GUI_EL_BORDER ][ GUI_EL_HOT    ] = s_style.btn_border_hover;
+    e->col[ GUI_EL_BORDER ][ GUI_EL_ACTIVE ] = s_style.btn_border_hover;
+    e->col[ GUI_EL_BORDER ][ GUI_EL_DIM    ] = s_style.panel_border;
+
+    e->col[ GUI_EL_TEXT   ][ GUI_EL_IDLE   ] = s_style.text;
+    e->col[ GUI_EL_TEXT   ][ GUI_EL_HOT    ] = s_style.text;
+    e->col[ GUI_EL_TEXT   ][ GUI_EL_ACTIVE ] = s_style.text;
+    e->col[ GUI_EL_TEXT   ][ GUI_EL_DIM    ] = s_style.text_dim;
+
+    e->col[ GUI_EL_ACCENT ][ GUI_EL_IDLE   ] = s_style.title;
+    e->col[ GUI_EL_ACCENT ][ GUI_EL_HOT    ] = s_style.slot_border_hot;
+    e->col[ GUI_EL_ACCENT ][ GUI_EL_ACTIVE ] = s_style.title;
+    e->col[ GUI_EL_ACCENT ][ GUI_EL_DIM    ] = s_style.meter_bg;
+}
+
 /*==============================================================================================
     Screen scope
 ==============================================================================================*/
@@ -159,25 +192,12 @@ ui_title( gui_rect_t r, const char* text )
     gui()->draw_text_shadow( box.x, box.y, text, s_style.title, s_style.title_shadow, 2.0f, 2.0f );
 }
 
+/* PROMOTED (GUI_STACK_PLAN increment 3): the core is now gui()->el_button -- the kit look
+   arrives through ui_kit_install's installed element style, not per-call colors. */
 bool
 ui_button( gui_rect_t r, const char* label )
 {
-    gui_item_state_t st = gui()->item( label, r );
-
-    u32 bg     = st.active ? s_style.btn_bg_press
-               : st.hover  ? s_style.btn_bg_hover
-               :             s_style.btn_bg;
-    u32 border = ( st.hover || st.nav ) ? s_style.btn_border_hover : s_style.btn_border;
-
-    gui()->draw_frame( r, bg, border, s_style.border_w );
-    gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, label );
-
-    /* A click is (by definition) a host state change this build cannot show yet -- ask for the
-       next frame to emit, or the retained cache replays this stale screen until the mouse moves. */
-    if ( st.clicked )
-        gui()->request_redraw();
-
-    return st.clicked;
+    return gui()->el_button( r, label );
 }
 
 bool
@@ -227,104 +247,36 @@ ui_globe( gui_rect_t r, f32 frac, u32 fill_abgr, const char* caption )
         gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, caption );
 }
 
+/* PROMOTED: gui()->el_meter (track colors from the installed element style; fill stays a
+   call parameter -- the per-widget color rule). */
 void
 ui_meter( gui_rect_t r, f32 frac, u32 fill_abgr )
 {
-    frac = ( frac < 0.0f ) ? 0.0f : ( frac > 1.0f ) ? 1.0f : frac;
-
-    gui()->draw_frame( r, s_style.meter_bg, s_style.panel_border, 1.0f );
-    gui_rect_t fill = ui_inset( r, 1.0f );
-    fill.w *= frac;
-    if ( fill.w > 0.0f )
-        gui()->draw_rect( fill.x, fill.y, fill.w, fill.h, fill_abgr );
+    gui()->el_meter( r, frac, fill_abgr );
 }
 
 /*==============================================================================================
     Form controls
 ==============================================================================================*/
 
+/* PROMOTED: the three form cores are gui()->el_check / el_slider / el_cycle.  The kit keeps
+   the old fixed-string ids so existing push_id_int row brackets behave identically. */
 bool
 ui_check( gui_rect_t r, bool* v )
 {
-    f32        side = ( r.w < r.h ) ? r.w : r.h;
-    gui_rect_t box  = gui_rect_align( r, side, side, GUI_ALIGN_CENTER );
-
-    gui_item_state_t st = gui()->item( "##check", box );
-    if ( st.clicked )
-    {
-        *v = !*v;
-        gui()->request_redraw();
-    }
-
-    u32 border = ( st.hover || st.nav ) ? s_style.slot_border_hot : s_style.slot_border;
-    gui()->draw_frame( box, s_style.slot_bg, border, s_style.border_w );
-    if ( *v )
-        gui()->draw_check_mark( ui_inset( box, side * 0.22f ), s_style.title );
-
-    return st.clicked;
+    return gui()->el_check( r, "##check", v );
 }
 
 bool
 ui_slider( gui_rect_t r, f32* v, f32 lo, f32 hi )
 {
-    gui_item_state_t st  = gui()->item( "##slider", r );
-    f32              old = *v;
-
-    if ( st.active )    /* captured drag: value follows the cursor across the track */
-    {
-        f32 mx, my;
-        gui()->get_mouse_pos( &mx, &my );
-        f32 t = ( r.w > 0.0f ) ? ( mx - r.x ) / r.w : 0.0f;
-        t  = ( t < 0.0f ) ? 0.0f : ( t > 1.0f ) ? 1.0f : t;
-        *v = lo + t * ( hi - lo );
-    }
-    if ( st.nav_adjust )
-        *v += (f32)st.nav_adjust * ( hi - lo ) * 0.05f;
-    *v = ( *v < lo ) ? lo : ( *v > hi ) ? hi : *v;
-
-    f32 frac = ( hi > lo ) ? ( *v - lo ) / ( hi - lo ) : 0.0f;
-
-    gui_rect_t track = gui_rect_align( r, r.w, r.h * 0.30f, GUI_ALIGN_CENTER );
-    gui()->draw_frame( track, s_style.meter_bg, s_style.slot_border, 1.0f );
-    gui_rect_t fill = ui_inset( track, 1.0f );
-    fill.w *= frac;
-    if ( fill.w > 0.0f )
-        gui()->draw_rect( fill.x, fill.y, fill.w, fill.h, s_style.btn_border_hover );
-
-    gui_rect_t handle = { r.x + frac * ( r.w - 8.0f ), r.y + r.h * 0.10f, 8.0f, r.h * 0.80f };
-    u32 hb = ( st.hover || st.active || st.nav ) ? s_style.slot_border_hot : s_style.slot_border;
-    gui()->draw_frame( handle, st.active ? s_style.btn_bg_press : s_style.btn_bg, hb, 1.0f );
-
-    if ( *v != old )
-        gui()->request_redraw();
-    return *v != old;
+    return gui()->el_slider( r, "##slider", v, lo, hi );
 }
 
 bool
 ui_cycle( gui_rect_t r, i32* idx, const char* const* items, i32 count )
 {
-    gui_rect_t lbox = ui_cut_left ( &r, r.h );    /* square end buttons, text between */
-    gui_rect_t rbox = ui_cut_right( &r, r.h );
-
-    i32 old = *idx;
-    gui_item_state_t ls = gui()->item( "##cyc_l", lbox );
-    gui_item_state_t rs = gui()->item( "##cyc_r", rbox );
-    if ( ls.clicked && count > 0 ) *idx = ( *idx + count - 1 ) % count;
-    if ( rs.clicked && count > 0 ) *idx = ( *idx + 1 ) % count;
-
-    u32 lb = ( ls.hover || ls.nav ) ? s_style.slot_border_hot : s_style.slot_border;
-    u32 rb = ( rs.hover || rs.nav ) ? s_style.slot_border_hot : s_style.slot_border;
-    gui()->draw_frame( lbox, s_style.slot_bg, lb, s_style.border_w );
-    gui()->draw_frame( rbox, s_style.slot_bg, rb, s_style.border_w );
-    gui()->draw_chevron( ui_inset( lbox, lbox.w * 0.30f ), GUI_DIR_LEFT,  2.0f, s_style.text );
-    gui()->draw_chevron( ui_inset( rbox, rbox.w * 0.30f ), GUI_DIR_RIGHT, 2.0f, s_style.text );
-
-    if ( count > 0 )
-        gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, items[ *idx ] );
-
-    if ( *idx != old )
-        gui()->request_redraw();
-    return *idx != old;
+    return gui()->el_cycle( r, "##cyc", idx, items, count );
 }
 
 /*============================================================================================*/

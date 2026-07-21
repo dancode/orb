@@ -1,6 +1,10 @@
 # GUI Stack Plan -- from one grab bag to a stack of small libraries
 
-Status: DRAFT (2026-07-21).  Companion to the rect-first campaign proven by sb_gui_diablo.
+Status: PHASE 1 DONE (2026-07-21) -- migration increments 1-6 (the on-ramp: vtable TOC,
+rect leaf, flow seams, element library + style strata, kits + on_hud) are built.  The
+STRUCTURAL BODY is not: the pane (section 5), the chrome feature kit (section 6), and the
+physical per-library TU split (section 7) remain -- staged as increments 7-10 below.
+Companion to the rect-first campaign proven by sb_gui_diablo.
 Goal: break the ~200-entry gui() surface into named sub-libraries, each a small digestible
 center with a public header, a one-way dependency, and utilities placed where they belong.
 The imgui-style editor convenience layer becomes ONE library at the top -- not the identity
@@ -275,18 +279,144 @@ Real build_tool targets can come later if wanted; the boundary is the header, no
 
   1. SKELETON    -- write the library headers as curated declaration groupings (no code
                     motion); resection gui_api.h to match.  Pure reorganization.
+                    DONE 2026-07-21: gui_rect.h created (geometry types gui_vec2_t/gui_rect_t/
+                    gui_pad_t/gui_align_t + all rect/align/anchor inlines moved out of gui.h,
+                    which now includes it first); gui_api.h vtable resectioned into the 8
+                    library sections in plan order (draw/core/rect/flow/element/chrome/debug/
+                    frame -- element is a reserved banner until increment 3) with the old
+                    directory banners kept as sub-dividers; gui_api.c initializer regenerated
+                    in matching order.  Full Debug build green.  Field set unchanged (vtable
+                    LAYOUT changed: hot-reload hosts restart once).  Remaining headers
+                    (gui_draw.h/gui_core.h/gui_flow.h/gui_element.h/gui_chrome.h) land with
+                    their content at increments 3-4 -- no empty stubs.
   2. SEAMS       -- add flow_begin/flow_cell/flow_end over push_layout_overlay/empty;
                     depth-verify with a sandbox check running the canonical nesting above.
+                    DONE 2026-07-21: three vtable entries in the GUI_FLOW section (flow_begin =
+                    sublayout_open over the caller rect; flow_cell = the shared cell seam with
+                    w/h <= 0 meaning natural track width / one standard row; flow_end =
+                    pop_layout), implemented in compose/gui_sublayout.c, declared in gui_host.h.
+                    Depth check: sb_gui_example "Layout > Flow Seams" demo runs the canonical
+                    nesting live at three flow depths (canvas cut -> flow -> flow_cell -> cut ->
+                    item() widget + flow -> flow_cell -> flow).  Full Debug build green.
+                    func_api_size GREW: hot-reload hosts restart once.
   3. ELEMENT     -- stand up gui_element: lift sb_gui_diablo ui.c cores + the internal
                     cell_/item_/draw_ widget seams; add gui_el_style_t; chrome installs it
                     from the active theme.  sb_gui_diablo/ui.h shrinks to a game kit.
+                    DONE 2026-07-21: gui_element.h (roles x states enums + gui_el_style_t,
+                    included by gui.h) + element/gui_element.c (unity-included after user/).
+                    Cores: el_panel / el_label / el_button / el_check / el_slider / el_meter /
+                    el_cycle + el_style() kit door -- 8 vtable entries in the GUI_ELEMENT
+                    section.  S2->S1 compile: gui_style_apply calls el_style_derive (reads the
+                    ACTIVE font-scaled s_style), so every theme/font landing refreshes the
+                    installed style; kits re-install after those calls to own the look.
+                    sb_gui_diablo ui.c: button/check/slider/cycle/meter now delegate to el_*;
+                    ui_kit_install() compiles the ember palette into el_style (called at boot
+                    + after each font_use); slot/globe/title stay kit.  Full build green +
+                    5s canary run OK.  func_api_size GREW again: hosts restart.
+                    (Deferred: rewiring the internal stock-widget cell_/item_/draw_ seams
+                    onto el_ cores -- that is increment 5's stock-widget pass.)
   4. TU SPLIT    -- 2 unity units -> per-library units; include order = dependency graph.
+                    DONE (scoped) 2026-07-21: element/gui_element.c is a real THIRD unit
+                    (orb.targets `unit` line on gui + gui_stress) -- it compiles against only
+                    the public gui_* surface + one internal seam (style_active(),
+                    gui_internal.h), so the element library boundary is compiler-enforced,
+                    proving the per-library TU pattern the backend unit pioneered.  gui.c's
+                    include list is re-bannered into LIBRARY GROUPS (order unchanged -- it
+                    stays the static-visibility order).  The FULL per-library split is
+                    deliberately re-staged to AFTER increment 5: the audit surfaced the real
+                    cross-cuts a physical split must untangle first --
+                      - present/ paint helpers read resolved style (draw-classified,
+                        core-coupled; the style purge parameterizes them),
+                      - nav/ reads the popup stack (core-classified, chrome-entangled),
+                      - user/gui_stacks.c mixes core brackets with chrome style stacks,
+                      - the ambient statics (g_ctx, s_scope, s_interaction, s_build) would
+                        need extern-ing across ~100+ symbols -- only worth it per-library as
+                        each library's file set becomes clean, not as one big-bang pass.
+                    Full build green (incl. gui_stress variant).  No vtable change.
   5. STYLE PURGE -- stock widgets read element-shaped values through the installed
                     gui_el_style_t; per-widget theme slots retire into chrome tokens.
+                    DONE 2026-07-21 (element-vocab resolver form, user-chosen over the
+                    breaking literal purge): NEW style_el_col( role, state ) in
+                    core/gui_style.c -- projects through g_gui_el_slot_map (the element
+                    unit's table, now shared with el_style_derive so the strata bridge's two
+                    directions cannot drift), push/next_style_color overrides win, otherwise
+                    the INSTALLED element style is the source.  10 COL_ macros re-pointed to
+                    the roles x states vocabulary (TEXT/TEXT_DIM, WIDGET_BG/HOT/ACT,
+                    CHILD_BG, BORDER, WIDGET_FG, CHECK_MARK, SLIDER_TRACK); the remaining 9
+                    stay style_col as named CHROME TOKENS (window/input/nav/adornments).
+                    Zero visual change by construction (no override + no kit overwrite ==
+                    style_col exactly); a kit that overwrites gui()->el_style() now restyles
+                    stock widget bodies with the same dial.  METRICS deliberately NOT routed
+                    through el style: scale_push pushes row/pad/gap onto the var stack, which
+                    the once-per-theme-land el derive cannot honor -- metrics remain
+                    style_var (composer/chrome tokens).  Full build green + example canary.
+                    This dissolves the "present/ reads resolved style" cross-cut for the
+                    element-shaped subset (the full TU split's blocker list shrinks).
   6. KITS        -- editor kit and sample game kit move to their own homes as the reference
                     consumers; optional: split real build targets.
+                    DONE 2026-07-21.  The audit surfaced a real contract gap first: a project
+                    DLL had NO legal place to emit gui -- game()->tick runs in the host's
+                    update phase, outside the gui frame bracket, and run_project.h had no gui
+                    hook (the diablo kit only works because that sandbox owns its own loop).
+                    So the increment's spine is the hook (user-approved ABI change):
+                      - run_project.h: on_hud( dt, view ) -- the one phase where gui() calls
+                        are legal; run_view_t v2 appends i32 gui_vp (-1 = no gui; tick-phase
+                        views always carry -1).  Every project vtable slot must be non-NULL:
+                        gui-less projects stub it (sb_proj_runtime does).
+                      - runner: game()->hud( dt, view ) forwards on_hud while a session is
+                        live (paused keeps the HUD up, same rule as draw).
+                      - host_game: on_gui builds the v2 view (gui_vp = main viewport) and
+                        calls game()->hud; update holds set_force_redraw( live ) so the
+                        retained-cache emit skip cannot freeze a per-frame HUD (the
+                        host_editor gate, same reason).
+                      - host_editor deliberately does NOT forward on_hud: a project HUD over
+                        the editor chrome is wrong, and HUD-inside-the-viewport-panel needs a
+                        rect-scoped form of the hook -- future work.  Play Standalone shows it.
+                    The kits, in their homes:
+                      - GAME KIT: source/project/sample_game/game_ui.h/.c (~120 lines, own
+                        unit) -- soft gui fetch (gui-less hosts stay supported), teal accent
+                        install into el_style (S3 -> S1, re-installed on reload), HUD surface
+                        bracket, score panel + tick meter over el_panel/el_label/el_meter;
+                        sample_game.c composes them in on_hud with pure rect cuts.
+                      - EDITOR KIT: source/editor/ed_kit.h/.c (~55 lines, unity in editor.c)
+                        -- the PROPERTY ROW idiom: flow_cell takes the row, rect math cuts the
+                        dim label column, flow_begin reopens the value zone so stock widgets
+                        drop in unchanged.  editor_api.c's Deploy window is the reference form
+                        (config/modular/pdbs/stage/deploy-to as prop rows); Game window
+                        readouts use ed_prop_text.
+                      - sb_gui_diablo/ui.h stays the standalone-loop sibling reference.
+                    Build-target split SKIPPED on purpose: the full per-library TU split is
+                    still staged (see inc 4) and the boundary is the header, not the .lib.
+                    Full Debug build green (incl. sample_game_ship mono shape); 6s canaries:
+                    host_game -module sample_game (HUD live, score ticking) and host_editor
+                    -module sample_game (prop rows live) both clean.
+
+## 9. Phase 2 increments -- the structural body (each builds + runs)
+
+  7. PANE        -- build section 5: gui_pane_t (id, rect, z, vp, input) as the shared
+                    minimal block; pane_begin/pane_end in gui_core over the existing
+                    surface_hover_nominate + segment machinery (region_begin's guts,
+                    re-seated).  Acceptance: a raw pane with hand-drawn chrome competes for
+                    hover/z correctly beside stock windows, and region_begin/window_begin
+                    are re-expressed as pane + policy internally with zero call-site change.
+  8. FEATURES    -- build section 6: carve the A-features out of gui_window_t/window_end.c
+                    as freestanding feat_* mechanisms (collapse, open latch, next-channel,
+                    max/min + clamp as B with the work area passed IN), each usable over any
+                    id + caller-owned state, sectioned inside core/chrome -- not new libs.
+                    move/resize/press-defer/scroll are already mechanism-shaped: bless their
+                    names, don't rewrite them.  Acceptance: the section-6 sketch (a window
+                    widget assembled feature by feature) runs in a sandbox demo.
+  9. RECIPE      -- gui_window_t becomes the stock RECIPE: one policy file assembling pane +
+                    feat_* + titlebar composite; its persisted record shrinks toward the
+                    policy fields chrome actually owns.  Behavior-identical by construction;
+                    dock membership stays a system.
+  10. TU SPLIT   -- finish section 7: per-library unity units in dependency order, done
+                    LAST because increments 7-9 churn exactly the files (window/, interact/,
+                    surface/) whose statics the split must extern.  Per-library, never
+                    big-bang; the increment-4 blocker list is the checklist.
 
 Vtable note: additions/reorders change gui_api_t layout -- hot-reload hosts need a restart
-at each increment that touches it (func_api_size discipline unchanged).
+at each increment that touches it (func_api_size discipline unchanged).  Increment 6 also
+changed run_project_api_t and game_api_t layouts: all project DLLs and hosts rebuild together.
 
 /*============================================================================================*/

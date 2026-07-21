@@ -44,6 +44,12 @@ typedef struct game_api_s
 
     void ( *tick )( f32 dt, const run_view_t* view );
 
+    /* the gui-bracket call -- forwards the project's on_hud while a session is live.
+       Hosts call it from on_gui (inside the gui frame), never from on_update; the view's
+       gui_vp names the viewport to emit to.  A no-op while GAME_STOPPED or gui-less. */
+
+    void ( *hud )( f32 dt, const run_view_t* view );
+
 } game_api_t;
 
 #if defined( BUILD_STATIC ) || defined( GAME_STATIC )

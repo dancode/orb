@@ -163,6 +163,24 @@ void gui_push_layout( void );
 void gui_push_layout_overlay( gui_rect_t rect );
 void gui_pop_layout( void );
 
+/* rect <-> flow seam pair (see gui_api.h GUI_FLOW section) */
+void       gui_flow_begin( gui_rect_t rect );
+gui_rect_t gui_flow_cell( f32 w, f32 h );
+void       gui_flow_end( void );
+
+void gui_request_redraw( void );   /* one-shot next-frame dirty (see gui_api.h GUI_CORE queries) */
+
+/* element cores -- rect-consuming building blocks (see gui_api.h GUI_ELEMENT section) */
+gui_el_style_t* gui_el_style( void );
+void gui_el_panel ( gui_rect_t r );
+void gui_el_label ( gui_rect_t r, gui_align_t align, const char* text );
+bool gui_el_button( gui_rect_t r, const char* label );
+bool gui_el_check ( gui_rect_t r, const char* id_str, bool* v );
+bool gui_el_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
+void gui_el_meter ( gui_rect_t r, f32 frac, u32 fill_abgr );
+bool gui_el_cycle ( gui_rect_t r, const char* id_str, i32* idx,
+                    const char* const* items, i32 count );
+
 /* root region -- a fixed-rect layout primitive with no window chrome */
 bool gui_region_begin( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
                        gui_win_flags_t flags );

@@ -293,22 +293,47 @@ style_new_frame( void )
 #define CHECK_PAD       ( (f32)s_style.checkmark_pad )
 #define WIN_FOCUS_BORDER style_var( GUI_VAR_WIN_FOCUS_BORDER )
 
+/* style_el_col -- resolve one element-shaped color for stock chrome (GUI_STACK_PLAN inc 5).
+   The role x state projects onto its theme slot through g_gui_el_slot_map (the element
+   unit's table, shared with el_style_derive so the two directions cannot drift).  A push /
+   next_style_color override on that slot wins -- chrome's own override mechanism keeps
+   working unchanged -- otherwise the INSTALLED element style (S1) is the source, so a kit
+   that overwrites gui()->el_style() restyles stock widget bodies with the same dial.  With
+   no override and no kit overwrite this equals style_col( slot ) exactly (the derive reads
+   the same s_style the working set is seeded from): zero visual change by construction. */
+u32
+style_el_col( u8 role, u8 state )
+{
+    gui_col_t slot     = (gui_col_t)g_gui_el_slot_map[ role ][ state ];
+    u32       resolved = style_col( slot );
+    if ( resolved != s_style.colors[ slot ] )      /* stack override in effect -- it wins */
+        return resolved;
+    return gui_el_style()->col[ role ][ state ];   /* S1: the installed element style */
+}
+
 /* SKIN: color palette (GUI_COLOR: byte order R,G,B,A in memory = ABGR u32).  Theme defaults
    come from the active theme (k_themes in gui_theme.c, seeded into s_style.colors); see
-   gui_col_t for the slots. */
+   gui_col_t for the slots.
 
+   The ELEMENT-SHAPED subset resolves through style_el_col above: those reads speak the
+   roles x states vocabulary (gui_element.h) and source from the installed element style.
+   The rest are CHROME TOKENS -- window/input/nav/adornment colors the element vocabulary
+   has no business naming -- and stay on style_col. */
+
+#define COL_TEXT         style_el_col( GUI_EL_TEXT,   GUI_EL_IDLE   )
+#define COL_TEXT_DIM     style_el_col( GUI_EL_TEXT,   GUI_EL_DIM    )
+#define COL_WIDGET_BG    style_el_col( GUI_EL_BG,     GUI_EL_IDLE   )
+#define COL_WIDGET_HOT   style_el_col( GUI_EL_BG,     GUI_EL_HOT    )
+#define COL_WIDGET_ACT   style_el_col( GUI_EL_BG,     GUI_EL_ACTIVE )
+#define COL_CHILD_BG     style_el_col( GUI_EL_BG,     GUI_EL_DIM    )
+#define COL_BORDER       style_el_col( GUI_EL_BORDER, GUI_EL_IDLE   )
+#define COL_WIDGET_FG    style_el_col( GUI_EL_ACCENT, GUI_EL_IDLE   )
+#define COL_CHECK_MARK   style_el_col( GUI_EL_ACCENT, GUI_EL_ACTIVE )
+#define COL_SLIDER_TRACK style_el_col( GUI_EL_ACCENT, GUI_EL_DIM    )
+
+/* chrome tokens */
 #define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG     )
-#define COL_CHILD_BG     style_col( GUI_COL_CHILD_BG      )
 #define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG      )
-#define COL_BORDER       style_col( GUI_COL_BORDER        )
-#define COL_TEXT         style_col( GUI_COL_TEXT          )
-#define COL_TEXT_DIM     style_col( GUI_COL_TEXT_DIM      )
-#define COL_WIDGET_BG    style_col( GUI_COL_WIDGET_BG     )
-#define COL_WIDGET_HOT   style_col( GUI_COL_WIDGET_HOT    )
-#define COL_WIDGET_ACT   style_col( GUI_COL_WIDGET_ACT    )
-#define COL_WIDGET_FG    style_col( GUI_COL_WIDGET_FG     )
-#define COL_CHECK_MARK   style_col( GUI_COL_CHECK_MARK    )
-#define COL_SLIDER_TRACK style_col( GUI_COL_SLIDER_TRACK  )
 #define COL_RESIZE_HOT   style_col( GUI_COL_RESIZE_HOT    )
 #define COL_INPUT_BG     style_col( GUI_COL_INPUT_BG      )
 #define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS   )

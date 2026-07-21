@@ -2,7 +2,7 @@
 
     runtime_service/gui/gui.c -- Unity build entry for the gui UI / core unit.
 
-    gui is two translation units linked into one static lib (see gui_backend.h):
+    gui is three translation units linked into one static lib (see gui_backend.h):
 
       - this unit (gui.c): context, layout, widgets, chrome, popups, nav, input, frame
         lifecycle, the module vtable.  Owns s_build / s_scope / s_io / s_interaction / g_ctx
@@ -10,6 +10,17 @@
 
       - the render backend (gui_backend.c): fonts, draw list, tessellation, GPU flush, debug
         overlay.  Owns s_draw / s_tess / s_font / s_render.  Called through gui_backend.h.
+
+      - the element unit (element/gui_element.c): the el_* rect-consuming widget cores.
+        Reaches the rest of gui ONLY through the public gui_* surface + the style_active()
+        seam (gui_internal.h) -- its library boundary is compiler-enforced.
+
+    The include list below is additionally grouped by LIBRARY (the GUI_* sections of
+    gui_api.h, per docs/GUI_STACK_PLAN.md).  File order is unchanged -- it remains the
+    static-visibility dependency order -- the group banners map each role dir onto its
+    library and mark the cross-cuts a further physical split would have to untangle:
+    present/ paint helpers read resolved style (core-coupled), nav/ reads the popup stack
+    (chrome-entangled), user/gui_stacks.c spans core brackets + chrome style stacks.
     
     Include order matters: each file can reference statics from files included above it.  The
     include list below is THE dependency order, the one the compiler enforces -- directories
@@ -251,6 +262,10 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
    backend/gui_debug_overlay) is the SECOND unit -- compiled separately via gui_backend.c.  This
    unit calls into it through the draw_* / font_* / gui_render_* declarations in gui_backend.h. */
 
+/*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
+// core/ + surface/ + interact/ + present/ paint primitives.  NOTE the cross-cut: the
+// present/ files are gui_draw-classified but read resolved style -- they stay beside core
+// until the style purge (GUI_STACK_PLAN inc 5) parameterizes them.
 // Core machinery interleaved with the sibling roles (present/ primitives, interact/
 // services): the include order is dependency-driven, the directories are the conceptual split.
 #include "runtime_service/gui/core/gui_theme.c"
@@ -274,6 +289,8 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 // it writes s_interaction (a fallback press consumer) -- called from window/gui_window_end.c.
 #include "runtime_service/gui/interact/gui_select.c"
 
+/*----------------------------------  LIBRARY: GUI_FLOW  ----------------------------------*/
+
 // Composition (spacing metrics in, rects out)
 #include "runtime_service/gui/compose/gui_layout_core.c"
 #include "runtime_service/gui/compose/gui_scroll.c"
@@ -283,8 +300,13 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/compose/gui_region.c"
 #include "runtime_service/gui/compose/gui_layout.c"
 
+/*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
+// the animation service (placed here in static-visibility order).
 #include "runtime_service/gui/interact/gui_anim.c"
 
+/*----------------------------------  LIBRARY: GUI_CHROME  ----------------------------------*/
+// widgets/ + table/ + window/ + dock/ + popup/ + nav/.  NOTE: nav/ is core-classified
+// (a peer focus service) but reads the popup stack, so it lives inside the chrome group.
 // The stock widget set (a client of the tiers above).  Internal
 // calls to the user/ vocabulary (gui_canvas tooltips, combo's push_id) resolve through the public
 // declarations in gui_host.h -- deliberate dogfooding of the caller surface, not an order cycle.
@@ -327,6 +349,9 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/popup/gui_menu.c"
 #include "runtime_service/gui/popup/gui_toolbar.c"
 
+/*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
+// user/ -- the public door.  NOTE the cross-cut: gui_stacks.c mixes core brackets
+// (id / item flags / disabled) with chrome style stacks; gui_canvas.c is draw-facing.
 // user/ -- the caller's vocabulary.  Pure public verbs + readers over the machinery
 // above; zero state, zero machinery -- deleting any file here breaks no lower tier.  Included
 // last-of-the-tiers because nothing below needs them at definition time (all upward calls go
@@ -336,6 +361,13 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/user/gui_canvas.c"
 #include "runtime_service/gui/user/gui_query.c"
 
+// element/ -- GUI_ELEMENT is its OWN translation unit (element/gui_element.c, the third unit
+// beside this one and gui_backend.c): the compiler enforces that the element tier reaches gui
+// only through the public gui_* surface + the style_active() seam (gui_internal.h).
+// gui_style_apply (frame/, below) calls across to el_style_derive at every theme/font landing.
+
+/*----------------------------------  LIBRARY: GUI_DEBUG  ----------------------------------*/
+
 // Pipeline dashboard -- an ordinary debug-band window + panel painters over the standard draw
 // API; the snapshot it reads is captured in the backend unit (backend/gui_dash_capture.c).
 #include "runtime_service/gui/debug/gui_dashboard.c"
@@ -343,6 +375,8 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 // Command stepper -- an ordinary debug-band window controlling the frozen-frame replay; the
 // capture + restore live in the backend unit (backend/gui_step_capture.c).
 #include "runtime_service/gui/debug/gui_step_window.c"
+
+/*----------------------------------  LIBRARY: GUI_FRAME  ----------------------------------*/
 
 // Orchestration -- sits above every tier, drives whichever are compiled in.  The overlay file
 // carries the perf/state HUDs plus the frame-timing helpers the lifecycle in gui_frame.c calls,

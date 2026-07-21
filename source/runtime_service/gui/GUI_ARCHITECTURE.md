@@ -5,7 +5,7 @@ Dense reference for working on the gui service (this directory) and its sandbox
 
 ## Big picture
 
-Static lib `gui`, two translation units:
+Static lib `gui`, three translation units:
 
 - `gui.c` (UI/core unit): context, id/state pool, input snapshot, layout engine, widgets,
   window/dock/popup/nav/table, frame lifecycle, mod vtable. Unity-includes its constituents;
@@ -26,6 +26,10 @@ Static lib `gui`, two translation units:
   raise-on-press with its dock exception) are window/ policy over these services.
 - `gui_backend.c` (render unit): fonts, draw list, tessellation, GPU flush, debug overlay.
   UI unit calls it one-way through `gui_backend.h` (`draw_*`, `font_*`, `gui_render_*`).
+- `element/gui_element.c` (element unit): the `el_*` rect-consuming widget cores + the
+  installed `gui_el_style_t` (see gui_api.h GUI_ELEMENT / docs/GUI_STACK_PLAN.md). Reaches
+  the rest of gui ONLY through the public `gui_*` surface plus the `style_active()` seam
+  (gui_internal.h) -- the library boundary is compiler-enforced.
 
 ## The composer / behavior / presentation split
 

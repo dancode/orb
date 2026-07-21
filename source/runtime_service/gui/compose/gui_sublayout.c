@@ -99,5 +99,39 @@ gui_pop_layout( void )
     if ( s_layout_sp ) --s_layout_sp;        /* parent already advanced at push -- nothing more */
 }
 
+/*==============================================================================================
+    flow_begin / flow_cell / flow_end -- the named rect <-> flow seam pair.
+
+    The blessed crossing verbs of the layer stack (GUI_STACK_PLAN increment 2): flow_begin opens
+    the layout engine inside ANY caller rect, however it was produced (cut_* algebra, split,
+    carve, anchor, a flow cell, custom math); flow_cell takes the next flow element back out AS
+    a rect; flow_end resumes the outer producer.  Thin names over the proven machinery --
+    flow_begin is sublayout_open (push_layout_overlay's body), flow_cell is the shared per-item
+    cell seam with 0-means-natural sizing, flow_end is pop_layout -- so the pair nests to the
+    layout stack depth and the recursive contract carve -> flow -> cell -> carve -> flow holds
+    at every level.  Flow never scrolls: a carved area that needs scroll / clip / persistence
+    opens a core surface first (region_begin) and flows inside it.
+==============================================================================================*/
+
+void
+gui_flow_begin( gui_rect_t rect )
+{
+    sublayout_open( rect );
+}
+
+/* The next flow element as a rect.  w / h <= 0 mean natural: the track width the template
+   resolves (same as any widget) and one standard row height.  Advances the pen like a widget. */
+gui_rect_t
+gui_flow_cell( f32 w, f32 h )
+{
+    return cell_next_w( w > 0.0f ? w : -1.0f, h > 0.0f ? h : WIDGET_H );
+}
+
+void
+gui_flow_end( void )
+{
+    gui_pop_layout();
+}
+
 // clang-format on
 /*============================================================================================*/

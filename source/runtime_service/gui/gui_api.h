@@ -29,176 +29,178 @@ struct rhi_cmd_s; typedef struct rhi_cmd_s* rhi_cmd_t;
 
 typedef struct gui_api_s
 {
-    /*========================  frame/ -- lifecycle, boot, viewports, contexts, events  ========================*/
 
-    /* GPU resource lifecycle.
-        init_config_back()  -- OPTIONAL; call before init() to override which BACKEND (render unit,
-                       gui_backend.c) capability layers (gui_backend_caps_t, gui.h) are compiled
-                       into the running instance -- icons, retained caching, debug render mode,
-                       stats-trace printfs.  Skip it entirely to accept GUI_CAPS_DEFAULT (every
-                       layer on except stats_trace).
-        init_config_front() -- OPTIONAL; the FRONTEND (UI/core unit, gui.c) sibling -- overrides
-                       which gui_forward_caps_t feature boundaries are active: tables,
-                       keyboard_nav.  Checked at callsite, not compiled out -- these exist for
-                       feature-boundary clarity, not code size.  Skip it entirely to accept
-                       GUI_FORWARD_CAPS_DEFAULT (every flag on).
-        init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
-                       `font` optionally loads one of the built-in presets (gui_builtin_font_t,
-                       gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
-                       yourself. A failed built-in load is non-fatal (a warning; init still
-                       succeeds without text).
-        shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
-        font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
-                       call after init(). Returns the new id (>= 1), or 0 on failure.
-        font_load_builtin() -- font_load for a built-in preset (gui_builtin_font_t): the enum
-                       already knows its asset path, so no path plumbing at the call site.
-                       Same contract as font_load -- a NEW id, activated (the init()/boot()
-                       preset in slot 0 is untouched; font_use( 0 ) switches back).  Returns
-                       the new id, or 0 for GUI_FONT_NONE / an unknown preset / a failed load.
-        asset_path() -- resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
-                       the build root, one level above the executable -- the same convention
-                       load_icon and the built-in font/icon presets resolve through. Writes the
-                       resolved path into `out` (out_size bytes); for a caller that wants the
-                       absolute path itself (e.g. a plain fopen) rather than a load_icon call. */
+    /*============================================================================================================
+        GUI_DRAW -- render server  (backend/ + present/)
+        Fonts, icons, textures, the draw_* primitive set, paths, clips, volatile blocks.
+        S0 style stratum: NO ambient style -- every call takes explicit colors / widths.
+        Draws what it is told under the ambient clip / z; never asks how a rect was made.
+    =============================================================================================================*/
 
-    void                ( *init_config_back  )( gui_backend_caps_t caps );
-    void                ( *init_config_front )( gui_forward_caps_t caps );
-    bool                ( *init      )( gui_builtin_font_t font );
-    void                ( *shutdown  )( void );
-    u32                 ( *font_load )( const char* path );
-    u32                 ( *font_load_builtin )( gui_builtin_font_t font );
-    void                ( *asset_path )( const char* relative, char* out, int out_size );
+    /*====================================  fonts -- id-addressed registry  =====================================*/
 
-    /* boot() -- TEST-BED tier: the one-call alternative to the block above for sandboxes, demos,
-       and quick tools whose main window IS a gui surface -- gui owns the window + render context
-       end to end, exactly like its tear-off floaters.  Non-idiomatic for engine hosts: those run
-       through the runtime host (run_host_main), which keeps ownership of the window/loop and
-       wires gui as an optional service.  Stands up the whole stack from a single descriptor
-       (gui_boot_desc_t, gui.h): rhi()->init() (idempotent -- safe if the host already ran it),
-       app window (borderless by default, with the chrome shell then auto-emitted each frame;
-       os_chrome opts back into the stock OS frame), rhi context, init_config_front + init(font),
-       set_frame_hooks, debug_enable, and the primary viewport -- returned, or GUI_VP_INVALID
-       with everything unwound on failure.  Call once after mod_init_all, before any other window
-       opens.  shutdown() tears down what boot created (context + window); rhi()->shutdown()
-       stays with the host, last.  Pairs with frame_poll / present below for the full easy-mode
-       loop; a host needing manual control of any stage simply keeps calling the explicit block
-       instead -- boot is composition, not replacement, and viewport_open still attaches gui to a
-       host-owned window. */
+    /* Font -- select / load fonts; call between frames (outside frame_begin / render), except
+       push_font / pop_font which may bracket a section or widget mid-frame.
 
-    gui_vp_t            ( *boot )( const gui_boot_desc_t* desc );
+       Fonts live in an id-addressed registry.  Slot 0 is the default; it is empty until the first
+       font_load / font_load_into( 0, path ) call -- call one right after gui()->init(), before any
+       frame renders.  font_load() loads a .orb_font into a fresh id; font_load_into() loads one
+       into an existing id (id 0 swaps the default).  font_use() makes a loaded id active; another
+       context can select its own font this way.  push_font() / pop_font() bracket a temporary
+       font and restore the previous one.  Each font_load/font_load_into uses its own bindless
+       texture.  Widget layout dimensions follow the active font's metrics. */
 
-    /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
-       backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
-       bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */
+    bool ( *font_load_into     )( u32 id, const char* path );
+    void ( *font_use           )( u32 id );
+    void ( *push_font          )( u32 id );
+    void ( *pop_font           )( void );
+    u32  ( *font_active_id     )( void );   // id of the currently active font (save/restore, or just to inspect)
 
-    gui_mem_stats_t     ( *mem_stats       )( void );
-    void                ( *print_mem_stats )( void );
+    /*===========================  custom draw -- canvas primitives, symbols, paths  ============================*/
 
-    /* Per-frame render statistics (geometry + batch counts) for the LAST completed frame.
-       Published at frame_begin, so a read during the build reflects the previous frame -- the
-       standard one-frame lag.  Feeds an FPS / performance overlay without re-deriving counts. */
-    gui_render_stats_t  ( *render_stats )( void );
+    /* Low-level draw list access -- may be called anywhere between frame_begin and render.
+       draw_rect and draw_text push geometry directly into the draw list.
+       draw_rects pushes N solid rects as ONE command -- the batched form for dense custom
+       drawing (timeline bars, graph columns) that would otherwise exhaust the frame's command
+       budget one draw_rect at a time.
+       push_clip / pop_clip set the current scissor rectangle. */
 
-    /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are no longer emitted
-       by host code.  debug_enable( true ) arms an internal hotkey driver (numpad '.' arms the group,
-       then P / O / F10 ...) and gui emits them itself, last in the default context's build -- see
-       debug_enable below.  The perf overlay's clock arrives once through set_frame_hooks. */
+    void ( *draw_rect  )( f32 x, f32 y, f32 w, f32 h, u32 abgr );
+    void ( *draw_rects )( const gui_rect_col_t* rects, u32 count );
+    void ( *draw_text  )( f32 x, f32 y, u32 abgr, const char* str );
 
-    /* Frame hooks -- one-time wiring (after init) of the host OS services gui cannot reach itself
-       (gui links only app + rhi, no sys):
+    /* volatile_cb -- runs `fn` inline, as ordinary code, wrapped so its command range can be
+       replayed standalone on frames where the rest of the UI build is skipped (frame_begin
+       returned false; frame_end runs the replay internally -- see frame_dirty below).
+       `fn` calls ordinary emit functions (text, rect_filled,
+       etc) and should bracket them with volatile_begin()/volatile_end() from inside its own body.
+       `label` is hashed the same way item_id() hashes a label -- combined with the current id
+       scope, so it need only be stable and unique within its own call site, same as any other
+       widget label.  Interactive widgets are safe to call from `fn` but are inert during replay --
+       see gui.h (gui_volatile_fn) for the contract. */
+    void ( *volatile_cb    )( const char* label, gui_volatile_fn fn );
+    void ( *volatile_begin )( void );   // called from inside fn: stamp the callback's start position
+    void ( *volatile_end   )( void );   // called from inside fn: reserved, no-op today
 
-         clock       -- monotonic seconds source (sys_tick_seconds); brackets the frame for the
-                        perf overlay's emit / render cost readouts.  NULL leaves timing at zero.
-         sleep_ms    -- thread sleep (sys_sleep_milliseconds); frame_pace's spin/animation sleep.
-         wait_events -- block until OS input or timeout (sys_wait_for_os_events_ms); enables the
-                        idle-skip path of frame_pace.  NULL disables idle skip entirely. */
+    /* text_size -- laid-out pixel size of s (widest line x line span; '\n' breaks).  CalcTextSize. */
+    gui_vec2_t ( *text_size )( const char* s );
 
-    void ( *set_frame_hooks )( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
+    /* draw_text_in -- draw s aligned within rect r (gui_align_t; multi-line, each line aligned).
+       The placement primitive: "right-align this caption in the canvas" with no hand-computed edge.
+       draw_text_clipped is the single-line variant that ellipsizes to r's width. */
+    void ( *draw_text_in      )( gui_rect_t r, gui_align_t align, u32 col, const char* s );
+    void ( *draw_text_clipped )( gui_rect_t r, gui_align_t align, u32 col, const char* s );
 
-    /* Frame lifecycle.  A frame is four explicit phases -- this is a multi-context system and the
-       API does not hide it; even a single-context host names its one context:
+    /* Icons -- a runtime-built R8 atlas of arbitrary symbols (folder, gear, check, editor glyphs).
+       register_icon packs a raw monochrome bitmap (row-major coverage, w*h bytes) and returns a
+       handle (0 = atlas full); the pixels live in the same flush as text and tint by `col`.
+       load_icon is the from-disk source: it decodes an image file (PNG and the other stb_image
+       formats) to R8 coverage -- alpha channel when present, else luminance -- and registers it the
+       same way, so a loaded icon is identical to a procedural one downstream.  `path` is resolved
+       through asset_path -- a plain path relative to the assets root ("assets/icon/foo.png"), no
+       need to call asset_path yourself first.  find_icon looks one
+       up by the name it was registered with (built-in icons register at gui init); icon_size is its
+       native pixel size (for layout).  image is a layout widget (reserve w x h, draw centered/fit);
+       draw_icon_in places an icon in a rect the caller already holds (cell / button label / canvas
+       cut).  col 0 means white. */
 
-         if ( frame_begin(dt) )        -- global: snapshot app input, compute frame_dirty, reset the
-         {                                draw list on dirty frames.  Binds NO context; call once at
-                                          the top of the frame.  Returns frame_dirty: emit the UI
-                                          build only when true -- on a false (clean) frame skip the
-                                          context scopes entirely; render() replays the preserved
-                                          geometry verbatim and frame_end patches the volatile
-                                          widgets (gui()->volatile_cb) internally.
-           ctx_begin(GUI_CTX_DEFAULT) -- bind a context and run its per-frame init; emit its
-              ... emit windows ...        windows immediately after.
-           ctx_end()                    -- close it, rebinding the previously-bound context.  Closing
-         }                                the DEFAULT context also auto-emits the debug overlays
-                                          when debug_enable is on.
-         frame_end()                   -- seal the build (latches emit cost; asserts ctx balance).
-                                          Call on clean frames too -- it runs the volatile replay.
+    gui_icon_id_t ( *register_icon )( const char* name, u32 w, u32 h, const u8* coverage );
+    gui_icon_id_t ( *load_icon     )( const char* name, const char* path );
+    gui_icon_id_t ( *find_icon     )( const char* name );
+    gui_vec2_t    ( *icon_size     )( gui_icon_id_t id );
+    void          ( *image         )( gui_icon_id_t id, f32 w, f32 h, u32 col );
+    void          ( *draw_icon_in  )( gui_rect_t r, gui_icon_id_t id, u32 col );
 
-       frame_begin/frame_end and ctx_begin/ctx_end are balanced scopes, exactly like
-       window_begin/window_end: every begin has an end, and each end restores the scope its begin
-       opened.  render() runs AFTER frame_end and consumes the sealed draw list.
 
-       render()    -- flush one viewport's geometry partition to GPU; opens a LOAD render pass on
-                      that viewport's swapchain, emits all draw calls, and closes the pass.  Also
-                      paints the debug overlay when vp is the primary (index 0).
-                      Call once per live viewport, each with the matching context cmd.
+    /* RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
+       image) as a full-color quad; the texel is the color, tint_abgr multiplies (0 = untinted).
+       image_texture flows in the layout like image(); draw_texture_in fills a rect the caller
+       already holds.  The caller owns the texture + its bindless slot (rhi register_texture). */
 
-       frame_pace( spin_sleep_ms, anim_sleep_ms )
-                   -- end-of-loop frame pacing; call once at the very bottom of the main loop.
-                      Default path: sleep spin_sleep_ms between frames (4 ~= 250 Hz).  With idle
-                      skip on (set_idle_skip, or the I hotkey under debug_enable): block on OS
-                      input so a static UI burns no frames, sleeping anim_sleep_ms (16 ~= 60 Hz)
-                      only while a widget animation settles.  0 opts that sleep out (no call),
-                      even while the feature is on -- free-run for that path.  A no-op until
-                      set_frame_hooks provides the sleep / wait callbacks. */
+    void ( *image_texture   )( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
+    void ( *draw_texture_in )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
 
-    bool ( *frame_begin )( f32 dt );
-    void ( *frame_end   )( void );
-    void ( *render      )( gui_vp_t vp, rhi_cmd_t cmd );
-    void ( *frame_pace  )( i32 spin_sleep_ms, i32 anim_sleep_ms );
+    /* Font atlas access -- the bindless index + pixel size backing a loaded font id, for previewing
+       its live GPU atlas through image_texture / draw_texture_in above (0 / {0,0} if empty). */
+    u32        ( *font_atlas_idx  )( u32 font_id );
+    gui_vec2_t ( *font_atlas_size )( u32 font_id );
 
-    /* Easy-mode loop wrappers (TEST-BED tier, same audience as boot() above -- engine hosts get
-       this loop from run_host instead).  With boot() these shrink a sandbox's main loop to its
-       essence.  frame_poll() works for any host (it needs only app + rhi routing); present_begin
-       / present_end are boot-tier (they render through the boot-owned context) and form a
-       balanced pair like every other begin/end: begin's bool gates the host's own passes, end
-       is called unconditionally.
+    /* Symbol + shape draw primitives (the draw_* family, Dear ImGui's AddXxx / Render* analogue),
+       drawn through the normal vertex pipeline (lines / triangles / circles), NOT the icon atlas.
+       They share the draw_* verb with draw_rect / draw_text / draw_line above -- everything that
+       pushes geometry into the draw list is draw_*; render() is reserved for the frame flush.  The
+       built-in widgets draw their check marks, arrows, bullets and close crosses through these, and
+       the broader shape
+       palette (frames, per-corner rounded rects, polygons, arcs / pie, beziers, dashes, checker /
+       hatch / gradient fills, soft shadows, outlined / shadowed text, grips, spinners) is exposed so
+       editor / custom widgets can paint them.  Implemented in gui_symbol.c.  (The global
+       indicator-shape selectors set_check_style / _bullet_style / _arrow_style live with the style
+       API above, since they are style state rather than draw calls.)
 
-         while ( gui()->frame_poll( &dt ) )       -- pump the OS, route events (rhi swapchain
-         {                                           resize, gui input + floater lifecycle),
-                                                     return dt from the boot clock hook; false on
-                                                     quit or main-window close.
-             ...frame_begin/build/frame_end...    -- unchanged (see above).
-             rhi_cmd_t cmd;
-             if ( gui()->present_begin( &cmd ) )  -- viewport_update + minimized guard + rhi
-                 ...host render passes...            frame open + swapchain clear (boot clear
-                                                     color); true hands out the live cmd for the
-                                                     host's own passes (offscreen scenes, custom
-                                                     draws under the UI).
-             gui()->present_end();                -- gui draw + present + all owned floaters.
-                                                     Call unconditionally (minimized-safe);
-                                                     no-op without a matching present_begin.
-             gui()->frame_pace( 4, 16 );
-         }
+       Pipeline note: draw_gradient is an exact one-quad blend via per-vertex color
+       (GUI_CMD_RECT_GRADIENT); draw_shadow (layered rings) is still an approximation that a
+       future multi-corner-color command would make exact, without changing this surface.  Angles
+       for arc / pie / progress are radians, screen-space (y
+       down).  `thickness` is the stroke width for the stroked forms. */
 
-       The host keeps reading input through app()'s snapshot API (key_pressed etc.) as before --
-       frame_poll only owns the event ring.  A host that needs the loop's internals (extra
-       swapchains, custom event handling) writes the explicit loop instead; these are sugar over
-       the same public calls. */
+    void ( *draw_check_mark        )( gui_rect_t box, u32 col );
+    void ( *draw_arrow             )( gui_rect_t box, gui_dir_t dir, u32 col );
+    void ( *draw_bullet            )( f32 cx, f32 cy, f32 r, u32 col );
+    void ( *draw_close             )( gui_rect_t box, u32 col );
+    void ( *draw_arrow_pointing_at )( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 col );
+    void ( *draw_chevron           )( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 col );
+    void ( *draw_plus_minus        )( gui_rect_t box, bool plus, f32 thickness, u32 col );
+    void ( *draw_frame             )( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
+    void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
+                                        bool filled, f32 thickness, u32 col );
+    void ( *draw_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
+    void ( *draw_circle            )( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
+    void ( *draw_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
+    void ( *draw_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
+    void ( *draw_bezier_quad       )( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
+    void ( *draw_bezier_cubic      )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
+    void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
+    void ( *draw_checker           )( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
+    void ( *draw_hatch             )( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
+    void ( *draw_gradient          )( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
+    void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );
+    void ( *draw_text_outline      )( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
+    void ( *draw_text_shadow       )( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
+    void ( *draw_grip              )( gui_rect_t box, u32 col );
+    void ( *draw_spinner           )( gui_rect_t box, f32 t, f32 thickness, u32 col );
+    void ( *draw_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
 
-    bool ( *frame_poll    )( f32* out_dt );
-    bool ( *present_begin )( rhi_cmd_t* out_cmd );
-    void ( *present_end   )( void );
+    /* Line / path stroking (gui_stroke_align_t; see gui.h for the pixel model).
+       draw_line     -- one segment, CENTER_BIASED: H/V lines render pixel-crisp, others antialiased.
+       draw_polyline -- a connected point array with miter-limited corners (always antialiased);
+                        `closed` joins the last point back to the first (rect / polygon outlines).
+       path_*        -- the retained form: clear, append points with path_line_to, then path_stroke
+                        (which strokes and clears the buffer).  Up to GUI_PATH_MAX points.
 
-    /* Idle-skip control -- the programmatic twin of the I hotkey.  When on, frame_pace blocks on
-       OS input while the UI is idle instead of spinning.  Off by default. */
-    void ( *set_idle_skip )( bool on );
-    bool ( *idle_skip     )( void );
+           gui()->draw_line( 10, 10, 200, 80, 2.0f, col );      // a 2px antialiased diagonal
+           gui()->path_line_to( x0, y0 ); gui()->path_line_to( x1, y1 ); ...
+           gui()->path_stroke( 1.5f, GUI_STROKE_CENTER, false, col ); */
 
-    /* Window state-transition animation (maximize / minimize / restore).  On by default: the window
-       tweens between rects through the gui() animation service.  Off snaps instantly.  A global
-       preference, not per-context. */
-    void ( *window_anim_enable     )( bool on );
-    bool ( *window_anim_is_enabled )( void );
+    void ( *draw_line     )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+    void ( *draw_polyline )( const gui_vec2_t* pts, u32 count, f32 thickness,
+                             gui_stroke_align_t align, bool closed, u32 abgr );
+    void ( *path_clear    )( void );
+    void ( *path_line_to  )( f32 x, f32 y );
+    void ( *path_stroke   )( f32 thickness, gui_stroke_align_t align, bool closed, u32 abgr );
+
+    void ( *push_clip )( f32 x, f32 y, f32 w, f32 h );
+    void ( *pop_clip  )( void );
+
+    /*============================================================================================================
+        GUI_CORE -- interaction server  (core/ + interact/ + nav/ + surface/ + user/)
+        The ambient, id-keyed services every layer composes over: identity (id scopes), the
+        item() state machine over caller rects, keyed state, animation, drag and drop, root
+        surfaces (clip / scroll / z / persist), io snapshot queries, redraw levers.
+        item( id, rect ) -> state is the coordination axis: layout of any kind PRODUCES a
+        rect, a widget of any kind CONSUMES one, and this server cannot tell them apart.
+    =============================================================================================================*/
+
+    /*===============================  animation service -- keyed value stepping  ===============================*/
 
     /* Animation service -- the general value-stepping surface any interface drives transitions with.
        Two models, both keyed on a caller-owned gui_id_t (compose with id_combine to avoid slot
@@ -223,414 +225,289 @@ typedef struct gui_api_s
     gui_vec2_t ( *anim_vec2 )( gui_id_t id, gui_vec2_t target, f32 speed );
     gui_rect_t ( *anim_rect )( gui_id_t id, gui_rect_t target, f32 speed );
 
-    /* Viewport management.  A viewport is a render surface backed by an OS window.  One frame's build
-       gathers every window's geometry into a single draw list; render() dispatches each window's
-       partition to the viewport it is assigned to (window_set_next_viewport, or inherited from
-       whichever viewport was most recently emitted into this frame).
+    /*===================================  surfaces -- root regions + scroll  ===================================*/
 
-       viewport_open()   -- open a surface for OS window win_id.  The initial drawable size is
-                            queried from app() internally -- no redundant w/h parameters.
-                            Returns a valid handle or GUI_VP_INVALID if the pool is full.
-                            The first call creates the primary (index 0); call before any frames.
-                            win_id routes mouse events from that OS window to this surface.
-       viewport_close()  -- close a viewport and release its GPU geometry buffers.  Works for both
-                            the primary and secondary viewports.  Windows on the closed viewport
-                            automatically fall back to the primary.  The host owns the OS window and
-                            rhi context; gui owns only the geometry.
-       viewport_resize() -- update a viewport's drawable size.  Prefer rhi()->event() +
-                            gui()->event() for automatic routing; call this directly only when
-                            explicit control is needed.
-       viewport_shell()  -- emit the window chrome for a borderless viewport.  Every host window is
-                            one of two things: a UI window (window_begin -- a body full of widgets)
-                            or a chrome shell for the OS window itself -- this call.  It emits a
-                            frame-only GUI_WIN_NATIVE window: its titlebar IS the OS caption (title
-                            text + min/max/close buttons, drag to move, double-click to maximize),
-                            its border the OS sizing frame, and its body is empty and click-through
-                            -- every other window lives on top of it.  Call it FIRST inside
-                            ctx_begin, every frame, before any other window on that viewport.
-                            Returns the caption band height so the host can stack its own strips
-                            (menu bar, toolbar) below it -- the built-in main_menu_bar, free-window
-                            clamping, and the dock tree already inset themselves automatically.
-                            On a viewport whose OS window has its own chrome (opened without
-                            APP_WIN_BORDERLESS) it is a no-op returning 0: call it unconditionally
-                            and flip only the window_open flag to switch chrome modes.  flags may
-                            add GUI_WIN_NOTITLEBAR / NO_MINIMIZE / NO_MAXIMIZE / NORESIZE.
-       viewport_caption_h() -- the caption band height (px) a chrome shell published on this
-                            viewport; 0 for an OS-chrome window.  The query twin of
-                            viewport_shell's return, for hosts on the boot path (where the shell
-                            is emitted internally) that stack pinned strips below the caption.
-       viewport_size()      -- the viewport's current drawable size (disp_w/disp_h) -- the query
-                            twin of viewport_resize.  Either out pointer may be NULL; an invalid
-                            viewport reports 0 x 0.
-       viewport_content_y() -- the y where host content starts on this viewport: 0 for an
-                            OS-chrome window, the caption band on a gui-shelled native window,
-                            plus the main menu bar when one was emitted (this frame or last --
-                            emit the bar before querying).  The same bound the maximize pin and
-                            free-window clamp use, published so hosts place windows below the
-                            viewport chrome without summing the parts themselves. */
+    /* region_begin / region_end -- a root-level layout region: an explicit screen rect with no
+       window chrome (no title, no drag/resize, no dock, no z-order competition, no pool record).
+       It is the third caller of the same scroll-region engine window_begin and child_begin sit
+       on, stripped to just a rect + persisted scroll/content state, for a HUD-style element that
+       needs a fixed, caller-positioned box rather than a movable window -- the perf overlay is
+       the reference case.  w/h <= 0 autosizes that axis to last frame's measured content, like
+       child_begin's AutoResizeY.  Unlike window_begin / child_begin, it takes no parent region --
+       call it directly at the top of a frame.  Paints on the main viewport at the z tier picked
+       by `tier` (gui_region_tier_t: MID over windows / under popups, BG, FG); interactive by
+       default -- competes for hover in the same z contest as windows (opt out with
+       GUI_WIN_NO_INPUT; see gui_region.c).  Always returns true; always pair with region_end. */
+    bool ( *region_begin )( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
+                            gui_win_flags_t flags );
+    void ( *region_end   )( void );
 
-    gui_vp_t    ( *viewport_open      )( i32 win_id );
-    void        ( *viewport_close     )( gui_vp_t vp );
-    void        ( *viewport_resize    )( gui_vp_t vp, i32 w, i32 h );
-    f32         ( *viewport_shell     )( gui_vp_t vp, const char* title, gui_win_flags_t flags );
-    f32         ( *viewport_caption_h )( gui_vp_t vp );
-    void        ( *viewport_size      )( gui_vp_t vp, i32* out_w, i32* out_h );
-    f32         ( *viewport_content_y )( gui_vp_t vp );
+    /* scroll_by -- nudge the currently open region's scroll offset by (dx, dy) px (0=top origin);
+       a large delta drives to an edge, so +BIG reaches the bottom / tail and -BIG the top.  Applied
+       THIS frame (re-bases the live pen), so call it right after opening the region, before content
+       -- no one-frame lag, unlike the wheel.  Pairs with GUI_WIN_ANCHOR_BOTTOM to drive a console's
+       wheel + PageUp/Down + jump-to-tail keys without any offset bookkeeping in the caller. */
+    void       ( *scroll_by     )( f32 dx, f32 dy );
 
-    /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
-       to flush into, these own the OS window + rhi context end to end -- gui creates them on
-       spawn and tears them down on close.  This is the lifecycle the tear-off gesture drives;
-       a host may also call viewport_spawn directly to place a panel in its own OS window.
+    /*=================================  identity + item flags + drag and drop  =================================*/
 
-       viewport_spawn()          -- open a floater hosting its own OS window at (x,y) sized w x h;
-                                    returns its viewport handle (assign windows via
-                                    window_set_next_viewport) or GUI_VP_INVALID.  Between frames.
-       viewport_update()         -- reconcile owned floaters with their OS windows: apply tear-off /
-                                    merge-back and tear down closed or abandoned surfaces.  Call once
-                                    per frame AFTER the UI build and BEFORE rendering (the safe point
-                                    to free a surface).
-       viewport_render_floaters() -- present every owned floater from the shared draw list, each on
-                                    its own rhi context (frame_begin/clear/flush/frame_end).  The
-                                    host still presents the main surface (index 0) via render(). */
+    /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
+       seeded by the enclosing window / child region automatically, so identical labels in
+       different regions never collide; push_id adds a temporary scope level for repeated widgets
+       within one region (e.g. rows in a list keyed by index).  Always pair with pop_id.
 
-    gui_vp_t   ( *viewport_spawn           )( const char* title, i32 x, i32 y, i32 w, i32 h );
-    void       ( *viewport_update          )( void );
-    void       ( *viewport_render_floaters )( void );
+           for ( i = 0; i < n; ++i ) {
+               gui()->push_id_int( i );
+               gui()->selectable( name[i], &sel[i] );   // distinct id even if name[] repeats
+               gui()->pop_id();
+           }
 
-    /* Multi-context -- isolated per-context retained state (windows, nav, popups, keyed widget state,
-       id namespace).  The primary context (GUI_CTX_DEFAULT / 0) is always live after init().
+       The "##" / "###" label suffixes are the per-call alternative: "Text##key" displays "Text"
+       but ids from the whole string; "pre###key" ids only from "###key", so a changing visible
+       prefix (a counter) keeps a stable id. */
 
-       ctx_create()       -- allocate a fresh secondary context, sized to `cfg` (NULL / zero fields =
-                             the internal maxima the library was compiled with).
-                             Each gets a unique id_salt so same-named widgets in different contexts
-                             never alias.  Returns GUI_CTX_INVALID on pool exhaustion.  Between frames.
-       ctx_destroy()      -- free a secondary context; rebinds the default if it was current.  Never
-                             destroys GUI_CTX_DEFAULT.  Call between frames.
-       ctx_bind()         -- make ctx the current context with no per-frame init: a mid-build "switch
-                             retained state" escape hatch.  ctx_begin/ctx_end are the normal scope;
-                             reach for ctx_bind only to peek at another context's state mid-frame.
-                             GUI_CTX_DEFAULT (0) or any invalid handle rebinds the default.
-       ctx_set_listening() -- set whether a context receives hover/click/nav input.  The default context
-                             starts listening; secondary contexts start deaf.  Multiple contexts may
-                             listen simultaneously; a deaf context renders but returns inert widget state.
-                             Call between frames.
-       ctx_begin()/ctx_end() -- bind a context for the frame and run its per-frame init, then close it.
-                             A balanced scope: ctx_end rebinds whatever ctx_begin found bound.  ctx_begin
-                             always runs the full frame init (hover promotion, nav, popup stale-close)
-                             regardless of the listening flag, and leaves g_ctx pointing at the context,
-                             so emit its windows IMMEDIATELY after the call.
+    void ( *push_id     )( const char* str );
+    void ( *push_id_int )( i32 i );
+    void ( *pop_id      )( void );
 
-       FRAME CONTRACT:
-         if ( frame_begin(dt) )         -- once: input poll; true = emit this frame (frame_dirty).
-         {
-           ctx_begin(GUI_CTX_DEFAULT) -- bind + init the default context; emit its windows.
-           ctx_end()                    -- close it (auto-emits debug overlays when debug is on).
-           ctx_begin(ctx2)              -- a second context, if any; emit its windows.
-           ctx_end()
-         }
-         frame_end()                    -- seal the build; volatile replay on clean frames.
-       A single-context host runs exactly one ctx_begin(GUI_CTX_DEFAULT)/ctx_end pair. */
+    /* Item flags -- the push-model per-item behavior set (gui_item_flags_t).  push/pop tune every
+       widget until popped (and nest); next_item_flag is a one-shot override the very next widget
+       consumes, no pop needed.  The mechanism is callsite-free: widgets read the resolved flags at
+       emit time, so a new flag never changes a widget signature.  GUI_ITEM_DISABLED is honored
+       for every widget today (inert + dimmed).
 
-    gui_ctx_id_t( *ctx_create        )( const gui_ctx_config_t* cfg );
-    void        ( *ctx_destroy       )( gui_ctx_id_t ctx );
-    void        ( *ctx_bind          )( gui_ctx_id_t ctx );
-    void        ( *ctx_set_listening )( gui_ctx_id_t ctx, bool listen );
-    void        ( *ctx_begin         )( gui_ctx_id_t ctx );
-    void        ( *ctx_end           )( void );
+           gui()->push_item_flag( GUI_ITEM_DISABLED, true );
+           gui()->button( "A" );  gui()->button( "B" );    // both disabled
+           gui()->pop_item_flag();
 
-    /* Host input -- the host owns the app event ring drain and forwards each event here.
-       event() handles:
-         - APP_EV_CHAR / MOUSE_WHEEL / CLIPBOARD: input state; returns true (consumed).
-         - APP_EV_MOUSE_MOVE / _DOWN / _UP: routes the cursor to the correct viewport; returns false.
-         - APP_EV_WIN_RESIZE: updates the matching viewport's drawable size (primary or owned
-           floater).  Also drives rhi context resize for owned floaters (gui owns those contexts).
-           Returns true only for owned floater events; primary resize returns false so
-           rhi()->event() can also handle the swapchain rebuild.
-         - APP_EV_WIN_CLOSE: marks an owned floater for teardown (returns true); primary window
-           close returns false so the host can exit. */
+           gui()->next_item_flag( GUI_ITEM_DISABLED, true );
+           gui()->button( "Only this one" );                 // disabled, no pop needed */
 
-    bool ( *event )( const app_event_t* ev );
+    void ( *push_item_flag )( gui_item_flags_t flag, bool enable );
+    void ( *pop_item_flag  )( void );
+    void ( *next_item_flag )( gui_item_flags_t flag, bool enable );
 
-    /* Panels -- open a window panel; must be matched with window_end().
-       flags is a bitmask of gui_win_flags_t (0 / GUI_WIN_NONE for the defaults) that
-       switches off built-in behavior per window -- title bar, collapse, or edge resize.
+    /* disabled_begin / disabled_end -- named-scope shorthand for GUI_ITEM_DISABLED (BeginDisabled
+       / EndDisabled).  disabled_begin( true ) dims + inerts the bracketed widgets; ( false ) pushes
+       a no-op scope so a conditional disable still balances.  Nests: an inner ( false ) never
+       re-enables widgets an outer ( true ) disabled. */
+    void ( *disabled_begin )( bool disabled );
+    void ( *disabled_end   )( void );
 
-       window_begin() returns false when the window is collapsed (title bar only).  Guard
-       the body widgets with it -- skipped widgets cost nothing -- but always call
-       window_end() regardless of the return value:
 
-           if ( gui()->window_begin( "Tools", GUI_WIN_NONE ) )
+    /* Drag and drop -- typed payload transfer between items (see gui_drag_flags_t /
+       gui_drag_payload_t in gui.h).  One drag exists at a time; the payload bytes are copied.
+
+       USAGE CONTRACT:
+         Source -- right after the widget that should be draggable:
+           if ( gui()->drag_source_begin( GUI_DRAG_NONE ) )      // true while dragging from it
            {
-               gui()->text( "..." );          // skipped while collapsed
+               gui()->drag_payload_set( "ASSET", &index, sizeof index );   // every frame is fine
+               gui()->textf( "Move %s", name );                  // preview widgets follow the cursor
+               gui()->drag_source_end();
            }
-           gui()->window_end();               // always called */
-
-    /*====================================  window/ -- persistent windows  =====================================*/
-
-    /* window_set_next_pos / _size -- queue geometry for the NEXT window_begin, applied per the
-       condition (gui_cond_t) and then cleared.  Decouples the value from when it is applied:
-       ONCE seeds an initial position/size (apply once on first appearance, then user-owned),
-       ALWAYS forces it every frame (layout managers, snapping, animation -- pair with NOMOVE /
-       NORESIZE), APPEARING re-applies it each time the window is shown after being absent.
-       Call immediately before window_begin. */
-    void ( *window_set_next_pos  )( f32 x, f32 y, gui_cond_t cond );
-    void ( *window_set_next_size )( f32 w, f32 h, gui_cond_t cond );
-
-    /* window_set_next_viewport -- assign the NEXT window_begin to a specific viewport.  Sticky: it
-       lands on the window record and persists across frames until reassigned.  Omit to inherit the
-       ambient viewport -- the one most recently emitted into this frame -- so windows created from
-       within a viewport's panels naturally land on the same surface without explicit assignment.
-       If the assigned viewport is later closed, the window automatically reverts to the primary. */
-    void ( *window_set_next_viewport )( gui_vp_t vp );
-
-    /* window_set_next_size_constraints -- queue a one-shot [min,max] size box for the NEXT
-       child_begin, then cleared.  The Dear ImGui SetNextWindowSizeConstraints analogue, in its
-       most useful form: it bounds the child's resolved width / height, so an auto-sized (h <= 0)
-       box grows with its content up to max_h and then scrolls, never collapses below min_h, and a
-       CHILD_RESIZE_* drag cannot leave the range.  A bound <= 0 is "unconstrained" on that side
-       (e.g. 0, 0, 0, max_h to cap height only).  Call immediately before child_begin. */
-    void ( *window_set_next_size_constraints )( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
-
-    bool ( *window_begin )( const char* title, gui_win_flags_t flags );
-    void ( *window_end   )( void );
-
-    /* window_set_open / window_is_open -- drive a CLOSEABLE window's visibility by title (the same
-       key window_begin hashes).  The window's close (X) button hides it; the host re-opens it by
-       calling window_set_open( title, true ) from a button.  window_is_open reports the current
-       state (a window with no record yet -- never begun -- reads as open). */
-    void ( *window_set_open )( const char* title, bool open );
-    bool ( *window_is_open  )( const char* title );
-
-    /*==========================  dock/ -- dock tree, tab groups, layout persistence  ==========================*/
-
-    /* Docking -- tile + tab windows into a dock tree that fills a viewport (the DockSpaceOverViewport
-       analogue).  The programmatic path: build a layout in code, then windows whose titles were
-       dock_window'd render into their node (no per-window title bar -- the node draws a shared tab
-       strip) instead of free-floating.  Mouse drag-to-dock and layout persistence (dock_save/load
-       below) build on the same tree.  Free-floating windows still overlap on top of the dockspace.
-
-       dockspace_over_viewport() -- ensure viewport vp hosts a dock tree, lay it out over the surface,
-                                    draw + interact its splitters, and return the tree ROOT node id.
-                                    Call once per frame at the TOP of the build, before the docked
-                                    windows' window_begin (which read their resolved node rects).
-       dock_split()              -- split a LEAF node in two; returns the NEW empty leaf on the `dir`
-                                    side and writes the REMAINING node id to *out_remain (may be NULL).
-                                    `ratio` is the new side's fraction of the axis.  The DockBuilder
-                                    idiom -- keep splitting the returned remainder to carve a layout.
-       dock_window()             -- add a window (matched to window_begin by title) as a tab in a leaf,
-                                    moving it out of any node it was already in; it becomes active.
-       dock_undock()             -- remove a window from its node, returning it to free-floating.
-       window_is_docked()        -- true while the window is tabbed into some node (dormant included).
-       dock_window_maximize()    -- maximize the window's node over its WHOLE dockspace (fullscreen
-                                    the docked pane -- the other nodes are obscured and stop emitting)
-                                    or restore the tiled layout; animated like the floater maximize
-                                    (window_anim_enable gates it).  GUI_WIN_DOCK_MAXIMIZE gates only
-                                    the tab strip's button; this verb works regardless, so a host can
-                                    bind fullscreen-toggle to a hotkey without offering the chrome.
-       window_is_dock_maximized() -- true while the window's node holds the dockspace maximize.
-
-       A dockspace is EMIT-GATED like every immediate-mode element: on frames the host does not call
-       dockspace_over_viewport, the viewport's tree is DORMANT -- retained but inert.  Windows tabbed
-       in a dormant tree keep their membership but render nothing (window_begin returns false,
-       inactive-tab semantics), and title drags offer no dock chips; floating tab groups are
-       independent of the tree and unaffected.  Re-emitting the dockspace revives the layout exactly
-       as it was, so a host can swap whole UI modes in and out just by (not) running the dock code
-       path.  dock_clear (below) is the only thing that destroys the tree.
-
-           gui_dock_id_t root  = gui()->dockspace_over_viewport( 0, GUI_DOCKSPACE_NONE );
-           gui_dock_id_t left  = gui()->dock_split( root, GUI_DIR_LEFT, 0.25f, &root );
-           gui()->dock_window( "Scene Tree", left );
-           gui()->dock_window( "Viewport",   root );   // center; tab more windows here with root */
-
-    gui_dock_id_t ( *dockspace_over_viewport )( gui_vp_t vp, gui_dockspace_flags_t flags );
-    gui_dock_id_t ( *dock_split )( gui_dock_id_t node, gui_dir_t dir, f32 ratio,
-                                     gui_dock_id_t* out_remain );
-    /* dock_split_root() -- split the WHOLE viewport tree, carving a new leaf along a full edge (`dir`).
-       Unlike dock_split (a single leaf), this wraps the root in a new split so the pane spans the entire
-       side -- the way to place a full-height column beside an existing top/bottom stack.  Returns the
-       new leaf id (dock windows into it), or GUI_DOCK_NONE.  Also the commit path of an edge drop. */
-    gui_dock_id_t ( *dock_split_root )( gui_vp_t vp, gui_dir_t dir, f32 ratio );
-    void ( *dock_window )( const char* title, gui_dock_id_t node );
-    void ( *dock_undock )( const char* title );
-    bool ( *window_is_docked )( const char* title );
-    void ( *dock_window_maximize )( const char* title, bool on );
-    bool ( *window_is_dock_maximized )( const char* title );
-
-    /* Floating tab groups -- tabbing WITHOUT split panes.  window_tab() merges window `title` onto
-       window `onto_title`'s frame: a free target grows a floating tab group around itself (shared
-       frame, tab strip in place of a title bar; drag the strip's empty band to move it, its edges
-       to resize); a target already tabbed somewhere -- a group or a dockspace leaf -- just gains
-       the tab.  The same merge exists as a gesture: title-drag one free window onto another's
-       title bar and drop on the center chip.  dock_undock() pulls a window back out; a group
-       dissolves by itself once a single tab remains.  A window flagged GUI_WIN_NO_TAB_TARGET
-       never hosts tabs (no drop chip; refused as onto_title) -- flag control panels whose body
-       the host gates on window_begin's return.  To keep a whole DOCKSPACE tabs-only instead,
-       pass GUI_DOCKSPACE_NO_SPLIT to dockspace_over_viewport: only the center (tab) drop chip
-       is offered and the split verbs above refuse. */
-    void ( *window_tab )( const char* title, const char* onto_title );
-
-    /* Layout persistence.  dock_save() serializes viewport vp's dock tree into buf as a small ASCII
-       blob and returns the byte count a full write needs (like snprintf -- pass a 0 bufsz to size
-       first).  dock_load() rebuilds the tree from such a blob; returns false on a bad header.  The
-       host owns the file: write the blob on change, read + load it at startup.  CALL dock_load at a
-       safe point -- between frames or at the top of the build before any docked window's window_begin
-       -- never from inside a docked window (it frees + rebuilds the tree). */
-    u32  ( *dock_save )( gui_vp_t vp, char* buf, u32 bufsz );
-    bool ( *dock_load )( gui_vp_t vp, const char* text );
-
-    /* dock_clear() -- DESTROY viewport vp's dock tree: free every node and clear the root.  Windows
-       lose their tab membership permanently and free-float from their next begin (at the rect their
-       node last gave them).  Not needed to merely stop docking for a while -- a dockspace that is
-       not emitted goes DORMANT (see above) and revives intact.  Clear is for discarding a layout
-       wholesale, e.g. before hand-building a fresh one.  Same safe-point rule as dock_load: top of
-       the build, never from inside a docked window.  Floating tab groups stay standing. */
-    void ( *dock_clear )( gui_vp_t vp );
-
-
-    /* Host-reserved top band (pixels) above viewport vp's dock area -- the height of a main menu
-       bar / toolbar strip the host draws itself; the dock tree lays out below it.  Sticky until
-       re-published; pass 0 to reclaim.  Publish before dockspace_over_viewport in the build. */
-
-    void ( *dockspace_inset )( gui_vp_t vp, f32 top );
-    /*==========================  popup/ -- popups, tooltips, menus, combo + listbox  ==========================*/
-
-    /* Popups -- transient overlay windows on top of everything.  A regular popup auto-closes when
-       the user clicks outside it; a modal blocks input behind it and dims the background, closing
-       only via popup_close_current.  The string id namespaces both the open request and the body,
-       so popup_open("x") and popup_begin("x") must use the same id.  Popups stack (a popup opened
-       while inside another nests under it); a click keeps the deepest popup under the cursor and
-       closes the rest.  Popup / tooltip bodies lay out like a window body: declare a layout header
-       (stack / columns / ...) before emitting widgets.
-
-           if ( gui()->button( "Open" ) )    gui()->popup_open( "menu" );
-           if ( gui()->popup_begin( "menu", GUI_WIN_NONE ) ) {
-               gui()->stack();
-               if ( gui()->selectable( "Cut",  NULL ) ) { ... }
-               if ( gui()->selectable( "Copy", NULL ) ) { ... }
-               gui()->popup_end();
+         Target -- right after any widget that should receive drops:
+           if ( gui()->drag_target_begin() )                     // true while a drag hovers it
+           {
+               const gui_drag_payload_t* p = gui()->drag_payload_accept( "ASSET", GUI_DRAG_NONE );
+               if ( p )                                          // non-NULL on the drop frame
+                   place_asset( *(const i32*)p->data );
+               gui()->drag_target_end();
            }
 
-       popup_begin / popup_modal_begin return true only when the popup is open AND visible -- guard
-       the body and call popup_end only on a true return (like window_begin's collapsed contract).
-       Auto-sized popups (the default) measure their content on the appearing frame off-screen and
-       snap into place the next frame, so there is no first-frame size pop. */
+       drag_payload_accept highlights the target while the types match and returns the payload on
+       the release frame (or every hover frame with GUI_DRAG_ACCEPT_PEEK).  drag_active reports a
+       drag in flight anywhere; drag_payload_peek inspects it without being a target.  The dock
+       tab-strip publishes its tab drags as type "gui.dock_tab" (payload: the window's gui_id_t). */
 
-    void ( *popup_open          )( const char* id );
-    bool ( *popup_begin         )( const char* id, gui_win_flags_t flags );
-    bool ( *popup_modal_begin   )( const char* id, const char* title, gui_win_flags_t flags );
-    void ( *popup_end           )( void );
-    void ( *popup_close_current )( void );
-    bool ( *popup_is_open        )( const char* id );
+    bool ( *drag_source_begin   )( gui_drag_flags_t flags );
+    void ( *drag_source_end     )( void );
+    bool ( *drag_payload_set    )( const char* type, const void* data, u32 size );
+    bool ( *drag_target_begin   )( void );
+    const gui_drag_payload_t* ( *drag_payload_accept )( const char* type, gui_drag_flags_t flags );
+    void ( *drag_target_end     )( void );
+    bool ( *drag_active         )( void );
+    const gui_drag_payload_t* ( *drag_payload_peek   )( void );
 
-    /* 
-        Context menus -- open a popup on a right-click.  _item binds to the previous widget (the one
-        emitted just before the call); _window binds to empty space in the current window.  Use them
-        in place of the popup_open + popup_begin pair:
+    /*=================================  item() -- behavior over a caller rect  =================================*/
 
-            gui()->selectable( "Row", NULL );
-            if ( gui()->popup_context_item_begin( "row_ctx" ) ) { ...; gui()->popup_end(); }
-    */
-    bool ( *popup_context_item_begin   )( const char* id );
-    bool ( *popup_context_window_begin )( const char* id );
+    /* item -- the user-UI behavior seam: run the shared widget interaction state machine over a
+       rect the CALLER derived (a canvas() cut, an empty() slot, split/carve panels, custom math)
+       and report the resolved state (hover / active / pressed / clicked).  A custom widget is
+       rect + item() + draw_*: it hovers, press-captures, clicks, and registers for keyboard nav
+       exactly like a stock widget, with the presentation entirely yours.  Owns no layout
+       reservation, so it composes with the rect helpers.  invisible_button is item() reduced to
+       its click bit; for only a hover tint, use is_mouse_hovering_rect. */
+    gui_item_state_t ( *item )( const char* id_str, gui_rect_t r );
+    bool ( *invisible_button )( const char* id_str, gui_rect_t r );
 
-    /* 
-        Tooltips -- a non-interactive overlay shown at the cursor while the previous widget is
-        hovered.  set_item_tooltip is the one-liner; tooltip_begin / tooltip_end wrap a multi-widget
-        body (guard the body on the true return, always call tooltip_end).
+    /*===========================  queries -- io snapshot, item state, redraw state  ============================*/
 
-           gui()->button( "Hover me" );
-           gui()->set_item_tooltip( "Does the thing" );
+    /* IO accessors -- the frame-coherent input snapshot the widgets see, for UI / tool code that
+       would otherwise re-query app() and so bypass gui's frame timing and its input capture.
 
-        help_marker draws a dim "(?)" hint that pops `text` on hover -- the Dear ImGui footnote,
-        typically emitted on the same line after a control:
+       want_capture_mouse / want_capture_keyboard are the fence: a true return means gui owns the
+       device this frame (the cursor is over a window, a widget is dragging, or a field is focused),
+       so non-UI code should NOT also act on it.  Gate direct app() input reads in gameplay / tools
+       on the inverse:
 
-           gui()->checkbox( "No mouse", &flag );
-           gui()->same_line( 0.0f );
-           gui()->help_marker( "Disable mouse inputs and interactions." ); 
-    */
-    void ( *set_item_tooltip )( const char* text );
-    bool ( *tooltip_begin    )( void );
-    void ( *tooltip_end      )( void );
-    void ( *help_marker      )( const char* text );
+           if ( !gui()->want_capture_keyboard() && app()->key_pressed( APP_KEY_SPACE ) )
+               jump();
 
-    /* Menus -- a coordination layer over the popup stack.  A menu bar holds menu_begin entries;
-       each opens a submenu popup that holds menu_items and further menu_begin entries (nesting on
-       the popup stack).  Disabled state reuses the item-flag stack: push_item_flag(GUI_ITEM_DISABLED).
+       The is_key_* / is_mouse_* / get_* readers return the same per-frame state the widgets use
+       (keyed by app_key_t / app_mouse_button_t).  is_key_pressed / is_mouse_clicked are the down-
+       edge this frame.  get_time is seconds since the first frame (accumulated dt); get_delta_time
+       is this frame's.
 
-       main_menu_bar_begin pins a bar across the top of the display; menu_bar_begin fills the strip a
-       window reserved with GUI_WIN_MENUBAR (and returns false on a window without the flag).  Both
-       return true only when visible -- guard the entries on the return and call the matching end only
-       then, exactly like window_begin / popup_begin.
+       Key repeat is per-query (no mode to set): is_key_pressed is the initial press only, while
+       is_key_pressed_repeat also fires on each OS auto-repeat tick at the user's system rate -- the
+       Dear ImGui IsKeyPressed(key, repeat=true) case.  Use the repeat reader for held-key actions
+       (text nav, a spinner); use the plain one for discrete actions that must fire once per press. */
 
-           if ( gui()->main_menu_bar_begin() ) {
-               if ( gui()->menu_begin( "File" ) ) {
-                   if ( gui()->menu_item( "Open", "Ctrl+O", NULL ) ) { ... }
-                   gui()->menu_item( "Show grid", NULL, &show_grid );   // checkable
-                   if ( gui()->menu_begin( "Recent" ) ) {              // submenu
-                       gui()->menu_item( "a.txt", NULL, NULL );
-                       gui()->menu_end();
-                   }
-                   gui()->menu_end();
-               }
-               gui()->main_menu_bar_end();
-           }
+    bool ( *want_capture_mouse       )( void );
+    bool ( *want_capture_keyboard    )( void );
 
-       menu_begin renders horizontally in a bar (its popup drops below) and as a full-width row with
-       a submenu arrow inside a menu (its popup opens to the side); the orientation follows the active
-       layout mode, so no flag is needed.  menu_item returns true on the clicked frame and dismisses
-       the whole menu chain; shortcut is display-only (may be NULL); selected may be NULL (a plain
-       command) or a bool* (a checkable item, toggled on click). */
+    /* is_mouse_hovering_rect -- cursor is over r and r is interactable (front-most window, inside the
+       region clip, no drag in flight): the IsMouseHoveringRect analogue for custom-drawn hit tests. */
+    bool ( *is_mouse_hovering_rect   )( gui_rect_t r );
 
-    bool ( *main_menu_bar_begin )( void );
-    void ( *main_menu_bar_end   )( void );
+    /* Last-item introspection (the ImGui IsItem* family) -- each reports on the widget just emitted,
+       so call immediately after it.  hovered / active / clicked / focused mirror the widget's own
+       interaction; activated / deactivated are the press / release edges (deactivated is the natural
+       "commit on release" seam); visible is true when any of the item's rect survives the region
+       clip; get_item_rect returns its screen rect (GetItemRectMin/Max/Size in one). */
+    bool         ( *is_item_hovered     )( void );
+    bool         ( *is_item_active      )( void );
+    bool         ( *is_item_clicked     )( void );
+    bool         ( *is_item_focused     )( void );
+    bool         ( *is_item_activated   )( void );
+    bool         ( *is_item_deactivated            )( void );
+    bool         ( *is_item_deactivated_after_edit )( void );
+    bool         ( *is_item_visible                )( void );
+    gui_rect_t ( *get_item_rect       )( void );
 
-    /* main_menu_bar_h() -- the band height main_menu_bar_begin occupies (theme-derived).  Use it
-       to stack host strips (toolbars, dockspace_inset) below the bar instead of re-deriving the
-       height from font metrics -- it stays truthful when the theme or scale ramp retunes. */
-    f32  ( *main_menu_bar_h     )( void );
-    bool ( *menu_bar_begin      )( void );
-    void ( *menu_bar_end        )( void );
-    bool ( *menu_begin )( const char* label );
-    void ( *menu_end   )( void );
-    bool ( *menu_item  )( const char* label, const char* shortcut, bool* selected );
+    bool ( *is_key_down              )( app_key_t key );
+    bool ( *is_key_pressed           )( app_key_t key );
+    bool ( *is_key_pressed_repeat    )( app_key_t key );
+    bool ( *is_key_released          )( app_key_t key );
+    bool ( *is_mouse_down            )( app_mouse_button_t b );
+    bool ( *is_mouse_clicked         )( app_mouse_button_t b );
+    bool ( *is_mouse_released        )( app_mouse_button_t b );
+    bool ( *is_mouse_double_clicked  )( app_mouse_button_t b );
+    void ( *get_mouse_pos            )( f32* x, f32* y );
+    f32  ( *get_mouse_wheel          )( void );
+    f32  ( *get_delta_time           )( void );
+    f64  ( *get_time                 )( void );
 
-    /* Toolbar -- an icon strip built on bar() (compose/).  toolbar_begin id-scopes the strip so
-       two toolbars' buttons never collide, then opens a bar() run; toolbar_end pops it.  Emit
-       inside any window / child -- it owns no window of its own, matching bar() itself.  It does
-       NOT push a scale -- wrap it in the caller's own scale_push/scale_pop (GUI_SCALE_BAR is the
-       density step authored for icon toolbars, but any GUI_SCALE_* works) so a single app can mix
-       toolbar sizes, e.g. a large main-panel strip next to a regular-scale one.
+    /* Hardware cursor.  The widgets already drive the shape from their own hover (resize edges show
+       the directional sizers, a text field shows the I-beam).  cursor_set lets UI code request
+       a shape gui cannot infer -- e.g. APP_CURSOR_HAND over a custom clickable -- for this frame;
+       the last request wins and is flushed to the OS window under the pointer while gui owns the
+       mouse, then reset to APP_CURSOR_ARROW next frame.  get_mouse_cursor reads the current request. */
+    void         ( *cursor_set )( app_cursor_t c );
+    app_cursor_t ( *get_mouse_cursor )( void );
 
-       toolbar_button / toolbar_toggle are square icon cells (press / latched-on); their id_str is
-       the id only ("##save") -- pass a display label there and it is still just the id, nothing
-       is drawn from it.  toolbar_dropdown_begin/end is the split-button form: the icon plus an
-       adjacent down-arrow column, opening an arbitrary-widget popup below the button -- the same
-       anchor / dismiss mechanics as combo_begin/combo_end, so put ANY widgets in the body,
-       including menu_item rows for the icon + label + shortcut three-column layout menus already
-       give you. tooltip may be NULL.
+    /* set_keyboard_focus -- queue a programmatic focus request: the next focusable widget emitted
+       (a text input box) takes keyboard focus as if clicked.  Call just before emitting the
+       widget; the request persists across frames until a focusable widget consumes it, so a
+       request made after this frame's field lands on the same field next frame (the "refocus
+       after Enter" console pattern). */
+    void         ( *set_keyboard_focus )( void );
 
-           gui()->scale_push( GUI_SCALE_BAR );
-           gui()->toolbar_begin( "main" );
-               if ( gui()->toolbar_button( "##save", icon_save, "Save (Ctrl+S)" ) ) save();
-               gui()->toolbar_toggle( "##wire", icon_wire, &wireframe, "Wireframe" );
-               gui()->toolbar_separator();
-               if ( gui()->toolbar_dropdown_begin( "##view", icon_eye, "View Mode" ) ) {
-                   gui()->menu_item( "Lit", NULL, NULL );
-                   gui()->menu_item( "Wireframe", NULL, NULL );
-                   gui()->toolbar_dropdown_end();
-               }
-           gui()->toolbar_end();
-           gui()->scale_pop(); */
+    /* set_edit_cursor_end -- queue a caret request: the focused text field seats its caret at the
+       end of its buffer (selection collapsed) the next time it runs.  Call after replacing the
+       field's buffer programmatically (history recall, tab completion); the request persists
+       across frames until a focused field consumes it. */
+    void         ( *set_edit_cursor_end )( void );
 
-    bool ( *toolbar_begin           )( const char* str_id );
-    void ( *toolbar_end             )( void );
-    bool ( *toolbar_button          )( const char* id_str, gui_icon_id_t icon, const char* tooltip );
-    bool ( *toolbar_toggle          )( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip );
-    bool ( *toolbar_dropdown_begin  )( const char* id_str, gui_icon_id_t icon, const char* tooltip );
-    void ( *toolbar_dropdown_end    )( void );
-    void ( *toolbar_separator       )( void );
+    /* set_edit_key_hook -- register a key passthrough for the next FOCUSED text field: the hook
+       (gui_edit_key_fn, gui.h) runs before the field's own key handling for every key down this
+       frame, and a key it consumes is cleared from the frame io.  One-shot: re-register just
+       before emitting the field each frame.  This is the Quake-console seam -- history on
+       Up/Down, completion on Tab, scrollback on PgUp/PgDn/Ctrl+Home/Ctrl+End -- while every
+       unconsumed key edits the line as normal. */
+    void         ( *set_edit_key_hook )( gui_edit_key_fn fn, void* user );
 
-    /*====================  compose/ -- containers, layout verbs, sizing, rect composition  ====================*/
+    /* wants_redraw -- true when at least one animated widget has not yet reached its target this
+       frame (the currently bound context's flag).  frame_pace already folds this across every
+       context internally; the query remains for hosts that run their own pacing. */
+    bool ( *wants_redraw )( void );
+
+    /* request_redraw -- one-shot: mark the bound context so the NEXT frame_begin returns dirty
+       and runs a full emit.  Self-clearing (the pin is set_force_redraw below).  Call it when a
+       state change made DURING this build only the next build can show -- the click that switches
+       which screen is emitted, a custom widget (gui()->item) mutating the model it draws.  Input
+       edges dirty only the frame they land on; without this, that next frame reads clean and
+       render() replays the stale cached geometry until the mouse moves again.  Stock widgets do
+       not need it (they re-read state in the same frame); the internal pop-time mutations
+       (scroll, dock collapse, style edits) already raise the same flag. */
+    void ( *request_redraw )( void );
+
+    /* frame_dirty -- true when the current frame must perform a full widget emit: input changed,
+       an animation is in flight, or last frame's render found a structural change.  This is the
+       value frame_begin returns; the query remains for reads later in the frame (e.g. to pair
+       external per-emit work such as a scene-texture flip with an actual emit). */
+    bool ( *frame_dirty )( void );
+
+    /* volatile_live -- true while at least one volatile block (volatile_cb) would actually patch
+       on an idle frame: registered, on screen, its window's cached slot current.  A host that
+       runs its OWN pacing and block-waits on input once wants_redraw/frame_dirty settle must add
+       this to the gate: volatile blocks advance only when a frame runs, so a blocking wait
+       freezes them until a timeout / spurious wakeup and the animation stutters at the wait
+       interval.  frame_pace folds this in internally, same as wants_redraw. */
+    bool ( *volatile_live )( void );
+
+    /* set_force_redraw -- pins frame_dirty (and so frame_begin's return) true every frame,
+       defeating the retained-cache clean-frame skip so the UI rebuilds and re-renders
+       unconditionally.  Off by default.  Two uses: a debug lever to isolate a "did not update
+       until input moved" symptom from a real emit bug, and the legitimate live-data pin -- a host
+       whose sim mutates displayed state every frame (play mode) sets it so panels track the sim. */
+    void ( *set_force_redraw )( bool on );
+
+    /* force_redraw -- current state of the set_force_redraw override. */
+    bool ( *force_redraw )( void );
+
+    /*============================================================================================================
+        GUI_RECT -- rect kit  (stateless carve math)
+        Pure rect producers: no pen, no region state, no draw -- feed the results to elements,
+        item(), push_layout_overlay, or draw_* directly.  The inline half of this library
+        (cut / inset / align / anchor_box + the geometry types) lives in gui_rect.h.
+    =============================================================================================================*/
+
+    /* content_rect -- the current region's available area as a screen rect (cursor_screen_pos joined
+       with content_avail).  split -- carve a rect into panels along an axis using the overloaded
+       column unit ( >1 px, ==1 fill, (0,1) fraction ), writing each panel rect into out[] and
+       returning the count ( <= GUI_LAYOUT_COLS ).  Pure rect math: fill each panel with
+       push_layout_overlay, and nest by splitting a returned rect again.  Single-pass and known-size --
+       it never measures content, so size panels with px / fraction / fill, not content-driven sizes. */
+    gui_rect_t ( *content_rect )( void );
+    u32        ( *split )( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
+
+    /* carve -- a whole nested partition from one flat f32 `form`: the recursive form of split.  The
+       form is a GUI_END-terminated list in the same overloaded unit as cols, with GUI_CUT_X /
+       GUI_CUT_Y sentinels marking which tracks subdivide (a size followed by a CUT is a container of
+       that size on the named axis; otherwise a leaf).  Opens with a leading CUT filling `area`.  Leaf
+       rects land in out[] in reading order; returns the leaf count ( <= max ).  One resolve per
+       container, no per-leaf storage -- store a form as data and carve it each frame. */
+    u32        ( *carve )( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out, u32 max );
+
+    /* anchor -- place a child rect inside `parent` from a normalized anchor frame (UE4 Slate model),
+       the general free-placement primitive for overlays / HUDs.  Per axis: min == max point-pins a
+       fixed `size` child to that parent fraction (hung off the line by `pivot`, shifted by `off`);
+       min < max stretches the child between the two fractions with `off` as per-edge insets.  Pure
+       rect math -- fill the result with push_layout_overlay or draw into it.  The corner / edge cases
+       are the inline gui_rect_align / gui_anchor_box (gui_rect.h); reach for anchor when you need a
+       fraction-relative position or a stretch-with-margins band.  See gui_anchor_t for the fields. */
+    gui_rect_t ( *anchor )( gui_rect_t parent, gui_anchor_t a );
+
+    /*============================================================================================================
+        GUI_FLOW -- layout engine  (compose/)
+        The stateful pen: templates (stack / cols / grid / form / pack), sizing, avail,
+        row virtualization, and the rect<->flow seams (empty, canvas, push_layout_overlay).
+        Produces rects and opens regions; draws nothing, and no widget core depends on it.
+    =============================================================================================================*/
+
+    /*================================  containers -- child boxes + sub-layouts  ================================*/
 
     /* Child regions -- a nested scrollable layout box inside the current window (or another
        child).  child_begin carves a box of height h (width w, or the remaining content width
@@ -639,7 +516,7 @@ typedef struct gui_api_s
        auto-sizes the height to the content (AutoResizeY).  GUI_WIN_CHILD_RESIZE_X / _Y add a
        draggable grip on the right / bottom border (flow children only): that axis becomes
        user-owned and persisted, seeded from w/h then driven by the drag, the way a window owns
-       its size.  window_set_next_size_constraints (above) bounds the resolved size, so an
+       its size.  window_set_next_size_constraints (GUI_CHROME: window/) bounds the resolved size, so an
        auto-sized box can grow with its content up to a max height and then scroll.  Always pair
        with child_end -- the parent layout resumes directly below the box.  Fill it with any
        widgets (e.g. selectable rows for a list box).  Always returns true. */
@@ -671,20 +548,7 @@ typedef struct gui_api_s
     void ( *pop_layout  )( void );
     void ( *child_end   )( void );
 
-    /* region_begin / region_end -- a root-level layout region: an explicit screen rect with no
-       window chrome (no title, no drag/resize, no dock, no z-order competition, no pool record).
-       It is the third caller of the same scroll-region engine window_begin and child_begin sit
-       on, stripped to just a rect + persisted scroll/content state, for a HUD-style element that
-       needs a fixed, caller-positioned box rather than a movable window -- the perf overlay is
-       the reference case.  w/h <= 0 autosizes that axis to last frame's measured content, like
-       child_begin's AutoResizeY.  Unlike window_begin / child_begin, it takes no parent region --
-       call it directly at the top of a frame.  Paints on the main viewport at the z tier picked
-       by `tier` (gui_region_tier_t: MID over windows / under popups, BG, FG); interactive by
-       default -- competes for hover in the same z contest as windows (opt out with
-       GUI_WIN_NO_INPUT; see gui_region.c).  Always returns true; always pair with region_end. */
-    bool ( *region_begin )( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
-                            gui_win_flags_t flags );
-    void ( *region_end   )( void );
+    /*==============================  layout verbs, sizing, virtualization, seams  ==============================*/
 
     /* Layout -- declare the active region's next-item methodology (its "mode"), then shape it.
        A region opens UNDECLARED: the first header below names the mode (stack / columns / grid /
@@ -897,13 +761,6 @@ typedef struct gui_api_s
     gui_span_t ( *rows_clip     )( i32 count, f32 row_h );
     void       ( *rows_clip_end )( void );
 
-    /* scroll_by -- nudge the currently open region's scroll offset by (dx, dy) px (0=top origin);
-       a large delta drives to an edge, so +BIG reaches the bottom / tail and -BIG the top.  Applied
-       THIS frame (re-bases the live pen), so call it right after opening the region, before content
-       -- no one-frame lag, unlike the wheel.  Pairs with GUI_WIN_ANCHOR_BOTTOM to drive a console's
-       wheel + PageUp/Down + jump-to-tail keys without any offset bookkeeping in the caller. */
-    void       ( *scroll_by     )( f32 dx, f32 dy );
-
     /* cursor_screen_pos -- screen position where the next item would land (GetCursorScreenPos): anchor
        custom draw_* geometry to the pen.  empty -- reserve a w x h block and return its screen rect
        (the ImGui Dummy analogue): blank space, or a slot to fill with custom draw / make clickable
@@ -912,213 +769,348 @@ typedef struct gui_api_s
     gui_vec2_t ( *cursor_screen_pos )( void );
     gui_rect_t ( *empty )( f32 w, f32 h );
 
-    /* content_rect -- the current region's available area as a screen rect (cursor_screen_pos joined
-       with content_avail).  split -- carve a rect into panels along an axis using the overloaded
-       column unit ( >1 px, ==1 fill, (0,1) fraction ), writing each panel rect into out[] and
-       returning the count ( <= GUI_LAYOUT_COLS ).  Pure rect math: fill each panel with
-       push_layout_overlay, and nest by splitting a returned rect again.  Single-pass and known-size --
-       it never measures content, so size panels with px / fraction / fill, not content-driven sizes. */
-    gui_rect_t ( *content_rect )( void );
-    u32        ( *split )( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
+    /* flow_begin / flow_cell / flow_end -- the named rect <-> flow seam pair.  flow_begin opens
+       the layout engine inside ANY rect, however it was produced (cut_* algebra, split, carve,
+       anchor, a flow cell, custom math) -- push_layout_overlay under its first-class name.
+       flow_cell takes the next flow element back out AS a rect (w / h <= 0 = natural: the
+       resolved track width / one standard row), so the two verbs cross the seam in both
+       directions and nest to the layout stack depth -- the recursive contract:
 
-    /* carve -- a whole nested partition from one flat f32 `form`: the recursive form of split.  The
-       form is a GUI_END-terminated list in the same overloaded unit as cols, with GUI_CUT_X /
-       GUI_CUT_Y sentinels marking which tracks subdivide (a size followed by a CUT is a container of
-       that size on the named axis; otherwise a leaf).  Opens with a leading CUT filling `area`.  Leaf
-       rects land in out[] in reading order; returns the leaf count ( <= max ).  One resolve per
-       container, no per-leaf storage -- store a form as data and carve it each frame. */
-    u32        ( *carve )( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out, u32 max );
+           carve -> flow_begin -> flow_cell -> carve -> flow_begin -> ...
 
-    /* anchor -- place a child rect inside `parent` from a normalized anchor frame (UE4 Slate model),
-       the general free-placement primitive for overlays / HUDs.  Per axis: min == max point-pins a
-       fixed `size` child to that parent fraction (hung off the line by `pivot`, shifted by `off`);
-       min < max stretches the child between the two fractions with `off` as per-edge insets.  Pure
-       rect math -- fill the result with push_layout_overlay or draw into it.  The corner / edge cases
-       are the inline gui_rect_align / gui_anchor_box (gui.h); reach for anchor when you need a
-       fraction-relative position or a stretch-with-margins band.  See gui_anchor_t for the fields. */
-    gui_rect_t ( *anchor )( gui_rect_t parent, gui_anchor_t a );
+       A fresh flow opens UNDECLARED: name a mode inside (stack / cols / ...).  Flow never
+       scrolls -- when the carved area needs scroll / clip / persistence, open a core surface
+       first (region_begin) and flow inside it.  Always pair flow_begin with flow_end. */
+    void       ( *flow_begin )( gui_rect_t rect );
+    gui_rect_t ( *flow_cell  )( f32 w, f32 h );
+    void       ( *flow_end   )( void );
 
+    /*============================================================================================================
+        GUI_ELEMENT -- building blocks  (rect-consuming widget cores)
+        The el_* set: every element fills EXACTLY the rect it is handed -- no hidden padding,
+        no flow, no layout reservation -- composing item() behavior + draw_* presentation +
+        the slim installed element style (gui_el_style_t, gui_element.h).  Rects come from
+        anywhere: gui_rect.h math, split / carve / anchor, flow_cell, your own numbers.
+        Lifted from the proven sb_gui_diablo ui layer (GUI_STACK_PLAN increment 3).
+    =============================================================================================================*/
 
-    /*  split_begin / split_next / split_end -- two panels side by side sharing a Y-level.
+    /* el_style -- mutable access to the INSTALLED element style, the kit (S3) tuning door.
+       The theme system re-derives the installed values at every theme / font landing
+       (style_apply / theme_set / theme_reset / font activation), so a kit that owns the
+       element look re-installs its palette after those calls.  Elements read only this. */
+    gui_el_style_t* ( *el_style )( void );
 
-        split_begin( id, right_w ) opens a split: the left panel fills, the right panel is
-        right_w pixels wide.  split_next() closes the left panel and opens the right.
-        split_end() closes the right panel.  Each panel is an independent flow region -- declare
-        a layout mode (stack/cols/...) inside each as usual.  Heights are cached per-id across
-        frames (one-frame lag on first appearance, then stable).
+    /* The cores.  el_panel -- inert framed backdrop (the DIM surface).  el_label -- a text run
+       seated per align.  el_button -- framed press element, id from the label, true on click.
+       el_check -- square toggle inscribed centered in r, explicit id, true on change.
+       el_slider -- bare horizontal drag track (caller draws any value text), nav steps 5%.
+       el_meter -- framed fill bar; the fill color is a CALL PARAMETER (per-widget color is
+       kit business, not a style slot).  el_cycle -- "< value >" selector with square chevron
+       caps, wraps; caps id under a push of id_str.  Value-mutating elements request the next
+       frame's redraw themselves. */
+    void ( *el_panel  )( gui_rect_t r );
+    void ( *el_label  )( gui_rect_t r, gui_align_t align, const char* text );
+    bool ( *el_button )( gui_rect_t r, const char* label );
+    bool ( *el_check  )( gui_rect_t r, const char* id_str, bool* v );
+    bool ( *el_slider )( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
+    void ( *el_meter  )( gui_rect_t r, f32 frac, u32 fill_abgr );
+    bool ( *el_cycle  )( gui_rect_t r, const char* id_str, i32* idx,
+                         const char* const* items, i32 count );
 
-        Use button_width() to size the right panel to fit a specific button label exactly:
+    /*============================================================================================================
+        GUI_CHROME -- convenience / editor UI  (window/ + dock/ + popup/ + widgets/ + table/)
+        The imgui-style design layer over the blocks below: persistent windows, docking,
+        popups / menus / toolbars, the stock flow-adapted widget set, tables, and the theme
+        system (S2: a compiler that resolves down to the strata beneath it).
+    =============================================================================================================*/
 
-            const char* title = "Bake & Preview";
-            gui()->split_begin( "##src", gui()->button_width( title ) );
-                gui()->stack();
-                gui()->combo_begin( ... ); ... gui()->combo_end();
-                gui()->slider_int( ... );
-            gui()->split_next();
-                gui()->stack();
-                gui()->button_fill( title );
-            gui()->split_end();
+    /*=====================================  window/ -- persistent windows  =====================================*/
 
-        button_width( label ) -- natural pixel width of a button with that label.
-        button_fill  -- a button that fills the remaining height of its containing region.
-        Identical to button() but height = content_avail().y.  Designed for the right panel
-        of a split so it matches the adjacent left panel's content height naturally. */
+    /* Panels -- open a window panel; must be matched with window_end().
+       flags is a bitmask of gui_win_flags_t (0 / GUI_WIN_NONE for the defaults) that
+       switches off built-in behavior per window -- title bar, collapse, or edge resize.
 
-    void ( *split_begin   )( const char* id, f32 right_w );
-    void ( *split_next    )( void );
-    void ( *split_end     )( void );
-    f32  ( *button_width  )( const char* label );
-    bool ( *button_fill   )( const char* label );
-    /*=================  user/ -- bracketing stacks, behavior on caller rects, drag and drop  ==================*/
+       window_begin() returns false when the window is collapsed (title bar only).  Guard
+       the body widgets with it -- skipped widgets cost nothing -- but always call
+       window_end() regardless of the return value:
 
-    /* Id scope -- disambiguate widgets that would otherwise share an id.  Widget ids are already
-       seeded by the enclosing window / child region automatically, so identical labels in
-       different regions never collide; push_id adds a temporary scope level for repeated widgets
-       within one region (e.g. rows in a list keyed by index).  Always pair with pop_id.
-
-           for ( i = 0; i < n; ++i ) {
-               gui()->push_id_int( i );
-               gui()->selectable( name[i], &sel[i] );   // distinct id even if name[] repeats
-               gui()->pop_id();
-           }
-
-       The "##" / "###" label suffixes are the per-call alternative: "Text##key" displays "Text"
-       but ids from the whole string; "pre###key" ids only from "###key", so a changing visible
-       prefix (a counter) keeps a stable id. */
-
-    void ( *push_id     )( const char* str );
-    void ( *push_id_int )( i32 i );
-    void ( *pop_id      )( void );
-
-    /* Item flags -- the push-model per-item behavior set (gui_item_flags_t).  push/pop tune every
-       widget until popped (and nest); next_item_flag is a one-shot override the very next widget
-       consumes, no pop needed.  The mechanism is callsite-free: widgets read the resolved flags at
-       emit time, so a new flag never changes a widget signature.  GUI_ITEM_DISABLED is honored
-       for every widget today (inert + dimmed).
-
-           gui()->push_item_flag( GUI_ITEM_DISABLED, true );
-           gui()->button( "A" );  gui()->button( "B" );    // both disabled
-           gui()->pop_item_flag();
-
-           gui()->next_item_flag( GUI_ITEM_DISABLED, true );
-           gui()->button( "Only this one" );                 // disabled, no pop needed */
-
-    void ( *push_item_flag )( gui_item_flags_t flag, bool enable );
-    void ( *pop_item_flag  )( void );
-    void ( *next_item_flag )( gui_item_flags_t flag, bool enable );
-
-    /* disabled_begin / disabled_end -- named-scope shorthand for GUI_ITEM_DISABLED (BeginDisabled
-       / EndDisabled).  disabled_begin( true ) dims + inerts the bracketed widgets; ( false ) pushes
-       a no-op scope so a conditional disable still balances.  Nests: an inner ( false ) never
-       re-enables widgets an outer ( true ) disabled. */
-    void ( *disabled_begin )( bool disabled );
-    void ( *disabled_end   )( void );
-
-
-    /* Drag and drop -- typed payload transfer between items (see gui_drag_flags_t /
-       gui_drag_payload_t in gui.h).  One drag exists at a time; the payload bytes are copied.
-
-       USAGE CONTRACT:
-         Source -- right after the widget that should be draggable:
-           if ( gui()->drag_source_begin( GUI_DRAG_NONE ) )      // true while dragging from it
+           if ( gui()->window_begin( "Tools", GUI_WIN_NONE ) )
            {
-               gui()->drag_payload_set( "ASSET", &index, sizeof index );   // every frame is fine
-               gui()->textf( "Move %s", name );                  // preview widgets follow the cursor
-               gui()->drag_source_end();
+               gui()->text( "..." );          // skipped while collapsed
            }
-         Target -- right after any widget that should receive drops:
-           if ( gui()->drag_target_begin() )                     // true while a drag hovers it
-           {
-               const gui_drag_payload_t* p = gui()->drag_payload_accept( "ASSET", GUI_DRAG_NONE );
-               if ( p )                                          // non-NULL on the drop frame
-                   place_asset( *(const i32*)p->data );
-               gui()->drag_target_end();
+           gui()->window_end();               // always called */
+
+    /* window_set_next_pos / _size -- queue geometry for the NEXT window_begin, applied per the
+       condition (gui_cond_t) and then cleared.  Decouples the value from when it is applied:
+       ONCE seeds an initial position/size (apply once on first appearance, then user-owned),
+       ALWAYS forces it every frame (layout managers, snapping, animation -- pair with NOMOVE /
+       NORESIZE), APPEARING re-applies it each time the window is shown after being absent.
+       Call immediately before window_begin. */
+    void ( *window_set_next_pos  )( f32 x, f32 y, gui_cond_t cond );
+    void ( *window_set_next_size )( f32 w, f32 h, gui_cond_t cond );
+
+    /* window_set_next_viewport -- assign the NEXT window_begin to a specific viewport.  Sticky: it
+       lands on the window record and persists across frames until reassigned.  Omit to inherit the
+       ambient viewport -- the one most recently emitted into this frame -- so windows created from
+       within a viewport's panels naturally land on the same surface without explicit assignment.
+       If the assigned viewport is later closed, the window automatically reverts to the primary. */
+    void ( *window_set_next_viewport )( gui_vp_t vp );
+
+    /* window_set_next_size_constraints -- queue a one-shot [min,max] size box for the NEXT
+       child_begin, then cleared.  The Dear ImGui SetNextWindowSizeConstraints analogue, in its
+       most useful form: it bounds the child's resolved width / height, so an auto-sized (h <= 0)
+       box grows with its content up to max_h and then scrolls, never collapses below min_h, and a
+       CHILD_RESIZE_* drag cannot leave the range.  A bound <= 0 is "unconstrained" on that side
+       (e.g. 0, 0, 0, max_h to cap height only).  Call immediately before child_begin. */
+    void ( *window_set_next_size_constraints )( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
+
+    bool ( *window_begin )( const char* title, gui_win_flags_t flags );
+    void ( *window_end   )( void );
+
+    /* window_set_open / window_is_open -- drive a CLOSEABLE window's visibility by title (the same
+       key window_begin hashes).  The window's close (X) button hides it; the host re-opens it by
+       calling window_set_open( title, true ) from a button.  window_is_open reports the current
+       state (a window with no record yet -- never begun -- reads as open). */
+    void ( *window_set_open )( const char* title, bool open );
+    bool ( *window_is_open  )( const char* title );
+
+    /* Window state-transition animation (maximize / minimize / restore).  On by default: the window
+       tweens between rects through the gui() animation service.  Off snaps instantly.  A global
+       preference, not per-context. */
+    void ( *window_anim_enable     )( bool on );
+    bool ( *window_anim_is_enabled )( void );
+
+    /*==========================  dock/ -- dock tree, tab groups, layout persistence  ===========================*/
+
+    /* Docking -- tile + tab windows into a dock tree that fills a viewport (the DockSpaceOverViewport
+       analogue).  The programmatic path: build a layout in code, then windows whose titles were
+       dock_window'd render into their node (no per-window title bar -- the node draws a shared tab
+       strip) instead of free-floating.  Mouse drag-to-dock and layout persistence (dock_save/load
+       below) build on the same tree.  Free-floating windows still overlap on top of the dockspace.
+
+       dockspace_over_viewport() -- ensure viewport vp hosts a dock tree, lay it out over the surface,
+                                    draw + interact its splitters, and return the tree ROOT node id.
+                                    Call once per frame at the TOP of the build, before the docked
+                                    windows' window_begin (which read their resolved node rects).
+       dock_split()              -- split a LEAF node in two; returns the NEW empty leaf on the `dir`
+                                    side and writes the REMAINING node id to *out_remain (may be NULL).
+                                    `ratio` is the new side's fraction of the axis.  The DockBuilder
+                                    idiom -- keep splitting the returned remainder to carve a layout.
+       dock_window()             -- add a window (matched to window_begin by title) as a tab in a leaf,
+                                    moving it out of any node it was already in; it becomes active.
+       dock_undock()             -- remove a window from its node, returning it to free-floating.
+       window_is_docked()        -- true while the window is tabbed into some node (dormant included).
+       dock_window_maximize()    -- maximize the window's node over its WHOLE dockspace (fullscreen
+                                    the docked pane -- the other nodes are obscured and stop emitting)
+                                    or restore the tiled layout; animated like the floater maximize
+                                    (window_anim_enable gates it).  GUI_WIN_DOCK_MAXIMIZE gates only
+                                    the tab strip's button; this verb works regardless, so a host can
+                                    bind fullscreen-toggle to a hotkey without offering the chrome.
+       window_is_dock_maximized() -- true while the window's node holds the dockspace maximize.
+
+       A dockspace is EMIT-GATED like every immediate-mode element: on frames the host does not call
+       dockspace_over_viewport, the viewport's tree is DORMANT -- retained but inert.  Windows tabbed
+       in a dormant tree keep their membership but render nothing (window_begin returns false,
+       inactive-tab semantics), and title drags offer no dock chips; floating tab groups are
+       independent of the tree and unaffected.  Re-emitting the dockspace revives the layout exactly
+       as it was, so a host can swap whole UI modes in and out just by (not) running the dock code
+       path.  dock_clear (below) is the only thing that destroys the tree.
+
+           gui_dock_id_t root  = gui()->dockspace_over_viewport( 0, GUI_DOCKSPACE_NONE );
+           gui_dock_id_t left  = gui()->dock_split( root, GUI_DIR_LEFT, 0.25f, &root );
+           gui()->dock_window( "Scene Tree", left );
+           gui()->dock_window( "Viewport",   root );   // center; tab more windows here with root */
+
+    gui_dock_id_t ( *dockspace_over_viewport )( gui_vp_t vp, gui_dockspace_flags_t flags );
+    gui_dock_id_t ( *dock_split )( gui_dock_id_t node, gui_dir_t dir, f32 ratio,
+                                     gui_dock_id_t* out_remain );
+    /* dock_split_root() -- split the WHOLE viewport tree, carving a new leaf along a full edge (`dir`).
+       Unlike dock_split (a single leaf), this wraps the root in a new split so the pane spans the entire
+       side -- the way to place a full-height column beside an existing top/bottom stack.  Returns the
+       new leaf id (dock windows into it), or GUI_DOCK_NONE.  Also the commit path of an edge drop. */
+    gui_dock_id_t ( *dock_split_root )( gui_vp_t vp, gui_dir_t dir, f32 ratio );
+    void ( *dock_window )( const char* title, gui_dock_id_t node );
+    void ( *dock_undock )( const char* title );
+    bool ( *window_is_docked )( const char* title );
+    void ( *dock_window_maximize )( const char* title, bool on );
+    bool ( *window_is_dock_maximized )( const char* title );
+
+    /* Floating tab groups -- tabbing WITHOUT split panes.  window_tab() merges window `title` onto
+       window `onto_title`'s frame: a free target grows a floating tab group around itself (shared
+       frame, tab strip in place of a title bar; drag the strip's empty band to move it, its edges
+       to resize); a target already tabbed somewhere -- a group or a dockspace leaf -- just gains
+       the tab.  The same merge exists as a gesture: title-drag one free window onto another's
+       title bar and drop on the center chip.  dock_undock() pulls a window back out; a group
+       dissolves by itself once a single tab remains.  A window flagged GUI_WIN_NO_TAB_TARGET
+       never hosts tabs (no drop chip; refused as onto_title) -- flag control panels whose body
+       the host gates on window_begin's return.  To keep a whole DOCKSPACE tabs-only instead,
+       pass GUI_DOCKSPACE_NO_SPLIT to dockspace_over_viewport: only the center (tab) drop chip
+       is offered and the split verbs above refuse. */
+    void ( *window_tab )( const char* title, const char* onto_title );
+
+    /* Layout persistence.  dock_save() serializes viewport vp's dock tree into buf as a small ASCII
+       blob and returns the byte count a full write needs (like snprintf -- pass a 0 bufsz to size
+       first).  dock_load() rebuilds the tree from such a blob; returns false on a bad header.  The
+       host owns the file: write the blob on change, read + load it at startup.  CALL dock_load at a
+       safe point -- between frames or at the top of the build before any docked window's window_begin
+       -- never from inside a docked window (it frees + rebuilds the tree). */
+    u32  ( *dock_save )( gui_vp_t vp, char* buf, u32 bufsz );
+    bool ( *dock_load )( gui_vp_t vp, const char* text );
+
+    /* dock_clear() -- DESTROY viewport vp's dock tree: free every node and clear the root.  Windows
+       lose their tab membership permanently and free-float from their next begin (at the rect their
+       node last gave them).  Not needed to merely stop docking for a while -- a dockspace that is
+       not emitted goes DORMANT (see above) and revives intact.  Clear is for discarding a layout
+       wholesale, e.g. before hand-building a fresh one.  Same safe-point rule as dock_load: top of
+       the build, never from inside a docked window.  Floating tab groups stay standing. */
+    void ( *dock_clear )( gui_vp_t vp );
+
+
+    /* Host-reserved top band (pixels) above viewport vp's dock area -- the height of a main menu
+       bar / toolbar strip the host draws itself; the dock tree lays out below it.  Sticky until
+       re-published; pass 0 to reclaim.  Publish before dockspace_over_viewport in the build. */
+
+    void ( *dockspace_inset )( gui_vp_t vp, f32 top );
+
+    /*==========================  popup/ -- popups, tooltips, menus, combo + listbox  ===========================*/
+
+    /* Popups -- transient overlay windows on top of everything.  A regular popup auto-closes when
+       the user clicks outside it; a modal blocks input behind it and dims the background, closing
+       only via popup_close_current.  The string id namespaces both the open request and the body,
+       so popup_open("x") and popup_begin("x") must use the same id.  Popups stack (a popup opened
+       while inside another nests under it); a click keeps the deepest popup under the cursor and
+       closes the rest.  Popup / tooltip bodies lay out like a window body: declare a layout header
+       (stack / columns / ...) before emitting widgets.
+
+           if ( gui()->button( "Open" ) )    gui()->popup_open( "menu" );
+           if ( gui()->popup_begin( "menu", GUI_WIN_NONE ) ) {
+               gui()->stack();
+               if ( gui()->selectable( "Cut",  NULL ) ) { ... }
+               if ( gui()->selectable( "Copy", NULL ) ) { ... }
+               gui()->popup_end();
            }
 
-       drag_payload_accept highlights the target while the types match and returns the payload on
-       the release frame (or every hover frame with GUI_DRAG_ACCEPT_PEEK).  drag_active reports a
-       drag in flight anywhere; drag_payload_peek inspects it without being a target.  The dock
-       tab-strip publishes its tab drags as type "gui.dock_tab" (payload: the window's gui_id_t). */
+       popup_begin / popup_modal_begin return true only when the popup is open AND visible -- guard
+       the body and call popup_end only on a true return (like window_begin's collapsed contract).
+       Auto-sized popups (the default) measure their content on the appearing frame off-screen and
+       snap into place the next frame, so there is no first-frame size pop. */
 
-    bool ( *drag_source_begin   )( gui_drag_flags_t flags );
-    void ( *drag_source_end     )( void );
-    bool ( *drag_payload_set    )( const char* type, const void* data, u32 size );
-    bool ( *drag_target_begin   )( void );
-    const gui_drag_payload_t* ( *drag_payload_accept )( const char* type, gui_drag_flags_t flags );
-    void ( *drag_target_end     )( void );
-    bool ( *drag_active         )( void );
-    const gui_drag_payload_t* ( *drag_payload_peek   )( void );
-    gui_style_t*       (*style_get)( void );    /* mutable base -- marks the theme anonymous       */
-    const gui_style_t* (*style_peek)( void );   /* read-only base -- does NOT mark theme anonymous  */
-    void               (*style_apply)( void );
+    void ( *popup_open          )( const char* id );
+    bool ( *popup_begin         )( const char* id, gui_win_flags_t flags );
+    bool ( *popup_modal_begin   )( const char* id, const char* title, gui_win_flags_t flags );
+    void ( *popup_end           )( void );
+    void ( *popup_close_current )( void );
+    bool ( *popup_is_open        )( const char* id );
 
-    /* Theme -- named style presets that form the root of the push/pop stack.
+    /* 
+        Context menus -- open a popup on a right-click.  _item binds to the previous widget (the one
+        emitted just before the call); _window binds to empty space in the current window.  Use them
+        in place of the popup_open + popup_begin pair:
 
-       theme_list()  -- returns the built-in theme array and writes the count to *count_out.
-       theme_set()   -- copies the named theme into the base style and immediately resets the
-                        push stacks; returns false if the name is not found (no-op).
-       theme_get()   -- returns the active theme name, or NULL after a raw style_get() edit.
-       theme_reset() -- if a named theme is active, restores the base from it; then clears the
-                        color + var push stacks (the "large style change" escape hatch -- call
-                        this instead of issuing many paired push/pop calls just to revert).
+            gui()->selectable( "Row", NULL );
+            if ( gui()->popup_context_item_begin( "row_ctx" ) ) { ...; gui()->popup_end(); }
+    */
+    bool ( *popup_context_item_begin   )( const char* id );
+    bool ( *popup_context_window_begin )( const char* id );
 
-           u32 n;
-           const gui_theme_t* list = gui()->theme_list( &n );
-           gui()->theme_set( list[0].name );       // switch to first built-in
-           // ... many style pushes ...
-           gui()->theme_reset();                   // clear everything, back to base */
+    /* 
+        Tooltips -- a non-interactive overlay shown at the cursor while the previous widget is
+        hovered.  set_item_tooltip is the one-liner; tooltip_begin / tooltip_end wrap a multi-widget
+        body (guard the body on the true return, always call tooltip_end).
 
-    const gui_theme_t* (*theme_list )( u32* count_out );
-    bool               (*theme_set  )( const char* name );
-    const char*        (*theme_get  )( void );
-    void               (*theme_reset)( void );
+           gui()->button( "Hover me" );
+           gui()->set_item_tooltip( "Does the thing" );
 
-    /* Style stacks -- the push-model theme override (gui_col_t colors, gui_style_var_t metrics).
-       push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
-       overrides for just the next widget, no pop.  Colors are abgr (GUI_COLOR); vars are f32 px.
-       Like the item flags, this is callsite-free: every widget already reads the palette + metrics
-       through the resolver, so an override reaches them without any widget change.
+        help_marker draws a dim "(?)" hint that pops `text` on hover -- the Dear ImGui footnote,
+        typically emitted on the same line after a control:
 
-           gui()->push_style_color( GUI_COL_WIDGET_BG, GUI_COLOR( 0xFF, 0, 0, 0xFF ) );
-           gui()->push_style_var( GUI_VAR_WIDGET_PAD, 20.0f );
-           gui()->button( "Big Red" );
-           gui()->pop_style_var( 1 );
-           gui()->pop_style_color( 1 ); */
+           gui()->checkbox( "No mouse", &flag );
+           gui()->same_line( 0.0f );
+           gui()->help_marker( "Disable mouse inputs and interactions." ); 
+    */
+    void ( *set_item_tooltip )( const char* text );
+    bool ( *tooltip_begin    )( void );
+    void ( *tooltip_end      )( void );
+    void ( *help_marker      )( const char* text );
 
-    void ( *push_style_color )( gui_col_t slot, u32 abgr );
-    void ( *pop_style_color  )( u32 count );
-    void ( *next_style_color )( gui_col_t slot, u32 abgr );
-    void ( *push_style_var   )( gui_style_var_t var, f32 value );
-    void ( *pop_style_var    )( u32 count );
-    void ( *next_style_var   )( gui_style_var_t var, f32 value );
+    /* Menus -- a coordination layer over the popup stack.  A menu bar holds menu_begin entries;
+       each opens a submenu popup that holds menu_items and further menu_begin entries (nesting on
+       the popup stack).  Disabled state reuses the item-flag stack: push_item_flag(GUI_ITEM_DISABLED).
 
-    /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
-       BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
-       the style-var stack, so every metric read and counting helper (sz_rows_h, sz_fit_row)
-       inside speaks the step.  Push before opening the region/child it styles.  To size against
-       a step without pushing it, query sz_scale_row( s ) from the sizing family. */
-    void ( *scale_push )( gui_scale_t s );
-    void ( *scale_pop  )( void );
+       main_menu_bar_begin pins a bar across the top of the display; menu_bar_begin fills the strip a
+       window reserved with GUI_WIN_MENUBAR (and returns false on a window without the flag).  Both
+       return true only when visible -- guard the entries on the return and call the matching end only
+       then, exactly like window_begin / popup_begin.
 
-    /* Global indicator-shape selectors -- set the default check / bullet / arrow glyph the chrome
-       draws (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t).  These are style
-       state, not draw calls: scope a change locally instead with push_style_var on
-       GUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE. */
-    void ( *set_check_style  )( u8 style );
-    void ( *set_bullet_style )( u8 style );
-    void ( *set_arrow_style  )( u8 style );
+           if ( gui()->main_menu_bar_begin() ) {
+               if ( gui()->menu_begin( "File" ) ) {
+                   if ( gui()->menu_item( "Open", "Ctrl+O", NULL ) ) { ... }
+                   gui()->menu_item( "Show grid", NULL, &show_grid );   // checkable
+                   if ( gui()->menu_begin( "Recent" ) ) {              // submenu
+                       gui()->menu_item( "a.txt", NULL, NULL );
+                       gui()->menu_end();
+                   }
+                   gui()->menu_end();
+               }
+               gui()->main_menu_bar_end();
+           }
 
-    /* window_set_drag() -- select how windows may be dragged (global default TITLEBAR).
-       Call between frames; affects every window. */
-    void ( *window_set_drag )( gui_win_drag_t mode );
+       menu_begin renders horizontally in a bar (its popup drops below) and as a full-width row with
+       a submenu arrow inside a menu (its popup opens to the side); the orientation follows the active
+       layout mode, so no flag is needed.  menu_item returns true on the clicked frame and dismisses
+       the whole menu chain; shortcut is display-only (may be NULL); selected may be NULL (a plain
+       command) or a bool* (a checkable item, toggled on click). */
 
-    /* window_set_nav() -- aim keyboard navigation at a window by title (the explicit-focus entry).
-       Clears the nav cursor so the window's first item takes focus and engages the nav highlight.
-       Nav otherwise follows the front-most window automatically; Ctrl+Tab cycles among windows and
-       Alt enters the main menu bar.  An open popup / menu always captures nav while it is open. */
-    void ( *window_set_nav )( const char* title );
+    bool ( *main_menu_bar_begin )( void );
+    void ( *main_menu_bar_end   )( void );
 
-    /*===================================  widgets/ -- the stock widget set  ===================================*/
+    /* main_menu_bar_h() -- the band height main_menu_bar_begin occupies (theme-derived).  Use it
+       to stack host strips (toolbars, dockspace_inset) below the bar instead of re-deriving the
+       height from font metrics -- it stays truthful when the theme or scale ramp retunes. */
+    f32  ( *main_menu_bar_h     )( void );
+    bool ( *menu_bar_begin      )( void );
+    void ( *menu_bar_end        )( void );
+    bool ( *menu_begin )( const char* label );
+    void ( *menu_end   )( void );
+    bool ( *menu_item  )( const char* label, const char* shortcut, bool* selected );
+
+    /* Toolbar -- an icon strip built on bar() (compose/).  toolbar_begin id-scopes the strip so
+       two toolbars' buttons never collide, then opens a bar() run; toolbar_end pops it.  Emit
+       inside any window / child -- it owns no window of its own, matching bar() itself.  It does
+       NOT push a scale -- wrap it in the caller's own scale_push/scale_pop (GUI_SCALE_BAR is the
+       density step authored for icon toolbars, but any GUI_SCALE_* works) so a single app can mix
+       toolbar sizes, e.g. a large main-panel strip next to a regular-scale one.
+
+       toolbar_button / toolbar_toggle are square icon cells (press / latched-on); their id_str is
+       the id only ("##save") -- pass a display label there and it is still just the id, nothing
+       is drawn from it.  toolbar_dropdown_begin/end is the split-button form: the icon plus an
+       adjacent down-arrow column, opening an arbitrary-widget popup below the button -- the same
+       anchor / dismiss mechanics as combo_begin/combo_end, so put ANY widgets in the body,
+       including menu_item rows for the icon + label + shortcut three-column layout menus already
+       give you. tooltip may be NULL.
+
+           gui()->scale_push( GUI_SCALE_BAR );
+           gui()->toolbar_begin( "main" );
+               if ( gui()->toolbar_button( "##save", icon_save, "Save (Ctrl+S)" ) ) save();
+               gui()->toolbar_toggle( "##wire", icon_wire, &wireframe, "Wireframe" );
+               gui()->toolbar_separator();
+               if ( gui()->toolbar_dropdown_begin( "##view", icon_eye, "View Mode" ) ) {
+                   gui()->menu_item( "Lit", NULL, NULL );
+                   gui()->menu_item( "Wireframe", NULL, NULL );
+                   gui()->toolbar_dropdown_end();
+               }
+           gui()->toolbar_end();
+           gui()->scale_pop(); */
+
+    bool ( *toolbar_begin           )( const char* str_id );
+    void ( *toolbar_end             )( void );
+    bool ( *toolbar_button          )( const char* id_str, gui_icon_id_t icon, const char* tooltip );
+    bool ( *toolbar_toggle          )( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip );
+    bool ( *toolbar_dropdown_begin  )( const char* id_str, gui_icon_id_t icon, const char* tooltip );
+    void ( *toolbar_dropdown_end    )( void );
+    void ( *toolbar_separator       )( void );
+
+    /*===================================  widgets/ -- the stock widget set  ====================================*/
 
     /* Widgets -- return true on the frame they are activated or changed.
        All widgets must be called between a matched window_begin / window_end pair, and only
@@ -1156,16 +1148,6 @@ typedef struct gui_api_s
        comes from the label (use a "##id" string, nothing is displayed).  Combine with
        push_item_flag( GUI_ITEM_BUTTON_REPEAT, true ) for press-and-hold stepping (spin buttons). */
     bool ( *arrow_button )( const char* id_str, gui_dir_t dir );
-
-    /* item -- the user-UI behavior seam: run the shared widget interaction state machine over a
-       rect the CALLER derived (a canvas() cut, an empty() slot, split/carve panels, custom math)
-       and report the resolved state (hover / active / pressed / clicked).  A custom widget is
-       rect + item() + draw_*: it hovers, press-captures, clicks, and registers for keyboard nav
-       exactly like a stock widget, with the presentation entirely yours.  Owns no layout
-       reservation, so it composes with the rect helpers.  invisible_button is item() reduced to
-       its click bit; for only a hover tint, use is_mouse_hovering_rect. */
-    gui_item_state_t ( *item )( const char* id_str, gui_rect_t r );
-    bool ( *invisible_button )( const char* id_str, gui_rect_t r );
 
     bool ( *checkbox    )( const char* label, bool* v );
 
@@ -1342,8 +1324,38 @@ typedef struct gui_api_s
     bool ( *tab_item_begin )( const char* label, bool* p_open, gui_tab_item_flags_t flags );
     void ( *tab_item_end   )( void );
 
+    /*  split_begin / split_next / split_end -- two panels side by side sharing a Y-level.
 
-    /*==========================  table/ -- multi-column rows over the layout engine  ==========================*/
+        split_begin( id, right_w ) opens a split: the left panel fills, the right panel is
+        right_w pixels wide.  split_next() closes the left panel and opens the right.
+        split_end() closes the right panel.  Each panel is an independent flow region -- declare
+        a layout mode (stack/cols/...) inside each as usual.  Heights are cached per-id across
+        frames (one-frame lag on first appearance, then stable).
+
+        Use button_width() to size the right panel to fit a specific button label exactly:
+
+            const char* title = "Bake & Preview";
+            gui()->split_begin( "##src", gui()->button_width( title ) );
+                gui()->stack();
+                gui()->combo_begin( ... ); ... gui()->combo_end();
+                gui()->slider_int( ... );
+            gui()->split_next();
+                gui()->stack();
+                gui()->button_fill( title );
+            gui()->split_end();
+
+        button_width( label ) -- natural pixel width of a button with that label.
+        button_fill  -- a button that fills the remaining height of its containing region.
+        Identical to button() but height = content_avail().y.  Designed for the right panel
+        of a split so it matches the adjacent left panel's content height naturally. */
+
+    void ( *split_begin   )( const char* id, f32 right_w );
+    void ( *split_next    )( void );
+    void ( *split_end     )( void );
+    f32  ( *button_width  )( const char* label );
+    bool ( *button_fill   )( const char* label );
+
+    /*==========================  table/ -- multi-column rows over the layout engine  ===========================*/
 
     /* Tables -- a multi-column layout with self-fitting cells (one table clip, no per-cell clip) and
        optional scrolling, sortable headers, and resizable columns.  Conceptually a grid whose rows accumulate and scroll
@@ -1417,161 +1429,83 @@ typedef struct gui_api_s
     bool ( *table_sort_order       )( i32* order, i32 count, gui_table_sort_value_fn val_fn,
                                       gui_table_sort_cmp_fn cmp_fn, void* user );
     void ( *table_set_bg_color     )( gui_table_bg_target_t target, u32 abgr );
-    /*===========================================  frame/ -- fonts  ============================================*/
 
-    /* Font -- select / load fonts; call between frames (outside frame_begin / render), except
-       push_font / pop_font which may bracket a section or widget mid-frame.
+    /*=================================  themes + style stacks + chrome levers  =================================*/
 
-       Fonts live in an id-addressed registry.  Slot 0 is the default; it is empty until the first
-       font_load / font_load_into( 0, path ) call -- call one right after gui()->init(), before any
-       frame renders.  font_load() loads a .orb_font into a fresh id; font_load_into() loads one
-       into an existing id (id 0 swaps the default).  font_use() makes a loaded id active; another
-       context can select its own font this way.  push_font() / pop_font() bracket a temporary
-       font and restore the previous one.  Each font_load/font_load_into uses its own bindless
-       texture.  Widget layout dimensions follow the active font's metrics. */
+    gui_style_t*       (*style_get)( void );    /* mutable base -- marks the theme anonymous       */
+    const gui_style_t* (*style_peek)( void );   /* read-only base -- does NOT mark theme anonymous  */
+    void               (*style_apply)( void );
 
-    bool ( *font_load_into     )( u32 id, const char* path );
-    void ( *font_use           )( u32 id );
-    void ( *push_font          )( u32 id );
-    void ( *pop_font           )( void );
-    u32  ( *font_active_id     )( void );   // id of the currently active font (save/restore, or just to inspect)
+    /* Theme -- named style presets that form the root of the push/pop stack.
 
-    /*==================  present/ + user/ -- custom draw: canvas primitives, symbols, paths  ==================*/
+       theme_list()  -- returns the built-in theme array and writes the count to *count_out.
+       theme_set()   -- copies the named theme into the base style and immediately resets the
+                        push stacks; returns false if the name is not found (no-op).
+       theme_get()   -- returns the active theme name, or NULL after a raw style_get() edit.
+       theme_reset() -- if a named theme is active, restores the base from it; then clears the
+                        color + var push stacks (the "large style change" escape hatch -- call
+                        this instead of issuing many paired push/pop calls just to revert).
 
-    /* Low-level draw list access -- may be called anywhere between frame_begin and render.
-       draw_rect and draw_text push geometry directly into the draw list.
-       draw_rects pushes N solid rects as ONE command -- the batched form for dense custom
-       drawing (timeline bars, graph columns) that would otherwise exhaust the frame's command
-       budget one draw_rect at a time.
-       push_clip / pop_clip set the current scissor rectangle. */
+           u32 n;
+           const gui_theme_t* list = gui()->theme_list( &n );
+           gui()->theme_set( list[0].name );       // switch to first built-in
+           // ... many style pushes ...
+           gui()->theme_reset();                   // clear everything, back to base */
 
-    void ( *draw_rect  )( f32 x, f32 y, f32 w, f32 h, u32 abgr );
-    void ( *draw_rects )( const gui_rect_col_t* rects, u32 count );
-    void ( *draw_text  )( f32 x, f32 y, u32 abgr, const char* str );
+    const gui_theme_t* (*theme_list )( u32* count_out );
+    bool               (*theme_set  )( const char* name );
+    const char*        (*theme_get  )( void );
+    void               (*theme_reset)( void );
 
-    /* volatile_cb -- runs `fn` inline, as ordinary code, wrapped so its command range can be
-       replayed standalone on frames where the rest of the UI build is skipped (frame_begin
-       returned false; frame_end runs the replay internally -- see frame_dirty below).
-       `fn` calls ordinary emit functions (text, rect_filled,
-       etc) and should bracket them with volatile_begin()/volatile_end() from inside its own body.
-       `label` is hashed the same way item_id() hashes a label -- combined with the current id
-       scope, so it need only be stable and unique within its own call site, same as any other
-       widget label.  Interactive widgets are safe to call from `fn` but are inert during replay --
-       see gui.h (gui_volatile_fn) for the contract. */
-    void ( *volatile_cb    )( const char* label, gui_volatile_fn fn );
-    void ( *volatile_begin )( void );   // called from inside fn: stamp the callback's start position
-    void ( *volatile_end   )( void );   // called from inside fn: reserved, no-op today
+    /* Style stacks -- the push-model theme override (gui_col_t colors, gui_style_var_t metrics).
+       push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
+       overrides for just the next widget, no pop.  Colors are abgr (GUI_COLOR); vars are f32 px.
+       Like the item flags, this is callsite-free: every widget already reads the palette + metrics
+       through the resolver, so an override reaches them without any widget change.
 
-    /* text_size -- laid-out pixel size of s (widest line x line span; '\n' breaks).  CalcTextSize. */
-    gui_vec2_t ( *text_size )( const char* s );
+           gui()->push_style_color( GUI_COL_WIDGET_BG, GUI_COLOR( 0xFF, 0, 0, 0xFF ) );
+           gui()->push_style_var( GUI_VAR_WIDGET_PAD, 20.0f );
+           gui()->button( "Big Red" );
+           gui()->pop_style_var( 1 );
+           gui()->pop_style_color( 1 ); */
 
-    /* draw_text_in -- draw s aligned within rect r (gui_align_t; multi-line, each line aligned).
-       The placement primitive: "right-align this caption in the canvas" with no hand-computed edge.
-       draw_text_clipped is the single-line variant that ellipsizes to r's width. */
-    void ( *draw_text_in      )( gui_rect_t r, gui_align_t align, u32 col, const char* s );
-    void ( *draw_text_clipped )( gui_rect_t r, gui_align_t align, u32 col, const char* s );
+    void ( *push_style_color )( gui_col_t slot, u32 abgr );
+    void ( *pop_style_color  )( u32 count );
+    void ( *next_style_color )( gui_col_t slot, u32 abgr );
+    void ( *push_style_var   )( gui_style_var_t var, f32 value );
+    void ( *pop_style_var    )( u32 count );
+    void ( *next_style_var   )( gui_style_var_t var, f32 value );
 
-    /* Icons -- a runtime-built R8 atlas of arbitrary symbols (folder, gear, check, editor glyphs).
-       register_icon packs a raw monochrome bitmap (row-major coverage, w*h bytes) and returns a
-       handle (0 = atlas full); the pixels live in the same flush as text and tint by `col`.
-       load_icon is the from-disk source: it decodes an image file (PNG and the other stb_image
-       formats) to R8 coverage -- alpha channel when present, else luminance -- and registers it the
-       same way, so a loaded icon is identical to a procedural one downstream.  `path` is resolved
-       through asset_path -- a plain path relative to the assets root ("assets/icon/foo.png"), no
-       need to call asset_path yourself first.  find_icon looks one
-       up by the name it was registered with (built-in icons register at gui init); icon_size is its
-       native pixel size (for layout).  image is a layout widget (reserve w x h, draw centered/fit);
-       draw_icon_in places an icon in a rect the caller already holds (cell / button label / canvas
-       cut).  col 0 means white. */
+    /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
+       BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
+       the style-var stack, so every metric read and counting helper (sz_rows_h, sz_fit_row)
+       inside speaks the step.  Push before opening the region/child it styles.  To size against
+       a step without pushing it, query sz_scale_row( s ) from the sizing family. */
+    void ( *scale_push )( gui_scale_t s );
+    void ( *scale_pop  )( void );
 
-    gui_icon_id_t ( *register_icon )( const char* name, u32 w, u32 h, const u8* coverage );
-    gui_icon_id_t ( *load_icon     )( const char* name, const char* path );
-    gui_icon_id_t ( *find_icon     )( const char* name );
-    gui_vec2_t    ( *icon_size     )( gui_icon_id_t id );
-    void          ( *image         )( gui_icon_id_t id, f32 w, f32 h, u32 col );
-    void          ( *draw_icon_in  )( gui_rect_t r, gui_icon_id_t id, u32 col );
+    /* Global indicator-shape selectors -- set the default check / bullet / arrow glyph the chrome
+       draws (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t).  These are style
+       state, not draw calls: scope a change locally instead with push_style_var on
+       GUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE. */
+    void ( *set_check_style  )( u8 style );
+    void ( *set_bullet_style )( u8 style );
+    void ( *set_arrow_style  )( u8 style );
 
+    /* window_set_drag() -- select how windows may be dragged (global default TITLEBAR).
+       Call between frames; affects every window. */
+    void ( *window_set_drag )( gui_win_drag_t mode );
 
-    /* RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
-       image) as a full-color quad; the texel is the color, tint_abgr multiplies (0 = untinted).
-       image_texture flows in the layout like image(); draw_texture_in fills a rect the caller
-       already holds.  The caller owns the texture + its bindless slot (rhi register_texture). */
+    /* window_set_nav() -- aim keyboard navigation at a window by title (the explicit-focus entry).
+       Clears the nav cursor so the window's first item takes focus and engages the nav highlight.
+       Nav otherwise follows the front-most window automatically; Ctrl+Tab cycles among windows and
+       Alt enters the main menu bar.  An open popup / menu always captures nav while it is open. */
+    void ( *window_set_nav )( const char* title );
 
-    void ( *image_texture   )( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
-    void ( *draw_texture_in )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
-
-    /* Font atlas access -- the bindless index + pixel size backing a loaded font id, for previewing
-       its live GPU atlas through image_texture / draw_texture_in above (0 / {0,0} if empty). */
-    u32        ( *font_atlas_idx  )( u32 font_id );
-    gui_vec2_t ( *font_atlas_size )( u32 font_id );
-
-    /* Symbol + shape draw primitives (the draw_* family, Dear ImGui's AddXxx / Render* analogue),
-       drawn through the normal vertex pipeline (lines / triangles / circles), NOT the icon atlas.
-       They share the draw_* verb with draw_rect / draw_text / draw_line above -- everything that
-       pushes geometry into the draw list is draw_*; render() is reserved for the frame flush.  The
-       built-in widgets draw their check marks, arrows, bullets and close crosses through these, and
-       the broader shape
-       palette (frames, per-corner rounded rects, polygons, arcs / pie, beziers, dashes, checker /
-       hatch / gradient fills, soft shadows, outlined / shadowed text, grips, spinners) is exposed so
-       editor / custom widgets can paint them.  Implemented in gui_symbol.c.  (The global
-       indicator-shape selectors set_check_style / _bullet_style / _arrow_style live with the style
-       API above, since they are style state rather than draw calls.)
-
-       Pipeline note: draw_gradient is an exact one-quad blend via per-vertex color
-       (GUI_CMD_RECT_GRADIENT); draw_shadow (layered rings) is still an approximation that a
-       future multi-corner-color command would make exact, without changing this surface.  Angles
-       for arc / pie / progress are radians, screen-space (y
-       down).  `thickness` is the stroke width for the stroked forms. */
-
-    void ( *draw_check_mark        )( gui_rect_t box, u32 col );
-    void ( *draw_arrow             )( gui_rect_t box, gui_dir_t dir, u32 col );
-    void ( *draw_bullet            )( f32 cx, f32 cy, f32 r, u32 col );
-    void ( *draw_close             )( gui_rect_t box, u32 col );
-    void ( *draw_arrow_pointing_at )( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 col );
-    void ( *draw_chevron           )( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 col );
-    void ( *draw_plus_minus        )( gui_rect_t box, bool plus, f32 thickness, u32 col );
-    void ( *draw_frame             )( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
-    void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
-                                        bool filled, f32 thickness, u32 col );
-    void ( *draw_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
-    void ( *draw_circle            )( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
-    void ( *draw_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
-    void ( *draw_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
-    void ( *draw_bezier_quad       )( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
-    void ( *draw_bezier_cubic      )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
-    void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
-    void ( *draw_checker           )( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
-    void ( *draw_hatch             )( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
-    void ( *draw_gradient          )( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
-    void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );
-    void ( *draw_text_outline      )( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
-    void ( *draw_text_shadow       )( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
-    void ( *draw_grip              )( gui_rect_t box, u32 col );
-    void ( *draw_spinner           )( gui_rect_t box, f32 t, f32 thickness, u32 col );
-    void ( *draw_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
-
-    /* Line / path stroking (gui_stroke_align_t; see gui.h for the pixel model).
-       draw_line     -- one segment, CENTER_BIASED: H/V lines render pixel-crisp, others antialiased.
-       draw_polyline -- a connected point array with miter-limited corners (always antialiased);
-                        `closed` joins the last point back to the first (rect / polygon outlines).
-       path_*        -- the retained form: clear, append points with path_line_to, then path_stroke
-                        (which strokes and clears the buffer).  Up to GUI_PATH_MAX points.
-
-           gui()->draw_line( 10, 10, 200, 80, 2.0f, col );      // a 2px antialiased diagonal
-           gui()->path_line_to( x0, y0 ); gui()->path_line_to( x1, y1 ); ...
-           gui()->path_stroke( 1.5f, GUI_STROKE_CENTER, false, col ); */
-
-    void ( *draw_line     )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
-    void ( *draw_polyline )( const gui_vec2_t* pts, u32 count, f32 thickness,
-                             gui_stroke_align_t align, bool closed, u32 abgr );
-    void ( *path_clear    )( void );
-    void ( *path_line_to  )( f32 x, f32 y );
-    void ( *path_stroke   )( f32 thickness, gui_stroke_align_t align, bool closed, u32 abgr );
-
-    void ( *push_clip )( f32 x, f32 y, f32 w, f32 h );
-    void ( *pop_clip  )( void );
-
-    /*=========================  debug/ -- overlays, dashboard, retained-cache levers  =========================*/
+    /*============================================================================================================
+        GUI_DEBUG -- overlays, dashboard, stepper  (debug/)
+        Diagnostic surfaces and retained-cache levers, hotkey-armed via debug_enable.
+    =============================================================================================================*/
 
     /* Debug overlay -- a separate draw list painted last, on top of the UI.  Pass a bitmask
        of gui_dbg_layer_t to debug_set_layers() to choose which visualizations show; pass
@@ -1638,131 +1572,302 @@ typedef struct gui_api_s
     void ( *set_retained_skip )( bool on );
     bool ( *retained_skip     )( void );
 
-    /*===================  user/ -- queries: io snapshot readers, item state, redraw state  ====================*/
+    /*============================================================================================================
+        GUI_FRAME -- glue  (frame/)
+        The conductor: lifecycle, boot, frame phases, pacing, viewports, contexts, event
+        routing, memory / render stats.  Owns per-frame ordering and this vtable; no widgets.
+    =============================================================================================================*/
 
-    /* IO accessors -- the frame-coherent input snapshot the widgets see, for UI / tool code that
-       would otherwise re-query app() and so bypass gui's frame timing and its input capture.
+    /* GPU resource lifecycle.
+        init_config_back()  -- OPTIONAL; call before init() to override which BACKEND (render unit,
+                       gui_backend.c) capability layers (gui_backend_caps_t, gui.h) are compiled
+                       into the running instance -- icons, retained caching, debug render mode,
+                       stats-trace printfs.  Skip it entirely to accept GUI_CAPS_DEFAULT (every
+                       layer on except stats_trace).
+        init_config_front() -- OPTIONAL; the FRONTEND (UI/core unit, gui.c) sibling -- overrides
+                       which gui_forward_caps_t feature boundaries are active: tables,
+                       keyboard_nav.  Checked at callsite, not compiled out -- these exist for
+                       feature-boundary clarity, not code size.  Skip it entirely to accept
+                       GUI_FORWARD_CAPS_DEFAULT (every flag on).
+        init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
+                       `font` optionally loads one of the built-in presets (gui_builtin_font_t,
+                       gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
+                       yourself. A failed built-in load is non-fatal (a warning; init still
+                       succeeds without text).
+        shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
+        font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
+                       call after init(). Returns the new id (>= 1), or 0 on failure.
+        font_load_builtin() -- font_load for a built-in preset (gui_builtin_font_t): the enum
+                       already knows its asset path, so no path plumbing at the call site.
+                       Same contract as font_load -- a NEW id, activated (the init()/boot()
+                       preset in slot 0 is untouched; font_use( 0 ) switches back).  Returns
+                       the new id, or 0 for GUI_FONT_NONE / an unknown preset / a failed load.
+        asset_path() -- resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
+                       the build root, one level above the executable -- the same convention
+                       load_icon and the built-in font/icon presets resolve through. Writes the
+                       resolved path into `out` (out_size bytes); for a caller that wants the
+                       absolute path itself (e.g. a plain fopen) rather than a load_icon call. */
 
-       want_capture_mouse / want_capture_keyboard are the fence: a true return means gui owns the
-       device this frame (the cursor is over a window, a widget is dragging, or a field is focused),
-       so non-UI code should NOT also act on it.  Gate direct app() input reads in gameplay / tools
-       on the inverse:
+    void                ( *init_config_back  )( gui_backend_caps_t caps );
+    void                ( *init_config_front )( gui_forward_caps_t caps );
+    bool                ( *init      )( gui_builtin_font_t font );
+    void                ( *shutdown  )( void );
+    u32                 ( *font_load )( const char* path );
+    u32                 ( *font_load_builtin )( gui_builtin_font_t font );
+    void                ( *asset_path )( const char* relative, char* out, int out_size );
 
-           if ( !gui()->want_capture_keyboard() && app()->key_pressed( APP_KEY_SPACE ) )
-               jump();
+    /* boot() -- TEST-BED tier: the one-call alternative to the block above for sandboxes, demos,
+       and quick tools whose main window IS a gui surface -- gui owns the window + render context
+       end to end, exactly like its tear-off floaters.  Non-idiomatic for engine hosts: those run
+       through the runtime host (run_host_main), which keeps ownership of the window/loop and
+       wires gui as an optional service.  Stands up the whole stack from a single descriptor
+       (gui_boot_desc_t, gui.h): rhi()->init() (idempotent -- safe if the host already ran it),
+       app window (borderless by default, with the chrome shell then auto-emitted each frame;
+       os_chrome opts back into the stock OS frame), rhi context, init_config_front + init(font),
+       set_frame_hooks, debug_enable, and the primary viewport -- returned, or GUI_VP_INVALID
+       with everything unwound on failure.  Call once after mod_init_all, before any other window
+       opens.  shutdown() tears down what boot created (context + window); rhi()->shutdown()
+       stays with the host, last.  Pairs with frame_poll / present below for the full easy-mode
+       loop; a host needing manual control of any stage simply keeps calling the explicit block
+       instead -- boot is composition, not replacement, and viewport_open still attaches gui to a
+       host-owned window. */
 
-       The is_key_* / is_mouse_* / get_* readers return the same per-frame state the widgets use
-       (keyed by app_key_t / app_mouse_button_t).  is_key_pressed / is_mouse_clicked are the down-
-       edge this frame.  get_time is seconds since the first frame (accumulated dt); get_delta_time
-       is this frame's.
+    gui_vp_t            ( *boot )( const gui_boot_desc_t* desc );
 
-       Key repeat is per-query (no mode to set): is_key_pressed is the initial press only, while
-       is_key_pressed_repeat also fires on each OS auto-repeat tick at the user's system rate -- the
-       Dear ImGui IsKeyPressed(key, repeat=true) case.  Use the repeat reader for held-key actions
-       (text nav, a spinner); use the plain one for discrete actions that must fire once per press. */
+    /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
+       backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
+       bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */
 
-    bool ( *want_capture_mouse       )( void );
-    bool ( *want_capture_keyboard    )( void );
+    gui_mem_stats_t     ( *mem_stats       )( void );
+    void                ( *print_mem_stats )( void );
 
-    /* is_mouse_hovering_rect -- cursor is over r and r is interactable (front-most window, inside the
-       region clip, no drag in flight): the IsMouseHoveringRect analogue for custom-drawn hit tests. */
-    bool ( *is_mouse_hovering_rect   )( gui_rect_t r );
+    /* Per-frame render statistics (geometry + batch counts) for the LAST completed frame.
+       Published at frame_begin, so a read during the build reflects the previous frame -- the
+       standard one-frame lag.  Feeds an FPS / performance overlay without re-deriving counts. */
+    gui_render_stats_t  ( *render_stats )( void );
 
-    /* Last-item introspection (the ImGui IsItem* family) -- each reports on the widget just emitted,
-       so call immediately after it.  hovered / active / clicked / focused mirror the widget's own
-       interaction; activated / deactivated are the press / release edges (deactivated is the natural
-       "commit on release" seam); visible is true when any of the item's rect survives the region
-       clip; get_item_rect returns its screen rect (GetItemRectMin/Max/Size in one). */
-    bool         ( *is_item_hovered     )( void );
-    bool         ( *is_item_active      )( void );
-    bool         ( *is_item_clicked     )( void );
-    bool         ( *is_item_focused     )( void );
-    bool         ( *is_item_activated   )( void );
-    bool         ( *is_item_deactivated            )( void );
-    bool         ( *is_item_deactivated_after_edit )( void );
-    bool         ( *is_item_visible                )( void );
-    gui_rect_t ( *get_item_rect       )( void );
+    /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are no longer emitted
+       by host code.  debug_enable( true ) arms an internal hotkey driver (numpad '.' arms the group,
+       then P / O / F10 ...) and gui emits them itself, last in the default context's build -- see
+       debug_enable (GUI_DEBUG section).  The perf overlay's clock arrives once through set_frame_hooks. */
 
-    bool ( *is_key_down              )( app_key_t key );
-    bool ( *is_key_pressed           )( app_key_t key );
-    bool ( *is_key_pressed_repeat    )( app_key_t key );
-    bool ( *is_key_released          )( app_key_t key );
-    bool ( *is_mouse_down            )( app_mouse_button_t b );
-    bool ( *is_mouse_clicked         )( app_mouse_button_t b );
-    bool ( *is_mouse_released        )( app_mouse_button_t b );
-    bool ( *is_mouse_double_clicked  )( app_mouse_button_t b );
-    void ( *get_mouse_pos            )( f32* x, f32* y );
-    f32  ( *get_mouse_wheel          )( void );
-    f32  ( *get_delta_time           )( void );
-    f64  ( *get_time                 )( void );
+    /* Frame hooks -- one-time wiring (after init) of the host OS services gui cannot reach itself
+       (gui links only app + rhi, no sys):
 
-    /* Hardware cursor.  The widgets already drive the shape from their own hover (resize edges show
-       the directional sizers, a text field shows the I-beam).  cursor_set lets UI code request
-       a shape gui cannot infer -- e.g. APP_CURSOR_HAND over a custom clickable -- for this frame;
-       the last request wins and is flushed to the OS window under the pointer while gui owns the
-       mouse, then reset to APP_CURSOR_ARROW next frame.  get_mouse_cursor reads the current request. */
-    void         ( *cursor_set )( app_cursor_t c );
-    app_cursor_t ( *get_mouse_cursor )( void );
+         clock       -- monotonic seconds source (sys_tick_seconds); brackets the frame for the
+                        perf overlay's emit / render cost readouts.  NULL leaves timing at zero.
+         sleep_ms    -- thread sleep (sys_sleep_milliseconds); frame_pace's spin/animation sleep.
+         wait_events -- block until OS input or timeout (sys_wait_for_os_events_ms); enables the
+                        idle-skip path of frame_pace.  NULL disables idle skip entirely. */
 
-    /* set_keyboard_focus -- queue a programmatic focus request: the next focusable widget emitted
-       (a text input box) takes keyboard focus as if clicked.  Call just before emitting the
-       widget; the request persists across frames until a focusable widget consumes it, so a
-       request made after this frame's field lands on the same field next frame (the "refocus
-       after Enter" console pattern). */
-    void         ( *set_keyboard_focus )( void );
+    void ( *set_frame_hooks )( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
 
-    /* set_edit_cursor_end -- queue a caret request: the focused text field seats its caret at the
-       end of its buffer (selection collapsed) the next time it runs.  Call after replacing the
-       field's buffer programmatically (history recall, tab completion); the request persists
-       across frames until a focused field consumes it. */
-    void         ( *set_edit_cursor_end )( void );
+    /* Frame lifecycle.  A frame is four explicit phases -- this is a multi-context system and the
+       API does not hide it; even a single-context host names its one context:
 
-    /* set_edit_key_hook -- register a key passthrough for the next FOCUSED text field: the hook
-       (gui_edit_key_fn, gui.h) runs before the field's own key handling for every key down this
-       frame, and a key it consumes is cleared from the frame io.  One-shot: re-register just
-       before emitting the field each frame.  This is the Quake-console seam -- history on
-       Up/Down, completion on Tab, scrollback on PgUp/PgDn/Ctrl+Home/Ctrl+End -- while every
-       unconsumed key edits the line as normal. */
-    void         ( *set_edit_key_hook )( gui_edit_key_fn fn, void* user );
+         if ( frame_begin(dt) )        -- global: snapshot app input, compute frame_dirty, reset the
+         {                                draw list on dirty frames.  Binds NO context; call once at
+                                          the top of the frame.  Returns frame_dirty: emit the UI
+                                          build only when true -- on a false (clean) frame skip the
+                                          context scopes entirely; render() replays the preserved
+                                          geometry verbatim and frame_end patches the volatile
+                                          widgets (gui()->volatile_cb) internally.
+           ctx_begin(GUI_CTX_DEFAULT) -- bind a context and run its per-frame init; emit its
+              ... emit windows ...        windows immediately after.
+           ctx_end()                    -- close it, rebinding the previously-bound context.  Closing
+         }                                the DEFAULT context also auto-emits the debug overlays
+                                          when debug_enable is on.
+         frame_end()                   -- seal the build (latches emit cost; asserts ctx balance).
+                                          Call on clean frames too -- it runs the volatile replay.
 
-    /* wants_redraw -- true when at least one animated widget has not yet reached its target this
-       frame (the currently bound context's flag).  frame_pace already folds this across every
-       context internally; the query remains for hosts that run their own pacing. */
-    bool ( *wants_redraw )( void );
+       frame_begin/frame_end and ctx_begin/ctx_end are balanced scopes, exactly like
+       window_begin/window_end: every begin has an end, and each end restores the scope its begin
+       opened.  render() runs AFTER frame_end and consumes the sealed draw list.
 
-    /* request_redraw -- one-shot: mark the bound context so the NEXT frame_begin returns dirty
-       and runs a full emit.  Self-clearing (the pin is set_force_redraw below).  Call it when a
-       state change made DURING this build only the next build can show -- the click that switches
-       which screen is emitted, a custom widget (gui()->item) mutating the model it draws.  Input
-       edges dirty only the frame they land on; without this, that next frame reads clean and
-       render() replays the stale cached geometry until the mouse moves again.  Stock widgets do
-       not need it (they re-read state in the same frame); the internal pop-time mutations
-       (scroll, dock collapse, style edits) already raise the same flag. */
-    void ( *request_redraw )( void );
+       render()    -- flush one viewport's geometry partition to GPU; opens a LOAD render pass on
+                      that viewport's swapchain, emits all draw calls, and closes the pass.  Also
+                      paints the debug overlay when vp is the primary (index 0).
+                      Call once per live viewport, each with the matching context cmd.
 
-    /* frame_dirty -- true when the current frame must perform a full widget emit: input changed,
-       an animation is in flight, or last frame's render found a structural change.  This is the
-       value frame_begin returns; the query remains for reads later in the frame (e.g. to pair
-       external per-emit work such as a scene-texture flip with an actual emit). */
-    bool ( *frame_dirty )( void );
+       frame_pace( spin_sleep_ms, anim_sleep_ms )
+                   -- end-of-loop frame pacing; call once at the very bottom of the main loop.
+                      Default path: sleep spin_sleep_ms between frames (4 ~= 250 Hz).  With idle
+                      skip on (set_idle_skip, or the I hotkey under debug_enable): block on OS
+                      input so a static UI burns no frames, sleeping anim_sleep_ms (16 ~= 60 Hz)
+                      only while a widget animation settles.  0 opts that sleep out (no call),
+                      even while the feature is on -- free-run for that path.  A no-op until
+                      set_frame_hooks provides the sleep / wait callbacks. */
 
-    /* volatile_live -- true while at least one volatile block (volatile_cb) would actually patch
-       on an idle frame: registered, on screen, its window's cached slot current.  A host that
-       runs its OWN pacing and block-waits on input once wants_redraw/frame_dirty settle must add
-       this to the gate: volatile blocks advance only when a frame runs, so a blocking wait
-       freezes them until a timeout / spurious wakeup and the animation stutters at the wait
-       interval.  frame_pace folds this in internally, same as wants_redraw. */
-    bool ( *volatile_live )( void );
+    bool ( *frame_begin )( f32 dt );
+    void ( *frame_end   )( void );
+    void ( *render      )( gui_vp_t vp, rhi_cmd_t cmd );
+    void ( *frame_pace  )( i32 spin_sleep_ms, i32 anim_sleep_ms );
 
-    /* set_force_redraw -- pins frame_dirty (and so frame_begin's return) true every frame,
-       defeating the retained-cache clean-frame skip so the UI rebuilds and re-renders
-       unconditionally.  Off by default.  Two uses: a debug lever to isolate a "did not update
-       until input moved" symptom from a real emit bug, and the legitimate live-data pin -- a host
-       whose sim mutates displayed state every frame (play mode) sets it so panels track the sim. */
-    void ( *set_force_redraw )( bool on );
+    /* Easy-mode loop wrappers (TEST-BED tier, same audience as boot() above -- engine hosts get
+       this loop from run_host instead).  With boot() these shrink a sandbox's main loop to its
+       essence.  frame_poll() works for any host (it needs only app + rhi routing); present_begin
+       / present_end are boot-tier (they render through the boot-owned context) and form a
+       balanced pair like every other begin/end: begin's bool gates the host's own passes, end
+       is called unconditionally.
 
-    /* force_redraw -- current state of the set_force_redraw override. */
-    bool ( *force_redraw )( void );
+         while ( gui()->frame_poll( &dt ) )       -- pump the OS, route events (rhi swapchain
+         {                                           resize, gui input + floater lifecycle),
+                                                     return dt from the boot clock hook; false on
+                                                     quit or main-window close.
+             ...frame_begin/build/frame_end...    -- unchanged (see above).
+             rhi_cmd_t cmd;
+             if ( gui()->present_begin( &cmd ) )  -- viewport_update + minimized guard + rhi
+                 ...host render passes...            frame open + swapchain clear (boot clear
+                                                     color); true hands out the live cmd for the
+                                                     host's own passes (offscreen scenes, custom
+                                                     draws under the UI).
+             gui()->present_end();                -- gui draw + present + all owned floaters.
+                                                     Call unconditionally (minimized-safe);
+                                                     no-op without a matching present_begin.
+             gui()->frame_pace( 4, 16 );
+         }
+
+       The host keeps reading input through app()'s snapshot API (key_pressed etc.) as before --
+       frame_poll only owns the event ring.  A host that needs the loop's internals (extra
+       swapchains, custom event handling) writes the explicit loop instead; these are sugar over
+       the same public calls. */
+
+    bool ( *frame_poll    )( f32* out_dt );
+    bool ( *present_begin )( rhi_cmd_t* out_cmd );
+    void ( *present_end   )( void );
+
+    /* Idle-skip control -- the programmatic twin of the I hotkey.  When on, frame_pace blocks on
+       OS input while the UI is idle instead of spinning.  Off by default. */
+    void ( *set_idle_skip )( bool on );
+    bool ( *idle_skip     )( void );
+
+    /* Viewport management.  A viewport is a render surface backed by an OS window.  One frame's build
+       gathers every window's geometry into a single draw list; render() dispatches each window's
+       partition to the viewport it is assigned to (window_set_next_viewport, or inherited from
+       whichever viewport was most recently emitted into this frame).
+
+       viewport_open()   -- open a surface for OS window win_id.  The initial drawable size is
+                            queried from app() internally -- no redundant w/h parameters.
+                            Returns a valid handle or GUI_VP_INVALID if the pool is full.
+                            The first call creates the primary (index 0); call before any frames.
+                            win_id routes mouse events from that OS window to this surface.
+       viewport_close()  -- close a viewport and release its GPU geometry buffers.  Works for both
+                            the primary and secondary viewports.  Windows on the closed viewport
+                            automatically fall back to the primary.  The host owns the OS window and
+                            rhi context; gui owns only the geometry.
+       viewport_resize() -- update a viewport's drawable size.  Prefer rhi()->event() +
+                            gui()->event() for automatic routing; call this directly only when
+                            explicit control is needed.
+       viewport_shell()  -- emit the window chrome for a borderless viewport.  Every host window is
+                            one of two things: a UI window (window_begin -- a body full of widgets)
+                            or a chrome shell for the OS window itself -- this call.  It emits a
+                            frame-only GUI_WIN_NATIVE window: its titlebar IS the OS caption (title
+                            text + min/max/close buttons, drag to move, double-click to maximize),
+                            its border the OS sizing frame, and its body is empty and click-through
+                            -- every other window lives on top of it.  Call it FIRST inside
+                            ctx_begin, every frame, before any other window on that viewport.
+                            Returns the caption band height so the host can stack its own strips
+                            (menu bar, toolbar) below it -- the built-in main_menu_bar, free-window
+                            clamping, and the dock tree already inset themselves automatically.
+                            On a viewport whose OS window has its own chrome (opened without
+                            APP_WIN_BORDERLESS) it is a no-op returning 0: call it unconditionally
+                            and flip only the window_open flag to switch chrome modes.  flags may
+                            add GUI_WIN_NOTITLEBAR / NO_MINIMIZE / NO_MAXIMIZE / NORESIZE.
+       viewport_caption_h() -- the caption band height (px) a chrome shell published on this
+                            viewport; 0 for an OS-chrome window.  The query twin of
+                            viewport_shell's return, for hosts on the boot path (where the shell
+                            is emitted internally) that stack pinned strips below the caption.
+       viewport_size()      -- the viewport's current drawable size (disp_w/disp_h) -- the query
+                            twin of viewport_resize.  Either out pointer may be NULL; an invalid
+                            viewport reports 0 x 0.
+       viewport_content_y() -- the y where host content starts on this viewport: 0 for an
+                            OS-chrome window, the caption band on a gui-shelled native window,
+                            plus the main menu bar when one was emitted (this frame or last --
+                            emit the bar before querying).  The same bound the maximize pin and
+                            free-window clamp use, published so hosts place windows below the
+                            viewport chrome without summing the parts themselves. */
+
+    gui_vp_t    ( *viewport_open      )( i32 win_id );
+    void        ( *viewport_close     )( gui_vp_t vp );
+    void        ( *viewport_resize    )( gui_vp_t vp, i32 w, i32 h );
+    f32         ( *viewport_shell     )( gui_vp_t vp, const char* title, gui_win_flags_t flags );
+    f32         ( *viewport_caption_h )( gui_vp_t vp );
+    void        ( *viewport_size      )( gui_vp_t vp, i32* out_w, i32* out_h );
+    f32         ( *viewport_content_y )( gui_vp_t vp );
+
+    /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
+       to flush into, these own the OS window + rhi context end to end -- gui creates them on
+       spawn and tears them down on close.  This is the lifecycle the tear-off gesture drives;
+       a host may also call viewport_spawn directly to place a panel in its own OS window.
+
+       viewport_spawn()          -- open a floater hosting its own OS window at (x,y) sized w x h;
+                                    returns its viewport handle (assign windows via
+                                    window_set_next_viewport) or GUI_VP_INVALID.  Between frames.
+       viewport_update()         -- reconcile owned floaters with their OS windows: apply tear-off /
+                                    merge-back and tear down closed or abandoned surfaces.  Call once
+                                    per frame AFTER the UI build and BEFORE rendering (the safe point
+                                    to free a surface).
+       viewport_render_floaters() -- present every owned floater from the shared draw list, each on
+                                    its own rhi context (frame_begin/clear/flush/frame_end).  The
+                                    host still presents the main surface (index 0) via render(). */
+
+    gui_vp_t   ( *viewport_spawn           )( const char* title, i32 x, i32 y, i32 w, i32 h );
+    void       ( *viewport_update          )( void );
+    void       ( *viewport_render_floaters )( void );
+
+    /* Multi-context -- isolated per-context retained state (windows, nav, popups, keyed widget state,
+       id namespace).  The primary context (GUI_CTX_DEFAULT / 0) is always live after init().
+
+       ctx_create()       -- allocate a fresh secondary context, sized to `cfg` (NULL / zero fields =
+                             the internal maxima the library was compiled with).
+                             Each gets a unique id_salt so same-named widgets in different contexts
+                             never alias.  Returns GUI_CTX_INVALID on pool exhaustion.  Between frames.
+       ctx_destroy()      -- free a secondary context; rebinds the default if it was current.  Never
+                             destroys GUI_CTX_DEFAULT.  Call between frames.
+       ctx_bind()         -- make ctx the current context with no per-frame init: a mid-build "switch
+                             retained state" escape hatch.  ctx_begin/ctx_end are the normal scope;
+                             reach for ctx_bind only to peek at another context's state mid-frame.
+                             GUI_CTX_DEFAULT (0) or any invalid handle rebinds the default.
+       ctx_set_listening() -- set whether a context receives hover/click/nav input.  The default context
+                             starts listening; secondary contexts start deaf.  Multiple contexts may
+                             listen simultaneously; a deaf context renders but returns inert widget state.
+                             Call between frames.
+       ctx_begin()/ctx_end() -- bind a context for the frame and run its per-frame init, then close it.
+                             A balanced scope: ctx_end rebinds whatever ctx_begin found bound.  ctx_begin
+                             always runs the full frame init (hover promotion, nav, popup stale-close)
+                             regardless of the listening flag, and leaves g_ctx pointing at the context,
+                             so emit its windows IMMEDIATELY after the call.
+
+       FRAME CONTRACT:
+         if ( frame_begin(dt) )         -- once: input poll; true = emit this frame (frame_dirty).
+         {
+           ctx_begin(GUI_CTX_DEFAULT) -- bind + init the default context; emit its windows.
+           ctx_end()                    -- close it (auto-emits debug overlays when debug is on).
+           ctx_begin(ctx2)              -- a second context, if any; emit its windows.
+           ctx_end()
+         }
+         frame_end()                    -- seal the build; volatile replay on clean frames.
+       A single-context host runs exactly one ctx_begin(GUI_CTX_DEFAULT)/ctx_end pair. */
+
+    gui_ctx_id_t( *ctx_create        )( const gui_ctx_config_t* cfg );
+    void        ( *ctx_destroy       )( gui_ctx_id_t ctx );
+    void        ( *ctx_bind          )( gui_ctx_id_t ctx );
+    void        ( *ctx_set_listening )( gui_ctx_id_t ctx, bool listen );
+    void        ( *ctx_begin         )( gui_ctx_id_t ctx );
+    void        ( *ctx_end           )( void );
+
+    /* Host input -- the host owns the app event ring drain and forwards each event here.
+       event() handles:
+         - APP_EV_CHAR / MOUSE_WHEEL / CLIPBOARD: input state; returns true (consumed).
+         - APP_EV_MOUSE_MOVE / _DOWN / _UP: routes the cursor to the correct viewport; returns false.
+         - APP_EV_WIN_RESIZE: updates the matching viewport's drawable size (primary or owned
+           floater).  Also drives rhi context resize for owned floaters (gui owns those contexts).
+           Returns true only for owned floater events; primary resize returns false so
+           rhi()->event() can also handle the swapchain rebuild.
+         - APP_EV_WIN_CLOSE: marks an owned floater for teardown (returns true); primary window
+           close returns false so the host can exit. */
+
+    bool ( *event )( const app_event_t* ev );
 
 } gui_api_t;
 

@@ -571,6 +571,78 @@ ex_layout_carve( void )
 }
 
 /*==============================================================================================
+    Flow Seams -- flow_begin / flow_cell / flow_end: the recursive rect <-> flow contract.
+    The canonical nesting from docs/GUI_STACK_PLAN.md section 4, live: carve a rect, auto-flow
+    into it, take one flow element back out as a rect, carve THAT, flow into the remainder --
+    three flow depths under one window, every crossing through the same two verbs.
+==============================================================================================*/
+
+static void
+ex_layout_flow( void )
+{
+    if ( ex_begin( "Flow Seams", 540, 560, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text( "carve -> flow -> cell -> carve -> flow: one contract, both directions." );
+
+        static f32 panel_w = 220.0f;
+        gui()->slider_float( "panel px", &panel_w, 140.0f, 320.0f );
+
+        /* Rect production by hand: a canvas cut into a flow panel and a marked remainder. */
+        gui_rect_t area  = gui()->canvas( 320.0f );
+        gui_rect_t panel = gui_rect_cut_left( &area, panel_w );
+        gui()->draw_frame( area, GUI_COLOR( 0x1E, 0x1E, 0x1E, 0xFF ),
+                                 GUI_COLOR( 0x60, 0x60, 0x60, 0xFF ), 1.0f );
+        gui()->draw_text_in( area, GUI_ALIGN_CENTER, 0xFF707070u, "carved remainder" );
+
+        /* Depth 1: auto-flow into the carved panel. */
+        gui()->flow_begin( gui_rect_pad( panel, 4.0f ) );
+            gui()->stack();
+            gui()->text( "depth 1: flow in a cut rect" );
+            static bool stock = true;
+            gui()->checkbox( "stock widget", &stock );
+
+            /* One flow element back out as a rect, carved by hand again. */
+            gui_rect_t cell = gui()->flow_cell( 0.0f, 120.0f );
+            gui_rect_t half = gui_rect_cut_left( &cell, cell.w * 0.5f );
+
+            /* Custom widget in the carved half: rect + item() + draw_*. */
+            static i32 clicks = 0;
+            gui_item_state_t st = gui()->item( "half##flow", half );
+            if ( st.clicked ) { clicks++; gui()->request_redraw(); }
+            gui()->draw_frame( half,
+                               st.active ? GUI_COLOR( 0x30, 0x50, 0x70, 0xFF )
+                                         : GUI_COLOR( 0x24, 0x2C, 0x34, 0xFF ),
+                               st.hover  ? GUI_COLOR( 0x4F, 0xC3, 0xF7, 0xFF )
+                                         : GUI_COLOR( 0x60, 0x60, 0x60, 0xFF ), 1.0f );
+            gui()->draw_text_in( half, GUI_ALIGN_CENTER, 0xFFE0E0E0u, "item()" );
+
+            /* Depth 2: flow into the remainder of that same cell. */
+            gui()->flow_begin( gui_rect_pad( cell, 4.0f ) );
+                gui()->stack();
+                static bool deep = false;
+                gui()->checkbox( "depth 2", &deep );
+
+                /* Depth 3: cell -> pad (carve) -> flow once more. */
+                gui_rect_t c2 = gui()->flow_cell( 0.0f, 44.0f );
+                gui()->draw_frame( c2, GUI_COLOR( 0x2A, 0x24, 0x34, 0xFF ),
+                                       GUI_COLOR( 0xFF, 0xB0, 0x40, 0xFF ), 1.0f );
+                gui()->flow_begin( gui_rect_pad( c2, 6.0f ) );
+                    gui()->stack();
+                    gui()->text( "depth 3" );
+                gui()->flow_end();
+            gui()->flow_end();
+
+            gui()->textf( "item clicks: %d", clicks );
+        gui()->flow_end();
+
+        /* The outer stack resumes below the canvas as if nothing happened. */
+        gui()->text( "outer flow resumed below the canvas." );
+    }
+    gui()->window_end();
+}
+
+/*==============================================================================================
     Natural & Wrap -- measured natural columns, the next_item_* one-shots, pack auto-wrap.
 ==============================================================================================*/
 

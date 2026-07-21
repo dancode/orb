@@ -30,6 +30,31 @@
 
 // clang-format off
 /*==============================================================================================
+    Cross-unit seams -- the element unit
+
+    element/gui_element.c is its own translation unit (the third, beside gui.c and
+    gui_backend.c): the compiler enforces that the element tier reaches the rest of gui only
+    through the public gui_* surface plus these two declarations.  style_active() is the one
+    internal read elements need -- the ACTIVE (font-scaled) style the S2 -> S1 derive compiles
+    from (gui_style_peek returns the unscaled em=12 base, which would ignore font scaling).
+    el_style_derive() is the derive itself, called by gui_style_apply (frame/gui_frame.c) at
+    every theme / font landing.
+==============================================================================================*/
+
+const gui_style_t* style_active( void );      /* core/gui_theme.c: the active scaled style   */
+void               el_style_derive( void );   /* element/gui_element.c: the S2->S1 compile   */
+
+/* THE role x state -> gui_col_t slot projection (element unit owns it) -- shared by
+   el_style_derive and style_el_col so the two directions of the strata bridge cannot drift. */
+extern const u8 g_gui_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ];
+
+/* core/gui_style.c: resolve one element-shaped color for STOCK chrome -- a push-stack
+   override on the projected slot wins (chrome's own mechanism), else the INSTALLED element
+   style value (S1 -- so a kit that overwrites el_style restyles stock widget bodies too).
+   With no override and no kit overwrite this equals style_col( slot ) exactly. */
+u32 style_el_col( u8 role, u8 state );
+
+/*==============================================================================================
     Loud-overflow reporting
 
     Every fixed pool in the gui follows the same saturation rule: never fail hard, never be

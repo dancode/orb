@@ -213,6 +213,14 @@ gui_style_get( void )
     return &s_style_base;
 }
 
+/* The ACTIVE style -- s_style_base rescaled for the current font by gui_style_apply.  The
+   internal read the element unit's el_style_derive compiles from (see gui_internal.h). */
+const gui_style_t*
+style_active( void )
+{
+    return &s_style;
+}
+
 const gui_style_t*
 gui_style_peek( void )
 {

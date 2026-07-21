@@ -90,6 +90,7 @@ static ex_demo_t s_demos[] =
     { "Layout",   "Child Regions",    "Child Regions",    "child_begin / resize grips / size constraints",     ex_layout_children,     false },
     { "Layout",   "Sizing Helpers",   "Sizing Helpers",   "sz_* family / content_avail / empty",               ex_layout_sizing,       false },
     { "Layout",   "Split & Carve",    "Split & Carve",    "split_begin / split / carve / anchor / overlay",    ex_layout_carve,        false },
+    { "Layout",   "Flow Seams",       "Flow Seams",       "flow_begin / flow_cell / flow_end -- recursive",    ex_layout_flow,         false },
 
     { "Windows",  "Window Playground","Window Playground","every window flag, toggled live",                   ex_windows_playground,  false },
     { "Windows",  "Multiple Windows", "Default Window",   "overlap / z-order / closeable / control",           ex_windows_multi,       false },

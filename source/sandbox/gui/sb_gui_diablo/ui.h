@@ -2,10 +2,13 @@
 #define SB_UI_H
 /*==============================================================================================
 
-    sandbox/gui/sb_gui_diablo/ui.h -- the rect-first UI layer (prototype).
+    sandbox/gui/sb_gui_diablo/ui.h -- the game KIT (S3) over gui's element tier.
 
-    A proving ground for a simpler user-facing GUI API, built over the existing gui library.
-    Once proven by sb_gui_diablo it graduates into gui proper.  The whole design is three rules:
+    Originally the proving ground for the rect-first API; GUI_STACK_PLAN increment 3 promoted
+    its widget cores into gui proper as the el_* elements (gui_api.h GUI_ELEMENT), and this
+    layer shrank to what a game kit is: a palette installed into the element style
+    (ui_kit_install), thin names over the cores, and the game-flavored widgets (slot, globe,
+    title) the engine has no business shipping.  The three rules still govern everything:
 
       1. RECTS ARE THE ONLY LAYOUT CURRENCY.  You are handed the screen as a rect.  You cut
          it, split it, and place boxes in it with pure math.  There is no pen, no flow, no
@@ -139,6 +142,12 @@ bool ui_cycle ( gui_rect_t r, i32* idx, const char* const* items, i32 count );
     Style -- one flat struct, mutable at any time.  No stacks, no push/pop: a screen that wants
     different colors sets them before its widgets and (optionally) restores after.
 ==============================================================================================*/
+
+/* Install the kit look: compiles this palette into gui's element style (gui()->el_style), so
+   the promoted el_* cores behind ui_button / ui_check / ui_slider / ui_cycle / ui_meter render
+   ember-gold.  The theme system re-derives the installed style at every theme / font landing,
+   so call once after boot AND again after any font_use / theme_set. */
+void ui_kit_install( void );
 
 typedef struct ui_style_t
 {

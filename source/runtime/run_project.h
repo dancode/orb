@@ -42,6 +42,12 @@
                       anything framerate-bound.
     on_draw( a, v )   scene submission.  a = accumulator fraction [0,1): lerp prev->cur
                       sim states by a for smooth motion at any sim rate (or ignore it).
+    on_hud( dt, v )   gui emission -- the ONLY phase where gui() calls are legal.  The
+                      driver calls it from inside the host's gui frame bracket (run_host's
+                      emit -> on_gui), NOT from the update-phase tick like the others, and
+                      may skip it entirely on clean retained frames or gui-less hosts.
+                      Emit to view->gui_vp (v2 field; check version) and treat < 0 as "no
+                      gui this frame".  Gui-less projects implement it as an empty stub.
     on_stop           play ends (close / editor Stop).
 
     Rules (enforced by the module loader):
@@ -61,7 +67,7 @@
 
 /*============================================================================================*/
 
-#define RUN_VIEW_VERSION 1
+#define RUN_VIEW_VERSION 2
 
 typedef struct run_view_s
 {
@@ -69,6 +75,10 @@ typedef struct run_view_s
     i32 render_ctx;   // rhi context id to submit scene draws into; -1 = headless
     i32 surface_w;    // drawable surface size in pixels; 0 when headless.  Handed in so
     i32 surface_h;    // projects can place scene draws without depending on rhi directly.
+
+    /* -- v2 -- */
+    i32 gui_vp;       // gui viewport for on_hud emission; -1 = no gui.  Only meaningful in
+                      // the view handed to on_hud -- tick-phase views always carry -1.
 
 } run_view_t;
 
@@ -78,6 +88,8 @@ typedef struct run_project_api_s
     void ( *on_sim   )( f32 fixed_dt );                       // 0..N per frame, deterministic
     void ( *on_frame )( f32 dt, const run_view_t* view );     // once per frame, variable rate
     void ( *on_draw  )( f32 alpha, const run_view_t* view );  // scene submission, interpolated
+    void ( *on_hud   )( f32 dt, const run_view_t* view );     // gui emission, inside the host's
+                                                              //   gui bracket; stub if gui-less
     void ( *on_stop  )( void );                               // play ends
 
 } run_project_api_t;

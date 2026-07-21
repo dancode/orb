@@ -472,6 +472,11 @@ gui_style_apply( void )
 
     layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
 
+    /* S2 -> S1 compile step: re-derive the installed element style from the freshly scaled
+       active style, so el_* elements track every theme / font landing without reading either.
+       A kit that owns the element look re-installs its values after its theme/font calls. */
+    el_style_derive();
+
     /* A style / theme change restyles every window, but the retained cache only re-tessellates on a
        dirty frame.  Request a redraw so the NEXT frame does a full clean rebuild with the reseeded
        style -- otherwise a change made while the UI is idle (e.g. picking a theme in a style editor,

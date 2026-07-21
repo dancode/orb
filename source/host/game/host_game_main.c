@@ -119,17 +119,33 @@ game_host_update( f32 dt )
     run_view_t view = {
         .version    = RUN_VIEW_VERSION,
         .render_ctx = run_host_ctx(),
+        .gui_vp     = -1,   /* tick phase: gui emission is illegal here (see on_hud) */
     };
     app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
     game()->tick( dt, &view );
+
+    /* A live session's HUD changes every frame (score, tick meter) and the retained-cache
+       emit skip would freeze it -- the same force-redraw gate host_editor holds while a
+       session is live.  Re-derived every frame so it clears when the session ends. */
+    gui()->set_force_redraw( game()->state() != GAME_STOPPED );
 }
 
-/* convenience UI for cheat and developer debug */
+/* The project's HUD phase.  This callback runs inside run_host's gui frame bracket -- the
+   only place widget emission is legal -- so this is where the runner forwards on_hud.  The
+   view is rebuilt here too (stale-handle rule); gui_vp hands the project the main viewport. */
 
 static void
 game_gui( f32 dt )
 {
-    // gamer()->build_gui( dt );
+    gui_vp_t vp = run_host_vp();
+
+    run_view_t view = {
+        .version    = RUN_VIEW_VERSION,
+        .render_ctx = run_host_ctx(),
+        .gui_vp     = ( vp == GUI_VP_INVALID ) ? -1 : ( i32 )vp,
+    };
+    app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
+    game()->hud( dt, &view );
 }
 
 /* Window X pressed: stop the session, then allow the close.  (Q-quit stops it too; the

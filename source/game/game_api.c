@@ -178,6 +178,19 @@ game_tick( f32 dt, const run_view_t* view )
     s->proj->on_draw( s->acc / fixed_dt, view );
 }
 
+/* The gui-bracket phase: hosts call this from on_gui, so the project's widget emission
+   lands inside the gui frame the tick-phase drive can never see.  Paused keeps the HUD
+   up for the same reason paused keeps drawing. */
+static void
+game_hud( f32 dt, const run_view_t* view )
+{
+    game_state_t* s = g_game_state;
+    if ( !s || !s->proj || s->play_state == GAME_STOPPED )
+        return;
+
+    s->proj->on_hud( dt, view );
+}
+
 /*==============================================================================================
     API Struct
 ==============================================================================================*/
@@ -190,6 +203,7 @@ const game_api_t g_game_api_struct = {
     .step         = game_step,
     .state        = game_state,
     .tick         = game_tick,
+    .hud          = game_hud,
 };
 
 /*==============================================================================================
