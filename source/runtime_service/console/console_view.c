@@ -18,8 +18,9 @@
         amber, debug/trace dim, interactive echo and info in the theme text colour.  con_log_level
         sets how much ambient engine logging is pulled in; `condump` copies it to the clipboard.
       - Height is con_height: a fraction of the space below the viewport chrome (0.1..1.0, 1.0 =
-        full), snapped to whole dense rows.  The console runs in a GUI_SCALE_DENSE scope so all
-        sizing is rows_h() row counting.
+        full).  The body is a 2-row grid (flex scrollback cell + fixed input row); the scrollback
+        is HAND-PAINTED bottom-up (draw_text_clipped from the child's bottom edge upward), so the
+        newest line hugs the input and any leftover space falls at the top -- no flow row math.
 
 ==============================================================================================*/
 
@@ -261,11 +262,11 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
 
     gui()->window_set_next_pos( 0.0f, top_y, GUI_COND_ALWAYS );
     gui()->window_set_next_size( display_w, win_h, GUI_COND_ALWAYS );
-    /* GUI_WIN_TEXT_SELECT: the scrollback runs draw into the window's own segments (a child region
-       is layout, not a separate window id), so flagging the top-level window makes every line
-       sweep/marquee selectable within the scrollback scissor -- no multiline edit box needed. */
+    /* The scrollback is hand-painted (draw_text_clipped) rather than emitted as flow text, so
+       there are no selectable runs to capture -- GUI_WIN_TEXT_SELECT is intentionally absent.
+       `condump` copies the whole buffer to the clipboard when a copy is needed. */
     if ( gui()->window_begin( "##console",
-                              GUI_WIN_NODECORATION | GUI_WIN_NOMOVE | GUI_WIN_MODAL | GUI_WIN_TEXT_SELECT ) )
+                              GUI_WIN_NODECORATION | GUI_WIN_NOMOVE | GUI_WIN_MODAL ) )
     {
         /* Fixed-pitch font when one loaded (console_frame): cvarlist and friends align their output
            with printf column padding, which only lines up under a monospace face. */
@@ -283,30 +284,29 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
             .rows = { 1.0f, line_h, GUI_END },
         } );
 
-        /* Scrollback cell.  child_begin in a grid parent takes the cell verbatim (w/h ignored), so
-           we never size it -- we MEASURE it.  NOSCROLL: the console owns the wheel and scrolls via
-           s_view_offset; drawing exactly the rows that fit means the child never needs its own bar. */
+        /* Scrollback cell.  child_begin in a grid parent takes the cell verbatim; NOSCROLL because
+           we paint the text ourselves and the console owns the wheel.  The child gives a clip
+           scissor and a content_rect to paint into, and child_end restores the parent pen so the
+           input line lands in the next grid cell untouched. */
         if ( gui()->child_begin( "##console_scrollback", 0.0f, 0.0f, GUI_WIN_NOSCROLL ) )
         {
-            /* Read the resolved interior (content_avail = pen to region floor) and fit whole rows
-               into it.  Conservative pitch -- line + gap for EVERY row, though the last owes no
-               trailing gap -- guarantees the drawn content is always <= the box, so nothing clips
-               and no inner scrollbar can appear.  This is the whole fix: size from measured
-               geometry, never from a row count computed ahead of the layout. */
+            /* Rect painter, BOTTOM UP: start at the child's bottom edge and step one line's pitch
+               UPWARD per scrollback line, newest first, until the next row would cross the top.
+               Pure rect math off content_rect -- no flow layout, no row-count or gap arithmetic
+               deciding where a line lands -- so nothing clips at the bottom and any leftover space
+               falls naturally at the TOP.  The child scissor clips a partial top line. */
+            const gui_rect_t area     = gui()->content_rect();
+            const f32        gap      = gui()->sz_row_gap();
+            const f32        pitch    = line_h + gap;
+            const u32        text_col = gui()->style_peek()->colors[ GUI_COL_TEXT ];
 
-            const f32 gap      = gui()->sz_row_gap();
-            const f32 interior = gui()->content_avail().y;
+            /* Rows that fit -- only for the wheel/page step and the offset clamp, not placement. */
+            i32 fit = ( i32 )( area.h / pitch );
+            if ( fit < 1 )
+                fit = 1;
+            s_rows = fit;
 
-            i32       fit      = ( i32 )( interior / ( line_h + gap ) );
-            if ( fit < 1 ) 
-                 fit = 1;
-
-            s_rows = fit;    /* the key hook reads this for its half-page scroll step */
-
-            gui()->row( line_h );   /* every scrollback line is exactly one dense row */
-
-            /* Mouse wheel scrolls the scrollback -- while open the console owns the wheel, Quake
-               style.  Wheel up (positive) looks back in history. */
+            /* Mouse wheel scrolls the scrollback while open (Quake style); up looks back. */
             const f32 wheel = gui()->get_mouse_wheel();
             if ( wheel != 0.0f )
                 s_view_offset += ( i32 )wheel * 3;
@@ -316,47 +316,26 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
             /* Clamp the view offset so the oldest line can reach the top but no further. */
             i32 max_offset = total - fit;
             if ( max_offset < 0 )
-                 max_offset = 0;
+                max_offset = 0;
             if ( s_view_offset > max_offset )
-                 s_view_offset = max_offset;
+                s_view_offset = max_offset;
             if ( s_view_offset < 0 )
-                 s_view_offset = 0;
-             
-            /* con_line_total is a monotonic commit counter (survives ring wrap): while parked at
-               the tail it is the baseline for "new output while scrolled".  Guard the later
-               subtraction against a con_clear reset (which zeroes it). */
+                s_view_offset = 0;
+
+            /* con_line_total is a monotonic commit counter (survives ring wrap): while parked at the
+               tail it is the baseline for "new output while scrolled".  Guard the subtraction
+               against a con_clear reset (which zeroes it). */
             const u32 committed = core()->con_line_total();
             if ( committed < s_tail_total )
                 s_tail_total = committed;
-
             const bool scrolled = ( s_view_offset > 0 );
             if ( !scrolled )
                 s_tail_total = committed;    /* at the tail: this is the new baseline */
 
-            /* When scrolled, spend the bottom row on a "new output below" marker; otherwise all
-               `fit` rows are text.  Either way exactly `fit` rows are emitted, so the content
-               height matches what we measured -- the reason nothing clips. */
-            const i32 text_rows = scrolled ? fit - 1 : fit;
+            /* y = the TOP of the row being painted; start flush at the child's bottom edge. */
+            f32 y = area.y + area.h - line_h;
 
-            /* Bottom-aligned: the newest visible line sits on the lowest text row; a short history
-               pads blank rows at the TOP, not the bottom (a console reads upward from the prompt). */
-            const i32 bottom_idx = total - 1 - s_view_offset;
-            for ( i32 r = 0; r < text_rows; ++r )
-            {
-                const i32 idx = bottom_idx - ( text_rows - 1 - r );
-                if ( idx < 0 || idx >= total )
-                {
-                    gui()->text( " " );
-                    continue;
-                }
-                const char* line = core()->con_line_get( ( u32 )idx );
-                const u32   col  = console_level_color( core()->con_line_level( ( u32 )idx ) );
-                if ( col )
-                    gui()->text_colored( col, line );
-                else
-                    gui()->text( line );
-            }
-
+            /* When scrolled, the lowest row is a "new output below" marker; text starts one row up. */
             if ( scrolled )
             {
                 char      sep[ 96 ];
@@ -365,7 +344,21 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
                     snprintf( sep, sizeof( sep ), "v v v  %u new below  (End for live tail)  v v v", fresh );
                 else
                     snprintf( sep, sizeof( sep ), "^ ^ ^  scrolled back  (End for live tail)  ^ ^ ^" );
-                gui()->separator_text( sep );
+                gui()->draw_text_clipped( ( gui_rect_t ){ area.x, y, area.w, line_h },
+                                          GUI_ALIGN_LEFT, text_col, sep );
+                y -= pitch;
+            }
+
+            /* Walk up from the newest visible line.  Continue while a row is even PARTIALLY visible
+               (y + line_h > area.y), so the topmost line bleeds off under the child scissor -- the
+               history reads as scrolling off the top edge rather than ending on a clean cut. */
+            for ( i32 idx = total - 1 - s_view_offset; idx >= 0 && y + line_h > area.y; --idx )
+            {
+                const char* line = core()->con_line_get( ( u32 )idx );
+                const u32   sev  = console_level_color( core()->con_line_level( ( u32 )idx ) );
+                gui()->draw_text_clipped( ( gui_rect_t ){ area.x, y, area.w, line_h },
+                                          GUI_ALIGN_LEFT, sev ? sev : text_col, line );
+                y -= pitch;
             }
         }
         gui()->child_end();
