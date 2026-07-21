@@ -121,6 +121,20 @@ void ui_globe ( gui_rect_t r, f32 frac, u32 fill_abgr, const char* caption );
    to `frac` (0..1) in fill_abgr. */
 void ui_meter ( gui_rect_t r, f32 frac, u32 fill_abgr );
 
+/* Form controls.  Same contract as everything else: they fill exactly the rect given -- the
+   caller cuts the row and places the control zone; labels are the caller's ui_label next to
+   it.  All three id internally off a fixed string, so bracket repeated instances with
+   gui()->push_id_int (the loop-row pattern).  All return true on the frame the value changes.
+
+   ui_check  -- a square toggle inscribed centered in r (side = min(r.w, r.h)).
+   ui_slider -- a horizontal drag track filling r; keyboard nav steps 5% per arrow.  The bare
+                control: the caller draws the value text from *v where it wants it.
+   ui_cycle  -- the "< value >" selector: square chevron buttons at r's ends, items[*idx]
+                centered between; wraps around. */
+bool ui_check ( gui_rect_t r, bool* v );
+bool ui_slider( gui_rect_t r, f32* v, f32 lo, f32 hi );
+bool ui_cycle ( gui_rect_t r, i32* idx, const char* const* items, i32 count );
+
 /*==============================================================================================
     Style -- one flat struct, mutable at any time.  No stacks, no push/pop: a screen that wants
     different colors sets them before its widgets and (optionally) restores after.

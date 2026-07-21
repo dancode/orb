@@ -11,7 +11,9 @@
                             mana globes, XP strip, click-to-move world marker.
       increment 3 (done) -- skill tree (3x4 lattice + connectors), equipment (paper doll +
                             8x6 backpack of art-exact cells, cursor-carry), character stats
-                            (cut-per-row list with steppers).  OPTIONS remains a stub.
+                            (cut-per-row list with steppers).
+      increment 4 (done) -- options form: ui_slider / ui_check / ui_cycle rows; the FONT row
+                            queues a live font swap the loop applies between frames.
 
     The point is the READ of the screen functions below: if the layout code is not obvious
     arithmetic, the ui layer failed.  ESC returns to the menu from any screen.
@@ -465,29 +467,98 @@ screen_stats( gui_vp_t vp )
 }
 
 /*==============================================================================================
-    Stub screens -- placeholders the later increments replace.  Same skeleton on purpose:
-    a titled screen with a centered panel and a BACK button proves the layer reuses cleanly.
+    Options (increment 4) -- the settings form: label left, control zone right, one cut per
+    row.  Sliders, checks, and "< value >" cycles are the new ui form controls.  The FONT row
+    is live: it queues a font swap the main loop applies between frames (fonts are frame-
+    global state), and the whole form re-lays itself in the new basis -- the two-currency
+    policy demonstrated by the very screen that changes the dial.
 ==============================================================================================*/
 
+static f32  s_opt_master = 0.8f;
+static f32  s_opt_music  = 0.6f;
+static bool s_opt_vsync  = true;
+static bool s_opt_dmgnum = true;
+static i32  s_opt_res    = 1;
+static i32  s_opt_diff   = 0;
+static i32  s_opt_font   = 0;
+static i32  s_font_req   = -1;    /* queued font choice; applied in main() between frames */
+
 static void
-screen_stub( gui_vp_t vp, const char* id, const char* title, const char* note )
+screen_options( gui_vp_t vp )
 {
-    gui_rect_t screen = ui_screen_begin( vp, id );
+    static const char* res_items [] = { "1280 x 720", "1600 x 900", "1920 x 1080" };
+    static const char* diff_items[] = { "NORMAL", "NIGHTMARE", "HELL" };
+    static const char* font_items[] = { "ROBOTO 16", "CASCADIA 20" };
 
-    ui_title( ui_cut_top( &screen, ui_u( 4.0f ) ), title );
+    gui_rect_t screen = ui_screen_begin( vp, "options" );
+    ui_title( ui_cut_top( &screen, ui_u( 4.0f ) ), "OPTIONS" );
 
-    /* centered 22u x 9u panel with the increment note inside */
-    gui_rect_t panel = ui_place( screen, ui_u( 22.0f ), ui_u( 9.0f ), GUI_ALIGN_CENTER );
+    const f32 pad   = ui_u( 0.75f );
+    const f32 row_h = ui_u( 1.8f );
+    const f32 gap   = ui_u( 0.25f );
+
+    gui_rect_t panel = ui_place( screen, ui_u( 26.0f ),
+                                 ui_span( 7, row_h, gap ) + 2.0f * pad, GUI_ALIGN_CENTER );
     ui_panel( panel );
-    ui_label_c( ui_inset( panel, ui_u( 0.75f ) ), GUI_ALIGN_CENTER, ui_style()->text_dim, note );
+    nav_back( panel );
 
-    /* BACK: a 7u x 2u button one unit below the panel, horizontally centered on it */
-    gui_rect_t back = ui_place( panel, ui_u( 7.0f ), ui_u( 2.0f ), GUI_ALIGN_HCENTER | GUI_ALIGN_BOTTOM );
-    back.y = panel.y + panel.h + ui_u( 1.0f );
-    if ( ui_button( back, "BACK" ) || gui()->is_key_pressed( APP_KEY_ESCAPE ) )
+    gui_rect_t in  = ui_inset( panel, pad );
+    char       buf[ 16 ];
+
+    for ( i32 row = 0; row < 7; ++row )
     {
-        s_screen = SCR_MENU;
-        gui()->request_redraw();    /* same stall as the click: the menu emits NEXT frame */
+        gui_rect_t r    = ui_cut_top( &in, row_h );
+        gui_rect_t ctrl = ui_cut_right( &r, ui_u( 12.0f ) );
+        ui_cut_top( &in, gap );
+
+        gui()->push_id_int( row );
+        switch ( row )
+        {
+            case 0:
+            {
+                ui_label_c( r, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, ui_style()->text, "MASTER VOLUME" );
+                gui_rect_t val = ui_cut_right( &ctrl, ui_u( 2.5f ) );
+                ui_slider( ctrl, &s_opt_master, 0.0f, 1.0f );
+                snprintf( buf, sizeof( buf ), "%d%%", (i32)( s_opt_master * 100.0f + 0.5f ) );
+                ui_label_c( val, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER, ui_style()->text_dim, buf );
+            } break;
+
+            case 1:
+            {
+                ui_label_c( r, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, ui_style()->text, "MUSIC VOLUME" );
+                gui_rect_t val = ui_cut_right( &ctrl, ui_u( 2.5f ) );
+                ui_slider( ctrl, &s_opt_music, 0.0f, 1.0f );
+                snprintf( buf, sizeof( buf ), "%d%%", (i32)( s_opt_music * 100.0f + 0.5f ) );
+                ui_label_c( val, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER, ui_style()->text_dim, buf );
+            } break;
+
+            case 2:
+                ui_label_c( r, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, ui_style()->text, "RESOLUTION" );
+                ui_cycle( ctrl, &s_opt_res, res_items, 3 );
+                break;
+
+            case 3:
+                ui_label_c( r, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, ui_style()->text, "DIFFICULTY" );
+                ui_cycle( ctrl, &s_opt_diff, diff_items, 3 );
+                break;
+
+            case 4:
+                ui_label_c( r, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, ui_style()->text, "FONT" );
+                if ( ui_cycle( ctrl, &s_opt_font, font_items, 2 ) )
+                    s_font_req = s_opt_font;          /* applied between frames by the loop */
+                break;
+
+            case 5:
+                ui_label_c( r, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, ui_style()->text, "VSYNC" );
+                ui_check( ui_place( ctrl, row_h, row_h, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER ), &s_opt_vsync );
+                break;
+
+            case 6:
+                ui_label_c( r, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, ui_style()->text, "DAMAGE NUMBERS" );
+                ui_check( ui_place( ctrl, row_h, row_h, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER ), &s_opt_dmgnum );
+                break;
+        }
+        gui()->pop_id();
     }
 
     ui_screen_end();
@@ -507,7 +578,7 @@ build_frame( gui_vp_t vp )
         case SCR_SKILLS:  screen_skills( vp ); break;
         case SCR_EQUIP:   screen_equip ( vp ); break;
         case SCR_STATS:   screen_stats ( vp ); break;
-        case SCR_OPTIONS: screen_stub( vp, "options", "OPTIONS",    "later: settings forms"                           ); break;
+        case SCR_OPTIONS: screen_options( vp ); break;
     }
 }
 
@@ -570,9 +641,17 @@ main( int argc, char** argv )
     while ( !s_quit && gui()->frame_poll( &dt ) )
     {
         /* font selection is frame-global state: switch BETWEEN frames (pre frame_begin), and
-           read the key from app()'s snapshot -- gui's io snapshot belongs to the frame scope */
-        if ( app()->key_pressed( APP_KEY_F1 ) ) gui()->font_use( 0 );
-        if ( app()->key_pressed( APP_KEY_F2 ) ) gui()->font_use( font_big );
+           read the key from app()'s snapshot -- gui's io snapshot belongs to the frame scope.
+           F1/F2 and the OPTIONS form drive the same choice: keys set s_font_req too, so the
+           form's FONT row always shows the truth. */
+        if ( app()->key_pressed( APP_KEY_F1 ) ) s_font_req = 0;
+        if ( app()->key_pressed( APP_KEY_F2 ) ) s_font_req = 1;
+        if ( s_font_req >= 0 )
+        {
+            gui()->font_use( s_font_req == 0 ? 0 : font_big );
+            s_opt_font = s_font_req;
+            s_font_req = -1;
+        }
 
         if ( gui()->frame_begin( dt ) )
         {

@@ -239,5 +239,93 @@ ui_meter( gui_rect_t r, f32 frac, u32 fill_abgr )
         gui()->draw_rect( fill.x, fill.y, fill.w, fill.h, fill_abgr );
 }
 
+/*==============================================================================================
+    Form controls
+==============================================================================================*/
+
+bool
+ui_check( gui_rect_t r, bool* v )
+{
+    f32        side = ( r.w < r.h ) ? r.w : r.h;
+    gui_rect_t box  = gui_rect_align( r, side, side, GUI_ALIGN_CENTER );
+
+    gui_item_state_t st = gui()->item( "##check", box );
+    if ( st.clicked )
+    {
+        *v = !*v;
+        gui()->request_redraw();
+    }
+
+    u32 border = ( st.hover || st.nav ) ? s_style.slot_border_hot : s_style.slot_border;
+    gui()->draw_frame( box, s_style.slot_bg, border, s_style.border_w );
+    if ( *v )
+        gui()->draw_check_mark( ui_inset( box, side * 0.22f ), s_style.title );
+
+    return st.clicked;
+}
+
+bool
+ui_slider( gui_rect_t r, f32* v, f32 lo, f32 hi )
+{
+    gui_item_state_t st  = gui()->item( "##slider", r );
+    f32              old = *v;
+
+    if ( st.active )    /* captured drag: value follows the cursor across the track */
+    {
+        f32 mx, my;
+        gui()->get_mouse_pos( &mx, &my );
+        f32 t = ( r.w > 0.0f ) ? ( mx - r.x ) / r.w : 0.0f;
+        t  = ( t < 0.0f ) ? 0.0f : ( t > 1.0f ) ? 1.0f : t;
+        *v = lo + t * ( hi - lo );
+    }
+    if ( st.nav_adjust )
+        *v += (f32)st.nav_adjust * ( hi - lo ) * 0.05f;
+    *v = ( *v < lo ) ? lo : ( *v > hi ) ? hi : *v;
+
+    f32 frac = ( hi > lo ) ? ( *v - lo ) / ( hi - lo ) : 0.0f;
+
+    gui_rect_t track = gui_rect_align( r, r.w, r.h * 0.30f, GUI_ALIGN_CENTER );
+    gui()->draw_frame( track, s_style.meter_bg, s_style.slot_border, 1.0f );
+    gui_rect_t fill = ui_inset( track, 1.0f );
+    fill.w *= frac;
+    if ( fill.w > 0.0f )
+        gui()->draw_rect( fill.x, fill.y, fill.w, fill.h, s_style.btn_border_hover );
+
+    gui_rect_t handle = { r.x + frac * ( r.w - 8.0f ), r.y + r.h * 0.10f, 8.0f, r.h * 0.80f };
+    u32 hb = ( st.hover || st.active || st.nav ) ? s_style.slot_border_hot : s_style.slot_border;
+    gui()->draw_frame( handle, st.active ? s_style.btn_bg_press : s_style.btn_bg, hb, 1.0f );
+
+    if ( *v != old )
+        gui()->request_redraw();
+    return *v != old;
+}
+
+bool
+ui_cycle( gui_rect_t r, i32* idx, const char* const* items, i32 count )
+{
+    gui_rect_t lbox = ui_cut_left ( &r, r.h );    /* square end buttons, text between */
+    gui_rect_t rbox = ui_cut_right( &r, r.h );
+
+    i32 old = *idx;
+    gui_item_state_t ls = gui()->item( "##cyc_l", lbox );
+    gui_item_state_t rs = gui()->item( "##cyc_r", rbox );
+    if ( ls.clicked && count > 0 ) *idx = ( *idx + count - 1 ) % count;
+    if ( rs.clicked && count > 0 ) *idx = ( *idx + 1 ) % count;
+
+    u32 lb = ( ls.hover || ls.nav ) ? s_style.slot_border_hot : s_style.slot_border;
+    u32 rb = ( rs.hover || rs.nav ) ? s_style.slot_border_hot : s_style.slot_border;
+    gui()->draw_frame( lbox, s_style.slot_bg, lb, s_style.border_w );
+    gui()->draw_frame( rbox, s_style.slot_bg, rb, s_style.border_w );
+    gui()->draw_chevron( ui_inset( lbox, lbox.w * 0.30f ), GUI_DIR_LEFT,  2.0f, s_style.text );
+    gui()->draw_chevron( ui_inset( rbox, rbox.w * 0.30f ), GUI_DIR_RIGHT, 2.0f, s_style.text );
+
+    if ( count > 0 )
+        gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, items[ *idx ] );
+
+    if ( *idx != old )
+        gui()->request_redraw();
+    return *idx != old;
+}
+
 /*============================================================================================*/
 // clang-format on
