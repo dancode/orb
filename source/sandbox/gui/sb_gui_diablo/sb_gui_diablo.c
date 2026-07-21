@@ -61,13 +61,18 @@ screen_menu( gui_vp_t vp )
     gui_rect_t footer = ui_inset( ui_cut_bottom( &screen, ui_u( 1.5f ) ), ui_u( 0.5f ) );
     ui_label_c( footer, GUI_ALIGN_LEFT  | GUI_ALIGN_VCENTER, ui_style()->text_dim, "EMBERFALL 0.1 -- sb_gui_diablo increment 1" );
     ui_label_c( footer, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER, ui_style()->text_dim, "ORB engine" );
+    
+    f32 line_size = ui_line();
+    UNUSED( line_size );
 
     /* title band: top third of what remains (proportional -- stays px math on purpose) */
     gui_rect_t band = ui_cut_top( &screen, screen.h * 0.34f );
     ui_title( band, "E M B E R F A L L" );
+
+    /* subtitle: a dim line of text centered in the band, just above the option column */
     ui_label_c( ui_place( band, band.w, ui_line(), GUI_ALIGN_HCENTER | GUI_ALIGN_BOTTOM ),
                 GUI_ALIGN_CENTER, ui_style()->text_dim, "a point-and-click descent" );
-
+    
     /* option column: 14u wide x (6 rows of 2u, half-unit gaps), centered below the title */
     static const struct { const char* label; screen_t go; } opts[] = {
         { "ENTER SANCTUM", SCR_GAME    },
@@ -80,7 +85,7 @@ screen_menu( gui_vp_t vp )
     const i32 n    = (i32)( sizeof( opts ) / sizeof( opts[ 0 ] ) );
     const f32 gap  = ui_u( 0.5f );
     const f32 bt_h = ui_u( 2.0f );
-
+    
     gui_rect_t col = ui_place( screen, ui_u( 14.0f ), ui_span( n, bt_h, gap ), GUI_ALIGN_CENTER );
     for ( i32 i = 0; i < n; ++i )
     {
@@ -115,7 +120,10 @@ screen_stub( gui_vp_t vp, const char* id, const char* title, const char* note )
     gui_rect_t back = ui_place( panel, ui_u( 7.0f ), ui_u( 2.0f ), GUI_ALIGN_HCENTER | GUI_ALIGN_BOTTOM );
     back.y = panel.y + panel.h + ui_u( 1.0f );
     if ( ui_button( back, "BACK" ) || gui()->is_key_pressed( APP_KEY_ESCAPE ) )
+    {
         s_screen = SCR_MENU;
+        gui()->request_redraw();    /* same stall as the click: the menu emits NEXT frame */
+    }
 
     ui_screen_end();
 }
@@ -185,18 +193,13 @@ main( int argc, char** argv )
         goto shutdown;
     }
 
-    /* Second font for the F1/F2 basis-unit test.  boot() put Roboto 16 in registry slot 0;
-       font_use takes REGISTRY ids (font_load returns), not the GUI_FONT_* preset enum, and the
-       preset table is init-only -- so load the second face by its asset path once, up front.
-       font_load also activates what it loads, so switch back to slot 0 after. */
+    // gui()->set_force_redraw( true );
 
-    u32 font_big = 0;
-    {
-        char font_path[ 576 ];
-        gui()->asset_path( "assets/font/CascadiaMono_20px.orb_font", font_path, sizeof( font_path ) );
-        font_big = gui()->font_load( font_path );    /* 0 on failure: F2 then just reselects slot 0 */
-        gui()->font_use( 0 );
-    }
+    /* Second font for the F1/F2 basis-unit test.  boot() put Roboto 16 in registry slot 0;
+       font_load_builtin loads a preset into a NEW registry id and activates it -- switch back
+       to slot 0 after.  0 on failure: F2 then just reselects slot 0. */
+    u32 font_big = gui()->font_load_builtin( GUI_FONT_CASCADIA_MONO_20 );
+    gui()->font_use( 0 );
 
     f32 dt = 0.0f;
     while ( !s_quit && gui()->frame_poll( &dt ) )

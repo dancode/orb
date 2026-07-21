@@ -60,6 +60,17 @@ static const char* s_builtin_font_path[] =
     [ GUI_FONT_CASCADIA_CODE_16 ]   = "assets/font/CascadiaCode_16px.orb_font",
 };
 
+/* Relative asset path of a built-in preset; NULL for GUI_FONT_NONE / out-of-range.  The public
+   font_load_builtin (gui_frame.c) resolves it against the root and loads into a fresh id. */
+
+const char*
+font_builtin_rel_path( gui_builtin_font_t font )
+{
+    if ( font >= ARRAY_COUNT( s_builtin_font_path ) )
+        return NULL;
+    return s_builtin_font_path[ font ];
+}
+
 /* Load a built-in font preset into slot 0 and activate it. A no-op success for GUI_FONT_NONE.
    (the caller loads its own font); called from gui_init() when the host passes a preset. */
 
@@ -69,16 +80,14 @@ font_load_builtin( gui_builtin_font_t font )
     if ( font == GUI_FONT_NONE )
         return true;
 
-    bool valid_slot = font < ARRAY_COUNT( s_builtin_font_path );
-    bool valid_font = valid_slot && s_builtin_font_path[ font ] != NULL;
-
-    if ( valid_font )
+    const char* rel = font_builtin_rel_path( font );
+    if ( rel != NULL )
     {
         /* Built-in presets are engine assets at <root>/assets/font -- resolve against
            sys_root_dir() so hosts work from any working directory (a child game project's
            root when launched via F5, for example). */
         char path[ 576 ];
-        fmt_snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), s_builtin_font_path[ font ] );
+        fmt_snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), rel );
 
         return font_internal_load_into( 0, path );   // slot 0 = the default font
     }

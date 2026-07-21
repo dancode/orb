@@ -38,6 +38,7 @@ void gui_print_mem_stats( void );
 
 /* font */
 u32  gui_font_load( const char* path );
+u32  gui_font_load_builtin( gui_builtin_font_t font );
 
 /* asset_path -- resolve a path relative to the engine's assets/ root (see gui_api.h) */
 void gui_asset_path( const char* relative, char* out, int out_size );

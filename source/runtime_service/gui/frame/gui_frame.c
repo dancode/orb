@@ -493,6 +493,21 @@ gui_font_load( const char* path )
     return id;
 }
 
+u32
+gui_font_load_builtin( gui_builtin_font_t font )
+{
+    /* The preset enum already knows its asset path -- resolve it and take the normal
+       font_load path (new id + activate).  Unlike init's slot-0 preset load, this never
+       touches the default font; GUI_FONT_NONE / an unknown preset returns 0. */
+    const char* rel = font_builtin_rel_path( font );
+    if ( rel == NULL )
+        return 0;
+
+    char path[ 576 ];
+    gui_asset_path( rel, path, sizeof( path ) );
+    return gui_font_load( path );
+}
+
 bool
 gui_font_load_into( u32 id, const char* path )
 {
@@ -568,6 +583,18 @@ bool
 gui_wants_redraw( void )
 {
     return g_ctx->retained.wants_redraw;
+}
+
+/* One-shot redraw request: raise the bound context's wants_redraw so the NEXT frame_begin reads
+   dirty and runs a full emit.  The public face of the flag every internal pop-time mutation
+   already sets -- for host/user-widget state changed DURING a build that only the next build can
+   show (a screen switch on a click, a model edit behind gui()->item).  Self-clearing, unlike the
+   set_force_redraw pin. */
+void
+gui_request_redraw( void )
+{
+    if ( g_ctx )
+        g_ctx->retained.wants_redraw = true;
 }
 
 /* True when the current frame must perform a full widget emit.  Computed in frame_begin as the OR

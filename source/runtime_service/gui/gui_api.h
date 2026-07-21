@@ -50,6 +50,11 @@ typedef struct gui_api_s
         shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
         font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
                        call after init(). Returns the new id (>= 1), or 0 on failure.
+        font_load_builtin() -- font_load for a built-in preset (gui_builtin_font_t): the enum
+                       already knows its asset path, so no path plumbing at the call site.
+                       Same contract as font_load -- a NEW id, activated (the init()/boot()
+                       preset in slot 0 is untouched; font_use( 0 ) switches back).  Returns
+                       the new id, or 0 for GUI_FONT_NONE / an unknown preset / a failed load.
         asset_path() -- resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
                        the build root, one level above the executable -- the same convention
                        load_icon and the built-in font/icon presets resolve through. Writes the
@@ -61,6 +66,7 @@ typedef struct gui_api_s
     bool                ( *init      )( gui_builtin_font_t font );
     void                ( *shutdown  )( void );
     u32                 ( *font_load )( const char* path );
+    u32                 ( *font_load_builtin )( gui_builtin_font_t font );
     void                ( *asset_path )( const char* relative, char* out, int out_size );
 
     /* boot() -- TEST-BED tier: the one-call alternative to the block above for sandboxes, demos,
@@ -1723,6 +1729,16 @@ typedef struct gui_api_s
        frame (the currently bound context's flag).  frame_pace already folds this across every
        context internally; the query remains for hosts that run their own pacing. */
     bool ( *wants_redraw )( void );
+
+    /* request_redraw -- one-shot: mark the bound context so the NEXT frame_begin returns dirty
+       and runs a full emit.  Self-clearing (the pin is set_force_redraw below).  Call it when a
+       state change made DURING this build only the next build can show -- the click that switches
+       which screen is emitted, a custom widget (gui()->item) mutating the model it draws.  Input
+       edges dirty only the frame they land on; without this, that next frame reads clean and
+       render() replays the stale cached geometry until the mouse moves again.  Stock widgets do
+       not need it (they re-read state in the same frame); the internal pop-time mutations
+       (scroll, dock collapse, style edits) already raise the same flag. */
+    void ( *request_redraw )( void );
 
     /* frame_dirty -- true when the current frame must perform a full widget emit: input changed,
        an animation is in flight, or last frame's render found a structural change.  This is the

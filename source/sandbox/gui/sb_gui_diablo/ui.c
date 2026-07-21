@@ -164,8 +164,10 @@ ui_button( gui_rect_t r, const char* label )
     gui()->draw_frame( r, bg, border, s_style.border_w );
     gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, label );
 
-    if ( st.clicked ) 
-         gui()->wants_redraw();
+    /* A click is (by definition) a host state change this build cannot show yet -- ask for the
+       next frame to emit, or the retained cache replays this stale screen until the mouse moves. */
+    if ( st.clicked )
+        gui()->request_redraw();
 
     return st.clicked;
 }
