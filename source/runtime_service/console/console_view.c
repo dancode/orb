@@ -273,7 +273,7 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
        buffer to the clipboard when a copy is needed. */
     if ( gui()->window_begin( "##console",
                               GUI_WIN_NODECORATION | GUI_WIN_NOMOVE | GUI_WIN_MODAL |
-                              GUI_WIN_NOMOUSESCROLL ) )
+                              GUI_WIN_NOMOUSESCROLL | GUI_WIN_TEXT_SELECT ) )
     {
         /* Fixed-pitch font when one loaded (console_frame): cvarlist and friends align their output
            with printf column padding, which only lines up under a monospace face. */
@@ -299,7 +299,7 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
            and keys alike land with no lag.  Rows emit in NATURAL order (oldest first) as real text
            widgets; rows_clip virtualizes the run so a deep scrollback costs only its visible slice. */
         if ( gui()->child_begin( "##console_scrollback", 0.0f, 0.0f,
-                                 GUI_WIN_NOSCROLL | GUI_WIN_NOMOUSESCROLL | GUI_WIN_ANCHOR_BOTTOM ) )
+            GUI_WIN_NOSCROLL | GUI_WIN_NOMOUSESCROLL | GUI_WIN_ANCHOR_BOTTOM ) )
         {
             /* Fold the mouse wheel into the pending key-driven scroll (PageUp/Down a screenful,
                Ctrl+Home/End an edge), then apply it all in one same-frame nudge -- no lag.  Wheel up
