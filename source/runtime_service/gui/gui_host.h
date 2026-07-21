@@ -221,6 +221,7 @@ gui_rect_t gui_canvas( f32 height );
 f32 gui_sz_u( f32 n );
 f32 gui_sz_row_gap( void );
 f32 gui_sz_rows_h( u32 n );
+f32 gui_sz_child_rows_h( u32 n );
 f32 gui_sz_scale_row( gui_scale_t s );
 f32 gui_sz_line_h( void );
 f32 gui_sz_chars( f32 n );

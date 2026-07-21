@@ -375,6 +375,15 @@ f32 gui_sz_row_gap( void ) { return WIDGET_GAP; }
    scale_push scope it speaks that step's metrics. */
 f32 gui_sz_rows_h( u32 n ) { return ( n == 0 ) ? 0.0f : (f32)n * WIDGET_H + ( (f32)n + 1.0f ) * WIDGET_GAP; }
 
+/* Outer height to pass to child_begin (or a bare NODECORATION window) so its INTERIOR holds
+   exactly n uniform WIDGET_H rows.  sz_rows_h( n ) is the region interior -- its own top/bottom
+   pad and inter-row gaps included -- but a container carves its border (WIN_BORDER) off the box
+   you hand it, so a child sized to sz_rows_h( n ) clips its last row by that border.  Add it back.
+   This is the sizing rung an external caller needs to fit content to a row count without knowing
+   the theme's border metric; n == 0 is the bare chrome, so a body-composer can read WIN_BORDER
+   itself as sz_child_rows_h( 0 ). */
+f32 gui_sz_child_rows_h( u32 n ) { return gui_sz_rows_h( n ) + WIN_BORDER; }
+
 /* Height of one line of text in the active font (the raw line advance) -- a font metric, for
    text-shaped custom-draw rects; it knows nothing about row margins or gaps. */
 f32 gui_sz_line_h( void ) { return font_line_h(); }

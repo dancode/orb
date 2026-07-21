@@ -835,6 +835,11 @@ typedef struct gui_api_s
        pad/gap (a fixed-size list of buttons/fields, a popup sized to its item count).  Reads
        through the style stack, so inside a scale_push scope it speaks that step's metrics.
 
+       sz_child_rows_h( n ) -- the OUTER height to give child_begin / a bare window so its interior
+       holds exactly n such rows.  sz_rows_h is the interior; a container also carves its border off
+       the box, so passing sz_rows_h( n ) to a child clips the last row -- use this instead when the
+       row count must be exact inside a child.
+
        sz_scale_row( s ) -- one row height at a named ramp step (gui_scale_t) without pushing
        the scope: size a header band or custom chrome to a step.
 
@@ -852,6 +857,7 @@ typedef struct gui_api_s
     f32 ( *sz_u         )( f32 n );
     f32 ( *sz_row_gap   )( void );
     f32 ( *sz_rows_h    )( u32 n );
+    f32 ( *sz_child_rows_h )( u32 n );    /* outer child/window height to hold exactly n rows */
     f32 ( *sz_scale_row )( gui_scale_t s );
     f32 ( *sz_line_h    )( void );
     f32 ( *sz_chars     )( f32 n );

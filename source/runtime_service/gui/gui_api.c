@@ -166,6 +166,7 @@ const gui_api_t g_gui_api_struct =
     .sz_u                               = gui_sz_u,
     .sz_row_gap                         = gui_sz_row_gap,
     .sz_rows_h                          = gui_sz_rows_h,
+    .sz_child_rows_h                    = gui_sz_child_rows_h,
     .sz_scale_row                       = gui_sz_scale_row,
     .sz_line_h                          = gui_sz_line_h,
     .sz_chars                           = gui_sz_chars,

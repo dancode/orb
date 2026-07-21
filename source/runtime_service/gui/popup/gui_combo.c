@@ -42,7 +42,7 @@ static f32
 combo_rows_h( i32 n )
 {
     if ( n < 1 ) n = 1;
-    return gui_sz_rows_h( (u32)n ) + WIN_BORDER;
+    return gui_sz_child_rows_h( (u32)n );
 }
 
 /* Mandatory combo dropdown window behavior: fixed, uncollapsible, no title bar -- a popup but with
