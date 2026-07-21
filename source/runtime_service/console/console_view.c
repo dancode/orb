@@ -256,10 +256,11 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
        Every metric read inside -- row heights, gaps, region pads -- resolves to that step. */
     gui()->scale_push( GUI_SCALE_DENSE );
 
-    /* Window height is just a fraction of the space below the viewport chrome (top_y = the caption
-       + menu band the console drops under).  No row snapping: the layout below fills whatever this
-       is, and reads back the resolved geometry to decide how many text rows fit -- never the other
-       way round.  The cvar's own min/max bounds the value; the clamp only guards a stray 0. */
+    /* Window height is just a fraction of the space below the caption band (top_y = the title-bar
+       band the console drops under; it covers the menu bar).  No row snapping: the layout below
+       fills whatever this is, and reads back the resolved geometry to decide how many text rows
+       fit -- never the other way round.  The cvar's own min/max bounds the value; the clamp only
+       guards a stray 0. */
     f32 frac = s_cv_height ? core()->cvar_get_float( s_cv_height ) : 0.4f;
     if ( frac <= 0.0f ) frac = 0.1f;
     if ( frac > 1.0f )  frac = 1.0f;
@@ -469,9 +470,11 @@ console_emit( f32 dt, gui_vp_t vp )
     i32 disp_w = 0, disp_h = 0;
     gui()->viewport_size( vp, &disp_w, &disp_h );
 
-    /* Start below the viewport chrome (caption + main menu bar) so the title bar stays
-       draggable.  0 on an OS-chrome window; the host's menu bar, if any, emitted before this. */
-    const f32 top_y = gui()->viewport_content_y( vp );
+    /* Drop below the caption band ONLY -- the console covers the main menu bar rather than
+       sitting under it (it is GUI_WIN_MODAL, so a visible-but-dead menu bar reads wrong; hiding
+       it under the drop-down is the Quake feel).  caption_h excludes the menu bar band, so only
+       the title bar stays exposed and draggable.  0 on an OS-chrome window. */
+    const f32 top_y = gui()->viewport_caption_h( vp );
 
     console_show( ( f32 )disp_w, ( f32 )disp_h, top_y );
 }
