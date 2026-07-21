@@ -26,27 +26,11 @@
 
 /* Baseline y to vertically center one line of glyphs in a row of height h starting at y.
    Used by every labeled widget and the window title so the centering math lives in one place.
-   (The text_center_y( y, h ) form is the VCENTER case of rect_align below, kept as a scalar
-   convenience because most labeled widgets only need the y and already own their x.) */
+   (The text_center_y( y, h ) form is the VCENTER case of rect_align (rect kit), kept as a
+   scalar convenience because most labeled widgets only need the y and already own their x.) */
 f32 text_center_y( f32 y, f32 h ) { return y + ( h - font_char_h() ) * 0.5f; }
 
-/* Linear blend between two ABGR colors at t in [0,1] (0 = ca, 1 = cb).  Used by animated
-   widgets that blend between palette entries rather than switching them discretely. */
-u32
-col_lerp( u32 ca, u32 cb, f32 t )
-{
-    if ( t <= 0.0f ) return ca;
-    if ( t >= 1.0f ) return cb;
-    f32 r0 = (f32)( ( ca       ) & 0xFF );  f32 r1 = (f32)( ( cb       ) & 0xFF );
-    f32 g0 = (f32)( ( ca >>  8 ) & 0xFF );  f32 g1 = (f32)( ( cb >>  8 ) & 0xFF );
-    f32 b0 = (f32)( ( ca >> 16 ) & 0xFF );  f32 b1 = (f32)( ( cb >> 16 ) & 0xFF );
-    f32 a0 = (f32)( ( ca >> 24 ) & 0xFF );  f32 a1 = (f32)( ( cb >> 24 ) & 0xFF );
-    u32 r  = (u32)( r0 + ( r1 - r0 ) * t );
-    u32 g  = (u32)( g0 + ( g1 - g0 ) * t );
-    u32 b  = (u32)( b0 + ( b1 - b0 ) * t );
-    u32 a  = (u32)( a0 + ( a1 - a0 ) * t );
-    return r | ( g << 8 ) | ( b << 16 ) | ( a << 24 );
-}
+/* col_lerp moved to rect/gui_rect_core.c -- the rect unit's compiled half (pure color math). */
 
 /* The rect-taking paint floor for the widget tier: a solid fill and a border outline over a
    gui_rect_t.  Widgets speak rects; only the backend emit layer (draw_push_*) speaks scalar
@@ -57,41 +41,16 @@ col_lerp( u32 ca, u32 cb, f32 t )
 void draw_fill   ( gui_rect_t r, u32 col )        { draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col ); }
 void draw_outline( gui_rect_t r, f32 t, u32 col ) { draw_push_rect_outline( r.x, r.y, r.w, r.h, t, 0, col ); }
 
-/* Place an extent `len` within the span [org, org+avail) along one axis: centered, against the far
-   edge, or (default) the near edge.  The one axis primitive every aligned placement resolves
-   through -- rect_align below for a box, and draw_text_in (gui_text.c) per line of a text
-   block -- so a centered label, a right-flushed caption, and a bottom-anchored run share one rule. */
-
-static f32
-align_span( f32 org, f32 avail, f32 len, bool center, bool far )
-{
-    if ( center ) return org + ( avail - len ) * 0.5f;
-    if ( far )    return org +   avail - len;
-    return org;                                                   /* near edge -- LEFT / TOP default */
-}
-
-/* Horizontal / vertical placement within a cell span, reading the matching gui_align_t bits. */
-f32 align_x( f32 x, f32 w, f32 len, u32 a ) { return align_span( x, w, len, a & GUI_ALIGN_HCENTER, a & GUI_ALIGN_RIGHT  ); }
-static f32 align_y( f32 y, f32 h, f32 len, u32 a ) { return align_span( y, h, len, a & GUI_ALIGN_VCENTER, a & GUI_ALIGN_BOTTOM ); }
-
-/* Place a natural nat_w x nat_h box inside `cell` per the alignment flags (gui_align_t).  The
-   single seam for positioning sub-cell content -- a button's label, a checkbox box, an aligned
-   text run, a separator line -- so every widget edges / centers content the same way and a
-   region's align setting flows through one place.  Returns the placed rect (w/h are nat_*).
-   Thin alias for the public gui_rect_align (gui.h) so widgets and callers share one rule. */
-
-gui_rect_t
-rect_align( gui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
-{
-    return gui_rect_align( cell, nat_w, nat_h, ( gui_align_t )align );
-}
+/* align_span / align_x / align_y / rect_align moved to rect/gui_rect_core.c -- the alignment
+   placement primitives are pure rect math, so they live in the rect unit (declared in
+   rect/gui_rect.h). */
 
 /* The symbol render primitives -- the glyph marks (arrow / collapse arrow / check / bullet / close /
    pointing arrow) and the broader shape palette (frames, rounded rects, polygons, arcs, curves,
    dashes, gradients, shadows, text effects, grips, spinners) -- live in gui_symbol.c,
    included later in the interleaved tier block (after interact/gui_item.c + gui_drag.c) so
    they may use the COL_* / ROUND_* /
-   WIN_BORDER macros and col_lerp defined here, and so every widget file below resolves them by
+   WIN_BORDER macros and col_lerp (rect kit) resolved here, and so every widget file below resolves them by
    name.  The public gui_render_* surface over them is centralized there too. */
 
 /*==============================================================================================

@@ -14,7 +14,7 @@
 
 ==============================================================================================*/
 
-#include "runtime_service/gui/gui_rect.h"
+#include "runtime_service/gui/rect/gui_rect.h"
 
 // clang-format off
 

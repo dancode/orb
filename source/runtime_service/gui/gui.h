@@ -41,7 +41,7 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "runtime_service/gui/gui_rect.h"      /* GUI_RECT leaf kit: geometry types + carve math */
+#include "runtime_service/gui/rect/gui_rect.h"      /* GUI_RECT leaf kit: geometry types + carve math */
 #include "runtime_service/gui/gui_element.h"   /* GUI_ELEMENT types: the slim el style (S1)      */
 
 // clang-format off

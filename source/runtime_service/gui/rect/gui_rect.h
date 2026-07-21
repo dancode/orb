@@ -2,13 +2,15 @@
 #define GUI_RECT_H
 /*==============================================================================================
 
-    runtime_service/gui/gui_rect.h -- GUI_RECT: the leaf rect kit.
+    runtime_service/gui/rect/gui_rect.h -- GUI_RECT: the leaf rect kit.
 
     Pure stateless carve math over the geometry types -- no pen, no region state, no draw,
     no gui context.  Depends on nothing but base types, so it is usable anywhere, even
     outside gui.  Layout of any kind is a rect PRODUCER and a widget is a rect CONSUMER;
     these are the verbs both sides share.  The vtable half of this library (content_rect,
-    split, carve, anchor) lives in the GUI_RECT section of gui_api.h.
+    split, carve, anchor) lives in the GUI_RECT section of gui_api.h.  The compiled half
+    (color blend + alignment placement, rect/gui_rect_core.c) is declared at the bottom;
+    the root unit gui_rect.c is the whole library's translation unit.
 
 ==============================================================================================*/
 
@@ -170,6 +172,52 @@ gui_anchor_box( gui_rect_t area, f32 w, f32 h, gui_align_t align, gui_pad_t m )
 {
     return gui_rect_align( gui_rect_inset( area, m ), w, h, align );
 }
+
+/*==============================================================================================
+    Shared stateless helpers -- small pure scalar/geometry helpers used across every unit
+    (the render backend needs rect_intersect for clip nesting).  static inline so each TU
+    gets its own copy with no linkage; they touch nothing but their arguments.
+==============================================================================================*/
+
+/* Clamp t to [0,1] -- the saturate used by slider + scrollbar drag mapping. */
+static inline f32
+saturate( f32 t ) { return t < 0.0f ? 0.0f : ( t > 1.0f ? 1.0f : t ); }
+
+/* Clamp v to [lo,hi]. */
+static inline f32
+clampf( f32 v, f32 lo, f32 hi ) { return v < lo ? lo : ( v > hi ? hi : v ); }
+
+/* Overlap of two rects (zero-size when they do not overlap).  Nested regions intersect their
+   clip with the parent so a child never scissors or hit-tests past it. */
+static inline gui_rect_t
+rect_intersect( gui_rect_t a, gui_rect_t b )
+{
+    f32 x0 = a.x > b.x ? a.x : b.x;
+    f32 y0 = a.y > b.y ? a.y : b.y;
+    f32 x1 = ( a.x + a.w < b.x + b.w ) ? a.x + a.w : b.x + b.w;
+    f32 y1 = ( a.y + a.h < b.y + b.h ) ? a.y + a.h : b.y + b.h;
+    f32 w  = x1 - x0 > 0.0f ? x1 - x0 : 0.0f;
+    f32 h  = y1 - y0 > 0.0f ? y1 - y0 : 0.0f;
+    return ( gui_rect_t ){ x0, y0, w, h };
+}
+
+/*==============================================================================================
+    Compiled half (rect/gui_rect_core.c) -- the non-inline primitives every layer above
+    consumes.  Still pure: no ambient state, no draw, no gui context.
+==============================================================================================*/
+
+/* Linear blend between two ABGR colors at t in [0,1] (0 = ca, 1 = cb). */
+u32 col_lerp( u32 ca, u32 cb, f32 t );
+
+/* Horizontal / vertical placement of an extent `len` within a cell span, reading the matching
+   gui_align_t bits -- the scalar halves of gui_rect_align for callers that own one axis. */
+f32 align_x( f32 x, f32 w, f32 len, u32 a );
+f32 align_y( f32 y, f32 h, f32 len, u32 a );
+
+/* Place a natural nat_w x nat_h box inside `cell` per the alignment flags (gui_align_t).  The
+   single seam for positioning sub-cell content -- thin compiled alias for gui_rect_align so
+   widgets and callers share one rule. */
+gui_rect_t rect_align( gui_rect_t cell, f32 nat_w, f32 nat_h, u32 align );
 
 // clang-format on
 /*============================================================================================*/
