@@ -37,36 +37,25 @@ gui_ui_memory( void )
               + sizeof( s_slot ) + sizeof( s_col_stack ) + sizeof( s_var_stack )
               + sizeof( s_next ) + sizeof( s_item ) );
 
-    /* compose/ -- layout state, split, sublayout scratch. */
-    b += (u32)( sizeof( s_layout_state_stack ) + sizeof( s_split_stack )
-              + sizeof( s_sublayout_sink ) );
+    /* compose/ -- the flow unit accounts for its own statics (compose/gui_flow.c seam). */
+    b += gui_flow_unit_mem_bytes();
 
     /* interact/ -- drag payload service + text-selection controller. */
     b += (u32)( sizeof( s_drag ) + sizeof( s_select ) );
 
-    /* widgets/ -- the single-line and multiline undo buffers (the frontend's largest statics),
-       numeric edit scratch, tab-bar stack. */
-    b += (u32)( sizeof( s_undo ) + sizeof( s_medit_undo )
-              + sizeof( s_num_edit_buf ) + sizeof( s_tabbars ) );
-
-    /* table/ -- the ambient table record. */
-    b += (u32)( sizeof( s_tab ) + sizeof( s_tab_scroll_dummy ) );
-
-    /* dock/ + popup/ -- gesture latches, menu-bar scratch, tooltip save slot. */
-    b += (u32)( sizeof( s_dock_drag ) + sizeof( s_dock_tab_drag ) + sizeof( s_dock_float_req ) );
-    b += (u32)( sizeof( s_menubar_sink ) + sizeof( s_menubar_saved_clip )
-              + sizeof( s_tooltip_save ) );
+    /* widgets/ + table/ + dock/ + popup/ -- the chrome unit accounts for its own statics
+       (gui_chrome.c seam). */
+    b += gui_chrome_unit_mem_bytes();
 
     /* frame/ + root -- lifecycle stacks, boot/present state, forwarded caps. */
     b += (u32)( sizeof( s_ctx_save_stack ) + sizeof( s_font_stack )
               + sizeof( s_boot ) + sizeof( s_present ) + sizeof( s_fwd_caps ) );
 
-    /* debug/ -- the perf/state HUD accumulators (always compiled; runtime-gated) and the
-       dashboard's palette when the feature is in. */
+    /* debug/ -- the perf/state HUD accumulators (always compiled; runtime-gated) live in THIS
+       unit; the dashboard / stepper statics moved to the debug unit (debug/gui_debug.c), which
+       reports its own fixed footprint through the seam. */
     b += (u32)sizeof( s_perf );
-#ifdef GUI_PIPELINE_DASHBOARD
-    b += (u32)sizeof( s_dash_palette );
-#endif
+    b += gui_debug_unit_mem_bytes();
 
     return b;
 }

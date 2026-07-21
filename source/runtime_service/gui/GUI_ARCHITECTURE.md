@@ -5,14 +5,15 @@ Dense reference for working on the gui service (this directory) and its sandbox
 
 ## Big picture
 
-Static lib `gui`, three translation units:
+Static lib `gui`, six translation units (the per-library TU split, GUI_STACK_PLAN inc 10 --
+cross-unit reach goes through the ambient-record externs + service seams in `gui_internal.h`,
+so each library boundary is compiler-enforced):
 
-- `gui.c` (UI/core unit): context, id/state pool, input snapshot, layout engine, widgets,
-  window/dock/popup/nav/table, frame lifecycle, mod vtable. Unity-includes its constituents;
-  directories name ROLES and the include list in gui.c is THE dependency order (core/ ->
-  surface/ -> compose/ + interact/ + present/ (siblings) -> widgets/ -> table/ -> window/ ->
-  dock/ -> popup/ -> nav/ -> user/ -> debug/ -> frame/, the conductor). Include order matters;
-  later files may reference statics from earlier ones.
+- `gui.c` (core + frame unit): context, id/state pool, input snapshot, the interact/ services,
+  present/ paint primitives, surface service, user/ vocabulary, frame lifecycle, mod vtable.
+  Unity-includes its constituents; directories name ROLES and the include list in gui.c is THE
+  dependency order (core/ -> surface/ -> interact/ + present/ (siblings) -> user/ -> frame/,
+  the conductor). Include order matters; later files may reference statics from earlier ones.
   `surface/gui_surface.c` is the surface service: window records as placed, stacked,
   occluding rectangles before any layout or chrome -- the record pool (`window_get` /
   `window_find`), the next-window placement channel, the z policy (the tier authors ALL z: the
@@ -30,6 +31,17 @@ Static lib `gui`, three translation units:
   installed `gui_el_style_t` (see gui_api.h GUI_ELEMENT / docs/GUI_STACK_PLAN.md). Reaches
   the rest of gui ONLY through the public `gui_*` surface plus the `style_active()` seam
   (gui_internal.h) -- the library boundary is compiler-enforced.
+- `compose/gui_flow.c` (flow unit): composition -- spacing metrics in, rects out. Track
+  resolver + cell emitters, scroll regions, children, sub-layouts, splits, the root region,
+  the public layout verbs + sz_ sizing. Two upward seams only: `scrollbar_widget` (the
+  gutter's one widget) and the `gui_anim_*` ease.
+- `gui_chrome.c` (chrome unit): widgets/ + table/ + window/ + dock/ + popup/ + nav/ -- the
+  stock set and the host structures, composing the core services + flow's emit surface.
+  Its core-facing definitions (the frame lifecycle's window/popup/nav/dock steps) are seams
+  the other direction.
+- `debug/gui_debug.c` (debug unit): the pipeline dashboard + command stepper -- severable
+  tooling over the backend capture snapshots (`gui_frame_overlay.c` stays with the frame
+  group: the lifecycle calls its timing helpers).
 
 ## The composer / behavior / presentation split
 

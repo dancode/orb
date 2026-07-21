@@ -94,7 +94,7 @@ scroll_clamp( f32* scroll, f32 content, f32 view )
     bars are drawn at pop, once this frame's content is measured.
 ==============================================================================================*/
 
-static void
+void
 layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win_flags_t flags,
                     gui_scroll_link_t* scroll, bool own_clip )
 {
@@ -229,7 +229,7 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     offset), which is imperceptible for scrolling.  Finally advance the parent pen past `outer`.
 ==============================================================================================*/
 
-static void
+void
 layout_pop_region( void )
 {
     layout_frame_t* f = lf();

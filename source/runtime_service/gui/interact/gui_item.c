@@ -259,7 +259,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kin
    resolver can prefix-match it.  A no-op if the item did not register this frame (wrong nav
    window, nav_skip) or GUI_ITEM_NO_TYPEAHEAD opted it out -- its label stays "" (nav_item_register
    already cleared it), which the resolver skips. */
-static void
+void
 nav_item_stamp_label( gui_id_t id, const char* label )
 {
     if ( s_scope.flags & GUI_ITEM_NO_TYPEAHEAD ) return;
@@ -332,7 +332,7 @@ focus_allowed( gui_id_t win )
    input keeps its caret after every command instead of going dead until the next click.  A focus
    MOVE (clicking / tabbing to another field) never comes through here; it overwrites focused_id
    directly in item_state, so navigation within the mode still works. */
-static void
+void
 item_focus_release( void )
 {
     if ( gui_modal_scope_live() && s_interaction.focused_win == g_ctx->modal.win_id )
@@ -344,7 +344,7 @@ item_focus_release( void )
    hit rect and the desired interaction kind; the returned flags are all a widget
    needs for drawing and value updates. */
 
-static gui_item_state_t
+gui_item_state_t
 item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
 {
     gui_item_state_t st = { 0 };
@@ -502,7 +502,7 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
    arbitration stays here, the domain is policy.  The grab claims the left button, released
    globally when it lifts.  Returns hot; *active reports this id's in-flight grab (true from
    the press frame on). */
-static bool
+bool
 item_grab( gui_id_t id, gui_rect_t r, bool gate, bool* active )
 {
     *active  = interact_held( id );
@@ -574,14 +574,14 @@ gui_item_sub_end( gui_item_sub_t s )
 ==============================================================================================*/
 
 /* Nothing holds the pointer capture: no widget, drag, or resize is in flight. */
-static bool
+bool
 interact_idle( void )
 {
     return s_interaction.active_id == GUI_ID_NONE;
 }
 
 /* `id` holds the pointer capture (its press-drag gesture is in flight). */
-static bool
+bool
 interact_held( gui_id_t id )
 {
     return s_interaction.active_id == id;
@@ -590,7 +590,7 @@ interact_held( gui_id_t id )
 /* The cursor is over window `win_id`'s bare surface: it is the front-most window under the
    cursor AND no widget sits under the cursor -- the gate for chrome gestures (title-bar drag,
    double-click collapse, context-menu press) that must yield to any widget above them. */
-static bool
+bool
 interact_hover_bare( gui_id_t win_id )
 {
     return s_interaction.hover_win == win_id && s_interaction.hover_id == GUI_ID_NONE;
@@ -601,7 +601,7 @@ interact_hover_bare( gui_id_t win_id )
    hover_win freezes everything behind the owner with no per-widget code -- the window-scale
    analogue of active_id drag-modality.  The verb behind the popup modal fence
    (popup_apply_modal); exists so this tier stays the only writer of s_interaction. */
-static void
+void
 interact_hover_fence( gui_id_t owner )
 {
     s_interaction.hover_win = owner;

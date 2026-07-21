@@ -1,33 +1,35 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui.c -- Unity build entry for the gui UI / core unit.
+    runtime_service/gui/gui.c -- Unity build entry for the gui CORE + FRAME unit.
 
-    gui is three translation units linked into one static lib (see gui_backend.h):
+    gui is SIX translation units linked into one static lib (the per-library TU split,
+    docs/GUI_STACK_PLAN.md inc 10).  Cross-unit reach goes through the ambient-record externs
+    and service seams in gui_internal.h, so every library boundary is compiler-enforced:
 
-      - this unit (gui.c): context, layout, widgets, chrome, popups, nav, input, frame
-        lifecycle, the module vtable.  Owns s_build / s_scope / s_io / s_interaction / g_ctx
-        and the stacks.
+      - this unit (gui.c): the interaction server + the conductor -- context, ids, keyed
+        state, io snapshot, style machinery, surface service, the interact/ gesture services,
+        present/ paint primitives, the user/ vocabulary, frame lifecycle, the module vtable.
+        Owns s_build / s_scope / s_io / s_interaction / g_ctx and the stacks.
 
       - the render backend (gui_backend.c): fonts, draw list, tessellation, GPU flush, debug
         overlay.  Owns s_draw / s_tess / s_font / s_render.  Called through gui_backend.h.
 
-      - the element unit (element/gui_element.c): the el_* rect-consuming widget cores.
-        Reaches the rest of gui ONLY through the public gui_* surface + the style_active()
-        seam (gui_internal.h) -- its library boundary is compiler-enforced.
+      - the element unit (element/gui_element.c): the el_* rect-consuming widget cores;
+        public surface + the style_active() seam only.
 
-    The include list below is additionally grouped by LIBRARY (the GUI_* sections of
-    gui_api.h, per docs/GUI_STACK_PLAN.md).  File order is unchanged -- it remains the
-    static-visibility dependency order -- the group banners map each role dir onto its
-    library and mark the cross-cuts a further physical split would have to untangle:
-    present/ paint helpers read resolved style (core-coupled), nav/ reads the popup stack
-    (chrome-entangled), user/gui_stacks.c spans core brackets + chrome style stacks.
-    
-    Include order matters: each file can reference statics from files included above it.  The
-    include list below is THE dependency order, the one the compiler enforces -- directories
-    name ROLES, not rungs.  A role only depends on roles included above it, and a role dir is
-    also where a future `#ifdef GUI_ENABLE_<role>` would wrap an #include line to compile a
-    feature out entirely.  Order: core -> surface -> compose / interact / present
-    (siblings) -> widgets -> table -> window -> dock -> popup -> nav -> user -> debug -> frame.
+      - the flow unit (compose/gui_flow.c): composition -- spacing metrics in, rects out.
+        Upward seams: scrollbar_widget + the gui_anim_* ease, nothing else.
+
+      - the chrome unit (gui_chrome.c): widgets/ + table/ + window/ + dock/ + popup/ + nav/
+        over the core services and flow's emit surface; its frame-called steps (raise-on-
+        press, modal fence, nav turnover, dock upkeep) are seams back the other way.
+
+      - the debug unit (debug/gui_debug.c): pipeline dashboard + command stepper; severable.
+
+    Include order in this unit matters: each file can reference statics from files included
+    above it.  Directories name ROLES, not rungs; a role only depends on roles included above
+    it.  Order here: core -> surface -> present / interact (siblings) -> flow's seam gap ->
+    anim + feat kit -> user -> frame.
 
     backend/     -- beside the stack, not a rung in it: the render sink (the second TU,
                     gui_backend.c), reached only through gui_backend.h at flush.
@@ -45,9 +47,8 @@
                     services.  Storage + frame turnover stay with the context
                     (core/gui_ctx.c), the house pattern; viewport (OS surface)
                     lifecycle stays with the conductor (app()/rhi() operations).
-    compose/     -- composition: the only code that turns style spacing metrics
-                    (line_size/gap/pad/quantum/scales) into rects.  Track resolver, regions,
-                    children, the public layout verbs + sz_ sizing family.
+    compose/     -- composition (THE FLOW UNIT, compose/gui_flow.c): the only code that turns
+                    style spacing metrics into rects.  Not in this TU.
     interact/    -- behavior: widget-agnostic interaction services -- the standard item
                     protocol (item_state), bare chrome grab (item_grab), drag threshold +
                     payload, move-drag + deferred-press (move_grab/move_track, press_defer_*),
@@ -68,20 +69,9 @@
                     rect + state + skin; never asks behavior, state is a parameter.
                     compose/, interact/, present/ are SIBLINGS -- combined only by the
                     tiers above.
-    widgets/     -- the stock widget set: prefab emit clients that compose the three sibling
-                    roles in one call.  A CLIENT of the tiers below, not a privileged layer.
-    window/      -- host structure: persisted window record + window-as-widget chrome.
-                    First real optional boundary -- a canvas/HUD-only embedding can skip it.
-    popup/       -- host structure, window-dependent overlay stack: popups/tooltips/combo/
-                    menus share the open-popup stack (g_ctx->popup.open).
-    nav/         -- keyboard nav: a peer service that arbitrates focus across windows, docks,
-                    menus, and popups alike -- not a client of any one of them.  Included right
-                    after popup/ (dependency order: it reads/drives the popup stack), even
-                    though topically it sits beside popup/dock/window, not inside them.
-    dock/        -- host structure, window-dependent, independent of popup/: dock-node
-                    tree + splitters.
-    table/       -- host structure, independent optional feature: needs only the sibling
-                    roles and below, no window dependency.
+    widgets/ table/ window/ dock/ popup/ nav/
+                 -- THE CHROME UNIT (gui_chrome.c): the stock widget set + the host
+                    structures.  Not in this TU; see gui_chrome.c for the role map.
     user/        -- the caller's vocabulary: pure public verbs + readers -- the bracketing
                     stacks (id / item flags / style / scale / disabled), behavior on caller
                     rects (gui_item), the canvas + raw-draw surface, and the query readers
@@ -89,8 +79,8 @@
                     consumed only from outside the lib (via the vtable) or by lower tiers
                     deliberately dogfooding the public surface through gui_host.h declarations.
                     Where user widgets are written: rect (canvas) + item() + draw_*, no skin.
-    debug/       -- dev tooling over the system, not part of it: the pipeline dashboard and
-                    the perf/state HUD overlays.  Severable -- a ship build could drop it.
+    debug/       -- dev tooling: dashboard + stepper are THE DEBUG UNIT (debug/gui_debug.c);
+                    gui_frame_overlay.c stays HERE (the lifecycle calls its timing helpers).
     frame/       -- the conductor: gui_frame.c lifecycle, gui_viewport.c, gui_boot.c.  Top of
                     the stack alongside user/ (the host's driver over the tiers, as user/ is
                     the caller's door into them), NOT a foundation: prepare/update/dispatch
@@ -101,9 +91,11 @@
       composition  (compose/)  consumes spacing metrics, produces rects;
       behavior     (interact/) consumes (id, rect), produces interaction state;
       presentation (present/)  consumes rect + state + skin and paints.
-    A widget (widgets/ and above) is the only combiner: it asks composition for a rect, hands it to
+    A widget (the chrome unit) is the only combiner: it asks composition for a rect, hands it to
     behavior, hands both results to presentation.  user/ is the public door onto the same
     roles, skin optional -- the game-UI path.
+
+    THIS UNIT's constituents (the carved units list their own):
 
     core/gui_theme.c       -- theme registry + base/active style state, theme API, layout_compute
     core/gui_style.c       -- style stacks machinery: style_col/style_var resolution, push/pop/next ops
@@ -116,14 +108,6 @@
     surface/gui_surface.c        -- surface service: window record pool, placement channel, z dispenser,
                                       hover-win contest, surface reassignment slot, open/closed state
 
-    compose/gui_layout_core.c    -- layout engine: track resolver + cell emitters (cell_next, grid/pack)
-    compose/gui_scroll.c  -- scrollable region engine: gui_region_t, gutters, push/pop_region
-    compose/gui_layout_child.c   -- child box lifecycle: child_begin/child_end
-    compose/gui_sublayout.c      -- transient sub-layout lifecycle: push/pop_layout, sublayout_open
-    compose/gui_split.c          -- side-by-side split panels: split_begin/next/end
-    compose/gui_region.c         -- root-level region: a fixed-rect layout primitive, no window chrome
-    compose/gui_layout.c         -- public layout API verbs + sz_ sizing: gui_layout, gui_stack, gui_cols
-
     interact/gui_item.c          -- the standard item protocol: item_state, item_grab, nav registration, repeat
     interact/gui_drag.c          -- drag service: threshold machine + typed payload transfer (source/target)
     interact/gui_move.c          -- move-drag protocol (move_grab/move_track) + deferred-press latch (press_defer_*)
@@ -134,46 +118,11 @@
                                       grammar, system adornments (nav/drop rings, resize highlight)
     present/gui_symbol.c         -- symbol + shape draw primitives: draw_arrow/check/frame/round_rect/arc/...
 
-    widgets/gui_text_edit.c      -- single-line text editing engine: input_field_edit (behind input_text)
-    widgets/gui_scrollbar.c      -- scrollbar widget: track + knob over a region-handed rect + scroll slot
-    widgets/gui_text.c           -- display widgets: text runs, bullets, label_text, progress_bar, spacers
-    widgets/gui_button.c         -- press widgets: button family, checkbox, radio_button, selectable
-    widgets/gui_tree.c           -- folding widgets: collapsing_header, tree_node/tree_pop
-    widgets/gui_input.c          -- single-line text fields: input_text / _ex / _with_hint
-    widgets/gui_text_edit_multi.c -- multiline text editor: input_text_multiline (child-region box, 2D caret)
-    widgets/gui_volatile.c       -- volatile widgets: per-frame retessellated text/plots (tess_gen slots)
-    widgets/gui_widget_slider.c  -- slider + drag widgets: slider_float/int, drag_int, slider_render
-    widgets/gui_widget_numeric.c -- numeric text inputs: input_int/float/double, input_float2/3/4
-    widgets/gui_tab_bar.c        -- in-window tab bar: tab_bar_begin/end, tab_item_begin/end
-
-    table/gui_table.c            -- table layout: multi-column rows, self-fitting cells, one table clip (needs only the sibling roles and below)
-
-    window/gui_window.c          -- window gesture policy state: drag mode, merge-back latch, raise-on-press
-    window/gui_window_native.c   -- native-borderless windows: identity test, caption buttons, OS-frame sync
-    window/gui_window_docked.c   -- the docked branch of window_begin: placed + chromed by its dock node
-    window/gui_window_free.c   -- the free-float window: geometry + gesture resolution (window_begin_ex)
-    window/gui_window_end.c      -- deferred window chrome: titlebar, buttons, border, resize grip, move grab
-
-    dock/gui_dock_core.c         -- docking: node pool, per-frame layout, splitter interaction + chrome
-    dock/gui_dock_float.c        -- floating tab groups: windows tabbed onto one free frame, no splits
-    dock/gui_dock_drag.c         -- docking: mouse drag-to-dock / undock-by-tab-drag + tab-strip chrome
-    dock/gui_dock.c              -- docking: public build API (dockspace_over_viewport, dock_split, ...)
-    dock/gui_dock_serialize.c    -- docking: layout save/load (text blob)
-    dock/gui_dock_route.c        -- the window <-> dock route seam: the five verbs window/ may call
-
-    popup/gui_popup.c            -- popups / context menus / tooltips: overlay windows on a reserved z-band
-    popup/gui_combo.c     -- combo box + list box: a popup dropdown / a scrolling child of selectables
-    popup/gui_menu.c      -- menu bar + menu items: built directly on the popup internals
-    popup/gui_toolbar.c   -- icon toolbar strip: bar(), caller-scaled; dropdown built on the popup internals
-
-    nav/gui_nav.c                -- keyboard nav cursor + menu-bar mode (reads/drives the popup stack)
-
     user/gui_stacks.c            -- bracketing vocabulary: push/pop id, item flags, style color/var, scale, disabled
     user/gui_behavior.c          -- public behavior on caller rects: gui_item, invisible_button
     user/gui_canvas.c            -- custom-draw surface: canvas, draw_rect/text, text measure, icons
     user/gui_query.c             -- public readers: want_capture_*, is_item_*, is_key_*, is_mouse_*, get_mouse_pos
 
-    debug/gui_dashboard.c        -- pipeline dashboard: debug-band window over the backend capture snapshot
     debug/gui_frame_overlay.c    -- built-in perf / state HUD overlays + the frame-timing helpers they read
 
     frame/gui_frame.c            -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, font, clip
@@ -233,7 +182,7 @@ MOD_USE_APP;
     init().
 ==============================================================================================*/
 
-static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav = true };
+gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav = true };
 
 /* The theme registry, base/active style state (s_style_base, s_style, s_font_size), the theme
    API, and layout_compute now live in core/gui_theme.c -- included first among core/ below, so
@@ -291,14 +240,10 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 
 /*----------------------------------  LIBRARY: GUI_FLOW  ----------------------------------*/
 
-// Composition (spacing metrics in, rects out)
-#include "runtime_service/gui/compose/gui_layout_core.c"
-#include "runtime_service/gui/compose/gui_scroll.c"
-#include "runtime_service/gui/compose/gui_layout_child.c"
-#include "runtime_service/gui/compose/gui_sublayout.c"
-#include "runtime_service/gui/compose/gui_split.c"
-#include "runtime_service/gui/compose/gui_region.c"
-#include "runtime_service/gui/compose/gui_layout.c"
+// GUI_FLOW is its OWN translation unit (compose/gui_flow.c, the fifth): composition --
+// spacing metrics in, rects out.  It reaches core through the ambient-record externs +
+// service seams in gui_internal.h; its two upward calls (scrollbar_widget, gui_anim_f32)
+// are seams there too.  This unit calls INTO it through the same seam declarations.
 
 /*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
 // the animation service (placed here in static-visibility order).
@@ -307,49 +252,11 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/interact/gui_feature.c"
 
 /*----------------------------------  LIBRARY: GUI_CHROME  ----------------------------------*/
-// widgets/ + table/ + window/ + dock/ + popup/ + nav/.  NOTE: nav/ is core-classified
-// (a peer focus service) but reads the popup stack, so it lives inside the chrome group.
-// The stock widget set (a client of the tiers above).  Internal
-// calls to the user/ vocabulary (gui_canvas tooltips, combo's push_id) resolve through the public
-// declarations in gui_host.h -- deliberate dogfooding of the caller surface, not an order cycle.
-#include "runtime_service/gui/widgets/gui_text_edit.c"
-#include "runtime_service/gui/widgets/gui_scrollbar.c"
-#include "runtime_service/gui/widgets/gui_text.c"
-#include "runtime_service/gui/widgets/gui_button.c"
-#include "runtime_service/gui/widgets/gui_tree.c"
-#include "runtime_service/gui/widgets/gui_input.c"
-#include "runtime_service/gui/widgets/gui_text_edit_multi.c"
-#include "runtime_service/gui/widgets/gui_volatile.c"
-#include "runtime_service/gui/widgets/gui_widget_slider.c"
-#include "runtime_service/gui/widgets/gui_widget_numeric.c"
-#include "runtime_service/gui/widgets/gui_tab_bar.c"
-
-// Table -- independent optional feature (needs only the sibling roles and below, no window dependency)
-#include "runtime_service/gui/table/gui_table.c"
-
-// Window subsystem (first real optional boundary)
-#include "runtime_service/gui/window/gui_window.c"
-#include "runtime_service/gui/window/gui_window_native.c"
-#include "runtime_service/gui/window/gui_window_docked.c"
-#include "runtime_service/gui/window/gui_window_free.c"
-#include "runtime_service/gui/window/gui_window_end.c"
-
-// Dock -- window-dependent, independent of popup/
-#include "runtime_service/gui/dock/gui_dock_core.c"
-#include "runtime_service/gui/dock/gui_dock_float.c"
-#include "runtime_service/gui/dock/gui_dock_drag.c"
-#include "runtime_service/gui/dock/gui_dock.c"
-#include "runtime_service/gui/dock/gui_dock_serialize.c"
-#include "runtime_service/gui/dock/gui_dock_route.c"
-
-// Popup -- window-dependent overlay stack (popup/combo/menu share g_ctx->popup.open)
-#include "runtime_service/gui/popup/gui_popup.c"
-// Nav -- keyboard nav: a peer service over windows/docks/menus/popups alike, included here
-// (not with popup/) only because it reads/drives the popup stack gui_popup.c just opened.
-#include "runtime_service/gui/nav/gui_nav.c"
-#include "runtime_service/gui/popup/gui_combo.c"
-#include "runtime_service/gui/popup/gui_menu.c"
-#include "runtime_service/gui/popup/gui_toolbar.c"
+// GUI_CHROME is its OWN translation unit (gui_chrome.c, the sixth): widgets/ + table/ +
+// window/ + dock/ + popup/ + nav/ (nav is core-classified but reads the popup stack, so it
+// lives with chrome).  It composes the core services + the flow emit surface through the
+// gui_internal.h seams; this unit's upward calls into it (the frame lifecycle's window /
+// popup / dock / nav steps) resolve through the same seam declarations.
 
 /*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
 // user/ -- the public door.  NOTE the cross-cut: gui_stacks.c mixes core brackets
@@ -363,20 +270,18 @@ static gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keybo
 #include "runtime_service/gui/user/gui_canvas.c"
 #include "runtime_service/gui/user/gui_query.c"
 
-// element/ -- GUI_ELEMENT is its OWN translation unit (element/gui_element.c, the third unit
-// beside this one and gui_backend.c): the compiler enforces that the element tier reaches gui
-// only through the public gui_* surface + the style_active() seam (gui_internal.h).
+// element/ -- GUI_ELEMENT is its OWN translation unit (element/gui_element.c): the compiler
+// enforces that the element tier reaches gui only through the public gui_* surface + the
+// style_active() seam (gui_internal.h).
 // gui_style_apply (frame/, below) calls across to el_style_derive at every theme/font landing.
 
 /*----------------------------------  LIBRARY: GUI_DEBUG  ----------------------------------*/
 
-// Pipeline dashboard -- an ordinary debug-band window + panel painters over the standard draw
-// API; the snapshot it reads is captured in the backend unit (backend/gui_dash_capture.c).
-#include "runtime_service/gui/debug/gui_dashboard.c"
-
-// Command stepper -- an ordinary debug-band window controlling the frozen-frame replay; the
-// capture + restore live in the backend unit (backend/gui_step_capture.c).
-#include "runtime_service/gui/debug/gui_step_window.c"
+// GUI_DEBUG is its OWN translation unit (debug/gui_debug.c, the fourth beside this one,
+// gui_backend.c, and element/gui_element.c): the pipeline dashboard + command stepper reach
+// gui only through the public surface, the backend capture API, and the gui_internal.h seams.
+// gui_frame_overlay.c stays HERE (frame group below): it carries the frame-timing helpers
+// the lifecycle calls -- conductor code, not severable tooling.
 
 /*----------------------------------  LIBRARY: GUI_FRAME  ----------------------------------*/
 

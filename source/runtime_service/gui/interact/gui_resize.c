@@ -24,18 +24,17 @@
 
 /* Edge-resize grab: while a resize is in flight the owner holds active_id == (id ^
    GUI_RESIZE_SALT), distinct from a window drag (the bare id), scrollbar, and collapse arrow. */
-#define GUI_RESIZE_SALT     0x5152E001u
+/* GUI_RESIZE_SALT moved to gui_internal.h at the TU split (inc 10). */
 
 /* In-flight edge resize.  s_resize_edges names which edges follow the cursor (GUI_RESIZE_* bits).
    s_resize_off keeps the grabbed edge under the cursor without a jump; s_resize_fix pins the
    opposite edge so a left/top drag grows from the far side. */
-static u8   s_resize_edges;
-static f32  s_resize_off_x, s_resize_off_y;
-static f32  s_resize_fix_x, s_resize_fix_y;
+u8   s_resize_edges;
+f32  s_resize_off_x, s_resize_off_y;
+f32  s_resize_fix_x, s_resize_fix_y;
 
 /* Grab band straddling the border: a few pixels inside and a few outside. */
-#define RESIZE_BAND_INNER  ( 4.0f )                  /* reach inside the border  */
-#define RESIZE_BAND_OUTER  ( WIN_BORDER + 6.0f )     /* and just outside it      */
+/* RESIZE_BAND_INNER / RESIZE_BAND_OUTER moved to gui_internal.h at the TU split (inc 10). */
 
 /* Which edges of rect r the cursor is within the grab band of (0 = none).  The band spans
    [edge - OUTER, edge + INNER] on each side, so the cursor catches an edge from just outside
@@ -86,7 +85,7 @@ resize_cursor_for_edges( u8 e )
    Stores the cursor offset that keeps each grabbed edge under the cursor, and the absolute position
    of the far edges -- pinned when a left / top edge moves (a right / bottom-only drag never reads
    them).  Record-agnostic: a window, a child, or a splitter grabs identically from its rect. */
-static void
+void
 resize_grab( gui_id_t id, gui_rect_t box, u8 edges )
 {
     s_interaction.active_id = id_combine( id, GUI_RESIZE_SALT );
@@ -109,7 +108,7 @@ resize_grab( gui_id_t id, gui_rect_t box, u8 edges )
    caller layers its own size policy on the result, so the raw geometry is shared and only the
    bounding differs.  `edges` is a parameter (not read from s_resize_edges) so a caller can apply a
    subset -- a child passes only its R / B. */
-static void
+void
 resize_apply_edges( gui_rect_t* r, u8 edges )
 {
     if ( edges & GUI_RESIZE_R ) r->w = ( s_io.mouse_x - s_resize_off_x ) - r->x;
@@ -129,7 +128,7 @@ resize_apply_edges( gui_rect_t* r, u8 edges )
    exposes; `pin_v` drops the vertical pair (a collapsed window).  Returns the edges live this
    frame -- dragged when *dragging, else hot -- and 0 while another widget owns the interaction
    or the owning window is not hovered. */
-static u8
+u8
 resize_item( gui_id_t id, gui_id_t owner_win, gui_rect_t box, u8 allow, bool pin_v, bool* dragging )
 {
     gui_id_t resize_id = id_combine( id, GUI_RESIZE_SALT );

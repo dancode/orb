@@ -176,15 +176,15 @@ style_next( u32 slot, u32 val )
     Typed faces -- the color / var range mapping, in one place each.
 ==============================================================================================*/
 
-static u32 style_col( gui_col_t slot )       { return style_read( (u32)slot ); }
-static f32 style_var( gui_style_var_t slot ) { return style_bits_f32( style_read( STYLE_VAR_BASE + (u32)slot ) ); }
+u32 style_col( gui_col_t slot )       { return style_read( (u32)slot ); }
+f32 style_var( gui_style_var_t slot ) { return style_bits_f32( style_read( STYLE_VAR_BASE + (u32)slot ) ); }
 
 static void style_push_color( gui_col_t slot, u32 abgr ) 
 {
     if ( slot < GUI_COL_COUNT ) 
          style_push( &s_col_stack, (u32)slot, abgr );
 }
-static void style_push_var( gui_style_var_t slot, f32 value )
+void style_push_var( gui_style_var_t slot, f32 value )
 {
     if ( slot < GUI_VAR_COUNT ) 
          style_push( &s_var_stack, STYLE_VAR_BASE + (u32)slot, style_f32_bits( value ) );
@@ -193,7 +193,7 @@ static void style_pop_color( u32 count )
 { 
     style_pop( &s_col_stack, count ); 
 }
-static void style_pop_var  ( u32 count ) 
+void style_pop_var  ( u32 count ) 
 { 
     style_pop( &s_var_stack, count );
 }
@@ -268,30 +268,9 @@ style_new_frame( void )
 
 ==============================================================================================*/
 
-/* 1. METRICS -- can move a rect */
-#define WIDGET_H      style_var( GUI_VAR_LINE_SIZE     )
-#define WIDGET_GAP    style_var( GUI_VAR_WIDGET_GAP    )
-#define WIDGET_PAD    style_var( GUI_VAR_WIDGET_PAD    )
-#define WIDGET_MIN_W  style_var( GUI_VAR_MIN_CELL_W    )
-#define WIN_BORDER    style_var( GUI_VAR_WIN_BORDER    )
-#define WIN_TITLE_H   style_var( GUI_VAR_WIN_TITLE_H   )
-#define CHECKBOX_SZ   style_var( GUI_VAR_CHECKBOX_SZ   )
-#define SLIDER_KNOB_W style_var( GUI_VAR_SLIDER_KNOB_W )
-#define FIELD_LABEL_W style_var( GUI_VAR_FIELD_LABEL_W )
-
-/* 2. SKIN -- paint-only.  The roundings are corner-radius categories, fed to draw_set_rounding
-   (gui_backend) so a draw site can pick the right rounding before emitting.  The item seam
-   defaults to ROUND_WIDGET and the chrome seam to ROUND_WIN; grabs and squared-off marks
-   override locally. */
-
-#define ROUND_WIN       style_var( GUI_VAR_WIN_ROUNDING    )
-#define ROUND_WIDGET    style_var( GUI_VAR_WIDGET_ROUNDING )
-#define ROUND_GRAB      style_var( GUI_VAR_GRAB_ROUNDING   )
-
-/* SKIN: check-mark inset inside the checkbox / radio disc.  A raw theme field (no push_style
-   var slot), wrapped so no widget reads s_style directly. */
-#define CHECK_PAD       ( (f32)s_style.checkmark_pad )
-#define WIN_FOCUS_BORDER style_var( GUI_VAR_WIN_FOCUS_BORDER )
+/* The vocabulary macros over these reads (WIDGET_H / WIN_BORDER / ROUND_* / ...) moved to
+   gui_internal.h at the TU split (inc 10): the flow unit sizes cells with the same numbers the
+   widgets and skin read, so the definitions live with the cross-unit declarations. */
 
 /* style_el_col -- resolve one element-shaped color for stock chrome (GUI_STACK_PLAN inc 5).
    The role x state projects onto its theme slot through g_gui_el_slot_map (the element
@@ -311,36 +290,17 @@ style_el_col( u8 role, u8 state )
     return gui_el_style()->col[ role ][ state ];   /* S1: the installed element style */
 }
 
-/* SKIN: color palette (GUI_COLOR: byte order R,G,B,A in memory = ABGR u32).  Theme defaults
-   come from the active theme (k_themes in gui_theme.c, seeded into s_style.colors); see
-   gui_col_t for the slots.
+/* The COL_* color vocabulary (element-shaped reads through style_el_col + the chrome tokens
+   on style_col) moved to gui_internal.h at the TU split (inc 10): the chrome unit paints with
+   the same palette the core's paint helpers read. */
 
-   The ELEMENT-SHAPED subset resolves through style_el_col above: those reads speak the
-   roles x states vocabulary (gui_element.h) and source from the installed element style.
-   The rest are CHROME TOKENS -- window/input/nav/adornment colors the element vocabulary
-   has no business naming -- and stay on style_col. */
-
-#define COL_TEXT         style_el_col( GUI_EL_TEXT,   GUI_EL_IDLE   )
-#define COL_TEXT_DIM     style_el_col( GUI_EL_TEXT,   GUI_EL_DIM    )
-#define COL_WIDGET_BG    style_el_col( GUI_EL_BG,     GUI_EL_IDLE   )
-#define COL_WIDGET_HOT   style_el_col( GUI_EL_BG,     GUI_EL_HOT    )
-#define COL_WIDGET_ACT   style_el_col( GUI_EL_BG,     GUI_EL_ACTIVE )
-#define COL_CHILD_BG     style_el_col( GUI_EL_BG,     GUI_EL_DIM    )
-#define COL_BORDER       style_el_col( GUI_EL_BORDER, GUI_EL_IDLE   )
-#define COL_WIDGET_FG    style_el_col( GUI_EL_ACCENT, GUI_EL_IDLE   )
-#define COL_CHECK_MARK   style_el_col( GUI_EL_ACCENT, GUI_EL_ACTIVE )
-#define COL_SLIDER_TRACK style_el_col( GUI_EL_ACCENT, GUI_EL_DIM    )
-
-/* chrome tokens */
-#define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG     )
-#define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG      )
-#define COL_RESIZE_HOT   style_col( GUI_COL_RESIZE_HOT    )
-#define COL_INPUT_BG     style_col( GUI_COL_INPUT_BG      )
-#define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS   )
-#define COL_CURSOR       style_col( GUI_COL_CURSOR        )
-#define COL_NAV          style_col( GUI_COL_NAV_HIGHLIGHT )
-#define COL_NAV_CAPTURE  style_col( GUI_COL_NAV_CAPTURE   )
-#define COL_FOCUS_BORDER style_col( GUI_COL_FOCUS_BORDER  )
+/* True while both push_style stacks are empty -- the volatile-replay precondition check
+   (widgets/gui_volatile.c) reads it through this predicate so style_stack_t stays private. */
+bool
+style_stacks_empty( void )
+{
+    return s_col_stack.sp == 0 && s_var_stack.sp == 0;
+}
 
 // clang-format on
 /*============================================================================================*/

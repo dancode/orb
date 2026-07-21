@@ -354,7 +354,7 @@ select_copy( gui_id_t win, gui_rect_t body )
    capture lag): during a drag the highlight trails the cursor by one frame, which the
    mouse-move-dirty frames make imperceptible.  The live marquee's box fill draws here too
    (under content, so widgets read through it); its outline paints at window_end, on top. */
-static void
+void
 select_paint_under( void )
 {
     gui_id_t win = s_build.win.id;
@@ -461,7 +461,7 @@ select_paint_overlay( gui_id_t win, gui_rect_t body )
     active_id this function claims.
 ==============================================================================================*/
 
-static void
+void
 select_window_end( void )
 {
     gui_id_t   win    = s_build.win.id;

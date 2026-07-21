@@ -229,6 +229,11 @@ void gui_grid_cells( u32 ncols, u32 nrows );
 void gui_bar( void );
 void gui_strip( void );
 
+/* layout - side-by-side split panels (compose/gui_split.c, flow unit) */
+void gui_split_begin( const char* id_str, f32 right_w );
+void gui_split_next( void );
+void gui_split_end( void );
+
 void gui_pack_size( f32 unit );
 void gui_pack_nextline( void );
 void gui_pack_wrap( void );
@@ -323,10 +328,34 @@ void gui_new_line( f32 h );
 void gui_label_text( const char* label, const char* value );
 bool gui_button( const char* label );
 bool gui_small_button( const char* label );
+bool gui_button_fill( const char* label );
+f32  gui_button_width( const char* label );
 void gui_progress_bar( f32 fraction, const char* overlay );
 bool gui_arrow_button( const char* label, gui_dir_t dir );
 bool gui_checkbox( const char* label, bool* v );
 bool gui_radio_button( const char* label, i32* v, i32 value );
+
+/* widget - volatile (per-frame retessellated custom draws) */
+void gui_volatile_begin( void );
+void gui_volatile_cb( const char* label, gui_volatile_fn fn );
+void gui_volatile_end( void );
+
+/* tables (table/gui_table.c, chrome unit) */
+bool gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 height );
+void gui_table_end( void );
+bool gui_table_next_column( void );
+void gui_table_next_row( f32 min_h );
+gui_span_t gui_table_rows_clip( i32 count, f32 min_h );
+void gui_table_headers_row( void );
+void gui_table_setup_column( const char* label, gui_table_col_flags_t flags, f32 width );
+void gui_table_set_bg_color( gui_table_bg_target_t target, u32 abgr );
+bool gui_table_set_column_index( i32 col );
+i32  gui_table_get_column_count( void );
+i32  gui_table_get_column_index( void );
+i32  gui_table_get_row_index( void );
+bool gui_table_get_sort_specs( gui_table_sort_specs_t* out );
+bool gui_table_sort_order( i32* order, i32 count, gui_table_sort_value_fn val_fn,
+                           gui_table_sort_cmp_fn cmp_fn, void* user );
 
 /* widget - sliders */
 bool gui_slider_float( const char* label, f32* v, f32 lo, f32 hi );

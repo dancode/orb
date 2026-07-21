@@ -1092,6 +1092,391 @@ typedef struct gui_context_t
 } gui_context_t;
 
 /*==============================================================================================
+    Ambient records -- cross-UNIT state (the per-library TU split, GUI_STACK_PLAN inc 10)
+
+    The ambient singletons the whole UI stack reads.  They were file-scope statics while the
+    stack was one translation unit; the per-library split externs them here, one record at a
+    time, exactly as each carved unit needs them (never speculatively).  Ownership is
+    unchanged: gui_ctx.c defines and turns them over; interact/ stays the only WRITER of
+    s_interaction's arbitration fields; everything else reads.
+==============================================================================================*/
+
+/* Ambient interaction state -- the one live hover / active / focus, persisting across frames.
+   One pointer, one keyboard, one mouse, so none of it is per-viewport or per-context: a single
+   global shared by every context, into which listening contexts nominate hover / active during
+   their emit.  Tier: ambient singular (see ARCHITECTURE.md sec 1, state tiers).  Field story
+   lives with the definition site (core/gui_ctx.c). */
+typedef struct
+{
+    gui_id_t  hover_id;         // widget under the cursor this frame (rebuilt each frame)
+    gui_id_t  active_id;        // widget with the mouse button held (drag / hold)
+    gui_id_t  active_id_prev;   // active_id as of the end of the previous frame
+    u8        active_button;    // which button holds active_id (0=left); reset to 0 on release
+    gui_id_t  focused_id;       // widget that owns keyboard input
+    gui_id_t  focused_win;      // window that owns focused_id (exclusive-scope focus lock)
+    bool      focus_has_selection; // focused text field holds a live selection this frame
+
+    f32       repeat_t;         // auto-repeat: held time since last fire
+    bool      repeat_on;        // initial delay elapsed -> faster rate
+
+    gui_id_t  hover_win;        // the window the cursor is over (resolved last frame)
+    gui_id_t  next_hover_win;   // front-most window nominee gathered this frame
+    u32       next_hover_win_z;
+
+    app_cursor_t mouse_cursor;  // hardware-cursor nominee; last writer wins, flushed next frame
+
+    gui_id_t  focused_id_at_frame_start;   // focus-departure tracking for
+    bool      focused_id_edited;           //   is_item_deactivated_after_edit -- see the
+    gui_id_t  focus_ended_id;              //   state block in core/gui_ctx.c
+    bool      focus_ended_edited;
+
+} gui_interaction_t;
+
+/* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as
+   the widget tree is walked.  Nothing survives begin_frame; contexts build sequentially on one
+   thread, so it stays a single global builder.  Field story at the definition (core/gui_ctx.c). */
+typedef struct
+{
+    gui_win_ctx_t win;          // the window currently between window_begin / window_end
+
+    bool          wheel_used;   // a region consumed the wheel this frame (innermost wins)
+
+    u32           nav_region_seq;   // per-frame region dispenser (layout_seed_content)
+    u32           nav_line_seq;     // per-frame line dispenser (a line-open takes the next)
+
+    gui_item_flags_t item_flags;    // merged top-of-stack item flags
+    gui_item_flags_t next_set;      // bits the next-item override controls
+    gui_item_flags_t next_val;      // their values
+
+    bool          combo_open;          // a combo dropdown body is currently being emitted
+    bool          combo_item_clicked;  // a selectable in that body was clicked this frame
+
+} gui_build_t;
+
+extern gui_io_t          s_io;            /* core/gui_io.c  -- the frame's distilled input   */
+extern gui_interaction_t s_interaction;   /* core/gui_ctx.c -- hover / active / focus        */
+extern gui_context_t*    g_ctx;           /* core/gui_ctx.c -- the bound context             */
+extern gui_build_t       s_build;         /* core/gui_ctx.c -- frame-build scratch           */
+extern gui_scope_t       s_scope;         /* core/gui_ctx.c -- composition->behavior scope   */
+extern gui_style_t       s_style;         /* core/gui_theme.c -- the ACTIVE (scaled) style   */
+
+extern layout_frame_t    s_layout_stack[ GUI_LAYOUT_DEPTH ];  /* core/gui_ctx.c -- region stack */
+extern u32               s_layout_sp;     /* active frame count; top = s_layout_sp - 1       */
+extern u32               s_id_sp;         /* core/gui_ctx.c -- id-scope stack pointer        */
+
+/*==============================================================================================
+    Cross-unit service seams -- gui_core services the carved units compose over
+
+    The core tier's ambient services, non-static so the flow / chrome / debug units reach them
+    (the same functions the in-unit files call; conversion is linkage-only).  Grouped by owner.
+==============================================================================================*/
+
+/* identity (core/gui_id.c) -- the id namespace verbs. */
+gui_id_t id_combine( gui_id_t seed, u32 key );
+gui_id_t id_seed   ( void );
+void     id_push   ( gui_id_t id );
+
+/* io (core/gui_io.c) -- modifier read. */
+bool io_shift( void );
+
+/* keyed state pool (core/gui_state.c) + the typed sugar over it.  gui_state_get: zero-on-create
+   T* persisted by id; gui_state_peek: read-only, non-allocating, non-stamping probe (NULL when
+   absent).  sizeof(T) must be <= GUI_STATE_BIG_CAP. */
+void*       gui_state_get ( gui_id_t id, u32 size );
+const void* gui_state_peek( gui_id_t id, u32 size );
+#define GUI_STATE( T, id )      ( (T*)gui_state_get( ( id ), (u32)sizeof( T ) ) )
+#define GUI_STATE_PEEK( T, id ) ( (const T*)gui_state_peek( ( id ), (u32)sizeof( T ) ) )
+
+/* style resolution (core/gui_style.c) -- the stack-honoring reads every tier-2 role consumes,
+   and the vocabulary macros over them (moved here from gui_style.c at the TU split so the
+   composer sizes cells with the same numbers the widgets and skin read). */
+f32 style_var( gui_style_var_t slot );
+u32 style_col( gui_col_t slot );
+
+/* 1. METRICS -- can move a rect */
+#define WIDGET_H      style_var( GUI_VAR_LINE_SIZE     )
+#define WIDGET_GAP    style_var( GUI_VAR_WIDGET_GAP    )
+#define WIDGET_PAD    style_var( GUI_VAR_WIDGET_PAD    )
+#define WIDGET_MIN_W  style_var( GUI_VAR_MIN_CELL_W    )
+#define WIN_BORDER    style_var( GUI_VAR_WIN_BORDER    )
+#define WIN_TITLE_H   style_var( GUI_VAR_WIN_TITLE_H   )
+#define CHECKBOX_SZ   style_var( GUI_VAR_CHECKBOX_SZ   )
+#define SLIDER_KNOB_W style_var( GUI_VAR_SLIDER_KNOB_W )
+#define FIELD_LABEL_W style_var( GUI_VAR_FIELD_LABEL_W )
+
+/* 2. SKIN -- paint-only corner-radius categories + insets (see gui_style.c for the story). */
+#define ROUND_WIN        style_var( GUI_VAR_WIN_ROUNDING    )
+#define ROUND_WIDGET     style_var( GUI_VAR_WIDGET_ROUNDING )
+#define ROUND_GRAB       style_var( GUI_VAR_GRAB_ROUNDING   )
+#define CHECK_PAD        ( (f32)s_style.checkmark_pad )
+#define WIN_FOCUS_BORDER style_var( GUI_VAR_WIN_FOCUS_BORDER )
+
+/* The COL_* color vocabulary: the element-shaped subset speaks roles x states through
+   style_el_col (sourcing from the installed element style, stack overrides winning); the
+   rest are CHROME TOKENS on style_col.  Moved here from gui_style.c at the TU split. */
+#define COL_TEXT         style_el_col( GUI_EL_TEXT,   GUI_EL_IDLE   )
+#define COL_TEXT_DIM     style_el_col( GUI_EL_TEXT,   GUI_EL_DIM    )
+#define COL_WIDGET_BG    style_el_col( GUI_EL_BG,     GUI_EL_IDLE   )
+#define COL_WIDGET_HOT   style_el_col( GUI_EL_BG,     GUI_EL_HOT    )
+#define COL_WIDGET_ACT   style_el_col( GUI_EL_BG,     GUI_EL_ACTIVE )
+#define COL_CHILD_BG     style_el_col( GUI_EL_BG,     GUI_EL_DIM    )
+#define COL_BORDER       style_el_col( GUI_EL_BORDER, GUI_EL_IDLE   )
+#define COL_WIDGET_FG    style_el_col( GUI_EL_ACCENT, GUI_EL_IDLE   )
+#define COL_CHECK_MARK   style_el_col( GUI_EL_ACCENT, GUI_EL_ACTIVE )
+#define COL_SLIDER_TRACK style_el_col( GUI_EL_ACCENT, GUI_EL_DIM    )
+
+#define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG     )
+#define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG      )
+#define COL_RESIZE_HOT   style_col( GUI_COL_RESIZE_HOT    )
+#define COL_INPUT_BG     style_col( GUI_COL_INPUT_BG      )
+#define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS   )
+#define COL_CURSOR       style_col( GUI_COL_CURSOR        )
+#define COL_NAV          style_col( GUI_COL_NAV_HIGHLIGHT )
+#define COL_NAV_CAPTURE  style_col( GUI_COL_NAV_CAPTURE   )
+#define COL_FOCUS_BORDER style_col( GUI_COL_FOCUS_BORDER  )
+
+/* True while both push_style stacks are empty (the volatile-replay precondition). */
+bool style_stacks_empty( void );
+
+/* lattice snapping (core/gui_theme.c) -- the grid-quantum rounders composition and chrome
+   share (identity when the lattice is off or q <= 1). */
+f32 lat_floor    ( f32 v, u32 q );
+f32 lat_floor_min( f32 v, u32 q );
+f32 lat_ceil     ( f32 v, u32 q );
+
+/* surface service (surface/gui_surface.c) -- the pane open + the hover contest, and the z band
+   map every stacked entity's z lives in (see the band story at the definitions). */
+void surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport );
+void pane_tag( gui_id_t id, u32 z, u32 vp, u32 band );
+
+#define GUI_REGION_BG_Z  0x00000000u
+#define GUI_REGION_Z     0x40000000u
+#define GUI_Z_OVERLAY    0x80000000u
+#define GUI_REGION_FG_Z  0xF0000000u
+
+/* frame scratch accessors + item seams (core/gui_ctx.c). */
+bool             rect_hit( gui_rect_t r );         /* cursor (s_io) inside r                  */
+layout_frame_t*  lf( void );                       /* top layout frame (clamped, never NULL)  */
+gui_item_flags_t item_flags_resolve( void );       /* per-item flag/style/alpha latch         */
+void             item_flags_chrome_reset( void );  /* clear it at the chrome seams            */
+
+/* presentation helpers (present/gui_paint_core.c) the composer's region chrome paints with. */
+f32  align_x              ( f32 x, f32 w, f32 len, u32 a );
+void draw_child_bg        ( gui_rect_t r );
+void draw_child_border    ( gui_rect_t r );
+void draw_resize_highlight( gui_rect_t r, u8 edges );
+
+/* edge-resize service (interact/gui_resize.c) -- the record-agnostic mechanism the resizeable
+   child (flow) and the window / dock chrome ride.  The salt / band constants moved here from
+   gui_resize.c at the TU split (chrome interrogates the same gesture id and outer band). */
+#define GUI_RESIZE_SALT    0x5152E001u
+#define RESIZE_BAND_INNER  ( 4.0f )                  /* reach inside the border  */
+#define RESIZE_BAND_OUTER  ( WIN_BORDER + 6.0f )     /* and just outside it      */
+u8   resize_item( gui_id_t id, gui_id_t owner_win, gui_rect_t box, u8 allow, bool pin_v,
+                  bool* dragging );
+void resize_apply_edges( gui_rect_t* r, u8 edges );
+void resize_grab( gui_id_t id, gui_rect_t box, u8 edges );
+extern u8  s_resize_edges;                 /* in-flight edges (GUI_RESIZE_* bits)              */
+extern f32 s_resize_off_x, s_resize_off_y; /* grab offsets keeping the edge under the cursor   */
+extern f32 s_resize_fix_x, s_resize_fix_y; /* pinned far edges for a left / top drag           */
+
+/* move-drag + deferred-press service (interact/gui_move.c). */
+void move_grab( gui_id_t id, u8 button, f32 org_x, f32 org_y );
+bool move_track( gui_id_t id, f32 cur_x, f32 cur_y, f32* out_x, f32* out_y );
+void press_defer_arm( gui_id_t id );
+void press_defer_cancel( void );
+bool press_defer_crossed( gui_id_t id );
+
+/* chrome grab + modal fence (interact/gui_item.c) and the chrome drag source (gui_drag.c). */
+bool item_grab( gui_id_t id, gui_rect_t r, bool gate, bool* active );
+void interact_hover_fence( gui_id_t owner );
+bool drag_from_chrome( gui_id_t id, f32 press_x, f32 press_y, const char* type,
+                       const void* data, u32 size );
+
+/* window text selection (interact/gui_select.c) -- painted under the body, resolved at end. */
+void select_paint_under( void );
+void select_window_end( void );
+
+/* timed-tween animation service (interact/gui_anim.c).  gui_ease_fn moved here with the decl. */
+typedef f32 ( *gui_ease_fn )( f32 );
+f32  gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active );
+void gui_anim_timer_start( gui_id_t id, f32 duration );
+
+/* the feat_* kit's internals the stock recipe rides (interact/gui_feature.c): the 3-state pin
+   core, the collapse liveness peek, and the shared window-feel constants. */
+#define FEAT_ANIM_SECS  0.2f
+f32  feat_ease( f32 t );
+bool feat_pin( gui_id_t id, u32 state, gui_rect_t* r, gui_rect_t* restore, gui_rect_t target );
+bool feat_collapse_live( gui_id_t id );
+
+/* surface service extras (surface/gui_surface.c): the record pool door, the z dispenser, the
+   next-window channel, and the surface reassignment slot (chrome fills it; the viewport
+   reconcile in frame/ services it). */
+gui_window_t* window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h );
+void          window_apply_next( gui_window_t* win, bool appearing );
+u32           surface_z_raise( u32 z );
+u32           surface_z_overlay( u32 depth );
+
+typedef struct
+{
+    bool        has_pos, has_size;     /* a value is queued on this axis */
+    gui_cond_t  pos_cond, size_cond;   /* when to apply it               */
+    f32         pos_x, pos_y;
+    f32         size_w, size_h;
+
+    bool        has_viewport;          /* a viewport reassignment is queued for the next window */
+    u32         viewport;              /* its target surface index                              */
+
+} gui_next_win_t;
+
+typedef struct
+{
+    bool        active;     /* a request is queued this frame                                  */
+    bool        by_drag;    /* true = seamless title-bar drag; false = detach-button click     */
+    gui_id_t    win_id;     /* the dragged window record                                       */
+    u32         from_vp;    /* surface it was on (0 = main -> tear off; else floater -> merge) */
+    const char* title;      /* window title, to label the spawned floater's OS window          */
+    bool        has_home;   /* re-open of a closed floater: spawn reads the record's restore   */
+
+} gui_vp_request_t;
+
+extern gui_next_win_t   s_next_win;    /* surface/gui_surface.c */
+extern gui_vp_request_t s_vp_request;  /* surface/gui_surface.c */
+
+/* viewport drawable size with the s_io fallback (core/gui_ctx.c). */
+f32 vp_w( const gui_viewport_t* vp );
+f32 vp_h( const gui_viewport_t* vp );
+
+/* style stack push/pop by slot (core/gui_style.c) + theme extras (core/gui_theme.c). */
+void style_push_var( gui_style_var_t slot, f32 value );
+void style_pop_var( u32 count );
+f32  lat_round( f32 v, u32 q );
+extern u32 s_font_size;                /* core/gui_theme.c -- active em (0 = never set)       */
+
+/* forwarded capability flags (gui.c root) -- table / dock / nav feature gates. */
+extern gui_forward_caps_t s_fwd_caps;
+
+/* more presentation helpers (present/). */
+const char* label_id_str( const char* s );
+void draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
+void draw_close_x( gui_rect_t box, u32 color );
+void draw_dropdown_arrow( gui_rect_t box, u32 color );
+void draw_window_focus_border( gui_rect_t r );
+
+/* more identity / io / ctx services the chrome unit composes over (owners as marked). */
+void id_pop( void );                                  /* core/gui_id.c                        */
+bool io_ctrl( void );                                 /* core/gui_io.c                        */
+bool io_alt ( void );                                 /* core/gui_io.c                        */
+bool key_claim( app_key_t k );                        /* core/gui_io.c: claim a key edge      */
+void gui_clipboard_set( const char* s, u32 n );       /* core/gui_io.c: outbound clipboard    */
+void cursor_set( app_cursor_t c );                    /* core/gui_ctx.c: hardware-cursor nom. */
+void item_mark_edited( void );                        /* core/gui_ctx.c: focus edit latch     */
+
+extern bool s_replay_mode;          /* core/gui_ctx.c -- volatile idle-replay phase flag      */
+extern u32  s_popup_begin_count;    /* core/gui_ctx.c -- popup nesting depth (per-frame)      */
+
+/* the item protocol (interact/gui_item.c) -- the behavior seam every widget rides. */
+gui_item_state_t item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind );
+void             item_focus_release( void );
+void             nav_item_stamp_label( gui_id_t id, const char* label );
+
+/* shared presentation primitives (present/gui_paint_core.c + gui_symbol.c) -- the paint
+   vocabulary the stock chrome draws with; rect + state + skin in, pixels out. */
+gui_id_t   item_id( const char* label );
+f32        label_width( const char* s );
+f32        label_natural_w( const char* s );
+f32        text_center_y( f32 y, f32 h );
+gui_rect_t rect_align( gui_rect_t cell, f32 nat_w, f32 nat_h, u32 align );
+u32        col_lerp( u32 ca, u32 cb, f32 t );
+u32        col_item_bg( gui_item_state_t st );
+u32        col_item_bg_anim( gui_id_t id, gui_item_state_t st );
+u32        col_frame_bg( gui_item_state_t st, u32 idle_color_enum );
+void       draw_fill( gui_rect_t r, u32 col );
+void       draw_outline( gui_rect_t r, f32 t, u32 col );
+void       draw_label( f32 x, f32 y, u32 c, const char* s );
+void       draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w );
+void       draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w );
+gui_rect_t draw_field_label( gui_rect_t row, const char* label, f32 min_control_w,
+                             u32 label_color );
+void       draw_arrow( gui_rect_t box, gui_dir_t dir, u32 color );
+void       draw_bullet( f32 cx, f32 cy, f32 r, u32 color );
+void       draw_check_indicator( gui_rect_t box, u32 col );
+void       draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
+void       draw_collapse_arrow( gui_rect_t box, bool collapsed, u32 color );
+void       draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
+void       draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, bool filled,
+                               f32 thickness, u32 col );
+void       draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col );
+
+/*==============================================================================================
+    Cross-unit seams -- the chrome unit (gui_chrome.c)
+
+    The few chrome definitions the core/frame unit calls UP into: the frame lifecycle's
+    window / popup / nav / dock steps, and the unit's memory report.  Everything else chrome
+    defines is reached through the public gui_* surface.
+==============================================================================================*/
+
+void window_raise_on_press( void );   /* window/gui_window.c: press-to-front (ctx_begin)      */
+void window_modal_apply   ( void );   /* popup/gui_popup.c: modal fence (ctx_begin)           */
+void popup_apply_modal    ( void );   /* popup/gui_popup.c: per-frame modal inertness         */
+void popup_close_check    ( void );   /* popup/gui_popup.c: click-outside close (frame)       */
+void nav_new_frame        ( void );   /* nav/gui_nav.c: per-frame nav turnover                */
+void dock_hidden_refresh  ( void );   /* dock/gui_dock_core.c: hidden-node upkeep (frame)     */
+u32  gui_chrome_unit_mem_bytes( void );
+
+/*==============================================================================================
+    Cross-unit seams -- the flow unit (compose/gui_flow.c)
+
+    Composition's emit surface: the cell emitters and region lifecycle every widget and chrome
+    file composes over, plus the pen/track helpers the higher tiers steer with.  Downward, flow
+    reads the ambient records + core services above; its only two upward calls are
+    scrollbar_widget (the gutter's one widget) and the gui_anim_* ease (both declared below
+    with the cross-file block).
+==============================================================================================*/
+
+gui_rect_t cell_next_w( f32 natural_w, f32 h );    /* THE universal emit seam                 */
+gui_rect_t cell_next  ( f32 h );                   /* fill the track cell                     */
+void       cell_reach ( f32 right_x );             /* stretch the content high-water mark     */
+
+/* Split a cell into control + trailing/field label geometry -- the seam every "control +
+   label" widget routes through; its painting companion (draw_field_label) stays in present/. */
+bool cell_split_field( gui_rect_t cell, f32 min_control_w, f32* out_label_x,
+                       f32* out_label_w, gui_rect_t* out_control );
+
+void extent_track   ( layout_frame_t* f, f32 x, f32 y );
+f32  layout_next_y  ( layout_frame_t* f );
+void layout_pen_jump( layout_frame_t* f, f32 y );
+void layout_row_break( layout_frame_t* f );
+void layout_set_default( layout_frame_t* f );
+void layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap,
+                            f32* out_pos, f32* out_size );
+
+void layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad,
+                         gui_win_flags_t flags, gui_scroll_link_t* scroll, bool own_clip );
+void layout_pop_region ( void );
+
+/* Default region padding (the inset every window body / child opens with) -- moved here from
+   gui_layout_core.c at the TU split (window chrome opens its body region with it). */
+#define REGION_PAD_DEFAULT ( ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, WIDGET_GAP } )
+
+u32 gui_flow_unit_mem_bytes( void );               /* the flow unit's fixed statics           */
+
+/*==============================================================================================
+    Cross-unit seams -- the debug unit (debug/gui_debug.c)
+
+    The pipeline dashboard + command stepper: ordinary debug-band windows over the backend's
+    capture snapshots.  Emitted by debug_overlays_emit (gui_frame_overlay.c, the frame unit);
+    they read identity + the window pool through these two service seams.
+==============================================================================================*/
+
+gui_id_t      id_hash    ( const char* str );   /* core/gui_id.c: FNV-1a of the full string   */
+gui_window_t* window_find( gui_id_t id );       /* surface/gui_surface.c: record by id / NULL */
+
+void gui_pipeline_dashboard( bool* open );      /* debug unit: F10 dashboard (stub w/o feature) */
+void gui_step_window       ( bool* open );      /* debug unit: F8 command stepper window        */
+u32  gui_debug_unit_mem_bytes( void );          /* debug unit: its fixed statics, for mem stats */
+
+/*==============================================================================================
     Cross-file forward declarations
 
     A handful of helpers are called from a file included BEFORE the file that defines them (the
@@ -1110,10 +1495,11 @@ static bool gui_owned_window_event( const app_event_t* ev );
 
 /* Interaction gate predicates (interact/gui_item.c) -- the read half of the arbitration state,
    named once so compound gesture gates read as sentences.  Pure queries, no writes: interact/
-   stays the only writer of s_interaction. */
-static bool interact_idle      ( void );             /* nothing holds the pointer capture      */
-static bool interact_held      ( gui_id_t id );      /* id's press-drag gesture is in flight   */
-static bool interact_hover_bare( gui_id_t win_id );  /* cursor on win_id, no widget beneath it */
+   stays the only writer of s_interaction.  Non-static since the TU split (the flow unit's
+   region wheel gate reads interact_idle). */
+bool interact_idle      ( void );             /* nothing holds the pointer capture      */
+bool interact_held      ( gui_id_t id );      /* id's press-drag gesture is in flight   */
+bool interact_hover_bare( gui_id_t win_id );  /* cursor on win_id, no widget beneath it */
 
 /* Exclusive input mode (focus scope) -- true while a GUI_WIN_MODAL window is live (emitted this
    frame or last).  Defined in core/gui_ctx.c; read by focus_allowed (interact/gui_item.c) to
@@ -1187,19 +1573,19 @@ gui_item_sub_t gui_item_sub_begin( void );
 gui_item_sub_t gui_item_sub_layout_begin( gui_id_t id, gui_rect_t r );
 void           gui_item_sub_end( gui_item_sub_t s );
 
-/* The size-animate seam (gui_layout_core.c) eases a remembered extent toward its target through the
-   animation pool, whose primitive (gui_anim_f32) lives in interact/gui_anim.c -- included AFTER the layout
-   files.  Forward-declared so size_animate can reach it across the unity TU. */
-static f32 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
-static f32 gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed );
-static gui_anim4_t gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed );
+/* The size-animate seam (gui_layout_core.c, flow unit) eases a remembered extent toward its
+   target through the animation pool, whose primitive (gui_anim_f32) lives in interact/gui_anim.c
+   (the core unit) -- a cross-UNIT seam since the TU split. */
+f32 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
+f32 gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed );
+gui_anim4_t gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed );
 
-/* The region engine (compose/gui_scroll.c) emits the scrollbar widget into the gutter
-   it reserved at layout_pop_region -- but the widget lives above it (widgets/gui_scrollbar.c),
-   included AFTER the layout files.  Forward-declared so the pop can reach it across the unity
-   TU: compose hands the track rect + scroll slot; the widget owns the feel and the look. */
-static void scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
-                              f32 content, f32 view, f32* scroll );
+/* The region engine (compose/gui_scroll.c, flow unit) emits the scrollbar widget into the gutter
+   it reserved at layout_pop_region -- but the widget lives above it (widgets/gui_scrollbar.c,
+   the core unit's chrome group): flow's one upward call beside the anim ease.  Compose hands the
+   track rect + scroll slot; the widget owns the feel and the look. */
+void scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
+                       f32 content, f32 view, f32* scroll );
 
 /* The GUI_RESIZE_L/R/T/B edge bits moved to gui.h (public: feat_resize's edge mask).  GRIP
    stays internal: the CAN_AUTOSIZE corner triangle -- a resize affordance like the edges,

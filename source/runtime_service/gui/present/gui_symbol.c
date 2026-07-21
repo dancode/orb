@@ -110,7 +110,7 @@ draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 color )
    submenu arrow, and the dock overlay all draw through it, so the shape is uniform and follows
    GUI_VAR_ARROW_STYLE (the chevron variant) exactly as check / bullet follow their style vars.
    The half-extent scales with the box so every arrow matches the others at any font size. */
-static void
+void
 draw_arrow( gui_rect_t box, gui_dir_t dir, u32 color )
 {
     if ( style_var( GUI_VAR_ARROW_STYLE ) >= 0.5f )
@@ -136,7 +136,7 @@ draw_arrow( gui_rect_t box, gui_dir_t dir, u32 color )
 /* Collapse toggle glyph: points down when expanded, right when collapsed (the following label reads
    as the thing being toggled).  Exactly the DOWN / RIGHT case of draw_arrow, so the window title bar
    and collapsing_header fold with the identical glyph arrow_button draws.  Shared by both. */
-static void
+void
 draw_collapse_arrow( gui_rect_t box, bool collapsed, u32 color )
 {
     draw_arrow( box, collapsed ? GUI_DIR_RIGHT : GUI_DIR_DOWN, color );
@@ -169,7 +169,7 @@ draw_check_mark( gui_rect_t box, u32 color )
    draw_arrow, so it drops cleanly into a narrow side column without overrunning the column width.
    Fixed DOWN orientation -- unlike draw_arrow it is not a general direction glyph and does not
    follow GUI_VAR_ARROW_STYLE; the toolbar affordance stays this one mark regardless of theme. */
-static void
+void
 draw_dropdown_arrow( gui_rect_t box, u32 color )
 {
     f32 sz = box.w < box.h ? box.w : box.h;
@@ -184,7 +184,7 @@ draw_dropdown_arrow( gui_rect_t box, u32 color )
 
 /* Bullet glyph: a small filled disc centered at (cx,cy) (Dear ImGui RenderBullet).  The round
    sibling of the square bullet -- the bullet widget picks between them on GUI_VAR_BULLET_STYLE. */
-static void
+void
 draw_bullet( f32 cx, f32 cy, f32 r, u32 color )
 {
     draw_push_circle_filled( cx, cy, r, 12, color );
@@ -192,7 +192,7 @@ draw_bullet( f32 cx, f32 cy, f32 r, u32 color )
 
 /* Close glyph: the two-diagonal 'X' centered in `box` (Dear ImGui's CloseButton cross).  Extracted
    so the native caption close button and any other caller stroke the identical mark. */
-static void
+void
 draw_close_x( gui_rect_t box, u32 color )
 {
     f32 cx = box.x + box.w * 0.5f;
@@ -239,7 +239,7 @@ draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 color )
 /* Checkbox / menu indicator: the mark drawn inside the `box` when checked, switched on
    GUI_VAR_CHECK_STYLE -- a 'v' tick (default), a filled disc, or an 'X' cross.  The one place the
    three-way style resolves, so checkbox and menu_item stay identical and a new style only adds here. */
-static void
+void
 draw_check_indicator( gui_rect_t box, u32 col )
 {
     u32 style = (u32)( style_var( GUI_VAR_CHECK_STYLE ) + 0.5f );
@@ -254,7 +254,7 @@ draw_check_indicator( gui_rect_t box, u32 col )
 
 /* Horizontal rule centered on yc, honoring GUI_VAR_SEPARATOR_STYLE (solid fill or dashed line).
    The shared draw seam for separator() and the two rules of separator_text(). */
-static void
+void
 draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col )
 {
     if ( w <= 0.0f )
@@ -316,7 +316,7 @@ round_rect_perimeter_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, gui_v
 /* Per-corner rounded rect, filled (triangle fan) or stroked (closed polyline).  The general path
    for tab / notch / asymmetric shapes; for a uniform radius prefer the public draw_round_rect,
    which delegates to the backend's single-command rounded rect. */
-static void
+void
 draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
                     bool filled, f32 thickness, u32 col )
 {
@@ -349,7 +349,7 @@ draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness
 
 /* Circle at arbitrary radius: filled (single backend disc command) or stroked (a closed polyline
    ring of `thickness`).  The ring is the outlined form -- pass filled = false with a thickness. */
-static void
+void
 draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
 {
     if ( filled )
@@ -443,7 +443,7 @@ draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickne
 /* Checkerboard fill of `box` with `cell`-sized squares alternating col_a / col_b -- the classic
    transparency backdrop behind a color swatch.  Cell count is capped so a large area cannot flood
    the command list; partial edge cells are clamped to the box. */
-static void
+void
 draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b )
 {
     if ( cell < 1.0f ) cell = 1.0f;
@@ -483,7 +483,7 @@ draw_hatch( gui_rect_t box, f32 spacing, f32 thickness, u32 col )
    opposite edges carry the two colors; the GPU's per-vertex color interpolation produces the
    smooth blend (draw_push_rect_gradient).  Square by nature -- the per-vertex blend has no
    rounded variant, matching the always-square fill this replaced. */
-static void
+void
 draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal )
 {
     draw_push_rect_gradient( box.x, box.y, box.w, box.h, col_a, col_b, horizontal );

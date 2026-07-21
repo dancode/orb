@@ -935,7 +935,7 @@ nav_finish( void )
     Called from gui_ctx_begin after popup_close_check / popup_apply_modal / window_raise_on_press.
 ==============================================================================================*/
 
-static void
+void
 nav_new_frame( void )
 {
      /* feature boundary: gui_forward_caps_t.keyboard_nav; g_ctx->nav.win stays GUI_ID_NONE, 

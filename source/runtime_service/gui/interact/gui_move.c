@@ -32,7 +32,7 @@ static f32  s_move_off_x, s_move_off_y;
 /* Claim the interaction for a move drag of the rect at (org_x, org_y): active_id = id, held by
    `button` (0 left, 2 middle -- released globally when that button lifts), offset recorded so
    move_track keeps the grabbed point under the cursor. */
-static void
+void
 move_grab( gui_id_t id, u8 button, f32 org_x, f32 org_y )
 {
     s_interaction.active_id     = id;
@@ -44,7 +44,7 @@ move_grab( gui_id_t id, u8 button, f32 org_x, f32 org_y )
 /* Map a cursor through the recorded grab offset while `id` holds the drag: true with the new
    origin in *out while dragging, false (outputs untouched) otherwise.  Pass s_io.mouse_x/y to
    track in client space, the screen cursor to move an OS window. */
-static bool
+bool
 move_track( gui_id_t id, f32 cur_x, f32 cur_y, f32* out_x, f32* out_y )
 {
     if ( s_interaction.active_id != id )
@@ -77,7 +77,7 @@ static f32      s_press_defer_px, s_press_defer_py;
 
 /* Arm a pending press for `id` at the current cursor.  One latch: only one press exists per
    frame, so arming replaces any stale pending gesture. */
-static void
+void
 press_defer_arm( gui_id_t id )
 {
     s_press_defer_pending = true;
@@ -88,7 +88,7 @@ press_defer_arm( gui_id_t id )
 
 /* Drop the pending press without committing (e.g. the second click arrived and the gesture
    resolved as a double-click instead). */
-static void
+void
 press_defer_cancel( void )
 {
     s_press_defer_pending = false;
@@ -98,7 +98,7 @@ press_defer_cancel( void )
    gate, so sliding off the small hit rect mid-press cannot strand the gesture.  True exactly
    once, when the cursor crosses the threshold with the button still down (commit the drag);
    a release before that clears the latch silently (it was a click). */
-static bool
+bool
 press_defer_crossed( gui_id_t id )
 {
     if ( !s_press_defer_pending || s_press_defer_id != id )

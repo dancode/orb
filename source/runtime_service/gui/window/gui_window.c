@@ -59,7 +59,7 @@ static bool                 s_vp_merge_armed;
     Called from gui_ctx_begin() right after ctx_new_frame() promotes hover_win.
 ==============================================================================================*/
 
-static void
+void
 window_raise_on_press( void )
 {
     /* Either button raises: left for the normal click/drag, middle for the convenience move

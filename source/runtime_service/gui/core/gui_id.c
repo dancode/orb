@@ -25,7 +25,7 @@
     id_hash -- FNV-1a 32-bit hash of a NUL-terminated string
 ==============================================================================================*/
 
-static gui_id_t
+gui_id_t                       /* non-static: a cross-unit seam (gui_internal.h, inc 10) */
 id_hash( const char* str )
 {
     /* Seed FNV-1a with the context's id salt so the same string hashes to a distinct id per context.
@@ -45,7 +45,7 @@ id_hash( const char* str )
     a bare XOR it avalanches and is order-dependent, so distinct (scope, key) pairs stay distinct.
 ==============================================================================================*/
 
-static gui_id_t
+gui_id_t
 id_combine( gui_id_t seed, u32 key )
 {
     u32 h = seed ^ ( key + 0x9E3779B9u + ( seed << 6 ) + ( seed >> 2 ) );
@@ -61,7 +61,7 @@ id_combine( gui_id_t seed, u32 key )
 ==============================================================================================*/
 
 /* Current scope seed -- top of the stack, or NONE when empty (a bare top-level widget). */
-static gui_id_t
+gui_id_t
 id_seed( void )
 {
     if ( s_id_sp == 0 ) return GUI_ID_NONE;
@@ -70,7 +70,7 @@ id_seed( void )
     return s_id_stack[ i ];
 }
 
-static void
+void
 id_push( gui_id_t id )
 {
     if ( s_id_sp < GUI_ID_STACK_DEPTH )
@@ -78,7 +78,7 @@ id_push( gui_id_t id )
     ++s_id_sp;    /* count truthfully so push/pop stay paired even past the cap */
 }
 
-static void
+void
 id_pop( void )
 {
     if ( s_id_sp ) --s_id_sp;

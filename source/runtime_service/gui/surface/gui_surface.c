@@ -31,7 +31,7 @@
 
 ==============================================================================================*/
 
-static gui_window_t*
+gui_window_t*
 window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
 {
     /* Existing window found */
@@ -131,7 +131,7 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
     GUI_ID_NONE query is "no window" and short-circuits -- no real record ever carries that id.
 ==============================================================================================*/
 
-static gui_window_t*
+gui_window_t*                  /* non-static: a cross-unit seam (gui_internal.h, inc 10) */
 window_find( gui_id_t id )
 {
     if ( id == GUI_ID_NONE ) return NULL;
@@ -151,17 +151,7 @@ window_find( gui_id_t id )
     queue (no window_begin follows) simply carries to whichever window is begun next.
 ==============================================================================================*/
 
-static struct
-{
-    bool         has_pos, has_size;     /* a value is queued on this axis */
-    gui_cond_t  pos_cond, size_cond;   /* when to apply it               */
-    f32          pos_x, pos_y;
-    f32          size_w, size_h;
-
-    bool         has_viewport;          /* a viewport reassignment is queued for the next window */
-    u32          viewport;              /* its target surface index                              */
-
-} s_next_win;
+gui_next_win_t s_next_win;   /* TYPE in gui_internal.h (extern for the chrome unit, inc 10) */
 
 void
 gui_window_set_next_pos( f32 x, f32 y, gui_cond_t cond )
@@ -205,7 +195,7 @@ window_cond_apply( u8* allow, gui_cond_t cond )
 /* Apply (and clear) the next-window channel onto win.  `appearing` gates the one-shot APPEARING
    permission: granted on (re)appearance frames and withheld otherwise, so an APPEARING-conditioned
    value fires on exactly those frames and never on a steady-state one. */
-static void
+void
 window_apply_next( gui_window_t* win, bool appearing )
 {
     if ( appearing )
@@ -256,10 +246,9 @@ window_apply_next( gui_window_t* win, bool appearing )
     nav / dock / native tests key on -- so z itself stays pure paint order.
 ==============================================================================================*/
 
-#define GUI_REGION_BG_Z  0x00000000u
-#define GUI_REGION_Z     0x40000000u
-#define GUI_Z_OVERLAY    0x80000000u
-#define GUI_REGION_FG_Z  0xF0000000u
+/* The four z-band macros (GUI_REGION_BG_Z / GUI_REGION_Z / GUI_Z_OVERLAY / GUI_REGION_FG_Z)
+   moved to gui_internal.h at the TU split (inc 10) -- the flow unit's root region and the
+   popup layer stamp the same bands. */
 
 /*==============================================================================================
     surface_z_raise -- the z dispenser's single verb: bring a stacked entity to the front.
@@ -273,7 +262,7 @@ window_apply_next( gui_window_t* win, bool appearing )
     file touches g_ctx->win.z_counter or the band constants raw.
 ==============================================================================================*/
 
-static u32
+u32
 surface_z_raise( u32 z )
 {
     /* 0 is the never-dispensed seed every fresh record starts at -- many entities share it, so
@@ -286,7 +275,7 @@ surface_z_raise( u32 z )
 /* z for an overlay-band occupant at `depth`: popups stack parent -> child, the tooltip sits at
    the maximum depth, above them all.  Stamped fresh (with win->overlay) on every popup / tooltip
    begin, so a stray raise can never sink an overlay and the dispenser never reaches this band. */
-static u32
+u32
 surface_z_overlay( u32 depth )
 {
     return GUI_Z_OVERLAY + depth;
@@ -305,7 +294,7 @@ surface_z_overlay( u32 depth )
     rejected before the rect test -- the "physical window is a parent hover" rule.
 ==============================================================================================*/
 
-static void
+void
 surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
 {
     /* Deaf context: not listening for input this frame, skip hover nomination. */
@@ -337,7 +326,7 @@ surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
     window shrinks it to the title bar, a frame-only shell offers only its caption.
 ==============================================================================================*/
 
-static void
+void
 pane_tag( gui_id_t id, u32 z, u32 vp, u32 band )
 {
     draw_set_window( id );        /* stable retained-cache key: all this pane's spans share it */
@@ -442,18 +431,7 @@ gui_pane_end( void )
     immediate-mode same-frame lifetime makes this safe -- it is consumed before the frame ends).
 ==============================================================================================*/
 
-static struct
-{
-    bool        active;     /* a request is queued this frame                                   */
-    bool        by_drag;    /* true = seamless title-bar drag; false = detach-button click       */
-    gui_id_t  win_id;     /* the dragged window record                                        */
-    u32         from_vp;    /* surface it was on (0 = main -> tear off; else floater -> merge)   */
-    const char* title;      /* window title, to label the spawned floater's OS window           */
-
-    bool        has_home;   /* re-open of a closed floater: the spawn reads RESTORE geometry +    */
-                            /* maximized state from the window record (home_*, restore_*,         */
-                            /* reopen.maximized) instead of the cursor / main-relative default.   */
-} s_vp_request;
+gui_vp_request_t s_vp_request;   /* TYPE in gui_internal.h (extern for the chrome unit, inc 10) */
 
 /*==============================================================================================
     Closeable windows -- open / query a window's hidden state by title.

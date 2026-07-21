@@ -40,7 +40,7 @@
 ==============================================================================================*/
 
 /* Font type size (em) used by layout_compute; updated by font_load(). */
-static u32 s_font_size = 0;
+u32 s_font_size = 0;
 
 /* Shared authoring blocks -- the built-in themes repeat large identical spans (a 17-slot palette,
    the density ramp), so those live once here as designated-initializer fragments and each theme
@@ -202,7 +202,7 @@ static gui_style_t s_style_base;
 static const char* s_theme_name = NULL;
 
 /* The active style, scaled from s_style_base for the current font size. */
-static gui_style_t s_style;
+gui_style_t s_style;
 
 gui_style_t*
 gui_style_get( void )
@@ -315,7 +315,7 @@ gui_theme_reset( void )
 
 /* Largest lattice multiple <= v (0 allowed -- callers needing a nonzero floor use lat_floor_min). */
 
-static f32
+f32
 lat_floor( f32 v, u32 q )
 {
 #if GUI_GRID_LATTICE
@@ -330,7 +330,7 @@ lat_floor( f32 v, u32 q )
 /* Largest lattice multiple <= v, but never below one quantum -- for a live size that must not
    collapse to nothing when it dips under a single cell. */
 
-static f32
+f32
 lat_floor_min( f32 v, u32 q )
 {
 #if GUI_GRID_LATTICE
@@ -345,7 +345,7 @@ lat_floor_min( f32 v, u32 q )
 
 /* Smallest lattice multiple >= v. */
 
-static f32
+f32
 lat_ceil( f32 v, u32 q )
 {
 #if GUI_GRID_LATTICE
@@ -365,7 +365,7 @@ lat_ceil( f32 v, u32 q )
    this also snaps window POSITIONS, which go negative when a window slides or resizes past the top /
    left of its viewport.  A v <= 0 guard here would silently stop snapping outside those edges. */
 
-static f32
+f32
 lat_round( f32 v, u32 q )
 {
 #if GUI_GRID_LATTICE

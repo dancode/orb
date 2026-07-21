@@ -41,9 +41,9 @@
    maximize / minimize transitions and the dock's maximize ease all ride these (via
    feat_collapse / feat_pin below, or directly), honoring the global window_anim_enable
    preference -- feature-built chrome and stock chrome move identically by construction. */
-#define FEAT_ANIM_SECS  0.2f
+/* FEAT_ANIM_SECS moved to gui_internal.h at the TU split (inc 10). */
 
-static f32 feat_ease( f32 t ) { return f32_ease_out_cubic( t ); }
+f32 feat_ease( f32 t ) { return f32_ease_out_cubic( t ); }
 
 /* Liveness peek for a feature's tween timer: reads the slot WITHOUT advancing the clock (a
    second gui_anim_timer sample in the same frame would double-step elapsed).  duration is
@@ -185,7 +185,7 @@ gui_feat_collapse( gui_id_t id, bool open, f32 head_h, f32 full_h )
 
 /* Is id's collapse height tween in flight this frame?  A recipe gate (the stock window
    holds edge-resize armability and the autosize refit off while the body height eases). */
-static bool
+bool
 feat_collapse_live( gui_id_t id )
 {
     return feat_timer_live( id_combine( id, GUI_FEAT_COLLAPSE_SALT ) );
@@ -227,7 +227,7 @@ feat_rect_lerp( gui_rect_t a, gui_rect_t b, f32 t )
                            f32_lerp( a.w, b.w, t ), f32_lerp( a.h, b.h, t ) };
 }
 
-static bool
+bool
 feat_pin( gui_id_t id, u32 state, gui_rect_t* r, gui_rect_t* restore, gui_rect_t target )
 {
     gui_id_t        pid = id_combine( id, GUI_FEAT_MAX_SALT );

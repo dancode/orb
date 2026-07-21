@@ -25,10 +25,8 @@
 ==============================================================================================*/
 // clang-format off
 
-/* Default region padding (the inset every window body / child opens with): pad columns by
-   WIDGET_PAD left and right, WIDGET_GAP of breathing above the first row and below the last --
-   the bottom pad scrolls with the content and joins the measured canvas at pop. */
-#define REGION_PAD_DEFAULT ( ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, WIDGET_GAP } )
+/* REGION_PAD_DEFAULT (the inset every window body / child opens with) moved to gui_internal.h
+   at the TU split (inc 10): window chrome (the core unit) opens its body region with it. */
 
 /*==============================================================================================
 
@@ -53,7 +51,7 @@ static f32 mod_gap_y( const layout_frame_t* f ) { return ( f->mod.gap_y > 0.0f )
    either axis, in place of the per-axis, per-mode inline updates the emitters used to do.  Does not
    touch the pen; content_reach moves both, cell_reach grows the x highwater alone. */
 
-static void
+void
 extent_track( layout_frame_t* f, f32 x, f32 y )
 {
     if ( x > f->high_x ) f->high_x = x;
@@ -65,7 +63,7 @@ extent_track( layout_frame_t* f, f32 x, f32 y )
    horizontal overflow; its vertical extent is the emitter's business.  Grows the x highwater alone,
    so the horizontal bar sees content the cell did not bound.  Every leaf-widget overflow site here. */
 
-static void
+void
 cell_reach( f32 right_x )
 {
     if ( right_x > lf()->high_x ) lf()->high_x = right_x;
@@ -221,7 +219,7 @@ nat_tracks_substitute( layout_frame_t* f, f32* tracks, u32 n )
    so a flat post-clamp matches a freeze-and-redistribute here; per-track minimums would need the
    iterative form. */
 
-static void
+void
 layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap,
                        f32* out_pos, f32* out_size )
 {
@@ -367,7 +365,7 @@ line_just_opened( const layout_frame_t* f )
    line owes one too (pen_y already carries its live extent); a fresh, still-empty pack line
    is its own next position (see line_just_opened). */
 
-static f32
+f32
 layout_next_y( layout_frame_t* f )
 {
     if ( line_just_opened( f ) )
@@ -411,7 +409,7 @@ pack_line_break( layout_frame_t* f )
    while a backward restore (a menu bar handing the pen back) does not rewind the content the region
    already reached. */
 
-static void
+void
 layout_pen_jump( layout_frame_t* f, f32 y )
 {
     f->pen_y   = y;
@@ -427,7 +425,7 @@ layout_pen_jump( layout_frame_t* f, f32 y )
    from its top to the region's content bottom, so once any cell is emitted the pen lands at the
    band bottom (band_bottom); an untouched grid gives the band back.  Safe in any mode. */
 
-static void
+void
 layout_row_break( layout_frame_t* f )
 {
     if ( f->mode == GUI_MODE_GRID )
@@ -575,7 +573,7 @@ layout_clear( layout_frame_t* f )
    it backs gui_layout_default and the emit-before-header guard's release fallback.  The plain
    stack() header keeps modifiers and routes through layout_set instead. */
 
-static void
+void
 layout_set_default( layout_frame_t* f )
 {
     f->mode            = GUI_MODE_STACK;
@@ -932,7 +930,7 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
    same_line() can anchor the next widget to this one's line.  This is the per-mode dispatch over
    the line machinery above; the widget just fills the rect it is handed. */
 
-static gui_rect_t
+gui_rect_t
 cell_next_w( f32 natural_w, f32 h )
 {
     layout_frame_t* f = lf();
@@ -1009,7 +1007,7 @@ cell_next_w( f32 natural_w, f32 h )
 
 /*============================================================================================*/
 /* The common case: fill the track cell (natural_w < 0 => no same_line preference). */
-static gui_rect_t cell_next( f32 h ) { return cell_next_w( -1.0f, h ); }
+gui_rect_t cell_next( f32 h ) { return cell_next_w( -1.0f, h ); }
 
 /*============================================================================================*/
 /* Resolve a labeled widget's cell into a label position + a control rect when a field split is
@@ -1019,7 +1017,7 @@ static gui_rect_t cell_next( f32 h ) { return cell_next_w( -1.0f, h ); }
    track sits left.  Draws nothing; the caller places its label + control from the outputs.  The
    control is floored at min_control_w so it stays usable (overrunning under the label, as before).
    Returns false when no field split is set, leaving the caller on its default layout. */
-static bool
+bool
 cell_split_field( gui_rect_t cell, f32 min_control_w, f32* out_label_x, f32* out_label_w,
                      gui_rect_t* out_control )
 {

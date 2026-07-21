@@ -40,7 +40,7 @@ static f32 s_sb_grab_off = 0.0f;
     slider_float.  Shared by every region's bars.
 ==============================================================================================*/
 
-static void
+void
 scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
                   f32 content, f32 view, f32* scroll )
 {

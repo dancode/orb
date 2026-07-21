@@ -80,7 +80,7 @@ gui_volatile_begin( void )
     ORB_ASSERT( s_build.item_flags == GUI_ITEM_NONE
              && "gui_volatile_cb: callback runs under an ambient begin_disabled() scope -- "
                 "not reproduced on idle-frame replay" );
-    ORB_ASSERT( s_col_stack.sp == 0 && s_var_stack.sp == 0
+    ORB_ASSERT( style_stacks_empty()
              && "gui_volatile_cb: callback runs under an ambient push_style_color/var() scope -- "
                 "not reproduced on idle-frame replay" );
 

@@ -1,9 +1,10 @@
 # GUI Stack Plan -- from one grab bag to a stack of small libraries
 
-Status: PHASE 1 DONE (2026-07-21); PHASE 2 increments 7-9 DONE (2026-07-21) -- the pane
-(section 5), the chrome feature kit (section 6), and the stock-window recipe re-seat are
-built: gui_window_t now IS pane + feat_* + titlebar policy, its record shrunk to the fields
-chrome owns.  Remaining: increment 10, the physical per-library TU split (section 7).
+Status: ALL INCREMENTS DONE (2026-07-21).  Phase 1 (1-6: vtable TOC, rect leaf, flow seams,
+element library + style strata, kits + on_hud) and phase 2 (7-10: pane, feat_* kit, the
+stock-window recipe re-seat, and the physical per-library TU split) are built.  gui is six
+compiler-enforced translation units; gui_window_t IS pane + feat_* + titlebar policy; the
+gui() surface reads as a table of contents over the libraries.
 Companion to the rect-first campaign proven by sb_gui_diablo.
 Goal: break the ~200-entry gui() surface into named sub-libraries, each a small digestible
 center with a public header, a one-way dependency, and utilities placed where they belong.
@@ -483,6 +484,39 @@ Real build_tool targets can come later if wanted; the boundary is the header, no
                     LAST because increments 7-9 churn exactly the files (window/, interact/,
                     surface/) whose statics the split must extern.  Per-library, never
                     big-bang; the increment-4 blocker list is the checklist.
+                    DONE 2026-07-21.  gui is now SIX translation units in one static lib:
+                    gui.c (CORE + FRAME: core/surface/interact/present/user/frame +
+                    gui_frame_overlay + gui_ui_mem + gui_api), gui_backend.c (draw),
+                    element/gui_element.c, compose/gui_flow.c (FLOW), gui_chrome.c (CHROME:
+                    widgets/table/window/dock/popup/nav), debug/gui_debug.c (DEBUG:
+                    dashboard + stepper, severable).  Carved one library at a time (debug ->
+                    flow -> chrome), each building green, seams discovered compiler-first
+                    (C4013/C2065 harvest -> classify -> extern/declare).  gui_internal.h
+                    gained the cross-unit sections: AMBIENT RECORDS (g_ctx, s_io, s_style,
+                    s_interaction + s_build newly TYPED as gui_interaction_t / gui_build_t,
+                    s_scope, s_layout_stack/sp, s_id_sp, s_replay_mode, s_popup_begin_count,
+                    s_resize_* gesture scratch, s_next_win / s_vp_request newly typed,
+                    s_font_size, s_fwd_caps) and ~120 SERVICE SEAMS grouped by owner (id /
+                    io / keyed state + GUI_STATE macros / style resolution + the WIDGET_* +
+                    ROUND_* + COL_* vocabulary macros moved from gui_style.c / lattice /
+                    surface verbs + the z band map / item protocol + gate predicates /
+                    paint helpers / gesture services / anim timer + gui_ease_fn / feat_pin
+                    internals / flow's emit surface incl. REGION_PAD_DEFAULT / chrome's
+                    frame steps).  Static-decl block gotcha: shared static forward decls in
+                    gui_internal.h break any including TU that references without defining
+                    them -- each converted to a real seam when first flagged.  Memory
+                    accounting decentralized: gui_ui_memory now sums this unit + per-unit
+                    seams (gui_flow/chrome/debug_unit_mem_bytes); style_stacks_empty()
+                    added so the volatile-replay assert stops reaching into style
+                    internals.  gui_host.h gained the public decls that had ridden unity
+                    visibility (gui_split_*, gui_table_*, gui_volatile_*, gui_button_fill/
+                    width).  orb.targets: gui AND gui_stress carry the three new unit
+                    lines.  Upward calls are explicit and few: flow -> scrollbar_widget +
+                    gui_anim_*; core/frame -> chrome's six frame steps (raise-on-press,
+                    modal fence x2, popup close check, nav turnover, dock upkeep) + the
+                    debug unit's two windows.  Full Debug build green (all targets incl.
+                    gui_stress + mono ship); 6s canaries sb_gui_example + host_editor clean.
+                    Docs: gui.c banner, GUI_ARCHITECTURE.md six-unit story.
 
 Vtable note: additions/reorders change gui_api_t layout -- hot-reload hosts need a restart
 at each increment that touches it (func_api_size discipline unchanged).  Increment 6 also

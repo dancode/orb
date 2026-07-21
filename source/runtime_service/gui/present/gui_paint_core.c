@@ -28,11 +28,11 @@
    Used by every labeled widget and the window title so the centering math lives in one place.
    (The text_center_y( y, h ) form is the VCENTER case of rect_align below, kept as a scalar
    convenience because most labeled widgets only need the y and already own their x.) */
-static f32 text_center_y( f32 y, f32 h ) { return y + ( h - font_char_h() ) * 0.5f; }
+f32 text_center_y( f32 y, f32 h ) { return y + ( h - font_char_h() ) * 0.5f; }
 
 /* Linear blend between two ABGR colors at t in [0,1] (0 = ca, 1 = cb).  Used by animated
    widgets that blend between palette entries rather than switching them discretely. */
-static u32
+u32
 col_lerp( u32 ca, u32 cb, f32 t )
 {
     if ( t <= 0.0f ) return ca;
@@ -54,8 +54,8 @@ col_lerp( u32 ca, u32 cb, f32 t )
    (uv 0,0,1,1, texture 0) so no widget repeats them.  Shapes beyond fill/outline are the
    symbol palette (gui_symbol.c). */
 
-static void draw_fill   ( gui_rect_t r, u32 col )        { draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col ); }
-static void draw_outline( gui_rect_t r, f32 t, u32 col ) { draw_push_rect_outline( r.x, r.y, r.w, r.h, t, 0, col ); }
+void draw_fill   ( gui_rect_t r, u32 col )        { draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col ); }
+void draw_outline( gui_rect_t r, f32 t, u32 col ) { draw_push_rect_outline( r.x, r.y, r.w, r.h, t, 0, col ); }
 
 /* Place an extent `len` within the span [org, org+avail) along one axis: centered, against the far
    edge, or (default) the near edge.  The one axis primitive every aligned placement resolves
@@ -71,7 +71,7 @@ align_span( f32 org, f32 avail, f32 len, bool center, bool far )
 }
 
 /* Horizontal / vertical placement within a cell span, reading the matching gui_align_t bits. */
-static f32 align_x( f32 x, f32 w, f32 len, u32 a ) { return align_span( x, w, len, a & GUI_ALIGN_HCENTER, a & GUI_ALIGN_RIGHT  ); }
+f32 align_x( f32 x, f32 w, f32 len, u32 a ) { return align_span( x, w, len, a & GUI_ALIGN_HCENTER, a & GUI_ALIGN_RIGHT  ); }
 static f32 align_y( f32 y, f32 h, f32 len, u32 a ) { return align_span( y, h, len, a & GUI_ALIGN_VCENTER, a & GUI_ALIGN_BOTTOM ); }
 
 /* Place a natural nat_w x nat_h box inside `cell` per the alignment flags (gui_align_t).  The
@@ -80,7 +80,7 @@ static f32 align_y( f32 y, f32 h, f32 len, u32 a ) { return align_span( y, h, le
    region's align setting flows through one place.  Returns the placed rect (w/h are nat_*).
    Thin alias for the public gui_rect_align (gui.h) so widgets and callers share one rule. */
 
-static gui_rect_t
+gui_rect_t
 rect_align( gui_rect_t cell, f32 nat_w, f32 nat_h, u32 align )
 {
     return gui_rect_align( cell, nat_w, nat_h, ( gui_align_t )align );
@@ -126,7 +126,7 @@ label_vis_len( const char* s )
 }
 
 /* The substring hashed for the id: the whole label, unless a "###" tail re-roots it there. */
-static const char*
+const char*
 label_id_str( const char* s )
 {
     for ( u32 i = 0; s[ i ]; ++i )
@@ -136,7 +136,7 @@ label_id_str( const char* s )
 }
 
 /* The id for a labeled widget: the active scope seed combined with the label's id key. */
-static gui_id_t
+gui_id_t
 item_id( const char* label )
 {
     gui_id_t id = id_combine( id_seed(), id_hash( label_id_str( label ) ) );
@@ -145,13 +145,13 @@ item_id( const char* label )
 }
 
 /* Width / draw of a label's visible span (markers stripped). */
-static f32 label_width( const char* s ) 
+f32 label_width( const char* s ) 
 { 
     return font_text_w_n( s, label_vis_len( s ) ); 
 }
 
 /* draw lebel convenience wrapper for the text label length */
-static void draw_label ( f32 x, f32 y, u32 c, const char* s ) 
+void draw_label ( f32 x, f32 y, u32 c, const char* s ) 
 { 
     draw_push_text_n( x, y, c, s, label_vis_len( s ) );
 }
@@ -159,7 +159,7 @@ static void draw_label ( f32 x, f32 y, u32 c, const char* s )
 /* The natural width a label-sized widget requests from the composer: the visible span plus the
    standard inset on both sides.  THE self-measurement formula -- button, small_button, menu
    items, and the public gui_button_width all speak it through this one helper. */
-static f32  label_natural_w( const char* s ) 
+f32  label_natural_w( const char* s ) 
 { 
     return label_width( s ) + 2.0f * WIDGET_PAD; 
 }
@@ -212,7 +212,7 @@ draw_ellipsis( f32 x, f32 y, u32 c )
    worse than a hard clip.  max_w <= 0 draws nothing.  Cheap: one width walk, no extra clip command
    (so draw batching is untouched).  draw_label_fit is the label-grammar wrapper; callers with a
    raw string (the window title) pass the whole length through here directly. */
-static void
+void
 draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w )
 {
     if ( max_w <= 0.0f ) return;
@@ -247,7 +247,7 @@ draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w )
 
 /* Clean-shrink companion to draw_label: fit a label's visible span (markers stripped) into max_w,
    ellipsizing when a cell squeezes it below its natural width.  Used by the labeled widgets. */
-static void
+void
 draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
 {
     draw_text_fit_n( x, y, c, s, label_vis_len( s ), max_w );
@@ -265,10 +265,9 @@ draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w )
    The single seam every "control + trailing label" widget (slider_float, input_text, combo,
    drag_float, color_edit) routes through, so row proportions retune in one place. */
 
-static bool cell_split_field( gui_rect_t cell, f32 min_control_w, f32* out_label_x,
-                                 f32* out_label_w, gui_rect_t* out_control );   /* compose */
+/* cell_split_field (compose, flow unit) is declared in gui_internal.h since the TU split. */
 
-static gui_rect_t
+gui_rect_t
 draw_field_label( gui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
 {
     /* Field split mode: the label sits in its track at full strength (the trailing-label dim hint,
@@ -304,7 +303,7 @@ draw_field_label( gui_rect_t row, const char* label, f32 min_control_w, u32 labe
    so each field keeps its own resting colour, matching how Dear ImGui's FrameBgHovered lifts every
    framed control, not just buttons. */
 
-static u32
+u32
 col_frame_bg( gui_item_state_t st, u32 idle_color_enum )
 {
     if ( st.active )            return COL_WIDGET_ACT;
@@ -314,7 +313,7 @@ col_frame_bg( gui_item_state_t st, u32 idle_color_enum )
 
 /* Common case background color for a pushbutton / knob style widget.
    col_frame_bg with the plain widget background as the idle base. */
-static u32 col_item_bg( gui_item_state_t st )
+u32 col_item_bg( gui_item_state_t st )
 {
     return col_frame_bg( st, COL_WIDGET_BG );
 }
@@ -329,7 +328,7 @@ static u32 col_item_bg( gui_item_state_t st )
 
 #define ANIM_TAG_BG  0xA501u   /* id_combine salt: keeps this slot distinct from all other per-widget state */
 
-static u32
+u32
 col_item_bg_anim( gui_id_t id, gui_item_state_t st )
 {
     gui_anim4_t rest   = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -369,7 +368,7 @@ draw_nav_ring( gui_rect_t r, bool captured )
    dock_window_chrome (docked / floating groups) invoke it after their base border, gated on
    s_build.win.id == g_ctx->nav.focused_win, so it inherits the ambient rounding that border used and
    traces the same corners.  Thickness 0 (a theme that disables it) draws nothing. */
-static void
+void
 draw_window_focus_border( gui_rect_t r )
 {
     f32 t = WIN_FOCUS_BORDER;
@@ -387,13 +386,13 @@ draw_drop_ring( gui_rect_t r )
 
 /* Child box chrome (compose/gui_layout_child.c invokes these around its region): the body
    fill under the region clips at child_begin, the border over the bar tracks at child_end. */
-static void draw_child_bg    ( gui_rect_t r ) { draw_fill   ( r, COL_CHILD_BG ); }
-static void draw_child_border( gui_rect_t r ) { draw_outline( r, WIN_BORDER, COL_BORDER ); }
+void draw_child_bg    ( gui_rect_t r ) { draw_fill   ( r, COL_CHILD_BG ); }
+void draw_child_border( gui_rect_t r ) { draw_outline( r, WIN_BORDER, COL_BORDER ); }
 
 /* Paint a bold line over each hot edge of an outline so it is obvious that the border is
    grabbable and which side will move.  Drawn just inside the rect, over the thin border.
    `edges` is the GUI_RESIZE_* mask from the edge-resize service (interact/gui_resize.c). */
-static void
+void
 draw_resize_highlight( gui_rect_t r, u8 edges )
 {
     const f32 t = WIN_BORDER * 2.0f + 1.0f;   /* bold relative to the 1px frame */

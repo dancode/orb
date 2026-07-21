@@ -530,7 +530,7 @@ popup_modal_floor( void )
     return floor;
 }
 
-static void
+void
 popup_close_check( void )
 {
     if ( !g_ctx->popup.open_count ) return;
@@ -562,7 +562,7 @@ popup_close_check( void )
     window behind it with no per-widget code; see the verb for the mechanism.
 ==============================================================================================*/
 
-static void
+void
 popup_apply_modal( void )
 {
     i32 m = (i32)popup_modal_floor() - 1;   /* index of the topmost modal, -1 when none is open */
@@ -587,7 +587,7 @@ popup_apply_modal( void )
     stops re-stamping seen_frame when it stops emitting, so the fence lapses the next frame.
 ==============================================================================================*/
 
-static void
+void
 window_modal_apply( void )
 {
     if ( g_ctx->modal.win_id == 0u ||

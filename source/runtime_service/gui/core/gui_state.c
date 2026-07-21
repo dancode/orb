@@ -136,7 +136,7 @@ state_probe( state_class_t c, gui_id_t id )
 /* Stable storage for `id`: the same pointer every frame the id stays live, zeroed the frame it is
    first seen or recycled.  `size` picks the class; it must fit GUI_STATE_BIG_CAP.  Never NULL. */
 
-static void*
+void*
 gui_state_get( gui_id_t id, u32 size )
 {
     ORB_ASSERT( size <= GUI_STATE_BIG_CAP );
@@ -147,7 +147,7 @@ gui_state_get( gui_id_t id, u32 size )
 /*============================================================================================*/
 /* Typed sugar: a zero-on-create T* persisted by id.  sizeof(T) must be <= GUI_STATE_BIG_CAP. */
 
-#define GUI_STATE( T, id ) ( (T*)gui_state_get( ( id ), (u32)sizeof( T ) ) )
+/* The GUI_STATE( T, id ) typed sugar moved to gui_internal.h at the TU split (inc 10). */
 
 /*============================================================================================*/
 /* Read-only, non-allocating, non-stamping probe for `id`.  `size` must be the same tenant size
@@ -156,7 +156,7 @@ gui_state_get( gui_id_t id, u32 size )
    the slot exists (regardless of freshness), else NULL.  Zero side effects -- safe to call on
    every widget every frame as a guard check. */
 
-static const void*
+const void*
 gui_state_peek( gui_id_t id, u32 size )
 {
     if ( id == GUI_ID_NONE ) id = 1u;
@@ -172,7 +172,7 @@ gui_state_peek( gui_id_t id, u32 size )
     return NULL;
 }
 
-#define GUI_STATE_PEEK( T, id ) ( (const T*)gui_state_peek( ( id ), (u32)sizeof( T ) ) )
+/* The GUI_STATE_PEEK( T, id ) typed sugar moved to gui_internal.h at the TU split (inc 10). */
 
 /*============================================================================================*/
 /* Pool load metric: live (touched this frame or last) and occupied (live + not-yet-reclaimed

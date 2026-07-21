@@ -204,7 +204,7 @@ dock_hidden_refresh_node( gui_dock_node_t* n )
 /* Refresh every viewport tree of the bound context.  Called from gui_ctx_end while the closing
    context is still bound -- the one point where every window's begin has run for this build.
    Floating groups are not reachable from any dock_root and are never marked. */
-static void
+void
 dock_hidden_refresh( void )
 {
     if ( !g_ctx->dock.pool )

@@ -43,7 +43,7 @@ typedef struct { f32 current; } gui_anim_f32_t;
    the natural start and the target is the passing state, so first sight must ramp FROM rest, not
    snap to target.  This variant seeds `current` from `rest` when there is no slot; gui_anim_f32 is
    just this with rest == target.  Give hover/press/focus channels rest = their off value (0). */
-static f32
+f32
 gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed )
 {
     const gui_anim_f32_t* peek = GUI_STATE_PEEK( gui_anim_f32_t, anim_id );
@@ -72,7 +72,7 @@ gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed )
     return current;
 }
 
-static f32
+f32
 gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed )
 {
     return gui_anim_f32_from( anim_id, target, target, speed );
@@ -93,7 +93,7 @@ gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed )
     four sit at rest, so a held non-rest value (a steady hover) never re-ramps after an eviction.
 ==============================================================================================*/
 
-static gui_anim4_t
+gui_anim4_t
 gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed )
 {
     const gui_anim4_t* peek = GUI_STATE_PEEK( gui_anim4_t, id );
@@ -150,12 +150,12 @@ gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed 
 ==============================================================================================*/
 
 typedef struct { f32 elapsed; f32 duration; } gui_anim_timer_t;
-typedef f32 ( *gui_ease_fn )( f32 );
+/* gui_ease_fn typedef moved to gui_internal.h at the TU split (inc 10). */
 
 /* Start (or restart) a duration-based timer on `id`: clock at 0, running for `duration` seconds.  A
    zero / negative duration is the "no animation" request -- no slot is stamped, so the first
    gui_anim_timer reads settled and the caller snaps straight to its target (the toggle-off path). */
-static void
+void
 gui_anim_timer_start( gui_id_t id, f32 duration )
 {
     if ( duration <= 0.0f )
@@ -172,7 +172,7 @@ gui_anim_timer_start( gui_id_t id, f32 duration )
    duration it returns exactly 1.0, clears the slot's duration (so it goes cold and evicts), and
    sets *out_active false.  An absent / finished slot also returns 1.0 with *out_active false -- the
    settled end, forced, so the value can never be read half-finished once the tween is over. */
-static f32
+f32
 gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active )
 {
     const gui_anim_timer_t* pk = GUI_STATE_PEEK( gui_anim_timer_t, id );

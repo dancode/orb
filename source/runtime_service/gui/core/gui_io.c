@@ -39,7 +39,7 @@ ORB_STATIC_ASSERT( APP_KEY_COUNT <= GUI_KEY_COUNT,
 /* The per-frame input snapshot the widgets see.  The polled fields are sampled by
    io_frame_begin(); the event-borne fields (text/wheel/paste) are written straight in by
    gui_event() during the host's ring drain and cleared by io_frame_end(). */
-static gui_io_t s_io;
+gui_io_t s_io;   /* extern'd in gui_internal.h for the carved units (inc 10) */
 
 /* True when any input-state change was detected this frame: mouse moved, button edge,
    key press/release, wheel, text, paste, or display-size change.  Computed in io_frame_begin
@@ -90,9 +90,9 @@ static bool s_debug_enabled;
 static bool io_dirty( void ) { return s_io_dirty; }
 
 /* Modifier key helpers: poll both L and R variants so callers need not repeat the pair. */
-static bool io_ctrl ( void ) { return s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_down[ APP_KEY_RCTRL  ]; }
-static bool io_shift( void ) { return s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ]; }
-static bool io_alt  ( void ) { return s_io.keys_down[ APP_KEY_LALT   ] || s_io.keys_down[ APP_KEY_RALT   ]; }
+bool io_ctrl ( void ) { return s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_down[ APP_KEY_RCTRL  ]; }
+bool io_shift( void ) { return s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ]; }
+bool io_alt  ( void ) { return s_io.keys_down[ APP_KEY_LALT   ] || s_io.keys_down[ APP_KEY_RALT   ]; }
 
 /* Claim a key edge for this frame -- the single choke point every consumer (item activation, nav
    type-ahead, nav mnemonics, and any future claimant) routes through instead of hand-zeroing s_io
@@ -103,7 +103,7 @@ static bool io_alt  ( void ) { return s_io.keys_down[ APP_KEY_LALT   ] || s_io.k
    press edge).  Returns whether there was actually a live edge to take, so a caller can tell "I used
    it" from "there was nothing there anyway".  See gui_want_capture_keyboard (user/gui_query.c) for the
    full per-frame tier order this primitive is tier 2 of. */
-static bool
+bool
 key_claim( app_key_t k )
 {
     bool had_edge = s_io.keys_pressed[ k ] || s_io.keys_pressed_repeat[ k ];
@@ -127,7 +127,7 @@ key_claim( app_key_t k )
 /* Copy n bytes of `s` to the OS clipboard, dropping control characters (a single-line field's
    selection never legitimately contains any, but this keeps the published text clean).  Builds
    a NUL-terminated temporary because the source is a slice of a larger buffer. */
-static void
+void
 gui_clipboard_set( const char* s, u32 n )
 {
     char tmp[ sizeof( ( (gui_io_t*)0 )->paste ) ];

@@ -31,58 +31,20 @@
 /* Ambient interaction state -- the one live hover / active / focus, persisting across frames.  One
    pointer, one keyboard, one mouse, so none of it is per-viewport or per-context: a single global
    shared by every context, into which listening contexts nominate hover / active during their emit.
-   Tier: ambient singular (see ARCHITECTURE.md sec 1, state tiers). */
+   Tier: ambient singular (see ARCHITECTURE.md sec 1, state tiers).  The TYPE lives in
+   gui_internal.h (gui_interaction_t, extern'd for the carved units -- inc 10); this file stays
+   the owner: it defines, resets, and turns the record over.  Field notes worth keeping close:
 
-static struct
-{
-    gui_id_t  hover_id;         // widget under the cursor this frame (rebuilt each frame)
-    gui_id_t  active_id;        // widget with the mouse button held (drag / hold)
-    gui_id_t  active_id_prev;   // active_id as of the end of the previous frame (snapshot at new_frame)
-    u8        active_button;    // which button holds active_id (0=left); reset to 0 on release
-    gui_id_t  focused_id;       // widget that owns keyboard input
-    gui_id_t  focused_win;      // window that owns focused_id -- drives the exclusive-scope focus lock
-    bool      focus_has_selection; // the focused text field holds a live selection this frame (for
-                                   // the window text-selection copy gate, gui_select.c)
+   - Auto-repeat (repeat_t / repeat_on, GUI_ITEM_BUTTON_REPEAT): only one widget is active at a
+     time, so a single timer suffices; both reset on the press frame.
+   - Window occlusion is one frame deferred: window_begin nominates into next_hover_win,
+     ctx_new_frame promotes it to hover_win; only the hover window hit-tests its widgets.
+   - mouse_cursor: last writer wins (exactly one widget hovers; resize bands suppress widget
+     hover); cursor_flush pushes it to the OS one frame later; reset each frame.
+   - Focus departure (focused_id_at_frame_start / focus_ended_*): the departing widget's id +
+     edit history latch for one frame so is_item_deactivated_after_edit can read them. */
 
-    /* Auto-repeat timing for the held button (GUI_ITEM_BUTTON_REPEAT).  Only one widget is active
-       at a time, so a single timer suffices: repeat_t accumulates held time since the last fire, and
-       repeat_on flips true once the initial delay has elapsed (switching to the faster rate).  Both
-       are reset on the press frame, so a new button starts its own cadence. */
-
-    f32         repeat_t;
-    bool        repeat_on;
-
-    /* Window occlusion is resolved one frame deferred: the single window the cursor is
-       over (front-most by z) is only known after every window has been submitted.
-       Each window_begin nominates itself into next_hover_win; ctx_new_frame promotes it to
-       hover_win.  Next frame a window compares its id against hover_win at entry -- if it
-       isn't the hover window it cannot be hit, so it (and all its widgets) skip hit-testing
-       entirely.  Only the hover window does widget hit-testing, and within one window
-       widgets don't overlap, so widget hover can be resolved immediately (no deferral). */
-
-    gui_id_t  hover_win;      // the window the cursor is over (resolved last frame)
-    gui_id_t  next_hover_win; // front-most window nominee gathered this frame
-    u32       next_hover_win_z;
-
-    /* Hardware-cursor request.  Widgets nominate a shape during the build (cursor_set); the
-       last writer wins -- safe because exactly one widget hovers per frame, and the resize bands
-       suppress widget hover so a window edge and a widget never both request.  cursor_flush pushes
-       it to the OS window under the pointer at the next frame_begin (deferred one frame, like
-       hover_win).  Reset to APP_CURSOR_ARROW each frame by interaction_frame_reset. */
-    app_cursor_t mouse_cursor;
-
-    /* Focus-departure tracking for is_item_deactivated_after_edit.
-       focused_id_at_frame_start snapshots focused_id at interaction_frame_reset.  At frame_end, if
-       focused_id changed this frame, the departing widget's id and edit history are latched into
-       focus_ended_* for one frame so the next frame's is_item_deactivated_after_edit can read them.
-       focused_id_edited accumulates while a widget holds focus (set by item_mark_edited in
-       input_field_edit); cleared and snapshotted into focus_ended_edited on departure. */
-    gui_id_t focused_id_at_frame_start;
-    bool     focused_id_edited;
-    gui_id_t focus_ended_id;
-    bool     focus_ended_edited;
-
-} s_interaction;
+gui_interaction_t s_interaction;
 
 /* True only while a volatile-widget callback is replayed standalone on an idle frame; set/cleared
    by gui_replay_scope_enter/_exit (widgets/gui_volatile.c).  Ambient frame-phase state, same tier as
@@ -90,7 +52,7 @@ static struct
    hit-test or write to s_interaction/s_build -- a replay renders against the hover/active/focus the
    last real frame established and can never acquire state or see a fresh click, since interaction is
    resolved only on real frames. */
-static bool s_replay_mode;
+bool s_replay_mode;
 
 /* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as the
    widget tree is walked.  Nothing here survives begin_frame: it is set and repopulated by the
@@ -98,46 +60,21 @@ static bool s_replay_mode;
    build sequentially on one thread, this stays a single global builder reused by each context in
    turn rather than per-context state.  Tier: frame scratch. */
 
-static struct
-{
-    /* The window currently between window_begin / window_end -- everything begin stamps and end
-       consumes, as one record (gui_win_ctx_t, gui_internal.h) so the popup seam saves/restores
-       it with a single assignment.  Everything below it is a frame-global channel that must
-       SURVIVE that seam and so lives outside the record. */
-    gui_win_ctx_t win;
+/* The TYPE lives in gui_internal.h (gui_build_t, extern'd for the carved units -- inc 10);
+   this file stays the owner (defines and resets it).  Notes worth keeping by the definition:
 
-    /* Layout pen + scroll region state live on the layout-frame stack below; the window is
-       just the root frame.  s_build keeps only the cross-cutting per-frame context the chrome
-       and widgets read regardless of which region is active. */
+   - win: everything window_begin stamps and window_end consumes, one record (gui_win_ctx_t) so
+     the popup seam saves/restores it with a single assignment; the fields after it are
+     frame-global channels that must SURVIVE that seam.
+   - Layout pen + scroll region state live on the layout-frame stack below; the window is just
+     the root frame.
+   - item_flags / next_set / next_val: the push-model behavior set; the value resolved for the
+     widget currently emitting is latched into s_scope.flags by item_flags_resolve.
+   - combo_open / combo_item_clicked: combo dropdown coordination (gui_combo.c) -- a click in
+     the body dismisses the combo with no caller code; reset each frame as a safety net.
+   - Nav state is NOT part of this scratch: it lives in g_ctx->nav so the builder stays small. */
 
-    bool         wheel_used;  // a region consumed the wheel this frame (innermost wins)
-
-    u32  nav_region_seq;    // per-frame region dispenser (layout_seed_content takes the next)
-    u32  nav_line_seq;      // per-frame line dispenser (a line-open takes the next)
-
-    /* Item flags -- the push-model behavior set a widget reads at emit time (see gui_item_flags_t).
-       item_flags is the merged top of the push/pop stack; next_set / next_val are the one-shot
-       override for the next widget (which bits it controls + their values); the value resolved for
-       the widget currently emitting is latched into s_scope.flags by item_flags_resolve, where
-       item_state and the widgets read it.  All reset to 0 each frame. */
-
-    gui_item_flags_t item_flags;       // merged top-of-stack item flags
-    gui_item_flags_t next_set;         // bits the next-item override controls
-    gui_item_flags_t next_val;         // their values
-
-    /* Combo dropdown coordination (gui_combo.c).  combo_begin sets combo_open true while
-       emitting its popup body; a selectable clicked in that body sets combo_item_clicked, and
-       combo_end closes the dropdown when it sees it -- so picking an item dismisses the combo with
-       no caller code, exactly as a selection should.  Both are scoped to the combo body and reset
-       each frame as a safety net. */
-
-    bool               combo_open;          // a combo dropdown body is currently being emitted
-    bool               combo_item_clicked;  // a selectable in that body was clicked this frame
-
-    /* Nav state is not part of this scratch: it lives in gui_nav_state_t g_ctx->nav (a per-context member,
-       below) so the per-frame builder stays small. */
-
-} s_build;
+gui_build_t s_build;
 
 /* The interaction scope -- the declared contract between composition and behavior; the full
    contract lives with the type (gui_scope_t, gui_internal.h).  Stamped directly by composition
@@ -145,7 +82,7 @@ static struct
    the type only needs its per-frame reset in ctx_new_frame below.  Tier: frame scratch, same
    lifetime as s_build. */
 
-static gui_scope_t s_scope;
+gui_scope_t s_scope;
 
 #ifdef GUI_DEBUG_OVERLAY
 /* The debug overlay (gui_debug_overlay.c) lives in the render backend unit and tags each captured rect
@@ -219,7 +156,7 @@ item_flag_next( gui_item_flags_t flag, bool enable )
    applied over it (the override wins on the bits it controls), then clear the override.  Latches the
    result for item_state / widgets to read, and sets the draw alpha so a disabled item dims with
    no per-widget code.  Called once per item from cell_next_w (the universal emit seam). */
-static gui_item_flags_t
+gui_item_flags_t
 item_flags_resolve( void )
 {
     gui_item_flags_t f = ( s_build.item_flags & ~s_build.next_set ) | ( s_build.next_val & s_build.next_set );
@@ -244,7 +181,7 @@ item_flags_resolve( void )
    would inherit whatever the last body widget latched (a disabled trailing widget would dim the
    border and deaden the scrollbar).  Called at the chrome seams (begin/window_end, child_begin,
    layout_pop_region) so chrome always interacts undisabled and paints opaque. */
-static void
+void
 item_flags_chrome_reset( void )
 {
     s_scope.flags  = GUI_ITEM_NONE;
@@ -266,8 +203,8 @@ item_flags_chrome_reset( void )
     Storage is just the fixed array, so a deep nesting costs nothing beyond these slots.
 ==============================================================================================*/
 
-static layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
-static u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
+layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
+u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
 
 /* Top layout frame.  Valid between a window_begin/child_begin and its matching end.  When the
    stack is empty (a caller emitted a widget into a collapsed window despite the false return)
@@ -276,7 +213,7 @@ static u32            s_layout_sp;   // active frame count; top = s_layout_sp - 
    to the top slot so an over-deep nesting (capped in layout_push_region) never reads past the
    array. */
 
-static layout_frame_t*
+layout_frame_t*
 lf( void )
 {
     u32 i = s_layout_sp ? s_layout_sp - 1 : 0;
@@ -305,7 +242,7 @@ lf( void )
 
 /* The open set (g_ctx->popup.open) and its count (g_ctx->popup.open_count) are per-context members reached
    through g_ctx; s_popup_begin_count is per-frame scratch and stays a plain global. */
-static u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per frame)
+u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per frame)
 
 /*==============================================================================================
     Keyed state pool -- persistent per-id widget state.
@@ -347,7 +284,7 @@ static u32           s_popup_begin_count;   // current popup nesting depth (rebu
 static gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
 static u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
 
-static gui_context_t* g_ctx = NULL;   /* bound context */
+gui_context_t* g_ctx = NULL;   /* bound context (extern'd in gui_internal.h for the carved units) */
 
 /* Single-malloc layout for one context block.  The header (gui_context_t) sits at offset 0;
    all pool arrays follow at ALIGN8 boundaries.  Caller sets `listening` and wires s_ctx_pool. */
@@ -467,7 +404,7 @@ viewport_index_for_window( i32 win_id )
 #define GUI_ID_STACK_DEPTH 32
 
 static gui_id_t s_id_stack[ GUI_ID_STACK_DEPTH ];
-static u32        s_id_sp;
+u32        s_id_sp;
 
 /* id_seed / id_push / id_pop / id_hash / id_combine and the keyed-state pool (gui_state_get,
    GUI_STATE) are in core/gui_id.c + core/gui_state.c, included just after this file. they operate on s_id_stack / s_id_sp
@@ -477,7 +414,7 @@ static u32        s_id_sp;
     rect_hit -- true when the mouse cursor (from s_io) is inside the given rect
 ==============================================================================================*/
 
-static bool
+bool
 rect_hit( gui_rect_t r )
 {
     return s_io.mouse_x >= r.x && s_io.mouse_x < r.x + r.w
@@ -504,7 +441,7 @@ rect_hit( gui_rect_t r )
 ==============================================================================================*/
 
 /* Request a hardware cursor shape for this frame.  Last writer wins (one hover per frame). */
-static void cursor_set( app_cursor_t c ) { s_interaction.mouse_cursor = c; }
+void cursor_set( app_cursor_t c ) { s_interaction.mouse_cursor = c; }
 
 /* Flush the requested cursor to the OS window under the pointer.  Reads last frame's request +
    hover state (called before interaction_frame_reset promotes the new frame's hover).  Dedupes on
@@ -645,7 +582,7 @@ interaction_frame_reset( void )
    buffer changes.  Accumulates in focused_id_edited (never cleared while focus stays); frame_end
    snapshots it into focus_ended_edited when focus departs so is_item_deactivated_after_edit can
    read it for one frame after the focus moves. */
-static void item_mark_edited( void ) { s_interaction.focused_id_edited = true; }
+void item_mark_edited( void ) { s_interaction.focused_id_edited = true; }
 
 /* Per-context frame reset: rebuilds the frame-scratch and per-context retained state.
    Called by ctx_begin for every context -- does NOT touch the global s_interaction fields
@@ -707,8 +644,8 @@ ctx_new_frame( void )
     the ternary out inline.
 ==============================================================================================*/
 
-static f32 vp_w( const gui_viewport_t* vp ) { return vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w; }
-static f32 vp_h( const gui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h; }
+f32 vp_w( const gui_viewport_t* vp ) { return vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w; }
+f32 vp_h( const gui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h; }
 
 /*==============================================================================================
     Memory Stats
