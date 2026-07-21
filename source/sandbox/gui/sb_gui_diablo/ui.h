@@ -17,8 +17,20 @@
          distinction.  All spacing is spacing YOU added with ui_inset / gap arguments,
          so every pixel is accounted for at the call site.
 
-      3. PIXELS ONLY.  Every size argument is pixels.  No overloaded f32 where >1 means px,
-         (0,1) means fraction, 1 means fill.  A fraction is plain C: r.w * 0.25f.
+      3. PIXELS ONLY, IN TWO EXPLICIT CURRENCIES.  Every size argument is pixels -- no
+         overloaded f32 where >1 means px, (0,1) means fraction, 1 means fill.  A fraction
+         is plain C: r.w * 0.25f.  The two currencies:
+
+           raw px      -- art-exact geometry the font must never move: slot grids (256px is
+                          256px), border widths, proportional cuts ( screen.h * 0.34f ).
+           ui_u( n )   -- n basis units, where the basis is the ACTIVE FONT's line height.
+                          Size anything that exists to hold text in units -- bands, buttons,
+                          gaps around text -- and a font swap rescales those rects in
+                          proportion, no layout rewrite.  The font is the only dial; there
+                          is no separate "ui scale" to drift out of sync with it.
+
+         Which contract a rect has is visible at the call site: 256.0f means art says so,
+         ui_u( 2.0f ) means text says so.
 
     The result: exact-fit screens (HUD bars, slot grids, fixed panels) read as arithmetic
     you can check by eye, and there is nothing to decipher -- ui_span( 5, 48, 12 ) IS the
@@ -73,6 +85,16 @@ gui_rect_t ui_cell ( gui_rect_t area, i32 cx, i32 cy, i32 ncols, i32 nrows, f32 
 /* Exact extent of n fixed-size slots with gaps between them: n * size + (n - 1) * gap.
    The sizing primitive: compute a container's dimension FROM its contents, then ui_place it. */
 f32 ui_span ( i32 n, f32 size, f32 gap );
+
+/*==============================================================================================
+    Basis unit -- the font-relative currency (rule 3).  The basis is the active font's line
+    height; ui_u( n ) is n of them, rounded to whole px so edges stay crisp.  ui_line() is the
+    raw metric for exact-fit text bands.  Rough anchors at a 16pt font (line ~= 22px):
+    ui_u( 0.5f ) ~= a gap, ui_u( 1.5f ) ~= a text band, ui_u( 2.0f ) ~= a button height.
+==============================================================================================*/
+
+f32 ui_u    ( f32 n );   // n basis units in px (basis = active font line height)
+f32 ui_line ( void );    // the raw line height itself, unrounded
 
 /*==============================================================================================
     Widgets -- every widget fills exactly the rect it is given.  Colors come from the shared

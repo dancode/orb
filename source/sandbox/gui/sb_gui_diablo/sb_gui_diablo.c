@@ -57,18 +57,18 @@ screen_menu( gui_vp_t vp )
 {
     gui_rect_t screen = ui_screen_begin( vp, "menu" );
 
-    /* footer first: version line pinned to the bottom edge, inset 12px */
-    gui_rect_t footer = ui_inset( ui_cut_bottom( &screen, 32.0f ), 12.0f );
+    /* footer first: a text band pinned to the bottom edge, half-unit inset */
+    gui_rect_t footer = ui_inset( ui_cut_bottom( &screen, ui_u( 1.5f ) ), ui_u( 0.5f ) );
     ui_label_c( footer, GUI_ALIGN_LEFT  | GUI_ALIGN_VCENTER, ui_style()->text_dim, "EMBERFALL 0.1 -- sb_gui_diablo increment 1" );
     ui_label_c( footer, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER, ui_style()->text_dim, "ORB engine" );
 
-    /* title band: top third of what remains */
+    /* title band: top third of what remains (proportional -- stays px math on purpose) */
     gui_rect_t band = ui_cut_top( &screen, screen.h * 0.34f );
     ui_title( band, "E M B E R F A L L" );
-    ui_label_c( ui_place( band, band.w, 24.0f, GUI_ALIGN_HCENTER | GUI_ALIGN_BOTTOM ),
+    ui_label_c( ui_place( band, band.w, ui_line(), GUI_ALIGN_HCENTER | GUI_ALIGN_BOTTOM ),
                 GUI_ALIGN_CENTER, ui_style()->text_dim, "a point-and-click descent" );
 
-    /* option column: 300 x (6 rows of 44, 10 gaps), centered in the space below the title */
+    /* option column: 14u wide x (6 rows of 2u, half-unit gaps), centered below the title */
     static const struct { const char* label; screen_t go; } opts[] = {
         { "ENTER SANCTUM", SCR_GAME    },
         { "SKILL TREE",    SCR_SKILLS  },
@@ -77,10 +77,11 @@ screen_menu( gui_vp_t vp )
         { "OPTIONS",       SCR_OPTIONS },
         { "EXIT",          SCR_MENU    },
     };
-    const i32 n   = (i32)( sizeof( opts ) / sizeof( opts[ 0 ] ) );
-    const f32 gap = 10.0f;
+    const i32 n    = (i32)( sizeof( opts ) / sizeof( opts[ 0 ] ) );
+    const f32 gap  = ui_u( 0.5f );
+    const f32 bt_h = ui_u( 2.0f );
 
-    gui_rect_t col = ui_place( screen, 300.0f, ui_span( n, 44.0f, gap ), GUI_ALIGN_CENTER );
+    gui_rect_t col = ui_place( screen, ui_u( 14.0f ), ui_span( n, bt_h, gap ), GUI_ALIGN_CENTER );
     for ( i32 i = 0; i < n; ++i )
     {
         if ( ui_button( ui_row( col, i, n, gap ), opts[ i ].label ) )
@@ -103,16 +104,16 @@ screen_stub( gui_vp_t vp, const char* id, const char* title, const char* note )
 {
     gui_rect_t screen = ui_screen_begin( vp, id );
 
-    ui_title( ui_cut_top( &screen, 96.0f ), title );
+    ui_title( ui_cut_top( &screen, ui_u( 4.0f ) ), title );
 
-    /* centered 480 x 200 panel with the increment note inside */
-    gui_rect_t panel = ui_place( screen, 480.0f, 200.0f, GUI_ALIGN_CENTER );
+    /* centered 22u x 9u panel with the increment note inside */
+    gui_rect_t panel = ui_place( screen, ui_u( 22.0f ), ui_u( 9.0f ), GUI_ALIGN_CENTER );
     ui_panel( panel );
-    ui_label_c( ui_inset( panel, 16.0f ), GUI_ALIGN_CENTER, ui_style()->text_dim, note );
+    ui_label_c( ui_inset( panel, ui_u( 0.75f ) ), GUI_ALIGN_CENTER, ui_style()->text_dim, note );
 
-    /* BACK: a 160 x 40 button 24px below the panel, horizontally centered on it */
-    gui_rect_t back = ui_place( panel, 160.0f, 40.0f, GUI_ALIGN_HCENTER | GUI_ALIGN_BOTTOM );
-    back.y = panel.y + panel.h + 24.0f;
+    /* BACK: a 7u x 2u button one unit below the panel, horizontally centered on it */
+    gui_rect_t back = ui_place( panel, ui_u( 7.0f ), ui_u( 2.0f ), GUI_ALIGN_HCENTER | GUI_ALIGN_BOTTOM );
+    back.y = panel.y + panel.h + ui_u( 1.0f );
     if ( ui_button( back, "BACK" ) || gui()->is_key_pressed( APP_KEY_ESCAPE ) )
         s_screen = SCR_MENU;
 
@@ -184,9 +185,27 @@ main( int argc, char** argv )
         goto shutdown;
     }
 
+    /* Second font for the F1/F2 basis-unit test.  boot() put Roboto 16 in registry slot 0;
+       font_use takes REGISTRY ids (font_load returns), not the GUI_FONT_* preset enum, and the
+       preset table is init-only -- so load the second face by its asset path once, up front.
+       font_load also activates what it loads, so switch back to slot 0 after. */
+
+    u32 font_big = 0;
+    {
+        char font_path[ 576 ];
+        gui()->asset_path( "assets/font/CascadiaMono_20px.orb_font", font_path, sizeof( font_path ) );
+        font_big = gui()->font_load( font_path );    /* 0 on failure: F2 then just reselects slot 0 */
+        gui()->font_use( 0 );
+    }
+
     f32 dt = 0.0f;
     while ( !s_quit && gui()->frame_poll( &dt ) )
     {
+        /* font selection is frame-global state: switch BETWEEN frames (pre frame_begin), and
+           read the key from app()'s snapshot -- gui's io snapshot belongs to the frame scope */
+        if ( app()->key_pressed( APP_KEY_F1 ) ) gui()->font_use( 0 );
+        if ( app()->key_pressed( APP_KEY_F2 ) ) gui()->font_use( font_big );
+
         if ( gui()->frame_begin( dt ) )
         {
             gui()->ctx_begin( GUI_CTX_DEFAULT );

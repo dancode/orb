@@ -105,6 +105,23 @@ ui_span( i32 n, f32 size, f32 gap )
 }
 
 /*==============================================================================================
+    Basis unit
+==============================================================================================*/
+
+f32
+ui_line( void )
+{
+    return gui()->sz_line_h();
+}
+
+f32
+ui_u( f32 n )
+{
+    f32 v = n * gui()->sz_line_h();
+    return (f32)(i32)( v + 0.5f );    /* whole px keeps 1-2px frame lines crisp */
+}
+
+/*==============================================================================================
     Widgets
 ==============================================================================================*/
 
@@ -146,6 +163,9 @@ ui_button( gui_rect_t r, const char* label )
 
     gui()->draw_frame( r, bg, border, s_style.border_w );
     gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, label );
+
+    if ( st.clicked ) 
+         gui()->wants_redraw();
 
     return st.clicked;
 }
