@@ -665,6 +665,16 @@ target sb_gui_dock						# docking test bed: dockspace / split / tabs / drag-to-d
     dep         mod sys ref job app core
     dep         rhi gui base
 
+target sb_gui_diablo					# rect-first ui layer proof: diablo-style menu / HUD shell
+
+    type        exe
+    root        source/sandbox/gui/sb_gui_diablo
+    folder      09_SANDBOX/GUI
+    unit        sb_gui_diablo.c
+    unit        ui.c
+    dep         mod sys ref job app core
+    dep         rhi gui base
+
 target sb_gui_editor					# game-engine editor shell over the gui library
 
     type        exe
@@ -1043,6 +1053,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     add         sb_gui_example   	# gui feature explorer (end-to-end demos)
     add         sb_gui_console   	# quake-style dev console
     add         sb_gui_dock   		# docking test bed
+    add         sb_gui_diablo   	# rect-first ui layer proof
     add         sb_gui_timeline   	# prof timeline overlay + workload
     add         sb_gui_editor   	# game-engine editor shell
     add         sb_gui_font   		# font find/bake/preview/export bench
