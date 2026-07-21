@@ -168,12 +168,13 @@ target gui
     type        static
     root        source/runtime_service/gui
     folder      03_RUNTIME/SERVICE
-    unit        gui.c   # UI / core unit
-    unit        gui_backend.c   # render backend unit
-    unit        element/gui_element.c   # GUI_ELEMENT unit: el_* cores, public-surface-only
-    unit        debug/gui_debug.c   # GUI_DEBUG unit: dashboard + command stepper (severable)
-    unit        compose/gui_flow.c   # GUI_FLOW unit: layout composition (metrics in, rects out)
-    unit        gui_chrome.c   # GUI_CHROME unit: widgets/table/window/dock/popup/nav
+    unit        gui.c   					# UI / core unit
+    unit        gui_backend.c  				# render backend unit
+    unit        element/gui_element.c   	# GUI_ELEMENT unit: el_* cores, public-surface-only
+    unit        debug/gui_debug.c   		# GUI_DEBUG unit: dashboard + command stepper (severable)
+    unit        compose/gui_flow.c   		# GUI_FLOW unit: layout composition (metrics in, rects out)
+    unit        gui_chrome.c   				# GUI_CHROME unit: widgets/table/window/dock/popup/nav
+	
     dep         app rhi base
 
 target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the load bench

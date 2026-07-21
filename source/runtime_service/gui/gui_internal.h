@@ -647,21 +647,21 @@ typedef struct { f32 left_h; f32 right_h; } gui_split_entry_t;
 
 typedef struct
 {
-    gui_id_t    id;            // id of the window currently between begin/window_end
-    const char* title;         // title string, cached for window_end's deferred chrome
-    bool        collapsed;     // current window is collapsed (title bar only this frame)
-    bool        minimized;     // current window is a shelf chip (title bar only, chip chrome)
-    bool        hidden;        // CLOSEABLE + closed: begin emitted nothing, end early-outs
-    gui_win_flags_t flags;     // behavior flags supplied to window_begin
-    f32         title_h;       // title bar height (0 if NOTITLEBAR)
-    struct gui_window_t* rec;  // persisted window record; scroll write-back target
+    gui_id_t            id;             // id of the window currently between begin/window_end
+    const char*         title;          // title string, cached for window_end's deferred chrome
+    bool                collapsed;      // current window is collapsed (title bar only this frame)
+    bool                minimized;      // current window is a shelf chip (title bar only, chip chrome)
+    bool                hidden;         // CLOSEABLE + closed: begin emitted nothing, end early-outs
+    gui_win_flags_t     flags;          // behavior flags supplied to window_begin
+    f32                 title_h;        // title bar height (0 if NOTITLEBAR)
+    struct gui_window_t* rec;           // persisted window record; scroll write-back target
 
     /* Docking (gui_dock.c): the node hosting the current window, or NULL when it is
        free-floating.  When set, the window's geometry is owned by the node and its title bar is
        replaced by the node's tab strip; dock_active distinguishes the visible tab (draws a body)
        from a window docked behind another tab (window_begin returns false, draws nothing). */
-    struct gui_dock_node_t* dock_node;
-    bool        dock_active;
+    struct gui_dock_node_t*     dock_node;
+    bool                        dock_active;
 
     f32         x, y;          // current window top-left (outer frame)
     f32         w, h;          // current window dimensions
