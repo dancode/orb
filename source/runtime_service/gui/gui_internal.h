@@ -94,7 +94,8 @@
 
 #define GUI_STATE_TINY_CAP          8       // tiny-class payload bytes (anim dampers/timers, open flags,
                                             //   open_frame stamps -- the one-or-two-word renters)
-#define GUI_STATE_CAP               24      // small-class payload bytes (max tenant: gui_region_t)
+#define GUI_STATE_CAP               32      // small-class payload bytes (max tenant: gui_region_t --
+                                            //   scroll link + user_w/h + the anchor tail-follow pair)
 #define GUI_STATE_BIG_CAP           96      // big-class payload bytes (max tenant: gui_table_persist_t)
 #ifdef GUI_STRESS_TEST
 #define GUI_STATE_BIG_SLOTS         128     // stress-bench build: 4x
@@ -172,6 +173,13 @@ typedef struct
 {
     f32 scroll_x, scroll_y;    // persisted scroll offset; 0 = top-left
     f32 content_w, content_h;  // content extent measured last frame
+
+    /* Bottom-anchor tail-follow (GUI_WIN_ANCHOR_BOTTOM only): pinned_y is the scroll_y layout_push_region
+       last left the region at, so a later external move (wheel / bar / scroll_by) is detectable; unstick
+       latches once the user scrolls off the bottom and clears when they return to it.  Zero on both = the
+       default "follow the tail" state a fresh region opens in. */
+    f32  pinned_y;
+    bool unstick;
 
 } gui_scroll_link_t;
 
@@ -529,6 +537,8 @@ typedef struct
     f32  high_x, high_y;    // CANVAS: highwater -- far corner the content reached
     f32  band_bottom;       // SCREEN: bottom of the content area (view bottom - pad.b) -- grid band end
     bool gap_pending;       // content committed above -- the next line owes a gap
+    f32  anchor_bias;       // GUI_WIN_ANCHOR_BOTTOM: px the content block was dropped to bottom-justify
+                            //   it (0 unless underfilled); pop subtracts it so the measure stays true
 
     gui_layout_mode_t mode; // declared next-item methodology; NONE until a header
 

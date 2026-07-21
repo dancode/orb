@@ -176,6 +176,7 @@ const gui_api_t g_gui_api_struct =
     .view_avail                         = gui_view_avail,
     .rows_clip                          = gui_rows_clip,
     .rows_clip_end                      = gui_rows_clip_end,
+    .scroll_by                          = gui_scroll_by,
     .cursor_screen_pos                  = gui_cursor_screen_pos,
     .empty                              = gui_empty,
     .content_rect                       = gui_content_rect,

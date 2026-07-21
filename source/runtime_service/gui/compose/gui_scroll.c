@@ -152,9 +152,34 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
        below reads -- clips, content track, bars, scroll chase.  Sized here and only here. */
     f->view = ( gui_rect_t ){ outer.x + WIN_BORDER, outer.y, view_w, view_h };
 
+    /* Bottom-anchor tail-follow (GUI_WIN_ANCHOR_BOTTOM): keep the scroll pinned to the content
+       bottom (the newest row) so new output stays in view, until the user scrolls up; scrolling
+       back to the bottom re-arms the follow.  scroll_y stays a normal 0=top offset -- the scrollbar
+       and scroll_clamp below are untouched, we only choose the offset here.  Follow vs. freeze is
+       driven by user intent, not geometry: an external move away from where we last pinned (a wheel
+       notch, a bar drag, scroll_by) more than a row off the bottom unsticks; anything else (content
+       simply growing under a pinned view) keeps following.  Uses last frame's content_h, so a line
+       added this frame reaches the tail next frame -- the one-frame lag every path here runs on. */
+    if ( flags & GUI_WIN_ANCHOR_BOTTOM )
+    {
+        f32 max = last_h - view_h;
+        if ( max < 0.0f ) max = 0.0f;
+        f32 bottom_tol = (f32)WIDGET_H;   /* within a row of the bottom still counts as "at the tail" */
+
+        if ( scroll->scroll_y != scroll->pinned_y )      /* moved since we pinned it */
+            scroll->unstick = ( scroll->scroll_y < max - bottom_tol );
+        if ( !scroll->unstick )
+            scroll->scroll_y = max;                      /* follow the tail */
+    }
+
     /* Clamp scroll against the gutter-adjusted views (last frame's content). */
     scroll_clamp( &scroll->scroll_y, last_h, view_h );
     scroll_clamp( &scroll->scroll_x, last_w, view_w );
+
+    /* Remember the pinned offset AFTER the clamp -- the exact value we leave the region at -- so
+       next frame can tell a genuine external move from content that merely grew. */
+    if ( flags & GUI_WIN_ANCHOR_BOTTOM )
+        scroll->pinned_y = scroll->scroll_y;
 
     /* Content column + pen (the shared derivation in gui_layout_core.c).  region_pad is the inset
        between the region box and where the layout starts (l/r narrow the column, t offsets the
@@ -224,7 +249,7 @@ layout_pop_region( void )
        leaves the same air under the content as a short region shows above it.  An empty region
        still measures 0 -- consumers use content <= 0 as the "never measured" premeasure sentinel.
        Both axes read the highwater pair symmetrically.  Stored for next frame's gutter + knob. */
-    f32 items_h = ( f->high_y + f->scroll->scroll_y ) - f->origin_y;
+    f32 items_h = ( f->high_y + f->scroll->scroll_y ) - f->origin_y - f->anchor_bias;
     f32 items_w = ( f->high_x + f->scroll->scroll_x ) - f->origin_x;
     f32 content_h = ( items_h > 0.0f ) ? items_h + f->pad.t + f->pad.b : 0.0f;
     f32 content_w = ( items_w > 0.0f ) ? items_w + f->pad.l + f->pad.r : 0.0f;

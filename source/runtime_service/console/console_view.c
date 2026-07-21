@@ -19,8 +19,10 @@
         sets how much ambient engine logging is pulled in; `condump` copies it to the clipboard.
       - Height is con_height: a fraction of the space below the viewport chrome (0.1..1.0, 1.0 =
         full).  The body is a 2-row grid (flex scrollback cell + fixed input row); the scrollback
-        is HAND-PAINTED bottom-up (draw_text_clipped from the child's bottom edge upward), so the
-        newest line hugs the input and any leftover space falls at the top -- no flow row math.
+        is a GUI_WIN_ANCHOR_BOTTOM child of real text widgets (one per line, oldest first) --
+        the region bottom-justifies the block so the newest line hugs the input and any leftover
+        space falls at the top, and pins the scroll to the live tail, so the view never does its
+        own row math.  rows_clip virtualizes the run; scroll_by carries the key-driven scrolling.
 
 ==============================================================================================*/
 
@@ -31,16 +33,20 @@
 ==============================================================================================*/
 
 static bool s_open           = false;
-static i32  s_view_offset    = 0;        // scrollback lines above the bottom (0 = live tail)
 static i32  s_history_pos    = -1;       // -1 = editing a live line, else index into history
 static char s_input[ CONSOLE_INPUT_MAX ];
 static i32  s_redraw_frames  = 0;        // force-redraw window after a queued submit
 static u32  s_mono_font      = 0;        // monospace font id for column-aligned output (0 = unloaded)
 static bool s_mono_tried     = false;    // one-shot: the mono font load was attempted
 static bool s_focus_pending  = false;    // one-shot: seat keyboard focus on the input next emit
-static i32  s_rows           = CONSOLE_ROWS;  // visible scrollback rows this frame (con_height derived)
-static u32  s_tail_total     = 0;        // con_line_total() sampled while parked at the live tail
 static i32  s_applied_floor  = -1;       // last log floor pushed to core (con_log_level resync guard)
+
+/* Scrollback scrolling is the gui region's job now (GUI_WIN_ANCHOR_BOTTOM: the block bottom-justifies
+   and the scroll pins to the live tail on its own).  The key map only needs to hand the region a
+   pending nudge, applied inside the scrollback child via gui()->scroll_by; s_page_px is half the
+   scrollback view height, sampled there each frame so PageUp/Down step by a screenful. */
+static f32  s_scroll_dy      = 0.0f;     // pending scroll nudge (px, +down); consumed next scrollback emit
+static f32  s_page_px        = 0.0f;     // PageUp/Down step -- half the scrollback view height
 
 /* Service-owned cvars: registered in console_mod_init (console_api.c), read here.  cvar_t is
    visible via core_api.h, included by console.c ahead of this translation unit. */
@@ -221,17 +227,17 @@ console_key_hook( u32 key, bool ctrl, bool shift, bool repeat, void* user )
         case APP_KEY_UP:        console_history_recall( -1 );                      return true;
         case APP_KEY_DOWN:      console_history_recall( +1 );                      return true;
         case APP_KEY_TAB:       console_complete_input();                          return true;
-        case APP_KEY_PAGE_UP:   s_view_offset += s_rows / 2;                        return true;
-        case APP_KEY_PAGE_DOWN: s_view_offset -= s_rows / 2;                        return true;
+        case APP_KEY_PAGE_UP:   s_scroll_dy -= s_page_px;                           return true;  /* look back (up) */
+        case APP_KEY_PAGE_DOWN: s_scroll_dy += s_page_px;                           return true;
 
-        case APP_KEY_HOME:      /* Ctrl+Home: oldest line (clamped in console_show) */
+        case APP_KEY_HOME:      /* Ctrl+Home: jump to the oldest line (top) */
             if ( !ctrl ) return false;
-            s_view_offset = ( i32 )core()->con_line_count();
+            s_scroll_dy = -1.0e6f;   /* clamped to 0 at the region's next push */
             return true;
 
-        case APP_KEY_END:       /* Ctrl+End: back to the live tail */
+        case APP_KEY_END:       /* Ctrl+End: back to the live tail (bottom) */
             if ( !ctrl ) return false;
-            s_view_offset = 0;
+            s_scroll_dy = 1.0e6f;    /* clamped to the tail; re-arms tail-follow */
             return true;
 
         default:
@@ -262,11 +268,12 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
 
     gui()->window_set_next_pos( 0.0f, top_y, GUI_COND_ALWAYS );
     gui()->window_set_next_size( display_w, win_h, GUI_COND_ALWAYS );
-    /* The scrollback is hand-painted (draw_text_clipped) rather than emitted as flow text, so
-       there are no selectable runs to capture -- GUI_WIN_TEXT_SELECT is intentionally absent.
-       `condump` copies the whole buffer to the clipboard when a copy is needed. */
+    /* The scrollback is a real flow of text widgets over a bottom-anchored region (below); the
+       runs are drawn by widgets but GUI_WIN_TEXT_SELECT stays off, so `condump` copies the whole
+       buffer to the clipboard when a copy is needed. */
     if ( gui()->window_begin( "##console",
-                              GUI_WIN_NODECORATION | GUI_WIN_NOMOVE | GUI_WIN_MODAL ) )
+                              GUI_WIN_NODECORATION | GUI_WIN_NOMOVE | GUI_WIN_MODAL |
+                              GUI_WIN_NOMOUSESCROLL ) )
     {
         /* Fixed-pitch font when one loaded (console_frame): cvarlist and friends align their output
            with printf column padding, which only lines up under a monospace face. */
@@ -284,81 +291,41 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
             .rows = { 1.0f, line_h, GUI_END },
         } );
 
-        /* Scrollback cell.  child_begin in a grid parent takes the cell verbatim; NOSCROLL because
-           we paint the text ourselves and the console owns the wheel.  The child gives a clip
-           scissor and a content_rect to paint into, and child_end restores the parent pen so the
-           input line lands in the next grid cell untouched. */
-        if ( gui()->child_begin( "##console_scrollback", 0.0f, 0.0f, GUI_WIN_NOSCROLL ) )
+        /* Scrollback cell.  A GUI_WIN_ANCHOR_BOTTOM child: the region bottom-justifies the block so
+           the newest line hugs the input and any slack falls at the top, and pins its scroll to the
+           live tail as new output lands (until the user scrolls up).  NOSCROLL keeps it bar-less,
+           Quake style; NOMOUSESCROLL disables the region's own (pop-time, one-frame-lagged) wheel so
+           the console can drive ALL scrolling through scroll_by, which applies same-frame -- wheel
+           and keys alike land with no lag.  Rows emit in NATURAL order (oldest first) as real text
+           widgets; rows_clip virtualizes the run so a deep scrollback costs only its visible slice. */
+        if ( gui()->child_begin( "##console_scrollback", 0.0f, 0.0f,
+                                 GUI_WIN_NOSCROLL | GUI_WIN_NOMOUSESCROLL | GUI_WIN_ANCHOR_BOTTOM ) )
         {
-            /* Rect painter, BOTTOM UP: start at the child's bottom edge and step one line's pitch
-               UPWARD per scrollback line, newest first, until the next row would cross the top.
-               Pure rect math off content_rect -- no flow layout, no row-count or gap arithmetic
-               deciding where a line lands -- so nothing clips at the bottom and any leftover space
-               falls naturally at the TOP.  The child scissor clips a partial top line. */
-            const gui_rect_t area     = gui()->content_rect();
-            const f32        gap      = gui()->sz_row_gap();
-            const f32        pitch    = line_h + gap;
-            const u32        text_col = gui()->style_peek()->colors[ GUI_COL_TEXT ];
-
-            /* Rows that fit -- only for the wheel/page step and the offset clamp, not placement. */
-            i32 fit = ( i32 )( area.h / pitch );
-            if ( fit < 1 )
-                fit = 1;
-            s_rows = fit;
-
-            /* Mouse wheel scrolls the scrollback while open (Quake style); up looks back. */
+            /* Fold the mouse wheel into the pending key-driven scroll (PageUp/Down a screenful,
+               Ctrl+Home/End an edge), then apply it all in one same-frame nudge -- no lag.  Wheel up
+               looks back (toward the top), 3 lines a notch, matching the old console feel. */
             const f32 wheel = gui()->get_mouse_wheel();
             if ( wheel != 0.0f )
-                s_view_offset += ( i32 )wheel * 3;
-
-            const i32 total = ( i32 )core()->con_line_count();
-
-            /* Clamp the view offset so the oldest line can reach the top but no further. */
-            i32 max_offset = total - fit;
-            if ( max_offset < 0 )
-                max_offset = 0;
-            if ( s_view_offset > max_offset )
-                s_view_offset = max_offset;
-            if ( s_view_offset < 0 )
-                s_view_offset = 0;
-
-            /* con_line_total is a monotonic commit counter (survives ring wrap): while parked at the
-               tail it is the baseline for "new output while scrolled".  Guard the subtraction
-               against a con_clear reset (which zeroes it). */
-            const u32 committed = core()->con_line_total();
-            if ( committed < s_tail_total )
-                s_tail_total = committed;
-            const bool scrolled = ( s_view_offset > 0 );
-            if ( !scrolled )
-                s_tail_total = committed;    /* at the tail: this is the new baseline */
-
-            /* y = the TOP of the row being painted; start flush at the child's bottom edge. */
-            f32 y = area.y + area.h - line_h;
-
-            /* When scrolled, the lowest row is a "new output below" marker; text starts one row up. */
-            if ( scrolled )
+                s_scroll_dy -= wheel * line_h * 3.0f;
+            if ( s_scroll_dy != 0.0f )
             {
-                char      sep[ 96 ];
-                const u32 fresh = committed - s_tail_total;
-                if ( fresh > 0 )
-                    snprintf( sep, sizeof( sep ), "v v v  %u new below  (End for live tail)  v v v", fresh );
-                else
-                    snprintf( sep, sizeof( sep ), "^ ^ ^  scrolled back  (End for live tail)  ^ ^ ^" );
-                gui()->draw_text_clipped( ( gui_rect_t ){ area.x, y, area.w, line_h },
-                                          GUI_ALIGN_LEFT, text_col, sep );
-                y -= pitch;
+                gui()->scroll_by( 0.0f, s_scroll_dy );
+                s_scroll_dy = 0.0f;
             }
+            s_page_px = gui()->view_avail().y * 0.5f;
 
-            /* Walk up from the newest visible line.  Continue while a row is even PARTIALLY visible
-               (y + line_h > area.y), so the topmost line bleeds off under the child scissor -- the
-               history reads as scrolling off the top edge rather than ending on a clean cut. */
-            for ( i32 idx = total - 1 - s_view_offset; idx >= 0 && y + line_h > area.y; --idx )
+            const u32 text_col = gui()->style_peek()->colors[ GUI_COL_TEXT ];
+            const i32 total    = ( i32 )core()->con_line_count();
+
+            /* One fixed-height column; rows_clip reserves the whole run's extent (so the scroll range
+               stays honest) and returns only the visible [first,last) slice to emit. */
+            gui()->row_cols_n( line_h, 1 );
+            const gui_span_t vis = gui()->rows_clip( total, line_h );
+            for ( i32 idx = vis.first; idx < vis.last; ++idx )
             {
                 const char* line = core()->con_line_get( ( u32 )idx );
                 const u32   sev  = console_level_color( core()->con_line_level( ( u32 )idx ) );
-                gui()->draw_text_clipped( ( gui_rect_t ){ area.x, y, area.w, line_h },
-                                          GUI_ALIGN_LEFT, sev ? sev : text_col, line );
-                y -= pitch;
+                gui()->text_colored( sev ? sev : text_col, line );
             }
         }
         gui()->child_end();
@@ -393,7 +360,7 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
             s_redraw_frames = 2;              /* output lands next frame; keep the emit alive */
             s_input[ 0 ]  = '\0';
             s_history_pos = -1;
-            s_view_offset = 0;         /* executing snaps the view back to the live tail */
+            s_scroll_dy   = 1.0e6f;    /* executing snaps the view back to the live tail */
         }
         if ( s_mono_font )
             gui()->pop_font();
@@ -415,7 +382,7 @@ console_set_open( bool open )
     s_open = open;
     if ( s_open )
     {
-        s_view_offset   = 0;       /* open on the live tail */
+        s_scroll_dy     = 1.0e6f;  /* open on the live tail (re-arms follow if last closed scrolled up) */
         s_focus_pending = true;    /* one-shot: seat focus on the input as the console appears */
     }
 }

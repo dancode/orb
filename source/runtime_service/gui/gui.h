@@ -1309,6 +1309,17 @@ typedef enum
        set_keyboard_focus for a text-entry modal.  Emit it last in the build so it wins z. */
     GUI_WIN_MODAL             = 1 << 26,
 
+    /* Bottom-anchored content -- the region justifies its whole content block to the BOTTOM of its
+       view instead of the top: when the content underfills the view the slack falls at the TOP and
+       the last (newest) row hugs the bottom edge; when it overflows, the block is top-anchored and
+       the scroll offset is pinned to the tail (the newest row), following it as content grows until
+       the user scrolls up -- scrolling back to the bottom re-arms the follow.  The caller emits rows
+       in natural order (oldest first); no bottom-up pen math.  A console / log / chat transcript.
+       Works on any region (window body, child_begin, region_begin); combine with NOSCROLL for a bar-
+       less console (the wheel and scroll_by still drive it). */
+
+    GUI_WIN_ANCHOR_BOTTOM     = 1 << 27,
+
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual
        ( GUI_WIN_OVERLAY | GUI_WIN_NOMOUSESCROLL ) and a window's resolved behavior is identical

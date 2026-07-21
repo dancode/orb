@@ -891,6 +891,13 @@ typedef struct gui_api_s
     gui_span_t ( *rows_clip     )( i32 count, f32 row_h );
     void       ( *rows_clip_end )( void );
 
+    /* scroll_by -- nudge the currently open region's scroll offset by (dx, dy) px (0=top origin);
+       a large delta drives to an edge, so +BIG reaches the bottom / tail and -BIG the top.  Applied
+       THIS frame (re-bases the live pen), so call it right after opening the region, before content
+       -- no one-frame lag, unlike the wheel.  Pairs with GUI_WIN_ANCHOR_BOTTOM to drive a console's
+       wheel + PageUp/Down + jump-to-tail keys without any offset bookkeeping in the caller. */
+    void       ( *scroll_by     )( f32 dx, f32 dy );
+
     /* cursor_screen_pos -- screen position where the next item would land (GetCursorScreenPos): anchor
        custom draw_* geometry to the pen.  empty -- reserve a w x h block and return its screen rect
        (the ImGui Dummy analogue): blank space, or a slot to fill with custom draw / make clickable

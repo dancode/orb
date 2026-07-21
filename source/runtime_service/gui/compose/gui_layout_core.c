@@ -612,6 +612,23 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     f->content_x     = f->origin_x - f->scroll->scroll_x;
     f->pen_y     = f->origin_y - f->scroll->scroll_y;
 
+    /* Bottom anchor (GUI_WIN_ANCHOR_BOTTOM): when last frame's content underfills the view, drop the
+       whole block by the slack so the last (newest) row hugs the view bottom and the empty space
+       falls at the TOP -- the flush-at-bottom, overflow-at-top flow a console wants, with no per-row
+       pen math.  Overflow (bias <= 0) leaves the block top-anchored; the scroll offset (pinned to the
+       tail in layout_push_region) shows the bottom instead.  The bias is a PRESENTATION shift only --
+       layout_pop_region subtracts anchor_bias back out of the measure so content_h stays the true
+       content height and the scroll range / autosize read honestly.  Uses last frame's content_h, the
+       same one-frame lag every measured-feedback path here already runs on. */
+    f->anchor_bias = 0.0f;
+    if ( f->flags & GUI_WIN_ANCHOR_BOTTOM )
+    {
+        f32 interior_h = f->view.h - pad.t - pad.b;
+        f32 items_h    = ( f->scroll->content_h > 0.0f ) ? f->scroll->content_h - pad.t - pad.b : 0.0f;
+        f32 bias       = interior_h - items_h;
+        if ( bias > 0.0f ) { f->pen_y += bias; f->anchor_bias = bias; }
+    }
+
     /* Track width: the view width, widened to last frame's measured content when that content ran
        wider.  scroll_clamp (layout_push_region) already lets scroll_x range across that extra width
        regardless of the HSCROLL flags -- a wheel or bar can reach it -- so a track pinned to the view

@@ -509,6 +509,43 @@ gui_rows_clip_end( void )
     s_rows_run_end = 0.0f;
 }
 
+/* scroll_by -- nudge the CURRENTLY OPEN region's scroll offset by (dx, dy) in px, applied THIS frame.
+   scroll_y stays a normal 0=top value, so a large delta drives to an edge (clamped here against last
+   frame's measured content): +BIG jumps to the bottom / tail, -BIG to the top.  Unlike a wheel notch
+   (claimed at pop, so it only reaches the screen next frame), this re-bases the live pen by the same
+   delta the moment it is called, so items emitted after it land at the new offset with no one-frame
+   lag -- call it right after opening the region, before its content.  The measure stays honest: the
+   pen and highwater move together (as a region scroll does), so pop reads the true content extent.
+   No-op in a region without a scroll link (a sub-layout, or outside any region). */
+void
+gui_scroll_by( f32 dx, f32 dy )
+{
+    layout_frame_t* f = lf();
+    if ( !f->scroll ) return;
+
+    f32 old_x = f->scroll->scroll_x;
+    f32 old_y = f->scroll->scroll_y;
+    f->scroll->scroll_x += dx;
+    f->scroll->scroll_y += dy;
+
+    /* Clamp to the same range the next push would (last frame's content vs. this frame's view), so a
+       jump-to-edge delta settles exactly on the edge instead of overshooting into a blank frame. */
+    scroll_clamp( &f->scroll->scroll_y, f->scroll->content_h, f->view.h );
+    scroll_clamp( &f->scroll->scroll_x, f->scroll->content_w, f->view.w );
+
+    /* Re-base the live canvas by the delta actually applied: pen_y = origin_y - scroll_y, so a larger
+       scroll_y slides the content up.  pen and highwater shift together, keeping the seed invariant
+       (an empty region still measures 0) and the pop measure true. */
+    f32 applied_x = f->scroll->scroll_x - old_x;
+    f32 applied_y = f->scroll->scroll_y - old_y;
+    f->content_x -= applied_x;
+    f->high_x    -= applied_x;
+    f->pen_y     -= applied_y;
+    f->high_y    -= applied_y;
+
+    g_ctx->retained.wants_redraw = true;
+}
+
 /* Screen position where the next item would be emitted -- the GetCursorScreenPos analogue.  Anchor
    custom draw_* geometry to the layout pen without reserving a cell first; pair with content_avail()
    for the space ahead.  Mode-aware: a pack run (or an armed same_line) reports the running line
