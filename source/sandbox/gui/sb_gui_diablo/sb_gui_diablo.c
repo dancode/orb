@@ -5,10 +5,13 @@
     The test bed for the ui.h prototype layer: every screen is exact-fit layout -- panels,
     slot grids, and bars placed with rect arithmetic, never flow.  Built in increments:
 
-      increment 1 (this) -- main menu: centered option column, title band, footer.  Screen
+      increment 1 (done) -- main menu: centered option column, title band, footer.  Screen
                             switching shell + stub screens the later increments fill in.
-      increment 2        -- in-game HUD: action bar, potion slots, health/mana globes.
-      increment 3+       -- skill tree, equipment (256px slot grid), character stats.
+      increment 2 (done) -- in-game HUD: action bar (art-exact 64px slots), potion, health/
+                            mana globes, XP strip, click-to-move world marker.
+      increment 3 (done) -- skill tree (3x4 lattice + connectors), equipment (paper doll +
+                            8x6 backpack of art-exact cells, cursor-carry), character stats
+                            (cut-per-row list with steppers).  OPTIONS remains a stub.
 
     The point is the READ of the screen functions below: if the layout code is not obvious
     arithmetic, the ui layer failed.  ESC returns to the menu from any screen.
@@ -100,6 +103,368 @@ screen_menu( gui_vp_t vp )
 }
 
 /*==============================================================================================
+    In-game HUD (increment 2) -- the exact-fit case: a fixed bottom band carved off the screen,
+    art-exact 64px action slots dead center, resource globes at the band's outer thirds, an XP
+    strip across the top of the band.  The "world" above is a click-to-move marker so the HUD
+    proves itself against live input (slots and world share the screen without fighting).
+==============================================================================================*/
+
+static f32        s_health       = 0.72f;
+static f32        s_mana         = 0.55f;
+static i32        s_potions      = 3;
+static i32        s_active_skill = 0;
+static gui_vec2_t s_move_target  = { 0.0f, 0.0f };
+static bool       s_has_target   = false;
+
+static f32 clamp01( f32 v ) { return ( v < 0.0f ) ? 0.0f : ( v > 1.0f ) ? 1.0f : v; }
+
+static void
+screen_game( gui_vp_t vp )
+{
+    gui_rect_t screen = ui_screen_begin( vp, "game" );
+
+    /* HUD band first -- carve the bottom 6u so the world knows its space */
+    gui_rect_t hud   = ui_cut_bottom( &screen, ui_u( 6.0f ) );
+    gui_rect_t world = screen;    /* everything left is the play field */
+
+    /* ---- world: a dark floor wash + click-to-move marker ---- */
+    gui()->draw_gradient( world, GUI_COLOR( 0x08, 0x06, 0x05, 0xff ),
+                                 GUI_COLOR( 0x1a, 0x12, 0x0c, 0xff ), false );
+    ui_label_c( ui_place( world, world.w, ui_line(), GUI_ALIGN_HCENTER | GUI_ALIGN_TOP ),
+                GUI_ALIGN_CENTER, ui_style()->text_dim,
+                "left-click: move    1-4: skills    Q: potion    ESC: menu" );
+
+    if ( gui()->invisible_button( "##world", world ))
+    {
+        gui()->get_mouse_pos( &s_move_target.x, &s_move_target.y );
+        s_has_target = true;
+        gui()->request_redraw();
+    }
+    if ( s_has_target )
+    {
+        /* damper glide to the last click; anim keeps frames coming until it settles */
+        gui_vec2_t pos = gui()->anim_vec2( 0xD1AB70u, s_move_target, 6.0f );
+        gui()->draw_circle( pos.x, pos.y, 10.0f, true,  0.0f, GUI_COLOR( 0xc8, 0x50, 0x20, 0xff ) );
+        gui()->draw_circle( pos.x, pos.y, 10.0f, false, 2.0f, GUI_COLOR( 0xe8, 0xc0, 0x50, 0xff ) );
+    }
+
+    /* ---- XP strip: a thin meter across the top of the band, trimmed 10u off each end ---- */
+    gui_rect_t xp = ui_cut_top( &hud, ui_u( 0.4f ) );
+    ui_cut_left ( &xp, ui_u( 10.0f ) );
+    ui_cut_right( &xp, ui_u( 10.0f ) );
+    ui_meter( xp, 0.35f, GUI_COLOR( 0x8a, 0x6a, 0x20, 0xff ) );
+
+    /* ---- globes: centered in the outer 6u of the band ---- */
+    char cap[ 16 ];
+    f32  gd = ui_u( 4.5f );
+
+    gui_rect_t lzone = ui_cut_left ( &hud, ui_u( 6.0f ) );
+    snprintf( cap, sizeof( cap ), "%d", (i32)( s_health * 100.0f ) );
+    ui_globe( ui_place( lzone, gd, gd, GUI_ALIGN_CENTER ), s_health,
+              GUI_COLOR( 0x9a, 0x18, 0x10, 0xff ), cap );
+
+    gui_rect_t rzone = ui_cut_right( &hud, ui_u( 6.0f ) );
+    snprintf( cap, sizeof( cap ), "%d", (i32)( s_mana * 100.0f ) );
+    ui_globe( ui_place( rzone, gd, gd, GUI_ALIGN_CENTER ), s_mana,
+              GUI_COLOR( 0x18, 0x30, 0x9a, 0xff ), cap );
+
+    /* ---- action bar: 6 art-exact 64px slots, 8px gaps, dead center of what remains ---- */
+    static const struct { const char* glyph; const char* key; } slots[] = {
+        { "I", "1" }, { "II", "2" }, { "III", "3" }, { "IV", "4" },   /* skills  */
+        { "",  "Q" },                                                 /* potion  */
+        { "TP", "E" },                                                /* to town */
+    };
+    const i32 ns = (i32)( sizeof( slots ) / sizeof( slots[ 0 ] ) );
+
+    char pots[ 8 ];
+    snprintf( pots, sizeof( pots ), "x%d", s_potions );
+
+    gui_rect_t bar = ui_place( hud, ui_span( ns, 64.0f, 8.0f ), 64.0f, GUI_ALIGN_CENTER );
+    for ( i32 i = 0; i < ns; ++i )
+    {
+        const char* glyph  = ( i == 4 ) ? pots : slots[ i ].glyph;
+        bool        active = ( i < 4 ) && ( s_active_skill == i );
+        bool        fire   = ui_slot( ui_col( bar, i, ns, 8.0f ), glyph, slots[ i ].key, active );
+
+        if ( i < 4  && gui()->is_key_pressed( (app_key_t)( APP_KEY_1 + i ) ) ) fire = true;
+        if ( i == 4 && gui()->is_key_pressed( APP_KEY_Q ) )                    fire = true;
+        if ( i == 5 && gui()->is_key_pressed( APP_KEY_E ) )                    fire = true;
+        if ( !fire )
+            continue;
+
+        gui()->request_redraw();    /* key-driven state change: next build shows it */
+        if      ( i < 4 )  { s_active_skill = i;  s_mana = clamp01( s_mana - 0.06f ); }
+        else if ( i == 4 ) { if ( s_potions > 0 ) { s_potions--; s_health = clamp01( s_health + 0.15f ); } }
+        else               s_screen = SCR_MENU;
+    }
+
+    if ( gui()->is_key_pressed( APP_KEY_ESCAPE ) )
+    {
+        s_screen = SCR_MENU;
+        gui()->request_redraw();
+    }
+
+    ui_screen_end();
+}
+
+/*==============================================================================================
+    Shared screen chrome -- BACK button one unit below a panel + ESC, every sub-screen's exit.
+==============================================================================================*/
+
+static void
+nav_back( gui_rect_t panel )
+{
+    gui_rect_t back = ui_place( panel, ui_u( 7.0f ), ui_u( 2.0f ), GUI_ALIGN_HCENTER | GUI_ALIGN_BOTTOM );
+    back.y = panel.y + panel.h + ui_u( 1.0f );
+    if ( ui_button( back, "BACK" ) || gui()->is_key_pressed( APP_KEY_ESCAPE ) )
+    {
+        s_screen = SCR_MENU;
+        gui()->request_redraw();
+    }
+}
+
+/*==============================================================================================
+    Skill tree (increment 3) -- three branches x four tiers on a fixed lattice.  Connector
+    lines run cell-center to cell-center (drawn first, nodes over them); a node is LOCKED
+    until its prerequisite (the tier above, same branch) is taken -- locked nodes are plain
+    panels, not widgets.  Click a lit node to spend a point; click a taken node to refund it
+    (only if nothing below depends on it).
+==============================================================================================*/
+
+static i32  s_skill_points = 5;
+static bool s_skill_taken[ 12 ];   /* [branch * 4 + tier] */
+
+static void
+screen_skills( gui_vp_t vp )
+{
+    static const char* branch[ 3 ] = { "EMBER", "GALE", "BONE" };
+    static const char* tier  [ 4 ] = { "I", "II", "III", "IV" };
+
+    gui_rect_t screen = ui_screen_begin( vp, "skills" );
+    ui_title( ui_cut_top( &screen, ui_u( 4.0f ) ), "SKILL TREE" );
+
+    /* panel sized from its contents: header + 3x4 lattice + footer line */
+    const f32 pad    = ui_u( 0.75f );
+    const f32 head_h = ui_u( 1.2f );
+    const f32 lat_w  = ui_u( 24.0f );
+    const f32 lat_h  = ui_u( 16.0f );
+
+    gui_rect_t panel = ui_place( screen, lat_w + 2.0f * pad,
+                                 head_h + lat_h + head_h + 2.0f * pad, GUI_ALIGN_CENTER );
+    ui_panel( panel );
+    nav_back( panel );
+
+    gui_rect_t in   = ui_inset( panel, pad );
+    gui_rect_t head = ui_cut_top( &in, head_h );
+    gui_rect_t foot = ui_cut_bottom( &in, head_h );
+    gui_rect_t lat  = in;
+
+    for ( i32 b = 0; b < 3; ++b )
+        ui_label_c( ui_col( head, b, 3, 0.0f ), GUI_ALIGN_CENTER, ui_style()->title, branch[ b ] );
+
+    char buf[ 64 ];
+    snprintf( buf, sizeof( buf ), "POINTS: %d    (click a taken node to refund)", s_skill_points );
+    ui_label_c( foot, GUI_ALIGN_CENTER, ui_style()->text_dim, buf );
+
+    /* connectors first, nodes on top; a link lights up once both ends are taken */
+    for ( i32 b = 0; b < 3; ++b )
+        for ( i32 t = 1; t < 4; ++t )
+        {
+            gui_vec2_t a = gui_rect_center( ui_cell( lat, b, t - 1, 3, 4, 0.0f ) );
+            gui_vec2_t c = gui_rect_center( ui_cell( lat, b, t,     3, 4, 0.0f ) );
+            bool lit = s_skill_taken[ b * 4 + t - 1 ] && s_skill_taken[ b * 4 + t ];
+            gui()->draw_line( a.x, a.y, c.x, c.y, 2.0f,
+                              lit ? ui_style()->btn_border_hover : ui_style()->btn_border );
+        }
+
+    for ( i32 b = 0; b < 3; ++b )
+        for ( i32 t = 0; t < 4; ++t )
+        {
+            i32  i        = b * 4 + t;
+            bool taken    = s_skill_taken[ i ];
+            bool unlocked = ( t == 0 ) || s_skill_taken[ i - 1 ];
+            gui_rect_t node = ui_place( ui_cell( lat, b, t, 3, 4, 0.0f ), 56.0f, 56.0f, GUI_ALIGN_CENTER );
+
+            if ( !unlocked )    /* locked: inert chrome, not a widget */
+            {
+                ui_panel( node );
+                ui_label_c( node, GUI_ALIGN_CENTER, ui_style()->text_dim, tier[ t ] );
+                continue;
+            }
+
+            gui()->push_id_int( i );
+            if ( ui_slot( node, tier[ t ], "", taken ) )
+            {
+                bool dependent = ( t < 3 ) && s_skill_taken[ i + 1 ];
+                if      ( taken && !dependent )          { s_skill_taken[ i ] = false; s_skill_points++; }
+                else if ( !taken && s_skill_points > 0 ) { s_skill_taken[ i ] = true;  s_skill_points--; }
+            }
+            gui()->pop_id();
+        }
+
+    ui_screen_end();
+}
+
+/*==============================================================================================
+    Equipment (increment 3) -- paper doll (3x4 lattice of art-exact 64px slots, cross layout)
+    beside an 8x6 backpack grid of 48px cells.  The panel's dimensions are COMPUTED from those
+    art sizes with ui_span -- the container fits the slots, never the other way around.  Click
+    any slot to pick its item up onto the cursor; click again to place / swap.
+==============================================================================================*/
+
+typedef struct doll_slot_t { i32 cx, cy; const char* tag; } doll_slot_t;
+
+static const doll_slot_t s_doll_lay[ 9 ] = {
+    { 1, 0, "HD" }, { 2, 0, "AM" },                    /* head, amulet          */
+    { 0, 1, "WP" }, { 1, 1, "CH" }, { 2, 1, "SH" },    /* weapon, chest, shield */
+    { 0, 2, "R1" }, { 1, 2, "LG" }, { 2, 2, "R2" },    /* rings, legs           */
+    { 1, 3, "FT" },                                    /* feet                  */
+};
+
+static char s_doll[ 9 ]  = { 0, 0, 'S', 'A', 0, 0, 0, 0, 0 };    /* sword + armor equipped */
+static char s_bag[ 48 ]  = { 'G', 0, '!', 0, 0, 'R', 0, 0, '!', 0, 0, 0, 'B' };
+static char s_carry      = 0;
+
+static void
+screen_equip( gui_vp_t vp )
+{
+    gui_rect_t screen = ui_screen_begin( vp, "equip" );
+    ui_title( ui_cut_top( &screen, ui_u( 4.0f ) ), "EQUIPMENT" );
+
+    /* the two art blocks size the panel */
+    const f32 pad    = ui_u( 0.75f );
+    const f32 head_h = ui_line();
+    const f32 doll_w = ui_span( 3, 64.0f, 8.0f ), doll_h = ui_span( 4, 64.0f, 8.0f );
+    const f32 grid_w = ui_span( 8, 48.0f, 6.0f ), grid_h = ui_span( 6, 48.0f, 6.0f );
+    const f32 body_h = ( doll_h > grid_h ) ? doll_h : grid_h;
+
+    gui_rect_t panel = ui_place( screen, doll_w + pad + grid_w + 2.0f * pad,
+                                 head_h + ui_u( 0.25f ) + body_h + 2.0f * pad, GUI_ALIGN_CENTER );
+    ui_panel( panel );
+    nav_back( panel );
+
+    gui_rect_t in    = ui_inset( panel, pad );
+    gui_rect_t left  = ui_cut_left( &in, doll_w );
+    ui_cut_left( &in, pad );                          /* the gutter between the blocks */
+    gui_rect_t right = in;
+
+    ui_label_c( ui_cut_top( &left,  head_h ), GUI_ALIGN_LEFT, ui_style()->text_dim, "EQUIPPED" );
+    ui_label_c( ui_cut_top( &right, head_h ), GUI_ALIGN_LEFT, ui_style()->text_dim, "BACKPACK" );
+    ui_cut_top( &left,  ui_u( 0.25f ) );
+    ui_cut_top( &right, ui_u( 0.25f ) );
+
+    /* paper doll: 9 slots on a 3x4 lattice of exact 64px cells */
+    gui_rect_t doll = ui_place( left, doll_w, doll_h, GUI_ALIGN_HCENTER | GUI_ALIGN_TOP );
+    for ( i32 i = 0; i < 9; ++i )
+    {
+        gui_rect_t cell = ui_cell( doll, s_doll_lay[ i ].cx, s_doll_lay[ i ].cy, 3, 4, 8.0f );
+        char glyph[ 2 ] = { s_doll[ i ], 0 };
+
+        gui()->push_id_int( 100 + i );
+        if ( ui_slot( cell, glyph, s_doll_lay[ i ].tag, s_doll[ i ] != 0 ) )
+        {
+            char t = s_doll[ i ]; s_doll[ i ] = s_carry; s_carry = t;
+        }
+        gui()->pop_id();
+    }
+
+    /* backpack: 8x6 grid of exact 48px cells */
+    gui_rect_t bag = ui_place( right, grid_w, grid_h, GUI_ALIGN_LEFT | GUI_ALIGN_TOP );
+    for ( i32 i = 0; i < 48; ++i )
+    {
+        gui_rect_t cell = ui_cell( bag, i % 8, i / 8, 8, 6, 6.0f );
+        char glyph[ 2 ] = { s_bag[ i ], 0 };
+
+        gui()->push_id_int( i );
+        if ( ui_slot( cell, glyph, "", false ) )
+        {
+            char t = s_bag[ i ]; s_bag[ i ] = s_carry; s_carry = t;
+        }
+        gui()->pop_id();
+    }
+
+    /* the carried item rides the cursor (mouse motion keeps frames dirty on its own) */
+    if ( s_carry )
+    {
+        f32 mx, my;
+        char glyph[ 2 ] = { s_carry, 0 };
+        gui()->get_mouse_pos( &mx, &my );
+        gui()->draw_text_shadow( mx + 14.0f, my + 10.0f, glyph,
+                                 ui_style()->title, ui_style()->title_shadow, 1.0f, 1.0f );
+    }
+
+    ui_screen_end();
+}
+
+/*==============================================================================================
+    Character stats (increment 3) -- a cut-per-row list: four allocatable attributes with
+    [-][+] steppers against a points pool, then the derived block computed from them.
+==============================================================================================*/
+
+static i32       s_stat_points   = 5;
+static i32       s_stat[ 4 ]      = { 24, 18, 30, 12 };
+static const i32 s_stat_base[ 4 ] = { 24, 18, 30, 12 };
+
+static void
+screen_stats( gui_vp_t vp )
+{
+    static const char* stat_name[ 4 ] = { "STRENGTH", "DEXTERITY", "VITALITY", "ENERGY" };
+
+    gui_rect_t screen = ui_screen_begin( vp, "stats" );
+    ui_title( ui_cut_top( &screen, ui_u( 4.0f ) ), "CHARACTER" );
+
+    const f32 pad   = ui_u( 0.75f );
+    const f32 row_h = ui_u( 1.6f );
+
+    gui_rect_t panel = ui_place( screen, ui_u( 20.0f ),
+                                 ui_u( 1.5f ) + 8.0f * row_h + ui_u( 0.75f ) + 2.0f * pad,
+                                 GUI_ALIGN_CENTER );
+    ui_panel( panel );
+    nav_back( panel );
+
+    gui_rect_t in   = ui_inset( panel, pad );
+    gui_rect_t head = ui_cut_top( &in, ui_u( 1.5f ) );
+    char buf[ 32 ];
+    snprintf( buf, sizeof( buf ), "POINTS: %d", s_stat_points );
+    ui_label_c( head, GUI_ALIGN_LEFT  | GUI_ALIGN_VCENTER, ui_style()->text,     "ATTRIBUTES" );
+    ui_label_c( head, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER, ui_style()->title,    buf );
+
+    for ( i32 i = 0; i < 4; ++i )
+    {
+        gui_rect_t row  = ui_cut_top( &in, row_h );
+        gui_rect_t plus = ui_place( ui_cut_right( &row, ui_u( 1.5f ) ), ui_u( 1.2f ), ui_u( 1.2f ), GUI_ALIGN_CENTER );
+        gui_rect_t minus= ui_place( ui_cut_right( &row, ui_u( 1.5f ) ), ui_u( 1.2f ), ui_u( 1.2f ), GUI_ALIGN_CENTER );
+        ui_cut_right( &row, ui_u( 0.5f ) );
+
+        gui()->push_id_int( i );
+        if ( ui_button( plus,  "+" ) && s_stat_points > 0 )              { s_stat[ i ]++; s_stat_points--; }
+        if ( ui_button( minus, "-" ) && s_stat[ i ] > s_stat_base[ i ] ) { s_stat[ i ]--; s_stat_points++; }
+        gui()->pop_id();
+
+        snprintf( buf, sizeof( buf ), "%d", s_stat[ i ] );
+        ui_label_c( row, GUI_ALIGN_LEFT  | GUI_ALIGN_VCENTER, ui_style()->text, stat_name[ i ] );
+        ui_label_c( row, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER, ui_style()->text, buf );
+    }
+
+    gui_rect_t rule = ui_cut_top( &in, ui_u( 0.75f ) );
+    gui()->draw_line( rule.x, rule.y + rule.h * 0.5f, rule.x + rule.w, rule.y + rule.h * 0.5f,
+                      1.0f, ui_style()->panel_border );
+
+    static const char* dv_name[ 4 ] = { "ATTACK", "DEFENSE", "LIFE", "MANA" };
+    const i32 dv[ 4 ] = { s_stat[ 0 ] * 2, s_stat[ 1 ] * 3,
+                          60 + s_stat[ 2 ] * 4, 20 + s_stat[ 3 ] * 3 };
+    for ( i32 i = 0; i < 4; ++i )
+    {
+        gui_rect_t row = ui_cut_top( &in, row_h );
+        snprintf( buf, sizeof( buf ), "%d", dv[ i ] );
+        ui_label_c( row, GUI_ALIGN_LEFT  | GUI_ALIGN_VCENTER, ui_style()->text_dim, dv_name[ i ] );
+        ui_label_c( row, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER, ui_style()->text_dim, buf );
+    }
+
+    ui_screen_end();
+}
+
+/*==============================================================================================
     Stub screens -- placeholders the later increments replace.  Same skeleton on purpose:
     a titled screen with a centered panel and a BACK button proves the layer reuses cleanly.
 ==============================================================================================*/
@@ -138,10 +503,10 @@ build_frame( gui_vp_t vp )
     switch ( s_screen )
     {
         case SCR_MENU:    screen_menu( vp ); break;
-        case SCR_GAME:    screen_stub( vp, "game",    "SANCTUM",    "increment 2: HUD -- action bar, potions, globes" ); break;
-        case SCR_SKILLS:  screen_stub( vp, "skills",  "SKILL TREE", "increment 3: node web on a fixed lattice"        ); break;
-        case SCR_EQUIP:   screen_stub( vp, "equip",   "EQUIPMENT",  "increment 3: paper doll + slot grid"             ); break;
-        case SCR_STATS:   screen_stub( vp, "stats",   "CHARACTER",  "increment 3: attribute list"                     ); break;
+        case SCR_GAME:    screen_game( vp ); break;
+        case SCR_SKILLS:  screen_skills( vp ); break;
+        case SCR_EQUIP:   screen_equip ( vp ); break;
+        case SCR_STATS:   screen_stats ( vp ); break;
         case SCR_OPTIONS: screen_stub( vp, "options", "OPTIONS",    "later: settings forms"                           ); break;
     }
 }

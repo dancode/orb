@@ -10,6 +10,8 @@
 
 #include "sandbox/gui/sb_gui_diablo/ui.h"
 
+#include "base/fmt.h"    /* fmt_snprintf -- slot id composition */
+
 // clang-format off
 
 /*==============================================================================================
@@ -28,6 +30,12 @@ static ui_style_t s_style = {
     .text_dim         = GUI_COLOR( 0x80, 0x74, 0x5c, 0xff ),
     .title            = GUI_COLOR( 0xe8, 0xc0, 0x50, 0xff ),
     .title_shadow     = GUI_COLOR( 0x40, 0x10, 0x08, 0xff ),
+    .slot_bg          = GUI_COLOR( 0x0e, 0x0b, 0x08, 0xf0 ),
+    .slot_border      = GUI_COLOR( 0x52, 0x3a, 0x1a, 0xff ),
+    .slot_border_hot  = GUI_COLOR( 0xc8, 0x96, 0x3c, 0xff ),
+    .globe_bg         = GUI_COLOR( 0x0a, 0x08, 0x06, 0xf5 ),
+    .globe_ring       = GUI_COLOR( 0x6b, 0x4a, 0x1f, 0xff ),
+    .meter_bg         = GUI_COLOR( 0x12, 0x0e, 0x0a, 0xf0 ),
     .border_w         = 2.0f,
 };
 
@@ -170,6 +178,65 @@ ui_button( gui_rect_t r, const char* label )
         gui()->request_redraw();
 
     return st.clicked;
+}
+
+bool
+ui_slot( gui_rect_t r, const char* label, const char* hotkey, bool active )
+{
+    char id[ 64 ];
+    fmt_snprintf( id, sizeof( id ), "%s##slot_%s", label, hotkey );
+    gui_item_state_t st = gui()->item( id, r );
+
+    u32 border = ( active || st.hover || st.nav ) ? s_style.slot_border_hot : s_style.slot_border;
+    u32 bg     = st.active ? s_style.btn_bg_press : s_style.slot_bg;
+
+    gui()->draw_frame( r, bg, border, s_style.border_w );
+    if ( label  && label[ 0 ] )
+        gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, label );
+    if ( hotkey && hotkey[ 0 ] )
+        gui()->draw_text_in( ui_inset( r, 3.0f ), GUI_ALIGN_RIGHT | GUI_ALIGN_BOTTOM,
+                             s_style.text_dim, hotkey );
+
+    if ( st.clicked )
+        gui()->request_redraw();
+    return st.clicked;
+}
+
+void
+ui_globe( gui_rect_t r, f32 frac, u32 fill_abgr, const char* caption )
+{
+    frac = ( frac < 0.0f ) ? 0.0f : ( frac > 1.0f ) ? 1.0f : frac;
+
+    f32 rad = ( ( r.w < r.h ) ? r.w : r.h ) * 0.5f;
+    f32 cx  = r.x + r.w * 0.5f;
+    f32 cy  = r.y + r.h * 0.5f;
+
+    gui()->draw_circle( cx, cy, rad, true, 0.0f, s_style.globe_bg );
+
+    /* bottom-up liquid fill: clip the circle to the bottom `frac` of its box */
+    if ( frac > 0.0f )
+    {
+        f32 lid = ( cy + rad ) - frac * ( 2.0f * rad );
+        gui()->push_clip( cx - rad, lid, 2.0f * rad, ( cy + rad ) - lid );
+        gui()->draw_circle( cx, cy, rad, true, 0.0f, fill_abgr );
+        gui()->pop_clip();
+    }
+
+    gui()->draw_circle( cx, cy, rad, false, 3.0f, s_style.globe_ring );
+    if ( caption && caption[ 0 ] )
+        gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, caption );
+}
+
+void
+ui_meter( gui_rect_t r, f32 frac, u32 fill_abgr )
+{
+    frac = ( frac < 0.0f ) ? 0.0f : ( frac > 1.0f ) ? 1.0f : frac;
+
+    gui()->draw_frame( r, s_style.meter_bg, s_style.panel_border, 1.0f );
+    gui_rect_t fill = ui_inset( r, 1.0f );
+    fill.w *= frac;
+    if ( fill.w > 0.0f )
+        gui()->draw_rect( fill.x, fill.y, fill.w, fill.h, fill_abgr );
 }
 
 /*============================================================================================*/

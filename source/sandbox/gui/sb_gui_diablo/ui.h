@@ -107,6 +107,20 @@ void ui_label_c( gui_rect_t r, gui_align_t align, u32 abgr, const char* text );
 void ui_title  ( gui_rect_t r, const char* text );                 // centered display text
 bool ui_button ( gui_rect_t r, const char* label );                // true on click
 
+/* ui_slot -- a square action-bar / inventory cell: framed box, `label` centered, `hotkey`
+   tucked in the bottom-right corner (either may be "").  `active` draws the highlighted frame
+   (the selected-skill state).  The id comes from label##hotkey, so give repeated glyphs
+   distinct hotkeys or wrap in push_id.  Returns true on click. */
+bool ui_slot ( gui_rect_t r, const char* label, const char* hotkey, bool active );
+
+/* ui_globe -- the Diablo resource orb: a circle inscribed in r, filled bottom-up to `frac`
+   (0..1) in fill_abgr over the dark empty liquid, rimmed, `caption` centered (may be ""). */
+void ui_globe ( gui_rect_t r, f32 frac, u32 fill_abgr, const char* caption );
+
+/* ui_meter -- a horizontal fill bar (XP strip, cast bar): framed track, filled left-to-right
+   to `frac` (0..1) in fill_abgr. */
+void ui_meter ( gui_rect_t r, f32 frac, u32 fill_abgr );
+
 /*==============================================================================================
     Style -- one flat struct, mutable at any time.  No stacks, no push/pop: a screen that wants
     different colors sets them before its widgets and (optionally) restores after.
@@ -125,6 +139,12 @@ typedef struct ui_style_t
     u32 text_dim;           // secondary text
     u32 title;              // display text
     u32 title_shadow;       // display text drop shadow
+    u32 slot_bg;            // action-bar / inventory slot fill
+    u32 slot_border;        // slot frame line, idle
+    u32 slot_border_hot;    // slot frame line, hover / active selection
+    u32 globe_bg;           // resource orb empty liquid
+    u32 globe_ring;         // resource orb rim line
+    u32 meter_bg;           // meter empty track
     f32 border_w;           // frame line width (panels + buttons)
 
 } ui_style_t;
