@@ -3,18 +3,18 @@
     runtime_service/gui/core/gui_ctx.c -- Immediate-mode context state and per-frame drivers.
 
     Declares all persistent ambient and frame-scratch state (s_interaction, s_build, gui_nav_state_t,
-    layout_frame_t, gui_context_t) and drives the per-frame lifecycle via ctx_new_frame.  Also owns
-    the public services that operate directly on the context pool and belong to no tier of their
-    own: memory stats (gui_mem_stats/gui_print_mem_stats) and the multi-context lifecycle
-    (gui_ctx_create/destroy/bind/set_listening).
+    layout_frame_t, gui_context_t) and drives the per-frame lifecycle via ctx_new_frame.  Owns the
+    context pool storage (s_ctx_pool, ctx_alloc_slot, ctx_bind); the PUBLIC multi-context lifecycle
+    and the memory-stats aggregation moved to the frame unit at the R4 carve (see the moved-out
+    block at the bottom).
 
     ID hashing and the keyed state pool (id_hash, id_combine, id_seed/push/pop, gui_state_get,
     GUI_STATE) are in core/gui_id.c + core/gui_state.c, included just after this file.
 
     Public IO accessors (gui_want_capture_*, gui_is_key_*, gui_is_mouse_*, etc.) are in
-    user/gui_query.c, included in the user/ tier below.
+    core/gui_query.c, the interact server's read surface.
 
-    Included by gui.c after core/gui_io.c so s_io is in scope.
+    Included by gui_core.c (the INTERACT SERVER unit) after core/gui_io.c so s_io is in scope.
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   /* gui_nav_state_t, layout_frame_t, gui_popup_t,
@@ -48,7 +48,7 @@ gui_interaction_t s_interaction;
 
 /* True only while a volatile-widget callback is replayed standalone on an idle frame; set/cleared
    by gui_replay_scope_enter/_exit (widgets/gui_volatile.c).  Ambient frame-phase state, same tier as
-   hover_id/active_id: item_state (interact/gui_item.c) reads it inline to short-circuit before any
+   hover_id/active_id: item_state (core/gui_item.c) reads it inline to short-circuit before any
    hit-test or write to s_interaction/s_build -- a replay renders against the hover/active/focus the
    last real frame established and can never acquire state or see a fresh click, since interaction is
    resolved only on real frames. */
@@ -69,7 +69,7 @@ bool s_replay_mode;
    - Layout pen + scroll region state live on the layout-frame stack below; the window is just
      the root frame.
    - item_flags / next_set / next_val: the push-model behavior set; the value resolved for the
-     widget currently emitting is latched into s_scope.flags by item_flags_resolve.
+     widget currently emitting is latched into s_scope.flags by item_flags_take.
    - combo_open / combo_item_clicked: combo dropdown coordination (gui_combo.c) -- a click in
      the body dismisses the combo with no caller code; reset each frame as a safety net.
    - Nav state is NOT part of this scratch: it lives in g_ctx->nav so the builder stays small. */
@@ -101,7 +101,7 @@ u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
     scoped window records itself into the nav item list as it emits (with the region + line the
     layout engine stamped when it placed it), and the next nav_new_frame resolves a move as index
     math over that list -- one frame deferred, exactly as hover_win lags the cursor.  gui_nav.c
-    drives it; nav_item_register (interact/gui_item.c) is the per-item seam.
+    drives it; nav_item_register (core/gui_item.c) is the per-item seam.
 ==============================================================================================*/
 
 /*==============================================================================================
@@ -117,11 +117,10 @@ u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
 static gui_item_flags_t s_item_flag_stack[ GUI_ITEM_FLAG_DEPTH ];
 static u32                s_item_flag_sp;
 
-/* Disabled items draw at this opacity (the rest of the dim is in the draw list's global alpha). */
-#define GUI_DISABLED_ALPHA 0.5f
-
-/* Push: save the current merged flags, then set or clear `flag` in the live set. */
-static void
+/* Push: save the current merged flags, then set or clear `flag` in the live set.  Non-static:
+   the public brackets (gui_push_item_flag / gui_disabled_begin, user/gui_stacks.c) wrap these
+   from the frame unit. */
+void
 item_flag_push( gui_item_flags_t flag, bool enable )
 {
     if ( s_item_flag_sp < GUI_ITEM_FLAG_DEPTH )
@@ -133,7 +132,7 @@ item_flag_push( gui_item_flags_t flag, bool enable )
 }
 
 /* Pop: restore the merged flags saved by the matching push. */
-static void
+void
 item_flag_pop( void )
 {
     if ( s_item_flag_sp == 0 ) return;
@@ -143,8 +142,8 @@ item_flag_pop( void )
 }
 
 /* Next-item override: mark `flag` as controlled for the next widget, with its on/off value.
-   Consumed (and cleared) by item_flags_resolve when that widget emits -- no pop needed. */
-static void
+   Consumed (and cleared) by item_flags_take when that widget emits -- no pop needed. */
+void
 item_flag_next( gui_item_flags_t flag, bool enable )
 {
     s_build.next_set |= flag;
@@ -152,46 +151,32 @@ item_flag_next( gui_item_flags_t flag, bool enable )
     else          s_build.next_val &= ~flag;
 }
 
-/* Resolve the flags for the item now emitting: the stack value with the one-shot next-item override
-   applied over it (the override wins on the bits it controls), then clear the override.  Latches the
-   result for item_state / widgets to read, and sets the draw alpha so a disabled item dims with
-   no per-widget code.  Called once per item from cell_next_w (the universal emit seam). */
+/* Take the flags for the item now emitting: the stack value with the one-shot next-item override
+   applied over it (the override wins on the bits it controls), then clear the override and latch
+   the result into the scope for item_state / widgets to read.  This is the PURE half of the
+   per-item seam: the style commit and the ambient draw application (alpha dim, default rounding)
+   live in the item_flags_resolve wrapper (present/gui_paint_core.c) -- the interact server never
+   touches a style value or the draw state. */
 gui_item_flags_t
-item_flags_resolve( void )
+item_flags_take( void )
 {
     gui_item_flags_t f = ( s_build.item_flags & ~s_build.next_set ) | ( s_build.next_val & s_build.next_set );
     s_build.next_set = 0;
     s_build.next_val = 0;
     s_scope.flags = f;
-
-    /* Same seam for the style stacks: promote any next_style_* override into the active per-item
-       layer so it applies for this widget's whole draw, then clears for the following one. */
-    style_item_commit();
-
-    draw_set_alpha( ( f & GUI_ITEM_DISABLED ) ? GUI_DISABLED_ALPHA : 1.0f );
-    /* Default this widget's rects to the control-frame radius (base + push/pop + next-* override).
-       A widget that draws a grab (slider knob, scrollbar) or a squared-off mark (check, bullet)
-       overrides draw_set_rounding locally for that sub-element. */
-    draw_set_rounding( ROUND_WIDGET );
     return f;
 }
 
-/* Clear the per-item state before chrome runs.  Window/child borders, scrollbars, titlebars, and
-   the collapse arrow are not items -- they never go through cell_next_w, so without this they
-   would inherit whatever the last body widget latched (a disabled trailing widget would dim the
-   border and deaden the scrollbar).  Called at the chrome seams (begin/window_end, child_begin,
-   layout_pop_region) so chrome always interacts undisabled and paints opaque. */
+/* Clear the per-item scope before chrome runs -- the pure half of item_flags_chrome_reset
+   (present/gui_paint_core.c), which also restores the ambient draw/style state.  Window/child
+   borders, scrollbars, and titlebars are not items; without this they would inherit whatever
+   the last body widget latched. */
 void
-item_flags_chrome_reset( void )
+item_flags_chrome_drop( void )
 {
     s_scope.flags  = GUI_ITEM_NONE;
     s_scope.nav.placed = false;   /* chrome is not an item to keyboard nav either: whatever
                                           interacts past this seam lists in the F6 chrome lane */
-    draw_set_alpha( 1.0f );
-    style_chrome_reset();   /* drop lingering next_style_* overrides; keep the push/pop stack */
-    /* Chrome (window / child / dock backgrounds, title bars, borders) defaults to the window radius,
-       read after the item override is cleared so a trailing widget's next-* radius cannot leak in. */
-    draw_set_rounding( style_var( GUI_VAR_WIN_ROUNDING ) );
 }
 
 /*==============================================================================================
@@ -279,16 +264,19 @@ u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per
    ctx_create, all sharing the same single-malloc block layout.  Each context's `listening` flag
    gates whether it receives hover / click / nav input. */
 
-#define GUI_CTX_POOL_MAX  8       /* slot 0 = default + up to 7 secondary contexts */
+/* GUI_CTX_POOL_MAX lives in core/gui_ctx.h: the public lifecycle (frame/gui_context.c) walks
+   the pool too.  The pool itself is the interact server's storage; the frame unit reaches it
+   through the externs there. */
 
-static gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
-static u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
+gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
+u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
 
 gui_context_t* g_ctx = NULL;   /* bound context (extern'd in gui_internal.h for the carved units) */
 
 /* Single-malloc layout for one context block.  The header (gui_context_t) sits at offset 0;
-   all pool arrays follow at ALIGN8 boundaries.  Caller sets `listening` and wires s_ctx_pool. */
-static gui_context_t*
+   all pool arrays follow at ALIGN8 boundaries.  Caller sets `listening` and wires s_ctx_pool.
+   Non-static: gui_ctx_create (frame/gui_context.c) allocates secondary contexts through it. */
+gui_context_t*
 ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
 {
     /* Keyed-state class partition: tiny gets the full state_slots (the hot renters), small 3/4
@@ -342,8 +330,9 @@ ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
 }
 
 /* Allocate the default context (slot 0) at the internal maxima -- the compile-time caps the
-   library is built with (GUI_STRESS_TEST scales these); no preset overrides them. */
-static void
+   library is built with (GUI_STRESS_TEST scales these); no preset overrides them.
+   Non-static: called once from gui_init (frame/gui_frame.c). */
+void
 ctx_pool_init( void )
 {
     gui_ctx_config_t c = {
@@ -364,7 +353,7 @@ ctx_pool_init( void )
 
 /* Bind the active context; every alias above resolves into it from here on.  NULL rebinds the
    default.  This is the whole multi-context seam -- no state is copied. */
-static void
+void
 ctx_bind( gui_context_t* ctx )
 {
     g_ctx = ctx ? ctx : s_ctx_pool[ 0 ];
@@ -445,8 +434,9 @@ void cursor_set( app_cursor_t c ) { s_interaction.mouse_cursor = c; }
 
 /* Flush the requested cursor to the OS window under the pointer.  Reads last frame's request +
    hover state (called before interaction_frame_reset promotes the new frame's hover).  Dedupes on
-   (window, shape) so an unchanged cursor is not re-posted every frame. */
-static void
+   (window, shape) so an unchanged cursor is not re-posted every frame.  Non-static: called
+   once per app frame from gui_frame_begin (frame/gui_frame.c). */
+void
 cursor_flush( void )
 {
     static i32          s_flushed_win   = -1;                 /* last window we pushed a shape to    */
@@ -488,12 +478,12 @@ cursor_flush( void )
     keyboard focus.  Two rules make focus behave like a menu selection rather than a desktop
     caret:
 
-      confine  -- only the mode's own widgets may TAKE focus (focus_allowed, interact/gui_item.c);
+      confine  -- only the mode's own widgets may TAKE focus (focus_allowed, core/gui_item.c);
                   no background window can steal it.
       hold     -- focus is STICKY within the mode: it never falls to nothing.  Focus can drop two
                   ways and the mode blocks both -- a press on non-focusable dead space
                   (interaction_frame_reset below) and a widget releasing its own capture on Enter /
-                  Escape (item_focus_release, interact/gui_item.c).  You cannot "select nothing"
+                  Escape (item_focus_release, core/gui_item.c).  You cannot "select nothing"
                   inside a menu; focus only MOVES when another focusable widget in the mode claims
                   it (a direct focused_id overwrite, not a release), so the console input keeps its
                   caret across dead-space clicks AND across every command it submits.
@@ -531,11 +521,11 @@ focus_scope_holds( gui_id_t id )
    gui_frame_begin before any ctx_begin -- shared across all contexts (there is one mouse,
    one keyboard, one hover window).  Must NOT be called from ctx_new_frame (which runs per
    context) or the second ctx_begin would clobber hover_win/active_id set by the first. */
-static void
+void
 interaction_frame_reset( void )
 {
     /* Snapshot the active item before this frame mutates it -- the previous-frame baseline the
-       is_item_activated / is_item_deactivated edge readers compare against (user/gui_query.c). */
+       is_item_activated / is_item_deactivated edge readers compare against (core/gui_query.c). */
     s_interaction.active_id_prev = s_interaction.active_id;
 
     /* Snapshot focused_id so frame_end can detect whether focus moved this frame. */
@@ -585,9 +575,9 @@ interaction_frame_reset( void )
 void item_mark_edited( void ) { s_interaction.focused_id_edited = true; }
 
 /* Per-context frame reset: rebuilds the frame-scratch and per-context retained state.
-   Called by ctx_begin for every context -- does NOT touch the global s_interaction fields
-   (those are reset once per app frame by interaction_frame_reset in frame_begin). */
-static void
+   Called by ctx_begin (frame/gui_frame.c) for every context -- does NOT touch the global
+   s_interaction fields (those are reset once per app frame by interaction_frame_reset). */
+void
 ctx_new_frame( void )
 {
     /* Last-item introspection resets to "no item": a query before any widget this frame (or in
@@ -623,14 +613,14 @@ ctx_new_frame( void )
     s_build.next_val       = GUI_ITEM_NONE;
     s_scope.flags = GUI_ITEM_NONE;
 
-    /* Fresh style stacks each frame: working set re-seeded from the theme, stacks + next cleared. */
-    style_new_frame();
+    /* The per-frame STYLE reset (style_new_frame) is not called from here: this server knows
+       nothing of style.  ctx_begin (frame/gui_frame.c) runs it right after this returns. */
     s_scope.clip = ( gui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
     ++g_ctx->retained.frame;
 }
 
 /* Public IO accessors (gui_want_capture_*, gui_is_key_*, gui_is_mouse_*, gui_get_*)
-   are defined in user/gui_query.c, included in the user/ tier below.
+   are defined in core/gui_query.c, included in the user/ tier below.
    They read s_interaction, g_ctx->nav, g_ctx->popup.open_count, s_build, s_io, and rect_hit --
    all visible in the unity build at that point. */
 
@@ -648,177 +638,17 @@ f32 vp_w( const gui_viewport_t* vp ) { return vp->disp_w > 0 ? (f32)vp->disp_w :
 f32 vp_h( const gui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h; }
 
 /*==============================================================================================
-    Memory Stats
+    Moved out at the R4 carve (GUI_SERVER_PLAN.md):
 
-    A full accounting of the gui system's resident footprint, split by where it lives (GPU device
-    memory / fixed CPU .bss / per-context CPU heap).  The backend fills its own buckets through
-    gui_backend_memory (GPU buffers + the fixed backend buffers); this frontend owns the context
-    pool, so it counts the live GPU surfaces to scale the geometry buffers and sums the per-context
-    malloc blocks for the heap total.  See gui_mem_stats_t (gui.h) for the bucket meanings.
+      gui_mem_stats / gui_print_mem_stats    -> gui_ui_mem.c (frame unit) -- the full-footprint
+                                                accounting aggregates BOTH servers
+                                                (gui_backend_memory), orchestrator work.
+      gui_ctx_create / destroy / bind /
+      set_listening                          -> frame/gui_context.c -- context destruction tears
+                                                down GPU surfaces (viewport_destroy, a render-
+                                                server call this server must never make).  The
+                                                pool storage + ctx_alloc_slot/ctx_bind stay here.
 ==============================================================================================*/
-
-/* Frontend statics total, defined in gui_ui_mem.c -- the LAST constituent include of this unity
-   TU, so it can sizeof statics declared after this file.  Forward-declared here (same TU). */
-u32 gui_ui_memory( void );
-
-gui_mem_stats_t
-gui_mem_stats( void )
-{
-    /* Count live GPU surfaces across every context (a viewport is live once it owns geometry
-       buffers) so the backend can scale the per-surface VB/IB by the true surface count -- the
-       old report assumed a single surface and undercounted every floater / secondary window. */
-    u32 live_viewports = 0;
-    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
-    {
-        gui_context_t* ctx = s_ctx_pool[ i ];
-        if ( !ctx ) continue;
-        for ( u32 v = 0; v < ctx->vp.max; ++v )
-            if ( rhi_handle_valid( ctx->vp.pool[ v ].vb ) )
-                ++live_viewports;
-    }
-
-    /* Backend fills GPU + CPU .bss; frontend adds its own unit's statics, the CPU-heap context
-       blocks, and the totals. */
-    gui_mem_stats_t s = gui_backend_memory( live_viewports );
-
-    s.cpu_frontend_bytes = gui_ui_memory();
-    s.cpu_static_total  += s.cpu_frontend_bytes;
-
-    /* CPU heap: one malloc block per live context (recorded at allocation as _alloc_size). */
-    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
-    {
-        gui_context_t* ctx = s_ctx_pool[ i ];
-        if ( !ctx ) continue;
-        s.cpu_context_bytes += ctx->_alloc_size;
-        ++s.context_count;
-    }
-    s.cpu_dynamic_total = s.cpu_context_bytes;
-
-    s.total_bytes = s.gpu_total + s.cpu_static_total + s.cpu_dynamic_total;
-    return s;
-}
-
-/* Dump the full breakdown to stdout as a sectioned table: GPU / CPU static / CPU heap, each with
-   its own subtotal, then the grand total.  Bytes and KiB side by side so small (font glyph tables)
-   and large (geometry buffers) buckets are both legible at a glance. */
-void
-gui_print_mem_stats( void )
-{
-    gui_mem_stats_t s = gui_mem_stats();
-    const f32 kb = 1024.0f;
-
-    #define GUI_MEM_ROW( label, bytes ) \
-        printf( "  %-22s %10u B  (%8.1f KB)\n", (label), (u32)(bytes), (u32)(bytes) / kb )
-
-    printf( "[gui] memory usage -- full breakdown:\n" );
-
-    printf( "  -- GPU device (%u live surface%s) ------------------------\n",
-            s.viewport_count, s.viewport_count == 1u ? "" : "s" );
-    GUI_MEM_ROW( "vertex buffers",   s.gpu_vertex_bytes  );
-    GUI_MEM_ROW( "index buffers",    s.gpu_index_bytes   );
-    GUI_MEM_ROW( "font atlas texture", s.gpu_texture_bytes );
-    if ( s.gpu_debug_bytes )
-        GUI_MEM_ROW( "debug overlay buffers", s.gpu_debug_bytes );
-    GUI_MEM_ROW( "  GPU subtotal",   s.gpu_total         );
-
-    printf( "  -- CPU static (fixed backend buffers) ------------------\n" );
-    GUI_MEM_ROW( "draw command list",  s.cpu_drawlist_bytes );
-    GUI_MEM_ROW( "tessellation stage", s.cpu_tess_bytes     );
-    GUI_MEM_ROW( "retained cache",     s.cpu_cache_bytes    );
-    GUI_MEM_ROW( "font registry",      s.cpu_font_bytes     );
-    GUI_MEM_ROW( "atlas + icons",      s.cpu_res_bytes      );
-    GUI_MEM_ROW( "render + shaders",   s.cpu_render_bytes   );
-    GUI_MEM_ROW( "text-select capture", s.cpu_select_bytes  );
-    if ( s.cpu_debug_bytes )
-        GUI_MEM_ROW( "debug tooling",  s.cpu_debug_bytes    );
-    GUI_MEM_ROW( "frontend statics",   s.cpu_frontend_bytes );
-    GUI_MEM_ROW( "  CPU static subtotal", s.cpu_static_total );
-
-    printf( "  -- CPU heap (%u context%s) -----------------------------\n",
-            s.context_count, s.context_count == 1u ? "" : "s" );
-    GUI_MEM_ROW( "context blocks",        s.cpu_context_bytes );
-    GUI_MEM_ROW( "  CPU heap subtotal",   s.cpu_dynamic_total );
-
-    printf( "  --------------------------------------------------------\n" );
-    printf( "  %-22s %10u B  (%8.1f KB)  (%.1f MB)\n",
-            "TOTAL", s.total_bytes, s.total_bytes / kb, s.total_bytes / ( kb * kb ) );
-
-    #undef GUI_MEM_ROW
-}
-
-/*==============================================================================================
-    Multi-context API
-==============================================================================================*/
-
-/* Set whether a context listens for hover/click/nav input.  Call between frames.
-   Multiple contexts may listen simultaneously; a deaf context renders but returns inert
-   widget state.  The default context starts listening; secondary contexts start deaf. */
-void
-gui_ctx_set_listening( gui_ctx_id_t ctx, bool listen )
-{
-    if ( ctx >= 0 && ctx < GUI_CTX_POOL_MAX && s_ctx_pool[ ctx ] )
-        s_ctx_pool[ ctx ]->listening = listen;
-}
-
-/* Allocate a fresh secondary context sized to `cfg` (NULL = the internal maxima).
-   Each gets a unique id_salt so same-named widgets do not alias across contexts.
-   Returns GUI_CTX_INVALID when the pool is full.  Call between frames. */
-gui_ctx_id_t
-gui_ctx_create( const gui_ctx_config_t* cfg )
-{
-    /* Resolve config: zero fields fall back to the internal caps.  max_dock_nodes == 0 in an
-       EXPLICIT cfg is valid (disables docking); only a NULL cfg gets the dock default. */
-    gui_ctx_config_t c = cfg ? *cfg
-                             : ( gui_ctx_config_t ){ .max_dock_nodes = GUI_DEFAULT_DOCK_NODES };
-    if ( !c.max_windows   ) c.max_windows   = GUI_DEFAULT_MAX_WINDOWS;
-    if ( !c.state_slots   ) c.state_slots   = GUI_DEFAULT_STATE_SLOTS;
-    if ( !c.popup_depth   ) c.popup_depth   = GUI_DEFAULT_POPUP_DEPTH;
-    if ( !c.max_viewports ) c.max_viewports = GUI_MAX_VIEWPORTS;
-
-    /* Counts are free of the old power-of-two rule (multiply-shift bucketing, gui_state.c);
-       just floor so the small class (3/4 of this) keeps usable headroom. */
-    u32 slots = c.state_slots;
-    if ( slots < 16 ) slots = 16;
-
-    /* Find a free pool slot (1..GUI_CTX_POOL_MAX-1). */
-    i32 slot = -1;
-    for ( i32 i = 1; i < GUI_CTX_POOL_MAX; ++i )
-        if ( !s_ctx_pool[ i ] ) { slot = i; break; }
-    if ( slot < 0 ) return GUI_CTX_INVALID;
-
-    gui_context_t* ctx = ctx_alloc_slot( &c, slots, slot );
-    if ( !ctx ) return GUI_CTX_INVALID;
-    ctx->listening = false;   /* secondary contexts start deaf; caller opts in */
-
-    s_ctx_pool[ slot ] = ctx;
-    if ( (u32)slot >= s_ctx_pool_count ) s_ctx_pool_count = (u32)slot + 1u;
-    return (gui_ctx_id_t)slot;
-}
-
-/* Free a secondary context; rebinds the default if this was current.  Never destroys slot 0. */
-void
-gui_ctx_destroy( gui_ctx_id_t ctx )
-{
-    if ( ctx <= 0 || ctx >= GUI_CTX_POOL_MAX || !s_ctx_pool[ ctx ] )
-        return;
-    gui_context_t* c = s_ctx_pool[ ctx ];
-    if ( g_ctx == c ) ctx_bind( NULL );
-    /* Destroy any GPU surfaces the context opened before releasing its memory block. */
-    for ( u32 i = 0; i < c->vp.max; ++i )
-        viewport_destroy( &c->vp.pool[ i ] );
-    if ( c->_alloc ) free( c->_alloc );
-    s_ctx_pool[ ctx ] = NULL;
-}
-
-/* Make ctx the current context.  GUI_CTX_DEFAULT (0) or an invalid handle rebinds the default. */
-void
-gui_ctx_bind( gui_ctx_id_t ctx )
-{
-    if ( ctx >= 0 && ctx < GUI_CTX_POOL_MAX && s_ctx_pool[ ctx ] )
-        ctx_bind( s_ctx_pool[ ctx ] );
-    else
-        ctx_bind( NULL );
-}
 
 // clang-format on
 /*============================================================================================*/

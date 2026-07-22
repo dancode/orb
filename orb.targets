@@ -169,7 +169,8 @@ target gui
     root        source/runtime_service/gui
     folder      03_RUNTIME/SERVICE
     unit        gui_rect.c  				# GUI_RECT unit: leaf geometry + color primitives
-    unit        gui.c   					# UI / core unit
+    unit        gui.c   					# UI / frame unit
+    unit        gui_core.c  				# GUI_CORE unit: the interact server (io, ids, state, item protocol)
     unit        gui_render.c  				# GUI_RENDER unit: the render server (batch, atlas, pipeline)
     unit        gui_draw.c  				# GUI_DRAW unit: drawing routines + font/icon resources over the server
     unit        element/gui_element.c   	# GUI_ELEMENT unit: el_* cores, public-surface-only
@@ -185,7 +186,8 @@ target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the lo
     root        source/runtime_service/gui
     folder      03_RUNTIME/SERVICE
     unit        gui_rect.c   # GUI_RECT unit: leaf geometry + color primitives
-    unit        gui.c   # UI / core unit
+    unit        gui.c   # UI / frame unit
+    unit        gui_core.c   # GUI_CORE unit: the interact server (io, ids, state, item protocol)
     unit        gui_render.c   # GUI_RENDER unit: the render server (batch, atlas, pipeline)
     unit        gui_draw.c   # GUI_DRAW unit: drawing routines + font/icon resources over the server
     unit        element/gui_element.c   # GUI_ELEMENT unit: el_* cores, public-surface-only

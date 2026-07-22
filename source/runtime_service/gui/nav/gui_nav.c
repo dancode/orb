@@ -30,7 +30,7 @@
          as popup_apply_modal steals hover_win), else the explicit target window, else the
          front-most normal window.
 
-    The per-item half lives in nav_item_register (interact/gui_item.c), called from item_state:
+    The per-item half lives in nav_item_register (core/gui_item.c), called from item_state:
     each item in nav_win appends itself to the list and -- if it is the nav cursor -- lights the
     focus ring and takes a synthesized click from an activation.  Chrome (title-bar buttons,
     dock tabs: anything not placed by a layout cell) forms its own lane: F6 hops between the
@@ -640,7 +640,7 @@ nav_move_horizontal( i32 cur, gui_nav_item_t c )
        neighbor either way, so Left/Right had no navigation meaning here at all and auto-adjusts
        instead of doing nothing -- no Enter/Space capture needed, and Up/Down stay untouched (unlike
        edit_id capture, which fences them).  edit_dir is consumed this same frame by
-       nav_item_register (interact/gui_item.c) via nav.solo_drag_id, resolved fresh in nav_finish. */
+       nav_item_register (core/gui_item.c) via nav.solo_drag_id, resolved fresh in nav_finish. */
     if ( c.drag_kind && nav_row_is_solo( cur ) )
         nav->edit_dir = step;
 }
@@ -948,7 +948,7 @@ nav_new_frame( void )
        every context (core/gui_ctx.c), so a passive context must not read -- much less key_claim
        -- the keyboard from them, or it would steal keys from whichever context IS listening this
        frame (and, with per-key claim, starve it of the press entirely).  The nav-driver peer of the
-       widget-level deaf gate (interact/gui_item.c) and the hover-nomination gate (surface/gui_surface.c). */
+       widget-level deaf gate (core/gui_item.c) and the hover-nomination gate (core/gui_surface.c). */
     if ( !g_ctx->listening )
         return;
 
@@ -1180,7 +1180,7 @@ nav_new_frame( void )
        target this frame: an empty item list resolves nothing, so an arrow over a targetless window
        falls through instead of being silently eaten -- the same lesson as nav_typeahead_query_matches.
        Enter/Space are NOT claimed here; they are taken at the activation seam (nav_item_register,
-       interact/gui_item.c), the only place that knows an item actually consumed the activation.  Esc
+       core/gui_item.c), the only place that knows an item actually consumed the activation.  Esc
        is left to the popup / menu-bar branches below, which run under want_capture_keyboard's hard
        block -- the app is already fenced from every key there, so a per-key claim would be redundant. */
     if ( g_ctx->nav.item_count > 0 )

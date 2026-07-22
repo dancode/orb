@@ -871,7 +871,7 @@ medit_field_edit( gui_id_t id, char* buf, u32 bufsz )
 
     medit_chase_and_paint( content, buf, len, es, st.focused, blink_reset );
 
-    /* Accumulate the edit flag for is_item_deactivated_after_edit (user/gui_query.c). */
+    /* Accumulate the edit flag for is_item_deactivated_after_edit (core/gui_query.c). */
     if ( changed )
         item_mark_edited();
 

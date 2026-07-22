@@ -25,7 +25,7 @@
     interaction scope (s_scope.win), so call these INSIDE the owning pane_begin / your
     window bracket.
 
-    Included by gui.c after interact/gui_anim.c (the tweens ride gui_anim_timer) and before
+    Included by gui.c after core/gui_anim.c (the tweens ride gui_anim_timer) and before
     the widget/window files.
 
 ==============================================================================================*/

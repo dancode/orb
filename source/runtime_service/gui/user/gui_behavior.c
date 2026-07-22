@@ -3,7 +3,7 @@
     runtime_service/gui/user/gui_behavior.c -- Public interaction behavior on caller rects.
 
     The behavior half of the user-UI substrate: gui_item() runs the shared widget interaction
-    state machine (item_state, interact/gui_item.c) over a rect the CALLER derived -- a
+    state machine (item_state, core/gui_item.c) over a rect the CALLER derived -- a
     canvas() cut, a split/carve panel, custom layout math -- and reports the resolved state as
     plain flags.  This is the seam a user widget is built on: get a rect, ask for behavior, draw
     your own presentation.  The stock widgets (widgets/) resolve their rects through the composer
@@ -14,7 +14,7 @@
     invisible_button is gui_item() reduced to its click bit, kept as the one-liner convenience.
 
     Included by gui.c in the user/ tier (last of the tiers -- pure vocabulary, no state); needs
-    item_id (present/gui_paint_core.c) and item_state (interact/gui_item.c), in scope far
+    item_id (present/gui_paint_core.c) and item_state (core/gui_item.c), in scope far
     above.
 
 ==============================================================================================*/

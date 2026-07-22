@@ -4,7 +4,7 @@
 
     The window RECORD and its services -- the pool (window_get / window_find), the next-window
     placement channel, the z dispenser, the hover contest, the surface reassignment slot, and
-    the open/closed state -- live in surface/gui_surface.c: a window is a placed, stacked,
+    the open/closed state -- live in core/gui_surface.c: a window is a placed, stacked,
     occluding rectangle before it is anything else.  This file keeps the gesture POLICY the
     chrome layers over those services: the global drag mode, the tear-off merge-back edge
     latch, and raise-to-front on press (policy because the dock exception -- tiles never

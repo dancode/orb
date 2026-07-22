@@ -374,6 +374,8 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
 
     g_ctx->retained.wants_redraw = false;    /* cleared before the build; set again by any animating widget */
     ctx_new_frame();                    /* per-context scratch reset + frame clock bump (no global interaction touch) */
+    style_new_frame();                  /* fresh style stacks, re-seeded from the theme -- the orchestrator
+                                           pairs the two resets; the interact server knows no style (R4) */
     popup_close_check();                /* stale-close + click-outside, BEFORE any user popup_open */
     window_modal_apply();               /* fence interaction behind a GUI_WIN_MODAL window (dev console) */
     popup_apply_modal();                /* fence interaction behind an open modal popup (wins over the above) */

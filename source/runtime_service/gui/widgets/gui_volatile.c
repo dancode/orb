@@ -31,7 +31,7 @@
             calls have a valid (if minimal) layout frame and id scope to emit into, without
             running ctx_begin/ctx_new_frame or touching anything else about the real frame's UI
             state.  s_replay_mode itself lives in gui_ctx.c (ambient state, same tier as
-            s_interaction) so item_state (interact/gui_item.c) can read it inline; this file
+            s_interaction) so item_state (core/gui_item.c) can read it inline; this file
             is the only place that sets it.
 
     Included by gui.c after the widget family files -- needs lf() / layout_frame_t (gui_ctx.c,

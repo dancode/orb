@@ -604,7 +604,7 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
     else
         sr = ( gui_rect_t ){ r.x, dock_at( n->child[ 1 ] )->rect.y - thick, r.w, thick };
 
-    /* Bare grab through item_grab (interact/gui_item.c); the hover-domain gate is this
+    /* Bare grab through item_grab (core/gui_item.c); the hover-domain gate is this
        splitter's own: the gutter sits over no window on its viewport (see the section note). */
     gui_id_t sid    = id_combine( n->id, DOCK_SPLIT_SALT );
     bool       active = false;

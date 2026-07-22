@@ -5,7 +5,7 @@
     The controls whose story is a press: button / button_fill / small_button / arrow_button,
     checkbox and radio_button, and selectable (the list-row
     press).  Each takes its rect from cell_next and runs the standard item protocol
-    (item_state, interact/gui_item.c) as ITEM_BUTTON, then paints its face with
+    (item_state, core/gui_item.c) as ITEM_BUTTON, then paints its face with
     the present/ helpers -- the canonical compose -> behave -> present combine.
 
     Display-only rows (text, bullets, label_text, progress_bar, spacers) are in gui_text.c,

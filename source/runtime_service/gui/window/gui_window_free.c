@@ -14,7 +14,7 @@
     window_get and the shared drag/resize state vars -- it declares no long-lived state of its own.
 
     A window is treated as a large compound widget, so this builds on the shared primitives
-    in present/gui_paint_core.c (col_item_bg, the label grammar) and interact/gui_item.c
+    in present/gui_paint_core.c (col_item_bg, the label grammar) and core/gui_item.c
     (item_state); the style vocabulary (WIDGET_* / WIN_* / COL_*) resolves in
     core/gui_style.c.
 
@@ -931,7 +931,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
                                    win->viewport );
     }
 
-    /* The pane open (surface/gui_surface.c): all of this window's geometry is stamped with its
+    /* The pane open (core/gui_surface.c): all of this window's geometry is stamped with its
        z so flush can paint windows back-to-front regardless of window_begin call order, and
        with its viewport so flush dispatches it to the hosting surface; the interaction scope
        is committed alongside (this window owns the items that follow).  Ordered before

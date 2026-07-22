@@ -224,7 +224,7 @@ window_sync_native( gui_window_t* win, gui_win_flags_t flags )
 }
 
 /* Enqueue a button-triggered tear-off or merge-back into the one-shot s_vp_request slot
-   (surface/gui_surface.c) -- shared by the pop-in caption button here and the plain detach
+   (core/gui_surface.c) -- shared by the pop-in caption button here and the plain detach
    button in window_end.  Idempotent: a single slot covers the one dragged window at a time, so
    the first caller wins. */
 static void

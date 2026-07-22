@@ -206,7 +206,7 @@ gui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
    Returns true (consumed) only when win_id is an gui-owned floater, so the host's close-to-quit
    path and rhi()->event() still fire for the primary (host-owned) window. */
 
-static bool
+bool                            /* non-static: gui_event (core/gui_io.c) delegates across the TU seam */
 gui_owned_window_event( const app_event_t* ev )
 {
     /* Walk all live viewports (index 0 = primary, 1+ = secondary/owned). */

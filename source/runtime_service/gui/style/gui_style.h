@@ -109,6 +109,13 @@ u32 col_item_bg( gui_item_state_t st );
 u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color_enum );
 
+/* Per-item ambient application (present/gui_paint_core.c) -- the impure wrappers over the
+   interact server's pure seams (item_flags_take / item_flags_chrome_drop, core/gui_core.h):
+   the style commit plus the disabled dim and default rounding.  The cell emit seam, the
+   chrome seams, and the pane bracket call these; placement refined at R5/R8. */
+gui_item_flags_t item_flags_resolve( void );
+void             item_flags_chrome_reset( void );
+
 // clang-format on
 /*============================================================================================*/
 #endif    // GUI_STYLE_INTERNAL_H

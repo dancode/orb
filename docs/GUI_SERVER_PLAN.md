@@ -1,6 +1,45 @@
 # GUI SERVER PLAN -- the v2 unit reorganization
 
-Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) DONE 2026-07-21 -- next: R4 (core)
+Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) DONE 2026-07-21 -- next: R5 (style)
+
+R4 DONE: the INTERACT SERVER unit exists (root gui_core.c): core/gui_io.c + gui_ctx.c +
+gui_id.c + gui_state.c + gui_surface.c (from surface/, folder removed) + gui_item.c +
+gui_anim.c (from interact/) + gui_query.c (from user/), with a gui_core_unit_mem_bytes()
+foot.  The server includes NO render header -- the acceptance criterion holds; its documented
+upward seams (gui_core.h): draw_nav_ring (the one adornment paint) + the DBG_*/STEP_SET_OWNER
+debug stamps.  Carve moves that made that true:
+  - PANE BRACKET -> frame/gui_pane.c: pane_tag + gui_pane_begin/end stamp BOTH servers (draw
+    segment key + interaction scope), so the go-between verb lives with the orchestrator;
+    core keeps the interact half (surface_hover_nominate, pool, z dispenser).
+  - item_flags split: core keeps the PURE halves (item_flags_take / item_flags_chrome_drop);
+    the style/draw application wrappers keep the old names in present/gui_paint_core.c
+    (declared in style/gui_style.h; placement refined R5/R8).
+  - ctx_new_frame no longer calls style_new_frame -- gui_ctx_begin (frame) pairs the two.
+  - gui_mem_stats/print -> gui_ui_mem.c (aggregates both servers); gui_ctx_create/destroy/
+    bind/set_listening -> frame/gui_context.c (destroy tears down GPU surfaces); the pool
+    storage + ctx_alloc_slot/ctx_bind stay core (externs in gui_ctx.h).
+  - label grammar id half (label_vis_len/label_id_str/item_id) -> core/gui_id.c.
+  - DBG_* overlay macro block + the GUI_CMD_STEPPER switch + STEP_SET_OWNER moved from
+    render/gui_render.h -> debug/gui_debug.h (cross-server debug tooling reaches every unit
+    via the umbrella; implementations stay render-side).
+  - New cross-TU seams: io_frame_begin/end, io_dirty, ctx_pool_init/ctx_bind/ctx_new_frame,
+    interaction_frame_reset, cursor_flush, item_flag_push/pop/next, gui_state_usage(_t),
+    gui_anim_timer_t, gui_api_anim_* adapters, s_viewport_dirty extern,
+    gui_owned_window_event un-static'd (io's one upward call into frame).
+PANE RE-SHAPE: gui_pane_t (gui.h) already matches the model sketch -- id + rect + z(u32) +
+u8 vp + u8 input, 2 pad bytes spare (field named `vp`, the sketch's `up`).  No change needed.
+BEHAVIOR DATA AUDIT (the R4 design task): keyed-by-id retained data (anim dampers/timers,
+feat_collapse/feat_pin, region scroll, open flags, table persist) already share ONE utility
+set -- the keyed state pool's tiny/small/big classes; R4 moved its anim tenants server-side
+so style blends and interact tweens rent from the same pool.  The single-user gesture latches
+(move offset, press-defer, drag payload, select controller, vp request, next-window channel)
+are deliberately AMBIENT SINGULAR records, not pool tenants: one mouse means at most one
+gesture in flight, so a keyed table buys capacity nothing needs.  Conclusion: no further
+consolidation warranted; rule recorded as "keyed-by-id rides the pool, one-user gesture state
+stays a single ambient record."
+GOTCHA cleared: stale pre-R2 gui_backend.obj files in build/obj/gui{,_stress}/ were still
+being swept into the libs (LNK4006 spam) -- deleted; a rename that retires a unit must also
+delete its old obj.  Full build + mono build clean; both canaries clean.
 
 R3 DONE: the GUI_DRAW unit exists (root gui_draw.c).  Moved in: draw/gui_paint.c (the paint
 floor + fitted text painters, split out of present/gui_paint_core.c), draw/gui_symbol.c
@@ -182,9 +221,9 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
 
 ## Open design tasks (resolved inside their increments)
 
-- R4: re-shape the pane record toward the gui_pane_t sketch above; map the behavior
-  services' retained data sets and combine where one shared utility set can serve several
-  (dampers, timers, deferred-press, last-rect -- candidates for one keyed record class).
+- R4 (RESOLVED): the pane record already matches the sketch; the behavior data audit found
+  the shared keyed utility set already exists (the state pool's three classes) and the
+  one-user gesture latches are correctly ambient singular records -- see the R4 DONE block.
 - R5: color id table = core ids (border, background, universal helpers) + user-extended
   range at the end.  SIMPLIFY: resolution stays pure where possible -- interact state
   arrives as PARAMETERS (col_item_bg( st ) style), never queried from core -- so style is
@@ -198,7 +237,7 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
     R1  rect     folder + root unit + move leaf math out of paint_core        <- DONE
     R2  render   backend/ -> render/; gui_backend.h -> render/gui_render.h; gui_backend.c -> gui_render.c   <- DONE
     R3  draw     NEW drawing-routine unit: pure wrappers + shape half of gui_symbol.c + canvas   <- DONE
-    R4  core     interact server assembly; core/gui_core.h carved from gui_internal.h; pane re-shape
+    R4  core     interact server assembly; pane bracket -> frame; behavior data audit        <- DONE
     R5  style    style/ folder; style/gui_style.h takes the COL_/metric vocabulary
     R6  interact gesture unit gui_interact.c; paint halves pushed up
     R7  flow     compose/ -> flow/; unit .c to root; flow/gui_flow.h (rect producer sits below element)

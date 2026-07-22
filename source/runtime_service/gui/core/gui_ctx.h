@@ -102,6 +102,24 @@ typedef struct
 extern gui_context_t* g_ctx;      /* core/gui_ctx.c -- the bound context     */
 extern gui_build_t    s_build;    /* core/gui_ctx.c -- frame-build scratch   */
 
+/*==============================================================================================
+    Context pool + lifecycle seams (core/gui_ctx.c) -- the storage stays with the interact
+    server; the PUBLIC lifecycle over it (gui_ctx_create/destroy, which touches GPU surfaces)
+    lives in frame/gui_context.c and the mem-stats aggregation in gui_ui_mem.c (R4).
+==============================================================================================*/
+
+#define GUI_CTX_POOL_MAX  8       /* slot 0 = default + up to 7 secondary contexts */
+
+extern gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
+extern u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
+
+gui_context_t* ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot );
+void           ctx_pool_init ( void );                  /* default context; gui_init only     */
+void           ctx_bind      ( gui_context_t* ctx );    /* NULL rebinds the default           */
+void           ctx_new_frame ( void );                  /* per-context scratch reset          */
+void           interaction_frame_reset( void );         /* once per APP frame (frame_begin)   */
+void           cursor_flush  ( void );                  /* push last frame's cursor to the OS */
+
 // clang-format on
 /*============================================================================================*/
 #endif    // GUI_CTX_H

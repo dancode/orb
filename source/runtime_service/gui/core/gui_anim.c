@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/interact/gui_anim.c -- Animation stepping service.
+    runtime_service/gui/core/gui_anim.c -- Animation stepping service.
 
     The value-stepping primitive behind every smoothed transition: peek-guard logic, channel
     stepping, slot stamping, and wants_redraw signalling in one function, so callers stay
@@ -149,7 +149,8 @@ gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed 
     settled at 1.0, so a caller that samples one extra frame still sees the end, never a restart.
 ==============================================================================================*/
 
-typedef struct { f32 elapsed; f32 duration; } gui_anim_timer_t;
+/* gui_anim_timer_t (the timer slot payload) lives in core/gui_core.h: the feat_* kit
+   (interact/gui_feature.c) peeks the slot across the unit seam. */
 /* gui_ease_fn typedef moved to gui_internal.h at the TU split (inc 10). */
 
 /* Start (or restart) a duration-based timer on `id`: clock at 0, running for `duration` seconds.  A
@@ -228,7 +229,7 @@ gui_ease_lookup( gui_ease_t e )
 
 /* Public tween sampler: advance the timer on `id` and return eased progress in [0,1].  Pair with
    anim_start (== gui_anim_timer_start) which seeds the clock; *out_active is false once settled. */
-static f32
+f32
 gui_api_anim_ease( gui_id_t id, gui_ease_t ease, bool* out_active )
 {
     return gui_anim_timer( id, gui_ease_lookup( ease ), out_active );
@@ -240,7 +241,7 @@ gui_api_anim_ease( gui_id_t id, gui_ease_t ease, bool* out_active )
    z/w) sit at 0 with rest == target and cost nothing. */
 
 /* Damped ABGR blend: the four color channels glide to target_abgr at `speed` (Hz-like, gui_anim_f32). */
-static u32
+u32
 gui_api_anim_color( gui_id_t id, u32 target_abgr, f32 speed )
 {
     gui_anim4_t tgt = { (f32)( ( target_abgr ) & 0xFF ), (f32)( ( target_abgr >> 8 ) & 0xFF ),
@@ -251,7 +252,7 @@ gui_api_anim_color( gui_id_t id, u32 target_abgr, f32 speed )
 }
 
 /* Damped 2D point: x/y glide to target; z/w unused. */
-static gui_vec2_t
+gui_vec2_t
 gui_api_anim_vec2( gui_id_t id, gui_vec2_t target, f32 speed )
 {
     gui_anim4_t tgt = { target.x, target.y, 0.0f, 0.0f };
@@ -261,7 +262,7 @@ gui_api_anim_vec2( gui_id_t id, gui_vec2_t target, f32 speed )
 }
 
 /* Damped rect: x/y/w/h glide together (position + extent) in one slot. */
-static gui_rect_t
+gui_rect_t
 gui_api_anim_rect( gui_id_t id, gui_rect_t target, f32 speed )
 {
     gui_anim4_t tgt = { target.x, target.y, target.w, target.h };

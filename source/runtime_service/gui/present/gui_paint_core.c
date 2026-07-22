@@ -2,15 +2,17 @@
 
     runtime_service/gui/present/gui_paint_core.c -- Shared presentation primitives.
 
-    What remains after the R1/R3 carves (GUI_SERVER_PLAN.md): the label GRAMMAR (the id half
-    -- -> core in R4), the frame/background color policy (state -> color -- style unit
-    material), and the system adornments + draw_field_label (styled painters -- -> element in
-    R8).  The pure paint floor and text painters moved to draw/gui_paint.c; the placement
-    math to rect/.  The style vocabulary (WIDGET_* / WIN_* / COL_* macros) lives with its
-    resolver in style/gui_style.h -- this file only consumes it.
-    
-    The interaction state machine (item_state) is a service -- it lives in interact/gui_item.c,
-    included immediately after this file so it can invoke the adornment painters below.
+    What remains after the R1/R3/R4 carves (GUI_SERVER_PLAN.md): the impure per-item wrappers
+    (item_flags_resolve / item_flags_chrome_reset -- style/draw application over core's pure
+    seams), the frame/background color policy (state -> color -- style unit material), and the
+    system adornments + draw_field_label (styled painters -- -> element in R8).  The pure paint
+    floor and text painters moved to draw/gui_paint.c; the placement math to rect/; the label
+    grammar's id half to core/gui_id.c.  The style vocabulary (WIDGET_* / WIN_* / COL_* macros)
+    lives with its resolver in style/gui_style.h -- this file only consumes it.
+
+    The interaction state machine (item_state) is a service -- it lives in core/gui_item.c
+    (the interact server unit) and invokes the adornment painter below across the one
+    documented upward seam (draw_nav_ring, core/gui_core.h).
 
     The shared edge-resize geometry is interact/gui_resize.c and the layout engine
     (track resolver + cell emitters) is compose/gui_layout_core.c.
@@ -31,54 +33,57 @@
 /* The symbol render primitives (the glyph marks + the broader shape palette) moved to
    draw/gui_symbol.c -- the draw unit (GUI_SERVER_PLAN.md R3). */
 
+/* The widget label GRAMMAR (label_vis_len, label_id_str, item_id) moved to core/gui_id.c at
+   the R4 carve: the id half of a label is identity derivation, interact-server material.  The
+   PAINT half of a labeled row (draw_field_label below, label_width / draw_label in draw/)
+   stays presentation. */
+
 /*==============================================================================================
+    Per-item ambient application -- the impure wrappers over the interact server's pure seams.
 
-    Widget label grammar  (Dear ImGui style)
-
-        "Text"        -> display "Text",  id = hash("Text")
-        "Text##key"   -> display "Text",  id = hash("Text##key")   distinct ids, same visible text
-        "pre###key"   -> display "pre",   id = hash("###key")      id ignores a dynamic prefix
-
-    The visible span ends at the first "##".  A "###" additionally re-roots the id hash at that
-    "###", so a label whose visible part changes every frame (a counter, a name) keeps one stable
-    id.  Every labeled widget routes its display through label_width / draw_label and its id
-    through item_id, so the grammar is honored uniformly in one place.
-
+    The core unit resolves WHAT the flags are (item_flags_take / item_flags_chrome_drop,
+    core/gui_ctx.c); these wrappers apply the style and draw consequences -- the per-item style
+    commit, the disabled dim, the default rounding -- which the interact server itself must
+    never touch.  Callers (the cell emit seam, the chrome seams, the pane bracket) keep the
+    original names.  Placement refined at R5/R8 (style owns the commit, element the adornment).
 ==============================================================================================*/
 
-/* Visible byte count: up to the first "##" marker, or the whole string.  Non-static: a
-   cross-unit seam (gui_internal.h) -- the element unit's el_button honors the same label
-   grammar, so the rule stays authored in one place. */
-u32
-label_vis_len( const char* s )
+/* Disabled items draw at this opacity (the rest of the dim is in the draw list's global alpha). */
+#define GUI_DISABLED_ALPHA 0.5f
+
+/* Resolve the flags for the item now emitting, then apply their ambient consequences.  Called
+   once per item from cell_next_w (the universal emit seam). */
+gui_item_flags_t
+item_flags_resolve( void )
 {
-    u32 i = 0;
-    while ( s[ i ] )
-    {
-        if ( s[ i ] == '#' && s[ i + 1 ] == '#' )    /* s[i+1] is at worst the NUL: safe */
-            break;
-        ++i;
-    }
-    return i;
+    gui_item_flags_t f = item_flags_take();
+
+    /* Same seam for the style stacks: promote any next_style_* override into the active per-item
+       layer so it applies for this widget's whole draw, then clears for the following one. */
+    style_item_commit();
+
+    draw_set_alpha( ( f & GUI_ITEM_DISABLED ) ? GUI_DISABLED_ALPHA : 1.0f );
+    /* Default this widget's rects to the control-frame radius (base + push/pop + next-* override).
+       A widget that draws a grab (slider knob, scrollbar) or a squared-off mark (check, bullet)
+       overrides draw_set_rounding locally for that sub-element. */
+    draw_set_rounding( ROUND_WIDGET );
+    return f;
 }
 
-/* The substring hashed for the id: the whole label, unless a "###" tail re-roots it there. */
-const char*
-label_id_str( const char* s )
+/* Clear the per-item state before chrome runs.  Window/child borders, scrollbars, titlebars, and
+   the collapse arrow are not items -- they never go through cell_next_w, so without this they
+   would inherit whatever the last body widget latched (a disabled trailing widget would dim the
+   border and deaden the scrollbar).  Called at the chrome seams (begin/window_end, child_begin,
+   layout_pop_region) so chrome always interacts undisabled and paints opaque. */
+void
+item_flags_chrome_reset( void )
 {
-    for ( u32 i = 0; s[ i ]; ++i )
-        if ( s[ i ] == '#' && s[ i + 1 ] == '#' && s[ i + 2 ] == '#' )    /* reads stop at NUL */
-            return s + i;
-    return s;
-}
-
-/* The id for a labeled widget: the active scope seed combined with the label's id key. */
-gui_id_t
-item_id( const char* label )
-{
-    gui_id_t id = id_combine( id_seed(), id_hash( label_id_str( label ) ) );
-    DBG_NAME( id, label );
-    return id;
+    item_flags_chrome_drop();
+    draw_set_alpha( 1.0f );
+    style_chrome_reset();   /* drop lingering next_style_* overrides; keep the push/pop stack */
+    /* Chrome (window / child / dock backgrounds, title bars, borders) defaults to the window radius,
+       read after the item override is cleared so a trailing widget's next-* radius cannot leak in. */
+    draw_set_rounding( style_var( GUI_VAR_WIN_ROUNDING ) );
 }
 
 /* Split a labeled widget row into a control rect and its painted label.  The geometry halves
@@ -147,7 +152,7 @@ u32 col_item_bg( gui_item_state_t st )
 }
 
 /* Animated background for a pushbutton-like widget: col_item_bg with the hover/active
-   transitions smoothed through the animation service (interact/gui_anim.c).  Two damper channels in
+   transitions smoothed through the animation service (core/gui_anim.c).  Two damper channels in
    one gui_anim4 slot -- a hot layer (hover / nav focus) at speed 10 and an active layer (pressed) at
    speed 20 -- both rest at 0 so they ramp up from the palette base; the spare two channels sit unused
    (0/0/0) and are free for a widget-specific flourish later.  Composite over the palette: BG -> HOT by
@@ -173,17 +178,17 @@ col_item_bg_anim( gui_id_t id, gui_item_state_t st )
     tier never reads a style value to adorn an item.
 ==============================================================================================*/
 
-/* Focus-ring inset outside the item rect so the item's own fill spares it.  The nav scroll
-   chase (interact/gui_item.c) also reads this to keep the ring clear of the view edge. */
-#define NAV_RING 2.0f
+/* NAV_RING (the focus-ring inset) is declared in core/gui_core.h beside this painter's upward
+   seam: the nav scroll chase (core/gui_item.c) reads it to keep the ring clear of the view edge. */
 
 /* Keyboard-nav focus ring: an outline just outside the item rect, painted before the item's
-   own background so the fill leaves the border visible (nav_item_register invokes it).
+   own background so the fill leaves the border visible (nav_item_register invokes it across
+   the core unit's one paint seam -- see the upward-seam block in core/gui_core.h).
    captured selects the ring color: plain nav-highlight (COL_NAV) vs. a value widget that has
    captured the keyboard for Left/Right editing (COL_NAV_CAPTURE) -- this is the one adornment
    every widget passes through, so it is the single place that makes "input captured" read as a
    real, theme-wide-consistent state change instead of looking identical to plain nav focus. */
-static void
+void
 draw_nav_ring( gui_rect_t r, bool captured )
 {
     draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,

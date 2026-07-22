@@ -25,7 +25,7 @@
     window honors).
 
     A region enters the same hover_win contest a window does through the surface service
-    (surface_hover_nominate, surface/gui_surface.c) -- occlusion is a tier-1 concern shared
+    (surface_hover_nominate, core/gui_surface.c) -- occlusion is a tier-1 concern shared
     by every top-level rect, which is why the contest sits below both callers.
 
     Included by gui.c after gui_layout_child.c (provides layout_push/pop_region, GUI_STATE,
@@ -36,7 +36,7 @@
 
 /* z tiers for root regions: GUI_REGION_Z (default mid-band: over windows, under popups),
    GUI_REGION_BG_Z (ties the window floor -- any raised window wins), GUI_REGION_FG_Z (above
-   every popup depth).  Defined with the rest of the z band map in surface/gui_surface.c --
+   every popup depth).  Defined with the rest of the z band map in core/gui_surface.c --
    the surface tier authors all z policy. */
 
 /* Persistent scroll + content-measure state, keyed by id -- exactly gui_region_t's scroll link,
@@ -73,7 +73,7 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tie
           : ( tier == GUI_REGION_FG ) ? GUI_REGION_FG_Z
           :                             GUI_REGION_Z;
 
-    /* The pane open (surface/gui_surface.c): stamp the draw state with this region's tag
+    /* The pane open (frame/gui_pane.c): stamp the draw state with this region's tag
        (retained-cache key, z tier, the main surface -- a root region paints only on viewport 0;
        FUTURE: other viewports, arena band) and commit the interaction scope so item_state
        attributes this region's widgets against hover_win.  A region IS a pane + scroll layout. */

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/interact/gui_item.c -- The standard item protocol.
+    runtime_service/gui/core/gui_item.c -- The standard item protocol.
 
     item_state: the default COMPOSITION of the interaction services, run once per item
     over a finished rect.  Every stock widget, chrome control, and gui_item() (user/) obtains

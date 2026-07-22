@@ -36,7 +36,7 @@
 
 /* A popup window is an OVERLAY: win->overlay is stamped every begin (the type fact the native /
    nav / tab-drop tests key on) alongside a z in the reserved overlay band (surface_z_overlay,
-   surface/gui_surface.c) -- rewritten every frame so a stray window_raise_on_press can never
+   core/gui_surface.c) -- rewritten every frame so a stray window_raise_on_press can never
    sink a popup. */
 
 /* Popup window ids are salted off the caller's string so a popup never shares a record with a
@@ -558,7 +558,7 @@ popup_close_check( void )
 
     When a modal is open, anything not over the modal (or a popup opened on top of it) must be
     inert.  The fence is one claim through the behavior tier -- interact_hover_fence
-    (interact/gui_item.c) points the hover-window arbitration at the modal, freezing every
+    (core/gui_item.c) points the hover-window arbitration at the modal, freezing every
     window behind it with no per-widget code; see the verb for the mechanism.
 ==============================================================================================*/
 

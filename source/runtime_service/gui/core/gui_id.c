@@ -87,5 +87,56 @@ id_pop( void )
 /* The keyed state pool (gui_state_get / gui_state_peek / GUI_STATE) is the companion tracking
    service in core/gui_state.c, included next. */
 
+/*==============================================================================================
+
+    Widget label grammar  (Dear ImGui style) -- the id half, moved here from
+    present/gui_paint_core.c at the R4 carve (a label's id is identity derivation).
+
+        "Text"        -> display "Text",  id = hash("Text")
+        "Text##key"   -> display "Text",  id = hash("Text##key")   distinct ids, same visible text
+        "pre###key"   -> display "pre",   id = hash("###key")      id ignores a dynamic prefix
+
+    The visible span ends at the first "##".  A "###" additionally re-roots the id hash at that
+    "###", so a label whose visible part changes every frame (a counter, a name) keeps one stable
+    id.  Every labeled widget routes its display through label_width / draw_label (draw unit) and
+    its id through item_id, so the grammar is honored uniformly in one place.
+
+==============================================================================================*/
+
+/* Visible byte count: up to the first "##" marker, or the whole string.  Non-static: a
+   cross-unit seam (core/gui_core.h) -- the element unit's el_button and the draw unit's label
+   painters honor the same label grammar, so the rule stays authored in one place. */
+u32
+label_vis_len( const char* s )
+{
+    u32 i = 0;
+    while ( s[ i ] )
+    {
+        if ( s[ i ] == '#' && s[ i + 1 ] == '#' )    /* s[i+1] is at worst the NUL: safe */
+            break;
+        ++i;
+    }
+    return i;
+}
+
+/* The substring hashed for the id: the whole label, unless a "###" tail re-roots it there. */
+const char*
+label_id_str( const char* s )
+{
+    for ( u32 i = 0; s[ i ]; ++i )
+        if ( s[ i ] == '#' && s[ i + 1 ] == '#' && s[ i + 2 ] == '#' )    /* reads stop at NUL */
+            return s + i;
+    return s;
+}
+
+/* The id for a labeled widget: the active scope seed combined with the label's id key. */
+gui_id_t
+item_id( const char* label )
+{
+    gui_id_t id = id_combine( id_seed(), id_hash( label_id_str( label ) ) );
+    DBG_NAME( id, label );
+    return id;
+}
+
 // clang-format on
 /*============================================================================================*/

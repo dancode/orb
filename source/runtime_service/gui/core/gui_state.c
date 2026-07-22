@@ -3,7 +3,7 @@
     runtime_service/gui/core/gui_state.c -- Keyed state pool: persistent per-id tracking.
 
     A pure tracking service: hand it an id, it hands back stable storage.  It does not know
-    what it tracks -- animations (interact/gui_anim.c), scroll offsets, persisted child sizes,
+    what it tracks -- animations (core/gui_anim.c), scroll offsets, persisted child sizes,
     text-edit carets, and table column widths all rent slots from the same pool.  One-way:
     consumers depend on it, it depends on nothing above the context.
 
@@ -180,13 +180,8 @@ gui_state_peek( gui_id_t id, u32 size )
    should be judged against; occupied is how full the probe actually walks.  A full-table walk
    (~1K slots), so call it when displaying (the perf overlay), not unconditionally per frame. */
 
-typedef struct
-{
-    u32 tiny_live,  tiny_used,  tiny_cap;
-    u32 small_live, small_used, small_cap;
-    u32 big_live,   big_used,   big_cap;
-
-} gui_state_usage_t;
+/* gui_state_usage_t lives in core/gui_core.h: the perf overlay (frame unit) reads the
+   pool usage across the unit seam. */
 
 static void
 state_count_class( state_class_t c, u32* out_live, u32* out_used )
@@ -203,7 +198,7 @@ state_count_class( state_class_t c, u32* out_live, u32* out_used )
     *out_used = used;
 }
 
-static gui_state_usage_t
+gui_state_usage_t
 gui_state_usage( void )
 {
     gui_state_usage_t u;
@@ -217,7 +212,7 @@ gui_state_usage( void )
 }
 
 /*============================================================================================*/
-/* Animation utilities (gui_anim_f32, ...) live in interact/gui_anim.c,
+/* Animation utilities (gui_anim_f32, ...) live in core/gui_anim.c,
    included after present/gui_paint_core.c which provides the color palette they blend. */
 
 // clang-format on

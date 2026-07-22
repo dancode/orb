@@ -297,63 +297,12 @@ void                viewport_destroy        ( gui_viewport_t* vp );             
 /*==============================================================================================
     DEBUG OVERLAY (gui_debug_overlay.c) -- Debug builds only.
 
-    A second draw list, captured from the UI via the DBG_* macros and flushed last, on top.  The
-    build switch is computed here so BOTH units agree before the macros / capture decls are used:
-    the build tool defines GUI_DEBUG_OVERLAY for the Debug config; the MSVC _DEBUG macro is a
-    fallback so the feature tracks the configuration even before a build_tool regen.  Define
-    GUI_NO_DEBUG_OVERLAY to force it off.
+    The GUI_DEBUG_OVERLAY switch, the DBG_* capture macros, and the capture/lifecycle decls
+    moved to debug/gui_debug.h at the R4 carve: they are cross-server debug tooling (the
+    interact server stamps DBG_WIDGET / DBG_NAME) and the servers never include each other's
+    headers -- the debug header reaches every unit through the umbrella.  The implementation
+    stays in this unit (gui_debug_overlay.c batches into GPU buffers).
 ==============================================================================================*/
-
-#if defined( _DEBUG ) && !defined( GUI_DEBUG_OVERLAY ) && !defined( GUI_NO_DEBUG_OVERLAY )
-    #define GUI_DEBUG_OVERLAY
-#endif
-#if defined( GUI_NO_DEBUG_OVERLAY ) && defined( GUI_DEBUG_OVERLAY )
-    #undef GUI_DEBUG_OVERLAY
-#endif
-
-#ifdef GUI_DEBUG_OVERLAY
-
-    /* Lifecycle, driven by gui_frame.c (UI unit) under the same #ifdef. */
-    bool gui_debug_init    ( void );
-    void gui_debug_shutdown( void );
-    void gui_debug_reset   ( void );
-    void gui_debug_flush   ( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h );
-
-    /* Capture entry points -- called from both units via the DBG_* macros below.  Each tags its
-       command with the ambient build viewport (gui_dbg_build_viewport, gui_ctx.c). */
-    void dbg_capture_widget( gui_id_t id, gui_rect_t r, bool hover, bool active );
-    void dbg_capture_clip  ( gui_rect_t r, u32 depth );
-    void dbg_capture_window( gui_rect_t r, bool is_hover );
-    void dbg_capture_resize( gui_rect_t band, u8 hot_edges );
-    void dbg_capture_layout( gui_rect_t r );
-    void dbg_capture_region( gui_rect_t view, gui_rect_t hit_clip, f32 sb_w, f32 sb_h );
-
-    /* Name registry -- records the source string behind an id as it is minted (widget label,
-       window/popup title, region/child/table id string), so gui_state_overlay() can show a
-       readable name instead of a hash.  See gui_debug_name() in gui_host.h for the reader. */
-    void dbg_name_register( gui_id_t id, const char* str );
-
-    #define DBG_WIDGET( id, r, hov, act ) dbg_capture_widget( ( id ), ( r ), ( hov ), ( act ) )
-    #define DBG_CLIP( r, depth )          dbg_capture_clip( ( r ), ( depth ) )
-    #define DBG_WINDOW( r, is_hover )     dbg_capture_window( ( r ), ( is_hover ) )
-    #define DBG_RESIZE( band, hot )       dbg_capture_resize( ( band ), ( hot ) )
-    #define DBG_LAYOUT( r )               dbg_capture_layout( ( r ) )
-    #define DBG_REGION( view, hit, sw, sh ) dbg_capture_region( ( view ), ( hit ), ( sw ), ( sh ) )
-    #define DBG_NAME( id, str )           dbg_name_register( ( id ), ( str ) )
-
-    /* Ambient build viewport (s_build.win.viewport, gui_ctx.c) -- the capture functions live in/usage
-       the backend unit, so they read it through this accessor rather than the UI-unit static. */
-    u32 gui_dbg_build_viewport( void );
-
-#else
-    #define DBG_WIDGET( id, r, hov, act ) ( (void)0 )
-    #define DBG_CLIP( r, depth )          ( (void)0 )
-    #define DBG_WINDOW( r, is_hover )     ( (void)0 )
-    #define DBG_RESIZE( band, hot )       ( (void)0 )
-    #define DBG_LAYOUT( r )               ( (void)0 )
-    #define DBG_REGION( view, hit, sw, sh ) ( (void)0 )
-    #define DBG_NAME( id, str )           ( (void)0 )
-#endif
 
 /*==============================================================================================
     PIPELINE DASHBOARD (render/gui_dash_capture.c + gui_dashboard.c) -- Debug builds only.
@@ -517,16 +466,10 @@ extern gui_id_t g_gui_dash_window_id;
         debug/gui_frame_overlay.c hotkeys  -- phase-1 controls (F8 freeze/release, , . step);
                                               a stepper window replaces them in a later phase.
 
-    The build switch mirrors GUI_PIPELINE_DASHBOARD: auto-on for Debug builds, force-off with
-    GUI_NO_CMD_STEPPER.  Computed here so BOTH units agree.
+    The GUI_CMD_STEPPER switch and the STEP_SET_OWNER attribution seam are computed in
+    debug/gui_debug.h (R4) -- the interact server's item protocol stamps the owner, so the
+    switch must reach every unit through the umbrella.  The rest of the mechanism stays here.
 ==============================================================================================*/
-
-#if defined( _DEBUG ) && !defined( GUI_CMD_STEPPER ) && !defined( GUI_NO_CMD_STEPPER )
-    #define GUI_CMD_STEPPER
-#endif
-#if defined( GUI_NO_CMD_STEPPER ) && defined( GUI_CMD_STEPPER )
-    #undef GUI_CMD_STEPPER
-#endif
 
 #ifdef GUI_CMD_STEPPER
 
@@ -594,11 +537,9 @@ extern gui_id_t g_gui_dash_window_id;
        a miss, or on a chrome hit. */
     bool gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index );
 
-    /* Attribution stamp (defined in gui_emit_draw.c): item_state marks each registering
-       widget so the commands it paints carry its id -- STEP_SET_OWNER compiles away with the
-       feature.  Window transitions and draw_reset clear it back to 0 (chrome). */
-    void draw_set_cmd_owner( gui_id_t id );
-    #define STEP_SET_OWNER( id )      draw_set_cmd_owner( id )
+    /* The attribution stamp (draw_set_cmd_owner / STEP_SET_OWNER) is declared in
+       debug/gui_debug.h -- the interact server calls it; the definition stays in
+       gui_emit_draw.c. */
 
     /* Pipeline hooks, called via the STEP_* macros below (defined in gui_step_capture.c, which
        the unity chain includes LAST):
@@ -620,7 +561,6 @@ extern gui_id_t g_gui_dash_window_id;
     #define STEP_RESTORE_EMIT()       ( (void)0 )
     #define STEP_FRAME_PENDING()      ( false )
     #define STEP_EMIT_SUPPRESSED()    ( false )
-    #define STEP_SET_OWNER( id )      ( (void)0 )
 #endif
 
 // clang-format on

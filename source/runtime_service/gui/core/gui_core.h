@@ -116,9 +116,12 @@ typedef struct
 } gui_io_t;
 
 extern gui_io_t s_io;               /* core/gui_io.c -- the frame's distilled input */
+extern bool s_viewport_dirty;       /* core/gui_io.c -- a floater surface resized; set by the
+                                       frame unit (gui_owned_window_event), consumed by
+                                       io_frame_begin's dirty check */
 
 /*==============================================================================================
-    Widget interaction kind (behavior in interact/gui_item.c)
+    Widget interaction kind (behavior in core/gui_item.c)
 
     The interaction class picked at the call site.  Only the press-time behavior differs between
     widgets; everything else (hover/active/click) is uniform.  item_state's per-frame result
@@ -175,13 +178,13 @@ extern gui_interaction_t s_interaction;   /* core/gui_ctx.c -- hover / active / 
     Interaction scope (the s_scope instance in core/gui_ctx.c)
 
     The declared contract between composition and behavior.  Everything item_state
-    (interact/gui_item.c) consumes about "where is this item emitting" lives here, nowhere
+    (core/gui_item.c) consumes about "where is this item emitting" lives here, nowhere
     else: composition stamps the record at its seams (window_begin / child_begin / popup / table
     stamp win + clip; the resize/grip resolvers stamp the chrome suppression; the emit seam
     cell_next_w latches the per-item flags + nav stamp), and behavior reads only this
     record plus its own s_interaction -- never the composer scratch (s_build).  Behavior
     publishes its result back into the last_* fields, where the item-query readers
-    (user/gui_query.c), drag sourcing, and context-menu anchoring pick it up.  Unlike the
+    (core/gui_query.c), drag sourcing, and context-menu anchoring pick it up.  Unlike the
     s_interaction arbitration fields (verb-only writes), the scope is stamped directly: the
     contract is the record itself.  The overlay seam saves and restores it wholesale, so a field
     added here only needs its per-frame reset.  Tier: frame scratch, same lifetime as s_build.
@@ -308,12 +311,16 @@ void     id_push   ( gui_id_t id );
 void     id_pop    ( void );
 extern u32 s_id_sp;                       /* core/gui_ctx.c -- id-scope stack pointer */
 
-/* io (core/gui_io.c) -- modifier reads, key claims, outbound clipboard. */
+/* io (core/gui_io.c) -- modifier reads, key claims, outbound clipboard, and the input-frame
+   bracket the orchestrator drives (gui_frame_begin/end pump the io frame into this server). */
 bool io_shift( void );
 bool io_ctrl ( void );
 bool io_alt  ( void );
 bool key_claim( app_key_t k );                        /* claim a key edge      */
 void gui_clipboard_set( const char* s, u32 n );       /* outbound clipboard    */
+void io_frame_begin( i32 win_w, i32 win_h, f32 dt );  /* sample polled input   */
+void io_frame_end  ( void );                          /* clear one-frame input */
+bool io_dirty      ( void );                          /* any input change this frame */
 
 /* keyed state pool (core/gui_state.c) + the typed sugar over it.  gui_state_get: zero-on-create
    T* persisted by id; gui_state_peek: read-only, non-allocating, non-stamping probe (NULL when
@@ -323,17 +330,23 @@ const void* gui_state_peek( gui_id_t id, u32 size );
 #define GUI_STATE( T, id )      ( (T*)gui_state_get( ( id ), (u32)sizeof( T ) ) )
 #define GUI_STATE_PEEK( T, id ) ( (const T*)gui_state_peek( ( id ), (u32)sizeof( T ) ) )
 
-/* frame scratch accessors + item seams (core/gui_ctx.c). */
+/* frame scratch accessors + item seams (core/gui_ctx.c).  The flag seams are the PURE halves;
+   the style/draw application wrappers keeping the old names (item_flags_resolve,
+   item_flags_chrome_reset) live in present/gui_paint_core.c and are declared in
+   style/gui_style.h -- this server never touches a style value or the draw state. */
 bool             rect_hit( gui_rect_t r );         /* cursor (s_io) inside r                  */
-gui_item_flags_t item_flags_resolve( void );       /* per-item flag/style/alpha latch         */
-void             item_flags_chrome_reset( void );  /* clear it at the chrome seams            */
+gui_item_flags_t item_flags_take( void );          /* per-item flag merge + scope latch       */
+void             item_flags_chrome_drop( void );   /* clear the item scope at chrome seams    */
+void             item_flag_push( gui_item_flags_t flag, bool enable );   /* bracketing stack  */
+void             item_flag_pop ( void );
+void             item_flag_next( gui_item_flags_t flag, bool enable );   /* one-shot override */
 void             cursor_set( app_cursor_t c );     /* hardware-cursor nomination              */
 void             item_mark_edited( void );         /* focus edit latch                        */
 
 extern bool s_replay_mode;          /* core/gui_ctx.c -- volatile idle-replay phase flag      */
 extern u32  s_popup_begin_count;    /* core/gui_ctx.c -- popup nesting depth (per-frame)      */
 
-/* Interaction gate predicates (interact/gui_item.c) -- the read half of the arbitration state,
+/* Interaction gate predicates (core/gui_item.c) -- the read half of the arbitration state,
    named once so compound gesture gates read as sentences.  Pure queries, no writes: interact/
    stays the only writer of s_interaction.  Non-static since the TU split (the flow unit's
    region wheel gate reads interact_idle). */
@@ -342,20 +355,20 @@ bool interact_held      ( gui_id_t id );      /* id's press-drag gesture is in f
 bool interact_hover_bare( gui_id_t win_id );  /* cursor on win_id, no widget beneath it */
 
 /* Exclusive input mode (focus scope) -- true while a GUI_WIN_MODAL window is live (emitted this
-   frame or last).  Defined in core/gui_ctx.c; read by focus_allowed (interact/gui_item.c) to
+   frame or last).  Defined in core/gui_ctx.c; read by focus_allowed (core/gui_item.c) to
    confine focus to the mode.  See the exclusive-mode block in gui_ctx.c for the full model. */
 static bool gui_modal_scope_live( void );
 
-/* the item protocol (interact/gui_item.c) -- the behavior seam every widget rides. */
+/* the item protocol (core/gui_item.c) -- the behavior seam every widget rides. */
 gui_item_state_t item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind );
 void             item_focus_release( void );
 void             nav_item_stamp_label( gui_id_t id, const char* label );
 
-/* chrome grab + modal fence (interact/gui_item.c). */
+/* chrome grab + modal fence (core/gui_item.c). */
 bool item_grab( gui_id_t id, gui_rect_t r, bool gate, bool* active );
 void interact_hover_fence( gui_id_t owner );
 
-/* Compound-widget bracket (interact/gui_item.c) -- the formal seam for "a widget made of
+/* Compound-widget bracket (core/gui_item.c) -- the formal seam for "a widget made of
    widgets".  The outer widget runs item_state for ITS id/rect first, then brackets its inner
    emissions so the sub-items do not clobber what the outer item published:
 
@@ -383,16 +396,17 @@ gui_item_sub_t gui_item_sub_begin( void );
 gui_item_sub_t gui_item_sub_layout_begin( gui_id_t id, gui_rect_t r );
 void           gui_item_sub_end( gui_item_sub_t s );
 
-/* Widget label grammar -- the id half (present/gui_paint_core.c today; -> core in R4).
-   "Text##key" displays "Text" with a distinct id; "###key" re-roots the id hash. */
+/* Widget label grammar -- the id half (core/gui_id.c since R4: a label's id is identity
+   derivation).  "Text##key" displays "Text" with a distinct id; "###key" re-roots the id hash. */
 gui_id_t    item_id( const char* label );        /* label -> widget id per the grammar        */
 u32         label_vis_len( const char* s );      /* visible byte count (up to the first "##") */
 const char* label_id_str( const char* s );
 
-/* the pane service (surface/gui_surface.c) -- the pane open + the hover contest, and the z band
-   map every stacked entity's z lives in (see the band story at the definitions). */
+/* the surface service (core/gui_surface.c) -- the hover contest and the z band map every
+   stacked entity's z lives in (see the band story at the definitions).  The pane BRACKET
+   (pane_tag, gui_pane_begin/end) lives with the frame orchestrator (frame/gui_pane.c): it
+   stamps BOTH servers, which neither server may do itself. */
 void surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport );
-void pane_tag( gui_id_t id, u32 z, u32 vp, u32 band );
 u32  surface_z_raise( u32 z );
 u32  surface_z_overlay( u32 depth );
 
@@ -401,14 +415,57 @@ u32  surface_z_overlay( u32 depth );
 #define GUI_Z_OVERLAY    0x80000000u
 #define GUI_REGION_FG_Z  0xF0000000u
 
-/* retained-state animation utilities (interact/gui_anim.c today; -> core in R4: dampers and
-   timers are keyed-state tenants, server-side so style blends and interact tweens share them). */
+/* retained-state animation utilities (core/gui_anim.c since R4: dampers and timers are
+   keyed-state tenants, server-side so style blends and interact tweens share them). */
 typedef f32 ( *gui_ease_fn )( f32 );
 f32  gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active );
 void gui_anim_timer_start( gui_id_t id, f32 duration );
 f32  gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 f32  gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed );
 gui_anim4_t gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed );
+
+/* The timer slot payload -- shared so the feat_* kit (interact/gui_feature.c) can PEEK a
+   timer's remaining duration without starting one. */
+typedef struct { f32 elapsed; f32 duration; } gui_anim_timer_t;
+
+/* Public vtable adapters over the anim utilities (core/gui_anim.c); wired by gui_api.c. */
+f32        gui_api_anim_ease ( gui_id_t id, gui_ease_t ease, bool* out_active );
+u32        gui_api_anim_color( gui_id_t id, u32 target_abgr, f32 speed );
+gui_vec2_t gui_api_anim_vec2 ( gui_id_t id, gui_vec2_t target, f32 speed );
+gui_rect_t gui_api_anim_rect ( gui_id_t id, gui_rect_t target, f32 speed );
+
+/* Keyed-state pool usage introspection (core/gui_state.c) -- a full-table walk; the perf
+   overlay (frame unit) calls it when displaying, not per frame. */
+typedef struct
+{
+    u32 tiny_live,  tiny_used,  tiny_cap;
+    u32 small_live, small_used, small_cap;
+    u32 big_live,   big_used,   big_cap;
+
+} gui_state_usage_t;
+
+gui_state_usage_t gui_state_usage( void );
+
+/*==============================================================================================
+    Upward seams -- the interact server's few documented calls above its layer (the inc-10
+    discipline: explicit and few, listed here so the whole set is visible at once).
+
+    draw_nav_ring    the ONE system-adornment paint this server invokes (nav_item_register,
+                     core/gui_item.c): the ring must land beneath the item's own fill and no
+                     presentation seam after behavior exists that every widget passes through.
+                     Behavior picks the MOMENT; the paint policy (color, thickness) lives with
+                     the skin (present/gui_paint_core.c -> element at R8).  Do not add more.
+    DBG_* / STEP_SET_OWNER   debug capture stamps (debug/gui_debug.h) -- severable tooling,
+                     compiled away outside Debug.
+==============================================================================================*/
+
+#define NAV_RING 2.0f   /* focus-ring inset outside the item rect; the nav scroll chase keeps
+                           the ring clear of the view edge with it */
+void draw_nav_ring( gui_rect_t r, bool captured );
+
+/* Decentralized memory accounting: the core unit's fixed statics (ambient records, io snapshot,
+   id/flag stacks, context pool array), summed at the foot of gui_core.c for gui_ui_memory. */
+u32 gui_core_unit_mem_bytes( void );
 
 // clang-format on
 /*============================================================================================*/

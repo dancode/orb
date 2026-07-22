@@ -136,9 +136,15 @@ f32 vp_h( const gui_viewport_t* vp );
 static u32 viewport_index_for_window( i32 win_id );
 
 /* OS resize / close events for an gui-OWNED floater are serviced against the viewport pool, so
-   gui_event (core/gui_io.c) delegates them here.  Defined in gui_frame.c after g_ctx; returns
-   true when win_id is an owned viewport (event consumed). */
-static bool gui_owned_window_event( const app_event_t* ev );
+   gui_event (core/gui_io.c) delegates them here across the unit seam (the io pump's one upward
+   call into its orchestrator).  Defined in gui_frame.c; returns true when win_id is an owned
+   viewport (event consumed). */
+bool gui_owned_window_event( const app_event_t* ev );
+
+/* The pane bracket (frame/gui_pane.c) -- the go-between verb: stamp a pane onto BOTH servers
+   (draw segment key + interaction scope).  Every stacked entity's open routes through it
+   (window_begin_ex, the docked branch, region_begin, gui_pane_begin). */
+void pane_tag( gui_id_t id, u32 z, u32 vp, u32 band );
 
 /* forwarded capability flags (gui.c root) -- table / dock / nav feature gates. */
 extern gui_forward_caps_t s_fwd_caps;

@@ -35,7 +35,7 @@ typedef struct gui_window_t
 
     /* Popup / tooltip overlay: an anchored overlay on its surface, never the OS-window frame
        (window_is_native), never a nav or tab-drop target.  Stamped by the popup layer each begin,
-       alongside a z in the reserved overlay band (see the z band map in surface/gui_surface.c) --
+       alongside a z in the reserved overlay band (see the z band map in core/gui_surface.c) --
        the flag carries the TYPE fact so z stays pure paint order. */
     bool       overlay;
 
@@ -369,7 +369,7 @@ typedef struct gui_dock_node_t
 } gui_dock_node_t;
 
 /*==============================================================================================
-    Window record door + the next-window channel (surface/gui_surface.c -- the core unit owns
+    Window record door + the next-window channel (core/gui_surface.c -- the interact server owns
     the pool; chrome is the policy that fills it)
 ==============================================================================================*/
 
@@ -400,8 +400,8 @@ typedef struct
 
 } gui_vp_request_t;
 
-extern gui_next_win_t   s_next_win;    /* surface/gui_surface.c */
-extern gui_vp_request_t s_vp_request;  /* surface/gui_surface.c */
+extern gui_next_win_t   s_next_win;    /* core/gui_surface.c */
+extern gui_vp_request_t s_vp_request;  /* core/gui_surface.c */
 
 /*==============================================================================================
     Frame steps + upward seams -- the few chrome definitions the core/frame unit calls UP into

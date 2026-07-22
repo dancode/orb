@@ -46,9 +46,10 @@ gui_io_t s_io;   /* extern'd in gui_internal.h for the carved units (inc 10) */
    and cleared at the next call.  Read by frame_begin to gate the frontend-dirty check. */
 static bool s_io_dirty;
 
-/* Set by gui_owned_window_event (gui_frame.c, same unity TU) when a floater OS window
-   is resized.  Consumed and cleared by io_frame_begin so the resize marks one frame dirty. */
-static bool s_viewport_dirty;
+/* Set by gui_owned_window_event (frame/gui_viewport.c, across the unit seam) when a floater
+   OS window is resized.  Consumed and cleared by io_frame_begin so the resize marks one frame
+   dirty.  Extern'd in core/gui_core.h for the frame unit. */
+bool s_viewport_dirty;
 
 /* Previous primary display size -- compared each frame to detect host-side viewport_resize
    calls on the main surface (which also change win_w/win_h passed into io_frame_begin). */
@@ -86,8 +87,8 @@ static bool s_debug_enabled;
     Snapshot readers -- the queries later tiers ask of s_io, named once.
 ==============================================================================================*/
 
-/* Internal accessor used by gui_frame.c (same unity TU). */
-static bool io_dirty( void ) { return s_io_dirty; }
+/* Accessor for gui_frame.c's frontend-dirty gate (frame unit, across the seam). */
+bool io_dirty( void ) { return s_io_dirty; }
 
 /* Modifier key helpers: poll both L and R variants so callers need not repeat the pair. */
 bool io_ctrl ( void ) { return s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_down[ APP_KEY_RCTRL  ]; }
@@ -101,7 +102,7 @@ bool io_alt  ( void ) { return s_io.keys_down[ APP_KEY_LALT   ] || s_io.keys_dow
    are untouched on purpose -- a claim silences "was this just pressed", not "is it physically held"
    (a held key still reads as held for e.g. continuous camera movement even after something claims its
    press edge).  Returns whether there was actually a live edge to take, so a caller can tell "I used
-   it" from "there was nothing there anyway".  See gui_want_capture_keyboard (user/gui_query.c) for the
+   it" from "there was nothing there anyway".  See gui_want_capture_keyboard (core/gui_query.c) for the
    full per-frame tier order this primitive is tier 2 of. */
 bool
 key_claim( app_key_t k )
@@ -278,7 +279,7 @@ io_detect_double_click( f32 dt )
    fields (text/wheel/paste) are NOT touched here -- gui_event already wrote them straight into
    s_io during the host's ring drain, which runs before frame_begin; io_frame_end clears them. */
 
-static void
+void
 io_frame_begin( i32 win_w, i32 win_h, f32 dt )
 {
     /* Mouse position (polled): client coords of the window the cursor is in.
@@ -367,7 +368,7 @@ io_frame_begin( i32 win_w, i32 win_h, f32 dt )
    refills them.  Valid because the host drains the event ring (which fills these fields) before
    frame_begin -- never between this call and the next io_frame_begin. */
 
-static void
+void
 io_frame_end( void )
 {
     s_io.text[ 0 ]   = '\0';

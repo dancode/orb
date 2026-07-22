@@ -45,7 +45,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
 
     f32 title_h = node->rect.h - node->content.h;   /* tab strip height (= WIN_TITLE_H, node-clamped) */
 
-    /* The pane open (surface/gui_surface.c), routed to the node's surface: a tree node holds
+    /* The pane open (core/gui_surface.c), routed to the node's surface: a tree node holds
        z 0, so docked content sits behind the free-floating windows; a floating group stacks
        among them at its own z -- as does a dockspace-maximized leaf, whose raised z paints its
        cover over the sibling tiles while the transition slides it across them (dock_max_set).

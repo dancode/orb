@@ -1,11 +1,11 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/user/gui_query.c -- Public readers over the io + interaction services.
+    runtime_service/gui/core/gui_query.c -- Public readers over the io + interaction services.
 
     The frame-coherent input snapshot the widgets see, exposed for UI / tool code that wants
     to read keys, the mouse, or the clock without re-querying app() -- which bypasses gui's
     frame timing and, more importantly, its input capture.  Pure caller vocabulary: the
-    machinery (core/gui_io.c snapshot, interact/gui_item.c last-item latch) stays with the
+    machinery (core/gui_io.c snapshot, core/gui_item.c last-item latch) stays with the
     services; the readers a user speaks live here.
 
     want_capture_* are the fence: gate any direct app() input read in non-UI code on them, so
@@ -100,7 +100,7 @@ gui_is_mouse_hovering_rect( gui_rect_t r )
     Last-item introspection (the Dear ImGui IsItem* family).
 
     Every reader reports on "the widget just emitted" -- the item whose rect and interaction state
-    item_state latched into s_scope.last_* (interact/gui_item.c).  Call immediately after a
+    item_state latched into s_scope.last_* (core/gui_item.c).  Call immediately after a
     widget, the way set_item_tooltip / popup_context_item_begin already bind to the previous item:
 
         gui()->button( "Save" );

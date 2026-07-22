@@ -10,7 +10,7 @@
     Compose hands the rect and owns the scroll state; this file owns the feel and the look.
 
     Mouse-only by design: keyboard scrolling is the nav cursor's scroll chase
-    (interact/gui_item.c), so the bar never lists as a keyboard target (neither Tab nor the
+    (core/gui_item.c), so the bar never lists as a keyboard target (neither Tab nor the
     chrome lane).
 
     Included by gui.c in the widgets/ tier; the region engine reaches it through the forward
