@@ -47,7 +47,7 @@
 gui_interaction_t s_interaction;
 
 /* True only while a volatile-widget callback is replayed standalone on an idle frame; set/cleared
-   by gui_replay_scope_enter/_exit (widgets/gui_volatile.c).  Ambient frame-phase state, same tier as
+   by gui_replay_scope_enter/_exit (chrome/widgets/gui_volatile.c).  Ambient frame-phase state, same tier as
    hover_id/active_id: item_state (core/gui_item.c) reads it inline to short-circuit before any
    hit-test or write to s_interaction/s_build -- a replay renders against the hover/active/focus the
    last real frame established and can never acquire state or see a fresh click, since interaction is

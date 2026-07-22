@@ -1,6 +1,18 @@
 # GUI SERVER PLAN -- the v2 unit reorganization
 
-Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) + R5 (style) + R6 (interact) + R7 (flow) + R8 (element) DONE 2026-07-21 -- next: R9 (chrome)
+Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) + R5 (style) + R6 (interact) + R7 (flow) + R8 (element) + R9 (chrome) DONE 2026-07-21 -- next: R10 (debug)
+
+R9 DONE: the CHROME UNIT's six folders folded under chrome/ -- widgets/, table/, window/,
+dock/, popup/, nav/ are now chrome/widgets/ ... chrome/nav/, beside the unit header
+chrome/gui_chrome.h that has lived there since R1b.  Purely mechanical: no code moved between
+units, no seams changed; the unit root gui_chrome.c stayed at the gui root (orb.targets
+untouched), its constituent include paths and every path reference repo-wide re-pointed
+(35 files; prose role references like "window/ policy" kept -- the folders still exist, one
+level down).  The gui root now shows exactly the target layout's shape: one folder per unit
+plus the root unit .c files and public headers.  NOTE discovered en route: 13 gui sources
+carry pre-existing UTF-8 BOMs (violating the ASCII rule byte-wise; MSVC accepts them) --
+left untouched, a separate hygiene pass if wanted.  Full + mono builds clean (first try);
+both canaries clean.
 
 R8 DONE: the ELEMENT UNIT is complete (root gui_element.c) -- THE FIRST LAYER ASTRIDE BOTH
 SERVERS: everything that combines interact state with styled paint over a caller rect.  Three
@@ -337,7 +349,7 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
     R6  interact gesture unit; select re-classified as chrome; interact_claim   <- DONE
     R7  flow     compose/ -> flow/; unit .c to root; flow/gui_flow.h (rect producer sits below element)   <- DONE
     R8  element  absorb styled paint helpers; unit .c to root   <- DONE
-    R9  chrome   six folders under chrome/; chrome/gui_chrome.h
+    R9  chrome   six folders under chrome/; chrome/gui_chrome.h   <- DONE
     R10 debug    unit .c to root; debug/gui_debug.h; frame_overlay -> frame/
     R11 frame    gui.c = pure orchestrator; gui_internal.h DELETED; GUI_ARCHITECTURE.md rewrite
 

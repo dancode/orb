@@ -43,7 +43,7 @@ gui_ui_memory( void )
 
     /* interact/ -- THE INTERACT UNIT is its own unit since R6 (gui_interact.c) and accounts
        for its own statics (the drag payload slot) via its seam; the text-selection controller
-       moved to chrome (window/gui_select.c) and is counted there. */
+       moved to chrome (chrome/window/gui_select.c) and is counted there. */
     b += gui_interact_unit_mem_bytes();
 
     /* element/ -- THE ELEMENT UNIT accounts for its own statics (the installed element style

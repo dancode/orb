@@ -17,7 +17,7 @@
     invoked where the accept is decided; the drag preview tooltip through the public chrome
     verbs; and resize's WIN_BORDER read (geometry, not paint).
 
-    NOT here: window text selection (window/gui_select.c since R6) -- its protocol reads the
+    NOT here: window text selection (chrome/window/gui_select.c since R6) -- its protocol reads the
     render server's run capture and measures with draw-unit font metrics, server crossings
     this unit must never make; it is chrome policy riding this unit's generic verbs.
 

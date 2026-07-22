@@ -151,7 +151,7 @@ bool draw_cull_box              ( f32 x, f32 y, f32 w, f32 h );
     The backend half of window text selection (GUI_WIN_TEXT_SELECT): at the build seam --
     segments closed, every emit pool complete -- the GUI_CMD_TEXT commands of each window
     marked this frame are copied into a persistent run buffer that survives draw_reset, so
-    the chrome unit's selection controller (window/gui_select.c) can hit-test, highlight and
+    the chrome unit's selection controller (chrome/window/gui_select.c) can hit-test, highlight and
     copy against them one frame behind the emit that produced them (the standard
     self-measurement lag).  ONE shared buffer serves every flagged window; runs are tagged
     with their owning window id.  Always compiled -- a product feature, not a debug layer.
@@ -233,13 +233,13 @@ void                gui_build_dump_geometry( void );
     The feature's actual logic is entirely in two files, one per unit -- read those for the full
     picture; this header is only the boundary between them:
 
-        widgets/gui_volatile.c            -- UI unit: gui()->volatile_cb/_begin/_end (gui_api.h),
+        chrome/widgets/gui_volatile.c            -- UI unit: gui()->volatile_cb/_begin/_end (gui_api.h),
                                              the replay scope (layout + id), gui_replay_scope_enter/_exit.
         render/pipeline/gui_build_volatile.c -- BUILD unit: the registry, capture at real emit, and
                                              gui_update_volatile (run internally by frame_end).
 
     Forward direction (core -> backend, the normal call direction for this header): gui_volatile_cb
-    (widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
+    (chrome/widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
     gui_volatile_cb_open records where its commands start, gui_volatile_stamp (called from inside
     the callback body, by gui_volatile_begin) records the window/z/vp/font/clip context and the
     layout cursor position, and gui_volatile_cb_close records where they end and tags the range.
@@ -265,7 +265,7 @@ u32      gui_volatile_row_count( void );                        // registered re
 bool     gui_volatile_live    ( void );                         // any row patchable RIGHT NOW -- gui_frame_pace must keep
                                                                 //   presenting at cadence instead of block-waiting on input
 
-/* Implemented in the UI unit (widgets/gui_volatile.c); called only from gui_update_volatile. */
+/* Implemented in the UI unit (chrome/widgets/gui_volatile.c); called only from gui_update_volatile. */
 void     gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w );
 void     gui_replay_scope_exit ( bool force_redraw );
 

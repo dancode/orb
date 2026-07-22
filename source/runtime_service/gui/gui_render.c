@@ -124,7 +124,7 @@ static gui_backend_caps_t s_caps;
 #include "runtime_service/gui/render/gui_dash_capture.c"
 
 // TEXT-SELECTION run capture: copies flagged windows' text commands into a persistent run
-// buffer at the build seam for the chrome unit's selection controller (window/gui_select.c).
+// buffer at the build seam for the chrome unit's selection controller (chrome/window/gui_select.c).
 // Always compiled (a product feature).  Last (with the captures below) so it sees s_draw.
 #include "runtime_service/gui/render/gui_select_capture.c"
 

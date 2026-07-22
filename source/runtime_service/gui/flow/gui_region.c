@@ -3,7 +3,7 @@
     runtime_service/gui/flow/gui_region.c -- Root-level region: a fixed-rect layout primitive
     with no window chrome.
 
-    window_begin_ex (window/gui_window_free.c) and child_begin (gui_layout_child.c) are both
+    window_begin_ex (chrome/window/gui_window_free.c) and child_begin (gui_layout_child.c) are both
     callers of the shared scroll-region engine in gui_scroll.c, each layered with its own
     bookkeeping -- a persisted, draggable, z-ordered, dockable record for a window; a
     parent-pen-relative box with a resize grip for a child.  Neither fits a HUD-style element

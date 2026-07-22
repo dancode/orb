@@ -4,7 +4,7 @@
 
     The backend half of window text selection (GUI_WIN_TEXT_SELECT); the UI half (the
     selection controller: press/drag protocol, highlight paint, Ctrl+C copy) is
-    window/gui_select.c (the chrome unit since R6).  See the section banner in gui_render.h for the boundary.
+    chrome/window/gui_select.c (the chrome unit since R6).  See the section banner in gui_render.h for the boundary.
 
     At the build seam -- segments closed, every emit pool complete, nothing tessellated yet
     (the same seam the command stepper freezes at) -- the GUI_CMD_TEXT commands of each

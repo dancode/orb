@@ -341,7 +341,7 @@ void gui_volatile_begin( void );
 void gui_volatile_cb( const char* label, gui_volatile_fn fn );
 void gui_volatile_end( void );
 
-/* tables (table/gui_table.c, chrome unit) */
+/* tables (chrome/table/gui_table.c, chrome unit) */
 bool gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 height );
 void gui_table_end( void );
 bool gui_table_next_column( void );

@@ -655,7 +655,7 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
 
 /*============================================================================================*/
 /* volatile_layout_push / volatile_layout_pop -- a minimal layout-frame push/pop at an explicit
-   (x, y, w), used only by the volatile-widget replay scope, now live in widgets/gui_volatile.c
+   (x, y, w), used only by the volatile-widget replay scope, now live in chrome/widgets/gui_volatile.c
    (gui_replay_scope_enter/_exit) alongside the rest of that feature. Both call
    layout_set_default (below), which is why they must be textually included after this file. */
 

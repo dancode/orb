@@ -7,7 +7,8 @@
     The stock recipes: window records, keyboard nav, popups, docking -- policy over the
     mechanism units below.  Included by gui_internal.h after flow/gui_flow.h (the overlay
     seam saves a layout frame and the draw scope wholesale, so both types must exist).
-    Implementation: widgets/ table/ window/ dock/ popup/ nav/ today, chrome/ after R9.
+    Implementation: the six folders under chrome/ (widgets, table, window, dock, popup,
+    nav) since R9; unit root gui_chrome.c.
 
 ==============================================================================================*/
 
@@ -407,32 +408,32 @@ extern gui_vp_request_t s_vp_request;  /* core/gui_surface.c */
     Frame steps + upward seams -- the few chrome definitions the core/frame unit calls UP into
 ==============================================================================================*/
 
-void window_raise_on_press( void );   /* window/gui_window.c: press-to-front (ctx_begin)      */
-void window_modal_apply   ( void );   /* popup/gui_popup.c: modal fence (ctx_begin)           */
-void popup_apply_modal    ( void );   /* popup/gui_popup.c: per-frame modal inertness         */
-void popup_close_check    ( void );   /* popup/gui_popup.c: click-outside close (frame)       */
-void nav_new_frame        ( void );   /* nav/gui_nav.c: per-frame nav turnover                */
-void dock_hidden_refresh  ( void );   /* dock/gui_dock_core.c: hidden-node upkeep (frame)     */
+void window_raise_on_press( void );   /* chrome/window/gui_window.c: press-to-front (ctx_begin)      */
+void window_modal_apply   ( void );   /* chrome/popup/gui_popup.c: modal fence (ctx_begin)           */
+void popup_apply_modal    ( void );   /* chrome/popup/gui_popup.c: per-frame modal inertness         */
+void popup_close_check    ( void );   /* chrome/popup/gui_popup.c: click-outside close (frame)       */
+void nav_new_frame        ( void );   /* chrome/nav/gui_nav.c: per-frame nav turnover                */
+void dock_hidden_refresh  ( void );   /* chrome/dock/gui_dock_core.c: hidden-node upkeep (frame)     */
 u32  gui_chrome_unit_mem_bytes( void );
 
 /* gui_popup.c is included after the widgets/ files; selectable calls this to auto-close the
    enclosing popup on click (the Dear ImGui CloseCurrentPopup default behavior). */
 void gui_popup_close_current( void );
 
-/* Window text selection (window/gui_select.c, chrome since R6 -- it reads the render capture
+/* Window text selection (chrome/window/gui_select.c, chrome since R6 -- it reads the render capture
    and font metrics, so it is policy astride both servers, not an interact mechanism).  The
    bands paint under the body at the window begins; the protocol + overlay resolve at end. */
 void select_paint_under( void );
 void select_window_end( void );
 
 /* The region engine (flow/gui_scroll.c) emits the scrollbar widget into the gutter
-   it reserved at layout_pop_region -- but the widget lives above it (widgets/gui_scrollbar.c):
+   it reserved at layout_pop_region -- but the widget lives above it (chrome/widgets/gui_scrollbar.c):
    flow's one upward call beside the anim ease.  Compose hands the track rect + scroll slot; the
    widget owns the feel and the look. */
 void scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
                        f32 content, f32 view, f32* scroll );
 
-/* The window <-> dock route seam (implemented in dock/gui_dock_route.c).
+/* The window <-> dock route seam (implemented in chrome/dock/gui_dock_route.c).
 
    window/ is included BEFORE dock/, yet a window must ask the dock whether it owns placement.
    This seam is the ONLY door between them: window/ calls these five verbs and nothing else in

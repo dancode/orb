@@ -13,7 +13,7 @@
     The persistent state for child_begin boxes is kept in the shared keyed pool
     (gui_state_get); window bodies pass pointers to their own gui_window_t fields.
 
-    The scrollbar itself is a stock widget (widgets/gui_scrollbar.c) -- this engine only
+    The scrollbar itself is a stock widget (chrome/widgets/gui_scrollbar.c) -- this engine only
     reserves its gutter and hands it the track rect + scroll slot at pop, through the forward
     declaration in gui_internal.h.  Compose produces rects; the widget owns feel + look.
 
@@ -284,7 +284,7 @@ layout_pop_region( void )
 
     /* Bars: in the reserved gutters, sitting exactly on the view's right / bottom edges (the
        gutters are what the view reservation carved out, so "just past the view" IS the gutter),
-       clear of the corner.  Compose ends at the track rect -- the widget (widgets/gui_scrollbar.c)
+       clear of the corner.  Compose ends at the track rect -- the widget (chrome/widgets/gui_scrollbar.c)
        owns the grab and the paint. */
     if ( f->show_v )
     {

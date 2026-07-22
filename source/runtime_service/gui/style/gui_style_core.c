@@ -346,7 +346,7 @@ col_item_bg_anim( gui_id_t id, gui_item_state_t st )
 }
 
 /* True while both push_style stacks are empty -- the volatile-replay precondition check
-   (widgets/gui_volatile.c) reads it through this predicate so style_stack_t stays private. */
+   (chrome/widgets/gui_volatile.c) reads it through this predicate so style_stack_t stays private. */
 bool
 style_stacks_empty( void )
 {

@@ -58,7 +58,7 @@ gui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
 }
 
 /* Volatile widgets (gui()->volatile_cb / volatile_begin / volatile_end) live in their own file --
-   widgets/gui_volatile.c -- rather than here, since they're a distinct cross-cutting feature
+   chrome/widgets/gui_volatile.c -- rather than here, since they're a distinct cross-cutting feature
    spanning both units, not a custom-draw escape hatch. */
 
 /* invisible_button / gui_item -- interaction on an explicit rect -- moved to gui_behavior.c,

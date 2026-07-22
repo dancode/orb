@@ -382,7 +382,7 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
         return st;
     }
 
-    /* Volatile-callback replay -- full feature in widgets/gui_volatile.c and
+    /* Volatile-callback replay -- full feature in chrome/widgets/gui_volatile.c and
        render/pipeline/gui_build_volatile.c; s_replay_mode itself is declared in gui_ctx.c.  Report the
        ambient hover/active/focused state as-is, but never touch it and never hit-test -- the
        interaction scope (s_scope: win, clip, flags, ...) is only meaningful between a real

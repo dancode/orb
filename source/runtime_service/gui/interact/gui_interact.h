@@ -11,7 +11,7 @@
 
     (The item protocol and the anim utilities are the interact SERVER's -- core/gui_core.h.
     Window text selection is NOT here: it reads the render capture and font metrics, so it is
-    chrome -- window/gui_select.c since R6; it claims gestures through interact_claim.)
+    chrome -- chrome/window/gui_select.c since R6; it claims gestures through interact_claim.)
 
 ==============================================================================================*/
 

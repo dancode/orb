@@ -64,16 +64,16 @@
                     stay the ONLY writers of the s_interaction arbitration fields
                     (hover/active/focus): higher tiers claim through the core verbs
                     (interact_claim) and read the record for gating, never write it raw.
-                    Window text selection re-classified as chrome (window/gui_select.c, R6).
+                    Window text selection re-classified as chrome (chrome/window/gui_select.c, R6).
     element/     -- THE ELEMENT UNIT (its own TU, gui_element.c, since R8): presentation
                     -- consumes rect + state + skin and paints; never asks behavior, state
                     is a parameter.  The el_* cores, the per-item ambient wrappers, the
                     system adornments, the styled symbol half.  Not in this TU.
                     (present/ dissolved into it at R8.)  flow/, interact/, element/ are
                     SIBLINGS -- combined only by the tiers above.
-    widgets/ table/ window/ dock/ popup/ nav/
-                 -- THE CHROME UNIT (gui_chrome.c): the stock widget set + the host
-                    structures.  Not in this TU; see gui_chrome.c for the role map.
+    chrome/      -- THE CHROME UNIT (gui_chrome.c): the stock widget set + the host
+                    structures; its six folders (widgets, table, window, dock, popup, nav)
+                    live under it since R9.  Not in this TU; see gui_chrome.c for the role map.
     (user/ dissolved at R6 -- the caller's vocabulary lives with its machinery: canvas ->
      draw (R3), query readers -> core (R4), bracketing stacks -> style (R5), behavior verbs
      -> interact (R6).  Where user widgets are written: rect (canvas) + item() + draw_*.)
@@ -198,7 +198,7 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 /* gui_symbol.c moved to the draw unit (gui_draw.c, R3); the gesture services (gui_move.c,
    gui_resize.c, gui_drag.c, gui_feature.c, gui_behavior.c) moved to the interact unit
    (gui_interact.c, R6); window text selection was re-classified as chrome and moved to
-   window/gui_select.c (the chrome unit) -- it reads the render capture + font metrics. */
+   chrome/window/gui_select.c (the chrome unit) -- it reads the render capture + font metrics. */
 
 /*----------------------------------  LIBRARY: GUI_FLOW  ----------------------------------*/
 
@@ -214,9 +214,9 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
    tear-off reads move_grab_offset). */
 
 /*----------------------------------  LIBRARY: GUI_CHROME  ----------------------------------*/
-// GUI_CHROME is its OWN translation unit (gui_chrome.c, the sixth): widgets/ + table/ +
-// window/ + dock/ + popup/ + nav/ (nav is core-classified but reads the popup stack, so it
-// lives with chrome).  It composes the core services + the flow emit surface through the
+// GUI_CHROME is its OWN translation unit (gui_chrome.c): the six folders under chrome/
+// since R9 -- widgets, table, window, dock, popup, nav (nav is core-classified but reads
+// the popup stack, so it lives with chrome).  It composes the core services + the flow emit surface through the
 // gui_internal.h seams; this unit's upward calls into it (the frame lifecycle's window /
 // popup / dock / nav steps) resolve through the same seam declarations.
 
