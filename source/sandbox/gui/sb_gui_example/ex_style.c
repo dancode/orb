@@ -301,43 +301,38 @@ ex_style_fonts( void )
     if ( ex_begin( "Fonts", 460, 560, GUI_WIN_NONE ) )
     {
         gui()->stack();
-        gui()->textf( "active font id: %u", gui()->font_active_id() );
 
-        /* push_font brackets a section in another face; layout follows its metrics. */
-        gui()->separator_text( "push_font / pop_font" );
-        gui()->text( "Default font (slot 0 -- the boot preset)." );
-        if ( s_id_cas )
-        {
-            gui()->push_font( s_id_cas );
-            gui()->text( "Cascadia Mono 16 via push_font." );
-            gui()->pop_font();
-        }
-        if ( s_id_rob )
-        {
-            gui()->push_font( s_id_rob );
-            gui()->text( "Roboto Regular 16 via push_font." );
-            gui()->pop_font();
-        }
+        /* Live font switch -- pick a face; the sample below re-renders in it live.  push_font
+           brackets the block (font_use under the hood), so layout follows the selected metrics. */
+        gui()->separator_text( "live font switch" );
+        static i32 face = 0;
+        gui()->radio_button( "slot 0 (boot)", &face, 0 ); gui()->same_line( -1.0f );
+        if ( s_id_cas ) { gui()->radio_button( "cascadia", &face, 1 ); gui()->same_line( -1.0f ); }
+        if ( s_id_rob )   gui()->radio_button( "roboto",   &face, 2 );
         if ( !s_id_cas && !s_id_rob )
             gui()->text_disabled( "(extra .orb_font loads failed -- check assets/font/)" );
 
-        /* text_size -- measure an arbitrary string in the active font. */
-        gui()->separator_text( "text_size" );
-        static char probe[ 48 ] = "measure me";
+        u32 face_id = face == 1 ? s_id_cas : face == 2 ? s_id_rob : 0;
+
+        /* text_size measures in the active font, so it tracks the switch too. */
+        static char probe[ 48 ] = "The quick brown fox jumps over the lazy dog";
         gui()->input_text( "string", probe, sizeof( probe ) );
+
+        gui()->push_font( face_id );
+        gui()->textf( "active font id: %u", gui()->font_active_id() );
+        gui()->text( probe );
+        gui()->text( "0123456789   ( ) [ ] { } < >   = + - * / & @ #" );
         gui_vec2_t sz = gui()->text_size( probe );
-        gui()->textf( "%.1f x %.1f px   (sz_chars(10) = %.1f)", sz.x, sz.y, gui()->sz_chars( 10.0f ) );
+        gui()->textf( "text_size: %.1f x %.1f px   (sz_chars(10) = %.1f)",
+                      sz.x, sz.y, gui()->sz_chars( 10.0f ) );
+        gui()->pop_font();
 
-        /* Live GPU atlas preview through the RGBA texture path. */
-        gui()->separator_text( "font atlas (font_atlas_idx)" );
-        static i32 atlas_sel = 0;
-        gui()->radio_button( "slot 0", &atlas_sel, 0 ); gui()->same_line( -1.0f );
-        if ( s_id_cas ) { gui()->radio_button( "cascadia", &atlas_sel, 1 ); gui()->same_line( -1.0f ); }
-        if ( s_id_rob )   gui()->radio_button( "roboto",   &atlas_sel, 2 );
-
-        u32 font_id = atlas_sel == 1 ? s_id_cas : atlas_sel == 2 ? s_id_rob : 0;
-        u32 tex     = gui()->font_atlas_idx( font_id );
-        gui_vec2_t asz = gui()->font_atlas_size( font_id );
+        /* GPU atlas preview -- one shared R8 atlas holds every loaded font as a packed tenant, so
+           this shows the SAME texture for any face (font_atlas_idx returns the shared bindless slot);
+           the live text above is the real per-face test. */
+        gui()->separator_text( "shared font atlas (font_atlas_idx)" );
+        u32 tex     = gui()->font_atlas_idx( face_id );
+        gui_vec2_t asz = gui()->font_atlas_size( face_id );
         gui()->textf( "atlas %u: %.0f x %.0f texels", tex, asz.x, asz.y );
         if ( tex && asz.x > 0.0f )
         {

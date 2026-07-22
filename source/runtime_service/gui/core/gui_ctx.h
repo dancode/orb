@@ -17,11 +17,11 @@
     Include order: after core/gui_core.h (the aggregate embeds gui_retained_t).
 
 ==============================================================================================*/
-
 // clang-format off
 
 /* Chrome-owned retained records the server stores but never reads: pooled behind pointers in
    gui_context_t, shaped in chrome/gui_chrome.h, sized by the allocator in frame/gui_context.c. */
+
 typedef struct gui_popup_t     gui_popup_t;
 typedef struct gui_dock_node_t gui_dock_node_t;
 
