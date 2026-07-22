@@ -7,6 +7,7 @@
     The pipeline dashboard + command stepper: ordinary debug-band windows over the render
     server's capture snapshots.  Emitted by debug_overlays_emit (gui_frame_overlay.c, the
     frame unit).  Severable: a build without the debug unit stubs these three.
+    Unit root: gui_debug.c, at the gui root since R10 like every unit.
 
 ==============================================================================================*/
 

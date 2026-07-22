@@ -39,7 +39,7 @@ so each library boundary is compiler-enforced):
   stock set and the host structures, composing the core services + flow's emit surface.
   Its core-facing definitions (the frame lifecycle's window/popup/nav/dock steps) are seams
   the other direction.
-- `debug/gui_debug.c` (debug unit): the pipeline dashboard + command stepper -- severable
+- `gui_debug.c` (debug unit): the pipeline dashboard + command stepper -- severable
   tooling over the render server capture snapshots (`gui_frame_overlay.c` stays with the frame
   group: the lifecycle calls its timing helpers).
 

@@ -1,19 +1,20 @@
 /*==============================================================================================
 
-    runtime_service/gui/debug/gui_debug.c -- Unity build entry for the GUI_DEBUG unit.
+    runtime_service/gui/gui_debug.c -- GUI_DEBUG translation unit: server introspection.
 
     Dev tooling OVER the system, not part of it (severable -- a ship build could drop this
     unit and lose nothing but the diagnostics): the pipeline dashboard and the command
     stepper, each an ordinary debug-band window painted through the standard draw API over a
     snapshot the backend unit captured (render/gui_dash_capture.c / gui_step_capture.c).
 
-    The fourth translation unit (beside gui.c, gui_render.c, element/gui_element.c) -- the
-    compiler enforces that the debug tier reaches the rest of gui only through the public
-    gui_* surface (gui_host.h), the backend capture API (gui_render.h), and the seams
-    declared in gui_internal.h's cross-unit section.
+    Root unit .c since R10, like every unit (GUI_SERVER_PLAN.md); implementation in debug/,
+    cross-unit decls in debug/gui_debug.h.  The compiler enforces that the debug tier reaches
+    the rest of gui only through the public gui_* surface (gui_host.h), the backend capture
+    API (gui_render.h), and the umbrella's cross-unit seams.
 
-    gui_frame_overlay.c stays in gui.c ON PURPOSE: it carries the frame-timing helpers the
-    frame lifecycle itself calls (gui_frame.c) -- conductor code, not severable tooling.
+    gui_frame_overlay.c is NOT here ON PURPOSE (frame/gui_frame_overlay.c since R10): it
+    carries the frame-timing helpers the frame lifecycle itself calls (gui_frame.c) --
+    conductor code, not severable tooling.
 
 ==============================================================================================*/
 

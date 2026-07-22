@@ -59,7 +59,7 @@ gui_ui_memory( void )
               + sizeof( s_boot ) + sizeof( s_present ) + sizeof( s_fwd_caps ) );
 
     /* debug/ -- the perf/state HUD accumulators (always compiled; runtime-gated) live in THIS
-       unit; the dashboard / stepper statics moved to the debug unit (debug/gui_debug.c), which
+       unit; the dashboard / stepper statics moved to the debug unit (gui_debug.c), which
        reports its own fixed footprint through the seam. */
     b += (u32)sizeof( s_perf );
     b += gui_debug_unit_mem_bytes();

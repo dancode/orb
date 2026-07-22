@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/debug/gui_frame_overlay.c -- Built-in perf / state HUD overlays + debug driver.
+    runtime_service/gui/frame/gui_frame_overlay.c -- Built-in perf / state HUD overlays + debug driver.
 
     Two hidden-chrome debug readouts drawn through the ordinary GUI pipeline, plus the frame-timing
     instrumentation the perf overlay reads.  The timing helpers (perf_frame_begin / perf_frame_end /

@@ -463,7 +463,7 @@ extern gui_id_t g_gui_dash_window_id;
                                               while frozen; live band-0 pushes are suppressed
                                               at the source (STEP_EMIT_SUPPRESSED).
 
-        debug/gui_frame_overlay.c hotkeys  -- phase-1 controls (F8 freeze/release, , . step);
+        frame/gui_frame_overlay.c hotkeys  -- phase-1 controls (F8 freeze/release, , . step);
                                               a stepper window replaces them in a later phase.
 
     The GUI_CMD_STEPPER switch and the STEP_SET_OWNER attribution seam are computed in

@@ -1,6 +1,17 @@
 # GUI SERVER PLAN -- the v2 unit reorganization
 
-Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) + R5 (style) + R6 (interact) + R7 (flow) + R8 (element) + R9 (chrome) DONE 2026-07-21 -- next: R10 (debug)
+Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) + R5 (style) + R6 (interact) + R7 (flow) + R8 (element) + R9 (chrome) + R10 (debug) DONE 2026-07-21 -- next: R11 (frame, the finale)
+
+R10 DONE: the DEBUG UNIT is re-seated -- debug/gui_debug.c -> root gui_debug.c (the last
+carved unit joins the root like every other), and debug/gui_frame_overlay.c ->
+frame/gui_frame_overlay.c (its own banner already said it: conductor code the lifecycle
+calls, never severable tooling -- now the folder says it too).  Constituents unchanged
+(debug/gui_dashboard.c + gui_step_window.c); debug/gui_debug.h stays the unit's cross-unit
+header (the DBG_*/STEP_SET_OWNER umbrella blocks live there since R4).  orb.targets unit
+lines updated (gui + gui_stress) + -gen; path sweep was small (8 files: gui.c banner +
+include, the two moved banners, chrome/io/render.h/ui_mem/ARCHITECTURE references).  No
+seam changes, no code motion between units.  Full + mono builds clean (first try); both
+canaries clean.
 
 R9 DONE: the CHROME UNIT's six folders folded under chrome/ -- widgets/, table/, window/,
 dock/, popup/, nav/ are now chrome/widgets/ ... chrome/nav/, beside the unit header
@@ -350,7 +361,7 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
     R7  flow     compose/ -> flow/; unit .c to root; flow/gui_flow.h (rect producer sits below element)   <- DONE
     R8  element  absorb styled paint helpers; unit .c to root   <- DONE
     R9  chrome   six folders under chrome/; chrome/gui_chrome.h   <- DONE
-    R10 debug    unit .c to root; debug/gui_debug.h; frame_overlay -> frame/
+    R10 debug    unit .c to root; debug/gui_debug.h; frame_overlay -> frame/   <- DONE
     R11 frame    gui.c = pure orchestrator; gui_internal.h DELETED; GUI_ARCHITECTURE.md rewrite
 
 Method per increment (proved in inc 10): create/move the unit + orb.targets lines (gui AND

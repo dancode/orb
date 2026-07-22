@@ -9,7 +9,7 @@
     focus service, but it reads/drives the popup stack, so it lives here).
 
     One of the carved translation units (beside gui.c, gui_render.c, gui_core.c, gui_style.c,
-    gui_interact.c, gui_flow.c, gui_element.c, gui_draw.c, debug/gui_debug.c).  The compiler enforces the boundary: everything
+    gui_interact.c, gui_flow.c, gui_element.c, gui_draw.c, gui_debug.c).  The compiler enforces the boundary: everything
     resolves through the public gui_* surface (gui_host.h), the backend draw API
     (gui_render.h), and the gui_internal.h cross-unit sections -- the ambient records, the
     core service seams (item / id / io / state / style / paint / gesture services), and the

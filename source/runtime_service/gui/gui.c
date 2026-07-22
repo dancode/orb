@@ -39,7 +39,7 @@
         over the core services and flow's emit surface; its frame-called steps (raise-on-
         press, modal fence, nav turnover, dock upkeep) are seams back the other way.
 
-      - the debug unit (debug/gui_debug.c): pipeline dashboard + command stepper; severable.
+      - the debug unit (gui_debug.c, R10): pipeline dashboard + command stepper; severable.
 
     Include order in this unit matters: each file can reference statics from files included
     above it.  What remains is the frame group (incl. the pane bracket + context lifecycle).
@@ -77,8 +77,8 @@
     (user/ dissolved at R6 -- the caller's vocabulary lives with its machinery: canvas ->
      draw (R3), query readers -> core (R4), bracketing stacks -> style (R5), behavior verbs
      -> interact (R6).  Where user widgets are written: rect (canvas) + item() + draw_*.)
-    debug/       -- dev tooling: dashboard + stepper are THE DEBUG UNIT (debug/gui_debug.c);
-                    gui_frame_overlay.c stays HERE (the lifecycle calls its timing helpers).
+    debug/       -- dev tooling: dashboard + stepper are THE DEBUG UNIT (its own TU,
+                    gui_debug.c, since R10 at the root like every unit).  Severable.
     frame/       -- the conductor: gui_frame.c lifecycle, gui_viewport.c, gui_boot.c.  Top
                     of the stack (the host's driver over the tiers), NOT a foundation:
                     prepare/update/dispatch touches every tier.
@@ -97,7 +97,8 @@
     gesture services in gui_interact.c since R6; the layout composer in gui_flow.c since R7;
     the ambient wrappers + adornments in gui_element.c since R8):
 
-    debug/gui_frame_overlay.c    -- built-in perf / state HUD overlays + the frame-timing helpers they read
+    frame/gui_frame_overlay.c    -- built-in perf / state HUD overlays + the frame-timing helpers they read
+                                      (home since R10 -- conductor code, never part of the debug unit)
 
     frame/gui_frame.c            -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, font, clip
     frame/gui_viewport.c         -- viewport open/resize/close + gui-owned floater lifecycle (spawn/update/render_floaters)
@@ -230,18 +231,18 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 
 /*----------------------------------  LIBRARY: GUI_DEBUG  ----------------------------------*/
 
-// GUI_DEBUG is its OWN translation unit (debug/gui_debug.c, the fourth beside this one,
-// gui_render.c, and element/gui_element.c): the pipeline dashboard + command stepper reach
-// gui only through the public surface, the backend capture API, and the gui_internal.h seams.
-// gui_frame_overlay.c stays HERE (frame group below): it carries the frame-timing helpers
-// the lifecycle calls -- conductor code, not severable tooling.
+// GUI_DEBUG is its OWN translation unit (root gui_debug.c since R10): the pipeline dashboard
+// + command stepper reach gui only through the public surface, the backend capture API, and
+// the gui_internal.h seams.  gui_frame_overlay.c stays in THIS unit (frame group below): it
+// carries the frame-timing helpers the lifecycle calls -- conductor code, not severable
+// tooling -- and lives in frame/ since R10.
 
 /*----------------------------------  LIBRARY: GUI_FRAME  ----------------------------------*/
 
 // Orchestration -- sits above every tier, drives whichever are compiled in.  The overlay file
 // carries the perf/state HUDs plus the frame-timing helpers the lifecycle in gui_frame.c calls,
 // so it must precede gui_frame.c in the unity build.
-#include "runtime_service/gui/debug/gui_frame_overlay.c"
+#include "runtime_service/gui/frame/gui_frame_overlay.c"
 #include "runtime_service/gui/frame/gui_frame.c"
 
 // The pane bracket -- the go-between verb stamping BOTH servers (R4); and the public
