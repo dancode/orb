@@ -6,10 +6,10 @@
 
     Interact-state flags in, colors / metrics out; never paints.  Owns the theme, the style
     stacks, the lattice, and the color/metric vocabulary macros every layer above sizes and
-    paints with.  Stack position: after the core pair (each unit .c lists its sub-stack, R11).
+    paints with.  Stack position: after the core pair (each unit .c lists its sub-stack).
 
-    Its own TU since R5 (root gui_style.c: gui_theme.c + gui_style_core.c + gui_stacks.c).
-    Resolution is PURE (the R5 rule): interact state arrives as PARAMETERS (col_item_bg( st )),
+    Its own TU (root gui_style.c: gui_theme.c + gui_style_core.c + gui_stacks.c).
+    Resolution is PURE: interact state arrives as PARAMETERS (col_item_bg( st )),
     never queried from core, so style resolves with no interact server present -- the one
     sanctioned exception is col_item_bg_anim's explicit ride on core's keyed anim utility.
     The color id table is core ids + a user-extended range at the end (GUI_COL_USER_*, gui.h),
@@ -117,14 +117,14 @@ f32 lat_round    ( f32 v, u32 q );
 extern gui_style_t s_style;     /* style/gui_theme.c -- the ACTIVE (scaled) style       */
 extern u32         s_font_size; /* style/gui_theme.c -- active em (0 = never set)       */
 
-/* State -> color projections (gui_style_core.c since R5) -- pure: the state flags arrive as
+/* State -> color projections (gui_style_core.c) -- pure: the state flags arrive as
    parameters; col_item_bg_anim alone rides core's keyed anim utility, explicitly. */
 u32 col_item_bg( gui_item_state_t st );
 u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color_enum );
 
 /* The per-item ambient wrappers (item_flags_resolve / item_flags_chrome_reset) found their
-   home at R8: element/gui_adornment.c, declared in element/gui_element_internal.h -- they
+   home: element/gui_adornment.c, declared in element/gui_element_internal.h -- they
    apply draw-state consequences, and style never paints. */
 
 /* Decentralized memory accounting -- this unit's fixed statics (root gui_style.c foot),

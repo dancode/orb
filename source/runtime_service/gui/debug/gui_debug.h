@@ -7,7 +7,7 @@
     The pipeline dashboard + command stepper: ordinary debug-band windows over the render
     server's capture snapshots.  Emitted by debug_overlays_emit (gui_frame_overlay.c, the
     frame unit).  Severable: a build without the debug unit stubs these three.
-    Unit root: gui_debug.c, at the gui root since R10 like every unit.
+    Unit root: gui_debug.c, at the gui root like every unit.
 
 ==============================================================================================*/
 
@@ -21,7 +21,7 @@ u32  gui_debug_unit_mem_bytes( void );          /* debug unit: its fixed statics
     DEBUG OVERLAY capture seams (gui_debug_overlay.c, render unit) -- Debug builds only.
 
     A second draw list, captured from every unit via the DBG_* macros and flushed last, on top.
-    Moved here from render/gui_render.h at the R4 carve: the capture macros are cross-server
+    The capture macros are cross-server
     debug tooling (the interact server's item protocol stamps DBG_WIDGET), and the servers never
     include each other's headers -- this header reaches everyone through the umbrella, exactly
     the severable-introspection role the debug unit owns.  The implementation stays in the

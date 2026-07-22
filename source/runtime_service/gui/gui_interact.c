@@ -2,8 +2,8 @@
 
     runtime_service/gui/gui_interact.c -- GUI_INTERACT translation unit: gesture mechanisms.
 
-    The library of record-agnostic interaction elements over the interact server
-    (GUI_SERVER_PLAN.md): move-drag with deferred press, edge resize, drag-and-drop payload
+    The library of record-agnostic interaction elements over the interact server:
+    move-drag with deferred press, edge resize, drag-and-drop payload
     transfer, the feat_* window feature kit, and the public behavior verbs.  Every mechanism
     consumes (id, rect, io) plus caller-owned state and produces DECISIONS -- new geometry,
     gesture liveness, a delivered payload.  None knows a widget, and none paints.
@@ -17,7 +17,7 @@
     invoked where the accept is decided; the drag preview tooltip through the public chrome
     verbs; and resize's WIN_BORDER read (geometry, not paint).
 
-    NOT here: window text selection (chrome/window/gui_select.c since R6) -- its protocol reads the
+    NOT here: window text selection (chrome/window/gui_select.c) -- its protocol reads the
     render server's run capture and measures with draw-unit font metrics, server crossings
     this unit must never make; it is chrome policy riding this unit's generic verbs.
 
@@ -38,9 +38,9 @@
 #include "base/math.h"        // f32_lerp -- the feat kit's tweens
 #include "base/math_ease.h"   // f32_ease_out_cubic -- feat_ease
 
-/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
+/* This unit's world, and nothing above it (the include list IS the dependency graph).
    Gestures over the interact server; the style header is here for the WIN_BORDER metric
-   read (geometry, not paint -- the R6-documented seam).  No render, no draw. */
+   read (geometry, not paint -- the documented seam).  No render, no draw. */
 #include "runtime_service/gui/gui_host.h"       /* public gui types (-> gui.h -> rect)     */
 #include "runtime_service/rhi/rhi_api.h"
 #include "engine/app/app_api.h"

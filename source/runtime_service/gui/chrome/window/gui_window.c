@@ -28,7 +28,7 @@
    the in-flight grab offset lives with the move-drag service (interact/gui_move.c) -- windows
    grab through move_grab and follow the cursor through move_track. */
 
-static gui_win_drag_t     s_win_drag_mode = GUI_WIN_DRAG_TITLEBAR;
+static gui_win_drag_t       s_win_drag_mode = GUI_WIN_DRAG_TITLEBAR;
 
 /* Merge-back edge latch.  A floater merges back into the main surface only on a genuine ENTER --
    the cursor crossing from outside the main window into it.  Without this, a floater spawned over
@@ -36,7 +36,7 @@ static gui_win_drag_t     s_win_drag_mode = GUI_WIN_DRAG_TITLEBAR;
    making it impossible to drag away.  s_vp_drag_id marks which window the latch belongs to so a
    fresh drag re-arms it; s_vp_merge_armed turns true once the cursor has been clear of the main
    window during this drag, gating the merge until then. */
-static gui_id_t           s_vp_drag_id = GUI_ID_NONE;
+static gui_id_t             s_vp_drag_id = GUI_ID_NONE;
 static bool                 s_vp_merge_armed;
 
 /* Click-vs-drag disambiguation for the native title bar and the CAN_AUTOSIZE corner grip --
@@ -65,7 +65,7 @@ window_raise_on_press( void )
     /* Either button raises: left for the normal click/drag, middle for the convenience move
        grab (gui_window_end.c), so a middle-grabbed window also comes to the front. */
     bool pressed = s_io.mouse_pressed[ 0 ] || s_io.mouse_pressed[ 2 ];
-    if ( !pressed || s_interaction.hover_win == GUI_ID_NONE )
+    if ( pressed == false || s_interaction.hover_win == GUI_ID_NONE )
         return;
 
     for ( u32 i = 0; i < g_ctx->win.count; ++i )

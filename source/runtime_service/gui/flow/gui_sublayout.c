@@ -102,7 +102,7 @@ gui_pop_layout( void )
 /*==============================================================================================
     flow_begin / flow_cell / flow_end -- the named rect <-> flow seam pair.
 
-    The blessed crossing verbs of the layer stack (GUI_STACK_PLAN increment 2): flow_begin opens
+    The blessed crossing verbs of the layer stack: flow_begin opens
     the layout engine inside ANY caller rect, however it was produced (cut_* algebra, split,
     carve, anchor, a flow cell, custom math); flow_cell takes the next flow element back out AS
     a rect; flow_end resumes the outer producer.  Thin names over the proven machinery --

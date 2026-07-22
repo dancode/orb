@@ -29,7 +29,7 @@
    window chrome opens its body region with it. */
 
 /*==============================================================================================
-    Layout-frame stack (here since R11 -- the frames are composition's records)
+    Layout-frame stack (here -- the frames are composition's records)
 
     Every scrollable region (a window body or a child_begin box) pushes one frame; the top frame
     owns the layout pen and the content column leaf widgets emit into.  The rest of the frame is the

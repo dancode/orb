@@ -717,7 +717,7 @@ debug_overlays_emit( void )
     gui_state_overlay( s_dbg_hotkeys_armed ? s_dbg_state_mode : 0 );
 }
 
-/* NOTE: gui_frame_pace() -- the end-of-loop idle sleep -- moved to gui_boot.c, the boot-tier
+/* NOTE: gui_frame_pace() -- the end-of-loop idle sleep -- lives in gui_boot.c, the boot-tier
    loop it belongs to.  It still reads the frame hooks (s_hook_sleep/wait) and s_idle_skip set
    here and s_any_redraw folded in gui_frame_loop.c; the gui_frame.c unity includes gui_boot.c
    last, so those statics are all in scope there. */

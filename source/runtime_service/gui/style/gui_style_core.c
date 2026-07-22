@@ -269,11 +269,11 @@ style_new_frame( void )
 
 ==============================================================================================*/
 
-/* The vocabulary macros over these reads (WIDGET_H / WIN_BORDER / ROUND_* / ...) moved to
-   style/gui_style.h at the TU split (inc 10): the flow unit sizes cells with the same numbers the
+/* The vocabulary macros over these reads (WIDGET_H / WIN_BORDER / ROUND_* / ...) live in
+   style/gui_style.h: the flow unit sizes cells with the same numbers the
    widgets and skin read, so the definitions live with the cross-unit declarations. */
 
-/* style_el_col -- resolve one element-shaped color for stock chrome (GUI_STACK_PLAN inc 5).
+/* style_el_col -- resolve one element-shaped color for stock chrome.
    The role x state projects onto its theme slot through g_gui_el_slot_map (the element
    unit's table, shared with el_style_derive so the two directions cannot drift).  A push /
    next_style_color override on that slot wins -- chrome's own override mechanism keeps
@@ -292,13 +292,13 @@ style_el_col( u8 role, u8 state )
 }
 
 /* The COL_* color vocabulary (element-shaped reads through style_el_col + the chrome tokens
-   on style_col) moved to style/gui_style.h at the TU split (inc 10): the chrome unit paints with
+   on style_col) live in style/gui_style.h: the chrome unit paints with
    the same palette the core's paint helpers read. */
 
 /*==============================================================================================
-    State -> color projections -- style resolution proper (moved from the old paint core
-    at the R5 carve).  The interact state arrives as a PARAMETER (the R5 purity rule): these
-    never query the interact server, so they resolve identically with no server present.
+    State -> color projections -- style resolution proper.  The interact state arrives as a
+    PARAMETER (the purity rule): these never query the interact server, so they resolve
+    identically with no server present.
 ==============================================================================================*/
 
 /* Frame-background tint for a "framed field" widget (checkbox box, slider track, drag box, input):
@@ -324,7 +324,7 @@ u32 col_item_bg( gui_item_state_t st )
 
 /* Animated background for a pushbutton-like widget: col_item_bg with the hover/active
    transitions smoothed through the animation service (core/gui_anim.c) -- the ONE projection
-   that rides the interact server, explicitly (the plan's sanctioned exception): the damper is
+   that rides the interact server, explicitly: the damper is
    keyed retained state, so the caller passes the id and core owns the storage.  Two damper
    channels in one gui_anim4 slot -- a hot layer (hover / nav focus) at speed 10 and an active
    layer (pressed) at speed 20 -- both rest at 0 so they ramp up from the palette base; the

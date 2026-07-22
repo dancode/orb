@@ -18,7 +18,7 @@
     their open/close lifecycle -- stays with the context and the conductor (gui_frame.c),
     since creating a surface is an app()/rhi() operation the tiers never perform.
 
-    Included by gui_core.c (the INTERACT SERVER unit, GUI_SERVER_PLAN.md R4) after the ambient
+    Included by gui_core.c (the INTERACT SERVER unit) after the ambient
     records (gui_ctx.c) -- a root region enters the same hover contest a window does, so the
     contest sits in the server both reach through the gui_core.h seams.
 
@@ -132,7 +132,7 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
     GUI_ID_NONE query is "no window" and short-circuits -- no real record ever carries that id.
 ==============================================================================================*/
 
-gui_window_t*                  /* non-static: a cross-unit seam (core/gui_ctx.h, inc 10) */
+gui_window_t*                  /* non-static: a cross-unit seam (core/gui_ctx.h) */
 window_find( gui_id_t id )
 {
     if ( id == GUI_ID_NONE ) return NULL;
@@ -152,7 +152,7 @@ window_find( gui_id_t id )
     queue (no window_begin follows) simply carries to whichever window is begun next.
 ==============================================================================================*/
 
-gui_next_win_t s_next_win;   /* TYPE in core/gui_ctx.h (extern for the chrome unit, inc 10) */
+gui_next_win_t s_next_win;   /* TYPE in core/gui_ctx.h (extern for the chrome unit) */
 
 void
 gui_window_set_next_pos( f32 x, f32 y, gui_cond_t cond )
@@ -248,7 +248,7 @@ window_apply_next( gui_window_t* win, bool appearing )
 ==============================================================================================*/
 
 /* The four z-band macros (GUI_REGION_BG_Z / GUI_REGION_Z / GUI_Z_OVERLAY / GUI_REGION_FG_Z)
-   moved to core/gui_core.h at the TU split (inc 10) -- the flow unit's root region and the
+   live in core/gui_core.h -- the flow unit's root region and the
    popup layer stamp the same bands. */
 
 /*==============================================================================================
@@ -314,8 +314,8 @@ surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
     }
 }
 
-/* The pane bracket (pane_tag, gui_pane_begin/end) moved to frame/gui_pane.c (GUI_SERVER_PLAN.md
-   R4): the pane is the go-between type, and stamping BOTH servers with it -- the render server's
+/* The pane bracket (pane_tag, gui_pane_begin/end) lives in frame/gui_pane.c: the pane is the
+   go-between type, and stamping BOTH servers with it -- the render server's
    draw state (segment key, z, viewport, band, clips) and this server's interaction scope -- is
    the frame orchestrator's verb.  This file keeps only the interact-server half the bracket
    consumes: the hover contest above and the pool / z dispenser around it. */
@@ -335,7 +335,7 @@ surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
     immediate-mode same-frame lifetime makes this safe -- it is consumed before the frame ends).
 ==============================================================================================*/
 
-gui_vp_request_t s_vp_request;   /* TYPE in core/gui_ctx.h (extern for the chrome unit, inc 10) */
+gui_vp_request_t s_vp_request;   /* TYPE in core/gui_ctx.h (extern for the chrome unit) */
 
 /*==============================================================================================
     Closeable windows -- open / query a window's hidden state by title.

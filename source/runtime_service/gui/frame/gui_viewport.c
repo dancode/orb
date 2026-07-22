@@ -27,7 +27,7 @@
 // clang-format off
 
 /*==============================================================================================
-    Surface record lifecycle (here since R11 -- the pane-handoff completion)
+    Surface record lifecycle (the pane-handoff completion)
 
     The render server mints and frees only the GPU geometry ring (surface_geo_create/destroy,
     render/gui_render.h); every other field of the surface record (gui_viewport_t,

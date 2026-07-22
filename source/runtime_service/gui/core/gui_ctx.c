@@ -6,7 +6,7 @@
     layout_frame_t, gui_context_t) and drives the per-frame lifecycle via ctx_new_frame.  Owns the
     context pool storage (s_ctx_pool, ctx_bind); the PUBLIC multi-context lifecycle, the block
     ALLOCATION (ctx_alloc_slot -- it sizes chrome's records, whole-stack knowledge), and the
-    memory-stats aggregation live in the frame unit (R4, completed R11).
+    memory-stats aggregation live in the frame unit.
 
     ID hashing and the keyed state pool (id_hash, id_combine, id_seed/push/pop, gui_state_get,
     GUI_STATE) are in core/gui_id.c + core/gui_state.c, included just after this file.
@@ -30,7 +30,7 @@
    pointer, one keyboard, one mouse, so none of it is per-viewport or per-context: a single global
    shared by every context, into which listening contexts nominate hover / active during their emit.
    Tier: ambient singular (see ARCHITECTURE.md sec 1, state tiers).  The TYPE lives in
-   core/gui_core.h (gui_interaction_t, extern'd for the carved units -- inc 10); this file stays
+   core/gui_core.h (gui_interaction_t, extern'd for the carved units); this file stays
    the owner: it defines, resets, and turns the record over.  Field notes worth keeping close:
 
    - Auto-repeat (repeat_t / repeat_on, GUI_ITEM_BUTTON_REPEAT): only one widget is active at a
@@ -58,7 +58,7 @@ bool s_replay_mode;
    build sequentially on one thread, this stays a single global builder reused by each context in
    turn rather than per-context state.  Tier: frame scratch. */
 
-/* The TYPE lives in core/gui_ctx.h (gui_build_t, extern'd for the carved units -- inc 10);
+/* The TYPE lives in core/gui_ctx.h (gui_build_t, extern'd for the carved units);
    this file stays the owner (defines and resets it).  Notes worth keeping by the definition:
 
    - win: everything window_begin stamps and window_end consumes, one record (gui_win_ctx_t) so
@@ -177,10 +177,6 @@ item_flags_chrome_drop( void )
                                           interacts past this seam lists in the F6 chrome lane */
 }
 
-/* The layout-frame stack (s_layout_stack, s_layout_sp, lf) moved to the FLOW unit at R11
-   (flow/gui_layout_core.c): the frames are composition's records, and with the per-unit
-   include graph enforced this server can no longer see layout_frame_t -- correctly. */
-
 /*==============================================================================================
     Popup stack
 
@@ -247,11 +243,6 @@ gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
 u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
 
 gui_context_t* g_ctx = NULL;   /* bound context (extern'd in core/gui_ctx.h for the carved units) */
-
-/* ctx_alloc_slot (the single-malloc block layout) and ctx_pool_init (the default context)
-   moved to frame/gui_context.c at R11: the layout sizes chrome's records (gui_popup_t,
-   gui_dock_node_t) with sizeof, and this server holds them opaque -- allocation is the
-   orchestrator's whole-stack knowledge.  The pool storage above stays here. */
 
 /* Bind the active context; every alias above resolves into it from here on.  NULL rebinds the
    default.  This is the whole multi-context seam -- no state is copied. */
@@ -488,33 +479,37 @@ ctx_new_frame( void )
     s_scope.last_rect   = ( gui_rect_t ){ 0 };
     s_scope.last_status = ( gui_item_state_t ){ 0 };
 
-    /* The layout stack's frame reset (s_layout_sp = 0) rides gui_ctx_begin since R11 -- the
-       stack is the flow unit's, and the orchestrator pairs the two resets (the R4 precedent:
-       ctx_new_frame + style_new_frame).  The interaction clip starts at the full display,
+    /* The layout stack's frame reset (s_layout_sp = 0) rides gui_ctx_begin -- the
+       stack is the flow unit's, and the orchestrator pairs the two resets
+       (ctx_new_frame + style_new_frame).  The interaction clip starts at the full display,
        and the wheel is unclaimed. */
     s_id_sp               = 0;       /* fresh id-scope stack; regions/push_id reseed it */
     s_build.wheel_used    = false;
     s_build.win.viewport  = 0;       /* ambient viewport resets to primary each frame */
 
     /* Fresh nav-stamp dispensers; nothing is placed until a layout cell is handed out. */
-    s_build.nav_region_seq  = 0;
-    s_build.nav_line_seq    = 0;
-    s_scope.nav.placed = false;
-    s_scope.nav.skip        = false;
+
+    s_build.nav_region_seq      = 0;
+    s_build.nav_line_seq        = 0;
+    s_scope.nav.placed          = false;
+    s_scope.nav.skip            = false;
 
     /* Popup nesting depth is rebuilt as popup_begin / popup_end run; the open set persists. */
+
     s_popup_begin_count = 0;
 
     /* Combo body coordination is per-frame and re-set by begin/combo_end; clear as a safety net. */
-    s_build.combo_open         = false;
-    s_build.combo_item_clicked = false;
+
+    s_build.combo_open          = false;
+    s_build.combo_item_clicked  = false;
 
     /* Fresh item-flag state each frame: empty stack, no next-item override, nothing disabled. */
-    s_item_flag_sp         = 0;
-    s_build.item_flags     = GUI_ITEM_NONE;
-    s_build.next_set       = GUI_ITEM_NONE;
-    s_build.next_val       = GUI_ITEM_NONE;
-    s_scope.flags = GUI_ITEM_NONE;
+
+    s_item_flag_sp              = 0;
+    s_build.item_flags          = GUI_ITEM_NONE;
+    s_build.next_set            = GUI_ITEM_NONE;
+    s_build.next_val            = GUI_ITEM_NONE;
+    s_scope.flags               = GUI_ITEM_NONE;
 
     /* The per-frame STYLE reset (style_new_frame) is not called from here: this server knows
        nothing of style.  ctx_begin (frame/gui_frame_loop.c) runs it right after this returns. */
@@ -539,19 +534,6 @@ ctx_new_frame( void )
 
 f32 vp_w( const gui_viewport_t* vp ) { return vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w; }
 f32 vp_h( const gui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h; }
-
-/*==============================================================================================
-    Moved out at the R4 carve (GUI_SERVER_PLAN.md):
-
-      gui_mem_stats / gui_print_mem_stats    -> gui_ui_mem.c (frame unit) -- the full-footprint
-                                                accounting aggregates BOTH servers
-                                                (gui_backend_memory), orchestrator work.
-      gui_ctx_create / destroy / bind /
-      set_listening                          -> frame/gui_context.c -- context destruction tears
-                                                down GPU surfaces (viewport_destroy, a render-
-                                                server call this server must never make).  The
-                                                pool storage + ctx_alloc_slot/ctx_bind stay here.
-==============================================================================================*/
 
 // clang-format on
 /*============================================================================================*/

@@ -2,13 +2,13 @@
 
     runtime_service/gui/gui_style.c -- GUI_STYLE translation unit: style resolution.
 
-    The first library over the interact server (GUI_SERVER_PLAN.md): interact-state flags in,
+    The first library over the interact server: interact-state flags in,
     colors / metrics out; NEVER paints.  It owns the theme registry, the active scaled style,
     the push/pop/next style stacks, the grid lattice, and the state -> color projections the
     layers above paint with.  The COL_* / WIDGET_* vocabulary macros (style/gui_style.h)
     resolve through this unit, so every read site above honors a stack override for free.
 
-    PURITY (the R5 rule): resolution takes interact state as PARAMETERS -- col_item_bg( st ),
+    PURITY: resolution takes interact state as PARAMETERS -- col_item_bg( st ),
     col_frame_bg( st, idle ) -- never queried from the interact server, so this unit is usable
     for HUD theming with no interact server present.  The one exception rides core's anim
     utility EXPLICITLY: col_item_bg_anim( id, st ) keys a damper through gui_anim4 (a keyed-
@@ -39,7 +39,7 @@
 
 #include "orb.h"
 
-/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
+/* This unit's world, and nothing above it (the include list IS the dependency graph).
    Style resolves over the interact server -- no render, no draw. */
 #include "runtime_service/gui/gui_host.h"       /* public gui types (-> gui.h -> rect)     */
 #include "runtime_service/rhi/rhi_api.h"

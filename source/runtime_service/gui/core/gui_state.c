@@ -37,7 +37,7 @@
 // clang-format off
 
 /* The small class's sizing tenant (gui_region_t) asserts its fit beside its definition
-   (flow/gui_scroll.c since R11) -- this server does not see the tenants' shapes. */
+   (flow/gui_scroll.c) -- this server does not see the tenants' shapes. */
 
 /*============================================================================================*/
 /* One class table: base array, slot stride, slot count.  Resolved from the requested size by
@@ -147,8 +147,6 @@ gui_state_get( gui_id_t id, u32 size )
 /*============================================================================================*/
 /* Typed sugar: a zero-on-create T* persisted by id.  sizeof(T) must be <= GUI_STATE_BIG_CAP. */
 
-/* The GUI_STATE( T, id ) typed sugar moved to core/gui_core.h at the TU split (inc 10). */
-
 /*============================================================================================*/
 /* Read-only, non-allocating, non-stamping probe for `id`.  `size` must be the same tenant size
    the gets for this id use (the GUI_STATE_PEEK sugar passes sizeof(T)) -- it picks the class,
@@ -171,8 +169,6 @@ gui_state_peek( gui_id_t id, u32 size )
     }
     return NULL;
 }
-
-/* The GUI_STATE_PEEK( T, id ) typed sugar moved to core/gui_core.h at the TU split (inc 10). */
 
 /*============================================================================================*/
 /* Pool load metric: live (touched this frame or last) and occupied (live + not-yet-reclaimed

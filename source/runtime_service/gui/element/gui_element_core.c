@@ -2,7 +2,7 @@
 
     runtime_service/gui/element/gui_element_core.c -- The el_* rect-consuming widget cores.
 
-    The building-block tier (GUI_STACK_PLAN increment 3), lifted from the proven
+    The building-block tier, lifted from the proven
     sb_gui_diablo ui layer.  Every el_* fills EXACTLY the rect it is handed -- no hidden
     padding, no flow, no layout reservation -- and composes the three ambient services:
     behavior (gui_item over the caller rect), presentation (the public draw_* surface),
@@ -16,8 +16,7 @@
     Dependency contract: the el_* cores call gui_core (item, ids, io, redraw) + gui_draw
     (draw_*) + gui_rect only -- NEVER the flow layout engine -- and resolve through the
     public gui_* declarations (gui_host.h) plus the style_active() seam.  A constituent of
-    the element unit (root gui_element.c) since R8; renamed from element/gui_element.c on
-    the rect_core precedent to free the root unit name.
+    the element unit (root gui_element.c).
 
 ==============================================================================================*/
 

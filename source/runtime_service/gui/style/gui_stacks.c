@@ -12,7 +12,7 @@
     depends on these wrappers; internal uses (combo's push_id for its list rows) are deliberate
     dogfooding through the gui_host.h declarations.
 
-    NOTE the cross-cut, carried whole into the style unit at R5 (the plan's mapping): the id
+    NOTE the cross-cut, carried whole into the style unit: the id
     and item-flag brackets forward DOWN to interact-server seams (id_push / item_flag_push,
     core/gui_core.h -- style -> core is the graph's own edge); the style color / var / scale
     brackets forward to this unit's own statics (gui_style_core.c, included above, so those
@@ -172,8 +172,8 @@ gui_sz_scale_row( gui_scale_t s )
 }
 
 /* Global indicator-shape setters (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t):
-   persistent writes to the active style record (from draw/gui_symbol.c at R8 -- a style write
-   is style-unit material).  Scope a change with push_style_var on the matching GUI_VAR_*_STYLE
+   persistent writes to the active style record (a style write is style-unit material).  Scope
+   a change with push_style_var on the matching GUI_VAR_*_STYLE
    instead; the styled emitters that read the picks live in element/gui_symbol_style.c. */
 void gui_set_check_style ( u8 style ) { s_style.check_style  = style; }
 void gui_set_bullet_style( u8 style ) { s_style.bullet_style = style; }

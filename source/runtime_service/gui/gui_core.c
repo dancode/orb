@@ -2,7 +2,7 @@
 
     runtime_service/gui/gui_core.c -- GUI_CORE translation unit: the INTERACT SERVER.
 
-    The second server of the two-server model (GUI_SERVER_PLAN.md): io routing + dedicated
+    The second server of the two-server model: io routing + dedicated
     retained-mode storage.  It owns the id namespace, the distilled io snapshot, the keyed
     state pool, the ambient interaction record (hover / active / focus), the interaction
     scope, the context pool, the window-record surface service (placement, z dispenser,
@@ -46,16 +46,17 @@
 #include "base/math.h"        // f32_lerp -- from/to interpolation for the animation service
 #include "base/math_ease.h"   // f32_ease_* shapers -- the easing curves the animation service applies
 
-/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
+/* This unit's world, and nothing above it (the include list IS the dependency graph).
    The interact server sees the public types, the engine APIs, and its own two headers --
    never render, draw, style, or a policy unit.  debug/gui_debug.h is the one sanctioned
    everywhere-include: severable instrumentation over public types (DBG_* stamps). */
-#include "runtime_service/gui/gui_host.h"       /* public gui types (-> gui.h -> rect)     */
-#include "runtime_service/rhi/rhi_api.h"        /* rhi handles held by gui_viewport_t      */
-#include "engine/app/app_api.h"                 /* app keys / events the io pump speaks    */
 
-#include "runtime_service/gui/core/gui_core.h"  /* the server's services                   */
-#include "runtime_service/gui/core/gui_ctx.h"   /* the server's retained-mode storage      */
+#include "runtime_service/gui/gui_host.h"           /* public gui types (-> gui.h -> rect)     */
+#include "runtime_service/rhi/rhi_api.h"            /* rhi handles held by gui_viewport_t      */
+#include "engine/app/app_api.h"                     /* app keys / events the io pump speaks    */
+
+#include "runtime_service/gui/core/gui_core.h"      /* the server's services                   */
+#include "runtime_service/gui/core/gui_ctx.h"       /* the server's retained-mode storage      */
 #include "runtime_service/gui/debug/gui_debug.h"
 
 /*==============================================================================================
@@ -84,7 +85,7 @@
 u32
 gui_core_unit_mem_bytes( void )
 {
-    /* s_layout_stack moved to the flow unit at R11 -- counted by gui_flow_unit_mem_bytes. */
+    /* s_layout_stack lives in the flow unit -- counted by gui_flow_unit_mem_bytes. */
     return (u32)( sizeof( s_interaction ) + sizeof( s_build ) + sizeof( s_scope )
                 + sizeof( s_io ) + sizeof( s_click_elapsed )
                 + sizeof( s_click_x ) + sizeof( s_click_y )

@@ -13,7 +13,7 @@
     pool pressure stays proportional to in-flight animations, not total widget count.  Idle
     values with no animation history pay only a single non-stamping probe.
 
-    Core-unit resident since R4; flow-and-above callers reach it through the forward
+    Core-unit resident; flow-and-above callers reach it through the forward
     declaration in core/gui_core.h.
 
 ==============================================================================================*/
@@ -151,7 +151,6 @@ gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed 
 
 /* gui_anim_timer_t (the timer slot payload) lives in core/gui_core.h: the feat_* kit
    (interact/gui_feature.c) peeks the slot across the unit seam. */
-/* gui_ease_fn typedef moved to core/gui_core.h at the TU split (inc 10). */
 
 /* Start (or restart) a duration-based timer on `id`: clock at 0, running for `duration` seconds.  A
    zero / negative duration is the "no animation" request -- no slot is stamped, so the first

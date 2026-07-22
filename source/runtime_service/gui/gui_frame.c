@@ -2,7 +2,7 @@
 
     runtime_service/gui/gui_frame.c -- GUI_FRAME translation unit: THE FRAME ORCHESTRATOR.
 
-    The top of the stack and nothing else (R11): boots both servers, owns the viewports and
+    The top of the stack and nothing else: boots both servers, owns the viewports and
     the app/sys wiring, pumps io into the interact server, hands each surface's GPU pieces to
     the render server at flush.  Everything with a role of its own is one of the ten carved
     units at this directory's root -- the model, the dependency graph, and the role map live in
@@ -18,15 +18,15 @@
     THIS UNIT's constituents (each carved unit lists its own):
 
     frame/gui_frame_overlay.c    -- built-in perf / state HUD overlays + the frame-timing helpers they read
-                                      (home since R10 -- conductor code, never part of the debug unit)
+                                      (home -- conductor code, never part of the debug unit)
 
     frame/gui_frame_loop.c       -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, clip
     frame/gui_frame_font.c       -- font API (load/use/push/pop/active_id) + the font -> layout bridge (gui_style_apply)
-    frame/gui_viewport.c         -- surface record lifecycle (viewport_create/destroy, R11) + viewport open/resize/
+    frame/gui_viewport.c         -- surface record lifecycle (viewport_create/destroy) + viewport open/resize/
                                       close + gui-owned floater lifecycle (spawn/update/render_floaters)
     frame/gui_boot.c             -- one-call host front end: boot, frame_poll, present_begin/present
-    frame/gui_pane.c             -- the pane bracket: pane_tag + gui_pane_begin/end stamp BOTH servers (R4)
-    frame/gui_context.c          -- public multi-context lifecycle + the context block allocation (R4, R11)
+    frame/gui_pane.c             -- the pane bracket: pane_tag + gui_pane_begin/end stamp BOTH servers
+    frame/gui_context.c          -- public multi-context lifecycle + the context block allocation
 
     gui_ui_mem.c                 -- frontend memory accounting (gui_ui_memory) + the gui_mem_stats
                                       aggregation; must be the last constituent include so it sees them all
@@ -46,7 +46,7 @@
 
 #include "engine/sys/sys_host.h"   // sys_root_dir -- disk assets (load_icon, asset_path) resolve root-relative
 
-/* The orchestrator's world -- everything, in stack order (R11: each carved unit includes only
+/* The orchestrator's world -- everything, in stack order (each carved unit includes only
    the headers at or below its layer; this unit sits on top and includes them all). */
 #include "runtime_service/gui/render/gui_render.h"   /* THE RENDER SERVER's surface
                                                         (pulls gui_host.h + rhi/app APIs)   */
@@ -92,11 +92,11 @@ void           viewport_destroy( gui_viewport_t* vp );                          
 gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav = true };
 
 /* The theme registry, base/active style state (s_style_base, s_style, s_font_size), the style
-   stacks, and layout_compute live in the STYLE UNIT (gui_style.c) since R5; this unit reads
+   stacks, and layout_compute live in the STYLE UNIT (gui_style.c); this unit reads
    s_style and the resolvers through the style/gui_style.h externs + seams.
 
    The shared stateless helpers (saturate, clampf, rect_intersect) are static inline in
-   rect/gui_rect.h (R1b) -- every unit reaches them through the public gui.h chain. */
+   rect/gui_rect.h -- every unit reaches them through the public gui.h chain. */
 
 /*==============================================================================================
     Unity build
@@ -108,54 +108,44 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
    unit calls into it through the draw_* / font_* / gui_render_* declarations in gui_render.h. */
 
 /*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
-// THE INTERACT SERVER is its OWN translation unit since R4 (gui_core.c): io, ids, keyed
+// THE INTERACT SERVER is its OWN translation unit (gui_core.c): io, ids, keyed
 // state, ambient interaction records, the surface service, the item protocol, anim, and the
 // query readers.  This unit reaches it through the core/gui_core.h + core/gui_ctx.h seams.
-// THE STYLE UNIT is its own translation unit since R5 (gui_style.c): theme registry, stacks,
+// THE STYLE UNIT is its own translation unit (gui_style.c): theme registry, stacks,
 // resolution, projections -- reached through the style/gui_style.h seams.
-// The present/ paint primitives (the last of the old core group) moved to the element unit
-// at R8 (element/gui_adornment.c) and present/ is DISSOLVED.
-
-/* gui_symbol.c moved to the draw unit (gui_draw.c, R3); the gesture services (gui_move.c,
-   gui_resize.c, gui_drag.c, gui_feature.c, gui_behavior.c) moved to the interact unit
-   (gui_interact.c, R6); window text selection was re-classified as chrome and moved to
-   chrome/window/gui_select.c (the chrome unit) -- it reads the render capture + font metrics. */
 
 /*----------------------------------  LIBRARY: GUI_FLOW  ----------------------------------*/
 
-// GUI_FLOW is its OWN translation unit since R7 (gui_flow.c): composition -- spacing
+// GUI_FLOW is its OWN translation unit (gui_flow.c): composition -- spacing
 // metrics in, rects out.  It reaches core through the flow/gui_flow.h + core seams; its
 // upward calls (scrollbar_widget, the child box paint trio) are the documented block in
 // flow/gui_flow.h.  This unit calls INTO it through the same seam declarations.
 
 /*----------------------------------  LIBRARY: GUI_INTERACT  ----------------------------------*/
-/* GUI_INTERACT is its OWN translation unit since R6 (gui_interact.c): move/resize/drag
+/* GUI_INTERACT is its OWN translation unit (gui_interact.c): move/resize/drag
    gestures, the feat_* kit, and the public behavior verbs.  This unit reaches them through
    the interact/gui_interact.h seams (frame_begin drives drag_new_frame; the viewport
    tear-off reads move_grab_offset). */
 
 /*----------------------------------  LIBRARY: GUI_CHROME  ----------------------------------*/
 // GUI_CHROME is its OWN translation unit (gui_chrome.c): the six folders under chrome/
-// since R9 -- widgets, table, window, dock, popup, nav (nav is core-classified but reads
+// -- widgets, table, window, dock, popup, nav (nav is core-classified but reads
 // the popup stack, so it lives with chrome).  It composes the core services + the flow emit surface through the
 // unit headers below it; this unit's upward calls into it (the frame lifecycle's window /
 // popup / dock / nav steps) resolve through chrome/gui_chrome.h's frame-step declarations.
 
-/* user/ dissolved at R6: gui_canvas.c -> draw (R3); gui_query.c -> the interact server (R4);
-   gui_stacks.c -> the style unit (R5); gui_behavior.c -> the interact unit (R6). */
-
-// element/ -- GUI_ELEMENT is its OWN translation unit since R8 (root gui_element.c): the
+// element/ -- GUI_ELEMENT is its OWN translation unit (root gui_element.c): the
 // el_* cores plus the absorbed styled painters (per-item wrappers, system adornments, the
 // styled symbol half), reached through element/gui_element_internal.h.
 // gui_style_apply (frame/, below) calls across to el_style_derive at every theme/font landing.
 
 /*----------------------------------  LIBRARY: GUI_DEBUG  ----------------------------------*/
 
-// GUI_DEBUG is its OWN translation unit (root gui_debug.c since R10): the pipeline dashboard
+// GUI_DEBUG is its OWN translation unit (root gui_debug.c): the pipeline dashboard
 // + command stepper reach gui only through the public surface, the backend capture API, and
 // the unit-header seams.  gui_frame_overlay.c stays in THIS unit (frame group below): it
 // carries the frame-timing helpers the lifecycle calls -- conductor code, not severable
-// tooling -- and lives in frame/ since R10.
+// tooling -- and lives in frame/.
 
 /*----------------------------------  LIBRARY: GUI_FRAME  ----------------------------------*/
 
@@ -168,7 +158,7 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 #include "runtime_service/gui/frame/gui_frame_loop.c"
 #include "runtime_service/gui/frame/gui_frame_font.c"
 
-// The pane bracket -- the go-between verb stamping BOTH servers (R4); and the public
+// The pane bracket -- the go-between verb stamping BOTH servers; and the public
 // multi-context lifecycle -- context destruction tears down GPU surfaces, orchestrator work.
 #include "runtime_service/gui/frame/gui_pane.c"
 #include "runtime_service/gui/frame/gui_context.c"

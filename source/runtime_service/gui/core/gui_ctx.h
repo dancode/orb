@@ -4,7 +4,7 @@
 
     runtime_service/gui/core/gui_ctx.h -- the interact server's retained-mode storage.
 
-    THE RECORDS (GUI_SERVER_PLAN.md R11): the model says the interact server owns "dedicated
+    THE RECORDS: the model says the interact server owns "dedicated
     retained-mode storage -- the id namespace, the keyed state pool, retained rect records,
     the hover/z contest".  This header is that storage: every retained record the server
     dereferences (window, nav cursor, surface, scroll link, the build scratch) is DEFINED
@@ -12,7 +12,7 @@
     record stays where it always was -- window/nav/popup/dock behavior in chrome, surface
     orchestration in frame.  Records whose shape the server never reads (the popup stack,
     the dock-tree node) stay in chrome/gui_chrome.h behind the forward declarations below:
-    the server allocates nothing (allocation is frame's, R11) and treats them as opaque.
+    the server allocates nothing (allocation is frame's) and treats them as opaque.
 
     Include order: after core/gui_core.h (the aggregate embeds gui_retained_t).
 
@@ -541,7 +541,7 @@ extern gui_build_t    s_build;    /* core/gui_ctx.c -- frame-build scratch   */
 /*==============================================================================================
     Context pool + lifecycle seams (core/gui_ctx.c) -- the storage stays with the interact
     server; the PUBLIC lifecycle over it AND the block allocation (which sizes chrome's records,
-    so it needs whole-stack type visibility) live in frame/gui_context.c (R4, completed R11).
+    so it needs whole-stack type visibility) live in frame/gui_context.c.
 ==============================================================================================*/
 
 #define GUI_CTX_POOL_MAX  8       /* slot 0 = default + up to 7 secondary contexts */

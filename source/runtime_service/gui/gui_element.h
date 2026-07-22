@@ -4,7 +4,7 @@
 
     runtime_service/gui/gui_element.h -- GUI_ELEMENT types: the slim element style.
 
-    The S1 style stratum (see docs/GUI_STACK_PLAN.md section 3): the minimum a rect-consuming
+    The S1 style stratum: the minimum a rect-consuming
     building block (el_*) needs -- 4 metrics + a 4x4 role/state palette.  Deliberately NO
     per-widget slots (btn_bg_hover, slot_border_hot, ...): per-widget color is either a call
     parameter (el_meter's fill) or a token in the kit above.  Elements read ONLY this struct;

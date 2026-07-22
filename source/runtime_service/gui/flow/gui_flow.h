@@ -6,11 +6,11 @@
 
     The rect PRODUCER: metrics in, rects out.  Owns the layout-frame types, the region
     lifecycle, and the cell emitters every widget and chrome file composes over.  Included by
-    each unit .c after interact/gui_interact.h (R11); the layers above (element, chrome) consume
-    the rects flow carves.  Its own unit (root gui_flow.c) since R7.
+    each unit .c after interact/gui_interact.h; the layers above (element, chrome) consume
+    the rects flow carves.  Its own unit (root gui_flow.c).
 
-    Downward, flow reads the ambient records + the core services (the anim ease is core
-    since R4), the style metrics, interact's edge-resize mechanism, and the render clip
+    Downward, flow reads the ambient records + the core services (the anim ease is core),
+    the style metrics, interact's edge-resize mechanism, and the render clip
     stack (flow computes the view rect, so it owns the region scissor -- see the root
     banner).  The upward seams are enumerated at the bottom of this header; do not add more.
 
@@ -20,12 +20,12 @@
 
 #define GUI_LAYOUT_DEPTH            8       // max nested scroll regions (windows or children)
 
-/* gui_scroll_link_t (the persisted scroll record) moved to core/gui_ctx.h at R11: it is
+/* gui_scroll_link_t (the persisted scroll record) is in core/gui_ctx.h: it is
    retained-mode storage (gui_window_t embeds one), so it lives with the server's records.
    The machinery that drives it stays here (flow/gui_scroll.c). */
 
 /*==============================================================================================
-    Layout-frame (stack storage in flow/gui_layout_core.c since R11)
+    Layout-frame (stack storage in flow/gui_layout_core.c)
 
     Every scrollable region (a window body or a child_begin box) pushes one frame.  The top frame
     owns the layout pen and the content column the leaf widgets emit into; the rest is the resolve
@@ -213,7 +213,7 @@ typedef struct
 } layout_frame_t;
 
 extern layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];  /* flow/gui_layout_core.c -- region
-                                                              stack (core's until R11)       */
+                                                              stack                          */
 extern u32            s_layout_sp;  /* active frame count; top = s_layout_sp - 1 */
 
 layout_frame_t* lf( void );         /* flow/gui_layout_core.c -- top frame (clamped, never NULL) */
@@ -275,7 +275,7 @@ void layout_pop_region ( void );
 /*==============================================================================================
     UPWARD SEAMS -- the flow unit's only calls above its layer.  Do not add more.
 
-    Declared HERE since R11 (upward-seam declarations live with their LOWEST consumer; the
+    Declared HERE (upward-seam declarations live with their LOWEST consumer; the
     units above see them through this header):
 
     scrollbar_widget (defined chrome/widgets/gui_scrollbar.c) -- the region gutter's ONE

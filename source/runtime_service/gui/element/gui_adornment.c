@@ -3,7 +3,7 @@
     runtime_service/gui/element/gui_adornment.c -- Per-item ambient application + the system
     adornments.
 
-    The old present/gui_paint_core.c, home in the element unit since R8 -- everything here is
+    Home in the element unit -- everything here is
     STYLED paint or style/draw application, which is element material (the first layer astride
     both servers).  Three groups:
 
@@ -31,7 +31,7 @@
     core/gui_ctx.c); these wrappers apply the style and draw consequences -- the per-item style
     commit, the disabled dim, the default rounding -- which the interact server itself must
     never touch.  Callers (the cell emit seam, the chrome seams, the pane bracket) keep the
-    original names.  Placement refined at R5/R8 (style owns the commit, element the adornment).
+    original names.  Style owns the commit, element the adornment.
 ==============================================================================================*/
 
 /* Disabled items draw at this opacity (the rest of the dim is in the draw list's global alpha). */
@@ -86,8 +86,8 @@ item_flags_chrome_reset( void )
 
 /* The natural width a label-sized widget requests from the composer: the visible span plus the
    standard inset on both sides.  THE self-measurement formula -- button, small_button, menu
-   items, and the public gui_button_width all speak it through this one helper.  From
-   draw/gui_paint.c at R8: WIDGET_PAD is a style read, so it lives with the styled painters. */
+   items, and the public gui_button_width all speak it through this one helper.  WIDGET_PAD
+   is a style read, so it lives with the styled painters. */
 f32  label_natural_w( const char* s )
 {
     return label_width( s ) + 2.0f * WIDGET_PAD;
@@ -123,9 +123,9 @@ draw_field_label( gui_rect_t row, const char* label, f32 min_control_w, u32 labe
     return control;
 }
 
-/* The state -> color projections (col_frame_bg, col_item_bg, col_item_bg_anim) moved to the
-   style unit at the R5 carve (style/gui_style_core.c): state -> color is style resolution by
-   nature, and all three take the interact state as a parameter (the R5 purity rule). */
+/* The state -> color projections (col_frame_bg, col_item_bg, col_item_bg_anim) live in the
+   style unit (style/gui_style_core.c): state -> color is style resolution by
+   nature, and all three take the interact state as a parameter. */
 
 /*==============================================================================================
     System adornments -- the uniform highlight rings and edge markers the interaction services

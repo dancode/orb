@@ -10,9 +10,9 @@
     accounting contract is that the grand total is the true resident footprint, and a bucket
     that is known to be small beats one that is unknown.
 
-    Also home to gui_mem_stats / gui_print_mem_stats (moved from core/gui_ctx.c at the R4
-    carve): the full-footprint aggregation reads BOTH servers (gui_backend_memory + the core
-    pool), which makes it orchestrator work, not interact-server work.
+    Also home to gui_mem_stats / gui_print_mem_stats: the full-footprint aggregation reads BOTH
+    servers (gui_backend_memory + the core pool), which makes it orchestrator work, not
+    interact-server work.
 
     MUST be the LAST include in the gui_frame.c unit root: every line below is a sizeof over
     another file's static, and unity visibility only flows downward.  Adding a static aggregate
@@ -29,25 +29,25 @@ gui_ui_memory( void )
 {
     u32 b = 0;
 
-    /* core/ -- THE INTERACT SERVER is its own unit since R4 (gui_core.c) and accounts for its
+    /* core/ -- THE INTERACT SERVER is its own unit (gui_core.c) and accounts for its
        own statics (ambient records, io snapshot, id/flag stacks, context pool) via its seam. */
     b += gui_core_unit_mem_bytes();
 
-    /* style/ -- THE STYLE UNIT is its own unit since R5 (gui_style.c) and accounts for its
+    /* style/ -- THE STYLE UNIT is its own unit (gui_style.c) and accounts for its
        own statics (base/active style, theme table, stacks + pair tables) via its seam. */
     b += gui_style_unit_mem_bytes();
 
-    /* flow/ -- THE FLOW UNIT is its own unit since R7 (gui_flow.c) and accounts for its own
+    /* flow/ -- THE FLOW UNIT is its own unit (gui_flow.c) and accounts for its own
        statics (layout state pool, split stack, sublayout sink) via its seam. */
     b += gui_flow_unit_mem_bytes();
 
-    /* interact/ -- THE INTERACT UNIT is its own unit since R6 (gui_interact.c) and accounts
+    /* interact/ -- THE INTERACT UNIT is its own unit (gui_interact.c) and accounts
        for its own statics (the drag payload slot) via its seam; the text-selection controller
        moved to chrome (chrome/window/gui_select.c) and is counted there. */
     b += gui_interact_unit_mem_bytes();
 
     /* element/ -- THE ELEMENT UNIT accounts for its own statics (the installed element style
-       + the slot map) via its seam (gui_element.c, R8). */
+       + the slot map) via its seam (gui_element.c). */
     b += gui_element_unit_mem_bytes();
 
     /* widgets/ + table/ + dock/ + popup/ -- the chrome unit accounts for its own statics

@@ -2,8 +2,8 @@
 
     runtime_service/gui/gui_chrome.c -- Unity build entry for the GUI_CHROME unit.
 
-    The stock widget set and the host structures over the core tiers, all under chrome/
-    since R9: chrome/widgets/ (prefab emit clients composing the three sibling roles),
+    The stock widget set and the host structures over the core tiers, all under chrome/:
+    chrome/widgets/ (prefab emit clients composing the three sibling roles),
     chrome/table/, chrome/window/ (persisted record + chrome policy -- the stock RECIPE over
     the feat_* kit), chrome/dock/, chrome/popup/, and chrome/nav/ (core-classified as a peer
     focus service, but it reads/drives the popup stack, so it lives here).
@@ -32,9 +32,9 @@
 #include "base/math.h"
 #include "base/math_ease.h"
 
-/* This unit's world -- everything below it (R11: the include list IS the dependency graph).
+/* This unit's world -- everything below it (the include list IS the dependency graph).
    Chrome is policy over the whole stack; the render header carries its documented server
-   crossing (the text-selection run capture, R6). */
+   crossing (the text-selection run capture). */
 #include "runtime_service/gui/render/gui_render.h"    /* pulls gui_host.h + rhi/app APIs */
 MOD_USE_RHI;
 MOD_USE_APP;
@@ -69,7 +69,7 @@ MOD_USE_APP;
 #include "runtime_service/gui/chrome/table/gui_table.c"
 
 /* Window subsystem (first real optional boundary).  gui_select.c first: the text-selection
-   controller (chrome since R6 -- it reads the render capture + font metrics) paints under the
+   controller (chrome -- it reads the render capture + font metrics) paints under the
    window begins and resolves in gui_window_end, all below. */
 #include "runtime_service/gui/chrome/window/gui_select.c"
 #include "runtime_service/gui/chrome/window/gui_window.c"
@@ -103,7 +103,7 @@ gui_chrome_unit_mem_bytes( void )
     b += (u32)( sizeof( s_undo ) + sizeof( s_medit_undo )
               + sizeof( s_num_edit_buf ) + sizeof( s_tabbars ) );
     b += (u32)( sizeof( s_tab ) + sizeof( s_tab_scroll_dummy ) );
-    b += (u32)sizeof( s_select );   /* window text selection (chrome/window/gui_select.c, R6) */
+    b += (u32)sizeof( s_select );   /* window text selection (chrome/window/gui_select.c) */
     b += (u32)( sizeof( s_dock_drag ) + sizeof( s_dock_tab_drag ) + sizeof( s_dock_float_req ) );
     b += (u32)( sizeof( s_menubar_sink ) + sizeof( s_menubar_saved_clip )
               + sizeof( s_tooltip_save ) );

@@ -320,9 +320,6 @@ gui_render_shutdown( void )
        (font textures, samplers, pipelines) are immediate, so drain the device first. */
     rhi()->device_wait_idle();
 
-    /* font_shutdown moved to gui_draw_shutdown (the draw unit tears its resources down
-       before the frame orchestrator exits the render server). */
-
     if ( s_render.font_sampler_idx )
         rhi()->unregister_sampler( s_render.font_sampler_idx );
     if ( rhi_handle_valid( s_render.font_sampler ) )

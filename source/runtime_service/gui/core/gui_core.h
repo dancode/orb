@@ -8,8 +8,8 @@
     pool, the ambient interaction record, the item protocol, the pane/z contest, and the
     retained-state animation utilities.  Knows nothing of style, themes, or drawing.
 
-    One header per section (GUI_SERVER_PLAN.md): every unit .c lists its sub-stack of unit
-    headers in stack order (R11), so each header may assume the ones BELOW it (rect, the
+    One header per section: every unit .c lists its sub-stack of unit
+    headers in stack order, so each header may assume the ones BELOW it (rect, the
     public gui_host.h set) and never the ones above.  The server's retained-mode storage
     (the records + gui_context_t) lives in the companion core/gui_ctx.h, included after this.
 
@@ -26,7 +26,7 @@
     may not be up yet), fflush so it lands before a follow-up ORB_ASSERT_MSG_ONCE can trap.
 ==============================================================================================*/
 
-/* GUI_WARN_ONCE moved to rect/gui_rect.h at R11: the render server's pools follow the same
+/* GUI_WARN_ONCE lives in rect/gui_rect.h: the render server's pools follow the same
    saturation rule and it must not reach into this header for the report macro -- the leaf
    shared kit is the one header every unit stands on. */
 
@@ -340,13 +340,13 @@ extern u32  s_popup_begin_count;    /* core/gui_ctx.c -- popup nesting depth (pe
 
 /* Interaction gate predicates (core/gui_item.c) -- the read half of the arbitration state,
    named once so compound gesture gates read as sentences.  Pure queries, no writes: interact/
-   stays the only writer of s_interaction.  Non-static since the TU split (the flow unit's
+   stays the only writer of s_interaction.  Non-static (the flow unit's
    region wheel gate reads interact_idle). */
 bool interact_idle      ( void );             /* nothing holds the pointer capture      */
 bool interact_held      ( gui_id_t id );      /* id's press-drag gesture is in flight   */
 bool interact_hover_bare( gui_id_t win_id );  /* cursor on win_id, no widget beneath it */
 void interact_claim( gui_id_t id, u8 button );/* claim the capture -- the one door for a
-                                                 higher tier to start a press-drag (R6)  */
+                                                 higher tier to start a press-drag       */
 
 /* Exclusive input mode (focus scope) -- true while a GUI_WIN_MODAL window is live (emitted this
    frame or last).  Defined in core/gui_ctx.c; read by focus_allowed (core/gui_item.c) to
@@ -390,7 +390,7 @@ gui_item_sub_t gui_item_sub_begin( void );
 gui_item_sub_t gui_item_sub_layout_begin( gui_id_t id, gui_rect_t r );
 void           gui_item_sub_end( gui_item_sub_t s );
 
-/* Widget label grammar -- the id half (core/gui_id.c since R4: a label's id is identity
+/* Widget label grammar -- the id half (core/gui_id.c: a label's id is identity
    derivation).  "Text##key" displays "Text" with a distinct id; "###key" re-roots the id hash. */
 gui_id_t    item_id( const char* label );        /* label -> widget id per the grammar        */
 u32         label_vis_len( const char* s );      /* visible byte count (up to the first "##") */
@@ -412,7 +412,7 @@ void pane_tag( gui_id_t id, u32 z, u32 vp, u32 band );   /* defined frame/gui_pa
 #define GUI_Z_OVERLAY    0x80000000u
 #define GUI_REGION_FG_Z  0xF0000000u
 
-/* retained-state animation utilities (core/gui_anim.c since R4: dampers and timers are
+/* retained-state animation utilities (core/gui_anim.c: dampers and timers are
    keyed-state tenants, server-side so style blends and interact tweens share them). */
 typedef f32 ( *gui_ease_fn )( f32 );
 f32  gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active );
@@ -451,11 +451,11 @@ gui_state_usage_t gui_state_usage( void );
                      core/gui_item.c): the ring must land beneath the item's own fill and no
                      presentation seam after behavior exists that every widget passes through.
                      Behavior picks the MOMENT; the paint policy (color, thickness) lives with
-                     the skin (element/gui_adornment.c since R8).  Do not add more.
+                     the skin (element/gui_adornment.c).  Do not add more.
     nav_scroll_chase the keyboard scroll-into-view (nav_item_register, core/gui_item.c):
                      walking the open region stack and moving scroll offsets is composition
                      machinery, so the act lives with flow (flow/gui_scroll.c) and behavior
-                     only picks the moment -- the same split as draw_nav_ring (R11).
+                     only picks the moment -- the same split as draw_nav_ring.
     gui_owned_window_event   the io pump's ONE call up into its orchestrator (frame unit):
                      OS resize / close events for a gui-OWNED floater are serviced against
                      the viewport pool the orchestrator manages.  Returns true when win_id

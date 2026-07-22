@@ -21,10 +21,10 @@
     through gradient quads, would make the shadow exact too -- without changing the public surface.
 
     Compiled in the DRAW unit (gui_draw.c) after gui_paint.c.  Everything here is
-    PARAMETER-PURE since the R8 carve: the emitters that resolve their own look (draw_arrow,
+    PARAMETER-PURE: the emitters that resolve their own look (draw_arrow,
     draw_check_indicator, draw_rule, draw_close_x, draw_frame -- style-var picks, WIN_BORDER,
-    ROUND_WIDGET) moved up to element/gui_symbol_style.c.  The public gui_draw_* surface over
-    the pure set is at the foot; the movers' wrappers moved with them.
+    ROUND_WIDGET) live in element/gui_symbol_style.c.  The public gui_draw_* surface over
+    the pure set is at the foot.
 
 ==============================================================================================*/
 // clang-format off
@@ -104,8 +104,8 @@ draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 color )
     gui_draw_polyline( p, 3, thickness, GUI_STROKE_CENTER, false, color );
 }
 
-/* draw_arrow + draw_collapse_arrow (the GUI_VAR_ARROW_STYLE pick) moved to
-   element/gui_symbol_style.c at the R8 carve; the chevron variant routes back through
+/* draw_arrow + draw_collapse_arrow (the GUI_VAR_ARROW_STYLE pick) live in
+   element/gui_symbol_style.c; the chevron variant routes back through
    gui_draw_chevron below. */
 
 /* Check-mark glyph: a two-stroke 'v' fitted and centered in `box` (Dear ImGui RenderCheckMark).
@@ -156,8 +156,6 @@ draw_bullet( f32 cx, f32 cy, f32 r, u32 color )
     draw_push_circle_filled( cx, cy, r, 12, color );
 }
 
-/* draw_close_x (stroke weight = WIN_BORDER) moved to element/gui_symbol_style.c at R8. */
-
 /* Arrow whose apex points AT a specific coordinate (Dear ImGui RenderArrowPointingAt): a filled
    triangle of half-extent `half` with its tip exactly on (tx,ty), opening away in `dir`.  Used for
    pointer chrome -- a tooltip / popup beak, a "jump to" marker -- where the tip must land on a point
@@ -189,14 +187,9 @@ draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 color )
         gui_draw_line( cx, cy - s, cx, cy + s, thickness, color );
 }
 
-/* draw_check_indicator (the GUI_VAR_CHECK_STYLE three-way) and draw_rule (the
-   GUI_VAR_SEPARATOR_STYLE solid/dashed pick) moved to element/gui_symbol_style.c at R8. */
-
 /*==============================================================================================
     Shapes  (the convex-fill / polyline-stroke palette)
 ==============================================================================================*/
-
-/* draw_frame (the ROUND_WIDGET ambient rounding) moved to element/gui_symbol_style.c at R8. */
 
 /* Build the clockwise perimeter of a per-corner rounded rect into `out` (caller-sized; <= 4*17+4).
    Each corner is a quarter arc (or a single sharp point when its radius is ~0), so a tab is two
@@ -346,10 +339,6 @@ draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
     Patterned lines + fills
 ==============================================================================================*/
 
-/* The file-local dashed forwarder died at R8: its one caller (draw_rule) moved to
-   element/gui_symbol_style.c and strokes the backend primitive (gui_draw_dashed_line,
-   gui_emit_path.c) directly. */
-
 /* Checkerboard fill of `box` with `cell`-sized squares alternating col_a / col_b -- the classic
    transparency backdrop behind a color swatch.  Cell count is capped so a large area cannot flood
    the command list; partial edge cells are clamped to the box. */
@@ -487,11 +476,10 @@ draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col )
     normal vertex pipeline (lines / triangles / circles), NOT the icon atlas.  Editor / custom
     widgets paint the same marks the built-in widgets use.  The styled pieces of the family
     (arrow / close / frame wrappers, the set_*_style setters) live with their targets in the
-    element and style units since R8.
+    element and style units.
 ==============================================================================================*/
 
-/* glyph marks  (gui_draw_arrow / gui_draw_close / gui_draw_frame moved with their styled
-   targets to element/gui_symbol_style.c at R8) */
+/* glyph marks */
 void gui_draw_check_mark( gui_rect_t box, u32 col )                       { draw_check_mark( box, col ); }
 void gui_draw_bullet    ( f32 cx, f32 cy, f32 r, u32 col )                  { draw_bullet( cx, cy, r, col ); }
 void gui_draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 col )
@@ -545,9 +533,6 @@ void gui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_
 void gui_draw_grip( gui_rect_t box, u32 col )                            { draw_grip_dots( box, col ); }
 void gui_draw_spinner( gui_rect_t box, f32 t, f32 thickness, u32 col )    { draw_spinner( box, t, thickness, col ); }
 void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, col ); }
-
-/* The global indicator-shape setters (gui_set_check/bullet/arrow_style) write the active style
-   record -- style-unit material; they moved to style/gui_stacks.c at R8. */
 
 // clang-format on
 /*============================================================================================*/

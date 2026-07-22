@@ -6,14 +6,14 @@
 
     The stock recipes: window policy, keyboard nav, popups, docking -- policy over the
     mechanism units below.  The RETAINED RECORDS chrome drives (gui_window_t, the nav state,
-    the viewport) moved to the interact server's storage header at R11 (core/gui_ctx.h): the
+    the viewport) live in the interact server's storage header (core/gui_ctx.h): the
     server owns retained-mode storage, chrome owns the behavior over it.  Two records whose
     shape only chrome reads stay HERE behind core's forward declarations -- the popup stack
     entry (it embeds the cross-unit overlay save) and the dock-tree node; frame's allocator
     (frame/gui_context.c) sizes them with full visibility.
 
     Implementation: the six folders under chrome/ (widgets, table, window, dock, popup,
-    nav) since R9; unit root gui_chrome.c.
+    nav); unit root gui_chrome.c.
 
 ==============================================================================================*/
 
@@ -137,14 +137,14 @@ extern gui_forward_caps_t s_fwd_caps;
    enclosing popup on click (the Dear ImGui CloseCurrentPopup default behavior). */
 void gui_popup_close_current( void );
 
-/* Window text selection (chrome/window/gui_select.c, chrome since R6 -- it reads the render capture
+/* Window text selection (chrome/window/gui_select.c, chrome -- it reads the render capture
    and font metrics, so it is policy astride both servers, not an interact mechanism).  The
    bands paint under the body at the window begins; the protocol + overlay resolve at end. */
 void select_paint_under( void );
 void select_window_end( void );
 
-/* scrollbar_widget -- the region gutter's ONE widget -- is declared in flow/gui_flow.h since
-   R11: flow is its caller (the sanctioned flow -> chrome seam), and upward-seam declarations
+/* scrollbar_widget -- the region gutter's ONE widget -- is declared in flow/gui_flow.h:
+   flow is its caller (the sanctioned flow -> chrome seam), and upward-seam declarations
    live with their LOWEST consumer. */
 
 /* The window <-> dock route seam (implemented in chrome/dock/gui_dock_route.c).

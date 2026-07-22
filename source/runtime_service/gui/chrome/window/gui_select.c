@@ -2,7 +2,7 @@
 
     runtime_service/gui/chrome/window/gui_select.c -- Window text selection (GUI_WIN_TEXT_SELECT).
 
-    CHROME, not a gesture mechanism (the R6 carve's classification): the controller reads the
+    CHROME, not a gesture mechanism: the controller reads the
     render server's run capture (select_capture_* / select_run, render/gui_select_capture.c)
     and measures with the draw unit's font metrics -- server crossings the interact unit must
     never make.  Its true mechanisms are the generic core verbs it rides (interact_claim /

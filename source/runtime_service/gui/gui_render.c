@@ -2,7 +2,7 @@
 
     runtime_service/gui/gui_render.c -- GUI_RENDER translation unit: the RENDER SERVER.
 
-    The 2d batch renderer (GUI_SERVER_PLAN.md): a narrow primitive foundation any 2d utility
+    The 2d batch renderer: a narrow primitive foundation any 2d utility
     can emit to.  This unit owns the pixel pipeline: the CPU draw list, path stroking, the
     CPU tessellator, the GPU flush, and the debug overlay -- plus, until R3 moves them up to
     the draw unit, the font/icon resources (the server proper renders from a pushed atlas
@@ -87,7 +87,7 @@ static gui_backend_caps_t s_caps;
 #include "runtime_service/gui/render/resource/gui_atlas.c"
 #include "runtime_service/gui/render/resource/gui_res_atlas.h"
 #include "runtime_service/gui/render/resource/gui_res_atlas.c"
-/* Fonts + icons moved to the draw unit (gui_draw.c, GUI_SERVER_PLAN.md R3) -- the server
+/* Fonts + icons live in the draw unit (gui_draw.c) -- the server
    renders from the shared atlas they push into; glyph/icon UV lookups at tess/emit time go
    through the glyph/sprite source contract in gui_render.h. */
 

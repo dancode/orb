@@ -61,9 +61,6 @@ gui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
    chrome/widgets/gui_volatile.c -- rather than here, since they're a distinct cross-cutting feature
    spanning both units, not a custom-draw escape hatch. */
 
-/* invisible_button / gui_item -- interaction on an explicit rect -- moved to gui_behavior.c,
-   the behavior half of this tier. */
-
 /*==============================================================================================
     Text measurement + aligned draw -- the placement primitives for custom drawing.  draw_text gives
     a top-left anchor only; these let a caller size to text and place it within a rect by intent

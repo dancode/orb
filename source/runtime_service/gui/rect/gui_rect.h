@@ -18,7 +18,7 @@
 
 // clang-format off
 /*==============================================================================================
-    Loud-overflow reporting (here since R11 -- every unit's pools stand on this leaf kit)
+    Loud-overflow reporting (every unit's pools stand on this leaf kit)
 
     Every fixed pool in the gui follows the same saturation rule: never fail hard, never be
     silent.  The overflowing site degrades gracefully (drop / share / evict) but reports ONCE

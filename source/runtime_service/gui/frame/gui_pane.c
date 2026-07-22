@@ -2,8 +2,8 @@
 
     runtime_service/gui/frame/gui_pane.c -- The pane bracket: the go-between verb.
 
-    The pane (gui_pane_t, gui.h) is the go-between type of the two-server model
-    (GUI_SERVER_PLAN.md): id + rect + z + viewport + input.  This file owns the one verb that
+    The pane (gui_pane_t, gui.h) is the go-between type of the two-server model:
+    id + rect + z + viewport + input.  This file owns the one verb that
     hands a pane to BOTH servers at once -- which is why it lives with the frame orchestrator
     and not in either server:
 

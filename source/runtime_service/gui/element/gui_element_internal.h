@@ -4,7 +4,7 @@
 
     runtime_service/gui/element/gui_element_internal.h -- the element unit's cross-unit seams.
 
-    The element unit (root gui_element.c, since R8) is the first layer astride both servers:
+    The element unit (root gui_element.c) is the first layer astride both servers:
     styled paint over interact state.  Its PUBLIC surface (the el_* cores, gui_el_style_t)
     stays in the root gui_element.h; this header holds only what crosses a unit boundary
     inside the system -- the per-item wrappers the emit/chrome seams call, the styled
@@ -21,7 +21,7 @@
 
 /* Per-item ambient application (element/gui_adornment.c): item_flags_resolve at the cell emit
    seam; item_flags_chrome_reset at every chrome seam -- wrappers over the interact server's
-   pure halves.  Declared in flow/gui_flow.h since R11: flow is their lowest consumer (its
+   pure halves.  Declared in flow/gui_flow.h: flow is their lowest consumer (its
    emit / region seams drive them). */
 
 /* Labeled-row paint half (element/gui_adornment.c): the geometry lives with the composer
@@ -33,7 +33,7 @@ f32        label_natural_w ( const char* s );
 /* System adornments (element/gui_adornment.c) invoked from below across documented upward
    seams are declared with their LOWEST consumer: draw_nav_ring (core/gui_core.h),
    draw_drop_ring (interact/gui_interact.h), the child box pair + resize highlight
-   (flow/gui_flow.h's upward block, R11).  Only the focus border -- consumed from chrome's
+   (flow/gui_flow.h's upward block).  Only the focus border -- consumed from chrome's
    window ends, ABOVE this unit -- is declared here. */
 void draw_window_focus_border( gui_rect_t r );
 

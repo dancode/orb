@@ -25,7 +25,7 @@
     id_hash -- FNV-1a 32-bit hash of a NUL-terminated string
 ==============================================================================================*/
 
-gui_id_t                       /* non-static: a cross-unit seam (core/gui_core.h, inc 10) */
+gui_id_t                       /* non-static: a cross-unit seam (core/gui_core.h) */
 id_hash( const char* str )
 {
     /* Seed FNV-1a with the context's id salt so the same string hashes to a distinct id per context.
@@ -89,8 +89,8 @@ id_pop( void )
 
 /*==============================================================================================
 
-    Widget label grammar  (Dear ImGui style) -- the id half, moved here from
-    the old paint core at the R4 carve (a label's id is identity derivation).
+    Widget label grammar  (Dear ImGui style) -- the id half (a label's id is
+    identity derivation).
 
         "Text"        -> display "Text",  id = hash("Text")
         "Text##key"   -> display "Text",  id = hash("Text##key")   distinct ids, same visible text

@@ -2,7 +2,7 @@
 
     runtime_service/gui/frame/gui_frame_font.c -- Font API + the font -> layout bridge.
 
-    Extracted from gui_frame_loop.c: the UI-unit font surface (load / load_builtin / load_into /
+    The UI-unit font surface (load / load_builtin / load_into /
     use / push / pop / active_id), the push/pop font stack, the asset-path helper the builtin
     loader resolves through, and gui_style_apply -- the font -> layout bridge that rebuilds the
     scaled layout metrics from the active font whenever a theme, font, or deferred reload lands.

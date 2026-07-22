@@ -2,9 +2,9 @@
 
     runtime_service/gui/frame/gui_context.c -- The public multi-context lifecycle.
 
-    Moved from core/gui_ctx.c at the R4 carve (GUI_SERVER_PLAN.md): creating and destroying a
-    context is orchestrator work -- destruction tears down the context's GPU surfaces.  The
-    block ALLOCATION (ctx_alloc_slot) joined it at R11: the single-malloc layout sizes every
+    Creating and destroying a context is orchestrator work -- destruction tears down the
+    context's GPU surfaces.  The block ALLOCATION (ctx_alloc_slot) belongs with it: the
+    single-malloc layout sizes every
     unit's retained records with sizeof -- including chrome's (gui_popup_t, gui_dock_node_t),
     which the server holds opaque -- so only the orchestrator, which sees the whole stack, can
     compute it.  The pool STORAGE and the bind verb stay with the server (core/gui_ctx.c:

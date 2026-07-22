@@ -6,12 +6,12 @@
 
     The record-agnostic interaction elements the chrome recipes ride: edge resize, move-drag
     with deferred press, drag-and-drop, and the feat_* window feature kit.  Mechanisms decide;
-    they never paint (gesture feedback paint lives up in element / chrome).  Its own TU since
-    R6 (root gui_interact.c).  Stack position: after style (each unit .c lists its sub-stack, R11).
+    they never paint (gesture feedback paint lives up in element / chrome).  Its own TU
+    (root gui_interact.c).  Stack position: after style (each unit .c lists its sub-stack).
 
     (The item protocol and the anim utilities are the interact SERVER's -- core/gui_core.h.
     Window text selection is NOT here: it reads the render capture and font metrics, so it is
-    chrome -- chrome/window/gui_select.c since R6; it claims gestures through interact_claim.)
+    chrome -- chrome/window/gui_select.c; it claims gestures through interact_claim.)
 
 ==============================================================================================*/
 
@@ -31,7 +31,7 @@ extern u8  s_resize_edges;                 /* in-flight edges (GUI_RESIZE_* bits
 extern f32 s_resize_off_x, s_resize_off_y; /* grab offsets keeping the edge under the cursor   */
 extern f32 s_resize_fix_x, s_resize_fix_y; /* pinned far edges for a left / top drag           */
 
-/* The GUI_RESIZE_L/R/T/B edge bits moved to gui.h (public: feat_resize's edge mask).  GRIP
+/* The GUI_RESIZE_L/R/T/B edge bits live in gui.h (public: feat_resize's edge mask).  GRIP
    stays internal: the CAN_AUTOSIZE corner triangle -- a resize affordance like the edges,
    carried in the same s_scope.resize_hot mask (the highlight painter ignores it; the R|B
    edge bits are promoted alongside it so the corner still bolds). */
@@ -56,7 +56,7 @@ void drag_new_frame( void );
 /*==============================================================================================
     Upward seams -- the unit's documented exceptions, mirroring core's block (gui_core.h).
     Do not add more.
-      - draw_drop_ring (element/gui_adornment.c since R8): the ONE adornment paint
+      - draw_drop_ring (element/gui_adornment.c): the ONE adornment paint
         this unit invokes -- the accept ring must land in the same call that decides the
         accept (gui_drag_payload_accept), exactly like core's draw_nav_ring.
       - gui_tooltip_begin/end + gui_stack (chrome, via gui_host.h): the drag preview body.

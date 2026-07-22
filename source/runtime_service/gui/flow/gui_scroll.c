@@ -47,7 +47,7 @@ region_get( gui_id_t id )
 }
 
 /*==============================================================================================
-    Nav scroll chase (here since R11; the moment is picked by the interact server)
+    Nav scroll chase (here; the moment is picked by the interact server)
 
     Bring the nav cursor's rect into view -- the keyboard analogue of the wheel.  Runs once, on
     the frame the cursor was adopted (g_ctx->nav.scroll_chase), for the layout-placed cursor

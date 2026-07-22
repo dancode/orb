@@ -7,12 +7,12 @@
     stepper, each an ordinary debug-band window painted through the standard draw API over a
     snapshot the backend unit captured (render/gui_dash_capture.c / gui_step_capture.c).
 
-    Root unit .c since R10, like every unit (GUI_SERVER_PLAN.md); implementation in debug/,
+    Root unit .c, like every unit; implementation in debug/,
     cross-unit decls in debug/gui_debug.h.  The compiler enforces that the debug tier reaches
     the rest of gui only through the public gui_* surface (gui_host.h), the backend capture
     API (gui_render.h), and the umbrella's cross-unit seams.
 
-    gui_frame_overlay.c is NOT here ON PURPOSE (frame/gui_frame_overlay.c since R10): it
+    gui_frame_overlay.c is NOT here ON PURPOSE (frame/gui_frame_overlay.c): it
     carries the frame-timing helpers the frame lifecycle itself calls (gui_frame_loop.c) --
     conductor code, not severable tooling.
 
@@ -24,7 +24,7 @@
 #include "orb.h"
 #include "base/fmt.h"
 
-/* This unit's world -- everything (R11: the include list IS the dependency graph; debug
+/* This unit's world -- everything (the include list IS the dependency graph; debug
    reads both servers' internals, which is exactly why it is severable and last). */
 #include "runtime_service/gui/render/gui_render.h"    /* capture snapshots + draw_* backend API
                                                          (pulls gui_host.h + rhi/app APIs)  */

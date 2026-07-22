@@ -79,7 +79,7 @@ item_repeat_tick( bool pressed )
    activates from the keyboard with no per-widget code, exactly as a mouse click flows through
    st.clicked. */
 
-/* nav_scroll_chase (bring the nav cursor's rect into view) moved to flow/gui_scroll.c at R11:
+/* nav_scroll_chase (bring the nav cursor's rect into view) lives in flow/gui_scroll.c:
    walking the open region stack and nudging scroll offsets is composition machinery, so the
    act lives with flow and behavior only picks the MOMENT -- the same split as draw_nav_ring.
    Declared in this server's upward-seams block (core/gui_core.h). */

@@ -2,7 +2,7 @@
 
     runtime_service/gui/gui_element.c -- GUI_ELEMENT translation unit: styled building blocks.
 
-    THE FIRST LAYER ASTRIDE BOTH SERVERS (GUI_SERVER_PLAN.md): everything that combines
+    THE FIRST LAYER ASTRIDE BOTH SERVERS: everything that combines
     interact state with styled paint over a caller-supplied rect.  Below it, style resolves
     and never emits, draw emits and never resolves; element is where the two meet -- the
     rect CONSUMER over the rects flow carves.
@@ -34,7 +34,7 @@
 #include "orb.h"
 #include "base/fmt.h"
 
-/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
+/* This unit's world, and nothing above it (the include list IS the dependency graph).
    Astride both servers by definition: the render header (it paints) AND the interact stack
    (it reads state as parameters) -- the whole sub-stack below element, and no chrome. */
 

@@ -1,7 +1,7 @@
 /*==============================================================================================
 
     runtime_service/gui/interact/gui_feature.c -- Window features as freestanding id-keyed
-    mechanisms (GUI_STACK_PLAN section 6): the feat_* kit.
+    mechanisms: the feat_* kit.
 
     Every entry here is a MECHANISM, not a widget: inputs are (id, rect, io) plus
     caller-owned state pointers, so anything can be a move handle, a collapse, or a maximize
@@ -14,7 +14,7 @@
     bookkeeping (edge detect + from-value) lives in the keyed pool, since it is animation
     scratch, not document state.
 
-    Dependency classes (the section-6 table): move / resize / collapse are A (freestanding:
+    Dependency classes: move / resize / collapse are A (freestanding:
     id + rect + io only); maximize / clamp are B (the WORK AREA is passed IN -- the feature
     never finds the viewport itself).  raise/shelf (population) and titlebar (composite)
     are not mechanisms and stay with chrome.
@@ -42,7 +42,6 @@
    maximize / minimize transitions and the dock's maximize ease all ride these (via
    feat_collapse / feat_pin below, or directly), honoring the global window_anim_enable
    preference -- feature-built chrome and stock chrome move identically by construction. */
-/* FEAT_ANIM_SECS moved to interact/gui_interact.h at the TU split (inc 10). */
 
 f32 feat_ease( f32 t ) { return f32_ease_out_cubic( t ); }
 

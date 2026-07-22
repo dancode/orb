@@ -4,11 +4,11 @@
 
     runtime_service/gui/render/gui_render.h -- THE RENDER SERVER's surface (the unit seam).
 
-    A 2d batch renderer with a narrow push-primitive foundation any 2d utility can emit to
-    (GUI_SERVER_PLAN.md).  Knows nothing of ids-as-identity, interact state, style, or
+    A 2d batch renderer with a narrow push-primitive foundation any 2d utility can emit to.
+    Knows nothing of ids-as-identity, interact state, style, or
     layout: the units above produce a semantic draw list through the draw_push_* primitives
     below; this server tessellates, caches, and uploads it.  This header is the server's
-    entire surface -- self-standing on the public gui types + the engine APIs since R11
+    entire surface -- self-standing on the public gui types + the engine APIs
     (never a gui unit header: the two servers must not see each other).
 
     The reverse direction is almost nothing: the glyph/sprite source contract (implemented
@@ -56,7 +56,7 @@ ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
     whole render backend.  `caps` (gui_backend_caps_t, gui.h) latches which optional layers are
     active for this run -- gui_init_config_back()'s value, or GUI_CAPS_DEFAULT if never called; see
     s_caps at the top of gui_render.c for how the rest of the unit reads it.  Internally wraps
-    gui_render_init/shutdown (gui_render.c), which are no longer exposed past this header.
+    gui_render_init/shutdown (gui_render.c), which are not exposed past this header.
 ==============================================================================================*/
 
 bool gui_backend_init( gui_backend_caps_t caps );
@@ -116,7 +116,7 @@ u32  draw_band                  ( void );           // current band (sampled for
 void draw_set_window            ( gui_id_t win );   // stable window id stamped on new commands (cache key)
 void draw_set_font              ( u32 font );       // active font id -> per-segment atlas batch context (push/pop/use_font)
 
-/* The paint cursor as one record (state in gui_emit_draw.c; here since R11 -- the definer's
+/* The paint cursor as one record (state in gui_emit_draw.c; here -- the definer's
    side of the seam): the command segment tag (owning window, sort key, viewport, arena band --
    the ambient font stays global by design) plus the ambient glyph-clip window (a table cell
    sets it for its span).  draw_scope / draw_scope_set read and write it wholesale for the
@@ -311,7 +311,7 @@ void                gui_render_flush        ( rhi_buffer_t vb, rhi_buffer_t ib, 
    context pool. */
 gui_mem_stats_t     gui_backend_memory      ( u32 live_viewports );
 
-/* The R3 accounting seam: the font/icon resources live one unit up (draw), so this server
+/* The accounting seam: the font/icon resources live one unit up (draw), so this server
    fills its font bucket by asking the draw unit for its fixed footprint.  Home declaration
    in draw/gui_draw.h; redeclared here because the server cannot see a library header. */
 u32                 gui_draw_unit_mem_bytes ( void );
@@ -325,7 +325,7 @@ gui_render_mode_t   gui_render_get_mode     ( void );
 /* A surface's own GPU geometry ring (one vb/ib region per frame-in-flight, sized by the
    server's caps).  The SURFACE RECORD (gui_viewport_t, core/gui_ctx.h) is not this server's
    to see: the orchestrator's viewport_create/destroy (frame/gui_viewport.c) wrap these and
-   own every other field -- the R11 completion of the pane handoff. */
+   own every other field. */
 bool                surface_geo_create      ( rhi_buffer_t* vb, rhi_buffer_t* ib );
 void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib );
 
@@ -333,7 +333,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
     DEBUG OVERLAY (gui_debug_overlay.c) -- Debug builds only.
 
     The GUI_DEBUG_OVERLAY switch, the DBG_* capture macros, and the capture/lifecycle decls
-    moved to debug/gui_debug.h at the R4 carve: they are cross-server debug tooling (the
+    live in debug/gui_debug.h: they are cross-server debug tooling (the
     interact server stamps DBG_WIDGET / DBG_NAME) and the servers never include each other's
     headers -- the debug header reaches every unit through the umbrella.  The implementation
     stays in this unit (gui_debug_overlay.c batches into GPU buffers).
@@ -502,7 +502,7 @@ extern gui_id_t g_gui_dash_window_id;
                                               a stepper window replaces them in a later phase.
 
     The GUI_CMD_STEPPER switch and the STEP_SET_OWNER attribution seam are computed in
-    debug/gui_debug.h (R4) -- the interact server's item protocol stamps the owner, so the
+    debug/gui_debug.h -- the interact server's item protocol stamps the owner, so the
     switch must reach every unit through the umbrella.  The rest of the mechanism stays here.
 ==============================================================================================*/
 

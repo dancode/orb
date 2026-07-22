@@ -4,14 +4,14 @@
 
     The symbol emitters that resolve their OWN look -- a theme style-var pick
     (GUI_VAR_ARROW/CHECK/SEPARATOR_STYLE), a style metric (WIN_BORDER, checkmark_pad), or the
-    ambient control rounding (ROUND_WIDGET) -- moved up from draw/gui_symbol.c at the R8 carve
+    ambient control rounding (ROUND_WIDGET) -- live in the element unit
     so the draw unit ends parameter-pure: a draw routine takes its colors and sizes as
     parameters; these read the live style, which makes them element material (the first layer
     astride style and draw).  Each composes the pure emitters it left behind through the
     public gui_draw_* surface (gui_host.h) or the render primitives directly.
 
-    The public wrappers over the movers (gui_draw_arrow / gui_draw_close / gui_draw_frame)
-    live at the foot -- they moved with their targets so the draw unit never calls upward.
+    The public wrappers (gui_draw_arrow / gui_draw_close / gui_draw_frame)
+    live at the foot -- they sit with their targets so the draw unit never calls upward.
 
 ==============================================================================================*/
 // clang-format off
@@ -53,7 +53,7 @@ draw_collapse_arrow( gui_rect_t box, bool collapsed, u32 color )
     draw_arrow( box, collapsed ? GUI_DIR_RIGHT : GUI_DIR_DOWN, color );
 }
 
-/* Close glyph: the two-diagonal 'X' centered in `box` (Dear ImGui's CloseButton cross).  Extracted
+/* Close glyph: the two-diagonal 'X' centered in `box` (Dear ImGui's CloseButton cross).  Shared
    so the native caption close button and any other caller stroke the identical mark.  Styled by
    the border metric: the stroke weight is WIN_BORDER so the cross tracks the frame weight. */
 void

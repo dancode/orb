@@ -7,9 +7,9 @@
     The drawing-routine library over the render server's push primitives: rect-taking
     wrappers, text painters, and the shape palette.  Widgets speak rects; only the render
     server's emit layer (draw_push_*) speaks scalar x/y/w/h with UV + texture arguments.
-    Stack position: over the render server, below interact (each unit .c lists its sub-stack, R11).
+    Stack position: over the render server, below interact (each unit .c lists its sub-stack).
 
-    Assembled in R3 (gui_draw.c at the gui root): gui_paint.c + gui_symbol.c + gui_canvas.c
+    Assembled at the gui root (gui_draw.c): gui_paint.c + gui_symbol.c + gui_canvas.c
     + the font/icon resources -- the render server renders from a pushed atlas and does not
     know what a font is, so glyph metrics and baking live here, one level up.
 
@@ -17,7 +17,7 @@
 
 // clang-format off
 
-/* gui_draw_scope_t (the paint cursor as one record) moved to render/gui_render.h at R11:
+/* gui_draw_scope_t (the paint cursor as one record) lives in render/gui_render.h:
    the render unit defines the state (pipeline/gui_emit_draw.c) and its accessors, so the
    type lives on the definer's side of the seam. */
 
@@ -39,8 +39,8 @@ void draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w );
 
 /* The shape palette (draw/gui_symbol.c) -- parameter-pure emitters.  The styled half of the
    family (draw_arrow, draw_check_indicator, draw_rule, draw_close_x, draw_frame -- emitters
-   that resolve their own look), the styled painters, and label_natural_w all climbed to the
-   element unit at R8 (element/gui_element_internal.h). */
+   that resolve their own look), the styled painters, and label_natural_w all live in the
+   element unit (element/gui_element_internal.h). */
 void draw_bullet( f32 cx, f32 cy, f32 r, u32 color );
 void draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
 void draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
@@ -59,10 +59,10 @@ bool gui_draw_boot    ( bool icons );    /* font registry + optional icon layer 
 void gui_draw_shutdown( void );
 u32  gui_draw_unit_mem_bytes( void );    /* the draw unit's fixed statics, for mem stats
                                             (also redeclared in render/gui_render.h -- the
-                                            R3 seam that fills the server's font bucket) */
+                                            seam that fills the server's font bucket) */
 
 /*==============================================================================================
-    UPWARD SEAMS -- the draw unit's only calls above its layer (R11).  Do not add more.
+    UPWARD SEAMS -- the draw unit's only calls above its layer.  Do not add more.
 
     label_vis_len (core/gui_id.c, home decl core/gui_core.h) -- the label grammar's visible
         span ("Text##id" measures "Text"): a pure string function, but the grammar is identity

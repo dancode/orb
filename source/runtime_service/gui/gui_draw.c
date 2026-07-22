@@ -2,14 +2,14 @@
 
     runtime_service/gui/gui_draw.c -- GUI_DRAW translation unit: the drawing-routine library.
 
-    Drawing and shapes over the RENDER SERVER's push primitives (GUI_SERVER_PLAN.md R3): the
+    Drawing and shapes over the RENDER SERVER's push primitives: the
     rect-taking paint floor, the fitted text painters, the symbol/shape palette, the canvas
     (the user door to 2d drawing), and the FONT + ICON resources -- glyph metrics and baking
     live here, one level above the server, writing into the shared atlas they hand down
     (the server renders from a pushed atlas; it does not know what a font is).
 
     Downward only: this unit calls the render server (draw_push_*, res_atlas_*) and reads the
-    style vocabulary for the few styled sites marked for the R8 element move.  The server
+    style vocabulary for the few styled sites.  The server
     calls BACK only through the glyph/sprite source contract (render/gui_render.h): the
     tessellator resolves glyph UVs and the emit layer resolves icon UVs against the tables
     this unit installs and manages.
@@ -32,8 +32,8 @@
 #include "base/fmt.h"
 #include "base/math.h"
 
-/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
-   Drawing routines over the render server's primitives -- parameter-pure since R8, so no
+/* This unit's world, and nothing above it (the include list IS the dependency graph).
+   Drawing routines over the render server's primitives -- parameter-pure, so no
    core, style, or policy header belongs here. */
 #include "runtime_service/gui/render/gui_render.h" /* the render server's primitive surface
                                                       (pulls gui_host.h + rhi/app APIs)     */

@@ -1,9 +1,9 @@
-# GUI Architecture + Layout/Composer Notes (AI-oriented)
+# GUI Architecture
 
 Dense reference for working on the gui service (this directory) and its sandbox
 `source/sandbox/gui/sb_gui/sb_gui.c`. Code is source of truth. ASCII only in all source.
 
-## Big picture -- two servers, one orchestrator (the v2 model, GUI_SERVER_PLAN.md R1-R11)
+## Big picture -- two servers, one orchestrator
 
 There are only three real things:
 
@@ -46,20 +46,20 @@ The two servers NEVER see each other. Everything else is a LIBRARY over them:
     gui_frame.c      frame/      (public headers)                FRAME ORCHESTRATOR
     gui.c            (root)      (public headers)                MODULE FACE (vtable + mod_desc)
 
-Dependency graph (lowest to highest) -- since R11 each unit root .c includes EXACTLY the unit
+Dependency graph (lowest to highest) -- each unit root .c includes EXACTLY the unit
 headers at or below its layer, so the include list at the top of each unit IS the graph and
-the compiler enforces it per unit (`gui_internal.h` is gone):
+the compiler enforces it per unit:
 
     rect      -> base only
     render    -> rect                 never sees core/style/ids
-    draw      -> render, rect         parameter-pure since R8 (no style/core reads)
+    draw      -> render, rect         parameter-pure (no style/core reads)
     core      -> rect                 never sees render/draw/style
     style     -> core, rect           resolves, never emits
     interact  -> core, style, rect    (style = the WIN_BORDER metric read only); never paints
     flow      -> style, draw, core    + the render CLIP STACK (flow computes THE view rect,
                                       so it owns the region scissor -- flow places, never paints)
     element   -> everything below     the first layer astride both servers (it paints)
-    chrome    -> everything below     + the render run capture (text selection, R6)
+    chrome    -> everything below     + the render run capture (text selection)
     debug     -> everything           severable; its header leads every unit (it computes the
                                       Debug-build switches, the one sanctioned above-layer include)
     frame     -> orchestrates all
@@ -146,9 +146,9 @@ draw_fill( r, col_item_bg_anim( id, st ) );
 The style vocabulary itself (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in
 the style unit (`style/gui_style_core.c`) since all three roles read it. `chrome/` is its
 CLIENT -- the stock widget set is written on the same substrate a user widget uses, not a
-privileged layer. (The old `user/` tier dissolved at R6: the caller's vocabulary lives with
-its machinery -- canvas -> draw, query readers -> core, bracketing stacks -> style, behavior
-verbs -> interact. Internal uses deliberately dogfood the public surface through gui_host.h.)
+privileged layer. The caller's vocabulary lives with its machinery -- canvas in draw, query
+readers in core, bracketing stacks in style, behavior verbs in interact -- and internal uses
+deliberately dogfood the public surface through gui_host.h.
 
 A custom widget (`game_ui_slider()`) never needs skin or spacing metrics -- it brings its own
 look and composes with any layout.
@@ -322,10 +322,8 @@ measurement lives with the draw family (`text_size`). Placement queries stay unp
 
 ## Regions, scroll, and clipping -- the invariants
 
-These are load-bearing rules, learned the hard way (2026-07: the multiline editor first
-hand-rolled its own scrollbar and broke hover arbitration, then sized itself to the content
-column and seated itself under the window's scrollbar). A widget that follows them "just
-works"; every exception listed is deliberate.
+These are load-bearing rules. A widget that follows them "just works"; every exception listed
+is deliberate.
 
 1. **Regions own everything scroll-shaped.** Gutter reservation, scrollbar emission, wheel
    claim (innermost-wins via `s_build.wheel_used`), scroll clamping, and both clips belong to

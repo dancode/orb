@@ -266,7 +266,7 @@ typedef struct gui_api_s
 
     /*=================================  window features as mechanisms  =================================*/
 
-    /* The feat_* kit (GUI_STACK_PLAN section 6): every window feature as a freestanding
+    /* The feat_* kit: every window feature as a freestanding
        id-keyed mechanism, so chrome is assembled feature by feature over a pane -- anything
        can be a move handle, a collapse, or a maximize.  State rule: in-flight gesture state
        is arbitrated by active_id (one drag at a time); PERSISTENT state is the caller's
@@ -847,7 +847,7 @@ typedef struct gui_api_s
         no flow, no layout reservation -- composing item() behavior + draw_* presentation +
         the slim installed element style (gui_el_style_t, gui_element.h).  Rects come from
         anywhere: gui_rect.h math, split / carve / anchor, flow_cell, your own numbers.
-        Lifted from the proven sb_gui_diablo ui layer (GUI_STACK_PLAN increment 3).
+        Lifted from the proven sb_gui_diablo ui layer.
     =============================================================================================================*/
 
     /* el_style -- mutable access to the INSTALLED element style, the kit (S3) tuning door.

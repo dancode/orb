@@ -574,7 +574,7 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
 /*==============================================================================================
     tess_stroke_poly_aa -- antialiased polyline tessellation for the render backend.
 
-    Mirrors the old stroke_poly_aa (removed from gui_emit_path.c in step 4) but writes into
+    Mirrors the old stroke_poly_aa but writes into
     s_tess via tess_prim_begin/commit.  abgr is pre-baked (alpha folded in at emit time).
     v2 / seg_normal / stroke_center_offset are defined in gui_emit_path.c (included before
     this file in the unity build) so they are visible here without forward declarations.
