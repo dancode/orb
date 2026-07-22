@@ -21,7 +21,7 @@
     Documented upward seams (the strata bridge -- see style/gui_style.h):
       - style_el_col reads the INSTALLED element style (gui_el_style, element unit) and
         projects role x state through g_gui_el_slot_map (the element unit's table).
-      - gui_theme_reset calls gui_style_apply (frame/gui_frame.c): the rescale needs the
+      - gui_theme_reset calls gui_style_apply (frame/gui_frame_font.c): the rescale needs the
         active font's metrics (draw unit), which style itself must not touch.
 
     Include order matters: each file can reference statics from files included above it.

@@ -327,7 +327,7 @@ surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
     client bounds changes which surface hosts it: from the main surface (viewport 0) it tears off
     into a fresh floater; from a floater it merges back to the main surface.  The gesture
     detection that fills this slot is window/ policy (window_begin_ex / the detach button);
-    the post-build reconcile gui_viewport_update (gui_frame.c) services it -- the safe point to
+    the post-build reconcile gui_viewport_update (frame/gui_viewport.c) services it -- the safe point to
     create or destroy a surface, since the build is complete and no draw list is mid-flight.
 
     A single slot suffices: only one window can own the drag (active_id) at a time.  `title` is the

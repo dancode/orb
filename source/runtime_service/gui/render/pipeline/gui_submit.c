@@ -393,7 +393,7 @@ render_batch_debug_color( u32 i )
     gui_render_flush -- upload one surface's geometry and emit its draw calls (SUBMIT phase).
 
     Paints into the surface at index `vp_index`, whose GPU pieces (vb / ib / target) arrive as
-    parameters -- the orchestrator (frame/gui_frame.c) passes the record's fields; this server
+    parameters -- the orchestrator (frame/gui_frame_loop.c) passes the record's fields; this server
     never sees the record.  First kicks the once-per-frame BUILD (cache_build_frame, lazy --
     only the first surface this frame pays for it; the rest reuse the result).  Then uploads
     this surface's slice of the shared geometry into its own vb/ib region and opens a LOAD pass

@@ -3,7 +3,7 @@
     runtime_service/gui/gui_ui_mem.c -- Frontend (frame unit) memory accounting.
 
     The frame-unit counterpart of render/gui_render_mem.c: sizeof-sums every fixed static the
-    gui.c unity TU defines into one bucket (cpu_frontend_bytes), plus the carved units'
+    gui_frame.c unity TU defines into one bucket (cpu_frontend_bytes), plus the carved units'
     footprints through their *_unit_mem_bytes seams.  Unlike the backend there are no big
     arenas here -- the real state lives in the malloc'd context blocks, already counted as
     CPU heap -- so this bucket is expected to register SMALL.  That is the point: the
@@ -14,9 +14,9 @@
     carve): the full-footprint aggregation reads BOTH servers (gui_backend_memory + the core
     pool), which makes it orchestrator work, not interact-server work.
 
-    MUST be the LAST include in gui.c (before the gui_api.c vtable block): every line below is
-    a sizeof over another file's static, and unity visibility only flows downward.  Adding a
-    static aggregate to this unit?  Add it here.
+    MUST be the LAST include in the gui_frame.c unit root: every line below is a sizeof over
+    another file's static, and unity visibility only flows downward.  Adding a static aggregate
+    to this unit?  Add it here.
 
     Not counted: scalar statics (bools, counters, stack depths, hook pointers) -- sub-cache-line
     noise -- and string literals (pooled by the linker).

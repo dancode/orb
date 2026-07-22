@@ -143,7 +143,7 @@ static gui_backend_caps_t s_caps;
 #include "runtime_service/gui/render/gui_render_mem.c"
 
 /*==============================================================================================
-    Backend lifecycle seam -- the entry point the UI unit (gui_init/gui_shutdown, gui_frame.c)
+    Backend lifecycle seam -- the entry point the UI unit (gui_init/gui_shutdown, gui_frame_loop.c)
     calls, mirroring how gui.c fronts the UI unit.  Ties together whatever the backend needs to
     stand up as a whole; today that's just the RENDER stage's GPU resources, but it's the one
     place to add more later without the UI unit reaching into a stage-specific name.

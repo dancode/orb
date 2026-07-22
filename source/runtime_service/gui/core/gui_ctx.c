@@ -337,7 +337,7 @@ void cursor_set( app_cursor_t c ) { s_interaction.mouse_cursor = c; }
 /* Flush the requested cursor to the OS window under the pointer.  Reads last frame's request +
    hover state (called before interaction_frame_reset promotes the new frame's hover).  Dedupes on
    (window, shape) so an unchanged cursor is not re-posted every frame.  Non-static: called
-   once per app frame from gui_frame_begin (frame/gui_frame.c). */
+   once per app frame from gui_frame_begin (frame/gui_frame_loop.c). */
 void
 cursor_flush( void )
 {
@@ -477,7 +477,7 @@ interaction_frame_reset( void )
 void item_mark_edited( void ) { s_interaction.focused_id_edited = true; }
 
 /* Per-context frame reset: rebuilds the frame-scratch and per-context retained state.
-   Called by ctx_begin (frame/gui_frame.c) for every context -- does NOT touch the global
+   Called by ctx_begin (frame/gui_frame_loop.c) for every context -- does NOT touch the global
    s_interaction fields (those are reset once per app frame by interaction_frame_reset). */
 void
 ctx_new_frame( void )
@@ -517,7 +517,7 @@ ctx_new_frame( void )
     s_scope.flags = GUI_ITEM_NONE;
 
     /* The per-frame STYLE reset (style_new_frame) is not called from here: this server knows
-       nothing of style.  ctx_begin (frame/gui_frame.c) runs it right after this returns. */
+       nothing of style.  ctx_begin (frame/gui_frame_loop.c) runs it right after this returns. */
     s_scope.clip = ( gui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
     ++g_ctx->retained.frame;
 }

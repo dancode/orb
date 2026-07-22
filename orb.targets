@@ -169,7 +169,8 @@ target gui
     root        source/runtime_service/gui
     folder      03_RUNTIME/SERVICE
     unit        gui_rect.c  				# GUI_RECT unit: leaf geometry + color primitives
-    unit        gui.c   					# UI / frame unit
+    unit        gui.c   					# gui module face: vtable + descriptor + DLL exports
+    unit        gui_frame.c  				# GUI_FRAME unit: the frame orchestrator (top of the stack)
     unit        gui_core.c  				# GUI_CORE unit: the interact server (io, ids, state, item protocol)
     unit        gui_style.c  				# GUI_STYLE unit: theme, stacks, state->color resolution
     unit        gui_interact.c  			# GUI_INTERACT unit: gesture mechanisms (move/resize/drag/feat)
@@ -188,7 +189,8 @@ target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the lo
     root        source/runtime_service/gui
     folder      03_RUNTIME/SERVICE
     unit        gui_rect.c   # GUI_RECT unit: leaf geometry + color primitives
-    unit        gui.c   # UI / frame unit
+    unit        gui.c   # gui module face: vtable + descriptor + DLL exports
+    unit        gui_frame.c   # GUI_FRAME unit: the frame orchestrator (top of the stack)
     unit        gui_core.c   # GUI_CORE unit: the interact server (io, ids, state, item protocol)
     unit        gui_style.c   # GUI_STYLE unit: theme, stacks, state->color resolution
     unit        gui_interact.c   # GUI_INTERACT unit: gesture mechanisms (move/resize/drag/feat)

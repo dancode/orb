@@ -20,9 +20,9 @@
     Anything that is not window/surface/UI -- job ticks, hot-reload, simulation clocks,
     networking -- belongs to the runtime host (source/runtime), never here.
 
-    Included LAST in the gui.c unity (after gui_frame.c): it calls straight into the frame
-    lifecycle, the viewport pool, and the window unit.  gui_frame.c reaches back through two
-    forward-declared statics -- boot_shutdown() (teardown from gui_shutdown) and
+    Included LAST in the gui_frame.c unity (after gui_frame_loop.c): it calls straight into the
+    frame lifecycle, the viewport pool, and the window unit.  gui_frame_loop.c reaches back through
+    two forward-declared statics -- boot_shutdown() (teardown from gui_shutdown) and
     boot_shell_emit() (the auto chrome shell at the default ctx_begin).
 
     Ordering contract (mirrors the explicit loop the sandboxes ran):
@@ -301,7 +301,7 @@ gui_present_end( void )
     a no-op (the host loop just spins).
 
     The hooks (s_hook_sleep / s_hook_wait), s_idle_skip, and s_any_redraw live in
-    gui_frame_overlay.c / gui_frame.c -- both included before this unit, so they are in scope here.
+    gui_frame_overlay.c / gui_frame_loop.c -- both included before this unit, so they are in scope here.
 ==============================================================================================*/
 
 void

@@ -57,7 +57,7 @@
 #include "runtime_service/gui/draw/gui_canvas.c"
 
 /*==============================================================================================
-    Unit lifecycle -- called by the frame orchestrator (frame/gui_frame.c) AFTER the render
+    Unit lifecycle -- called by the frame orchestrator (frame/gui_frame_loop.c) AFTER the render
     server stands up (fonts and icons register into the server's shared atlas) and torn down
     before it.  `icons` gates the optional icon layer (gui_backend_caps_t.icons).
 ==============================================================================================*/

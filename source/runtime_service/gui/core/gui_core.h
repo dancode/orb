@@ -459,7 +459,7 @@ gui_state_usage_t gui_state_usage( void );
     gui_owned_window_event   the io pump's ONE call up into its orchestrator (frame unit):
                      OS resize / close events for a gui-OWNED floater are serviced against
                      the viewport pool the orchestrator manages.  Returns true when win_id
-                     is an owned viewport (event consumed).  Defined in frame/gui_frame.c.
+                     is an owned viewport (event consumed).  Defined in frame/gui_frame_loop.c.
     DBG_* / STEP_SET_OWNER   debug capture stamps (debug/gui_debug.h) -- severable tooling,
                      compiled away outside Debug.
 ==============================================================================================*/

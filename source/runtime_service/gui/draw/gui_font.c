@@ -61,7 +61,7 @@ static const char* s_builtin_font_path[] =
 };
 
 /* Relative asset path of a built-in preset; NULL for GUI_FONT_NONE / out-of-range.  The public
-   font_load_builtin (gui_frame.c) resolves it against the root and loads into a fresh id. */
+   font_load_builtin (gui_frame_font.c) resolves it against the root and loads into a fresh id. */
 
 const char*
 font_builtin_rel_path( gui_builtin_font_t font )

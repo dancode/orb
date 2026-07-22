@@ -20,8 +20,8 @@
     The tear-off gesture drives spawn/close; a host/sandbox may also call gui_viewport_spawn
     directly to place a panel in its own OS window.
 
-    Included by gui.c right after gui_frame.c: gui_viewport_render_floaters calls gui_render(),
-    defined there.
+    Included by the gui_frame.c unit root after gui_frame_loop.c: gui_viewport_render_floaters
+    calls gui_render(), defined there.
 
 ==============================================================================================*/
 // clang-format off

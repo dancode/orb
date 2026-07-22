@@ -5,9 +5,9 @@
     Two hidden-chrome debug readouts drawn through the ordinary GUI pipeline, plus the frame-timing
     instrumentation the perf overlay reads.  The timing helpers (perf_frame_begin / perf_frame_end /
     perf_render_begin / perf_render_end / perf_present_begin / perf_present_end) are the private half
-    of this unit: they are called from the frame lifecycle in gui_frame.c (emit / render) and the
-    boot present pair in gui_boot.c (present), which is why this file is included BEFORE both in the
-    unity build (gui.c) -- those statics must be in scope where the lifecycle brackets them.
+    of this unit: they are called from the frame lifecycle in gui_frame_loop.c (emit / render) and
+    the boot present pair in gui_boot.c (present), which is why this file is included BEFORE both in
+    the gui_frame.c unity build -- those statics must be in scope where the lifecycle brackets them.
 
     The overlays are NOT host-called: debug_enable( true ) arms an internal hotkey driver
     (debug_hotkeys, run from frame_begin) that cycles the overlay tiers, and the lifecycle emits
@@ -160,11 +160,9 @@ perf_span_ema( f32* dst, f64 t0 )
     *dst = ( *dst <= 0.0f ) ? ms : *dst * 0.9f + ms * 0.1f;
 }
 
-/* Debug-lever state read by the overlay's status rows below; defined further down this file
-   (idle skip) and in gui_frame.c (force redraw) -- forward declarations, same unity TU. */
-void gui_set_force_redraw( bool on );
-bool gui_force_redraw( void );
-bool gui_idle_skip( void );
+/* The debug-lever state read by the overlay's status rows below -- gui_set_force_redraw /
+   gui_force_redraw (frame/gui_frame_loop.c) and gui_idle_skip (further down this file) -- is declared
+   on the frame unit's public face (gui_host.h), in scope here via the render header. */
 
 /* Backing panel behind an overlay's text -- a plain filled rect emitted FIRST inside the region,
    so it draws behind the region's own text but (region z-band) on top of every ordinary window
@@ -721,8 +719,8 @@ debug_overlays_emit( void )
 
 /* NOTE: gui_frame_pace() -- the end-of-loop idle sleep -- moved to gui_boot.c, the boot-tier
    loop it belongs to.  It still reads the frame hooks (s_hook_sleep/wait) and s_idle_skip set
-   here and s_any_redraw folded in gui_frame.c; the gui.c unity includes gui_boot.c last, so
-   those statics are all in scope there. */
+   here and s_any_redraw folded in gui_frame_loop.c; the gui_frame.c unity includes gui_boot.c
+   last, so those statics are all in scope there. */
 
 // clang-format on
 /*============================================================================================*/

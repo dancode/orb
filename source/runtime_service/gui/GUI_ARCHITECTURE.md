@@ -19,11 +19,14 @@ There are only three real things:
   header `core/gui_ctx.h` (window, nav state, viewport, scroll link, the context aggregate);
   the two records only chrome reads (popup entry, dock node) stay shaped in chrome behind
   forward declarations. Knows nothing of style, themes, or drawing.
-- **FRAME ORCHESTRATOR** (`frame/` + root `gui.c`): boots both servers, owns
+- **FRAME ORCHESTRATOR** (`frame/` + root `gui_frame.c`): boots both servers, owns
   viewports/app/sys wiring, pumps io into the interact server, hands each surface's GPU
-  pieces (vb/ib/target) to the render server at flush, allocates the context blocks (it alone
-  sees every record's size), and assembles the module vtable. Owns NO unit header -- its
-  public face is gui.h / gui_api.h / gui_host.h.
+  pieces (vb/ib/target) to the render server at flush, and allocates the context blocks (it
+  alone sees every record's size). Owns NO unit header -- its public face is gui.h /
+  gui_api.h / gui_host.h.
+- **MODULE FACE** (root `gui.c`): the separate, logic-free unit that assembles the module
+  vtable (`g_gui_api_struct`) + `mod_desc_t`, and defines the app/rhi API pointer storage the
+  module init fetches. It carries no orchestration -- only the module's public identity.
 
 The two servers NEVER see each other. Everything else is a LIBRARY over them:
 
@@ -40,7 +43,8 @@ The two servers NEVER see each other. Everything else is a LIBRARY over them:
                                  element/gui_element_internal.h
     gui_chrome.c     chrome/     chrome/gui_chrome.h             stock windowing policy (6 folders)
     gui_debug.c      debug/      debug/gui_debug.h               server introspection (severable)
-    gui.c            frame/      (public headers)                FRAME ORCHESTRATOR
+    gui_frame.c      frame/      (public headers)                FRAME ORCHESTRATOR
+    gui.c            (root)      (public headers)                MODULE FACE (vtable + mod_desc)
 
 Dependency graph (lowest to highest) -- since R11 each unit root .c includes EXACTLY the unit
 headers at or below its layer, so the include list at the top of each unit IS the graph and

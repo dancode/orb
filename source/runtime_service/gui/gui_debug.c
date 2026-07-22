@@ -13,7 +13,7 @@
     API (gui_render.h), and the umbrella's cross-unit seams.
 
     gui_frame_overlay.c is NOT here ON PURPOSE (frame/gui_frame_overlay.c since R10): it
-    carries the frame-timing helpers the frame lifecycle itself calls (gui_frame.c) --
+    carries the frame-timing helpers the frame lifecycle itself calls (gui_frame_loop.c) --
     conductor code, not severable tooling.
 
 ==============================================================================================*/

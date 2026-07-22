@@ -103,7 +103,7 @@ void style_item_commit( void );
 void style_chrome_reset( void );
 void style_new_frame( void );
 
-/* The em rescale (style/gui_theme.c) -- gui_style_apply (frame/gui_frame.c) reads the active
+/* The em rescale (style/gui_theme.c) -- gui_style_apply (frame/gui_frame_font.c) reads the active
    font's metrics (draw-unit material style must not touch) and passes them down here. */
 void layout_compute( u32 em, u32 char_h, u32 line_h );
 

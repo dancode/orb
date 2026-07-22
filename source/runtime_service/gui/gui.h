@@ -16,7 +16,7 @@
     convention: this file (types) -> gui_api.h (DLL) -> gui_host.h (hosts/sandboxes).
 
     Two caches make an idle UI cheap (see ARCHITECTURE.md sec 6):
-    1. CPU emit skip (s_frame_dirty, gui_frame.c): a single global bool.  When no input, animation,
+    1. CPU emit skip (s_frame_dirty, gui_frame_loop.c): a single global bool.  When no input, animation,
        or render delta occurred, the whole emit phase is skipped and the previous frame's draw list
        is reused.
     2. GPU tessellation cache (gui_build_cache.c): granular per window.  A per-window hash mismatch

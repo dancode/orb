@@ -86,7 +86,7 @@ static bool s_debug_enabled;
     Snapshot readers -- the queries later tiers ask of s_io, named once.
 ==============================================================================================*/
 
-/* Accessor for gui_frame.c's frontend-dirty gate (frame unit, across the seam). */
+/* Accessor for gui_frame_loop.c's frontend-dirty gate (frame unit, across the seam). */
 bool io_dirty( void ) { return s_io_dirty; }
 
 /* Modifier key helpers: poll both L and R variants so callers need not repeat the pair. */

@@ -42,7 +42,7 @@ u32  gui_debug_unit_mem_bytes( void );          /* debug unit: its fixed statics
 
 #ifdef GUI_DEBUG_OVERLAY
 
-    /* Lifecycle, driven by gui_frame.c (frame unit) under the same #ifdef. */
+    /* Lifecycle, driven by gui_frame_loop.c (frame unit) under the same #ifdef. */
     bool gui_debug_init    ( void );
     void gui_debug_shutdown( void );
     void gui_debug_reset   ( void );

@@ -39,7 +39,7 @@
     Scrollbars and drag strips are no keyboard targets at all (s_scope.nav.skip).
 
     Included by gui.c after gui_popup.c (so the popup stack is in scope)
-    and before gui_frame.c (so gui_ctx_begin can call nav_new_frame).
+    and before gui_frame_loop.c (so gui_ctx_begin can call nav_new_frame).
 
 ==============================================================================================*/
 // clang-format off

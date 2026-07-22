@@ -241,7 +241,7 @@ style_chrome_reset( void )
 
 /* Reset the per-frame style state: re-seed the working set from the base (so an unbalanced push
    cannot leak across frames), empty the stacks, and clear both next-item layers.  Called from
-   gui_ctx_begin (frame/gui_frame.c), paired with ctx_new_frame, and from gui_theme_reset. */
+   gui_ctx_begin (frame/gui_frame_loop.c), paired with ctx_new_frame, and from gui_theme_reset. */
 
 void
 style_new_frame( void )

@@ -325,7 +325,7 @@ font_init( void )
        font_load_into supply -- gui_render_init's job is standing up the GPU bindings those loads
        will later fill (pipeline, font sampler), not conjuring an atlas with nothing in it.  Slot 0
        starts empty; font_valid() reports that until the host's own font_load_builtin / font_load
-       call activates one -- see gui_init's font_valid() gate in gui_frame.c for the consumer side
+       call activates one -- see gui_init's font_valid() gate in gui_frame_loop.c for the consumer side
        of that contract.  The icon atlas is a separate, optional layer -- gui_backend_init stands it
        up (gated on s_caps.icons), not this font-only function. */
     return true;

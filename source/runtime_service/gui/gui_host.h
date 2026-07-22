@@ -170,6 +170,13 @@ void       gui_flow_end( void );
 
 void gui_request_redraw( void );   /* one-shot next-frame dirty (see gui_api.h GUI_CORE queries) */
 
+/* redraw / dirty queries (frame/gui_frame_loop.c) -- the rest of the GUI_CORE redraw family; the
+   implementations live in the frame unit, so their prototypes belong here on its public face. */
+bool gui_wants_redraw( void );
+bool gui_frame_dirty( void );
+void gui_set_force_redraw( bool on );
+bool gui_force_redraw( void );
+
 /* element cores -- rect-consuming building blocks (see gui_api.h GUI_ELEMENT section) */
 gui_el_style_t* gui_el_style( void );
 void gui_el_panel ( gui_rect_t r );
