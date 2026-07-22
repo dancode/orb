@@ -41,7 +41,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     win->w          = node->rect.w;
     win->h          = node->rect.h;
     win->collapsed  = false;
-    win->last_frame = g_ctx->retained.frame;
+    win->last_frame = gui_frame_index();
 
     f32 title_h = node->rect.h - node->content.h;   /* tab strip height (= WIN_TITLE_H, node-clamped) */
 

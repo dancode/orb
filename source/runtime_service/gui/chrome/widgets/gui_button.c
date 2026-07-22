@@ -255,7 +255,7 @@ gui_checkbox( const char* label, bool* v )
         /* The indicator above drew the OLD *v; the new state shows on next frame's emit.  Force
            that frame -- an isolated toggle changes no other UI, so nothing else would mark the
            retained cache dirty and the check would not appear until the next input event. */
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
     return changed;
 }
@@ -304,7 +304,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
         changed = true;
         /* Same one-frame-late draw as checkbox: the dot above drew the OLD selection.  Force the
            next frame so the moved selection shows without waiting on another input event. */
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
     return changed;
 }
@@ -347,7 +347,7 @@ gui_selectable( const char* label, bool* selected )
            caller-owned selection (this row, a picked index) that is not visible until the NEXT
            frame's emit -- often because the content it selects was already built earlier in this
            same frame.  Force that frame so the new selection shows without waiting on more input. */
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
 
         /* Inside a combo dropdown a clicked row dismisses the combo: flag it for combo_end to close
            (the popup machinery is not in scope here).  Inert for an ordinary list selectable. */

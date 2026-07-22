@@ -108,7 +108,7 @@ static bool
 dock_vp_emitted( u32 vp )
 {
     const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
-    return v->dock_root != GUI_DOCK_REF_NONE && v->dock_seen_frame == g_ctx->retained.frame;
+    return v->dock_root != GUI_DOCK_REF_NONE && v->dock_seen_frame == gui_frame_index();
 }
 
 /* The lookup window_begin routes through: which LEAF tabs this window, or NULL.  Forward-declared in
@@ -150,7 +150,7 @@ static bool
 dock_tab_seen( gui_id_t wid )
 {
     const gui_window_t* w = window_find( wid );
-    return !w || w->last_frame + 1u >= g_ctx->retained.frame;
+    return !w || w->last_frame + 1u >= gui_frame_index();
 }
 
 /* Post-order refresh of one subtree's hidden flags; returns the subtree's own state (a split is
@@ -183,7 +183,7 @@ dock_hidden_refresh_node( gui_dock_node_t* n )
              && !dock_tab_seen( n->tabs[ n->active_tab ] ) )
         {
             n->active_tab                = first_seen;
-            g_ctx->retained.wants_redraw = true;
+            redraw_request();
         }
     }
     else
@@ -196,7 +196,7 @@ dock_hidden_refresh_node( gui_dock_node_t* n )
     if ( hidden != n->hidden )
     {
         n->hidden                    = hidden;
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
     return hidden;
 }
@@ -312,7 +312,7 @@ dock_max_set( gui_dock_node_t* n, bool on )
     v->dock_max_settled = false;
     v->dock_max_from    = n->rect;
     gui_anim_timer_start( id_combine( n->id, DOCK_MAX_SALT ), s_win_anim ? FEAT_ANIM_SECS : 0.0f );
-    g_ctx->retained.wants_redraw = true;   /* takes effect next frame; force one more build */
+    redraw_request();   /* takes effect next frame; force one more build */
 }
 
 /*==============================================================================================

@@ -129,7 +129,7 @@ gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char*
         *v      = !( *v );
         changed = true;
         /* Same one-frame-late fix checkbox uses: the tint above drew the OLD state. */
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
     return changed;
 }
@@ -163,7 +163,7 @@ gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* 
 
     // The was_open guard prevents the same click from closing then 
     // immediately reopening the popup.
-    bool was_open = ( ds->open_frame + 1u == g_ctx->retained.frame );
+    bool was_open = ( ds->open_frame + 1u == gui_frame_index() );
     if ( st.clicked && !was_open )
          popup_open_id( pid, r.x, r.y + r.h );
     if ( popup_is_open_id( pid ) )
@@ -186,7 +186,7 @@ gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* 
                                       false, 0.0f, 0.0f );
     if ( vis )
     {
-        ds->open_frame = g_ctx->retained.frame;   /* body emitted this frame -> "open" next frame */
+        ds->open_frame = gui_frame_index();   /* body emitted this frame -> "open" next frame */
         gui_stack();                          /* the dropdown body is a vertical list */
     }
     return vis;

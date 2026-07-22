@@ -535,5 +535,18 @@ ctx_new_frame( void )
 f32 vp_w( const gui_viewport_t* vp ) { return vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w; }
 f32 vp_h( const gui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h; }
 
+/*==============================================================================================
+    Frame clock + redraw request -- the read / request doors over the retained record.
+
+    Layers above the interact server read the monotonic build counter through gui_frame_index()
+    for emit-gating, and raise the bound context's dirty flag through redraw_request(), rather
+    than reaching into g_ctx->retained.  The owner still touches the fields directly: the bump
+    lives in ctx_new_frame above, the anim / item writes in their own files, and the frame loop
+    keeps the clear + read (gui_frame_loop.c).
+==============================================================================================*/
+
+u32  gui_frame_index( void ) { return g_ctx->retained.frame; }
+void redraw_request ( void ) { if ( g_ctx ) g_ctx->retained.wants_redraw = true; }
+
 // clang-format on
 /*============================================================================================*/

@@ -72,7 +72,7 @@ static f32
 window_work_top( const gui_viewport_t* vp )
 {
     f32 top = vp->caption_inset;
-    if ( vp->bar_seen_frame != 0u && vp->bar_seen_frame + 1u >= g_ctx->retained.frame )
+    if ( vp->bar_seen_frame != 0u && vp->bar_seen_frame + 1u >= gui_frame_index() )
         top += vp->bar_inset;
     return top;
 }
@@ -168,7 +168,7 @@ window_collapse_set( gui_window_t* win, bool on )
         return;
 
     win->collapsed = on;
-    g_ctx->retained.wants_redraw = true;
+    redraw_request();
 }
 
 /* Public toggle for window state-transition animation (maximize / minimize / restore).  A global
@@ -189,7 +189,7 @@ static bool
 window_shelf_occupies( const gui_window_t* o, const gui_window_t* win )
 {
     return o != win && o->id != 0 && o->minimized && o->viewport == win->viewport
-        && o->last_frame + 1u >= g_ctx->retained.frame;
+        && o->last_frame + 1u >= gui_frame_index();
 }
 
 /* Chip paint position on the shelf: the count of live minimized windows on this surface ahead of
@@ -236,7 +236,7 @@ window_maximize_set( gui_window_t* win, bool on )
         win->z = surface_z_raise( win->z );
 
     win->maximized = on;
-    g_ctx->retained.wants_redraw = true;   /* takes effect next frame; force one more build */
+    redraw_request();   /* takes effect next frame; force one more build */
 }
 
 /* Toggle minimize.  Entering takes the next free shelf slot on this surface; leaving raises the
@@ -254,7 +254,7 @@ window_minimize_set( gui_window_t* win, bool on )
         win->z = surface_z_raise( win->z );
 
     win->minimized = on;
-    g_ctx->retained.wants_redraw = true;
+    redraw_request();
 }
 
 /*==============================================================================================
@@ -691,7 +691,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         win->z       = surface_z_overlay( 0u );
         win->overlay = true;
         g_ctx->modal.win_id     = id;
-        g_ctx->modal.seen_frame = g_ctx->retained.frame;
+        g_ctx->modal.seen_frame = gui_frame_index();
     }
 
     /* Closeable + closed: the window is fully hidden this frame -- no chrome, no body, no hover.
@@ -725,7 +725,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         s_vp_request.title    = title;
         s_vp_request.has_home = true;   /* spawn reads restore geometry + maximized from the record */
 
-        win->last_frame      = g_ctx->retained.frame;
+        win->last_frame      = gui_frame_index();
         s_build.win.hidden   = true;
         s_build.win.dock_node = NULL;
         return false;
@@ -752,7 +752,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        resize, and autosize act on the geometry, so a ONCE / APPEARING seed becomes the incoming
        state the user then interacts with.  `appearing` is the first begin (last_frame 0) or the
        first begin after a frame of absence -- it renews the one-shot APPEARING permission. */
-    bool appearing = ( win->last_frame == 0u ) || ( win->last_frame != g_ctx->retained.frame - 1u );
+    bool appearing = ( win->last_frame == 0u ) || ( win->last_frame != gui_frame_index() - 1u );
 
     /* Raise to front on every appearance: first creation and re-opens both get a fresh z
        above all currently-live windows, so no two windows ever share a z on their first
@@ -767,7 +767,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         win->z = surface_z_raise( win->z );
 
     window_apply_next( win, appearing );
-    win->last_frame = g_ctx->retained.frame;
+    win->last_frame = gui_frame_index();
 
     /* NOTITLEBAR removes the bar entirely (title_h 0); content then starts at the top edge.
        Collapsing lives on the title bar, so NOTITLEBAR and NOCOLLAPSE both pin the window

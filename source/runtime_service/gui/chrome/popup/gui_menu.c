@@ -155,7 +155,7 @@ gui_menu_begin( const char* label )
     gui_item_state_t st = item_state( id, box, ITEM_BUTTON );
 
     gui_menu_state_t* ms = GUI_STATE( gui_menu_state_t, id );
-    bool was_open     = ( ms->open_frame + 1u == g_ctx->retained.frame );
+    bool was_open     = ( ms->open_frame + 1u == gui_frame_index() );
     bool this_open    = popup_is_open_id( pid );
     bool sibling_open = ( g_ctx->popup.open_count > s_popup_begin_count );
 
@@ -228,7 +228,7 @@ gui_menu_begin( const char* label )
                                       false, 0.0f, 0.0f );
     if ( vis )
     {
-        ms->open_frame = g_ctx->retained.frame;   /* body emitted this frame -> "open" next frame */
+        ms->open_frame = gui_frame_index();   /* body emitted this frame -> "open" next frame */
         gui_stack();                      /* a menu body is a vertical list */
     }
     return vis;
@@ -268,7 +268,7 @@ gui_main_menu_bar_begin( void )
        work area for maximized windows and the drag clamp starts below it -- window_work_top,
        gui_window_free.c. */
     g_ctx->vp.pool[ 0 ].bar_inset      = h;
-    g_ctx->vp.pool[ 0 ].bar_seen_frame = g_ctx->retained.frame;
+    g_ctx->vp.pool[ 0 ].bar_seen_frame = gui_frame_index();
 
     /* Chrome band: the bar paints with the root regions -- above every normal window, below its
        own dropdown popups -- so a window that still overlaps it (NO_BOUNDARY_CLAMP, a gesture

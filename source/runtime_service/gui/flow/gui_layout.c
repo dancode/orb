@@ -543,7 +543,7 @@ gui_scroll_by( f32 dx, f32 dy )
     f->pen_y     -= applied_y;
     f->high_y    -= applied_y;
 
-    g_ctx->retained.wants_redraw = true;
+    redraw_request();
 }
 
 /* Screen position where the next item would be emitted -- the GetCursorScreenPos analogue.  Anchor

@@ -55,7 +55,7 @@ window_route_resolve( gui_id_t id, const char* title, gui_window_t* win )
        window was hidden (dock_hidden_refresh moved active off it).  First-ever begins
        (last_frame 0) keep the stored selection, so a loaded layout's active tab survives
        startup.  Reads the pre-begin stamp: window_begin_docked refreshes last_frame after. */
-    if ( win && win->last_frame != 0u && win->last_frame + 1u < g_ctx->retained.frame )
+    if ( win && win->last_frame != 0u && win->last_frame + 1u < gui_frame_index() )
         for ( u32 i = 0; i < route.node->tab_count; ++i )
             if ( route.node->tabs[ i ] == id ) { route.node->active_tab = i; break; }
 

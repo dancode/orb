@@ -83,7 +83,7 @@ gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t
     /* Toggle on click.  A click while open is the dismiss gesture: popup_close_check (frame top)
        has already closed the dropdown as a click outside it, so only open when the body did NOT
        emit last frame -- otherwise the one click would close then immediately reopen it. */
-    bool was_open = ( cs->open_frame + 1u == g_ctx->retained.frame );
+    bool was_open = ( cs->open_frame + 1u == gui_frame_index() );
     if ( st.clicked && !was_open )
         popup_open_id( pid, box.x, box.y + box.h );
 
@@ -127,7 +127,7 @@ gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t
 
     if ( vis )
     {
-        cs->open_frame   = g_ctx->retained.frame;   /* body emitted this frame -> "open" next frame */
+        cs->open_frame   = gui_frame_index();   /* body emitted this frame -> "open" next frame */
         s_build.combo_open = true;              /* a row clicked here dismisses the combo */
 
         gui_stack();                        /* the dropdown body is a vertical list */

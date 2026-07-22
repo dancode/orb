@@ -496,8 +496,7 @@ gui_wants_redraw( void )
 void
 gui_request_redraw( void )
 {
-    if ( g_ctx )
-        g_ctx->retained.wants_redraw = true;
+    redraw_request();
 }
 
 /* True when the current frame must perform a full widget emit.  Computed in frame_begin as the OR

@@ -50,7 +50,7 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
 
     gui_viewport_t*  v    = &g_ctx->vp.pool[ vp ];
     v->dock_flags      = flags;   /* re-published each frame; NO_SPLIT gates the chips + split verbs */
-    v->dock_seen_frame = g_ctx->retained.frame;   /* tree ACTIVE this build; unstamped = dormant */
+    v->dock_seen_frame = gui_frame_index();   /* tree ACTIVE this build; unstamped = dormant */
     gui_dock_node_t* root = dock_at( v->dock_root );
     if ( !root )
     {

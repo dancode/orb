@@ -158,8 +158,8 @@ popup_open_id( gui_id_t id, f32 ax, f32 ay )
     p->modal       = false;                 /* decided at begin; default until then */
     p->anchor_x    = ax;
     p->anchor_y    = ay;
-    p->open_frame  = g_ctx->retained.frame;
-    p->begun_frame = g_ctx->retained.frame;       /* guard the stale-close until begin runs */
+    p->open_frame  = gui_frame_index();
+    p->begun_frame = gui_frame_index();       /* guard the stale-close until begin runs */
     p->rect        = ( gui_rect_t ){ 0 };
 
     g_ctx->popup.open_count = depth + 1u;        /* opening closes anything deeper */
@@ -231,7 +231,7 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
 
     gui_popup_t* p = &g_ctx->popup.open[ depth ];
     p->modal       = modal;
-    p->begun_frame = g_ctx->retained.frame;
+    p->begun_frame = gui_frame_index();
 
     /* The popup's window record; stamp the overlay type + its band z (depth-stacked) every frame. */
     gui_window_t* win = window_get( id, p->anchor_x, p->anchor_y,
@@ -537,7 +537,7 @@ popup_close_check( void )
 
     /* Stale-close: not begun last frame nor this one (begun_frame + 1 < frame_counter). */
     while ( g_ctx->popup.open_count
-            && g_ctx->popup.open[ g_ctx->popup.open_count - 1u ].begun_frame + 1u < g_ctx->retained.frame )
+            && g_ctx->popup.open[ g_ctx->popup.open_count - 1u ].begun_frame + 1u < gui_frame_index() )
         --g_ctx->popup.open_count;
 
     if ( !g_ctx->popup.open_count ) return;
@@ -591,7 +591,7 @@ void
 window_modal_apply( void )
 {
     if ( g_ctx->modal.win_id == 0u ||
-         g_ctx->modal.seen_frame != g_ctx->retained.frame - 1u )
+         g_ctx->modal.seen_frame != gui_frame_index() - 1u )
         return;
 
     /* Chrome exemption: never fence the viewport's own caption/border shell (a GUI_WIN_NATIVE

@@ -61,7 +61,7 @@ gui_style_apply( void )
        tessellated this frame keep their old colors and metrics.  Guarded because style_apply also
        runs at init-time font load, before any context exists. */
     if ( g_ctx )
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
 }
 
 u32

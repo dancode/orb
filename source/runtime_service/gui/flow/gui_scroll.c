@@ -105,7 +105,7 @@ nav_scroll_chase( gui_rect_t r )
             f->scroll->scroll_x = want_x;
             r.y -= dy;   /* where the item lands next frame -- the ancestors check that position */
             r.x -= dx;
-            g_ctx->retained.wants_redraw = true;
+            redraw_request();
         }
     }
 }
@@ -388,7 +388,7 @@ layout_pop_region( void )
            update stalls until some unrelated input arrives -- every other notch appears to do
            nothing, since it is showing the previous notch's result.  Same fix as the collapse /
            close toggles above: force the guaranteed follow-up frame that flushes it. */
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
 
         s_build.wheel_used = true;
     }

@@ -84,7 +84,7 @@ static void
 step_seek_dirty( u32 cursor )
 {
     gui_step_seek( cursor );
-    g_ctx->retained.wants_redraw = true;
+    redraw_request();
 }
 
 /* One swatch square + its labelled packed value, drawn into row `r` at pen `x`; returns the pen
@@ -246,7 +246,7 @@ gui_step_window( bool* open )
             else          gui_step_capture();
             s_step_play  = false;
             s_step_accum = 0.0f;
-            g_ctx->retained.wants_redraw = true;
+            redraw_request();
         }
         gui_same_line( -1.0f );
         if ( frozen )
@@ -271,7 +271,7 @@ gui_step_window( bool* open )
                 }
                 if ( gui_step_cursor() >= cnt )
                     s_step_play = false;
-                g_ctx->retained.wants_redraw = true;   /* keep pumping frames while playing */
+                redraw_request();   /* keep pumping frames while playing */
             }
 
             u32 cur = gui_step_cursor();
@@ -297,7 +297,7 @@ gui_step_window( bool* open )
                 if ( s_step_play && cur >= cnt )
                     gui_step_seek( 0 );
                 s_step_accum = 0.0f;
-                g_ctx->retained.wants_redraw = true;
+                redraw_request();
             }
             gui_same_line( -1.0f );
             gui_checkbox( "Highlight", &s_step_highlight );
@@ -310,7 +310,7 @@ gui_step_window( bool* open )
             if ( gui_checkbox( "Paint order", &paint ) )
             {
                 gui_step_set_paint_order( paint );
-                g_ctx->retained.wants_redraw = true;
+                redraw_request();
             }
             gui_same_line( -1.0f );
             gui_checkbox( "Pick", &s_step_pick_arm );

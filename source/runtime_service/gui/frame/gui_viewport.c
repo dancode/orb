@@ -423,7 +423,7 @@ viewport_service_mergeback( gui_window_t* win )
                       tolerates a transient single-frame hide.
 
    Runs after the tear-off / merge-back step, so a window just moved this frame already carries
-   last_frame == g_ctx->retained.frame on its new surface and never reads as abandoned. */
+   last_frame == gui_frame_index() on its new surface and never reads as abandoned. */
 static void
 viewport_teardown_owned( void )
 {
@@ -446,7 +446,7 @@ viewport_teardown_owned( void )
                     if ( g_ctx->win.pool[ w ].last_frame > max_lf )
                         max_lf = g_ctx->win.pool[ w ].last_frame;
                 }
-            abandoned = !any || ( max_lf + 1u < g_ctx->retained.frame );
+            abandoned = !any || ( max_lf + 1u < gui_frame_index() );
         }
 
         if ( !( vp->pending_close || abandoned ) )

@@ -373,7 +373,7 @@ edit_run_key_hook( char* buf, u32 bufsz, gui_edit_state_t* es, u32* len_io )
         if ( es->cursor > len ) es->cursor = (u16)len;
         if ( es->anchor > len ) es->anchor = (u16)len;
         *len_io = len;
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
 }
 

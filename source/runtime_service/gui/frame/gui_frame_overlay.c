@@ -189,7 +189,7 @@ gui_perf_overlay( int mode )
 
     f32 top_y = 34.0f;
     gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
-    if ( mb && mb->last_frame == g_ctx->retained.frame )
+    if ( mb && mb->last_frame == gui_frame_index() )
         top_y += mb->h;
 
 
@@ -350,7 +350,7 @@ gui_state_overlay( int mode )
 
     f32 top_y = 34.0f;   /* matches perf_overlay's base so the two HUDs share one top edge */
     gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
-    if ( mb && mb->last_frame == g_ctx->retained.frame )
+    if ( mb && mb->last_frame == gui_frame_index() )
         top_y += mb->h;
 
     /* Fixed offset to the right of perf_overlay's top-left HUD so both can be shown at once
@@ -520,7 +520,7 @@ debug_reset( void )
         gui_step_release();                     /* unfreeze back to live emission */
 #endif
 
-    g_ctx->retained.wants_redraw = true;
+    redraw_request();
 }
 
 /* Put the remembered selector-menu lever values back -- called when the master arm is switched
@@ -551,7 +551,7 @@ debug_hotkeys( void )
             debug_restore();
         else
             debug_reset();
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
     if ( !s_dbg_hotkeys_armed )
         return;
@@ -563,13 +563,13 @@ debug_hotkeys( void )
         gui_render_set_mode( m );
         static const char* names[] = { "normal", "wireframe", "batch" };
         printf( "[gui] render mode: %s\n", names[ m ] );
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
     if ( gui_is_key_pressed( APP_KEY_F10 ) )
     {
         s_dbg_dash_open = !s_dbg_dash_open;
         printf( "[gui] pipeline dashboard: %s\n", s_dbg_dash_open ? "open" : "closed" );
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
 
 #ifdef GUI_CMD_STEPPER
@@ -581,7 +581,7 @@ debug_hotkeys( void )
     {
         s_dbg_step_open = !s_dbg_step_open;
         printf( "[gui] command stepper window: %s\n", s_dbg_step_open ? "open" : "closed" );
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
 #endif
 
@@ -609,7 +609,7 @@ debug_hotkeys( void )
             if ( gui_is_key_pressed( k_dbg_layer[ i ].key ) )
             {
                 gui_debug_set_layers( gui_debug_get_layers() ^ k_dbg_layer[ i ].layer );
-                g_ctx->retained.wants_redraw = true;
+                redraw_request();
             }
     }
 
@@ -621,13 +621,13 @@ debug_hotkeys( void )
     if ( gui_is_key_pressed( APP_KEY_NP_ADD ) )
     {
         s_dbg_perf_mode = ( s_dbg_perf_mode + 1 ) % 5;
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
 
     if ( gui_is_key_pressed( APP_KEY_NP_SUB ) )
     {
         s_dbg_state_mode = ( s_dbg_state_mode + 1 ) % 4;
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
 
 #ifdef GUI_CMD_STEPPER
@@ -649,7 +649,7 @@ debug_hotkeys( void )
                 c = c + stride;               /* seek clamps to the frozen command count */
             gui_step_seek( c );
             printf( "[gui] command stepper: %u/%u\n", gui_step_cursor(), gui_step_count() );
-            g_ctx->retained.wants_redraw = true;
+            redraw_request();
         }
     }
 #endif
@@ -672,7 +672,7 @@ gui_debug_selector_menu( void )
 {
     f32 top_y = 8.0f;
     gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
-    if ( mb && mb->last_frame == g_ctx->retained.frame )
+    if ( mb && mb->last_frame == gui_frame_index() )
         top_y += mb->h;
 
     f32 w = 190.0f;

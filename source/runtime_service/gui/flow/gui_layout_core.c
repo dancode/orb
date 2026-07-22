@@ -184,7 +184,7 @@ nat_track_touch( layout_frame_t* f, u32 col )
                                                     : id_combine( 0x4E415455u, f->nav_region );
     nat_track_t* t = GUI_STATE( nat_track_t, id_combine( base, ( f->tmpl.seq << 3 ) | col ) );
 
-    u32 now = g_ctx->retained.frame;
+    u32 now = gui_frame_index();
     if ( t->frame != now ) { t->stable = t->accum; t->accum = 0.0f; t->frame = now; }
     return t;
 }

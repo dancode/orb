@@ -126,7 +126,7 @@ gui_tab_bar_end( void )
         if ( ctx->want != ctx->st->selected )
         {
             ctx->st->selected            = ctx->want;
-            g_ctx->retained.wants_redraw = true;
+            redraw_request();
         }
     }
     /* No click, and the selected tab vanished this frame (its item stopped being emitted -- e.g. it
@@ -135,7 +135,7 @@ gui_tab_bar_end( void )
               && ctx->st->selected != ctx->first_seen )
     {
         ctx->st->selected            = ctx->first_seen;
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
 
     s_tabbar_depth--;
@@ -197,7 +197,7 @@ gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags 
     if ( st.clicked )
     {
         ctx->want                    = tid;
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
     }
 
     /* Active chip takes the body colour (joined to the content below); the rest sit on the title
@@ -225,7 +225,7 @@ gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags 
         if ( cst.clicked )
         {
             *p_open                      = false;
-            g_ctx->retained.wants_redraw = true;
+            redraw_request();
         }
     }
 

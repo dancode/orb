@@ -291,7 +291,7 @@ static void
 select_clear( void )
 {
     if ( s_select.win != GUI_ID_NONE )
-        g_ctx->retained.wants_redraw = true;   /* the highlight must visibly drop */
+        redraw_request();   /* the highlight must visibly drop */
     s_select.win      = GUI_ID_NONE;
     s_select.dragging = false;
 }
@@ -508,7 +508,7 @@ select_window_end( void )
             f32 mx = s_io.mouse_x - s_build.win.x;
             f32 my = s_io.mouse_y - s_build.win.y;
             if ( mx != s_select.rx1 || my != s_select.ry1 )
-                g_ctx->retained.wants_redraw = true;
+                redraw_request();
             s_select.rx1 = mx;
             s_select.ry1 = my;
         }
@@ -518,7 +518,7 @@ select_window_end( void )
             if ( select_pos_from_mouse( win, body, false, &run, &chr ) )
             {
                 if ( run != s_select.c_run || chr != s_select.c_chr )
-                    g_ctx->retained.wants_redraw = true;
+                    redraw_request();
                 s_select.c_run = run;
                 s_select.c_chr = chr;
             }
@@ -554,7 +554,7 @@ select_window_end( void )
                 s_select.serial    = select_capture_serial();
                 s_select.a_run     = s_select.c_run = run;
                 s_select.a_chr     = s_select.c_chr = chr;
-                g_ctx->retained.wants_redraw = true;
+                redraw_request();
             }
             else
             {
@@ -565,7 +565,7 @@ select_window_end( void )
                 s_select.serial    = select_capture_serial();
                 s_select.rx0       = s_select.rx1 = s_io.mouse_x - s_build.win.x;
                 s_select.ry0       = s_select.ry1 = s_io.mouse_y - s_build.win.y;
-                g_ctx->retained.wants_redraw = true;
+                redraw_request();
             }
         }
         else if ( s_select.win == win && s_interaction.hover_win != win )

@@ -47,7 +47,7 @@ window_end_chip( gui_window_t* win, f32 title_h )
         if ( cl_st.clicked && win )
         {
             win->closed = true;
-            g_ctx->retained.wants_redraw = true;
+            redraw_request();
         }
         right_limit = cl_r.x - WIDGET_PAD;
     }
@@ -189,7 +189,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             if ( cl_st.clicked && win )
             {
                 win->closed = true;
-                g_ctx->retained.wants_redraw = true;  /* close takes effect next frame; force one more build */
+                redraw_request();  /* close takes effect next frame; force one more build */
             }
 
             right_limit = cl_r.x - WIDGET_PAD;

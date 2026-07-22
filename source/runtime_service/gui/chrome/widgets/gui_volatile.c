@@ -176,7 +176,7 @@ gui_replay_scope_exit( bool force_redraw )
     id_pop();
     s_replay_mode = false;
     if ( force_redraw )
-        g_ctx->retained.wants_redraw = true;
+        redraw_request();
 }
 
 // clang-format on

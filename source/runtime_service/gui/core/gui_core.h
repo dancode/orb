@@ -291,6 +291,15 @@ typedef struct
 
 } gui_retained_t;
 
+/* Frame clock + redraw request (core/gui_ctx.c) -- the read / request doors over the retained
+   record for layers above the server.  gui_frame_index() is the monotonic per-context build
+   counter (bumped at ctx_begin), read for emit-gating; redraw_request() raises the bound
+   context's dirty flag.  Consumers call these instead of reaching into g_ctx->retained -- the
+   record's shape stays the server's.  The owner (this unit's clock / anim / item writes, the
+   frame loop's clear + read) still touches the fields directly. */
+u32  gui_frame_index( void );
+void redraw_request ( void );
+
 /*==============================================================================================
     Server service seams -- identity, io, state, item protocol, pane contest, anim utilities
 ==============================================================================================*/
