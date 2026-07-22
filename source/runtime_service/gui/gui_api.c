@@ -392,6 +392,7 @@ const gui_api_t g_gui_api_struct =
     .push_style_var                     = gui_push_style_var,
     .pop_style_var                      = gui_pop_style_var,
     .next_style_var                     = gui_next_style_var,
+    .style_color                        = gui_style_color,
     .scale_push                         = gui_scale_push,
     .scale_pop                          = gui_scale_pop,
     .set_check_style                    = gui_set_check_style,

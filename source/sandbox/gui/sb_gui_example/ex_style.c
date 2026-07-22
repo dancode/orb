@@ -62,6 +62,8 @@ static const char* s_col_names[ GUI_COL_COUNT ] = {
     "WIDGET_BG", "WIDGET_HOT", "WIDGET_ACT", "WIDGET_FG", "CHECK_MARK",
     "SLIDER_TRACK", "RESIZE_HOT", "INPUT_BG", "INPUT_FOCUS", "CURSOR",
     "NAV_HIGHLIGHT", "NAV_CAPTURE", "FOCUS_BORDER",
+    "USER_0", "USER_1", "USER_2", "USER_3",
+    "USER_4", "USER_5", "USER_6", "USER_7",
 };
 
 /* The var subset with obvious visual effect, plus a sensible slider range for each. */

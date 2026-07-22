@@ -1532,6 +1532,12 @@ typedef struct gui_api_s
     void ( *pop_style_var    )( u32 count );
     void ( *next_style_var   )( gui_style_var_t var, f32 value );
 
+    /* style_color() -- resolved read of one palette slot (theme base + push/next overrides):
+       the value a stock widget would paint with right now.  The public door to the
+       user-extended range (GUI_COL_USER_*): seed a user slot, paint custom drawing with this
+       read, and it rides the theme + stacks like stock chrome. */
+    u32  ( *style_color      )( gui_col_t slot );
+
     /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
        BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
        the style-var stack, so every metric read and counting helper (sz_rows_h, sz_fit_row)

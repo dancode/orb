@@ -33,11 +33,9 @@ gui_ui_memory( void )
        own statics (ambient records, io snapshot, id/flag stacks, context pool) via its seam. */
     b += gui_core_unit_mem_bytes();
 
-    /* core/ -- style + theme (still in this TU until the R5 style unit): base/active style,
-       theme table (.rdata), stacks + pair tables. */
-    b += (u32)( sizeof( s_style_base ) + sizeof( s_style ) + sizeof( k_themes )
-              + sizeof( s_slot ) + sizeof( s_col_stack ) + sizeof( s_var_stack )
-              + sizeof( s_next ) + sizeof( s_item ) );
+    /* style/ -- THE STYLE UNIT is its own unit since R5 (gui_style.c) and accounts for its
+       own statics (base/active style, theme table, stacks + pair tables) via its seam. */
+    b += gui_style_unit_mem_bytes();
 
     /* compose/ -- the flow unit accounts for its own statics (compose/gui_flow.c seam). */
     b += gui_flow_unit_mem_bytes();

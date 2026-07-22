@@ -304,6 +304,7 @@ void gui_next_style_color( gui_col_t slot, u32 abgr );
 void gui_push_style_var( gui_style_var_t var, f32 value );
 void gui_pop_style_var( u32 count );
 void gui_next_style_var( gui_style_var_t var, f32 value );
+u32  gui_style_color( gui_col_t slot );
 void gui_scale_push( gui_scale_t s );
 void gui_scale_pop( void );
 void gui_set_check_style( u8 style );

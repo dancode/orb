@@ -118,7 +118,7 @@ static gui_item_flags_t s_item_flag_stack[ GUI_ITEM_FLAG_DEPTH ];
 static u32                s_item_flag_sp;
 
 /* Push: save the current merged flags, then set or clear `flag` in the live set.  Non-static:
-   the public brackets (gui_push_item_flag / gui_disabled_begin, user/gui_stacks.c) wrap these
+   the public brackets (gui_push_item_flag / gui_disabled_begin, style/gui_stacks.c) wrap these
    from the frame unit. */
 void
 item_flag_push( gui_item_flags_t flag, bool enable )

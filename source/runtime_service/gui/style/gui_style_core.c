@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/core/gui_style.c -- Style stacks: colors + layout metrics.
+    runtime_service/gui/style/gui_style_core.c -- Style stacks: colors + layout metrics.
 
     The push-model theme override the widgets draw through, the ImGui PushStyleColor / PushStyleVar
     analogue.  Three layers resolve into the value a widget sees:
@@ -15,15 +15,15 @@
 
     The seam is shared with the item-flag system (item_flags_resolve calls style_item_commit; the
     chrome reset calls style_chrome_reset), so colors / vars and flags all latch on the same
-    once-per-widget boundary -- see gui_ctx.c.
+    once-per-widget boundary -- see the impure wrappers in present/gui_paint_core.c.
 
-    The payoff is reach with no churn: the COL_*, WIDGET_*, and WIN_* vocabulary macros at the
-    bottom of this file resolve through style_col / style_var, so every existing read site honors
-    an override without changing a single widget.
+    The payoff is reach with no churn: the COL_*, WIDGET_*, and WIN_* vocabulary macros
+    (style/gui_style.h) resolve through style_col / style_var, so every existing read site
+    honors an override without changing a single widget.
 
-    Included by gui.c after gui_theme.c and before gui_ctx.c (ctx_new_frame drives
-    style_new_frame) so the accessors are in scope for the macros and the resolve seam.
-    s_style (core/gui_theme.c) and GUI_COLOR (gui.h) are already visible.
+    Included by gui_style.c after gui_theme.c -- s_style and GUI_COLOR (gui.h) are already
+    visible.  The frame orchestrator drives the per-frame reset across the unit seam
+    (gui_ctx_begin pairs ctx_new_frame with style_new_frame).
 
 ==============================================================================================*/
 // clang-format off
@@ -216,10 +216,11 @@ static void style_next_var( gui_style_var_t slot, f32 value )
 ==============================================================================================*/
 
 /* Promote the pending next-item overrides into the active per-item layer and clear the pending.
-   Called once per widget from item_flags_resolve, so the override that next_style_* queued just
-   before this widget applies for this widget's whole draw, then is gone for the following one. */
+   Called once per widget from item_flags_resolve (present/gui_paint_core.c, cross-unit), so the
+   override that next_style_* queued just before this widget applies for this widget's whole
+   draw, then is gone for the following one. */
 
-static void
+void
 style_item_commit( void )
 {
     s_item_n = s_next_n;
@@ -232,7 +233,7 @@ style_item_commit( void )
    from the last body widget.  The push/pop stacks are intentionally left intact -- a push that
    brackets a window_begin / child_begin still applies to the chrome inside it, like ImGui. */
 
-static void
+void
 style_chrome_reset( void )
 {
     s_item_n = 0;
@@ -240,9 +241,9 @@ style_chrome_reset( void )
 
 /* Reset the per-frame style state: re-seed the working set from the base (so an unbalanced push
    cannot leak across frames), empty the stacks, and clear both next-item layers.  Called from
-   ctx_new_frame. */
+   gui_ctx_begin (frame/gui_frame.c), paired with ctx_new_frame, and from gui_theme_reset. */
 
-static void
+void
 style_new_frame( void )
 {
     for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
@@ -293,6 +294,56 @@ style_el_col( u8 role, u8 state )
 /* The COL_* color vocabulary (element-shaped reads through style_el_col + the chrome tokens
    on style_col) moved to gui_internal.h at the TU split (inc 10): the chrome unit paints with
    the same palette the core's paint helpers read. */
+
+/*==============================================================================================
+    State -> color projections -- style resolution proper (moved from present/gui_paint_core.c
+    at the R5 carve).  The interact state arrives as a PARAMETER (the R5 purity rule): these
+    never query the interact server, so they resolve identically with no server present.
+==============================================================================================*/
+
+/* Frame-background tint for a "framed field" widget (checkbox box, slider track, drag box, input):
+   hover / nav / active lift it to the shared hot / active palette entries -- one at a time, since
+   hover and nav-highlight are mutually exclusive -- over a caller-supplied idle_color_enum base
+   so each field keeps its own resting colour, matching how Dear ImGui's FrameBgHovered lifts every
+   framed control, not just buttons. */
+
+u32
+col_frame_bg( gui_item_state_t st, u32 idle_color_enum )
+{
+    if ( st.active )            return COL_WIDGET_ACT;
+    if ( st.hover || st.nav )   return COL_WIDGET_HOT;   /* nav cursor lights the body like a hover */
+    return idle_color_enum;
+}
+
+/* Common case background color for a pushbutton / knob style widget.
+   col_frame_bg with the plain widget background as the idle base. */
+u32 col_item_bg( gui_item_state_t st )
+{
+    return col_frame_bg( st, COL_WIDGET_BG );
+}
+
+/* Animated background for a pushbutton-like widget: col_item_bg with the hover/active
+   transitions smoothed through the animation service (core/gui_anim.c) -- the ONE projection
+   that rides the interact server, explicitly (the plan's sanctioned exception): the damper is
+   keyed retained state, so the caller passes the id and core owns the storage.  Two damper
+   channels in one gui_anim4 slot -- a hot layer (hover / nav focus) at speed 10 and an active
+   layer (pressed) at speed 20 -- both rest at 0 so they ramp up from the palette base; the
+   spare two channels sit unused (0/0/0) and are free for a widget-specific flourish later.
+   Composite over the palette: BG -> HOT by the hot channel, then that -> ACT by the active
+   one.  The primitive owns all storage, settle, and wants_redraw bookkeeping in a single peek;
+   an idle widget with no history lands on COL_WIDGET_BG. */
+
+#define ANIM_TAG_BG  0xA501u   /* id_combine salt: keeps this slot distinct from all other per-widget state */
+
+u32
+col_item_bg_anim( gui_id_t id, gui_item_state_t st )
+{
+    gui_anim4_t rest   = { 0.0f, 0.0f, 0.0f, 0.0f };
+    gui_anim4_t target = { ( st.hover || st.nav ) ? 1.0f : 0.0f, st.active ? 1.0f : 0.0f, 0.0f, 0.0f };
+    gui_anim4_t speed  = { 10.0f, 20.0f, 0.0f, 0.0f };
+    gui_anim4_t a      = gui_anim4( id_combine( id, ANIM_TAG_BG ), rest, target, speed );
+    return col_lerp( col_lerp( COL_WIDGET_BG, COL_WIDGET_HOT, a.x ), COL_WIDGET_ACT, a.y );
+}
 
 /* True while both push_style stacks are empty -- the volatile-replay precondition check
    (widgets/gui_volatile.c) reads it through this predicate so style_stack_t stays private. */

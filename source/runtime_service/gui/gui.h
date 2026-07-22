@@ -201,7 +201,24 @@ typedef enum
     GUI_COL_NAV_CAPTURE,    /* nav ring when the item has captured keyboard value-edit input */
     GUI_COL_FOCUS_BORDER,   /* outline around the keyboard-focused window  */
 
+    /* User-extended range -- reserved palette slots no engine code ever reads.  A kit or game
+       HUD claims one by aliasing it locally (enum my_kit_accent = GUI_COL_USER_0), seeds it in
+       the base style (style_get()->colors[ slot ] = ...; style_apply()) or scopes it with
+       push_style_color, and paints with the resolved read (gui()->style_color( slot )) -- so
+       custom drawing rides the theme + the push/next stacks exactly like stock chrome.  Themes
+       leave them zero (transparent): an unseeded user slot draws nothing, loudly. */
+    GUI_COL_USER_0,
+    GUI_COL_USER_1,
+    GUI_COL_USER_2,
+    GUI_COL_USER_3,
+    GUI_COL_USER_4,
+    GUI_COL_USER_5,
+    GUI_COL_USER_6,
+    GUI_COL_USER_7,
+
     GUI_COL_COUNT,          /* slot count -- not a color                   */
+
+    GUI_COL_USER_COUNT = GUI_COL_COUNT - GUI_COL_USER_0,   /* size of the user range */
 
 } gui_col_t;
 

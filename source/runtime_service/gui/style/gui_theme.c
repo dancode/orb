@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/core/gui_theme.c -- Theme registry + base style state + layout metrics.
+    runtime_service/gui/style/gui_theme.c -- Theme registry + base style state + layout metrics.
 
     Owns the three pieces of style STATE that everything else in gui reads or scales from:
         k_themes     -- the built-in named presets (gui_theme_t), each a complete gui_style_t
@@ -12,15 +12,15 @@
                         read this (through gui_style.c's push-stack resolver + vocabulary macros,
                         gui_symbol.c's check/bullet/arrow style setters, ...).
 
-    The theme API (theme_list/set/get/reset) and gui_style_get() are the public surface over that
-    state; layout_compute is the font-driven rescale, called from gui_frame.c whenever a font
-    loads or activates.  style_new_frame (gui_style.c) reseeds the push-stacks' base layer from
-    s_style each frame -- forward-declared here since gui_theme_reset() calls it and gui_style.c
-    is included right after this file.
+    The theme API (theme_list/set/get/reset) and gui_style_get() are the public surface over
+    that state; layout_compute is the font-driven rescale, invoked across the unit seam by
+    gui_style_apply (frame/gui_frame.c) whenever a font loads or activates -- the rescale
+    needs font metrics this unit must not read itself.  style_new_frame (gui_style_core.c)
+    reseeds the push-stacks' base layer from s_style each frame; gui_theme_reset() calls it
+    through the style/gui_style.h declaration.
 
-    Included by gui.c FIRST among the Tier 0 files -- s_style must already be declared (file-scope
-    static, no header) before core/gui_style.c's style_var_base resolver and every
-    later tier's widget code can read it in the same TU.
+    Included by gui_style.c FIRST -- s_style must already be defined before
+    gui_style_core.c's style_var_base resolver reads it in this TU.
 
 ==============================================================================================*/
 // clang-format off
@@ -237,12 +237,7 @@ gui_style_peek( void )
     the active named theme (if any), rescales the metrics, and immediately clears both the color
     and var push stacks -- so callers never need to issue paired pop calls just to get back to a
     clean base state.
-
-    style_new_frame() is static and lives in gui_style.c (included right after this file);
-    declare it here so the call in gui_theme_reset() resolves within the same TU.
 ==============================================================================================*/
-
-static void style_new_frame( void );  /* forward -- defined in gui_style.c */
 
 const gui_theme_t*
 gui_theme_list( u32* count_out )
@@ -395,9 +390,11 @@ metric_quantize( u32 v, u32 q )
 #endif
 
 /* Recompute the active layout metrics by scaling the user's base style profile to the
-   active font's type size (em).  The base style is authored assuming em=12. */
+   active font's type size (em).  The base style is authored assuming em=12.  Invoked across
+   the unit seam by gui_style_apply (frame/gui_frame.c), which reads the font metrics this
+   unit must not touch and passes them in as parameters. */
 
-static void
+void
 layout_compute( u32 em, u32 char_h, u32 line_h )
 {
     if ( em < 8u ) em = 8u;

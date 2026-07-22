@@ -17,7 +17,7 @@
     here so the grab band straddles the visible border (a hit-test metric, not paint).
 
     Included by gui.c before the consumers (gui_layout_child.c / gui_window_free.c);
-    WIN_BORDER resolves from the core/gui_style.c vocabulary.
+    WIN_BORDER resolves from the style unit vocabulary (style/gui_style.h).
 
 ==============================================================================================*/
 // clang-format off

@@ -1,0 +1,67 @@
+/*==============================================================================================
+
+    runtime_service/gui/gui_style.c -- GUI_STYLE translation unit: style resolution.
+
+    The first library over the interact server (GUI_SERVER_PLAN.md): interact-state flags in,
+    colors / metrics out; NEVER paints.  It owns the theme registry, the active scaled style,
+    the push/pop/next style stacks, the grid lattice, and the state -> color projections the
+    layers above paint with.  The COL_* / WIDGET_* vocabulary macros (style/gui_style.h)
+    resolve through this unit, so every read site above honors a stack override for free.
+
+    PURITY (the R5 rule): resolution takes interact state as PARAMETERS -- col_item_bg( st ),
+    col_frame_bg( st, idle ) -- never queried from the interact server, so this unit is usable
+    for HUD theming with no interact server present.  The one exception rides core's anim
+    utility EXPLICITLY: col_item_bg_anim( id, st ) keys a damper through gui_anim4 (a keyed-
+    state tenant) -- a deliberate, documented core dependency, not a hidden query.
+
+    This unit includes NO render header and calls NO draw_* routine (the acceptance
+    criterion): applying a resolved value to the draw state (alpha, rounding) is the impure
+    wrappers' job (item_flags_resolve / item_flags_chrome_reset, present/gui_paint_core.c).
+
+    Documented upward seams (the strata bridge -- see style/gui_style.h):
+      - style_el_col reads the INSTALLED element style (gui_el_style, element unit) and
+        projects role x state through g_gui_el_slot_map (the element unit's table).
+      - gui_theme_reset calls gui_style_apply (frame/gui_frame.c): the rescale needs the
+        active font's metrics (draw unit), which style itself must not touch.
+
+    Include order matters: each file can reference statics from files included above it.
+
+    style/gui_theme.c      -- theme registry, base/active style state (s_style_base, s_style),
+                              theme API, the grid lattice, layout_compute (the em rescale)
+    style/gui_style_core.c -- the stacks machinery: one slot space, push/pop/next resolution,
+                              the item/chrome seam hooks, state -> color projections
+    style/gui_stacks.c     -- the caller's bracketing vocabulary: push/pop id, item flags,
+                              style color/var, scale ramp, disabled scope
+
+==============================================================================================*/
+
+#include <string.h>   /* strcmp -- theme name lookup */
+
+#include "orb.h"
+
+#include "runtime_service/gui/gui_internal.h"   /* umbrella: unit headers in stack order */
+
+/*==============================================================================================
+    Unity build -- theme state first (the stacks re-seed from s_style), then the stack
+    machinery over it, then the public bracketing vocabulary over both.
+==============================================================================================*/
+
+#include "runtime_service/gui/style/gui_theme.c"
+#include "runtime_service/gui/style/gui_style_core.c"
+#include "runtime_service/gui/style/gui_stacks.c"
+
+/*==============================================================================================
+    Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory
+    (gui_ui_mem.c): the base + active style, the theme table (.rdata), and the stack /
+    override-pair tables.
+==============================================================================================*/
+
+u32
+gui_style_unit_mem_bytes( void )
+{
+    return (u32)( sizeof( s_style_base ) + sizeof( s_style ) + sizeof( k_themes )
+                + sizeof( s_slot ) + sizeof( s_col_stack ) + sizeof( s_var_stack )
+                + sizeof( s_next ) + sizeof( s_item ) );
+}
+
+/*============================================================================================*/

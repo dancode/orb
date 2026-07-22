@@ -1,20 +1,26 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/user/gui_stacks.c -- Bracketing vocabulary: id scope, item flags, style.
+    runtime_service/gui/style/gui_stacks.c -- Bracketing vocabulary: id scope, item flags, style.
 
     The thin public wrappers for the three push / pop / next stacks a caller brackets widgets with:
         push_id / pop_id           -- id-scope levels for repeated widgets (id stack, core/gui_id.c)
         push_item_flag / next_     -- per-item behavior tweaks (item-flag stack, core/gui_ctx.c)
-        push_style_color / _var    -- per-item theme overrides (style stacks, core/gui_style.c)
+        push_style_color / _var    -- per-item theme overrides (style stacks, gui_style_core.c)
 
-    Each just forwards to the static stack operations in the machinery files above -- this file
-    is pure caller vocabulary (the machinery / vocabulary split: the stacks and their resolution
-    live with core/; the verbs a user speaks live here).  Nothing in the lib below
+    Pure caller vocabulary (the machinery / vocabulary split: the stacks and their resolution
+    live in the machinery files; the verbs a user speaks live here).  Nothing in the lib below
     depends on these wrappers; internal uses (combo's push_id for its list rows) are deliberate
     dogfooding through the gui_host.h declarations.
 
-    Included by gui.c in the user/ tier (last of the tiers), before gui_api.c, which wires
-    these into the vtable.
+    NOTE the cross-cut, carried whole into the style unit at R5 (the plan's mapping): the id
+    and item-flag brackets forward DOWN to interact-server seams (id_push / item_flag_push,
+    core/gui_core.h -- style -> core is the graph's own edge); the style color / var / scale
+    brackets forward to this unit's own statics (gui_style_core.c, included above, so those
+    stay static).  If a later increment wants the core brackets beside their machinery, only
+    the down-forwarding wrappers move.
+
+    Included by gui_style.c LAST -- above both machinery files.  gui_api.c (frame unit) wires
+    these into the vtable through the gui_host.h declarations.
 
 ==============================================================================================*/
 // clang-format off
@@ -99,6 +105,16 @@ void gui_next_style_color( gui_col_t slot, u32 abgr )       { style_next_color( 
 void gui_push_style_var( gui_style_var_t var, f32 value )   { style_push_var( var, value ); }
 void gui_pop_style_var ( u32 count )                          { style_pop_var( count ); }
 void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( var, value ); }
+
+/* Resolved read of one palette slot -- theme base with any push / next override applied, the
+   same value a stock widget would paint with right now.  THE public door to the user-extended
+   range (GUI_COL_USER_*): a kit seeds a user slot (style_get()->colors[...] or push) and paints
+   its custom drawing with this read, so its colors ride the theme + stacks like stock chrome.
+   Reading a core slot (border, backgrounds) for custom chrome is equally legitimate. */
+u32 gui_style_color( gui_col_t slot )
+{
+    return ( slot < GUI_COL_COUNT ) ? style_col( slot ) : 0u;
+}
 
 /*==============================================================================================
     scale_push / scale_pop -- scope a named density step (the theme's scale ramp, gui_scale_t)

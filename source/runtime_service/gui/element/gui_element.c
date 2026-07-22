@@ -34,7 +34,7 @@ static gui_el_style_t s_el_style;
 /* THE role x state -> theme slot map: the single source of truth for how the element
    vocabulary projects onto the chrome slot table.  Drives both directions of the strata
    bridge: el_style_derive below (S2 -> S1: theme lands, slots compile into the installed
-   style) and style_el_col (core/gui_style.c: stock chrome reads element-shaped values back
+   style) and style_el_col (style/gui_style_core.c: stock chrome reads element-shaped values back
    through the installed style, stack overrides winning). */
 const u8 g_gui_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] =
 {

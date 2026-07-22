@@ -2,13 +2,14 @@
 
     runtime_service/gui/present/gui_paint_core.c -- Shared presentation primitives.
 
-    What remains after the R1/R3/R4 carves (GUI_SERVER_PLAN.md): the impure per-item wrappers
-    (item_flags_resolve / item_flags_chrome_reset -- style/draw application over core's pure
-    seams), the frame/background color policy (state -> color -- style unit material), and the
-    system adornments + draw_field_label (styled painters -- -> element in R8).  The pure paint
-    floor and text painters moved to draw/gui_paint.c; the placement math to rect/; the label
-    grammar's id half to core/gui_id.c.  The style vocabulary (WIDGET_* / WIN_* / COL_* macros)
-    lives with its resolver in style/gui_style.h -- this file only consumes it.
+    What remains after the R1/R3/R4/R5 carves (GUI_SERVER_PLAN.md): the impure per-item
+    wrappers (item_flags_resolve / item_flags_chrome_reset -- style/draw application over
+    core's pure seams) and the system adornments + draw_field_label (styled painters --
+    -> element in R8).  The pure paint floor and text painters moved to draw/gui_paint.c; the
+    placement math to rect/; the label grammar's id half to core/gui_id.c; the state -> color
+    projections to the style unit (style/gui_style_core.c, R5).  The style vocabulary
+    (WIDGET_* / WIN_* / COL_* macros) lives with its resolver in style/gui_style.h -- this
+    file only consumes it.
 
     The interaction state machine (item_state) is a service -- it lives in core/gui_item.c
     (the interact server unit) and invokes the adornment painter below across the one
@@ -17,10 +18,10 @@
     The shared edge-resize geometry is interact/gui_resize.c and the layout engine
     (track resolver + cell emitters) is compose/gui_layout_core.c.
 
-    Included by gui.c after core/gui_ctx.c + core/gui_io.c so s_interaction, s_build, s_io, s_style,
-    rect_hit, and the draw helpers are all in scope.  Despite the name, this file has no
-    dependency on gui_window.c -- window bookkeeping is a later, optional tier
-    (window/gui_window.c).
+    Included by gui.c (the frame unit); the ambient records (s_build, s_io) and s_style reach
+    it through the per-unit header externs, the style seams through style/gui_style.h.
+    Despite the name, this file has no dependency on gui_window.c -- window bookkeeping is a
+    later, optional tier (window/gui_window.c).
 
 ==============================================================================================*/
 #include "runtime_service/gui/gui_internal.h"   /* gui_item_kind_t, gui_item_state_t */
@@ -130,46 +131,9 @@ draw_field_label( gui_rect_t row, const char* label, f32 min_control_w, u32 labe
     return control;
 }
 
-/* Frame-background tint for a "framed field" widget (checkbox box, slider track, drag box, input):
-   hover / nav / active lift it to the shared hot / active palette entries -- one at a time, since
-   hover and nav-highlight are mutually exclusive -- over a caller-supplied idle_color_enum base 
-   so each field keeps its own resting colour, matching how Dear ImGui's FrameBgHovered lifts every
-   framed control, not just buttons. */
-
-u32
-col_frame_bg( gui_item_state_t st, u32 idle_color_enum )
-{
-    if ( st.active )            return COL_WIDGET_ACT;
-    if ( st.hover || st.nav )   return COL_WIDGET_HOT;   /* nav cursor lights the body like a hover */
-    return idle_color_enum;
-}
-
-/* Common case background color for a pushbutton / knob style widget.
-   col_frame_bg with the plain widget background as the idle base. */
-u32 col_item_bg( gui_item_state_t st )
-{
-    return col_frame_bg( st, COL_WIDGET_BG );
-}
-
-/* Animated background for a pushbutton-like widget: col_item_bg with the hover/active
-   transitions smoothed through the animation service (core/gui_anim.c).  Two damper channels in
-   one gui_anim4 slot -- a hot layer (hover / nav focus) at speed 10 and an active layer (pressed) at
-   speed 20 -- both rest at 0 so they ramp up from the palette base; the spare two channels sit unused
-   (0/0/0) and are free for a widget-specific flourish later.  Composite over the palette: BG -> HOT by
-   the hot channel, then that -> ACT by the active one.  The primitive owns all storage, settle, and
-   wants_redraw bookkeeping in a single peek; an idle widget with no history lands on COL_WIDGET_BG. */
-
-#define ANIM_TAG_BG  0xA501u   /* id_combine salt: keeps this slot distinct from all other per-widget state */
-
-u32
-col_item_bg_anim( gui_id_t id, gui_item_state_t st )
-{
-    gui_anim4_t rest   = { 0.0f, 0.0f, 0.0f, 0.0f };
-    gui_anim4_t target = { ( st.hover || st.nav ) ? 1.0f : 0.0f, st.active ? 1.0f : 0.0f, 0.0f, 0.0f };
-    gui_anim4_t speed  = { 10.0f, 20.0f, 0.0f, 0.0f };
-    gui_anim4_t a      = gui_anim4( id_combine( id, ANIM_TAG_BG ), rest, target, speed );
-    return col_lerp( col_lerp( COL_WIDGET_BG, COL_WIDGET_HOT, a.x ), COL_WIDGET_ACT, a.y );
-}
+/* The state -> color projections (col_frame_bg, col_item_bg, col_item_bg_anim) moved to the
+   style unit at the R5 carve (style/gui_style_core.c): state -> color is style resolution by
+   nature, and all three take the interact state as a parameter (the R5 purity rule). */
 
 /*==============================================================================================
     System adornments -- the uniform highlight rings and edge markers the interaction services

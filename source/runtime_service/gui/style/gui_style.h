@@ -8,10 +8,12 @@
     stacks, the lattice, and the color/metric vocabulary macros every layer above sizes and
     paints with.  Included by gui_internal.h after core/gui_core.h.
 
-    Direction (GUI_SERVER_PLAN.md R5): resolution stays PURE where possible -- state passed
-    as parameters, not queried -- so style is usable with no interact server present; the
-    color id table becomes core ids (border, background, universal helpers) + a user-extended
-    range at the end.
+    Its own TU since R5 (root gui_style.c: gui_theme.c + gui_style_core.c + gui_stacks.c).
+    Resolution is PURE (the R5 rule): interact state arrives as PARAMETERS (col_item_bg( st )),
+    never queried from core, so style resolves with no interact server present -- the one
+    sanctioned exception is col_item_bg_anim's explicit ride on core's keyed anim utility.
+    The color id table is core ids + a user-extended range at the end (GUI_COL_USER_*, gui.h),
+    read back through the public gui_style_color().
 
 ==============================================================================================*/
 
@@ -21,14 +23,14 @@
     The element bridge -- the strata seam between the style unit and the element unit
 ==============================================================================================*/
 
-const gui_style_t* style_active( void );      /* core/gui_theme.c: the active scaled style   */
+const gui_style_t* style_active( void );      /* style/gui_theme.c: the active scaled style  */
 void               el_style_derive( void );   /* element/gui_element.c: the S2->S1 compile   */
 
 /* THE role x state -> gui_col_t slot projection (element unit owns it) -- shared by
    el_style_derive and style_el_col so the two directions of the strata bridge cannot drift. */
 extern const u8 g_gui_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ];
 
-/* core/gui_style.c: resolve one element-shaped color for STOCK chrome -- a push-stack
+/* gui_style_core.c: resolve one element-shaped color for STOCK chrome -- a push-stack
    override on the projected slot wins (chrome's own mechanism), else the INSTALLED element
    style value (S1 -- so a kit that overwrites el_style restyles stock widget bodies too).
    With no override and no kit overwrite this equals style_col( slot ) exactly. */
@@ -38,7 +40,7 @@ u32 style_el_col( u8 role, u8 state );
     Style resolution + the vocabulary macros
 ==============================================================================================*/
 
-/* style resolution (core/gui_style.c) -- the stack-honoring reads every tier-2 role consumes,
+/* style resolution (gui_style_core.c) -- the stack-honoring reads every tier-2 role consumes,
    and the vocabulary macros over them (the composer sizes cells with the same numbers the
    widgets and skin read). */
 f32 style_var( gui_style_var_t slot );
@@ -86,35 +88,52 @@ u32 style_col( gui_col_t slot );
 #define COL_NAV_CAPTURE  style_col( GUI_COL_NAV_CAPTURE   )
 #define COL_FOCUS_BORDER style_col( GUI_COL_FOCUS_BORDER  )
 
-/* style stack push/pop by slot (core/gui_style.c). */
+/* style stack push/pop by slot (gui_style_core.c). */
 void style_push_var( gui_style_var_t slot, f32 value );
 void style_pop_var( u32 count );
 
 /* True while both push_style stacks are empty (the volatile-replay precondition). */
 bool style_stacks_empty( void );
 
-/* lattice snapping (core/gui_theme.c) -- the grid-quantum rounders composition and chrome
+/* The item / chrome / frame seam hooks (gui_style_core.c) -- driven from OUTSIDE this unit:
+   style_item_commit / style_chrome_reset by the impure per-item wrappers (present/
+   gui_paint_core.c), style_new_frame by the orchestrator (gui_ctx_begin pairs it with
+   ctx_new_frame) and by gui_theme_reset. */
+void style_item_commit( void );
+void style_chrome_reset( void );
+void style_new_frame( void );
+
+/* The em rescale (style/gui_theme.c) -- gui_style_apply (frame/gui_frame.c) reads the active
+   font's metrics (draw-unit material style must not touch) and passes them down here. */
+void layout_compute( u32 em, u32 char_h, u32 line_h );
+
+/* lattice snapping (style/gui_theme.c) -- the grid-quantum rounders composition and chrome
    share (identity when the lattice is off or q <= 1). */
 f32 lat_floor    ( f32 v, u32 q );
 f32 lat_floor_min( f32 v, u32 q );
 f32 lat_ceil     ( f32 v, u32 q );
 f32 lat_round    ( f32 v, u32 q );
 
-extern gui_style_t s_style;     /* core/gui_theme.c -- the ACTIVE (scaled) style        */
-extern u32         s_font_size; /* core/gui_theme.c -- active em (0 = never set)        */
+extern gui_style_t s_style;     /* style/gui_theme.c -- the ACTIVE (scaled) style       */
+extern u32         s_font_size; /* style/gui_theme.c -- active em (0 = never set)       */
 
-/* State -> color projections (present/gui_paint_core.c today; style resolution by nature --
-   the state flags arrive as parameters, exactly the pure direction R5 finishes). */
+/* State -> color projections (gui_style_core.c since R5) -- pure: the state flags arrive as
+   parameters; col_item_bg_anim alone rides core's keyed anim utility, explicitly. */
 u32 col_item_bg( gui_item_state_t st );
 u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color_enum );
 
-/* Per-item ambient application (present/gui_paint_core.c) -- the impure wrappers over the
+/* Per-item ambient application (present/gui_paint_core.c -- deliberately NOT in this unit:
+   they apply draw-state consequences, and style never paints) -- the impure wrappers over the
    interact server's pure seams (item_flags_take / item_flags_chrome_drop, core/gui_core.h):
    the style commit plus the disabled dim and default rounding.  The cell emit seam, the
-   chrome seams, and the pane bracket call these; placement refined at R5/R8. */
+   chrome seams, and the pane bracket call these; placement refined at R8 (element). */
 gui_item_flags_t item_flags_resolve( void );
 void             item_flags_chrome_reset( void );
+
+/* Decentralized memory accounting -- this unit's fixed statics (root gui_style.c foot),
+   summed into cpu_frontend_bytes by gui_ui_memory (gui_ui_mem.c). */
+u32 gui_style_unit_mem_bytes( void );
 
 // clang-format on
 /*============================================================================================*/

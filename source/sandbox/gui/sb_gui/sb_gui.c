@@ -804,7 +804,16 @@ static const char* const k_col_names[ GUI_COL_COUNT ] =
     [ GUI_COL_INPUT_FOCUS   ] = "Input Focus",
     [ GUI_COL_CURSOR        ] = "Cursor",
     [ GUI_COL_NAV_HIGHLIGHT ] = "Nav Highlight",
+    [ GUI_COL_NAV_CAPTURE   ] = "Nav Capture",
     [ GUI_COL_FOCUS_BORDER  ] = "Focus Border",
+    [ GUI_COL_USER_0        ] = "User 0",
+    [ GUI_COL_USER_1        ] = "User 1",
+    [ GUI_COL_USER_2        ] = "User 2",
+    [ GUI_COL_USER_3        ] = "User 3",
+    [ GUI_COL_USER_4        ] = "User 4",
+    [ GUI_COL_USER_5        ] = "User 5",
+    [ GUI_COL_USER_6        ] = "User 6",
+    [ GUI_COL_USER_7        ] = "User 7",
 };
 
 static void

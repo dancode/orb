@@ -1,6 +1,33 @@
 # GUI SERVER PLAN -- the v2 unit reorganization
 
-Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) DONE 2026-07-21 -- next: R5 (style)
+Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) + R5 (style) DONE 2026-07-21 -- next: R6 (interact)
+
+R5 DONE: the STYLE UNIT exists (root gui_style.c) -- the first library over the interact
+server: state flags in, colors/metrics out, never paints.  Constituents: style/gui_theme.c
+(from core/ -- theme registry, s_style_base/s_style, theme API, lattice, layout_compute),
+style/gui_style_core.c (from core/gui_style.c, renamed on the rect/gui_rect_core.c precedent
+to free the root unit name -- slot space, push/pop/next stacks, style_el_col, seam hooks),
+style/gui_stacks.c (from user/ WHOLE, per the mapping -- the cross-cut is banner-documented:
+id/item-flag brackets forward DOWN to core seams, the style/scale brackets to this unit's own
+statics, which therefore stay static).  The state -> color projections (col_frame_bg,
+col_item_bg, col_item_bg_anim + ANIM_TAG_BG) moved from present/gui_paint_core.c into
+gui_style_core.c.  ACCEPTANCE: the unit includes no render header and calls no draw_*
+routine; the impure wrappers (item_flags_resolve / item_flags_chrome_reset) deliberately
+STAY in present/gui_paint_core.c (they apply draw-state consequences; -> element at R8).
+PURITY (the R5 design task): all three projections take interact state as PARAMETERS;
+col_item_bg_anim alone rides core's keyed anim utility explicitly (the sanctioned exception).
+COLOR TABLE: gui_col_t gained the user-extended range GUI_COL_USER_0..7 (+ GUI_COL_USER_COUNT)
+at the end -- engine code never reads them, themes leave them zero -- with the NEW public
+resolved read style_color( slot ) (gui_style_color, vtable add => func_api_size grew, host
+restart on hot-reload) as the door: kits seed a user slot and paint custom drawing through
+the same theme + stack resolution as stock chrome.  New cross-TU seams (style/gui_style.h):
+style_item_commit / style_chrome_reset (driven by paint_core), style_new_frame (driven by
+gui_ctx_begin + gui_theme_reset), layout_compute (driven by gui_style_apply, which stays
+frame -- the rescale reads font metrics style must not touch; documented upward seam, as is
+style_el_col's read of the installed element style), gui_style_unit_mem_bytes (gui_ui_mem
+seam).  Fixed en route: sb_gui's k_col_names was missing GUI_COL_NAV_CAPTURE (NULL label row
+in the style editor); both sandbox name tables gained the user range.  Full + mono builds
+clean (first try); both canaries clean.
 
 R4 DONE: the INTERACT SERVER unit exists (root gui_core.c): core/gui_io.c + gui_ctx.c +
 gui_id.c + gui_state.c + gui_surface.c (from surface/, folder removed) + gui_item.c +
@@ -224,11 +251,9 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
 - R4 (RESOLVED): the pane record already matches the sketch; the behavior data audit found
   the shared keyed utility set already exists (the state pool's three classes) and the
   one-user gesture latches are correctly ambient singular records -- see the R4 DONE block.
-- R5: color id table = core ids (border, background, universal helpers) + user-extended
-  range at the end.  SIMPLIFY: resolution stays pure where possible -- interact state
-  arrives as PARAMETERS (col_item_bg( st ) style), never queried from core -- so style is
-  usable for HUD theming with no interact server present; the one keyed-anim blend
-  (col_item_bg_anim) takes its t from the caller or rides core's anim utility explicitly.
+- R5 (RESOLVED): the color id table is core ids + GUI_COL_USER_0..7 at the end, read through
+  the new public style_color(); resolution is pure -- state arrives as parameters, and
+  col_item_bg_anim rides core's anim utility explicitly -- see the R5 DONE block.
 - R3/R8: split gui_symbol.c -- parameter-pure shape emitters go to draw; COL_*-consuming
   sugar moves up to element.
 
@@ -238,7 +263,7 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
     R2  render   backend/ -> render/; gui_backend.h -> render/gui_render.h; gui_backend.c -> gui_render.c   <- DONE
     R3  draw     NEW drawing-routine unit: pure wrappers + shape half of gui_symbol.c + canvas   <- DONE
     R4  core     interact server assembly; pane bracket -> frame; behavior data audit        <- DONE
-    R5  style    style/ folder; style/gui_style.h takes the COL_/metric vocabulary
+    R5  style    style/ folder + root unit; projections in; user color range        <- DONE
     R6  interact gesture unit gui_interact.c; paint halves pushed up
     R7  flow     compose/ -> flow/; unit .c to root; flow/gui_flow.h (rect producer sits below element)
     R8  element  absorb styled paint helpers; unit .c to root
