@@ -841,6 +841,15 @@ typedef struct gui_api_s
     gui_rect_t ( *flow_cell  )( f32 w, f32 h );
     void       ( *flow_end   )( void );
 
+    /* split_begin / split_next / split_end -- split the current row into a fixed-width left panel
+       and a fill remainder (recurse via split_next), id-scoped with per-id height caching.  Each
+       panel is an independent flow region -- declare a mode (stack / cols / ...) inside.  A layout
+       composition (flow/gui_split.c); pair with button_fill or any fill widget for side-by-side
+       panels that share the row height. */
+    void ( *split_begin   )( const char* id, f32 right_w );
+    void ( *split_next    )( void );
+    void ( *split_end     )( void );
+
     /*============================================================================================================
         GUI_ELEMENT -- building blocks  (rect-consuming widget cores)
         The el_* set: every element fills EXACTLY the rect it is handed -- no hidden padding,
@@ -1405,9 +1414,6 @@ typedef struct gui_api_s
         Identical to button() but height = content_avail().y.  Designed for the right panel
         of a split so it matches the adjacent left panel's content height naturally. */
 
-    void ( *split_begin   )( const char* id, f32 right_w );
-    void ( *split_next    )( void );
-    void ( *split_end     )( void );
     f32  ( *button_width  )( const char* label );
     bool ( *button_fill   )( const char* label );
 
@@ -1486,7 +1492,22 @@ typedef struct gui_api_s
                                       gui_table_sort_cmp_fn cmp_fn, void* user );
     void ( *table_set_bg_color     )( gui_table_bg_target_t target, u32 abgr );
 
-    /*=================================  themes + style stacks + chrome levers  =================================*/
+    /* window_set_drag() -- select how windows may be dragged (global default TITLEBAR).
+       Call between frames; affects every window. */
+    void ( *window_set_drag )( gui_win_drag_t mode );
+
+    /* window_set_nav() -- aim keyboard navigation at a window by title (the explicit-focus entry).
+       Clears the nav cursor so the window's first item takes focus and engages the nav highlight.
+       Nav otherwise follows the front-most window automatically; Ctrl+Tab cycles among windows and
+       Alt enters the main menu bar.  An open popup / menu always captures nav while it is open. */
+    void ( *window_set_nav )( const char* title );
+
+    /*============================================================================================================
+        GUI_STYLE -- style resolution  (style/)
+        Theme, style stacks, density scale, indicator-shape selectors.  A SERVICE tier: the style
+        unit implements all of these, so any UI on the service API -- not just chrome -- styles
+        through them; a game kit gets colors + metrics without pulling in windowing.
+    =============================================================================================================*/
 
     gui_style_t*       (*style_get)( void );    /* mutable base -- marks the theme anonymous       */
     const gui_style_t* (*style_peek)( void );   /* read-only base -- does NOT mark theme anonymous  */
@@ -1553,16 +1574,6 @@ typedef struct gui_api_s
     void ( *set_check_style  )( u8 style );
     void ( *set_bullet_style )( u8 style );
     void ( *set_arrow_style  )( u8 style );
-
-    /* window_set_drag() -- select how windows may be dragged (global default TITLEBAR).
-       Call between frames; affects every window. */
-    void ( *window_set_drag )( gui_win_drag_t mode );
-
-    /* window_set_nav() -- aim keyboard navigation at a window by title (the explicit-focus entry).
-       Clears the nav cursor so the window's first item takes focus and engages the nav highlight.
-       Nav otherwise follows the front-most window automatically; Ctrl+Tab cycles among windows and
-       Alt enters the main menu bar.  An open popup / menu always captures nav while it is open. */
-    void ( *window_set_nav )( const char* title );
 
     /*============================================================================================================
         GUI_DEBUG -- overlays, dashboard, stepper  (debug/)

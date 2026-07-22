@@ -50,6 +50,7 @@ gui_interaction_t s_interaction;
    hit-test or write to s_interaction/s_build -- a replay renders against the hover/active/focus the
    last real frame established and can never acquire state or see a fresh click, since interaction is
    resolved only on real frames. */
+
 bool s_replay_mode;
 
 /* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as the
@@ -82,11 +83,20 @@ gui_build_t s_build;
 
 gui_scope_t s_scope;
 
+/*==============================================================================================
+
+    Debug Overlay Accessors
+
+==============================================================================================*/
+
 #ifdef GUI_DEBUG_OVERLAY
+
 /* The debug overlay (gui_debug_overlay.c) lives in the render backend unit and tags each captured rect
-   with the ambient build viewport.  s_build is private to this unit, so the overlay reads it
+   with the ambient build viewport. s_build is private to this unit, so the overlay reads it
    across the unit seam through this accessor (declared in gui_render.h, Debug builds only). */
+
 u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
+
 #endif
 
 /*==============================================================================================
@@ -101,6 +111,8 @@ u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
     math over that list -- one frame deferred, exactly as hover_win lags the cursor.  gui_nav.c
     drives it; nav_item_register (core/gui_item.c) is the per-item seam.
 ==============================================================================================*/
+
+/* ... this is inside the context now */
 
 /*==============================================================================================
     Item-flag stack

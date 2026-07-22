@@ -519,24 +519,27 @@ typedef struct gui_context_t
    thread, so it stays a single global builder.  Field story at the definition (core/gui_ctx.c). */
 typedef struct
 {
-    gui_win_ctx_t win;          // the window currently between window_begin / window_end
+    gui_win_ctx_t win;                  // the window currently between window_begin / window_end
 
-    bool          wheel_used;   // a region consumed the wheel this frame (innermost wins)
+    bool          wheel_used;           // a region consumed the wheel this frame (innermost wins)
 
-    u32           nav_region_seq;   // per-frame region dispenser (layout_seed_content)
-    u32           nav_line_seq;     // per-frame line dispenser (a line-open takes the next)
+    u32           nav_region_seq;       // per-frame region dispenser (layout_seed_content)
+    u32           nav_line_seq;         // per-frame line dispenser (a line-open takes the next)
 
-    gui_item_flags_t item_flags;    // merged top-of-stack item flags
-    gui_item_flags_t next_set;      // bits the next-item override controls
-    gui_item_flags_t next_val;      // their values
+    gui_item_flags_t item_flags;        // merged top-of-stack item flags
+    gui_item_flags_t next_set;          // bits the next-item override controls
+    gui_item_flags_t next_val;          // their values
 
-    bool          combo_open;          // a combo dropdown body is currently being emitted
-    bool          combo_item_clicked;  // a selectable in that body was clicked this frame
+    bool          combo_open;           // a combo dropdown body is currently being emitted
+    bool          combo_item_clicked;   // a selectable in that body was clicked this frame
 
 } gui_build_t;
 
-extern gui_context_t* g_ctx;      /* core/gui_ctx.c -- the bound context     */
-extern gui_build_t    s_build;    /* core/gui_ctx.c -- frame-build scratch   */
+/*============================================================================================*/
+/* exported context data */
+
+extern gui_context_t* g_ctx;            // core/gui_ctx.c -- the bound context
+extern gui_build_t    s_build;          // core/gui_ctx.c -- frame-build scratch
 
 /*==============================================================================================
     Context pool + lifecycle seams (core/gui_ctx.c) -- the storage stays with the interact
@@ -544,13 +547,14 @@ extern gui_build_t    s_build;    /* core/gui_ctx.c -- frame-build scratch   */
     so it needs whole-stack type visibility) live in frame/gui_context.c.
 ==============================================================================================*/
 
-#define GUI_CTX_POOL_MAX  8       /* slot 0 = default + up to 7 secondary contexts */
+#define GUI_CTX_POOL_MAX  8             /* slot 0 = default + up to 7 secondary contexts */
 
-extern gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
-extern u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
+extern gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];   /* allocated context data */
+extern u32            s_ctx_pool_count;                 /* live slot count; always >= 1 after init */
 
 void           ctx_bind      ( gui_context_t* ctx );    /* NULL rebinds the default           */
 void           ctx_new_frame ( void );                  /* per-context scratch reset          */
+
 void           interaction_frame_reset( void );         /* once per APP frame (frame_begin)   */
 void           cursor_flush  ( void );                  /* push last frame's cursor to the OS */
 

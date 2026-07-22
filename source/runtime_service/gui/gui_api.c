@@ -229,6 +229,9 @@ const gui_api_t g_gui_api_struct =
     .flow_begin                         = gui_flow_begin,
     .flow_cell                          = gui_flow_cell,
     .flow_end                           = gui_flow_end,
+    .split_begin                        = gui_split_begin,
+    .split_next                         = gui_split_next,
+    .split_end                          = gui_split_end,
 
     /*==============================================  GUI_ELEMENT  ==============================================*/
 
@@ -354,9 +357,6 @@ const gui_api_t g_gui_api_struct =
     .tab_bar_end                        = gui_tab_bar_end,
     .tab_item_begin                     = gui_tab_item_begin,
     .tab_item_end                       = gui_tab_item_end,
-    .split_begin                        = gui_split_begin,
-    .split_next                         = gui_split_next,
-    .split_end                          = gui_split_end,
     .button_width                       = gui_button_width,
     .button_fill                        = gui_button_fill,
 
@@ -376,8 +376,10 @@ const gui_api_t g_gui_api_struct =
     .table_get_sort_specs               = gui_table_get_sort_specs,
     .table_sort_order                   = gui_table_sort_order,
     .table_set_bg_color                 = gui_table_set_bg_color,
+    .window_set_drag                    = gui_window_set_drag,
+    .window_set_nav                     = gui_window_set_nav,
 
-    /* themes + style stacks + chrome levers */
+    /*===============================================  GUI_STYLE  ===============================================*/
 
     .style_get                          = gui_style_get,
     .style_peek                         = gui_style_peek,
@@ -398,8 +400,6 @@ const gui_api_t g_gui_api_struct =
     .set_check_style                    = gui_set_check_style,
     .set_bullet_style                   = gui_set_bullet_style,
     .set_arrow_style                    = gui_set_arrow_style,
-    .window_set_drag                    = gui_window_set_drag,
-    .window_set_nav                     = gui_window_set_nav,
 
     /*===============================================  GUI_DEBUG  ===============================================*/
 
