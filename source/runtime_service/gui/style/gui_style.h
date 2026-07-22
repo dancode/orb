@@ -6,7 +6,7 @@
 
     Interact-state flags in, colors / metrics out; never paints.  Owns the theme, the style
     stacks, the lattice, and the color/metric vocabulary macros every layer above sizes and
-    paints with.  Included by gui_internal.h after core/gui_core.h.
+    paints with.  Stack position: after the core pair (each unit .c lists its sub-stack, R11).
 
     Its own TU since R5 (root gui_style.c: gui_theme.c + gui_style_core.c + gui_stacks.c).
     Resolution is PURE (the R5 rule): interact state arrives as PARAMETERS (col_item_bg( st )),

@@ -36,8 +36,8 @@
 ==============================================================================================*/
 // clang-format off
 
-ORB_STATIC_ASSERT( sizeof( gui_region_t ) <= GUI_STATE_CAP,
-                   "gui_region_t is the small class's sizing tenant; grow GUI_STATE_CAP" );
+/* The small class's sizing tenant (gui_region_t) asserts its fit beside its definition
+   (flow/gui_scroll.c since R11) -- this server does not see the tenants' shapes. */
 
 /*============================================================================================*/
 /* One class table: base array, slot stride, slot count.  Resolved from the requested size by
@@ -118,9 +118,9 @@ state_probe( state_class_t c, gui_id_t id )
                (identified by stride) so the right GUI_STATE_*_SLOTS partition gets raised. */
             GUI_WARN_ONCE( "keyed state pool full (class stride %u, %u slots) -- a "
                            "live entry was evicted; per-widget state (scroll/anim/caret) may reset. "
-                           "Raise the class's slot count (gui_internal.h).\n", c.stride, c.count );
+                           "Raise the class's slot count (core/gui_core.h).\n", c.stride, c.count );
             ORB_ASSERT_MSG_ONCE( false, "gui keyed state pool full -- live state evicted; raise "
-                                        "GUI_STATE_*_SLOTS (gui_internal.h)" );
+                                        "GUI_STATE_*_SLOTS (core/gui_core.h)" );
         }
         dst = reuse ? reuse : c.base + (size_t)state_bucket( id, c.count ) * c.stride;
     }
@@ -147,7 +147,7 @@ gui_state_get( gui_id_t id, u32 size )
 /*============================================================================================*/
 /* Typed sugar: a zero-on-create T* persisted by id.  sizeof(T) must be <= GUI_STATE_BIG_CAP. */
 
-/* The GUI_STATE( T, id ) typed sugar moved to gui_internal.h at the TU split (inc 10). */
+/* The GUI_STATE( T, id ) typed sugar moved to core/gui_core.h at the TU split (inc 10). */
 
 /*============================================================================================*/
 /* Read-only, non-allocating, non-stamping probe for `id`.  `size` must be the same tenant size
@@ -172,7 +172,7 @@ gui_state_peek( gui_id_t id, u32 size )
     return NULL;
 }
 
-/* The GUI_STATE_PEEK( T, id ) typed sugar moved to gui_internal.h at the TU split (inc 10). */
+/* The GUI_STATE_PEEK( T, id ) typed sugar moved to core/gui_core.h at the TU split (inc 10). */
 
 /*============================================================================================*/
 /* Pool load metric: live (touched this frame or last) and occupied (live + not-yet-reclaimed

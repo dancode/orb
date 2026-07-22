@@ -374,6 +374,8 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
 
     g_ctx->retained.wants_redraw = false;    /* cleared before the build; set again by any animating widget */
     ctx_new_frame();                    /* per-context scratch reset + frame clock bump (no global interaction touch) */
+    s_layout_sp = 0;                    /* fresh layout stack (the flow unit's) -- no region is open
+                                           until a window_begin/child_begin; paired here since R11 */
     style_new_frame();                  /* fresh style stacks, re-seeded from the theme -- the orchestrator
                                            pairs the two resets; the interact server knows no style (R4) */
     popup_close_check();                /* stale-close + click-outside, BEFORE any user popup_open */
@@ -446,7 +448,7 @@ gui_render( gui_vp_t vp, rhi_cmd_t cmd )
     /* Latch the emit time (first render of the frame) and bracket the flush -- "conclude cost at
        render": emit ends here, render time accumulates across every render() call this frame. */
     f64 t0 = perf_render_begin();
-    gui_render_flush( v, vp, cmd, v->disp_w, v->disp_h );
+    gui_render_flush( v->vb, v->ib, v->target, vp, cmd, v->disp_w, v->disp_h );
 #ifdef GUI_DEBUG_OVERLAY
     gui_debug_flush( vp, cmd, v->disp_w, v->disp_h );   /* each viewport flushes its own rects */
 #endif

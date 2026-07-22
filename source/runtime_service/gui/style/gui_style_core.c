@@ -270,7 +270,7 @@ style_new_frame( void )
 ==============================================================================================*/
 
 /* The vocabulary macros over these reads (WIDGET_H / WIN_BORDER / ROUND_* / ...) moved to
-   gui_internal.h at the TU split (inc 10): the flow unit sizes cells with the same numbers the
+   style/gui_style.h at the TU split (inc 10): the flow unit sizes cells with the same numbers the
    widgets and skin read, so the definitions live with the cross-unit declarations. */
 
 /* style_el_col -- resolve one element-shaped color for stock chrome (GUI_STACK_PLAN inc 5).
@@ -292,7 +292,7 @@ style_el_col( u8 role, u8 state )
 }
 
 /* The COL_* color vocabulary (element-shaped reads through style_el_col + the chrome tokens
-   on style_col) moved to gui_internal.h at the TU split (inc 10): the chrome unit paints with
+   on style_col) moved to style/gui_style.h at the TU split (inc 10): the chrome unit paints with
    the same palette the core's paint helpers read. */
 
 /*==============================================================================================

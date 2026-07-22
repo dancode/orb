@@ -25,7 +25,7 @@
     id_hash -- FNV-1a 32-bit hash of a NUL-terminated string
 ==============================================================================================*/
 
-gui_id_t                       /* non-static: a cross-unit seam (gui_internal.h, inc 10) */
+gui_id_t                       /* non-static: a cross-unit seam (core/gui_core.h, inc 10) */
 id_hash( const char* str )
 {
     /* Seed FNV-1a with the context's id salt so the same string hashes to a distinct id per context.

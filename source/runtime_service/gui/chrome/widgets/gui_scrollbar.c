@@ -14,7 +14,7 @@
     chrome lane).
 
     Included by gui.c in the widgets/ tier; the region engine reaches it through the forward
-    declaration in gui_internal.h (the same cross-order seam size_animate uses for gui_anim_f32).
+    declaration in flow/gui_flow.h (the same cross-order seam size_animate uses for gui_anim_f32).
 
 ==============================================================================================*/
 // clang-format off

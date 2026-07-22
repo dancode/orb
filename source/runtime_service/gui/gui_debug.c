@@ -24,8 +24,19 @@
 #include "orb.h"
 #include "base/fmt.h"
 
-#include "runtime_service/gui/gui_internal.h"   /* -> gui_host.h -> gui_api.h -> gui.h */
-#include "runtime_service/gui/render/gui_render.h"    /* capture snapshots + draw_* backend API  */
+/* This unit's world -- everything (R11: the include list IS the dependency graph; debug
+   reads both servers' internals, which is exactly why it is severable and last). */
+#include "runtime_service/gui/render/gui_render.h"    /* capture snapshots + draw_* backend API
+                                                         (pulls gui_host.h + rhi/app APIs)  */
+#include "runtime_service/gui/core/gui_core.h"
+#include "runtime_service/gui/core/gui_ctx.h"
+#include "runtime_service/gui/style/gui_style.h"
+#include "runtime_service/gui/draw/gui_draw.h"
+#include "runtime_service/gui/interact/gui_interact.h"
+#include "runtime_service/gui/flow/gui_flow.h"
+#include "runtime_service/gui/element/gui_element_internal.h"
+#include "runtime_service/gui/chrome/gui_chrome.h"
+#include "runtime_service/gui/debug/gui_debug.h"
 
 /* Pipeline dashboard -- debug-band window + panel painters over the dash capture. */
 #include "runtime_service/gui/debug/gui_dashboard.c"
@@ -34,7 +45,7 @@
 #include "runtime_service/gui/debug/gui_step_window.c"
 
 /* MEMORY ACCOUNTING: this unit's fixed statics, reported to gui_ui_memory (gui_ui_mem.c)
-   through the gui_internal.h seam -- each carved unit accounts for itself.  Last include-order
+   through the debug/gui_debug.h seam -- each carved unit accounts for itself.  Last include-order
    position so every static aggregate above is in scope. */
 u32
 gui_debug_unit_mem_bytes( void )

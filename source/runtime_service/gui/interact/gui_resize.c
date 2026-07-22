@@ -13,7 +13,7 @@
     clamps to its constraints and persists the size).  The in-flight s_resize_* state lives here
     because both consumers read/write it, so it belongs to neither.  The hot-edge highlight is
     paint policy and lives with the skin (element/gui_adornment.c: draw_resize_highlight);
-    the GUI_RESIZE_* edge bits both sides speak are in gui_internal.h.  WIN_BORDER is still read
+    the GUI_RESIZE_* edge bits both sides speak are in interact/gui_interact.h.  WIN_BORDER is still read
     here so the grab band straddles the visible border (a hit-test metric, not paint).
 
     Included by gui_interact.c (the interact unit); the consumers (gui_layout_child.c /
@@ -26,7 +26,7 @@
 
 /* Edge-resize grab: while a resize is in flight the owner holds active_id == (id ^
    GUI_RESIZE_SALT), distinct from a window drag (the bare id), scrollbar, and collapse arrow. */
-/* GUI_RESIZE_SALT moved to gui_internal.h at the TU split (inc 10). */
+/* GUI_RESIZE_SALT moved to interact/gui_interact.h at the TU split (inc 10). */
 
 /* In-flight edge resize.  s_resize_edges names which edges follow the cursor (GUI_RESIZE_* bits).
    s_resize_off keeps the grabbed edge under the cursor without a jump; s_resize_fix pins the
@@ -36,7 +36,7 @@ f32  s_resize_off_x, s_resize_off_y;
 f32  s_resize_fix_x, s_resize_fix_y;
 
 /* Grab band straddling the border: a few pixels inside and a few outside. */
-/* RESIZE_BAND_INNER / RESIZE_BAND_OUTER moved to gui_internal.h at the TU split (inc 10). */
+/* RESIZE_BAND_INNER / RESIZE_BAND_OUTER moved to interact/gui_interact.h at the TU split (inc 10). */
 
 /* Which edges of rect r the cursor is within the grab band of (0 = none).  The band spans
    [edge - OUTER, edge + INNER] on each side, so the cursor catches an edge from just outside

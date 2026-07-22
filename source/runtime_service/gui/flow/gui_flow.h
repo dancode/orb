@@ -6,7 +6,7 @@
 
     The rect PRODUCER: metrics in, rects out.  Owns the layout-frame types, the region
     lifecycle, and the cell emitters every widget and chrome file composes over.  Included by
-    gui_internal.h after interact/gui_interact.h; the layers above (element, chrome) consume
+    each unit .c after interact/gui_interact.h (R11); the layers above (element, chrome) consume
     the rects flow carves.  Its own unit (root gui_flow.c) since R7.
 
     Downward, flow reads the ambient records + the core services (the anim ease is core
@@ -20,31 +20,12 @@
 
 #define GUI_LAYOUT_DEPTH            8       // max nested scroll regions (windows or children)
 
-/*==============================================================================================
-    Scroll link (flow/gui_scroll.c)
-
-    Persistent scroll offset + last-measured content extent for one scrollable region.
-    layout_push_region biases the pen by -scroll and writes content_w/content_h back at pop; the
-    owner (gui_window_t, gui_region_t, gui_table_persist_t) holds one by value so layout_frame_t
-    can reach it through a single pointer instead of four.
-==============================================================================================*/
-
-typedef struct
-{
-    f32 scroll_x, scroll_y;    // persisted scroll offset; 0 = top-left
-    f32 content_w, content_h;  // content extent measured last frame
-
-    /* Bottom-anchor tail-follow (GUI_WIN_ANCHOR_BOTTOM only): pinned_y is the scroll_y layout_push_region
-       last left the region at, so a later external move (wheel / bar / scroll_by) is detectable; unstick
-       latches once the user scrolls off the bottom and clears when they return to it.  Zero on both = the
-       default "follow the tail" state a fresh region opens in. */
-    f32  pinned_y;
-    bool unstick;
-
-} gui_scroll_link_t;
+/* gui_scroll_link_t (the persisted scroll record) moved to core/gui_ctx.h at R11: it is
+   retained-mode storage (gui_window_t embeds one), so it lives with the server's records.
+   The machinery that drives it stays here (flow/gui_scroll.c). */
 
 /*==============================================================================================
-    Layout-frame (stack storage in core/gui_ctx.c)
+    Layout-frame (stack storage in flow/gui_layout_core.c since R11)
 
     Every scrollable region (a window body or a child_begin box) pushes one frame.  The top frame
     owns the layout pen and the content column the leaf widgets emit into; the rest is the resolve
@@ -231,10 +212,11 @@ typedef struct
 
 } layout_frame_t;
 
-extern layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];  /* core/gui_ctx.c -- region stack */
+extern layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];  /* flow/gui_layout_core.c -- region
+                                                              stack (core's until R11)       */
 extern u32            s_layout_sp;  /* active frame count; top = s_layout_sp - 1 */
 
-layout_frame_t* lf( void );         /* core/gui_ctx.c -- top layout frame (clamped, never NULL) */
+layout_frame_t* lf( void );         /* flow/gui_layout_core.c -- top frame (clamped, never NULL) */
 
 /*==============================================================================================
     Persistent region state (flow/gui_scroll.c)
@@ -293,15 +275,31 @@ void layout_pop_region ( void );
 /*==============================================================================================
     UPWARD SEAMS -- the flow unit's only calls above its layer.  Do not add more.
 
-    scrollbar_widget (chrome/gui_chrome.h) -- the region gutter's ONE widget: layout_pop_region
-        measured the content, so the bars land where the gutters were reserved.  The plan's one
-        sanctioned flow -> chrome call.
+    Declared HERE since R11 (upward-seam declarations live with their LOWEST consumer; the
+    units above see them through this header):
 
-    draw_child_bg / draw_child_border / draw_resize_highlight (element/gui_adornment.c,
-        declared in element/gui_element_internal.h) -- child_begin/end paint
-        the child box through these styled painters; the box decision and its paint land in
-        the same call, like core's draw_nav_ring and interact's draw_drop_ring.
+    scrollbar_widget (defined chrome/widgets/gui_scrollbar.c) -- the region gutter's ONE
+        widget: layout_pop_region measured the content, so the bars land where the gutters
+        were reserved.  The plan's one sanctioned flow -> chrome call.
+
+    draw_child_bg / draw_child_border / draw_resize_highlight (defined
+        element/gui_adornment.c) -- child_begin/end paint the child box through these styled
+        painters; the box decision and its paint land in the same call, like core's
+        draw_nav_ring and interact's draw_drop_ring.
 ==============================================================================================*/
+
+void scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
+                       f32 content, f32 view, f32* scroll );
+
+void draw_child_bg        ( gui_rect_t r );
+void draw_child_border    ( gui_rect_t r );
+void draw_resize_highlight( gui_rect_t r, u8 edges );
+
+/* item_flags_resolve / item_flags_chrome_reset (element/gui_adornment.c) -- the per-item
+   ambient application wrappers this unit drives at its emit / chrome seams (cell_next_w,
+   layout_pop_region); chrome and element reach them through this header. */
+gui_item_flags_t item_flags_resolve( void );
+void             item_flags_chrome_reset( void );
 
 u32 gui_flow_unit_mem_bytes( void );               /* the flow unit's fixed statics           */
 

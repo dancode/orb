@@ -3,15 +3,94 @@
     runtime_service/gui/frame/gui_context.c -- The public multi-context lifecycle.
 
     Moved from core/gui_ctx.c at the R4 carve (GUI_SERVER_PLAN.md): creating and destroying a
-    context is orchestrator work -- destruction tears down the context's GPU surfaces
-    (viewport_destroy, a render-server call the interact server must never make).  The pool
-    STORAGE and the allocation/bind verbs stay with the server (core/gui_ctx.c: s_ctx_pool,
-    ctx_alloc_slot, ctx_bind); this file is the public policy over them.
+    context is orchestrator work -- destruction tears down the context's GPU surfaces.  The
+    block ALLOCATION (ctx_alloc_slot) joined it at R11: the single-malloc layout sizes every
+    unit's retained records with sizeof -- including chrome's (gui_popup_t, gui_dock_node_t),
+    which the server holds opaque -- so only the orchestrator, which sees the whole stack, can
+    compute it.  The pool STORAGE and the bind verb stay with the server (core/gui_ctx.c:
+    s_ctx_pool, ctx_bind); this file is the policy over them.
 
     Included by gui.c in the frame group.
 
 ==============================================================================================*/
 // clang-format off
+
+/* Single-malloc layout for one context block.  The header (gui_context_t) sits at offset 0;
+   all pool arrays follow at ALIGN8 boundaries.  Caller sets `listening` and wires s_ctx_pool. */
+gui_context_t*
+ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
+{
+    /* Keyed-state class partition: tiny gets the full state_slots (the hot renters), small 3/4
+       of it -- counts are free of the power-of-two rule (multiply-shift bucketing, gui_state.c). */
+    u32 slots_small = ( slots / 4u ) * 3u;
+    if ( slots_small == 0 ) slots_small = slots;
+
+    #define ALIGN8( x ) ( ( ( x ) + 7u ) & ~7u )
+    u32 sz_tiny  = slots               * (u32)sizeof( gui_state_tiny_slot_t );
+    u32 sz_state = slots_small         * (u32)sizeof( gui_state_slot_t     );
+    u32 sz_big   = GUI_STATE_BIG_SLOTS * (u32)sizeof( gui_state_big_slot_t );
+    u32 sz_pop   = c->popup_depth      * (u32)sizeof( gui_popup_t          );
+    u32 sz_win   = c->max_windows      * (u32)sizeof( gui_window_t         );
+    u32 sz_vp    = c->max_viewports    * (u32)sizeof( gui_viewport_t       );
+    u32 sz_dock  = c->max_dock_nodes   * (u32)sizeof( gui_dock_node_t      );
+
+    u32 off_tiny  = ALIGN8( (u32)sizeof( gui_context_t ) );
+    u32 off_state = ALIGN8( off_tiny  + sz_tiny  );
+    u32 off_big   = ALIGN8( off_state + sz_state );
+    u32 off_pop   = ALIGN8( off_big   + sz_big   );
+    u32 off_win   = ALIGN8( off_pop   + sz_pop   );
+    u32 off_vp    = ALIGN8( off_win   + sz_win   );
+    u32 off_dock  = ALIGN8( off_vp    + sz_vp    );
+    u32 total     = ALIGN8( off_dock  + sz_dock  );
+    #undef ALIGN8
+
+    char* blk = (char*)malloc( total );
+    if ( !blk ) return NULL;
+    memset( blk, 0, total );
+
+    gui_context_t* ctx      = (gui_context_t*)blk;
+    ctx->retained.state_tiny  = (gui_state_tiny_slot_t*)( blk + off_tiny );
+    ctx->retained.tiny_count  = slots;
+    ctx->retained.state       = (gui_state_slot_t*)( blk + off_state );
+    ctx->retained.state_count = slots_small;
+    ctx->retained.state_big   = (gui_state_big_slot_t*)( blk + off_big );
+    ctx->retained.big_count   = GUI_STATE_BIG_SLOTS;
+    ctx->retained.id_salt     = (u32)slot * 0x9e3779b9u;
+    ctx->popup.open           = (gui_popup_t*)   ( blk + off_pop  );
+    ctx->popup.depth          = c->popup_depth;
+    ctx->win.pool             = (gui_window_t*)  ( blk + off_win  );
+    ctx->win.max              = c->max_windows;
+    ctx->vp.pool              = (gui_viewport_t*)( blk + off_vp   );
+    ctx->vp.max               = c->max_viewports;
+    ctx->dock.pool            = c->max_dock_nodes
+                                ? (gui_dock_node_t*)( blk + off_dock ) : NULL;
+    ctx->dock.max             = c->max_dock_nodes;
+    ctx->_alloc               = blk;
+    ctx->_alloc_size          = total;
+    return ctx;
+}
+
+/* Allocate the default context (slot 0) at the internal maxima -- the compile-time caps the
+   library is built with (GUI_STRESS_TEST scales these); no preset overrides them.
+   Called once from gui_init (frame/gui_frame.c). */
+void
+ctx_pool_init( void )
+{
+    gui_ctx_config_t c = {
+        .max_windows    = GUI_DEFAULT_MAX_WINDOWS,
+        .state_slots    = GUI_DEFAULT_STATE_SLOTS,
+        .popup_depth    = GUI_DEFAULT_POPUP_DEPTH,
+        .max_viewports  = GUI_MAX_VIEWPORTS,
+        .max_dock_nodes = GUI_DEFAULT_DOCK_NODES,
+    };
+    gui_context_t* ctx = ctx_alloc_slot( &c, c.state_slots, 0 );
+    ORB_ASSERT( ctx != NULL );   /* no gui without a default context */
+    ctx->listening = true;       /* default context listens to input */
+
+    s_ctx_pool[ 0 ]  = ctx;
+    s_ctx_pool_count = 1;
+    g_ctx            = ctx;
+}
 
 /* Set whether a context listens for hover/click/nav input.  Call between frames.
    Multiple contexts may listen simultaneously; a deaf context renders but returns inert

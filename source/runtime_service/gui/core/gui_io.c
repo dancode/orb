@@ -25,7 +25,6 @@
     Included by gui.c after gui_emit_draw.c.
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   /* gui_io_t, GUI_KEY_COUNT */
 
 /* Compile-time check: GUI_KEY_COUNT must be large enough to index all app keys. */
 ORB_STATIC_ASSERT( APP_KEY_COUNT <= GUI_KEY_COUNT,
@@ -39,7 +38,7 @@ ORB_STATIC_ASSERT( APP_KEY_COUNT <= GUI_KEY_COUNT,
 /* The per-frame input snapshot the widgets see.  The polled fields are sampled by
    io_frame_begin(); the event-borne fields (text/wheel/paste) are written straight in by
    gui_event() during the host's ring drain and cleared by io_frame_end(). */
-gui_io_t s_io;   /* extern'd in gui_internal.h for the carved units (inc 10) */
+gui_io_t s_io;   /* extern'd in core/gui_core.h for the carved units (inc 10) */
 
 /* True when any input-state change was detected this frame: mouse moved, button edge,
    key press/release, wheel, text, paste, or display-size change.  Computed in io_frame_begin

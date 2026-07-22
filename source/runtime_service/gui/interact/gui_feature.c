@@ -42,7 +42,7 @@
    maximize / minimize transitions and the dock's maximize ease all ride these (via
    feat_collapse / feat_pin below, or directly), honoring the global window_anim_enable
    preference -- feature-built chrome and stock chrome move identically by construction. */
-/* FEAT_ANIM_SECS moved to gui_internal.h at the TU split (inc 10). */
+/* FEAT_ANIM_SECS moved to interact/gui_interact.h at the TU split (inc 10). */
 
 f32 feat_ease( f32 t ) { return f32_ease_out_cubic( t ); }
 

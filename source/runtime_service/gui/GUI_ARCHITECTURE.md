@@ -3,94 +3,115 @@
 Dense reference for working on the gui service (this directory) and its sandbox
 `source/sandbox/gui/sb_gui/sb_gui.c`. Code is source of truth. ASCII only in all source.
 
-## Big picture
+## Big picture -- two servers, one orchestrator (the v2 model, GUI_SERVER_PLAN.md R1-R11)
 
-Static lib `gui`, six translation units (the per-library TU split, GUI_STACK_PLAN inc 10 --
-cross-unit reach goes through the ambient-record externs + service seams in `gui_internal.h`,
-so each library boundary is compiler-enforced):
+There are only three real things:
 
-- `gui.c` (core + frame unit): context, id/state pool, input snapshot, the interact/ services,
-  present/ paint primitives, surface service, user/ vocabulary, frame lifecycle, mod vtable.
-  Unity-includes its constituents; directories name ROLES and the include list in gui.c is THE
-  dependency order (core/ -> surface/ -> interact/ + present/ (siblings) -> user/ -> frame/,
-  the conductor). Include order matters; later files may reference statics from earlier ones.
-  `surface/gui_surface.c` is the surface service: window records as placed, stacked,
-  occluding rectangles before any layout or chrome -- the record pool (`window_get` /
-  `window_find`), the next-window placement channel, the z policy (the tier authors ALL z: the
-  band map -- region tiers, the overlay band -- is defined here, `surface_z_raise` is the
-  dispenser's only verb, and popups stamp their band through `surface_z_overlay` plus the
-  record's `overlay` type flag, so z itself is pure paint order), the hover-win occlusion
-  contest (`surface_hover_nominate`, entered by windows, floating dock groups, and root regions
-  alike), the surface reassignment request slot (tear-off / merge-back, serviced by the
-  conductor), and open/closed state. Storage + frame turnover
-  stay in `gui_context_t` (core), the house pattern; window GESTURES (drags, grips,
-  raise-on-press with its dock exception) are window/ policy over these services.
-- `gui_render.c` (render server unit): fonts, draw list, tessellation, GPU flush, debug overlay.
-  UI unit calls it one-way through `render/gui_render.h` (`draw_*`, `font_*`, `gui_render_*`).
-- `element/gui_element.c` (element unit): the `el_*` rect-consuming widget cores + the
-  installed `gui_el_style_t` (see gui_api.h GUI_ELEMENT / docs/GUI_STACK_PLAN.md). Reaches
-  the rest of gui ONLY through the public `gui_*` surface plus the `style_active()` seam
-  (gui_internal.h) -- the library boundary is compiler-enforced.
-- `compose/gui_flow.c` (flow unit): composition -- spacing metrics in, rects out. Track
-  resolver + cell emitters, scroll regions, children, sub-layouts, splits, the root region,
-  the public layout verbs + sz_ sizing. Two upward seams only: `scrollbar_widget` (the
-  gutter's one widget) and the `gui_anim_*` ease.
-- `gui_chrome.c` (chrome unit): widgets/ + table/ + window/ + dock/ + popup/ + nav/ -- the
-  stock set and the host structures, composing the core services + flow's emit surface.
-  Its core-facing definitions (the frame lifecycle's window/popup/nav/dock steps) are seams
-  the other direction.
-- `gui_debug.c` (debug unit): the pipeline dashboard + command stepper -- severable
-  tooling over the render server capture snapshots (`gui_frame_overlay.c` stays with the frame
-  group: the lifecycle calls its timing helpers).
+- **RENDER SERVER** (`render/`, unit `gui_render.c`): a 2d batch renderer with a narrow
+  push-primitive surface any 2d utility can emit to -- draw list, tessellation, retained
+  geometry cache, the shared atlas, GPU flush. Knows nothing of ids-as-identity, interact
+  state, style, or layout. Renders from an atlas that is PUSHED to it; it does not know what
+  a font is (the glyph/sprite source contract in `render/gui_render.h` is implemented by the
+  draw unit).
+- **INTERACT SERVER** (`core/`, unit `gui_core.c`): io routing + dedicated retained-mode
+  storage -- the id namespace, the keyed state pool, the ambient interaction record, the item
+  protocol, the pane/z contest, anim utilities. ALL retained record types live in its storage
+  header `core/gui_ctx.h` (window, nav state, viewport, scroll link, the context aggregate);
+  the two records only chrome reads (popup entry, dock node) stay shaped in chrome behind
+  forward declarations. Knows nothing of style, themes, or drawing.
+- **FRAME ORCHESTRATOR** (`frame/` + root `gui.c`): boots both servers, owns
+  viewports/app/sys wiring, pumps io into the interact server, hands each surface's GPU
+  pieces (vb/ib/target) to the render server at flush, allocates the context blocks (it alone
+  sees every record's size), and assembles the module vtable. Owns NO unit header -- its
+  public face is gui.h / gui_api.h / gui_host.h.
+
+The two servers NEVER see each other. Everything else is a LIBRARY over them:
+
+    unit .c (root)   folder      owns header                     role
+    --------------   ---------   -----------------------------   --------------------------------
+    gui_rect.c       rect/       rect/gui_rect.h                 leaf: geometry + color + GUI_WARN_ONCE
+    gui_render.c     render/     render/gui_render.h             RENDER SERVER
+    gui_draw.c       draw/       draw/gui_draw.h                 drawing routines + font/icon resources
+    gui_core.c       core/       core/gui_core.h + gui_ctx.h     INTERACT SERVER (services + storage)
+    gui_style.c      style/      style/gui_style.h               state flags in, colors/metrics out
+    gui_interact.c   interact/   interact/gui_interact.h         gesture mechanisms (move/resize/drag/feat)
+    gui_flow.c       flow/       flow/gui_flow.h                 layout: THE rect producer
+    gui_element.c    element/    gui_element.h (public) +        styled cores astride both servers
+                                 element/gui_element_internal.h
+    gui_chrome.c     chrome/     chrome/gui_chrome.h             stock windowing policy (6 folders)
+    gui_debug.c      debug/      debug/gui_debug.h               server introspection (severable)
+    gui.c            frame/      (public headers)                FRAME ORCHESTRATOR
+
+Dependency graph (lowest to highest) -- since R11 each unit root .c includes EXACTLY the unit
+headers at or below its layer, so the include list at the top of each unit IS the graph and
+the compiler enforces it per unit (`gui_internal.h` is gone):
+
+    rect      -> base only
+    render    -> rect                 never sees core/style/ids
+    draw      -> render, rect         parameter-pure since R8 (no style/core reads)
+    core      -> rect                 never sees render/draw/style
+    style     -> core, rect           resolves, never emits
+    interact  -> core, style, rect    (style = the WIN_BORDER metric read only); never paints
+    flow      -> style, draw, core    + the render CLIP STACK (flow computes THE view rect,
+                                      so it owns the region scissor -- flow places, never paints)
+    element   -> everything below     the first layer astride both servers (it paints)
+    chrome    -> everything below     + the render run capture (text selection, R6)
+    debug     -> everything           severable; its header leads every unit (it computes the
+                                      Debug-build switches, the one sanctioned above-layer include)
+    frame     -> orchestrates all
+
+Upward calls stay explicit and few, and each is DECLARED in its lowest consumer's header
+(higher consumers see it through the stack): core -> `draw_nav_ring`, `nav_scroll_chase`,
+`gui_owned_window_event`; draw -> `label_vis_len`, `cell_next(_w)` (canvas placement); flow ->
+`scrollbar_widget`, the child box paint trio; render -> the glyph/sprite source contract +
+`gui_draw_unit_mem_bytes`; frame steps (chrome's window/popup/nav/dock upkeep) are declared in
+`chrome/gui_chrome.h`. Do not add more.
+
+Every unit ends with a `gui_<unit>_unit_mem_bytes()` seam; `gui_ui_mem.c` (frame) aggregates.
 
 ## The composer / behavior / presentation split
 
-Three roles, one contract (the directories carry the same names):
+Three roles, one contract (the units carry the same names):
 
-- **Composer** (`compose/`): the ONLY code that POSITIONS rects -- divides regions into
+- **Composer** (`flow/`): the ONLY code that POSITIONS rects -- divides regions into
   cells, moves the pen, decides where the next widget lands. Widgets MEASURE themselves with
   the same METRICS vocabulary (a button's natural width is its label plus pad) but only ever
   REQUEST a size through `cell_next_w`; the composer decides placement. Composes and
-  never paints. Public face: the layout verbs + the `sz_` sizing family.
-- **Behavior** (`interact/`, public door `user/gui_behavior.c`): widget-agnostic
-  interaction SERVICES over the core/ utilities (identity `core/gui_id.c`,
-  keyed state tracking `core/gui_state.c`, the io snapshot `core/gui_io.c`;
-  the public readers over it are `user/gui_query.c`) -- the drag threshold machine + payload
-  transfer (`gui_drag.c`), the move-drag protocol + deferred-press latch (`gui_move.c`:
-  `move_grab`/`move_track`, `press_defer_*`), the edge-resize mechanism (`gui_resize.c`:
-  `resize_item`), and the standard item protocol (`gui_item.c`: `item_state`, the default
-  composition every stock widget runs, plus `item_grab`, the bare grab for hot chrome that is
-  not a widget -- a dock splitter gutter, a table column boundary; the compound-widget bracket
-  `gui_item_sub_begin/end` scopes a widget's INNER item emissions so the queries after it
-  report the outer widget, and `gui_item_sub_layout_begin` is its full form -- id scope +
-  sub-layout over the widget's rect, so a widget can emit real widgets inside itself). Each
-  service knows a
-  capability (exclusivity, clicks, tracking) over (id, rect); none knows a slider. Consumes
-  finished rects, produces interaction state (`hover`/`active`/`pressed`/`clicked`). This tier
-  is the ONLY writer of the `s_interaction` arbitration fields: the window/dock/table hosts
-  claim hover/active/focus exclusively through these verbs and read the record for gating,
-  never write it raw (the popup modal fence claims through `interact_hover_fence`, no
-  exceptions).
+  never paints (the region scissor lifecycle is its one render crossing). Public face: the
+  layout verbs + the `sz_` sizing family.
+- **Behavior** (`interact/` over the `core/` services): widget-agnostic interaction SERVICES
+  (identity `core/gui_id.c`, keyed state `core/gui_state.c`, the io snapshot `core/gui_io.c`;
+  the public readers are `core/gui_query.c`) -- the drag threshold machine + payload transfer
+  (`gui_drag.c`), the move-drag protocol + deferred-press latch (`gui_move.c`), the
+  edge-resize mechanism (`gui_resize.c`), and the standard item protocol (`core/gui_item.c`:
+  `item_state`, plus `item_grab` for hot chrome that is not a widget; the compound-widget
+  bracket `gui_item_sub_begin/end` and its full form `gui_item_sub_layout_begin`). Each
+  service knows a capability (exclusivity, clicks, tracking) over (id, rect); none knows a
+  slider. This tier plus core are the ONLY writers of the `s_interaction` arbitration fields:
+  higher tiers claim through the core verbs (`interact_claim`, `interact_hover_fence`) and
+  read the record for gating, never write it raw.
   Behavior's only inputs beyond (id, rect) are the interaction scope (`s_scope`,
-  `core/gui_ctx.c`): the owner window, the interaction clip, the chrome hover
-  suppression, and the per-item flag/nav stamps -- placed there by composition at its seams
-  (window/child/popup/table begin, the emit seam `cell_next_w`).  Behavior never reads
-  the composer scratch (`s_build`); the scope record IS the composition->behavior contract,
-  and behavior publishes its per-item result back into it (`s_scope.last_*`, read by the
-  `is_item_*` queries and the context-menu / drag anchors).
-  Style is invisible below this line -- a service never
-  reads a skin value and never paints (the one metric it reads is `WIN_BORDER`, because the
-  resize grab band and the scroll view box straddle the border, and border is geometry): the
-  system adornments (nav focus ring, drag accept ring, hot resize edges) are invoked from
-  behavior at the protocol point but painted by present-tier helpers (`draw_nav_ring` /
-  `draw_drop_ring` / `draw_resize_highlight` in `present/gui_paint_core.c`), so the paint
-  policy lives with the skin.
-- **Presentation** (`present/`: label grammar + self-measurement (`label_natural_w`),
-  text-fit, frame color policy, system adornments, symbol draws): consumes rect + state + skin
-  and paints; state is a parameter, it never asks behavior. The widget paint floor is
-  rect-taking (`draw_fill( r, col )` / `draw_outline( r, t, col )` in `gui_paint_core.c`, plus
-  the `draw_*` symbol palette): widgets speak rects; only the render server emit layer
+  `core/gui_core.h`): the owner window, the interaction clip, the chrome hover suppression,
+  and the per-item flag/nav stamps -- placed there by composition at its seams. Behavior never
+  reads the composer scratch (`s_build`); the scope record IS the composition->behavior
+  contract, and behavior publishes its per-item result back into it (`s_scope.last_*`).
+  Style is invisible below this line (the one metric interact reads is `WIN_BORDER`, because
+  the resize band straddles the border, and border is geometry): the system adornments (nav
+  focus ring, drag accept ring, hot resize edges) are invoked from behavior at the protocol
+  point but painted by element-unit helpers (`draw_nav_ring` / `draw_drop_ring` /
+  `draw_resize_highlight` in `element/gui_adornment.c`), so the paint policy lives with the
+  skin.
+- **Presentation** (`element/`: the `el_*` rect-consuming cores, label paint +
+  self-measurement (`label_natural_w`), per-item ambient wrappers, system adornments, the
+  styled symbol half): consumes rect + state + skin and paints; state is a parameter, it
+  never asks behavior. The widget paint floor is rect-taking (`draw_fill( r, col )` /
+  `draw_outline( r, t, col )` in `draw/gui_paint.c`, plus the parameter-pure `draw_*` symbol
+  palette in `draw/gui_symbol.c`): widgets speak rects; only the render server emit layer
   (`draw_push_*`) speaks scalar x/y/w/h with UV + texture arguments.
+
+A widget (the chrome unit) is the only combiner: it asks composition for a rect, hands it to
+behavior, hands both results to presentation. The public `gui_item`/`canvas`/`draw_*` verbs
+are the caller's door onto the same roles, skin optional -- the game-UI path.
 
 The internal prefix names the seam a widget crosses: `item_id` (identity), `cell_next(_w)` /
 `cell_reach` / `cell_split_field` (composer), `item_state` / `item_grab` (behavior),
@@ -103,8 +124,8 @@ Static-function charter (how internals stay organized):
    in gui_move.c).
 2. A narrow helper adopts its user's language, not a system prefix (`checkable_cell`,
    `slider_render`, `carve_skip`).
-3. A shared pure utility moves to gui_internal.h's stateless-helpers section on its SECOND
-   user; single-file utils (`fnv1a`, `rect_empty`) stay local.
+3. A shared pure utility moves to rect/gui_rect.h (the leaf kit) on its SECOND user;
+   single-file utils (`fnv1a`, `rect_empty`) stay local.
 4. The door is at the bottom: pure leaf helpers first, mechanism next (bottom-up), the file's
    seam / public face last (`cell_next_w` ends gui_layout_core.c, `window_begin_ex` ends
    gui_window_free.c).
@@ -116,19 +137,14 @@ gui_id_t         id = item_id( label );
 gui_rect_t       r  = cell_next_w( label_natural_w( label ), WIDGET_H );
 gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 draw_fill( r, col_item_bg_anim( id, st ) );
-``` The style vocabulary itself
-  (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in `core/gui_style.c`
-  since all three roles read it. `widgets/` and the window/dock/popup chrome are its
-  CLIENTS -- the stock widget set is written on the same substrate a user widget uses, not a
-  privileged layer.
+```
 
-`user/` is the top tier and the public door onto the first two roles -- the caller's vocabulary,
-pure verbs + readers with zero state or machinery: `canvas`/`split`/`carve`/`empty` for
-rects, `item`/`invisible_button` for behavior, `draw_*`/`text_size` for your own presentation,
-the bracketing stacks (`push_id`, item flags, `push_style_*`, `scale_push`, `disabled_begin`),
-and the query readers (`want_capture_*`, `is_item_*`, `is_key_*`). Nothing below depends on it;
-internal uses (combo's `push_id`, the overlay's key reads) deliberately dogfood the public
-surface through gui_host.h declarations.
+The style vocabulary itself (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in
+the style unit (`style/gui_style_core.c`) since all three roles read it. `chrome/` is its
+CLIENT -- the stock widget set is written on the same substrate a user widget uses, not a
+privileged layer. (The old `user/` tier dissolved at R6: the caller's vocabulary lives with
+its machinery -- canvas -> draw, query readers -> core, bracketing stacks -> style, behavior
+verbs -> interact. Internal uses deliberately dogfood the public surface through gui_host.h.)
 
 A custom widget (`game_ui_slider()`) never needs skin or spacing metrics -- it brings its own
 look and composes with any layout.
@@ -229,7 +245,7 @@ Invariants:
 - `volatile_cb` blocks keep animating on skipped frames but MUST keep a fixed layout
   footprint (constant size; pad printf fields).
 
-## Layout engine (compose/gui_layout_core.c = mechanism, compose/gui_layout.c = public verbs)
+## Layout engine (flow/gui_layout_core.c = mechanism, flow/gui_layout.c = public verbs)
 
 Model: every window body / region / child owns a `layout_frame_t` with a content box, a PEN
 (`pen_y`, flows downward) and a HIGHWATER (`high_x/high_y`, monotonic bounding box used at
@@ -366,7 +382,7 @@ overloaded unit. Pair results with `push_layout_overlay` or `draw_*`.
 Absolute-rect placement does NOT move the layout pen: after drawing a HUD/carved band, reserve
 it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
 
-## Interaction / ids / the user tier (user/)
+## Interaction / ids / the public verbs
 
 - IDs: label-hashed; `"##hidden"` suffix hides label; `push_id_int/pop_id` for loops.
 - Item queries after any emit: `is_item_hovered/active/clicked`; `want_capture_mouse` for
@@ -391,5 +407,5 @@ HUD overlay (`anchor`/`gui_anchor_box`/`gui_rect_align`), region demo, drag-drop
 I idle skip); host adds M = mem stats.
 
 Build + run: `bin\build_tool.exe -config Debug -target sb_gui && bin\sb_gui.exe`.
-Note: editing a unity-included .c/.h does not rebuild the lib -- touch the unit file
-(`gui.c` / `gui_render.c`) if the build skips.
+Note: editing a unity-included .c/.h does not rebuild the lib -- touch the owning unit root
+(`gui.c`, `gui_core.c`, `gui_render.c`, ...) if the build skips.

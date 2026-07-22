@@ -40,8 +40,20 @@
 #include "base/fmt.h"
 #include "base/math.h"
 
-#include "runtime_service/gui/gui_internal.h"   /* umbrella: unit headers in stack order    */
-#include "runtime_service/gui/render/gui_render.h"    /* clip stack + GUI_DBG_REGION outline */
+/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
+   The render header is flow's documented exception: flow computes THE view rect, so it owns
+   the region scissor lifecycle (draw_push/pop_clip_rect) -- flow places, it does not paint. */
+#include "runtime_service/gui/render/gui_render.h"    /* clip stack + GUI_DBG_REGION outline
+                                                         (pulls gui_host.h + rhi/app APIs)  */
+#include "runtime_service/gui/core/gui_core.h"
+#include "runtime_service/gui/core/gui_ctx.h"
+#include "runtime_service/gui/style/gui_style.h"
+#include "runtime_service/gui/draw/gui_draw.h"   /* text measure lives one level up from the
+                                                    server (font_text_w & co) -- the plan's
+                                                    single home for flow's measuring need   */
+#include "runtime_service/gui/interact/gui_interact.h"
+#include "runtime_service/gui/flow/gui_flow.h"
+#include "runtime_service/gui/debug/gui_debug.h"
 
 #include "runtime_service/gui/flow/gui_layout_core.c"
 #include "runtime_service/gui/flow/gui_scroll.c"
@@ -53,15 +65,15 @@
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory
-    (gui_ui_mem.c).  The layout-frame stack itself stays a core static -- core/gui_ctx.c owns
-    frame turnover -- and is counted by the core unit.
+    (gui_ui_mem.c).  The layout-frame stack came home at R11 (flow/gui_layout_core.c, with lf)
+    and is counted here since.
 ==============================================================================================*/
 
 u32
 gui_flow_unit_mem_bytes( void )
 {
-    return (u32)( sizeof( s_layout_state_stack ) + sizeof( s_split_stack )
-                + sizeof( s_sublayout_sink ) );
+    return (u32)( sizeof( s_layout_stack ) + sizeof( s_layout_state_stack )
+                + sizeof( s_split_stack ) + sizeof( s_sublayout_sink ) );
 }
 
 /*============================================================================================*/

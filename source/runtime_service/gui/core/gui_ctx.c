@@ -4,9 +4,9 @@
 
     Declares all persistent ambient and frame-scratch state (s_interaction, s_build, gui_nav_state_t,
     layout_frame_t, gui_context_t) and drives the per-frame lifecycle via ctx_new_frame.  Owns the
-    context pool storage (s_ctx_pool, ctx_alloc_slot, ctx_bind); the PUBLIC multi-context lifecycle
-    and the memory-stats aggregation moved to the frame unit at the R4 carve (see the moved-out
-    block at the bottom).
+    context pool storage (s_ctx_pool, ctx_bind); the PUBLIC multi-context lifecycle, the block
+    ALLOCATION (ctx_alloc_slot -- it sizes chrome's records, whole-stack knowledge), and the
+    memory-stats aggregation live in the frame unit (R4, completed R11).
 
     ID hashing and the keyed state pool (id_hash, id_combine, id_seed/push/pop, gui_state_get,
     GUI_STATE) are in core/gui_id.c + core/gui_state.c, included just after this file.
@@ -17,22 +17,20 @@
     Included by gui_core.c (the INTERACT SERVER unit) after core/gui_io.c so s_io is in scope.
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   /* gui_nav_state_t, layout_frame_t, gui_popup_t,
-                                                        gui_retained_t, gui_viewport_t, gui_context_t */
 // clang-format off
 
 /*==============================================================================================
     State
 ==============================================================================================*/
 
-/* s_build.win.rec points at a live gui_window_t pool record (window types in gui_internal.h; the
+/* s_build.win.rec points at a live gui_window_t pool record (window types in core/gui_ctx.h; the
    pool is reached through g_ctx) so window_end can write scroll / content extent back into it. */
 
 /* Ambient interaction state -- the one live hover / active / focus, persisting across frames.  One
    pointer, one keyboard, one mouse, so none of it is per-viewport or per-context: a single global
    shared by every context, into which listening contexts nominate hover / active during their emit.
    Tier: ambient singular (see ARCHITECTURE.md sec 1, state tiers).  The TYPE lives in
-   gui_internal.h (gui_interaction_t, extern'd for the carved units -- inc 10); this file stays
+   core/gui_core.h (gui_interaction_t, extern'd for the carved units -- inc 10); this file stays
    the owner: it defines, resets, and turns the record over.  Field notes worth keeping close:
 
    - Auto-repeat (repeat_t / repeat_on, GUI_ITEM_BUTTON_REPEAT): only one widget is active at a
@@ -60,7 +58,7 @@ bool s_replay_mode;
    build sequentially on one thread, this stays a single global builder reused by each context in
    turn rather than per-context state.  Tier: frame scratch. */
 
-/* The TYPE lives in gui_internal.h (gui_build_t, extern'd for the carved units -- inc 10);
+/* The TYPE lives in core/gui_ctx.h (gui_build_t, extern'd for the carved units -- inc 10);
    this file stays the owner (defines and resets it).  Notes worth keeping by the definition:
 
    - win: everything window_begin stamps and window_end consumes, one record (gui_win_ctx_t) so
@@ -77,7 +75,7 @@ bool s_replay_mode;
 gui_build_t s_build;
 
 /* The interaction scope -- the declared contract between composition and behavior; the full
-   contract lives with the type (gui_scope_t, gui_internal.h).  Stamped directly by composition
+   contract lives with the type (gui_scope_t, core/gui_core.h).  Stamped directly by composition
    at its seams, read by behavior, saved/restored wholesale at the popup seam -- a field added to
    the type only needs its per-frame reset in ctx_new_frame below.  Tier: frame scratch, same
    lifetime as s_build. */
@@ -96,7 +94,7 @@ u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
 
     The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather than
     the mouse -- plus the menu-bar state machine layered on it.  gui_nav_state_t is defined in
-    gui_internal.h; the instance is the g_ctx->nav member of the bound context, reached through g_ctx, so
+    core/gui_ctx.h; the instance is the g_ctx->nav member of the bound context, reached through g_ctx, so
     each context keeps its own cursor.  Movement is structural, not spatial: every item of the
     scoped window records itself into the nav item list as it emits (with the region + line the
     layout engine stamped when it placed it), and the next nav_new_frame resolves a move as index
@@ -179,32 +177,9 @@ item_flags_chrome_drop( void )
                                           interacts past this seam lists in the F6 chrome lane */
 }
 
-/*==============================================================================================
-    Layout-frame stack
-
-    Every scrollable region (a window body or a child_begin box) pushes one frame; the top frame
-    owns the layout pen and the content column leaf widgets emit into.  The rest of the frame is the
-    resolve context layout_pop_region needs to measure content and draw the region's scrollbars.
-    Storage is just the fixed array, so a deep nesting costs nothing beyond these slots.
-==============================================================================================*/
-
-layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
-u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
-
-/* Top layout frame.  Valid between a window_begin/child_begin and its matching end.  When the
-   stack is empty (a caller emitted a widget into a collapsed window despite the false return)
-   slot 0 is returned instead of indexing out of bounds -- the stray widget draws into whatever
-   the last frame's root region left there rather than crashing.  The read index is also clamped
-   to the top slot so an over-deep nesting (capped in layout_push_region) never reads past the
-   array. */
-
-layout_frame_t*
-lf( void )
-{
-    u32 i = s_layout_sp ? s_layout_sp - 1 : 0;
-    if ( i >= GUI_LAYOUT_DEPTH ) i = GUI_LAYOUT_DEPTH - 1;
-    return &s_layout_stack[ i ];
-}
+/* The layout-frame stack (s_layout_stack, s_layout_sp, lf) moved to the FLOW unit at R11
+   (flow/gui_layout_core.c): the frames are composition's records, and with the per-unit
+   include graph enforced this server can no longer see layout_frame_t -- correctly. */
 
 /*==============================================================================================
     Popup stack
@@ -219,7 +194,7 @@ lf( void )
                              writes a request at this depth; popup_begin matches its id against it.
 
     A popup is a top-level overlay begun while its parent window is still open, yet it must lay out,
-    clip, and paint independent of that parent.  gui_overlay_save_t (gui_internal.h) holds the parent
+    clip, and paint independent of that parent.  gui_overlay_save_t (chrome/gui_chrome.h) holds the parent
     context -- whole-struct copies of the window context, interaction scope, and draw scope, plus the
     parent's top layout frame -- so popup_end restores the parent verbatim; the stack counters
     balance through the normal push/pop, so no slot is reused or lost.
@@ -271,85 +246,12 @@ u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per
 gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
 u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
 
-gui_context_t* g_ctx = NULL;   /* bound context (extern'd in gui_internal.h for the carved units) */
+gui_context_t* g_ctx = NULL;   /* bound context (extern'd in core/gui_ctx.h for the carved units) */
 
-/* Single-malloc layout for one context block.  The header (gui_context_t) sits at offset 0;
-   all pool arrays follow at ALIGN8 boundaries.  Caller sets `listening` and wires s_ctx_pool.
-   Non-static: gui_ctx_create (frame/gui_context.c) allocates secondary contexts through it. */
-gui_context_t*
-ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
-{
-    /* Keyed-state class partition: tiny gets the full state_slots (the hot renters), small 3/4
-       of it -- counts are free of the power-of-two rule (multiply-shift bucketing, gui_state.c). */
-    u32 slots_small = ( slots / 4u ) * 3u;
-    if ( slots_small == 0 ) slots_small = slots;
-
-    #define ALIGN8( x ) ( ( ( x ) + 7u ) & ~7u )
-    u32 sz_tiny  = slots               * (u32)sizeof( gui_state_tiny_slot_t );
-    u32 sz_state = slots_small         * (u32)sizeof( gui_state_slot_t     );
-    u32 sz_big   = GUI_STATE_BIG_SLOTS * (u32)sizeof( gui_state_big_slot_t );
-    u32 sz_pop   = c->popup_depth      * (u32)sizeof( gui_popup_t          );
-    u32 sz_win   = c->max_windows      * (u32)sizeof( gui_window_t         );
-    u32 sz_vp    = c->max_viewports    * (u32)sizeof( gui_viewport_t       );
-    u32 sz_dock  = c->max_dock_nodes   * (u32)sizeof( gui_dock_node_t      );
-
-    u32 off_tiny  = ALIGN8( (u32)sizeof( gui_context_t ) );
-    u32 off_state = ALIGN8( off_tiny  + sz_tiny  );
-    u32 off_big   = ALIGN8( off_state + sz_state );
-    u32 off_pop   = ALIGN8( off_big   + sz_big   );
-    u32 off_win   = ALIGN8( off_pop   + sz_pop   );
-    u32 off_vp    = ALIGN8( off_win   + sz_win   );
-    u32 off_dock  = ALIGN8( off_vp    + sz_vp    );
-    u32 total     = ALIGN8( off_dock  + sz_dock  );
-    #undef ALIGN8
-
-    char* blk = (char*)malloc( total );
-    if ( !blk ) return NULL;
-    memset( blk, 0, total );
-
-    gui_context_t* ctx      = (gui_context_t*)blk;
-    ctx->retained.state_tiny  = (gui_state_tiny_slot_t*)( blk + off_tiny );
-    ctx->retained.tiny_count  = slots;
-    ctx->retained.state       = (gui_state_slot_t*)( blk + off_state );
-    ctx->retained.state_count = slots_small;
-    ctx->retained.state_big   = (gui_state_big_slot_t*)( blk + off_big );
-    ctx->retained.big_count   = GUI_STATE_BIG_SLOTS;
-    ctx->retained.id_salt     = (u32)slot * 0x9e3779b9u;
-    ctx->popup.open           = (gui_popup_t*)   ( blk + off_pop  );
-    ctx->popup.depth          = c->popup_depth;
-    ctx->win.pool             = (gui_window_t*)  ( blk + off_win  );
-    ctx->win.max              = c->max_windows;
-    ctx->vp.pool              = (gui_viewport_t*)( blk + off_vp   );
-    ctx->vp.max               = c->max_viewports;
-    ctx->dock.pool            = c->max_dock_nodes
-                                ? (gui_dock_node_t*)( blk + off_dock ) : NULL;
-    ctx->dock.max             = c->max_dock_nodes;
-    ctx->_alloc               = blk;
-    ctx->_alloc_size          = total;
-    return ctx;
-}
-
-/* Allocate the default context (slot 0) at the internal maxima -- the compile-time caps the
-   library is built with (GUI_STRESS_TEST scales these); no preset overrides them.
-   Non-static: called once from gui_init (frame/gui_frame.c). */
-void
-ctx_pool_init( void )
-{
-    gui_ctx_config_t c = {
-        .max_windows    = GUI_DEFAULT_MAX_WINDOWS,
-        .state_slots    = GUI_DEFAULT_STATE_SLOTS,
-        .popup_depth    = GUI_DEFAULT_POPUP_DEPTH,
-        .max_viewports  = GUI_MAX_VIEWPORTS,
-        .max_dock_nodes = GUI_DEFAULT_DOCK_NODES,
-    };
-    gui_context_t* ctx = ctx_alloc_slot( &c, c.state_slots, 0 );
-    ORB_ASSERT( ctx != NULL );   /* no gui without a default context */
-    ctx->listening = true;       /* default context listens to input */
-
-    s_ctx_pool[ 0 ]  = ctx;
-    s_ctx_pool_count = 1;
-    g_ctx            = ctx;
-}
+/* ctx_alloc_slot (the single-malloc block layout) and ctx_pool_init (the default context)
+   moved to frame/gui_context.c at R11: the layout sizes chrome's records (gui_popup_t,
+   gui_dock_node_t) with sizeof, and this server holds them opaque -- allocation is the
+   orchestrator's whole-stack knowledge.  The pool storage above stays here. */
 
 /* Bind the active context; every alias above resolves into it from here on.  NULL rebinds the
    default.  This is the whole multi-context seam -- no state is copied. */
@@ -364,7 +266,7 @@ ctx_bind( gui_context_t* ctx )
    secondary contexts share the same OS windows and render surfaces rather than owning separate ones.
    Searches the primary context's viewport array for a live slot (one with GPU buffers) whose
    recorded win_id matches; falls back to 0 (main swapchain) if none found.
-   Forward-declared in gui_internal.h; called by the mouse-input path in core/gui_io.c. */
+   Forward-declared in core/gui_ctx.h; called by the mouse-input path in core/gui_io.c. */
 static u32
 viewport_index_for_window( i32 win_id )
 {
@@ -586,9 +488,10 @@ ctx_new_frame( void )
     s_scope.last_rect   = ( gui_rect_t ){ 0 };
     s_scope.last_status = ( gui_item_state_t ){ 0 };
 
-    /* Fresh layout stack each frame; no region is open until a window_begin/child_begin.
-       The interaction clip starts at the full display, and the wheel is unclaimed. */
-    s_layout_sp           = 0;
+    /* The layout stack's frame reset (s_layout_sp = 0) rides gui_ctx_begin since R11 -- the
+       stack is the flow unit's, and the orchestrator pairs the two resets (the R4 precedent:
+       ctx_new_frame + style_new_frame).  The interaction clip starts at the full display,
+       and the wheel is unclaimed. */
     s_id_sp               = 0;       /* fresh id-scope stack; regions/push_id reseed it */
     s_build.wheel_used    = false;
     s_build.win.viewport  = 0;       /* ambient viewport resets to primary each frame */

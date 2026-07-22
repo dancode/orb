@@ -17,7 +17,6 @@
     is surface-independent.  gui_build_frame_reset clears the guard at frame_begin.
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"
 // clang-format off
 
 /* Reverse id->name lookup, defined later in this unit (gui_debug_overlay.c) -- used by the overflow

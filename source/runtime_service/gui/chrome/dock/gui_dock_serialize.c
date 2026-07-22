@@ -106,7 +106,7 @@ dock_free_viewport_tree( u32 vp )
    window loses its membership permanently and free-floats from its next begin, at the rect its node
    last gave it (window_begin_docked mirrors node geometry onto the record each frame).  Distinct
    from dormancy: a tree whose dockspace merely stops being emitted is retained and revives intact
-   (dock_seen_frame, gui_internal.h); clear is for discarding a layout wholesale.  Same safe-point
+   (dock_seen_frame, core/gui_ctx.h); clear is for discarding a layout wholesale.  Same safe-point
    rule as dock_load above: call at the top of the build, never from inside a docked window's body.
    Floating tab groups are not part of the tree and stay standing. */
 void

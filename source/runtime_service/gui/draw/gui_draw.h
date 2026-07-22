@@ -7,7 +7,7 @@
     The drawing-routine library over the render server's push primitives: rect-taking
     wrappers, text painters, and the shape palette.  Widgets speak rects; only the render
     server's emit layer (draw_push_*) speaks scalar x/y/w/h with UV + texture arguments.
-    Included by gui_internal.h after style/gui_style.h.
+    Stack position: over the render server, below interact (each unit .c lists its sub-stack, R11).
 
     Assembled in R3 (gui_draw.c at the gui root): gui_paint.c + gui_symbol.c + gui_canvas.c
     + the font/icon resources -- the render server renders from a pushed atlas and does not
@@ -17,25 +17,9 @@
 
 // clang-format off
 
-/*==============================================================================================
-    Draw scope (state in render/pipeline/gui_emit_draw.c; accessors in gui_render.h)
-
-    The paint cursor as one record: the command segment tag (owning window, sort key,
-    viewport, arena band -- the ambient font stays global by design) plus the ambient glyph-clip
-    window (a table cell sets it for its span).  draw_scope / draw_scope_set read and write it
-    wholesale for the overlay seam.
-==============================================================================================*/
-
-typedef struct
-{
-    gui_id_t window;         // s_draw.cur_win (retained-cache key)
-    u32      sort_key;       // s_draw.cur_z (paint order)
-    u32      viewport;       // s_draw.cur_vp (target surface routing)
-    u32      band;           // s_draw.cur_band (arena band: debug UI isolation)
-    f32      text_clip_x0;   // ambient glyph-clip window
-    f32      text_clip_x1;
-
-} gui_draw_scope_t;
+/* gui_draw_scope_t (the paint cursor as one record) moved to render/gui_render.h at R11:
+   the render unit defines the state (pipeline/gui_emit_draw.c) and its accessors, so the
+   type lives on the definer's side of the seam. */
 
 /*==============================================================================================
     The paint vocabulary -- rect + color in, pixels out
@@ -73,7 +57,25 @@ void draw_dropdown_arrow( gui_rect_t box, u32 color );
 
 bool gui_draw_boot    ( bool icons );    /* font registry + optional icon layer (gui_draw.c) */
 void gui_draw_shutdown( void );
-u32  gui_draw_unit_mem_bytes( void );    /* the draw unit's fixed statics, for mem stats */
+u32  gui_draw_unit_mem_bytes( void );    /* the draw unit's fixed statics, for mem stats
+                                            (also redeclared in render/gui_render.h -- the
+                                            R3 seam that fills the server's font bucket) */
+
+/*==============================================================================================
+    UPWARD SEAMS -- the draw unit's only calls above its layer (R11).  Do not add more.
+
+    label_vis_len (core/gui_id.c, home decl core/gui_core.h) -- the label grammar's visible
+        span ("Text##id" measures "Text"): a pure string function, but the grammar is identity
+        derivation and lives with the id system.  Redeclared here because this unit cannot
+        see the server's header.
+
+    cell_next / cell_next_w (flow/gui_layout_core.c, home decls flow/gui_flow.h) -- canvas
+        placement: the user door to 2d drawing asks the composer for its cell like any widget.
+==============================================================================================*/
+
+u32        label_vis_len( const char* s );
+gui_rect_t cell_next    ( f32 h );
+gui_rect_t cell_next_w  ( f32 natural_w, f32 h );
 
 /* Font registry + measurement (draw/gui_font.c; loader in draw/gui_font_internal.c).  The
    glyph-source half the render server consumes (font_use / font_active_id / font_valid /

@@ -585,7 +585,7 @@ draw_clear_text_clip( void )
 }
 
 /*==============================================================================================
-    Draw scope -- the paint cursor as one record (gui_draw_scope_t, gui_internal.h): the command
+    Draw scope -- the paint cursor as one record (gui_draw_scope_t, gui_render.h): the command
     segment tag (window, sort key, viewport, band -- the ambient font stays global by design)
     plus the ambient text-clip window above.  The overlay seam (overlay_detach / overlay_reattach,
     gui_popup.c) saves and restores it wholesale; the restore is a single segment retag.

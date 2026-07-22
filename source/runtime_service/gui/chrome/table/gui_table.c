@@ -349,7 +349,7 @@ gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 hei
     if ( !s_fwd_caps.tables ) return false;   /* feature boundary: gui_forward_caps_t.tables */
 
     /* FUTURE: nested tables -- only one table is open at a time (s_tab is a single frame-scratch
-       slot; see the state-model note in gui_internal.h).  Reject a nested table_begin. */
+       slot; see the state-model note in core/gui_core.h).  Reject a nested table_begin. */
     if ( s_tab_active ) return false;
     if ( ncols < 1 ) ncols = 1;
     if ( ncols > GUI_TABLE_COLS_MAX ) ncols = GUI_TABLE_COLS_MAX;

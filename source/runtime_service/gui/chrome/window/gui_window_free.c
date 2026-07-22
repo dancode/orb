@@ -54,7 +54,7 @@
 
 /* GUI_RESIZE_SALT, the RESIZE_BAND_* grab-band constants, and the record-agnostic resize helpers
    (resize_edge_hit, resize_grab, resize_apply_edges) live in interact/gui_resize.c (the
-   GUI_RESIZE_* edge bits in gui_internal.h, the hot-edge paint in element/gui_adornment.c:
+   GUI_RESIZE_* edge bits in interact/gui_interact.h, the hot-edge paint in element/gui_adornment.c:
    draw_resize_highlight), ahead of gui_layout.c, so child_begin reuses the same mechanism (the
    dock splitter does not; it has its own drag path in dock/).  Only the
    window's size policy stays below: the min clamp with far-edge pinning (window_apply_resize) and

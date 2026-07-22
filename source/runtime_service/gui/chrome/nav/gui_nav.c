@@ -49,7 +49,7 @@
 ==============================================================================================*/
 
 /* The keyboard-focused window (click / window_set_nav / Ctrl+Tab / Alt) lives in
-   g_ctx->nav.focused_win (gui_internal.h) -- per-context, so two bound contexts never stomp each
+   g_ctx->nav.focused_win (core/gui_ctx.h) -- per-context, so two bound contexts never stomp each
    other's focus.  It is the sole authority for where the keyboard goes: NONE means no window has
    focus and the keyboard falls through to the app (no front-most fallback -- a defocused window does
    not silently keep it).  Focus is acquired only by a click, Ctrl+Tab, or window_set_nav. */

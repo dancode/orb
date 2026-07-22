@@ -11,19 +11,20 @@
     Two responsibilities live here:
 
       - GPU resources (gui_render_init / _shutdown): the shared pipeline + font sampler, created
-        once; and a surface's own vertex/index buffers (viewport_create / viewport_destroy), created
-        per render target.  These are immutable across frames and shared by every surface.
+        once; and a surface's own vertex/index buffers (surface_geo_create / surface_geo_destroy),
+        created per render target.  These are immutable across frames and shared by every surface.
 
       - The flush (gui_render_flush): kick the once-per-frame BUILD (cache_build_frame, lazy), then
         upload this surface's slice of the shared geometry and emit one indexed draw call per cached
-        GPU command, back-to-front in dispatch order.
+        GPU command, back-to-front in dispatch order.  The flush takes the surface's GPU pieces
+        (vb / ib / target) as PARAMETERS -- the surface RECORD (gui_viewport_t) is the interact
+        server's storage, orchestrated by frame, and this server never sees it (R11).
 
     Included by gui_render.c after gui_build_cache.c (cache_build_frame, s_dispatch, the slot
     types, the stats accessors) -- which in turn follows gui_build_tess.c (s_tess) and
     gui_emit_draw.c (s_draw).  gui_debug_overlay.c follows this file and reuses s_render + render_ortho.
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   // gui_viewport_t, gui_ctx_t, GUI_MAX_VIEWPORTS
 #include "engine/sys/sys_host.h"                // sys_exe_dir -- probe for cooked .oshd shaders
                                                 //   (gui is a static lib: sys is always in the host)
 
@@ -60,11 +61,10 @@ typedef struct
 
     Immutable across frames and shared by every viewport (and the debug overlay), so never a
     per-viewport or per-frame bottleneck.  Per-viewport surfaces own only their vb/ib (in
-    gui_viewport_t); a viewport is a render TARGET that windows are dispatched to, not an owner of
+    gui_viewport_t, core/gui_ctx.h); a viewport is a render TARGET that windows are dispatched to, not an owner of
     windows -- the one context emits every window and flush routes each window's geometry to the
-    viewport hosting it.  gui_viewport_t + GUI_MAX_VIEWPORTS live in gui_internal.h; the
-    viewport list itself lives in the bound context (gui_ctx.c), so this file only ever touches a
-    viewport through a passed pointer.
+    viewport hosting it.  The viewport list lives in the bound context (core/gui_ctx.c), so
+    this file only ever touches a surface through the GPU pieces passed to it.
 ==============================================================================================*/
 
 static struct
@@ -95,48 +95,37 @@ render_ortho( f32 out[ 16 ], f32 w, f32 h )
 }
 
 /*==============================================================================================
-    Per-viewport surfaces -- a surface's own GPU geometry buffers.
+    Per-surface geometry ring -- a surface's own GPU geometry buffers.
 
-    Per viewport so each surface has an independent vb/ib ring (one region per frame-in-flight).
-    Called once per viewport: the main swapchain at init, a torn-off floater on tear-off.  The shared
-    pipeline / sampler / atlas are NOT here -- those are created once in gui_render_init.
+    Per surface so each has an independent vb/ib ring (one region per frame-in-flight).  Called
+    once per surface by the orchestrator's viewport_create/destroy (frame/gui_viewport.c), which
+    own every non-GPU field of the surface record -- this server only mints and frees the pair.
+    The shared pipeline / sampler / atlas are NOT here -- those are created once in gui_render_init.
 ==============================================================================================*/
 
 bool
-viewport_create( gui_viewport_t* vp, rhi_texture_t target, i32 win_id )
+surface_geo_create( rhi_buffer_t* vb, rhi_buffer_t* ib )
 {
-    vp->target          = target;
-    vp->win_id          = win_id;           // OS window hosting this surface; -1 = unassociated
-    vp->rhi_ctx         = RHI_CTX_INVALID;  // set only by viewport_spawn for an gui-owned floater
-    vp->owned           = false;            // host-provided unless viewport_spawn flips it
-    vp->pending_close   = false;            // owned floater close request; serviced by viewport_update
-    vp->disp_w          = 0;                // drawable size set by the host before build; 0 = fall back to main
-    vp->disp_h          = 0;
-    vp->caption_inset   = 0.0f;             // no native shell band until one publishes it during the build
-    vp->dock_inset      = 0.0f;             // no host menu/toolbar band until one publishes it
-    vp->dock_root       = GUI_DOCK_REF_NONE; // free-float until docking assigns a tree
-    vp->dock_seen_frame = 0;                 // never emitted; frame clock starts at 1 so 0 = dormant
-
     // Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame.
-    vp->vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+    *vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
         .size       = RHI_MAX_FRAMES_IN_FLIGHT * GUI_VB_REGION_BYTES,
         .usage      = RHI_BUFFER_USAGE_VERTEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "gui_vb",
     } );
-    if ( !rhi_handle_valid( vp->vb ) )
+    if ( !rhi_handle_valid( *vb ) )
         return false;
-    
+
     // Index buffer (CPU_TO_GPU, u16 indices): one region per frame-in-flight.
-    vp->ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+    *ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
         .size       = RHI_MAX_FRAMES_IN_FLIGHT * GUI_IB_REGION_BYTES,
         .usage      = RHI_BUFFER_USAGE_INDEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "gui_ib",
     } );
-    if ( !rhi_handle_valid( vp->ib ) )
+    if ( !rhi_handle_valid( *ib ) )
     {
-        rhi()->buffer_destroy( vp->vb );
+        rhi()->buffer_destroy( *vb );
         return false;
     }
 
@@ -144,29 +133,13 @@ viewport_create( gui_viewport_t* vp, rhi_texture_t target, i32 win_id )
 }
 
 void
-viewport_destroy( gui_viewport_t* vp )
+surface_geo_destroy( rhi_buffer_t* vb, rhi_buffer_t* ib )
 {
-    /* Owned floater: destroy the rhi context FIRST.  context_destroy idles the GPU (waits the device)
-       before tearing down its swapchain/sync, so the geometry-buffer frees below are then safe --
-       matching the host's own shutdown order (drain, free buffers, close window).  A host-provided
-       surface (owned == false) leaves its context to the host; gui frees only the GPU buffers it
-       created via viewport_create. */
-    if ( vp->owned && vp->rhi_ctx != RHI_CTX_INVALID )
-        rhi()->context_destroy( vp->rhi_ctx );
+    if ( rhi_handle_valid( *ib ) ) rhi()->buffer_destroy( *ib );
+    if ( rhi_handle_valid( *vb ) ) rhi()->buffer_destroy( *vb );
 
-    if ( rhi_handle_valid( vp->ib ) ) rhi()->buffer_destroy( vp->ib );
-    if ( rhi_handle_valid( vp->vb ) ) rhi()->buffer_destroy( vp->vb );
-
-    // Owned floater: close the OS window gui opened, only after the context (and its swapchain) is gone.
-    if ( vp->owned && vp->win_id >= 0 )
-        app()->window_close( vp->win_id );
-
-    vp->vb            = ( rhi_buffer_t ){ 0 };
-    vp->ib            = ( rhi_buffer_t ){ 0 };
-    vp->win_id        = -1;            // slot freed -> no window matches it for input routing
-    vp->rhi_ctx       = RHI_CTX_INVALID;
-    vp->owned         = false;
-    vp->pending_close = false;
+    *vb = ( rhi_buffer_t ){ 0 };
+    *ib = ( rhi_buffer_t ){ 0 };
 }
 
 /*==============================================================================================
@@ -419,12 +392,14 @@ render_batch_debug_color( u32 i )
 /*==============================================================================================
     gui_render_flush -- upload one surface's geometry and emit its draw calls (SUBMIT phase).
 
-    Paints into `vp` (the surface at index `vp_index`).  First kicks the once-per-frame BUILD
-    (cache_build_frame, lazy -- only the first surface this frame pays for it; the rest reuse the
-    result).  Then uploads this surface's slice of the shared geometry into vp's own vb/ib region and
-    opens a LOAD pass on vp->target, so a surface's geometry and target travel together.  The host
-    calls this once per live surface with that surface's drawable size; slots tagged for another
-    viewport are skipped (each command carries its own first_index in s_tess.gpu_cmds[].ibase).
+    Paints into the surface at index `vp_index`, whose GPU pieces (vb / ib / target) arrive as
+    parameters -- the orchestrator (frame/gui_frame.c) passes the record's fields; this server
+    never sees the record.  First kicks the once-per-frame BUILD (cache_build_frame, lazy --
+    only the first surface this frame pays for it; the rest reuse the result).  Then uploads
+    this surface's slice of the shared geometry into its own vb/ib region and opens a LOAD pass
+    on the target, so a surface's geometry and target travel together.  The host calls this
+    once per live surface with that surface's drawable size; slots tagged for another viewport
+    are skipped (each command carries its own first_index in s_tess.gpu_cmds[].ibase).
 
     Geometry is shared and indices are slot-local (vertex_offset = slot->vert_base shifts them to the
     absolute VB position), so the whole vertex/index list is uploaded to every surface's buffer and
@@ -433,7 +408,8 @@ render_batch_debug_color( u32 i )
 ==============================================================================================*/
 
 void
-gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
+gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
+                  u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
         return;
@@ -478,7 +454,7 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
     if ( vtx_hi > vtx_lo )
     {
         u32 bytes = ( vtx_hi - vtx_lo ) * sizeof( gui_draw_vert_t );
-        rhi()->buffer_write( vp->vb,
+        rhi()->buffer_write( vb,
                              &s_tess.verts[ vtx_lo ],
                              bytes,
                              vb_off + vtx_lo * (u32)sizeof( gui_draw_vert_t ) );
@@ -488,7 +464,7 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
     if ( idx_hi > idx_lo )
     {
         u32 bytes = ( idx_hi - idx_lo ) * sizeof( u16 );
-        rhi()->buffer_write( vp->ib,
+        rhi()->buffer_write( ib,
                              &s_tess.indices[ idx_lo ],
                              bytes,
                              ib_off + idx_lo * (u32)sizeof( u16 ) );
@@ -506,7 +482,7 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
     /* Open a LOAD pass on the swapchain color target (no depth).  LOAD preserves the scene content
        rendered before this call; CLEAR would wipe it. */
     rhi_color_attachment_t color_att = {
-        .texture  = vp->target,
+        .texture  = target,
         .load_op  = RHI_LOAD_OP_LOAD,
         .store_op = RHI_STORE_OP_STORE,
     };
@@ -529,8 +505,8 @@ gui_render_flush( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i3
     rhi()->cmd_bind_pipeline( cmd, pipe );
     rhi()->cmd_bind_bindless( cmd );
     // Bind this frame's region; index values and first_index stay region-relative.
-    rhi()->cmd_bind_vertex_buffer( cmd, vp->vb, vb_off );
-    rhi()->cmd_bind_index_buffer( cmd, vp->ib, ib_off, RHI_INDEX_TYPE_UINT16 );
+    rhi()->cmd_bind_vertex_buffer( cmd, vb, vb_off );
+    rhi()->cmd_bind_index_buffer( cmd, ib, ib_off, RHI_INDEX_TYPE_UINT16 );
 
     // Ortho matrix: pixel [0,w]x[0,h] -> NDC [-1,+1]x[-1,+1].
     gui_push_t push;

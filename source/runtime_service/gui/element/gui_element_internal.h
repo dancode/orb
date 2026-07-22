@@ -19,14 +19,10 @@
 
 // clang-format off
 
-/* Per-item ambient application (element/gui_adornment.c): resolve the emitting item's flags,
-   then apply their style and draw consequences (per-item style commit, disabled dim, default
-   rounding).  item_flags_resolve at the cell emit seam; item_flags_chrome_reset at every
-   chrome seam (window begin/end, child_begin, layout_pop_region, the pane bracket) so chrome
-   always interacts undisabled and paints opaque.  Wrappers over the interact server's pure
-   seams (item_flags_take / item_flags_chrome_drop, core/gui_ctx.c). */
-gui_item_flags_t item_flags_resolve( void );
-void             item_flags_chrome_reset( void );
+/* Per-item ambient application (element/gui_adornment.c): item_flags_resolve at the cell emit
+   seam; item_flags_chrome_reset at every chrome seam -- wrappers over the interact server's
+   pure halves.  Declared in flow/gui_flow.h since R11: flow is their lowest consumer (its
+   emit / region seams drive them). */
 
 /* Labeled-row paint half (element/gui_adornment.c): the geometry lives with the composer
    (cell_split_field, flow/gui_flow.h); the label paint + the WIDGET_PAD self-measure here. */
@@ -35,12 +31,10 @@ gui_rect_t draw_field_label( gui_rect_t row, const char* label, f32 min_control_
 f32        label_natural_w ( const char* s );
 
 /* System adornments (element/gui_adornment.c) invoked from below across documented upward
-   seams: the child box pair + resize highlight (flow/gui_flow.h's block), the focus border
-   (chrome's window ends).  draw_nav_ring / draw_drop_ring are declared with their consumers
-   (see the banner). */
-void draw_child_bg           ( gui_rect_t r );
-void draw_child_border       ( gui_rect_t r );
-void draw_resize_highlight   ( gui_rect_t r, u8 edges );
+   seams are declared with their LOWEST consumer: draw_nav_ring (core/gui_core.h),
+   draw_drop_ring (interact/gui_interact.h), the child box pair + resize highlight
+   (flow/gui_flow.h's upward block, R11).  Only the focus border -- consumed from chrome's
+   window ends, ABOVE this unit -- is declared here. */
 void draw_window_focus_border( gui_rect_t r );
 
 /* The styled half of the symbol palette (element/gui_symbol_style.c): emitters that resolve

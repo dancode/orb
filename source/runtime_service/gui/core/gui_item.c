@@ -79,61 +79,10 @@ item_repeat_tick( bool pressed )
    activates from the keyboard with no per-widget code, exactly as a mouse click flows through
    st.clicked. */
 
-/* Bring the nav cursor's rect into view -- the keyboard analogue of the wheel.  Runs once, on the
-   frame the cursor was adopted (g_ctx->nav.scroll_chase), for the layout-placed cursor item: walk the
-   open region stack innermost-out and nudge each region's scroll so the item is visible, correcting
-   the rect level by level so an item deep in a nested child pulls every ancestor into line.  Like
-   the wheel, the new offset only reaches the screen next frame (this frame's pen already used the
-   old one), so wants_redraw forces the follow-up frame that shows it. */
-static void
-nav_scroll_chase( gui_rect_t r )
-{
-    const f32 pad = NAV_RING + 2.0f;   /* breathing room so the ring lands clear of the view edge */
-
-    u32 top = ( s_layout_sp <= GUI_LAYOUT_DEPTH ) ? s_layout_sp : GUI_LAYOUT_DEPTH;
-    for ( i32 i = (i32)top - 1; i >= 0; --i )
-    {
-        layout_frame_t* f = &s_layout_stack[ i ];
-        if ( f->flags & GUI_WIN_NOSCROLL ) continue;
-
-        f32 vx0 = f->view.x;   /* the region's resolved view rect: the same gutter-adjusted */
-        f32 vy0 = f->view.y;   /* extents the region's own scrollbars are sized against     */
-
-        /* Overshoot per axis: pull the near edge in (top-aligning an item taller than the view),
-           else the far edge.  Clamped into the scroll range measured last frame, so a chase can
-           never scroll past the content -- the same clamp the wheel applies. */
-        f32 dy = 0.0f;
-        if ( r.h > f->view.h - 2.0f * pad || r.y < vy0 + pad )
-            dy = r.y - ( vy0 + pad );
-        else if ( r.y + r.h > vy0 + f->view.h - pad )
-            dy = ( r.y + r.h ) - ( vy0 + f->view.h - pad );
-
-        f32 max_y  = f->scroll->content_h - f->view.h;
-        if ( max_y < 0.0f ) max_y = 0.0f;
-        f32 want_y = clampf( f->scroll->scroll_y + dy, 0.0f, max_y );
-        dy = want_y - f->scroll->scroll_y;
-
-        f32 dx = 0.0f;
-        if ( r.w > f->view.w - 2.0f * pad || r.x < vx0 + pad )
-            dx = r.x - ( vx0 + pad );
-        else if ( r.x + r.w > vx0 + f->view.w - pad )
-            dx = ( r.x + r.w ) - ( vx0 + f->view.w - pad );
-
-        f32 max_x  = f->scroll->content_w - f->view.w;
-        if ( max_x < 0.0f ) max_x = 0.0f;
-        f32 want_x = clampf( f->scroll->scroll_x + dx, 0.0f, max_x );
-        dx = want_x - f->scroll->scroll_x;
-
-        if ( dy != 0.0f || dx != 0.0f )
-        {
-            f->scroll->scroll_y = want_y;
-            f->scroll->scroll_x = want_x;
-            r.y -= dy;   /* where the item lands next frame -- the ancestors check that position */
-            r.x -= dx;
-            g_ctx->retained.wants_redraw = true;
-        }
-    }
-}
+/* nav_scroll_chase (bring the nav cursor's rect into view) moved to flow/gui_scroll.c at R11:
+   walking the open region stack and nudging scroll offsets is composition machinery, so the
+   act lives with flow and behavior only picks the MOMENT -- the same split as draw_nav_ring.
+   Declared in this server's upward-seams block (core/gui_core.h). */
 
 static void
 nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kind_t kind )
@@ -168,7 +117,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kin
            rows_clip as the usual fix) instead of reading as a nav bug. */
         GUI_WARN_ONCE( "nav item list full (%u) -- further items are unreachable by "
                        "keyboard nav this frame. Virtualize rows (rows_clip) or raise "
-                       "GUI_NAV_ITEMS_MAX (gui_internal.h).\n", (unsigned)GUI_NAV_ITEMS_MAX );
+                       "GUI_NAV_ITEMS_MAX (core/gui_ctx.h).\n", (unsigned)GUI_NAV_ITEMS_MAX );
     }
     else
     {
@@ -517,7 +466,7 @@ item_grab( gui_id_t id, gui_rect_t r, bool gate, bool* active )
 }
 
 /*==============================================================================================
-    Compound-widget bracket -- see the contract comment in gui_internal.h.
+    Compound-widget bracket -- see the contract comment in core/gui_core.h.
 
     A widget made of widgets runs item_state for its OWN id/rect, then brackets its inner
     emissions: begin snapshots what the outer item published into s_scope (last_* + flags), the
@@ -568,7 +517,7 @@ gui_item_sub_end( gui_item_sub_t s )
     Gate predicates -- the interaction questions every gesture gate asks, named once.
 
     These are the read half of the arbitration state above: pure queries, no writes, so any
-    tier may call them (declared in gui_internal.h for the files included before this one).
+    tier may call them (declared in core/gui_core.h for the files included before this one).
     They exist so a compound gesture gate reads as a sentence at the call site instead of a
     chain of raw field comparisons.
 ==============================================================================================*/

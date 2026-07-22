@@ -32,9 +32,14 @@
 #include "base/fmt.h"
 #include "base/math.h"
 
-#include "runtime_service/gui/gui_internal.h"     /* umbrella: unit headers in stack order */
-#include "runtime_service/gui/render/gui_render.h" /* the render server's primitive surface */
+/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
+   Drawing routines over the render server's primitives -- parameter-pure since R8, so no
+   core, style, or policy header belongs here. */
+#include "runtime_service/gui/render/gui_render.h" /* the render server's primitive surface
+                                                      (pulls gui_host.h + rhi/app APIs)     */
 #include "runtime_service/gui/render/resource/gui_res_atlas.h" /* the atlas push API fonts/icons write through */
+#include "runtime_service/gui/draw/gui_draw.h"
+#include "runtime_service/gui/debug/gui_debug.h"
 
 /*==============================================================================================
     Unity build -- resources first (the palette and canvas draw with the active font's

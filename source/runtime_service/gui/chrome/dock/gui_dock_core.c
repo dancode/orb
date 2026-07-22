@@ -11,7 +11,7 @@
     primitives and lives in the sibling dock/ files, included after this one.
 
     Included by gui.c first among the dock/ files: dock_node_alloc / _free / _find /
-    dock_leaf_remove_tab / dock_collapse are plain statics, not forward-declared in gui_internal.h,
+    dock_leaf_remove_tab / dock_collapse are plain statics, not forward-declared in chrome/gui_chrome.h,
     so every other dock file needs this one already in scope.  (window/ reaches
     dock_find_window_node only through the route seam, chrome/dock/gui_dock_route.c.)
 
@@ -46,7 +46,7 @@
 
 /* dock_ref/dock_at convert between a live pointer and its pool index (gui_dock_ref_t).  The pool
    never moves or compacts a live slot, so an index survives exactly as long as the pointer it
-   replaces would -- see gui_dock_ref_t in gui_internal.h for why this trades 8 bytes for 2. */
+   replaces would -- see gui_dock_ref_t in core/gui_ctx.h for why this trades 8 bytes for 2. */
 static gui_dock_ref_t
 dock_ref( gui_dock_node_t* n )
 {
@@ -103,7 +103,7 @@ dock_node_find( gui_dock_id_t id )
 /* True only on frames the host emitted dockspace_over_viewport for vp (its stamp matches this
    build's frame clock -- the clock advances at ctx_begin, so equality means "emitted in the
    current build").  A live tree without emission is DORMANT: retained, but it places no windows
-   and offers no drops (see dock_seen_frame in gui_internal.h). */
+   and offers no drops (see dock_seen_frame in core/gui_ctx.h). */
 static bool
 dock_vp_emitted( u32 vp )
 {
@@ -112,7 +112,7 @@ dock_vp_emitted( u32 vp )
 }
 
 /* The lookup window_begin routes through: which LEAF tabs this window, or NULL.  Forward-declared in
-   gui_internal.h so gui_window_free.c (included earlier) can call it. */
+   chrome/gui_chrome.h so gui_window_free.c (included earlier) can call it. */
 static gui_dock_node_t*
 dock_find_window_node( gui_id_t win )
 {
@@ -252,7 +252,7 @@ dock_hidden_reuse( gui_dock_node_t* n, gui_dir_t dir )
     same timed tween the floater states use, and while the cover is settled every other tree
     node's windows suppress -- they are fully obscured, so emitting them would be pure waste
     (window_route_resolve applies the inactive-tab semantics; the state lives on the viewport,
-    see dock_max_* in gui_internal.h).  The per-frame tween step runs in dockspace_over_viewport
+    see dock_max_* in core/gui_ctx.h).  The per-frame tween step runs in dockspace_over_viewport
     (gui_dock.c), after the tree layout resolves the restore target.
 ==============================================================================================*/
 

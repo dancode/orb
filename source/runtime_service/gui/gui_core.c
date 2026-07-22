@@ -46,7 +46,17 @@
 #include "base/math.h"        // f32_lerp -- from/to interpolation for the animation service
 #include "base/math_ease.h"   // f32_ease_* shapers -- the easing curves the animation service applies
 
-#include "runtime_service/gui/gui_internal.h"   /* umbrella: unit headers in stack order */
+/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
+   The interact server sees the public types, the engine APIs, and its own two headers --
+   never render, draw, style, or a policy unit.  debug/gui_debug.h is the one sanctioned
+   everywhere-include: severable instrumentation over public types (DBG_* stamps). */
+#include "runtime_service/gui/gui_host.h"       /* public gui types (-> gui.h -> rect)     */
+#include "runtime_service/rhi/rhi_api.h"        /* rhi handles held by gui_viewport_t      */
+#include "engine/app/app_api.h"                 /* app keys / events the io pump speaks    */
+
+#include "runtime_service/gui/core/gui_core.h"  /* the server's services                   */
+#include "runtime_service/gui/core/gui_ctx.h"   /* the server's retained-mode storage      */
+#include "runtime_service/gui/debug/gui_debug.h"
 
 /*==============================================================================================
     Unity build -- io first (everything reads s_io), then the ambient records and the services
@@ -74,10 +84,11 @@
 u32
 gui_core_unit_mem_bytes( void )
 {
+    /* s_layout_stack moved to the flow unit at R11 -- counted by gui_flow_unit_mem_bytes. */
     return (u32)( sizeof( s_interaction ) + sizeof( s_build ) + sizeof( s_scope )
                 + sizeof( s_io ) + sizeof( s_click_elapsed )
                 + sizeof( s_click_x ) + sizeof( s_click_y )
-                + sizeof( s_item_flag_stack ) + sizeof( s_layout_stack )
+                + sizeof( s_item_flag_stack )
                 + sizeof( s_id_stack ) + sizeof( s_ctx_pool ) );
 }
 

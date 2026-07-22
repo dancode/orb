@@ -38,7 +38,18 @@
 #include "base/math.h"        // f32_lerp -- the feat kit's tweens
 #include "base/math_ease.h"   // f32_ease_out_cubic -- feat_ease
 
-#include "runtime_service/gui/gui_internal.h"   /* umbrella: unit headers in stack order */
+/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
+   Gestures over the interact server; the style header is here for the WIN_BORDER metric
+   read (geometry, not paint -- the R6-documented seam).  No render, no draw. */
+#include "runtime_service/gui/gui_host.h"       /* public gui types (-> gui.h -> rect)     */
+#include "runtime_service/rhi/rhi_api.h"
+#include "engine/app/app_api.h"
+
+#include "runtime_service/gui/core/gui_core.h"
+#include "runtime_service/gui/core/gui_ctx.h"
+#include "runtime_service/gui/style/gui_style.h"
+#include "runtime_service/gui/interact/gui_interact.h"
+#include "runtime_service/gui/debug/gui_debug.h"
 
 /*==============================================================================================
     Unity build -- the two raw gesture services first, the drag machine over the same

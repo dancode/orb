@@ -3,14 +3,14 @@
     runtime_service/gui/chrome/dock/gui_dock_route.c -- The window <-> dock route seam.
 
     The five verbs window/ is allowed to call into dock/ -- one per protocol point of the
-    window lifecycle (see the seam contract in gui_internal.h).  Thin dispatch onto the dock
+    window lifecycle (see the seam contract in chrome/gui_chrome.h).  Thin dispatch onto the dock
     internals: dock_find_window_node (gui_dock_core.c), dock_float_service_request /
     dock_float_resolve (gui_dock_float.c), dock_drag_detect / dock_drag_commit /
     dock_window_chrome (gui_dock_drag.c).  window/ names none of those directly; a build
     without docking is a stub implementation of this file.
 
     Included by gui.c last of the dock/ files, so every internal it dispatches to is already
-    in scope; the callers in window/ reach it through the gui_internal.h forward declarations.
+    in scope; the callers in window/ reach it through the chrome/gui_chrome.h forward declarations.
 
 ==============================================================================================*/
 // clang-format off

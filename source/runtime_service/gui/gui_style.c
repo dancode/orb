@@ -39,7 +39,16 @@
 
 #include "orb.h"
 
-#include "runtime_service/gui/gui_internal.h"   /* umbrella: unit headers in stack order */
+/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
+   Style resolves over the interact server -- no render, no draw. */
+#include "runtime_service/gui/gui_host.h"       /* public gui types (-> gui.h -> rect)     */
+#include "runtime_service/rhi/rhi_api.h"
+#include "engine/app/app_api.h"
+
+#include "runtime_service/gui/core/gui_core.h"
+#include "runtime_service/gui/core/gui_ctx.h"
+#include "runtime_service/gui/style/gui_style.h"
+#include "runtime_service/gui/debug/gui_debug.h"
 
 /*==============================================================================================
     Unity build -- theme state first (the stacks re-seed from s_style), then the stack

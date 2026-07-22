@@ -1,6 +1,52 @@
 # GUI SERVER PLAN -- the v2 unit reorganization
 
-Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) + R5 (style) + R6 (interact) + R7 (flow) + R8 (element) + R9 (chrome) + R10 (debug) DONE 2026-07-21 -- next: R11 (frame, the finale)
+Status: CAMPAIGN COMPLETE -- R1 through R11 DONE 2026-07-21.  gui_internal.h is deleted; each
+unit root .c includes exactly the unit headers at or below its layer, so the include list IS
+the dependency graph and the compiler enforces it per unit.  GUI_ARCHITECTURE.md rewritten to
+the final model.
+
+R11 DONE (the finale): gui_internal.h DELETED; gui.c = pure orchestrator.  Four design
+resolutions made it possible:
+  1. THE RECORDS GO TO THE SERVER.  The model's own words ("dedicated retained-mode storage
+     ... retained rect records") resolved the aggregate entanglement: every retained record
+     type the server dereferences moved to core/gui_ctx.h, now the interact server's STORAGE
+     header (gui_window_t + the window door/next-win channel, gui_nav_item_t/_state_t,
+     gui_win_ctx_t, gui_viewport_t + gui_dock_ref_t, gui_scroll_link_t) -- policy stayed in
+     chrome/frame.  The two records only chrome reads (gui_popup_t with its overlay save,
+     gui_dock_node_t) stay shaped in chrome/gui_chrome.h behind forward typedefs -- the
+     server pools them opaque.
+  2. ALLOCATION IS ORCHESTRATION.  ctx_alloc_slot + ctx_pool_init moved to
+     frame/gui_context.c (completing R4): the single-malloc layout sizes chrome's records
+     with sizeof, whole-stack knowledge only the frame unit has.  Core keeps the pool
+     storage + ctx_bind.
+  3. THE PANE HANDOFF COMPLETED.  gui_render_flush now takes the surface's GPU pieces
+     (vb/ib/target) as parameters; viewport_create/destroy split into render's
+     surface_geo_create/destroy (the buffer pair, nothing else) + orchestration wrappers in
+     frame/gui_viewport.c (fields, rhi context, OS window).  render/gui_render.h is
+     self-standing on the public types + engine APIs -- the render server sees NO unit
+     header and never sees the surface record.
+  4. COMPOSITION'S RECORDS WENT HOME.  s_layout_stack + lf() -> flow/gui_layout_core.c
+     (overturning R7's "stays a core static" -- per-unit enforcement decided it);
+     nav_scroll_chase -> flow/gui_scroll.c as core's SECOND documented upward seam (behavior
+     picks the moment, composition owns the act -- the draw_nav_ring split); the
+     gui_region_t sizing assert moved beside its tenant; the s_layout_sp frame reset is
+     paired in gui_ctx_begin (the R4 precedent).
+Seam discipline formalized: an upward-seam declaration lives with its LOWEST consumer, and
+higher consumers see it through the stack -- scrollbar_widget + the child box trio + the
+item_flags wrappers in flow/gui_flow.h; pane_tag + gui_owned_window_event + nav_scroll_chase
+in core/gui_core.h; s_fwd_caps in chrome/gui_chrome.h; gui_draw_scope_t moved definer-side to
+render/gui_render.h; font_line_h joined the glyph/sprite source contract;
+gui_draw_unit_mem_bytes redeclared render-side (the R3 font-bucket seam); label_vis_len +
+cell_next(_w) redeclared in draw/gui_draw.h's upward block (canvas placement + label
+measure).  debug/gui_debug.h LEADS every unit (it computes the Debug-build switches;
+render/gui_render.h includes it -- the one sanctioned above-layer include).  GUI_WARN_ONCE
+-> rect/gui_rect.h (the leaf kit every unit stands on).  frame/gui_frame.h DELETED -- the
+frame unit owns only the public headers, per the target layout; GUI_MAX_VIEWPORTS + its
+assert -> render/gui_render.h; frame-internal seams forward-declared in gui.c.  ~56-site
+comment sweep re-pointed every stale gui_internal.h reference.  Flow's mem seam gained
+s_layout_stack (from core's).  Full + mono builds clean; both canaries clean.
+Noted for someday: canvas PLACEMENT (the draw unit's cell_next calls) is element-shaped by
+the model -- a candidate later carve; the R2 gui_backend_* lifecycle rename stays deferred.
 
 R10 DONE: the DEBUG UNIT is re-seated -- debug/gui_debug.c -> root gui_debug.c (the last
 carved unit joins the root like every other), and debug/gui_frame_overlay.c ->
@@ -362,7 +408,7 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
     R8  element  absorb styled paint helpers; unit .c to root   <- DONE
     R9  chrome   six folders under chrome/; chrome/gui_chrome.h   <- DONE
     R10 debug    unit .c to root; debug/gui_debug.h; frame_overlay -> frame/   <- DONE
-    R11 frame    gui.c = pure orchestrator; gui_internal.h DELETED; GUI_ARCHITECTURE.md rewrite
+    R11 frame    gui.c = pure orchestrator; gui_internal.h DELETED; GUI_ARCHITECTURE.md rewrite   <- DONE (campaign complete)
 
 Method per increment (proved in inc 10): create/move the unit + orb.targets lines (gui AND
 gui_stress) + -gen; build; let the compiler enumerate the seams; place each decl in its

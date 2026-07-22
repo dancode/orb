@@ -8,10 +8,10 @@
     pool, the ambient interaction record, the item protocol, the pane/z contest, and the
     retained-state animation utilities.  Knows nothing of style, themes, or drawing.
 
-    One header per section (GUI_SERVER_PLAN.md): gui_internal.h includes these in stack
-    order, so each header may assume the ones BELOW it (rect, the public gui_host.h set)
-    and never the ones above.  The context aggregate (gui_context_t) lives in the late
-    companion core/gui_ctx.h -- it embeds types from most units, so it closes the stack.
+    One header per section (GUI_SERVER_PLAN.md): every unit .c lists its sub-stack of unit
+    headers in stack order (R11), so each header may assume the ones BELOW it (rect, the
+    public gui_host.h set) and never the ones above.  The server's retained-mode storage
+    (the records + gui_context_t) lives in the companion core/gui_ctx.h, included after this.
 
 ==============================================================================================*/
 
@@ -26,17 +26,9 @@
     may not be up yet), fflush so it lands before a follow-up ORB_ASSERT_MSG_ONCE can trap.
 ==============================================================================================*/
 
-#define GUI_WARN_ONCE( ... )                              \
-    do                                                    \
-    {                                                     \
-        static bool s_gui_warned_once;                    \
-        if ( !s_gui_warned_once )                         \
-        {                                                 \
-            printf( "[gui] WARNING: " __VA_ARGS__ );      \
-            fflush( stdout );                             \
-            s_gui_warned_once = true;                     \
-        }                                                 \
-    } while ( 0 )
+/* GUI_WARN_ONCE moved to rect/gui_rect.h at R11: the render server's pools follow the same
+   saturation rule and it must not reach into this header for the report macro -- the leaf
+   shared kit is the one header every unit stands on. */
 
 /*==============================================================================================
     Server capacities
@@ -407,10 +399,13 @@ const char* label_id_str( const char* s );
 /* the surface service (core/gui_surface.c) -- the hover contest and the z band map every
    stacked entity's z lives in (see the band story at the definitions).  The pane BRACKET
    (pane_tag, gui_pane_begin/end) lives with the frame orchestrator (frame/gui_pane.c): it
-   stamps BOTH servers, which neither server may do itself. */
+   stamps BOTH servers, which neither server may do itself.  pane_tag is declared here --
+   the go-between verb's consumers (chrome's window opens, flow's region opens) all sit on
+   this header. */
 void surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport );
 u32  surface_z_raise( u32 z );
 u32  surface_z_overlay( u32 depth );
+void pane_tag( gui_id_t id, u32 z, u32 vp, u32 band );   /* defined frame/gui_pane.c */
 
 #define GUI_REGION_BG_Z  0x00000000u
 #define GUI_REGION_Z     0x40000000u
@@ -457,6 +452,14 @@ gui_state_usage_t gui_state_usage( void );
                      presentation seam after behavior exists that every widget passes through.
                      Behavior picks the MOMENT; the paint policy (color, thickness) lives with
                      the skin (element/gui_adornment.c since R8).  Do not add more.
+    nav_scroll_chase the keyboard scroll-into-view (nav_item_register, core/gui_item.c):
+                     walking the open region stack and moving scroll offsets is composition
+                     machinery, so the act lives with flow (flow/gui_scroll.c) and behavior
+                     only picks the moment -- the same split as draw_nav_ring (R11).
+    gui_owned_window_event   the io pump's ONE call up into its orchestrator (frame unit):
+                     OS resize / close events for a gui-OWNED floater are serviced against
+                     the viewport pool the orchestrator manages.  Returns true when win_id
+                     is an owned viewport (event consumed).  Defined in frame/gui_frame.c.
     DBG_* / STEP_SET_OWNER   debug capture stamps (debug/gui_debug.h) -- severable tooling,
                      compiled away outside Debug.
 ==============================================================================================*/
@@ -464,6 +467,8 @@ gui_state_usage_t gui_state_usage( void );
 #define NAV_RING 2.0f   /* focus-ring inset outside the item rect; the nav scroll chase keeps
                            the ring clear of the view edge with it */
 void draw_nav_ring( gui_rect_t r, bool captured );
+void nav_scroll_chase( gui_rect_t r );
+bool gui_owned_window_event( const app_event_t* ev );
 
 /* Decentralized memory accounting: the core unit's fixed statics (ambient records, io snapshot,
    id/flag stacks, context pool array), summed at the foot of gui_core.c for gui_ui_memory. */

@@ -25,8 +25,35 @@
 ==============================================================================================*/
 // clang-format off
 
-/* REGION_PAD_DEFAULT (the inset every window body / child opens with) moved to gui_internal.h
-   at the TU split (inc 10): window chrome (the core unit) opens its body region with it. */
+/* REGION_PAD_DEFAULT (the inset every window body / child opens with) lives in flow/gui_flow.h:
+   window chrome opens its body region with it. */
+
+/*==============================================================================================
+    Layout-frame stack (here since R11 -- the frames are composition's records)
+
+    Every scrollable region (a window body or a child_begin box) pushes one frame; the top frame
+    owns the layout pen and the content column leaf widgets emit into.  The rest of the frame is the
+    resolve context layout_pop_region needs to measure content and draw the region's scrollbars.
+    Storage is just the fixed array, so a deep nesting costs nothing beyond these slots.
+==============================================================================================*/
+
+layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
+u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
+
+/* Top layout frame.  Valid between a window_begin/child_begin and its matching end.  When the
+   stack is empty (a caller emitted a widget into a collapsed window despite the false return)
+   slot 0 is returned instead of indexing out of bounds -- the stray widget draws into whatever
+   the last frame's root region left there rather than crashing.  The read index is also clamped
+   to the top slot so an over-deep nesting (capped in layout_push_region) never reads past the
+   array. */
+
+layout_frame_t*
+lf( void )
+{
+    u32 i = s_layout_sp ? s_layout_sp - 1 : 0;
+    if ( i >= GUI_LAYOUT_DEPTH ) i = GUI_LAYOUT_DEPTH - 1;
+    return &s_layout_stack[ i ];
+}
 
 /*==============================================================================================
 

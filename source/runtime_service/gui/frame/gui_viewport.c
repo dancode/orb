@@ -27,6 +27,57 @@
 // clang-format off
 
 /*==============================================================================================
+    Surface record lifecycle (here since R11 -- the pane-handoff completion)
+
+    The render server mints and frees only the GPU geometry ring (surface_geo_create/destroy,
+    render/gui_render.h); every other field of the surface record (gui_viewport_t,
+    core/gui_ctx.h) is orchestration -- OS window, rhi context, routing, dock policy -- and
+    the orchestrator owns it here.  Both stay g_ctx-agnostic (they take a vp pointer): the
+    context teardown paths (gui_ctx_destroy, gui_shutdown) walk pools of unbound contexts.
+==============================================================================================*/
+
+bool
+viewport_create( gui_viewport_t* vp, rhi_texture_t target, i32 win_id )
+{
+    vp->target          = target;
+    vp->win_id          = win_id;           // OS window hosting this surface; -1 = unassociated
+    vp->rhi_ctx         = RHI_CTX_INVALID;  // set only by viewport_spawn for an gui-owned floater
+    vp->owned           = false;            // host-provided unless viewport_spawn flips it
+    vp->pending_close   = false;            // owned floater close request; serviced by viewport_update
+    vp->disp_w          = 0;                // drawable size set by the host before build; 0 = fall back to main
+    vp->disp_h          = 0;
+    vp->caption_inset   = 0.0f;             // no native shell band until one publishes it during the build
+    vp->dock_inset      = 0.0f;             // no host menu/toolbar band until one publishes it
+    vp->dock_root       = GUI_DOCK_REF_NONE; // free-float until docking assigns a tree
+    vp->dock_seen_frame = 0;                 // never emitted; frame clock starts at 1 so 0 = dormant
+
+    return surface_geo_create( &vp->vb, &vp->ib );
+}
+
+void
+viewport_destroy( gui_viewport_t* vp )
+{
+    /* Owned floater: destroy the rhi context FIRST.  context_destroy idles the GPU (waits the device)
+       before tearing down its swapchain/sync, so the geometry-buffer frees below are then safe --
+       matching the host's own shutdown order (drain, free buffers, close window).  A host-provided
+       surface (owned == false) leaves its context to the host; gui frees only the GPU buffers it
+       created via viewport_create. */
+    if ( vp->owned && vp->rhi_ctx != RHI_CTX_INVALID )
+        rhi()->context_destroy( vp->rhi_ctx );
+
+    surface_geo_destroy( &vp->vb, &vp->ib );
+
+    // Owned floater: close the OS window gui opened, only after the context (and its swapchain) is gone.
+    if ( vp->owned && vp->win_id >= 0 )
+        app()->window_close( vp->win_id );
+
+    vp->win_id        = -1;            // slot freed -> no window matches it for input routing
+    vp->rhi_ctx       = RHI_CTX_INVALID;
+    vp->owned         = false;
+    vp->pending_close = false;
+}
+
+/*==============================================================================================
     Viewport API
 ==============================================================================================*/
 

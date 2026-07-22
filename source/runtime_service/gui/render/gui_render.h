@@ -2,45 +2,53 @@
 #define GUI_BACKEND_H
 /*==============================================================================================
 
-    runtime_service/gui/render/gui_render.h -- The render-backend interface (the unit seam).
+    runtime_service/gui/render/gui_render.h -- THE RENDER SERVER's surface (the unit seam).
 
-    gui is built as TWO unity translation units that link into one static lib:
+    A 2d batch renderer with a narrow push-primitive foundation any 2d utility can emit to
+    (GUI_SERVER_PLAN.md).  Knows nothing of ids-as-identity, interact state, style, or
+    layout: the units above produce a semantic draw list through the draw_push_* primitives
+    below; this server tessellates, caches, and uploads it.  This header is the server's
+    entire surface -- self-standing on the public gui types + the engine APIs since R11
+    (never a gui unit header: the two servers must not see each other).
 
-        gui.c          -- the UI / core unit: context, layout, widgets, chrome, popups, nav,
-                          input, frame lifecycle, the module vtable.  Owns s_build / s_io /
-                          s_interaction / g_ctx and the stacks.
-        gui_render.c  -- the render backend unit: fonts, the CPU draw list, path stroking,
-                          CPU tessellation, the GPU flush, and the debug overlay.  Owns
-                          s_draw / s_tess / s_font / s_render.
-
-    The UI unit produces a semantic draw list by calling the draw_* / font_* primitives below;
-    the backend unit tessellates and uploads it.  This header is the entire surface between them
-    -- the functions the backend exports to the UI, plus the debug-overlay instrumentation both
-    sides share.  The reverse direction is almost nothing: the backend pulls only rect_intersect
-    (a stateless helper in gui_internal.h) and, for the debug overlay, the ambient build
-    viewport via gui_dbg_build_viewport().
+    The reverse direction is almost nothing: the glyph/sprite source contract (implemented
+    by the draw unit over tables beside the atlas), the volatile replay-scope pair, and the
+    debug overlay's ambient build viewport (gui_dbg_build_viewport) -- each one documented at
+    its declaration.
 
     The module API pointers (rhi() / app()) are NOT redefined here: g_rhi_api_ptr / g_app_api_ptr
     have external linkage, defined and fetched once in gui.c (MOD_USE_RHI / MOD_USE_APP); the
-    backend unit reads them through the same inline accessors from rhi_api.h / app_api.h.
-
-    Included once at the top of each unity entry (gui.c and gui_render.c).
+    render unit reads them through the same inline accessors from rhi_api.h / app_api.h.
 
     Sections below are grouped by pipeline stage, matching the include order in gui_render.c and
     named for the function prefix each stage exports.  Tessellation primitives (gui_build_tess.c)
     have no public surface -- driven entirely from within BUILD -- so there is no section for them.
 
     0. Backend lifecycle (gui_backend_init/exit)
-    1. Fonts (resource registry)
-    2. Runtime icon atlas (resource registry)
-    3. EMIT -- CPU draw list
-    4. BUILD -- retained cache
-    5. RENDER -- GPU flush
-    6. DEBUG OVERLAY
+    1. Glyph / sprite source contract + the shared atlas
+    2. EMIT -- CPU draw list
+    3. BUILD -- retained cache
+    4. RENDER -- GPU flush
+    5. DEBUG OVERLAY / DASHBOARD / STEPPER captures
 
 ==============================================================================================*/
 
-#include "runtime_service/gui/gui_internal.h"
+#include "runtime_service/gui/gui_host.h"   // public gui types: gui_rect_t, gui_id_t, flags, enums
+#include "runtime_service/rhi/rhi_api.h"    // rhi buffer/texture/cmd handles the flush speaks
+#include "engine/app/app_api.h"             // APP_WIN_MAX -- the per-surface fan-out bound
+
+/* The debug unit's header leads every unit (severable instrumentation over public types): it
+   computes the Debug-build switches (GUI_DEBUG_OVERLAY, GUI_CMD_STEPPER) the capture sections
+   below key off, so it is the one sanctioned above-layer include. */
+#include "runtime_service/gui/debug/gui_debug.h"
+
+/* Render-surface ceiling: one gui viewport rides one OS window + one rhi context, so the
+   per-surface capture tables here and the viewport pool default (frame/gui_context.c) are
+   sized by the platform pair -- derived, not repeated. */
+#define GUI_MAX_VIEWPORTS APP_WIN_MAX       // one surface per OS window / rhi context
+
+ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
+                   "a gui viewport pairs an OS window with an rhi context; the maxes must agree" );
 
 // clang-format off
 /*==============================================================================================
@@ -69,6 +77,7 @@ void gui_backend_exit( void );
 void font_use      ( u32 id );      // make an already-loaded id the active glyph table
 u32  font_active_id( void );        // id of the active table (segment save/restore)
 bool font_valid    ( void );        // true once a table is installed -- gates glyph reads
+f32  font_line_h   ( void );        // line advance of the active table (multi-line text quads)
 
 /* Glyph lookup: UVs, pen offsets, glyph box, and advance for one character. */
 void font_glyph    ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
@@ -106,6 +115,22 @@ void draw_set_band              ( u32 band );       // arena band: 0 = main UI, 
 u32  draw_band                  ( void );           // current band (sampled for popup band inheritance)
 void draw_set_window            ( gui_id_t win );   // stable window id stamped on new commands (cache key)
 void draw_set_font              ( u32 font );       // active font id -> per-segment atlas batch context (push/pop/use_font)
+
+/* The paint cursor as one record (state in gui_emit_draw.c; here since R11 -- the definer's
+   side of the seam): the command segment tag (owning window, sort key, viewport, arena band --
+   the ambient font stays global by design) plus the ambient glyph-clip window (a table cell
+   sets it for its span).  draw_scope / draw_scope_set read and write it wholesale for the
+   overlay seam. */
+typedef struct
+{
+    gui_id_t window;         // s_draw.cur_win (retained-cache key)
+    u32      sort_key;       // s_draw.cur_z (paint order)
+    u32      viewport;       // s_draw.cur_vp (target surface routing)
+    u32      band;           // s_draw.cur_band (arena band: debug UI isolation)
+    f32      text_clip_x0;   // ambient glyph-clip window
+    f32      text_clip_x1;
+
+} gui_draw_scope_t;
 
 gui_draw_scope_t draw_scope     ( void );              // paint cursor + glyph clip as one record
 void             draw_scope_set ( gui_draw_scope_t s );// restore it wholesale (the overlay seam)
@@ -276,7 +301,8 @@ void     gui_replay_scope_exit ( bool force_redraw );
     gui_backend_init/exit (above) now, called directly within the gui_render.c unity TU.
 ==============================================================================================*/
 
-void                gui_render_flush        ( gui_viewport_t* vp, u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+void                gui_render_flush        ( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
+                                              u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
 /* Fill the backend-owned buckets of the memory breakdown: GPU device memory (geometry buffers
    scaled by the caller-supplied live-surface count, atlas textures, debug-overlay buffers) and
@@ -285,14 +311,23 @@ void                gui_render_flush        ( gui_viewport_t* vp, u32 vp_index, 
    context pool. */
 gui_mem_stats_t     gui_backend_memory      ( u32 live_viewports );
 
+/* The R3 accounting seam: the font/icon resources live one unit up (draw), so this server
+   fills its font bucket by asking the draw unit for its fixed footprint.  Home declaration
+   in draw/gui_draw.h; redeclared here because the server cannot see a library header. */
+u32                 gui_draw_unit_mem_bytes ( void );
+
 /* Debug render mode (normal / wireframe / batch-tint) -- backs gui()->debug_set/get_render_mode.
    The flush reads it to pick the fill vs. wireframe pipeline and the per-draw debug push constants. */
 
 void                gui_render_set_mode     ( gui_render_mode_t mode );
 gui_render_mode_t   gui_render_get_mode     ( void );
 
-bool                viewport_create         ( gui_viewport_t* vp, rhi_texture_t target, i32 win_id ); // a surface's vb/ib
-void                viewport_destroy        ( gui_viewport_t* vp );                                   // free its vb/ib
+/* A surface's own GPU geometry ring (one vb/ib region per frame-in-flight, sized by the
+   server's caps).  The SURFACE RECORD (gui_viewport_t, core/gui_ctx.h) is not this server's
+   to see: the orchestrator's viewport_create/destroy (frame/gui_viewport.c) wrap these and
+   own every other field -- the R11 completion of the pane handoff. */
+bool                surface_geo_create      ( rhi_buffer_t* vb, rhi_buffer_t* ib );
+void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib );
 
 /*==============================================================================================
     DEBUG OVERLAY (gui_debug_overlay.c) -- Debug builds only.

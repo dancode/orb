@@ -11,7 +11,7 @@
     One of the carved translation units (beside gui.c, gui_render.c, gui_core.c, gui_style.c,
     gui_interact.c, gui_flow.c, gui_element.c, gui_draw.c, gui_debug.c).  The compiler enforces the boundary: everything
     resolves through the public gui_* surface (gui_host.h), the backend draw API
-    (gui_render.h), and the gui_internal.h cross-unit sections -- the ambient records, the
+    (gui_render.h), and the unit headers below it -- the ambient records, the
     core service seams (item / id / io / state / style / paint / gesture services), and the
     flow unit's emit surface.  Chrome's few core-facing definitions (scrollbar_widget, the
     viewport request slot) are seams the other direction.
@@ -32,16 +32,22 @@
 #include "base/math.h"
 #include "base/math_ease.h"
 
-#include "runtime_service/gui/render/gui_render.h"
-
-#include "runtime_service/rhi/rhi_api.h"
-#include "engine/app/app_api.h"
+/* This unit's world -- everything below it (R11: the include list IS the dependency graph).
+   Chrome is policy over the whole stack; the render header carries its documented server
+   crossing (the text-selection run capture, R6). */
+#include "runtime_service/gui/render/gui_render.h"    /* pulls gui_host.h + rhi/app APIs */
 MOD_USE_RHI;
 MOD_USE_APP;
 
-/* gui_render.h pulls gui_internal.h in via gui_host.h on this path; include it directly for
-   the cross-unit seam sections regardless. */
-#include "runtime_service/gui/gui_internal.h"
+#include "runtime_service/gui/core/gui_core.h"
+#include "runtime_service/gui/core/gui_ctx.h"
+#include "runtime_service/gui/style/gui_style.h"
+#include "runtime_service/gui/draw/gui_draw.h"
+#include "runtime_service/gui/interact/gui_interact.h"
+#include "runtime_service/gui/flow/gui_flow.h"
+#include "runtime_service/gui/element/gui_element_internal.h"
+#include "runtime_service/gui/chrome/gui_chrome.h"
+#include "runtime_service/gui/debug/gui_debug.h"
 
 // clang-format off
 
@@ -89,7 +95,7 @@ MOD_USE_APP;
 #include "runtime_service/gui/chrome/popup/gui_toolbar.c"
 
 /* MEMORY ACCOUNTING: this unit's fixed statics, reported to gui_ui_memory (gui_ui_mem.c)
-   through the gui_internal.h seam.  Last so every static aggregate above is in scope. */
+   through the chrome/gui_chrome.h seam.  Last so every static aggregate above is in scope. */
 u32
 gui_chrome_unit_mem_bytes( void )
 {

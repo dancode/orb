@@ -263,7 +263,7 @@ dock_drag_float_target( gui_id_t win_id, u32 vp, f32 s )
 
 /* Compute + preview the drop target for a free window being dragged over a dockspace on its own
    surface.  Sets s_dock_drag (active only when the cursor is over a chip) and draws the overlay on
-   the reserved high z-band.  Forward-declared in gui_internal.h for window_begin_ex to call. */
+   the reserved high z-band.  Forward-declared in chrome/gui_chrome.h for window_begin_ex to call. */
 static void
 dock_drag_detect( gui_id_t win_id, gui_window_t* win )
 {
@@ -288,7 +288,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         return;
 
     /* A dormant dockspace (tree retained but not emitted this build) offers no drop chips --
-       drops would land in rects that no longer lay out.  See dock_seen_frame, gui_internal.h. */
+       drops would land in rects that no longer lay out.  See dock_seen_frame, core/gui_ctx.h. */
     gui_dock_node_t* root = dock_at( g_ctx->vp.pool[ vp ].dock_root );
     if ( !root || !dock_vp_emitted( vp ) )
         return;
@@ -406,7 +406,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
 /* Execute the drop computed by dock_drag_detect: tab into the target leaf (center) or split it and
    dock on a side.  Called unconditionally from window_end for every free window; no-ops unless this
    is the dragged window on its release edge (the gate is here because s_dock_drag is unit-private).
-   Forward-declared in gui_internal.h. */
+   Forward-declared in chrome/gui_chrome.h. */
 static void
 dock_drag_commit( gui_id_t win_id, const char* title )
 {
@@ -572,7 +572,7 @@ dock_strip_reorder( gui_dock_node_t* node, gui_id_t wid, f32 strip_x )
     node, and its clip is the node rect), so item_state hit-tests the tabs correctly.  Tabs march
     left-to-right at natural width; clicking one selects it (takes effect next frame, when that window
     becomes the active tab).  A press dragged past the threshold pops the window out (see below).
-    Forward-declared in gui_internal.h for window_end to call.
+    Forward-declared in chrome/gui_chrome.h for window_end to call.
 ==============================================================================================*/
 
 static void
