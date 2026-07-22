@@ -180,15 +180,15 @@ static bool s_overlays_emitted = false;
 static bool s_shell_emitted = false;
 
 /*============================================================================================*/
-/* Commit any font (re)loads deferred from last frame's build at this between-frames latch.  The
-   GPU atlas swap (create/upload/register + deferred destroy of the old atlas) is done here, before
-   any context renders, so it never interleaves with an in-flight frame.  Returns true when the
-   active font changed -- its metrics drive layout, so the caller forces a rebuild this frame. */
+/* Upload any (re)loaded fonts' resident pixels into the shared atlas at this between-frames latch.
+   The GPU atlas swap (register / upload) is done here, before any context renders, so it never
+   interleaves with an in-flight frame.  Returns true when the active font changed -- its metrics
+   drive layout, so the caller forces a rebuild this frame. */
 
 static bool
 gui_font_flush_deferred( void )
 {
-    if ( !font_flush_pending() )
+    if ( !font_atlas_sync() )
         return false;
     gui_style_apply();          /* active font's metrics changed -> rescale the layout base */
     return true;

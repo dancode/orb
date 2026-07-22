@@ -1,13 +1,13 @@
 /*==============================================================================================
 
-    runtime_service/gui/text/gui_font_core.c -- the loaded-font registry + metric readers.
+    runtime_service/gui/font/gui_font_core.c -- the loaded-font registry + metric readers.
 
-    The pure-data half of the font system: the id-addressed registry (s_fonts[]), the active-font
+    The registry half of the font resource: the id-addressed registry (s_fonts[]), the active-font
     pointers (s_active / s_font), the measurement readers, and the selection + fill surface the
-    render-side loader drives.  No fs, no atlas, no GPU -- the .orb_font loader and glyph UV
-    dispatch live render-side and reach this registry through font_slot_ptr / font_activate.
+    loader (font/gui_font_load.c) and the render side share.  No fs, no atlas, no GPU -- glyph UV
+    dispatch and atlas upload live render-side and reach a slot's pixels through font_slot_ptr.
 
-    Compiled into the gui_font.c leaf unit; included after text/gui_font.h.
+    Compiled into the gui_font.c resource unit; included after font/gui_font.h.
 
 ==============================================================================================*/
 // clang-format off
@@ -33,9 +33,9 @@ font_slot_char_advance( const font_slot_t* slot, u8 ch )
     Metric readers -- resolved from s_font / s_active, aimed by font_activate().
 ==============================================================================================*/
 
-f32  font_char_h      ( void ) { return s_font->type.char_h; }
-f32  font_line_h      ( void ) { return s_font->type.line_h; }
-f32  font_em          ( void ) { return s_font->type.size;   }   // nominal type size (em) -- layout base
+f32  font_char_h      ( void ) { return s_font->char_h; }
+f32  font_line_h      ( void ) { return s_font->line_h; }
+f32  font_em          ( void ) { return s_font->size;   }   // nominal type size (em) -- layout base
 
 f32
 font_char_advance( u8 ch )
@@ -75,7 +75,7 @@ void
 font_print_active( void )
 {
     printf( "[gui] set font [%u] '<loaded>' (char_h=%.1f line_h=%.1f)\n",
-            s_active_id, s_font->type.char_h, s_font->type.line_h );
+            s_active_id, s_font->char_h, s_font->line_h );
 }
 
 /*==============================================================================================
@@ -140,24 +140,30 @@ font_active_slot( void )
     return s_active;
 }
 
-/* Clear the registry and active pointers at shutdown.  Fonts own no GPU resource of their own --
-   their glyph pixels live in the shared resource atlas, torn down once render-side -- so this just
-   drops the CPU registry. */
+/* Clear the registry and active pointers at shutdown.  Frees each slot's resident glyph pixels;
+   the atlas copy of those pixels is a separate GPU resource torn down once render-side
+   (res_atlas_shutdown), so this just drops the CPU registry. */
 void
 font_registry_reset( void )
 {
+    for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
+        free( s_fonts[ i ].pixels );
     memset( s_fonts, 0, sizeof( s_fonts ) );
     s_active    = NULL;
     s_active_id = 0;
     s_font      = NULL;
 }
 
-/* Decentralized memory accounting -- the loaded-font registry (CPU-side; glyph pixels live in the
-   shared atlas, counted render-side). */
+/* Decentralized memory accounting -- the registry plus each loaded font's resident R8 glyph pixels
+   (the atlas holds its own GPU copy, counted render-side). */
 u32
 gui_font_unit_mem_bytes( void )
 {
-    return (u32)sizeof( s_fonts );
+    u32 b = (u32)sizeof( s_fonts );
+    for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
+        if ( s_fonts[ i ].used )
+            b += s_fonts[ i ].atlas_w * s_fonts[ i ].atlas_h;
+    return b;
 }
 
 // clang-format on

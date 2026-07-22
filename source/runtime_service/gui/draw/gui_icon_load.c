@@ -12,7 +12,7 @@
     exactly the coverage an R8 icon wants.  Coverage is taken from alpha when the source has it, and
     from luminance otherwise, so both alpha-on-transparent art and plain greyscale masks work.
 
-    This is the icon analogue of gui_font_internal.c's .orb_font loader -- same raw stdio read, same
+    This is the icon analogue of font/gui_font_load.c's .orb_font parser -- same raw stdio read, same
     "decode then res_atlas_add (via icon_register)" shape -- and, like it, depends on no higher
     service (no asset/fs layer): the gui backend owns its own resource loading.
 
@@ -27,6 +27,8 @@
 // clang-format off
 
 #include <stdlib.h>   // malloc / free
+
+#include "engine/sys/sys_host.h"   // sys_root_dir -- built-in icon assets resolve root-relative
 
 /* stb_image: memory-only decode (no fopen path of its own); STATIC so the symbols do not clash
    with the asset service's external copy when a host links both libraries. */

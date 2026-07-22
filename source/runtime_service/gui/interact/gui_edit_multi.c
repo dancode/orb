@@ -8,7 +8,7 @@
     newline-preserving paste, the key -> command map, glyph + line-geometry MEASUREMENT, the mouse
     selection drag, the horizontal pan that chases the caret, and the caret-blink clock.  Like the
     single-line engine it consumes (id, content rect, item state, buf, io) and produces DECISIONS,
-    never a pixel; measurement over the text/ leaf is math, not drawing, so it lives here.
+    never a pixel; measurement over the font/ resource is math, not drawing, so it lives here.
 
     What stays with the wrapping widget (chrome/widgets/gui_text_edit_multi.c) is exactly what an
     interact mechanism may not reach: the VERTICAL scroll, which belongs to the enclosing child

@@ -15,10 +15,10 @@
 
 ==============================================================================================*/
 
-/* Font metrics + the loaded-font registry are the text/ leaf (below both servers): measuring a
+/* Font metrics + the loaded-font registry are the font/ resource (below both servers): measuring a
    glyph run is sizes-and-math, not drawing.  Pulled here so the drawing routines -- and everyone
    who includes this header -- measure through font_char_advance / font_text_w / font_line_h. */
-#include "runtime_service/gui/text/gui_font.h"
+#include "runtime_service/gui/font/gui_font.h"
 
 // clang-format off
 
@@ -82,17 +82,14 @@ u32        label_vis_len( const char* s );
 gui_rect_t cell_next    ( f32 h );
 gui_rect_t cell_next_w  ( f32 natural_w, f32 h );
 
-/* Font load + atlas queries (draw/gui_font.c; loader in draw/gui_font_internal.c).  The
-   measurement readers (font_char_advance / font_text_w / font_line_h / ...) are the text/ leaf,
-   pulled in at the top of this header; the glyph-source half the render server consumes
-   (font_use / font_active_id / font_valid / font_glyph) is render/gui_render.h + the text/ leaf. */
-u32  font_load              ( const char* path );           // load a .orb_font into a new id, activate it (0=fail)
-bool font_load_into         ( u32 id, const char* path );   // load a .orb_font into an existing id (id 0 = default)
-bool font_load_builtin      ( gui_builtin_font_t font );    // load a built-in preset (gui.h) into slot 0; true no-op for GUI_FONT_NONE
-const char* font_builtin_rel_path( gui_builtin_font_t font ); // preset's asset path relative to the root; NULL for NONE / out of range
+/* Render-side glyph surface over the font resource (draw/gui_glyph.c; UV dispatch + upload in
+   draw/gui_glyph_internal.c).  The (re)load + measurement readers (font_load / font_load_into /
+   font_char_advance / font_text_w / font_line_h / ...) are the font/ resource, pulled in at the
+   top of this header; the glyph-source half the render server consumes (font_use / font_active_id
+   / font_valid / font_glyph) is render/gui_render.h + the font/ resource. */
 u32  font_slot_atlas_idx    ( u32 id );                     // live bindless atlas index backing a font id (0 if empty)
 gui_vec2_t font_slot_atlas_size( u32 id );                  // live atlas pixel dimensions backing a font id
-bool font_flush_pending     ( void );                       // commit deferred (re)loads; true if the active font changed
+bool font_atlas_sync        ( void );                       // upload (re)loaded fonts' pixels to the atlas; true if the active font changed
 
 /* Icon registry + loading (draw/gui_icon.c, draw/gui_icon_load.c).  icon_get (the sprite-
    source half the emit layer consumes) is declared in render/gui_render.h. */

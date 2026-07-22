@@ -155,7 +155,7 @@ icon_get( gui_icon_id_t id, f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h )
 
 /*==============================================================================================
     BACKEND-INTERNAL -- consumed by pipeline/gui_emit_draw.c (draw_push_icon), the same shape as
-    font_atlas_idx (resource/gui_font_internal.c): the bindless tex_idx a pipeline draw call binds.
+    font_atlas_idx (draw/gui_glyph_internal.c): the bindless tex_idx a pipeline draw call binds.
     Icons live in the shared resource atlas, so this is that one shared slot -- which is exactly why
     an icon quad now batches with the text and fills around it.
 ==============================================================================================*/

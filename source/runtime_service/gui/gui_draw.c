@@ -15,7 +15,7 @@
     this unit installs and manages.
 
     Constituents (draw/):
-        gui_font_internal.c / gui_font.c  -- .orb_font loader + atlas + glyph (registry is the text/ leaf)
+        gui_glyph_internal.c / gui_glyph.c  -- glyph atlas upload + UV dispatch (the font resource is the font/ leaf)
         gui_icon.c / gui_icon_load.c                   -- icon registry + PNG -> R8 loader
         gui_paint.c                                    -- paint floor + fitted text painters
         gui_symbol.c                                   -- symbol marks + shape palette + gui_draw_* surface
@@ -46,8 +46,8 @@
     metrics), paint floor before symbol (symbol composes fill/outline).
 ==============================================================================================*/
 
-#include "runtime_service/gui/draw/gui_font_internal.c"
-#include "runtime_service/gui/draw/gui_font.c"
+#include "runtime_service/gui/draw/gui_glyph_internal.c"
+#include "runtime_service/gui/draw/gui_glyph.c"
 #include "runtime_service/gui/draw/gui_icon.c"
 #include "runtime_service/gui/draw/gui_icon_load.c"
 
@@ -95,13 +95,12 @@ gui_draw_shutdown( void )
     font_shutdown();
 }
 
-/* The draw unit's fixed statics, for the decentralized memory accounting: the deferred font
-   reload queue + the icon tables (the loaded-font registry is the text/ leaf's, counted there). */
+/* The draw unit's fixed statics, for the decentralized memory accounting: the icon tables (the
+   loaded-font registry + its resident pixels are the font/ resource's, counted there). */
 u32
 gui_draw_unit_mem_bytes( void )
 {
-    return (u32)( sizeof( s_reload_q )
-                + sizeof( s_icons ) + sizeof( s_builtin_icons ) );
+    return (u32)( sizeof( s_icons ) + sizeof( s_builtin_icons ) );
 }
 
 /*============================================================================================*/

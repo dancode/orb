@@ -10,7 +10,7 @@
     consumes (id, content rect, item state, buf, io) plus caller-owned edit state and produces
     DECISIONS -- a new buffer, cursor / anchor, scroll bias, blink phase -- never a pixel.
 
-    Measurement is math over font metrics (the text/ leaf), not drawing, so it lives here: an
+    Measurement is math over font metrics (the font/ resource), not drawing, so it lives here: an
     interact mechanism may size and hit-test text exactly as it sizes and hit-tests any rect; it
     just never emits a glyph.  The one convenient entry is edit_field(): drive it once per frame
     over a content rect and it runs the whole non-paint frame.  The wrapping widget
@@ -73,7 +73,7 @@ word_click_off( const char* buf, u32 len, u32 off )
 }
 
 /*==============================================================================================
-    Glyph measurement -- math over the active font's advances (the text/ leaf), the interact-side
+    Glyph measurement -- math over the active font's advances (the font/ resource), the interact-side
     counterpart of a hit-test.  Shared with both widget wrappers through the seam so the caret,
     the click mapping, and the paint all agree on where each byte sits.  No drawing.
 ==============================================================================================*/

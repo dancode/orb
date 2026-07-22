@@ -1,21 +1,26 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_font.c -- GUI_FONT translation unit: the leaf font-metrics library.
+    runtime_service/gui/gui_font.c -- GUI_FONT translation unit: the font resource.
 
-    * A foundational leaf of the gui stack, beside rect: text measurement is sizes-and-math, not
-      drawing, so the loaded-font metrics live here where BOTH servers and every layer can read them.
-    * No draw, no atlas, no GPU -- this unit never touches a render resource.  The glyph DRAWING
-      half (atlas pixels, UV dispatch, the .orb_font loader) stays render-side.
-    * The types + reader surface are text/gui_font.h; this unit compiles the registry + readers.
+    * A low-level resource the GUI depends on, beside rect -- not a GUI feature: it draws nothing
+      and holds no widgets.  It parses a baked .orb_font into the two things the GUI needs: the
+      TYPE METRICS layout measures against, and the raw R8 GLYPH PIXELS the render atlas uploads.
+    * No atlas, no GPU: this unit never touches a render resource.  The render side is the one
+      consumer of the pixels -- it reads a slot's pixels and packs them into the shared atlas.
+    * Types + reader/loader surface are font/gui_font.h; this unit compiles the registry, the
+      metric readers, the .orb_font parser, and the built-in preset loader.
 
 ==============================================================================================*/
 
-#include <stdio.h>    /* printf  -- font_print_active                 */
-#include <string.h>   /* memset  -- font_registry_reset               */
+#include <stdio.h>    /* fopen/fread/printf                          */
+#include <stdlib.h>   /* malloc/free -- resident glyph pixels        */
+#include <string.h>   /* memset/memcpy                               */
 
 #include "orb.h"
 
-#include "runtime_service/gui/text/gui_font.h"
-#include "runtime_service/gui/text/gui_font_core.c"    // registry + metric readers
+#include "runtime_service/gui/font/gui_font.h"
+#include "runtime_service/gui/font/gui_font_core.c"       // registry + metric readers
+#include "runtime_service/gui/font/gui_font_load.c"       // .orb_font parser + load API
+#include "runtime_service/gui/font/gui_font_builtin.c"    // built-in preset -> load
 
 /*============================================================================================*/

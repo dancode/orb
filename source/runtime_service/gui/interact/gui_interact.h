@@ -75,7 +75,7 @@ bool feat_collapse_live( gui_id_t id );
     Single-line text edit engine (interact/gui_edit.c) -- the whole behavior of a text field
     behind input_text, minus the paint.  A gesture mechanism like move / resize: it mutates a
     caller buffer + edit state from io and paints nothing, but it MEASURES (glyph advances are
-    math over the text/ leaf, not drawing) so it owns the caret placement, the click-to-caret
+    math over the font/ resource, not drawing) so it owns the caret placement, the click-to-caret
     mapping, the mouse selection drag, and horizontal scroll as well as the keyboard path.  The
     one entry is edit_field(): the wrapping widget (chrome/widgets/gui_text_edit.c) supplies a
     content rect + item state, calls it once per frame, and then only paints the resolved state.

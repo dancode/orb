@@ -93,9 +93,10 @@ gui_font_load_builtin( gui_builtin_font_t font )
 bool
 gui_font_load_into( u32 id, const char* path )
 {
-    /* font_load_into defers a swap of an already-loaded slot to the next frame_begin (see the
-       reload queue in gui_font_internal.c); layout follows there, via gui_font_flush_deferred, once the
-       new metrics are live.  Nothing to rescale here -- the slot still shows its current font. */
+    /* font_load_into parses the .orb_font into the slot now (metrics live immediately); a slot that
+       already shows a font keeps showing its old atlas pixels until the upload lands at the next
+       frame_begin (font_atlas_sync), where layout follows via gui_font_flush_deferred.  Nothing to
+       rescale here. */
     return font_load_into( id, path );
 }
 

@@ -63,7 +63,7 @@ void res_atlas_shutdown      ( void );   // destroy the texture, free the reside
 void res_atlas_flush_upload  ( void );   // re-upload the resident buffer to the GPU if dirty (deferred)
 
 /*==============================================================================================
-    Tenant registration -- fonts (gui_font_internal.c) and icons (gui_icon.c) pack through here.
+    Tenant registration -- fonts (draw/gui_glyph_internal.c) and icons (gui_icon.c) pack through here.
 ==============================================================================================*/
 
 /* Copy w*h R8 coverage into the atlas and return a 1-based tenant handle (0 = out of room / bad

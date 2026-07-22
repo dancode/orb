@@ -34,7 +34,7 @@
 ==============================================================================================*/
 
 #include "runtime_service/gui/gui_host.h"   // public gui types: gui_rect_t, gui_id_t, flags, enums
-#include "runtime_service/gui/text/gui_font.h"  // font-metrics leaf: font_use/active_id/valid/line_h the tessellator reads
+#include "runtime_service/gui/font/gui_font.h"  // font resource leaf: font_use/active_id/valid/line_h the tessellator reads
 #include "runtime_service/rhi/rhi_api.h"    // rhi buffer/texture/cmd handles the flush speaks
 #include "engine/app/app_api.h"             // APP_WIN_MAX -- the per-surface fan-out bound
 
@@ -70,14 +70,14 @@ void gui_backend_exit( void );
     what a font or an icon IS.  What it does need, mid-pipeline, is a resolver: the
     tessellator turns a text command into quads via font_glyph and re-activates the segment's
     font by id (font_use / font_active_id); the emit layer resolves an icon id to its cached
-    UVs (icon_get).  These are implemented by the DRAW unit's resources (draw/gui_font.c,
+    UVs (icon_get).  These are implemented by the DRAW unit's resources (draw/gui_glyph.c,
     draw/gui_icon.c) over tables that live beside the atlas -- the server consumes the
     installed source and never manages it.
 ==============================================================================================*/
 
 /* Glyph lookup: UVs, pen offsets, glyph box, and advance for one character (defined in the DRAW
-   unit's font resources, draw/gui_font.c).  The active-font selection + metrics the tessellator
-   also reads (font_use / font_active_id / font_valid / font_line_h) are the text/ leaf, pulled in
+   unit's font resources, draw/gui_glyph.c).  The active-font selection + metrics the tessellator
+   also reads (font_use / font_active_id / font_valid / font_line_h) are the font/ resource, pulled in
    above -- measuring text is sizes-and-math, not a render resource. */
 void font_glyph    ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
                             f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
