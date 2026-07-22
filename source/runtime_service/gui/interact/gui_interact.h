@@ -124,6 +124,59 @@ u32  word_click_off( const char* buf, u32 len, u32 off );                   /* r
 u32  edit_strlen   ( const char* buf, u32 bufsz );                          /* capacity-bounded len  */
 void edit_sel      ( const gui_edit_state_t* es, u32* lo, u32* hi, bool* has ); /* selection range */
 
+/*==============================================================================================
+    Multi-line text edit engine (interact/gui_edit_multi.c) -- the two-dimensional twin of the
+    single-line engine, the field-internal core behind input_text_multiline.  Same shape as
+    gui_edit.c: it mutates a caller buffer + editor state from io, measures (glyph + line
+    geometry), pans the caret horizontally, and paints nothing.  The one entry is medit_edit().
+    What it does NOT own is the VERTICAL scroll: that belongs to the enclosing child region
+    (flow, above this layer), so the wrapping widget (chrome/widgets/gui_text_edit_multi.c)
+    chases the caret's row by writing the region scroll and paints; medit_edit returns `active`
+    to tell it when.  The line-geometry readers below are shared with that widget.
+==============================================================================================*/
+
+/* Persisted per-id editor state (big-class keyed slot).  cursor / anchor are byte offsets with
+   the single-line selection contract ([min,max), equal = bare caret).  scroll_x is the horizontal
+   pan chasing the caret (vertical scroll belongs to the child region, not this state).  pref_x is
+   the sticky preferred column for vertical caret movement (the x the caret aims for when Up / Down
+   crosses a shorter line); pref_valid gates it because 0.0 is a real column.  36 bytes. */
+
+typedef struct
+{
+    f32  blink_t;      // seconds since last caret-visibility reset
+    u32  cursor;       // byte offset of the caret
+    u32  anchor;       // passive end of the selection; cursor == anchor -> none
+    u32  dbl_lo;       // word start of the double-clicked word (word-drag mode)
+    u32  dbl_hi;       // word end of the double-clicked word  (word-drag mode)
+    f32  scroll_x;     // horizontal pixel pan (caret chase)
+    f32  pref_x;       // preferred caret column (pixels) for vertical movement
+    u8   word_sel;     // nonzero while in word-select drag (set by double-click)
+    u8   pref_valid;   // pref_x holds a live column (0.0 is a real column, so a flag)
+    u8   _pad[ 2 ];
+
+} gui_medit_state_t;
+
+/* medit_edit result: changed on any buffer modification; active on any caret / edit activity this
+   frame (the signal for the widget's vertical region-scroll chase and its own caret repaint). */
+
+typedef struct { bool changed; bool active; } medit_result_t;
+
+/* The engine entry: run one full field-internal frame of a multiline editor over a caller buffer.
+   `inner` is the text content rect (the widget's cell already inset), `st` the item state,
+   `vis_rows` the page-scroll size, `line_h` the row pitch.  The engine fetches its own keyed
+   editor state by id and leaves cursor / anchor / scroll_x / blink on it for the widget. */
+
+medit_result_t medit_edit( gui_id_t id, gui_rect_t inner, gui_item_state_t st, u32 vis_rows,
+                           f32 line_h, char* buf, u32 bufsz );
+
+/* Line geometry + selection readers, shared with the widget's vertical chase + paint. */
+
+void medit_sel        ( const gui_medit_state_t* es, u32* lo, u32* hi, bool* has ); /* selection  */
+u32  medit_line_count ( const char* buf, u32 len );                    /* '\n' count + 1          */
+u32  medit_line_end   ( const char* buf, u32 len, u32 off );           /* '\n' offset, or len     */
+u32  medit_row_start  ( const char* buf, u32 len, u32 row );           /* start offset of `row`   */
+void medit_caret_rowx ( const char* buf, u32 off, u32* row, f32* x );  /* (row, px) of the caret  */
+
 /* Decentralized memory accounting -- this unit's fixed statics (root gui_interact.c foot),
    summed into cpu_frontend_bytes by gui_ui_memory (gui_ui_mem.c). */
 u32 gui_interact_unit_mem_bytes( void );

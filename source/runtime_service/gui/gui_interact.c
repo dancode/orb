@@ -30,6 +30,8 @@
     interact/gui_behavior.c  -- public behavior on caller rects: gui_item, invisible_button
     interact/gui_edit.c      -- single-line text edit engine: buffer / cursor / selection / undo,
                                 glyph measurement, mouse-drag select, scroll-into-view (no paint)
+    interact/gui_edit_multi.c -- multi-line text edit engine: 2D caret, line geometry, undo,
+                                mouse-drag select, horizontal pan (region vertical scroll is chrome)
 
 ==============================================================================================*/
 
@@ -65,17 +67,19 @@
 #include "runtime_service/gui/interact/gui_feature.c"
 #include "runtime_service/gui/interact/gui_behavior.c"
 #include "runtime_service/gui/interact/gui_edit.c"
+#include "runtime_service/gui/interact/gui_edit_multi.c"
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory
-    (gui_ui_mem.c).  The drag payload slot and the text-edit undo ring are the real aggregates;
-    the gesture latches (move offset, press-defer, resize anchors) are scalar statics, not counted.
+    (gui_ui_mem.c).  The drag payload slot and the two text-edit undo rings (single-line s_undo
+    256 B + multiline s_medit_undo 2 KB) are the real aggregates; the gesture latches (move
+    offset, press-defer, resize anchors) are scalar statics, not counted.
 ==============================================================================================*/
 
 u32
 gui_interact_unit_mem_bytes( void )
 {
-    return (u32)( sizeof( s_drag ) + sizeof( s_undo ) );
+    return (u32)( sizeof( s_drag ) + sizeof( s_undo ) + sizeof( s_medit_undo ) );
 }
 
 /*============================================================================================*/
