@@ -34,6 +34,7 @@
 ==============================================================================================*/
 
 #include "runtime_service/gui/gui_host.h"   // public gui types: gui_rect_t, gui_id_t, flags, enums
+#include "runtime_service/gui/text/gui_text.h"  // font-metrics leaf: font_use/active_id/valid/line_h the tessellator reads
 #include "runtime_service/rhi/rhi_api.h"    // rhi buffer/texture/cmd handles the flush speaks
 #include "engine/app/app_api.h"             // APP_WIN_MAX -- the per-surface fan-out bound
 
@@ -74,12 +75,10 @@ void gui_backend_exit( void );
     installed source and never manages it.
 ==============================================================================================*/
 
-void font_use      ( u32 id );      // make an already-loaded id the active glyph table
-u32  font_active_id( void );        // id of the active table (segment save/restore)
-bool font_valid    ( void );        // true once a table is installed -- gates glyph reads
-f32  font_line_h   ( void );        // line advance of the active table (multi-line text quads)
-
-/* Glyph lookup: UVs, pen offsets, glyph box, and advance for one character. */
+/* Glyph lookup: UVs, pen offsets, glyph box, and advance for one character (defined in the DRAW
+   unit's font resources, draw/gui_font.c).  The active-font selection + metrics the tessellator
+   also reads (font_use / font_active_id / font_valid / font_line_h) are the text/ leaf, pulled in
+   above -- measuring text is sizes-and-math, not a render resource. */
 void font_glyph    ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
                             f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
 

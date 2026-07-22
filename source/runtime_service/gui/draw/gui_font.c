@@ -1,14 +1,15 @@
 /*==============================================================================================
 
-    runtime_service/gui/draw/gui_font.c -- The font unit's public API (gui_render.h).
+    runtime_service/gui/draw/gui_font.c -- the font unit's load + atlas + glyph API.
 
-    Every function here is what gui.c (the UI unit) is allowed to call.  gui_font_internal.c,
-    included right before this file, holds the registry state and the loader; this file calls
-    straight into its statics (s_fonts, s_active, s_font, ...) and building-block functions
-    (font_slot_load, font_activate, font_alloc_slot, ...) since it's the same translation unit.
-    Only logic shared by more than one public function (font_internal_load_into, needed by both
-    font_load_into and font_load_builtin) got pulled out as a named internal function -- anything
-    used by exactly one function here is written directly in that function's body.
+    The render-touching public surface: load / reload fonts, the shared-atlas queries, and glyph
+    UV dispatch (font_glyph, the render server's reverse-seam consumer).  It drives the registry
+    through the text/ leaf (font_alloc_slot / font_slot_ptr / font_activate / font_active_id /
+    font_active_slot) and packs pixels through gui_font_internal.c, included right before this file.
+
+    The MEASUREMENT readers (font_char_advance / font_text_w / font_line_h / ...) and the registry
+    itself are the text/ leaf (text/gui_text.c) -- measuring text is sizes-and-math, not drawing,
+    so it lives at the bottom of the stack, readable by every layer including the interact server.
 
 ==============================================================================================*/
 // clang-format off
@@ -16,9 +17,7 @@
 #include "engine/sys/sys_host.h"    // sys_root_dir -- built-in presets resolve root-relative
 
 /*==============================================================================================
-
-    Registry API -- load / select fonts by id.
-
+    Registry API -- load fonts by id (the registry storage + selection live in the text/ leaf).
 ==============================================================================================*/
 
 /* Load a font into a new id and activate it.  Returns the id, or 0 on failure (registry full, or
@@ -27,11 +26,11 @@
 u32
 font_load( const char* path )
 {
-    u32  id = font_alloc_slot();
+    u32 id = font_alloc_slot();
     if ( id == 0 )
-         return 0;
+        return 0;
 
-    if ( !font_slot_load( &s_fonts[ id ], path ) )
+    if ( !font_slot_load( font_slot_ptr( id ), path ) )
         return 0;
 
     font_activate( id );
@@ -49,14 +48,14 @@ font_load_into( u32 id, const char* path )
 
 /* Path of every gui_builtin_font_t preset (gui.h), indexed by the enum; NULL for GUI_FONT_NONE. */
 
-static const char* s_builtin_font_path[] = 
+static const char* s_builtin_font_path[] =
 {
     [ GUI_FONT_NONE ]               = NULL,
     [ GUI_FONT_JETBRAINS_16 ]       = "assets/font/JetBrainsMonoNL-Regular_16px.orb_font",
     [ GUI_FONT_ROBOTO_16 ]          = "assets/font/Roboto-Regular_16px.orb_font",
     [ GUI_FONT_CASCADIA_MONO_12 ]   = "assets/font/CascadiaMono_12px.orb_font",
     [ GUI_FONT_CASCADIA_MONO_16 ]   = "assets/font/CascadiaMono_16px.orb_font",
-    [ GUI_FONT_CASCADIA_MONO_20 ]   = "assets/font/CascadiaMono_20px.orb_font",     
+    [ GUI_FONT_CASCADIA_MONO_20 ]   = "assets/font/CascadiaMono_20px.orb_font",
     [ GUI_FONT_CASCADIA_CODE_16 ]   = "assets/font/CascadiaCode_16px.orb_font",
 };
 
@@ -72,7 +71,7 @@ font_builtin_rel_path( gui_builtin_font_t font )
 }
 
 /* Load a built-in font preset into slot 0 and activate it. A no-op success for GUI_FONT_NONE.
-   (the caller loads its own font); called from gui_init() when the host passes a preset. */
+   Called from gui_init() when the host passes a preset. */
 
 bool
 font_load_builtin( gui_builtin_font_t font )
@@ -84,8 +83,7 @@ font_load_builtin( gui_builtin_font_t font )
     if ( rel != NULL )
     {
         /* Built-in presets are engine assets at <root>/assets/font -- resolve against
-           sys_root_dir() so hosts work from any working directory (a child game project's
-           root when launched via F5, for example). */
+           sys_root_dir() so hosts work from any working directory. */
         char path[ 576 ];
         fmt_snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), rel );
 
@@ -111,13 +109,13 @@ font_flush_pending( void )
             continue;
 
         u32  id = s_reload_q[ i ].id;
-        bool ok = font_slot_load( &s_fonts[ id ], s_reload_q[ i ].path );
+        bool ok = font_slot_load( font_slot_ptr( id ), s_reload_q[ i ].path );
         if ( !ok )   /* slot keeps its previous font; say so instead of failing silently */
             printf( "[gui] WARNING: deferred font reload failed for slot %u ('%s')\n",
                     id, s_reload_q[ i ].path );
         s_reload_q[ i ] = ( font_reload_req_t ){ 0 };
 
-        if ( ok && s_active_id == id )
+        if ( ok && font_active_id() == id )
         {
             font_activate( id );        // metrics rebuilt in place; refresh active pointers
             active_reloaded = true;
@@ -127,43 +125,18 @@ font_flush_pending( void )
     return active_reloaded;
 }
 
-/* Make an already-loaded id the active font.  Ignored if the id is empty or out of range. */
-void
-font_use( u32 id )
-{
-    if ( id >= GUI_FONT_REGISTRY_MAX || !s_fonts[ id ].used )
-        return;
-    font_activate( id );
-}
+/*==============================================================================================
+    Atlas queries + glyph dispatch -- the render-side surface (the shared atlas + UV lookup).
+==============================================================================================*/
 
-/* Id of the active font slot -- callers save/restore this to push and pop fonts. */
-u32
-font_active_id( void )
-{
-    return s_active_id;
-}
-
-/* True once a font has been activated (s_font set by font_activate) and every metrics/glyph
-   accessor below is safe to call.  False from init() until either a built-in preset or the
-   caller's own font_load() succeeds -- s_font stays NULL until then, so layout code that needs
-   type metrics (gui_style_apply -> layout_compute) must gate on this rather than call in blind. */
-bool
-font_valid( void )
-{
-    return s_font != NULL;
-}
-
-/* Bindless index of the atlas backing font id `id` (0 for an empty / out-of-range slot).
-
-   Every loaded font now shares the one resource atlas, so this is the shared bindless slot for any
-   used font.  A texture preview (sb_gui) draws this index -- it shows the whole shared atlas (all
-   fonts + icons), which is the intent.  Cache invalidation on a live re-bake is handled separately
-   by res_atlas_generation (folded into the retained cache's per-window hash), since the shared
-   bindless slot is stable across reloads while glyph UVs may shift on a repack. */
+/* Bindless index of the atlas backing font id `id` (0 for an empty / out-of-range slot).  Every
+   loaded font shares the one resource atlas, so this is the shared bindless slot for any used
+   font.  A texture preview (sb_gui) draws this index -- it shows the whole shared atlas. */
 u32
 font_slot_atlas_idx( u32 id )
 {
-    if ( id >= GUI_FONT_REGISTRY_MAX || !s_fonts[ id ].used )
+    font_slot_t* slot = font_slot_ptr( id );
+    if ( !slot || !slot->used )
         return 0;
     return res_atlas_idx();
 }
@@ -173,71 +146,15 @@ font_slot_atlas_idx( u32 id )
 gui_vec2_t
 font_slot_atlas_size( u32 id )
 {
-    if ( id >= GUI_FONT_REGISTRY_MAX || !s_fonts[ id ].used )
+    font_slot_t* slot = font_slot_ptr( id );
+    if ( !slot || !slot->used )
         return ( gui_vec2_t ){ 0.0f, 0.0f };
     return ( gui_vec2_t ){ (f32)GUI_RES_ATLAS_W, (f32)GUI_RES_ATLAS_H };
 }
 
 /*==============================================================================================
-    Dispatch helpers -- read from s_font / s_active, set by font_activate() (gui_font_internal.c).
-==============================================================================================*/
-
-f32  font_char_h      ( void ) { return s_font->type.char_h; }
-f32  font_line_h      ( void ) { return s_font->type.line_h; }
-f32  font_em          ( void ) { return s_font->type.size;   }   // nominal type size (em) -- layout base
-
-/* Log the active font (id, name, metrics). */
-void
-font_print_active( void )
-{
-    printf( "[gui] set font [%u] '<loaded>' (char_h=%.1f line_h=%.1f)\n",
-            s_active_id, s_font->type.char_h, s_font->type.line_h );
-}
-
-/* Horizontal advance of one character in the active font.  Used by the text edit engine to
-   measure glyph positions without emitting draw geometry (cursor placement, click-to-offset). */
-f32
-font_char_advance( u8 ch )
-{
-    return font_slot_char_advance( s_active, ch );
-}
-
-/* Width of the first n bytes of str (stops early at a NUL).  Labels measure only their visible
-   span this way -- the bytes before a "##" marker -- so reserved label space matches what draws.
-   Out-of-range bytes advance as '?' via font_slot_char_advance, matching what the draw path
-   (font_glyph) renders for them -- measure and draw must agree or such text overflows its slot. */
-f32
-font_text_w_n( const char* str, u32 n )
-{
-    /* font_slot_char_advance hand-inlined with the slot hoisted: this is the hottest inner loop
-       in the emit path (every label, cell, and value text measures through it), and a debug
-       build (/Od) pays a real call per character through the helper form. */
-    const font_slot_t* slot = s_active;
-    f32                w    = 0.0f;
-    for ( u32 i = 0; i < n && str[ i ]; ++i )
-    {
-        u8 ch = (u8)str[ i ];
-        if ( ch < ORB_FONT_CP_FIRST || ch > ORB_FONT_CP_LAST ) ch = (u8)'?';
-        w += (f32)slot->lookup[ ch - ORB_FONT_CP_FIRST ].advance;
-    }
-    return w;
-}
-
-/* Pixel width of a NUL-terminated run. */
-f32
-font_text_w( const char* str )
-{
-    return font_text_w_n( str, 0xFFFFFFFFu );
-}
-
-/*==============================================================================================
-    font_glyph -- per-character draw parameters.
-
-    Outputs:
-        u0..v1   atlas UV rect for the glyph bitmap
-        ox, oy   pixel offsets from (cursor_x, text_y) to the top-left of the bitmap
-        gw, gh   pixel dimensions of the bitmap to draw (0 for invisible glyphs like space)
-        advance  horizontal cursor advance in pixels
+    font_glyph -- per-character draw parameters for the active font (the render server's reverse
+    seam, declared in render/gui_render.h): atlas UV rect, bearing offsets, glyph size, advance.
 ==============================================================================================*/
 
 void
@@ -246,7 +163,7 @@ font_glyph( u8 ch,
             f32* ox, f32* oy, f32* gw, f32* gh,
             f32* advance )
 {
-    font_slot_glyph( s_active, ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
+    font_slot_glyph( font_active_slot(), ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
 }
 
 // clang-format on

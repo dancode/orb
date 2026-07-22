@@ -15,7 +15,7 @@
     this unit installs and manages.
 
     Constituents (draw/):
-        gui_font.h / gui_font_internal.c / gui_font.c  -- font registry, .orb_font loader, metrics
+        gui_font_internal.c / gui_font.c  -- .orb_font loader + atlas + glyph (registry is the text/ leaf)
         gui_icon.c / gui_icon_load.c                   -- icon registry + PNG -> R8 loader
         gui_paint.c                                    -- paint floor + fitted text painters
         gui_symbol.c                                   -- symbol marks + shape palette + gui_draw_* surface
@@ -46,7 +46,6 @@
     metrics), paint floor before symbol (symbol composes fill/outline).
 ==============================================================================================*/
 
-#include "runtime_service/gui/draw/gui_font.h"
 #include "runtime_service/gui/draw/gui_font_internal.c"
 #include "runtime_service/gui/draw/gui_font.c"
 #include "runtime_service/gui/draw/gui_icon.c"
@@ -96,12 +95,12 @@ gui_draw_shutdown( void )
     font_shutdown();
 }
 
-/* The draw unit's fixed statics, for the decentralized memory accounting: the font registry
-   (CPU glyph metrics) + the hot-reload request queue + the icon tables. */
+/* The draw unit's fixed statics, for the decentralized memory accounting: the deferred font
+   reload queue + the icon tables (the loaded-font registry is the text/ leaf's, counted there). */
 u32
 gui_draw_unit_mem_bytes( void )
 {
-    return (u32)( sizeof( s_fonts ) + sizeof( s_reload_q )
+    return (u32)( sizeof( s_reload_q )
                 + sizeof( s_icons ) + sizeof( s_builtin_icons ) );
 }
 

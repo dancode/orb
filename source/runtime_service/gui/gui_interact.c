@@ -49,6 +49,7 @@
 #include "runtime_service/gui/core/gui_core.h"
 #include "runtime_service/gui/core/gui_ctx.h"
 #include "runtime_service/gui/style/gui_style.h"
+#include "runtime_service/gui/text/gui_text.h"
 #include "runtime_service/gui/interact/gui_interact.h"
 #include "runtime_service/gui/debug/gui_debug.h"
 

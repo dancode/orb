@@ -1,56 +1,28 @@
 /*==============================================================================================
 
-    runtime_service/gui/draw/gui_font_internal.c -- Font registry state and the
-    .orb_font loader.
+    runtime_service/gui/draw/gui_font_internal.c -- the .orb_font loader + glyph dispatch.
 
-    Nothing here is declared in gui_render.h -- none of it crosses to gui.c.  gui_font.c (included
-    right after this file) is the ENTIRE public surface and is allowed to call straight into the
-    statics and functions defined here (same TU).  Only font_internal_load_into lives here as a
-    named function despite having no public name of its own -- it's shared by two gui_font.c
-    callers (font_load_into, font_load_builtin).  Everything else gui_font.c needs is either a
-    building block used from more than one place (the font_slot_* loader ops, font_activate,
-    font_alloc_slot) or state (s_fonts, s_reload_q, ...); logic used by exactly one public
-    function lives directly in that function, in gui_font.c.
+    The render-touching half of the font system: it parses a baked .orb_font, registers its glyph
+    pixels into the shared resource atlas (gui_res_atlas.c), and fills a text-tier registry slot
+    (metrics + advance table + tenant handle) through the text/ leaf's font_slot_ptr / font_activate.
+    Glyph UV dispatch (font_slot_glyph) and the deferred-reload queue also live here.
 
-    Owns the id-addressed registry (s_fonts[]), the active-font pointers (s_active / s_font), the
-    deferred reload queue, the shared atlas finalize, and the .orb_font file loader.  .orb_font is
-    a proportional font baked offline by font_tool (FreeType-rasterized, not an stb runtime bake):
-    an R8 atlas of packed glyph bitmaps plus per-glyph records (UV rect, bearing, advance).  It is
-    currently the only font source format gui loads.
+    The loaded-font REGISTRY and the measurement readers are the text/ leaf (text/gui_text.c) --
+    nothing about measurement lives here; this file only loads pixels and hands metrics down.
 
-    Slot 0 is the default.  It starts empty (used == false) until the host's first font_load /
-    font_load_into( 0, path ) / font_load_builtin() call -- every caller of gui_init() loads a
-    font immediately after, before any frame renders, so no frame ever needs a fallback font.
-
-    Also holds the BACKEND-INTERNAL accessors (font_atlas_idx / font_white_uv / font_dash_v /
-    font_atlas_bytes / font_init / font_shutdown) consumed by other render/ files later in the
-    unity build (pipeline/gui_build_tess.c, gui_debug_overlay.c, pipeline/gui_render.c) -- those
-    aren't public either, they just have a wider audience than "this file only".
-
-    Included by gui_render.c after gui_font.h, before gui_font.c.
+    Included by gui_draw.c after gui_draw.h (-> text/gui_text.h types) + gui_res_atlas.h (the shared
+    atlas), before gui_font.c.  .orb_font is a proportional font baked offline by font_tool: an R8
+    atlas of packed glyph bitmaps plus per-glyph records (UV rect, bearing, advance).
 
 ==============================================================================================*/
 // clang-format off
 
-static font_slot_t      s_fonts     [ GUI_FONT_REGISTRY_MAX ];  // font registry; slot 0 is the default
-static font_slot_t*     s_active    = NULL;                     // active slot (s_font == &s_active->metrics)
-static u32              s_active_id = 0;                        // active slot id (0 = default, 1..MAX-1 = user-loaded)
-static font_metrics_t*  s_font      = NULL;                     // active font's metrics (read by every accessor)
-
-/*==============================================================================================
-    The .orb_font loader.
-
-    A font's glyph atlas is packed into the shared resource atlas (gui_res_atlas.c) as a tenant; the
-    white texel + dash rows are the shared atlas's assist band, not per font, so there is no per-font
-    finalize step anymore.  The slot keeps only its tenant handle plus type/glyph metrics.
-==============================================================================================*/
-
 /*==============================================================================================
     font_slot_load -- load a .orb_font from disk into `slot`.  Does not activate the slot.
 
-    On success the slot's glyph pixels are resident in the shared atlas and metrics describe a
-    proportional font.  A slot that already holds a font (a live re-bake) updates its existing
-    tenant in place; a failed load leaves the slot's previous font intact.
+    On success the slot's glyph pixels are resident in the shared atlas and its metrics + advance
+    table describe a proportional font.  A slot that already holds a font (a live re-bake) updates
+    its existing tenant in place; a failed load leaves the slot's previous font intact.
 ==============================================================================================*/
 
 static bool
@@ -150,15 +122,14 @@ font_slot_load( font_slot_t* slot, const char* path )
 }
 
 /*==============================================================================================
-    font_slot_char_advance / font_slot_glyph -- per-glyph metrics and draw parameters for a slot.
-==============================================================================================*/
+    font_slot_glyph -- per-character draw parameters for a slot.
 
-static f32
-font_slot_char_advance( const font_slot_t* slot, u8 ch )
-{
-    if ( ch < ORB_FONT_CP_FIRST || ch > ORB_FONT_CP_LAST ) ch = (u8)'?';
-    return (f32)slot->lookup[ ch - ORB_FONT_CP_FIRST ].advance;
-}
+    Outputs:
+        u0..v1   atlas UV rect for the glyph bitmap
+        ox, oy   pixel offsets from (cursor_x, text_y) to the top-left of the bitmap
+        gw, gh   pixel dimensions of the bitmap to draw (0 for invisible glyphs like space)
+        advance  horizontal cursor advance in pixels
+==============================================================================================*/
 
 static void
 font_slot_glyph( const font_slot_t* slot, u8 ch,
@@ -189,14 +160,13 @@ font_slot_glyph( const font_slot_t* slot, u8 ch,
 /*==============================================================================================
     Deferred reload queue.
 
-    A live font swap (font_load_into on a slot that already holds a font) builds a fresh GPU atlas
-    and tears the old one down.  Done mid-build that GPU churn -- create / upload / register, plus
-    the deferred destroy of the outgoing atlas -- interleaves with a frame the host is still
-    assembling and, across the multi-context floater pass, with frames still in flight, which can
-    fault the device (VK_ERROR_DEVICE_LOST).  Instead such a (re)load is queued here and committed
-    once per frame from font_flush_pending(), which the UI unit calls at frame_begin -- a clean
-    point between frames, before any context renders.  The slot keeps showing its current font
-    until the swap lands, so there is no half-loaded slot to draw.
+    A live font swap (font_load_into on a slot that already holds a font) rebuilds glyph pixels in
+    the shared atlas.  Done mid-build that GPU churn -- upload / register -- interleaves with a frame
+    the host is still assembling and, across the multi-context floater pass, with frames still in
+    flight, which can fault the device (VK_ERROR_DEVICE_LOST).  Instead such a (re)load is queued
+    here and committed once per frame from font_flush_pending(), which the UI unit calls at
+    frame_begin -- a clean point between frames.  The slot keeps showing its current font until the
+    swap lands, so there is no half-loaded slot to draw.
 ==============================================================================================*/
 
 #define GUI_FONT_PATH_MAX 512
@@ -240,105 +210,61 @@ font_reload_enqueue( u32 id, const char* path )
 }
 
 /*==============================================================================================
-    Slot activation.
-==============================================================================================*/
-
-/* Point the active-font pointers at slot `id`. */
-
-static void
-font_activate( u32 id )
-{
-    s_active_id = id;
-    s_active    = &s_fonts[ id ];
-    s_font      = &s_active->metrics;
-}
-
-/* First free slot id in 1..MAX-1, or 0 when the registry is full (0 is reserved for the default). */
-
-static u32
-font_alloc_slot( void )
-{
-    for ( u32 i = 1; i < GUI_FONT_REGISTRY_MAX; ++i )
-        if ( !s_fonts[ i ].used )
-            return i;
-    return 0;
-}
-
-/*==============================================================================================
-    font_internal_load_into -- the one piece of registry logic with more than one gui_font.c
-    caller (font_load_into AND font_load_builtin both need the enqueue-vs-synchronous-load
-    branch), so it earns a real internal function instead of being inlined into either.
+    font_internal_load_into -- the one piece of load logic with more than one gui_font.c caller
+    (font_load_into AND font_load_builtin both need the enqueue-vs-synchronous-load branch).
 
     Load a font into an existing id (id 0 swaps the default).  Returns false on bad id; a deferred
-    request always reports success (it is committed later by font_flush_pending).
-
-    A slot that already holds a font stays valid and on screen until the swap, so the GPU atlas
-    rebuild is deferred to the next frame_begin latch -- the create/upload/register and the deferred
-    destroy of the old atlas then land between frames, never mid-build (see s_reload_q).  A fresh
-    slot has no font to show, so it loads synchronously; on failure the slot keeps what it had.
+    request always reports success (committed later by font_flush_pending).  A slot that already
+    holds a font stays valid on screen until the swap; a fresh slot loads synchronously.
 ==============================================================================================*/
 
 static bool
 font_internal_load_into( u32 id, const char* path )
 {
-    if ( id >= GUI_FONT_REGISTRY_MAX )
+    font_slot_t* slot = font_slot_ptr( id );
+    if ( !slot )
         return false;
 
-    if ( s_fonts[ id ].used )
+    if ( slot->used )
     {
         font_reload_enqueue( id, path );
         return true;
     }
 
-    if ( !font_slot_load( &s_fonts[ id ], path ) )
+    if ( !font_slot_load( slot, path ) )
         return false;
-    if ( s_active_id == id )
+    if ( font_active_id() == id )
         font_activate( id );            // metrics rebuilt in place; refresh active pointers
     return true;
 }
 
 /*==============================================================================================
-    BACKEND-INTERNAL -- module lifecycle, called from gui_render.c
-    (gui_render_init/shutdown).
+    BACKEND-INTERNAL -- module lifecycle, called from gui_draw.c (gui_draw_boot / shutdown).
 ==============================================================================================*/
 
 static void
 font_shutdown( void )
 {
-    /* Drop any deferred reloads that never reached a frame_begin flush. */
+    /* Drop any deferred reloads that never reached a frame_begin flush, then clear the CPU
+       registry (text/ leaf).  Fonts own no GPU resource of their own -- glyph pixels live in the
+       shared resource atlas, torn down once by res_atlas_shutdown (gui_backend_exit). */
     memset( s_reload_q, 0, sizeof( s_reload_q ) );
-
-    /* Fonts own no GPU resource of their own -- their glyph pixels live in the shared resource
-       atlas, torn down once by res_atlas_shutdown (gui_backend_exit).  Just clear the registry. */
-    memset( s_fonts, 0, sizeof( s_fonts ) );
-    s_active    = NULL;
-    s_active_id = 0;
-    s_font      = NULL;
+    font_registry_reset();
 }
 
 static bool
 font_init( void )
 {
     /* Deliberately a no-op, not a placeholder: font_init exists as the paired bookend to
-       font_shutdown (called from gui_render_init/shutdown) but has nothing to allocate.  Creating
-       a font atlas needs actual glyph pixels from an .orb_font, which only font_load /
-       font_load_into supply -- gui_render_init's job is standing up the GPU bindings those loads
-       will later fill (pipeline, font sampler), not conjuring an atlas with nothing in it.  Slot 0
-       starts empty; font_valid() reports that until the host's own font_load_builtin / font_load
-       call activates one -- see gui_init's font_valid() gate in gui_frame_loop.c for the consumer side
-       of that contract.  The icon atlas is a separate, optional layer -- gui_backend_init stands it
-       up (gated on s_caps.icons), not this font-only function. */
+       font_shutdown but has nothing to allocate.  A font atlas needs actual glyph pixels from an
+       .orb_font, which only font_load / font_load_into supply.  Slot 0 starts empty; font_valid()
+       (text/ leaf) reports that until the host's own load activates one. */
     return true;
 }
 
 /*==============================================================================================
-    BACKEND-INTERNAL -- consumed by gui_build_tess.c (atlas index / white texel / dash rows) and
-    gui_debug_overlay.c (atlas index / white texel), and gui_render.c (memory stats).
-
-    Fonts, icons and solid/dash assists all share ONE resource atlas now, so these are thin
-    redirects to gui_res_atlas.c.  Keeping the font_* names means the tessellation hot path
-    (gui_build_tess.c) is unchanged -- every tex_idx it emits is the shared atlas, so text, fills,
-    dashes and icons batch into one draw per clip/viewport scope.
+    BACKEND-INTERNAL -- shared-atlas redirects consumed within this unit (canvas texture preview)
+    and named font_* so the tessellation hot path reads one shared atlas for text, fills and icons.
 ==============================================================================================*/
 
 static u32  font_atlas_idx  ( void )               { return res_atlas_idx();   }
