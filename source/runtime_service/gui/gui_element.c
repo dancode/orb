@@ -37,6 +37,7 @@
 /* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
    Astride both servers by definition: the render header (it paints) AND the interact stack
    (it reads state as parameters) -- the whole sub-stack below element, and no chrome. */
+
 #include "runtime_service/gui/render/gui_render.h"    /* the render server's push primitives
                                                          (pulls gui_host.h + rhi/app APIs)  */
 #include "runtime_service/gui/core/gui_core.h"
@@ -47,6 +48,8 @@
 #include "runtime_service/gui/flow/gui_flow.h"
 #include "runtime_service/gui/element/gui_element_internal.h"
 #include "runtime_service/gui/debug/gui_debug.h"
+
+/*============================================================================================*/
 
 #include "runtime_service/gui/element/gui_element_core.c"
 #include "runtime_service/gui/element/gui_adornment.c"

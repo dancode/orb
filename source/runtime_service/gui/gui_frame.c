@@ -67,15 +67,17 @@
 #include "engine/app/app_api.h"
 
 // clang-format off
-
+/*============================================================================================*/
 /* Frame-unit internal seams -- both ends live in THIS translation unit, so the declarations
    live here rather than in any unit header (the frame unit owns no header of its own: its
    public face IS gui.h / gui_api.h / gui_host.h).  Forward-declared because the frame group's
    include order has callers (gui_frame_loop.c) before definers (gui_context.c, gui_viewport.c). */
-gui_context_t* ctx_alloc_slot ( const gui_ctx_config_t* c, u32 slots, i32 slot );  /* gui_context.c */
-void           ctx_pool_init  ( void );                                           /* gui_context.c */
-bool           viewport_create ( gui_viewport_t* vp, rhi_texture_t target, i32 win_id ); /* gui_viewport.c */
-void           viewport_destroy( gui_viewport_t* vp );                                   /* gui_viewport.c */
+
+gui_context_t* ctx_alloc_slot ( const gui_ctx_config_t* c, u32 slots, i32 slot );           /* gui_context.c */
+void           ctx_pool_init  ( void );                                                     /* gui_context.c */
+
+bool           viewport_create ( gui_viewport_t* vp, rhi_texture_t target, i32 win_id );     /* gui_viewport.c */
+void           viewport_destroy( gui_viewport_t* vp );                                       /* gui_viewport.c */
 
 /*==============================================================================================
     Capability flags -- latched by gui_init_config_front (gui_frame_loop.c), read directly (same TU)

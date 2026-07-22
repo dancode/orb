@@ -22,8 +22,10 @@
 
 #include "orb.h"
 
+/*============================================================================================*/
 /* The whole stack's decls -- purely so gui_api.c's vtable can name every unit's implementation
    function (their prototypes live across these internal unit headers). */
+
 #include "runtime_service/gui/render/gui_render.h"
 #include "runtime_service/gui/core/gui_core.h"
 #include "runtime_service/gui/core/gui_ctx.h"
@@ -35,17 +37,21 @@
 #include "runtime_service/gui/chrome/gui_chrome.h"
 #include "runtime_service/gui/debug/gui_debug.h"
 
-// Sibling module APIs -- fetched once at module init (gui_api.c), read everywhere via the
-// extern accessors.  THIS is the one TU that defines the pointer storage.
-#include "runtime_service/rhi/rhi_api.h"
+/*============================================================================================*/
+/* Sibling module APIs -- fetched once at module init (gui_api.c), 
+   read everywhere via the extern accessors. THIS is the one TU that defines the pointer storage. */
+
 #include "engine/app/app_api.h"
-MOD_USE_RHI;
+#include "runtime_service/rhi/rhi_api.h"
+
 MOD_USE_APP;
-
-// clang-format off
-
-#include "engine/mod/mod_export.h"
-#include "runtime_service/gui/gui_api.c"
+MOD_USE_RHI;
 
 /*============================================================================================*/
-// clang-format on
+
+#ifndef GUI_API_C_PRELUDE
+    #include "engine/mod/mod_export.h"
+    #include "runtime_service/gui/gui_api.c"
+#endif
+
+/*============================================================================================*/
