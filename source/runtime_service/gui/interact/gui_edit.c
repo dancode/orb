@@ -92,13 +92,13 @@ typedef struct
 
 typedef struct
 {
-    gui_id_t        for_id;                   // which widget owns this history
-    char              revert[ UNDO_TEXT_MAX ];  // buffer content at focus-gain
-    gui_undo_snap_t ring[ UNDO_SLOTS ];       // circular snapshot ring
-    i32               base;                     // ring index of logical slot 0
-    i32               cur;                      // logical index of the current (live) snapshot
-    i32               top;                      // one past the highest committed logical index
-    bool              last_was_char;            // true when the last push was a char insert
+    gui_id_t            for_id;                   // which widget owns this history
+    char                revert[ UNDO_TEXT_MAX ];  // buffer content at focus-gain
+    gui_undo_snap_t     ring[ UNDO_SLOTS ];       // circular snapshot ring
+    i32                 base;                     // ring index of logical slot 0
+    i32                 cur;                      // logical index of the current (live) snapshot
+    i32                 top;                      // one past the highest committed logical index
+    bool                last_was_char;            // true when the last push was a char insert
 
 } gui_undo_buf_t;
 
@@ -232,6 +232,7 @@ edit_sel( const gui_edit_state_t* es, u32* lo, u32* hi, bool* has )
    (and queue set_edit_cursor_end), so length and caret are recomputed afterward; wants_redraw
    covers hook-side state the caller emitted before this field ran (scrollback rows), or the
    clean-frame skip would stall the update. */
+
 static void
 edit_run_key_hook( char* buf, u32 bufsz, gui_edit_state_t* es, u32* len_io )
 {
@@ -267,6 +268,7 @@ edit_run_key_hook( char* buf, u32 bufsz, gui_edit_state_t* es, u32* len_io )
    navigation (Left/Right/Home/End, word jumps, Ctrl+A), backspace/delete, character insertion,
    and the Enter/Escape submit/revert.  Threads len (kept in step with buf), the result flags,
    and the blink-reset request back to the caller. */
+
 static void
 edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shift,
                  u32* len_io, input_field_result_t* res_io, bool* blink_io )

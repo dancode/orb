@@ -65,6 +65,7 @@ edit_apply_mouse( gui_rect_t box, gui_item_state_t st, char* buf, u32 len,
        focused_id = id by now); st.active stays true for the whole capture, so the drag below
        keeps extending the selection even after the cursor leaves the box.  text_offset_at clamps
        a cursor past either edge to 0 / len, so a drag past the ends selects to start / end. */
+
     f32 px  = s_io.mouse_x - ( box.x + WIDGET_PAD ) + es->scroll_x;
     u32 off = text_offset_at( buf, len, px );
 
@@ -135,14 +136,15 @@ edit_apply_mouse( gui_rect_t box, gui_item_state_t st, char* buf, u32 len,
    glyph-clipped text, and the blinking caret -- all inside the box interior.  Runs every frame
    (focused or not) so a programmatic caret move from outside is honoured and the field always
    repaints its content. */
+
 static void
 edit_scroll_and_paint( gui_rect_t box, char* buf, gui_edit_state_t* es, bool focused )
 {
     /* Scroll to keep the caret inside the visible width on every frame, not just when
        focused, so a programmatic cursor move from outside is also honoured. */
     {
-        f32 cx    = text_x_at( buf, es->cursor );
-        f32 vis_w = box.w - 2.0f * WIDGET_PAD;
+        f32  cx    = text_x_at( buf, es->cursor );
+        f32  vis_w = box.w - 2.0f * WIDGET_PAD;
         if ( vis_w < 0.0f ) vis_w = 0.0f;
         if ( cx - (f32)es->scroll_x < 0.0f )  es->scroll_x = (u16)cx;
         if ( cx - (f32)es->scroll_x > vis_w ) es->scroll_x = (u16)( cx - vis_w );
@@ -247,6 +249,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
         /* The interact edit engine owns the entire keyboard path (key hook, cursor-end request,
            undo ring, selection publish, and every key command); this widget owns measurement,
            the mouse selection drag, and paint. */
+
         res = edit_keys( id, buf, bufsz, es, &blink_reset );
         len = edit_strlen( buf, bufsz );   /* keys may have resized buf under us */
 
