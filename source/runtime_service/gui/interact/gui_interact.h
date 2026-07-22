@@ -71,6 +71,46 @@ f32  feat_ease( f32 t );
 bool feat_pin( gui_id_t id, u32 state, gui_rect_t* r, gui_rect_t* restore, gui_rect_t target );
 bool feat_collapse_live( gui_id_t id );
 
+/*==============================================================================================
+    Single-line text edit engine (interact/gui_edit.c) -- keyboard-driven buffer editing, the
+    measurement-free core behind input_text.  A gesture mechanism like move / resize: it mutates
+    a caller buffer + edit state from io, and paints nothing.  The wrapping widget
+    (chrome/widgets/gui_text_edit.c) owns font measurement, the mouse handler, horizontal scroll,
+    and rendering; it drives the engine through edit_keys() once per focused frame.  The pure
+    byte-offset helpers are shared with the multiline wrapper (gui_text_edit_multi.c).
+==============================================================================================*/
+
+/* Persisted per-id edit state.  cursor + anchor describe the selection ([min,max), equal = none).
+   blink_t (caret-blink dt accumulator) and scroll_x (horizontal pixel bias) are widget-owned
+   presentation fields kept here so the whole field state is one keyed slot.  16 bytes -- fits
+   within GUI_STATE_CAP. */
+typedef struct
+{
+    f32  blink_t;          // seconds since last caret-visibility reset (widget-owned)
+    u16  cursor;           // byte offset of the caret
+    u16  anchor;           // passive end of the selection; cursor == anchor -> none
+    u16  dbl_lo, dbl_hi;   // double-clicked word bounds (word-drag mode)
+    u16  scroll_x;         // horizontal scroll bias in px (widget-owned)
+    u8   word_sel;         // nonzero while in a word-select drag
+    u8   _pad;
+
+} gui_edit_state_t;
+
+/* edit_keys result: changed on any buffer modification, enter on Enter submit.  Independent. */
+typedef struct { bool changed; bool enter; } input_field_result_t;
+
+/* The engine entry: run one focused frame's keyboard editing (hook, cursor-end, undo, selection
+   publish, all key commands) over a caller buffer + edit state.  Sets *blink_reset on activity. */
+input_field_result_t edit_keys( gui_id_t id, char* buf, u32 bufsz, gui_edit_state_t* es,
+                                bool* blink_reset );
+
+/* Pure byte-offset helpers, shared with the single-line + multiline widget wrappers. */
+int  char_class    ( u8 c );                                              /* 0 ws / 1 word / 2 sym */
+void word_bounds   ( const char* buf, u32 len, u32 off, u32* lo, u32* hi );/* word run around off   */
+u32  word_click_off( const char* buf, u32 len, u32 off );                 /* right-edge click fixup*/
+u32  edit_strlen   ( const char* buf, u32 bufsz );                        /* capacity-bounded len  */
+void edit_sel      ( const gui_edit_state_t* es, u32* lo, u32* hi, bool* has ); /* selection range */
+
 /* Decentralized memory accounting -- this unit's fixed statics (root gui_interact.c foot),
    summed into cpu_frontend_bytes by gui_ui_memory (gui_ui_mem.c). */
 u32 gui_interact_unit_mem_bytes( void );

@@ -100,7 +100,9 @@ u32
 gui_chrome_unit_mem_bytes( void )
 {
     u32 b = 0;
-    b += (u32)( sizeof( s_undo ) + sizeof( s_medit_undo )
+    /* s_undo (single-line undo ring) moved to the interact edit engine and is counted by
+       gui_interact_unit_mem_bytes; s_medit_undo (multiline) is still this unit's. */
+    b += (u32)( sizeof( s_medit_undo )
               + sizeof( s_num_edit_buf ) + sizeof( s_tabbars ) );
     b += (u32)( sizeof( s_tab ) + sizeof( s_tab_scroll_dummy ) );
     b += (u32)sizeof( s_select );   /* window text selection (chrome/window/gui_select.c) */

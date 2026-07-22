@@ -28,6 +28,7 @@
     interact/gui_drag.c      -- drag-and-drop: threshold machine + typed payload (source/target)
     interact/gui_feature.c   -- feat_* kit: window features as freestanding id-keyed mechanisms
     interact/gui_behavior.c  -- public behavior on caller rects: gui_item, invisible_button
+    interact/gui_edit.c      -- single-line text edit engine: buffer / cursor / selection / undo
 
 ==============================================================================================*/
 
@@ -61,17 +62,18 @@
 #include "runtime_service/gui/interact/gui_drag.c"
 #include "runtime_service/gui/interact/gui_feature.c"
 #include "runtime_service/gui/interact/gui_behavior.c"
+#include "runtime_service/gui/interact/gui_edit.c"
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory
-    (gui_ui_mem.c).  The drag payload slot is the one real aggregate; the gesture latches
-    (move offset, press-defer, resize anchors) are scalar statics, not counted by contract.
+    (gui_ui_mem.c).  The drag payload slot and the text-edit undo ring are the real aggregates;
+    the gesture latches (move offset, press-defer, resize anchors) are scalar statics, not counted.
 ==============================================================================================*/
 
 u32
 gui_interact_unit_mem_bytes( void )
 {
-    return (u32)sizeof( s_drag );
+    return (u32)( sizeof( s_drag ) + sizeof( s_undo ) );
 }
 
 /*============================================================================================*/
