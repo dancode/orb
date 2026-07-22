@@ -1,6 +1,14 @@
 /*==============================================================================================
 
-    runtime_service/gui/interact/gui_select.c -- Window text selection (GUI_WIN_TEXT_SELECT).
+    runtime_service/gui/window/gui_select.c -- Window text selection (GUI_WIN_TEXT_SELECT).
+
+    CHROME, not a gesture mechanism (the R6 carve's classification): the controller reads the
+    render server's run capture (select_capture_* / select_run, render/gui_select_capture.c)
+    and measures with the draw unit's font metrics -- server crossings the interact unit must
+    never make.  Its true mechanisms are the generic core verbs it rides (interact_claim /
+    interact_held / interact_idle) plus the highlight paint, which is chrome's to draw.  So
+    the whole controller lives with its only callers: the window begins (select_paint_under)
+    and gui_window_end (select_window_end), all in this unit.
 
     The UI half of selectable display text; the backend half (the run capture) is
     render/gui_select_capture.c.  A window flagged GUI_WIN_TEXT_SELECT gets two selection
@@ -539,8 +547,7 @@ select_window_end( void )
             u32 run, chr;
             if ( select_pos_from_mouse( win, body, true, &run, &chr ) )
             {
-                s_interaction.active_id     = sel_id;
-                s_interaction.active_button = 0;
+                interact_claim( sel_id, 0 );
                 s_select.win       = win;
                 s_select.dragging  = true;
                 s_select.rect_mode = false;
@@ -551,8 +558,7 @@ select_window_end( void )
             }
             else
             {
-                s_interaction.active_id     = sel_id;
-                s_interaction.active_button = 0;
+                interact_claim( sel_id, 0 );
                 s_select.win       = win;
                 s_select.dragging  = true;
                 s_select.rect_mode = true;

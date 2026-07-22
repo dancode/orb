@@ -151,7 +151,7 @@ bool draw_cull_box              ( f32 x, f32 y, f32 w, f32 h );
     The backend half of window text selection (GUI_WIN_TEXT_SELECT): at the build seam --
     segments closed, every emit pool complete -- the GUI_CMD_TEXT commands of each window
     marked this frame are copied into a persistent run buffer that survives draw_reset, so
-    the UI unit's selection controller (interact/gui_select.c) can hit-test, highlight and
+    the chrome unit's selection controller (window/gui_select.c) can hit-test, highlight and
     copy against them one frame behind the emit that produced them (the standard
     self-measurement lag).  ONE shared buffer serves every flagged window; runs are tagged
     with their owning window id.  Always compiled -- a product feature, not a debug layer.

@@ -25,8 +25,9 @@
     interaction scope (s_scope.win), so call these INSIDE the owning pane_begin / your
     window bracket.
 
-    Included by gui.c after core/gui_anim.c (the tweens ride gui_anim_timer) and before
-    the widget/window files.
+    Included by gui_interact.c (the interact unit), after gui_move.c and gui_resize.c -- the
+    feat_ verbs are their public form; the tweens ride the interact server's gui_anim_timer
+    across the core/gui_core.h seams.
 
 ==============================================================================================*/
 // clang-format off

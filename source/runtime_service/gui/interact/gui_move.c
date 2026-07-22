@@ -19,9 +19,9 @@
     with the button still down.  A release before that silently cancels: it was a click, and
     the hit rect stayed put for press-2.
 
-    Included by gui.c with the other interact services, after gui_item.c; consumers are the
-    tier-4 hosts (gui_window_free.c, gui_dock_drag.c, gui_dock_float.c) and the frame
-    conductor's tear-off placement (gui_frame.c, via move_grab_offset).
+    Included by gui_interact.c (the interact unit); consumers are the chrome hosts
+    (gui_window_free.c, gui_dock_drag.c, gui_dock_float.c) and the frame conductor's
+    tear-off placement (frame/gui_viewport.c, via move_grab_offset).
 
 ==============================================================================================*/
 // clang-format off
@@ -56,8 +56,9 @@ move_track( gui_id_t id, f32 cur_x, f32 cur_y, f32* out_x, f32* out_y )
 
 /* The raw grab offset of the in-flight move drag.  For the one consumer that must re-derive a
    position in another coordinate space mid-gesture: the tear-off / merge-back placement in
-   gui_frame.c lands the surface at (cursor - offset) using the SCREEN or the new host's cursor. */
-static void
+   frame/gui_viewport.c (cross-unit) lands the surface at (cursor - offset) using the SCREEN
+   or the new host's cursor. */
+void
 move_grab_offset( f32* off_x, f32* off_y )
 {
     *off_x = s_move_off_x;

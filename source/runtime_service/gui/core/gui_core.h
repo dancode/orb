@@ -353,6 +353,8 @@ extern u32  s_popup_begin_count;    /* core/gui_ctx.c -- popup nesting depth (pe
 bool interact_idle      ( void );             /* nothing holds the pointer capture      */
 bool interact_held      ( gui_id_t id );      /* id's press-drag gesture is in flight   */
 bool interact_hover_bare( gui_id_t win_id );  /* cursor on win_id, no widget beneath it */
+void interact_claim( gui_id_t id, u8 button );/* claim the capture -- the one door for a
+                                                 higher tier to start a press-drag (R6)  */
 
 /* Exclusive input mode (focus scope) -- true while a GUI_WIN_MODAL window is live (emitted this
    frame or last).  Defined in core/gui_ctx.c; read by focus_allowed (core/gui_item.c) to

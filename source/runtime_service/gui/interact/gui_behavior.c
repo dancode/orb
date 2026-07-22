@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/user/gui_behavior.c -- Public interaction behavior on caller rects.
+    runtime_service/gui/interact/gui_behavior.c -- Public interaction behavior on caller rects.
 
     The behavior half of the user-UI substrate: gui_item() runs the shared widget interaction
     state machine (item_state, core/gui_item.c) over a rect the CALLER derived -- a
@@ -13,9 +13,8 @@
 
     invisible_button is gui_item() reduced to its click bit, kept as the one-liner convenience.
 
-    Included by gui.c in the user/ tier (last of the tiers -- pure vocabulary, no state); needs
-    item_id (present/gui_paint_core.c) and item_state (core/gui_item.c), in scope far
-    above.
+    Included by gui_interact.c LAST (pure vocabulary, no state); item_id and item_state are
+    interact-server seams (core/gui_id.c / core/gui_item.c, via core/gui_core.h).
 
 ==============================================================================================*/
 // clang-format off

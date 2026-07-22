@@ -40,8 +40,10 @@ gui_ui_memory( void )
     /* compose/ -- the flow unit accounts for its own statics (compose/gui_flow.c seam). */
     b += gui_flow_unit_mem_bytes();
 
-    /* interact/ -- drag payload service + text-selection controller. */
-    b += (u32)( sizeof( s_drag ) + sizeof( s_select ) );
+    /* interact/ -- THE INTERACT UNIT is its own unit since R6 (gui_interact.c) and accounts
+       for its own statics (the drag payload slot) via its seam; the text-selection controller
+       moved to chrome (window/gui_select.c) and is counted there. */
+    b += gui_interact_unit_mem_bytes();
 
     /* widgets/ + table/ + dock/ + popup/ -- the chrome unit accounts for its own statics
        (gui_chrome.c seam). */

@@ -1,6 +1,29 @@
 # GUI SERVER PLAN -- the v2 unit reorganization
 
-Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) + R5 (style) DONE 2026-07-21 -- next: R6 (interact)
+Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) + R5 (style) + R6 (interact) DONE 2026-07-21 -- next: R7 (flow)
+
+R6 DONE: the INTERACT UNIT exists (root gui_interact.c) -- gesture mechanisms over the
+interact server: interact/gui_move.c + gui_resize.c + gui_drag.c + gui_feature.c +
+gui_behavior.c (from user/ -- the user/ folder is now DISSOLVED: canvas -> draw R3, query ->
+core R4, stacks -> style R5, behavior -> interact R6).  ACCEPTANCE: no render header; the
+documented upward seams live in interact/gui_interact.h mirroring core's block --
+draw_drop_ring (un-static'd in paint_core; the ONE adornment paint, invoked where the accept
+is decided, like core's draw_nav_ring), the drag preview tooltip through public chrome verbs,
+and resize's WIN_BORDER read (geometry, not paint).  New cross-TU seams: drag_new_frame
+(frame_begin drives it) + move_grab_offset (viewport tear-off reads it) un-static'd.
+SELECT RE-CLASSIFIED (the R6 design resolution): the plan mapped "gui_select.c (decision
+half)" to interact, but the audit shows the decision half is inseparable from server
+crossings interact must never make -- the press/sweep protocol reads the render server's run
+capture (select_capture_*, select_run) and measures with draw-unit font metrics
+(font_char_advance).  Window text selection is CHROME: policy astride both servers, riding
+the generic core verbs.  The whole controller moved to window/gui_select.c (chrome TU,
+included before the window files; decls -> chrome/gui_chrome.h), and its two raw
+s_interaction writes were re-seated onto NEW core verb interact_claim( id, button )
+(core/gui_item.c, beside interact_held/idle) -- preserving the rule that core/ + interact/
+are the only raw writers of the arbitration fields.  Memory accounting: NEW
+gui_interact_unit_mem_bytes() (= s_drag; the gesture latches are scalar statics, uncounted
+by contract); s_select now counted in gui_chrome_unit_mem_bytes.  Full + mono builds clean
+(first try); both canaries clean.
 
 R5 DONE: the STYLE UNIT exists (root gui_style.c) -- the first library over the interact
 server: state flags in, colors/metrics out, never paints.  Constituents: style/gui_theme.c
@@ -264,7 +287,7 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
     R3  draw     NEW drawing-routine unit: pure wrappers + shape half of gui_symbol.c + canvas   <- DONE
     R4  core     interact server assembly; pane bracket -> frame; behavior data audit        <- DONE
     R5  style    style/ folder + root unit; projections in; user color range        <- DONE
-    R6  interact gesture unit gui_interact.c; paint halves pushed up
+    R6  interact gesture unit; select re-classified as chrome; interact_claim   <- DONE
     R7  flow     compose/ -> flow/; unit .c to root; flow/gui_flow.h (rect producer sits below element)
     R8  element  absorb styled paint helpers; unit .c to root
     R9  chrome   six folders under chrome/; chrome/gui_chrome.h

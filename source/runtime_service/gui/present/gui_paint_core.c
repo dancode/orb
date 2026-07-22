@@ -174,8 +174,10 @@ draw_window_focus_border( gui_rect_t r )
 }
 
 /* Drag-and-drop accept ring: a bolder outline around an open target whose type matched the
-   payload, so the drop reads as "accepted here" (gui_drag_payload_accept invokes it). */
-static void
+   payload, so the drop reads as "accepted here".  gui_drag_payload_accept (the interact unit)
+   invokes it across that unit's one documented upward paint seam (interact/gui_interact.h) --
+   the drop decision and its feedback land in the same call, like core's draw_nav_ring. */
+void
 draw_drop_ring( gui_rect_t r )
 {
     draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, 0, COL_NAV );

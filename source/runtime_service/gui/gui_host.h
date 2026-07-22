@@ -251,7 +251,7 @@ void gui_stack_same_line( f32 spacing );
 void gui_skip( void );
 void gui_separator( void );
 
-/* user substrate - blank space canvas (user/gui_canvas.c): reserve a rect to draw into */
+/* user substrate - blank space canvas (draw/gui_canvas.c): reserve a rect to draw into */
 gui_rect_t gui_canvas( f32 height );
 
 /* sizing (sz_) - intent to px; grid-first first, content-fit escape hatches last */
@@ -276,7 +276,7 @@ u32        gui_carve( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out
 gui_rect_t gui_anchor( gui_rect_t parent, gui_anchor_t a );
 gui_rect_t gui_empty( f32 w, f32 h );
 
-/* user substrate - behavior on caller rects (user/gui_behavior.c): the shared interaction
+/* user substrate - behavior on caller rects (interact/gui_behavior.c): the shared interaction
    state machine run over a rect YOU derived.  item() reports the full state; invisible_button
    is its click bit.  A custom widget = rect (canvas/split/carve) + item() + draw_*. */
 gui_item_state_t gui_item( const char* id_str, gui_rect_t r );

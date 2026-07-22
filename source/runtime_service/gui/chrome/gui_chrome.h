@@ -419,6 +419,12 @@ u32  gui_chrome_unit_mem_bytes( void );
    enclosing popup on click (the Dear ImGui CloseCurrentPopup default behavior). */
 void gui_popup_close_current( void );
 
+/* Window text selection (window/gui_select.c, chrome since R6 -- it reads the render capture
+   and font metrics, so it is policy astride both servers, not an interact mechanism).  The
+   bands paint under the body at the window begins; the protocol + overlay resolve at end. */
+void select_paint_under( void );
+void select_window_end( void );
+
 /* The region engine (compose/gui_scroll.c, flow unit) emits the scrollbar widget into the gutter
    it reserved at layout_pop_region -- but the widget lives above it (widgets/gui_scrollbar.c):
    flow's one upward call beside the anim ease.  Compose hands the track rect + scroll slot; the

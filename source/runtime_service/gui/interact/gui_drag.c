@@ -18,12 +18,12 @@
     live drag" threshold machine, and drag_from_chrome starts a drag from non-item chrome (a dock
     tab, gui_dock_drag.c) with the payload attached in the same call.
 
-    Included by gui.c after gui_paint_core.c (draw_drop_ring, the present-tier accept
-    highlight); the preview tooltip reuses gui_tooltip_begin/end (gui_popup.c, later in the TU --
-    resolved by the public declarations in gui_host.h).
+    Included by gui_interact.c (the interact unit).  Two documented upward calls: the accept
+    ring paints through draw_drop_ring (the unit's ONE adornment paint -- see the upward-seams
+    block in interact/gui_interact.h), and the preview tooltip reuses gui_tooltip_begin/end
+    (chrome, resolved by the public declarations in gui_host.h -- deliberate dogfooding).
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"
 // clang-format off
 
 #define GUI_DRAG_THRESH 4.0f    /* px an armed press must move before the drag goes live */
@@ -52,10 +52,11 @@ static struct
 
 } s_drag;
 
-/* Frame reset, called from frame_begin next to interaction_frame_reset.  The drag (and its
-   payload) survives through the release frame -- accept reads it on mouse_released -- and clears
-   on the first fully-idle frame after, mirroring how active_id is released. */
-static void
+/* Frame reset, called from frame_begin (frame/gui_frame.c, cross-unit) next to
+   interaction_frame_reset.  The drag (and its payload) survives through the release frame --
+   accept reads it on mouse_released -- and clears on the first fully-idle frame after,
+   mirroring how active_id is released. */
+void
 drag_new_frame( void )
 {
     if ( !s_io.mouse_down[ 0 ] && !s_io.mouse_released[ 0 ] )

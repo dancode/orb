@@ -587,6 +587,19 @@ interact_held( gui_id_t id )
     return s_interaction.active_id == id;
 }
 
+/* Claim the pointer capture for `id` (held by `button`) -- the write half of the pair above.
+   The one sanctioned door for a HIGHER tier to start a press-drag gesture: core/ and
+   interact/ are the only raw writers of the arbitration fields, so chrome-side gestures
+   (window text selection's fallback press) claim through this verb instead of poking
+   s_interaction directly.  Release is global, as for every gesture: the frame reset drops
+   active_id when `button` lifts. */
+void
+interact_claim( gui_id_t id, u8 button )
+{
+    s_interaction.active_id     = id;
+    s_interaction.active_button = button;
+}
+
 /* The cursor is over window `win_id`'s bare surface: it is the front-most window under the
    cursor AND no widget sits under the cursor -- the gate for chrome gestures (title-bar drag,
    double-click collapse, context-menu press) that must yield to any widget above them. */

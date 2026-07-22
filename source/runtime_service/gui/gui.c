@@ -7,9 +7,13 @@
     headers under gui_internal.h, so every library boundary is compiler-enforced:
 
       - this unit (gui.c): the FRAME ORCHESTRATOR + the tiers not yet carved -- present/
-        paint primitives, the interact/ gesture services, the user/ vocabulary, frame
-        lifecycle, the pane bracket, the module vtable.  It boots both servers, pumps io
-        into the interact server, and hands contexts to the render server.
+        paint primitives, frame lifecycle, the pane bracket, the module vtable.  It boots
+        both servers, pumps io into the interact server, and hands contexts to the render
+        server.
+
+      - the interact unit (gui_interact.c, R6): gesture mechanisms -- move/resize/drag,
+        the feat_* kit, the public behavior verbs.  Decides, never paints.  Reached
+        through the interact/gui_interact.h seams.
 
       - the interact server (gui_core.c, R4): io snapshot, ids, keyed state, the ambient
         interaction records, the surface service, the item protocol, anim, query readers.
@@ -39,8 +43,7 @@
 
     Include order in this unit matters: each file can reference statics from files included
     above it.  Directories name ROLES, not rungs; a role only depends on roles included above
-    it.  Order here: present / interact gestures (siblings) -> flow's seam gap -> feat kit ->
-    user -> frame (incl. the pane bracket + context lifecycle).
+    it.  Order here: present -> frame (incl. the pane bracket + context lifecycle).
 
     render/     -- beside the stack, not a rung in it: the RENDER SERVER (gui_render.c),
                     reached only through gui_render.h at flush.
@@ -54,17 +57,15 @@
                     vocabulary.  Not in this TU; reached through the style/gui_style.h seams.
     compose/     -- composition (THE FLOW UNIT, compose/gui_flow.c): the only code that turns
                     style spacing metrics into rects.  Not in this TU.
-    interact/    -- behavior: the GESTURE services still in this TU (the R6 interact unit's
-                    material) -- drag threshold + payload, move-drag + deferred-press
-                    (move_grab/move_track, press_defer_*), edge-resize mechanism
-                    (resize_item), text selection, the feat_* kit.  The standard item
-                    protocol (item_state, item_grab) and anim moved to the interact server
-                    (core/, R4).  Each service is a capability (exclusivity, clicks,
-                    tracking) over (id, rect); none knows a widget, and none reads a style
-                    value or paints.  interact/ + core/ stay the ONLY writers of the
-                    s_interaction arbitration fields (hover/active/focus): higher tiers
-                    claim through the core verbs and read the record for gating, never
-                    write it raw.
+    interact/    -- THE INTERACT UNIT (its own TU, gui_interact.c, since R6): the gesture
+                    mechanisms -- drag threshold + payload, move-drag + deferred-press,
+                    edge resize, the feat_* kit, the public behavior verbs.  Not in this TU.
+                    Each service is a capability (exclusivity, clicks, tracking) over
+                    (id, rect); none knows a widget, and none paints.  interact/ + core/
+                    stay the ONLY writers of the s_interaction arbitration fields
+                    (hover/active/focus): higher tiers claim through the core verbs
+                    (interact_claim) and read the record for gating, never write it raw.
+                    Window text selection re-classified as chrome (window/gui_select.c, R6).
     present/     -- presentation: the shared paint primitives -- COL_* palette, widget
                     macros, label grammar, text-fit, symbol/shape draws.  Consumes
                     rect + state + skin; never asks behavior, state is a parameter.
@@ -73,19 +74,14 @@
     widgets/ table/ window/ dock/ popup/ nav/
                  -- THE CHROME UNIT (gui_chrome.c): the stock widget set + the host
                     structures.  Not in this TU; see gui_chrome.c for the role map.
-    user/        -- the caller's vocabulary: pure public verbs + readers -- behavior on
-                    caller rects (gui_item, invisible_button).  The bracketing stacks moved
-                    to the style unit (style/gui_stacks.c, R5), the canvas to draw (R3), the
-                    query readers to core (R4).  Zero state, zero machinery; consumed only
-                    from outside the lib (via the vtable) or by lower tiers deliberately
-                    dogfooding the public surface through gui_host.h declarations.
-                    Where user widgets are written: rect (canvas) + item() + draw_*, no skin.
+    (user/ dissolved at R6 -- the caller's vocabulary lives with its machinery: canvas ->
+     draw (R3), query readers -> core (R4), bracketing stacks -> style (R5), behavior verbs
+     -> interact (R6).  Where user widgets are written: rect (canvas) + item() + draw_*.)
     debug/       -- dev tooling: dashboard + stepper are THE DEBUG UNIT (debug/gui_debug.c);
                     gui_frame_overlay.c stays HERE (the lifecycle calls its timing helpers).
-    frame/       -- the conductor: gui_frame.c lifecycle, gui_viewport.c, gui_boot.c.  Top of
-                    the stack alongside user/ (the host's driver over the tiers, as user/ is
-                    the caller's door into them), NOT a foundation: prepare/update/dispatch
-                    touches every tier.
+    frame/       -- the conductor: gui_frame.c lifecycle, gui_viewport.c, gui_boot.c.  Top
+                    of the stack (the host's driver over the tiers), NOT a foundation:
+                    prepare/update/dispatch touches every tier.
     (root)       -- this unity entry, the public headers, and gui_api.c (vtable, mod_desc).
 
     Cross-role contract (the composer / behavior / presentation split):
@@ -93,25 +89,15 @@
       behavior     (interact/) consumes (id, rect), produces interaction state;
       presentation (present/)  consumes rect + state + skin and paints.
     A widget (the chrome unit) is the only combiner: it asks composition for a rect, hands it to
-    behavior, hands both results to presentation.  user/ is the public door onto the same
-    roles, skin optional -- the game-UI path.
+    behavior, hands both results to presentation.  The public gui_item/canvas/draw_* verbs are
+    the caller's door onto the same roles, skin optional -- the game-UI path.
 
     THIS UNIT's constituents (the carved units list their own; the interact server's former
-    residents -- ctx/io/id/state/surface/item/anim/query -- live in gui_core.c since R4; the
-    style machinery -- theme/stacks/vocabulary -- lives in gui_style.c since R5):
-
-    interact/gui_drag.c          -- drag service: threshold machine + typed payload transfer (source/target)
-    interact/gui_move.c          -- move-drag protocol (move_grab/move_track) + deferred-press latch (press_defer_*)
-    interact/gui_resize.c        -- edge-resize mechanism: resize_item protocol, hit-test, grab, edge apply
-    interact/gui_select.c        -- window text selection: press/sweep protocol, highlight, Ctrl+C copy
-    interact/gui_feature.c       -- feat_* kit: window features as freestanding id-keyed mechanisms
+    residents live in gui_core.c since R4; the style machinery in gui_style.c since R5; the
+    gesture services in gui_interact.c since R6):
 
     present/gui_paint_core.c    -- impure per-item wrappers (item_flags_resolve/chrome_reset),
                                       system adornments (nav/drop rings, resize highlight)
-    draw/gui_symbol.c (DRAW unit)  -- symbol + shape draw primitives (moved R3)
-
-    user/gui_behavior.c          -- public behavior on caller rects: gui_item, invisible_button
-    draw/gui_canvas.c (DRAW unit)  -- custom-draw surface (moved R3)
 
     debug/gui_frame_overlay.c    -- built-in perf / state HUD overlays + the frame-timing helpers they read
 
@@ -211,15 +197,10 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 // What stays HERE from the old core group: the present/ paint primitives.
 
 #include "runtime_service/gui/present/gui_paint_core.c"
-#include "runtime_service/gui/interact/gui_drag.c"
-#include "runtime_service/gui/interact/gui_move.c"
-/* gui_symbol.c moved to the draw unit (gui_draw.c, R3) */
-#include "runtime_service/gui/interact/gui_resize.c"
-
-// Window text selection (GUI_WIN_TEXT_SELECT): press/sweep protocol, highlight paint, Ctrl+C
-// copy over the backend's captured runs (render/gui_select_capture.c).  Here in interact/ --
-// it writes s_interaction (a fallback press consumer) -- called from window/gui_window_end.c.
-#include "runtime_service/gui/interact/gui_select.c"
+/* gui_symbol.c moved to the draw unit (gui_draw.c, R3); the gesture services (gui_move.c,
+   gui_resize.c, gui_drag.c, gui_feature.c, gui_behavior.c) moved to the interact unit
+   (gui_interact.c, R6); window text selection was re-classified as chrome and moved to
+   window/gui_select.c (the chrome unit) -- it reads the render capture + font metrics. */
 
 /*----------------------------------  LIBRARY: GUI_FLOW  ----------------------------------*/
 
@@ -228,11 +209,11 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 // service seams in gui_internal.h; its two upward calls (scrollbar_widget, gui_anim_f32)
 // are seams there too.  This unit calls INTO it through the same seam declarations.
 
-/*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
-/* the animation service moved to the interact server (gui_core.c, R4) -- dampers/timers are
-   keyed-state tenants; this unit reaches them through the gui_core.h seams. */
-// the feat_* kit: window features as freestanding id-keyed mechanisms (rides move/resize/anim).
-#include "runtime_service/gui/interact/gui_feature.c"
+/*----------------------------------  LIBRARY: GUI_INTERACT  ----------------------------------*/
+/* GUI_INTERACT is its OWN translation unit since R6 (gui_interact.c): move/resize/drag
+   gestures, the feat_* kit, and the public behavior verbs.  This unit reaches them through
+   the interact/gui_interact.h seams (frame_begin drives drag_new_frame; the viewport
+   tear-off reads move_grab_offset). */
 
 /*----------------------------------  LIBRARY: GUI_CHROME  ----------------------------------*/
 // GUI_CHROME is its OWN translation unit (gui_chrome.c, the sixth): widgets/ + table/ +
@@ -241,15 +222,8 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 // gui_internal.h seams; this unit's upward calls into it (the frame lifecycle's window /
 // popup / dock / nav steps) resolve through the same seam declarations.
 
-/*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
-// user/ -- the caller's vocabulary.  Pure public verbs + readers over the machinery
-// above; zero state, zero machinery -- deleting any file here breaks no lower tier.  Included
-// last-of-the-tiers because nothing below needs them at definition time (all upward calls go
-// through gui_host.h declarations).
-#include "runtime_service/gui/user/gui_behavior.c"
-/* gui_canvas.c moved to the draw unit (gui_draw.c, R3);
-   gui_query.c moved to the interact server (gui_core.c, R4);
-   gui_stacks.c moved to the style unit (gui_style.c, R5) */
+/* user/ dissolved at R6: gui_canvas.c -> draw (R3); gui_query.c -> the interact server (R4);
+   gui_stacks.c -> the style unit (R5); gui_behavior.c -> the interact unit (R6). */
 
 // element/ -- GUI_ELEMENT is its OWN translation unit (element/gui_element.c): the compiler
 // enforces that the element tier reaches gui only through the public gui_* surface + the
