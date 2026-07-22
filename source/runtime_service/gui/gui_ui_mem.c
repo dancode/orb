@@ -54,9 +54,9 @@ gui_ui_memory( void )
        (gui_chrome.c seam). */
     b += gui_chrome_unit_mem_bytes();
 
-    /* text/ -- THE TEXT LEAF (gui_text.c) accounts for the loaded-font registry (glyph metric
+    /* text/ -- THE TEXT LEAF (gui_font.c) accounts for the loaded-font registry (glyph metric
        tables) via its seam; it moved down from the draw unit so both servers can measure text. */
-    b += gui_text_unit_mem_bytes();
+    b += gui_font_unit_mem_bytes();
 
     /* frame/ + root -- lifecycle stacks, boot/present state, forwarded caps. */
     b += (u32)( sizeof( s_ctx_save_stack ) + sizeof( s_font_stack )

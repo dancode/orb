@@ -8,7 +8,7 @@
     font_active_slot) and packs pixels through gui_font_internal.c, included right before this file.
 
     The MEASUREMENT readers (font_char_advance / font_text_w / font_line_h / ...) and the registry
-    itself are the text/ leaf (text/gui_text.c) -- measuring text is sizes-and-math, not drawing,
+    itself are the text/ leaf (text/gui_font.c) -- measuring text is sizes-and-math, not drawing,
     so it lives at the bottom of the stack, readable by every layer including the interact server.
 
 ==============================================================================================*/

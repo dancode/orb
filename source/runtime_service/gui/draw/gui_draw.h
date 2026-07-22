@@ -18,7 +18,7 @@
 /* Font metrics + the loaded-font registry are the text/ leaf (below both servers): measuring a
    glyph run is sizes-and-math, not drawing.  Pulled here so the drawing routines -- and everyone
    who includes this header -- measure through font_char_advance / font_text_w / font_line_h. */
-#include "runtime_service/gui/text/gui_text.h"
+#include "runtime_service/gui/text/gui_font.h"
 
 // clang-format off
 

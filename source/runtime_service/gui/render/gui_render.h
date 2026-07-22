@@ -34,7 +34,7 @@
 ==============================================================================================*/
 
 #include "runtime_service/gui/gui_host.h"   // public gui types: gui_rect_t, gui_id_t, flags, enums
-#include "runtime_service/gui/text/gui_text.h"  // font-metrics leaf: font_use/active_id/valid/line_h the tessellator reads
+#include "runtime_service/gui/text/gui_font.h"  // font-metrics leaf: font_use/active_id/valid/line_h the tessellator reads
 #include "runtime_service/rhi/rhi_api.h"    // rhi buffer/texture/cmd handles the flush speaks
 #include "engine/app/app_api.h"             // APP_WIN_MAX -- the per-surface fan-out bound
 

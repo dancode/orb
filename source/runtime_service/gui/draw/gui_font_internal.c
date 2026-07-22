@@ -7,10 +7,10 @@
     (metrics + advance table + tenant handle) through the text/ leaf's font_slot_ptr / font_activate.
     Glyph UV dispatch (font_slot_glyph) and the deferred-reload queue also live here.
 
-    The loaded-font REGISTRY and the measurement readers are the text/ leaf (text/gui_text.c) --
+    The loaded-font REGISTRY and the measurement readers are the text/ leaf (text/gui_font.c) --
     nothing about measurement lives here; this file only loads pixels and hands metrics down.
 
-    Included by gui_draw.c after gui_draw.h (-> text/gui_text.h types) + gui_res_atlas.h (the shared
+    Included by gui_draw.c after gui_draw.h (-> text/gui_font.h types) + gui_res_atlas.h (the shared
     atlas), before gui_font.c.  .orb_font is a proportional font baked offline by font_tool: an R8
     atlas of packed glyph bitmaps plus per-glyph records (UV rect, bearing, advance).
 

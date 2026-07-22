@@ -1,13 +1,13 @@
 /*==============================================================================================
 
-    runtime_service/gui/text/gui_text_core.c -- the loaded-font registry + metric readers.
+    runtime_service/gui/text/gui_font_core.c -- the loaded-font registry + metric readers.
 
     The pure-data half of the font system: the id-addressed registry (s_fonts[]), the active-font
     pointers (s_active / s_font), the measurement readers, and the selection + fill surface the
     render-side loader drives.  No fs, no atlas, no GPU -- the .orb_font loader and glyph UV
     dispatch live render-side and reach this registry through font_slot_ptr / font_activate.
 
-    Compiled into the gui_text.c leaf unit; included after text/gui_text.h.
+    Compiled into the gui_font.c leaf unit; included after text/gui_font.h.
 
 ==============================================================================================*/
 // clang-format off
@@ -155,7 +155,7 @@ font_registry_reset( void )
 /* Decentralized memory accounting -- the loaded-font registry (CPU-side; glyph pixels live in the
    shared atlas, counted render-side). */
 u32
-gui_text_unit_mem_bytes( void )
+gui_font_unit_mem_bytes( void )
 {
     return (u32)sizeof( s_fonts );
 }

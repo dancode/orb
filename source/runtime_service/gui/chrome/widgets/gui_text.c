@@ -21,6 +21,7 @@
 
 /* Shared text-run emit: reserve a natural-width cell, place the run by the region's content
    alignment, and draw it in `col`.  text / text_colored / text_disabled differ only by colour. */
+
 static void
 text_emit( u32 col, const char* str )
 {
