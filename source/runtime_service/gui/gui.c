@@ -6,10 +6,9 @@
     Cross-unit reach goes through the ambient-record externs and service seams in the per-unit
     headers under gui_internal.h, so every library boundary is compiler-enforced:
 
-      - this unit (gui.c): the FRAME ORCHESTRATOR + the tiers not yet carved -- present/
-        paint primitives, frame lifecycle, the pane bracket, the module vtable.  It boots
-        both servers, pumps io into the interact server, and hands contexts to the render
-        server.
+      - this unit (gui.c): the FRAME ORCHESTRATOR -- frame lifecycle, the pane bracket,
+        the module vtable.  It boots both servers, pumps io into the interact server, and
+        hands contexts to the render server.
 
       - the interact unit (gui_interact.c, R6): gesture mechanisms -- move/resize/drag,
         the feat_* kit, the public behavior verbs.  Decides, never paints.  Reached
@@ -29,11 +28,12 @@
       - the draw unit (gui_draw.c, R3): drawing routines + font/icon resources over the
         render server's primitives.
 
-      - the element unit (element/gui_element.c): the el_* rect-consuming widget cores;
-        public surface + the style_active() seam only.
+      - the element unit (gui_element.c, R8): the styled building blocks astride both
+        servers -- the el_* rect-consuming cores, the per-item ambient wrappers + system
+        adornments (element/gui_adornment.c), and the styled symbol half.
 
-      - the flow unit (compose/gui_flow.c): composition -- spacing metrics in, rects out.
-        Upward seams: scrollbar_widget + the gui_anim_* ease, nothing else.
+      - the flow unit (gui_flow.c, R7): composition -- spacing metrics in, rects out.
+        Upward seams: scrollbar_widget + the child box paint trio, nothing else.
 
       - the chrome unit (gui_chrome.c): widgets/ + table/ + window/ + dock/ + popup/ + nav/
         over the core services and flow's emit surface; its frame-called steps (raise-on-
@@ -42,8 +42,7 @@
       - the debug unit (debug/gui_debug.c): pipeline dashboard + command stepper; severable.
 
     Include order in this unit matters: each file can reference statics from files included
-    above it.  Directories name ROLES, not rungs; a role only depends on roles included above
-    it.  Order here: present -> frame (incl. the pane bracket + context lifecycle).
+    above it.  What remains is the frame group (incl. the pane bracket + context lifecycle).
 
     render/     -- beside the stack, not a rung in it: the RENDER SERVER (gui_render.c),
                     reached only through gui_render.h at flush.
@@ -55,8 +54,8 @@
     style/       -- THE STYLE UNIT (its own TU, gui_style.c, since R5): theme registry,
                     style stacks, lattice, state -> color projections, the bracketing
                     vocabulary.  Not in this TU; reached through the style/gui_style.h seams.
-    compose/     -- composition (THE FLOW UNIT, compose/gui_flow.c): the only code that turns
-                    style spacing metrics into rects.  Not in this TU.
+    flow/        -- THE FLOW UNIT (its own TU, gui_flow.c, since R7): the only code that
+                    turns style spacing metrics into rects.  Not in this TU.
     interact/    -- THE INTERACT UNIT (its own TU, gui_interact.c, since R6): the gesture
                     mechanisms -- drag threshold + payload, move-drag + deferred-press,
                     edge resize, the feat_* kit, the public behavior verbs.  Not in this TU.
@@ -66,11 +65,12 @@
                     (hover/active/focus): higher tiers claim through the core verbs
                     (interact_claim) and read the record for gating, never write it raw.
                     Window text selection re-classified as chrome (window/gui_select.c, R6).
-    present/     -- presentation: the shared paint primitives -- COL_* palette, widget
-                    macros, label grammar, text-fit, symbol/shape draws.  Consumes
-                    rect + state + skin; never asks behavior, state is a parameter.
-                    compose/, interact/, present/ are SIBLINGS -- combined only by the
-                    tiers above.
+    element/     -- THE ELEMENT UNIT (its own TU, gui_element.c, since R8): presentation
+                    -- consumes rect + state + skin and paints; never asks behavior, state
+                    is a parameter.  The el_* cores, the per-item ambient wrappers, the
+                    system adornments, the styled symbol half.  Not in this TU.
+                    (present/ dissolved into it at R8.)  flow/, interact/, element/ are
+                    SIBLINGS -- combined only by the tiers above.
     widgets/ table/ window/ dock/ popup/ nav/
                  -- THE CHROME UNIT (gui_chrome.c): the stock widget set + the host
                     structures.  Not in this TU; see gui_chrome.c for the role map.
@@ -85,19 +85,17 @@
     (root)       -- this unity entry, the public headers, and gui_api.c (vtable, mod_desc).
 
     Cross-role contract (the composer / behavior / presentation split):
-      composition  (compose/)  consumes spacing metrics, produces rects;
+      composition  (flow/)     consumes spacing metrics, produces rects;
       behavior     (interact/) consumes (id, rect), produces interaction state;
-      presentation (present/)  consumes rect + state + skin and paints.
+      presentation (element/)  consumes rect + state + skin and paints.
     A widget (the chrome unit) is the only combiner: it asks composition for a rect, hands it to
     behavior, hands both results to presentation.  The public gui_item/canvas/draw_* verbs are
     the caller's door onto the same roles, skin optional -- the game-UI path.
 
     THIS UNIT's constituents (the carved units list their own; the interact server's former
     residents live in gui_core.c since R4; the style machinery in gui_style.c since R5; the
-    gesture services in gui_interact.c since R6):
-
-    present/gui_paint_core.c    -- impure per-item wrappers (item_flags_resolve/chrome_reset),
-                                      system adornments (nav/drop rings, resize highlight)
+    gesture services in gui_interact.c since R6; the layout composer in gui_flow.c since R7;
+    the ambient wrappers + adornments in gui_element.c since R8):
 
     debug/gui_frame_overlay.c    -- built-in perf / state HUD overlays + the frame-timing helpers they read
 
@@ -194,9 +192,9 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 // query readers.  This unit reaches it through the core/gui_core.h + core/gui_ctx.h seams.
 // THE STYLE UNIT is its own translation unit since R5 (gui_style.c): theme registry, stacks,
 // resolution, projections -- reached through the style/gui_style.h seams.
-// What stays HERE from the old core group: the present/ paint primitives.
+// The present/ paint primitives (the last of the old core group) moved to the element unit
+// at R8 (element/gui_adornment.c) and present/ is DISSOLVED.
 
-#include "runtime_service/gui/present/gui_paint_core.c"
 /* gui_symbol.c moved to the draw unit (gui_draw.c, R3); the gesture services (gui_move.c,
    gui_resize.c, gui_drag.c, gui_feature.c, gui_behavior.c) moved to the interact unit
    (gui_interact.c, R6); window text selection was re-classified as chrome and moved to
@@ -204,10 +202,10 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 
 /*----------------------------------  LIBRARY: GUI_FLOW  ----------------------------------*/
 
-// GUI_FLOW is its OWN translation unit (compose/gui_flow.c, the fifth): composition --
-// spacing metrics in, rects out.  It reaches core through the ambient-record externs +
-// service seams in gui_internal.h; its two upward calls (scrollbar_widget, gui_anim_f32)
-// are seams there too.  This unit calls INTO it through the same seam declarations.
+// GUI_FLOW is its OWN translation unit since R7 (gui_flow.c): composition -- spacing
+// metrics in, rects out.  It reaches core through the flow/gui_flow.h + core seams; its
+// upward calls (scrollbar_widget, the child box paint trio) are the documented block in
+// flow/gui_flow.h.  This unit calls INTO it through the same seam declarations.
 
 /*----------------------------------  LIBRARY: GUI_INTERACT  ----------------------------------*/
 /* GUI_INTERACT is its OWN translation unit since R6 (gui_interact.c): move/resize/drag
@@ -225,9 +223,9 @@ gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav
 /* user/ dissolved at R6: gui_canvas.c -> draw (R3); gui_query.c -> the interact server (R4);
    gui_stacks.c -> the style unit (R5); gui_behavior.c -> the interact unit (R6). */
 
-// element/ -- GUI_ELEMENT is its OWN translation unit (element/gui_element.c): the compiler
-// enforces that the element tier reaches gui only through the public gui_* surface + the
-// style_active() seam (gui_internal.h).
+// element/ -- GUI_ELEMENT is its OWN translation unit since R8 (root gui_element.c): the
+// el_* cores plus the absorbed styled painters (per-item wrappers, system adornments, the
+// styled symbol half), reached through element/gui_element_internal.h.
 // gui_style_apply (frame/, below) calls across to el_style_derive at every theme/font landing.
 
 /*----------------------------------  LIBRARY: GUI_DEBUG  ----------------------------------*/

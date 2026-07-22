@@ -19,7 +19,7 @@
 
     Included by gui.c after the widget family files (shares item_state, draw_field_label,
     cell_next, the COL_* palette, and the WIDGET_/WIN_ layout macros from
-    gui_paint_core.c).
+    element/gui_adornment.c).
 
 ==============================================================================================*/
 // clang-format off

@@ -90,7 +90,7 @@ id_pop( void )
 /*==============================================================================================
 
     Widget label grammar  (Dear ImGui style) -- the id half, moved here from
-    present/gui_paint_core.c at the R4 carve (a label's id is identity derivation).
+    the old paint core at the R4 carve (a label's id is identity derivation).
 
         "Text"        -> display "Text",  id = hash("Text")
         "Text##key"   -> display "Text",  id = hash("Text##key")   distinct ids, same visible text

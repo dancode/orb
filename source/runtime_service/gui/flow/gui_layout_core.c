@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/compose/gui_layout_core.c -- Layout mechanism: track resolver + cell emitters.
+    runtime_service/gui/flow/gui_layout_core.c -- Layout mechanism: track resolver + cell emitters.
 
     The engine the public layout API (gui_layout.c) drives.  It carves a region's content area
     into cells from a repeating row / column template (or a fixed grid, or a pack run) and hands
@@ -15,10 +15,10 @@
 
     This tier composes and never paints: cell_split_field hands out geometry, and its painting
     companion draw_field_label lives with the rest of the label grammar in
-    present/gui_paint_core.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD / ...) resolves
+    element/gui_adornment.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD / ...) resolves
     in style/gui_style_core.c.
 
-    Included by gui.c after gui_paint_core.c (so rect_align and item_flags_resolve are in
+    Part of the flow unit (gui_flow.c); rect_align and item_flags_resolve resolve cross-unit (in
     scope) and before gui_layout.c (which calls layout_set / cell_next / the region
     helpers).
 

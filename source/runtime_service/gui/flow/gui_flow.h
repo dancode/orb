@@ -7,11 +7,12 @@
     The rect PRODUCER: metrics in, rects out.  Owns the layout-frame types, the region
     lifecycle, and the cell emitters every widget and chrome file composes over.  Included by
     gui_internal.h after interact/gui_interact.h; the layers above (element, chrome) consume
-    the rects flow carves.
+    the rects flow carves.  Its own unit (root gui_flow.c) since R7.
 
-    Downward, flow reads the ambient records + core services; its only two upward calls are
-    scrollbar_widget (declared in chrome/gui_chrome.h) and the gui_anim_* ease
-    (core/gui_core.h).  Implementation: compose/*.c today, flow/ after R7.
+    Downward, flow reads the ambient records + the core services (the anim ease is core
+    since R4), the style metrics, interact's edge-resize mechanism, and the render clip
+    stack (flow computes the view rect, so it owns the region scissor -- see the root
+    banner).  The upward seams are enumerated at the bottom of this header; do not add more.
 
 ==============================================================================================*/
 
@@ -20,7 +21,7 @@
 #define GUI_LAYOUT_DEPTH            8       // max nested scroll regions (windows or children)
 
 /*==============================================================================================
-    Scroll link (compose/gui_scroll.c)
+    Scroll link (flow/gui_scroll.c)
 
     Persistent scroll offset + last-measured content extent for one scrollable region.
     layout_push_region biases the pen by -scroll and writes content_w/content_h back at pop; the
@@ -236,7 +237,7 @@ extern u32            s_layout_sp;  /* active frame count; top = s_layout_sp - 1
 layout_frame_t* lf( void );         /* core/gui_ctx.c -- top layout frame (clamped, never NULL) */
 
 /*==============================================================================================
-    Persistent region state (compose/gui_scroll.c)
+    Persistent region state (flow/gui_scroll.c)
 
     A child_begin region's scroll offset and last-measured content size, kept across frames in the
     keyed state pool (gui_ctx.c), keyed by region id.  Windows keep these inline in gui_window_t.
@@ -288,6 +289,19 @@ void layout_pop_region ( void );
 /* Default region padding (the inset every window body / child opens with) -- the window
    chrome opens its body region with it. */
 #define REGION_PAD_DEFAULT ( ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, WIDGET_GAP } )
+
+/*==============================================================================================
+    UPWARD SEAMS -- the flow unit's only calls above its layer.  Do not add more.
+
+    scrollbar_widget (chrome/gui_chrome.h) -- the region gutter's ONE widget: layout_pop_region
+        measured the content, so the bars land where the gutters were reserved.  The plan's one
+        sanctioned flow -> chrome call.
+
+    draw_child_bg / draw_child_border / draw_resize_highlight (element/gui_adornment.c,
+        declared in element/gui_element_internal.h) -- child_begin/end paint
+        the child box through these styled painters; the box decision and its paint land in
+        the same call, like core's draw_nav_ring and interact's draw_drop_ring.
+==============================================================================================*/
 
 u32 gui_flow_unit_mem_bytes( void );               /* the flow unit's fixed statics           */
 

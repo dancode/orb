@@ -6,14 +6,14 @@
     stepping, slot stamping, and wants_redraw signalling in one function, so callers stay
     simple.  Pure timing -- what a stepped value MEANS (a color blend, an eased extent) is the
     caller's business: the animated background color lives with the skin
-    (present/gui_paint_core.c: col_item_bg_anim), the size ease with the layout engine
-    (compose/gui_layout_core.c: size_animate).
+    (style/gui_style_core.c: col_item_bg_anim), the size ease with the layout engine
+    (flow/gui_layout_core.c: size_animate).
 
     Storage lives in the keyed state pool (core/gui_state.c) with peek-then-stamp semantics:
     pool pressure stays proportional to in-flight animations, not total widget count.  Idle
     values with no animation history pay only a single non-stamping probe.
 
-    Included by gui.c after the compose/ files; earlier callers reach it through the forward
+    Core-unit resident since R4; flow-and-above callers reach it through the forward
     declaration in gui_internal.h.
 
 ==============================================================================================*/

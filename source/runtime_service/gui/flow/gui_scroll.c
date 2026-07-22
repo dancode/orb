@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/compose/gui_scroll.c -- Scroll region engine.
+    runtime_service/gui/flow/gui_scroll.c -- Scroll region engine.
 
     Implements the shared scrollable-region mechanism used by both window bodies and
     child_begin boxes:

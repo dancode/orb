@@ -15,6 +15,7 @@
         draw      gui_draw.h         drawing routines over the render server's primitives
         interact  gui_interact.h     gesture mechanisms (resize / move / drag / select / feat)
         flow      gui_flow.h         layout composition: the rect producer
+        element   gui_element_internal.h   styled building blocks astride both servers
         chrome    gui_chrome.h       managed windowing: window / nav / popup / dock records
         frame     gui_frame.h        render surfaces (viewports) the orchestrator manages
         ctx       gui_ctx.h          the context aggregate -- closes the stack (embeds most units)
@@ -40,6 +41,7 @@
 #include "runtime_service/gui/draw/gui_draw.h"
 #include "runtime_service/gui/interact/gui_interact.h"
 #include "runtime_service/gui/flow/gui_flow.h"
+#include "runtime_service/gui/element/gui_element_internal.h"
 #include "runtime_service/gui/chrome/gui_chrome.h"
 #include "runtime_service/gui/frame/gui_frame.h"
 #include "runtime_service/gui/core/gui_ctx.h"

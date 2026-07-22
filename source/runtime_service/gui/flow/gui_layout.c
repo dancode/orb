@@ -1,6 +1,6 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/compose/gui_layout.c -- Public layout API verbs + the sz_ sizing family.
+    runtime_service/gui/flow/gui_layout.c -- Public layout API verbs + the sz_ sizing family.
 
     Defines the per-region template-shaping calls (gui_stack, gui_row,
     gui_cols, gui_grid, gui_bar, gui_strip, gui_field_split,

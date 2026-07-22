@@ -4,7 +4,7 @@
 
     Color blend + alignment placement: the non-inline pure primitives declared at the bottom
     of rect/gui_rect.h.  Pure means pure -- no ambient state, no draw calls, no gui context;
-    everything here is a function of its arguments.  Moved out of present/gui_paint_core.c
+    everything here is a function of its arguments.  Moved out of the old paint core
     when the rect unit was carved (GUI_SERVER_PLAN.md R1).
 
 ==============================================================================================*/

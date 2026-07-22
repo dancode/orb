@@ -1,43 +1,28 @@
 /*==============================================================================================
 
-    runtime_service/gui/present/gui_paint_core.c -- Shared presentation primitives.
+    runtime_service/gui/element/gui_adornment.c -- Per-item ambient application + the system
+    adornments.
 
-    What remains after the R1/R3/R4/R5 carves (GUI_SERVER_PLAN.md): the impure per-item
-    wrappers (item_flags_resolve / item_flags_chrome_reset -- style/draw application over
-    core's pure seams) and the system adornments + draw_field_label (styled painters --
-    -> element in R8).  The pure paint floor and text painters moved to draw/gui_paint.c; the
-    placement math to rect/; the label grammar's id half to core/gui_id.c; the state -> color
-    projections to the style unit (style/gui_style_core.c, R5).  The style vocabulary
-    (WIDGET_* / WIN_* / COL_* macros) lives with its resolver in style/gui_style.h -- this
-    file only consumes it.
+    The old present/gui_paint_core.c, home in the element unit since R8 -- everything here is
+    STYLED paint or style/draw application, which is element material (the first layer astride
+    both servers).  Three groups:
 
-    The interaction state machine (item_state) is a service -- it lives in core/gui_item.c
-    (the interact server unit) and invokes the adornment painter below across the one
-    documented upward seam (draw_nav_ring, core/gui_core.h).
+      - the impure per-item wrappers (item_flags_resolve / item_flags_chrome_reset): style and
+        draw consequences over the interact server's pure seams (item_flags_take /
+        item_flags_chrome_drop, core/gui_ctx.c);
+      - the labeled-row paint half (draw_field_label + label_natural_w): the geometry halves
+        live with the composer (cell_split_field, flow), the paint and the WIDGET_PAD
+        self-measure here;
+      - the system adornments (nav ring, focus border, drop ring, child box, resize
+        highlight): the units below decide WHEN one paints -- across their documented upward
+        seams (core/gui_core.h, interact/gui_interact.h, flow/gui_flow.h) -- and the paint
+        policy (color, thickness, extent) lives here with the rest of the skin.
 
-    The shared edge-resize geometry is interact/gui_resize.c and the layout engine
-    (track resolver + cell emitters) is compose/gui_layout_core.c.
-
-    Included by gui.c (the frame unit); the ambient records (s_build, s_io) and s_style reach
-    it through the per-unit header externs, the style seams through style/gui_style.h.
-    Despite the name, this file has no dependency on gui_window.c -- window bookkeeping is a
-    later, optional tier (window/gui_window.c).
+    The style vocabulary (WIDGET_* / WIN_* / COL_* macros) lives with its resolver in
+    style/gui_style.h -- this file only consumes it.
 
 ==============================================================================================*/
-#include "runtime_service/gui/gui_internal.h"   /* gui_item_kind_t, gui_item_state_t */
 // clang-format off
-
-/* text_center_y / draw_fill / draw_outline / the text-fit painters (draw_label, label_width,
-   label_natural_w, draw_text_fit_n, draw_label_fit, the compact ellipsis) moved to
-   draw/gui_paint.c -- the draw unit's paint floor (GUI_SERVER_PLAN.md R3). */
-
-/* The symbol render primitives (the glyph marks + the broader shape palette) moved to
-   draw/gui_symbol.c -- the draw unit (GUI_SERVER_PLAN.md R3). */
-
-/* The widget label GRAMMAR (label_vis_len, label_id_str, item_id) moved to core/gui_id.c at
-   the R4 carve: the id half of a label is identity derivation, interact-server material.  The
-   PAINT half of a labeled row (draw_field_label below, label_width / draw_label in draw/)
-   stays presentation. */
 
 /*==============================================================================================
     Per-item ambient application -- the impure wrappers over the interact server's pure seams.
@@ -88,18 +73,25 @@ item_flags_chrome_reset( void )
 }
 
 /* Split a labeled widget row into a control rect and its painted label.  The geometry halves
-   live with the composer: cell_split_field (compose/gui_layout_core.c, forward-declared
-   here -- the one present->compose seam) lays the two tracks when a field split is active; the
+   live with the composer: cell_split_field (flow/gui_layout_core.c, forward-declared
+   here -- the one present->flow seam) lays the two tracks when a field split is active; the
    default trailing-label math is local.  This wrapper owns the PAINT: it draws the label and
    returns the control rect, which is why it sits here with the label grammar and not in the
-   composer -- compose never colors a pixel.  In the default (trailing-label) mode the label
+   composer -- flow never colors a pixel.  In the default (trailing-label) mode the label
    keeps its natural width pinned at the row's right edge and the control takes the rest, never
    shrinking below min_control_w so it stays usable when the label is long (the control then
    overruns under the label); in field-split mode the label and control are two resolved tracks.
    The single seam every "control + trailing label" widget (slider_float, input_text, combo,
    drag_float, color_edit) routes through, so row proportions retune in one place. */
 
-/* cell_split_field (compose, flow unit) is declared in gui_internal.h since the TU split. */
+/* The natural width a label-sized widget requests from the composer: the visible span plus the
+   standard inset on both sides.  THE self-measurement formula -- button, small_button, menu
+   items, and the public gui_button_width all speak it through this one helper.  From
+   draw/gui_paint.c at R8: WIDGET_PAD is a style read, so it lives with the styled painters. */
+f32  label_natural_w( const char* s )
+{
+    return label_width( s ) + 2.0f * WIDGET_PAD;
+}
 
 gui_rect_t
 draw_field_label( gui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
@@ -183,7 +175,7 @@ draw_drop_ring( gui_rect_t r )
     draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, 0, COL_NAV );
 }
 
-/* Child box chrome (compose/gui_layout_child.c invokes these around its region): the body
+/* Child box chrome (flow/gui_layout_child.c invokes these around its region): the body
    fill under the region clips at child_begin, the border over the bar tracks at child_end. */
 void draw_child_bg    ( gui_rect_t r ) { draw_fill   ( r, COL_CHILD_BG ); }
 void draw_child_border( gui_rect_t r ) { draw_outline( r, WIN_BORDER, COL_BORDER ); }

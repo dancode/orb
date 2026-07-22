@@ -8,7 +8,7 @@
     as a peer focus service, but it reads/drives the popup stack, so it lives here).
 
     The sixth translation unit (beside gui.c, gui_render.c, element/gui_element.c,
-    debug/gui_debug.c, compose/gui_flow.c).  The compiler enforces the boundary: everything
+    debug/gui_debug.c, gui_flow.c).  The compiler enforces the boundary: everything
     resolves through the public gui_* surface (gui_host.h), the backend draw API
     (gui_render.h), and the gui_internal.h cross-unit sections -- the ambient records, the
     core service seams (item / id / io / state / style / paint / gesture services), and the

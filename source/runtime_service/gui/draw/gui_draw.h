@@ -49,33 +49,21 @@ void draw_outline( gui_rect_t r, f32 t, u32 col );
 /* Text painters (font metrics ride the atlas the render server was handed). */
 f32  text_center_y( f32 y, f32 h );              /* baseline y centering one line in a row     */
 f32  label_width( const char* s );               /* visible-span width per the label grammar   */
-f32  label_natural_w( const char* s );
 void draw_label ( f32 x, f32 y, u32 c, const char* s );
 void draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w );
 void draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w );
 
-/* The shape palette (present/gui_symbol.c) -- parameter-pure emitters. */
-void draw_arrow( gui_rect_t box, gui_dir_t dir, u32 color );
+/* The shape palette (draw/gui_symbol.c) -- parameter-pure emitters.  The styled half of the
+   family (draw_arrow, draw_check_indicator, draw_rule, draw_close_x, draw_frame -- emitters
+   that resolve their own look), the styled painters, and label_natural_w all climbed to the
+   element unit at R8 (element/gui_element_internal.h). */
 void draw_bullet( f32 cx, f32 cy, f32 r, u32 color );
-void draw_check_indicator( gui_rect_t box, u32 col );
 void draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
-void draw_collapse_arrow( gui_rect_t box, bool collapsed, u32 color );
 void draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
 void draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, bool filled,
                          f32 thickness, u32 col );
-void draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col );
 void draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
-void draw_close_x( gui_rect_t box, u32 color );
 void draw_dropdown_arrow( gui_rect_t box, u32 color );
-
-/* Styled painters -- COL_* / metric consumers; they climb to the element unit in R8 (a draw
-   routine takes its colors as parameters; these resolve their own). */
-void       draw_child_bg        ( gui_rect_t r );
-void       draw_child_border    ( gui_rect_t r );
-void       draw_resize_highlight( gui_rect_t r, u8 edges );
-void       draw_window_focus_border( gui_rect_t r );
-gui_rect_t draw_field_label( gui_rect_t row, const char* label, f32 min_control_w,
-                             u32 label_color );
 
 /*==============================================================================================
     Unit lifecycle + resources -- fonts and icons live HERE, one level above the render

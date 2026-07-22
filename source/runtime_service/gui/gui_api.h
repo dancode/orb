@@ -31,7 +31,7 @@ typedef struct gui_api_s
 {
 
     /*============================================================================================================
-        GUI_DRAW -- render server  (render/ + present/)
+        GUI_DRAW -- render server  (render/ + draw/)
         Fonts, icons, textures, the draw_* primitive set, paths, clips, volatile blocks.
         S0 style stratum: NO ambient style -- every call takes explicit colors / widths.
         Draws what it is told under the ambient clip / z; never asks how a rect was made.
@@ -557,7 +557,7 @@ typedef struct gui_api_s
     gui_rect_t ( *anchor )( gui_rect_t parent, gui_anchor_t a );
 
     /*============================================================================================================
-        GUI_FLOW -- layout engine  (compose/)
+        GUI_FLOW -- layout engine  (flow/)
         The stateful pen: templates (stack / cols / grid / form / pack), sizing, avail,
         row virtualization, and the rect<->flow seams (empty, canvas, push_layout_overlay).
         Produces rects and opens regions; draws nothing, and no widget core depends on it.
@@ -1130,7 +1130,7 @@ typedef struct gui_api_s
     void ( *menu_end   )( void );
     bool ( *menu_item  )( const char* label, const char* shortcut, bool* selected );
 
-    /* Toolbar -- an icon strip built on bar() (compose/).  toolbar_begin id-scopes the strip so
+    /* Toolbar -- an icon strip built on bar() (flow/).  toolbar_begin id-scopes the strip so
        two toolbars' buttons never collide, then opens a bar() run; toolbar_end pops it.  Emit
        inside any window / child -- it owns no window of its own, matching bar() itself.  It does
        NOT push a scale -- wrap it in the caller's own scale_push/scale_pop (GUI_SCALE_BAR is the

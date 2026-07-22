@@ -175,9 +175,9 @@ target gui
     unit        gui_interact.c  			# GUI_INTERACT unit: gesture mechanisms (move/resize/drag/feat)
     unit        gui_render.c  				# GUI_RENDER unit: the render server (batch, atlas, pipeline)
     unit        gui_draw.c  				# GUI_DRAW unit: drawing routines + font/icon resources over the server
-    unit        element/gui_element.c   	# GUI_ELEMENT unit: el_* cores, public-surface-only
+    unit        gui_element.c   			# GUI_ELEMENT unit: styled building blocks (el_* cores, adornments)
     unit        debug/gui_debug.c   		# GUI_DEBUG unit: dashboard + command stepper (severable)
-    unit        compose/gui_flow.c   		# GUI_FLOW unit: layout composition (metrics in, rects out)
+    unit        gui_flow.c  				# GUI_FLOW unit: layout composition (metrics in, rects out)
     unit        gui_chrome.c   				# GUI_CHROME unit: widgets/table/window/dock/popup/nav
 	
     dep         app rhi base
@@ -194,9 +194,9 @@ target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the lo
     unit        gui_interact.c   # GUI_INTERACT unit: gesture mechanisms (move/resize/drag/feat)
     unit        gui_render.c   # GUI_RENDER unit: the render server (batch, atlas, pipeline)
     unit        gui_draw.c   # GUI_DRAW unit: drawing routines + font/icon resources over the server
-    unit        element/gui_element.c   # GUI_ELEMENT unit: el_* cores, public-surface-only
+    unit        gui_element.c   # GUI_ELEMENT unit: styled building blocks (el_* cores, adornments)
     unit        debug/gui_debug.c   # GUI_DEBUG unit: dashboard + command stepper (severable)
-    unit        compose/gui_flow.c   # GUI_FLOW unit: layout composition (metrics in, rects out)
+    unit        gui_flow.c   # GUI_FLOW unit: layout composition (metrics in, rects out)
     unit        gui_chrome.c   # GUI_CHROME unit: widgets/table/window/dock/popup/nav
     dep         app rhi base
     define      GUI_STRESS_TEST

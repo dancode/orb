@@ -20,9 +20,11 @@
     everything else here is pixel-exact.  FUTURE: a multi-corner-color command, or routing the rings
     through gradient quads, would make the shadow exact too -- without changing the public surface.
 
-    Compiled in the DRAW unit (gui_draw.c) after gui_paint.c.  A handful of sites still read
-    style (the GUI_VAR_*_STYLE picks, WIN_BORDER, ROUND_WIDGET) -- marked for the R8 element
-    move so draw ends parameter-pure.  The public gui_draw_* surface over them is at the foot.
+    Compiled in the DRAW unit (gui_draw.c) after gui_paint.c.  Everything here is
+    PARAMETER-PURE since the R8 carve: the emitters that resolve their own look (draw_arrow,
+    draw_check_indicator, draw_rule, draw_close_x, draw_frame -- style-var picks, WIN_BORDER,
+    ROUND_WIDGET) moved up to element/gui_symbol_style.c.  The public gui_draw_* surface over
+    the pure set is at the foot; the movers' wrappers moved with them.
 
 ==============================================================================================*/
 // clang-format off
@@ -33,9 +35,6 @@
 /*==============================================================================================
     Shared geometry helpers
 ==============================================================================================*/
-
-/* Forward decl: draw_rule (shapes section) strokes through draw_dashed_line, defined further down. */
-static void draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
 
 /* Make a vec2 (the backend file owns its own v2; this is the UI unit's local one). */
 static gui_vec2_t sv2( f32 x, f32 y ) { return ( gui_vec2_t ){ x, y }; }
@@ -105,42 +104,9 @@ draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 color )
     gui_draw_polyline( p, 3, thickness, GUI_STROKE_CENTER, false, color );
 }
 
-/* Directional arrow glyph: a filled triangle (default) or a stroked chevron pointing `dir`,
-   centered in `box`.  The one arrow generator -- arrow_button, draw_collapse_arrow, the combo /
-   submenu arrow, and the dock overlay all draw through it, so the shape is uniform and follows
-   GUI_VAR_ARROW_STYLE (the chevron variant) exactly as check / bullet follow their style vars.
-   The half-extent scales with the box so every arrow matches the others at any font size. */
-void
-draw_arrow( gui_rect_t box, gui_dir_t dir, u32 color )
-{
-    if ( style_var( GUI_VAR_ARROW_STYLE ) >= 0.5f )
-    {
-        f32 t = floorf( box.h * 0.13f );  if ( t < 1.5f ) t = 1.5f;
-        draw_chevron( box, dir, t, color );
-        return;
-    }
-
-    f32 cx = box.x + box.w * 0.5f;
-    f32 cy = box.y + box.h * 0.5f;
-    f32 s  = floorf( box.h * 0.22f );   /* triangle half-extent */
-
-    switch ( dir )
-    {
-        case GUI_DIR_LEFT:  draw_push_triangle( cx - s, cy,     cx + s, cy - s, cx + s, cy + s, 0, color ); break;
-        case GUI_DIR_RIGHT: draw_push_triangle( cx + s, cy,     cx - s, cy - s, cx - s, cy + s, 0, color ); break;
-        case GUI_DIR_UP:    draw_push_triangle( cx,     cy - s, cx - s, cy + s, cx + s, cy + s, 0, color ); break;
-        case GUI_DIR_DOWN:  draw_push_triangle( cx,     cy + s, cx - s, cy - s, cx + s, cy - s, 0, color ); break;
-    }
-}
-
-/* Collapse toggle glyph: points down when expanded, right when collapsed (the following label reads
-   as the thing being toggled).  Exactly the DOWN / RIGHT case of draw_arrow, so the window title bar
-   and collapsing_header fold with the identical glyph arrow_button draws.  Shared by both. */
-void
-draw_collapse_arrow( gui_rect_t box, bool collapsed, u32 color )
-{
-    draw_arrow( box, collapsed ? GUI_DIR_RIGHT : GUI_DIR_DOWN, color );
-}
+/* draw_arrow + draw_collapse_arrow (the GUI_VAR_ARROW_STYLE pick) moved to
+   element/gui_symbol_style.c at the R8 carve; the chevron variant routes back through
+   gui_draw_chevron below. */
 
 /* Check-mark glyph: a two-stroke 'v' fitted and centered in `box` (Dear ImGui RenderCheckMark).
    Two antialiased line segments -- a short down-stroke into the valley, then a long up-stroke --
@@ -190,20 +156,7 @@ draw_bullet( f32 cx, f32 cy, f32 r, u32 color )
     draw_push_circle_filled( cx, cy, r, 12, color );
 }
 
-/* Close glyph: the two-diagonal 'X' centered in `box` (Dear ImGui's CloseButton cross).  Extracted
-   so the native caption close button and any other caller stroke the identical mark. */
-void
-draw_close_x( gui_rect_t box, u32 color )
-{
-    f32 cx = box.x + box.w * 0.5f;
-    f32 cy = box.y + box.h * 0.5f;
-    f32 m  = box.w < box.h ? box.w : box.h;
-    f32 s  = floorf( m * 0.18f );   /* glyph half-extent -- matches the caption min/max glyphs */
-    f32 t  = WIN_BORDER;
-
-    gui_draw_line( cx - s, cy - s, cx + s, cy + s, t, color );
-    gui_draw_line( cx - s, cy + s, cx + s, cy - s, t, color );
-}
+/* draw_close_x (stroke weight = WIN_BORDER) moved to element/gui_symbol_style.c at R8. */
 
 /* Arrow whose apex points AT a specific coordinate (Dear ImGui RenderArrowPointingAt): a filled
    triangle of half-extent `half` with its tip exactly on (tx,ty), opening away in `dir`.  Used for
@@ -236,52 +189,14 @@ draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 color )
         gui_draw_line( cx, cy - s, cx, cy + s, thickness, color );
 }
 
-/* Checkbox / menu indicator: the mark drawn inside the `box` when checked, switched on
-   GUI_VAR_CHECK_STYLE -- a 'v' tick (default), a filled disc, or an 'X' cross.  The one place the
-   three-way style resolves, so checkbox and menu_item stay identical and a new style only adds here. */
-void
-draw_check_indicator( gui_rect_t box, u32 col )
-{
-    u32 style = (u32)( style_var( GUI_VAR_CHECK_STYLE ) + 0.5f );
-    if ( style == GUI_CHECK_DISC )
-        draw_push_circle_filled( box.x + box.w * 0.5f, box.y + box.h * 0.5f,
-                                 box.w * 0.5f - (f32)s_style.checkmark_pad, 16, col );
-    else if ( style == GUI_CHECK_CROSS )
-        draw_close_x( box, col );
-    else
-        draw_check_mark( box, col );
-}
-
-/* Horizontal rule centered on yc, honoring GUI_VAR_SEPARATOR_STYLE (solid fill or dashed line).
-   The shared draw seam for separator() and the two rules of separator_text(). */
-void
-draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col )
-{
-    if ( w <= 0.0f )
-        return;
-    if ( style_var( GUI_VAR_SEPARATOR_STYLE ) >= 0.5f )
-        draw_dashed_line( x, yc, x + w, yc, 6.0f, 4.0f, thickness, col );
-    else
-        draw_push_rect_filled( x, yc - thickness * 0.5f, w, thickness, 0, 0, 1, 1, 0, col );
-}
+/* draw_check_indicator (the GUI_VAR_CHECK_STYLE three-way) and draw_rule (the
+   GUI_VAR_SEPARATOR_STYLE solid/dashed pick) moved to element/gui_symbol_style.c at R8. */
 
 /*==============================================================================================
     Shapes  (the convex-fill / polyline-stroke palette)
 ==============================================================================================*/
 
-/* Frame / bezel (Dear ImGui RenderFrame): a filled rounded body with an optional border, the basis
-   every widget frame shares.  Uses the control-frame rounding (ROUND_WIDGET) so a custom-drawn frame
-   matches the built-in buttons / inputs; pass border <= 0 to skip the outline. */
-static void
-draw_frame( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
-{
-    f32 save = draw_rounding();
-    draw_set_rounding( ROUND_WIDGET );
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0, 0, 1, 1, 0, col_bg );
-    if ( border > 0.0f )
-        draw_push_rect_outline( r.x, r.y, r.w, r.h, border, 0, col_border );
-    draw_set_rounding( save );
-}
+/* draw_frame (the ROUND_WIDGET ambient rounding) moved to element/gui_symbol_style.c at R8. */
 
 /* Build the clockwise perimeter of a per-corner rounded rect into `out` (caller-sized; <= 4*17+4).
    Each corner is a quarter arc (or a single sharp point when its radius is ~0), so a tab is two
@@ -431,14 +346,9 @@ draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
     Patterned lines + fills
 ==============================================================================================*/
 
-/* Dashed / dotted line from (x0,y0) to (x1,y1): on-segments of length `dash` separated by `gap`
-   (guides, selection marquees).  A small dash with gap == dash reads as dotted.  Backed by a single
-   tiled textured quad (gui_draw_dashed_line) -- not one stroke per dash -- so length is free. */
-static void
-draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col )
-{
-    gui_draw_dashed_line( x0, y0, x1, y1, dash, gap, thickness, col );
-}
+/* The file-local dashed forwarder died at R8: its one caller (draw_rule) moved to
+   element/gui_symbol_style.c and strokes the backend primitive (gui_draw_dashed_line,
+   gui_emit_path.c) directly. */
 
 /* Checkerboard fill of `box` with `cell`-sized squares alternating col_a / col_b -- the classic
    transparency backdrop behind a color swatch.  Cell count is capped so a large area cannot flood
@@ -575,23 +485,21 @@ draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col )
 /*==============================================================================================
     Public surface -- the gui_draw_* family (Dear ImGui AddXxx / Render* analogue), drawn through the
     normal vertex pipeline (lines / triangles / circles), NOT the icon atlas.  Editor / custom
-    widgets paint the same marks the built-in widgets use.  The set_*_style setters choose the
-    global indicator shape; scope a change with push_style_var on the matching GUI_VAR_*_STYLE.
+    widgets paint the same marks the built-in widgets use.  The styled pieces of the family
+    (arrow / close / frame wrappers, the set_*_style setters) live with their targets in the
+    element and style units since R8.
 ==============================================================================================*/
 
-/* glyph marks */
+/* glyph marks  (gui_draw_arrow / gui_draw_close / gui_draw_frame moved with their styled
+   targets to element/gui_symbol_style.c at R8) */
 void gui_draw_check_mark( gui_rect_t box, u32 col )                       { draw_check_mark( box, col ); }
-void gui_draw_arrow     ( gui_rect_t box, gui_dir_t dir, u32 col )      { draw_arrow( box, dir, col ); }
 void gui_draw_bullet    ( f32 cx, f32 cy, f32 r, u32 col )                  { draw_bullet( cx, cy, r, col ); }
-void gui_draw_close     ( gui_rect_t box, u32 col )                       { draw_close_x( box, col ); }
 void gui_draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 col )
                                                                                { draw_arrow_pointing_at( tx, ty, half, dir, col ); }
 void gui_draw_chevron   ( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 col ) { draw_chevron( box, dir, thickness, col ); }
 void gui_draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 col )       { draw_plus_minus( box, plus, thickness, col ); }
 
 /* shapes */
-void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border ) { draw_frame( box, col_bg, col_border, border ); }
-
 void
 gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
                          bool filled, f32 thickness, u32 col )
@@ -622,9 +530,8 @@ void gui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 t
 void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col )
                                                                                { draw_bezier_cubic( x0, y0, c0x, c0y, c1x, c1y, x1, y1, thickness, col ); }
 
-/* patterned lines + fills.  (draw_dashed_line has no wrapper here -- the public draw_dashed_line is
-   the backend primitive in gui_emit_path.c; the vtable binds straight to it.  The file-local
-   draw_dashed_line static below forwards to that same primitive for the separator rule.) */
+/* patterned lines + fills.  (gui_draw_dashed_line is the backend primitive in gui_emit_path.c;
+   the vtable binds straight to it.) */
 void gui_draw_checker ( gui_rect_t box, f32 cell, u32 col_a, u32 col_b )  { draw_checker( box, cell, col_a, col_b ); }
 void gui_draw_hatch   ( gui_rect_t box, f32 spacing, f32 thickness, u32 col ) { draw_hatch( box, spacing, thickness, col ); }
 void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal ) { draw_gradient( box, col_a, col_b, horizontal ); }
@@ -639,10 +546,8 @@ void gui_draw_grip( gui_rect_t box, u32 col )                            { draw_
 void gui_draw_spinner( gui_rect_t box, f32 t, f32 thickness, u32 col )    { draw_spinner( box, t, thickness, col ); }
 void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, col ); }
 
-/* global indicator-shape setters (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t) */
-void gui_set_check_style ( u8 style ) { s_style.check_style  = style; }
-void gui_set_bullet_style( u8 style ) { s_style.bullet_style = style; }
-void gui_set_arrow_style ( u8 style ) { s_style.arrow_style  = style; }
+/* The global indicator-shape setters (gui_set_check/bullet/arrow_style) write the active style
+   record -- style-unit material; they moved to style/gui_stacks.c at R8. */
 
 // clang-format on
 /*============================================================================================*/

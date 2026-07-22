@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/element/gui_element.c -- GUI_ELEMENT: rect-consuming widget cores.
+    runtime_service/gui/element/gui_element_core.c -- The el_* rect-consuming widget cores.
 
     The building-block tier (GUI_STACK_PLAN increment 3), lifted from the proven
     sb_gui_diablo ui layer.  Every el_* fills EXACTLY the rect it is handed -- no hidden
@@ -13,15 +13,13 @@
     theme_reset); a kit (S3) may overwrite the installed values afterward via gui_el_style().
     Elements never see a theme, a style stack, or a gui_col_t slot.
 
-    Dependency contract: this tier calls gui_core (item, ids, io, redraw) + gui_draw
-    (draw_*) + gui_rect only -- NEVER the flow layout engine.  This file is its OWN
-    translation unit (the third, beside gui.c and gui_render.c) -- the compiler enforces
-    the contract: everything resolves through the public gui_* declarations (gui_host.h)
-    plus the one internal seam, style_active() (gui_internal.h).
+    Dependency contract: the el_* cores call gui_core (item, ids, io, redraw) + gui_draw
+    (draw_*) + gui_rect only -- NEVER the flow layout engine -- and resolve through the
+    public gui_* declarations (gui_host.h) plus the style_active() seam.  A constituent of
+    the element unit (root gui_element.c) since R8; renamed from element/gui_element.c on
+    the rect_core precedent to free the root unit name.
 
 ==============================================================================================*/
-
-#include "runtime_service/gui/gui_internal.h"   /* -> gui_host.h -> gui_api.h -> gui.h */
 
 // clang-format off
 

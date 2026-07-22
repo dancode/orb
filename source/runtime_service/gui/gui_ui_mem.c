@@ -37,13 +37,18 @@ gui_ui_memory( void )
        own statics (base/active style, theme table, stacks + pair tables) via its seam. */
     b += gui_style_unit_mem_bytes();
 
-    /* compose/ -- the flow unit accounts for its own statics (compose/gui_flow.c seam). */
+    /* flow/ -- THE FLOW UNIT is its own unit since R7 (gui_flow.c) and accounts for its own
+       statics (layout state pool, split stack, sublayout sink) via its seam. */
     b += gui_flow_unit_mem_bytes();
 
     /* interact/ -- THE INTERACT UNIT is its own unit since R6 (gui_interact.c) and accounts
        for its own statics (the drag payload slot) via its seam; the text-selection controller
        moved to chrome (window/gui_select.c) and is counted there. */
     b += gui_interact_unit_mem_bytes();
+
+    /* element/ -- THE ELEMENT UNIT accounts for its own statics (the installed element style
+       + the slot map) via its seam (gui_element.c, R8). */
+    b += gui_element_unit_mem_bytes();
 
     /* widgets/ + table/ + dock/ + popup/ -- the chrome unit accounts for its own statics
        (gui_chrome.c seam). */

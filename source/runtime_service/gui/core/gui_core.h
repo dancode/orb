@@ -332,7 +332,7 @@ const void* gui_state_peek( gui_id_t id, u32 size );
 
 /* frame scratch accessors + item seams (core/gui_ctx.c).  The flag seams are the PURE halves;
    the style/draw application wrappers keeping the old names (item_flags_resolve,
-   item_flags_chrome_reset) live in present/gui_paint_core.c and are declared in
+   item_flags_chrome_reset) live in element/gui_adornment.c and are declared in
    style/gui_style.h -- this server never touches a style value or the draw state. */
 bool             rect_hit( gui_rect_t r );         /* cursor (s_io) inside r                  */
 gui_item_flags_t item_flags_take( void );          /* per-item flag merge + scope latch       */
@@ -456,7 +456,7 @@ gui_state_usage_t gui_state_usage( void );
                      core/gui_item.c): the ring must land beneath the item's own fill and no
                      presentation seam after behavior exists that every widget passes through.
                      Behavior picks the MOMENT; the paint policy (color, thickness) lives with
-                     the skin (present/gui_paint_core.c -> element at R8).  Do not add more.
+                     the skin (element/gui_adornment.c since R8).  Do not add more.
     DBG_* / STEP_SET_OWNER   debug capture stamps (debug/gui_debug.h) -- severable tooling,
                      compiled away outside Debug.
 ==============================================================================================*/

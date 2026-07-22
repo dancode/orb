@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/compose/gui_sublayout.c -- Transient sub-layout lifecycle.
+    runtime_service/gui/flow/gui_sublayout.c -- Transient sub-layout lifecycle.
 
     push_layout / pop_layout open a transient sub-layout inside one cell of the parent template:
     no scroll, no clip, no persistent state, no frame.  It is the recursive completion of the

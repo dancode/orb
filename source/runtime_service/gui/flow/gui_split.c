@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/compose/gui_split.c -- Side-by-side split panels.
+    runtime_service/gui/flow/gui_split.c -- Side-by-side split panels.
 
     split_begin / split_next / split_end -- two panels side by side, sharing a Y-level.
 

@@ -5,7 +5,7 @@
     The draw unit's foundation routines: a solid fill and a border outline over a gui_rect_t,
     and the fitted text painters (truncate on a glyph boundary, compact ellipsis).  Pure draw:
     colors arrive as parameters; the only ambient reads are the active font's metrics.  Moved
-    out of present/gui_paint_core.c when the draw unit was assembled (GUI_SERVER_PLAN.md R3);
+    out of the old paint core when the draw unit was assembled (GUI_SERVER_PLAN.md R3);
     the label GRAMMAR (label_vis_len -- where the visible span ends) stays authored in the
     core-side grammar block and is consumed here through its seam.
 
@@ -40,14 +40,8 @@ void draw_label ( f32 x, f32 y, u32 c, const char* s )
     draw_push_text_n( x, y, c, s, label_vis_len( s ) );
 }
 
-/* The natural width a label-sized widget requests from the composer: the visible span plus the
-   standard inset on both sides.  THE self-measurement formula -- button, small_button, menu
-   items, and the public gui_button_width all speak it through this one helper.  (WIDGET_PAD is
-   a style read -- this helper moves up with the styled painters in R8.) */
-f32  label_natural_w( const char* s )
-{
-    return label_width( s ) + 2.0f * WIDGET_PAD;
-}
+/* label_natural_w (the widget self-measurement formula) reads WIDGET_PAD -- a style read --
+   so it moved up with the styled painters at R8 (element/gui_adornment.c). */
 
 /* Compact truncation ellipsis -- three baseline dots packed into ~1.2 glyph advances instead of
    three full '.' glyph cells.  A literal "..." spends three whole character advances on the cut

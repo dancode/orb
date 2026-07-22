@@ -25,7 +25,7 @@
          always wins and Up exactly undoes Down.  (The list is one frame old, the same deferral
          hover_win runs on; the resolve itself happens on the keypress frame.)  An adoption arms
          the scroll chase: a cursor landing outside its region's view scrolls into it
-         (nav_scroll_chase, gui_paint_core.c).
+         (nav_scroll_chase, core/gui_item.c).
       3. Choose nav_win (nav_choose_window): the top open popup if any (popups capture nav exactly
          as popup_apply_modal steals hover_win), else the explicit target window, else the
          front-most normal window.

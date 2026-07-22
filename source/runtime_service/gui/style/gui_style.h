@@ -96,8 +96,8 @@ void style_pop_var( u32 count );
 bool style_stacks_empty( void );
 
 /* The item / chrome / frame seam hooks (gui_style_core.c) -- driven from OUTSIDE this unit:
-   style_item_commit / style_chrome_reset by the impure per-item wrappers (present/
-   gui_paint_core.c), style_new_frame by the orchestrator (gui_ctx_begin pairs it with
+   style_item_commit / style_chrome_reset by the impure per-item wrappers (element/
+   gui_adornment.c), style_new_frame by the orchestrator (gui_ctx_begin pairs it with
    ctx_new_frame) and by gui_theme_reset. */
 void style_item_commit( void );
 void style_chrome_reset( void );
@@ -123,13 +123,9 @@ u32 col_item_bg( gui_item_state_t st );
 u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color_enum );
 
-/* Per-item ambient application (present/gui_paint_core.c -- deliberately NOT in this unit:
-   they apply draw-state consequences, and style never paints) -- the impure wrappers over the
-   interact server's pure seams (item_flags_take / item_flags_chrome_drop, core/gui_core.h):
-   the style commit plus the disabled dim and default rounding.  The cell emit seam, the
-   chrome seams, and the pane bracket call these; placement refined at R8 (element). */
-gui_item_flags_t item_flags_resolve( void );
-void             item_flags_chrome_reset( void );
+/* The per-item ambient wrappers (item_flags_resolve / item_flags_chrome_reset) found their
+   home at R8: element/gui_adornment.c, declared in element/gui_element_internal.h -- they
+   apply draw-state consequences, and style never paints. */
 
 /* Decentralized memory accounting -- this unit's fixed statics (root gui_style.c foot),
    summed into cpu_frontend_bytes by gui_ui_memory (gui_ui_mem.c). */

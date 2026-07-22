@@ -3,7 +3,7 @@
     runtime_service/gui/widgets/gui_scrollbar.c -- Scrollbar: track + knob over a scroll offset.
 
     A stock widget with a special placement policy: it is never emitted from the layout pen.
-    The region engine (compose/gui_scroll.c) reserves the gutter, computes the track
+    The region engine (flow/gui_scroll.c) reserves the gutter, computes the track
     rect from it, and invokes this at layout_pop_region once the frame's content is measured.
     From there it is the standard widget recipe on a handed rect: item_state for the grab
     (ITEM_DRAG), the drag mapped back into *scroll, then the track + knob paint.

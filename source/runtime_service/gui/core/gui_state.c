@@ -213,7 +213,7 @@ gui_state_usage( void )
 
 /*============================================================================================*/
 /* Animation utilities (gui_anim_f32, ...) live in core/gui_anim.c,
-   included after present/gui_paint_core.c which provides the color palette they blend. */
+   resolved through the style unit which provides the color palette they blend. */
 
 // clang-format on
 /*============================================================================================*/

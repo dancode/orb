@@ -7,12 +7,12 @@
     horizontal scroll to keep the caret in view, and rendering (text, selection highlight,
     blinking caret) -- all clipped to a caller-supplied box.  input_text (gui_input.c) is a
     thin wrapper: it owns the label split, the box background / border, and the focus claim,
-    then delegates here.  Lifted out of gui_paint_core.c so the editor is one named unit.
+    then delegates here.  Lifted out of the old paint core so the editor is one named unit.
 
     The persisted per-id edit state (cursor, anchor, scroll, blink) lives in the keyed state
     pool (gui_ctx.c); gui_clipboard_set is in core/gui_io.c.
 
-    Included by gui.c after gui_paint_core.c so gui_item_state_t, text_center_y, the COL_*
+    Part of the chrome unit; gui_item_state_t, text_center_y, and the COL_*
     palette, WIDGET_PAD / WIN_BORDER, and the draw + font helpers are all in scope.
 
 ==============================================================================================*/

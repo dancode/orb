@@ -181,7 +181,7 @@ typedef struct
 
     /* Scroll-to-view request: set when a resolver adopts a new cursor item, consumed by
        nav_item_register when that item registers -- if its rect sits outside its region's view,
-       the region (and its ancestors) scroll it into view (nav_scroll_chase, gui_paint_core.c).
+       the region (and its ancestors) scroll it into view (nav_scroll_chase, core/gui_item.c).
        One-shot per adoption so the chase never fights the wheel or a scrollbar drag. */
     bool        scroll_chase;
 
@@ -425,7 +425,7 @@ void gui_popup_close_current( void );
 void select_paint_under( void );
 void select_window_end( void );
 
-/* The region engine (compose/gui_scroll.c, flow unit) emits the scrollbar widget into the gutter
+/* The region engine (flow/gui_scroll.c) emits the scrollbar widget into the gutter
    it reserved at layout_pop_region -- but the widget lives above it (widgets/gui_scrollbar.c):
    flow's one upward call beside the anim ease.  Compose hands the track rect + scroll slot; the
    widget owns the feel and the look. */

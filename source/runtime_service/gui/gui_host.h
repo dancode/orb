@@ -229,7 +229,7 @@ void gui_grid_cells( u32 ncols, u32 nrows );
 void gui_bar( void );
 void gui_strip( void );
 
-/* layout - side-by-side split panels (compose/gui_split.c, flow unit) */
+/* layout - side-by-side split panels (flow/gui_split.c) */
 void gui_split_begin( const char* id_str, f32 right_w );
 void gui_split_next( void );
 void gui_split_end( void );

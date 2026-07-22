@@ -35,8 +35,8 @@
             is the only place that sets it.
 
     Included by gui.c after the widget family files -- needs lf() / layout_frame_t (gui_ctx.c,
-    compose/gui_layout_core.c), id_push/id_pop (core/gui_id.c), and layout_set_default
-    (compose/gui_layout_core.c) already in scope.
+    flow/gui_layout_core.c), id_push/id_pop (core/gui_id.c), and layout_set_default
+    (flow/gui_layout_core.c) already in scope.
 
 ==============================================================================================*/
 // clang-format off

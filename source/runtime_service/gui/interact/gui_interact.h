@@ -56,7 +56,7 @@ void drag_new_frame( void );
 /*==============================================================================================
     Upward seams -- the unit's documented exceptions, mirroring core's block (gui_core.h).
     Do not add more.
-      - draw_drop_ring (present/gui_paint_core.c; -> element at R8): the ONE adornment paint
+      - draw_drop_ring (element/gui_adornment.c since R8): the ONE adornment paint
         this unit invokes -- the accept ring must land in the same call that decides the
         accept (gui_drag_payload_accept), exactly like core's draw_nav_ring.
       - gui_tooltip_begin/end + gui_stack (chrome, via gui_host.h): the drag preview body.

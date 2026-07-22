@@ -1,6 +1,52 @@
 # GUI SERVER PLAN -- the v2 unit reorganization
 
-Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) + R5 (style) + R6 (interact) DONE 2026-07-21 -- next: R7 (flow)
+Status: R1 (rect) + R1b (header split) + R2 (render) + R3 (draw) + R4 (core) + R5 (style) + R6 (interact) + R7 (flow) + R8 (element) DONE 2026-07-21 -- next: R9 (chrome)
+
+R8 DONE: the ELEMENT UNIT is complete (root gui_element.c) -- THE FIRST LAYER ASTRIDE BOTH
+SERVERS: everything that combines interact state with styled paint over a caller rect.  Three
+constituents: element/gui_element_core.c (the el_* cores, renamed from element/gui_element.c
+on the rect_core precedent to free the root name -- contract unchanged: fill exactly the rect,
+read only the installed element style), element/gui_adornment.c (the old
+present/gui_paint_core.c, moved whole -- the impure per-item wrappers item_flags_resolve /
+item_flags_chrome_reset, draw_field_label + label_natural_w (the WIDGET_PAD self-measure, up
+from draw/gui_paint.c), and the system adornments: nav ring, focus border, drop ring, child
+box pair, resize highlight), and NEW element/gui_symbol_style.c (the styled half of
+draw/gui_symbol.c: draw_arrow, draw_collapse_arrow, draw_close_x, draw_check_indicator,
+draw_rule, draw_frame -- every emitter that resolves its own look from a style-var pick /
+WIN_BORDER / checkmark_pad / ROUND_WIDGET; their public wrappers gui_draw_arrow /
+gui_draw_close / gui_draw_frame moved with them so draw never calls upward; the chevron
+variant routes back through the public gui_draw_chevron; the file-local dashed forwarder died
+-- draw_rule strokes gui_draw_dashed_line, the backend primitive, directly).  The
+gui_set_check/bullet/arrow_style setters write the active style record, so they went to the
+STYLE unit (style/gui_stacks.c), not element.  present/ is DISSOLVED; the draw unit is now
+parameter-pure (no style_var / s_style / vocabulary-macro reads).  NEW
+element/gui_element_internal.h joins the umbrella between flow and chrome -- the unit's
+cross-boundary decls (wrappers, styled painters, mem seam); the adornments invoked from below
+stay declared in their consumer's documented upward-seam blocks (draw_nav_ring in
+core/gui_core.h, draw_drop_ring in interact/gui_interact.h), and the element bridge
+(el_style_derive, g_gui_el_slot_map) stays in style/gui_style.h -- one decl, one home.  The
+element TU now includes render/gui_render.h (it paints -- astride is the unit's definition).
+NEW gui_element_unit_mem_bytes() = s_el_style + g_gui_el_slot_map, wired into gui_ui_memory.
+Full + mono builds clean (one trivial fix: the missing render header); both canaries clean.
+
+R7 DONE: the FLOW UNIT is re-seated (compose/ -> flow/; compose/gui_flow.c -> root
+gui_flow.c) -- the folder now matches the unit, joining the R1b header (flow/gui_flow.h,
+real since this increment).  Constituents unchanged: gui_layout_core.c, gui_scroll.c,
+gui_layout_child.c, gui_sublayout.c, gui_split.c, gui_region.c, gui_layout.c.  The carve was
+purely mechanical (the TU existed since the predecessor campaign); the increment's work was
+the DEP AUDIT now recorded in the banners: downward, flow composes over core (frames, keyed
+state, anim ease, io), style (the spacing metrics), interact (resize_apply_edges -- child
+edge-resize rides the window mechanism), and the render clip stack -- flow computes THE view
+rect, so it owns the region scissor lifecycle (draw_push/pop_clip_rect) + the matching
+s_scope.clip fence + the GUI_DBG_REGION outline; no other render call belongs there (flow
+places, it does not paint).  UPWARD SEAMS formalized in flow/gui_flow.h ("do not add more"):
+scrollbar_widget (the region gutter's ONE widget -- the plan's sanctioned flow -> chrome
+call) and the child box paint trio (draw_child_bg / draw_child_border /
+draw_resize_highlight, declared in draw/gui_draw.h, defined in paint_core, bound for element
+at R8).  The old banner's second upward seam (gui_anim_f32) is downward since the anim
+utilities moved to core at R4.  gui_flow_unit_mem_bytes unchanged (s_layout_state_stack +
+s_split_stack + s_sublayout_sink; the layout-frame stack stays a core static).  Full + mono
+builds clean (first try); both canaries clean.
 
 R6 DONE: the INTERACT UNIT exists (root gui_interact.c) -- gesture mechanisms over the
 interact server: interact/gui_move.c + gui_resize.c + gui_drag.c + gui_feature.c +
@@ -277,8 +323,9 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
 - R5 (RESOLVED): the color id table is core ids + GUI_COL_USER_0..7 at the end, read through
   the new public style_color(); resolution is pure -- state arrives as parameters, and
   col_item_bg_anim rides core's anim utility explicitly -- see the R5 DONE block.
-- R3/R8: split gui_symbol.c -- parameter-pure shape emitters go to draw; COL_*-consuming
-  sugar moves up to element.
+- R3/R8 (RESOLVED): gui_symbol.c split at R8 -- the parameter-pure emitters stayed in draw;
+  the emitters that resolve their own look moved to element/gui_symbol_style.c, and the
+  style SETTERS at the foot went to the style unit -- see the R8 DONE block.
 
 ## Increment ladder (one per go-ahead, each builds green)
 
@@ -288,8 +335,8 @@ Later increments tighten each unit .c to include ONLY the headers at or below it
     R4  core     interact server assembly; pane bracket -> frame; behavior data audit        <- DONE
     R5  style    style/ folder + root unit; projections in; user color range        <- DONE
     R6  interact gesture unit; select re-classified as chrome; interact_claim   <- DONE
-    R7  flow     compose/ -> flow/; unit .c to root; flow/gui_flow.h (rect producer sits below element)
-    R8  element  absorb styled paint helpers; unit .c to root
+    R7  flow     compose/ -> flow/; unit .c to root; flow/gui_flow.h (rect producer sits below element)   <- DONE
+    R8  element  absorb styled paint helpers; unit .c to root   <- DONE
     R9  chrome   six folders under chrome/; chrome/gui_chrome.h
     R10 debug    unit .c to root; debug/gui_debug.h; frame_overlay -> frame/
     R11 frame    gui.c = pure orchestrator; gui_internal.h DELETED; GUI_ARCHITECTURE.md rewrite

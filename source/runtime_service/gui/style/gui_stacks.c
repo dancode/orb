@@ -171,5 +171,13 @@ gui_sz_scale_row( gui_scale_t s )
     return (f32)s_style.scales[ s ].row;
 }
 
+/* Global indicator-shape setters (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t):
+   persistent writes to the active style record (from draw/gui_symbol.c at R8 -- a style write
+   is style-unit material).  Scope a change with push_style_var on the matching GUI_VAR_*_STYLE
+   instead; the styled emitters that read the picks live in element/gui_symbol_style.c. */
+void gui_set_check_style ( u8 style ) { s_style.check_style  = style; }
+void gui_set_bullet_style( u8 style ) { s_style.bullet_style = style; }
+void gui_set_arrow_style ( u8 style ) { s_style.arrow_style  = style; }
+
 // clang-format on
 /*============================================================================================*/
