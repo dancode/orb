@@ -1,28 +1,34 @@
 /*==============================================================================================
 
-    runtime_service/gui/interact/gui_edit.c -- single-line text edit engine (keyboard behavior).
+    runtime_service/gui/interact/gui_edit.c -- single-line text edit engine.
 
-    The measurement-free heart of a text field: buffer insert / delete, cursor + selection in
-    BYTE space, word motion, the undo / redo ring, clipboard cut / copy / paste, and the
-    key -> command mapping.  A keyboard-driven interaction mechanism, sibling to move / resize /
-    drag -- it consumes (id, buf, io) plus caller-owned edit state and produces DECISIONS (new
-    buffer + cursor / anchor), never a pixel.  It knows nothing of fonts, layout, or drawing.
+    The complete behavior of a text field, minus the paint: buffer insert / delete, cursor +
+    selection in BYTE space, word motion, the undo / redo ring, clipboard cut / copy / paste, the
+    key -> command mapping, glyph MEASUREMENT (caret pixel-x, click pixel -> byte offset), the
+    mouse selection drag that rides it, horizontal scroll to keep the caret in view, and the caret
+    blink clock.  A keyboard-and-mouse interaction mechanism, sibling to move / resize / drag: it
+    consumes (id, content rect, item state, buf, io) plus caller-owned edit state and produces
+    DECISIONS -- a new buffer, cursor / anchor, scroll bias, blink phase -- never a pixel.
 
-    The widget that wraps it (chrome/widgets/gui_text_edit.c: input_field_edit) owns the parts
-    this engine deliberately does not: font measurement (caret pixel-x, pixel -> byte offset),
-    the mouse handler that needs it, horizontal scroll, and all rendering.  It drives the engine
-    once per focused frame through edit_keys(), then applies mouse + paint itself.  The pure
-    byte-offset helpers (char_class / word_bounds / word_click_off / edit_strlen / edit_sel) are
-    shared with the multiline wrapper (chrome/widgets/gui_text_edit_multi.c) through the seam.
+    Measurement is math over font metrics (the text/ leaf), not drawing, so it lives here: an
+    interact mechanism may size and hit-test text exactly as it sizes and hit-tests any rect; it
+    just never emits a glyph.  The one convenient entry is edit_field(): drive it once per frame
+    over a content rect and it runs the whole non-paint frame.  The wrapping widget
+    (chrome/widgets/gui_text_edit.c) supplies the box, colors, and frame chrome, then paints the
+    resolved state (text / selection / caret) that this engine leaves on the edit-state slot.
+
+    The measurement helpers (text_x_at / text_offset_at) and the pure byte-offset helpers
+    (char_class / word_bounds / word_click_off / edit_strlen / edit_sel) are shared through the
+    seam with the multiline wrapper (chrome/widgets/gui_text_edit_multi.c).
 
     The persisted per-id edit state (gui_edit_state_t) lives in the keyed state pool; the widget
     allocates it and hands this engine a pointer.  gui_clipboard_set / item_focus_release are the
-    interact server's (core/gui_io.c, core/gui_item.c).
+    interact server's (core/gui_io.c, core/gui_item.c); cursor_set is core's (core/gui_ctx.c).
 
 ==============================================================================================*/
 // clang-format off
 
-/* gui_edit_state_t (the persisted per-id edit state) and input_field_result_t (the edit_keys
+/* gui_edit_state_t (the persisted per-id edit state) and input_field_result_t (the edit_field
    result) are defined in the unit seam, interact/gui_interact.h, so this engine, the single-line
    widget, and the multiline wrapper all share one definition. */
 
@@ -64,6 +70,40 @@ word_click_off( const char* buf, u32 len, u32 off )
     if ( off > 0 && past_word && char_class( (u8)buf[ off - 1u ] ) != 0 )
         --off;
     return off;
+}
+
+/*==============================================================================================
+    Glyph measurement -- math over the active font's advances (the text/ leaf), the interact-side
+    counterpart of a hit-test.  Shared with both widget wrappers through the seam so the caret,
+    the click mapping, and the paint all agree on where each byte sits.  No drawing.
+==============================================================================================*/
+
+/* Pixel x-offset of the insertion point at byte index `off` in `buf`, measured from the left
+   edge of the first glyph (scroll is not applied here; the caller adjusts).  Stops safely at a
+   NUL so off > len is handled without bounds checks. */
+f32
+text_x_at( const char* buf, u32 off )
+{
+    f32 x = 0.0f;
+    for ( u32 i = 0; i < off && buf[ i ]; ++i )
+        x += font_char_advance( (u8)buf[ i ] );
+    return x;
+}
+
+/* Byte offset in buf[0..len) nearest to pixel position `px` measured from the text origin.
+   Snaps to the midpoint of each glyph so a click in the left half of a glyph lands before it
+   and in the right half lands after it, matching standard click-to-caret behaviour. */
+u32
+text_offset_at( const char* buf, u32 len, f32 px )
+{
+    f32 x = 0.0f;
+    for ( u32 i = 0; i < len; ++i )
+    {
+        f32 adv = font_char_advance( (u8)buf[ i ] );
+        if ( px < x + adv * 0.5f ) return i;
+        x += adv;
+    }
+    return len;
 }
 
 /*==============================================================================================
@@ -548,42 +588,177 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
 }
 
 /*==============================================================================================
-    edit_keys -- the full focused-frame keyboard path (the engine's public entry).
+    Mouse selection -- click-to-caret, Shift-extend, double-click word select, and the click-drag
+    that extends the selection (plain, or by whole words after a double-click).  Runs off st.active
+    so the drag survives the cursor leaving the box, like the scrollbar knob.  Measurement
+    (text_offset_at) turns the cursor pixel into a byte offset in content space -- content.x is the
+    text origin, so the scroll bias is added back in -- then the word helpers snap to boundaries.
+==============================================================================================*/
 
-    Drives one frame of keyboard editing over a caller-owned buffer + persisted edit state:
-    runs the registered key hook, honours a queued set_edit_cursor_end, initialises the undo
-    ring on first focus, publishes the live-selection fact for window-level text selection, and
-    applies every key command.  Returns { changed, enter }; sets *blink_reset when any activity
-    should un-hide the caret.  The wrapper widget still owns measurement, mouse, and paint.
+static void
+edit_apply_mouse( gui_rect_t content, gui_item_state_t st, char* buf, u32 len,
+                  gui_edit_state_t* es, bool shift, bool* blink_io )
+{
+    bool blink_reset = *blink_io;
+
+    /* st.pressed is the grab frame (also the focus-gaining click, since item_state set
+       focused_id = id by now); st.active stays true for the whole capture, so the drag below
+       keeps extending the selection even after the cursor leaves the box.  text_offset_at clamps
+       a cursor past either edge to 0 / len, so a drag past the ends selects to start / end. */
+
+    f32 px  = s_io.mouse_x - content.x + es->scroll_x;
+    u32 off = text_offset_at( buf, len, px );
+
+    if ( st.pressed && s_io.mouse_double[ 0 ] )
+    {
+        /* Double-click: select the word under the cursor. */
+        u32 wb_off = word_click_off( buf, len, off );
+        u32 wlo, whi;
+        word_bounds( buf, len, wb_off, &wlo, &whi );
+        es->anchor   = (u16)wlo;
+        es->cursor   = (u16)whi;
+        es->dbl_lo   = (u16)wlo;
+        es->dbl_hi   = (u16)whi;
+        es->word_sel = 1;
+        blink_reset  = true;
+    }
+    else if ( st.pressed )
+    {
+        /* Single press: caret to the click; Shift keeps the anchor to extend. */
+        es->cursor   = (u16)off;
+        es->word_sel = 0;
+        if ( !shift ) es->anchor = (u16)off;
+        blink_reset = true;
+    }
+    else if ( st.active )
+    {
+        if ( es->word_sel )
+        {
+            /* Word-select drag: keep the initial double-clicked word selected and extend
+               by word boundaries when the mouse moves outside it.
+               Apply the same right-edge correction as the double-click itself. */
+            u32 drag_off = word_click_off( buf, len, off );
+            if ( drag_off < es->dbl_lo )
+            {
+                /* Dragged left of original word: pin right at dbl_hi, extend left. */
+                u32 wlo, whi;
+                word_bounds( buf, len, drag_off, &wlo, &whi );
+                es->anchor = es->dbl_hi;
+                es->cursor = (u16)wlo;
+            }
+            else if ( drag_off >= es->dbl_hi )
+            {
+                /* Dragged right of original word: pin left at dbl_lo, extend right. */
+                u32 wlo, whi;
+                word_bounds( buf, len, drag_off, &wlo, &whi );
+                es->anchor = es->dbl_lo;
+                es->cursor = (u16)whi;
+            }
+            else
+            {
+                /* Still inside the original word: restore the initial word selection. */
+                es->anchor = es->dbl_lo;
+                es->cursor = es->dbl_hi;
+            }
+        }
+        else
+        {
+            /* Normal drag: move the caret, leaving the anchor put. */
+            es->cursor = (u16)off;
+        }
+        blink_reset = true;
+    }
+
+    *blink_io = blink_reset;
+}
+
+/*==============================================================================================
+    Scroll-into-view -- bias the content horizontally so the caret stays inside the visible width.
+    Runs every frame (focused or not) so a programmatic caret move from outside is also honoured;
+    content.w is the visible text width (the box already inset by the widget).
+==============================================================================================*/
+
+static void
+edit_scroll( gui_rect_t content, const char* buf, gui_edit_state_t* es )
+{
+    f32 cx    = text_x_at( buf, es->cursor );
+    f32 vis_w = content.w;
+    if ( vis_w < 0.0f ) vis_w = 0.0f;
+    if ( cx - (f32)es->scroll_x < 0.0f )  es->scroll_x = (u16)cx;
+    if ( cx - (f32)es->scroll_x > vis_w ) es->scroll_x = (u16)( cx - vis_w );
+}
+
+/*==============================================================================================
+    edit_field -- the one convenient entry: a full non-paint frame of a single-line text field.
+
+    Fetches the field's persisted edit state, requests the I-beam cursor over the content, and --
+    while focused -- runs the key hook, honours a queued set_edit_cursor_end, initialises the undo
+    ring on first focus, publishes the live-selection fact for window-level text selection, applies
+    every key command, then the mouse selection drag, then advances the caret-blink clock.  Every
+    frame (focused or not) it scrolls the caret into view so a programmatic move is honoured, and
+    reports any change to the item record.  Returns { changed, enter } and leaves cursor / anchor /
+    scroll_x / blink_t on the state slot for the wrapping widget to paint; the widget supplies the
+    content rect, the colors, and the box chrome, and does nothing else.
 ==============================================================================================*/
 input_field_result_t
-edit_keys( gui_id_t id, char* buf, u32 bufsz, gui_edit_state_t* es, bool* blink_reset )
+edit_field( gui_id_t id, gui_rect_t content, gui_item_state_t st, char* buf, u32 bufsz )
 {
+    gui_edit_state_t*    es  = GUI_STATE( gui_edit_state_t, id );
     input_field_result_t res = { false, false };
     u32                  len = edit_strlen( buf, bufsz );
 
-    /* The registered hook gets first crack at this frame's keys (may replace buf, moving len). */
-    edit_run_key_hook( buf, bufsz, es, &len );
+    /* I-beam over a text field -- held through a selection drag (st.active), so it does not flip
+       back to the arrow while the cursor sweeps outside the box mid-drag. */
+    if ( st.hover || st.active )
+        cursor_set( APP_CURSOR_TEXT );
 
-    /* A queued set_edit_cursor_end request lands on the focused field: caret to the end of the
-       (possibly replaced) buffer, selection collapsed, blink reset so the caret shows. */
-    if ( s_cursor_end_request )
+    /* Clamp caret / anchor to the current length -- a programmatic buffer change between frames
+       may have shortened the string under the old positions. */
+    if ( es->cursor > len ) es->cursor = (u16)len;
+    if ( es->anchor > len ) es->anchor = (u16)len;
+
+    if ( st.focused )
     {
-        s_cursor_end_request = false;
-        es->cursor  = es->anchor = (u16)len;
-        es->blink_t = 0.0f;
+        bool blink_reset = false;
+
+        /* The registered hook gets first crack at this frame's keys (may replace buf, moving len). */
+        edit_run_key_hook( buf, bufsz, es, &len );
+
+        /* A queued set_edit_cursor_end request lands on the focused field: caret to the end of the
+           (possibly replaced) buffer, selection collapsed, blink reset so the caret shows. */
+        if ( s_cursor_end_request )
+        {
+            s_cursor_end_request = false;
+            es->cursor  = es->anchor = (u16)len;
+            es->blink_t = 0.0f;
+        }
+
+        /* On the first frame this field is focused, initialise the undo ring for it. */
+        if ( s_undo.for_id != id )
+            undo_init( &s_undo, id, buf, es->cursor, es->anchor );
+
+        /* Publish whether this focused field holds a live selection, so a window-level text
+           selection (GUI_WIN_TEXT_SELECT) yields Ctrl+C to the field's own copy and only takes it
+           when the field has none.  interact/ is a sanctioned writer of the s_interaction record. */
+        s_interaction.focus_has_selection = ( es->cursor != es->anchor );
+
+        edit_apply_keys( buf, bufsz, es, io_ctrl(), io_shift(), &len, &res, &blink_reset );
+        len = edit_strlen( buf, bufsz );   /* keys may have resized buf under us */
+
+        edit_apply_mouse( content, st, buf, len, es, io_shift(), &blink_reset );
+
+        /* Caret blink clock: any activity this frame un-hides the caret; otherwise it advances. */
+        if ( blink_reset ) es->blink_t  = 0.0f;
+        else               es->blink_t += s_io.dt;
     }
 
-    /* On the first frame this field is focused, initialise the undo ring for it. */
-    if ( s_undo.for_id != id )
-        undo_init( &s_undo, id, buf, es->cursor, es->anchor );
+    /* Scroll the caret into view every frame so a programmatic move from outside is honoured. */
+    edit_scroll( content, buf, es );
 
-    /* Publish whether this focused field holds a live selection, so a window-level text
-       selection (GUI_WIN_TEXT_SELECT) yields Ctrl+C to the field's own copy and only takes it
-       when the field has none.  interact/ is a sanctioned writer of the s_interaction record. */
-    s_interaction.focus_has_selection = ( es->cursor != es->anchor );
+    /* Report the edit to the item record (is_item_deactivated_after_edit, core/gui_query.c). */
+    if ( res.changed )
+        item_mark_edited();
 
-    edit_apply_keys( buf, bufsz, es, io_ctrl(), io_shift(), &len, &res, blink_reset );
     return res;
 }
 

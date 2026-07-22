@@ -28,7 +28,8 @@
     interact/gui_drag.c      -- drag-and-drop: threshold machine + typed payload (source/target)
     interact/gui_feature.c   -- feat_* kit: window features as freestanding id-keyed mechanisms
     interact/gui_behavior.c  -- public behavior on caller rects: gui_item, invisible_button
-    interact/gui_edit.c      -- single-line text edit engine: buffer / cursor / selection / undo
+    interact/gui_edit.c      -- single-line text edit engine: buffer / cursor / selection / undo,
+                                glyph measurement, mouse-drag select, scroll-into-view (no paint)
 
 ==============================================================================================*/
 

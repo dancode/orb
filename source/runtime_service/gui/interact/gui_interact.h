@@ -72,43 +72,52 @@ bool feat_pin( gui_id_t id, u32 state, gui_rect_t* r, gui_rect_t* restore, gui_r
 bool feat_collapse_live( gui_id_t id );
 
 /*==============================================================================================
-    Single-line text edit engine (interact/gui_edit.c) -- keyboard-driven buffer editing, the
-    measurement-free core behind input_text.  A gesture mechanism like move / resize: it mutates
-    a caller buffer + edit state from io, and paints nothing.  The wrapping widget
-    (chrome/widgets/gui_text_edit.c) owns font measurement, the mouse handler, horizontal scroll,
-    and rendering; it drives the engine through edit_keys() once per focused frame.  The pure
-    byte-offset helpers are shared with the multiline wrapper (gui_text_edit_multi.c).
+    Single-line text edit engine (interact/gui_edit.c) -- the whole behavior of a text field
+    behind input_text, minus the paint.  A gesture mechanism like move / resize: it mutates a
+    caller buffer + edit state from io and paints nothing, but it MEASURES (glyph advances are
+    math over the text/ leaf, not drawing) so it owns the caret placement, the click-to-caret
+    mapping, the mouse selection drag, and horizontal scroll as well as the keyboard path.  The
+    one entry is edit_field(): the wrapping widget (chrome/widgets/gui_text_edit.c) supplies a
+    content rect + item state, calls it once per frame, and then only paints the resolved state.
+    The measurement + pure byte-offset helpers are shared with the multiline wrapper
+    (gui_text_edit_multi.c).
 ==============================================================================================*/
 
 /* Persisted per-id edit state.  cursor + anchor describe the selection ([min,max), equal = none).
-   blink_t (caret-blink dt accumulator) and scroll_x (horizontal pixel bias) are widget-owned
+   blink_t (caret-blink dt accumulator) and scroll_x (horizontal pixel bias) are engine-owned
    presentation fields kept here so the whole field state is one keyed slot.  16 bytes -- fits
    within GUI_STATE_CAP. */
 
 typedef struct
 {
-    f32  blink_t;          // seconds since last caret-visibility reset (widget-owned)
+    f32  blink_t;          // seconds since last caret-visibility reset (engine-owned)
     u16  cursor;           // byte offset of the caret
     u16  anchor;           // passive end of the selection; cursor == anchor -> none
     u16  dbl_lo, dbl_hi;   // double-clicked word bounds (word-drag mode)
-    u16  scroll_x;         // horizontal scroll bias in px (widget-owned)
+    u16  scroll_x;         // horizontal scroll bias in px (engine-owned)
     u8   word_sel;         // nonzero while in a word-select drag
     u8   _pad;
 
 } gui_edit_state_t;
 
-/* edit_keys result: changed on any buffer modification, enter on Enter submit.  Independent. */
+/* edit_field result: changed on any buffer modification, enter on Enter submit.  Independent. */
 
 typedef struct { bool changed; bool enter; } input_field_result_t;
 
-/* The engine entry: run one focused frame's keyboard editing (hook, cursor-end, undo, selection
-   publish, all key commands) over a caller buffer + edit state.  Sets *blink_reset on activity. */
+/* The engine entry: run one full non-paint frame of a single-line field over a caller buffer.
+   `content` is the text-area rect (the widget's box already inset); `st` is the item state.  The
+   engine fetches its own keyed edit state by id, runs keys + mouse + scroll + blink, and leaves
+   cursor / anchor / scroll_x / blink_t on that slot for the widget to paint. */
 
-input_field_result_t edit_keys( gui_id_t id, char* buf, u32 bufsz, gui_edit_state_t* es,
-                                bool* blink_reset );
+input_field_result_t edit_field( gui_id_t id, gui_rect_t content, gui_item_state_t st,
+                                 char* buf, u32 bufsz );
 
-/* Pure byte-offset helpers, shared with the single-line + multiline widget wrappers. */
+/* Measurement + pure byte-offset helpers, shared with the single-line + multiline wrappers.
+   text_x_at / text_offset_at are math over the active font's advances -- the interact-side
+   hit-test the widgets reuse to paint the caret and selection. */
 
+f32  text_x_at     ( const char* buf, u32 off );                           /* caret px at byte off  */
+u32  text_offset_at( const char* buf, u32 len, f32 px );                    /* byte off nearest px   */
 int  char_class    ( u8 c );                                                /* 0 ws / 1 word / 2 sym */
 void word_bounds   ( const char* buf, u32 len, u32 off, u32* lo, u32* hi ); /* word run around off   */
 u32  word_click_off( const char* buf, u32 len, u32 off );                   /* right-edge click fixup*/
