@@ -65,42 +65,58 @@ typedef struct
 
 typedef struct gui_window_t
 {
-    gui_id_t    id;             // id_hash(title); 0 = free slot
-    f32         x, y;           // persisted top-left (updated by dragging)
-    f32         w, h;           // persisted dimensions
-    u32         z;              // paint order: higher = more recently raised = in front
-    u32         viewport;       // target surface index (0 = main swapchain); set via window_set_next_viewport
+    gui_id_t    id;              // id_hash(title); 0 = free slot
+    f32         x, y;            // persisted top-left (updated by dragging)
+    f32         w, h;            // persisted dimensions
+    u32         z;               // paint order: higher = more recently raised = in front
+    u32         viewport;        // target surface index (0 = main swapchain); set via window_set_next_viewport
 
-    gui_scroll_link_t scroll;   // persisted scroll offset + last-measured content extent
+    u8         set_pos_allow;    // conds still permitted to set position (gui_cond_t bits)
+    u8         set_size_allow;   // conds still permitted to set size (gui_cond_t bits)
 
-    u8         set_pos_allow;           // conds still permitted to set position (gui_cond_t bits)
-    u8         set_size_allow;          // conds still permitted to set size (gui_cond_t bits)
+    /* Packed transient state -- one byte instead of five.  win->bits = 0 clears all; the named
+       bits stay directly accessible (win->overlay, win->maximized, ...) via the anonymous
+       struct/union, so no call site changes.
 
-    /* Popup / tooltip overlay: an anchored overlay on its surface, never the OS-window frame
+       overlay -- anchored popup/tooltip overlay on its surface, never the OS-window frame
        (window_is_native), never a nav or tab-drop target.  Stamped by the popup layer each begin,
        alongside a z in the reserved overlay band (see the z band map in core/gui_surface.c) --
-       the flag carries the TYPE fact so z stays pure paint order. */
-    bool       overlay;
+       the flag carries the TYPE fact so z stays pure paint order.
 
-    bool       collapsed;       // title-bar-only when set; toggled by the arrow
-    bool       closed;          // CLOSEABLE: hidden by the X until re-opened
+       collapsed -- title-bar-only when set; toggled by the arrow.
+       closed -- CLOSEABLE: hidden by the X until re-opened.
 
-    /* Maximize / minimize for a regular (non-native, non-docked) floater -- state transitions in
-       gui_window_free.c (window_maximize_set / window_minimize_set), chrome in gui_window_end.c.
-       Maximized pins the window to its surface work area every frame; minimized parks it as a
-       title-bar chip on a shelf along the surface's bottom edge.  norm is the saved normal rect
-       both states restore to; shelf_slot orders the chips (taken at minimize time, compacted to
-       a paint position each frame as neighbours restore).  These three fields are the POLICY --
-       the rect tween between the states (and the norm save / restore), and the collapse height
-       tween off `collapsed` above, are the feat kit's mechanisms (feat_pin / gui_feat_collapse,
-       interact/gui_feature.c), keyed off the window id: their edge latches and from-values live
-       in the keyed state pool, not on this record. */
-    bool       maximized;
-    bool       minimized;
+       maximized / minimized -- for a regular (non-native, non-docked) floater; state transitions
+       in gui_window_free.c (window_maximize_set / window_minimize_set), chrome in
+       gui_window_end.c.  Maximized pins the window to its surface work area every frame;
+       minimized parks it as a title-bar chip on a shelf along the surface's bottom edge.  norm
+       (below) is the saved normal rect both states restore to; shelf_slot orders the chips
+       (taken at minimize time, compacted to a paint position each frame as neighbours restore).
+       These are the POLICY -- the rect tween between the states (and the norm save / restore),
+       and the collapse height tween off `collapsed`, are the feat kit's mechanisms (feat_pin /
+       gui_feat_collapse, interact/gui_feature.c), keyed off the window id: their edge latches and
+       from-values live in the keyed state pool, not on this record. */
+    union
+    {
+        struct
+        {
+            u8 overlay   : 1;
+            u8 collapsed : 1;
+            u8 closed    : 1;
+            u8 maximized : 1;
+            u8 minimized : 1;
+        };
+        u8 bits;
+    };
+
+    u32        last_frame;       // frame index last begun; 0 = never begun
+    gui_win_flags_t flags;       // behavior flags supplied to window_begin
 
     u32        shelf_slot; // minimized: the chip's order along the surface's bottom edge (0 = leftmost)
 
     gui_rect_t norm; // maximized / minimized: the saved normal rect to restore to
+
+    gui_scroll_link_t scroll;    // persisted scroll offset + last-measured content extent
 
     /* NOTE: for native windows only */
     /* Re-open of a CLOSEABLE floater: closing it lets the abandoned-teardown free its OS window,
@@ -115,13 +131,6 @@ typedef struct gui_window_t
         i32  home_x, home_y;   // saved restore (normal) client-corner screen pos
         f32  w, h;             // saved restore (normal) size
     } reopen;
-
-    gui_win_flags_t flags;              // behavior flags supplied to window_begin
-
-    /* Next-window channel bookkeeping (see window_set_next_pos / _size).  last_frame drives the
-       "appearing" test; the allow masks track which conditions a queued value may still fire. */
-
-    u32        last_frame;              // frame index last begun; 0 = never begun
 
 } gui_window_t;
 
