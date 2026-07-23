@@ -303,6 +303,7 @@ void gui_disabled_begin( bool disabled );
 void gui_disabled_end( void );
 
 /* style modifiers */
+void gui_style_source_set( gui_style_source_fn fn, void* user );
 void gui_push_style_color( gui_col_t slot, u32 abgr );
 void gui_pop_style_color( u32 count );
 void gui_next_style_color( gui_col_t slot, u32 abgr );

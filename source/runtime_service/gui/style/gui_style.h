@@ -25,6 +25,8 @@
 
 const gui_style_t* style_active( void );      /* style/gui_theme.c: the active scaled style  */
 void               el_style_derive( void );   /* element/gui_element.c: the S2->S1 compile   */
+void               el_style_install( void );  /* element/gui_element.c: the landing funnel --
+                                                 registered style source, else el_style_derive */
 
 /* THE role x state -> gui_col_t slot projection (element unit owns it) -- shared by
    el_style_derive and style_el_col so the two directions of the strata bridge cannot drift. */

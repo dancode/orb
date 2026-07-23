@@ -5,12 +5,23 @@
     runtime_service/gui/gui_api.h -- gui module API struct and gateway macro.
     Always statically linked into the host.
 
-    Function groups (all called through gui() vtable or as gui_* direct calls):
-        Lifecycle : init / shutdown
-        Frame     : frame_begin / ctx_begin / ctx_end / frame_end / render
-        Panels    : window_begin / window_end
-        Widgets   : text / button / checkbox / slider_float / input_text
-        Draw      : draw_rect / draw_text / push_clip / pop_clip
+    A 2D interaction renderer.  Sections read in usage order, lowest stratum first once the
+    frame is open (all called through the gui() vtable or as gui_* direct calls):
+
+        GUI_FRAME    lifecycle: boot, frame phases, pacing, viewports, contexts, events
+        GUI_DRAW     render server: the draw_* primitive set, fonts, icons, paths, clips
+        GUI_CORE     interaction server: item(), ids, io queries, anim, drag and drop
+        GUI_SURFACE  root surfaces: raw pane / region blocks + the feat_* chrome mechanisms
+        GUI_RECT     stateless carve math
+        GUI_FLOW     the layout pen
+        GUI_STYLE    style service: stacks, slot reads, density scale
+        GUI_ELEMENT  el_* rect-consuming styled cores
+        GUI_CHROME   OPTIONAL policy layer: windows, dock, popups, stock widgets, themes
+        GUI_DEBUG    severable diagnostics
+
+    Everything below GUI_CHROME stands alone -- chrome is one client of the strata, not the
+    system.  A kit builds its own UI from frame + draw + core + surface + rect/flow, and
+    promotes its own style; sb_gui_base is the bottom-up proof, tier by tier.
 
 ==============================================================================================*/
 
@@ -29,6 +40,292 @@ struct rhi_cmd_s; typedef struct rhi_cmd_s* rhi_cmd_t;
 
 typedef struct gui_api_s
 {
+
+    /*============================================================================================================
+        GUI_FRAME -- lifecycle  (frame/)
+        The door and the conductor: init/boot, frame phases, pacing, viewports, contexts,
+        event routing, memory / render stats.  Owns per-frame ordering; no widgets.  Every
+        section below emits inside the frame scope this one opens.
+    =============================================================================================================*/
+
+    /* GPU resource lifecycle.
+        init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
+                       `font` optionally loads one of the built-in presets (gui_builtin_font_t,
+                       gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
+                       yourself. A failed built-in load is non-fatal (a warning; init still
+                       succeeds without text).
+        shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
+        font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
+                       call after init(). Returns the new id (>= 1), or 0 on failure.
+        font_load_builtin() -- font_load for a built-in preset (gui_builtin_font_t): the enum
+                       already knows its asset path, so no path plumbing at the call site.
+                       Same contract as font_load -- a NEW id, activated (the init()/boot()
+                       preset in slot 0 is untouched; font_use( 0 ) switches back).  Returns
+                       the new id, or 0 for GUI_FONT_NONE / an unknown preset / a failed load.
+        asset_path() -- resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
+                       the build root, one level above the executable -- the same convention
+                       load_icon and the built-in font/icon presets resolve through. Writes the
+                       resolved path into `out` (out_size bytes); for a caller that wants the
+                       absolute path itself (e.g. a plain fopen) rather than a load_icon call. */
+
+    bool                ( *init      )( gui_builtin_font_t font );
+    void                ( *shutdown  )( void );
+    u32                 ( *font_load )( const char* path );
+    u32                 ( *font_load_builtin )( gui_builtin_font_t font );
+    void                ( *asset_path )( const char* relative, char* out, int out_size );
+
+    /* boot() -- TEST-BED tier: the one-call alternative to the block above for sandboxes, demos,
+       and quick tools whose main window IS a gui surface -- gui owns the window + render context
+       end to end, exactly like its tear-off floaters.  Non-idiomatic for engine hosts: those run
+       through the runtime host (run_host_main), which keeps ownership of the window/loop and
+       wires gui as an optional service.  Stands up the whole stack from a single descriptor
+       (gui_boot_desc_t, gui.h): rhi()->init() (idempotent -- safe if the host already ran it),
+       app window (borderless by default, with the chrome shell then auto-emitted each frame;
+       os_chrome opts back into the stock OS frame), rhi context, init(font),
+       set_frame_hooks, debug_enable, and the primary viewport -- returned, or GUI_VP_INVALID
+       with everything unwound on failure.  Call once after mod_init_all, before any other window
+       opens.  shutdown() tears down what boot created (context + window); rhi()->shutdown()
+       stays with the host, last.  Pairs with frame_poll / present below for the full easy-mode
+       loop; a host needing manual control of any stage simply keeps calling the explicit block
+       instead -- boot is composition, not replacement, and viewport_open still attaches gui to a
+       host-owned window. */
+
+    gui_vp_t            ( *boot )( const gui_boot_desc_t* desc );
+
+    /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
+       backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
+       bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */
+
+    gui_mem_stats_t     ( *mem_stats       )( void );
+    void                ( *print_mem_stats )( void );
+
+    /* Per-frame render statistics (geometry + batch counts) for the LAST completed frame.
+       Published at frame_begin, so a read during the build reflects the previous frame -- the
+       standard one-frame lag.  Feeds an FPS / performance overlay without re-deriving counts. */
+    gui_render_stats_t  ( *render_stats )( void );
+
+    /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are no longer emitted
+       by host code.  debug_enable( true ) arms an internal hotkey driver (numpad '.' arms the group,
+       then P / O / F10 ...) and gui emits them itself, last in the default context's build -- see
+       debug_enable (GUI_DEBUG section).  The perf overlay's clock arrives once through set_frame_hooks. */
+
+    /* Frame hooks -- one-time wiring (after init) of the host OS services gui cannot reach itself
+       (gui links only app + rhi, no sys):
+
+         clock       -- monotonic seconds source (sys_tick_seconds); brackets the frame for the
+                        perf overlay's emit / render cost readouts.  NULL leaves timing at zero.
+         sleep_ms    -- thread sleep (sys_sleep_milliseconds); frame_pace's spin/animation sleep.
+         wait_events -- block until OS input or timeout (sys_wait_for_os_events_ms); enables the
+                        idle-skip path of frame_pace.  NULL disables idle skip entirely. */
+
+    void ( *set_frame_hooks )( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
+
+    /* Frame lifecycle.  A frame is four explicit phases -- this is a multi-context system and the
+       API does not hide it; even a single-context host names its one context:
+
+         if ( frame_begin(dt) )        -- global: snapshot app input, compute frame_dirty, reset the
+         {                                draw list on dirty frames.  Binds NO context; call once at
+                                          the top of the frame.  Returns frame_dirty: emit the UI
+                                          build only when true -- on a false (clean) frame skip the
+                                          context scopes entirely; render() replays the preserved
+                                          geometry verbatim and frame_end patches the volatile
+                                          widgets (gui()->volatile_cb) internally.
+           ctx_begin(GUI_CTX_DEFAULT) -- bind a context and run its per-frame init; emit its
+              ... emit windows ...        windows immediately after.
+           ctx_end()                    -- close it, rebinding the previously-bound context.  Closing
+         }                                the DEFAULT context also auto-emits the debug overlays
+                                          when debug_enable is on.
+         frame_end()                   -- seal the build (latches emit cost; asserts ctx balance).
+                                          Call on clean frames too -- it runs the volatile replay.
+
+       frame_begin/frame_end and ctx_begin/ctx_end are balanced scopes, exactly like
+       window_begin/window_end: every begin has an end, and each end restores the scope its begin
+       opened.  render() runs AFTER frame_end and consumes the sealed draw list.
+
+       render()    -- flush one viewport's geometry partition to GPU; opens a LOAD render pass on
+                      that viewport's swapchain, emits all draw calls, and closes the pass.  Also
+                      paints the debug overlay when vp is the primary (index 0).
+                      Call once per live viewport, each with the matching context cmd.
+
+       frame_pace( spin_sleep_ms, anim_sleep_ms )
+                   -- end-of-loop frame pacing; call once at the very bottom of the main loop.
+                      Default path: sleep spin_sleep_ms between frames (4 ~= 250 Hz).  With idle
+                      skip on (set_idle_skip, or the I hotkey under debug_enable): block on OS
+                      input so a static UI burns no frames, sleeping anim_sleep_ms (16 ~= 60 Hz)
+                      only while a widget animation settles.  0 opts that sleep out (no call),
+                      even while the feature is on -- free-run for that path.  A no-op until
+                      set_frame_hooks provides the sleep / wait callbacks. */
+
+    bool ( *frame_begin )( f32 dt );
+    void ( *frame_end   )( void );
+    void ( *render      )( gui_vp_t vp, rhi_cmd_t cmd );
+    void ( *frame_pace  )( i32 spin_sleep_ms, i32 anim_sleep_ms );
+
+    /* Easy-mode loop wrappers (TEST-BED tier, same audience as boot() above -- engine hosts get
+       this loop from run_host instead).  With boot() these shrink a sandbox's main loop to its
+       essence.  frame_poll() works for any host (it needs only app + rhi routing); present_begin
+       / present_end are boot-tier (they render through the boot-owned context) and form a
+       balanced pair like every other begin/end: begin's bool gates the host's own passes, end
+       is called unconditionally.
+
+         while ( gui()->frame_poll( &dt ) )       -- pump the OS, route events (rhi swapchain
+         {                                           resize, gui input + floater lifecycle),
+                                                     return dt from the boot clock hook; false on
+                                                     quit or main-window close.
+             ...frame_begin/build/frame_end...    -- unchanged (see above).
+             rhi_cmd_t cmd;
+             if ( gui()->present_begin( &cmd ) )  -- viewport_update + minimized guard + rhi
+                 ...host render passes...            frame open + swapchain clear (boot clear
+                                                     color); true hands out the live cmd for the
+                                                     host's own passes (offscreen scenes, custom
+                                                     draws under the UI).
+             gui()->present_end();                -- gui draw + present + all owned floaters.
+                                                     Call unconditionally (minimized-safe);
+                                                     no-op without a matching present_begin.
+             gui()->frame_pace( 4, 16 );
+         }
+
+       The host keeps reading input through app()'s snapshot API (key_pressed etc.) as before --
+       frame_poll only owns the event ring.  A host that needs the loop's internals (extra
+       swapchains, custom event handling) writes the explicit loop instead; these are sugar over
+       the same public calls. */
+
+    bool ( *frame_poll    )( f32* out_dt );
+    bool ( *present_begin )( rhi_cmd_t* out_cmd );
+    void ( *present_end   )( void );
+
+    /* Idle-skip control -- the programmatic twin of the I hotkey.  When on, frame_pace blocks on
+       OS input while the UI is idle instead of spinning.  Off by default. */
+    void ( *set_idle_skip )( bool on );
+    bool ( *idle_skip     )( void );
+
+    /* Viewport management.  A viewport is a render surface backed by an OS window.  One frame's build
+       gathers every window's geometry into a single draw list; render() dispatches each window's
+       partition to the viewport it is assigned to (window_set_next_viewport, or inherited from
+       whichever viewport was most recently emitted into this frame).
+
+       viewport_open()   -- open a surface for OS window win_id.  The initial drawable size is
+                            queried from app() internally -- no redundant w/h parameters.
+                            Returns a valid handle or GUI_VP_INVALID if the pool is full.
+                            The first call creates the primary (index 0); call before any frames.
+                            win_id routes mouse events from that OS window to this surface.
+       viewport_close()  -- close a viewport and release its GPU geometry buffers.  Works for both
+                            the primary and secondary viewports.  Windows on the closed viewport
+                            automatically fall back to the primary.  The host owns the OS window and
+                            rhi context; gui owns only the geometry.
+       viewport_resize() -- update a viewport's drawable size.  Prefer rhi()->event() +
+                            gui()->event() for automatic routing; call this directly only when
+                            explicit control is needed.
+       viewport_shell()  -- emit the window chrome for a borderless viewport.  Every host window is
+                            one of two things: a UI window (window_begin -- a body full of widgets)
+                            or a chrome shell for the OS window itself -- this call.  It emits a
+                            frame-only GUI_WIN_NATIVE window: its titlebar IS the OS caption (title
+                            text + min/max/close buttons, drag to move, double-click to maximize),
+                            its border the OS sizing frame, and its body is empty and click-through
+                            -- every other window lives on top of it.  Call it FIRST inside
+                            ctx_begin, every frame, before any other window on that viewport.
+                            Returns the caption band height so the host can stack its own strips
+                            (menu bar, toolbar) below it -- the built-in main_menu_bar, free-window
+                            clamping, and the dock tree already inset themselves automatically.
+                            On a viewport whose OS window has its own chrome (opened without
+                            APP_WIN_BORDERLESS) it is a no-op returning 0: call it unconditionally
+                            and flip only the window_open flag to switch chrome modes.  flags may
+                            add GUI_WIN_NOTITLEBAR / NO_MINIMIZE / NO_MAXIMIZE / NORESIZE.
+       viewport_caption_h() -- the caption band height (px) a chrome shell published on this
+                            viewport; 0 for an OS-chrome window.  The query twin of
+                            viewport_shell's return, for hosts on the boot path (where the shell
+                            is emitted internally) that stack pinned strips below the caption.
+       viewport_size()      -- the viewport's current drawable size (disp_w/disp_h) -- the query
+                            twin of viewport_resize.  Either out pointer may be NULL; an invalid
+                            viewport reports 0 x 0.
+       viewport_content_y() -- the y where host content starts on this viewport: 0 for an
+                            OS-chrome window, the caption band on a gui-shelled native window,
+                            plus the main menu bar when one was emitted (this frame or last --
+                            emit the bar before querying).  The same bound the maximize pin and
+                            free-window clamp use, published so hosts place windows below the
+                            viewport chrome without summing the parts themselves. */
+
+    gui_vp_t    ( *viewport_open      )( i32 win_id );
+    void        ( *viewport_close     )( gui_vp_t vp );
+    void        ( *viewport_resize    )( gui_vp_t vp, i32 w, i32 h );
+    f32         ( *viewport_shell     )( gui_vp_t vp, const char* title, gui_win_flags_t flags );
+    f32         ( *viewport_caption_h )( gui_vp_t vp );
+    void        ( *viewport_size      )( gui_vp_t vp, i32* out_w, i32* out_h );
+    f32         ( *viewport_content_y )( gui_vp_t vp );
+
+    /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
+       to flush into, these own the OS window + rhi context end to end -- gui creates them on
+       spawn and tears them down on close.  This is the lifecycle the tear-off gesture drives;
+       a host may also call viewport_spawn directly to place a panel in its own OS window.
+
+       viewport_spawn()          -- open a floater hosting its own OS window at (x,y) sized w x h;
+                                    returns its viewport handle (assign windows via
+                                    window_set_next_viewport) or GUI_VP_INVALID.  Between frames.
+       viewport_update()         -- reconcile owned floaters with their OS windows: apply tear-off /
+                                    merge-back and tear down closed or abandoned surfaces.  Call once
+                                    per frame AFTER the UI build and BEFORE rendering (the safe point
+                                    to free a surface).
+       viewport_render_floaters() -- present every owned floater from the shared draw list, each on
+                                    its own rhi context (frame_begin/clear/flush/frame_end).  The
+                                    host still presents the main surface (index 0) via render(). */
+
+    gui_vp_t   ( *viewport_spawn           )( const char* title, i32 x, i32 y, i32 w, i32 h );
+    void       ( *viewport_update          )( void );
+    void       ( *viewport_render_floaters )( void );
+
+    /* Multi-context -- isolated per-context retained state (windows, nav, popups, keyed widget state,
+       id namespace).  The primary context (GUI_CTX_DEFAULT / 0) is always live after init().
+
+       ctx_create()       -- allocate a fresh secondary context, sized to `cfg` (NULL / zero fields =
+                             the internal maxima the library was compiled with).
+                             Each gets a unique id_salt so same-named widgets in different contexts
+                             never alias.  Returns GUI_CTX_INVALID on pool exhaustion.  Between frames.
+       ctx_destroy()      -- free a secondary context; rebinds the default if it was current.  Never
+                             destroys GUI_CTX_DEFAULT.  Call between frames.
+       ctx_bind()         -- make ctx the current context with no per-frame init: a mid-build "switch
+                             retained state" escape hatch.  ctx_begin/ctx_end are the normal scope;
+                             reach for ctx_bind only to peek at another context's state mid-frame.
+                             GUI_CTX_DEFAULT (0) or any invalid handle rebinds the default.
+       ctx_set_listening() -- set whether a context receives hover/click/nav input.  The default context
+                             starts listening; secondary contexts start deaf.  Multiple contexts may
+                             listen simultaneously; a deaf context renders but returns inert widget state.
+                             Call between frames.
+       ctx_begin()/ctx_end() -- bind a context for the frame and run its per-frame init, then close it.
+                             A balanced scope: ctx_end rebinds whatever ctx_begin found bound.  ctx_begin
+                             always runs the full frame init (hover promotion, nav, popup stale-close)
+                             regardless of the listening flag, and leaves g_ctx pointing at the context,
+                             so emit its windows IMMEDIATELY after the call.
+
+       FRAME CONTRACT:
+         if ( frame_begin(dt) )         -- once: input poll; true = emit this frame (frame_dirty).
+         {
+           ctx_begin(GUI_CTX_DEFAULT) -- bind + init the default context; emit its windows.
+           ctx_end()                    -- close it (auto-emits debug overlays when debug is on).
+           ctx_begin(ctx2)              -- a second context, if any; emit its windows.
+           ctx_end()
+         }
+         frame_end()                    -- seal the build; volatile replay on clean frames.
+       A single-context host runs exactly one ctx_begin(GUI_CTX_DEFAULT)/ctx_end pair. */
+
+    gui_ctx_id_t( *ctx_create        )( const gui_ctx_config_t* cfg );
+    void        ( *ctx_destroy       )( gui_ctx_id_t ctx );
+    void        ( *ctx_bind          )( gui_ctx_id_t ctx );
+    void        ( *ctx_set_listening )( gui_ctx_id_t ctx, bool listen );
+    void        ( *ctx_begin         )( gui_ctx_id_t ctx );
+    void        ( *ctx_end           )( void );
+
+    /* Host input -- the host owns the app event ring drain and forwards each event here.
+       event() handles:
+         - APP_EV_CHAR / MOUSE_WHEEL / CLIPBOARD: input state; returns true (consumed).
+         - APP_EV_MOUSE_MOVE / _DOWN / _UP: routes the cursor to the correct viewport; returns false.
+         - APP_EV_WIN_RESIZE: updates the matching viewport's drawable size (primary or owned
+           floater).  Also drives rhi context resize for owned floaters (gui owns those contexts).
+           Returns true only for owned floater events; primary resize returns false so
+           rhi()->event() can also handle the swapchain rebuild.
+         - APP_EV_WIN_CLOSE: marks an owned floater for teardown (returns true); primary window
+           close returns false so the host can exit. */
+
+    bool ( *event )( const app_event_t* ev );
 
     /*============================================================================================================
         GUI_DRAW -- render server  (render/ + draw/)
@@ -192,10 +489,10 @@ typedef struct gui_api_s
     void ( *pop_clip  )( void );
 
     /*============================================================================================================
-        GUI_CORE -- interaction server  (core/ + interact/ + nav/ + surface/ + user/)
+        GUI_CORE -- interaction server  (core/ + interact/)
         The ambient, id-keyed services every layer composes over: identity (id scopes), the
-        item() state machine over caller rects, keyed state, animation, drag and drop, root
-        surfaces (clip / scroll / z / persist), io snapshot queries, redraw levers.
+        item() state machine over caller rects, keyed state, animation, drag and drop, io
+        snapshot queries, redraw levers.
         item( id, rect ) -> state is the coordination axis: layout of any kind PRODUCES a
         rect, a widget of any kind CONSUMES one, and this server cannot tell them apart.
     =============================================================================================================*/
@@ -224,86 +521,6 @@ typedef struct gui_api_s
     u32      ( *anim_color  )( gui_id_t id, u32 target_abgr, f32 speed );
     gui_vec2_t ( *anim_vec2 )( gui_id_t id, gui_vec2_t target, f32 speed );
     gui_rect_t ( *anim_rect )( gui_id_t id, gui_rect_t target, f32 speed );
-
-    /*===================================  surfaces -- panes, root regions + scroll  ===================================*/
-
-    /* pane_begin / pane_end -- the MINIMAL top-level surface occupant (gui_pane_t, gui.h): the
-       raw block every window is built from, for callers assembling their own chrome.  Opens
-       identity (items inside attribute to this pane), enters the hover/z contest at the tier's
-       band (same contest windows and popups compete in), and pushes the base clip (draw + hit)
-       to the rect -- NOTHING else: no pool record, no persistence, no layout, no background
-       paint, no scroll.  The caller owns every pixel (el_* / draw_* over carved rects) and any
-       cross-frame state; open flow inside with flow_begin( pane.rect ) if wanted.  Flags
-       honored: GUI_WIN_NO_INPUT (pure display), GUI_WIN_NO_CLIP, GUI_WIN_DEBUG_BAND.  vp
-       GUI_VP_INVALID = primary surface.  Root-level, never nests; always pair with pane_end.
-       region_begin below = this + persisted scroll + a layout; window_begin = this + the
-       persisted record + stock chrome. */
-    gui_pane_t ( *pane_begin )( const char* id, gui_rect_t r, gui_region_tier_t tier,
-                                gui_vp_t vp, gui_win_flags_t flags );
-    void       ( *pane_end   )( void );
-
-    /* region_begin / region_end -- a root-level layout region: an explicit screen rect with no
-       window chrome (no title, no drag/resize, no dock, no z-order competition, no pool record).
-       It is the third caller of the same scroll-region engine window_begin and child_begin sit
-       on, stripped to just a rect + persisted scroll/content state, for a HUD-style element that
-       needs a fixed, caller-positioned box rather than a movable window -- the perf overlay is
-       the reference case.  w/h <= 0 autosizes that axis to last frame's measured content, like
-       child_begin's AutoResizeY.  Unlike window_begin / child_begin, it takes no parent region --
-       call it directly at the top of a frame.  Paints on the main viewport at the z tier picked
-       by `tier` (gui_region_tier_t: MID over windows / under popups, BG, FG); interactive by
-       default -- competes for hover in the same z contest as windows (opt out with
-       GUI_WIN_NO_INPUT; see gui_region.c).  Always returns true; always pair with region_end. */
-    bool ( *region_begin )( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
-                            gui_win_flags_t flags );
-    void ( *region_end   )( void );
-
-    /* scroll_by -- nudge the currently open region's scroll offset by (dx, dy) px (0=top origin);
-       a large delta drives to an edge, so +BIG reaches the bottom / tail and -BIG the top.  Applied
-       THIS frame (re-bases the live pen), so call it right after opening the region, before content
-       -- no one-frame lag, unlike the wheel.  Pairs with GUI_WIN_ANCHOR_BOTTOM to drive a console's
-       wheel + PageUp/Down + jump-to-tail keys without any offset bookkeeping in the caller. */
-    void       ( *scroll_by     )( f32 dx, f32 dy );
-
-    /*=================================  window features as mechanisms  =================================*/
-
-    /* The feat_* kit: every window feature as a freestanding
-       id-keyed mechanism, so chrome is assembled feature by feature over a pane -- anything
-       can be a move handle, a collapse, or a maximize.  State rule: in-flight gesture state
-       is arbitrated by active_id (one drag at a time); PERSISTENT state is the caller's
-       pointers -- you see every byte.  Call these inside the owning pane/window bracket
-       (hover gating reads the ambient scope).  The open latch needs no mechanism: it is a
-       caller bool your close button clears; scroll is region_begin ("region owns scroll").
-
-           gui_pane_t p     = gui()->pane_begin( "tool", st->rect, GUI_REGION_MID, 0, 0 );
-           gui_rect_t r     = p.rect;
-           gui_rect_t title = gui_rect_cut_top( &r, 26.0f );          // titlebar = a band...
-           gui()->feat_move( p.id, title, &st->rect.x, &st->rect.y ); // ...that drags
-           if ( gui()->el_button( gui_rect_cut_right( &title, title.h ), "x##c" ) )
-               st->open = false;                                      // close = your bool
-           r.h = gui()->feat_collapse( p.id, !st->folded, 26.0f, r.h ) - 26.0f;
-           gui()->feat_resize( p.id, &st->rect, GUI_RESIZE_R | GUI_RESIZE_B, 120, 80 );
-           ... body: carve r, or flow_begin( r ) ...
-           gui()->pane_end();
-
-       feat_move     -- drag handle over any rect: press in `handle` (deferred: click vs
-                        drag) grabs; the caller-owned origin follows the cursor.  True on
-                        frames it moved.
-       feat_resize   -- edge-resize the caller-owned rect: `edges` masks the exposed sides
-                        (GUI_RESIZE_L/R/T/B), min_w/h floors against the grabbed edge's
-                        pinned far side.  Returns the live (hot/dragging) edges.
-       feat_collapse -- tweened height channel over a caller bool: full_h open, head_h
-                        closed, eased between after YOUR toggle.  Returns this frame's height.
-       feat_maximize -- rect <-> work-area swap (work passed IN -- the B rule): saves *r
-                        into *restore on the way up, tweens both directions, tracks a
-                        resizing work area while maximized.  Writes *r every call.
-       feat_clamp    -- boundary policy over passed-in bounds: the handle row stays
-                        reachable (never above work's top; `margin` sliver at other edges). */
-    bool ( *feat_move     )( gui_id_t id, gui_rect_t handle, f32* x, f32* y );
-    u8   ( *feat_resize   )( gui_id_t id, gui_rect_t* r, u8 edges, f32 min_w, f32 min_h );
-    f32  ( *feat_collapse )( gui_id_t id, bool open, f32 head_h, f32 full_h );
-    void ( *feat_maximize )( gui_id_t id, bool maximized, gui_rect_t* r, gui_rect_t* restore,
-                             gui_rect_t work );
-    void ( *feat_clamp    )( gui_rect_t* r, gui_rect_t work, f32 margin );
 
     /*=================================  identity + item flags + drag and drop  =================================*/
 
@@ -522,6 +739,95 @@ typedef struct gui_api_s
 
     /* force_redraw -- current state of the set_force_redraw override. */
     bool ( *force_redraw )( void );
+
+    /*============================================================================================================
+        GUI_SURFACE -- root surfaces  (core/gui_surface.c + flow/gui_region.c + interact/gui_feature.c)
+        The renderer primitive: a raw pane/region block -- identity + clip + the hover/z contest,
+        and nothing else.  pane_begin is the bare block, region_begin adds persisted scroll + a
+        layout, and chrome's window_begin (GUI_CHROME) is the same pane plus a pool record and
+        stock policy.  The feat_* kit assembles window features (move / resize / collapse /
+        maximize / clamp) over any pane: custom chrome is composition, not a privileged layer.
+    =============================================================================================================*/
+
+    /*===================================  surfaces -- panes, root regions + scroll  ===================================*/
+
+    /* pane_begin / pane_end -- the MINIMAL top-level surface occupant (gui_pane_t, gui.h): the
+       raw block every window is built from, for callers assembling their own chrome.  Opens
+       identity (items inside attribute to this pane), enters the hover/z contest at the tier's
+       band (same contest windows and popups compete in), and pushes the base clip (draw + hit)
+       to the rect -- NOTHING else: no pool record, no persistence, no layout, no background
+       paint, no scroll.  The caller owns every pixel (el_* / draw_* over carved rects) and any
+       cross-frame state; open flow inside with flow_begin( pane.rect ) if wanted.  Flags
+       honored: GUI_WIN_NO_INPUT (pure display), GUI_WIN_NO_CLIP, GUI_WIN_DEBUG_BAND.  vp
+       GUI_VP_INVALID = primary surface.  Root-level, never nests; always pair with pane_end.
+       region_begin below = this + persisted scroll + a layout; window_begin = this + the
+       persisted record + stock chrome. */
+    gui_pane_t ( *pane_begin )( const char* id, gui_rect_t r, gui_region_tier_t tier,
+                                gui_vp_t vp, gui_win_flags_t flags );
+    void       ( *pane_end   )( void );
+
+    /* region_begin / region_end -- a root-level layout region: an explicit screen rect with no
+       window chrome (no title, no drag/resize, no dock, no z-order competition, no pool record).
+       It is the third caller of the same scroll-region engine window_begin and child_begin sit
+       on, stripped to just a rect + persisted scroll/content state, for a HUD-style element that
+       needs a fixed, caller-positioned box rather than a movable window -- the perf overlay is
+       the reference case.  w/h <= 0 autosizes that axis to last frame's measured content, like
+       child_begin's AutoResizeY.  Unlike window_begin / child_begin, it takes no parent region --
+       call it directly at the top of a frame.  Paints on the main viewport at the z tier picked
+       by `tier` (gui_region_tier_t: MID over windows / under popups, BG, FG); interactive by
+       default -- competes for hover in the same z contest as windows (opt out with
+       GUI_WIN_NO_INPUT; see gui_region.c).  Always returns true; always pair with region_end. */
+    bool ( *region_begin )( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
+                            gui_win_flags_t flags );
+    void ( *region_end   )( void );
+
+    /* scroll_by -- nudge the currently open region's scroll offset by (dx, dy) px (0=top origin);
+       a large delta drives to an edge, so +BIG reaches the bottom / tail and -BIG the top.  Applied
+       THIS frame (re-bases the live pen), so call it right after opening the region, before content
+       -- no one-frame lag, unlike the wheel.  Pairs with GUI_WIN_ANCHOR_BOTTOM to drive a console's
+       wheel + PageUp/Down + jump-to-tail keys without any offset bookkeeping in the caller. */
+    void       ( *scroll_by     )( f32 dx, f32 dy );
+
+    /*=================================  window features as mechanisms  =================================*/
+
+    /* The feat_* kit: every window feature as a freestanding
+       id-keyed mechanism, so chrome is assembled feature by feature over a pane -- anything
+       can be a move handle, a collapse, or a maximize.  State rule: in-flight gesture state
+       is arbitrated by active_id (one drag at a time); PERSISTENT state is the caller's
+       pointers -- you see every byte.  Call these inside the owning pane/window bracket
+       (hover gating reads the ambient scope).  The open latch needs no mechanism: it is a
+       caller bool your close button clears; scroll is region_begin ("region owns scroll").
+
+           gui_pane_t p     = gui()->pane_begin( "tool", st->rect, GUI_REGION_MID, 0, 0 );
+           gui_rect_t r     = p.rect;
+           gui_rect_t title = gui_rect_cut_top( &r, 26.0f );          // titlebar = a band...
+           gui()->feat_move( p.id, title, &st->rect.x, &st->rect.y ); // ...that drags
+           if ( gui()->el_button( gui_rect_cut_right( &title, title.h ), "x##c" ) )
+               st->open = false;                                      // close = your bool
+           r.h = gui()->feat_collapse( p.id, !st->folded, 26.0f, r.h ) - 26.0f;
+           gui()->feat_resize( p.id, &st->rect, GUI_RESIZE_R | GUI_RESIZE_B, 120, 80 );
+           ... body: carve r, or flow_begin( r ) ...
+           gui()->pane_end();
+
+       feat_move     -- drag handle over any rect: press in `handle` (deferred: click vs
+                        drag) grabs; the caller-owned origin follows the cursor.  True on
+                        frames it moved.
+       feat_resize   -- edge-resize the caller-owned rect: `edges` masks the exposed sides
+                        (GUI_RESIZE_L/R/T/B), min_w/h floors against the grabbed edge's
+                        pinned far side.  Returns the live (hot/dragging) edges.
+       feat_collapse -- tweened height channel over a caller bool: full_h open, head_h
+                        closed, eased between after YOUR toggle.  Returns this frame's height.
+       feat_maximize -- rect <-> work-area swap (work passed IN -- the B rule): saves *r
+                        into *restore on the way up, tweens both directions, tracks a
+                        resizing work area while maximized.  Writes *r every call.
+       feat_clamp    -- boundary policy over passed-in bounds: the handle row stays
+                        reachable (never above work's top; `margin` sliver at other edges). */
+    bool ( *feat_move     )( gui_id_t id, gui_rect_t handle, f32* x, f32* y );
+    u8   ( *feat_resize   )( gui_id_t id, gui_rect_t* r, u8 edges, f32 min_w, f32 min_h );
+    f32  ( *feat_collapse )( gui_id_t id, bool open, f32 head_h, f32 full_h );
+    void ( *feat_maximize )( gui_id_t id, bool maximized, gui_rect_t* r, gui_rect_t* restore,
+                             gui_rect_t work );
+    void ( *feat_clamp    )( gui_rect_t* r, gui_rect_t work, f32 margin );
 
     /*============================================================================================================
         GUI_RECT -- rect kit  (stateless carve math)
@@ -851,6 +1157,67 @@ typedef struct gui_api_s
     void ( *split_end     )( void );
 
     /*============================================================================================================
+        GUI_STYLE -- style service  (style/)
+        The neutral style MECHANISM: base style access, push/pop stacks, per-slot reads,
+        density scale, indicator-shape selectors.  Any UI on the service API styles through
+        these; the named theme presets are chrome's style kit and live with it (GUI_CHROME).
+    =============================================================================================================*/
+
+    gui_style_t*       (*style_get)( void );    /* mutable base -- marks the theme anonymous       */
+    const gui_style_t* (*style_peek)( void );   /* read-only base -- does NOT mark theme anonymous  */
+    void               (*style_apply)( void );
+
+    /* style_source_set -- register the OWNER of the installed element style: the promotion seam
+       a kit uses to put its own look into service.  The source is invoked immediately, then again
+       at every style landing (font activation, theme_set / theme_reset / style_apply) AFTER the
+       layout metrics rescale -- so the kit re-derives against fresh numbers instead of being
+       clobbered by the default compile.  Inside the source, write through el_style()
+       (GUI_ELEMENT) and read metrics via style_peek / the sz_ family.  fn NULL restores the
+       default owner: chrome's theme compiler. */
+    void ( *style_source_set )( gui_style_source_fn fn, void* user );
+
+    /* Style stacks -- the push-model theme override (gui_col_t colors, gui_style_var_t metrics).
+       push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
+       overrides for just the next widget, no pop.  Colors are abgr (GUI_COLOR); vars are f32 px.
+       Like the item flags, this is callsite-free: every widget already reads the palette + metrics
+       through the resolver, so an override reaches them without any widget change.
+
+           gui()->push_style_color( GUI_COL_WIDGET_BG, GUI_COLOR( 0xFF, 0, 0, 0xFF ) );
+           gui()->push_style_var( GUI_VAR_WIDGET_PAD, 20.0f );
+           gui()->button( "Big Red" );
+           gui()->pop_style_var( 1 );
+           gui()->pop_style_color( 1 ); */
+
+    void ( *push_style_color )( gui_col_t slot, u32 abgr );
+    void ( *pop_style_color  )( u32 count );
+    void ( *next_style_color )( gui_col_t slot, u32 abgr );
+    void ( *push_style_var   )( gui_style_var_t var, f32 value );
+    void ( *pop_style_var    )( u32 count );
+    void ( *next_style_var   )( gui_style_var_t var, f32 value );
+
+    /* style_color() -- resolved read of one palette slot (theme base + push/next overrides):
+       the value a stock widget would paint with right now.  The public door to the
+       user-extended range (GUI_COL_USER_*): seed a user slot, paint custom drawing with this
+       read, and it rides the theme + stacks like stock chrome. */
+    u32  ( *style_color      )( gui_col_t slot );
+
+    /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
+       BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
+       the style-var stack, so every metric read and counting helper (sz_rows_h, sz_fit_row)
+       inside speaks the step.  Push before opening the region/child it styles.  To size against
+       a step without pushing it, query sz_scale_row( s ) from the sizing family. */
+    void ( *scale_push )( gui_scale_t s );
+    void ( *scale_pop  )( void );
+
+    /* Global indicator-shape selectors -- set the default check / bullet / arrow glyph the chrome
+       draws (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t).  These are style
+       state, not draw calls: scope a change locally instead with push_style_var on
+       GUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE. */
+    void ( *set_check_style  )( u8 style );
+    void ( *set_bullet_style )( u8 style );
+    void ( *set_arrow_style  )( u8 style );
+
+    /*============================================================================================================
         GUI_ELEMENT -- building blocks  (rect-consuming widget cores)
         The el_* set: every element fills EXACTLY the rect it is handed -- no hidden padding,
         no flow, no layout reservation -- composing item() behavior + draw_* presentation +
@@ -860,9 +1227,9 @@ typedef struct gui_api_s
     =============================================================================================================*/
 
     /* el_style -- mutable access to the INSTALLED element style, the kit (S3) tuning door.
-       The theme system re-derives the installed values at every theme / font landing
-       (style_apply / theme_set / theme_reset / font activation), so a kit that owns the
-       element look re-installs its palette after those calls.  Elements read only this. */
+       Elements read only this.  Ad-hoc writes last until the next style landing re-installs
+       the values; a kit that OWNS the look registers style_source_set (GUI_STYLE) so its
+       palette is re-derived, not clobbered, at every landing. */
     gui_el_style_t* ( *el_style )( void );
 
     /* The cores.  el_panel -- inert framed backdrop (the DIM surface).  el_label -- a text run
@@ -1502,16 +1869,7 @@ typedef struct gui_api_s
        Alt enters the main menu bar.  An open popup / menu always captures nav while it is open. */
     void ( *window_set_nav )( const char* title );
 
-    /*============================================================================================================
-        GUI_STYLE -- style resolution  (style/)
-        Theme, style stacks, density scale, indicator-shape selectors.  A SERVICE tier: the style
-        unit implements all of these, so any UI on the service API -- not just chrome -- styles
-        through them; a game kit gets colors + metrics without pulling in windowing.
-    =============================================================================================================*/
-
-    gui_style_t*       (*style_get)( void );    /* mutable base -- marks the theme anonymous       */
-    const gui_style_t* (*style_peek)( void );   /* read-only base -- does NOT mark theme anonymous  */
-    void               (*style_apply)( void );
+    /*==========================  theme -- chrome's named style presets (style kit)  ===========================*/
 
     /* Theme -- named style presets that form the root of the push/pop stack.
 
@@ -1533,47 +1891,6 @@ typedef struct gui_api_s
     bool               (*theme_set  )( const char* name );
     const char*        (*theme_get  )( void );
     void               (*theme_reset)( void );
-
-    /* Style stacks -- the push-model theme override (gui_col_t colors, gui_style_var_t metrics).
-       push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
-       overrides for just the next widget, no pop.  Colors are abgr (GUI_COLOR); vars are f32 px.
-       Like the item flags, this is callsite-free: every widget already reads the palette + metrics
-       through the resolver, so an override reaches them without any widget change.
-
-           gui()->push_style_color( GUI_COL_WIDGET_BG, GUI_COLOR( 0xFF, 0, 0, 0xFF ) );
-           gui()->push_style_var( GUI_VAR_WIDGET_PAD, 20.0f );
-           gui()->button( "Big Red" );
-           gui()->pop_style_var( 1 );
-           gui()->pop_style_color( 1 ); */
-
-    void ( *push_style_color )( gui_col_t slot, u32 abgr );
-    void ( *pop_style_color  )( u32 count );
-    void ( *next_style_color )( gui_col_t slot, u32 abgr );
-    void ( *push_style_var   )( gui_style_var_t var, f32 value );
-    void ( *pop_style_var    )( u32 count );
-    void ( *next_style_var   )( gui_style_var_t var, f32 value );
-
-    /* style_color() -- resolved read of one palette slot (theme base + push/next overrides):
-       the value a stock widget would paint with right now.  The public door to the
-       user-extended range (GUI_COL_USER_*): seed a user slot, paint custom drawing with this
-       read, and it rides the theme + stacks like stock chrome. */
-    u32  ( *style_color      )( gui_col_t slot );
-
-    /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
-       BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
-       the style-var stack, so every metric read and counting helper (sz_rows_h, sz_fit_row)
-       inside speaks the step.  Push before opening the region/child it styles.  To size against
-       a step without pushing it, query sz_scale_row( s ) from the sizing family. */
-    void ( *scale_push )( gui_scale_t s );
-    void ( *scale_pop  )( void );
-
-    /* Global indicator-shape selectors -- set the default check / bullet / arrow glyph the chrome
-       draws (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t).  These are style
-       state, not draw calls: scope a change locally instead with push_style_var on
-       GUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE. */
-    void ( *set_check_style  )( u8 style );
-    void ( *set_bullet_style )( u8 style );
-    void ( *set_arrow_style  )( u8 style );
 
     /*============================================================================================================
         GUI_DEBUG -- overlays, dashboard, stepper  (debug/)
@@ -1644,291 +1961,6 @@ typedef struct gui_api_s
        or confirm that the hash-upfront path produces identical output to the reference. */
     void ( *set_retained_skip )( bool on );
     bool ( *retained_skip     )( void );
-
-    /*============================================================================================================
-        GUI_FRAME -- glue  (frame/)
-        The conductor: lifecycle, boot, frame phases, pacing, viewports, contexts, event
-        routing, memory / render stats.  Owns per-frame ordering and this vtable; no widgets.
-    =============================================================================================================*/
-
-    /* GPU resource lifecycle.
-        init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
-                       `font` optionally loads one of the built-in presets (gui_builtin_font_t,
-                       gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
-                       yourself. A failed built-in load is non-fatal (a warning; init still
-                       succeeds without text).
-        shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
-        font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
-                       call after init(). Returns the new id (>= 1), or 0 on failure.
-        font_load_builtin() -- font_load for a built-in preset (gui_builtin_font_t): the enum
-                       already knows its asset path, so no path plumbing at the call site.
-                       Same contract as font_load -- a NEW id, activated (the init()/boot()
-                       preset in slot 0 is untouched; font_use( 0 ) switches back).  Returns
-                       the new id, or 0 for GUI_FONT_NONE / an unknown preset / a failed load.
-        asset_path() -- resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
-                       the build root, one level above the executable -- the same convention
-                       load_icon and the built-in font/icon presets resolve through. Writes the
-                       resolved path into `out` (out_size bytes); for a caller that wants the
-                       absolute path itself (e.g. a plain fopen) rather than a load_icon call. */
-
-    bool                ( *init      )( gui_builtin_font_t font );
-    void                ( *shutdown  )( void );
-    u32                 ( *font_load )( const char* path );
-    u32                 ( *font_load_builtin )( gui_builtin_font_t font );
-    void                ( *asset_path )( const char* relative, char* out, int out_size );
-
-    /* boot() -- TEST-BED tier: the one-call alternative to the block above for sandboxes, demos,
-       and quick tools whose main window IS a gui surface -- gui owns the window + render context
-       end to end, exactly like its tear-off floaters.  Non-idiomatic for engine hosts: those run
-       through the runtime host (run_host_main), which keeps ownership of the window/loop and
-       wires gui as an optional service.  Stands up the whole stack from a single descriptor
-       (gui_boot_desc_t, gui.h): rhi()->init() (idempotent -- safe if the host already ran it),
-       app window (borderless by default, with the chrome shell then auto-emitted each frame;
-       os_chrome opts back into the stock OS frame), rhi context, init(font),
-       set_frame_hooks, debug_enable, and the primary viewport -- returned, or GUI_VP_INVALID
-       with everything unwound on failure.  Call once after mod_init_all, before any other window
-       opens.  shutdown() tears down what boot created (context + window); rhi()->shutdown()
-       stays with the host, last.  Pairs with frame_poll / present below for the full easy-mode
-       loop; a host needing manual control of any stage simply keeps calling the explicit block
-       instead -- boot is composition, not replacement, and viewport_open still attaches gui to a
-       host-owned window. */
-
-    gui_vp_t            ( *boot )( const gui_boot_desc_t* desc );
-
-    /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
-       backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
-       bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */
-
-    gui_mem_stats_t     ( *mem_stats       )( void );
-    void                ( *print_mem_stats )( void );
-
-    /* Per-frame render statistics (geometry + batch counts) for the LAST completed frame.
-       Published at frame_begin, so a read during the build reflects the previous frame -- the
-       standard one-frame lag.  Feeds an FPS / performance overlay without re-deriving counts. */
-    gui_render_stats_t  ( *render_stats )( void );
-
-    /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are no longer emitted
-       by host code.  debug_enable( true ) arms an internal hotkey driver (numpad '.' arms the group,
-       then P / O / F10 ...) and gui emits them itself, last in the default context's build -- see
-       debug_enable (GUI_DEBUG section).  The perf overlay's clock arrives once through set_frame_hooks. */
-
-    /* Frame hooks -- one-time wiring (after init) of the host OS services gui cannot reach itself
-       (gui links only app + rhi, no sys):
-
-         clock       -- monotonic seconds source (sys_tick_seconds); brackets the frame for the
-                        perf overlay's emit / render cost readouts.  NULL leaves timing at zero.
-         sleep_ms    -- thread sleep (sys_sleep_milliseconds); frame_pace's spin/animation sleep.
-         wait_events -- block until OS input or timeout (sys_wait_for_os_events_ms); enables the
-                        idle-skip path of frame_pace.  NULL disables idle skip entirely. */
-
-    void ( *set_frame_hooks )( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
-
-    /* Frame lifecycle.  A frame is four explicit phases -- this is a multi-context system and the
-       API does not hide it; even a single-context host names its one context:
-
-         if ( frame_begin(dt) )        -- global: snapshot app input, compute frame_dirty, reset the
-         {                                draw list on dirty frames.  Binds NO context; call once at
-                                          the top of the frame.  Returns frame_dirty: emit the UI
-                                          build only when true -- on a false (clean) frame skip the
-                                          context scopes entirely; render() replays the preserved
-                                          geometry verbatim and frame_end patches the volatile
-                                          widgets (gui()->volatile_cb) internally.
-           ctx_begin(GUI_CTX_DEFAULT) -- bind a context and run its per-frame init; emit its
-              ... emit windows ...        windows immediately after.
-           ctx_end()                    -- close it, rebinding the previously-bound context.  Closing
-         }                                the DEFAULT context also auto-emits the debug overlays
-                                          when debug_enable is on.
-         frame_end()                   -- seal the build (latches emit cost; asserts ctx balance).
-                                          Call on clean frames too -- it runs the volatile replay.
-
-       frame_begin/frame_end and ctx_begin/ctx_end are balanced scopes, exactly like
-       window_begin/window_end: every begin has an end, and each end restores the scope its begin
-       opened.  render() runs AFTER frame_end and consumes the sealed draw list.
-
-       render()    -- flush one viewport's geometry partition to GPU; opens a LOAD render pass on
-                      that viewport's swapchain, emits all draw calls, and closes the pass.  Also
-                      paints the debug overlay when vp is the primary (index 0).
-                      Call once per live viewport, each with the matching context cmd.
-
-       frame_pace( spin_sleep_ms, anim_sleep_ms )
-                   -- end-of-loop frame pacing; call once at the very bottom of the main loop.
-                      Default path: sleep spin_sleep_ms between frames (4 ~= 250 Hz).  With idle
-                      skip on (set_idle_skip, or the I hotkey under debug_enable): block on OS
-                      input so a static UI burns no frames, sleeping anim_sleep_ms (16 ~= 60 Hz)
-                      only while a widget animation settles.  0 opts that sleep out (no call),
-                      even while the feature is on -- free-run for that path.  A no-op until
-                      set_frame_hooks provides the sleep / wait callbacks. */
-
-    bool ( *frame_begin )( f32 dt );
-    void ( *frame_end   )( void );
-    void ( *render      )( gui_vp_t vp, rhi_cmd_t cmd );
-    void ( *frame_pace  )( i32 spin_sleep_ms, i32 anim_sleep_ms );
-
-    /* Easy-mode loop wrappers (TEST-BED tier, same audience as boot() above -- engine hosts get
-       this loop from run_host instead).  With boot() these shrink a sandbox's main loop to its
-       essence.  frame_poll() works for any host (it needs only app + rhi routing); present_begin
-       / present_end are boot-tier (they render through the boot-owned context) and form a
-       balanced pair like every other begin/end: begin's bool gates the host's own passes, end
-       is called unconditionally.
-
-         while ( gui()->frame_poll( &dt ) )       -- pump the OS, route events (rhi swapchain
-         {                                           resize, gui input + floater lifecycle),
-                                                     return dt from the boot clock hook; false on
-                                                     quit or main-window close.
-             ...frame_begin/build/frame_end...    -- unchanged (see above).
-             rhi_cmd_t cmd;
-             if ( gui()->present_begin( &cmd ) )  -- viewport_update + minimized guard + rhi
-                 ...host render passes...            frame open + swapchain clear (boot clear
-                                                     color); true hands out the live cmd for the
-                                                     host's own passes (offscreen scenes, custom
-                                                     draws under the UI).
-             gui()->present_end();                -- gui draw + present + all owned floaters.
-                                                     Call unconditionally (minimized-safe);
-                                                     no-op without a matching present_begin.
-             gui()->frame_pace( 4, 16 );
-         }
-
-       The host keeps reading input through app()'s snapshot API (key_pressed etc.) as before --
-       frame_poll only owns the event ring.  A host that needs the loop's internals (extra
-       swapchains, custom event handling) writes the explicit loop instead; these are sugar over
-       the same public calls. */
-
-    bool ( *frame_poll    )( f32* out_dt );
-    bool ( *present_begin )( rhi_cmd_t* out_cmd );
-    void ( *present_end   )( void );
-
-    /* Idle-skip control -- the programmatic twin of the I hotkey.  When on, frame_pace blocks on
-       OS input while the UI is idle instead of spinning.  Off by default. */
-    void ( *set_idle_skip )( bool on );
-    bool ( *idle_skip     )( void );
-
-    /* Viewport management.  A viewport is a render surface backed by an OS window.  One frame's build
-       gathers every window's geometry into a single draw list; render() dispatches each window's
-       partition to the viewport it is assigned to (window_set_next_viewport, or inherited from
-       whichever viewport was most recently emitted into this frame).
-
-       viewport_open()   -- open a surface for OS window win_id.  The initial drawable size is
-                            queried from app() internally -- no redundant w/h parameters.
-                            Returns a valid handle or GUI_VP_INVALID if the pool is full.
-                            The first call creates the primary (index 0); call before any frames.
-                            win_id routes mouse events from that OS window to this surface.
-       viewport_close()  -- close a viewport and release its GPU geometry buffers.  Works for both
-                            the primary and secondary viewports.  Windows on the closed viewport
-                            automatically fall back to the primary.  The host owns the OS window and
-                            rhi context; gui owns only the geometry.
-       viewport_resize() -- update a viewport's drawable size.  Prefer rhi()->event() +
-                            gui()->event() for automatic routing; call this directly only when
-                            explicit control is needed.
-       viewport_shell()  -- emit the window chrome for a borderless viewport.  Every host window is
-                            one of two things: a UI window (window_begin -- a body full of widgets)
-                            or a chrome shell for the OS window itself -- this call.  It emits a
-                            frame-only GUI_WIN_NATIVE window: its titlebar IS the OS caption (title
-                            text + min/max/close buttons, drag to move, double-click to maximize),
-                            its border the OS sizing frame, and its body is empty and click-through
-                            -- every other window lives on top of it.  Call it FIRST inside
-                            ctx_begin, every frame, before any other window on that viewport.
-                            Returns the caption band height so the host can stack its own strips
-                            (menu bar, toolbar) below it -- the built-in main_menu_bar, free-window
-                            clamping, and the dock tree already inset themselves automatically.
-                            On a viewport whose OS window has its own chrome (opened without
-                            APP_WIN_BORDERLESS) it is a no-op returning 0: call it unconditionally
-                            and flip only the window_open flag to switch chrome modes.  flags may
-                            add GUI_WIN_NOTITLEBAR / NO_MINIMIZE / NO_MAXIMIZE / NORESIZE.
-       viewport_caption_h() -- the caption band height (px) a chrome shell published on this
-                            viewport; 0 for an OS-chrome window.  The query twin of
-                            viewport_shell's return, for hosts on the boot path (where the shell
-                            is emitted internally) that stack pinned strips below the caption.
-       viewport_size()      -- the viewport's current drawable size (disp_w/disp_h) -- the query
-                            twin of viewport_resize.  Either out pointer may be NULL; an invalid
-                            viewport reports 0 x 0.
-       viewport_content_y() -- the y where host content starts on this viewport: 0 for an
-                            OS-chrome window, the caption band on a gui-shelled native window,
-                            plus the main menu bar when one was emitted (this frame or last --
-                            emit the bar before querying).  The same bound the maximize pin and
-                            free-window clamp use, published so hosts place windows below the
-                            viewport chrome without summing the parts themselves. */
-
-    gui_vp_t    ( *viewport_open      )( i32 win_id );
-    void        ( *viewport_close     )( gui_vp_t vp );
-    void        ( *viewport_resize    )( gui_vp_t vp, i32 w, i32 h );
-    f32         ( *viewport_shell     )( gui_vp_t vp, const char* title, gui_win_flags_t flags );
-    f32         ( *viewport_caption_h )( gui_vp_t vp );
-    void        ( *viewport_size      )( gui_vp_t vp, i32* out_w, i32* out_h );
-    f32         ( *viewport_content_y )( gui_vp_t vp );
-
-    /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
-       to flush into, these own the OS window + rhi context end to end -- gui creates them on
-       spawn and tears them down on close.  This is the lifecycle the tear-off gesture drives;
-       a host may also call viewport_spawn directly to place a panel in its own OS window.
-
-       viewport_spawn()          -- open a floater hosting its own OS window at (x,y) sized w x h;
-                                    returns its viewport handle (assign windows via
-                                    window_set_next_viewport) or GUI_VP_INVALID.  Between frames.
-       viewport_update()         -- reconcile owned floaters with their OS windows: apply tear-off /
-                                    merge-back and tear down closed or abandoned surfaces.  Call once
-                                    per frame AFTER the UI build and BEFORE rendering (the safe point
-                                    to free a surface).
-       viewport_render_floaters() -- present every owned floater from the shared draw list, each on
-                                    its own rhi context (frame_begin/clear/flush/frame_end).  The
-                                    host still presents the main surface (index 0) via render(). */
-
-    gui_vp_t   ( *viewport_spawn           )( const char* title, i32 x, i32 y, i32 w, i32 h );
-    void       ( *viewport_update          )( void );
-    void       ( *viewport_render_floaters )( void );
-
-    /* Multi-context -- isolated per-context retained state (windows, nav, popups, keyed widget state,
-       id namespace).  The primary context (GUI_CTX_DEFAULT / 0) is always live after init().
-
-       ctx_create()       -- allocate a fresh secondary context, sized to `cfg` (NULL / zero fields =
-                             the internal maxima the library was compiled with).
-                             Each gets a unique id_salt so same-named widgets in different contexts
-                             never alias.  Returns GUI_CTX_INVALID on pool exhaustion.  Between frames.
-       ctx_destroy()      -- free a secondary context; rebinds the default if it was current.  Never
-                             destroys GUI_CTX_DEFAULT.  Call between frames.
-       ctx_bind()         -- make ctx the current context with no per-frame init: a mid-build "switch
-                             retained state" escape hatch.  ctx_begin/ctx_end are the normal scope;
-                             reach for ctx_bind only to peek at another context's state mid-frame.
-                             GUI_CTX_DEFAULT (0) or any invalid handle rebinds the default.
-       ctx_set_listening() -- set whether a context receives hover/click/nav input.  The default context
-                             starts listening; secondary contexts start deaf.  Multiple contexts may
-                             listen simultaneously; a deaf context renders but returns inert widget state.
-                             Call between frames.
-       ctx_begin()/ctx_end() -- bind a context for the frame and run its per-frame init, then close it.
-                             A balanced scope: ctx_end rebinds whatever ctx_begin found bound.  ctx_begin
-                             always runs the full frame init (hover promotion, nav, popup stale-close)
-                             regardless of the listening flag, and leaves g_ctx pointing at the context,
-                             so emit its windows IMMEDIATELY after the call.
-
-       FRAME CONTRACT:
-         if ( frame_begin(dt) )         -- once: input poll; true = emit this frame (frame_dirty).
-         {
-           ctx_begin(GUI_CTX_DEFAULT) -- bind + init the default context; emit its windows.
-           ctx_end()                    -- close it (auto-emits debug overlays when debug is on).
-           ctx_begin(ctx2)              -- a second context, if any; emit its windows.
-           ctx_end()
-         }
-         frame_end()                    -- seal the build; volatile replay on clean frames.
-       A single-context host runs exactly one ctx_begin(GUI_CTX_DEFAULT)/ctx_end pair. */
-
-    gui_ctx_id_t( *ctx_create        )( const gui_ctx_config_t* cfg );
-    void        ( *ctx_destroy       )( gui_ctx_id_t ctx );
-    void        ( *ctx_bind          )( gui_ctx_id_t ctx );
-    void        ( *ctx_set_listening )( gui_ctx_id_t ctx, bool listen );
-    void        ( *ctx_begin         )( gui_ctx_id_t ctx );
-    void        ( *ctx_end           )( void );
-
-    /* Host input -- the host owns the app event ring drain and forwards each event here.
-       event() handles:
-         - APP_EV_CHAR / MOUSE_WHEEL / CLIPBOARD: input state; returns true (consumed).
-         - APP_EV_MOUSE_MOVE / _DOWN / _UP: routes the cursor to the correct viewport; returns false.
-         - APP_EV_WIN_RESIZE: updates the matching viewport's drawable size (primary or owned
-           floater).  Also drives rhi context resize for owned floaters (gui owns those contexts).
-           Returns true only for owned floater events; primary resize returns false so
-           rhi()->event() can also handle the swapchain rebuild.
-         - APP_EV_WIN_CLOSE: marks an owned floater for teardown (returns true); primary window
-           close returns false so the host can exit. */
-
-    bool ( *event )( const app_event_t* ev );
 
 } gui_api_t;
 

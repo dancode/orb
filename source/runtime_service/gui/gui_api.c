@@ -16,6 +16,45 @@
 const gui_api_t g_gui_api_struct = 
 {
 
+    /*===============================================  GUI_FRAME  ===============================================*/
+
+    .init                               = gui_init,
+    .shutdown                           = gui_shutdown,
+    .font_load                          = gui_font_load,
+    .font_load_builtin                  = gui_font_load_builtin,
+    .asset_path                         = gui_asset_path,
+    .boot                               = gui_boot,
+    .mem_stats                          = gui_mem_stats,
+    .print_mem_stats                    = gui_print_mem_stats,
+    .render_stats                       = gui_render_stats,
+    .set_frame_hooks                    = gui_set_frame_hooks,
+    .frame_begin                        = gui_frame_begin,
+    .frame_end                          = gui_frame_end,
+    .render                             = gui_render,
+    .frame_pace                         = gui_frame_pace,
+    .frame_poll                         = gui_frame_poll,
+    .present_begin                      = gui_present_begin,
+    .present_end                        = gui_present_end,
+    .set_idle_skip                      = gui_set_idle_skip,
+    .idle_skip                          = gui_idle_skip,
+    .viewport_open                      = gui_viewport_open,
+    .viewport_close                     = gui_viewport_close,
+    .viewport_resize                    = gui_viewport_resize,
+    .viewport_shell                     = gui_viewport_shell,
+    .viewport_caption_h                 = gui_viewport_caption_h,
+    .viewport_size                      = gui_viewport_size,
+    .viewport_content_y                 = gui_viewport_content_y,
+    .viewport_spawn                     = gui_viewport_spawn,
+    .viewport_update                    = gui_viewport_update,
+    .viewport_render_floaters           = gui_viewport_render_floaters,
+    .ctx_create                         = gui_ctx_create,
+    .ctx_destroy                        = gui_ctx_destroy,
+    .ctx_bind                           = gui_ctx_bind,
+    .ctx_set_listening                  = gui_ctx_set_listening,
+    .ctx_begin                          = gui_ctx_begin,
+    .ctx_end                            = gui_ctx_end,
+    .event                              = gui_event,
+
     /*===============================================  GUI_DRAW  ================================================*/
 
     .font_load_into                     = gui_font_load_into,
@@ -87,19 +126,6 @@ const gui_api_t g_gui_api_struct =
     .anim_vec2                          = gui_api_anim_vec2,
     .anim_rect                          = gui_api_anim_rect,
 
-    /* surfaces -- root regions + scroll */
-
-    .pane_begin                         = gui_pane_begin,
-    .pane_end                           = gui_pane_end,
-    .region_begin                       = gui_region_begin,
-    .region_end                         = gui_region_end,
-    .scroll_by                          = gui_scroll_by,
-    .feat_move                          = gui_feat_move,
-    .feat_resize                        = gui_feat_resize,
-    .feat_collapse                      = gui_feat_collapse,
-    .feat_maximize                      = gui_feat_maximize,
-    .feat_clamp                         = gui_feat_clamp,
-
     /* identity + item flags + drag and drop */
 
     .push_id                            = gui_push_id,
@@ -161,6 +187,21 @@ const gui_api_t g_gui_api_struct =
     .volatile_live                      = gui_volatile_live,
     .set_force_redraw                   = gui_set_force_redraw,
     .force_redraw                       = gui_force_redraw,
+
+    /*==============================================  GUI_SURFACE  =============================================*/
+
+    /* surfaces -- root regions + scroll */
+
+    .pane_begin                         = gui_pane_begin,
+    .pane_end                           = gui_pane_end,
+    .region_begin                       = gui_region_begin,
+    .region_end                         = gui_region_end,
+    .scroll_by                          = gui_scroll_by,
+    .feat_move                          = gui_feat_move,
+    .feat_resize                        = gui_feat_resize,
+    .feat_collapse                      = gui_feat_collapse,
+    .feat_maximize                      = gui_feat_maximize,
+    .feat_clamp                         = gui_feat_clamp,
 
     /*===============================================  GUI_RECT  ================================================*/
 
@@ -232,6 +273,25 @@ const gui_api_t g_gui_api_struct =
     .split_begin                        = gui_split_begin,
     .split_next                         = gui_split_next,
     .split_end                          = gui_split_end,
+
+    /*===============================================  GUI_STYLE  ===============================================*/
+
+    .style_get                          = gui_style_get,
+    .style_peek                         = gui_style_peek,
+    .style_apply                        = gui_style_apply,
+    .style_source_set                   = gui_style_source_set,
+    .push_style_color                   = gui_push_style_color,
+    .pop_style_color                    = gui_pop_style_color,
+    .next_style_color                   = gui_next_style_color,
+    .push_style_var                     = gui_push_style_var,
+    .pop_style_var                      = gui_pop_style_var,
+    .next_style_var                     = gui_next_style_var,
+    .style_color                        = gui_style_color,
+    .scale_push                         = gui_scale_push,
+    .scale_pop                          = gui_scale_pop,
+    .set_check_style                    = gui_set_check_style,
+    .set_bullet_style                   = gui_set_bullet_style,
+    .set_arrow_style                    = gui_set_arrow_style,
 
     /*==============================================  GUI_ELEMENT  ==============================================*/
 
@@ -379,27 +439,12 @@ const gui_api_t g_gui_api_struct =
     .window_set_drag                    = gui_window_set_drag,
     .window_set_nav                     = gui_window_set_nav,
 
-    /*===============================================  GUI_STYLE  ===============================================*/
+    /* theme -- chrome's named style presets (style kit) */
 
-    .style_get                          = gui_style_get,
-    .style_peek                         = gui_style_peek,
-    .style_apply                        = gui_style_apply,
     .theme_list                         = gui_theme_list,
     .theme_set                          = gui_theme_set,
     .theme_get                          = gui_theme_get,
     .theme_reset                        = gui_theme_reset,
-    .push_style_color                   = gui_push_style_color,
-    .pop_style_color                    = gui_pop_style_color,
-    .next_style_color                   = gui_next_style_color,
-    .push_style_var                     = gui_push_style_var,
-    .pop_style_var                      = gui_pop_style_var,
-    .next_style_var                     = gui_next_style_var,
-    .style_color                        = gui_style_color,
-    .scale_push                         = gui_scale_push,
-    .scale_pop                          = gui_scale_pop,
-    .set_check_style                    = gui_set_check_style,
-    .set_bullet_style                   = gui_set_bullet_style,
-    .set_arrow_style                    = gui_set_arrow_style,
 
     /*===============================================  GUI_DEBUG  ===============================================*/
 
@@ -413,45 +458,6 @@ const gui_api_t g_gui_api_struct =
     .debug_dump_geometry                = gui_build_dump_geometry,
     .set_retained_skip                  = gui_build_set_retained_skip,
     .retained_skip                      = gui_build_retained_skip,
-
-    /*===============================================  GUI_FRAME  ===============================================*/
-
-    .init                               = gui_init,
-    .shutdown                           = gui_shutdown,
-    .font_load                          = gui_font_load,
-    .font_load_builtin                  = gui_font_load_builtin,
-    .asset_path                         = gui_asset_path,
-    .boot                               = gui_boot,
-    .mem_stats                          = gui_mem_stats,
-    .print_mem_stats                    = gui_print_mem_stats,
-    .render_stats                       = gui_render_stats,
-    .set_frame_hooks                    = gui_set_frame_hooks,
-    .frame_begin                        = gui_frame_begin,
-    .frame_end                          = gui_frame_end,
-    .render                             = gui_render,
-    .frame_pace                         = gui_frame_pace,
-    .frame_poll                         = gui_frame_poll,
-    .present_begin                      = gui_present_begin,
-    .present_end                        = gui_present_end,
-    .set_idle_skip                      = gui_set_idle_skip,
-    .idle_skip                          = gui_idle_skip,
-    .viewport_open                      = gui_viewport_open,
-    .viewport_close                     = gui_viewport_close,
-    .viewport_resize                    = gui_viewport_resize,
-    .viewport_shell                     = gui_viewport_shell,
-    .viewport_caption_h                 = gui_viewport_caption_h,
-    .viewport_size                      = gui_viewport_size,
-    .viewport_content_y                 = gui_viewport_content_y,
-    .viewport_spawn                     = gui_viewport_spawn,
-    .viewport_update                    = gui_viewport_update,
-    .viewport_render_floaters           = gui_viewport_render_floaters,
-    .ctx_create                         = gui_ctx_create,
-    .ctx_destroy                        = gui_ctx_destroy,
-    .ctx_bind                           = gui_ctx_bind,
-    .ctx_set_listening                  = gui_ctx_set_listening,
-    .ctx_begin                          = gui_ctx_begin,
-    .ctx_end                            = gui_ctx_end,
-    .event                              = gui_event,
 
 };
 

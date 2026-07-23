@@ -4,7 +4,9 @@
 
     runtime_service/gui/gui.h -- gui module types (the public type header).
 
-    In-house immediate-mode GUI for ORB.  No Dear ImGui, no GLFW/SDL: windowing/input come from
+    In-house 2D interaction renderer for ORB: draw + interact servers, root surfaces, rect and
+    flow composition, styled element cores -- with chrome (windows / dock / stock widgets) as an
+    OPTIONAL policy layer on top.  No Dear ImGui, no GLFW/SDL: windowing/input come from
     the engine `app` layer (Win32), rendering goes through `rhi` (Vulkan).  The host drives a
     frame_begin -> ctx_begin/widgets/ctx_end -> frame_end -> render() lifecycle each frame.
 
@@ -155,6 +157,12 @@ typedef void ( *gui_text_cb_fn )( char* buf, u32 len, u32 bufsz, void* user );
    consume: the key is cleared from the frame io, so neither the field nor any later widget
    acts on it -- the Quake-console passthrough (history, completion, scrollback keys). */
 typedef bool ( *gui_edit_key_fn )( u32 key, bool ctrl, bool shift, bool repeat, void* user );
+
+/* The installed-element-style OWNER (see style_source_set, GUI_STYLE).  Invoked at every style
+   landing (font activation, theme_set / theme_reset / style_apply) AFTER the layout metrics
+   rescale, so the owner re-derives its look against fresh numbers.  The source writes the
+   installed style through gui()->el_style(). */
+typedef void ( *gui_style_source_fn )( void* user );
 
 /* Monotonic wall-clock source (seconds), supplied by the host to the built-in perf overlay.
    gui has no timing service of its own (it is a leaf of rhi + app), so the host hands it a

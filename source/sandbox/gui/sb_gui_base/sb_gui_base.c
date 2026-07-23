@@ -1,17 +1,26 @@
 /*==============================================================================================
 
-    sandbox/gui/sb_gui_base/sb_gui_base.c -- the minimal gui frame loop.
+    sandbox/gui/sb_gui_base/sb_gui_base.c -- the strata curriculum, bottom up.
 
-    The smallest program that gets a 2D frame through the pipeline and onto the screen: boot
-    (window + rhi + gui context), then per-frame frame_poll -> frame_begin -> ctx_begin ->
-    (nothing) -> ctx_end -> frame_end -> present_begin -> present_end -> frame_pace.  No
-    widgets, no demo content -- the body between ctx_begin/ctx_end is deliberately empty.
+    The bottom-up proof that every stratum below GUI_CHROME stands alone: each number key
+    demonstrates ONE tier using nothing above it (fenced by want_capture_keyboard):
 
-    Reference for what gui()->boot sets up and what every other gui sandbox builds on top of.
+        0  idle        -- empty frame through the whole pipeline (boot + frame loop only)
+        1  GUI_DRAW    -- bare draw_* primitives; no surface, no ids, no style
+        2  GUI_SURFACE -- pane + feat_move/feat_resize, and a custom widget from
+                          rect + item() + draw_* (custom chrome is composition)
+        3  GUI_ELEMENT -- carve one flat form into leaf rects, fill them with el_* cores
+        4  GUI_FLOW    -- region_begin + a layout header + flow_cell rects feeding el_*
+        5  GUI_STYLE   -- a kit promotes its own palette over the el_* set
+        6  GUI_CHROME  -- one stock window for contrast: the optional policy layer
+
+    Also the reference for what gui()->boot sets up: the minimal loop is boot -> frame_poll ->
+    frame_begin -> ctx_begin .. ctx_end -> frame_end -> present_begin/present_end -> frame_pace.
 
 ==============================================================================================*/
 
 #include <stdio.h>
+#include <string.h>
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
@@ -23,6 +32,325 @@
 #include "runtime_service/gui/gui_host.h"
 
 // clang-format off
+
+/*==============================================================================================
+    Shared ink
+==============================================================================================*/
+
+#define INK       GUI_COLOR( 0xE8, 0xE0, 0xD0, 0xFF )
+#define INK_DIM   GUI_COLOR( 0x8A, 0x88, 0x80, 0xFF )
+#define AMBER     GUI_COLOR( 0xFF, 0xA0, 0x20, 0xFF )
+#define TEAL      GUI_COLOR( 0x20, 0xC0, 0xB0, 0xFF )
+#define PLUM      GUI_COLOR( 0xB0, 0x60, 0xE0, 0xFF )
+#define PANEL_BG  GUI_COLOR( 0x24, 0x26, 0x2B, 0xFF )
+#define PANEL_LN  GUI_COLOR( 0x50, 0x54, 0x5C, 0xFF )
+#define TITLE_BG  GUI_COLOR( 0x34, 0x38, 0x40, 0xFF )
+
+/*==============================================================================================
+    Tier 1 -- GUI_DRAW: primitives under the ambient clip/z.  No surface, no ids, no style.
+==============================================================================================*/
+
+static void
+tier_draw( void )
+{
+    gui()->draw_text( 100.0f, 70.0f, INK,
+                      "GUI_DRAW -- primitives straight into the draw list; no surface, no ids, no style" );
+
+    gui()->draw_rect( 100.0f, 100.0f, 200.0f, 120.0f, AMBER );
+    gui()->draw_round_rect( ( gui_rect_t ){ 320.0f, 100.0f, 200.0f, 120.0f },
+                            12.0f, 12.0f, 12.0f, 12.0f, false, 2.0f, TEAL );
+    gui()->draw_gradient( ( gui_rect_t ){ 540.0f, 100.0f, 200.0f, 120.0f }, AMBER, PLUM, true );
+    gui()->draw_circle( 840.0f, 160.0f, 56.0f, false, 3.0f, INK );
+
+    gui()->draw_line( 100.0f, 270.0f, 740.0f, 300.0f, 2.0f, INK );
+    gui()->draw_dashed_line( 100.0f, 300.0f, 740.0f, 330.0f, 8.0f, 6.0f, 2.0f, TEAL );
+
+    /* the retained path form: accumulate points, stroke once */
+    for ( i32 i = 0; i <= 12; ++i )
+        gui()->path_line_to( 100.0f + ( f32 )i * 54.0f, 380.0f + ( ( i & 1 ) ? 26.0f : -26.0f ) );
+    gui()->path_stroke( 2.0f, GUI_STROKE_CENTER, false, PLUM );
+
+    gui()->draw_checker( ( gui_rect_t ){ 100.0f, 440.0f, 200.0f, 90.0f }, 12.0f,
+                         GUI_COLOR( 0x30, 0x30, 0x36, 0xFF ), GUI_COLOR( 0x3C, 0x3C, 0x44, 0xFF ) );
+    gui()->draw_text_shadow( 320.0f, 470.0f, "shadowed text", INK,
+                             GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ), 2.0f, 2.0f );
+}
+
+/*==============================================================================================
+    Tier 2 -- GUI_SURFACE + GUI_CORE: a pane is identity + clip + the z contest, nothing else.
+    Chrome features are freestanding feat_* mechanisms; a custom widget is rect+item()+draw_*.
+==============================================================================================*/
+
+static void
+tier_surface( void )
+{
+    static gui_rect_t s_rect = { 140.0f, 120.0f, 320.0f, 210.0f };  // caller-owned persistence
+    static bool       s_on   = false;
+
+    gui_pane_t p = gui()->pane_begin( "t2_pane", s_rect, GUI_REGION_MID, GUI_VP_INVALID,
+                                      GUI_WIN_NONE );
+    gui_rect_t r = p.rect;
+
+    /* the pane painted nothing -- every pixel is ours */
+    gui()->draw_frame( r, PANEL_BG, PANEL_LN, 1.0f );
+
+    gui_rect_t title = gui_rect_cut_top( &r, 26.0f );
+    gui()->feat_move( p.id, title, &s_rect.x, &s_rect.y );
+    gui()->feat_resize( p.id, &s_rect, GUI_RESIZE_R | GUI_RESIZE_B, 240.0f, 150.0f );
+    gui()->draw_rect( title.x, title.y, title.w, title.h, TITLE_BG );
+    gui()->draw_text_in( title, GUI_ALIGN_CENTER, INK, "pane + feat_move / feat_resize" );
+
+    /* a custom widget: a rect we carved + item() behavior + draw_* presentation */
+    gui_rect_t body = gui_rect_pad( r, 10.0f );
+    gui_rect_t box  = gui_rect_cut_top( &body, 34.0f );
+    gui_item_state_t st = gui()->item( "t2_toggle", box );
+    if ( st.clicked ) { s_on = !s_on; gui()->request_redraw(); }
+
+    u32 fill = st.active ? GUI_COLOR( 0x50, 0x38, 0x18, 0xFF )
+             : st.hover  ? GUI_COLOR( 0x40, 0x40, 0x48, 0xFF )
+                         : GUI_COLOR( 0x30, 0x32, 0x38, 0xFF );
+    gui()->draw_frame( box, fill, s_on ? AMBER : PANEL_LN, 1.0f );
+    gui()->draw_text_in( box, GUI_ALIGN_CENTER, INK, s_on ? "ON  -- click me" : "OFF -- click me" );
+
+    char readout[ 64 ];
+    snprintf( readout, sizeof readout, "hover %d  active %d  pressed %d  clicked %d",
+              st.hover, st.active, st.pressed, st.clicked );
+    body.y += 8.0f;
+    gui()->draw_text( body.x, body.y, INK_DIM, readout );
+
+    gui()->pane_end();
+}
+
+/*==============================================================================================
+    Tier 3 -- GUI_RECT + GUI_ELEMENT: one flat carve form -> leaf rects -> el_* cores.
+    Every element fills exactly the rect it is handed; the layout is data.
+==============================================================================================*/
+
+static void
+tier_element( void )
+{
+    static bool s_check  = true;
+    static f32  s_level  = 0.35f;
+    static i32  s_mode   = 0;
+    static const char* const s_modes[] = { "alpha", "beta", "gamma" };
+
+    gui_rect_t area = { 140.0f, 120.0f, 480.0f, 300.0f };
+    gui_pane_t p = gui()->pane_begin( "t3_pane", area, GUI_REGION_MID, GUI_VP_INVALID,
+                                      GUI_WIN_NONE );
+    gui()->draw_frame( p.rect, PANEL_BG, PANEL_LN, 1.0f );
+
+    /* sidebar | ( header / body / footer ) from one form */
+    static const f32 FORM[] = { GUI_CUT_X, 140.0f, 1.0f,
+                                    GUI_CUT_Y, 30.0f, 1.0f, 36.0f, GUI_END,
+                                GUI_END };
+    gui_rect_t leaf[ 4 ];
+    gui()->carve( FORM, gui_rect_pad( p.rect, 8.0f ), 6.0f, leaf, 4 );
+
+    gui()->el_panel( leaf[ 0 ] );
+    gui_rect_t side = gui_rect_pad( leaf[ 0 ], 8.0f );
+    gui()->el_check( gui_rect_cut_top( &side, 26.0f ), "t3_check", &s_check );
+    side.y += 6.0f;  side.h -= 6.0f;
+    gui()->el_cycle( gui_rect_cut_top( &side, 26.0f ), "t3_cycle", &s_mode, s_modes, 3 );
+
+    gui()->el_label( leaf[ 1 ], GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+                     "el_* cores over carved rects" );
+
+    gui()->el_panel( leaf[ 2 ] );
+    gui_rect_t rows = gui_rect_pad( leaf[ 2 ], 8.0f );
+    gui()->el_slider( gui_rect_cut_top( &rows, 24.0f ), "t3_slider", &s_level, 0.0f, 1.0f );
+    rows.y += 6.0f;  rows.h -= 6.0f;
+    gui()->el_meter( gui_rect_cut_top( &rows, 18.0f ), s_level, AMBER );
+
+    gui()->el_button( leaf[ 3 ], "el_button" );
+
+    gui()->pane_end();
+}
+
+/*==============================================================================================
+    Tier 4 -- GUI_FLOW: a region owns scroll + a layout; flow_cell hands rects back out to el_*.
+==============================================================================================*/
+
+static void
+tier_flow( void )
+{
+    gui()->region_begin( "t4_region", 140.0f, 120.0f, 380.0f, 320.0f, GUI_REGION_MID,
+                         GUI_WIN_NONE );
+    gui()->row( 26.0f );
+
+    for ( i32 i = 0; i < 30; ++i )
+    {
+        char label[ 32 ];
+        gui()->push_id_int( i );
+        gui_rect_t cell = gui()->flow_cell( 0.0f, 0.0f );
+        if ( i % 5 == 0 )
+        {
+            snprintf( label, sizeof label, "el_button %d", i );
+            gui()->el_button( cell, label );
+        }
+        else
+        {
+            snprintf( label, sizeof label, "row %d -- the region scrolls", i );
+            gui()->el_label( cell, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, label );
+        }
+        gui()->pop_id();
+    }
+
+    gui()->region_end();
+}
+
+/*==============================================================================================
+    Tier 5 -- GUI_STYLE: a kit PROMOTES its own look.  style_source_set registers the kit as
+    the OWNER of the installed element style: invoked immediately and again at every style
+    landing (font / theme / scale), so the palette survives instead of being clobbered by the
+    chrome theme compiler.  Entering/leaving the tier registers/restores -- see build_frame.
+==============================================================================================*/
+
+static i32 s_t5_pal = 0;
+
+static void
+install_palette( i32 which )
+{
+    gui_el_style_t* es = gui()->el_style();
+
+    es->pad      = 6.0f;
+    es->gap      = 6.0f;
+    es->border_w = 1.0f;
+    es->line_h   = 0.0f;   /* follow the active font */
+
+    if ( which == 0 )   /* ember -- warm dark */
+    {
+        u32 c[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] = {
+            /* BG     */ { GUI_COLOR( 0x2E, 0x20, 0x18, 0xFF ), GUI_COLOR( 0x46, 0x30, 0x20, 0xFF ),
+                           GUI_COLOR( 0x5E, 0x3C, 0x22, 0xFF ), GUI_COLOR( 0x24, 0x1C, 0x16, 0xFF ) },
+            /* BORDER */ { GUI_COLOR( 0x7A, 0x50, 0x2C, 0xFF ), GUI_COLOR( 0xA8, 0x6C, 0x38, 0xFF ),
+                           GUI_COLOR( 0xD8, 0x8C, 0x44, 0xFF ), GUI_COLOR( 0x4A, 0x36, 0x24, 0xFF ) },
+            /* TEXT   */ { GUI_COLOR( 0xF0, 0xDC, 0xC0, 0xFF ), GUI_COLOR( 0xFF, 0xEC, 0xD4, 0xFF ),
+                           GUI_COLOR( 0xFF, 0xF4, 0xE4, 0xFF ), GUI_COLOR( 0x9A, 0x84, 0x6C, 0xFF ) },
+            /* ACCENT */ { GUI_COLOR( 0xFF, 0xA0, 0x20, 0xFF ), GUI_COLOR( 0xFF, 0xB4, 0x44, 0xFF ),
+                           GUI_COLOR( 0xFF, 0xC8, 0x68, 0xFF ), GUI_COLOR( 0x6E, 0x4C, 0x1E, 0xFF ) },
+        };
+        memcpy( es->col, c, sizeof c );
+    }
+    else                /* ice -- cool dark */
+    {
+        u32 c[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] = {
+            /* BG     */ { GUI_COLOR( 0x18, 0x22, 0x2E, 0xFF ), GUI_COLOR( 0x22, 0x32, 0x46, 0xFF ),
+                           GUI_COLOR( 0x2A, 0x42, 0x5E, 0xFF ), GUI_COLOR( 0x14, 0x1C, 0x26, 0xFF ) },
+            /* BORDER */ { GUI_COLOR( 0x34, 0x58, 0x7A, 0xFF ), GUI_COLOR( 0x48, 0x7C, 0xA8, 0xFF ),
+                           GUI_COLOR( 0x5C, 0xA0, 0xD8, 0xFF ), GUI_COLOR( 0x26, 0x3A, 0x4A, 0xFF ) },
+            /* TEXT   */ { GUI_COLOR( 0xC8, 0xE0, 0xF0, 0xFF ), GUI_COLOR( 0xDC, 0xEE, 0xFF, 0xFF ),
+                           GUI_COLOR( 0xEC, 0xF6, 0xFF, 0xFF ), GUI_COLOR( 0x6C, 0x84, 0x9A, 0xFF ) },
+            /* ACCENT */ { GUI_COLOR( 0x30, 0xC0, 0xE8, 0xFF ), GUI_COLOR( 0x54, 0xD0, 0xF4, 0xFF ),
+                           GUI_COLOR( 0x78, 0xE0, 0xFF, 0xFF ), GUI_COLOR( 0x1E, 0x50, 0x60, 0xFF ) },
+        };
+        memcpy( es->col, c, sizeof c );
+    }
+}
+
+/* the registered owner: re-derives the kit look at every style landing */
+static void
+t5_style_source( void* user )
+{
+    UNUSED( user );
+    install_palette( s_t5_pal );
+}
+
+static void
+tier_style( void )
+{
+    static bool s_check  = true;
+    static f32  s_level  = 0.6f;
+    static const char* const s_pals[] = { "ember", "ice" };
+
+    gui_rect_t area = { 140.0f, 120.0f, 380.0f, 250.0f };
+    gui_pane_t p = gui()->pane_begin( "t5_pane", area, GUI_REGION_MID, GUI_VP_INVALID,
+                                      GUI_WIN_NONE );
+    gui()->el_panel( p.rect );
+
+    gui_rect_t r = gui_rect_pad( p.rect, 10.0f );
+    gui()->el_label( gui_rect_cut_top( &r, 26.0f ), GUI_ALIGN_LEFT,
+                     "the SAME el_* cores, the kit's palette" );
+    r.y += 6.0f;  r.h -= 6.0f;
+    if ( gui()->el_cycle( gui_rect_cut_top( &r, 26.0f ), "t5_pal", &s_t5_pal, s_pals, 2 ) )
+        install_palette( s_t5_pal );   /* restyle now; the source keeps it across landings */
+    r.y += 6.0f;  r.h -= 6.0f;
+    gui()->el_check( gui_rect_cut_top( &r, 26.0f ), "t5_check", &s_check );
+    r.y += 6.0f;  r.h -= 6.0f;
+    gui()->el_slider( gui_rect_cut_top( &r, 24.0f ), "t5_slider", &s_level, 0.0f, 1.0f );
+    r.y += 6.0f;  r.h -= 6.0f;
+    gui()->el_meter( gui_rect_cut_top( &r, 18.0f ), s_level,
+                     gui()->el_style()->col[ GUI_EL_ACCENT ][ GUI_EL_IDLE ] );
+    r.y += 6.0f;  r.h -= 6.0f;
+    gui()->el_button( gui_rect_cut_top( &r, 30.0f ), "el_button" );
+
+    gui()->pane_end();
+}
+
+/*==============================================================================================
+    Tier 6 -- GUI_CHROME: the optional policy layer, for contrast.  One stock window; everything
+    it does is assembled from the tiers below.
+==============================================================================================*/
+
+static void
+tier_chrome( void )
+{
+    static char s_buf[ 64 ] = "type here";
+    static bool s_flag      = true;
+    static f32  s_value     = 0.5f;
+
+    gui()->window_set_next_pos ( 160.0f, 140.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 380.0f, 260.0f, GUI_COND_ONCE );
+    if ( gui()->window_begin( "GUI_CHROME -- optional policy", GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text( "A stock window: pane + feat_* + flow +" );
+        gui()->text( "el_* + style, assembled as policy." );
+        gui()->button( "button" );
+        gui()->checkbox( "checkbox", &s_flag );
+        gui()->slider_float( "slider", &s_value, 0.0f, 1.0f );
+        gui()->input_text( "input", s_buf, sizeof s_buf );
+    }
+    gui()->window_end();
+}
+
+/*==============================================================================================
+    Build -- key routing, tier dispatch, hint line
+==============================================================================================*/
+
+static i32 s_tier = 1;
+
+static void
+build_frame( void )
+{
+    /* number-key tier switching, fenced so typing in tier 6's field never switches */
+    if ( !gui()->want_capture_keyboard() )
+        for ( i32 k = 0; k <= 6; ++k )
+            if ( gui()->is_key_pressed( ( app_key_t )( APP_KEY_0 + k ) ) )
+                s_tier = k;
+
+    /* entering the style tier promotes the kit as style owner; leaving restores the default
+       owner (chrome's theme compiler) -- both through the one promotion seam */
+    static i32 s_prev = 1;
+    if ( s_tier == 5 && s_prev != 5 )
+        gui()->style_source_set( t5_style_source, NULL );
+    if ( s_prev == 5 && s_tier != 5 )
+        gui()->style_source_set( NULL, NULL );
+    s_prev = s_tier;
+
+    gui()->draw_text( 12.0f, 8.0f, INK_DIM,
+        "sb_gui_base -- 1 draw  2 surface  3 element  4 flow  5 style  6 chrome  0 idle" );
+
+    switch ( s_tier )
+    {
+        case 1: tier_draw();    break;
+        case 2: tier_surface(); break;
+        case 3: tier_element(); break;
+        case 4: tier_flow();    break;
+        case 5: tier_style();   break;
+        case 6: tier_chrome();  break;
+        default:                break;
+    }
+}
 
 /*==============================================================================================
     main
@@ -78,13 +406,9 @@ main( int argc, char** argv )
     {
         if ( gui()->frame_begin( dt ) )
         {
-            // gui()->ctx_begin( GUI_CTX_DEFAULT );
-
-            /* The bare minimum to get a rect on screen: draw_rect pushes straight into the draw
-               list under the ambient clip/z -- no window, pane, or region needed to place it. */
-            gui()->draw_rect( 100.0f, 100.0f, 200.0f, 120.0f, GUI_COLOR( 0xFF, 0xA0, 0x20, 0xFF ) );
-
-            // gui()->ctx_end();
+            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            build_frame();
+            gui()->ctx_end();
         }
         gui()->frame_end();
 

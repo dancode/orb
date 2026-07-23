@@ -8,9 +8,10 @@
     behavior (gui_item over the caller rect), presentation (the public draw_* surface),
     and the slim element style (gui_el_style_t, gui_element.h).
 
-    Style contract: elements read ONLY s_el_style.  The theme system (S2) compiles into it
-    through el_style_derive() whenever a theme lands (gui_style_apply / theme_set /
-    theme_reset); a kit (S3) may overwrite the installed values afterward via gui_el_style().
+    Style contract: elements read ONLY s_el_style.  Every style landing (gui_style_apply /
+    theme_set / theme_reset / font activation) re-installs it through el_style_install(): the
+    registered style source when a kit owns the look (gui_style_source_set), else the default
+    S2 compile (el_style_derive).  A kit may also poke values ad hoc via gui_el_style().
     Elements never see a theme, a style stack, or a gui_col_t slot.
 
     Dependency contract: the el_* cores call gui_core (item, ids, io, redraw) + gui_draw
@@ -42,10 +43,9 @@ const u8 g_gui_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] =
     /* ACCENT */ { GUI_COL_WIDGET_FG,  GUI_COL_NAV_HIGHLIGHT, GUI_COL_CHECK_MARK, GUI_COL_SLIDER_TRACK },
 };
 
-/* Re-derive the element style from the active theme -- the S2 -> S1 compile step.  Called by
-   the theme tier at every point a theme lands (style_apply, theme_set, theme_reset), so
-   elements track the chrome look by default without ever reading it.  A kit that owns the
-   element look overwrites the result through gui_el_style() after its theme call. */
+/* Re-derive the element style from the active theme -- the S2 -> S1 compile step, and the
+   DEFAULT style source: el_style_install (below) routes every landing here unless a kit has
+   registered its own owner, so elements track the chrome look without ever reading it. */
 void
 el_style_derive( void )
 {
@@ -62,12 +62,38 @@ el_style_derive( void )
             e->col[ role ][ state ] = s->colors[ g_gui_el_slot_map[ role ][ state ] ];
 }
 
-/* Mutable access to the installed style -- the kit (S3) tuning door.  Values persist until the
-   next theme lands (style_apply / theme_set / theme_reset re-derives); re-install after those. */
+/* Mutable access to the installed style -- the kit (S3) tuning door.  Ad-hoc writes last until
+   the next style landing re-installs; a kit that OWNS the look registers a style source below
+   so its values are re-derived, not clobbered, at every landing. */
 gui_el_style_t*
 gui_el_style( void )
 {
     return &s_el_style;
+}
+
+/* The registered style source -- the S3 promotion seam: the OWNER of the installed style.
+   NULL = the default owner, chrome's theme compiler (el_style_derive above). */
+static gui_style_source_fn s_style_source      = NULL;
+static void*               s_style_source_user = NULL;
+
+/* The landing funnel: gui_style_apply calls this at every style landing (font activation,
+   theme_set / theme_reset), after the metrics rescale.  Routes to whichever owner is
+   registered, so a kit's promoted look survives theme / font / scale landings. */
+void
+el_style_install( void )
+{
+    if ( s_style_source ) s_style_source( s_style_source_user );
+    else                  el_style_derive();
+}
+
+void
+gui_style_source_set( gui_style_source_fn fn, void* user )
+{
+    s_style_source      = fn;
+    s_style_source_user = user;
+    el_style_install();             /* promotion / restoration lands immediately */
+    if ( g_ctx )                    /* guard: callable before any context exists */
+        gui_request_redraw();       /* the restyle must survive an idle frame    */
 }
 
 /* col shorthand for the element bodies below */

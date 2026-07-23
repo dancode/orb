@@ -13,6 +13,14 @@ symbol in source files, comments, or generated code. Use only standard 7-bit ASC
 
 ---
 
+## Pre-Ship: API Stability Is a Non-Concern
+
+Nothing has shipped and there are no external users. Public API structs, vtable member
+order, enum values, and header layout may be freely reordered or renamed. Never warn about
+ABI breakage, hot-reload staleness, or migration concerns from reordering -- just rebuild.
+
+---
+
 ## Build System
 
 Custom C build orchestrator (`build_tool.exe`) -- not CMake or MSBuild. Directly invokes

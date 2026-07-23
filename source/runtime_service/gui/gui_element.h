@@ -8,9 +8,9 @@
     building block (el_*) needs -- 4 metrics + a 4x4 role/state palette.  Deliberately NO
     per-widget slots (btn_bg_hover, slot_border_hot, ...): per-widget color is either a call
     parameter (el_meter's fill) or a token in the kit above.  Elements read ONLY this struct;
-    themes never reach them directly -- the chrome theme system (S2) COMPILES down into an
-    installed gui_el_style_t whenever a theme lands, and an app kit (S3) may overwrite the
-    installed values after that to own the look (see gui()->el_style).
+    themes never reach them directly -- every style landing re-installs it through the
+    registered style source (a kit that owns the look, gui()->style_source_set), else the
+    default S2 compile from the chrome theme.  Ad-hoc pokes go through gui()->el_style.
 
 ==============================================================================================*/
 
