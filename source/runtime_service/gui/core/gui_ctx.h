@@ -91,7 +91,9 @@ typedef struct gui_window_t
        gui_window_end.c.  Maximized pins the window to its surface work area every frame;
        minimized parks it as a title-bar chip on a shelf along the surface's bottom edge.  norm
        (below) is the saved normal rect both states restore to; shelf_slot orders the chips
-       (taken at minimize time, compacted to a paint position each frame as neighbours restore).
+       (rebased to a dense 0..live-count ranking at minimize time, so it stays small instead of
+       climbing forever; the per-frame paint position in window_shelf_order re-derives from it
+       as neighbours restore).
        These are the POLICY -- the rect tween between the states (and the norm save / restore),
        and the collapse height tween off `collapsed`, are the feat kit's mechanisms (feat_pin /
        gui_feat_collapse, interact/gui_feature.c), keyed off the window id: their edge latches and
@@ -113,7 +115,7 @@ typedef struct gui_window_t
     u32                 last_frame;     // frame index last begun; 0 = never begun
     gui_win_flags_t     flags;          // behavior flags supplied to window_begin
 
-    u32                 shelf_slot;     // minimized: the chip's order along the surface's bottom edge (0 = leftmost)
+    u8                  shelf_slot;     // minimized: the chip's order along the surface's bottom edge (0 = leftmost)
 
     gui_rect_t          norm;           // maximized / minimized: the saved normal rect to restore to
     gui_scroll_link_t   scroll;         // persisted scroll offset + last-measured content extent
@@ -138,30 +140,30 @@ typedef struct gui_window_t
    that fills it) + the next-window channel records its verbs queue into. */
 
 gui_window_t* window_get ( gui_id_t id, f32 x, f32 y, f32 w, f32 h );
-gui_window_t* window_find( gui_id_t id );                                /* record by id / NULL, in the BOUND context */
-gui_window_t* window_find_in( struct gui_context_t* ctx, gui_id_t id );  /* record by id / NULL, in an EXPLICIT context */
+gui_window_t* window_find( gui_id_t id );                                // record by id / NULL, in the BOUND context
+gui_window_t* window_find_in( struct gui_context_t* ctx, gui_id_t id );  // record by id / NULL, in an EXPLICIT context
 void          window_apply_next( gui_window_t* win, bool appearing );
 
 typedef struct
 {
-    bool        has_pos, has_size;     /* a value is queued on this axis */
-    gui_cond_t  pos_cond, size_cond;   /* when to apply it               */
+    bool        has_pos, has_size;     // a value is queued on this axis 
+    gui_cond_t  pos_cond, size_cond;   // when to apply it               
     f32         pos_x, pos_y;
     f32         size_w, size_h;
 
-    bool        has_viewport;          /* a viewport reassignment is queued for the next window */
-    u32         viewport;              /* its target surface index                              */
+    bool        has_viewport;          // a viewport reassignment is queued for the next window 
+    u32         viewport;              // its target surface index                              
 
 } gui_next_win_t;
 
 typedef struct
 {
-    bool        active;     /* a request is queued this frame                                  */
-    bool        by_drag;    /* true = seamless title-bar drag; false = detach-button click     */
-    gui_id_t    win_id;     /* the dragged window record                                       */
-    u32         from_vp;    /* surface it was on (0 = main -> tear off; else floater -> merge) */
-    const char* title;      /* window title, to label the spawned floater's OS window          */
-    bool        has_home;   /* re-open of a closed floater: spawn reads the record's restore   */
+    bool        active;     // a request is queued this frame
+    bool        by_drag;    // true = seamless title-bar drag; false = detach-button click
+    gui_id_t    win_id;     // the dragged window record
+    u32         from_vp;    // surface it was on (0 = main -> tear off; else floater -> merge)
+    const char* title;      // window title, to label the spawned floater's OS window 
+    bool        has_home;   // re-open of a closed floater: spawn reads the record's restore
 
     /* The context whose win.pool holds win_id, stamped at enqueue time (window_begin_ex /
        native_popin_request run with that context bound).  gui_viewport_update resolves the
@@ -172,8 +174,8 @@ typedef struct
 
 } gui_vp_request_t;
 
-extern gui_next_win_t   s_next_win;    /* core/gui_surface.c */
-extern gui_vp_request_t s_vp_request;  /* core/gui_surface.c */
+extern gui_next_win_t   s_next_win;    // core/gui_surface.c
+extern gui_vp_request_t s_vp_request;  // core/gui_surface.c
 
 /*==============================================================================================
     Keyboard navigation state (driver in chrome/nav/gui_nav.c)

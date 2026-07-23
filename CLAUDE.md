@@ -180,4 +180,5 @@ Include `ref.h` in DLL modules; `ref_host.h` in hosts, unity entries, sandboxes.
 
 `.clang-format` (Google base, customized) governs formatting -- run it; don't hand-format.
 - Comments show intent concisely at each block.
-- Comments use cpp style // after fields, but c style for larger blocks.
+- Struct fields ALWAYS use `//` trailing comments, never `/* */`. Larger blocks (file headers,
+  function/section comments) use C style `/* */`.

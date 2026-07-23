@@ -208,18 +208,66 @@ window_shelf_order( const gui_window_t* win )
     return order;
 }
 
-/* Next free shelf slot on win's surface -- one past the highest live occupant. */
-static u32
+/* Shelf occupancy on one surface stays small by construction -- chips must fit across the
+   surface's width -- so a fixed scratch cap here mirrors the window-pool overflow guard in
+   core/gui_surface.c (window_get): bounded local scratch instead of growing with max_windows. */
+#define GUI_SHELF_SCRATCH_MAX 64
+
+/* Next free shelf slot on win's surface, and the point where the whole shelf gets rebased.
+   Compacts every CURRENT occupant's shelf_slot down to a dense 0..len-1 ranking (stable: it
+   preserves relative minimize order) before handing out len as the new window's slot -- so the
+   raw value only ever spans the live chip count instead of climbing forever.  The old scheme
+   ("one past the highest occupant") only ever grew: two windows minimizing and restoring back and
+   forth on a shelf that never fully empties push the counter up every cycle, with no floor short
+   of the whole shelf going empty at once.
+   Two passes because ranking a neighbour against one already rewritten this same call (instead
+   of its original key) can invert pairs relative to pool-array order and hand two chips the same
+   slot -- by hand: raw keys {100, 5, 50} processed in that order and rewritten in place compact
+   to {2, 1, 2}, a tie. */
+
+static u8
 window_shelf_take_slot( const gui_window_t* win )
 {
-    u32 slot = 0;
+    u32 occ_idx[ GUI_SHELF_SCRATCH_MAX ];   // pool indices of live occupants
+    u8  occ_key[ GUI_SHELF_SCRATCH_MAX ];   // their shelf_slot, frozen before any rewrite
+    u32 len = 0;
+
     for ( u32 i = 0; i < g_ctx->win.count; ++i )
     {
         const gui_window_t* o = &g_ctx->win.pool[ i ];
-        if ( window_shelf_occupies( o, win ) && o->shelf_slot >= slot )
-            slot = o->shelf_slot + 1u;
+        if ( !window_shelf_occupies( o, win ) )
+            continue;
+
+        if ( len >= GUI_SHELF_SCRATCH_MAX )
+        {
+            static bool warned = false;
+            if ( !warned )
+            {
+                printf( "[gui] WARNING: more than %u windows minimized on one shelf at once -- "
+                        "extras skip the rebase and keep their old slot.\n", (u32)GUI_SHELF_SCRATCH_MAX );
+                fflush( stdout );   /* flush the diagnostic before the once-assert can trap */
+                warned = true;
+            }
+            ORB_ASSERT_MSG_ONCE( false, "gui shelf overflow -- more than GUI_SHELF_SCRATCH_MAX "
+                                        "windows minimized on one surface at once" );
+            break;
+        }
+
+        occ_idx[ len ] = i;
+        occ_key[ len ] = o->shelf_slot;
+        ++len;
     }
-    return slot;
+
+    for ( u32 a = 0; a < len; ++a )
+    {
+        u8 rank = 0;
+        for ( u32 b = 0; b < len; ++b )
+            if ( occ_key[ b ] < occ_key[ a ] )
+                ++rank;
+        g_ctx->win.pool[ occ_idx[ a ] ].shelf_slot = rank;
+    }
+
+    return (u8)len;
 }
 
 /* Toggle maximize.  Entering raises the window so it covers everything on its surface (bodies
@@ -244,17 +292,17 @@ window_maximize_set( gui_window_t* win, bool on )
    window.  As with maximize, the rect ease and the norm save / restore are feat_pin's edge
    detect on the next window_begin_ex. */
 static void
-window_minimize_set( gui_window_t* win, bool on )
+window_minimize_set( gui_window_t* win, bool is_on )
 {
-    if ( win->minimized == on )
+    if ( win->minimized == is_on )
         return;
 
-    if ( on )
+    if ( is_on )
         win->shelf_slot = window_shelf_take_slot( win );
     else
         win->z = surface_z_raise( win->z );
 
-    win->minimized = on;
+    win->minimized = is_on;
     redraw_request();
 }
 
