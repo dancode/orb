@@ -121,22 +121,15 @@ cache_count_upload( u32 batches, u32 bytes )
 /*==============================================================================================
     Retained-skip toggle.
 
-    When enabled (default: s_caps.retained_cache) a window whose per-command hash matches last
-    frame keeps its geometry in place instead of re-tessellating.  Disable to benchmark or verify
-    the from-scratch path.  Toggled via gui()->set_retained_skip (key C in sb_vulkan), which flips
-    the same s_caps field latched at gui_backend_init -- there is only the one flag.
+    When enabled (default) a window whose per-command hash matches last frame keeps its geometry
+    in place instead of re-tessellating.  Disable to benchmark or verify the from-scratch path.
+    Toggled via gui()->set_retained_skip (key C in sb_vulkan).
 ==============================================================================================*/
 
-void gui_build_set_retained_skip( bool on ) { s_caps.retained_cache = on; }
-bool gui_build_retained_skip    ( void )    { return s_caps.retained_cache; }
+static bool s_retained_cache = true;
 
-/*==============================================================================================
-    Build-phase debug toggles.
-
-    s_caps.stats_trace (set at gui_backend_init, default off) gates all three prints below; each
-    prints a per-frame line only when its value changes, so a steady UI does not spam.  The same
-    numbers are live through gui()->render_stats() in the perf overlay regardless of the flag.
-==============================================================================================*/
+void gui_build_set_retained_skip( bool on ) { s_retained_cache = on; }
+bool gui_build_retained_skip    ( void )    { return s_retained_cache; }
 
 /* Debug-band windows (GUI_WIN_DEBUG_BAND: the perf overlay, the pipeline dashboard, their
    popups/tooltips) are exempted from: (1) the vert/tri/win totals they may themselves display
@@ -609,9 +602,6 @@ cache_diff_windows( void )
     for ( u32 ci = 0; ci < GUI_MAX_CLIP_RECTS; ++ci )
         total_clip += clip_used[ ci ];
     s_stats.accum.clip_count = total_clip;
-
-    if ( s_caps.stats_trace && s_cache.any_changed )
-        printf( "[gui] cache: %u/%u windows unchanged\n", s_cache.unchanged, s_cache.cur_n );
 }
 
 /*==============================================================================================
@@ -1147,7 +1137,7 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
 
         /* prev->cmd_cached: a window whose command run overflowed the stable cache last frame has
            nothing to replay from -- it must re-tessellate even when its content hash matched. */
-        bool reuse_geo = allow_reuse && s_caps.retained_cache && !wh->changed
+        bool reuse_geo = allow_reuse && s_retained_cache && !wh->changed
                       && prev && prev->cmd_cached && ci != ~0u;
 
         bool ovf_before = s_tess.overflow;   /* did the arena already spill before this window? */
@@ -1263,15 +1253,7 @@ cache_build_frame( void )
                || ( dead_i >= GUI_REPACK_FRAG_FLOOR && dead_i * 100u >= s_tess.idx_count  * GUI_REPACK_FRAG_PCT );
 
     if ( s_tess.overflow || frag )
-    {
-        bool was_overflow = s_tess.overflow;    /* tess_reset in the repack clears it -- capture first */
-        u32  pre_v = s_tess.vert_count, pre_i = s_tess.idx_count;
         cache_place_slots( false, &ps );
-        if ( s_caps.stats_trace )
-            printf( "[gui] repack (%s): tail verts %u -> %u, idx %u -> %u  (dead was v=%u i=%u)\n",
-                    was_overflow ? "overflow" : "frag",
-                    pre_v, s_tess.vert_count, pre_i, s_tess.idx_count, dead_v, dead_i );
-    }
 
     /* Deferred volatile patches for reused windows: every slot is now placed and s_tess.vert_count
        is the true tail, so volatile_patch's scratch tessellation lands past all live geometry
@@ -1350,34 +1332,6 @@ cache_build_frame( void )
        past it (or a release build) and the app keeps running with the dropped geometry. */
     ORB_ASSERT_MSG_ONCE( !s_tess.overflow, "gui draw list overflow -- geometry dropped; raise "
                                            "GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS (gui.h)" );
-
-    /* Debug trace (s_caps.stats_trace): print the geometry counts only when they change, so a
-       steady UI does not spam; each line carries the lifetime peak alongside the live count. */
-
-    static u32 prev_verts = ~0u, prev_idx = ~0u;
-    if ( s_caps.stats_trace && ( s_tess.vert_count != prev_verts || s_tess.idx_count != prev_idx ) )
-    {
-        printf( "[gui] geometry: verts %u/%u (peak %u)  idx %u/%u (peak %u)\n",
-                s_tess.vert_count, GUI_MAX_VERTS, s_tess_stats.vert_hwm,
-                s_tess.idx_count,  GUI_MAX_IDX,   s_tess_stats.idx_hwm );
-        prev_verts = s_tess.vert_count;
-        prev_idx   = s_tess.idx_count;
-    }
-
-    /* Debug trace (s_caps.stats_trace): retained-cache effectiveness, again only on change. */
-
-    static u32 prev_win_ret = ~0u, prev_vert_ret = ~0u;
-    if ( s_caps.stats_trace &&
-         ( s_stats.accum.win_retained  != prev_win_ret ||
-           s_stats.accum.vert_retained != prev_vert_ret ) )
-    {
-        printf( "[gui] retained: wins %u/%u  verts %u/%u  tris %u/%u\n",
-                s_stats.accum.win_retained,  s_stats.accum.win_total,
-                s_stats.accum.vert_retained, s_stats.accum.vert_count,
-                s_stats.accum.tri_retained,  s_stats.accum.tri_count );
-        prev_win_ret  = s_stats.accum.win_retained;
-        prev_vert_ret = s_stats.accum.vert_retained;
-    }
 
     /* Pipeline-dashboard snapshot: everything above is final for the frame -- slots placed,
        dispatch z-sorted, stats accumulated.  A no-op unless GUI_PIPELINE_DASHBOARD. */

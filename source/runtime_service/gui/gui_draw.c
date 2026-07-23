@@ -58,31 +58,24 @@
 /*==============================================================================================
     Unit lifecycle -- called by the frame orchestrator (frame/gui_frame_loop.c) AFTER the render
     server stands up (fonts and icons register into the server's shared atlas) and torn down
-    before it.  `icons` gates the optional icon layer (gui_backend_caps_t.icons).
+    before it.
 ==============================================================================================*/
 
-static bool s_draw_icons;    /* icon layer active this run (latched at boot) */
-
 bool
-gui_draw_boot( bool icons )
+gui_draw_boot( void )
 {
-    s_draw_icons = icons;
-
     if ( !font_init() )
         return false;
 
-    /* Icons are an optional layer over the shared atlas -- their registration API is stood up
-       here so a caller that never touches icons never reserves the packer.  The built-in icon
-       set loads from disk in one pass; non-fatal: a missing file leaves that name unregistered. */
-    if ( icons )
+    /* Icons are a layer over the shared atlas -- registration API stood up here so it can
+       register into the atlas the render server just created.  The built-in icon set loads
+       from disk in one pass; non-fatal: a missing file leaves that name unregistered. */
+    if ( !icon_atlas_init() )
     {
-        if ( !icon_atlas_init() )
-        {
-            font_shutdown();
-            return false;
-        }
-        icon_load_builtins();
+        font_shutdown();
+        return false;
     }
+    icon_load_builtins();
 
     return true;
 }
@@ -90,8 +83,7 @@ gui_draw_boot( bool icons )
 void
 gui_draw_shutdown( void )
 {
-    if ( s_draw_icons )
-        icon_atlas_shutdown();
+    icon_atlas_shutdown();
     font_shutdown();
 }
 

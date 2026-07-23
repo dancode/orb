@@ -67,15 +67,6 @@
 #include "runtime_service/gui/debug/gui_debug.h"
 
 /*==============================================================================================
-    Capability flags -- latched by gui_backend_init, read directly (same TU) by any file below
-    that owns an optional layer: gui_icon.c (icons), gui_build_cache.c (retained_cache,
-    stats_trace), gui_render.c (render_debug, stats_trace).  Declared before every include below
-    so all of them see it, same visibility model as s_render / s_draw / s_tess.
-==============================================================================================*/
-
-static gui_backend_caps_t s_caps;
-
-/*==============================================================================================
     Unity build
 ==============================================================================================*/
 
@@ -150,10 +141,8 @@ static gui_backend_caps_t s_caps;
 ==============================================================================================*/
 
 bool
-gui_backend_init( gui_backend_caps_t caps )
+gui_backend_init( void )
 {
-    s_caps = caps;
-
     if ( !gui_render_init() )   /* shared pipeline / sampler (gui_render.c) */
         return false;
 

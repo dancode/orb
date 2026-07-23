@@ -416,7 +416,6 @@ const gui_api_t g_gui_api_struct =
 
     /*===============================================  GUI_FRAME  ===============================================*/
 
-    .init_config_back                   = gui_init_config_back,
     .init                               = gui_init,
     .shutdown                           = gui_shutdown,
     .font_load                          = gui_font_load,

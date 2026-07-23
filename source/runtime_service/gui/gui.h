@@ -1443,32 +1443,6 @@ typedef enum
 } gui_builtin_font_t;
 
 /*==============================================================================================
-    GUI: Capability Flags
-==============================================================================================*/
-/* Backend capability flags -- latched via gui_init_config_back() before init().  The render
-   pipeline itself (fonts, EMIT draw list, tessellate, SUBMIT flush) is always on and has no flag;
-   everything here is complexity layered on top that a caller can independently switch off.  A
-   caller that never calls gui_init_config_back() gets GUI_CAPS_DEFAULT, which preserves the
-   pipeline's full behavior -- these flags exist to let a minimal/embedded use of gui shed layers
-   it doesn't need, not to change what a default caller sees. */
-
-typedef struct
-{
-    bool icons;             // Runtime icon atlas (icon_register/find, draw_push_icon) -- owns its own
-                            // 512x512 R8 texture + stb_rect_pack packer, stood up at init when on
-    bool retained_cache;    // BUILD-phase diff + geometry reuse; off always re-tessellates every
-                            // Window for every frame (also the backing for set_retained_skip)
-    bool render_debug;      // Wireframe/batch-tint debug render mode; off skips compiling the 
-                            // second (wireframe) pipeline at init
-    bool stats_trace;       // Per-frame printf lines for cache diff / geometry / retained / draw-calls
-
-} gui_backend_caps_t;
-
-#define GUI_CAPS_DEFAULT \
-    ( ( gui_backend_caps_t ){ .icons = true, .retained_cache = true, \
-                              .render_debug = true, .stats_trace = false } )
-
-/*==============================================================================================
     GUI: Boot descriptor
 
     One-call host setup (gui()->boot): gui owns the main OS window and its render context end to

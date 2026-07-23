@@ -22,29 +22,11 @@
     Init / Shutdown
 ==============================================================================================*/
 
-/* Backend capability flags latched by gui_init_config_back(), read by gui_init when it stands up
-   the backend.  Defaults to GUI_CAPS_DEFAULT (set below, GUI_CAPS_DEFAULT is a compound literal
-   and not a valid static initializer) so a caller that never calls gui_init_config_back() sees
-   the full-feature defaults unchanged. */
-
-static gui_backend_caps_t s_init_caps = { .icons = true, .retained_cache = true,
-                                           .render_debug = true, .stats_trace = false };
-
 /* Boot-path seams -- defined in gui_boot.c (same TU, included after this file): teardown of the
    boot-owned window/context from gui_shutdown, and the auto chrome-shell emit at the default
    context's ctx_begin.  Both no-op when the host did not boot(). */
 static void boot_shutdown( void );
 static void boot_shell_emit( void );
-
-/* OPTIONAL: override which backend capability layers this run compiles in.  Call before init();
-   a call after init() has no effect (the backend has already latched its own copy).  Skip this
-   entirely to accept GUI_CAPS_DEFAULT. */
-
-void
-gui_init_config_back( gui_backend_caps_t caps )
-{
-    s_init_caps = caps;
-}
 
 bool
 gui_init( gui_builtin_font_t font )
@@ -60,12 +42,12 @@ gui_init( gui_builtin_font_t font )
 
     /* init: shared pipeline / sampler / atlas + optional layers */
 
-    if ( !gui_backend_init( s_init_caps ) )
+    if ( !gui_backend_init() )
         return false;
 
-    /* The draw unit's resources (fonts + optional icons) register into the shared atlas the
+    /* The draw unit's resources (fonts + icons) register into the shared atlas the
        server just created -- the orchestrator boots them in dependency order. */
-    if ( !gui_draw_boot( s_init_caps.icons ) )
+    if ( !gui_draw_boot() )
     {
         gui_backend_exit();
         return false;

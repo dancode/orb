@@ -54,13 +54,11 @@ ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
 // clang-format off
 /*==============================================================================================
     Backend lifecycle (gui_render.c) -- the seam the UI unit calls to stand up / tear down the
-    whole render backend.  `caps` (gui_backend_caps_t, gui.h) latches which optional layers are
-    active for this run -- gui_init_config_back()'s value, or GUI_CAPS_DEFAULT if never called; see
-    s_caps at the top of gui_render.c for how the rest of the unit reads it.  Internally wraps
-    gui_render_init/shutdown (gui_render.c), which are not exposed past this header.
+    whole render backend.  Internally wraps gui_render_init/shutdown (gui_render.c), which are
+    not exposed past this header.
 ==============================================================================================*/
 
-bool gui_backend_init( gui_backend_caps_t caps );
+bool gui_backend_init( void );
 void gui_backend_exit( void );
 
 /*==============================================================================================

@@ -261,16 +261,12 @@ gui_render_init( void )
     };
     s_render.pipeline = rhi()->pipeline_create( &pdesc );
 
-    /* Wireframe pipeline is the render_debug layer's only extra GPU resource -- skip compiling it
-       when the caller has switched that layer off (gui_render_flush already falls back to the fill
-       pipeline whenever pipeline_wire is invalid, so an off s_caps.render_debug needs no other
-       change here). */
-    if ( s_caps.render_debug )
-    {
-        pdesc.polygon_mode = RHI_POLYGON_LINE;
-        pdesc.debug_name   = "gui_wire";
-        s_render.pipeline_wire = rhi()->pipeline_create( &pdesc );
-    }
+    /* Wireframe pipeline: the debug-view (normal / wireframe / batch-tint) toggle's only extra
+       GPU resource.  gui_render_flush falls back to the fill pipeline if this one ever fails to
+       create (see the fallback below). */
+    pdesc.polygon_mode = RHI_POLYGON_LINE;
+    pdesc.debug_name   = "gui_wire";
+    s_render.pipeline_wire = rhi()->pipeline_create( &pdesc );
 
     rhi()->shader_destroy( frag );
     rhi()->shader_destroy( vert );
@@ -348,10 +344,6 @@ void
 gui_render_set_mode( gui_render_mode_t mode )
 {
     if ( mode < 0 || mode >= GUI_RENDER_MODE_COUNT )
-        mode = GUI_RENDER_NORMAL;
-    /* WIREFRAME needs pipeline_wire, which only exists when s_caps.render_debug was on at init;
-       BATCH is a push-constant tint on the normal fill pipeline, so it needs no such guard. */
-    if ( mode == GUI_RENDER_WIREFRAME && !s_caps.render_debug )
         mode = GUI_RENDER_NORMAL;
     s_render.debug_mode = mode;
 }
@@ -593,13 +585,6 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        region, upload spans, bytes/writes, draws).  A no-op unless GUI_PIPELINE_DASHBOARD. */
     DASH_CAPTURE_FLUSH( vp_index, frame, vtx_lo, vtx_hi, idx_lo, idx_hi,
                         up_bytes, up_batches, draw_calls );
-
-    static u32 prev_draw_calls = ~0u;   // sentinel: forces a print on the first frame
-    if ( s_caps.stats_trace && draw_calls != prev_draw_calls )
-    {
-        printf( "[gui] draw calls this frame: %u (peak %u)\n", draw_calls, cache_draw_call_hwm() );
-        prev_draw_calls = draw_calls;
-    }
 }
 
 // clang-format on

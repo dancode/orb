@@ -1652,11 +1652,6 @@ typedef struct gui_api_s
     =============================================================================================================*/
 
     /* GPU resource lifecycle.
-        init_config_back()  -- OPTIONAL; call before init() to override which BACKEND (render unit,
-                       gui_render.c) capability layers (gui_backend_caps_t, gui.h) are compiled
-                       into the running instance -- icons, retained caching, debug render mode,
-                       stats-trace printfs.  Skip it entirely to accept GUI_CAPS_DEFAULT (every
-                       layer on except stats_trace).
         init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
                        `font` optionally loads one of the built-in presets (gui_builtin_font_t,
                        gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
@@ -1676,7 +1671,6 @@ typedef struct gui_api_s
                        resolved path into `out` (out_size bytes); for a caller that wants the
                        absolute path itself (e.g. a plain fopen) rather than a load_icon call. */
 
-    void                ( *init_config_back  )( gui_backend_caps_t caps );
     bool                ( *init      )( gui_builtin_font_t font );
     void                ( *shutdown  )( void );
     u32                 ( *font_load )( const char* path );
