@@ -24,21 +24,22 @@
     2. GPU tessellation cache (gui_build_cache.c): granular per window.  A per-window hash mismatch
        re-tessellates only that window's slot; sibling windows reuse their geometry in place.
 
-    Contents -- sections follow the source tree order (see gui.c's include list):
+    Contents -- types sit in DEPENDENCY order (a struct follows the enums it embeds), each
+    section banner tagged with its gui_api.h strata band.  Band -> sections:
 
-    core        -- ids, context config, geometry, style colors / config / themes / vars
-                   (the leaf geometry types + rect algebra live in gui_rect.h, included first)
-    compose     -- layout template / modes, pack, split, field
-    interact    -- item flags, drag and drop
-    present     -- angle algebra, color packing, stroking, draw vertex, volatile cb,
-                   semantic draw commands
-    widgets     -- direction, color edit flags
-    window      -- drag mode, apply condition, window flags
-    dock        -- dockspace flags
-    popup       -- combo flags
-    table       -- table support
-    frame       -- font config, capability flags, boot descriptor, limits, memory + render stats
-    debug       -- overlay layers, render mode
+    GUI_FRAME    -- context config, font config, boot descriptor, limits, mem + render stats
+    GUI_DRAW     -- angle algebra, color packing, stroking, draw vertex, volatile cb,
+                    semantic draw commands, direction
+    GUI_CORE     -- ids, item state, item flags, drag and drop, easing
+    GUI_SURFACE  -- pane, region z tier (win flags shared from GUI_CHROME)
+    GUI_RECT     -- anchor frame, split axis
+                    (the leaf geometry types + rect algebra live in gui_rect.h, included first)
+    GUI_FLOW     -- layout template / modes, pack, field label side
+    GUI_STYLE    -- style colors, global style config, style vars
+    GUI_ELEMENT  -- the slim el style (gui_element.h, included first)
+    GUI_CHROME   -- themes, window drag / cond / flags, dockspace, combo, tab bar, tables,
+                    color edit flags
+    GUI_DEBUG    -- overlay layers, render mode
 
 ==============================================================================================*/
 
@@ -48,7 +49,7 @@
 
 // clang-format off
 /*==============================================================================================
-    GUI: ID
+    GUI_CORE -- ids
 ==============================================================================================*/
 
 /* Widget id -- a hashed value creates a unique value to identify a widget */
@@ -87,7 +88,7 @@ typedef i32 gui_ctx_id_t;
 #define GUI_CTX_INVALID  (-1)
 
 /*==============================================================================================
-    GUI: Context Configuration
+    GUI_FRAME -- context configuration
 
     Context configuration -- sizes the per-context resource pools at creation time.
     Pass to ctx_create(); zero fields (and a NULL cfg) mean "the internal maximum" -- the
@@ -115,7 +116,7 @@ typedef struct
     ( ( gui_ctx_config_t ){ 8, 64, 4, 0 } )
 
 /*==============================================================================================
-    GUI: Geometry
+    Shared leaf types -- spans, easing, callback typedefs
 ==============================================================================================*/
 
 /* gui_vec2_t / gui_rect_t / gui_pad_t / gui_align_t live in gui_rect.h (the leaf rect kit) */
@@ -178,7 +179,7 @@ typedef void ( *gui_sleep_fn )( i32 milliseconds );
 typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 
 /*==============================================================================================
-    Style colors
+    GUI_STYLE -- style colors
 
     The themeable color slots, the ImGuiCol_ analogue.  Each names one entry of the shared palette
     the widgets draw from; push_style_color( slot, abgr ) overrides it for every widget until the
@@ -234,7 +235,7 @@ typedef enum
 } gui_col_t;
 
 /*==============================================================================================
-    Global Style Configuration
+    GUI_STYLE -- global style configuration
 ==============================================================================================*/
 
 /* The scale ramp -- the named density steps the UI is authored in, instead of raw pixel sizes.
@@ -350,7 +351,7 @@ const gui_style_t* gui_style_peek( void );
 void         gui_style_apply( void );
 
 /*==============================================================================================
-    Themes
+    GUI_CHROME -- themes (chrome's named style presets)
 
     A theme is a named gui_style_t snapshot: a human-readable name paired with a complete set
     of colors and layout metrics.  The active theme is the root layer every push_style_color /
@@ -378,7 +379,7 @@ const char*        gui_theme_get  ( void );              /* active theme name, N
 void               gui_theme_reset( void );              /* restore base + clear push stacks     */
 
 /*==============================================================================================
-    Style vars
+    GUI_STYLE -- style vars
 
     The tunable scalar metrics, the ImGuiStyleVar_ analogue.  Each names one scalar the layout
     or widgets read; push_style_var( var, value ) overrides it until the matching pop_style_var,
@@ -491,7 +492,7 @@ typedef enum
 } gui_menu_check_t;
 
 /*==============================================================================================
-    GUI: Layout Template
+    GUI_FLOW -- layout template
 
     A region (a window body or a child_begin box) lays widgets out by carving its content area
     into cells.  A layout header installs a template that *persists and repeats*: every widget
@@ -544,7 +545,7 @@ typedef enum
 #define GUI_CUT_Y (-3.0f)                     // open a nested row split (panels stacked)
 
 /*==============================================================================================
-    Item interaction state
+    GUI_CORE -- item interaction state
 
     One frame of interaction for one item -- the result of the shared widget interaction state
     machine, whether run internally for a stock widget or over a caller rect via gui()->item().
@@ -566,7 +567,7 @@ typedef struct gui_item_state_t
 } gui_item_state_t;
 
 /*==============================================================================================
-    Anchor frame -- the general placement (UE4 Slate model): a normalized sub-rect of the parent
+    GUI_RECT -- anchor frame: the general placement (UE4 Slate model): a normalized sub-rect of the parent
     (0..1 per axis) plus pixel offsets, resolved per axis by gui()->anchor.  On an axis where
     min == max the child is point-anchored: the anchor is a single line at that fraction, the child
     takes `size` and is hung off it by `pivot` (0 = near edge sits on the line, 0.5 = centered, 1 =
@@ -596,7 +597,7 @@ typedef struct
 } gui_layout_t;
 
 /*==============================================================================================
-    Layout mode -- the next-item methodology a region is laying out under.
+    GUI_FLOW -- layout mode: the next-item methodology a region is laying out under.
 
     A region opens UNDECLARED (NONE): the first layout header names the mode (stack / columns /
     grid / ...), and a widget emitted before any header is a usage error (debug assert; a release
@@ -616,7 +617,7 @@ typedef enum
 } gui_layout_mode_t;
 
 /*==============================================================================================
-    Pack direction -- the axis a pack() run places items along, item-by-item at natural size.
+    GUI_FLOW -- pack direction: the axis a pack() run places items along, item-by-item at natural size.
     bar() is the horizontal pack (a toolbar); strip() is the vertical pack.
 ==============================================================================================*/
 
@@ -628,7 +629,7 @@ typedef enum
 } gui_pack_dir_t;
 
 /*==============================================================================================
-    Split axis -- the axis gui()->split carves a rect along.  X lays the panels left-to-right
+    GUI_RECT -- split axis: the axis gui()->split carves a rect along.  X lays the panels left-to-right
     (a column split: a sidebar + content); Y lays them top-to-bottom (a row split: header /
     body / footer).  The panel sizes use the same overloaded unit as the column tracks.
 ==============================================================================================*/
@@ -641,7 +642,7 @@ typedef enum
 } gui_axis_t;
 
 /*==============================================================================================
-    Field label side -- where a labeled value widget (input_text / slider_float / checkbox) puts
+    GUI_FLOW -- field label side: where a labeled value widget (input_text / slider_float / checkbox) puts
     its label when a field split is active (gui()->field_split / field_label_left).  The label and
     control are two tracks resolved across the widget's cell with the same overloaded unit as
     columns; `side` only decides which track sits on which edge.  NONE is the per-region default
@@ -659,7 +660,7 @@ typedef enum
 } gui_label_side_t;
 
 /*==============================================================================================
-    Item flags
+    GUI_CORE -- item flags
 
     A push-model of per-item behavior tweaks, the ImGui ItemFlags analogue.  Instead of widening
     every widget signature with a new parameter, behavior is tuned through a flag set the widget
@@ -717,7 +718,7 @@ typedef enum
 } gui_item_flags_t;
 
 /*==============================================================================================
-    Drag and drop
+    GUI_CORE -- drag and drop
 
     Item-to-item payload transfer (the ImGui BeginDragDropSource/Target analogue).  A widget
     becomes a drag SOURCE by calling drag_source_begin right after it emits; while the user
@@ -758,7 +759,7 @@ typedef struct
 } gui_drag_payload_t;
 
 /*==============================================================================================
-    GUI: Angle Algebra
+    GUI_DRAW -- angle algebra
 
     Angles -- the arc / pie / spinner / progress sweep parameters (draw_arc, draw_pie, ...) are
     radians in screen space (y down, so a positive angle turns clockwise; 0 points right / +x).
@@ -779,7 +780,7 @@ static inline f32 gui_radians( f32 degrees ) { return degrees * ( GUI_PI / 180.0
 static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_PI ); }
 
 /*==============================================================================================
-    Color packing
+    GUI_DRAW -- color packing
 
     GUI_COLOR(r,g,b,a) packs 0-255 byte values into a u32 such that memory byte order
     is [R, G, B, A], matching VK_FORMAT_R8G8B8A8_UNORM vertex attribute layout.
@@ -789,7 +790,7 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
     ( ( ( u32 )( a ) << 24 ) | ( ( u32 )( b ) << 16 ) | ( ( u32 )( g ) << 8 ) | ( u32 )( r ) )
 
 /*==============================================================================================
-    Line / path stroking
+    GUI_DRAW -- line / path stroking
 
     Thickness, pixel-snapping, and where a stroke sits relative to the ideal path it is drawn from.
     Implementation in gui_emit_path.c.
@@ -820,7 +821,7 @@ typedef enum
 #define GUI_PATH_MAX 256            /* max points path_line_to accumulates before a stroke */
 
 /*==============================================================================================
-    Draw vertex  (20 bytes, single interleaved binding)
+    GUI_DRAW -- draw vertex (20 bytes, single interleaved binding)
 
     Vertex attribute layout (matches the gui pipeline):
         location 0 : float2  (x, y)       offset  0   -- pixel-space position
@@ -837,7 +838,7 @@ typedef struct
 } gui_draw_vert_t;
 
 /*==============================================================================================
-    Volatile widget callback
+    GUI_DRAW -- volatile widget callback
 
     A "volatile" callback contains ordinary UI emit calls (text, colored rects, etc).  It runs
     inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
@@ -881,7 +882,7 @@ typedef struct
 typedef void ( *gui_volatile_fn )( gui_id_t id, bool is_replay );
 
 /*==============================================================================================
-    Semantic draw commands
+    GUI_DRAW -- semantic draw commands
 
     The UI build pass emits one gui_cmd_t per visible shape into a list.  The render backend
     (gui_render.c) tessellates each command into vertices and indices at flush time.  This
@@ -961,7 +962,7 @@ typedef struct
 } gui_cmd_t;
 
 /*==============================================================================================
-    Direction -- a cardinal direction, the ImGuiDir analogue.  Passed to arrow_button (and any
+    GUI_DRAW -- direction: a cardinal direction, the ImGuiDir analogue.  Passed to arrow_button (and any
     future directional widget) to pick which way the glyph points.
 ==============================================================================================*/
 
@@ -975,7 +976,7 @@ typedef enum
 } gui_dir_t;
 
 /*==============================================================================================
-    Color edit flags
+    GUI_CHROME -- color edit flags
 ==============================================================================================*/
 
 typedef enum
@@ -988,7 +989,7 @@ typedef enum
 } gui_color_edit_flags_t;
 
 /*==============================================================================================
-    Window drag mode -- how a window may be repositioned by the mouse.
+    GUI_CHROME -- window drag mode: how a window may be repositioned by the mouse.
     Selected globally via gui()->window_set_drag(); default is TITLEBAR.
 ==============================================================================================*/
 
@@ -1001,7 +1002,7 @@ typedef enum
 } gui_win_drag_t;
 
 /*==============================================================================================
-    Apply condition -- when a queued window_set_next_* value takes effect on its target window.
+    GUI_CHROME -- apply condition: when a queued window_set_next_* value takes effect on its target window.
 
     Passed to window_set_next_pos / window_set_next_size.  The value and the condition are two
     separate axes: the same window can be seeded once, forced every frame, or re-applied whenever
@@ -1026,7 +1027,7 @@ typedef enum
 } gui_cond_t;
 
 /*==============================================================================================
-    Window flags
+    GUI_CHROME -- window flags (policy bits shared down to GUI_SURFACE panes / regions / children)
 
     Passed as the final argument to window_begin to customize a single window's behavior.
     They mostly switch off default behavior; pass 0 (GUI_WIN_NONE) for the defaults.
@@ -1223,7 +1224,7 @@ typedef enum
 } gui_win_flags_t;
 
 /*==============================================================================================
-    Region z tier (region_begin) -- where a root region sits in the one z contest windows and
+    GUI_SURFACE -- region z tier: where a root region sits in the one z contest windows and
     popups compete in (whichever z wins, wins draw order and hover that frame).  A three-way
     choice, so it is a parameter rather than flag bits.
 
@@ -1246,7 +1247,7 @@ typedef enum
 } gui_region_tier_t;
 
 /*==============================================================================================
-    Pane -- the MINIMAL top-level surface occupant: the block every "window" is built from.
+    GUI_SURFACE -- pane: the MINIMAL top-level surface occupant: the block every "window" is built from.
 
     Both servers already run on this cross-section: the interaction server's occlusion contest
     keys on (id, rect, z, viewport), and the render backend's per-window unit is a command
@@ -1279,7 +1280,7 @@ typedef struct gui_pane_s
 } gui_pane_t;
 
 /*==============================================================================================
-    Dockspace flags
+    GUI_CHROME -- dockspace flags
 
     Passed to dockspace_over_viewport.  0 (GUI_DOCKSPACE_NONE) is the default dockspace that fills
     the viewport behind the free-floating windows.  Bit values so future policy bits (e.g. hide the
@@ -1299,7 +1300,7 @@ typedef enum
 } gui_dockspace_flags_t;
 
 /*==============================================================================================
-    Combo flags
+    GUI_CHROME -- combo flags
 
     Passed to combo_begin to tune the dropdown.  The HEIGHT_* group caps the dropdown to a fixed
     number of visible rows (then it scrolls) -- the ImGuiComboFlags_Height* analogue; they are
@@ -1323,7 +1324,7 @@ typedef enum
 } gui_combo_flags_t;
 
 /*==============================================================================================
-    Tab bar
+    GUI_CHROME -- tab bar
 
     tab_bar_begin / tab_item_begin open an in-window tabbed content switcher (the ImGuiTabBar
     analogue): a strip of clickable chips above the body, with only the selected tab's widgets
@@ -1352,7 +1353,7 @@ typedef enum
 } gui_tab_item_flags_t;
 
 /*==============================================================================================
-    Table support
+    GUI_CHROME -- table support
 
     begin_table / end_table open a multi-column layout with independent cell clipping.
     Use table_setup_column before any row to name and size columns, then iterate with
@@ -1432,7 +1433,7 @@ typedef i32 ( *gui_table_sort_cmp_fn )( i32 a, i32 b, i32 col, bool descending, 
 
 // clang-format on
 /*==============================================================================================
-    GUI: Font Configuration
+    GUI_FRAME -- font configuration
 ==============================================================================================*/
 /* Built-in font presets for init() -- pre-baked .orb_font assets (FreeType-rasterized offline by
    font_tool, not an stb runtime bake) shipped under assets/font/.  GUI_FONT_NONE loads nothing;
@@ -1451,7 +1452,7 @@ typedef enum
 } gui_builtin_font_t;
 
 /*==============================================================================================
-    GUI: Boot descriptor
+    GUI_FRAME -- boot descriptor
 
     One-call host setup (gui()->boot): gui owns the main OS window and its render context end to
     end -- the same lifecycle its tear-off floaters already use -- instead of the host assembling
@@ -1477,7 +1478,7 @@ typedef struct
 } gui_boot_desc_t;
 
 /*==============================================================================================
-    Limits
+    GUI_FRAME -- limits
 ==============================================================================================*/
 
 /* 16K verts covers the busiest measured frame (all sb_gui demo windows + the pipeline
@@ -1525,7 +1526,7 @@ typedef struct
 #define GUI_MAX_SEGS       ( GUI_MAX_CMDS + 1 )
 
 /*==============================================================================================
-    Memory usage breakdown (bytes), reported by gui()->mem_stats().
+    GUI_FRAME -- memory usage breakdown (bytes), reported by gui()->mem_stats().
 
     A full accounting of what the gui system holds, split by WHERE it lives:
 
@@ -1583,7 +1584,7 @@ typedef struct
 } gui_mem_stats_t;
 
 /*==============================================================================================
-    Per-frame render statistics, reported by gui()->render_stats().
+    GUI_FRAME -- per-frame render statistics, reported by gui()->render_stats().
 
     A direct read on render density: the geometry the last completed frame tessellated and how
     many GPU indexed draw calls (batches) it cost to paint it across every surface.  Published at
@@ -1616,7 +1617,7 @@ typedef struct
 } gui_render_stats_t;
 
 /*==============================================================================================
-    Debug overlay layers
+    GUI_DEBUG -- overlay layers
 
     Bitmask passed to gui()->debug_set_layers().  Each bit enables one bolt-on debug
     visualization, emitted into a separate draw list and painted last, on top of the UI.
@@ -1644,7 +1645,7 @@ typedef enum
 } gui_dbg_layer_t;
 
 /*==============================================================================================
-    Debug render mode
+    GUI_DEBUG -- render mode
 
     How the main UI draw list is rasterized, selected via gui()->debug_set_render_mode().  Unlike
     the debug overlay layers (a separate draw list painted on top), this changes the rasterization

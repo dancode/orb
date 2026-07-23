@@ -46,6 +46,15 @@ The two servers NEVER see each other. Everything else is a LIBRARY over them:
     gui_frame.c      frame/      (public headers)                FRAME ORCHESTRATOR
     gui.c            (root)      (public headers)                MODULE FACE (vtable + mod_desc)
 
+The public face (gui.h / gui_api.h / gui_host.h) reads in strata BANDS, one per section
+banner; band -> implementing unit:
+
+    GUI_FRAME   -> frame/          GUI_FLOW    -> flow/
+    GUI_DRAW    -> render/ + draw/  GUI_STYLE   -> style/
+    GUI_CORE    -> core/ + interact/ GUI_ELEMENT -> element/
+    GUI_SURFACE -> core/gui_surface.c + flow/gui_region.c + interact/gui_feature.c
+    GUI_RECT    -> rect/            GUI_CHROME  -> chrome/     GUI_DEBUG -> debug/
+
 Dependency graph (lowest to highest) -- each unit root .c includes EXACTLY the unit
 headers at or below its layer, so the include list at the top of each unit IS the graph and
 the compiler enforces it per unit:

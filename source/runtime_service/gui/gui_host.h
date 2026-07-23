@@ -10,6 +10,9 @@
     or via the build-mode-transparent macro:
         mod_load( gui );
 
+    Sections follow the gui_api.h strata order:
+    FRAME / DRAW / CORE / SURFACE / RECT / FLOW / STYLE / ELEMENT / CHROME / DEBUG.
+
 ==============================================================================================*/
 
 #include "runtime_service/gui/gui_api.h"
@@ -25,6 +28,8 @@ mod_desc_t* gui_get_mod_desc( void );
     Direct-call functions (host and sandbox use only)
 ==============================================================================================*/
 
+/*===============================================  GUI_FRAME  ===============================================*/
+
 bool gui_init( gui_builtin_font_t font );
 void gui_shutdown( void );
 
@@ -34,7 +39,7 @@ void gui_print_mem_stats( void );
 /* NOTE: the built-in perf/state overlays and the pipeline dashboard are internal now -- armed by
    gui_debug_enable( true ) and emitted behind hotkeys (P / O / F10); hosts no longer call them. */
 
-/* font */
+/* font lifecycle (load-into-registry half lives with GUI_DRAW below) */
 u32  gui_font_load( const char* path );
 u32  gui_font_load_builtin( gui_builtin_font_t font );
 
@@ -51,11 +56,6 @@ void gui_frame_end( void );
 void gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms );   /* 0 opts that sleep out */
 void gui_set_idle_skip( bool on );
 bool gui_idle_skip( void );
-
-void gui_window_anim_enable( bool on );
-bool gui_window_anim_is_enabled( void );
-void gui_ctx_begin( gui_ctx_id_t ctx );
-void gui_ctx_end( void );
 void gui_render( gui_vp_t vp, rhi_cmd_t cmd );
 
 /* multi-context */
@@ -63,6 +63,8 @@ gui_ctx_id_t gui_ctx_create       ( const gui_ctx_config_t* cfg );
 void         gui_ctx_destroy      ( gui_ctx_id_t ctx );
 void         gui_ctx_bind         ( gui_ctx_id_t ctx );
 void         gui_ctx_set_listening( gui_ctx_id_t ctx, bool listen );
+void         gui_ctx_begin        ( gui_ctx_id_t ctx );
+void         gui_ctx_end          ( void );
 
 /* viewport management */
 gui_vp_t    gui_viewport_open       ( i32 win_id );
@@ -84,46 +86,106 @@ gui_vp_t    gui_viewport_spawn          ( const char* title, i32 x, i32 y, i32 w
 void        gui_viewport_update         ( void );
 void        gui_viewport_render_floaters( void );
 
-/* io */
+/* event routing -- the host drains the app event ring and forwards each event */
 bool gui_event( const app_event_t* ev );
 
-/* window */
-void gui_window_set_next_pos ( f32 x, f32 y, gui_cond_t cond );
-void gui_window_set_next_size( f32 w, f32 h, gui_cond_t cond );
-void gui_window_set_next_viewport( gui_vp_t vp );
-void gui_window_set_next_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
-bool gui_window_begin( const char* title, gui_win_flags_t flags );
-void gui_window_end( void );
-void gui_window_set_open( const char* title, bool open );
-bool gui_window_is_open( const char* title );
+/*===============================================  GUI_DRAW  ================================================*/
 
-/* docking */
-void gui_dockspace_inset( gui_vp_t vp, f32 top );
-gui_dock_id_t gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags );
-gui_dock_id_t gui_dock_split( gui_dock_id_t node, gui_dir_t dir, f32 ratio, gui_dock_id_t* out_remain );
-gui_dock_id_t gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio );
-void gui_dock_window( const char* title, gui_dock_id_t node );
-void gui_dock_undock( const char* title );
-bool gui_window_is_docked( const char* title );
-void gui_dock_window_maximize( const char* title, bool on );
-bool gui_window_is_dock_maximized( const char* title );
-void gui_window_tab( const char* title, const char* onto_title );
-u32  gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz );
-bool gui_dock_load( gui_vp_t vp, const char* text );
-void gui_dock_clear( gui_vp_t vp );
+/* font registry */
+bool gui_font_load_into     ( u32 id, const char* path );
+void gui_font_use           ( u32 id );
+void gui_push_font          ( u32 id );
+void gui_pop_font           ( void );
+u32  gui_font_active_id     ( void );
 
-/* popup */
-void gui_popup_open( const char* id );
-bool gui_popup_begin( const char* id, gui_win_flags_t flags );
-bool gui_popup_modal_begin( const char* id, const char* title, gui_win_flags_t flags );
-void gui_popup_end( void );
-void gui_popup_close_current( void );
-bool gui_popup_is_open( const char* id );
-bool gui_popup_context_item_begin( const char* id );
-bool gui_popup_context_window_begin( const char* id );
-void gui_set_item_tooltip( const char* text );
-bool gui_tooltip_begin( void );
-void gui_tooltip_end( void );
+/* drawing */
+void gui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr );
+void gui_draw_rects( const gui_rect_col_t* rects, u32 count );
+void gui_draw_text( f32 x, f32 y, u32 abgr, const char* str );
+gui_vec2_t gui_text_size( const char* s );
+void gui_draw_text_in( gui_rect_t r, gui_align_t align, u32 col, const char* s );
+void gui_draw_text_clipped( gui_rect_t r, gui_align_t align, u32 col, const char* s );
+
+/* volatile blocks (per-frame retessellated custom draws) */
+void gui_volatile_begin( void );
+void gui_volatile_cb( const char* label, gui_volatile_fn fn );
+void gui_volatile_end( void );
+
+/* icons -- runtime icon atlas */
+gui_icon_id_t gui_register_icon( const char* name, u32 w, u32 h, const u8* coverage );
+gui_icon_id_t gui_load_icon( const char* name, const char* path );
+gui_icon_id_t gui_find_icon( const char* name );
+gui_vec2_t gui_icon_size( gui_icon_id_t id );
+void gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col );
+void gui_draw_icon_in( gui_rect_t r, gui_icon_id_t id, u32 col );
+
+/* RGBA textures -- arbitrary bindless texture as a full-color quad (scene viewport) */
+void gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
+void gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
+
+/* font atlas access -- bindless index + pixel size for previewing a font's live GPU atlas */
+u32 gui_font_atlas_idx( u32 font_id );
+gui_vec2_t gui_font_atlas_size( u32 font_id );
+
+/* symbol + shape render primitives -- Dear ImGui Render* / AddXxx family (normal pipeline, not the
+   icon atlas).  Implemented in gui_symbol.c. */
+void gui_draw_check_mark( gui_rect_t box, u32 col );
+void gui_draw_arrow( gui_rect_t box, gui_dir_t dir, u32 col );
+void gui_draw_bullet( f32 cx, f32 cy, f32 r, u32 col );
+void gui_draw_close( gui_rect_t box, u32 col );
+void gui_draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 col );
+void gui_draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 col );
+void gui_draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 col );
+void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
+void gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, bool filled, f32 thickness, u32 col );
+void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
+void gui_draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
+void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
+void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
+void gui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
+void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
+void gui_draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
+void gui_draw_hatch( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
+void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
+void gui_draw_shadow( gui_rect_t box, f32 spread, u32 col );
+void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
+void gui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
+void gui_draw_grip( gui_rect_t box, u32 col );
+void gui_draw_spinner( gui_rect_t box, f32 t, f32 thickness, u32 col );
+void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
+
+/* lines + paths */
+void gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+void gui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 abgr );
+void gui_draw_polyline( const gui_vec2_t* pts, u32 count, f32 thickness, gui_stroke_align_t align, bool closed, u32 abgr );
+void gui_path_clear( void );
+void gui_path_line_to( f32 x, f32 y );
+void gui_path_stroke( f32 thickness, gui_stroke_align_t align, bool closed, u32 abgr );
+
+/* clipping */
+void gui_push_clip( f32 x, f32 y, f32 w, f32 h );
+void gui_pop_clip( void );
+
+/*===============================================  GUI_CORE  ================================================*/
+
+/* behavior on caller rects (interact/gui_behavior.c): the shared interaction
+   state machine run over a rect YOU derived.  item() reports the full state; invisible_button
+   is its click bit.  A custom widget = rect (canvas/split/carve) + item() + draw_*. */
+gui_item_state_t gui_item( const char* id_str, gui_rect_t r );
+bool gui_invisible_button( const char* id_str, gui_rect_t r );
+bool gui_is_mouse_hovering_rect( gui_rect_t r );
+
+/* id stack */
+void gui_push_id( const char* str );
+void gui_push_id_int( i32 i );
+void gui_pop_id( void );
+
+/* item flags */
+void gui_push_item_flag( gui_item_flags_t flag, bool enable );
+void gui_pop_item_flag( void );
+void gui_next_item_flag( gui_item_flags_t flag, bool enable );
+void gui_disabled_begin( bool disabled );
+void gui_disabled_end( void );
 
 /* drag and drop */
 bool gui_drag_source_begin( gui_drag_flags_t flags );
@@ -135,36 +197,45 @@ void gui_drag_target_end( void );
 bool gui_drag_active( void );
 const gui_drag_payload_t* gui_drag_payload_peek( void );
 
-/* menu */
-bool gui_main_menu_bar_begin( void );
-void gui_main_menu_bar_end( void );
-f32  gui_main_menu_bar_h( void );
-bool gui_menu_bar_begin( void );
-void gui_menu_bar_end( void );
-bool gui_menu_begin( const char* label );
-void gui_menu_end( void );
-bool gui_menu_item( const char* label, const char* shortcut, bool* selected );
+/* input capture fences */
+bool gui_want_capture_mouse( void );
+bool gui_want_capture_keyboard( void );
 
-/* toolbar */
-bool gui_toolbar_begin( const char* str_id );
-void gui_toolbar_end( void );
-bool gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip );
-bool gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip );
-bool gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* tooltip );
-void gui_toolbar_dropdown_end( void );
-void gui_toolbar_separator( void );
+/* last-item introspection */
+bool        gui_is_item_hovered( void );
+bool        gui_is_item_active( void );
+bool        gui_is_item_clicked( void );
+bool        gui_is_item_focused( void );
+bool        gui_is_item_activated( void );
+bool        gui_is_item_deactivated( void );
+bool        gui_is_item_deactivated_after_edit( void );
+bool        gui_is_item_visible( void );
+gui_rect_t  gui_get_item_rect( void );
 
-/* child layout */
-bool gui_child_begin( const char* id, f32 w, f32 h, gui_win_flags_t flags );
-void gui_child_end( void );
-void gui_push_layout( void );
-void gui_push_layout_overlay( gui_rect_t rect );
-void gui_pop_layout( void );
+/* io snapshot */
+bool gui_is_key_down( app_key_t key );
+bool gui_is_key_pressed( app_key_t key );
+bool gui_is_key_pressed_repeat( app_key_t key );
+bool gui_is_key_released( app_key_t key );
+bool gui_is_mouse_down( app_mouse_button_t b );
+bool gui_is_mouse_clicked( app_mouse_button_t b );
+bool gui_is_mouse_released( app_mouse_button_t b );
+bool gui_is_mouse_double_clicked( app_mouse_button_t b );
+void gui_get_mouse_pos( f32* x, f32* y );
+f32  gui_get_mouse_wheel( void );
 
-/* rect <-> flow seam pair (see gui_api.h GUI_FLOW section) */
-void       gui_flow_begin( gui_rect_t rect );
-gui_rect_t gui_flow_cell( f32 w, f32 h );
-void       gui_flow_end( void );
+/* cursor */
+void         gui_cursor_set( app_cursor_t c );
+app_cursor_t gui_get_mouse_cursor( void );
+
+/* focus */
+void gui_set_keyboard_focus( void );
+void gui_set_edit_cursor_end( void );
+void gui_set_edit_key_hook( gui_edit_key_fn fn, void* user );
+
+/* time */
+f32  gui_get_delta_time( void );
+f64  gui_get_time( void );
 
 void gui_request_redraw( void );   /* one-shot next-frame dirty (see gui_api.h GUI_CORE queries) */
 
@@ -175,21 +246,18 @@ bool gui_frame_dirty( void );
 void gui_set_force_redraw( bool on );
 bool gui_force_redraw( void );
 
-/* element cores -- rect-consuming building blocks (see gui_api.h GUI_ELEMENT section) */
-gui_el_style_t* gui_el_style( void );
-void gui_el_panel ( gui_rect_t r );
-void gui_el_label ( gui_rect_t r, gui_align_t align, const char* text );
-bool gui_el_button( gui_rect_t r, const char* label );
-bool gui_el_check ( gui_rect_t r, const char* id_str, bool* v );
-bool gui_el_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
-void gui_el_meter ( gui_rect_t r, f32 frac, u32 fill_abgr );
-bool gui_el_cycle ( gui_rect_t r, const char* id_str, i32* idx,
-                    const char* const* items, i32 count );
+/*==============================================  GUI_SURFACE  ==============================================*/
 
 /* pane -- the minimal top-level surface occupant: identity + hover/z contest + base clip */
 gui_pane_t gui_pane_begin( const char* id, gui_rect_t r, gui_region_tier_t tier,
                            gui_vp_t vp, gui_win_flags_t flags );
 void       gui_pane_end( void );
+
+/* root region -- a fixed-rect layout primitive with no window chrome */
+bool gui_region_begin( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
+                       gui_win_flags_t flags );
+void gui_region_end( void );
+void gui_scroll_by( f32 dx, f32 dy );
 
 /* feat_* kit -- window features as freestanding id-keyed mechanisms */
 bool gui_feat_move( gui_id_t id, gui_rect_t handle, f32* x, f32* y );
@@ -199,10 +267,26 @@ void gui_feat_maximize( gui_id_t id, bool maximized, gui_rect_t* r, gui_rect_t* 
                         gui_rect_t work );
 void gui_feat_clamp( gui_rect_t* r, gui_rect_t work, f32 margin );
 
-/* root region -- a fixed-rect layout primitive with no window chrome */
-bool gui_region_begin( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
-                       gui_win_flags_t flags );
-void gui_region_end( void );
+/*===============================================  GUI_RECT  ================================================*/
+
+gui_rect_t gui_content_rect( void );
+u32        gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
+u32        gui_carve( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out, u32 max );
+gui_rect_t gui_anchor( gui_rect_t parent, gui_anchor_t a );
+
+/*===============================================  GUI_FLOW  ================================================*/
+
+/* child regions + sub-layouts */
+bool gui_child_begin( const char* id, f32 w, f32 h, gui_win_flags_t flags );
+void gui_child_end( void );
+void gui_push_layout( void );
+void gui_push_layout_overlay( gui_rect_t rect );
+void gui_pop_layout( void );
+
+/* rect <-> flow seam pair (see gui_api.h GUI_FLOW section) */
+void       gui_flow_begin( gui_rect_t rect );
+gui_rect_t gui_flow_cell( f32 w, f32 h );
+void       gui_flow_end( void );
 
 /* layout */
 void gui_layout_default( void );
@@ -230,18 +314,17 @@ void gui_field_label_right( f32 width );
 void gui_grid( gui_layout_t desc );
 void gui_grid_cells( u32 ncols, u32 nrows );
 
-/* layout bar + strip */
+/* layout - bar + strip pack runs */
 void gui_bar( void );
 void gui_strip( void );
+void gui_pack_size( f32 unit );
+void gui_pack_nextline( void );
+void gui_pack_wrap( void );
 
 /* layout - side-by-side split panels (flow/gui_split.c) */
 void gui_split_begin( const char* id_str, f32 right_w );
 void gui_split_next( void );
 void gui_split_end( void );
-
-void gui_pack_size( f32 unit );
-void gui_pack_nextline( void );
-void gui_pack_wrap( void );
 
 /* layout - save/restore the declared shape around a scoped header change */
 void gui_push_layout_state( void );
@@ -256,7 +339,7 @@ void gui_stack_same_line( f32 spacing );
 void gui_skip( void );
 void gui_separator( void );
 
-/* user substrate - blank space canvas (draw/gui_canvas.c): reserve a rect to draw into */
+/* canvas -- reserve a full-width drawing area in the layout (draw/gui_canvas.c) */
 gui_rect_t gui_canvas( f32 height );
 
 /* sizing (sz_) - intent to px; grid-first first, content-fit escape hatches last */
@@ -269,40 +352,17 @@ f32 gui_sz_line_h( void );
 f32 gui_sz_chars( f32 n );
 f32 gui_sz_fit_row( f32 content_h );
 f32 gui_sz_fit_col( f32 content_w );
+
+/* placement queries + reservation */
 gui_vec2_t gui_content_avail( void );
 gui_vec2_t gui_view_avail( void );
 gui_span_t gui_rows_clip( i32 count, f32 row_h );
 void       gui_rows_clip_end( void );
-void       gui_scroll_by( f32 dx, f32 dy );
 gui_vec2_t gui_cursor_screen_pos( void );
-gui_rect_t gui_content_rect( void );
-u32        gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
-u32        gui_carve( const f32* form, gui_rect_t area, f32 gap, gui_rect_t* out, u32 max );
-gui_rect_t gui_anchor( gui_rect_t parent, gui_anchor_t a );
 gui_rect_t gui_empty( f32 w, f32 h );
 
-/* user substrate - behavior on caller rects (interact/gui_behavior.c): the shared interaction
-   state machine run over a rect YOU derived.  item() reports the full state; invisible_button
-   is its click bit.  A custom widget = rect (canvas/split/carve) + item() + draw_*. */
-gui_item_state_t gui_item( const char* id_str, gui_rect_t r );
-bool gui_invisible_button( const char* id_str, gui_rect_t r );
-bool gui_is_mouse_hovering_rect( gui_rect_t r );
-void gui_window_set_drag( gui_win_drag_t mode );
-void gui_window_set_nav( const char* title );
+/*===============================================  GUI_STYLE  ===============================================*/
 
-/* id stack and item flags */
-void gui_push_id( const char* str );
-void gui_push_id_int( i32 i );
-void gui_pop_id( void );
-
-/* item flags */
-void gui_push_item_flag( gui_item_flags_t flag, bool enable );
-void gui_pop_item_flag( void );
-void gui_next_item_flag( gui_item_flags_t flag, bool enable );
-void gui_disabled_begin( bool disabled );
-void gui_disabled_end( void );
-
-/* style modifiers */
 void gui_style_source_set( gui_style_source_fn fn, void* user );
 void gui_push_style_color( gui_col_t slot, u32 abgr );
 void gui_pop_style_color( u32 count );
@@ -317,13 +377,82 @@ void gui_set_check_style( u8 style );
 void gui_set_bullet_style( u8 style );
 void gui_set_arrow_style( u8 style );
 
-/* themes */
-const gui_theme_t* gui_theme_list ( u32* count_out );
-bool               gui_theme_set  ( const char* name );
-const char*        gui_theme_get  ( void );
-void               gui_theme_reset( void );
+/*==============================================  GUI_ELEMENT  ==============================================*/
 
-/* widgets */
+gui_el_style_t* gui_el_style( void );
+void gui_el_panel ( gui_rect_t r );
+void gui_el_label ( gui_rect_t r, gui_align_t align, const char* text );
+bool gui_el_button( gui_rect_t r, const char* label );
+bool gui_el_check ( gui_rect_t r, const char* id_str, bool* v );
+bool gui_el_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
+void gui_el_meter ( gui_rect_t r, f32 frac, u32 fill_abgr );
+bool gui_el_cycle ( gui_rect_t r, const char* id_str, i32* idx,
+                    const char* const* items, i32 count );
+
+/*==============================================  GUI_CHROME  ===============================================*/
+
+/* window */
+void gui_window_set_next_pos ( f32 x, f32 y, gui_cond_t cond );
+void gui_window_set_next_size( f32 w, f32 h, gui_cond_t cond );
+void gui_window_set_next_viewport( gui_vp_t vp );
+void gui_window_set_next_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
+bool gui_window_begin( const char* title, gui_win_flags_t flags );
+void gui_window_end( void );
+void gui_window_set_open( const char* title, bool open );
+bool gui_window_is_open( const char* title );
+void gui_window_anim_enable( bool on );
+bool gui_window_anim_is_enabled( void );
+void gui_window_set_drag( gui_win_drag_t mode );
+void gui_window_set_nav( const char* title );
+
+/* docking */
+void gui_dockspace_inset( gui_vp_t vp, f32 top );
+gui_dock_id_t gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags );
+gui_dock_id_t gui_dock_split( gui_dock_id_t node, gui_dir_t dir, f32 ratio, gui_dock_id_t* out_remain );
+gui_dock_id_t gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio );
+void gui_dock_window( const char* title, gui_dock_id_t node );
+void gui_dock_undock( const char* title );
+bool gui_window_is_docked( const char* title );
+void gui_dock_window_maximize( const char* title, bool on );
+bool gui_window_is_dock_maximized( const char* title );
+void gui_window_tab( const char* title, const char* onto_title );
+u32  gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz );
+bool gui_dock_load( gui_vp_t vp, const char* text );
+void gui_dock_clear( gui_vp_t vp );
+
+/* popup + tooltip */
+void gui_popup_open( const char* id );
+bool gui_popup_begin( const char* id, gui_win_flags_t flags );
+bool gui_popup_modal_begin( const char* id, const char* title, gui_win_flags_t flags );
+void gui_popup_end( void );
+void gui_popup_close_current( void );
+bool gui_popup_is_open( const char* id );
+bool gui_popup_context_item_begin( const char* id );
+bool gui_popup_context_window_begin( const char* id );
+void gui_set_item_tooltip( const char* text );
+bool gui_tooltip_begin( void );
+void gui_tooltip_end( void );
+
+/* menu */
+bool gui_main_menu_bar_begin( void );
+void gui_main_menu_bar_end( void );
+f32  gui_main_menu_bar_h( void );
+bool gui_menu_bar_begin( void );
+void gui_menu_bar_end( void );
+bool gui_menu_begin( const char* label );
+void gui_menu_end( void );
+bool gui_menu_item( const char* label, const char* shortcut, bool* selected );
+
+/* toolbar */
+bool gui_toolbar_begin( const char* str_id );
+void gui_toolbar_end( void );
+bool gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip );
+bool gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip );
+bool gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* tooltip );
+void gui_toolbar_dropdown_end( void );
+void gui_toolbar_separator( void );
+
+/* widget - text + buttons */
 void gui_text( const char* str );
 void gui_textf( const char* fmt, ... );
 void gui_bullet_text( const char* str );
@@ -341,28 +470,6 @@ void gui_progress_bar( f32 fraction, const char* overlay );
 bool gui_arrow_button( const char* label, gui_dir_t dir );
 bool gui_checkbox( const char* label, bool* v );
 bool gui_radio_button( const char* label, i32* v, i32 value );
-
-/* widget - volatile (per-frame retessellated custom draws) */
-void gui_volatile_begin( void );
-void gui_volatile_cb( const char* label, gui_volatile_fn fn );
-void gui_volatile_end( void );
-
-/* tables (chrome/table/gui_table.c, chrome unit) */
-bool gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 height );
-void gui_table_end( void );
-bool gui_table_next_column( void );
-void gui_table_next_row( f32 min_h );
-gui_span_t gui_table_rows_clip( i32 count, f32 min_h );
-void gui_table_headers_row( void );
-void gui_table_setup_column( const char* label, gui_table_col_flags_t flags, f32 width );
-void gui_table_set_bg_color( gui_table_bg_target_t target, u32 abgr );
-bool gui_table_set_column_index( i32 col );
-i32  gui_table_get_column_count( void );
-i32  gui_table_get_column_index( void );
-i32  gui_table_get_row_index( void );
-bool gui_table_get_sort_specs( gui_table_sort_specs_t* out );
-bool gui_table_sort_order( i32* order, i32 count, gui_table_sort_value_fn val_fn,
-                           gui_table_sort_cmp_fn cmp_fn, void* user );
 
 /* widget - sliders */
 bool gui_slider_float( const char* label, f32* v, f32 lo, f32 hi );
@@ -419,77 +526,31 @@ void gui_unindent( f32 w );
 void gui_separator_text( const char* label );
 void gui_help_marker( const char* text );
 
-/* font */
-bool gui_font_load_into     ( u32 id, const char* path );
-void gui_font_use           ( u32 id );
-void gui_push_font          ( u32 id );
-void gui_pop_font           ( void );
-u32  gui_font_active_id     ( void );
+/* tables (chrome/table/gui_table.c, chrome unit) */
+bool gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 height );
+void gui_table_end( void );
+bool gui_table_next_column( void );
+void gui_table_next_row( f32 min_h );
+gui_span_t gui_table_rows_clip( i32 count, f32 min_h );
+void gui_table_headers_row( void );
+void gui_table_setup_column( const char* label, gui_table_col_flags_t flags, f32 width );
+void gui_table_set_bg_color( gui_table_bg_target_t target, u32 abgr );
+bool gui_table_set_column_index( i32 col );
+i32  gui_table_get_column_count( void );
+i32  gui_table_get_column_index( void );
+i32  gui_table_get_row_index( void );
+bool gui_table_get_sort_specs( gui_table_sort_specs_t* out );
+bool gui_table_sort_order( i32* order, i32 count, gui_table_sort_value_fn val_fn,
+                           gui_table_sort_cmp_fn cmp_fn, void* user );
 
-/* drawing */
-void gui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr );
-void gui_draw_rects( const gui_rect_col_t* rects, u32 count );
-void gui_draw_text( f32 x, f32 y, u32 abgr, const char* str );
-gui_vec2_t gui_text_size( const char* s );
-void gui_draw_text_in( gui_rect_t r, gui_align_t align, u32 col, const char* s );
-void gui_draw_text_clipped( gui_rect_t r, gui_align_t align, u32 col, const char* s );
+/* themes -- chrome's named style presets (style kit) */
+const gui_theme_t* gui_theme_list ( u32* count_out );
+bool               gui_theme_set  ( const char* name );
+const char*        gui_theme_get  ( void );
+void               gui_theme_reset( void );
 
-/* icons -- runtime icon atlas */
-gui_icon_id_t gui_register_icon( const char* name, u32 w, u32 h, const u8* coverage );
-gui_icon_id_t gui_load_icon( const char* name, const char* path );
-gui_icon_id_t gui_find_icon( const char* name );
-gui_vec2_t gui_icon_size( gui_icon_id_t id );
-void gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col );
-void gui_draw_icon_in( gui_rect_t r, gui_icon_id_t id, u32 col );
+/*===============================================  GUI_DEBUG  ===============================================*/
 
-/* RGBA textures -- arbitrary bindless texture as a full-color quad (scene viewport) */
-void gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
-void gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
-
-/* font atlas access -- bindless index + pixel size for previewing a font's live GPU atlas */
-u32 gui_font_atlas_idx( u32 font_id );
-gui_vec2_t gui_font_atlas_size( u32 font_id );
-
-/* symbol + shape render primitives -- Dear ImGui Render* / AddXxx family (normal pipeline, not the
-   icon atlas).  Implemented in gui_symbol.c. */
-void gui_draw_check_mark( gui_rect_t box, u32 col );
-void gui_draw_arrow( gui_rect_t box, gui_dir_t dir, u32 col );
-void gui_draw_bullet( f32 cx, f32 cy, f32 r, u32 col );
-void gui_draw_close( gui_rect_t box, u32 col );
-void gui_draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 col );
-void gui_draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 col );
-void gui_draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 col );
-void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
-void gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, bool filled, f32 thickness, u32 col );
-void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
-void gui_draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
-void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
-void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
-void gui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
-void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
-void gui_draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
-void gui_draw_hatch( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
-void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
-void gui_draw_shadow( gui_rect_t box, f32 spread, u32 col );
-void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
-void gui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
-void gui_draw_grip( gui_rect_t box, u32 col );
-void gui_draw_spinner( gui_rect_t box, f32 t, f32 thickness, u32 col );
-void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
-
-/* draw -- paths */
-void gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
-void gui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 abgr );
-void gui_draw_polyline( const gui_vec2_t* pts, u32 count, f32 thickness, gui_stroke_align_t align, bool closed, u32 abgr );
-void gui_path_clear( void );
-void gui_path_line_to( f32 x, f32 y );
-void gui_path_stroke( f32 thickness, gui_stroke_align_t align, bool closed, u32 abgr );
-
-/* clipping */
-void gui_push_clip( f32 x, f32 y, f32 w, f32 h );
-void gui_pop_clip( void );
-
-/* debug drawing */
 void gui_debug_set_layers( u32 layers );
 u32  gui_debug_get_layers( void );
 void gui_debug_enable( bool enable );
@@ -501,45 +562,6 @@ bool gui_debug_hotkeys_armed( void );
    unregistered.  Only Debug builds (GUI_DEBUG_OVERLAY) populate the registry, but the accessor
    itself is always callable -- Release just always gets NULL -- so callers need no #ifdef. */
 const char* gui_debug_name( gui_id_t id );
-
-/* input */
-bool gui_want_capture_mouse( void );
-bool gui_want_capture_keyboard( void );
-
-/* last-item introspection */
-bool        gui_is_item_hovered( void );
-bool        gui_is_item_active( void );
-bool        gui_is_item_clicked( void );
-bool        gui_is_item_focused( void );
-bool        gui_is_item_activated( void );
-bool        gui_is_item_deactivated( void );
-bool        gui_is_item_deactivated_after_edit( void );
-bool        gui_is_item_visible( void );
-gui_rect_t  gui_get_item_rect( void );
-
-bool gui_is_key_down( app_key_t key );
-bool gui_is_key_pressed( app_key_t key );
-bool gui_is_key_pressed_repeat( app_key_t key );
-bool gui_is_key_released( app_key_t key );
-bool gui_is_mouse_down( app_mouse_button_t b );
-bool gui_is_mouse_clicked( app_mouse_button_t b );
-bool gui_is_mouse_released( app_mouse_button_t b );
-bool gui_is_mouse_double_clicked( app_mouse_button_t b );
-void gui_get_mouse_pos( f32* x, f32* y );
-f32  gui_get_mouse_wheel( void );
-
-/* cursor */
-void         gui_set_mouse_cursor( app_cursor_t c );
-app_cursor_t gui_get_mouse_cursor( void );
-
-/* focus */
-void gui_set_keyboard_focus( void );
-void gui_set_edit_cursor_end( void );
-void gui_set_edit_key_hook( gui_edit_key_fn fn, void* user );
-
-/* time */
-f32  gui_get_delta_time( void );
-f64  gui_get_time( void );
 
 // clang-format on
 /*============================================================================================*/

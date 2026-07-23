@@ -422,7 +422,7 @@ void pane_tag( gui_id_t id, u32 z, u32 vp, u32 band );   /* defined frame/gui_pa
    keyed-state tenants, server-side so style blends and interact tweens share them). */
 typedef f32 ( *gui_ease_fn )( f32 );
 f32  gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active );
-void gui_anim_timer_start( gui_id_t id, f32 duration );
+void gui_anim_start( gui_id_t id, f32 duration );
 f32  gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 f32  gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed );
 gui_anim4_t gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed );
@@ -432,10 +432,10 @@ gui_anim4_t gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_an
 typedef struct { f32 elapsed; f32 duration; } gui_anim_timer_t;
 
 /* Public vtable adapters over the anim utilities (core/gui_anim.c); wired by gui_api.c. */
-f32        gui_api_anim_ease ( gui_id_t id, gui_ease_t ease, bool* out_active );
-u32        gui_api_anim_color( gui_id_t id, u32 target_abgr, f32 speed );
-gui_vec2_t gui_api_anim_vec2 ( gui_id_t id, gui_vec2_t target, f32 speed );
-gui_rect_t gui_api_anim_rect ( gui_id_t id, gui_rect_t target, f32 speed );
+f32        gui_anim_ease ( gui_id_t id, gui_ease_t ease, bool* out_active );
+u32        gui_anim_color( gui_id_t id, u32 target_abgr, f32 speed );
+gui_vec2_t gui_anim_vec2 ( gui_id_t id, gui_vec2_t target, f32 speed );
+gui_rect_t gui_anim_rect ( gui_id_t id, gui_rect_t target, f32 speed );
 
 /* Keyed-state pool usage introspection (core/gui_state.c) -- a full-table walk; the perf
    overlay (frame unit) calls it when displaying, not per frame. */

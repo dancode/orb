@@ -119,12 +119,19 @@ const gui_api_t g_gui_api_struct =
 
     /*===============================================  GUI_CORE  ================================================*/
 
+    /* item() -- behavior over a caller rect */
+
+    .item                               = gui_item,
+    .invisible_button                   = gui_invisible_button,
+
+    /* animation service */
+
     .anim_f32                           = gui_anim_f32,
-    .anim_start                         = gui_anim_timer_start,
-    .anim_ease                          = gui_api_anim_ease,
-    .anim_color                         = gui_api_anim_color,
-    .anim_vec2                          = gui_api_anim_vec2,
-    .anim_rect                          = gui_api_anim_rect,
+    .anim_start                         = gui_anim_start,
+    .anim_ease                          = gui_anim_ease,
+    .anim_color                         = gui_anim_color,
+    .anim_vec2                          = gui_anim_vec2,
+    .anim_rect                          = gui_anim_rect,
 
     /* identity + item flags + drag and drop */
 
@@ -144,11 +151,6 @@ const gui_api_t g_gui_api_struct =
     .drag_target_end                    = gui_drag_target_end,
     .drag_active                        = gui_drag_active,
     .drag_payload_peek                  = gui_drag_payload_peek,
-
-    /* item() -- behavior over a caller rect */
-
-    .item                               = gui_item,
-    .invisible_button                   = gui_invisible_button,
 
     /* queries -- io snapshot, item state, redraw state */
 
@@ -176,7 +178,7 @@ const gui_api_t g_gui_api_struct =
     .get_mouse_wheel                    = gui_get_mouse_wheel,
     .get_delta_time                     = gui_get_delta_time,
     .get_time                           = gui_get_time,
-    .cursor_set                         = gui_set_mouse_cursor,
+    .cursor_set                         = gui_cursor_set,
     .get_mouse_cursor                   = gui_get_mouse_cursor,
     .set_keyboard_focus                 = gui_set_keyboard_focus,
     .set_edit_cursor_end                = gui_set_edit_cursor_end,

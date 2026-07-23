@@ -172,7 +172,7 @@ gui_feat_collapse( gui_id_t id, bool open, f32 head_h, f32 full_h )
     {
         st->was_open = (u8)open;
         st->from     = st->last_h;
-        gui_anim_timer_start( cid, gui_window_anim_is_enabled() ? FEAT_ANIM_SECS : 0.0f );
+        gui_anim_start( cid, gui_window_anim_is_enabled() ? FEAT_ANIM_SECS : 0.0f );
     }
 
     bool active = false;
@@ -250,7 +250,7 @@ feat_pin( gui_id_t id, u32 state, gui_rect_t* r, gui_rect_t* restore, gui_rect_t
         st->was_state = state;
         st->restoring = (u8)( state == 0 ); /* going down: keep owning the rect until landed */
         st->from      = st->last;
-        gui_anim_timer_start( pid, gui_window_anim_is_enabled() ? FEAT_ANIM_SECS : 0.0f );
+        gui_anim_start( pid, gui_window_anim_is_enabled() ? FEAT_ANIM_SECS : 0.0f );
     }
 
     /* Steady normal state: the CALLER owns the rect (move/resize mutate it freely) -- the

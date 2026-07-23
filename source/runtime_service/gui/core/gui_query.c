@@ -180,7 +180,7 @@ bool gui_is_mouse_double_clicked( app_mouse_button_t b ) { return mb_in_range( b
    from their own hover; call this from UI code for a shape gui cannot infer -- e.g. a HAND over a
    custom clickable.  The last request of the frame wins and is flushed to the OS window the cursor
    is over (only while gui owns the mouse).  Reset to APP_CURSOR_ARROW at the top of every frame. */
-void         gui_set_mouse_cursor( app_cursor_t c ) { cursor_set( c ); }
+void         gui_cursor_set( app_cursor_t c ) { cursor_set( c ); }
 app_cursor_t gui_get_mouse_cursor( void )           { return s_interaction.mouse_cursor; }
 
 /* Pointer position, wheel delta, and timing straight from the snapshot. */

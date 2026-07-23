@@ -432,7 +432,7 @@ typedef struct gui_api_s
        hatch / gradient fills, soft shadows, outlined / shadowed text, grips, spinners) is exposed so
        editor / custom widgets can paint them.  Implemented in gui_symbol.c.  (The global
        indicator-shape selectors set_check_style / _bullet_style / _arrow_style live with the style
-       API above, since they are style state rather than draw calls.)
+       API (GUI_STYLE), since they are style state rather than draw calls.)
 
        Pipeline note: draw_gradient is an exact one-quad blend via per-vertex color
        (GUI_CMD_RECT_GRADIENT); draw_shadow (layered rings) is still an approximation that a
@@ -496,6 +496,18 @@ typedef struct gui_api_s
         item( id, rect ) -> state is the coordination axis: layout of any kind PRODUCES a
         rect, a widget of any kind CONSUMES one, and this server cannot tell them apart.
     =============================================================================================================*/
+
+    /*=================================  item() -- behavior over a caller rect  =================================*/
+
+    /* item -- the user-UI behavior seam: run the shared widget interaction state machine over a
+       rect the CALLER derived (a canvas() cut, an empty() slot, split/carve panels, custom math)
+       and report the resolved state (hover / active / pressed / clicked).  A custom widget is
+       rect + item() + draw_*: it hovers, press-captures, clicks, and registers for keyboard nav
+       exactly like a stock widget, with the presentation entirely yours.  Owns no layout
+       reservation, so it composes with the rect helpers.  invisible_button is item() reduced to
+       its click bit; for only a hover tint, use is_mouse_hovering_rect. */
+    gui_item_state_t ( *item )( const char* id_str, gui_rect_t r );
+    bool ( *invisible_button )( const char* id_str, gui_rect_t r );
 
     /*===============================  animation service -- keyed value stepping  ===============================*/
 
@@ -601,18 +613,6 @@ typedef struct gui_api_s
     void ( *drag_target_end     )( void );
     bool ( *drag_active         )( void );
     const gui_drag_payload_t* ( *drag_payload_peek   )( void );
-
-    /*=================================  item() -- behavior over a caller rect  =================================*/
-
-    /* item -- the user-UI behavior seam: run the shared widget interaction state machine over a
-       rect the CALLER derived (a canvas() cut, an empty() slot, split/carve panels, custom math)
-       and report the resolved state (hover / active / pressed / clicked).  A custom widget is
-       rect + item() + draw_*: it hovers, press-captures, clicks, and registers for keyboard nav
-       exactly like a stock widget, with the presentation entirely yours.  Owns no layout
-       reservation, so it composes with the rect helpers.  invisible_button is item() reduced to
-       its click bit; for only a hover tint, use is_mouse_hovering_rect. */
-    gui_item_state_t ( *item )( const char* id_str, gui_rect_t r );
-    bool ( *invisible_button )( const char* id_str, gui_rect_t r );
 
     /*===========================  queries -- io snapshot, item state, redraw state  ============================*/
 
@@ -1251,7 +1251,7 @@ typedef struct gui_api_s
 
     /*============================================================================================================
         GUI_CHROME -- convenience / editor UI  (window/ + dock/ + popup/ + widgets/ + table/)
-        The imgui-style design layer over the blocks below: persistent windows, docking,
+        The imgui-style design layer over the strata beneath it: persistent windows, docking,
         popups / menus / toolbars, the stock flow-adapted widget set, tables, and the theme
         system (S2: a compiler that resolves down to the strata beneath it).
     =============================================================================================================*/

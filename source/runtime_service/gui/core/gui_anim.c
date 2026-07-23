@@ -143,7 +143,7 @@ gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed 
         the frame the duration elapses, FORCES that end, reports "done", and evicts.  The caller can
         then snap to its target and drop its own animating flag with no risk of a stuck mid-tween.
 
-    Storage is a single keyed slot (elapsed + duration).  gui_anim_timer_start seeds it; each
+    Storage is a single keyed slot (elapsed + duration).  gui_anim_start seeds it; each
     gui_anim_timer call advances and shapes it through `ease` (any f32 shaper: f32_ease_out_cubic,
     f32_smoothstep01, ... or NULL for linear).  A slot that is absent or already finished reads as
     settled at 1.0, so a caller that samples one extra frame still sees the end, never a restart.
@@ -156,7 +156,7 @@ gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed 
    zero / negative duration is the "no animation" request -- no slot is stamped, so the first
    gui_anim_timer reads settled and the caller snaps straight to its target (the toggle-off path). */
 void
-gui_anim_timer_start( gui_id_t id, f32 duration )
+gui_anim_start( gui_id_t id, f32 duration )
 {
     if ( duration <= 0.0f )
         return;   /* instant: leave the slot unseeded so the next sample reports done at t=1 */
@@ -227,9 +227,9 @@ gui_ease_lookup( gui_ease_t e )
 }
 
 /* Public tween sampler: advance the timer on `id` and return eased progress in [0,1].  Pair with
-   anim_start (== gui_anim_timer_start) which seeds the clock; *out_active is false once settled. */
+   anim_start (== gui_anim_start) which seeds the clock; *out_active is false once settled. */
 f32
-gui_api_anim_ease( gui_id_t id, gui_ease_t ease, bool* out_active )
+gui_anim_ease( gui_id_t id, gui_ease_t ease, bool* out_active )
 {
     return gui_anim_timer( id, gui_ease_lookup( ease ), out_active );
 }
@@ -241,7 +241,7 @@ gui_api_anim_ease( gui_id_t id, gui_ease_t ease, bool* out_active )
 
 /* Damped ABGR blend: the four color channels glide to target_abgr at `speed` (Hz-like, gui_anim_f32). */
 u32
-gui_api_anim_color( gui_id_t id, u32 target_abgr, f32 speed )
+gui_anim_color( gui_id_t id, u32 target_abgr, f32 speed )
 {
     gui_anim4_t tgt = { (f32)( ( target_abgr ) & 0xFF ), (f32)( ( target_abgr >> 8 ) & 0xFF ),
                         (f32)( ( target_abgr >> 16 ) & 0xFF ), (f32)( ( target_abgr >> 24 ) & 0xFF ) };
@@ -252,7 +252,7 @@ gui_api_anim_color( gui_id_t id, u32 target_abgr, f32 speed )
 
 /* Damped 2D point: x/y glide to target; z/w unused. */
 gui_vec2_t
-gui_api_anim_vec2( gui_id_t id, gui_vec2_t target, f32 speed )
+gui_anim_vec2( gui_id_t id, gui_vec2_t target, f32 speed )
 {
     gui_anim4_t tgt = { target.x, target.y, 0.0f, 0.0f };
     gui_anim4_t sp  = { speed, speed, 0.0f, 0.0f };
@@ -262,7 +262,7 @@ gui_api_anim_vec2( gui_id_t id, gui_vec2_t target, f32 speed )
 
 /* Damped rect: x/y/w/h glide together (position + extent) in one slot. */
 gui_rect_t
-gui_api_anim_rect( gui_id_t id, gui_rect_t target, f32 speed )
+gui_anim_rect( gui_id_t id, gui_rect_t target, f32 speed )
 {
     gui_anim4_t tgt = { target.x, target.y, target.w, target.h };
     gui_anim4_t sp  = { speed, speed, speed, speed };
