@@ -77,10 +77,7 @@ gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier, gui_vp
     /* Base clip against the pane's own surface, then the pane rect -- draw clip and hit clip
        together, exactly the docked-window pair.  NO_CLIP skips both: a pure HUD pane that
        draws outside its nominal rect (and hit-tests display-wide). */
-    {
-        const gui_viewport_t* vprec = &g_ctx->vp.pool[ vp ];
-        draw_set_root_clip( vp_w( vprec ), vp_h( vprec ) );
-    }
+    draw_set_root_clip( vp_w( vp ), vp_h( vp ) );
     if ( !( flags & GUI_WIN_NO_CLIP ) )
     {
         draw_push_clip_rect( r.x, r.y, r.w, r.h );

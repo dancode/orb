@@ -25,6 +25,13 @@
 typedef struct gui_popup_t     gui_popup_t;
 typedef struct gui_dock_node_t gui_dock_node_t;
 
+/* Forward declaration only -- the full gui_context_t aggregate closes this file.  Named here so
+   earlier records that merely reference a context (a pointer, never a member access) -- the
+   window record door's window_find_in, s_vp_request's owner -- can do so without MSVC treating
+   the struct tag's first mention as a "named type definition in parentheses" (C4115) when it
+   happens to fall inside a parameter list. */
+struct gui_context_t;
+
 /*==============================================================================================
     Scroll link (machinery in flow/gui_scroll.c)
 
@@ -121,7 +128,8 @@ typedef struct gui_window_t
 /* The window record door (core/gui_surface.c -- the server owns the pool; chrome is the policy
    that fills it) + the next-window channel records its verbs queue into. */
 gui_window_t* window_get ( gui_id_t id, f32 x, f32 y, f32 w, f32 h );
-gui_window_t* window_find( gui_id_t id );       /* record by id / NULL */
+gui_window_t* window_find( gui_id_t id );       /* record by id / NULL, in the BOUND context */
+gui_window_t* window_find_in( struct gui_context_t* ctx, gui_id_t id );  /* record by id / NULL, in an EXPLICIT context */
 void          window_apply_next( gui_window_t* win, bool appearing );
 
 typedef struct
@@ -144,6 +152,13 @@ typedef struct
     u32         from_vp;    /* surface it was on (0 = main -> tear off; else floater -> merge) */
     const char* title;      /* window title, to label the spawned floater's OS window          */
     bool        has_home;   /* re-open of a closed floater: spawn reads the record's restore   */
+
+    /* The context whose win.pool holds win_id, stamped at enqueue time (window_begin_ex /
+       native_popin_request run with that context bound).  gui_viewport_update resolves the
+       window through THIS context, not whichever one happens to be bound when the reconcile
+       runs later in the frame -- a secondary context's tear-off must not silently resolve
+       against the primary's window pool (or find nothing at all). */
+    struct gui_context_t* owner;
 
 } gui_vp_request_t;
 
@@ -345,6 +360,7 @@ typedef struct
    (the stable id_hash-style handle exposed to callers).  The pool is fixed-size and never compacts,
    so an index stays valid across frames exactly like the pointer it replaces -- but at 2 bytes
    instead of 8.  dock_ref()/dock_at() (gui_dock_core.c) convert to/from a live pointer. */
+
 typedef u16 gui_dock_ref_t;
 #define GUI_DOCK_REF_NONE ( (gui_dock_ref_t)0xFFFFu )
 
@@ -443,13 +459,29 @@ typedef struct
 
 } gui_viewport_t;
 
-/* viewport drawable size with the s_io fallback (core/gui_ctx.c). */
-f32 vp_w( const gui_viewport_t* vp );
-f32 vp_h( const gui_viewport_t* vp );
+/* viewport drawable size with the s_io fallback (core/gui_ctx.c).  Take the slot index, not a
+   pointer -- s_vp_pool is one small fixed-size global table now, so an index is the stable,
+   context-independent way to name a slot across a call boundary. */
+f32 vp_w( gui_vp_t vp );
+f32 vp_h( gui_vp_t vp );
 
-/* The mouse-input path (core/gui_io.c) resolves an event's app win_id to the viewport hosting it,
-   but the viewport pool lives on g_ctx (core/gui_ctx.c), a later constituent.  Static: both ends
+/*==============================================================================================
+    The one real viewport table (frame/gui_viewport.c owns the lifecycle; storage is here next
+    to gui_viewport_t).  OS windows and RHI contexts are a genuinely global, small, fixed-size
+    resource (APP_WIN_MAX == RHI_CTX_MAX; the render tier calls this GUI_MAX_VIEWPORTS, but this
+    file sizes off APP_WIN_MAX directly -- the interact server never includes render/gui_render.h)
+    -- every gui_context_t that ever existed shares this SAME table rather than owning a copy.
+    [0] is the main swapchain; a context differs from another only in which of ITS windows
+    (win.pool) assign into which slot.  Defined in core/gui_ctx.c, next to s_ctx_pool.
+==============================================================================================*/
+
+extern gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
+extern u32            s_vp_count;                   /* used count; iterate [0, count) */
+
+/* The mouse-input path (core/gui_io.c) resolves an event's app win_id to the viewport hosting it
+   by searching s_vp_pool -- context-independent, since the table is global.  Static: both ends
    live in this unit. */
+
 static u32 viewport_index_for_window( i32 win_id );
 
 /*==============================================================================================
@@ -494,12 +526,9 @@ typedef struct gui_context_t
         u32           cascade;      // default-spawn cascade slot (window_default_spawn)
     } win;
 
-    struct                          /* frame/ -- render surfaces */
-    {
-        gui_viewport_t* pool;       // render surfaces: [0]=main swapchain; ptr into alloc
-        u32             count;      // high-water slot count (compacted on close; iterate [0, count))
-        u32             max;        // capacity
-    } vp;
+    /* Render surfaces are NOT here -- see s_vp_pool above.  A viewport is a genuinely global
+       resource (one real OS window / RHI context each); this context differs from another only
+       in which of its own windows (win.pool below) assign into which global slot. */
 
     struct                          /* dock/ -- the dock-tree node pool */
     {

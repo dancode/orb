@@ -45,7 +45,7 @@ window_route_resolve( gui_id_t id, const char* title, gui_window_t* win )
        the tiles at their own z and are exempt, like everywhere else. */
     if ( !route.node->floating )
     {
-        const gui_viewport_t* v = &g_ctx->vp.pool[ route.node->viewport ];
+        const gui_viewport_t* v = &s_vp_pool[ route.node->viewport ];
         if ( v->dock_max_settled && v->dock_max_id != route.node->id )
             return route;   /* obscured -- route.active stays false */
     }

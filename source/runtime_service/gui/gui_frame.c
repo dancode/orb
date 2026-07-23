@@ -76,8 +76,8 @@
 gui_context_t* ctx_alloc_slot ( const gui_ctx_config_t* c, u32 slots, i32 slot );           /* gui_context.c */
 void           ctx_pool_init  ( void );                                                     /* gui_context.c */
 
-bool           viewport_create ( gui_viewport_t* vp, rhi_texture_t target, i32 win_id );     /* gui_viewport.c */
-void           viewport_destroy( gui_viewport_t* vp );                                       /* gui_viewport.c */
+bool           viewport_create ( gui_vp_t vp, rhi_texture_t target, i32 win_id );             /* gui_viewport.c */
+void           viewport_destroy( gui_vp_t vp );                                               /* gui_viewport.c */
 
 /*==============================================================================================
     Capability flags -- latched by gui_init_config_front (gui_frame_loop.c), read directly (same TU)

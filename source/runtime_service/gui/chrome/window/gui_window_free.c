@@ -69,11 +69,12 @@
    same lag hover_win runs on).  Shared by the maximize pin, window_clamp below, and the
    floating-group clamp (chrome/dock/gui_dock_float.c). */
 static f32
-window_work_top( const gui_viewport_t* vp )
+window_work_top( gui_vp_t vp )
 {
-    f32 top = vp->caption_inset;
-    if ( vp->bar_seen_frame != 0u && vp->bar_seen_frame + 1u >= gui_frame_index() )
-        top += vp->bar_inset;
+    const gui_viewport_t* v = &s_vp_pool[ vp ];
+    f32 top = v->caption_inset;
+    if ( v->bar_seen_frame != 0u && v->bar_seen_frame + 1u >= gui_frame_index() )
+        top += v->bar_inset;
     return top;
 }
 
@@ -82,9 +83,9 @@ window_work_top( const gui_viewport_t* vp )
 f32
 gui_viewport_content_y( gui_vp_t vp )
 {
-    if ( !g_ctx || vp >= g_ctx->vp.max )
+    if ( vp >= GUI_MAX_VIEWPORTS )
         return 0.0f;
-    return window_work_top( &g_ctx->vp.pool[ vp ] );
+    return window_work_top( vp );
 }
 
 /* Keep a dragged window reachable within its own viewport's work area.  The geometry is the
@@ -99,8 +100,8 @@ window_clamp( gui_window_t* win )
     if ( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP )
         return;
 
-    const gui_viewport_t* vp  = &g_ctx->vp.pool[ win->viewport ];
-    const f32             top = window_work_top( vp );
+    gui_vp_t vp  = win->viewport;
+    const f32 top = window_work_top( vp );
 
     gui_rect_t r = { win->x, win->y, win->w, win->h };
     gui_feat_clamp( &r, ( gui_rect_t ){ 0.0f, top, vp_w( vp ), vp_h( vp ) - top }, WIN_TITLE_H );
@@ -114,7 +115,7 @@ window_clamp( gui_window_t* win )
 static void
 window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
 {
-    const gui_viewport_t* vp = &g_ctx->vp.pool[ win->viewport ];
+    gui_vp_t vp = win->viewport;
     *out_max_w = vp_w( vp ) - win->x;
     *out_max_h = vp_h( vp ) - win->y;
 }
@@ -419,7 +420,7 @@ window_apply_drag( gui_window_t* win, gui_id_t id )
         f32 nx = 0.0f, ny = 0.0f;
         app()->mouse_position_screen( &cx, &cy );
         move_track( id, (f32)cx, (f32)cy, &nx, &ny );
-        app()->window_set_pos( g_ctx->vp.pool[ win->viewport ].win_id,
+        app()->window_set_pos( s_vp_pool[ win->viewport ].win_id,
                                (i32)window_snap( nx ), (i32)window_snap( ny ) );
         win->x = 0.0f;
         win->y = 0.0f;
@@ -467,9 +468,8 @@ window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title,
         bool crossed = false;
         if ( win->viewport == 0 )
         {
-            const gui_viewport_t* hv = &g_ctx->vp.pool[ 0 ];
-            f32 dw = vp_w( hv ); if ( dw < 1.0f ) dw = 1.0f;
-            f32 dh = vp_h( hv ); if ( dh < 1.0f ) dh = 1.0f;
+            f32 dw = vp_w( 0 ); if ( dw < 1.0f ) dw = 1.0f;
+            f32 dh = vp_h( 0 ); if ( dh < 1.0f ) dh = 1.0f;
             crossed = s_io.mouse_x < 0.0f || s_io.mouse_y < 0.0f
                    || s_io.mouse_x >= dw || s_io.mouse_y >= dh;
         }
@@ -481,10 +481,9 @@ window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title,
                every frame.  Re-entering only past the inset breaks that oscillation. */
             i32 cx = 0, cy = 0, mx = 0, my = 0;
             app()->mouse_position_screen( &cx, &cy );
-            app()->window_get_pos( g_ctx->vp.pool[ 0 ].win_id, &mx, &my );
-            const gui_viewport_t* mv = &g_ctx->vp.pool[ 0 ];
-            i32 mw = (i32)vp_w( mv );
-            i32 mh = (i32)vp_h( mv );
+            app()->window_get_pos( s_vp_pool[ 0 ].win_id, &mx, &my );
+            i32 mw = (i32)vp_w( 0 );
+            i32 mh = (i32)vp_h( 0 );
             i32 inset = (i32)WIN_TITLE_H;
             bool inside = cx >= mx + inset && cy >= my + inset
                        && cx < mx + mw - inset && cy < my + mh - inset;
@@ -504,6 +503,7 @@ window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title,
             s_vp_request.win_id  = id;
             s_vp_request.from_vp = win->viewport;
             s_vp_request.title   = title;
+            s_vp_request.owner   = g_ctx;   /* this window's context, for the reconcile's lookup */
         }
     }
 
@@ -724,6 +724,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         s_vp_request.from_vp  = 0;
         s_vp_request.title    = title;
         s_vp_request.has_home = true;   /* spawn reads restore geometry + maximized from the record */
+        s_vp_request.owner    = g_ctx;  /* this window's context, for the reconcile's lookup */
 
         win->last_frame      = gui_frame_index();
         s_build.win.hidden   = true;
@@ -737,7 +738,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         win->reopen.floater = false;
 
     /* Closed-viewport fallback: if this window's surface was destroyed, revert to primary. */
-    if ( win->viewport > 0 && !rhi_handle_valid( g_ctx->vp.pool[ win->viewport ].vb ) )
+    if ( win->viewport > 0 && !rhi_handle_valid( s_vp_pool[ win->viewport ].vb ) )
         win->viewport = 0;
 
     /* Ask the dock who places this window (the route seam, chrome/dock/gui_dock_route.c): any pending
@@ -840,7 +841,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         if ( appearing )
             win->shelf_slot = window_shelf_take_slot( win );
 
-        const gui_viewport_t* vp = &g_ctx->vp.pool[ win->viewport ];
+        gui_vp_t vp = win->viewport;
         f32 chip_w = window_shelf_chip_w();
         pin_state  = 2u;
         pin_target = ( gui_rect_t ){
@@ -849,7 +850,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     }
     else if ( win->maximized )
     {
-        const gui_viewport_t* vp  = &g_ctx->vp.pool[ win->viewport ];
+        gui_vp_t vp  = win->viewport;
         f32  top   = window_work_top( vp );
         pin_state  = 1u;
         pin_target = ( gui_rect_t ){ 0.0f, top, vp_w( vp ), vp_h( vp ) - top };
@@ -949,10 +950,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        below intersects the base clip (clip_stack[0]), so seed that base with this viewport's drawable
        size.  Falls back to the main display when the surface size is unset (single-window default).
        window_end restores the main display for subsequent background / low-level draws. */
-    {
-        const gui_viewport_t* vp = &g_ctx->vp.pool[ win->viewport ];
-        draw_set_root_clip( vp_w( vp ), vp_h( vp ) );
-    }
+    draw_set_root_clip( vp_w( win->viewport ), vp_h( win->viewport ) );
 
     /* Window chrome (background, titlebar, border) is not an item: clear any disabled latch a prior
        window's trailing widget left, so this window paints opaque and its chrome interacts. */
@@ -993,7 +991,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
 static void
 window_default_spawn( u32 viewport, f32* out_x, f32* out_y )
 {
-    const gui_viewport_t* vp = &g_ctx->vp.pool[ viewport ];
+    gui_vp_t vp = viewport;
     const f32 inset = 60.0f;
     const f32 step  = WIN_TITLE_H;
     const f32 top   = window_work_top( vp );
@@ -1050,17 +1048,17 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
 f32
 gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
 {
-    if ( vp >= g_ctx->vp.max )
+    if ( vp >= GUI_MAX_VIEWPORTS )
         return 0.0f;
 
-    if ( !app()->window_is_borderless( g_ctx->vp.pool[ vp ].win_id ) )
+    if ( !app()->window_is_borderless( s_vp_pool[ vp ].win_id ) )
         return 0.0f;    /* OS-chrome window: the OS draws the frame, no shell needed */
 
     gui_window_set_next_viewport( vp );
     gui_window_begin( title, GUI_WIN_NATIVE | GUI_WIN_NOSCROLL | flags );
     gui_window_end();
 
-    return g_ctx->vp.pool[ vp ].caption_inset;   /* published by the begin above */
+    return s_vp_pool[ vp ].caption_inset;   /* published by the begin above */
 }
 
 /* gui_window_end (the deferred chrome: titlebar, buttons, border, resize grip, move grab, and

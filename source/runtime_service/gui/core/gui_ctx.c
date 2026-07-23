@@ -227,8 +227,8 @@ u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per
     A context is the emission session the code binds once and emits ALL its windows into; it owns the
     state that must persist between frames for that UI.  Every retained access in the module spells
     the bound context out -- g_ctx->retained (id salt + frame clock + keyed state pool), g_ctx->nav
-    (the nav cursor location + menu mode), the popup open-set, the window / viewport / dock pools --
-    so per-context state is visibly distinct from the global s_* scratch at every call site, and
+    (the nav cursor location + menu mode), the popup open-set, the window / dock pools -- so
+    per-context state is visibly distinct from the global s_* scratch at every call site, and
     switching contexts is a single pointer assignment (ctx_bind): no copy, no backup/restore.
 
     The frame clock (g_ctx->retained.frame) advances per context, at ctx_begin, NOT per app-frame: a
@@ -237,9 +237,9 @@ u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per
     combo "appearing" detection keys off the same per-context clock.
 
     Ambient state (one user: s_interaction, s_io) and frame scratch (s_build, the stacks, s_draw) are
-    NOT per context -- they stay global and target whichever context is bound.  The primary context
-    (slot 0) owns the OS windows; secondary contexts share the same OS windows and render surfaces
-    rather than owning separate ones.
+    NOT per context -- they stay global and target whichever context is bound.  Viewports are not
+    per-context either (s_vp_pool, above): every context shares the same real OS windows / RHI
+    contexts, and differs from another only in which of its OWN windows assign into which slot.
 ==============================================================================================*/
 
 /* Context pool.  Slot 0 is the default context (heap-allocated and bound at init, freed only at
@@ -256,6 +256,13 @@ u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
 
 gui_context_t* g_ctx = NULL;   /* bound context (extern'd in core/gui_ctx.h for the carved units) */
 
+/* The one real viewport table -- see the extern comment in core/gui_ctx.h.  A plain zero-init
+   global, not part of any context's malloc block: it is sized once at compile time (APP_WIN_MAX,
+   the same small cap RHI_CTX_MAX matches) and outlives every context. */
+
+gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
+u32            s_vp_count;
+
 /* Bind the active context; every alias above resolves into it from here on.  NULL rebinds the
    default.  This is the whole multi-context seam -- no state is copied. */
 void
@@ -264,22 +271,16 @@ ctx_bind( gui_context_t* ctx )
     g_ctx = ctx ? ctx : s_ctx_pool[ 0 ];
 }
 
-/* Resolve an app win_id to the primary context's viewport index.  OS windows and their viewport
-   slots are owned by the primary context (slot 0) regardless of which context is currently bound;
-   secondary contexts share the same OS windows and render surfaces rather than owning separate ones.
-   Searches the primary context's viewport array for a live slot (one with GPU buffers) whose
-   recorded win_id matches; falls back to 0 (main swapchain) if none found.
+/* Resolve an app win_id to its viewport index.  Searches the one global viewport table (s_vp_pool)
+   for a live slot (one with GPU buffers) whose recorded win_id matches; falls back to 0 (main
+   swapchain) if none found.  Context-independent -- there is only one table.
    Forward-declared in core/gui_ctx.h; called by the mouse-input path in core/gui_io.c. */
 static u32
 viewport_index_for_window( i32 win_id )
 {
-    const gui_context_t* primary = s_ctx_pool[ 0 ];
-    for ( u32 i = 0; i < primary->vp.max; ++i )
-    {
-        const gui_viewport_t* vp = &primary->vp.pool[ i ];
-        if ( rhi_handle_valid( vp->vb ) && vp->win_id == win_id )
+    for ( u32 i = 0; i < APP_WIN_MAX; ++i )
+        if ( rhi_handle_valid( s_vp_pool[ i ].vb ) && s_vp_pool[ i ].win_id == win_id )
             return i;
-    }
     return 0;   /* no live slot matches -> main swapchain surface */
 }
 
@@ -354,8 +355,8 @@ cursor_flush( void )
     {
         /* The OS window the cursor is in: viewport slot index -> its app win_id. */
         i32 win = 0;
-        if ( s_io.mouse_viewport < g_ctx->vp.count )
-            win = g_ctx->vp.pool[ s_io.mouse_viewport ].win_id;
+        if ( s_io.mouse_viewport < s_vp_count )
+            win = s_vp_pool[ s_io.mouse_viewport ].win_id;
 
         if ( win != s_flushed_win || s_interaction.mouse_cursor != s_flushed_cur )
         {
@@ -544,8 +545,8 @@ ctx_new_frame( void )
     the ternary out inline.
 ==============================================================================================*/
 
-f32 vp_w( const gui_viewport_t* vp ) { return vp->disp_w > 0 ? (f32)vp->disp_w : (f32)s_io.display_w; }
-f32 vp_h( const gui_viewport_t* vp ) { return vp->disp_h > 0 ? (f32)vp->disp_h : (f32)s_io.display_h; }
+f32 vp_w( gui_vp_t vp ) { i32 w = s_vp_pool[ vp ].disp_w; return w > 0 ? (f32)w : (f32)s_io.display_w; }
+f32 vp_h( gui_vp_t vp ) { i32 h = s_vp_pool[ vp ].disp_h; return h > 0 ? (f32)h : (f32)s_io.display_h; }
 
 /*==============================================================================================
     Frame clock + redraw request -- the read / request doors over the retained record.

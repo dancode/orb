@@ -90,10 +90,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
     }
 
     /* Clip against the node's surface, then the node rect; the body region reuses this clip. */
-    {
-        const gui_viewport_t* vp = &g_ctx->vp.pool[ node->viewport ];
-        draw_set_root_clip( vp_w( vp ), vp_h( vp ) );
-    }
+    draw_set_root_clip( vp_w( node->viewport ), vp_h( node->viewport ) );
     item_flags_chrome_reset();
 
     draw_push_clip_rect( win->x, win->y, win->w, win->h );

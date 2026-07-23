@@ -135,10 +135,20 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
 gui_window_t*                  /* non-static: a cross-unit seam (core/gui_ctx.h) */
 window_find( gui_id_t id )
 {
-    if ( id == GUI_ID_NONE ) return NULL;
-    for ( u32 i = 0; i < g_ctx->win.count; ++i )
-        if ( g_ctx->win.pool[ i ].id == id )
-            return &g_ctx->win.pool[ i ];
+    return window_find_in( g_ctx, id );
+}
+
+/* window_find against an EXPLICIT context rather than whichever is bound -- gui_viewport_update
+   needs this: a tear-off request enqueued while a secondary context was bound (window_begin_ex,
+   native_popin_request) must resolve against THAT context's window pool, since by the time the
+   reconcile runs later in the frame g_ctx has typically rebound to the primary. */
+gui_window_t*                  /* non-static: a cross-unit seam (core/gui_ctx.h) */
+window_find_in( gui_context_t* ctx, gui_id_t id )
+{
+    if ( id == GUI_ID_NONE || !ctx ) return NULL;
+    for ( u32 i = 0; i < ctx->win.count; ++i )
+        if ( ctx->win.pool[ i ].id == id )
+            return &ctx->win.pool[ i ];
     return NULL;
 }
 

@@ -125,16 +125,10 @@ gui_shutdown( void )
     gui_debug_shutdown();
     #endif
 
-    /* Destroy GPU surfaces for every context before releasing memory blocks.
-       viewport_destroy is g_ctx-agnostic (takes a pointer), so no rebind is needed.
-       Primary context viewports (including any gui-owned floaters) are destroyed first. */
-    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
-    {
-        gui_context_t* ctx = s_ctx_pool[ i ];
-        if ( !ctx ) continue;
-        for ( u32 v = 0; v < ctx->vp.max; ++v )
-            viewport_destroy( &ctx->vp.pool[ v ] );
-    }
+    /* Destroy GPU surfaces once -- the one global s_vp_pool (including any gui-owned floaters),
+       not per context: a viewport is a real OS window / RHI context, never context-owned. */
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+        viewport_destroy( v );
     gui_draw_shutdown();      /* draw unit resources (fonts + icons) leave the atlas first */
     gui_backend_exit();       /* shared pipeline / sampler / atlas */
 
@@ -213,15 +207,12 @@ gui_frame_begin( f32 dt )
     s_overlays_emitted = false;   /* debug overlays emit once, at the default context's ctx_end */
     s_shell_emitted    = false;   /* boot chrome shell emits once, at the default context's ctx_begin */
 
-    /* default ctx always owns the OS window (guaranteed to exist) */
-    gui_context_t* primary = s_ctx_pool[ 0 ];   
-    
-    /* display dimensions: the OS window and its viewports belong to the default context regardless of
-       which context is active for input this frame. The host may resize the OS window at any time,
-       so read the current size from the primary context's first viewport. */
+    /* display dimensions: viewports are the one global s_vp_pool, so this needs no context at all.
+       The host may resize the OS window at any time, so read the current size from the primary
+       (main swapchain) surface, slot 0. */
 
-    i32 disp_w = primary->vp.count > 0 ? primary->vp.pool[ 0 ].disp_w : 0;
-    i32 disp_h = primary->vp.count > 0 ? primary->vp.pool[ 0 ].disp_h : 0;
+    i32 disp_w = s_vp_count > 0 ? s_vp_pool[ 0 ].disp_w : 0;
+    i32 disp_h = s_vp_count > 0 ? s_vp_pool[ 0 ].disp_h : 0;
 
     /* Open the perf overlay's emit clock here -- "start at frame_begin" -- and publish last frame's
        measured cost into the smoothed readouts the overlay shows. */
@@ -454,9 +445,9 @@ gui_ctx_end( void )
 void
 gui_render( gui_vp_t vp, rhi_cmd_t cmd )
 {
-    if ( vp >= g_ctx->vp.max )
+    if ( vp >= GUI_MAX_VIEWPORTS )
         return;
-    gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
+    gui_viewport_t* v = &s_vp_pool[ vp ];
 
     /* Latch the emit time (first render of the frame) and bracket the flush -- "conclude cost at
        render": emit ends here, render time accumulates across every render() call this frame. */

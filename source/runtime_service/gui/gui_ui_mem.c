@@ -62,6 +62,11 @@ gui_ui_memory( void )
     b += (u32)( sizeof( s_ctx_save_stack ) + sizeof( s_font_stack )
               + sizeof( s_boot ) + sizeof( s_present ) + sizeof( s_fwd_caps ) );
 
+    /* core/gui_ctx.c -- the one global viewport table (s_vp_pool).  A fixed static now, not part
+       of any context's per-context heap block, so it is counted here rather than under
+       cpu_context_bytes below. */
+    b += (u32)sizeof( s_vp_pool );
+
     /* debug/ -- the perf/state HUD accumulators (always compiled; runtime-gated) live in THIS
        unit; the dashboard / stepper statics moved to the debug unit (gui_debug.c), which
        reports its own fixed footprint through the seam. */
@@ -85,18 +90,13 @@ gui_ui_memory( void )
 gui_mem_stats_t
 gui_mem_stats( void )
 {
-    /* Count live GPU surfaces across every context (a viewport is live once it owns geometry
-       buffers) so the backend can scale the per-surface VB/IB by the true surface count -- the
-       old report assumed a single surface and undercounted every floater / secondary window. */
+    /* Count live GPU surfaces in the one global viewport table (a viewport is live once it owns
+       geometry buffers) so the backend can scale the per-surface VB/IB by the true surface count --
+       the old report assumed a single surface and undercounted every floater / secondary window. */
     u32 live_viewports = 0;
-    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
-    {
-        gui_context_t* ctx = s_ctx_pool[ i ];
-        if ( !ctx ) continue;
-        for ( u32 v = 0; v < ctx->vp.max; ++v )
-            if ( rhi_handle_valid( ctx->vp.pool[ v ].vb ) )
-                ++live_viewports;
-    }
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+        if ( rhi_handle_valid( s_vp_pool[ v ].vb ) )
+            ++live_viewports;
 
     /* Backend fills GPU + CPU .bss; this unit adds the frontend statics, the CPU-heap context
        blocks, and the totals. */

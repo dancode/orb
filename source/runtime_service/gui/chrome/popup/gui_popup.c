@@ -277,15 +277,13 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
     else if ( modal )
     {
         /* Center on the popup's own surface, not the main display (detached viewport). */
-        const gui_viewport_t* vp = &g_ctx->vp.pool[ win->viewport ];
-        px = ( vp_w( vp ) - win->w ) * 0.5f;
-        py = ( vp_h( vp ) - win->h ) * 0.5f;
+        px = ( vp_w( win->viewport ) - win->w ) * 0.5f;
+        py = ( vp_h( win->viewport ) - win->h ) * 0.5f;
     }
     else
     {
-        const gui_viewport_t* vp = &g_ctx->vp.pool[ win->viewport ];
-        px = popup_clamp( p->anchor_x, win->w, vp_w( vp ) );
-        py = popup_clamp( p->anchor_y, win->h, vp_h( vp ) );
+        px = popup_clamp( p->anchor_x, win->w, vp_w( win->viewport ) );
+        py = popup_clamp( p->anchor_y, win->h, vp_h( win->viewport ) );
     }
     gui_window_set_next_pos( px, py, GUI_COND_ALWAYS );
 
@@ -414,9 +412,8 @@ gui_tooltip_begin( void )
     {
         /* Clamp inside the tooltip's own surface, not the main display: a tooltip raised in a
            detached (native/floater) viewport must stay within that surface's extent. */
-        const gui_viewport_t* vp = &g_ctx->vp.pool[ win->viewport ];
-        px = popup_clamp( s_io.mouse_x + GUI_TOOLTIP_OFFSET, win->w, vp_w( vp ) );
-        py = popup_clamp( s_io.mouse_y + GUI_TOOLTIP_OFFSET, win->h, vp_h( vp ) );
+        px = popup_clamp( s_io.mouse_x + GUI_TOOLTIP_OFFSET, win->w, vp_w( win->viewport ) );
+        py = popup_clamp( s_io.mouse_y + GUI_TOOLTIP_OFFSET, win->h, vp_h( win->viewport ) );
     }
     gui_window_set_next_pos( px, py, GUI_COND_ALWAYS );
 

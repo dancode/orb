@@ -31,16 +31,16 @@ ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
     u32 sz_big   = GUI_STATE_BIG_SLOTS * (u32)sizeof( gui_state_big_slot_t );
     u32 sz_pop   = c->popup_depth      * (u32)sizeof( gui_popup_t          );
     u32 sz_win   = c->max_windows      * (u32)sizeof( gui_window_t         );
-    u32 sz_vp    = c->max_viewports    * (u32)sizeof( gui_viewport_t       );
     u32 sz_dock  = c->max_dock_nodes   * (u32)sizeof( gui_dock_node_t      );
 
+    /* No viewport sizing here -- render surfaces are the one global s_vp_pool (core/gui_ctx.h),
+       not a per-context block. */
     u32 off_tiny  = ALIGN8( (u32)sizeof( gui_context_t ) );
     u32 off_state = ALIGN8( off_tiny  + sz_tiny  );
     u32 off_big   = ALIGN8( off_state + sz_state );
     u32 off_pop   = ALIGN8( off_big   + sz_big   );
     u32 off_win   = ALIGN8( off_pop   + sz_pop   );
-    u32 off_vp    = ALIGN8( off_win   + sz_win   );
-    u32 off_dock  = ALIGN8( off_vp    + sz_vp    );
+    u32 off_dock  = ALIGN8( off_win   + sz_win   );
     u32 total     = ALIGN8( off_dock  + sz_dock  );
     #undef ALIGN8
 
@@ -60,8 +60,6 @@ ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
     ctx->popup.depth          = c->popup_depth;
     ctx->win.pool             = (gui_window_t*)  ( blk + off_win  );
     ctx->win.max              = c->max_windows;
-    ctx->vp.pool              = (gui_viewport_t*)( blk + off_vp   );
-    ctx->vp.max               = c->max_viewports;
     ctx->dock.pool            = c->max_dock_nodes
                                 ? (gui_dock_node_t*)( blk + off_dock ) : NULL;
     ctx->dock.max             = c->max_dock_nodes;
@@ -80,7 +78,6 @@ ctx_pool_init( void )
         .max_windows    = GUI_DEFAULT_MAX_WINDOWS,
         .state_slots    = GUI_DEFAULT_STATE_SLOTS,
         .popup_depth    = GUI_DEFAULT_POPUP_DEPTH,
-        .max_viewports  = GUI_MAX_VIEWPORTS,
         .max_dock_nodes = GUI_DEFAULT_DOCK_NODES,
     };
     gui_context_t* ctx = ctx_alloc_slot( &c, c.state_slots, 0 );
@@ -115,7 +112,6 @@ gui_ctx_create( const gui_ctx_config_t* cfg )
     if ( !c.max_windows   ) c.max_windows   = GUI_DEFAULT_MAX_WINDOWS;
     if ( !c.state_slots   ) c.state_slots   = GUI_DEFAULT_STATE_SLOTS;
     if ( !c.popup_depth   ) c.popup_depth   = GUI_DEFAULT_POPUP_DEPTH;
-    if ( !c.max_viewports ) c.max_viewports = GUI_MAX_VIEWPORTS;
 
     /* Counts are free of the old power-of-two rule (multiply-shift bucketing, gui_state.c);
        just floor so the small class (3/4 of this) keeps usable headroom. */
@@ -145,9 +141,8 @@ gui_ctx_destroy( gui_ctx_id_t ctx )
         return;
     gui_context_t* c = s_ctx_pool[ ctx ];
     if ( g_ctx == c ) ctx_bind( NULL );
-    /* Destroy any GPU surfaces the context opened before releasing its memory block. */
-    for ( u32 i = 0; i < c->vp.max; ++i )
-        viewport_destroy( &c->vp.pool[ i ] );
+    /* No viewport teardown here -- a context never owns viewport GPU/OS resources; the one
+       global s_vp_pool outlives any single context's destruction. */
     if ( c->_alloc ) free( c->_alloc );
     s_ctx_pool[ ctx ] = NULL;
 }

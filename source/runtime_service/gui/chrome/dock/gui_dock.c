@@ -31,9 +31,9 @@
 void
 gui_dockspace_inset( gui_vp_t vp, f32 top )
 {
-    if ( vp >= g_ctx->vp.max )
+    if ( vp >= GUI_MAX_VIEWPORTS )
         return;
-    g_ctx->vp.pool[ vp ].dock_inset = ( top > 0.0f ) ? top : 0.0f;
+    s_vp_pool[ vp ].dock_inset = ( top > 0.0f ) ? top : 0.0f;
 }
 
 /* Ensure viewport vp hosts a dock tree, lay it out over the surface (below any native caption band),
@@ -45,10 +45,10 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
 {
     if ( !s_fwd_caps.docking ) return GUI_DOCK_NONE;   /* feature boundary: gui_forward_caps_t.docking */
     if ( !g_ctx->dock.pool ) return GUI_DOCK_NONE;   /* pool disabled for this context (max_dock_nodes == 0) */
-    if ( vp >= g_ctx->vp.max )
+    if ( vp >= GUI_MAX_VIEWPORTS )
         return GUI_DOCK_NONE;
 
-    gui_viewport_t*  v    = &g_ctx->vp.pool[ vp ];
+    gui_viewport_t*  v    = &s_vp_pool[ vp ];
     v->dock_flags      = flags;   /* re-published each frame; NO_SPLIT gates the chips + split verbs */
     v->dock_seen_frame = gui_frame_index();   /* tree ACTIVE this build; unstamped = dormant */
     gui_dock_node_t* root = dock_at( v->dock_root );
@@ -60,8 +60,8 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
         v->dock_root = dock_ref( root );
     }
 
-    f32 dw  = vp_w( v );
-    f32 dh  = vp_h( v );
+    f32 dw  = vp_w( vp );
+    f32 dh  = vp_h( vp );
     f32 top = v->caption_inset + v->dock_inset;
     gui_rect_t area = { 0.0f, top, dw, dh - top };
     if ( area.h < 0.0f ) area.h = 0.0f;
@@ -91,7 +91,7 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
        surface resize), the tree rect the layout above just resolved while restoring -- and the
        timer forces t == 1 on its final frame, landing the lerp exactly on the target.  Once a
        restore settles the node is a plain tile again: z back to the dock floor, id cleared. */
-    gui_dock_node_t* mx = dock_max_node( v );
+    gui_dock_node_t* mx = dock_max_node( vp );
     if ( mx )
     {
         gui_rect_t target = v->dock_max_on ? area : mx->rect;
@@ -155,7 +155,7 @@ gui_dock_split( gui_dock_id_t node_id, gui_dir_t dir, f32 ratio, gui_dock_id_t* 
         return GUI_DOCK_NONE;
     if ( n->floating )
         return GUI_DOCK_NONE;   /* a floating tab group is tabs-only by definition */
-    if ( g_ctx->vp.pool[ n->viewport ].dock_flags & GUI_DOCKSPACE_NO_SPLIT )
+    if ( s_vp_pool[ n->viewport ].dock_flags & GUI_DOCKSPACE_NO_SPLIT )
         return GUI_DOCK_NONE;   /* tab docking only on this dockspace */
 
     gui_dock_node_t* a = dock_node_alloc( n->viewport );
@@ -203,10 +203,10 @@ gui_dock_id_t
 gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio )
 {
     if ( !g_ctx->dock.pool ) return GUI_DOCK_NONE;
-    if ( vp >= g_ctx->vp.max )
+    if ( vp >= GUI_MAX_VIEWPORTS )
         return GUI_DOCK_NONE;
 
-    gui_viewport_t*  v    = &g_ctx->vp.pool[ vp ];
+    gui_viewport_t*  v    = &s_vp_pool[ vp ];
     if ( v->dock_flags & GUI_DOCKSPACE_NO_SPLIT )
         return GUI_DOCK_NONE;   /* tab docking only on this dockspace */
     gui_dock_node_t* root = dock_at( v->dock_root );
@@ -289,7 +289,7 @@ gui_dock_window_maximize( const char* title, bool on )
         for ( u32 i = 0; i < n->tab_count; ++i )
             if ( n->tabs[ i ] == wid ) { n->active_tab = i; break; }
 
-    gui_viewport_t* v = &g_ctx->vp.pool[ n->viewport ];
+    gui_viewport_t* v = &s_vp_pool[ n->viewport ];
     if ( ( v->dock_max_id == n->id && v->dock_max_on ) != on )
         dock_max_set( n, on );
 }
@@ -303,7 +303,7 @@ gui_window_is_dock_maximized( const char* title )
     gui_dock_node_t* n = dock_find_window_node( id_hash( title ) );
     if ( !n || n->floating )
         return false;
-    const gui_viewport_t* v = &g_ctx->vp.pool[ n->viewport ];
+    const gui_viewport_t* v = &s_vp_pool[ n->viewport ];
     return v->dock_max_id == n->id && v->dock_max_on;
 }
 

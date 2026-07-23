@@ -72,13 +72,13 @@ u32
 gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz )
 {
     dock_writer_t w = { buf, bufsz, 0u };
-    if ( vp >= g_ctx->vp.max )
+    if ( vp >= GUI_MAX_VIEWPORTS )
     {
         if ( bufsz ) buf[ 0 ] = '\0';
         return 0u;
     }
     dw_emit( &w, "ORBDOCK 1\n", 10u );
-    dock_serialize_node( &w, dock_at( g_ctx->vp.pool[ vp ].dock_root ) );
+    dock_serialize_node( &w, dock_at( s_vp_pool[ vp ].dock_root ) );
     if ( bufsz )
         buf[ ( w.len < bufsz ) ? w.len : bufsz - 1u ] = '\0';
     return w.len;
@@ -94,12 +94,12 @@ dock_free_viewport_tree( u32 vp )
         if ( g_ctx->dock.pool[ i ].id != 0 && g_ctx->dock.pool[ i ].viewport == vp
              && !g_ctx->dock.pool[ i ].floating )
             dock_node_free( &g_ctx->dock.pool[ i ] );
-    g_ctx->vp.pool[ vp ].dock_root = GUI_DOCK_REF_NONE;
+    s_vp_pool[ vp ].dock_root = GUI_DOCK_REF_NONE;
 
     /* Any dockspace-maximize referenced a node just freed -- session state, never serialized. */
-    g_ctx->vp.pool[ vp ].dock_max_id      = 0;
-    g_ctx->vp.pool[ vp ].dock_max_on      = false;
-    g_ctx->vp.pool[ vp ].dock_max_settled = false;
+    s_vp_pool[ vp ].dock_max_id      = 0;
+    s_vp_pool[ vp ].dock_max_on      = false;
+    s_vp_pool[ vp ].dock_max_settled = false;
 }
 
 /* Public DESTROY verb: free viewport vp's whole dock tree and clear its root.  Every tree-docked
@@ -112,7 +112,7 @@ dock_free_viewport_tree( u32 vp )
 void
 gui_dock_clear( gui_vp_t vp )
 {
-    if ( !g_ctx->dock.pool || vp >= g_ctx->vp.max )
+    if ( !g_ctx->dock.pool || vp >= GUI_MAX_VIEWPORTS )
         return;
     dock_free_viewport_tree( vp );
 }
@@ -214,7 +214,7 @@ dock_parse_node( dock_reader_t* r, u32 vp )
 bool
 gui_dock_load( gui_vp_t vp, const char* text )
 {
-    if ( vp >= g_ctx->vp.max || !text )
+    if ( vp >= GUI_MAX_VIEWPORTS || !text )
         return false;
 
     dock_reader_t r = { text };
@@ -223,7 +223,7 @@ gui_dock_load( gui_vp_t vp, const char* text )
         return false;
 
     dock_free_viewport_tree( vp );
-    g_ctx->vp.pool[ vp ].dock_root = dock_ref( dock_parse_node( &r, vp ) );
+    s_vp_pool[ vp ].dock_root = dock_ref( dock_parse_node( &r, vp ) );
     return true;
 }
 

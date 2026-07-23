@@ -100,14 +100,17 @@ typedef struct
     u32  state_slots;    // keyed state pool: tiny-class slot count; the small class gets
                          //   3/4 of it, the big class is fixed (GUI_STATE_BIG_SLOTS)
     u32  popup_depth;    // max popup nesting
-    u32  max_viewports;  // render surfaces
     u32  max_dock_nodes; // dock-tree node pool; 0 = no docking (NULL cfg keeps the default)
 
 } gui_ctx_config_t;
 
+/* NOTE: render surfaces are NOT sized here -- viewports are a single global table shared by
+   every context (OS windows and RHI contexts are a genuinely global, small, fixed-size resource;
+   see s_vp_pool, core/gui_ctx.h), not a per-context pool. */
+
 /* Pre-built config -- a deliberately small profile for lightweight in-game UI contexts */
 #define GUI_CTX_CONFIG_GAME_UI \
-    ( ( gui_ctx_config_t ){ 8, 64, 4, 1, 0 } )
+    ( ( gui_ctx_config_t ){ 8, 64, 4, 0 } )
 
 /*==============================================================================================
     GUI: Geometry

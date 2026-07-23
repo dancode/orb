@@ -185,11 +185,10 @@ dock_zone_region( gui_rect_t r, dock_zone_t z )
 static void
 dock_overlay_begin( u32 vp )
 {
-    const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
     draw_set_window   ( DOCK_OVERLAY_WIN );
     draw_set_viewport ( vp );
     draw_set_sort_key ( DOCK_OVERLAY_Z );
-    draw_set_root_clip( vp_w( v ), vp_h( v ) );
+    draw_set_root_clip( vp_w( vp ), vp_h( vp ) );
     draw_set_rounding ( ROUND_WIDGET );
 }
 
@@ -276,7 +275,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     s_dock_drag.float_win  = GUI_ID_NONE;
 
     u32 vp = win->viewport;
-    if ( vp != s_io.mouse_viewport || vp >= g_ctx->vp.max )
+    if ( vp != s_io.mouse_viewport || vp >= GUI_MAX_VIEWPORTS )
         return;
 
     /* Chip layout: a title-bar-sized square per zone, centered in the leaf. */
@@ -289,13 +288,13 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
 
     /* A dormant dockspace (tree retained but not emitted this build) offers no drop chips --
        drops would land in rects that no longer lay out.  See dock_seen_frame, core/gui_ctx.h. */
-    gui_dock_node_t* root = dock_at( g_ctx->vp.pool[ vp ].dock_root );
+    gui_dock_node_t* root = dock_at( s_vp_pool[ vp ].dock_root );
     if ( !root || !dock_vp_emitted( vp ) )
         return;
 
     /* A settled maximized leaf covers the dockspace: the tree's rects are all obscured, so no
        drop chips are offered while fullscreen -- restore first, then dock. */
-    if ( g_ctx->vp.pool[ vp ].dock_max_settled )
+    if ( s_vp_pool[ vp ].dock_max_settled )
         return;
     /* Over a splitter gutter no leaf contains the cursor.  That must NOT drop the whole overlay:
        the viewport edge chips target the ROOT and stay offered anywhere inside the dockspace, so
@@ -306,7 +305,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         return;
 
     /* NO_SPLIT dockspace: tab docking only -- the center chip stands alone, no side or edge chips. */
-    bool no_split = ( g_ctx->vp.pool[ vp ].dock_flags & GUI_DOCKSPACE_NO_SPLIT ) != 0;
+    bool no_split = ( s_vp_pool[ vp ].dock_flags & GUI_DOCKSPACE_NO_SPLIT ) != 0;
 
     /* Outer (edge) chips appear only once the root is split: when the tree is a single leaf the inner
        5-way already spans the whole surface, so an edge chip would be a redundant duplicate.  Once
@@ -644,7 +643,7 @@ dock_window_chrome( gui_dock_node_t* node )
        the bare-hover gate excludes them. */
     if ( !node->floating && ( s_build.win.flags & GUI_WIN_DOCK_MAXIMIZE ) )
     {
-        gui_viewport_t* v     = &g_ctx->vp.pool[ node->viewport ];
+        gui_viewport_t* v     = &s_vp_pool[ node->viewport ];
         bool            maxed = ( v->dock_max_id == node->id && v->dock_max_on );
 
         gui_rect_t       mx_r  = { x + w - th, y, th, th };

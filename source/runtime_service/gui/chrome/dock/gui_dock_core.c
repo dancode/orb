@@ -107,7 +107,7 @@ dock_node_find( gui_dock_id_t id )
 static bool
 dock_vp_emitted( u32 vp )
 {
-    const gui_viewport_t* v = &g_ctx->vp.pool[ vp ];
+    const gui_viewport_t* v = &s_vp_pool[ vp ];
     return v->dock_root != GUI_DOCK_REF_NONE && v->dock_seen_frame == gui_frame_index();
 }
 
@@ -209,8 +209,8 @@ dock_hidden_refresh( void )
 {
     if ( !g_ctx->dock.pool )
         return;
-    for ( u32 vp = 0; vp < g_ctx->vp.count; ++vp )
-        dock_hidden_refresh_node( dock_at( g_ctx->vp.pool[ vp ].dock_root ) );
+    for ( u32 vp = 0; vp < s_vp_count; ++vp )
+        dock_hidden_refresh_node( dock_at( s_vp_pool[ vp ].dock_root ) );
 }
 
 /* The hidden pane a `dir` drop beside `n` should REVIVE instead of carving a new split: when the
@@ -263,13 +263,14 @@ dock_hidden_reuse( gui_dock_node_t* n, gui_dir_t dir )
    never false-match.  A node that outlives its maximize (split, hidden) drops the raised cover z
    here, so it re-tiles as a plain node when it next lays out. */
 static gui_dock_node_t*
-dock_max_node( gui_viewport_t* v )
+dock_max_node( gui_vp_t vp )
 {
+    gui_viewport_t* v = &s_vp_pool[ vp ];
     if ( v->dock_max_id == 0 )
         return NULL;
 
     gui_dock_node_t* n = dock_node_find( v->dock_max_id );
-    if ( !n || n->split != GUI_DOCK_SPLIT_NONE || n->floating || &g_ctx->vp.pool[ n->viewport ] != v
+    if ( !n || n->split != GUI_DOCK_SPLIT_NONE || n->floating || n->viewport != vp
          || n->hidden )
     {
         if ( n && !n->floating )
@@ -293,7 +294,7 @@ dock_max_node( gui_viewport_t* v )
 static void
 dock_max_set( gui_dock_node_t* n, bool on )
 {
-    gui_viewport_t* v = &g_ctx->vp.pool[ n->viewport ];
+    gui_viewport_t* v = &s_vp_pool[ n->viewport ];
 
     if ( on )
     {
@@ -351,7 +352,7 @@ dock_collapse( gui_dock_node_t* leaf )
 
     sib->parent = dock_ref( gp );
     if ( !gp )
-        g_ctx->vp.pool[ parent->viewport ].dock_root = dock_ref( sib );
+        s_vp_pool[ parent->viewport ].dock_root = dock_ref( sib );
     else
         gp->child[ gp->child[ 0 ] == dock_ref( parent ) ? 0 : 1 ] = dock_ref( sib );
 

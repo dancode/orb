@@ -194,7 +194,7 @@ dock_float_service_request( gui_id_t id, const char* title, gui_window_t* win )
 static void
 dock_float_clamp( gui_dock_node_t* node )
 {
-    const gui_viewport_t* vp = &g_ctx->vp.pool[ node->viewport ];
+    gui_vp_t vp = node->viewport;
     f32 dw = vp_w( vp );
     f32 dh = vp_h( vp );
     const f32 margin = WIN_TITLE_H;

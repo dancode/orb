@@ -28,7 +28,7 @@
 /* OS window hosting this window's viewport surface (-1 / APP_WIN_INVALID if unassociated). */
 static win_id_t window_native_id( const gui_window_t* win )
 {
-    return ( win_id_t )g_ctx->vp.pool[ win->viewport ].win_id;
+    return ( win_id_t )s_vp_pool[ win->viewport ].win_id;
 }
 
 /* A window is native when it solely occupies an gui-owned OS window: flagged explicitly (a
@@ -46,7 +46,7 @@ static bool window_is_native( const gui_window_t* win, gui_win_flags_t flags )
         return false;
 
     return ( flags & GUI_WIN_NATIVE ) != 0
-        || ( win && win->viewport != 0 && g_ctx->vp.pool[ win->viewport ].owned );
+        || ( win && win->viewport != 0 && s_vp_pool[ win->viewport ].owned );
 }
 
 /*==============================================================================================
@@ -187,7 +187,7 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
 static void
 window_sync_native( gui_window_t* win, gui_win_flags_t flags )
 {
-    const gui_viewport_t* vp = &g_ctx->vp.pool[ win->viewport ];
+    const gui_viewport_t* vp = &s_vp_pool[ win->viewport ];
     win->x = 0.0f;
     win->y = 0.0f;
     if ( vp->disp_w > 0 ) win->w = ( f32 )vp->disp_w;
@@ -208,7 +208,7 @@ window_sync_native( gui_window_t* win, gui_win_flags_t flags )
     app()->window_set_size_step( window_native_id( win ), step, step );
 
     i32 caption = ( flags & GUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
-    g_ctx->vp.pool[ win->viewport ].caption_inset = ( f32 )caption;
+    s_vp_pool[ win->viewport ].caption_inset = ( f32 )caption;
 
     if ( win->viewport != 0 && ( flags & GUI_WIN_CLOSEABLE ) )
     {
@@ -236,6 +236,7 @@ native_popin_request( gui_window_t* win )
     s_vp_request.win_id  = s_build.win.id;
     s_vp_request.from_vp = win ? win->viewport : 0u;
     s_vp_request.title   = s_build.win.title;
+    s_vp_request.owner   = g_ctx;   /* this window's context, for the reconcile's lookup */
 }
 
 /*==============================================================================================
