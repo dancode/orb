@@ -1264,7 +1264,6 @@ typedef struct gui_pane_s
     gui_rect_t rect;    // where it is; hit test + base clip derive from it
     u32        z;       // one number, two consumers: occlusion contest + paint order
     u8         vp;      // hosting OS surface (viewport index)
-    u8         input;   // 1 = competes for hover; 0 = pure display (GUI_WIN_NO_INPUT)
 
 } gui_pane_t;
 

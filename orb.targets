@@ -671,6 +671,15 @@ target sb_gui
     dep         rhi draw gui dev_font base
     mono_dep    render
 
+target sb_gui_base						# minimal gui frame loop: boot + empty ctx begin/end + present
+
+    type        exe
+    root        source/sandbox/gui/sb_gui_base
+    folder      09_SANDBOX/GUI
+    unit        sb_gui_base.c
+    dep         mod sys ref job app core
+    dep         rhi gui base
+
 target sb_gui_console					# Quake-style dev console over core cvar/console
 
     type        exe
@@ -1074,6 +1083,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     add         sb_asset_image   	# asset image loader proof
     add         sb_asset_shader   	# shader asset + hot-reload proof
     add         sb_gui   			# gui demo
+    add         sb_gui_base   		# minimal gui frame loop (boot + empty ctx begin/end)
     add         sb_gui_example   	# gui feature explorer (end-to-end demos)
     add         sb_gui_console   	# quake-style dev console
     add         sb_gui_dock   		# docking test bed

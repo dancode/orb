@@ -155,6 +155,8 @@ fnv1a_u32( u32 h, u32 v )
 }
 
 /*==============================================================================================
+    COMMDN STEPPING
+ 
     draw_emit_blocked -- the one gate every draw_push_* entry point checks before spending a
     command slot (and, by early-outing first, any pool space): the command list is full, or the
     command stepper is replaying a frozen frame and live main-band emission is suppressed at the
@@ -166,18 +168,24 @@ draw_emit_blocked( void )
 {
     if ( s_draw.cmd_count >= GUI_MAX_CMDS )
         return true;
+
     if ( STEP_EMIT_SUPPRESSED() )
         return true;
+
 #ifdef GUI_CMD_STEPPER
     /* Attribution: stamp the emitting widget onto the slot this push will occupy.  Speculative
        (the push may still drop for alpha/cull), but exact: every push checks this gate first,
        so whichever push finally lands at this index was also the last stamper. */
+
     s_draw.cmd_owner[ s_draw.cmd_count ] = s_draw.cur_owner;
+
 #endif
+
     return false;
 }
 
 #ifdef GUI_CMD_STEPPER
+
 /* Called by item_state (STEP_SET_OWNER, gui_render.h) as each widget registers -- the
    commands it paints right after carry its id.  Reset to 0 (chrome) at window transitions in
    draw_seg_retag; chrome painted after a window's last widget still attributes to that widget
@@ -187,6 +195,7 @@ draw_set_cmd_owner( gui_id_t id )
 {
     s_draw.cur_owner = id;
 }
+
 #endif
 
 /*==============================================================================================
@@ -690,22 +699,28 @@ draw_hash_cmd( const gui_cmd_t* c )
 }
 
 void
-draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
-                       f32 u0, f32 v0, f32 u1, f32 v1,
-                       u32 tex_idx, u32 abgr )
+draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      /* rect */
+                       f32 u0, f32 v0, f32 u1, f32 v1,  /* uv */
+                       u32 tex_idx, u32 abgr )          /* texture slot + color */
 {
     if ( draw_emit_blocked() )
         return;
+
     /* Fully transparent fills contribute nothing under alpha blending (src*0 + dst = dst).
        Drop them before they cost a command + triangles -- e.g. a hidden window body whose
        COL_WINDOW_BG was pushed to alpha 0, as the perf overlay does. Also covers a textured
        quad tinted to zero alpha, which is likewise invisible. */
+
     u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u )
+    if (( col >> 24 ) == 0u )
         return;
-    if ( draw_cull_box( x, y, w, h ) )      /* scissored to nothing -- drop before it costs a slot */
+
+    if ( draw_cull_box( x, y, w, h ))   /* scissored to nothing -- drop before it costs a slot */
         return;
-    gui_cmd_t* c  = &s_draw.cmds[ s_draw.cmd_count++ ];
+
+    /* fill in the command struct */
+
+    gui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type         = GUI_CMD_RECT_FILLED;
     c->clip_idx     = s_draw.cur_clip_idx;
     c->vp           = (u8)s_draw.cur_vp;
@@ -719,7 +734,9 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,
     c->rect.v1      = v1;
     c->rect.tex_idx = tex_idx;
     c->rect.abgr    = col;
+
     /* Round solid-color fills only; a textured quad (glyph / image) keeps square UVs. */
+
     c->rect.rounding = ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }

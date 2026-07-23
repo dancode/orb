@@ -159,9 +159,10 @@ gui_shutdown( void )
 /* Context save stack -- ctx_begin pushes the context bound on entry, ctx_end pops and rebinds it,
    so begin/end nests as a balanced scope exactly like window_begin/window_end.  Reset to empty each
    frame in frame_begin, so an unbalanced previous frame cannot leak a binding into this one. */
+
 #define GUI_CTX_STACK_DEPTH 8
 static gui_context_t* s_ctx_save_stack[ GUI_CTX_STACK_DEPTH ];
-static u32              s_ctx_save_sp;
+static u32            s_ctx_save_sp;
 
 /* True when the current frame has any input change, in-flight animation, or render delta from last
    frame.  Computed in frame_begin after io_frame_begin; exposed via gui_frame_dirty().  When false
@@ -212,12 +213,19 @@ gui_frame_begin( f32 dt )
     s_overlays_emitted = false;   /* debug overlays emit once, at the default context's ctx_end */
     s_shell_emitted    = false;   /* boot chrome shell emits once, at the default context's ctx_begin */
 
-    gui_context_t* primary = s_ctx_pool[ 0 ];   /* default ctx always owns the OS window */
+    /* default ctx always owns the OS window (guaranteed to exist) */
+    gui_context_t* primary = s_ctx_pool[ 0 ];   
+    
+    /* display dimensions: the OS window and its viewports belong to the default context regardless of
+       which context is active for input this frame. The host may resize the OS window at any time,
+       so read the current size from the primary context's first viewport. */
+
     i32 disp_w = primary->vp.count > 0 ? primary->vp.pool[ 0 ].disp_w : 0;
     i32 disp_h = primary->vp.count > 0 ? primary->vp.pool[ 0 ].disp_h : 0;
 
     /* Open the perf overlay's emit clock here -- "start at frame_begin" -- and publish last frame's
        measured cost into the smoothed readouts the overlay shows. */
+
     perf_frame_begin( dt );
 
     /* caption_inset is NOT cleared here.  Native shell windows republish it during the build, so
@@ -226,6 +234,7 @@ gui_frame_begin( f32 dt )
     /* Push last frame's cursor request to the OS BEFORE interaction_frame_reset promotes the new
        hover_win and io_frame_begin overwrites mouse_viewport -- cursor_flush reads both as the
        previous frame left them, keeping the requested shape and its target window coherent. */
+
     cursor_flush();
 
     /* Promote last frame's render-stat accumulator to the published value BEFORE draw_reset, so a
@@ -365,14 +374,14 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
     ORB_ASSERT( font_valid() );
 
     if ( ctx_handle < 0 || ctx_handle >= (i32)s_ctx_pool_count || !s_ctx_pool[ ctx_handle ] )
-        ctx_handle = GUI_CTX_DEFAULT;
+         ctx_handle = GUI_CTX_DEFAULT;
 
     /* Push the context bound on entry; ctx_end restores it.  Count truthfully past the cap so a
        too-deep nesting still balances against ctx_end (the saved slot just aliases the top). */
     if ( s_ctx_save_sp < GUI_CTX_STACK_DEPTH )
-        s_ctx_save_stack[ s_ctx_save_sp ] = g_ctx;
-    ++s_ctx_save_sp;
-
+         s_ctx_save_stack[ s_ctx_save_sp ] = g_ctx;
+       ++s_ctx_save_sp;
+    
     gui_context_t* c = s_ctx_pool[ ctx_handle ];
     ctx_bind( c );
 

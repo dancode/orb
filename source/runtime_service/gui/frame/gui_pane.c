@@ -97,7 +97,7 @@ gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier, gui_vp
     s_pane.open    = true;
     s_pane.clipped = !( flags & GUI_WIN_NO_CLIP );
 
-    return ( gui_pane_t ){ .id = id, .rect = r, .z = z, .vp = (u8)vp, .input = (u8)input };
+    return ( gui_pane_t ){ .id = id, .rect = r, .z = z, .vp = (u8)vp };
 }
 
 void
