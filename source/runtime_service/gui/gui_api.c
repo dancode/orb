@@ -305,6 +305,7 @@ const gui_api_t g_gui_api_struct =
     .el_slider                          = gui_el_slider,
     .el_meter                           = gui_el_meter,
     .el_cycle                           = gui_el_cycle,
+    .el_input                           = gui_el_input,
 
     /*==============================================  GUI_CHROME  ===============================================*/
 

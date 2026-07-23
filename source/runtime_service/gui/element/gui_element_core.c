@@ -266,6 +266,69 @@ gui_el_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* ite
     return *idx != old;
 }
 
+/* Single-line text field filling r: the shared edit ENGINE (interact/gui_edit.c -- keys, mouse
+   selection drag, clipboard, undo, horizontal scroll, caret blink) under an element-styled box.
+   The proof the engine needs no chrome: this core and chrome's input_text drive the same
+   edit_field(); only the paint differs.  A press claims keyboard focus (ITEM_FOCUSABLE); the
+   engine owns every mutation and the redraw; this core paints selection / run / caret from the
+   keyed slot the engine resolved.  True on any frame the buffer changes. */
+bool
+gui_el_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
+{
+    gui_id_t         id = item_id( id_str );
+    gui_item_state_t st = item_state( id, r, ITEM_FOCUSABLE );
+
+    gui_draw_frame( r,
+                    st.focused ? EL_COL( BG, ACTIVE ) : s_el_style.col[ GUI_EL_BG ][ el_state( st ) ],
+                    ( st.focused || st.hover || st.nav ) ? EL_COL( BORDER, HOT )
+                                                         : EL_COL( BORDER, IDLE ),
+                    s_el_style.border_w );
+
+    /* The engine works in the content rect (box inset by the element pad on left / right) so it
+       never sees widget padding; it leaves cursor / anchor / scroll_x / blink_t on the keyed slot. */
+    gui_rect_t content = { r.x + s_el_style.pad, r.y, r.w - 2.0f * s_el_style.pad, r.h };
+    input_field_result_t res = edit_field( id, content, st, buf, bufsz );
+
+    /* Paint the resolved state: selection band, glyph-clipped run, blinking caret. */
+    const gui_edit_state_t* es = GUI_STATE( gui_edit_state_t, id );
+
+    f32 text_x  = content.x - es->scroll_x;
+    f32 text_y  = text_center_y( content.y, content.h );
+    f32 clip_x0 = content.x;
+    f32 clip_x1 = content.x + content.w;
+
+    if ( st.focused )
+    {
+        u32  sel_lo, sel_hi;
+        bool has_sel;
+        edit_sel( es, &sel_lo, &sel_hi, &has_sel );
+        if ( has_sel )
+        {
+            f32 sx0 = text_x + text_x_at( buf, sel_lo );
+            f32 sx1 = text_x + text_x_at( buf, sel_hi );
+            if ( sx0 < clip_x0 ) sx0 = clip_x0;
+            if ( sx1 > clip_x1 ) sx1 = clip_x1;
+            if ( sx1 > sx0 )
+                draw_fill( ( gui_rect_t ){ sx0, content.y + 1.0f, sx1 - sx0, content.h - 2.0f },
+                           EL_COL( ACCENT, DIM ) );
+        }
+    }
+
+    draw_push_text_clip_n( text_x, text_y, EL_COL( TEXT, IDLE ), buf, 0xFFFFFFFFu,
+                           clip_x0, clip_x1 );
+
+    /* Caret: visible the first half of each 1 s blink cycle; 1px column, 2px vertical inset
+       (presentation constants of THIS core, not style slots -- per-widget detail is kit business). */
+    if ( st.focused && ( ( (u32)( es->blink_t * 2.0f ) & 1u ) == 0u ) )
+    {
+        f32 cx = text_x + text_x_at( buf, es->cursor );
+        draw_fill( ( gui_rect_t ){ cx, content.y + 2.0f, 1.0f, content.h - 4.0f },
+                   EL_COL( ACCENT, ACTIVE ) );
+    }
+
+    return res.changed;
+}
+
 #undef EL_COL
 
 // clang-format on

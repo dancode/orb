@@ -1249,6 +1249,14 @@ typedef struct gui_api_s
     bool ( *el_cycle  )( gui_rect_t r, const char* id_str, i32* idx,
                          const char* const* items, i32 count );
 
+    /* el_input -- single-line text field filling r: the SAME edit engine chrome's input_text
+       drives (keys, mouse selection drag, clipboard, undo, horizontal scroll, caret blink),
+       under an element-styled box -- a text field with no chrome dependency.  A press claims
+       keyboard focus; buf is caller-owned, NUL-terminated, edited in place.  True on any frame
+       the buffer changes.  Enter / submit policy stays with the caller (set_edit_key_hook, or
+       chrome's input_text for the labeled form-row treatment). */
+    bool ( *el_input  )( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
+
     /*============================================================================================================
         GUI_CHROME -- convenience / editor UI  (window/ + dock/ + popup/ + widgets/ + table/)
         The imgui-style design layer over the strata beneath it: persistent windows, docking,

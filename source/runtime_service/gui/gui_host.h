@@ -388,6 +388,7 @@ bool gui_el_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
 void gui_el_meter ( gui_rect_t r, f32 frac, u32 fill_abgr );
 bool gui_el_cycle ( gui_rect_t r, const char* id_str, i32* idx,
                     const char* const* items, i32 count );
+bool gui_el_input ( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
 
 /*==============================================  GUI_CHROME  ===============================================*/
 

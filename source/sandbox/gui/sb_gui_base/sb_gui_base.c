@@ -155,11 +155,14 @@ tier_element( void )
     gui()->el_label( leaf[ 1 ], GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
                      "el_* cores over carved rects" );
 
+    static char s_name[ 48 ] = "el_input";
     gui()->el_panel( leaf[ 2 ] );
     gui_rect_t rows = gui_rect_pad( leaf[ 2 ], 8.0f );
     gui()->el_slider( gui_rect_cut_top( &rows, 24.0f ), "t3_slider", &s_level, 0.0f, 1.0f );
     rows.y += 6.0f;  rows.h -= 6.0f;
     gui()->el_meter( gui_rect_cut_top( &rows, 18.0f ), s_level, AMBER );
+    rows.y += 6.0f;  rows.h -= 6.0f;
+    gui()->el_input( gui_rect_cut_top( &rows, 26.0f ), "t3_input", s_name, sizeof s_name );
 
     gui()->el_button( leaf[ 3 ], "el_button" );
 
@@ -280,6 +283,9 @@ tier_style( void )
     r.y += 6.0f;  r.h -= 6.0f;
     gui()->el_meter( gui_rect_cut_top( &r, 18.0f ), s_level,
                      gui()->el_style()->col[ GUI_EL_ACCENT ][ GUI_EL_IDLE ] );
+    r.y += 6.0f;  r.h -= 6.0f;
+    static char s_field[ 48 ] = "kit-styled field";
+    gui()->el_input( gui_rect_cut_top( &r, 26.0f ), "t5_input", s_field, sizeof s_field );
     r.y += 6.0f;  r.h -= 6.0f;
     gui()->el_button( gui_rect_cut_top( &r, 30.0f ), "el_button" );
 
