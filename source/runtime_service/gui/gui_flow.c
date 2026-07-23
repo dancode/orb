@@ -62,6 +62,7 @@
 #include "runtime_service/gui/flow/gui_split.c"
 #include "runtime_service/gui/flow/gui_region.c"
 #include "runtime_service/gui/flow/gui_layout.c"
+#include "runtime_service/gui/flow/gui_table_engine.c"
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory

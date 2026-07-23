@@ -273,6 +273,60 @@ void layout_pop_region ( void );
 #define REGION_PAD_DEFAULT ( ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, WIDGET_GAP } )
 
 /*==============================================================================================
+    Table engine (flow/gui_table_engine.c) -- the widget-agnostic machinery behind chrome's
+    table_* verbs, at the service tier so a second kit can build its own table look without
+    chrome: persisted column tracks + the boundary pair-resize drag, the sort state machine +
+    the stable display-order sort, and fixed-pitch row virtualization.  Chrome keeps the
+    one-clip model, the header paint, stripes / dividers, and the scroll-region policy.
+==============================================================================================*/
+
+/* Per-table persistent state: column widths, sort choice, and scroll position survive frames.
+   A big-class tenant of the keyed state pool (GUI_STATE), so every field's default must be its
+   zero -- the zero-on-create contract: sort_col is 1-BASED with 0 = unsorted.  The scroll link
+   is storage for the caller's scrolling body region (the engine never reads it). */
+typedef struct
+{
+    f32        col_w[ GUI_TABLE_COLS_MAX ];   /* 0 = use the setup width / default   */
+    i8         sort_col;                        /* 1-based sorted column; 0 = unsorted */
+    i8         sort_dir;                        /* 0 = ascending, 1 = descending       */
+
+    gui_scroll_link_t scroll;                   /* the caller's body-region scroll + extent */
+
+} gui_table_persist_t;
+
+ORB_STATIC_ASSERT( sizeof( gui_table_persist_t ) <= GUI_STATE_BIG_CAP,
+                   "gui_table_persist_t is the big class's sizing tenant; grow GUI_STATE_BIG_CAP" );
+
+/* Resolve column origins / widths into out_x / out_w.  Priority per column: user-resized
+   persist width > setup fixed px (init_w[i] > 1) > stretch.  x / w = the column strip. */
+void table_tracks_resolve( const gui_table_persist_t* p, const f32* init_w, i32 init_n,
+                           i32 ncols, f32 x, f32 w, f32* out_x, f32* out_w );
+
+/* Interior-boundary pair-resize drag over the resolved columns; mutates p->col_w and
+   re-resolves col_x / col_w on a live drag.  pin_mask bit i pins the boundary on column i's
+   right edge; band_box spans the grab bands vertically; `front` gates the hover.  Returns the
+   hot / dragged boundary (-1 none).  The caller owns the hit-clip policy around the call. */
+i32  table_resize_drag( gui_id_t id, gui_table_persist_t* p, const f32* init_w, i32 init_n,
+                        i32 ncols, u32 pin_mask, gui_rect_t band_box, bool front,
+                        f32 x, f32 w, f32* col_x, f32* col_w );
+
+/* Header sort click on 0-based `col`: same column flips direction, a new column sorts it
+   ascending.  Pure persist-state cycle; the caller owns any dirty flag. */
+void table_sort_click( gui_table_persist_t* p, i32 col );
+
+/* Stable reorder of a caller-owned display-order index array by (col, desc) via the public
+   sort callbacks (cmp_fn wins over val_fn).  Pure; true when it reordered. */
+bool table_order_sort( i32* order, i32 count, i32 col, bool desc,
+                       gui_table_sort_value_fn val_fn, gui_table_sort_cmp_fn cmp_fn,
+                       void* user );
+
+/* Fixed-pitch visible span over the OPEN region from screen-space `top` (row height h,
+   pitch h + WIDGET_GAP): reserves all `count` rows of extent so the scrollbar range sees the
+   full run, jumps the pen past the culled head, and returns [first, last).  The caller seeds
+   its own row iteration from the result. */
+gui_span_t table_rows_span( i32 count, f32 h, f32 top );
+
+/*==============================================================================================
     UPWARD SEAMS -- the flow unit's only calls above its layer.  Do not add more.
 
     Declared HERE (upward-seam declarations live with their LOWEST consumer; the

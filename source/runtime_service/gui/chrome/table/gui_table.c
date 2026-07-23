@@ -34,11 +34,14 @@
       - gui_table_persist_t  : persistent per-table state (col widths, sort, scroll), a big-class
                                 tenant of the keyed state pool (GUI_STATE) -- per-context like all
                                 keyed state, so two bound contexts never share a same-titled
-                                table's column/sort state.
+                                table's column/sort state.  The type and the machinery over it
+                                (track resolve, pair-resize drag, sort cycle + order sort, row
+                                span) are the table ENGINE: flow/gui_table_engine.c.
 
-    Include order (unity build): included by gui.c after gui_layout_child.c so layout_push_region,
-    layout_pop_region, layout_set_default, layout_row_break, layout_resolve_tracks, item_state,
-    lf, s_layout_sp, s_layout_stack, s_build, s_interaction, s_io, and the draw + style macros are
+    Include order (unity build): included by the chrome unit after the flow seam so the engine
+    verbs (table_tracks_resolve, table_resize_drag, table_sort_click, table_order_sort,
+    table_rows_span), layout_push_region, layout_pop_region, layout_set_default,
+    layout_row_break, item_state, lf, s_build, s_interaction, and the draw + style macros are
     all in scope.
 
 ==============================================================================================*/
@@ -57,24 +60,11 @@ typedef struct
 
 } gui_table_col_t;
 
-/* Per-table persistent state: column widths, sort choice, and scroll position survive frames.
-   A big-class tenant of the keyed state pool (GUI_STATE), so every field's default must be its
-   zero -- the zero-on-create contract: sort_col is 1-BASED with 0 = unsorted. */
-typedef struct
-{
-    f32        col_w[ GUI_TABLE_COLS_MAX ];   /* 0 = use column's init_w / default   */
-    i8         sort_col;                        /* 1-based sorted column; 0 = unsorted */
-    i8         sort_dir;                        /* 0 = ascending, 1 = descending       */
-
-    /* Scroll state + measured content extent for a scrolling body (GUI_TABLE_SCROLL_*).
-       The layout region reads scroll as the pen bias and writes content_w/h back at pop; both
-       must persist across frames for the two-pass gutter / clamp logic to settle. */
-    gui_scroll_link_t scroll;
-
-} gui_table_persist_t;
-
-ORB_STATIC_ASSERT( sizeof( gui_table_persist_t ) <= GUI_STATE_BIG_CAP,
-                   "gui_table_persist_t is the big class's sizing tenant; grow GUI_STATE_BIG_CAP" );
+/* The persistent per-table state (gui_table_persist_t: column widths, sort, scroll) and the
+   widget-agnostic machinery over it -- track resolution, the boundary pair-resize drag, the
+   sort state machine + order sort, row virtualization -- live in the table ENGINE at the
+   service tier (flow/gui_table_engine.c, seam decls in flow/gui_flow.h).  This widget is the
+   engine's chrome face: geometry, paint, and the region policy. */
 
 /* Per-frame active table context.  One table active at a time (table_begin rejects nesting); a
    single module-static slot like s_build (frame scratch, not per-context).  FUTURE: nested
@@ -144,47 +134,33 @@ static gui_scroll_link_t s_tab_scroll_dummy;
     Internal helpers
 ==============================================================================================*/
 
-/* Resolve column positions and widths from setup data and persist overrides.
+/* Gather the setup widths into the flat array the engine takes (the engine never sees
+   gui_table_col_t -- labels and flags are chrome business). */
+static i32
+table_init_widths( gui_table_t* t, f32* out )
+{
+    for ( i32 i = 0; i < t->col_setup_n; ++i )
+        out[ i ] = t->cols[ i ].init_w;
+    return t->col_setup_n;
+}
+
+/* Resolve column positions and widths through the engine (persist override > setup > stretch).
    x / w are the screen-space origin and total width of the column strip. */
 static void
 table_resolve_columns( gui_table_t* t, f32 x, f32 w )
 {
-    f32 tracks[ GUI_TABLE_COLS_MAX ];
-
-    for ( i32 i = 0; i < t->ncols; ++i )
-    {
-        /* Priority: user-resized persist width > setup init_w > default stretch. */
-        f32 track = 1.0f;    /* stretch / fill by default */
-
-        if ( t->persist->col_w[ i ] > 0.0f )
-        {
-            track = t->persist->col_w[ i ];
-        }
-        else if ( i < t->col_setup_n )
-        {
-            gui_table_col_t* col = &t->cols[ i ];
-            if ( col->init_w > 1.0f )
-                track = col->init_w;   /* explicit fixed width */
-        }
-
-        tracks[ i ] = track;
-    }
-
-    /* Zero gap between columns -- dividers are drawn as lines, not gaps (see table_draw_dividers). */
-    layout_resolve_tracks( tracks, (u32)t->ncols, x, w, 0.0f, t->col_x, t->col_w );
+    f32 init_w[ GUI_TABLE_COLS_MAX ];
+    i32 init_n = table_init_widths( t, init_w );
+    table_tracks_resolve( t->persist, init_w, init_n, t->ncols, x, w, t->col_x, t->col_w );
 }
 
-/* Drag an interior column boundary to resize (GUI_TABLE_RESIZABLE).  Run from table_open_body
-   right after columns resolve, so a live drag updates the persist widths and we re-resolve for
-   same-frame feedback.  The grab bands span the FULL table height (header included), so widen the
-   hit clip to the whole table box for the queries -- the same trick table_header_interact uses --
-   then restore it for the body rows.  Gated on this table's window being front-most with a free or
-   self-owned active id, mirroring the child edge-resize.
-
-   Pair-resize: the dragged boundary grows the column on its left and gives the difference back to
-   its right neighbor, so the pair's combined width -- and therefore every other column -- stays put
-   and the grabbed edge tracks the cursor exactly.  Both sides are written as fixed-px tracks
-   (values > 1), which table_resolve_columns then honors over init_w / stretch. */
+/* Drag an interior column boundary to resize (GUI_TABLE_RESIZABLE) -- the engine's pair-resize
+   mechanism (table_resize_drag) over this table's geometry.  Run from table_open_body right
+   after columns resolve, so a live drag updates the persist widths and re-resolves for
+   same-frame feedback.  The grab bands span the FULL table height (header included), so widen
+   the hit clip to the whole table box for the engine's queries -- the same trick
+   table_header_interact uses -- then restore it for the body rows.  Gated on this table's
+   window being front-most, mirroring the child edge-resize. */
 static void
 table_resize_interact( gui_table_t* t )
 {
@@ -193,43 +169,21 @@ table_resize_interact( gui_table_t* t )
     gui_rect_t body_hit = s_scope.clip;
     s_scope.clip = rect_intersect( t->saved_clip, t->outer_rect );
 
-    const f32 thick = 6.0f;          /* grab band width, centered on the boundary */
-    const f32 min_w = WIDGET_MIN_W;  /* floor for each side of the resized pair    */
-    bool      front = ( s_build.win.id == s_interaction.hover_win );
+    /* A column flagged NO_RESIZE pins the boundary on its right edge. */
+    u32 pin_mask = 0;
+    for ( i32 i = 0; i < t->col_setup_n && i < t->ncols - 1; ++i )
+        if ( t->cols[ i ].flags & GUI_TABLE_COL_NO_RESIZE )
+            pin_mask |= 1u << i;
 
-    for ( i32 i = 0; i < t->ncols - 1; ++i )
-    {
-        /* A column flagged NO_RESIZE pins the boundary on its right edge. */
-        gui_table_col_t* col = ( i < t->col_setup_n ) ? &t->cols[ i ] : NULL;
-        if ( col && ( col->flags & GUI_TABLE_COL_NO_RESIZE ) ) continue;
+    f32 init_w[ GUI_TABLE_COLS_MAX ];
+    i32 init_n = table_init_widths( t, init_w );
 
-        f32          bx  = t->col_x[ i + 1 ];   /* boundary between col i and col i+1 */
-        gui_rect_t hr  = { bx - thick * 0.5f, t->outer_rect.y, thick, t->outer_rect.h };
-        gui_id_t   rid = id_combine( t->id, (gui_id_t)( 0x5200u + i ) );
-
-        /* Hot when free + front-most and the cursor is over the band; the grab is the bare
-           item_grab protocol (core/gui_item.c), claiming the left button (released
-           globally when it lifts, like the dock splitter). */
-        bool active = false;
-        if ( item_grab( rid, hr, front, &active ) )
-            t->resize_hot = (i8)i;
-
-        if ( active )
-        {
-            t->resize_hot = (i8)i;
-
-            f32 pair_w = t->col_w[ i ] + t->col_w[ i + 1 ];
-            if ( pair_w >= 2.0f * min_w )   /* enough room to keep both sides above the floor */
-            {
-                f32 new_left = clampf( s_io.mouse_x - t->col_x[ i ], min_w, pair_w - min_w );
-                t->persist->col_w[ i ]     = new_left;
-                t->persist->col_w[ i + 1 ] = pair_w - new_left;
-
-                /* Re-resolve so the columns laid out this frame reflect the drag with no lag. */
-                table_resolve_columns( t, lf()->content_x, lf()->content_w );
-            }
-        }
-    }
+    bool front = ( s_build.win.id == s_interaction.hover_win );
+    i32  hot   = table_resize_drag( t->id, t->persist, init_w, init_n, t->ncols, pin_mask,
+                                    t->outer_rect, front, lf()->content_x, lf()->content_w,
+                                    t->col_x, t->col_w );
+    if ( hot >= 0 )
+        t->resize_hot = (i8)hot;
 
     s_scope.clip = body_hit;
 }
@@ -496,19 +450,11 @@ table_header_interact( gui_table_t* t )
         if ( !no_sort && st.hover )  t->hdr_hot = (i8)i;
         if ( !no_sort && st.active ) t->hdr_act = (i8)i;
 
-        /* Sort click: cycle sort column / direction. */
+        /* Sort click: the engine cycles the persist's column / direction. */
         if ( !no_sort && st.clicked )
         {
-            if ( sort_col == (i8)i )
-            {
-                t->persist->sort_dir = ( t->persist->sort_dir == 0 ) ? 1 : 0;
-            }
-            else
-            {
-                t->persist->sort_col = (i8)( i + 1 );   /* stored 1-based; 0 = unsorted */
-                t->persist->sort_dir = 0;
-                sort_col             = (i8)i;
-            }
+            table_sort_click( t->persist, i );
+            sort_col      = (i8)( t->persist->sort_col - 1 );
             t->sort_dirty = true;
         }
     }
@@ -665,33 +611,23 @@ gui_table_rows_clip( i32 count, f32 min_h )
 
     table_end_row( t );   /* close any row already emitted; the pen is at its bottom + gap */
 
-    layout_frame_t* f     = lf();
-    f32             h     = ( min_h > 0.0f ) ? min_h : (f32)WIDGET_H;
-    f32             pitch = h + (f32)WIDGET_GAP;
-    f32             top   = f->pen_y;   /* imperative host: the pen is authoritative, no gap owed */
+    f32 h     = ( min_h > 0.0f ) ? min_h : (f32)WIDGET_H;
+    f32 pitch = h + (f32)WIDGET_GAP;
+    f32 top   = lf()->pen_y;   /* imperative host: the pen is authoritative, no gap owed */
 
-    /* Reserve all `count` rows of extent (last row's bottom, no trailing gap) so the scrollbar
-       range and clamp see the full table regardless of how few rows the loop emits. */
-    extent_track( f, f->content_x, top + (f32)count * pitch - (f32)WIDGET_GAP );
-
-    i32 first = (i32)floorf( ( f->view.y - top ) / pitch );
-    i32 last  = (i32)ceilf ( ( f->view.y + f->view.h - top ) / pitch );
-    if ( first < 0 )     first = 0;
-    if ( first > count ) first = count;
-    if ( last  > count ) last  = count;
-    if ( last  < first ) last  = first;
-
-    layout_pen_jump( f, top + (f32)first * pitch );
+    /* The engine reserves the full extent, computes the visible span, and jumps the pen past
+       the culled head. */
+    gui_span_t s = table_rows_span( count, h, top );
 
     /* Seed the culled head as the "previous row": absolute cur_row keeps stripe/divider phase,
        and row_top/row_h must describe the last culled row -- the next table_next_row re-steps the
        pen from them via table_end_row (row_top + row_h + gap), and left at table_begin's zeros
        that step would yank the pen to the screen top and strand the whole run above the view. */
-    t->cur_row = first - 1;
-    t->row_top = top + (f32)first * pitch - pitch;
+    t->cur_row = s.first - 1;
+    t->row_top = top + (f32)s.first * pitch - pitch;
     t->row_h   = h;
 
-    return ( gui_span_t ){ first, last };
+    return s;
 }
 
 bool
@@ -792,34 +728,13 @@ gui_table_get_sort_specs( gui_table_sort_specs_t* out )
     return true;
 }
 
-/* Compare two user rows by the active sort column via the value callback.  Returns the ascending
-   ordering (<0 / 0 / >0); the caller applies the sort direction.  A numeric key on either side
-   forces a numeric compare (a missing key counts as zero); otherwise both sides compare as text. */
-static i32
-table_sort_value_cmp( i32 a, i32 b, i32 col, gui_table_sort_value_fn fn, void* user )
-{
-    gui_table_sort_value_t va = { 0 }, vb = { 0 };
-    fn( a, col, &va, user );
-    fn( b, col, &vb, user );
-
-    if ( va.is_num || vb.is_num )
-    {
-        f64 da = va.is_num ? va.num : 0.0;
-        f64 db = vb.is_num ? vb.num : 0.0;
-        return (i32)( da > db ) - (i32)( da < db );
-    }
-
-    const char* sa = va.str ? va.str : "";
-    const char* sb = vb.str ? vb.str : "";
-    return strcmp( sa, sb );
-}
-
 /* Reorder a user-owned display-order index array to match the table's active sort.  order holds
    the user data indices in display order; count is its length.  Sorts ONLY on the frame a header
    click changed the sort (consuming the same dirty flag table_get_sort_specs reads), so it is cheap
    to call unconditionally every frame and the order is preserved across frames.  Pass val_fn for the
-   built-in alphabetical / numeric sort (direction handled here), or cmp_fn for a full-control
-   comparator (cmp_fn wins if both are given).  Returns true when it reordered the array. */
+   built-in alphabetical / numeric sort (direction handled by the engine), or cmp_fn for a
+   full-control comparator (cmp_fn wins if both are given).  The sort itself is the engine's
+   stable order sort (table_order_sort).  Returns true when it reordered the array. */
 bool
 gui_table_sort_order( i32* order, i32 count, gui_table_sort_value_fn val_fn,
                         gui_table_sort_cmp_fn cmp_fn, void* user )
@@ -831,38 +746,9 @@ gui_table_sort_order( i32* order, i32 count, gui_table_sort_value_fn val_fn,
     /* Consume the dirty flag regardless: with no comparator there is nothing to do, but we should
        not keep re-reporting the same click on later frames. */
     t->sort_dirty = false;
-    if ( !val_fn && !cmp_fn ) return false;
 
-    i32  col  = (i32)t->persist->sort_col - 1;   /* stored 1-based; sort on the 0-based index */
-    bool desc = ( t->persist->sort_dir != 0 );
-
-    /* Stable insertion sort -- keeps the input order among equal keys and needs no scratch buffer.
-       It runs only on the click frame, so the O(n^2) worst case is paid once per sort, not per
-       frame; swap in a faster stable sort here if very large tables ever need it. */
-    for ( i32 i = 1; i < count; ++i )
-    {
-        i32 key = order[ i ];
-        i32 j   = i - 1;
-        while ( j >= 0 )
-        {
-            i32 c;
-            if ( cmp_fn )
-            {
-                c = cmp_fn( order[ j ], key, col, desc, user );
-            }
-            else
-            {
-                c = table_sort_value_cmp( order[ j ], key, col, val_fn, user );
-                if ( desc ) c = -c;
-            }
-            if ( c <= 0 ) break;   /* <= keeps equal keys stable (no swap on tie) */
-            order[ j + 1 ] = order[ j ];
-            --j;
-        }
-        order[ j + 1 ] = key;
-    }
-
-    return true;
+    return table_order_sort( order, count, (i32)t->persist->sort_col - 1,
+                             t->persist->sort_dir != 0, val_fn, cmp_fn, user );
 }
 
 /* Tint the current row or cell.  Call after table_next_row (for ROW) or after table_next_column
