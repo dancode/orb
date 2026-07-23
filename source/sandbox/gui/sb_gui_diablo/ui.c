@@ -192,12 +192,15 @@ ui_title( gui_rect_t r, const char* text )
     gui()->draw_text_shadow( box.x, box.y, text, s_style.title, s_style.title_shadow, 2.0f, 2.0f );
 }
 
-/* PROMOTED (GUI_STACK_PLAN increment 3): the core is now gui()->el_button -- the kit look
-   arrives through ui_kit_install's installed element style, not per-call colors. */
+/* UNIFIED (layout-seam pass): no el_ vocabulary -- the stock widget driven by an explicit rect.
+   next_item_rect makes cell_next_w hand gui_button THIS rect verbatim (no flow pad / gap), so the
+   button fills r exactly, the el_ atom's zero-padding property with one widget set.  The kit look
+   still arrives through ui_kit_install's installed element style. */
 bool
 ui_button( gui_rect_t r, const char* label )
 {
-    return gui()->el_button( r, label );
+    gui()->next_item_rect( r );
+    return gui()->button( label );
 }
 
 bool
