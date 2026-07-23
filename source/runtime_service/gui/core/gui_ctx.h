@@ -96,6 +96,7 @@ typedef struct gui_window_t
        and the collapse height tween off `collapsed`, are the feat kit's mechanisms (feat_pin /
        gui_feat_collapse, interact/gui_feature.c), keyed off the window id: their edge latches and
        from-values live in the keyed state pool, not on this record. */
+
     union
     {
         struct
@@ -109,14 +110,13 @@ typedef struct gui_window_t
         u8 bits;
     };
 
-    u32        last_frame;       // frame index last begun; 0 = never begun
-    gui_win_flags_t flags;       // behavior flags supplied to window_begin
+    u32                 last_frame;     // frame index last begun; 0 = never begun
+    gui_win_flags_t     flags;          // behavior flags supplied to window_begin
 
-    u32        shelf_slot; // minimized: the chip's order along the surface's bottom edge (0 = leftmost)
+    u32                 shelf_slot;     // minimized: the chip's order along the surface's bottom edge (0 = leftmost)
 
-    gui_rect_t norm; // maximized / minimized: the saved normal rect to restore to
-
-    gui_scroll_link_t scroll;    // persisted scroll offset + last-measured content extent
+    gui_rect_t          norm;           // maximized / minimized: the saved normal rect to restore to
+    gui_scroll_link_t   scroll;         // persisted scroll offset + last-measured content extent
 
     /* NOTE: for native windows only */
     /* Re-open of a CLOSEABLE floater: closing it lets the abandoned-teardown free its OS window,
@@ -136,8 +136,9 @@ typedef struct gui_window_t
 
 /* The window record door (core/gui_surface.c -- the server owns the pool; chrome is the policy
    that fills it) + the next-window channel records its verbs queue into. */
+
 gui_window_t* window_get ( gui_id_t id, f32 x, f32 y, f32 w, f32 h );
-gui_window_t* window_find( gui_id_t id );       /* record by id / NULL, in the BOUND context */
+gui_window_t* window_find( gui_id_t id );                                /* record by id / NULL, in the BOUND context */
 gui_window_t* window_find_in( struct gui_context_t* ctx, gui_id_t id );  /* record by id / NULL, in an EXPLICIT context */
 void          window_apply_next( gui_window_t* win, bool appearing );
 
