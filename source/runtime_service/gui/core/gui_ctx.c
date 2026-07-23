@@ -254,7 +254,8 @@ u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per
 gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
 u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
 
-gui_context_t* g_ctx = NULL;   /* bound context (extern'd in core/gui_ctx.h for the carved units) */
+/* bound context (extern'd in core/gui_ctx.h for the carved units) */
+gui_context_t* g_ctx = NULL;   
 
 /* The one real viewport table -- see the extern comment in core/gui_ctx.h.  A plain zero-init
    global, not part of any context's malloc block: it is sized once at compile time (APP_WIN_MAX,
@@ -402,6 +403,7 @@ cursor_flush( void )
 /* An exclusive input mode is live -- a GUI_WIN_MODAL window emitted this frame or last (the
    console re-stamps modal.seen_frame at its window_begin every frame it is open, so the fence
    never lapses while it is up and lapses one frame after it closes). */
+
 static bool
 gui_modal_scope_live( void )
 {

@@ -43,11 +43,8 @@
 
 #ifdef GUI_STRESS_TEST
 
-/* Stress-bench build (gui_stress lib): 4x the load-bearing pools; the sensible defaults below
-   stay the shipping values.  Popup depth and dock nodes are not load axes and keep theirs. */
-
-#define GUI_DEFAULT_MAX_WINDOWS     128
-#define GUI_DEFAULT_STATE_SLOTS     2048
+#define GUI_DEFAULT_MAX_WINDOWS     128     // gui_stress.lib builds with higher counts
+#define GUI_DEFAULT_STATE_SLOTS     2048    // gui_stress.lib builds with higher counts
 
 #else
 
