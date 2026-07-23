@@ -1257,6 +1257,12 @@ typedef struct gui_api_s
        chrome's input_text for the labeled form-row treatment). */
     bool ( *el_input  )( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
 
+    /* el_selectable -- a full-width row: transparent idle, HOT tint on hover / nav, ACTIVE tint
+       when *selected.  THE row primitive under lists, combos, trees, menus -- the pure core, with
+       none of chrome's selectable policy (type-ahead, popup / combo dismiss on click).  selected
+       NULL = a click-only row; id from the label.  True on the frame it is clicked. */
+    bool ( *el_selectable )( gui_rect_t r, const char* label, bool* selected );
+
     /*============================================================================================================
         GUI_CHROME -- convenience / editor UI  (window/ + dock/ + popup/ + widgets/ + table/)
         The imgui-style design layer over the strata beneath it: persistent windows, docking,

@@ -389,6 +389,7 @@ void gui_el_meter ( gui_rect_t r, f32 frac, u32 fill_abgr );
 bool gui_el_cycle ( gui_rect_t r, const char* id_str, i32* idx,
                     const char* const* items, i32 count );
 bool gui_el_input ( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
+bool gui_el_selectable( gui_rect_t r, const char* label, bool* selected );
 
 /*==============================================  GUI_CHROME  ===============================================*/
 

@@ -47,19 +47,13 @@ draw_button_label( gui_rect_t r, const char* label )
 bool
 gui_button( const char* label )
 {
-    /* Get this widgets unique identifier */
-    gui_id_t id = item_id( label );
-
-    /* Natural width = a react with room for label + padding.  
-       Shrinks to this in stack and in same_line; Columns fills to fit. */
-    gui_rect_t r  = cell_next_w( label_natural_w( label ), WIDGET_H );
-
-    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
-
-    draw_fill( r, col_item_bg_anim( id, st ) );
-    draw_button_label( r, label );
-
-    return st.clicked;
+    /* Placement is all chrome adds: reserve the natural-width cell (shrinks to it in stack /
+       same_line, fills to fit in columns), then paint the stock face through the element core.
+       Since the color seam closed (el_button uses the same col_item_bg_anim over the same
+       style_el_col palette), the core paints exactly what this widget used to -- this is the
+       canonical four-line widget collapsed to composer + core. */
+    gui_rect_t r = cell_next_w( label_natural_w( label ), WIDGET_H );
+    return gui_el_button( r, label );
 }
 
 /*==============================================================================================

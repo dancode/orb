@@ -8,11 +8,16 @@
     behavior (gui_item over the caller rect), presentation (the public draw_* surface),
     and the slim element style (gui_el_style_t, gui_element.h).
 
-    Style contract: elements read ONLY s_el_style.  Every style landing (gui_style_apply /
-    theme_set / theme_reset / font activation) re-installs it through el_style_install(): the
-    registered style source when a kit owns the look (gui_style_source_set), else the default
-    S2 compile (el_style_derive).  A kit may also poke values ad hoc via gui_el_style().
-    Elements never see a theme, a style stack, or a gui_col_t slot.
+    Style contract: elements resolve every color through style_el_col (the style unit) -- the
+    INSTALLED element style by default, an active push_style_color override winning.  So a
+    delegating stock widget reads exactly what chrome reads (chrome's COL_* macros ARE
+    style_el_col), and a caller can push_style_color around an el_* the same way; absent any
+    override this is byte-identical to the raw installed palette, so a kit that owns the look
+    (gui_style_source_set) still wins by default.  The installed style is re-derived at every
+    landing (gui_style_apply / theme_set / theme_reset / font activation) through
+    el_style_install(): the registered style source, else the default S2 compile
+    (el_style_derive).  A kit may also poke values ad hoc via gui_el_style().  Elements still
+    never NAME a gui_col_t slot or walk the theme -- style_el_col is the one seam.
 
     Dependency contract: the el_* cores call gui_core (item, ids, io, redraw) + gui_draw
     (draw_*) + gui_rect only -- NEVER the flow layout engine -- and resolve through the
@@ -96,8 +101,11 @@ gui_style_source_set( gui_style_source_fn fn, void* user )
         gui_request_redraw();       /* the restyle must survive an idle frame    */
 }
 
-/* col shorthand for the element bodies below */
-#define EL_COL( role, state ) s_el_style.col[ GUI_EL_##role ][ GUI_EL_##state ]
+/* col shorthand for the element bodies below -- routed through style_el_col so a push_style_color
+   override wins and a delegating stock widget sees the SAME value chrome does; with no override
+   this is exactly the installed element palette (kit-owned when a style source is registered).
+   For a runtime (non-token) state, call style_el_col( GUI_EL_<role>, s ) directly. */
+#define EL_COL( role, state ) style_el_col( GUI_EL_##role, GUI_EL_##state )
 
 /* Interaction state -> palette state for a body fill / border line. */
 static gui_el_state_t
@@ -106,6 +114,20 @@ el_state( gui_item_state_t st )
     return st.active           ? GUI_EL_ACTIVE
          : st.hover || st.nav  ? GUI_EL_HOT
                                : GUI_EL_IDLE;
+}
+
+/* The "##id" label grammar for a DISPLAYED label: the suffix carries identity, never pixels.
+   Returns the visible span -- the original pointer when there is no suffix (no copy), else the
+   head copied into buf.  Shared by the label-bearing cores (el_button, el_selectable). */
+static const char*
+el_visible_text( const char* label, char* buf, u32 bufsz )
+{
+    u32 n = label_vis_len( label );
+    if ( label[ n ] == '\0' ) return label;         /* no suffix: paint the label as-is */
+    if ( n >= bufsz ) n = bufsz - 1;
+    for ( u32 i = 0; i < n; ++i ) buf[ i ] = label[ i ];
+    buf[ n ] = '\0';
+    return buf;
 }
 
 /*==============================================================================================
@@ -127,29 +149,35 @@ gui_el_label( gui_rect_t r, gui_align_t align, const char* text )
     gui_draw_text_in( r, align, EL_COL( TEXT, IDLE ), text );
 }
 
-/* Framed press element: id from the label ("##"/"###" rules apply).  True on click. */
+/* Button face label: centered when it fits the frame, else left-anchored and ellipsized so an
+   oversized label truncates cleanly instead of spilling past both edges.  The el twin of chrome's
+   draw_button_label -- both paint the same face, which is what lets a stock button delegate here.
+   text is the already-visible span (the caller stripped the "##id" suffix). */
+static void
+el_button_label( gui_rect_t r, const char* text )
+{
+    f32 avail = r.w - 2.0f * s_el_style.pad;
+    if ( label_width( text ) <= avail )
+        gui_draw_text_in( r, GUI_ALIGN_CENTER, EL_COL( TEXT, IDLE ), text );
+    else
+        draw_label_fit( r.x + s_el_style.pad, text_center_y( r.y, r.h ),
+                        EL_COL( TEXT, IDLE ), text, avail );
+}
+
+/* The stock press button: a flat, hover/press-animated fill + a centered (or ellipsized) label;
+   id from the label ("##"/"###" rules apply).  col_item_bg_anim rides the keyed damper over the
+   SAME element palette style_el_col resolves, so el and chrome animate alike -- this IS the face
+   chrome's gui_button now delegates to.  True on click. */
 bool
 gui_el_button( gui_rect_t r, const char* label )
 {
-    gui_item_state_t st = gui_item( label, r );
-    gui_el_state_t   s  = el_state( st );
+    gui_id_t         id = item_id( label );
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    gui_draw_frame( r, s_el_style.col[ GUI_EL_BG ][ s ],
-                    ( st.hover || st.nav ) ? EL_COL( BORDER, HOT ) : EL_COL( BORDER, IDLE ),
-                    s_el_style.border_w );
+    draw_fill( r, col_item_bg_anim( id, st ) );
 
-    /* Display honors the label grammar: the "##id" suffix carries identity, never pixels. */
-    const char* text = label;
-    char        vis[ 128 ];
-    u32         n = label_vis_len( label );
-    if ( label[ n ] != '\0' )
-    {
-        if ( n >= sizeof( vis ) ) n = sizeof( vis ) - 1;
-        for ( u32 i = 0; i < n; ++i ) vis[ i ] = label[ i ];
-        vis[ n ] = '\0';
-        text = vis;
-    }
-    gui_draw_text_in( r, GUI_ALIGN_CENTER, EL_COL( TEXT, IDLE ), text );
+    char vis[ 128 ];
+    el_button_label( r, el_visible_text( label, vis, sizeof vis ) );
 
     /* A click is a host state change this build cannot show yet -- ask for the next emit, or
        the retained cache replays the stale screen until the mouse moves. */
@@ -212,7 +240,7 @@ gui_el_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
 
     gui_rect_t handle = { r.x + frac * ( r.w - 8.0f ), r.y + r.h * 0.10f, 8.0f, r.h * 0.80f };
     gui_el_state_t s  = el_state( st );
-    gui_draw_frame( handle, s_el_style.col[ GUI_EL_BG ][ s ],
+    gui_draw_frame( handle, style_el_col( GUI_EL_BG, s ),
                     ( s != GUI_EL_IDLE ) ? EL_COL( BORDER, HOT ) : EL_COL( BORDER, IDLE ), 1.0f );
 
     if ( *v != old )
@@ -279,7 +307,7 @@ gui_el_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
     gui_item_state_t st = item_state( id, r, ITEM_FOCUSABLE );
 
     gui_draw_frame( r,
-                    st.focused ? EL_COL( BG, ACTIVE ) : s_el_style.col[ GUI_EL_BG ][ el_state( st ) ],
+                    st.focused ? EL_COL( BG, ACTIVE ) : style_el_col( GUI_EL_BG, el_state( st ) ),
                     ( st.focused || st.hover || st.nav ) ? EL_COL( BORDER, HOT )
                                                          : EL_COL( BORDER, IDLE ),
                     s_el_style.border_w );
@@ -327,6 +355,34 @@ gui_el_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
     }
 
     return res.changed;
+}
+
+/* Full-width selectable row: transparent when idle so the surface behind shows through, the HOT
+   tint on hover / nav, the ACTIVE tint when selected.  THE row primitive under lists, combos,
+   trees, and menus -- the pure core, carrying none of chrome's policy (type-ahead stamp, popup /
+   combo dismiss on click).  That policy stays in chrome's gui_selectable, which is free to compose
+   this.  selected NULL = a click-only row (the caller drives its own index from the return).  id
+   comes from the label ("##"/"###" rules apply).  True on the frame it is clicked. */
+bool
+gui_el_selectable( gui_rect_t r, const char* label, bool* selected )
+{
+    gui_item_state_t st = gui_item( label, r );
+
+    bool on = ( selected && *selected );
+    if ( on || st.hover || st.nav )
+        gui_draw_rect( r.x, r.y, r.w, r.h, on ? EL_COL( BG, ACTIVE ) : EL_COL( BG, HOT ) );
+
+    char        vis[ 128 ];
+    const char* text = el_visible_text( label, vis, sizeof vis );
+    gui_rect_t  tr   = { r.x + s_el_style.pad, r.y, r.w - 2.0f * s_el_style.pad, r.h };
+    gui_draw_text_in( tr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, EL_COL( TEXT, IDLE ), text );
+
+    if ( st.clicked )
+    {
+        if ( selected ) *selected = !( *selected );
+        gui_request_redraw();   /* a click drives a caller selection not visible until next emit */
+    }
+    return st.clicked;
 }
 
 #undef EL_COL

@@ -132,10 +132,12 @@ promise holds for the *mechanisms* (identity, behavior, layout, style, paint are
 It frays on the *widget vocabulary*. This is the most useful thing to fix if you want the
 "custom UI" story to be as strong as the "editor toolkit" story.
 
-**Fray 1 -- the `el_*` set is 8 cores; chrome is ~100 widgets.** The rect-taking element tier
-is `el_panel / el_label / el_button / el_check / el_slider / el_meter / el_cycle / el_input`.
-Chrome adds combo, listbox, tree, tab bar, color pickers, drag-floatN, tables, collapsing
-headers, radio, selectable, and more -- but *only in flow-placed form*. If you are below chrome
+**Fray 1 -- the `el_*` set is thin; chrome is ~100 widgets.** The rect-taking element tier is
+`el_panel / el_label / el_button / el_check / el_slider / el_meter / el_cycle / el_input`, plus
+`el_selectable` (the first parity extraction -- the row primitive lifted out of chrome's
+`gui_selectable`; see the parity pass). Chrome adds combo, listbox, tree, tab bar, color
+pickers, drag-floatN, tables, collapsing headers, radio, and more -- but *only in flow-placed
+form*. If you are below chrome
 and want a rect-taking combo or tree, there is no `el_combo`; you are back to composing
 `item()` + `draw_*` by hand. The custom path drops off a cliff exactly where the widget gets
 interesting. **Fix: widen `el_*` toward parity, or make the flow-placed chrome widget provably
