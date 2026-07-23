@@ -337,24 +337,29 @@ rect_hit( gui_rect_t r )
 ==============================================================================================*/
 
 /* Request a hardware cursor shape for this frame.  Last writer wins (one hover per frame). */
-void cursor_set( app_cursor_t c ) { s_interaction.mouse_cursor = c; }
+void cursor_set( app_cursor_t c ) 
+{ 
+    s_interaction.mouse_cursor = c; 
+}
 
 /* Flush the requested cursor to the OS window under the pointer.  Reads last frame's request +
    hover state (called before interaction_frame_reset promotes the new frame's hover).  Dedupes on
    (window, shape) so an unchanged cursor is not re-posted every frame.  Non-static: called
    once per app frame from gui_frame_begin (frame/gui_frame_loop.c). */
+
 void
 cursor_flush( void )
 {
-    static i32          s_flushed_win   = -1;                 /* last window we pushed a shape to    */
-    static app_cursor_t s_flushed_cur   = APP_CURSOR_ARROW;   /* last shape pushed there             */
+    static i32          s_flushed_win   = -1;                   // last window we pushed a shape to
+    static app_cursor_t s_flushed_cur   = APP_CURSOR_ARROW;     // last shape pushed there
 
-    bool want = ( s_interaction.hover_win != GUI_ID_NONE )   /* gui owns the mouse: same fence  */
-             || ( s_interaction.active_id != GUI_ID_NONE );  /* as want_capture_mouse             */
+    bool want = ( s_interaction.hover_win != GUI_ID_NONE )      // gui owns the mouse: same fence
+             || ( s_interaction.active_id != GUI_ID_NONE );     // as want_capture_mouse
 
     if ( want )
     {
         /* The OS window the cursor is in: viewport slot index -> its app win_id. */
+
         i32 win = 0;
         if ( s_io.mouse_viewport < s_vp_count )
             win = s_vp_pool[ s_io.mouse_viewport ].win_id;

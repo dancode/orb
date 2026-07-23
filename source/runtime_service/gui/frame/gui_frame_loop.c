@@ -198,6 +198,7 @@ gui_frame_begin( f32 dt )
 
     /* Promote last frame's render-stat accumulator to the published value BEFORE draw_reset, so a
        build that reads render_stats() this frame sees the previous frame's completed totals. */
+
     gui_build_stats_publish();
 
     /* Refresh the IO snapshot, computing s_io_dirty as a side-effect. */
