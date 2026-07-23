@@ -333,6 +333,7 @@ void gui_pop_layout_state( void );
 void gui_align( gui_align_t a );
 void gui_next_item_fit( f32 unit );
 void gui_next_item_h( f32 unit );
+void gui_next_item_rect( gui_rect_t r );
 void gui_next_item_align( gui_align_t a );
 void gui_same_line( f32 spacing );
 void gui_stack_same_line( f32 spacing );

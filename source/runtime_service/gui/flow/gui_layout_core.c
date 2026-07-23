@@ -976,6 +976,26 @@ cell_next_w( f32 natural_w, f32 h )
        widget passes through, so the push-model needs no plumbing at the individual call sites. */
     item_flags_resolve();
 
+    /* One-shot explicit rect (next_item_rect): the caller owns the exact cell -- a carved leaf, an
+       anchored box, a hand-cut band.  THE seam that makes every widget layout-agnostic: the same
+       gui_button() takes its rect from the flow template OR from here, so a rect-first call site
+       (next_item_rect(box); button(...)) and a flow call site (button(...)) run identical code -- and
+       the el_* rect cores become optional sugar over it.  A pure placement override: it consumes the
+       height one-shot, moves no pen, and grows no highwater (reserve with empty() if a region must
+       size around it), so it needs no declared mode and returns before the emit-before-header guard.
+       Nav is still latched so item_state keys it. */
+    if ( f->line.rect_next_set )
+    {
+        f->line.rect_next_set = false;
+        f->line.h_next        = -1.0f;
+        gui_rect_t r          = f->line.rect_next;
+        s_scope.nav.region = f->nav_region;
+        s_scope.nav.line   = f->nav_line;
+        s_scope.nav.placed = true;
+        DBG_LAYOUT( r );
+        return r;
+    }
+
     /* Emit-before-header guard: a region opens UNDECLARED (mode NONE), and the first layout header
        names the mode.  A widget emitted before any header is a usage error -- assert in debug so it
        is caught at the call site, and fall back to a stack in release so a shipped build degrades

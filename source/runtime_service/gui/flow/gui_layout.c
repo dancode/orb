@@ -221,6 +221,17 @@ void gui_next_item_fit( f32 unit ) { lf()->line.fit_next = unit; }
        gui()->next_item_h( gui()->sz_u( 16 ) ); gui()->button( "Tall" );  // a 16-quantum row */
 void gui_next_item_h( f32 unit ) { lf()->line.h_next = unit; }
 
+/* next_item_rect -- one-shot: the next widget's cell IS this exact screen rect, whoever produced it
+   (a carve/split/anchor leaf, a hand-cut band, a manual box).  The rect-first door onto the whole
+   widget set: any gui_* widget takes its rect from here instead of the flow template, so one call
+   site works under manual, carved, or flow layout.  Pure placement -- no pen advance, no highwater,
+   no declared mode required (see cell_next_w); reserve with empty() if a region must size around it.
+
+       gui_rect_t leaf[4]; gui()->carve( FORM, area, 6, leaf, 4 );
+       gui()->next_item_rect( leaf[0] ); gui()->button( "Save" );        // carved cell, flow widget
+       gui()->next_item_rect( leaf[1] ); gui()->checkbox( "On", &on ); */
+void gui_next_item_rect( gui_rect_t r ) { lf()->line.rect_next = r; lf()->line.rect_next_set = true; }
+
 /* Grid mode: partition the band from the pen to the region bottom into desc.cols x desc.rows
    (both GUI_END-terminated, overloaded units).  Uses cols, rows, gaps, and align; row_h is
    flow-only and ignored.  Widgets then fill cells row-major; nothing scrolls. */

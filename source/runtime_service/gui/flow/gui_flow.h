@@ -110,6 +110,9 @@ typedef struct
     f32 fit_next;                   // pending cell-item fit unit; < 0 = unset (implicit)
     f32 h_next;                     // pending one-shot item-height unit; < 0 = unset (caller's h)
 
+    gui_rect_t rect_next;           // one-shot explicit cell (next_item_rect): the caller owns the
+    bool       rect_next_set;       //   exact rect; cell_next_w returns it and moves no pen
+
     /* One-shot next_item_align: the verb swaps the override into mod.align (so the item's own
        paint reads it too) and arms the next emit; the emit AFTER that one restores the base. */
     u8   align_restore;             // mod.align to restore once the armed item has emitted

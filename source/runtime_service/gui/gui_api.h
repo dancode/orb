@@ -1020,6 +1020,16 @@ typedef struct gui_api_s
 
            gui()->next_item_h( 1.0f ); gui()->button( "Fill" );    // rest of the region
 
+       next_item_rect() -- one-shot: the next widget's cell IS this exact screen rect, from any
+                      producer (a carve / split / anchor leaf, a hand-cut band).  The rect-first door
+                      onto the WHOLE widget set -- any gui_* widget takes its rect from here instead
+                      of the flow template, so one call site works under manual, carved, or flow
+                      layout, and the el_* rect cores are optional sugar over it.  Pure placement: no
+                      pen advance, no highwater, no declared mode needed; reserve with empty() if a
+                      region must size around it.
+
+           gui()->next_item_rect( leaf );  gui()->button( "Save" );  // a carved cell, a flow widget
+
        next_item_align() -- one-shot align for the next item only (flexbox's align-self), over the
                       region's persistent align(); restored at the following emit, so call it
                       immediately before the item.
@@ -1040,6 +1050,7 @@ typedef struct gui_api_s
     void ( *align      )( gui_align_t a );
     void ( *next_item_fit )( f32 unit );
     void ( *next_item_h )( f32 unit );
+    void ( *next_item_rect )( gui_rect_t r );
     void ( *next_item_align )( gui_align_t a );
     void ( *same_line  )( f32 spacing );
     void ( *stack_same_line )( f32 spacing );

@@ -248,6 +248,7 @@ const gui_api_t g_gui_api_struct =
     .align                              = gui_align,
     .next_item_fit                      = gui_next_item_fit,
     .next_item_h                        = gui_next_item_h,
+    .next_item_rect                     = gui_next_item_rect,
     .next_item_align                    = gui_next_item_align,
     .same_line                          = gui_same_line,
     .stack_same_line                    = gui_stack_same_line,
