@@ -133,13 +133,12 @@ typedef struct
     Host descriptor
 ==============================================================================================*/
 
-/* Optional gui service configuration — pointed to from the host descriptor; NULL keeps
-   today's defaults (no font, default caps, dark clear, debug driver off).  Only read when
+/* Optional gui service configuration -- pointed to from the host descriptor; NULL keeps
+   today's defaults (no font, dark clear, debug driver off).  Only read when
    gui is in k_modules[]. */
 typedef struct
 {
     gui_builtin_font_t        font;       // GUI_FONT_NONE = host loads its own (font_load)
-    const gui_forward_caps_t* caps;       // NULL = GUI_FORWARD_CAPS_DEFAULT                 */
     f32                       clear[ 4 ]; // main-surface clear color; alpha 0 = default dark
     bool                      debug;      // arm the gui debug hotkey driver (P/O/F9/F10...)  */
 

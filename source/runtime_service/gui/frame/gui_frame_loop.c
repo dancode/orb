@@ -46,20 +46,6 @@ gui_init_config_back( gui_backend_caps_t caps )
     s_init_caps = caps;
 }
 
-/* OPTIONAL: override which UI-unit feature boundaries this run compiles in (gui_forward_caps_t,
-   gui.h) -- tables, keyboard_nav.  s_fwd_caps lives at the top of the gui_frame.c unit root (not
-   here in the frame/ constituent) so every tier file below it in the unity build can read it
-   directly; this just overwrites that copy.  Call
-   before init() (or before the first frame, at latest -- unlike the backend caps, nothing here is
-   latched into a one-time GPU setup, so a call any time before the first affected code path runs
-   is safe).  Skip this entirely to accept GUI_FORWARD_CAPS_DEFAULT. */
-
-void
-gui_init_config_front( gui_forward_caps_t caps )
-{
-    s_fwd_caps = caps;
-}
-
 bool
 gui_init( gui_builtin_font_t font )
 {

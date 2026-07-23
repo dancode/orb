@@ -1468,20 +1468,6 @@ typedef struct
     ( ( gui_backend_caps_t ){ .icons = true, .retained_cache = true, \
                               .render_debug = true, .stats_trace = false } )
 
-/* Forward (UI-unit) capability flags -- latched via gui_init_config_front() before init().
-   These do not exclude any code from the build -- the point is feature-boundary clarity. */
-
-typedef struct
-{
-    bool tables;            // default on: optionally turn off tables.
-    bool docking;           // default on: optionally turn off docking.
-    bool keyboard_nav;      // default on: optionally turn off keyboard navigation.
-
-} gui_forward_caps_t;
-
-#define GUI_FORWARD_CAPS_DEFAULT \
-    ( ( gui_forward_caps_t ){ .tables = true, .docking = true, .keyboard_nav = true } )
-
 /*==============================================================================================
     GUI: Boot descriptor
 
@@ -1500,7 +1486,6 @@ typedef struct
     bool                      os_chrome;  /* true = stock OS frame; false (default) = borderless
                                              window with the gui chrome shell auto-emitted         */
     gui_builtin_font_t        font;       /* built-in preset; GUI_FONT_NONE = caller font_load()s  */
-    const gui_forward_caps_t* caps;       /* UI-unit feature caps; NULL = GUI_FORWARD_CAPS_DEFAULT */
     gui_clock_fn              clock;      /* frame hooks (gui links no sys) -- see set_frame_hooks */
     gui_sleep_fn              sleep;
     gui_wait_events_fn        wait;

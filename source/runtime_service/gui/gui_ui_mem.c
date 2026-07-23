@@ -58,9 +58,9 @@ gui_ui_memory( void )
        tables) via its seam; it moved down from the draw unit so both servers can measure text. */
     b += gui_font_unit_mem_bytes();
 
-    /* frame/ + root -- lifecycle stacks, boot/present state, forwarded caps. */
+    /* frame/ + root -- lifecycle stacks, boot/present state. */
     b += (u32)( sizeof( s_ctx_save_stack ) + sizeof( s_font_stack )
-              + sizeof( s_boot ) + sizeof( s_present ) + sizeof( s_fwd_caps ) );
+              + sizeof( s_boot ) + sizeof( s_present ) );
 
     /* core/gui_ctx.c -- the one global viewport table (s_vp_pool).  A fixed static now, not part
        of any context's per-context heap block, so it is counted here rather than under

@@ -79,18 +79,6 @@ void           ctx_pool_init  ( void );                                         
 bool           viewport_create ( gui_vp_t vp, rhi_texture_t target, i32 win_id );             /* gui_viewport.c */
 void           viewport_destroy( gui_vp_t vp );                                               /* gui_viewport.c */
 
-/*==============================================================================================
-    Capability flags -- latched by gui_init_config_front (gui_frame_loop.c), read directly (same TU)
-    by any file below that owns an optional feature boundary: gui_table.c (tables),
-    gui_dock*.c (docking), gui_nav.c (keyboard_nav) reach it through the chrome/gui_chrome.h
-    extern.  Declared here, before every tier include, so all of them see it -- the
-    gui_render.c s_caps placement, mirrored for this unit.  A compound literal is not a valid
-    static initializer (see frame/gui_frame_loop.c's s_init_caps comment), so this repeats
-    GUI_FORWARD_CAPS_DEFAULT's fields by hand; gui_init_config_front overwrites it before init().
-==============================================================================================*/
-
-gui_forward_caps_t s_fwd_caps = { .tables = true, .docking = true, .keyboard_nav = true };
-
 /* The theme registry, base/active style state (s_style_base, s_style, s_font_size), the style
    stacks, and layout_compute live in the STYLE UNIT (gui_style.c); this unit reads
    s_style and the resolvers through the style/gui_style.h externs + seams.

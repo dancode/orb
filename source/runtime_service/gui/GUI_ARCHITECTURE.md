@@ -180,7 +180,6 @@ them. `gui_boot.c` is NOT involved.
 
 ```
 // setup (after app window + rhi context + swapchain exist)
-gui()->init_config_front( caps );                 // optional feature gates, BEFORE init
 gui()->init( font );                              // or GUI_FONT_NONE
 gui()->set_frame_hooks( clock, sleep, wait );     // OS services gui cannot reach itself
 gui()->debug_enable( true );                      // optional hotkey driver

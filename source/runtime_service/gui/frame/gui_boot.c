@@ -97,8 +97,6 @@ gui_boot( const gui_boot_desc_t* desc )
         return GUI_VP_INVALID;
     }
 
-    gui_init_config_front( desc->caps ? *desc->caps : GUI_FORWARD_CAPS_DEFAULT );
-
     if ( !gui_init( desc->font ) )
     {
         rhi()->context_destroy( rctx );

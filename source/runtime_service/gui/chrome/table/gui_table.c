@@ -346,8 +346,6 @@ static void table_draw_header( gui_table_t* t );
 bool
 gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 height )
 {
-    if ( !s_fwd_caps.tables ) return false;   /* feature boundary: gui_forward_caps_t.tables */
-
     /* FUTURE: nested tables -- only one table is open at a time (s_tab is a single frame-scratch
        slot; see the state-model note in core/gui_core.h).  Reject a nested table_begin. */
     if ( s_tab_active ) return false;

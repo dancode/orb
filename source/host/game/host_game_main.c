@@ -174,15 +174,8 @@ static const run_module_entry_t k_modules[] = {
 
 /* gui composites over render's scene (the same path host_editor uses).  A font is required
    for the console (and any menu/HUD) to render text -- GUI_FONT_NONE would draw nothing. */
-static const gui_forward_caps_t k_gui_caps = {
-    .keyboard_nav = true,
-    .tables       = false,
-    .docking      = false,
-};
-
 static const run_gui_desc_t k_gui_desc = {
     .font  = GUI_FONT_ROBOTO_16,
-    .caps  = &k_gui_caps,
     .clear = { 0.0f, 0.0f, 0.0f, 0.0f },   /* alpha 0 = render owns the clear (path A) */
     .debug = false,
 };

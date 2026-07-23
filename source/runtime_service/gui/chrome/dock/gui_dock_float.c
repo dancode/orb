@@ -263,8 +263,8 @@ gui_window_tab( const char* title, const char* onto_title )
 {
     if ( !title || !onto_title )
         return;
-    if ( !s_fwd_caps.docking || !g_ctx->dock.pool )
-        return;   /* feature boundary: tab groups ride the dock-node pool */
+    if ( !g_ctx->dock.pool )
+        return;   /* tab groups ride the dock-node pool */
 
     gui_id_t wid = id_hash( title );
     gui_id_t tid = id_hash( onto_title );

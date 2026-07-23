@@ -1657,11 +1657,6 @@ typedef struct gui_api_s
                        into the running instance -- icons, retained caching, debug render mode,
                        stats-trace printfs.  Skip it entirely to accept GUI_CAPS_DEFAULT (every
                        layer on except stats_trace).
-        init_config_front() -- OPTIONAL; the FRONTEND (UI/core unit, gui.c) sibling -- overrides
-                       which gui_forward_caps_t feature boundaries are active: tables,
-                       keyboard_nav.  Checked at callsite, not compiled out -- these exist for
-                       feature-boundary clarity, not code size.  Skip it entirely to accept
-                       GUI_FORWARD_CAPS_DEFAULT (every flag on).
         init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
                        `font` optionally loads one of the built-in presets (gui_builtin_font_t,
                        gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
@@ -1682,7 +1677,6 @@ typedef struct gui_api_s
                        absolute path itself (e.g. a plain fopen) rather than a load_icon call. */
 
     void                ( *init_config_back  )( gui_backend_caps_t caps );
-    void                ( *init_config_front )( gui_forward_caps_t caps );
     bool                ( *init      )( gui_builtin_font_t font );
     void                ( *shutdown  )( void );
     u32                 ( *font_load )( const char* path );
@@ -1696,7 +1690,7 @@ typedef struct gui_api_s
        wires gui as an optional service.  Stands up the whole stack from a single descriptor
        (gui_boot_desc_t, gui.h): rhi()->init() (idempotent -- safe if the host already ran it),
        app window (borderless by default, with the chrome shell then auto-emitted each frame;
-       os_chrome opts back into the stock OS frame), rhi context, init_config_front + init(font),
+       os_chrome opts back into the stock OS frame), rhi context, init(font),
        set_frame_hooks, debug_enable, and the primary viewport -- returned, or GUI_VP_INVALID
        with everything unwound on failure.  Call once after mod_init_all, before any other window
        opens.  shutdown() tears down what boot created (context + window); rhi()->shutdown()

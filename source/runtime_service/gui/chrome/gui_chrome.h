@@ -129,10 +129,6 @@ void nav_new_frame        ( void );   /* chrome/nav/gui_nav.c: per-frame nav tur
 void dock_hidden_refresh  ( void );   /* chrome/dock/gui_dock_core.c: hidden-node upkeep (frame)     */
 u32  gui_chrome_unit_mem_bytes( void );
 
-/* Forwarded capability flags (defined at the gui.c root, latched at init): table / dock / nav
-   feature gates the chrome files consult before emitting their optional layers. */
-extern gui_forward_caps_t s_fwd_caps;
-
 /* gui_popup.c is included after the widgets/ files; selectable calls this to auto-close the
    enclosing popup on click (the Dear ImGui CloseCurrentPopup default behavior). */
 void gui_popup_close_current( void );

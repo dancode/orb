@@ -550,7 +550,6 @@ main( int argc, char** argv )
         .w         = 1100, .h = 720,
         .os_chrome = true,
         .font      = GUI_FONT_CASCADIA_MONO_16, // GUI_FONT_CASCADIA_MONO_16
-        .caps      = &( gui_forward_caps_t ){ .keyboard_nav = true, .tables = false, .docking = false },
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
         .wait      = sys_wait_for_os_events_ms,

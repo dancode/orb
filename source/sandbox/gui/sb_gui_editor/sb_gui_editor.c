@@ -86,7 +86,6 @@ main( int argc, char** argv )
         .title = "ORB Editor -- sb_gui_editor",
         .w     = 1600, .h = 900,
         .font  = GUI_FONT_ROBOTO_16,        // GUI_FONT_JETBRAINS_16
-        .caps  = &( gui_forward_caps_t ){ .keyboard_nav = true, .tables = true, .docking = true },
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,

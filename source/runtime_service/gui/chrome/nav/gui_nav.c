@@ -938,12 +938,6 @@ nav_finish( void )
 void
 nav_new_frame( void )
 {
-     /* feature boundary: gui_forward_caps_t.keyboard_nav; g_ctx->nav.win stays GUI_ID_NONE, 
-        so nav_item_register never matches a window and mouse input is untouched */
-
-    if ( !s_fwd_caps.keyboard_nav )
-        return;                             /* not using the keyboard for nav */
-
     /* A deaf (non-listening) context takes no input.  s_io and the interaction record are shared by
        every context (core/gui_ctx.c), so a passive context must not read -- much less key_claim
        -- the keyboard from them, or it would steal keys from whichever context IS listening this

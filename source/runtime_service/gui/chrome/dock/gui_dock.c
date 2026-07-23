@@ -43,7 +43,6 @@ gui_dockspace_inset( gui_vp_t vp, f32 top )
 gui_dock_id_t
 gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
 {
-    if ( !s_fwd_caps.docking ) return GUI_DOCK_NONE;   /* feature boundary: gui_forward_caps_t.docking */
     if ( !g_ctx->dock.pool ) return GUI_DOCK_NONE;   /* pool disabled for this context (max_dock_nodes == 0) */
     if ( vp >= GUI_MAX_VIEWPORTS )
         return GUI_DOCK_NONE;

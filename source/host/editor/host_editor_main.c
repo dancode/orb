@@ -149,15 +149,8 @@ static const run_module_entry_t k_modules[] = {
     { 0 }
 };
 
-static const gui_forward_caps_t k_gui_caps = {
-    .keyboard_nav = true,
-    .tables       = true,
-    .docking      = true,
-};
-
 static const run_gui_desc_t k_gui_desc = {
     .font  = GUI_FONT_ROBOTO_16,
-    .caps  = &k_gui_caps,
     .clear = { 0.10f, 0.10f, 0.12f, 1.00f },
     .debug = true,            /* P/O/F10 overlays, I idle skip, etc. */
 };

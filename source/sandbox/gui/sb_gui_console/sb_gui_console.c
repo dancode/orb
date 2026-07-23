@@ -363,13 +363,11 @@ main( int argc, char** argv )
 
     int      ret_code = 1;
 
-    /* keyboard_nav off: the console owns Tab (completion) and Up/Down (history). */
     gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui_console",
         .w         = 1280, .h = 720,
         .os_chrome = true,
         .font      = GUI_FONT_ROBOTO_16, // GUI_FONT_JETBRAINS_16,
-        .caps      = &( gui_forward_caps_t ){ .keyboard_nav = true, .tables = false, .docking = false },
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
         .wait      = sys_wait_for_os_events_ms,
