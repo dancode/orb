@@ -341,7 +341,7 @@ show_split_demo( bool* p_open )
 
         /* Body. */
         gui()->push_layout_overlay( cell[ 2 ] );
-            gui()->child_begin( "##body", 0.0f, 0.0f, GUI_WIN_NO_CLIP ); 
+            gui()->child_begin( "##body", 0.0f, 0.0f, 0 );   /* clip content to the body rect */
                 gui()->stack();
                 gui()->text( "Body content fills the middle." );
                 gui()->text( "The layout is one flat f32 form." );
@@ -840,7 +840,15 @@ show_style_editor( bool* p_open )
     u32         n_themes;
     const gui_theme_t* themes = gui()->theme_list( &n_themes );
 
-    if ( gui()->combo_begin( "Theme", active ? active : "(custom)", GUI_COMBO_NONE ) )
+    /* [ combo (fill) | Reset (fixed) ] as an explicit two-track row, NOT combo + same_line(button):
+       a fill widget leaves the pen at the region's right edge, so a same_line natural-width button
+       reaches past content_w and (content_w chasing that) the row grows without bound each frame.
+       A fixed second track parks the button in a content_w-independent cell instead.  The combo hides
+       its own label ("##") since the separator above already titles the section. */
+    f32 reset_w = gui()->button_width( "Reset" );
+    gui()->row_cols( 0.0f, (f32[]){ 1.0f, reset_w, GUI_END } );
+
+    if ( gui()->combo_begin( "##Theme", active ? active : "(custom)", GUI_COMBO_NONE ) )
     {
         for ( u32 i = 0; i < n_themes; ++i )
         {
@@ -851,9 +859,10 @@ show_style_editor( bool* p_open )
         gui()->combo_end();
     }
 
-    gui()->same_line( -1 );
     if ( gui()->button( "Reset" ) )
         gui()->theme_reset();   /* revert to the active theme's authored values, clear stacks */
+
+    gui()->stack();   /* back to a single full-width column for the rest of the panel */
 
     if ( !active )
         gui()->text_disabled( "Edited -- pick a theme above to revert." );
