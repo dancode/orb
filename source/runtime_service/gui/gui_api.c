@@ -313,6 +313,19 @@ const gui_api_t g_gui_api_struct =
     .el_input                           = gui_el_input,
     .el_selectable                      = gui_el_selectable,
 
+    .comp_slider                        = gui_comp_slider,
+    .stock_slider                       = gui_stock_slider,
+    .comp_button                        = gui_comp_button,
+    .stock_button                       = gui_stock_button,
+    .comp_check                         = gui_comp_check,
+    .stock_check                        = gui_stock_check,
+    .comp_cycle                         = gui_comp_cycle,
+    .stock_cycle                        = gui_stock_cycle,
+    .comp_selectable                    = gui_comp_selectable,
+    .stock_selectable                   = gui_stock_selectable,
+    .comp_input                         = gui_comp_input,
+    .stock_input                        = gui_stock_input,
+
     /*==============================================  GUI_CHROME  ===============================================*/
 
     .window_set_next_pos                = gui_window_set_next_pos,

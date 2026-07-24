@@ -39,9 +39,10 @@ The two servers NEVER see each other. Everything else is a LIBRARY over them:
     gui_style.c      style/      style/gui_style.h               state flags in, colors/metrics out
     gui_interact.c   interact/   interact/gui_interact.h         gesture mechanisms (move/resize/drag/feat)
     gui_flow.c       flow/       flow/gui_flow.h                 layout: THE rect producer
-    gui_element.c    element/    gui_element.h (public) +        styled cores astride both servers
-                                 element/gui_element_internal.h
-    gui_chrome.c     chrome/     chrome/gui_chrome.h             stock windowing policy (6 folders)
+    gui_component.c  component/  component/gui_component_internal.h  widget LOGIC, no paint -- STAGING
+    gui_stock.c      stock/      gui_element.h (public) +        reference widget set (el_* cores),
+                                 stock/gui_element_internal.h    astride both servers
+    gui_chrome.c     chrome/     chrome/gui_chrome.h             product windowing policy (6 folders)
     gui_debug.c      debug/      debug/gui_debug.h               server introspection (severable)
     gui_frame.c      frame/      (public headers)                FRAME ORCHESTRATOR
     gui.c            (root)      (public headers)                MODULE FACE (vtable + mod_desc)
@@ -51,9 +52,12 @@ banner; band -> implementing unit:
 
     GUI_FRAME   -> frame/          GUI_FLOW    -> flow/
     GUI_DRAW    -> render/ + draw/  GUI_STYLE   -> style/
-    GUI_CORE    -> core/ + interact/ GUI_ELEMENT -> element/
+    GUI_CORE    -> core/ + interact/ GUI_ELEMENT -> stock/ (the el_* surface's implementing unit)
     GUI_SURFACE -> core/gui_surface.c + flow/gui_region.c + interact/gui_feature.c
     GUI_RECT    -> rect/            GUI_CHROME  -> chrome/     GUI_DEBUG -> debug/
+
+The component/ unit has no public band yet (its API is TBD, see the widget-tier note below);
+the GUI_ELEMENT band still names the el_* surface, now implemented in stock/.
 
 Dependency graph (lowest to highest) -- each unit root .c includes EXACTLY the unit
 headers at or below its layer, so the include list at the top of each unit IS the graph and
@@ -67,7 +71,9 @@ the compiler enforces it per unit:
     interact  -> core, style, rect    (style = the WIN_BORDER metric read only); never paints
     flow      -> style, draw, core    + the render CLIP STACK (flow computes THE view rect,
                                       so it owns the region scissor -- flow places, never paints)
-    element   -> everything below     the first layer astride both servers (it paints)
+    component -> core, interact       widget LOGIC only: (id,rect) in, outputs out, NEVER paints,
+                                      so it stops below draw/render (staging; see tier note below)
+    stock     -> everything below     the reference widget set -- astride both servers (it paints)
     chrome    -> everything below     + the render run capture (text selection)
     debug     -> everything           severable; its header leads every unit (it computes the
                                       Debug-build switches, the one sanctioned above-layer include)
@@ -81,6 +87,53 @@ Upward calls stay explicit and few, and each is DECLARED in its lowest consumer'
 `chrome/gui_chrome.h`. Do not add more.
 
 Every unit ends with a `gui_<unit>_unit_mem_bytes()` seam; `gui_ui_mem.c` (frame) aggregates.
+
+## Widget tiers -- component / stock / chrome (the point of the whole stack)
+
+The stack has zero one-size-fits-all widgets on purpose. A widget's presentation is USER-driven;
+only its logic is shared. Four rungs, each a client of the one below:
+
+    state/interact  ->  component  ->  stock  ->  chrome
+     (services)        (logic)       (reference)  (product)
+
+- **component** (`component/`, `gui_comp_*`): a widget's LOGIC with no look. Consumes an
+  (id, rect) and does the tedious part -- hit-testing, drag math, value snapping, focus /
+  hover / active state -- then reports clear outputs. NEVER paints, so it stops below the
+  draw/render servers. A component does not exist on screen; it is a utility front-end a
+  widget composes onto. This is the engine's own idiom (world/entity/**component**/actor): a
+  widget is an actor, its components are logic aspects that do not independently exist.
+- **stock** (`stock/`, the `el_*` cores): the reference widget set = a component's logic + one
+  plain render. It is what a user READS AND FORKS, not a privileged default.
+- **chrome** (`chrome/`): the product -- the editor's window/dock/popup/table framework and
+  its default-look widgets.
+- **user widget** (app-side, e.g. `my_game_slider`): a component + the game's own art. It is a
+  SIBLING of the matching stock widget -- same logic, different presentation. This is the whole
+  payoff: the same slider logic drives the editor's flat handle and a game's diamond-and-art
+  handle, and neither is favored.
+
+Status: the `el_*` interactive cores have all been swept down onto components. Each `el_*` now
+delegates to a `gui_stock_*` reference render over a `gui_comp_*` logic core; all are public
+(`gui_host.h` / the vtable), and a user widget is the stock render's sibling over the same
+`comp_*` call. The shared shape a component returns: a `gui_item_state_t state`, then any
+geometry, then the semantic outcome.
+
+- `comp_slider` -- one desc (`gui_comp_slider_desc_t`, the only parameter-rich core) -> `{state,
+  frac, fill, handle, changed}`.
+- `comp_button` -- the simplest; settled the shared shape. Plain `(id, rect)` -> `{state, clicked}`.
+- `comp_check` -- `(id, rect, bool* v)` -> `{state, box, changed}` (inscribed box).
+- `comp_cycle` -- COMPOSES `comp_button` for each cap -> `{prev, next, prev_box, next_box, label,
+  changed}`; takes `count` for wrap, not the strings (the render draws those).
+- `comp_selectable` -- `comp_button` + optional `*selected` toggle.
+- `comp_input` -- runs the interact/ edit engine (`edit_field`) and returns PAINTABLE geometry
+  (content rect, run origin, selection + caret bars) so a render draws a text field with only
+  public verbs, never touching `gui_edit_state_t` or measuring a glyph.
+
+No component (deliberately): `el_panel` / `el_label` / `el_meter` are inert paint -- no
+interaction, no logic to extract -- so they stay stock-render-only. Not every core needs a
+component. Proven in `sb_gui_base` tier 3 (the slider and button each show a stock render beside
+a custom render over one `comp_*` call). `chrome/` may keep its bespoke widgets or migrate onto
+these components later (the migrate-down direction), only when a chrome feature is needed in a
+user widget.
 
 ## The composer / behavior / presentation split
 
@@ -111,10 +164,10 @@ Three roles, one contract (the units carry the same names):
   Style is invisible below this line (the one metric interact reads is `WIN_BORDER`, because
   the resize band straddles the border, and border is geometry): the system adornments (nav
   focus ring, drag accept ring, hot resize edges) are invoked from behavior at the protocol
-  point but painted by element-unit helpers (`draw_nav_ring` / `draw_drop_ring` /
-  `draw_resize_highlight` in `element/gui_adornment.c`), so the paint policy lives with the
+  point but painted by stock-unit helpers (`draw_nav_ring` / `draw_drop_ring` /
+  `draw_resize_highlight` in `stock/gui_adornment.c`), so the paint policy lives with the
   skin.
-- **Presentation** (`element/`: the `el_*` rect-consuming cores, label paint +
+- **Presentation** (`stock/`: the `el_*` rect-consuming cores, label paint +
   self-measurement (`label_natural_w`), per-item ambient wrappers, system adornments, the
   styled symbol half): consumes rect + state + skin and paints; state is a parameter, it
   never asks behavior. The widget paint floor is rect-taking (`draw_fill( r, col )` /
@@ -154,8 +207,8 @@ draw_fill( r, col_item_bg_anim( id, st ) );
 
 The style vocabulary itself (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in
 the style unit (`style/gui_style_core.c`) since all three roles read it. `chrome/` is its
-CLIENT -- the stock widget set is written on the same substrate a user widget uses, not a
-privileged layer. The caller's vocabulary lives with its machinery -- canvas in draw, query
+CLIENT -- the chrome (and stock) widget set is written on the same substrate a user widget
+uses, not a privileged layer. The caller's vocabulary lives with its machinery -- canvas in draw, query
 readers in core, bracketing stacks in style, behavior verbs in interact -- and internal uses
 deliberately dogfood the public surface through gui_host.h.
 

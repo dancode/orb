@@ -1287,6 +1287,32 @@ typedef struct gui_api_s
        NULL = a click-only row; id from the label.  True on the frame it is clicked. */
     bool ( *el_selectable )( gui_rect_t r, const char* label, bool* selected );
 
+    /* GUI_COMPONENT (staging) -- widget LOGIC with no look.  A component runs a widget's whole
+       interaction over an (id, rect) and returns state + geometry a render draws; it never
+       paints.  Each stock_* is the reference render over its component -- a user's own widget is
+       its sibling: same comp_* call, different draw_*.  The el_* cores delegate to the stock_*.
+         comp_slider -- hit / drag / snap / keyboard nav over a desc; returns bar + handle rects.
+         comp_button -- the press protocol over (id, rect); returns state + clicked.  Simplest
+                        case, no desc (not parameter-rich); takes a pure id, the label is the
+                        render's (stock_button passes the label as both). */
+    gui_comp_slider_t     ( *comp_slider      )( const gui_comp_slider_desc_t* desc );
+    bool                  ( *stock_slider     )( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
+    gui_comp_button_t     ( *comp_button      )( const char* id, gui_rect_t rect );
+    bool                  ( *stock_button     )( gui_rect_t r, const char* label );
+    /* check -- toggle over an inscribed box (returns the box).  cycle -- a "< value >" stepper,
+       composing two comp_buttons (takes count for wrap; the strings are the render's).  selectable
+       -- comp_button + an optional *selected toggle.  input -- runs the shared edit engine and
+       returns paintable geometry (content / text origin / selection + caret bars) so a render
+       draws a text field with only public verbs, never touching the edit state. */
+    gui_comp_check_t      ( *comp_check       )( const char* id, gui_rect_t rect, bool* v );
+    bool                  ( *stock_check      )( gui_rect_t r, const char* id_str, bool* v );
+    gui_comp_cycle_t      ( *comp_cycle       )( const char* id, gui_rect_t rect, i32* idx, i32 count );
+    bool                  ( *stock_cycle      )( gui_rect_t r, const char* id_str, i32* idx, const char* const* items, i32 count );
+    gui_comp_selectable_t ( *comp_selectable  )( const char* id, gui_rect_t rect, bool* selected );
+    bool                  ( *stock_selectable )( gui_rect_t r, const char* label, bool* selected );
+    gui_comp_input_t      ( *comp_input       )( const char* id, gui_rect_t rect, f32 pad, char* buf, u32 bufsz );
+    bool                  ( *stock_input      )( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
+
     /*============================================================================================================
         GUI_CHROME -- convenience / editor UI  (window/ + dock/ + popup/ + widgets/ + table/)
         The imgui-style design layer over the strata beneath it: persistent windows, docking,

@@ -399,6 +399,21 @@ bool gui_el_cycle ( gui_rect_t r, const char* id_str, i32* idx,
 bool gui_el_input ( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
 bool gui_el_selectable( gui_rect_t r, const char* label, bool* selected );
 
+/* GUI_COMPONENT (staging) -- widget logic, no paint (component/); the stock_* twins are the
+   reference renders over them (stock/gui_element_core.c). */
+gui_comp_slider_t     gui_comp_slider     ( const gui_comp_slider_desc_t* desc );
+bool                  gui_stock_slider    ( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
+gui_comp_button_t     gui_comp_button     ( const char* id, gui_rect_t rect );
+bool                  gui_stock_button    ( gui_rect_t r, const char* label );
+gui_comp_check_t      gui_comp_check      ( const char* id, gui_rect_t rect, bool* v );
+bool                  gui_stock_check     ( gui_rect_t r, const char* id_str, bool* v );
+gui_comp_cycle_t      gui_comp_cycle      ( const char* id, gui_rect_t rect, i32* idx, i32 count );
+bool                  gui_stock_cycle     ( gui_rect_t r, const char* id_str, i32* idx, const char* const* items, i32 count );
+gui_comp_selectable_t gui_comp_selectable ( const char* id, gui_rect_t rect, bool* selected );
+bool                  gui_stock_selectable( gui_rect_t r, const char* label, bool* selected );
+gui_comp_input_t      gui_comp_input      ( const char* id, gui_rect_t rect, f32 pad, char* buf, u32 bufsz );
+bool                  gui_stock_input     ( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
+
 /*==============================================  GUI_CHROME  ===============================================*/
 
 /* window */

@@ -1,29 +1,41 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_element.c -- GUI_ELEMENT translation unit: styled building blocks.
+    runtime_service/gui/gui_stock.c -- GUI_STOCK translation unit: the reference widget set.
 
-    THE FIRST LAYER ASTRIDE BOTH SERVERS: everything that combines
-    interact state with styled paint over a caller-supplied rect.  Below it, style resolves
-    and never emits, draw emits and never resolves; element is where the two meet -- the
-    rect CONSUMER over the rects flow carves.
+    THE STOCK TIER (formerly "element"): the example widgets that combine interact state with
+    styled paint over a caller-supplied rect.  This is the layer astride both servers -- below
+    it, style resolves and never emits, draw emits and never resolves; stock is where the two
+    meet, the rect CONSUMER over the rects flow carves.
+
+    Where it sits in the stack (see GUI_ARCHITECTURE.md):
+
+        state/interact  ->  component  ->  stock  ->  chrome
+                            (logic)       (this)     (product)
+
+    A stock widget = a component's logic + one plain render.  It is the reference a user forks
+    to build their own look (my_game_slider = the same component + their art); it is NOT a
+    privileged default.  Today the el_* cores below still fuse logic and paint -- the component
+    tier (source/runtime_service/gui/component/) is the staging area where that logic is being
+    extracted so stock and user widgets become siblings over it.  Internals keep their
+    "element" names until that extraction lands; only the tier moved.
 
     Three constituents, three faces of the same role:
 
-    element/gui_element_core.c  -- the public el_* cores: fill EXACTLY the rect they are
+    stock/gui_element_core.c  -- the public el_* cores: fill EXACTLY the rect they are
                                      handed, read ONLY the installed element style
                                      (gui_el_style_t; el_style_derive compiles the theme in)
-    element/gui_adornment.c     -- per-item ambient application (item_flags_resolve /
+    stock/gui_adornment.c     -- per-item ambient application (item_flags_resolve /
                                      item_flags_chrome_reset), the label paint
                                      (field_row, label_natural_w), and the system
                                      adornments the units below invoke across their
                                      documented upward seams (nav ring, focus border, drop
                                      ring, child box, resize highlight)
-    element/gui_symbol_style.c  -- the styled half of the symbol palette (arrow, check
+    stock/gui_symbol_style.c  -- the styled half of the symbol palette (arrow, check
                                      indicator, rule, close, frame): emitters that resolve
                                      their own look from the live style, over the draw
                                      unit's parameter-pure emitters
 
-    Cross-unit declarations live in element/gui_element_internal.h (the umbrella slot
+    Cross-unit declarations live in stock/gui_element_internal.h (the umbrella slot
     between flow and chrome); the public el_* surface stays in the root gui_element.h.
 
 ==============================================================================================*/
@@ -46,14 +58,14 @@
 #include "runtime_service/gui/draw/gui_draw.h"
 #include "runtime_service/gui/interact/gui_interact.h"
 #include "runtime_service/gui/flow/gui_flow.h"
-#include "runtime_service/gui/element/gui_element_internal.h"
+#include "runtime_service/gui/stock/gui_element_internal.h"
 #include "runtime_service/gui/debug/gui_debug.h"
 
 /*============================================================================================*/
 
-#include "runtime_service/gui/element/gui_element_core.c"
-#include "runtime_service/gui/element/gui_adornment.c"
-#include "runtime_service/gui/element/gui_symbol_style.c"
+#include "runtime_service/gui/stock/gui_element_core.c"
+#include "runtime_service/gui/stock/gui_adornment.c"
+#include "runtime_service/gui/stock/gui_symbol_style.c"
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory

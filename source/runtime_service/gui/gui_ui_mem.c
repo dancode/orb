@@ -46,8 +46,12 @@ gui_ui_memory( void )
        moved to chrome (chrome/window/gui_select.c) and is counted there. */
     b += gui_interact_unit_mem_bytes();
 
-    /* element/ -- THE ELEMENT UNIT accounts for its own statics (the installed element style
-       + the slot map) via its seam (gui_element.c). */
+    /* component/ -- THE COMPONENT UNIT (widget logic, staging) accounts for its own statics
+       (none yet) via its seam (gui_component.c). */
+    b += gui_component_unit_mem_bytes();
+
+    /* stock/ -- THE STOCK UNIT (reference widget set) accounts for its own statics (the
+       installed element style + the slot map) via its seam (gui_stock.c). */
     b += gui_element_unit_mem_bytes();
 
     /* widgets/ + table/ + dock/ + popup/ -- the chrome unit accounts for its own statics

@@ -33,7 +33,7 @@
 #include "runtime_service/gui/draw/gui_draw.h"
 #include "runtime_service/gui/interact/gui_interact.h"
 #include "runtime_service/gui/flow/gui_flow.h"
-#include "runtime_service/gui/element/gui_element_internal.h"
+#include "runtime_service/gui/stock/gui_element_internal.h"
 #include "runtime_service/gui/chrome/gui_chrome.h"
 #include "runtime_service/gui/debug/gui_debug.h"
 

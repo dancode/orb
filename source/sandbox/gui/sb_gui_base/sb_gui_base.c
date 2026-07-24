@@ -123,7 +123,9 @@ tier_surface( void )
 
 /*==============================================================================================
     Tier 3 -- GUI_RECT + GUI_ELEMENT: one flat carve form -> leaf rects -> el_* cores.
-    Every element fills exactly the rect it is handed; the layout is data.
+    Every element fills exactly the rect it is handed; the layout is data.  The slider pair and
+    the button pair each share ONE logic (gui()->comp_slider / comp_button): a stock reference
+    render beside a custom render -- the component / stock / user-widget sibling model, side by side.
 ==============================================================================================*/
 
 static void
@@ -131,6 +133,7 @@ tier_element( void )
 {
     static bool s_check  = true;
     static f32  s_level  = 0.35f;
+    static f32  s_custom = 0.5f;
     static i32  s_mode   = 0;
     static const char* const s_modes[] = { "alpha", "beta", "gamma" };
 
@@ -148,9 +151,9 @@ tier_element( void )
 
     gui()->el_panel( leaf[ 0 ] );
     gui_rect_t side = gui_rect_pad( leaf[ 0 ], 8.0f );
-    gui()->el_check( gui_rect_cut_top( &side, 26.0f ), "t3_check", &s_check );
+    gui()->stock_check( gui_rect_cut_top( &side, 26.0f ), "t3_check", &s_check );
     side.y += 6.0f;  side.h -= 6.0f;
-    gui()->el_cycle( gui_rect_cut_top( &side, 26.0f ), "t3_cycle", &s_mode, s_modes, 3 );
+    gui()->stock_cycle( gui_rect_cut_top( &side, 26.0f ), "t3_cycle", &s_mode, s_modes, 3 );
 
     gui()->el_label( leaf[ 1 ], GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
                      "el_* cores over carved rects" );
@@ -158,13 +161,50 @@ tier_element( void )
     static char s_name[ 48 ] = "el_input";
     gui()->el_panel( leaf[ 2 ] );
     gui_rect_t rows = gui_rect_pad( leaf[ 2 ], 8.0f );
-    gui()->el_slider( gui_rect_cut_top( &rows, 24.0f ), "t3_slider", &s_level, 0.0f, 1.0f );
+
+    /* the reference render: stock_slider (over gui_comp_slider) */
+
+    gui()->stock_slider( gui_rect_cut_top( &rows, 24.0f ), "t3_slider", &s_level, 0.0f, 1.0f );
+    
+    /* a bar filling a meter based on slider value */
     rows.y += 6.0f;  rows.h -= 6.0f;
     gui()->el_meter( gui_rect_cut_top( &rows, 18.0f ), s_level, AMBER );
     rows.y += 6.0f;  rows.h -= 6.0f;
-    gui()->el_input( gui_rect_cut_top( &rows, 26.0f ), "t3_input", s_name, sizeof s_name );
 
-    gui()->el_button( leaf[ 3 ], "el_button" );
+    /* a USER widget over the SAME component: a thin groove + round handle.  stock_slider above
+       and this differ only in these draw_* calls -- one logic (gui()->comp_slider), two looks. */
+
+    gui_rect_t cs = gui_rect_cut_top( &rows, 24.0f );
+
+    gui_comp_slider_t sl = gui()->comp_slider( &( gui_comp_slider_desc_t ){
+        .id = "t3_comp", .rect = cs, .v = &s_custom, .lo = 0.0f, .hi = 1.0f, .handle_w = 14.0f } );
+    
+    f32 gy = cs.y + cs.h * 0.5f;
+    gui()->draw_rect( cs.x, gy - 2.0f, cs.w, 4.0f, PANEL_LN );
+    if ( sl.fill.w > 0.0f )
+        gui()->draw_rect( sl.fill.x, gy - 2.0f, sl.fill.w, 4.0f, TEAL );
+
+    gui()->draw_circle( sl.handle.x + sl.handle.w * 0.5f, gy, 7.0f, true, 0.0f,
+                        ( sl.state.hover || sl.state.active ) ? AMBER : INK );
+
+    /* input box */
+    rows.y += 6.0f;  rows.h -= 6.0f;
+    gui()->stock_input( gui_rect_cut_top( &rows, 26.0f ), "t3_input", s_name, sizeof s_name );
+
+    /* the footer holds a matching button pair: the reference stock_button and a USER button --
+       both over the SAME gui()->comp_button, one logic and two looks (as the sliders above). */
+    gui_rect_t foot = leaf[ 3 ];
+    gui_rect_t bl   = gui_rect_cut_left( &foot, foot.w * 0.5f - 3.0f );
+    foot.x += 6.0f;  foot.w -= 6.0f;   /* gap between the pair */
+
+    gui()->stock_button( bl, "stock_button" );
+
+    /* a USER button: a rounded pill, TEAL on hover, PLUM while pressed -- the component does the
+       press logic, this render does the rest. */
+    gui_comp_button_t cb = gui()->comp_button( "t3_pill", foot );
+    u32 face = cb.state.active ? PLUM : cb.state.hover ? TEAL : PANEL_LN;
+    gui()->draw_round_rect( foot, 8.0f, 8.0f, 8.0f, 8.0f, true, 0.0f, face );
+    gui()->draw_text_in( foot, GUI_ALIGN_CENTER, INK, "comp_button" );
 
     gui()->pane_end();
 }

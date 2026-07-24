@@ -565,6 +565,107 @@ typedef struct gui_item_state_t
 } gui_item_state_t;
 
 /*==============================================================================================
+    GUI_COMPONENT -- widget LOGIC building blocks (staging)
+
+    A component consumes an (id, rect) + config and does the interaction math -- hit, drag,
+    snap, keyboard nav -- with NO paint, reporting the geometry a caller renders however it
+    likes.  The reference render (stock_*) and a user's own widget are SIBLINGS over the same
+    component: same logic, different presentation.  Design is iterative; the slider is first.
+==============================================================================================*/
+
+/* Input to gui()->comp_slider -- the shape, range, and feel of a value slider.  Bundled into
+   one struct because the call is parameter-rich: fill the fields that matter, leave the rest
+   zero (every zero has a documented "auto" meaning).  A relative-drag field (value by cursor
+   displacement, no track) is the model's other pivot -- not this call. */
+typedef struct gui_comp_slider_desc_t
+{
+    const char* id;        // interaction identity (label-hashed)
+    gui_rect_t  rect;      // the region the handle travels within (the groove)
+    f32*        v;         // value, read and written in place (clamped + snapped)
+    f32         lo, hi;    // value range; lo < hi
+    f32         step;      // snap quantum in value units; <= 0 = continuous
+    f32         handle_w;  // handle extent along the track, px; <= 0 = a default width
+    f32         nav_step;  // keyboard arrow step, value units; <= 0 = auto (step, else 5% of range)
+
+} gui_comp_slider_desc_t;
+
+/* Result of gui()->comp_slider -- the interaction state plus the two rects a render needs (the
+   value BAR and the HANDLE) and the resolved fraction.  The full track is the caller's input
+   rect; the handle CENTER tracks the cursor, so value and knob never disagree. */
+typedef struct gui_comp_slider_t
+{
+    gui_item_state_t state;    // raw interaction (hover/active/pressed/focused/nav/nav_adjust)
+    f32              frac;     // 0..1 handle position after clamp + snap
+    gui_rect_t       fill;     // the value bar: track start up to the handle center
+    gui_rect_t       handle;   // the handle (thumb) at frac
+    bool             changed;  // *v changed this frame
+
+} gui_comp_slider_t;
+
+/* Result of gui()->comp_button -- the SHARED shape every component follows: the raw interaction
+   state first, the widget's semantic outcome last.  The button is the simplest case: no geometry
+   beyond the caller's rect (so no desc struct -- it takes plain id + rect), and the outcome is
+   the click.  A render reads .state to pick its face colors and .clicked to fire. */
+typedef struct gui_comp_button_t
+{
+    gui_item_state_t state;    // raw interaction (hover/active/pressed/clicked/focused/nav)
+    bool             clicked;  // fired this frame: released over the item (== state.clicked)
+
+} gui_comp_button_t;
+
+/* Result of gui()->comp_check -- the toggle's interaction, the inscribed square box (the hit AND
+   where the render draws the frame + mark), and whether *v flipped this frame. */
+typedef struct gui_comp_check_t
+{
+    gui_item_state_t state;    // interaction over the box
+    gui_rect_t       box;      // inscribed square: the hit and the paint target
+    bool             changed;  // *v toggled this frame
+
+} gui_comp_check_t;
+
+/* Result of gui()->comp_cycle -- a "< value >" stepper.  The two cap buttons are each a COMPOSED
+   comp_button (so they hover / nav / redraw like any button), with their rects and the center
+   region for the value text.  The component takes count (for wrap) but not the item strings --
+   those are the render's to draw at label. */
+typedef struct gui_comp_cycle_t
+{
+    gui_comp_button_t prev;      // left cap (decrement)
+    gui_comp_button_t next;      // right cap (increment)
+    gui_rect_t        prev_box;  // left cap rect
+    gui_rect_t        next_box;  // right cap rect
+    gui_rect_t        label;     // center region for items[*idx]
+    bool              changed;   // *idx changed this frame
+
+} gui_comp_cycle_t;
+
+/* Result of gui()->comp_selectable -- a list-row press.  The button's shape (it composes
+   comp_button) plus the *selected toggle; the render reads the caller's selected flag for its
+   active tint and .clicked to drive its own selection. */
+typedef struct gui_comp_selectable_t
+{
+    gui_item_state_t state;    // interaction over the row
+    bool             clicked;  // fired this frame (== state.clicked)
+
+} gui_comp_selectable_t;
+
+/* Result of gui()->comp_input -- a single-line text field.  The component runs the shared edit
+   engine and hands back PAINTABLE geometry so a render never touches the edit state or measures
+   text: the content rect (push_clip it), the run's draw origin, and the selection / caret bars
+   (each w == 0 when absent).  changed / enter are the outcomes. */
+typedef struct gui_comp_input_t
+{
+    gui_item_state_t state;      // interaction (press claims keyboard focus)
+    gui_rect_t       content;    // text content rect (rect inset by pad); the run's clip band
+    f32              text_x;     // x to draw buf[0] at (already scroll-offset)
+    f32              text_y;     // baseline y for the run (vertically centered)
+    gui_rect_t       selection;  // selection band to fill; w == 0 = none / unfocused
+    gui_rect_t       caret;      // caret bar to fill; w == 0 = hidden this blink phase
+    bool             changed;    // buffer changed this frame
+    bool             enter;      // Enter / submit this frame
+
+} gui_comp_input_t;
+
+/*==============================================================================================
     GUI_RECT -- anchor frame: the general placement (UE4 Slate model): a normalized sub-rect of the parent
     (0..1 per axis) plus pixel offsets, resolved per axis by gui()->anchor.  On an axis where
     min == max the child is point-anchored: the anchor is a single line at that fraction, the child

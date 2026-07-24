@@ -96,6 +96,7 @@ f32  label_natural_w( const char* s )
    toggle), skip_label() armed for this one widget, or an empty ("##id") label.  The geometry half
    (field_geom_split) lives with the composer in flow; this owns the PAINT and the pen -- flow
    never colors a pixel. */
+
 void
 field_row( const char* label )
 {
