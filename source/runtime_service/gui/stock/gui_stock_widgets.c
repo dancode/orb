@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/stock/gui_element_core.c -- The stock_* rect-consuming widget renders.
+    runtime_service/gui/stock/gui_stock_widgets.c -- The stock_* rect-consuming widget renders.
 
     The REFERENCE widget set: one plain render per component, the thing a user reads and forks,
     not a privileged default.  Every stock_* fills EXACTLY the rect it is handed -- no hidden

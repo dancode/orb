@@ -28,7 +28,7 @@
     (s_build) -- the scope record IS the composition->behavior contract.
 
     LAYERING NOTE: nav_item_register invokes the present-tier focus ring (draw_nav_ring,
-    element/gui_adornment.c) -- behavior decides WHEN the system adornment paints; the paint
+    stock/gui_adornment.c) -- behavior decides WHEN the system adornment paints; the paint
     policy (color, thickness, extent) lives with the skin.  See the comment at that site.
 
     Part of the core unit (gui_core.c); draw_nav_ring / NAV_RING resolve cross-unit, and
@@ -141,7 +141,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kin
        be uniform across every widget -- stock and custom alike -- and must paint beneath the
        item's own fill, and no single presentation seam exists after behavior that every widget
        passes through.  The paint itself (color, thickness, extent) is draw_nav_ring in
-       element/gui_adornment.c; behavior only picks the moment.  Do not add style reads or
+       stock/gui_adornment.c; behavior only picks the moment.  Do not add style reads or
        raw draws to this tier. */
 
     if ( is_cur && g_ctx->nav.active )

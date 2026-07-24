@@ -16,11 +16,11 @@
 
     This unit includes NO render header and calls NO draw_* routine (the acceptance
     criterion): applying a resolved value to the draw state (alpha, rounding) is the impure
-    wrappers' job (item_flags_resolve / item_flags_chrome_reset, element/gui_adornment.c).
+    wrappers' job (item_flags_resolve / item_flags_chrome_reset, stock/gui_adornment.c).
 
     Documented upward seams (the strata bridge -- see style/gui_style.h):
-      - style_el_col reads the INSTALLED element style (gui_el_style, element unit) and
-        projects role x state through g_gui_el_slot_map (the element unit's table).
+      - style_el_col reads the INSTALLED element style (gui_el_style, stock unit) and
+        projects role x state through g_gui_el_slot_map (the stock unit's table).
       - gui_theme_reset calls gui_style_apply (frame/gui_frame_font.c): the rescale needs the
         active font's metrics (draw unit), which style itself must not touch.
 

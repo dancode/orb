@@ -13,7 +13,7 @@
     Read ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is the
     orientation map: the three state tiers (ambient-singular / per-context retained via g_ctx /
     frame-scratch), the three unity TUs (gui.c UI unit + gui_render.c render unit +
-    element/gui_element.c element unit), the
+    stock/gui_stock.c stock unit), the
     EMIT -> BUILD -> RENDER pipeline, and the invariants.  Header split follows the house
     convention: this file (types) -> gui_api.h (DLL) -> gui_host.h (hosts/sandboxes).
 

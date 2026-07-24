@@ -45,7 +45,7 @@ void draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w );
 /* The shape palette (draw/gui_symbol.c) -- parameter-pure emitters.  The styled half of the
    family (draw_arrow, draw_check_indicator, draw_rule, draw_close_x, draw_frame -- emitters
    that resolve their own look), the styled painters, and label_natural_w all live in the
-   element unit (element/gui_element_internal.h). */
+   stock unit (stock/gui_stock_internal.h). */
 void draw_bullet( f32 cx, f32 cy, f32 r, u32 color );
 void draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
 void draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );

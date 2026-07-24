@@ -1,10 +1,10 @@
 /*==============================================================================================
 
-    runtime_service/gui/element/gui_symbol_style.c -- The styled half of the symbol palette.
+    runtime_service/gui/stock/gui_symbol_style.c -- The styled half of the symbol palette.
 
     The symbol emitters that resolve their OWN look -- a theme style-var pick
     (GUI_VAR_ARROW/CHECK/SEPARATOR_STYLE), a style metric (WIN_BORDER, checkmark_pad), or the
-    ambient control rounding (ROUND_WIDGET) -- live in the element unit
+    ambient control rounding (ROUND_WIDGET) -- live in the stock unit
     so the draw unit ends parameter-pure: a draw routine takes its colors and sizes as
     parameters; these read the live style, which makes them element material (the first layer
     astride style and draw).  Each composes the pure emitters it left behind through the

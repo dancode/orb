@@ -4,7 +4,7 @@
 
     runtime_service/gui/component/gui_component_internal.h -- the component unit's cross-unit seams.
 
-    THE COMPONENT TIER (STAGING).  A component is a widget's LOGIC with no look: it consumes an
+    THE COMPONENT TIER.  A component is a widget's LOGIC with no look: it consumes an
     (id, rect) and does the tedious part -- hit-testing, drag math, value snapping, focus /
     hover / active state -- then hands back clear outputs.  It never draws.  A component does
     NOT exist on screen; it is a utility front-end a widget composes onto.  In the engine's own
@@ -30,7 +30,7 @@
 
         u32 face = gui()->el_color( GUI_EL_BG, gui()->item_phase( x.state ) );
 
-    THE COMPONENTS (each has a reference render gui_stock_* in stock/gui_element_core.c; all
+    THE COMPONENTS (each has a reference render gui_stock_* in stock/gui_stock_widgets.c; all
     public via gui_host.h / the vtable; a user widget is their sibling over the same comp_* call):
       - comp_slider -- state + fraction + bar/handle rects.  Absolute-position mapping (handle
         center = cursor).  The parameter-rich one, hence the _ex desc form.

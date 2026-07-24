@@ -177,8 +177,8 @@ target gui
     unit        gui_interact.c  			# GUI_INTERACT unit: gesture mechanisms (move/resize/drag/feat)
     unit        gui_render.c  				# GUI_RENDER unit: the render server (batch, atlas, pipeline)
     unit        gui_draw.c  				# GUI_DRAW unit: drawing routines + font/icon resources over the server
-    unit        gui_component.c 			# GUI_COMPONENT unit: widget logic building blocks (comp_* cores) -- STAGING
-    unit        gui_stock.c   			# GUI_STOCK unit: reference widget set (el_* cores, adornments)
+    unit        gui_component.c 			# GUI_COMPONENT unit: widget logic building blocks (comp_* cores)
+    unit        gui_stock.c   			# GUI_STOCK unit: reference widget set (stock_* renders, adornments)
     unit        gui_debug.c   				# GUI_DEBUG unit: dashboard + command stepper (severable)
     unit        gui_flow.c  				# GUI_FLOW unit: layout composition (metrics in, rects out)
     unit        gui_chrome.c   				# GUI_CHROME unit: widgets/table/window/dock/popup/nav
@@ -199,8 +199,8 @@ target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the lo
     unit        gui_interact.c   # GUI_INTERACT unit: gesture mechanisms (move/resize/drag/feat)
     unit        gui_render.c   # GUI_RENDER unit: the render server (batch, atlas, pipeline)
     unit        gui_draw.c   # GUI_DRAW unit: drawing routines + font/icon resources over the server
-    unit        gui_component.c   # GUI_COMPONENT unit: widget logic building blocks (comp_* cores) -- STAGING
-    unit        gui_stock.c   # GUI_STOCK unit: reference widget set (el_* cores, adornments)
+    unit        gui_component.c   # GUI_COMPONENT unit: widget logic building blocks (comp_* cores)
+    unit        gui_stock.c   # GUI_STOCK unit: reference widget set (stock_* renders, adornments)
     unit        gui_debug.c   # GUI_DEBUG unit: dashboard + command stepper (severable)
     unit        gui_flow.c   # GUI_FLOW unit: layout composition (metrics in, rects out)
     unit        gui_chrome.c   # GUI_CHROME unit: widgets/table/window/dock/popup/nav

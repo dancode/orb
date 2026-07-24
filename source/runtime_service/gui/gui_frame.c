@@ -57,7 +57,7 @@
 #include "runtime_service/gui/interact/gui_interact.h"
 #include "runtime_service/gui/flow/gui_flow.h"
 #include "runtime_service/gui/component/gui_component_internal.h"
-#include "runtime_service/gui/stock/gui_element_internal.h"
+#include "runtime_service/gui/stock/gui_stock_internal.h"
 #include "runtime_service/gui/chrome/gui_chrome.h"
 #include "runtime_service/gui/debug/gui_debug.h"
 
@@ -123,9 +123,9 @@ void           viewport_destroy( gui_vp_t vp );                                 
 // unit headers below it; this unit's upward calls into it (the frame lifecycle's window /
 // popup / dock / nav steps) resolve through chrome/gui_chrome.h's frame-step declarations.
 
-// element/ -- GUI_ELEMENT is its OWN translation unit (root gui_element.c): the
-// el_* cores plus the absorbed styled painters (per-item wrappers, system adornments, the
-// styled symbol half), reached through element/gui_element_internal.h.
+// stock/ -- GUI_STOCK is its OWN translation unit (root gui_stock.c): the stock_* renders
+// plus the absorbed styled painters (per-item wrappers, system adornments, the styled
+// symbol half), reached through stock/gui_stock_internal.h.
 // gui_style_apply (frame/, below) calls across to el_style_derive at every theme/font landing.
 
 /*----------------------------------  LIBRARY: GUI_DEBUG  ----------------------------------*/

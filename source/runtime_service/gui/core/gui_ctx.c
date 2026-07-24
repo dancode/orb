@@ -165,7 +165,7 @@ item_flag_next( gui_item_flags_t flag, bool enable )
    applied over it (the override wins on the bits it controls), then clear the override and latch
    the result into the scope for item_state / widgets to read.  This is the PURE half of the
    per-item seam: the style commit and the ambient draw application (alpha dim, default rounding)
-   live in the item_flags_resolve wrapper (element/gui_adornment.c) -- the interact server never
+   live in the item_flags_resolve wrapper (stock/gui_adornment.c) -- the interact server never
    touches a style value or the draw state. */
 gui_item_flags_t
 item_flags_take( void )
@@ -178,7 +178,7 @@ item_flags_take( void )
 }
 
 /* Clear the per-item scope before chrome runs -- the pure half of item_flags_chrome_reset
-   (element/gui_adornment.c), which also restores the ambient draw/style state.  Window/child
+   (stock/gui_adornment.c), which also restores the ambient draw/style state.  Window/child
    borders, scrollbars, and titlebars are not items; without this they would inherit whatever
    the last body widget latched. */
 void

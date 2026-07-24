@@ -14,7 +14,7 @@
     window_get and the shared drag/resize state vars -- it declares no long-lived state of its own.
 
     A window is treated as a large compound widget, so this builds on the shared primitives
-    in the style/element units (col_item_bg, gui_field_row) and core/gui_item.c
+    in the style/stock units (col_item_bg, gui_field_row) and core/gui_item.c
     (item_state); the style vocabulary (WIDGET_* / WIN_* / COL_*) resolves in
     style/gui_style_core.c.
 
@@ -54,7 +54,7 @@
 
 /* GUI_RESIZE_SALT, the RESIZE_BAND_* grab-band constants, and the record-agnostic resize helpers
    (resize_edge_hit, resize_grab, resize_apply_edges) live in interact/gui_resize.c (the
-   GUI_RESIZE_* edge bits in interact/gui_interact.h, the hot-edge paint in element/gui_adornment.c:
+   GUI_RESIZE_* edge bits in interact/gui_interact.h, the hot-edge paint in stock/gui_adornment.c:
    draw_resize_highlight), ahead of gui_layout.c, so child_begin reuses the same mechanism (the
    dock splitter does not; it has its own drag path in dock/).  Only the
    window's size policy stays below: the min clamp with far-edge pinning (window_apply_resize) and
@@ -425,7 +425,7 @@ window_apply_resize( gui_window_t* win, f32 title_h )
     }
 }
 
-/* resize_grab (the press-time anchor record) lives in interact/, draw_collapse_arrow in element/,
+/* resize_grab (the press-time anchor record) lives in interact/, draw_collapse_arrow in stock/,
    shared with child_begin and collapsing_header respectively. */
 
 /* window_begin_docked (the docked branch of window_begin) lives in gui_window_docked.c, included

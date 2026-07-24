@@ -411,7 +411,7 @@ u32             gui_el_color  ( gui_el_role_t role, gui_el_state_t state );
 gui_el_style_t* gui_el_style  ( void );
 
 /* component (widget logic, no paint -- component/) + its stock_* reference render
-   (stock/gui_element_core.c).  A widget of your own is the stock render's sibling. */
+   (stock/gui_stock_widgets.c).  A widget of your own is the stock render's sibling. */
 gui_comp_slider_t     gui_comp_slider     ( const char* id, gui_rect_t rect, f32* v, f32 lo, f32 hi );
 gui_comp_slider_t     gui_comp_slider_ex  ( const gui_comp_slider_desc_t* desc );
 bool                  gui_stock_slider    ( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );

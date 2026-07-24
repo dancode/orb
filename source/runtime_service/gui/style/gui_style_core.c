@@ -15,7 +15,7 @@
 
     The seam is shared with the item-flag system (item_flags_resolve calls style_item_commit; the
     chrome reset calls style_chrome_reset), so colors / vars and flags all latch on the same
-    once-per-widget boundary -- see the impure wrappers in element/gui_adornment.c.
+    once-per-widget boundary -- see the impure wrappers in stock/gui_adornment.c.
 
     The payoff is reach with no churn: the COL_*, WIDGET_*, and WIN_* vocabulary macros
     (style/gui_style.h) resolve through style_col / style_var, so every existing read site
@@ -215,7 +215,7 @@ static void style_next_var( gui_style_var_t slot, f32 value )
 ==============================================================================================*/
 
 /* Promote the pending next-item overrides into the active per-item layer and clear the pending.
-   Called once per widget from item_flags_resolve (element/gui_adornment.c, cross-unit), so the
+   Called once per widget from item_flags_resolve (stock/gui_adornment.c, cross-unit), so the
    override that next_style_* queued just before this widget applies for this widget's whole
    draw, then is gone for the following one. */
 

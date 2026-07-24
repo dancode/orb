@@ -20,15 +20,15 @@
 // clang-format off
 
 /*==============================================================================================
-    The element bridge -- the strata seam between the style unit and the element unit
+    The element bridge -- the strata seam between the style unit and the stock unit
 ==============================================================================================*/
 
 const gui_style_t* style_active( void );      /* style/gui_theme.c: the active scaled style  */
-void               el_style_derive( void );   /* element/gui_element.c: the S2->S1 compile   */
-void               el_style_install( void );  /* element/gui_element.c: the landing funnel --
+void               el_style_derive( void );   /* stock/gui_stock.c: the S2->S1 compile   */
+void               el_style_install( void );  /* stock/gui_stock.c: the landing funnel --
                                                  registered style source, else el_style_derive */
 
-/* THE role x state -> gui_col_t slot projection (element unit owns it) -- shared by
+/* THE role x state -> gui_col_t slot projection (stock unit owns it) -- shared by
    el_style_derive and style_el_col so the two directions of the strata bridge cannot drift. */
 extern const u8 g_gui_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ];
 
@@ -104,7 +104,7 @@ void style_pop_var( u32 count );
 bool style_stacks_empty( void );
 
 /* The item / chrome / frame seam hooks (gui_style_core.c) -- driven from OUTSIDE this unit:
-   style_item_commit / style_chrome_reset by the impure per-item wrappers (element/
+   style_item_commit / style_chrome_reset by the impure per-item wrappers (stock/
    gui_adornment.c), style_new_frame by the orchestrator (gui_ctx_begin pairs it with
    ctx_new_frame) and by gui_theme_reset. */
 void style_item_commit( void );
@@ -132,7 +132,7 @@ u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color_enum );
 
 /* The per-item ambient wrappers (item_flags_resolve / item_flags_chrome_reset) found their
-   home: element/gui_adornment.c, declared in element/gui_element_internal.h -- they
+   home: stock/gui_adornment.c, declared in stock/gui_stock_internal.h -- they
    apply draw-state consequences, and style never paints. */
 
 /* Decentralized memory accounting -- this unit's fixed statics (root gui_style.c foot),

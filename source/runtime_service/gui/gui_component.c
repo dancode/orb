@@ -11,10 +11,11 @@
         state/interact  ->  component  ->  stock  ->  chrome
                             (this unit)   (render)   (product)
 
-    See component/gui_component_internal.h for the tier's charter.  DESIGN IS TBD -- this is a
-    staging area; the constituents are stubs today (no functions yet), wired into the build so
-    the seam exists to grow into.  The logic currently fused into the stock el_* cores
-    (gui_stock.c) migrates down here one widget at a time, slider and button first.
+    See component/gui_component_internal.h for the tier's charter -- the call shape
+    ( id, rect, ... ) and the result shape (gui_item_state_t state first) every component
+    follows.  Six components live here (slider, button, check, cycle, selectable, input): the
+    whole interactive stock_* set now renders over them, and a user widget is a stock render's
+    sibling over the same call.  chrome/ has NOT migrated down and keeps its bespoke widgets.
 
 ==============================================================================================*/
 

@@ -18,7 +18,7 @@
     The upward seams live in the documented block of flow/gui_flow.h (mirroring core's and
     interact's): scrollbar_widget -- the region gutter's ONE widget -- and the child box
     paint trio (draw_child_bg / draw_child_border / draw_resize_highlight, styled painters
-    bound for the element unit).
+    bound for the stock unit).
 
     Include order matters: each file can reference statics from files included above it.
 

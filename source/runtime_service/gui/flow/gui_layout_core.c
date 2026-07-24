@@ -15,7 +15,7 @@
 
     This tier composes and never paints: field_geom_split hands out a labeled row's two-track
     geometry, and its painting companion gui_field_row (which draws the label) lives with the rest of
-    the label grammar in element/gui_adornment.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD /
+    the label grammar in stock/gui_adornment.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD /
     ...) resolves in style/gui_style_core.c.
 
     Part of the flow unit (gui_flow.c); rect_align and item_flags_resolve resolve cross-unit (in

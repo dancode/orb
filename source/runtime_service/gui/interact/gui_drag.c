@@ -206,7 +206,7 @@ gui_drag_payload_accept( const char* type, gui_drag_flags_t flags )
         return NULL;
 
     /* Type matches: ring the target so the drop reads as "accepted here" (paint policy lives
-       with the skin -- draw_drop_ring, element/gui_adornment.c). */
+       with the skin -- draw_drop_ring, stock/gui_adornment.c). */
     if ( !( flags & GUI_DRAG_NO_PREVIEW ) )
         draw_drop_ring( s_drag.target_rect );
 

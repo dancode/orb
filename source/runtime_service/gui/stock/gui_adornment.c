@@ -1,10 +1,10 @@
 /*==============================================================================================
 
-    runtime_service/gui/element/gui_adornment.c -- Per-item ambient application + the system
+    runtime_service/gui/stock/gui_adornment.c -- Per-item ambient application + the system
     adornments.
 
-    Home in the element unit -- everything here is
-    STYLED paint or style/draw application, which is element material (the first layer astride
+    Home in the stock unit -- everything here is
+    STYLED paint or style/draw application, which is stock material (the first layer astride
     both servers).  Three groups:
 
       - the impure per-item wrappers (item_flags_resolve / item_flags_chrome_reset): style and

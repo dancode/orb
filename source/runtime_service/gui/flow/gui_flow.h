@@ -343,7 +343,7 @@ gui_span_t table_rows_span( i32 count, f32 h, f32 top );
         were reserved.  The plan's one sanctioned flow -> chrome call.
 
     draw_child_bg / draw_child_border / draw_resize_highlight (defined
-        element/gui_adornment.c) -- child_begin/end paint the child box through these styled
+        stock/gui_adornment.c) -- child_begin/end paint the child box through these styled
         painters; the box decision and its paint land in the same call, like core's
         draw_nav_ring and interact's draw_drop_ring.
 ==============================================================================================*/
@@ -355,7 +355,7 @@ void draw_child_bg        ( gui_rect_t r );
 void draw_child_border    ( gui_rect_t r );
 void draw_resize_highlight( gui_rect_t r, u8 edges );
 
-/* item_flags_resolve / item_flags_chrome_reset (element/gui_adornment.c) -- the per-item
+/* item_flags_resolve / item_flags_chrome_reset (stock/gui_adornment.c) -- the per-item
    ambient application wrappers this unit drives at its emit / chrome seams (cell_next_w,
    layout_pop_region); chrome and element reach them through this header. */
 gui_item_flags_t item_flags_resolve( void );

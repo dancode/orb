@@ -17,7 +17,7 @@
 
     Included by gui.c after gui_scroll.c (provides layout_push/pop_region, region_get,
     scroll_clamp) and interact/gui_resize.c (provides the resize_item protocol +
-    resize_apply_edges); the chrome paint comes from element/gui_adornment.c
+    resize_apply_edges); the chrome paint comes from stock/gui_adornment.c
     (draw_child_bg / draw_child_border / draw_resize_highlight).
 
 ==============================================================================================*/
@@ -190,7 +190,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     /* Child body fill, drawn under the parent clip before the region clips in.  The border is
        deferred to child_end (after the scrollbars) so the bar tracks cannot overdraw it -- the
        same deferral window_end uses for the window frame.  Paint policy lives with the skin
-       (draw_child_bg / draw_child_border, element/gui_adornment.c). */
+       (draw_child_bg / draw_child_border, stock/gui_adornment.c). */
     draw_child_bg( box );
 
     layout_push_region( id, box, REGION_PAD_DEFAULT, flags, &rg->scroll,

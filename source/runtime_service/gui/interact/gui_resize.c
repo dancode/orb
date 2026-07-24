@@ -12,7 +12,7 @@
     caller layers its own size policy on the result (a window pins + clamps to its min, a child
     clamps to its constraints and persists the size).  The in-flight s_resize_* state lives here
     because both consumers read/write it, so it belongs to neither.  The hot-edge highlight is
-    paint policy and lives with the skin (element/gui_adornment.c: draw_resize_highlight);
+    paint policy and lives with the skin (stock/gui_adornment.c: draw_resize_highlight);
     the GUI_RESIZE_* edge bits both sides speak are in interact/gui_interact.h.  WIN_BORDER is still read
     here so the grab band straddles the visible border (a hit-test metric, not paint).
 

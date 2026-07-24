@@ -39,9 +39,9 @@ The two servers NEVER see each other. Everything else is a LIBRARY over them:
     gui_style.c      style/      style/gui_style.h               state flags in, colors/metrics out
     gui_interact.c   interact/   interact/gui_interact.h         gesture mechanisms (move/resize/drag/feat)
     gui_flow.c       flow/       flow/gui_flow.h                 layout: THE rect producer
-    gui_component.c  component/  component/gui_component_internal.h  widget LOGIC, no paint -- STAGING
-    gui_stock.c      stock/      gui_element.h (public) +        reference widget set (stock_* renders),
-                                 stock/gui_element_internal.h    astride both servers
+    gui_component.c  component/  component/gui_component_internal.h  widget LOGIC, no paint
+    gui_stock.c      stock/      gui_element.h (el_ palette) +   reference widget set (stock_* renders),
+                                 stock/gui_stock_internal.h      astride both servers
     gui_chrome.c     chrome/     chrome/gui_chrome.h             product windowing policy (6 folders)
     gui_debug.c      debug/      debug/gui_debug.h               server introspection (severable)
     gui_frame.c      frame/      (public headers)                FRAME ORCHESTRATOR
@@ -72,7 +72,7 @@ the compiler enforces it per unit:
     flow      -> style, draw, core    + the render CLIP STACK (flow computes THE view rect,
                                       so it owns the region scissor -- flow places, never paints)
     component -> core, interact       widget LOGIC only: (id,rect) in, outputs out, NEVER paints,
-                                      so it stops below draw/render (staging; see tier note below)
+                                      so it stops below draw/render (see the tier note below)
     stock     -> everything below     the reference widget set -- astride both servers (it paints)
     chrome    -> everything below     + the render run capture (text selection)
     debug     -> everything           severable; its header leads every unit (it computes the

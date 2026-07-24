@@ -23,7 +23,7 @@
     Compiled in the DRAW unit (gui_draw.c) after gui_paint.c.  Everything here is
     PARAMETER-PURE: the emitters that resolve their own look (draw_arrow,
     draw_check_indicator, draw_rule, draw_close_x, draw_frame -- style-var picks, WIN_BORDER,
-    ROUND_WIDGET) live in element/gui_symbol_style.c.  The public gui_draw_* surface over
+    ROUND_WIDGET) live in stock/gui_symbol_style.c.  The public gui_draw_* surface over
     the pure set is at the foot.
 
 ==============================================================================================*/
@@ -105,7 +105,7 @@ draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 color )
 }
 
 /* draw_arrow + draw_collapse_arrow (the GUI_VAR_ARROW_STYLE pick) live in
-   element/gui_symbol_style.c; the chevron variant routes back through
+   stock/gui_symbol_style.c; the chevron variant routes back through
    gui_draw_chevron below. */
 
 /* Check-mark glyph: a two-stroke 'v' fitted and centered in `box` (Dear ImGui RenderCheckMark).

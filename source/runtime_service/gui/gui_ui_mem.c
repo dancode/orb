@@ -52,7 +52,7 @@ gui_ui_memory( void )
 
     /* stock/ -- THE STOCK UNIT (reference widget set) accounts for its own statics (the
        installed element style + the slot map) via its seam (gui_stock.c). */
-    b += gui_element_unit_mem_bytes();
+    b += gui_stock_unit_mem_bytes();
 
     /* widgets/ + table/ + dock/ + popup/ -- the chrome unit accounts for its own statics
        (gui_chrome.c seam). */
