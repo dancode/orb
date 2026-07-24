@@ -49,11 +49,11 @@ u32  gui_font_load_builtin( gui_builtin_font_t font );
 /* asset_path -- resolve a path relative to the engine's assets/ root (see gui_api.h) */
 void gui_asset_path( const char* relative, char* out, int out_size );
 
-/* frame -- frame_begin returns frame_dirty: emit the UI build only when true.  set_frame_hooks
+/* frame -- frame_begin returns frame_dirty: emit the UI build only when true.  frame_set_hooks
    hands gui the OS clock / sleep / wait callbacks it cannot reach itself (typically
    sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms); frame_pace is the
    end-of-loop sleep / idle wait.  See the FRAME CONTRACT in gui_api.h. */
-void gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
+void gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
 bool gui_frame_begin( f32 dt );
 void gui_frame_end( void );
 void gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms );   /* 0 opts that sleep out */

@@ -113,7 +113,7 @@ gui_boot( const gui_boot_desc_t* desc )
         return GUI_VP_INVALID;
     }
 
-    gui_set_frame_hooks( desc->clock, desc->sleep, desc->wait );
+    gui_frame_set_hooks( desc->clock, desc->sleep, desc->wait );
     if ( desc->debug )
         gui_debug_enable( true );
 
@@ -222,6 +222,7 @@ gui_frame_poll( f32* out_dt )
    custom draws) before present_end() draws the gui; false means skip them (minimized,
    swapchain rebuild, or no boot) -- still call present_end() unconditionally, it presents the
    floaters and resets this state either way.  A balanced pair like every other begin/end. */
+
 bool
 gui_present_begin( rhi_cmd_t* out_cmd )
 {
@@ -295,7 +296,7 @@ gui_present_end( void )
     With idle skip on (I, or set_idle_skip) and the UI settled, the loop blocks on OS input instead
     (500 ms safety cap), so a static UI burns no frames -- unless live volatile blocks are on
     screen (gui_volatile_live), which keep the anim_sleep_ms cadence so their idle-frame patches
-    actually present.  Requires the sleep / wait hooks from set_frame_hooks; without them this is
+    actually present.  Requires the sleep / wait hooks from frame_set_hooks; without them this is
     a no-op (the host loop just spins).
 
     The hooks (s_hook_sleep / s_hook_wait), s_idle_skip, and s_any_redraw live in

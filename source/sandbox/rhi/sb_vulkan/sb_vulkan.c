@@ -145,7 +145,7 @@ main( int argc, char** argv )
     }
 
     /* The frame_pace clock + sleep hooks (gui links only app + rhi, so the host wires sys). */
-    gui()->set_frame_hooks( sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms );
+    gui()->frame_set_hooks( sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms );
 
     /* Overlay state: toggling the triangle swaps between the boot pass (its own clear) and a
        bare host clear -- both paths must composite the gui correctly. */

@@ -12,7 +12,7 @@
     The overlays are NOT host-called: debug_enable( true ) arms an internal hotkey driver
     (debug_hotkeys, run from frame_begin) that cycles the overlay tiers, and the lifecycle emits
     them into the default context at its ctx_end (debug_overlays_emit).  The host's only jobs are
-    debug_enable() and a one-time set_frame_hooks() to hand gui the OS clock / sleep / wait
+    debug_enable() and a one-time frame_set_hooks() to hand gui the OS clock / sleep / wait
     callbacks it cannot reach itself; frame_pace() then owns the end-of-loop sleep or idle wait.
 
 ==============================================================================================*/
@@ -409,7 +409,7 @@ static gui_sleep_fn       s_hook_sleep;
 static gui_wait_events_fn s_hook_wait;
 
 void
-gui_set_frame_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events )
+gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events )
 {
     s_perf.clock = clock;        /* adopted by perf_frame_begin / render brackets next frame */
     s_hook_sleep = sleep_ms;

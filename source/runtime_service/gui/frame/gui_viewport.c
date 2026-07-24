@@ -539,14 +539,19 @@ gui_viewport_update( void )
    (index 0, host-owned) is presented by the host via render(); this loop handles only the surfaces
    gui spawned, so a single-window host stays a single-window present loop and tear-off "just
    works".  A minimized floater is skipped (its frame_begin would hand back an invalid cmd). */
+
 void
 gui_viewport_render_floaters( void )
 {
     for ( u32 viewport_id = 1; viewport_id < s_vp_count; ++viewport_id )
     {
         gui_viewport_t* vp = &s_vp_pool[ viewport_id ];
+
+        // Skip any slot that is not an gui owned floater (or closed without a valid rhi context)
         if ( !vp->owned || vp->rhi_ctx == RHI_CTX_INVALID )
             continue;
+
+        // We don't render minimized windows.
         if ( app()->window_is_minimized( vp->win_id ) )
             continue;
 

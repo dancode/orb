@@ -104,7 +104,7 @@ typedef struct gui_api_s
        (gui_boot_desc_t, gui.h): rhi()->init() (idempotent -- safe if the host already ran it),
        app window (borderless by default, with the chrome shell then auto-emitted each frame;
        os_chrome opts back into the stock OS frame), rhi context, init(font),
-       set_frame_hooks, debug_enable, and the primary viewport -- returned, or GUI_VP_INVALID
+       frame_set_hooks, debug_enable, and the primary viewport -- returned, or GUI_VP_INVALID
        with everything unwound on failure.  Call once after mod_init_all, before any other window
        opens.  shutdown() tears down what boot created (context + window); rhi()->shutdown()
        stays with the host, last.  Pairs with frame_poll / present below for the full easy-mode
@@ -129,7 +129,7 @@ typedef struct gui_api_s
     /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are no longer emitted
        by host code.  debug_enable( true ) arms an internal hotkey driver (numpad '.' arms the group,
        then P / O / F10 ...) and gui emits them itself, last in the default context's build -- see
-       debug_enable (GUI_DEBUG section).  The perf overlay's clock arrives once through set_frame_hooks. */
+       debug_enable (GUI_DEBUG section).  The perf overlay's clock arrives once through frame_set_hooks. */
 
     /* Frame hooks -- one-time wiring (after init) of the host OS services gui cannot reach itself
        (gui links only app + rhi, no sys):
@@ -140,7 +140,7 @@ typedef struct gui_api_s
          wait_events -- block until OS input or timeout (sys_wait_for_os_events_ms); enables the
                         idle-skip path of frame_pace.  NULL disables idle skip entirely. */
 
-    void ( *set_frame_hooks )( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
+    void ( *frame_set_hooks )( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
 
     /* Frame lifecycle.  A frame is four explicit phases -- this is a multi-context system and the
        API does not hide it; even a single-context host names its one context:
@@ -176,7 +176,7 @@ typedef struct gui_api_s
                       input so a static UI burns no frames, sleeping anim_sleep_ms (16 ~= 60 Hz)
                       only while a widget animation settles.  0 opts that sleep out (no call),
                       even while the feature is on -- free-run for that path.  A no-op until
-                      set_frame_hooks provides the sleep / wait callbacks. */
+                      frame_set_hooks provides the sleep / wait callbacks. */
 
     bool ( *frame_begin )( f32 dt );
     void ( *frame_end   )( void );

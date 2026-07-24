@@ -551,7 +551,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 }
                 s_gui_inited = true;
 
-                gui()->set_frame_hooks( sys_tick_seconds, sys_sleep_milliseconds,
+                gui()->frame_set_hooks( sys_tick_seconds, sys_sleep_milliseconds,
                                         sys_wait_for_os_events_ms );
                 if ( gd && gd->debug )
                     gui()->debug_enable( true );
