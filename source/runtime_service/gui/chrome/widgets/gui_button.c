@@ -20,7 +20,7 @@
    ellipsized fit so an oversized label truncates cleanly instead of spilling past both edges.
    Every pushbutton-style widget (button, button_fill, small_button) draws its face this way --
    centered is a button's one layout difference from the trailing-label widgets below, which is
-   why it is not routed through draw_field_label / rect_align's LEFT default like they are. */
+   why it does not route its label through field_row / rect_align's LEFT default like they do. */
 
 static void
 draw_button_label( gui_rect_t r, const char* label )

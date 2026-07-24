@@ -17,7 +17,7 @@
 
     slider_render is the shared visual: track frame, fill bar, knob, and centered value text.
 
-    Included by gui.c after the widget family files (shares item_state, draw_field_label,
+    Included by gui.c after the widget family files (shares item_state, field_row,
     cell_next, the COL_* palette, and the WIDGET_/WIN_ layout macros from
     element/gui_adornment.c).
 
@@ -431,9 +431,9 @@ gui_drag_int( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, cons
     v_speed = drag_resolve_speed( v_speed, (f32)( v_max - v_min ), 1.0f );
     if ( !format || !format[ 0 ] ) format = "%d";
 
-    gui_id_t   id    = item_id( label );
-    gui_rect_t r     = cell_next( WIDGET_H );
-    gui_rect_t box_r = draw_field_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
+    gui_id_t id = item_id( label );
+    field_row( label );   /* label via the ambient field seam; box_r = control track (see slider_float_step) */
+    gui_rect_t box_r = cell_next( WIDGET_H );
 
     return drag_int_box( id, box_r, v, v_speed, v_min, v_max, format );
 }
@@ -537,9 +537,9 @@ gui_drag_float( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_max, co
     v_speed = drag_resolve_speed( v_speed, v_max - v_min, 1.0f );
     if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
 
-    gui_id_t   id    = item_id( label );
-    gui_rect_t r     = cell_next( WIDGET_H );
-    gui_rect_t box_r = draw_field_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
+    gui_id_t id = item_id( label );
+    field_row( label );   /* label via the ambient field seam; box_r = control track (see slider_float_step) */
+    gui_rect_t box_r = cell_next( WIDGET_H );
 
     return drag_float_box( id, box_r, v, v_speed, v_min, v_max, fmt );
 }
@@ -552,9 +552,9 @@ drag_float_n( const char* label, f32* v, u32 n, f32 v_speed, f32 v_min, f32 v_ma
     v_speed = drag_resolve_speed( v_speed, v_max - v_min, 1.0f );
     if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
 
-    gui_id_t   id   = item_id( label );
-    gui_rect_t r    = cell_next( WIDGET_H );
-    gui_rect_t ctrl = draw_field_label( r, label, font_char_h() * 3.0f * (f32)n, COL_TEXT_DIM );
+    gui_id_t id = item_id( label );
+    field_row( label );
+    gui_rect_t ctrl = cell_next( WIDGET_H );
 
     bool changed = false;
     for ( u32 i = 0; i < n; ++i )
@@ -634,7 +634,8 @@ static bool
 color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
 {
     gui_id_t id = item_id( label );
-    gui_rect_t r = cell_next( WIDGET_H );
+    field_row( label );
+    gui_rect_t r = cell_next( WIDGET_H );   /* control track (label already emitted by field_row) */
 
     u32  comps  = ( n == 4 && ( flags & GUI_COLOR_EDIT_NO_ALPHA ) ) ? 3 : n;
     bool is_hsv = ( flags & GUI_COLOR_EDIT_DISPLAY_HSV ) != 0;
@@ -659,8 +660,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
     /* ---- Inline row: [preview_sq] [drag0 .. dragN-1] | label ---- */
     f32 preview_w = (f32)WIDGET_H;
     f32 gap       = (f32)s_style.widget_gap;
-    f32 ctrl_min  = preview_w + gap + 44.0f * (f32)comps + gap * (f32)( comps - 1u );
-    gui_rect_t ctrl = draw_field_label( r, label, ctrl_min, COL_TEXT_DIM );
+    gui_rect_t ctrl = r;   /* field_row emitted the label; the whole control track is ours */
 
     /* Clickable color square -- placed first for fast visual identification. */
     gui_rect_t preview_r = { ctrl.x, ctrl.y, preview_w, ctrl.h };

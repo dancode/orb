@@ -11,12 +11,12 @@
           layout_seed_content, and layout_set / _grid / _reflow / _clear) -- the "what shape
           is this region" mechanism;
         - cell emitters (cell_next_w, grid_next_rect, pack_next_rect,
-          cell_split_field) -- the per-item "hand out the next rect" mechanism.
+          field_geom_split) -- the per-item "hand out the next rect" mechanism.
 
-    This tier composes and never paints: cell_split_field hands out geometry, and its painting
-    companion draw_field_label lives with the rest of the label grammar in
-    element/gui_adornment.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD / ...) resolves
-    in style/gui_style_core.c.
+    This tier composes and never paints: field_geom_split hands out a labeled row's two-track
+    geometry, and its painting companion field_row (which draws the label) lives with the rest of
+    the label grammar in element/gui_adornment.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD /
+    ...) resolves in style/gui_style_core.c.
 
     Part of the flow unit (gui_flow.c); rect_align and item_flags_resolve resolve cross-unit (in
     scope) and before gui_layout.c (which calls layout_set / cell_next / the region
@@ -1057,58 +1057,6 @@ cell_next_w( f32 natural_w, f32 h )
 gui_rect_t cell_next( f32 h ) { return cell_next_w( -1.0f, h ); }
 
 /*============================================================================================*/
-/* Resolve a labeled widget's cell into a label position + a control rect when a field split is
-   active (field_split / field_label_*).  The label and control are two tracks laid across the cell
-   by the same resolver columns use, so a field split obeys the overloaded unit rule and adapts to
-   whatever width the widget is handed -- a full row or a single column cell.  `side` flips which
-   track sits left.  Draws nothing; the caller places its label + control from the outputs.  The
-   control is floored at min_control_w so it stays usable (overrunning under the label, as before).
-   Returns false when no field split is set, leaving the caller on its default layout. */
-bool
-cell_split_field( gui_rect_t cell, f32 min_control_w, f32* out_label_x, f32* out_label_w,
-                     gui_rect_t* out_control )
-{
-    layout_frame_t* f = lf();
-    if ( f->mod.field_side == 0 ) return false;
-
-    /* Order the two tracks by side so the resolver lays them left-to-right correctly. */
-    f32 tracks[ 2 ];
-    u32 lab_i, ctl_i;
-    if ( f->mod.field_side == GUI_LABEL_LEFT )
-    {
-        tracks[ 0 ] = f->mod.field_label;   tracks[ 1 ] = f->mod.field_control;   lab_i = 0; ctl_i = 1;
-    }
-    else /* GUI_LABEL_RIGHT */
-    {
-        tracks[ 0 ] = f->mod.field_control; tracks[ 1 ] = f->mod.field_label;     ctl_i = 0; lab_i = 1;
-    }
-
-    f32 pos[ 2 ], size[ 2 ];
-    layout_resolve_tracks( tracks, 2, cell.x, cell.w, WIDGET_PAD, pos, size );
-
-    f32 control_w = size[ ctl_i ];
-    if ( control_w < min_control_w ) control_w = min_control_w;
-
-    f32 label_x = pos[ lab_i ];
-
-    /* When the control floors at min_control_w it grows past its resolved track.  In LABEL_RIGHT
-       the trailing label was anchored to the resolved (shrinking) control edge, so a squeezed row
-       slid the label leftward under the control.  Re-anchor it to the FLOORED control's right edge:
-       the label stops moving left once the control hits its minimum, and the row overflows into the
-       scroll boundary instead of the label crawling beneath the field. */
-    if ( f->mod.field_side == GUI_LABEL_RIGHT )
-    {
-        f32 min_label_x = pos[ ctl_i ] + control_w + WIDGET_PAD;
-        if ( label_x < min_label_x ) label_x = min_label_x;
-    }
-
-    *out_label_x = label_x;
-    *out_label_w = size[ lab_i ];
-    *out_control = ( gui_rect_t ){ pos[ ctl_i ], cell.y, control_w, cell.h };
-    return true;
-}
-
-/*============================================================================================*/
 /* The ambient label ("pair") layout -- the shared authority the _label widget variants read
    (gui.h, gui_field_t).  A flow static, set once and reused: field_row (element) resolves each
    labeled row against it, so all forms align without re-declaring the split per widget.  Zeroed
@@ -1128,11 +1076,10 @@ void gui_skip_label ( void ) { s_field_skip = true; }
 bool field_skip_take( void ) { bool s = s_field_skip; s_field_skip = false; return s; }
 
 /* The effective field for the row now emitting.  An explicit per-region split (gui_form /
-   field_split, carried on mod) OVERRIDES the ambient global default -- so every existing form
-   keeps aligning through the mod path while new code sets the ambient once with field_set.  hide
-   and align have no mod form, so they always come from the ambient.  This is the one bridge that
-   lets a converted widget (field_row) and an un-converted one (draw_field_label, mod-only) resolve
-   the same label geometry inside one form. */
+   field_split, carried on mod) OVERRIDES the ambient global default -- so a form set the old way
+   still aligns through the mod path while new code sets the ambient once with field_set.  hide
+   and align have no mod form, so they always come from the ambient.  Every labeled widget resolves
+   its label geometry through this, so mod and ambient forms lay out identically. */
 gui_field_t
 field_effective( void )
 {
@@ -1149,7 +1096,7 @@ field_effective( void )
 
 /* Pure two-track geometry for a labeled row (see gui_flow.h).  Shares layout_resolve_tracks --
    the same resolver columns use -- so a field split obeys the overloaded unit rule; the NONE
-   (trailing) branch is the default-label math cell_split_field's caller once owned. */
+   (trailing) branch is the plain "control left, label trailing right" math. */
 void
 field_geom_split( gui_rect_t cell, gui_label_side_t side, f32 control_u, f32 label_w,
                   f32 min_ctrl, f32 pad, gui_rect_t* out_label, gui_rect_t* out_control )
@@ -1177,7 +1124,7 @@ field_geom_split( gui_rect_t cell, gui_label_side_t side, f32 control_u, f32 lab
     if ( cw < min_ctrl ) cw = min_ctrl;
 
     f32 lx = pos[ lab_i ];
-    if ( side == GUI_LABEL_RIGHT )   /* re-anchor past the floored control (as cell_split_field) */
+    if ( side == GUI_LABEL_RIGHT )   /* re-anchor past the floored control so it never crawls under */
     {
         f32 min_lx = pos[ ctl_i ] + cw + pad;
         if ( lx < min_lx ) lx = min_lx;

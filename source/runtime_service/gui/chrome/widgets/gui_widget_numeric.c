@@ -17,7 +17,7 @@
     Focus gain seeds it from the current value; Enter / focus loss parses it back.
 
     Included by gui.c after gui_widget_slider.c (which is after the widget family files, so
-    item_state, draw_field_label, input_field_edit, and the COL_* / WIDGET_ / WIN_
+    item_state, field_row, input_field_edit, and the COL_* / WIDGET_ / WIN_
     style vocabulary from gui_style.c are all in scope).
 
 ==============================================================================================*/
@@ -94,13 +94,14 @@ static bool
 input_scalar( const char* label, double cur, double* out,
               double step, double step_fast, const char* fmt, bool is_int )
 {
-    gui_id_t   id  = item_id( label );
-    gui_rect_t r   = cell_next( WIDGET_H );
+    gui_id_t id = item_id( label );
+
+    /* Label via the ambient field seam; the control track holds the text box + optional steppers. */
+    field_row( label );
+    gui_rect_t ctrl = cell_next( WIDGET_H );
 
     bool has_steps = ( step != 0.0 );
     f32  btn_w     = has_steps ? 2.0f * WIDGET_H : 0.0f;
-    f32  min_ctrl  = font_char_h() * 3.0f + btn_w;
-    gui_rect_t ctrl = draw_field_label( r, label, min_ctrl, COL_TEXT_DIM );
 
     gui_rect_t   box_r = { ctrl.x, ctrl.y, ctrl.w - btn_w, ctrl.h };
     gui_item_state_t st    = item_state( id, box_r, ITEM_FOCUSABLE );
@@ -168,9 +169,10 @@ static bool
 input_float_n( const char* label, f32* v, u32 n, const char* fmt )
 {
     if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
-    gui_id_t   id   = item_id( label );
-    gui_rect_t r    = cell_next( WIDGET_H );
-    gui_rect_t ctrl = draw_field_label( r, label, font_char_h() * 3.0f * (f32)n, COL_TEXT_DIM );
+    gui_id_t id = item_id( label );
+
+    field_row( label );
+    gui_rect_t ctrl = cell_next( WIDGET_H );
 
     bool changed = false;
     for ( u32 i = 0; i < n; ++i )

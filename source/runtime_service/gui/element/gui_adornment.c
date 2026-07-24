@@ -10,9 +10,9 @@
       - the impure per-item wrappers (item_flags_resolve / item_flags_chrome_reset): style and
         draw consequences over the interact server's pure seams (item_flags_take /
         item_flags_chrome_drop, core/gui_ctx.c);
-      - the labeled-row paint half (draw_field_label + label_natural_w): the geometry halves
-        live with the composer (cell_split_field, flow), the paint and the WIDGET_PAD
-        self-measure here;
+      - the label paint (field_row + label_natural_w): field_row draws a labeled widget's own
+        label per the ambient gui_field_t; its geometry half (field_geom_split) lives with the
+        composer in flow, the paint and the WIDGET_PAD self-measure here;
       - the system adornments (nav ring, focus border, drop ring, child box, resize
         highlight): the units below decide WHEN one paints -- across their documented upward
         seams (core/gui_core.h, interact/gui_interact.h, flow/gui_flow.h) -- and the paint
@@ -72,18 +72,6 @@ item_flags_chrome_reset( void )
     draw_set_rounding( style_var( GUI_VAR_WIN_ROUNDING ) );
 }
 
-/* Split a labeled widget row into a control rect and its painted label.  The geometry halves
-   live with the composer: cell_split_field (flow/gui_layout_core.c, forward-declared
-   here -- the one present->flow seam) lays the two tracks when a field split is active; the
-   default trailing-label math is local.  This wrapper owns the PAINT: it draws the label and
-   returns the control rect, which is why it sits here with the label grammar and not in the
-   composer -- flow never colors a pixel.  In the default (trailing-label) mode the label
-   keeps its natural width pinned at the row's right edge and the control takes the rest, never
-   shrinking below min_control_w so it stays usable when the label is long (the control then
-   overruns under the label); in field-split mode the label and control are two resolved tracks.
-   The single seam every "control + trailing label" widget (slider_float, input_text, combo,
-   drag_float, color_edit) routes through, so row proportions retune in one place. */
-
 /* The natural width a label-sized widget requests from the composer: the visible span plus the
    standard inset on both sides.  THE self-measurement formula -- button, small_button, menu
    items, and the public gui_button_width all speak it through this one helper.  WIDGET_PAD
@@ -91,36 +79,6 @@ item_flags_chrome_reset( void )
 f32  label_natural_w( const char* s )
 {
     return label_width( s ) + 2.0f * WIDGET_PAD;
-}
-
-gui_rect_t
-draw_field_label( gui_rect_t row, const char* label, f32 min_control_w, u32 label_color )
-{
-    /* Field split mode: the label sits in its track at full strength (the trailing-label dim hint,
-       label_color, does not apply -- a field label reads as primary); the control fills the rest.
-       The label is fitted to its track width so a narrow (fraction-shrunk) track ellipsizes it. */
-    f32          label_x, label_w;
-    gui_rect_t control;
-    if ( cell_split_field( row, min_control_w, &label_x, &label_w, &control ) )
-    {
-        draw_label_fit( label_x, text_center_y( row.y, row.h ), COL_TEXT, label, label_w );
-        return control;
-    }
-
-    /* Default: control on the left, the label trailing at its natural width on the right.  When the
-       control floors at min_control_w the label space narrows; fit it so it ellipsizes there
-       instead of bleeding under the row's right edge.  No visible label ("##key") => full row. */
-    label_w = label_width( label );
-    if ( label_w == 0.0f ) return row;
-    f32 control_w = row.w - label_w - WIDGET_PAD;
-    if ( control_w < min_control_w ) control_w = min_control_w;
-
-    control = ( gui_rect_t ){ row.x, row.y, control_w, row.h };
-
-    f32 trail_x = control.x + control.w + WIDGET_PAD;
-    draw_label_fit( trail_x, text_center_y( row.y, row.h ), label_color, label,
-                    ( row.x + row.w ) - trail_x );
-    return control;
 }
 
 /* The caption label seam -- the ONE place a labeled value widget routes its own label through, so
@@ -136,8 +94,8 @@ draw_field_label( gui_rect_t row, const char* label, f32 min_control_w, u32 labe
    It emits nothing (consumes no cell, arms nothing -- the widget's cell_next then returns a full
    cell) in three cases, so one call handles labeled AND bare: field.hide (the master property-panel
    toggle), skip_label() armed for this one widget, or an empty ("##id") label.  The geometry half
-   (field_geom_split) lives with the composer in flow; this owns the PAINT and the pen, the same
-   division draw_field_label / cell_split_field keep. */
+   (field_geom_split) lives with the composer in flow; this owns the PAINT and the pen -- flow
+   never colors a pixel. */
 void
 field_row( const char* label )
 {

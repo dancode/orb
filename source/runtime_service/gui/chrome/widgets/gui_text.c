@@ -220,8 +220,8 @@ gui_bullet( void )
 void
 gui_label_text( const char* label, const char* value )
 {
-    gui_rect_t r       = cell_next( WIDGET_H );
-    gui_rect_t control = draw_field_label( r, label, 0.0f, COL_TEXT_DIM );
+    field_row( label );
+    gui_rect_t control = cell_next( WIDGET_H );
 
     /* The value is the primary content: draw it where a control would sit, vertically centered and
        fitted (ellipsized) to the track width.  Plain text -- no "##" grammar -- so it shows as-is. */

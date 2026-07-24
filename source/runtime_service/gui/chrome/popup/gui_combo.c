@@ -65,13 +65,13 @@ combo_cap_items( gui_combo_flags_t flags )
 bool
 gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t flags )
 {
-    gui_id_t   id  = item_id( label );
-    gui_rect_t row = cell_next( WIDGET_H );
+    gui_id_t id = item_id( label );
 
     /* The box takes the control track and the label trails it (or sits in its field-split track),
-       exactly like the other labeled value widgets.  The min control width keeps room for the
-       arrow plus a little preview text when the cell is squeezed. */
-    gui_rect_t box = draw_field_label( row, label, WIDGET_H + font_char_h() * 2.0f, COL_TEXT_DIM );
+       exactly like the other labeled value widgets -- routed through the ambient field seam
+       (field_row), which also drops the label when hidden / skipped. */
+    field_row( label );
+    gui_rect_t box = cell_next( WIDGET_H );
 
     gui_item_state_t st = item_state( id, box, ITEM_BUTTON );
 

@@ -30,9 +30,12 @@ typedef struct { gui_id_t id; gui_rect_t box; gui_item_state_t st; } input_text_
 static input_text_frame_t
 input_text_begin( const char* label )
 {
-    gui_id_t     id    = item_id( label );
-    gui_rect_t   box_r = draw_field_label( cell_next( WIDGET_H ), label,
-                                               font_char_h() * 3.0f, COL_TEXT_DIM );
+    gui_id_t id = item_id( label );
+
+    /* Label via the ambient field seam (field_row): aligned column under a form / field_split,
+       trailing otherwise, or dropped when hidden / skipped -- then the box fills the control cell. */
+    field_row( label );
+    gui_rect_t       box_r = cell_next( WIDGET_H );
     gui_item_state_t st    = item_state( id, box_r, ITEM_FOCUSABLE );
     draw_fill( box_r, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );
     draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );

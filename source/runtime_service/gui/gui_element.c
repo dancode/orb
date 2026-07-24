@@ -13,8 +13,8 @@
                                      handed, read ONLY the installed element style
                                      (gui_el_style_t; el_style_derive compiles the theme in)
     element/gui_adornment.c     -- per-item ambient application (item_flags_resolve /
-                                     item_flags_chrome_reset), the labeled-row paint half
-                                     (draw_field_label, label_natural_w), and the system
+                                     item_flags_chrome_reset), the label paint
+                                     (field_row, label_natural_w), and the system
                                      adornments the units below invoke across their
                                      documented upward seams (nav ring, focus border, drop
                                      ring, child box, resize highlight)

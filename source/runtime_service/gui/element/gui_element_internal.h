@@ -24,10 +24,9 @@
    pure halves.  Declared in flow/gui_flow.h: flow is their lowest consumer (its
    emit / region seams drive them). */
 
-/* Labeled-row paint half (element/gui_adornment.c): the geometry lives with the composer
-   (cell_split_field, flow/gui_flow.h); the label paint + the WIDGET_PAD self-measure here. */
-gui_rect_t draw_field_label( gui_rect_t row, const char* label, f32 min_control_w,
-                             u32 label_color );
+/* Label paint (element/gui_adornment.c): field_row draws a labeled widget's own label per the
+   ambient gui_field_t (geometry = field_geom_split, flow/gui_flow.h; declared in gui_host.h).
+   label_natural_w is the self-measure the button family shares. */
 f32        label_natural_w ( const char* s );
 
 /* System adornments (element/gui_adornment.c) invoked from below across documented upward
