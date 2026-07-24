@@ -105,15 +105,15 @@ game_ui_score( gui_rect_t r, i32 score )
     char text[ 32 ];
     snprintf( text, sizeof( text ), "score  %d", score );
 
-    gui()->el_panel( r );
-    gui()->el_label( gui_rect_pad( r, game_ui_u( 0.25f ) ),
+    gui()->stock_panel( r );
+    gui()->stock_label( gui_rect_pad( r, game_ui_u( 0.25f ) ),
                      GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, text );
 }
 
 void
 game_ui_tick_meter( gui_rect_t r, f32 frac )
 {
-    gui()->el_meter( r, frac, GAME_UI_TEAL );
+    gui()->stock_meter( r, frac, GAME_UI_TEAL );
 }
 
 // clang-format on

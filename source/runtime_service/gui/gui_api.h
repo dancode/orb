@@ -15,13 +15,35 @@
         GUI_RECT     stateless carve math
         GUI_FLOW     the layout pen
         GUI_STYLE    style service: stacks, slot reads, density scale
-        GUI_ELEMENT  el_* rect-consuming styled cores
-        GUI_CHROME   OPTIONAL policy layer: windows, dock, popups, stock widgets, themes
+        GUI_STOCK    comp_* widget logic + the stock_* reference renders over it
+        GUI_CHROME   OPTIONAL policy layer: windows, dock, popups, flow widgets, themes
         GUI_DEBUG    severable diagnostics
 
     Everything below GUI_CHROME stands alone -- chrome is one client of the strata, not the
     system.  A kit builds its own UI from frame + draw + core + surface + rect/flow, and
     promotes its own style; sb_gui_base is the bottom-up proof, tier by tier.
+
+    THE BEGIN / END RULE -- one rule, no exceptions, for every pair in this header (frame, ctx,
+    window, child, region, pane, popup, modal, tooltip, combo, listbox, menu, menu bar, toolbar
+    dropdown, tab bar, tab item, table, flow, layout, split, drag source / target):
+
+        THE BOOL GATES THE BODY, NEVER THE END.  Every end is safe to call whatever its begin
+        returned -- it unwinds exactly what that begin opened, and nothing when it opened
+        nothing.  So you never have to remember which pairs are which:
+
+            if ( gui()->window_begin( "Tools", GUI_WIN_NONE ) )
+            {
+                ...body widgets...           // skipped when false -- they cost nothing
+            }
+            gui()->window_end();             // safe whatever begin returned
+
+    A false return means "do not emit the body" (collapsed, closed, not the selected tab, popup
+    not open); it says nothing about what the begin opened internally.  That is why the end must
+    not be guarded on it -- a begin that opens state and then reports a body it does not want
+    (an auto-sizing popup mid-measure, a window closing this frame) would otherwise strand an
+    overlay detach, an id scope, or a window record.  Placing the end outside the guard, as
+    above, is the form that cannot get this wrong; older call sites in this repo still place it
+    inside and remain correct, because the ends are no-ops on the paths that reach them.
 
 ==============================================================================================*/
 
@@ -802,7 +824,7 @@ typedef struct gui_api_s
            gui_rect_t r     = p.rect;
            gui_rect_t title = gui_rect_cut_top( &r, 26.0f );          // titlebar = a band...
            gui()->feat_move( p.id, title, &st->rect.x, &st->rect.y ); // ...that drags
-           if ( gui()->el_button( gui_rect_cut_right( &title, title.h ), "x##c" ) )
+           if ( gui()->stock_button( gui_rect_cut_right( &title, title.h ), "x##c" ) )
                st->open = false;                                      // close = your bool
            r.h = gui()->feat_collapse( p.id, !st->folded, 26.0f, r.h ) - 26.0f;
            gui()->feat_resize( p.id, &st->rect, GUI_RESIZE_R | GUI_RESIZE_B, 120, 80 );
@@ -987,7 +1009,7 @@ typedef struct gui_api_s
     void         ( *field_set  )( const gui_field_t* f );
     gui_field_t* ( *field_get  )( void );
     void         ( *skip_label )( void );
-    void         ( *field_row  )( const char* label );
+    void         ( *field_row      )( const char* label );
     void ( *grid              )( gui_layout_t desc );
     void ( *grid_cells        )( u32 ncols, u32 nrows );
     void ( *bar               )( void );
@@ -1171,11 +1193,11 @@ typedef struct gui_api_s
     gui_rect_t ( *flow_cell  )( f32 w, f32 h );
     void       ( *flow_end   )( void );
 
-    /* split_begin / split_next / split_end -- split the current row into a fixed-width left panel
-       and a fill remainder (recurse via split_next), id-scoped with per-id height caching.  Each
-       panel is an independent flow region -- declare a mode (stack / cols / ...) inside.  A layout
-       composition (flow/gui_split.c); pair with button_fill or any fill widget for side-by-side
-       panels that share the row height. */
+    /* split_begin / split_next / split_end -- two panels side by side sharing a Y level: a fill
+       left panel and a right panel `right_w` px wide, each an independent flow region (declare a
+       mode inside each), heights cached per id.  A layout composition (flow/gui_split.c).  The
+       worked example, with button_width / button_fill sizing the right panel, is under GUI_CHROME
+       -- these three verbs are documented once, there. */
     void ( *split_begin   )( const char* id, f32 right_w );
     void ( *split_next    )( void );
     void ( *split_end     )( void );
@@ -1242,76 +1264,89 @@ typedef struct gui_api_s
     void ( *set_arrow_style  )( u8 style );
 
     /*============================================================================================================
-        GUI_ELEMENT -- building blocks  (rect-consuming widget cores)
-        The el_* set: every element fills EXACTLY the rect it is handed -- no hidden padding,
-        no flow, no layout reservation -- composing item() behavior + draw_* presentation +
-        the slim installed element style (gui_el_style_t, gui_element.h).  Rects come from
-        anywhere: gui_rect.h math, split / carve / anchor, flow_cell, your own numbers.
-        Lifted from the proven sb_gui_diablo ui layer.
+        GUI_STOCK -- components + the reference widget set  (component/ + stock/)
+        Two rungs, one pair per widget.  A COMPONENT (comp_*) is a widget's LOGIC with no look:
+        it consumes (id, rect), does the tedious part -- hit-testing, drag math, value snapping,
+        focus / hover / active -- and reports state + the geometry a render needs.  It never
+        paints.  A STOCK widget (stock_*) is one plain render over that component: the reference
+        you READ AND FORK, not a privileged default.  Your own widget is the stock render's
+        SIBLING -- same comp_* call, different draw_* -- which is the whole point of the stack.
+
+        Rects come from anywhere: gui_rect.h math, split / carve / anchor, flow_cell, your own
+        numbers.  (The flow-placed, labeled, theme-styled versions of these widgets live in
+        GUI_CHROME; next_item_rect feeds a chrome widget an explicit rect when you want that
+        set instead.)
+
+            gui_comp_button_t b = gui()->comp_button( "save", r );          // logic
+            u32 face = gui()->el_color( GUI_EL_BG, gui()->item_phase( b.state ) );
+            gui()->draw_round_rect( r, 8,8,8,8, true, 0.0f, face );          // your look
     =============================================================================================================*/
 
-    /* el_style -- mutable access to the INSTALLED element style, the kit (S3) tuning door.
-       Elements read only this.  Ad-hoc writes last until the next style landing re-installs
-       the values; a kit that OWNS the look registers style_source_set (GUI_STYLE) so its
-       palette is re-derived, not clobbered, at every landing. */
-    gui_el_style_t* ( *el_style )( void );
+    /* item_phase -- interaction state -> palette state (ACTIVE / HOT / IDLE), the one mapping
+       every render needs; nav counts as HOT so a keyboard-navigated widget lights like a hovered
+       one.  Pair with el_color and a custom render is two lines.  (GUI_EL_DIM is the inert /
+       disabled variant: a render picks it deliberately, never from live interaction.)
 
-    /* The cores.  el_panel -- inert framed backdrop (the DIM surface).  el_label -- a text run
-       seated per align.  el_button -- framed press element, id from the label, true on click.
-       el_check -- square toggle inscribed centered in r, explicit id, true on change.
-       el_slider -- bare horizontal drag track (caller draws any value text), nav steps 5%.
-       el_meter -- framed fill bar; the fill color is a CALL PARAMETER (per-widget color is
-       kit business, not a style slot).  el_cycle -- "< value >" selector with square chevron
-       caps, wraps; caps id under a push of id_str.  Value-mutating elements request the next
-       frame's redraw themselves. */
-    void ( *el_panel  )( gui_rect_t r );
-    void ( *el_label  )( gui_rect_t r, gui_align_t align, const char* text );
-    bool ( *el_button )( gui_rect_t r, const char* label );
-    bool ( *el_check  )( gui_rect_t r, const char* id_str, bool* v );
-    bool ( *el_slider )( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
-    void ( *el_meter  )( gui_rect_t r, f32 frac, u32 fill_abgr );
-    bool ( *el_cycle  )( gui_rect_t r, const char* id_str, i32* idx,
-                         const char* const* items, i32 count );
+       el_color -- the RESOLVED element palette read: the installed style (kit-owned when a style
+       source is registered) with an active push_style_color / next_style_color override winning.
+       THE color door for a widget of your own -- the same seam the stock renders and chrome's
+       COL_* macros read, so a push_style_color around your widget behaves exactly as it does
+       around a stock one.
 
-    /* el_input -- single-line text field filling r: the SAME edit engine chrome's input_text
-       drives (keys, mouse selection drag, clipboard, undo, horizontal scroll, caret blink),
-       under an element-styled box -- a text field with no chrome dependency.  A press claims
-       keyboard focus; buf is caller-owned, NUL-terminated, edited in place.  True on any frame
-       the buffer changes.  Enter / submit policy stays with the caller (set_edit_key_hook, or
-       chrome's input_text for the labeled form-row treatment). */
-    bool ( *el_input  )( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
+       el_style -- the raw INSTALLED element style, mutable: the kit (S3) tuning door for
+       INSTALLING a look.  Ad-hoc writes last until the next style landing re-installs them; a kit
+       that OWNS the look registers style_source_set (GUI_STYLE) so its palette is re-derived
+       rather than clobbered at every landing.  Do not read ->col[][] through it at paint time --
+       that bypasses the style stack; use el_color. */
+    gui_el_state_t  ( *item_phase )( gui_item_state_t st );
+    u32             ( *el_color   )( gui_el_role_t role, gui_el_state_t state );
+    gui_el_style_t* ( *el_style   )( void );
 
-    /* el_selectable -- a full-width row: transparent idle, HOT tint on hover / nav, ACTIVE tint
-       when *selected.  THE row primitive under lists, combos, trees, menus -- the pure core, with
-       none of chrome's selectable policy (type-ahead, popup / combo dismiss on click).  selected
-       NULL = a click-only row; id from the label.  True on the frame it is clicked. */
-    bool ( *el_selectable )( gui_rect_t r, const char* label, bool* selected );
+    /*=====================================  the component / render pairs  ======================================*/
 
-    /* GUI_COMPONENT (staging) -- widget LOGIC with no look.  A component runs a widget's whole
-       interaction over an (id, rect) and returns state + geometry a render draws; it never
-       paints.  Each stock_* is the reference render over its component -- a user's own widget is
-       its sibling: same comp_* call, different draw_*.  The el_* cores delegate to the stock_*.
-         comp_slider -- hit / drag / snap / keyboard nav over a desc; returns bar + handle rects.
-         comp_button -- the press protocol over (id, rect); returns state + clicked.  Simplest
-                        case, no desc (not parameter-rich); takes a pure id, the label is the
-                        render's (stock_button passes the label as both). */
-    gui_comp_slider_t     ( *comp_slider      )( const gui_comp_slider_desc_t* desc );
+    /* slider -- hit / drag / snap / keyboard nav; returns the resolved fraction plus the value
+       BAR and HANDLE rects.  Absolute-position mapping: the handle CENTER tracks the cursor, so
+       value and knob never disagree.  The positional form covers the common case; comp_slider_ex
+       takes the full desc (gui_comp_slider_desc_t: snap step, handle width, nav step).
+       stock_slider draws an el-styled groove + handle, leaving any value text to the caller. */
+    gui_comp_slider_t     ( *comp_slider      )( const char* id, gui_rect_t rect, f32* v, f32 lo, f32 hi );
+    gui_comp_slider_t     ( *comp_slider_ex   )( const gui_comp_slider_desc_t* desc );
     bool                  ( *stock_slider     )( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
+
+    /* button -- the press protocol; the simplest component and the shape the rest follow.  It
+       takes a pure ID: the displayed label is the render's business (stock_button passes the
+       label as both, so the "##hidden" / "###stable" grammar still applies). */
     gui_comp_button_t     ( *comp_button      )( const char* id, gui_rect_t rect );
     bool                  ( *stock_button     )( gui_rect_t r, const char* label );
-    /* check -- toggle over an inscribed box (returns the box).  cycle -- a "< value >" stepper,
-       composing two comp_buttons (takes count for wrap; the strings are the render's).  selectable
-       -- comp_button + an optional *selected toggle.  input -- runs the shared edit engine and
-       returns paintable geometry (content / text origin / selection + caret bars) so a render
-       draws a text field with only public verbs, never touching the edit state. */
+
+    /* check -- toggle over an inscribed square box (returned as .box: the hit AND the paint
+       target).  cycle -- a "< value >" stepper composing a comp_button per cap; it takes `count`
+       for the wrap but NOT the strings, which the render draws at .label.  selectable --
+       comp_button plus an optional *selected toggle (NULL = a click-only row). */
     gui_comp_check_t      ( *comp_check       )( const char* id, gui_rect_t rect, bool* v );
     bool                  ( *stock_check      )( gui_rect_t r, const char* id_str, bool* v );
     gui_comp_cycle_t      ( *comp_cycle       )( const char* id, gui_rect_t rect, i32* idx, i32 count );
     bool                  ( *stock_cycle      )( gui_rect_t r, const char* id_str, i32* idx, const char* const* items, i32 count );
     gui_comp_selectable_t ( *comp_selectable  )( const char* id, gui_rect_t rect, bool* selected );
     bool                  ( *stock_selectable )( gui_rect_t r, const char* label, bool* selected );
+
+    /* input -- the richest component: runs the SAME edit engine chrome's input_text drives (keys,
+       mouse selection drag, clipboard, undo, horizontal scroll, caret blink) and returns PAINTABLE
+       geometry -- content rect, run origin, selection + caret bars -- so a render draws a text
+       field with only public verbs (push_clip / draw_text / draw_rect), never touching the edit
+       state or measuring a glyph.  A press claims keyboard focus; buf is caller-owned,
+       NUL-terminated, edited in place.  Enter / submit policy stays with the caller
+       (set_edit_key_hook, or chrome's input_text for the labeled form-row treatment). */
     gui_comp_input_t      ( *comp_input       )( const char* id, gui_rect_t rect, f32 pad, char* buf, u32 bufsz );
     bool                  ( *stock_input      )( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
+
+    /* The inert three -- no interaction, so no logic to extract; render-only by design.
+       stock_panel -- framed backdrop (the DIM surface), for grouping.  stock_label -- a text run
+       seated per align.  stock_meter -- framed fill bar whose fill color is a CALL PARAMETER
+       (per-widget color is kit business, not a style slot). */
+    void ( *stock_panel )( gui_rect_t r );
+    void ( *stock_label )( gui_rect_t r, gui_align_t align, const char* text );
+    void ( *stock_meter )( gui_rect_t r, f32 frac, u32 fill_abgr );
 
     /*============================================================================================================
         GUI_CHROME -- convenience / editor UI  (window/ + dock/ + popup/ + widgets/ + table/)
@@ -1326,9 +1361,9 @@ typedef struct gui_api_s
        flags is a bitmask of gui_win_flags_t (0 / GUI_WIN_NONE for the defaults) that
        switches off built-in behavior per window -- title bar, collapse, or edge resize.
 
-       window_begin() returns false when the window is collapsed (title bar only).  Guard
-       the body widgets with it -- skipped widgets cost nothing -- but always call
-       window_end() regardless of the return value:
+       window_begin() returns false when the window is collapsed (title bar only) or closed.
+       Guard the body widgets with it -- skipped widgets cost nothing -- and always call
+       window_end() regardless of the return value (THE BEGIN / END RULE, top of this header):
 
            if ( gui()->window_begin( "Tools", GUI_WIN_NONE ) )
            {
@@ -1483,11 +1518,12 @@ typedef struct gui_api_s
                gui()->stack();
                if ( gui()->selectable( "Cut",  NULL ) ) { ... }
                if ( gui()->selectable( "Copy", NULL ) ) { ... }
-               gui()->popup_end();
            }
+           gui()->popup_end();                       // ALWAYS (see THE BEGIN / END RULE)
 
-       popup_begin / popup_modal_begin return true only when the popup is open AND visible -- guard
-       the body and call popup_end only on a true return (like window_begin's collapsed contract).
+       popup_begin / popup_modal_begin return true only when the popup is open AND visible: the
+       return gates the body, popup_end is unconditional.  This one matters more than most -- an
+       open popup detaches the parent layout context at begin, so a skipped end would strand it.
        Auto-sized popups (the default) measure their content on the appearing frame off-screen and
        snap into place the next frame, so there is no first-frame size pop. */
 
@@ -1504,7 +1540,8 @@ typedef struct gui_api_s
         in place of the popup_open + popup_begin pair:
 
             gui()->selectable( "Row", NULL );
-            if ( gui()->popup_context_item_begin( "row_ctx" ) ) { ...; gui()->popup_end(); }
+            if ( gui()->popup_context_item_begin( "row_ctx" ) ) { ... }
+            gui()->popup_end();
     */
     bool ( *popup_context_item_begin   )( const char* id );
     bool ( *popup_context_window_begin )( const char* id );
@@ -1512,7 +1549,7 @@ typedef struct gui_api_s
     /* 
         Tooltips -- a non-interactive overlay shown at the cursor while the previous widget is
         hovered.  set_item_tooltip is the one-liner; tooltip_begin / tooltip_end wrap a multi-widget
-        body (guard the body on the true return, always call tooltip_end).
+        body (the return gates the body; tooltip_end is unconditional).
 
            gui()->button( "Hover me" );
            gui()->set_item_tooltip( "Does the thing" );
@@ -1535,8 +1572,8 @@ typedef struct gui_api_s
 
        main_menu_bar_begin pins a bar across the top of the display; menu_bar_begin fills the strip a
        window reserved with GUI_WIN_MENUBAR (and returns false on a window without the flag).  Both
-       return true only when visible -- guard the entries on the return and call the matching end only
-       then, exactly like window_begin / popup_begin.
+       return true only when visible -- the return gates the entries; the matching end is
+       unconditional, exactly like window_begin / popup_begin.
 
            if ( gui()->main_menu_bar_begin() ) {
                if ( gui()->menu_begin( "File" ) ) {
@@ -1544,12 +1581,12 @@ typedef struct gui_api_s
                    gui()->menu_item( "Show grid", NULL, &show_grid );   // checkable
                    if ( gui()->menu_begin( "Recent" ) ) {              // submenu
                        gui()->menu_item( "a.txt", NULL, NULL );
-                       gui()->menu_end();
                    }
-                   gui()->menu_end();
+                   gui()->menu_end();                                  // ends are unconditional
                }
-               gui()->main_menu_bar_end();
+               gui()->menu_end();
            }
+           gui()->main_menu_bar_end();
 
        menu_begin renders horizontally in a bar (its popup drops below) and as a full-width row with
        a submenu arrow inside a menu (its popup opens to the side); the orientation follows the active
@@ -1593,8 +1630,8 @@ typedef struct gui_api_s
                if ( gui()->toolbar_dropdown_begin( "##view", icon_eye, "View Mode" ) ) {
                    gui()->menu_item( "Lit", NULL, NULL );
                    gui()->menu_item( "Wireframe", NULL, NULL );
-                   gui()->toolbar_dropdown_end();
                }
+               gui()->toolbar_dropdown_end();
            gui()->toolbar_end();
            gui()->scale_pop(); */
 
@@ -1728,16 +1765,16 @@ typedef struct gui_api_s
 
     /* Combo box -- a framed preview box (selected text + a down arrow) with a trailing label that
        drops a popup of rows below it on click.  combo_begin opens the dropdown: it returns true
-       only while the dropdown is open, so -- like window_begin's collapse -- guard the rows on the
-       return and call combo_end only then.  preview_value is the text shown in the closed box (the
+       only while the dropdown is open, so -- like window_begin's collapse -- the return gates the
+       rows and combo_end is unconditional.  preview_value is the text shown in the closed box (the
        caller's current selection, usually items[current]).  A row clicked in the body dismisses the
        combo automatically, so emit selectables and set your selection from their return:
 
            if ( gui()->combo_begin( "mode", items[cur], GUI_COMBO_NONE ) ) {
                for ( i32 i = 0; i < n; ++i )
                    if ( gui()->selectable( items[i], NULL ) ) cur = i;
-               gui()->combo_end();
            }
+           gui()->combo_end();
 
        flags is gui_combo_flags_t: the HEIGHT_* group caps the dropdown to a fixed row count
        (then it scrolls), 0 (GUI_COMBO_NONE) is the ~8-row default.  combo() is the one-liner over
@@ -1797,27 +1834,28 @@ typedef struct gui_api_s
        clickable chips with only the selected tab's body emitted below it.  Distinct from docking,
        which tabs whole windows into a dock node -- this tabs SECTIONS of one window's body.
 
-       tab_bar_begin opens the bar and reserves the strip row; it always returns true (guard-and-pair
-       like child_begin) -- always call tab_bar_end.  Each tab_item_begin draws one chip and returns
-       true only for the selected tab, so -- like window_begin's collapse -- guard the body on the
-       return and call tab_item_end only then.  The active selection persists per bar id; the first
-       tab is the default.  p_open (optional, may be NULL): when non-NULL a close (x) appears on the
-       chip and clicking it sets *p_open = false (the caller drops the item next frame).
+       tab_bar_begin opens the bar and reserves the strip row (false only when the nesting cap is
+       hit).  Each tab_item_begin draws one chip and returns true only for the selected tab.  Both
+       returns gate their body; both ends are unconditional.  The active selection persists per bar
+       id; the first tab is the default.  p_open (optional, may be NULL): when non-NULL a close (x)
+       appears on the chip and clicking it sets *p_open = false (the caller drops the item next
+       frame).
 
            if ( gui()->tab_bar_begin( "settings", GUI_TAB_BAR_NONE ) )
            {
                if ( gui()->tab_item_begin( "General", NULL, GUI_TAB_ITEM_NONE ) )
                {
                    gui()->checkbox( "Vsync", &vsync );
-                   gui()->tab_item_end();
                }
+               gui()->tab_item_end();
+
                if ( gui()->tab_item_begin( "Audio", NULL, GUI_TAB_ITEM_NONE ) )
                {
                    gui()->slider_float( "Volume", &vol, 0.0f, 1.0f );
-                   gui()->tab_item_end();
                }
-               gui()->tab_bar_end();
-           } */
+               gui()->tab_item_end();
+           }
+           gui()->tab_bar_end(); */
     bool ( *tab_bar_begin  )( const char* str_id, gui_tab_bar_flags_t flags );
     void ( *tab_bar_end    )( void );
     bool ( *tab_item_begin )( const char* label, bool* p_open, gui_tab_item_flags_t flags );

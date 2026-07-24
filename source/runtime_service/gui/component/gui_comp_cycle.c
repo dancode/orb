@@ -21,7 +21,8 @@
 gui_comp_cycle_t
 gui_comp_cycle( const char* id, gui_rect_t rect, i32* idx, i32 count )
 {
-    gui_comp_cycle_t out = ( gui_comp_cycle_t ){ 0 };
+    gui_comp_cycle_t out  = ( gui_comp_cycle_t ){ 0 };
+    gui_rect_t       full = rect;
 
     out.prev_box = gui_rect_cut_left ( &rect, rect.h );   /* square cap, row-height wide */
     out.next_box = gui_rect_cut_right( &rect, rect.h );
@@ -33,8 +34,18 @@ gui_comp_cycle( const char* id, gui_rect_t rect, i32* idx, i32 count )
     out.next = gui_comp_button( "##next", out.next_box );
     gui_pop_id();
 
-    if ( out.prev.clicked && count > 0 ) *idx = ( *idx + count - 1 ) % count;
-    if ( out.next.clicked && count > 0 ) *idx = ( *idx + 1 ) % count;
+    if ( out.prev.state.clicked && count > 0 ) *idx = ( *idx + count - 1 ) % count;
+    if ( out.next.state.clicked && count > 0 ) *idx = ( *idx + 1 ) % count;
+
+    /* The shared shape's leading field: the WHOLE stepper's interaction, so item_phase works on a
+       cycle like any other component.  Hover is either cap or the value band; active / clicked
+       come from whichever cap owns the gesture. */
+    out.state       = out.prev.state.active ? out.prev.state
+                    : out.next.state.active ? out.next.state
+                                            : ( gui_item_state_t ){ 0 };
+    out.state.hover = out.prev.state.hover || out.next.state.hover
+                    || gui_is_mouse_hovering_rect( full );
+    out.state.nav   = out.prev.state.nav || out.next.state.nav;
 
     out.changed = ( *idx != old );
     return out;

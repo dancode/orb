@@ -32,9 +32,9 @@ input_text_begin( const char* label )
 {
     gui_id_t id = item_id( label );
 
-    /* Label via the ambient field seam (field_row): aligned column under a form / field_split,
+    /* Label via the ambient field seam (gui_field_row): aligned column under a form / field_split,
        trailing otherwise, or dropped when hidden / skipped -- then the box fills the control cell. */
-    field_row( label );
+    gui_field_row( label );
     gui_rect_t       box_r = cell_next( WIDGET_H );
     gui_item_state_t st    = item_state( id, box_r, ITEM_FOCUSABLE );
     draw_fill( box_r, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );

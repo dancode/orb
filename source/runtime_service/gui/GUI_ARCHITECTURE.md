@@ -40,7 +40,7 @@ The two servers NEVER see each other. Everything else is a LIBRARY over them:
     gui_interact.c   interact/   interact/gui_interact.h         gesture mechanisms (move/resize/drag/feat)
     gui_flow.c       flow/       flow/gui_flow.h                 layout: THE rect producer
     gui_component.c  component/  component/gui_component_internal.h  widget LOGIC, no paint -- STAGING
-    gui_stock.c      stock/      gui_element.h (public) +        reference widget set (el_* cores),
+    gui_stock.c      stock/      gui_element.h (public) +        reference widget set (stock_* renders),
                                  stock/gui_element_internal.h    astride both servers
     gui_chrome.c     chrome/     chrome/gui_chrome.h             product windowing policy (6 folders)
     gui_debug.c      debug/      debug/gui_debug.h               server introspection (severable)
@@ -52,12 +52,12 @@ banner; band -> implementing unit:
 
     GUI_FRAME   -> frame/          GUI_FLOW    -> flow/
     GUI_DRAW    -> render/ + draw/  GUI_STYLE   -> style/
-    GUI_CORE    -> core/ + interact/ GUI_ELEMENT -> stock/ (the el_* surface's implementing unit)
+    GUI_CORE    -> core/ + interact/ GUI_STOCK   -> component/ + stock/
     GUI_SURFACE -> core/gui_surface.c + flow/gui_region.c + interact/gui_feature.c
     GUI_RECT    -> rect/            GUI_CHROME  -> chrome/     GUI_DEBUG -> debug/
 
-The component/ unit has no public band yet (its API is TBD, see the widget-tier note below);
-the GUI_ELEMENT band still names the el_* surface, now implemented in stock/.
+The GUI_STOCK band covers both rungs at once: the comp_* logic cores (component/) and the
+stock_* renders over them (stock/), paired one to one in the header so the two are read together.
 
 Dependency graph (lowest to highest) -- each unit root .c includes EXACTLY the unit
 headers at or below its layer, so the include list at the top of each unit IS the graph and
@@ -102,8 +102,8 @@ only its logic is shared. Four rungs, each a client of the one below:
   draw/render servers. A component does not exist on screen; it is a utility front-end a
   widget composes onto. This is the engine's own idiom (world/entity/**component**/actor): a
   widget is an actor, its components are logic aspects that do not independently exist.
-- **stock** (`stock/`, the `el_*` cores): the reference widget set = a component's logic + one
-  plain render. It is what a user READS AND FORKS, not a privileged default.
+- **stock** (`stock/`, the `stock_*` renders): the reference widget set = a component's logic +
+  one plain render. It is what a user READS AND FORKS, not a privileged default.
 - **chrome** (`chrome/`): the product -- the editor's window/dock/popup/table framework and
   its default-look widgets.
 - **user widget** (app-side, e.g. `my_game_slider`): a component + the game's own art. It is a
@@ -111,29 +111,44 @@ only its logic is shared. Four rungs, each a client of the one below:
   payoff: the same slider logic drives the editor's flat handle and a game's diamond-and-art
   handle, and neither is favored.
 
-Status: the `el_*` interactive cores have all been swept down onto components. Each `el_*` now
-delegates to a `gui_stock_*` reference render over a `gui_comp_*` logic core; all are public
-(`gui_host.h` / the vtable), and a user widget is the stock render's sibling over the same
-`comp_*` call. The shared shape a component returns: a `gui_item_state_t state`, then any
-geometry, then the semantic outcome.
+Status: the widget set is `stock_*` throughout; the old `el_*` widget names are gone (the `el_`
+prefix now names ONLY the style stratum -- `gui_el_style_t`, `gui_el_color`, `GUI_EL_BG`). Each
+`gui_stock_*` render sits over a `gui_comp_*` logic core; all are public (`gui_host.h` / the
+vtable), and a user widget is the stock render's sibling over the same `comp_*` call.
 
-- `comp_slider` -- one desc (`gui_comp_slider_desc_t`, the only parameter-rich core) -> `{state,
-  frac, fill, handle, changed}`.
-- `comp_button` -- the simplest; settled the shared shape. Plain `(id, rect)` -> `{state, clicked}`.
+CALL shape: every component opens `(id, rect, ...)`. A parameter-rich one ADDS an `_ex` desc
+twin, never replaces the positional form (`comp_slider` / `comp_slider_ex`).
+
+RESULT shape: `gui_item_state_t state` FIRST (so it is at offset 0 for every component), then any
+geometry, then only the outcomes `state` does not already carry -- never a second spelling of
+`state.clicked`.
+
+- `comp_slider` -- `(id, rect, v, lo, hi)` -> `{state, frac, fill, handle, changed}`;
+  `comp_slider_ex` takes `gui_comp_slider_desc_t` (snap step, handle width, nav step).
+- `comp_button` -- the simplest; settled the shared shape. `(id, rect)` -> `{state}`; the outcome
+  IS `state.clicked`, so it adds no field.
 - `comp_check` -- `(id, rect, bool* v)` -> `{state, box, changed}` (inscribed box).
-- `comp_cycle` -- COMPOSES `comp_button` for each cap -> `{prev, next, prev_box, next_box, label,
-  changed}`; takes `count` for wrap, not the strings (the render draws those).
-- `comp_selectable` -- `comp_button` + optional `*selected` toggle.
+- `comp_cycle` -- COMPOSES `comp_button` for each cap -> `{state, prev, next, prev_box, next_box,
+  label, changed}`; `state` is the whole stepper, `prev`/`next` the per-cap faces. Takes `count`
+  for wrap, not the strings (the render draws those).
+- `comp_selectable` -- `comp_button` + optional `*selected` toggle -> `{state}`.
 - `comp_input` -- runs the interact/ edit engine (`edit_field`) and returns PAINTABLE geometry
   (content rect, run origin, selection + caret bars) so a render draws a text field with only
   public verbs, never touching `gui_edit_state_t` or measuring a glyph.
 
-No component (deliberately): `el_panel` / `el_label` / `el_meter` are inert paint -- no
-interaction, no logic to extract -- so they stay stock-render-only. Not every core needs a
-component. Proven in `sb_gui_base` tier 3 (the slider and button each show a stock render beside
-a custom render over one `comp_*` call). `chrome/` may keep its bespoke widgets or migrate onto
-these components later (the migrate-down direction), only when a chrome feature is needed in a
-user widget.
+The two verbs that make a user widget a real sibling, both public: `gui()->item_phase( state )`
+maps interaction to a palette state (ACTIVE / HOT / IDLE, nav counting as HOT) and
+`gui()->el_color( role, state )` is the RESOLVED palette read -- the same seam the stock renders
+and chrome's `COL_*` macros use, so `push_style_color` reaches a user widget exactly as it
+reaches a stock one. Reading `el_style()->col[][]` at paint time instead bypasses the style stack.
+
+No component (deliberately): `stock_panel` / `stock_label` / `stock_meter` are inert paint -- no
+interaction, no logic to extract -- so they stay render-only. Not every widget needs one. Proven
+in `sb_gui_base` tier 3 (the slider and button each show a stock render beside a custom render
+over one `comp_*` call). `chrome/` keeps its bespoke widgets for now -- it makes NO `comp_*` calls
+today -- and may migrate onto these components later (the migrate-down direction), which would
+first need the components chrome is missing (`comp_drag` for the relative-drag family,
+`comp_scrollbar`, `comp_tab`).
 
 ## The composer / behavior / presentation split
 
@@ -167,7 +182,7 @@ Three roles, one contract (the units carry the same names):
   point but painted by stock-unit helpers (`draw_nav_ring` / `draw_drop_ring` /
   `draw_resize_highlight` in `stock/gui_adornment.c`), so the paint policy lives with the
   skin.
-- **Presentation** (`stock/`: the `el_*` rect-consuming cores, label paint +
+- **Presentation** (`stock/`: the `stock_*` rect-consuming renders, label paint +
   self-measurement (`label_natural_w`), per-item ambient wrappers, system adornments, the
   styled symbol half): consumes rect + state + skin and paints; state is a parameter, it
   never asks behavior. The widget paint floor is rect-taking (`draw_fill( r, col )` /
@@ -302,8 +317,13 @@ pump + routing; `present_begin/present_end` = `rhi frame_begin` + clear + `gui()
 present + `viewport_render_floaters`.
 
 Invariants:
-- `window_begin` false means collapsed OR closed; always still call `window_end`. Distinguish
-  a real close with `window_is_open( title )` before clearing a host `p_open` flag.
+- THE BEGIN / END RULE, one rule for every pair: the bool gates the BODY, never the end call.
+  Every `*_end` is safe to call whatever its begin returned -- it unwinds exactly what that
+  begin opened and nothing when it opened nothing, so there is no per-pair contract to
+  memorize. Guarding an end on the bool is what strands an overlay detach (popup), an id scope
+  (tab item), or a window record when a begin opens state and then reports a body it does not
+  want. `window_begin` false means collapsed OR closed; distinguish a real close with
+  `window_is_open( title )` before clearing a host `p_open` flag.
 - Any state mutation done outside the emitted build (or at pop time) must not depend on
   re-emit happening next frame -- clean-frame skip will freeze it unless something sets
   wants_redraw (input, animation, `volatile_cb`).

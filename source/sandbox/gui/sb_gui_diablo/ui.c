@@ -250,36 +250,36 @@ ui_globe( gui_rect_t r, f32 frac, u32 fill_abgr, const char* caption )
         gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, caption );
 }
 
-/* PROMOTED: gui()->el_meter (track colors from the installed element style; fill stays a
+/* PROMOTED: gui()->stock_meter (track colors from the installed element style; fill stays a
    call parameter -- the per-widget color rule). */
 void
 ui_meter( gui_rect_t r, f32 frac, u32 fill_abgr )
 {
-    gui()->el_meter( r, frac, fill_abgr );
+    gui()->stock_meter( r, frac, fill_abgr );
 }
 
 /*==============================================================================================
     Form controls
 ==============================================================================================*/
 
-/* PROMOTED: the three form cores are gui()->el_check / el_slider / el_cycle.  The kit keeps
+/* PROMOTED: the three form cores are gui()->stock_check / stock_slider / stock_cycle.  The kit keeps
    the old fixed-string ids so existing push_id_int row brackets behave identically. */
 bool
 ui_check( gui_rect_t r, bool* v )
 {
-    return gui()->el_check( r, "##check", v );
+    return gui()->stock_check( r, "##check", v );
 }
 
 bool
 ui_slider( gui_rect_t r, f32* v, f32 lo, f32 hi )
 {
-    return gui()->el_slider( r, "##slider", v, lo, hi );
+    return gui()->stock_slider( r, "##slider", v, lo, hi );
 }
 
 bool
 ui_cycle( gui_rect_t r, i32* idx, const char* const* items, i32 count )
 {
-    return gui()->el_cycle( r, "##cyc", idx, items, count );
+    return gui()->stock_cycle( r, "##cyc", idx, items, count );
 }
 
 /*============================================================================================*/

@@ -239,7 +239,7 @@ const gui_api_t g_gui_api_struct =
     .field_set                          = gui_field_set,
     .field_get                          = gui_field_get,
     .skip_label                         = gui_skip_label,
-    .field_row                          = field_row,
+    .field_row                          = gui_field_row,
     .grid                               = gui_grid,
     .grid_cells                         = gui_grid_cells,
     .bar                                = gui_bar,
@@ -300,20 +300,14 @@ const gui_api_t g_gui_api_struct =
     .set_bullet_style                   = gui_set_bullet_style,
     .set_arrow_style                    = gui_set_arrow_style,
 
-    /*==============================================  GUI_ELEMENT  ==============================================*/
+    /*===============================================  GUI_STOCK  ===============================================*/
 
+    .item_phase                         = gui_item_phase,
+    .el_color                           = gui_el_color,
     .el_style                           = gui_el_style,
-    .el_panel                           = gui_el_panel,
-    .el_label                           = gui_el_label,
-    .el_button                          = gui_el_button,
-    .el_check                           = gui_el_check,
-    .el_slider                          = gui_el_slider,
-    .el_meter                           = gui_el_meter,
-    .el_cycle                           = gui_el_cycle,
-    .el_input                           = gui_el_input,
-    .el_selectable                      = gui_el_selectable,
 
     .comp_slider                        = gui_comp_slider,
+    .comp_slider_ex                     = gui_comp_slider_ex,
     .stock_slider                       = gui_stock_slider,
     .comp_button                        = gui_comp_button,
     .stock_button                       = gui_stock_button,
@@ -325,6 +319,10 @@ const gui_api_t g_gui_api_struct =
     .stock_selectable                   = gui_stock_selectable,
     .comp_input                         = gui_comp_input,
     .stock_input                        = gui_stock_input,
+
+    .stock_panel                        = gui_stock_panel,
+    .stock_label                        = gui_stock_label,
+    .stock_meter                        = gui_stock_meter,
 
     /*==============================================  GUI_CHROME  ===============================================*/
 

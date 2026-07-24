@@ -220,7 +220,7 @@ gui_bullet( void )
 void
 gui_label_text( const char* label, const char* value )
 {
-    field_row( label );
+    gui_field_row( label );
     gui_rect_t control = cell_next( WIDGET_H );
 
     /* The value is the primary content: draw it where a control would sit, vertically centered and

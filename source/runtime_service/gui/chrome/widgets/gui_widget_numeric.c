@@ -17,7 +17,7 @@
     Focus gain seeds it from the current value; Enter / focus loss parses it back.
 
     Included by gui.c after gui_widget_slider.c (which is after the widget family files, so
-    item_state, field_row, input_field_edit, and the COL_* / WIDGET_ / WIN_
+    item_state, gui_field_row, input_field_edit, and the COL_* / WIDGET_ / WIN_
     style vocabulary from gui_style.c are all in scope).
 
 ==============================================================================================*/
@@ -97,7 +97,7 @@ input_scalar( const char* label, double cur, double* out,
     gui_id_t id = item_id( label );
 
     /* Label via the ambient field seam; the control track holds the text box + optional steppers. */
-    field_row( label );
+    gui_field_row( label );
     gui_rect_t ctrl = cell_next( WIDGET_H );
 
     bool has_steps = ( step != 0.0 );
@@ -171,7 +171,7 @@ input_float_n( const char* label, f32* v, u32 n, const char* fmt )
     if ( !fmt || !fmt[ 0 ] ) fmt = "%.3f";
     gui_id_t id = item_id( label );
 
-    field_row( label );
+    gui_field_row( label );
     gui_rect_t ctrl = cell_next( WIDGET_H );
 
     bool changed = false;

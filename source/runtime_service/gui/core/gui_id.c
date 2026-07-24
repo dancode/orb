@@ -104,7 +104,7 @@ id_pop( void )
 ==============================================================================================*/
 
 /* Visible byte count: up to the first "##" marker, or the whole string.  Non-static: a
-   cross-unit seam (core/gui_core.h) -- the element unit's el_button and the draw unit's label
+   cross-unit seam (core/gui_core.h) -- the stock unit's stock_button and the draw unit's label
    painters honor the same label grammar, so the rule stays authored in one place. */
 u32
 label_vis_len( const char* s )

@@ -46,7 +46,7 @@ void
 ed_prop_text( const char* label, const char* value )
 {
     gui_rect_t zone = ed_prop_row( label );
-    gui()->el_label( zone, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+    gui()->stock_label( zone, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
                      ( value && value[ 0 ] ) ? value : "-" );
 }
 

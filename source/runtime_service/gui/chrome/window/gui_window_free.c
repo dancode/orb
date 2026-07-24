@@ -14,7 +14,7 @@
     window_get and the shared drag/resize state vars -- it declares no long-lived state of its own.
 
     A window is treated as a large compound widget, so this builds on the shared primitives
-    in the style/element units (col_item_bg, field_row) and core/gui_item.c
+    in the style/element units (col_item_bg, gui_field_row) and core/gui_item.c
     (item_state); the style vocabulary (WIDGET_* / WIN_* / COL_*) resolves in
     style/gui_style_core.c.
 

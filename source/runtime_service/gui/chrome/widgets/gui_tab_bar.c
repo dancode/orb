@@ -56,6 +56,10 @@ typedef struct
     bool                 sel_seen;    // the selected id matched a tab emitted this frame
     gui_id_t             want;        // tab clicked this frame; committed at tab_bar_end (0 = none)
     gui_tab_bar_flags_t  flags;
+    bool                 item_open;   // a tab_item_begin returned true and pushed its id scope --
+                                      //   the latch that makes tab_item_end safe to call whether
+                                      //   or not the body ran (the one begin/end rule).  Per-bar,
+                                      //   so a tab body hosting a nested bar unwinds correctly.
 
 } gui_tabbar_ctx_t;
 
@@ -63,6 +67,12 @@ typedef struct
 
 static gui_tabbar_ctx_t s_tabbars[ GUI_TABBAR_STACK_MAX ];
 static u32              s_tabbar_depth;
+
+/* Every tab_bar_begin counts here, INCLUDING one that overflowed the ctx stack and opened no bar.
+   tab_bar_end pairs against this rather than s_tabbar_depth, so an unguarded end after a failed
+   begin unwinds its own (empty) level instead of tearing down the enclosing bar -- the uniform
+   begin/end rule holding even on the degrade path. */
+static u32              s_tabbar_attempt;
 
 /* Salt so a tab's close (x) button gets a distinct widget id from the chip it sits on. */
 #define GUI_TAB_CLOSE_SALT 0x7ab0c105u
@@ -76,6 +86,8 @@ static u32              s_tabbar_depth;
 bool
 gui_tab_bar_begin( const char* str_id, gui_tab_bar_flags_t flags )
 {
+    ++s_tabbar_attempt;          /* counted before any early-out: tab_bar_end pairs against this */
+
     gui_push_id( str_id );
 
     gui_rect_t strip = cell_next( WIDGET_H );   /* one row for the tab strip; body flows below */
@@ -98,6 +110,7 @@ gui_tab_bar_begin( const char* str_id, gui_tab_bar_flags_t flags )
     ctx->sel_seen   = false;
     ctx->want       = GUI_ID_NONE;
     ctx->flags      = flags;
+    ctx->item_open  = false;
 
     /* Flat strip band + a thin seam line along its bottom edge; the active chip overpaints the seam
        in the body colour so it reads as joined to the content below. */
@@ -111,11 +124,18 @@ gui_tab_bar_begin( const char* str_id, gui_tab_bar_flags_t flags )
     return true;
 }
 
+/* Safe to call whether tab_bar_begin returned true or false (it degrades to false only when the
+   nesting cap is hit).  Pairs against s_tabbar_attempt so a failed begin's end unwinds nothing. */
 void
 gui_tab_bar_end( void )
 {
-    if ( s_tabbar_depth == 0 )
+    if ( s_tabbar_attempt == 0 )
         return;
+
+    bool overflowed = ( s_tabbar_attempt > GUI_TABBAR_STACK_MAX );
+    --s_tabbar_attempt;
+    if ( overflowed || s_tabbar_depth == 0 )
+        return;                  /* this end belongs to a begin that opened no bar */
 
     gui_tabbar_ctx_t* ctx = &s_tabbars[ s_tabbar_depth - 1 ];
 
@@ -143,10 +163,11 @@ gui_tab_bar_end( void )
 }
 
 /*==============================================================================================
-    tab_item_begin -- emit one tab chip and report whether it is the selected tab.  Guard the body
-    on the return and call tab_item_end only when true (window_begin's collapse contract):
+    tab_item_begin -- emit one tab chip and report whether it is the selected tab.  The return
+    gates the BODY only; tab_item_end is called unconditionally, like every other pair:
 
-        if ( gui()->tab_item_begin( "Log", NULL, GUI_TAB_ITEM_NONE ) ) { ...; gui()->tab_item_end(); }
+        if ( gui()->tab_item_begin( "Log", NULL, GUI_TAB_ITEM_NONE ) ) { ...body... }
+        gui()->tab_item_end();
 
     p_open (optional): when non-NULL a close (x) sits at the chip's right edge; clicking it sets
     *p_open = false (the caller stops emitting the item next frame).  The click does not switch tabs.
@@ -234,14 +255,27 @@ gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags 
     if ( !is_active )
         return false;
 
-    /* Active: open a per-tab id scope so two tabs' bodies with same-named widgets never alias. */
+    /* Active: open a per-tab id scope so two tabs' bodies with same-named widgets never alias.
+       Latch it so tab_item_end knows whether there is a scope to pop. */
     gui_push_id( label );
+    ctx->item_open = true;
     return true;
 }
 
+/* Safe to call whether tab_item_begin returned true or false -- the uniform begin/end rule: the
+   bool gates the BODY, never the end call.  Only the tab that actually opened an id scope pops
+   one, so an unguarded end on an inactive tab cannot unbalance the id stack. */
 void
 gui_tab_item_end( void )
 {
+    if ( s_tabbar_depth == 0 )
+        return;
+
+    gui_tabbar_ctx_t* ctx = &s_tabbars[ s_tabbar_depth - 1 ];
+    if ( !ctx->item_open )
+        return;
+
+    ctx->item_open = false;
     gui_pop_id();
 }
 

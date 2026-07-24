@@ -9,9 +9,9 @@
         1  GUI_DRAW    -- bare draw_* primitives; no surface, no ids, no style
         2  GUI_SURFACE -- pane + feat_move/feat_resize, and a custom widget from
                           rect + item() + draw_* (custom chrome is composition)
-        3  GUI_ELEMENT -- carve one flat form into leaf rects, fill them with el_* cores
-        4  GUI_FLOW    -- region_begin + a layout header + flow_cell rects feeding el_*
-        5  GUI_STYLE   -- a kit promotes its own palette over the el_* set
+        3  GUI_STOCK   -- carve one flat form into leaf rects, fill them with stock_* renders
+        4  GUI_FLOW    -- region_begin + a layout header + flow_cell rects feeding stock_*
+        5  GUI_STYLE   -- a kit promotes its own palette over the stock_* set
         6  GUI_CHROME  -- one stock window for contrast: the optional policy layer
 
     Also the reference for what gui()->boot sets up: the minimal loop is boot -> frame_poll ->
@@ -106,10 +106,16 @@ tier_surface( void )
     gui_item_state_t st = gui()->item( "t2_toggle", box );
     if ( st.clicked ) { s_on = !s_on; gui()->request_redraw(); }
 
-    u32 fill = st.active ? GUI_COLOR( 0x50, 0x38, 0x18, 0xFF )
-             : st.hover  ? GUI_COLOR( 0x40, 0x40, 0x48, 0xFF )
-                         : GUI_COLOR( 0x30, 0x32, 0x38, 0xFF );
-    gui()->draw_frame( box, fill, s_on ? AMBER : PANEL_LN, 1.0f );
+    /* item_phase folds the interaction flags into the one three-way rule every render uses
+       (ACTIVE / HOT / IDLE, nav counting as HOT) -- so a widget of your own picks its face
+       exactly the way a stock one does, without re-deriving the mapping. */
+    static const u32 FACE[ GUI_EL_STATE_COUNT ] = {
+        [ GUI_EL_IDLE   ] = GUI_COLOR( 0x30, 0x32, 0x38, 0xFF ),
+        [ GUI_EL_HOT    ] = GUI_COLOR( 0x40, 0x40, 0x48, 0xFF ),
+        [ GUI_EL_ACTIVE ] = GUI_COLOR( 0x50, 0x38, 0x18, 0xFF ),
+        [ GUI_EL_DIM    ] = GUI_COLOR( 0x28, 0x28, 0x2C, 0xFF ),
+    };
+    gui()->draw_frame( box, FACE[ gui()->item_phase( st ) ], s_on ? AMBER : PANEL_LN, 1.0f );
     gui()->draw_text_in( box, GUI_ALIGN_CENTER, INK, s_on ? "ON  -- click me" : "OFF -- click me" );
 
     char readout[ 64 ];
@@ -122,14 +128,14 @@ tier_surface( void )
 }
 
 /*==============================================================================================
-    Tier 3 -- GUI_RECT + GUI_ELEMENT: one flat carve form -> leaf rects -> el_* cores.
-    Every element fills exactly the rect it is handed; the layout is data.  The slider pair and
+    Tier 3 -- GUI_RECT + GUI_STOCK: one flat carve form -> leaf rects -> stock_* renders.
+    Every stock render fills exactly the rect it is handed; the layout is data.  The slider pair and
     the button pair each share ONE logic (gui()->comp_slider / comp_button): a stock reference
     render beside a custom render -- the component / stock / user-widget sibling model, side by side.
 ==============================================================================================*/
 
 static void
-tier_element( void )
+tier_stock( void )
 {
     static bool s_check  = true;
     static f32  s_level  = 0.35f;
@@ -149,17 +155,17 @@ tier_element( void )
     gui_rect_t leaf[ 4 ];
     gui()->carve( FORM, gui_rect_pad( p.rect, 8.0f ), 6.0f, leaf, 4 );
 
-    gui()->el_panel( leaf[ 0 ] );
+    gui()->stock_panel( leaf[ 0 ] );
     gui_rect_t side = gui_rect_pad( leaf[ 0 ], 8.0f );
     gui()->stock_check( gui_rect_cut_top( &side, 26.0f ), "t3_check", &s_check );
     side.y += 6.0f;  side.h -= 6.0f;
     gui()->stock_cycle( gui_rect_cut_top( &side, 26.0f ), "t3_cycle", &s_mode, s_modes, 3 );
 
-    gui()->el_label( leaf[ 1 ], GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
-                     "el_* cores over carved rects" );
+    gui()->stock_label( leaf[ 1 ], GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+                     "stock_* renders over carved rects" );
 
-    static char s_name[ 48 ] = "el_input";
-    gui()->el_panel( leaf[ 2 ] );
+    static char s_name[ 48 ] = "stock_input";
+    gui()->stock_panel( leaf[ 2 ] );
     gui_rect_t rows = gui_rect_pad( leaf[ 2 ], 8.0f );
 
     /* the reference render: stock_slider (over gui_comp_slider) */
@@ -168,7 +174,7 @@ tier_element( void )
     
     /* a bar filling a meter based on slider value */
     rows.y += 6.0f;  rows.h -= 6.0f;
-    gui()->el_meter( gui_rect_cut_top( &rows, 18.0f ), s_level, AMBER );
+    gui()->stock_meter( gui_rect_cut_top( &rows, 18.0f ), s_level, AMBER );
     rows.y += 6.0f;  rows.h -= 6.0f;
 
     /* a USER widget over the SAME component: a thin groove + round handle.  stock_slider above
@@ -176,7 +182,9 @@ tier_element( void )
 
     gui_rect_t cs = gui_rect_cut_top( &rows, 24.0f );
 
-    gui_comp_slider_t sl = gui()->comp_slider( &( gui_comp_slider_desc_t ){
+    /* comp_slider( id, rect, v, lo, hi ) is the plain form; _ex takes the desc when a component
+       needs more than the common case -- here a wider handle than the default. */
+    gui_comp_slider_t sl = gui()->comp_slider_ex( &( gui_comp_slider_desc_t ){
         .id = "t3_comp", .rect = cs, .v = &s_custom, .lo = 0.0f, .hi = 1.0f, .handle_w = 14.0f } );
     
     f32 gy = cs.y + cs.h * 0.5f;
@@ -199,18 +207,22 @@ tier_element( void )
 
     gui()->stock_button( bl, "stock_button" );
 
-    /* a USER button: a rounded pill, TEAL on hover, PLUM while pressed -- the component does the
-       press logic, this render does the rest. */
-    gui_comp_button_t cb = gui()->comp_button( "t3_pill", foot );
-    u32 face = cb.state.active ? PLUM : cb.state.hover ? TEAL : PANEL_LN;
-    gui()->draw_round_rect( foot, 8.0f, 8.0f, 8.0f, 8.0f, true, 0.0f, face );
-    gui()->draw_text_in( foot, GUI_ALIGN_CENTER, INK, "comp_button" );
+    /* a USER button: a rounded pill over the same component.  el_color reads the INSTALLED
+       palette through the style stack -- the same seam stock_button and chrome read -- so this
+       fork tracks the theme and honors a push_style_color exactly as the stock render does,
+       while owning its own shape.  (Hard-coding colors here instead would opt out of both.) */
+    gui_comp_button_t cb    = gui()->comp_button( "t3_pill", foot );
+    gui_el_state_t    phase = gui()->item_phase( cb.state );
+    gui()->draw_round_rect( foot, 8.0f, 8.0f, 8.0f, 8.0f, true, 0.0f,
+                            gui()->el_color( GUI_EL_BG, phase ) );
+    gui()->draw_text_in( foot, GUI_ALIGN_CENTER, gui()->el_color( GUI_EL_TEXT, phase ),
+                         "comp_button" );
 
     gui()->pane_end();
 }
 
 /*==============================================================================================
-    Tier 4 -- GUI_FLOW: a region owns scroll + a layout; flow_cell hands rects back out to el_*.
+    Tier 4 -- GUI_FLOW: a region owns scroll + a layout; flow_cell hands rects back out to stock_*.
 ==============================================================================================*/
 
 static void
@@ -227,13 +239,13 @@ tier_flow( void )
         gui_rect_t cell = gui()->flow_cell( 0.0f, 0.0f );
         if ( i % 5 == 0 )
         {
-            snprintf( label, sizeof label, "el_button %d", i );
-            gui()->el_button( cell, label );
+            snprintf( label, sizeof label, "stock_button %d", i );
+            gui()->stock_button( cell, label );
         }
         else
         {
             snprintf( label, sizeof label, "row %d -- the region scrolls", i );
-            gui()->el_label( cell, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, label );
+            gui()->stock_label( cell, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, label );
         }
         gui()->pop_id();
     }
@@ -308,26 +320,26 @@ tier_style( void )
     gui_rect_t area = { 140.0f, 120.0f, 380.0f, 250.0f };
     gui_pane_t p = gui()->pane_begin( "t5_pane", area, GUI_REGION_MID, GUI_VP_INVALID,
                                       GUI_WIN_NONE );
-    gui()->el_panel( p.rect );
+    gui()->stock_panel( p.rect );
 
     gui_rect_t r = gui_rect_pad( p.rect, 10.0f );
-    gui()->el_label( gui_rect_cut_top( &r, 26.0f ), GUI_ALIGN_LEFT,
-                     "the SAME el_* cores, the kit's palette" );
+    gui()->stock_label( gui_rect_cut_top( &r, 26.0f ), GUI_ALIGN_LEFT,
+                     "the SAME stock_* renders, the kit palette" );
     r.y += 6.0f;  r.h -= 6.0f;
-    if ( gui()->el_cycle( gui_rect_cut_top( &r, 26.0f ), "t5_pal", &s_t5_pal, s_pals, 2 ) )
+    if ( gui()->stock_cycle( gui_rect_cut_top( &r, 26.0f ), "t5_pal", &s_t5_pal, s_pals, 2 ) )
         install_palette( s_t5_pal );   /* restyle now; the source keeps it across landings */
     r.y += 6.0f;  r.h -= 6.0f;
-    gui()->el_check( gui_rect_cut_top( &r, 26.0f ), "t5_check", &s_check );
+    gui()->stock_check( gui_rect_cut_top( &r, 26.0f ), "t5_check", &s_check );
     r.y += 6.0f;  r.h -= 6.0f;
-    gui()->el_slider( gui_rect_cut_top( &r, 24.0f ), "t5_slider", &s_level, 0.0f, 1.0f );
+    gui()->stock_slider( gui_rect_cut_top( &r, 24.0f ), "t5_slider", &s_level, 0.0f, 1.0f );
     r.y += 6.0f;  r.h -= 6.0f;
-    gui()->el_meter( gui_rect_cut_top( &r, 18.0f ), s_level,
+    gui()->stock_meter( gui_rect_cut_top( &r, 18.0f ), s_level,
                      gui()->el_style()->col[ GUI_EL_ACCENT ][ GUI_EL_IDLE ] );
     r.y += 6.0f;  r.h -= 6.0f;
     static char s_field[ 48 ] = "kit-styled field";
-    gui()->el_input( gui_rect_cut_top( &r, 26.0f ), "t5_input", s_field, sizeof s_field );
+    gui()->stock_input( gui_rect_cut_top( &r, 26.0f ), "t5_input", s_field, sizeof s_field );
     r.y += 6.0f;  r.h -= 6.0f;
-    gui()->el_button( gui_rect_cut_top( &r, 30.0f ), "el_button" );
+    gui()->stock_button( gui_rect_cut_top( &r, 30.0f ), "stock_button" );
 
     gui()->pane_end();
 }
@@ -350,7 +362,7 @@ tier_chrome( void )
     {
         gui()->stack();
         gui()->text( "A stock window: pane + feat_* + flow +" );
-        gui()->text( "el_* + style, assembled as policy." );
+        gui()->text( "stock_* + style, assembled as policy." );
         gui()->button( "button" );
         gui()->checkbox( "checkbox", &s_flag );
         gui()->slider_float( "slider", &s_value, 0.0f, 1.0f );
@@ -384,13 +396,13 @@ build_frame( void )
     s_prev = s_tier;
 
     gui()->draw_text( 12.0f, 8.0f, INK_DIM,
-        "sb_gui_base -- 1 draw  2 surface  3 element  4 flow  5 style  6 chrome  0 idle" );
+        "sb_gui_base -- 1 draw  2 surface  3 stock  4 flow  5 style  6 chrome  0 idle" );
 
     switch ( s_tier )
     {
         case 1: tier_draw();    break;
         case 2: tier_surface(); break;
-        case 3: tier_element(); break;
+        case 3: tier_stock();   break;
         case 4: tier_flow();    break;
         case 5: tier_style();   break;
         case 6: tier_chrome();  break;

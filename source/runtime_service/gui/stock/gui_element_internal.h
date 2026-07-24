@@ -24,7 +24,7 @@
    pure halves.  Declared in flow/gui_flow.h: flow is their lowest consumer (its
    emit / region seams drive them). */
 
-/* Label paint (element/gui_adornment.c): field_row draws a labeled widget's own label per the
+/* Label paint (element/gui_adornment.c): gui_field_row draws a labeled widget's own label per the
    ambient gui_field_t (geometry = field_geom_split, flow/gui_flow.h; declared in gui_host.h).
    label_natural_w is the self-measure the button family shares. */
 f32        label_natural_w ( const char* s );

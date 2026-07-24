@@ -26,7 +26,7 @@
                                      (gui_el_style_t; el_style_derive compiles the theme in)
     stock/gui_adornment.c     -- per-item ambient application (item_flags_resolve /
                                      item_flags_chrome_reset), the label paint
-                                     (field_row, label_natural_w), and the system
+                                     (gui_field_row, label_natural_w), and the system
                                      adornments the units below invoke across their
                                      documented upward seams (nav ring, focus border, drop
                                      ring, child box, resize highlight)

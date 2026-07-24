@@ -3,14 +3,15 @@
     runtime_service/gui/component/gui_comp_slider.c -- slider component: value <-> track logic.
 
     The reference component: the richest logic-vs-look seam in the kit, and the template every
-    other component copies.  Consumes ONE desc (id, rect, value, range, snap, handle width) and
-    reports the interaction state, the resolved fraction, and the two rects a render needs (the
-    value BAR and the HANDLE) -- with NO paint.  A stock render (gui_stock_slider) and a user's
-    own slider both drive this and differ only in their draw_* calls.
+    other component copies.  Consumes (id, rect, value, range) -- or the full desc, which adds
+    snap step / handle width / nav step -- and reports the interaction state, the resolved
+    fraction, and the two rects a render needs (the value BAR and the HANDLE), with NO paint.
+    A stock render (gui_stock_slider) and a user's own slider both drive this and differ only in
+    their draw_* calls.
 
     What the model pivots on:
       - MAPPING.  This is the ABSOLUTE-position slider: the handle CENTER tracks the cursor, so
-        the value and the knob never disagree (resolving the legacy el_slider mismatch, where
+        the value and the knob never disagree (resolving the pre-component core's mismatch, where
         the cursor mapped over the full width but the knob over width - handle).  The other
         pivot -- RELATIVE drag (value by cursor displacement x speed, no track, needs a press
         anchor) -- is a sibling component, not this one.
@@ -27,10 +28,13 @@
 
 /* One value slider over a caller rect: run behavior, map drag/nav to the value, snap + clamp,
    then hand back the fraction and the bar/handle rects.  True change is reported via .changed;
-   the component requests the next frame's redraw itself (it knows the value moved). */
+   the component requests the next frame's redraw itself (it knows the value moved).
+
+   The _ex form takes the full desc; gui_comp_slider below is the positional common case, so
+   the component tier opens ( id, rect, ... ) uniformly like every other comp_*. */
 
 gui_comp_slider_t
-gui_comp_slider( const gui_comp_slider_desc_t* d )
+gui_comp_slider_ex( const gui_comp_slider_desc_t* d )
 {
     gui_comp_slider_t out = ( gui_comp_slider_t ){ 0 };
 
@@ -83,6 +87,16 @@ gui_comp_slider( const gui_comp_slider_desc_t* d )
     if ( out.changed )
         gui_request_redraw();
     return out;
+}
+
+/* The positional form: continuous value over [lo,hi] with the default handle width and the auto
+   nav step (5% of the range).  Everything the desc adds -- a snap grid, a specific handle extent,
+   an explicit keyboard step -- is what _ex is for. */
+gui_comp_slider_t
+gui_comp_slider( const char* id, gui_rect_t rect, f32* v, f32 lo, f32 hi )
+{
+    return gui_comp_slider_ex( &( gui_comp_slider_desc_t ){
+        .id = id, .rect = rect, .v = v, .lo = lo, .hi = hi } );
 }
 
 // clang-format on

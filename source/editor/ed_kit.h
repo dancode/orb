@@ -11,7 +11,7 @@
     window in the editor shares.  Asset pickers and friends land here as they appear.
 
     A prop row composes the whole stack in one bracket: flow_cell takes the row from the
-    ambient window flow (rect PRODUCER), rect math cuts the label column, el_label fills
+    ambient window flow (rect PRODUCER), rect math cuts the label column, stock_label fills
     it (rect CONSUMER), and flow_begin re-opens the flow inside the value zone so any
     STOCK widget drops in unchanged:
 

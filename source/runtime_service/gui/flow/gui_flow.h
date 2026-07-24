@@ -259,7 +259,7 @@ void       cell_reach ( f32 right_x );             /* stretch the content high-w
 void field_geom_split( gui_rect_t cell, gui_label_side_t side, f32 control_u, f32 label_w,
                        f32 min_ctrl, f32 pad, gui_rect_t* out_label, gui_rect_t* out_control );
 
-/* Consume the skip_label one-shot (returns true once if armed) -- field_row's escape hatch. */
+/* Consume the skip_label one-shot (returns true once if armed) -- gui_field_row's escape hatch. */
 bool field_skip_take( void );
 
 void extent_track   ( layout_frame_t* f, f32 x, f32 y );

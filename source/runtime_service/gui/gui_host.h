@@ -11,7 +11,7 @@
         mod_load( gui );
 
     Sections follow the gui_api.h strata order:
-    FRAME / DRAW / CORE / SURFACE / RECT / FLOW / STYLE / ELEMENT / CHROME / DEBUG.
+    FRAME / DRAW / CORE / SURFACE / RECT / FLOW / STYLE / STOCK / CHROME / DEBUG.
 
 ==============================================================================================*/
 
@@ -35,6 +35,9 @@ void gui_shutdown( void );
 
 gui_mem_stats_t gui_mem_stats( void );
 void gui_print_mem_stats( void );
+
+/* per-frame geometry / batch counts for the LAST completed frame (one-frame lag) */
+gui_render_stats_t gui_render_stats( void );
 
 /* NOTE: the built-in perf/state overlays and the pipeline dashboard are internal now -- armed by
    gui_debug_enable( true ) and emitted behind hotkeys (P / O / F10); hosts no longer call them. */
@@ -233,6 +236,14 @@ void gui_set_keyboard_focus( void );
 void gui_set_edit_cursor_end( void );
 void gui_set_edit_key_hook( gui_edit_key_fn fn, void* user );
 
+/* animation service -- keyed value stepping (dampers + fixed-duration tweens); see gui_api.h */
+f32        gui_anim_f32  ( gui_id_t id, f32 target, f32 speed );
+void       gui_anim_start( gui_id_t id, f32 secs );
+f32        gui_anim_ease ( gui_id_t id, gui_ease_t ease, bool* out_active );
+u32        gui_anim_color( gui_id_t id, u32 target_abgr, f32 speed );
+gui_vec2_t gui_anim_vec2 ( gui_id_t id, gui_vec2_t target, f32 speed );
+gui_rect_t gui_anim_rect ( gui_id_t id, gui_rect_t target, f32 speed );
+
 /* time */
 f32  gui_get_delta_time( void );
 f64  gui_get_time( void );
@@ -243,6 +254,7 @@ void gui_request_redraw( void );   /* one-shot next-frame dirty (see gui_api.h G
    implementations live in the frame unit, so their prototypes belong here on its public face. */
 bool gui_wants_redraw( void );
 bool gui_frame_dirty( void );
+bool gui_volatile_live( void );
 void gui_set_force_redraw( bool on );
 bool gui_force_redraw( void );
 
@@ -311,11 +323,12 @@ void gui_field_label_left( f32 width );
 void gui_field_label_right( f32 width );
 
 /* the ambient label layout -- set once, every labeled widget's own label aligns to it (gui_field_t).
-   field_row is the seam a widget routes its label through; skip_label drops it for the next widget. */
+   gui_field_row (gui()->field_row) is the seam a widget routes its label through; skip_label
+   drops it for the next widget. */
 void         gui_field_set( const gui_field_t* f );
 gui_field_t* gui_field_get( void );
 void         gui_skip_label( void );
-void         field_row( const char* label );
+void         gui_field_row( const char* label );
 
 /* layout - grid */
 void gui_grid( gui_layout_t desc );
@@ -371,6 +384,11 @@ gui_rect_t gui_empty( f32 w, f32 h );
 
 /*===============================================  GUI_STYLE  ===============================================*/
 
+/* base style access -- style_get marks the theme anonymous, style_peek does not */
+gui_style_t*       gui_style_get ( void );
+const gui_style_t* gui_style_peek( void );
+void               gui_style_apply( void );
+
 void gui_style_source_set( gui_style_source_fn fn, void* user );
 void gui_push_style_color( gui_col_t slot, u32 abgr );
 void gui_pop_style_color( u32 count );
@@ -385,23 +403,17 @@ void gui_set_check_style( u8 style );
 void gui_set_bullet_style( u8 style );
 void gui_set_arrow_style( u8 style );
 
-/*==============================================  GUI_ELEMENT  ==============================================*/
+/*===============================================  GUI_STOCK  ===============================================*/
 
-gui_el_style_t* gui_el_style( void );
-void gui_el_panel ( gui_rect_t r );
-void gui_el_label ( gui_rect_t r, gui_align_t align, const char* text );
-bool gui_el_button( gui_rect_t r, const char* label );
-bool gui_el_check ( gui_rect_t r, const char* id_str, bool* v );
-bool gui_el_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
-void gui_el_meter ( gui_rect_t r, f32 frac, u32 fill_abgr );
-bool gui_el_cycle ( gui_rect_t r, const char* id_str, i32* idx,
-                    const char* const* items, i32 count );
-bool gui_el_input ( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
-bool gui_el_selectable( gui_rect_t r, const char* label, bool* selected );
+/* the el_ palette: the phase mapping + the resolved read every render picks a face with */
+gui_el_state_t  gui_item_phase( gui_item_state_t st );
+u32             gui_el_color  ( gui_el_role_t role, gui_el_state_t state );
+gui_el_style_t* gui_el_style  ( void );
 
-/* GUI_COMPONENT (staging) -- widget logic, no paint (component/); the stock_* twins are the
-   reference renders over them (stock/gui_element_core.c). */
-gui_comp_slider_t     gui_comp_slider     ( const gui_comp_slider_desc_t* desc );
+/* component (widget logic, no paint -- component/) + its stock_* reference render
+   (stock/gui_element_core.c).  A widget of your own is the stock render's sibling. */
+gui_comp_slider_t     gui_comp_slider     ( const char* id, gui_rect_t rect, f32* v, f32 lo, f32 hi );
+gui_comp_slider_t     gui_comp_slider_ex  ( const gui_comp_slider_desc_t* desc );
 bool                  gui_stock_slider    ( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
 gui_comp_button_t     gui_comp_button     ( const char* id, gui_rect_t rect );
 bool                  gui_stock_button    ( gui_rect_t r, const char* label );
@@ -413,6 +425,11 @@ gui_comp_selectable_t gui_comp_selectable ( const char* id, gui_rect_t rect, boo
 bool                  gui_stock_selectable( gui_rect_t r, const char* label, bool* selected );
 gui_comp_input_t      gui_comp_input      ( const char* id, gui_rect_t rect, f32 pad, char* buf, u32 bufsz );
 bool                  gui_stock_input     ( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
+
+/* the inert three -- no component (no interaction to extract), render-only by design */
+void gui_stock_panel( gui_rect_t r );
+void gui_stock_label( gui_rect_t r, gui_align_t align, const char* text );
+void gui_stock_meter( gui_rect_t r, f32 frac, u32 fill_abgr );
 
 /*==============================================  GUI_CHROME  ===============================================*/
 
@@ -492,7 +509,7 @@ bool gui_small_button( const char* label );
 bool gui_button_fill( const char* label );
 f32  gui_button_width( const char* label );
 void gui_progress_bar( f32 fraction, const char* overlay );
-bool gui_arrow_button( const char* label, gui_dir_t dir );
+bool gui_arrow_button( const char* id_str, gui_dir_t dir );
 bool gui_checkbox( const char* label, bool* v );
 bool gui_radio_button( const char* label, i32* v, i32 value );
 
@@ -581,6 +598,13 @@ u32  gui_debug_get_layers( void );
 void gui_debug_enable( bool enable );
 bool gui_debug_is_enabled( void );
 bool gui_debug_hotkeys_armed( void );
+
+/* render mode (live in every build) + the retained-cache levers */
+void              gui_debug_set_render_mode( gui_render_mode_t mode );
+gui_render_mode_t gui_debug_get_render_mode( void );
+void              gui_debug_dump_geometry( void );
+void              gui_set_retained_skip( bool on );
+bool              gui_retained_skip( void );
 
 /* Reverse lookup for the id name registry (gui_debug_overlay.c): the source string an id was
    minted from (widget label, window/popup title, region/child/table id string), or NULL if

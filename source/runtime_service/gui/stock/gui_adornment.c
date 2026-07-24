@@ -10,7 +10,7 @@
       - the impure per-item wrappers (item_flags_resolve / item_flags_chrome_reset): style and
         draw consequences over the interact server's pure seams (item_flags_take /
         item_flags_chrome_drop, core/gui_ctx.c);
-      - the label paint (field_row + label_natural_w): field_row draws a labeled widget's own
+      - the label paint (gui_field_row + label_natural_w): gui_field_row draws a labeled widget's own
         label per the ambient gui_field_t; its geometry half (field_geom_split) lives with the
         composer in flow, the paint and the WIDGET_PAD self-measure here;
       - the system adornments (nav ring, focus border, drop ring, child box, resize
@@ -89,7 +89,7 @@ f32  label_natural_w( const char* s )
    the label is passive text.  A widget calls it right before taking its cell:
 
        bool gui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
-       { field_row( label ); ... id = item_id(label); cell = cell_next(WIDGET_H); ... }
+       { gui_field_row( label ); ... id = item_id(label); cell = cell_next(WIDGET_H); ... }
 
    It emits nothing (consumes no cell, arms nothing -- the widget's cell_next then returns a full
    cell) in three cases, so one call handles labeled AND bare: field.hide (the master property-panel
@@ -98,7 +98,7 @@ f32  label_natural_w( const char* s )
    never colors a pixel. */
 
 void
-field_row( const char* label )
+gui_field_row( const char* label )
 {
     gui_field_t* fld   = gui_field_get();   /* the one field authority (set-once, like a style) */
     f32          vis_w = label_width( label );

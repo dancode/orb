@@ -602,14 +602,22 @@ typedef struct gui_comp_slider_t
 
 } gui_comp_slider_t;
 
-/* Result of gui()->comp_button -- the SHARED shape every component follows: the raw interaction
-   state first, the widget's semantic outcome last.  The button is the simplest case: no geometry
-   beyond the caller's rect (so no desc struct -- it takes plain id + rect), and the outcome is
-   the click.  A render reads .state to pick its face colors and .clicked to fire. */
+/* THE SHARED COMPONENT SHAPE -- every gui_comp_*_t below follows it, in this order:
+
+       gui_item_state_t state;   // ALWAYS first: the raw interaction, for picking a face
+       ...geometry...            // the rects a render paints (absent when the widget has none)
+       ...outcome...             // what the widget MEANS this frame -- and only what `state`
+                                 //   does not already say (changed / enter, never a second
+                                 //   spelling of state.clicked)
+
+   So `state` is at offset 0 for every component, and a render reads it the same way regardless
+   of which component produced it: gui()->item_phase( x.state ) -> a palette state.
+
+   Result of gui()->comp_button -- the simplest case, and the one that settled the shape: no
+   geometry beyond the caller's rect, and its outcome IS state.clicked, so it adds no field. */
 typedef struct gui_comp_button_t
 {
-    gui_item_state_t state;    // raw interaction (hover/active/pressed/clicked/focused/nav)
-    bool             clicked;  // fired this frame: released over the item (== state.clicked)
+    gui_item_state_t state;    // raw interaction; .clicked is the button's outcome
 
 } gui_comp_button_t;
 
@@ -626,9 +634,12 @@ typedef struct gui_comp_check_t
 /* Result of gui()->comp_cycle -- a "< value >" stepper.  The two cap buttons are each a COMPOSED
    comp_button (so they hover / nav / redraw like any button), with their rects and the center
    region for the value text.  The component takes count (for wrap) but not the item strings --
-   those are the render's to draw at label. */
+   those are the render's to draw at label.  `state` (the shared shape's first field) is the
+   WHOLE widget's interaction -- hover over either cap or the value band -- so item_phase works
+   on a cycle exactly as on any other component; read .prev / .next for the per-cap faces. */
 typedef struct gui_comp_cycle_t
 {
+    gui_item_state_t  state;     // interaction over the whole stepper (either cap or the band)
     gui_comp_button_t prev;      // left cap (decrement)
     gui_comp_button_t next;      // right cap (increment)
     gui_rect_t        prev_box;  // left cap rect
@@ -639,12 +650,11 @@ typedef struct gui_comp_cycle_t
 } gui_comp_cycle_t;
 
 /* Result of gui()->comp_selectable -- a list-row press.  The button's shape (it composes
-   comp_button) plus the *selected toggle; the render reads the caller's selected flag for its
-   active tint and .clicked to drive its own selection. */
+   comp_button) plus the *selected toggle already applied; the render reads the caller's selected
+   flag for its active tint and state.clicked to drive its own selection. */
 typedef struct gui_comp_selectable_t
 {
-    gui_item_state_t state;    // interaction over the row
-    bool             clicked;  // fired this frame (== state.clicked)
+    gui_item_state_t state;    // interaction over the row; .clicked is the row's outcome
 
 } gui_comp_selectable_t;
 

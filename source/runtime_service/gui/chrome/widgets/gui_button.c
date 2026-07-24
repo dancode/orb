@@ -20,7 +20,7 @@
    ellipsized fit so an oversized label truncates cleanly instead of spilling past both edges.
    Every pushbutton-style widget (button, button_fill, small_button) draws its face this way --
    centered is a button's one layout difference from the trailing-label widgets below, which is
-   why it does not route its label through field_row / rect_align's LEFT default like they do. */
+   why it does not route its label through gui_field_row / rect_align's LEFT default like they do. */
 
 static void
 draw_button_label( gui_rect_t r, const char* label )
@@ -49,11 +49,11 @@ gui_button( const char* label )
 {
     /* Placement is all chrome adds: reserve the natural-width cell (shrinks to it in stack /
        same_line, fills to fit in columns), then paint the stock face through the element core.
-       Since the color seam closed (el_button uses the same col_item_bg_anim over the same
+       Since the color seam closed (stock_button uses the same col_item_bg_anim over the same
        style_el_col palette), the core paints exactly what this widget used to -- this is the
        canonical four-line widget collapsed to composer + core. */
     gui_rect_t r = cell_next_w( label_natural_w( label ), WIDGET_H );
-    return gui_el_button( r, label );
+    return gui_stock_button( r, label );
 }
 
 /*==============================================================================================
@@ -216,7 +216,7 @@ checkable_cell( gui_id_t id, const char* label )
        label trailing it.  The box only needs CHECKBOX_SZ of the control track.
 
        Resolved BEFORE item_state so the hit/nav rect can match input_text / slider_float: those
-       route their label through field_row, which hands item_state the control track alone, starting
+       route their label through gui_field_row, which hands item_state the control track alone, starting
        after the label gutter.  Handing item_state the full (label-gutter-including, left-seated)
        cell here instead would put this widget's nav rect at a different X than every other field in
        the same form -- e.g. a checkbox at column 0 next to input/slider fields starting at column 90 --

@@ -18,29 +18,35 @@
     render over the same component.  That is the whole point of the stack -- zero one-size-fits-
     all widgets, user-driven presentation over shared logic.
 
-    DESIGN IS ITERATIVE.  The component API shape -- what each gui_comp_*() takes and the output
-    struct it returns -- is being settled one widget at a time, starting from the slider (richest
-    logic seam) and the button (simplest case).  The proven pattern lives in chrome today and
-    migrates DOWN into components only once a real widget needs it.
+    THE CALL SHAPE.  Every component opens ( id, rect, ... ): identity first, the rect it works
+    over second, then whatever that widget needs.  A parameter-rich component adds an _ex twin
+    taking a desc struct (comp_slider / comp_slider_ex), never replaces the positional form --
+    so learning one component teaches the signature of all of them.
 
-    THE COMPONENTS (each has a reference render gui_stock_* in stock/gui_element_core.c that the
-    matching gui_el_* now delegates to; all public via gui_host.h / the vtable; a user widget is
-    their sibling over the same comp_* call):
-      - comp_slider -- ONE desc (gui_comp_slider_desc_t) -> state + bar/handle rects; the only
-        parameter-rich one, hence the desc.  Absolute-position mapping (handle center = cursor).
-      - comp_button -- the simplest, which SETTLED the shared shape: a component returns a
-        gui_item_state_t plus its semantic outcome, any geometry between.  Plain (id, rect); a
-        pure id, the label is the render's.
+    THE RESULT SHAPE.  Every gui_comp_*_t opens with `gui_item_state_t state`, then any geometry
+    a render paints, then only the outcomes state does not already carry (changed / enter -- never
+    a second spelling of state.clicked).  Because state sits at offset 0 for all of them, one
+    render idiom works over every component:
+
+        u32 face = gui()->el_color( GUI_EL_BG, gui()->item_phase( x.state ) );
+
+    THE COMPONENTS (each has a reference render gui_stock_* in stock/gui_element_core.c; all
+    public via gui_host.h / the vtable; a user widget is their sibling over the same comp_* call):
+      - comp_slider -- state + fraction + bar/handle rects.  Absolute-position mapping (handle
+        center = cursor).  The parameter-rich one, hence the _ex desc form.
+      - comp_button -- the simplest, which SETTLED the shared shape: its outcome IS state.clicked,
+        so it adds no field at all.  A pure id; the label is the render's.
       - comp_check -- toggle over an inscribed box; returns { state, box, changed }.
       - comp_cycle -- a "< value >" stepper that COMPOSES comp_button for each cap (the shared
-        press core stacks); takes count for wrap, not the strings.
+        press core stacks); takes count for wrap, not the strings.  Its own .state covers the
+        whole stepper, with .prev / .next carrying the per-cap faces.
       - comp_selectable -- comp_button + an optional *selected toggle (composition again).
       - comp_input -- the richest: runs the interact/ edit engine (edit_field) and returns
         PAINTABLE geometry (content rect, run origin, selection + caret bars) so a render draws a
         text field with only public verbs, never touching gui_edit_state_t or measuring a glyph.
 
-    NO component (deliberately): el_panel / el_label / el_meter are inert paint -- no interaction,
-    no logic to extract -- so they stay stock-render-only.  Not every core needs a component.
+    NO component (deliberately): stock_panel / stock_label / stock_meter are inert paint -- no
+    interaction, no logic to extract -- so they stay render-only.  Not every widget needs one.
 
     NEXT: chrome's own widgets may migrate onto these components when a chrome-only feature is
     needed in a user widget (the migrate-down direction); until then chrome stays bespoke.

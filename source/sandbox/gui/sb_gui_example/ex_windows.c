@@ -532,24 +532,24 @@ ex_windows_pane( void )
 
     gui_rect_t title = gui_rect_cut_top( &body, 26.0f );
     gui()->draw_rect( title.x, title.y, title.w, title.h, GUI_COLOR( 0x20, 0x2A, 0x38, 0xFF ) );
-    gui()->el_label( gui_rect_pad( title, 6.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+    gui()->stock_label( gui_rect_pad( title, 6.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
                      input ? "raw pane" : "raw pane (display only)" );
 
     body = gui_rect_pad( body, 10.0f );
     gui_rect_t row = gui_rect_cut_top( &body, 30.0f );
-    if ( gui()->el_button( row, "click me##pane" ) )
+    if ( gui()->stock_button( row, "click me##pane" ) )
         clicks++;
 
     gui_rect_cut_top( &body, 8.0f );   /* gap */
     row = gui_rect_cut_top( &body, 24.0f );
-    gui()->el_check( gui_rect_cut_left( &row, 24.0f ), "##pane_chk", &check );
-    gui()->el_label( gui_rect_pad( row, 4.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+    gui()->stock_check( gui_rect_cut_left( &row, 24.0f ), "##pane_chk", &check );
+    gui()->stock_label( gui_rect_pad( row, 4.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
                      check ? "checked" : "unchecked" );
 
     gui_rect_t foot = gui_rect_cut_bottom( &body, 20.0f );
     char zbuf[ 48 ];
     snprintf( zbuf, sizeof( zbuf ), "z 0x%08X  vp %u", p.z, (u32)p.vp );
-    gui()->el_label( foot, GUI_ALIGN_LEFT | GUI_ALIGN_BOTTOM, zbuf );
+    gui()->stock_label( foot, GUI_ALIGN_LEFT | GUI_ALIGN_BOTTOM, zbuf );
 
     gui()->pane_end();
 }
@@ -559,7 +559,7 @@ ex_windows_pane( void )
     feature by feature over a pane.  feat_maximize + feat_clamp shape the rect (B-features:
     the work area is passed IN), feat_collapse tweens the height off a caller bool, the title
     band drags through feat_move, the edges resize through feat_resize, and close is nothing
-    but a static bool a hand-placed el_button clears.  Every persistent byte is a demo static;
+    but a static bool a hand-placed stock_button clears.  Every persistent byte is a demo static;
     gui holds only tween scratch.
 ==============================================================================================*/
 
@@ -630,18 +630,18 @@ ex_windows_features( void )
 
     /* Title buttons BEFORE feat_move, cut off the band so the drag handle excludes them (and
        a press they claim blocks the move arm -- the same order stock chrome resolves). */
-    if ( gui()->el_button( gui_rect_cut_right( &title, title_h ), "x##feat_close" ) )
+    if ( gui()->stock_button( gui_rect_cut_right( &title, title_h ), "x##feat_close" ) )
         open = false;                                       /* the open latch: just a bool */
-    if ( gui()->el_button( gui_rect_cut_right( &title, title_h ), maximized ? "v##feat_max"
+    if ( gui()->stock_button( gui_rect_cut_right( &title, title_h ), maximized ? "v##feat_max"
                                                                             : "^##feat_max" ) )
         maximized = !maximized;
-    if ( gui()->el_button( gui_rect_cut_right( &title, title_h ), folded ? ">##feat_fold"
+    if ( gui()->stock_button( gui_rect_cut_right( &title, title_h ), folded ? ">##feat_fold"
                                                                          : "-##feat_fold" ) )
         folded = !folded;
 
     if ( !maximized )
         gui()->feat_move( feat_id, title, &rect.x, &rect.y );
-    gui()->el_label( gui_rect_pad( title, 6.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+    gui()->stock_label( gui_rect_pad( title, 6.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
                      "feature window" );
 
     /* Body -- only when the collapse tween has left room. */
@@ -649,12 +649,12 @@ ex_windows_features( void )
     {
         body = gui_rect_pad( body, 10.0f );
         gui_rect_t row = gui_rect_cut_top( &body, 30.0f );
-        if ( gui()->el_button( row, "click me##feat" ) )
+        if ( gui()->stock_button( row, "click me##feat" ) )
             clicks++;
         gui_rect_cut_top( &body, 8.0f );
         row = gui_rect_cut_top( &body, 24.0f );
-        gui()->el_check( gui_rect_cut_left( &row, 24.0f ), "##feat_chk", &check );
-        gui()->el_label( gui_rect_pad( row, 4.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+        gui()->stock_check( gui_rect_cut_left( &row, 24.0f ), "##feat_chk", &check );
+        gui()->stock_label( gui_rect_pad( row, 4.0f ), GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
                          "assembled from mechanisms" );
     }
 

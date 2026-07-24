@@ -14,7 +14,7 @@
           field_geom_split) -- the per-item "hand out the next rect" mechanism.
 
     This tier composes and never paints: field_geom_split hands out a labeled row's two-track
-    geometry, and its painting companion field_row (which draws the label) lives with the rest of
+    geometry, and its painting companion gui_field_row (which draws the label) lives with the rest of
     the label grammar in element/gui_adornment.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD /
     ...) resolves in style/gui_style_core.c.
 
@@ -1053,7 +1053,7 @@ gui_rect_t cell_next( f32 h ) { return cell_next_w( -1.0f, h ); }
 
 /*============================================================================================*/
 /* The ambient label ("pair") layout -- the shared authority the _label widget variants read
-   (gui.h, gui_field_t).  A flow static, set once and reused: field_row (element) resolves each
+   (gui.h, gui_field_t).  A flow static, set once and reused: gui_field_row (element) resolves each
    labeled row against it, so all forms align without re-declaring the split per widget.  Zeroed
    at startup = the built-in default (labels shown, trailing at their natural width). */
 static gui_field_t s_field;
@@ -1063,7 +1063,7 @@ gui_field_t* gui_field_get( void )                 { return &s_field; }
 
 /* skip_label -- the one-shot that drops the ambient label for the NEXT widget only (labels stay on
    globally).  The mirror of field.hide's global toggle; armed like next_item_rect / next_item_align.
-   field_row consumes it (field_skip_take) whether or not it would have drawn, so a skip never leaks
+   gui_field_row consumes it (field_skip_take) whether or not it would have drawn, so a skip never leaks
    to the following widget. */
 static bool s_field_skip;
 

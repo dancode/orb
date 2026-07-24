@@ -1,28 +1,32 @@
 /*==============================================================================================
 
-    runtime_service/gui/element/gui_element_core.c -- The el_* rect-consuming widget cores.
+    runtime_service/gui/stock/gui_element_core.c -- The stock_* rect-consuming widget renders.
 
-    The building-block tier, lifted from the proven
-    sb_gui_diablo ui layer.  Every el_* fills EXACTLY the rect it is handed -- no hidden
+    The REFERENCE widget set: one plain render per component, the thing a user reads and forks,
+    not a privileged default.  Every stock_* fills EXACTLY the rect it is handed -- no hidden
     padding, no flow, no layout reservation -- and composes the three ambient services:
-    behavior (gui_item over the caller rect), presentation (the public draw_* surface),
-    and the slim element style (gui_el_style_t, gui_element.h).
+    behavior (the comp_* logic core, or gui_item directly for the inert three), presentation
+    (the public draw_* surface), and the slim element style (gui_el_style_t, gui_element.h).
 
-    Style contract: elements resolve every color through style_el_col (the style unit) -- the
-    INSTALLED element style by default, an active push_style_color override winning.  So a
-    delegating stock widget reads exactly what chrome reads (chrome's COL_* macros ARE
-    style_el_col), and a caller can push_style_color around an el_* the same way; absent any
-    override this is byte-identical to the raw installed palette, so a kit that owns the look
-    (gui_style_source_set) still wins by default.  The installed style is re-derived at every
-    landing (gui_style_apply / theme_set / theme_reset / font activation) through
-    el_style_install(): the registered style source, else the default S2 compile
-    (el_style_derive).  A kit may also poke values ad hoc via gui_el_style().  Elements still
-    never NAME a gui_col_t slot or walk the theme -- style_el_col is the one seam.
+    Naming: stock_* is the WIDGET SET; el_* is the STYLE STRATUM it paints from (gui_el_style_t,
+    gui_el_color, GUI_EL_BG ...).  Two vocabularies, deliberately -- a user widget is a sibling
+    of a stock_* render and reads the same el_ palette.
 
-    Dependency contract: the el_* cores call gui_core (item, ids, io, redraw) + gui_draw
-    (draw_*) + gui_rect only -- NEVER the flow layout engine -- and resolve through the
-    public gui_* declarations (gui_host.h) plus the style_active() seam.  A constituent of
-    the element unit (root gui_element.c).
+    Style contract: renders resolve every color through style_el_col (the style unit) -- the
+    INSTALLED element style by default, an active push_style_color override winning.  So a stock
+    widget reads exactly what chrome reads (chrome's COL_* macros ARE style_el_col), and a caller
+    can push_style_color around a stock_* the same way; absent any override this is byte-identical
+    to the raw installed palette, so a kit that owns the look (gui_style_source_set) still wins by
+    default.  gui_el_color is this same seam published for a user's own render.  The installed
+    style is re-derived at every landing (gui_style_apply / theme_set / theme_reset / font
+    activation) through el_style_install(): the registered style source, else the default S2
+    compile (el_style_derive).  A kit may also poke values ad hoc via gui_el_style().  Renders
+    still never NAME a gui_col_t slot or walk the theme -- style_el_col is the one seam.
+
+    Dependency contract: the stock_* renders call gui_core (item, ids, io, redraw) + gui_draw
+    (draw_*) + gui_rect + the comp_* components only -- NEVER the flow layout engine -- and
+    resolve through the public gui_* declarations (gui_host.h) plus the style_active() seam.
+    A constituent of the stock unit (root gui_stock.c).
 
 ==============================================================================================*/
 
@@ -107,18 +111,36 @@ gui_style_source_set( gui_style_source_fn fn, void* user )
    For a runtime (non-token) state, call style_el_col( GUI_EL_<role>, s ) directly. */
 #define EL_COL( role, state ) style_el_col( GUI_EL_##role, GUI_EL_##state )
 
-/* Interaction state -> palette state for a body fill / border line. */
-static gui_el_state_t
-el_state( gui_item_state_t st )
+/* gui_item_phase -- interaction state -> palette state, the one mapping EVERY render needs.
+   Published because a user widget is the stock render's sibling: both pick a face from the same
+   three-way rule, so neither should re-derive it.  nav counts as HOT so a keyboard-navigated
+   widget lights up exactly like a hovered one.  (GUI_EL_DIM is the inert / disabled variant --
+   a render selects it deliberately, never from live interaction.) */
+gui_el_state_t
+gui_item_phase( gui_item_state_t st )
 {
     return st.active           ? GUI_EL_ACTIVE
          : st.hover || st.nav  ? GUI_EL_HOT
                                : GUI_EL_IDLE;
 }
 
+/* gui_el_color -- the resolved element palette read: the installed style (kit-owned when a style
+   source is registered), with an active push_style_color / next_style_color override winning.
+   THE color door for a user widget: reading gui_el_style()->col[][] directly bypasses the style
+   stack, so a push_style_color around a user widget would silently do nothing while it works on
+   every stock widget.  This is the same seam the stock renders and chrome's COL_* macros read. */
+u32
+gui_el_color( gui_el_role_t role, gui_el_state_t state )
+{
+    return style_el_col( (u8)role, (u8)state );
+}
+
+/* Local shorthand: the phase mapping under its old in-file name. */
+#define el_state( st ) gui_item_phase( st )
+
 /* The "##id" label grammar for a DISPLAYED label: the suffix carries identity, never pixels.
    Returns the visible span -- the original pointer when there is no suffix (no copy), else the
-   head copied into buf.  Shared by the label-bearing cores (el_button, el_selectable). */
+   head copied into buf.  Shared by the label-bearing renders (stock_button, stock_selectable). */
 static const char*
 el_visible_text( const char* label, char* buf, u32 bufsz )
 {
@@ -134,9 +156,11 @@ el_visible_text( const char* label, char* buf, u32 bufsz )
     The element cores -- every one fills exactly its rect.
 ==============================================================================================*/
 
-/* Inert framed backdrop: the DIM surface.  Chrome for grouping, never interactive. */
+/* Inert framed backdrop: the DIM surface.  Chrome for grouping, never interactive.  One of the
+   three inert stock cores (panel / label / meter) with no component behind them -- there is no
+   interaction to extract, so they are render-only by design. */
 void
-gui_el_panel( gui_rect_t r )
+gui_stock_panel( gui_rect_t r )
 {
     gui_draw_frame( r, EL_COL( BG, DIM ), EL_COL( BORDER, DIM ), s_el_style.border_w );
 }
@@ -144,7 +168,7 @@ gui_el_panel( gui_rect_t r )
 /* A text run seated in r per align.  The one-role element; a colored variant is just
    draw_text_in with the caller's color -- no el_ wrapper needed. */
 void
-gui_el_label( gui_rect_t r, gui_align_t align, const char* text )
+gui_stock_label( gui_rect_t r, gui_align_t align, const char* text )
 {
     gui_draw_text_in( r, align, EL_COL( TEXT, IDLE ), text );
 }
@@ -154,7 +178,7 @@ gui_el_label( gui_rect_t r, gui_align_t align, const char* text )
    draw_button_label -- both paint the same face, which is what lets a stock button delegate here.
    text is the already-visible span (the caller stripped the "##id" suffix). */
 static void
-el_button_label( gui_rect_t r, const char* text )
+stock_button_label( gui_rect_t r, const char* text )
 {
     f32 avail = r.w - 2.0f * s_el_style.pad;
     if ( label_width( text ) <= avail )
@@ -178,18 +202,9 @@ gui_stock_button( gui_rect_t r, const char* label )
     draw_fill( r, col_item_bg_anim( id, b.state ) );
 
     char vis[ 128 ];
-    el_button_label( r, el_visible_text( label, vis, sizeof vis ) );
+    stock_button_label( r, el_visible_text( label, vis, sizeof vis ) );
 
-    return b.clicked;
-}
-
-/* el_button -- the prior name for the stock button; delegates so existing callers (kits, chrome's
-   gui_button, the sandboxes) are unchanged while the reference lives in one place, now over the
-   component.  True on click. */
-bool
-gui_el_button( gui_rect_t r, const char* label )
-{
-    return gui_stock_button( r, label );
+    return b.state.clicked;
 }
 
 /* stock_check -- the reference render over gui_comp_check: a framed square box with a check mark
@@ -209,13 +224,6 @@ gui_stock_check( gui_rect_t r, const char* id_str, bool* v )
     return c.changed;
 }
 
-/* el_check -- the prior name; delegates to the stock render over the component. */
-bool
-gui_el_check( gui_rect_t r, const char* id_str, bool* v )
-{
-    return gui_stock_check( r, id_str, v );
-}
-
 /* stock_slider -- THE reference render over gui_comp_slider: an el-styled groove, value bar, and
    handle, drawn from the component's geometry.  The batteries-included slider a user forks --
    keep gui_comp_slider, swap only these draw_* calls (see sb_gui_base tier 3).  The bare control:
@@ -224,7 +232,7 @@ gui_el_check( gui_rect_t r, const char* id_str, bool* v )
 bool
 gui_stock_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
 {
-    gui_comp_slider_t s = gui_comp_slider( &( gui_comp_slider_desc_t ){
+    gui_comp_slider_t s = gui_comp_slider_ex( &( gui_comp_slider_desc_t ){
         .id = id_str, .rect = r, .v = v, .lo = lo, .hi = hi, .handle_w = 8.0f } );
 
     /* Groove: a centered band; the value bar fills it to the component's fraction. */
@@ -244,19 +252,10 @@ gui_stock_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
     return s.changed;
 }
 
-/* el_slider -- the prior name for the stock slider; delegates so existing callers (kits, the
-   sandboxes, chrome) are unchanged while the reference lives in one place, now over the
-   component.  True on the change frame. */
-bool
-gui_el_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
-{
-    return gui_stock_slider( r, id_str, v, lo, hi );
-}
-
 /* Horizontal fill bar (XP strip, cast bar): framed track filled left-to-right to frac (0..1).
    The fill color is a CALL PARAMETER -- per-widget color is kit business, not a style slot. */
 void
-gui_el_meter( gui_rect_t r, f32 frac, u32 fill_abgr )
+gui_stock_meter( gui_rect_t r, f32 frac, u32 fill_abgr )
 {
     frac = ( frac < 0.0f ) ? 0.0f : ( frac > 1.0f ) ? 1.0f : frac;
 
@@ -289,14 +288,6 @@ gui_stock_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* 
     return cy.changed;
 }
 
-/* el_cycle -- the prior name; delegates.  Repeated cycles still need distinct id_str (the two caps
-   id under a push of it). */
-bool
-gui_el_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* items, i32 count )
-{
-    return gui_stock_cycle( r, id_str, idx, items, count );
-}
-
 /* stock_input -- the reference render over gui_comp_input: an element-styled box, then the
    component's selection band, glyph-clipped run, and blinking caret painted from the geometry it
    returned (this render never touches the edit state).  The proof the engine needs no chrome:
@@ -326,23 +317,13 @@ gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
     return in.changed;
 }
 
-/* el_input -- the prior name; delegates to the stock render over the component. */
-bool
-gui_el_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
-{
-    return gui_stock_input( r, id_str, buf, bufsz );
-}
-
 /* Full-width selectable row: transparent when idle so the surface behind shows through, the HOT
    tint on hover / nav, the ACTIVE tint when selected.  THE row primitive under lists, combos,
    trees, and menus -- the pure core, carrying none of chrome's policy (type-ahead stamp, popup /
    combo dismiss on click).  That policy stays in chrome's gui_selectable, which is free to compose
-   this.  selected NULL = a click-only row (the caller drives its own index from the return).  id
-   comes from the label ("##"/"###" rules apply).  True on the frame it is clicked. */
-/* stock_selectable -- the reference render over gui_comp_selectable: transparent when idle so the
-   surface behind shows through, HOT on hover/nav, ACTIVE when *selected, with a left-aligned
-   label.  The component owns the press + the *selected toggle; this draws the row.  True on the
-   frame it is clicked. */
+   this.  The component owns the press + the *selected toggle (NULL = a click-only row, the caller
+   driving its own index from the return); this draws the row.  id comes from the label ("##" /
+   "###" rules apply).  True on the frame it is clicked. */
 bool
 gui_stock_selectable( gui_rect_t r, const char* label, bool* selected )
 {
@@ -357,16 +338,10 @@ gui_stock_selectable( gui_rect_t r, const char* label, bool* selected )
     gui_rect_t  tr   = { r.x + s_el_style.pad, r.y, r.w - 2.0f * s_el_style.pad, r.h };
     gui_draw_text_in( tr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, EL_COL( TEXT, IDLE ), text );
 
-    return s.clicked;
+    return s.state.clicked;
 }
 
-/* el_selectable -- the prior name; delegates to the stock render over the component. */
-bool
-gui_el_selectable( gui_rect_t r, const char* label, bool* selected )
-{
-    return gui_stock_selectable( r, label, selected );
-}
-
+#undef el_state
 #undef EL_COL
 
 // clang-format on
