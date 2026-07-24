@@ -151,12 +151,14 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
 bool
 gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
 {
-    gui_id_t   id = item_id( label );
-    gui_rect_t r  = cell_next( WIDGET_H );
+    gui_id_t id = item_id( label );
 
-    /* Track takes the left portion; the label sits at the right.  The min track width keeps the
-       knob travel usable when the label is long. */
-    gui_rect_t track_r = draw_field_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
+    /* Route the widget's own label through the ambient field seam (field_row): it paints the label
+       -- an aligned column under a form / field_split, or trailing otherwise -- and hands back the
+       control track as the next cell.  With labels hidden (field.hide), skipped (skip_label), or
+       empty ("##id") it is a no-op and the track fills the whole row.  No second "_label" widget. */
+    field_row( label );
+    gui_rect_t track_r = cell_next( WIDGET_H );
     gui_item_state_t st = item_state( id, track_r, ITEM_DRAG );
 
     /* Drag: map the cursor's track fraction to a value, snapping to the step grid when asked. */
@@ -210,10 +212,10 @@ gui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
 bool
 gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
 {
-    gui_id_t   id = item_id( label );
-    gui_rect_t r  = cell_next( WIDGET_H );
+    gui_id_t id = item_id( label );
 
-    gui_rect_t track_r = draw_field_label( r, label, SLIDER_KNOB_W * 3.0f, COL_TEXT_DIM );
+    field_row( label );   /* label via the ambient field seam; track_r = control track (see slider_float_step) */
+    gui_rect_t track_r = cell_next( WIDGET_H );
     gui_item_state_t st = item_state( id, track_r, ITEM_DRAG );
 
     bool changed = false;

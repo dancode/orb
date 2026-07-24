@@ -940,12 +940,15 @@ typedef struct gui_api_s
                          out as an aligned "Label  [control]" form from a single call.
        field_label_left() / field_label_right() -- field_split sugar: a fixed-width label column on
                          the left / right with a flex control filling the rest (0 = off).
-       field_set() / field_get() -- the ambient label ("pair") layout (gui_field_t): the shared
-                         authority every _label widget variant reads, so all forms align from one
-                         set.  field_set(NULL) restores the default; field_get returns the live
-                         struct to poke a field (e.g. .hide to drop every label at once).
-       field_row()  -- the caption-pair emitter a labeled variant wraps a bare control in: paints
-                         the label per the ambient field and arms the next cell for the control.
+       field_set() / field_get() -- the ambient label layout (gui_field_t): the shared authority
+                         every labeled widget's own label reads, so all forms align from one set and
+                         there is no second "_label" widget set.  field_set(NULL) restores the
+                         default; field_get returns the live struct to poke (e.g. .hide to drop every
+                         label at once).
+       skip_label() -- one-shot: drop the ambient label for the next widget only (labels stay on
+                         globally) -- the per-widget mirror of field.hide.
+       field_row()  -- the label seam a widget routes its own label through: paints the label per the
+                         ambient field and arms the next cell for the control (bare when hidden).
 
        Grid mode -- cols x rows partition a bounded box (the region content from the pen to its
        bottom) into a fixed matrix, both axes resolved up front; widgets fill cells row-major and
@@ -981,9 +984,10 @@ typedef struct gui_api_s
     void ( *field_split       )( gui_label_side_t side, f32 label, f32 control );
     void ( *field_label_left  )( f32 width );
     void ( *field_label_right )( f32 width );
-    void         ( *field_set )( const gui_field_t* f );
-    gui_field_t* ( *field_get )( void );
-    void         ( *field_row )( const char* label );
+    void         ( *field_set  )( const gui_field_t* f );
+    gui_field_t* ( *field_get  )( void );
+    void         ( *skip_label )( void );
+    void         ( *field_row  )( const char* label );
     void ( *grid              )( gui_layout_t desc );
     void ( *grid_cells        )( u32 ncols, u32 nrows );
     void ( *bar               )( void );
@@ -1615,8 +1619,10 @@ typedef struct gui_api_s
        push_item_flag( GUI_ITEM_BUTTON_REPEAT, true ) for press-and-hold stepping (spin buttons). */
     bool ( *arrow_button )( const char* id_str, gui_dir_t dir );
 
+    /* checkbox -- indicator box + its own label; the label follows the ambient field (aligned
+       column under a form / field_split, trailing otherwise, or dropped when hidden / skipped).
+       The body is the hit -- clicking the label toggles (intrinsic to a checkbox). */
     bool ( *checkbox    )( const char* label, bool* v );
-    bool ( *checkbox_bare )( const char* id_str, bool* v );   /* the control alone, no label */
 
     /* radio_button -- one option of a mutually-exclusive set: shows on while *v == value, a click
        sets *v = value.  Emit several against the same v (same_line between them for a row) to form

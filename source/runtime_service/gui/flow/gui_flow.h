@@ -269,6 +269,13 @@ bool cell_split_field( gui_rect_t cell, f32 min_control_w, f32* out_label_x,
 void field_geom_split( gui_rect_t cell, gui_label_side_t side, f32 control_u, f32 label_w,
                        f32 min_ctrl, f32 pad, gui_rect_t* out_label, gui_rect_t* out_control );
 
+/* Consume the skip_label one-shot (returns true once if armed) -- field_row's escape hatch. */
+bool field_skip_take( void );
+
+/* The field the row now emitting resolves against: a per-region mod split (gui_form / field_split)
+   overrides the ambient gui_field_t; else the ambient.  The bridge field_row reads. */
+gui_field_t field_effective( void );
+
 void extent_track   ( layout_frame_t* f, f32 x, f32 y );
 f32  layout_next_y  ( layout_frame_t* f );
 void layout_pen_jump( layout_frame_t* f, f32 y );

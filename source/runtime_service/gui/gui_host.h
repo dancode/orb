@@ -310,10 +310,11 @@ void gui_field_split( gui_label_side_t side, f32 label, f32 control );
 void gui_field_label_left( f32 width );
 void gui_field_label_right( f32 width );
 
-/* the ambient label ("pair") layout -- set once, every _label widget aligns to it (gui_field_t).
-   field_row is the pair emitter a labeled variant wraps its bare control in. */
+/* the ambient label layout -- set once, every labeled widget's own label aligns to it (gui_field_t).
+   field_row is the seam a widget routes its label through; skip_label drops it for the next widget. */
 void         gui_field_set( const gui_field_t* f );
 gui_field_t* gui_field_get( void );
+void         gui_skip_label( void );
 void         field_row( const char* label );
 
 /* layout - grid */
@@ -478,7 +479,6 @@ f32  gui_button_width( const char* label );
 void gui_progress_bar( f32 fraction, const char* overlay );
 bool gui_arrow_button( const char* label, gui_dir_t dir );
 bool gui_checkbox( const char* label, bool* v );
-bool gui_checkbox_bare( const char* id_str, bool* v );
 bool gui_radio_button( const char* label, i32* v, i32 value );
 
 /* widget - sliders */

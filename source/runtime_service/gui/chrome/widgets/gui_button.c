@@ -166,7 +166,8 @@ typedef struct
 {
     gui_item_state_t st;
     gui_rect_t       box;                 /* CHECKBOX_SZ indicator box (paint the mark/disc here) */
-    f32              label_x, label_w;    /* trailing label placement */
+    bool             show_label;          /* false when the ambient field hid / skipped the label  */
+    f32              label_x, label_w;    /* trailing label placement (valid only when show_label) */
     f32              label_y;             /* label baseline (text_center_y of the row) */
 } checkable_cell_t;
 
@@ -179,11 +180,32 @@ checkable_cell( gui_id_t id, const char* label )
        sides instead of hugging it flush left and at the label's last glyph. */
     f32 side_pad = ( WIDGET_H - CHECKBOX_SZ ) * 0.5f;
 
+    /* The label is governed by the ambient field like every other widget: hidden (field.hide),
+       skipped (skip_label), or empty ("##id") => box only, and the whole (box-sized) cell is the
+       hit.  This is the checkbox's body-hit form: no field split, no trailing label. */
+    gui_field_t fld  = field_effective();
+    bool        skip = field_skip_take();   /* always consume the one-shot, even when hidden */
+    bool        show = !fld.hide && !skip && label_width( label ) > 0.0f;
+
+    checkable_cell_t c;
+    c.show_label = show;
+
+    if ( !show )
+    {
+        gui_rect_t cell = cell_next_w( 2.0f * side_pad + CHECKBOX_SZ, WIDGET_H );
+        f32        by   = rect_align( cell, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
+        c.st      = item_state( id, cell, ITEM_BUTTON );   /* box-sized cell IS the hit */
+        c.box     = ( gui_rect_t ){ cell.x + side_pad, by, CHECKBOX_SZ, CHECKBOX_SZ };
+        c.label_x = c.label_w = 0.0f;
+        c.label_y = text_center_y( cell.y, cell.h );
+        return c;
+    }
+
     /* Natural width = pad + box + gap + label + pad, so a same_line control shrinks to fit.
        Under a field split the cell must NOT shrink: the split resolves its label + control tracks
        over the cell, so a hugged cell collapses the control track to the CHECKBOX_SZ floor and the
        nav/hit rect shrinks to the bare box instead of spanning the field like input/slider rows. */
-    bool       split_on = ( lf()->mod.field_side != 0 );
+    bool       split_on = ( fld.side != GUI_LABEL_NONE );
     gui_rect_t r  = cell_next_w( split_on ? -1.0f
                                                  : 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD
                                                        + label_width( label ),
@@ -194,19 +216,22 @@ checkable_cell( gui_id_t id, const char* label )
        label trailing it.  The box only needs CHECKBOX_SZ of the control track.
 
        Resolved BEFORE item_state so the hit/nav rect can match input_text / slider_float: those
-       route through draw_field_label, which hands item_state the control track alone, starting
+       route their label through field_row, which hands item_state the control track alone, starting
        after the label gutter.  Handing item_state the full (label-gutter-including, left-seated)
        cell here instead would put this widget's nav rect at a different X than every other field in
        the same form -- e.g. a checkbox at column 0 next to input/slider fields starting at column 90 --
        so directional nav (which keys off cross-axis overlap) would treat them as different columns. */
-    checkable_cell_t c;
-    gui_rect_t       control;
-    f32              bx;
-    bool             split = cell_split_field( r, CHECKBOX_SZ, &c.label_x, &c.label_w, &control );
+    gui_rect_t control, label_r;
+    f32        bx;
 
-    if ( split )
+    if ( split_on )
     {
-        bx = control.x;
+        field_geom_split( r, (gui_label_side_t)fld.side, fld.control > 0.0f ? fld.control : 1.0f,
+                          fld.label > 0.0f ? fld.label : label_width( label ),
+                          CHECKBOX_SZ, WIDGET_PAD, &label_r, &control );
+        bx        = control.x;
+        c.label_x = label_r.x;
+        c.label_w = label_r.w;
     }
     else
     {
@@ -215,7 +240,7 @@ checkable_cell( gui_id_t id, const char* label )
         c.label_w  = ( r.x + r.w - side_pad ) - c.label_x;  /* trails to the cell's right edge      */
     }
 
-    c.st      = item_state( id, split ? control : r, ITEM_BUTTON );
+    c.st      = item_state( id, split_on ? control : r, ITEM_BUTTON );
     f32 by    = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
     c.box     = ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ };
     c.label_y = text_center_y( r.y, r.h );
@@ -223,13 +248,14 @@ checkable_cell( gui_id_t id, const char* label )
 }
 
 /*==============================================================================================
-    The bare checkbox control, then the labeled composition over it.
+    checkbox = ONE widget: the indicator box plus its own label, the label governed by the ambient
+    field (aligned column under a form / field_split, trailing otherwise, or dropped entirely when
+    hidden / skipped).  There is no separate "bare" or "_label" checkbox -- checkable_cell above
+    resolves whichever form the field asks for, and the body is the hit (the label click-target is
+    intrinsic to a checkbox, unlike slider / input where the label is passive).
 
-    checkbox_face is the single-widget PAINT (indicator box + border + check mark), shared so the
-    bare control and the labeled convenience cannot drift.  gui_checkbox_bare is the control ALONE --
-    one widget, no label, its cell taken from flow or next_item_rect.  gui_checkbox is the
-    convenience: the SAME control plus a SEPARATE label emission, no longer one welded body (the label
-    is its own draw, the way slider_float / input_text already emit theirs via draw_field_label).
+    checkbox_face is the single-widget PAINT (indicator box + border + check mark), factored so a
+    kit cloning the widget swaps only this and keeps the placement / interaction recipe.
 ==============================================================================================*/
 
 static void
@@ -242,32 +268,17 @@ checkbox_face( gui_rect_t box, gui_item_state_t st, bool on )
 }
 
 bool
-gui_checkbox_bare( const char* id_str, bool* v )
-{
-    gui_id_t   id   = item_id( id_str );
-    gui_rect_t cell = cell_next_w( CHECKBOX_SZ, WIDGET_H );   /* flow or next_item_rect */
-    f32        by   = rect_align( cell, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
-    gui_rect_t box  = { cell.x, by, CHECKBOX_SZ, CHECKBOX_SZ };
-
-    gui_item_state_t st = item_state( id, box, ITEM_BUTTON );
-    checkbox_face( box, st, *v );
-    if ( st.clicked ) { *v = !( *v ); redraw_request(); }
-    return st.clicked;
-}
-
-bool
 gui_checkbox( const char* label, bool* v )
 {
     gui_id_t         id = item_id( label );
     checkable_cell_t c  = checkable_cell( id, label );
 
-    /* the bare control's face on the placed box ... */
     checkbox_face( c.box, c.st, *v );
 
-    /* ... and the label emitted SEPARATELY -- plainly, no ellipsis (markers still stripped); a label
+    /* The label, when the field kept it -- plainly, no ellipsis (markers still stripped); a label
        too wide for its track overflows and is bounded by the window clip, matching text() and the
        input widgets. */
-    draw_label( c.label_x, c.label_y, COL_TEXT, label );
+    if ( c.show_label ) draw_label( c.label_x, c.label_y, COL_TEXT, label );
 
     bool changed = false;
     if ( c.st.clicked )
@@ -317,7 +328,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
     if ( on )
         draw_push_circle_filled( cx, cy, rad - CHECK_PAD, segs, COL_CHECK_MARK );
 
-    draw_label_fit( c.label_x, c.label_y, COL_TEXT, label, c.label_w );
+    if ( c.show_label ) draw_label_fit( c.label_x, c.label_y, COL_TEXT, label, c.label_w );
 
     bool changed = false;
     if ( c.st.clicked && v && *v != value )

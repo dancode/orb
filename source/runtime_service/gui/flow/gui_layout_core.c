@@ -1118,6 +1118,35 @@ static gui_field_t s_field;
 void         gui_field_set( const gui_field_t* f ) { s_field = f ? *f : ( gui_field_t ){ 0 }; }
 gui_field_t* gui_field_get( void )                 { return &s_field; }
 
+/* skip_label -- the one-shot that drops the ambient label for the NEXT widget only (labels stay on
+   globally).  The mirror of field.hide's global toggle; armed like next_item_rect / next_item_align.
+   field_row consumes it (field_skip_take) whether or not it would have drawn, so a skip never leaks
+   to the following widget. */
+static bool s_field_skip;
+
+void gui_skip_label ( void ) { s_field_skip = true; }
+bool field_skip_take( void ) { bool s = s_field_skip; s_field_skip = false; return s; }
+
+/* The effective field for the row now emitting.  An explicit per-region split (gui_form /
+   field_split, carried on mod) OVERRIDES the ambient global default -- so every existing form
+   keeps aligning through the mod path while new code sets the ambient once with field_set.  hide
+   and align have no mod form, so they always come from the ambient.  This is the one bridge that
+   lets a converted widget (field_row) and an un-converted one (draw_field_label, mod-only) resolve
+   the same label geometry inside one form. */
+gui_field_t
+field_effective( void )
+{
+    gui_field_t     e = s_field;
+    layout_frame_t* f = lf();
+    if ( f->mod.field_side != GUI_LABEL_NONE )
+    {
+        e.side    = f->mod.field_side;
+        e.label   = f->mod.field_label;
+        e.control = f->mod.field_control;
+    }
+    return e;
+}
+
 /* Pure two-track geometry for a labeled row (see gui_flow.h).  Shares layout_resolve_tracks --
    the same resolver columns use -- so a field split obeys the overloaded unit rule; the NONE
    (trailing) branch is the default-label math cell_split_field's caller once owned. */

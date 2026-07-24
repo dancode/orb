@@ -123,32 +123,36 @@ draw_field_label( gui_rect_t row, const char* label, f32 min_control_w, u32 labe
     return control;
 }
 
-/* The caption "pair" emitter -- the composition seam a labeled (_label) value widget wraps its
-   bare control in.  Reads the ambient gui_field_t (gui_field_get), consumes one WIDGET_H row
-   cell, paints the label into its track, and arms next_item_rect with the control track so the
-   FOLLOWING bare control fills it and keeps the hit -- the label is passive text.  When labels
-   are hidden or the label is empty ("##id") it consumes nothing and returns, leaving the
-   control to fill its own full cell: the master on/off costs the bare call site nothing.
+/* The caption label seam -- the ONE place a labeled value widget routes its own label through, so
+   there is no second "_label" widget set: the label param a widget already carries becomes the
+   label, and the ambient gui_field_t (gui_field_get) decides whether and where it renders.  Reads
+   the ambient, consumes one WIDGET_H row cell, paints the label into its track, and arms
+   next_item_rect with the control track so the widget's own cell_next fills it and keeps the hit --
+   the label is passive text.  A widget calls it right before taking its cell:
 
-       void gui_slider_float_label( const char* label, f32* v, f32 lo, f32 hi )
-       { field_row( label ); gui_slider_float( v, lo, hi ); }
+       bool gui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
+       { field_row( label ); ... id = item_id(label); cell = cell_next(WIDGET_H); ... }
 
-   The geometry half (field_geom_split) lives with the composer in flow; this owns the PAINT and
-   the pen, the same division draw_field_label / cell_split_field keep. */
+   It emits nothing (consumes no cell, arms nothing -- the widget's cell_next then returns a full
+   cell) in three cases, so one call handles labeled AND bare: field.hide (the master property-panel
+   toggle), skip_label() armed for this one widget, or an empty ("##id") label.  The geometry half
+   (field_geom_split) lives with the composer in flow; this owns the PAINT and the pen, the same
+   division draw_field_label / cell_split_field keep. */
 void
 field_row( const char* label )
 {
-    gui_field_t* fld   = gui_field_get();
-    f32          vis_w = label_width( label );
-    if ( fld->hide || vis_w == 0.0f ) return;   /* no label: the bare control fills its own cell */
+    gui_field_t fld   = field_effective();   /* mod split (gui_form) overrides the ambient default */
+    f32         vis_w = label_width( label );
+    bool        skip  = field_skip_take();    /* always consume the one-shot, even when hidden */
+    if ( fld.hide || skip || vis_w == 0.0f ) return;   /* bare: control fills its cell */
 
     gui_rect_t cell = cell_next( WIDGET_H );
 
     /* Natural label track = the measured width; an explicit field.label (LEFT/RIGHT column) wins. */
-    f32 label_track = ( fld->side != GUI_LABEL_NONE && fld->label > 0.0f ) ? fld->label : vis_w;
+    f32 label_track = ( fld.side != GUI_LABEL_NONE && fld.label > 0.0f ) ? fld.label : vis_w;
 
     gui_rect_t label_r, control_r;
-    field_geom_split( cell, (gui_label_side_t)fld->side, fld->control > 0.0f ? fld->control : 1.0f,
+    field_geom_split( cell, (gui_label_side_t)fld.side, fld.control > 0.0f ? fld.control : 1.0f,
                       label_track, WIDGET_MIN_W, WIDGET_PAD, &label_r, &control_r );
 
     draw_label_fit( label_r.x, text_center_y( cell.y, cell.h ), COL_TEXT, label, label_r.w );
