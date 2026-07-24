@@ -183,9 +183,9 @@ checkable_cell( gui_id_t id, const char* label )
     /* The label is governed by the ambient field like every other widget: hidden (field.hide),
        skipped (skip_label), or empty ("##id") => box only, and the whole (box-sized) cell is the
        hit.  This is the checkbox's body-hit form: no field split, no trailing label. */
-    gui_field_t fld  = field_effective();
-    bool        skip = field_skip_take();   /* always consume the one-shot, even when hidden */
-    bool        show = !fld.hide && !skip && label_width( label ) > 0.0f;
+    gui_field_t* fld  = gui_field_get();    /* the one field authority (set-once, like a style) */
+    bool         skip = field_skip_take();   /* always consume the one-shot, even when hidden */
+    bool         show = !fld->hide && !skip && label_width( label ) > 0.0f;
 
     checkable_cell_t c;
     c.show_label = show;
@@ -205,7 +205,7 @@ checkable_cell( gui_id_t id, const char* label )
        Under a field split the cell must NOT shrink: the split resolves its label + control tracks
        over the cell, so a hugged cell collapses the control track to the CHECKBOX_SZ floor and the
        nav/hit rect shrinks to the bare box instead of spanning the field like input/slider rows. */
-    bool       split_on = ( fld.side != GUI_LABEL_NONE );
+    bool       split_on = ( fld->side != GUI_LABEL_NONE );
     gui_rect_t r  = cell_next_w( split_on ? -1.0f
                                                  : 2.0f * side_pad + CHECKBOX_SZ + WIDGET_PAD
                                                        + label_width( label ),
@@ -226,8 +226,8 @@ checkable_cell( gui_id_t id, const char* label )
 
     if ( split_on )
     {
-        field_geom_split( r, (gui_label_side_t)fld.side, fld.control > 0.0f ? fld.control : 1.0f,
-                          fld.label > 0.0f ? fld.label : label_width( label ),
+        field_geom_split( r, (gui_label_side_t)fld->side, fld->control > 0.0f ? fld->control : 1.0f,
+                          fld->label > 0.0f ? fld->label : label_width( label ),
                           CHECKBOX_SZ, WIDGET_PAD, &label_r, &control );
         bx        = control.x;
         c.label_x = label_r.x;

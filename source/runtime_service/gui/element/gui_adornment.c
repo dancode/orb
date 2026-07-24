@@ -99,18 +99,18 @@ f32  label_natural_w( const char* s )
 void
 field_row( const char* label )
 {
-    gui_field_t fld   = field_effective();   /* mod split (gui_form) overrides the ambient default */
-    f32         vis_w = label_width( label );
-    bool        skip  = field_skip_take();    /* always consume the one-shot, even when hidden */
-    if ( fld.hide || skip || vis_w == 0.0f ) return;   /* bare: control fills its cell */
+    gui_field_t* fld   = gui_field_get();   /* the one field authority (set-once, like a style) */
+    f32          vis_w = label_width( label );
+    bool         skip  = field_skip_take();  /* always consume the one-shot, even when hidden */
+    if ( fld->hide || skip || vis_w == 0.0f ) return;   /* bare: control fills its cell */
 
     gui_rect_t cell = cell_next( WIDGET_H );
 
     /* Natural label track = the measured width; an explicit field.label (LEFT/RIGHT column) wins. */
-    f32 label_track = ( fld.side != GUI_LABEL_NONE && fld.label > 0.0f ) ? fld.label : vis_w;
+    f32 label_track = ( fld->side != GUI_LABEL_NONE && fld->label > 0.0f ) ? fld->label : vis_w;
 
     gui_rect_t label_r, control_r;
-    field_geom_split( cell, (gui_label_side_t)fld.side, fld.control > 0.0f ? fld.control : 1.0f,
+    field_geom_split( cell, (gui_label_side_t)fld->side, fld->control > 0.0f ? fld->control : 1.0f,
                       label_track, WIDGET_MIN_W, WIDGET_PAD, &label_r, &control_r );
 
     draw_label_fit( label_r.x, text_center_y( cell.y, cell.h ), COL_TEXT, label, label_r.w );

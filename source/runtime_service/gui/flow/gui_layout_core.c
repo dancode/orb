@@ -559,19 +559,14 @@ gui_pop_layout_state( void )
 }
 
 /*============================================================================================*/
-/* Reset the orthogonal modifiers: gaps back to the theme, align to LEFT | TOP, and the field split
-   back to the style default -- FIELD_LABEL_W > 0 seeds a fixed left label column for every region so
-   forms align window-wide with no per-block call; 0 leaves it off (each label trails at its own
-   width).  A local field_split / field_label_* still overrides within its region. */
+/* Reset the orthogonal modifiers: gaps back to the theme, align to LEFT | TOP.  The field split is
+   no longer a per-region modifier -- it lives in the ambient gui_field_t (set once via field_set /
+   form / field_split, persisting like a style), so a region open no longer clears it. */
 
 static void
 layout_modifiers_reset( layout_frame_t* f )
 {
-    f32 lw = FIELD_LABEL_W;
-    f->mod = ( layout_mod_t ){ .gap_x = WIDGET_GAP, .gap_y = WIDGET_GAP,
-                               .field_side    = ( lw > 0.0f ) ? (u8)GUI_LABEL_LEFT : 0u,
-                               .field_label   = lw,
-                               .field_control = 1.0f };
+    f->mod = ( layout_mod_t ){ .gap_x = WIDGET_GAP, .gap_y = WIDGET_GAP };
 }
 
 /*============================================================================================*/
@@ -1074,25 +1069,6 @@ static bool s_field_skip;
 
 void gui_skip_label ( void ) { s_field_skip = true; }
 bool field_skip_take( void ) { bool s = s_field_skip; s_field_skip = false; return s; }
-
-/* The effective field for the row now emitting.  An explicit per-region split (gui_form /
-   field_split, carried on mod) OVERRIDES the ambient global default -- so a form set the old way
-   still aligns through the mod path while new code sets the ambient once with field_set.  hide
-   and align have no mod form, so they always come from the ambient.  Every labeled widget resolves
-   its label geometry through this, so mod and ambient forms lay out identically. */
-gui_field_t
-field_effective( void )
-{
-    gui_field_t     e = s_field;
-    layout_frame_t* f = lf();
-    if ( f->mod.field_side != GUI_LABEL_NONE )
-    {
-        e.side    = f->mod.field_side;
-        e.label   = f->mod.field_label;
-        e.control = f->mod.field_control;
-    }
-    return e;
-}
 
 /* Pure two-track geometry for a labeled row (see gui_flow.h).  Shares layout_resolve_tracks --
    the same resolver columns use -- so a field split obeys the overloaded unit rule; the NONE

@@ -64,7 +64,6 @@ u32 style_col( gui_col_t slot );
 #define WIN_TITLE_H   style_var( GUI_VAR_WIN_TITLE_H   )
 #define CHECKBOX_SZ   style_var( GUI_VAR_CHECKBOX_SZ   )
 #define SLIDER_KNOB_W style_var( GUI_VAR_SLIDER_KNOB_W )
-#define FIELD_LABEL_W style_var( GUI_VAR_FIELD_LABEL_W )
 
 /* 2. SKIN -- paint-only corner-radius categories + insets (see gui_style.c for the story). */
 #define ROUND_WIN        style_var( GUI_VAR_WIN_ROUNDING    )

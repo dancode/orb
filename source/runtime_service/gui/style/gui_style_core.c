@@ -46,7 +46,6 @@ style_var_base( gui_style_var_t v )
         case GUI_VAR_WIN_TITLE_H:     return (f32)s_style.win_title_h;
         case GUI_VAR_CHECKBOX_SZ:     return (f32)s_style.checkbox_sz;
         case GUI_VAR_SLIDER_KNOB_W:   return (f32)s_style.slider_knob_w;
-        case GUI_VAR_FIELD_LABEL_W:   return (f32)s_style.field_label_w;
 
         /* 2. SKIN */
         case GUI_VAR_WIN_ROUNDING:    return (f32)s_style.win_rounding;

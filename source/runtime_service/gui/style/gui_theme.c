@@ -421,7 +421,6 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
     s_style.win_title_h     = (u8)( (f32)s_style_base.win_title_h     * scale );
     s_style.checkbox_sz     = (u8)( (f32)s_style_base.checkbox_sz     * scale );
     s_style.slider_knob_w   = (u8)( (f32)s_style_base.slider_knob_w   * scale );
-    s_style.field_label_w   = (u8)( (f32)s_style_base.field_label_w   * scale );
 
     /* 2. SKIN */
     s_style.win_rounding     = (u8)( (f32)s_style_base.win_rounding     * scale );
@@ -487,7 +486,6 @@ layout_compute( u32 em, u32 char_h, u32 line_h )
         s_style.win_title_h   = metric_quantize( s_style.win_title_h,   q );
         s_style.checkbox_sz   = metric_quantize( s_style.checkbox_sz,   q );
         s_style.slider_knob_w = metric_quantize( s_style.slider_knob_w, q );
-        s_style.field_label_w = metric_quantize( s_style.field_label_w, q );
 
         /* Ramp steps land on the same lattice: rows ceil (keep the font floor), pads and gaps
            snap to nearest.  The whole ramp retunes together when the quantum or font changes. */

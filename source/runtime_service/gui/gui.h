@@ -305,7 +305,6 @@ typedef struct gui_style_t
     u8 win_title_h;        // window title bar height -- the body starts below it
     u8 checkbox_sz;        // checkbox indicator side -- feeds the checkbox's natural width
     u8 slider_knob_w;      // slider knob width AND the scrollbar gutter thickness regions reserve
-    u8 field_label_w;      // default label-track width for forms (0 = off: each label trails at its own width)
 
     /* 2. SKIN -- paint-only: never sizes a cell */
     u8 win_rounding;       // corner radius: windows / children / popups
@@ -407,7 +406,6 @@ typedef enum
     GUI_VAR_WIN_TITLE_H,    // window title bar height -- the body starts below it
     GUI_VAR_CHECKBOX_SZ,    // checkbox / radio indicator side -- feeds the natural width
     GUI_VAR_SLIDER_KNOB_W,  // slider knob width + the scrollbar gutter thickness
-    GUI_VAR_FIELD_LABEL_W,  // default form label-track width (0 = off: labels trail at their own width)
 
     /* 2. SKIN -- paint-only */
 
@@ -643,12 +641,11 @@ typedef enum
 
 /*==============================================================================================
     GUI_FLOW -- field label side: where a labeled value widget (input_text / slider_float / checkbox) puts
-    its label when a field split is active (gui()->field_split / field_label_left).  The label and
-    control are two tracks resolved across the widget's cell with the same overloaded unit as
-    columns; `side` only decides which track sits on which edge.  NONE is the per-region default
-    unless the style sets GUI_VAR_FIELD_LABEL_W (> 0), which seeds a fixed left label column for
-    every region so forms align window-wide; a local field_split / field_label_* still overrides it.
-    With no split active the label trails the control at its natural width on the right.
+    its label when a field split is active (gui()->field_split / field_label_left, or the ambient
+    gui_field_t).  The label and control are two tracks resolved across the widget's cell with the
+    same overloaded unit as columns; `side` only decides which track sits on which edge.  NONE (the
+    default) trails the label at its natural width on the right; the field lives in the ambient
+    gui_field_t and persists like a style until changed.
 ==============================================================================================*/
 
 typedef enum

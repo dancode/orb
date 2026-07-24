@@ -140,16 +140,17 @@ gui_stack_same_line( f32 spacing )
    single call.  `side` places the label on the left or right; `label` / `control` are two sizes in
    the same overloaded unit as columns (>1 px, 1 fill, (0,1) fraction, 0 natural), so field_split(
    LEFT, 0.4f, 0.6f ) is a 40/60 split and field_split( LEFT, 120, 1 ) is a 120px label + fill control.
-   Pass GUI_LABEL_NONE to turn it off (back to the trailing natural-width label).  Set once on a
-   region; it persists like the row template until changed, and is resolved against whatever cell
-   each widget is handed -- a full row or a single column. */
+   Pass GUI_LABEL_NONE to turn it off (back to the trailing natural-width label).  Sugar over the
+   ambient gui_field_t (field_set): it writes the one field authority, so -- like a style -- it
+   persists until changed and is not reset per region (hide / align are left untouched).  Resolved
+   against whatever cell each widget is handed, a full row or a single column. */
 void
 gui_field_split( gui_label_side_t side, f32 label, f32 control )
 {
-    layout_frame_t* f   = lf();
-    f->mod.field_side    = (u8)side;
-    f->mod.field_label   = label;
-    f->mod.field_control = control;
+    gui_field_t* f = gui_field_get();
+    f->side    = (u8)side;
+    f->label   = label;
+    f->control = control;
 }
 
 /* field_split sugar -- a fixed-width label column with a flex control filling the rest, on the

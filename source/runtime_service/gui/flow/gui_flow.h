@@ -64,18 +64,14 @@ typedef struct
 
 } layout_tmpl_t;
 
-/* Orthogonal modifiers -- gaps, alignment, field split.  align (gui_align_t flags) is where a
-   widget's natural-sized content sits in its cell; 0 = LEFT | TOP.  The field split
-   (field_split / field_label_left) makes a labeled value widget split its cell into a label
-   track + a control track, resolved with the column unit rule. */
+/* Orthogonal modifiers -- gaps and alignment.  align (gui_align_t flags) is where a widget's
+   natural-sized content sits in its cell; 0 = LEFT | TOP.  (The field split moved out to the
+   ambient gui_field_t -- it is a set-once authority like a style, not a per-region modifier.) */
 
 typedef struct
 {
     f32 gap_x, gap_y;               // inter-cell spacing request; 0 = live theme default (mod_gap_x/_y)
     u8  align;                      // gui_align_t flags
-    u8  field_side;                 // gui_label_side_t: 0 off (label trails), 1 left, 2 right
-    f32 field_label;                // label track size   (overloaded unit)
-    f32 field_control;              // control track size (overloaded unit)
 
 } layout_mod_t;
 
@@ -265,10 +261,6 @@ void field_geom_split( gui_rect_t cell, gui_label_side_t side, f32 control_u, f3
 
 /* Consume the skip_label one-shot (returns true once if armed) -- field_row's escape hatch. */
 bool field_skip_take( void );
-
-/* The field the row now emitting resolves against: a per-region mod split (gui_form / field_split)
-   overrides the ambient gui_field_t; else the ambient.  The bridge field_row reads. */
-gui_field_t field_effective( void );
 
 void extent_track   ( layout_frame_t* f, f32 x, f32 y );
 f32  layout_next_y  ( layout_frame_t* f );
