@@ -1108,5 +1108,55 @@ cell_split_field( gui_rect_t cell, f32 min_control_w, f32* out_label_x, f32* out
     return true;
 }
 
+/*============================================================================================*/
+/* The ambient label ("pair") layout -- the shared authority the _label widget variants read
+   (gui.h, gui_field_t).  A flow static, set once and reused: field_row (element) resolves each
+   labeled row against it, so all forms align without re-declaring the split per widget.  Zeroed
+   at startup = the built-in default (labels shown, trailing at their natural width). */
+static gui_field_t s_field;
+
+void         gui_field_set( const gui_field_t* f ) { s_field = f ? *f : ( gui_field_t ){ 0 }; }
+gui_field_t* gui_field_get( void )                 { return &s_field; }
+
+/* Pure two-track geometry for a labeled row (see gui_flow.h).  Shares layout_resolve_tracks --
+   the same resolver columns use -- so a field split obeys the overloaded unit rule; the NONE
+   (trailing) branch is the default-label math cell_split_field's caller once owned. */
+void
+field_geom_split( gui_rect_t cell, gui_label_side_t side, f32 control_u, f32 label_w,
+                  f32 min_ctrl, f32 pad, gui_rect_t* out_label, gui_rect_t* out_control )
+{
+    if ( side == GUI_LABEL_NONE )   /* trailing: control on the left, label hugs the right */
+    {
+        f32 cw = cell.w - label_w - pad;
+        if ( cw < min_ctrl ) cw = min_ctrl;
+        *out_control = ( gui_rect_t ){ cell.x, cell.y, cw, cell.h };
+        f32 lx = cell.x + cw + pad;
+        *out_label  = ( gui_rect_t ){ lx, cell.y, ( cell.x + cell.w ) - lx, cell.h };
+        return;
+    }
+
+    /* Order the tracks by side so the resolver lays them left-to-right correctly. */
+    f32 tracks[ 2 ];
+    u32 lab_i, ctl_i;
+    if ( side == GUI_LABEL_LEFT ) { tracks[ 0 ] = label_w;   tracks[ 1 ] = control_u; lab_i = 0; ctl_i = 1; }
+    else                          { tracks[ 0 ] = control_u; tracks[ 1 ] = label_w;   ctl_i = 0; lab_i = 1; }
+
+    f32 pos[ 2 ], size[ 2 ];
+    layout_resolve_tracks( tracks, 2, cell.x, cell.w, pad, pos, size );
+
+    f32 cw = size[ ctl_i ];
+    if ( cw < min_ctrl ) cw = min_ctrl;
+
+    f32 lx = pos[ lab_i ];
+    if ( side == GUI_LABEL_RIGHT )   /* re-anchor past the floored control (as cell_split_field) */
+    {
+        f32 min_lx = pos[ ctl_i ] + cw + pad;
+        if ( lx < min_lx ) lx = min_lx;
+    }
+
+    *out_control = ( gui_rect_t ){ pos[ ctl_i ], cell.y, cw,          cell.h };
+    *out_label   = ( gui_rect_t ){ lx,           cell.y, size[ lab_i ], cell.h };
+}
+
 // clang-format on
 /*============================================================================================*/

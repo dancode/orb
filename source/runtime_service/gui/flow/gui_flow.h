@@ -259,6 +259,16 @@ void       cell_reach ( f32 right_x );             /* stretch the content high-w
 bool cell_split_field( gui_rect_t cell, f32 min_control_w, f32* out_label_x,
                        f32* out_label_w, gui_rect_t* out_control );
 
+/* Pure geometry for one labeled ("pair") row: split `cell` into a label rect and a control
+   rect for the given side / track units.  NONE lays the control across the cell with the label
+   trailing at label_w; LEFT / RIGHT lay two resolved tracks (control floored at min_ctrl,
+   RIGHT re-anchored so a squeezed row overflows instead of the label crawling under the
+   control).  The caller measured label_w and paints -- flow never colors.  Drives field_row
+   (element) from the ambient gui_field_t (gui_field_get); cell_split_field is its mod-driven
+   sibling. */
+void field_geom_split( gui_rect_t cell, gui_label_side_t side, f32 control_u, f32 label_w,
+                       f32 min_ctrl, f32 pad, gui_rect_t* out_label, gui_rect_t* out_control );
+
 void extent_track   ( layout_frame_t* f, f32 x, f32 y );
 f32  layout_next_y  ( layout_frame_t* f );
 void layout_pen_jump( layout_frame_t* f, f32 y );

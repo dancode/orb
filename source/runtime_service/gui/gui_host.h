@@ -310,6 +310,12 @@ void gui_field_split( gui_label_side_t side, f32 label, f32 control );
 void gui_field_label_left( f32 width );
 void gui_field_label_right( f32 width );
 
+/* the ambient label ("pair") layout -- set once, every _label widget aligns to it (gui_field_t).
+   field_row is the pair emitter a labeled variant wraps its bare control in. */
+void         gui_field_set( const gui_field_t* f );
+gui_field_t* gui_field_get( void );
+void         field_row( const char* label );
+
 /* layout - grid */
 void gui_grid( gui_layout_t desc );
 void gui_grid_cells( u32 ncols, u32 nrows );

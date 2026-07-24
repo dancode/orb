@@ -940,6 +940,12 @@ typedef struct gui_api_s
                          out as an aligned "Label  [control]" form from a single call.
        field_label_left() / field_label_right() -- field_split sugar: a fixed-width label column on
                          the left / right with a flex control filling the rest (0 = off).
+       field_set() / field_get() -- the ambient label ("pair") layout (gui_field_t): the shared
+                         authority every _label widget variant reads, so all forms align from one
+                         set.  field_set(NULL) restores the default; field_get returns the live
+                         struct to poke a field (e.g. .hide to drop every label at once).
+       field_row()  -- the caption-pair emitter a labeled variant wraps a bare control in: paints
+                         the label per the ambient field and arms the next cell for the control.
 
        Grid mode -- cols x rows partition a bounded box (the region content from the pen to its
        bottom) into a fixed matrix, both axes resolved up front; widgets fill cells row-major and
@@ -975,6 +981,9 @@ typedef struct gui_api_s
     void ( *field_split       )( gui_label_side_t side, f32 label, f32 control );
     void ( *field_label_left  )( f32 width );
     void ( *field_label_right )( f32 width );
+    void         ( *field_set )( const gui_field_t* f );
+    gui_field_t* ( *field_get )( void );
+    void         ( *field_row )( const char* label );
     void ( *grid              )( gui_layout_t desc );
     void ( *grid_cells        )( u32 ncols, u32 nrows );
     void ( *bar               )( void );

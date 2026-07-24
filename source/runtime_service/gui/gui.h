@@ -660,6 +660,34 @@ typedef enum
 } gui_label_side_t;
 
 /*==============================================================================================
+    GUI_FLOW -- gui_field_t: the ambient label ("pair") layout, the shared authority every
+    labeled widget reads.  A labeled widget is a bare control plus a label composed as a pair;
+    this struct owns the LABEL half so every paired row aligns the same way -- set it once
+    (gui()->field_set) and all the _label variants line up.  It is deliberately kept small and
+    apart from the color palette: this is layout-theme material (like the four spacing metrics),
+    not skin, so a kit can swap label geometry without touching a single color.
+
+    Zero-initialized => the built-in default: labels shown, trailing at their own natural width
+    on the right (GUI_LABEL_NONE), no forced track, left-aligned in their space.  `hide` is the
+    master toggle for property panels -- flip it once and every _label row drops its label and
+    the control spans the whole cell, with no per-call parameter riding along.
+
+    label / control are two sizes in the same overloaded unit as columns (> 1 px, == 1 fill,
+    (0,1) fraction, 0 natural), used only when side is LEFT / RIGHT: field_set{ .side=LEFT,
+    .label=120 } is a 120px label column + a flex control; { .side=LEFT, .label=0.35f } a 35/65
+    split.  In NONE (trailing) mode both are ignored and the label hugs the right at its width. */
+
+typedef struct gui_field_s
+{
+    f32  label;      // label track size when side is LEFT/RIGHT (overloaded unit; 0 = natural width)
+    f32  control;    // control track size (overloaded unit; 0 = fill the rest)
+    u8   side;       // gui_label_side_t: 0 trailing (label hugs right), 1 left column, 2 right column
+    u8   align;      // gui_align_t for the label text within its track (0 = LEFT | VCENTER)
+    bool hide;       // master toggle: true skips every label, the control spans the whole cell
+
+} gui_field_t;
+
+/*==============================================================================================
     GUI_CORE -- item flags
 
     A push-model of per-item behavior tweaks, the ImGui ItemFlags analogue.  Instead of widening
