@@ -472,6 +472,7 @@ f32  gui_button_width( const char* label );
 void gui_progress_bar( f32 fraction, const char* overlay );
 bool gui_arrow_button( const char* label, gui_dir_t dir );
 bool gui_checkbox( const char* label, bool* v );
+bool gui_checkbox_bare( const char* id_str, bool* v );
 bool gui_radio_button( const char* label, i32* v, i32 value );
 
 /* widget - sliders */

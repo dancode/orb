@@ -291,6 +291,25 @@ style_el_col( u8 role, u8 state )
     return gui_el_style()->col[ role ][ state ];   /* S1: the installed element style */
 }
 
+/* style_el_pad / style_el_gap -- the LAYOUT-STYLE metric twins of style_el_col, for the two spacing
+   floats the rect dispatcher applies (cell_next_w's inter-cell gap + the region / label pad).  A
+   push_style_var / scale_push override on the slot wins (detected as resolved != the unstacked base,
+   the same test style_el_col uses for colors); else the INSTALLED layout style (gui_el_style's pad /
+   gap, so a kit -- or a set-once layout style -- controls flow spacing, and zero means zero).  With
+   no override and no kit overwrite this equals style_var(slot) exactly, so default chrome is
+   unchanged.  (pad / gap / border_w / line_h are the layout-style group inside gui_el_style; the
+   colors stay separate lookup -- this is the seam the color-theme / layout-theme split falls on.) */
+static f32
+style_el_metric( gui_style_var_t slot, f32 el_value )
+{
+    f32 resolved = style_var( slot );
+    if ( resolved != style_var_base( slot ) ) return resolved;   /* transient stack override wins */
+    return el_value;                                             /* installed layout style (base) */
+}
+
+f32 style_el_pad( void ) { return style_el_metric( GUI_VAR_WIDGET_PAD, gui_el_style()->pad ); }
+f32 style_el_gap( void ) { return style_el_metric( GUI_VAR_WIDGET_GAP, gui_el_style()->gap ); }
+
 /* The COL_* color vocabulary (element-shaped reads through style_el_col + the chrome tokens
    on style_col) live in style/gui_style.h: the chrome unit paints with
    the same palette the core's paint helpers read. */

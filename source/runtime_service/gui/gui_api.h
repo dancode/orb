@@ -1607,6 +1607,7 @@ typedef struct gui_api_s
     bool ( *arrow_button )( const char* id_str, gui_dir_t dir );
 
     bool ( *checkbox    )( const char* label, bool* v );
+    bool ( *checkbox_bare )( const char* id_str, bool* v );   /* the control alone, no label */
 
     /* radio_button -- one option of a mutually-exclusive set: shows on while *v == value, a click
        sets *v = value.  Emit several against the same v (same_line between them for a row) to form

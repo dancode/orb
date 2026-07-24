@@ -38,6 +38,13 @@ extern const u8 g_gui_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ];
    With no override and no kit overwrite this equals style_col( slot ) exactly. */
 u32 style_el_col( u8 role, u8 state );
 
+/* style_el_pad / style_el_gap (gui_style_core.c) -- the layout-style spacing floats the rect
+   dispatcher applies, resolved installed-layout-style-as-base with the var stack (push_style_var /
+   scale_push) overriding: the metric twins of style_el_col.  WIDGET_PAD / WIDGET_GAP read through
+   these, so a kit's (or a set-once) gui_el_style pad / gap drives flow spacing and zero means zero. */
+f32 style_el_pad( void );
+f32 style_el_gap( void );
+
 /*==============================================================================================
     Style resolution + the vocabulary macros
 ==============================================================================================*/
@@ -50,8 +57,8 @@ u32 style_col( gui_col_t slot );
 
 /* 1. METRICS -- can move a rect */
 #define WIDGET_H      style_var( GUI_VAR_LINE_SIZE     )
-#define WIDGET_GAP    style_var( GUI_VAR_WIDGET_GAP    )
-#define WIDGET_PAD    style_var( GUI_VAR_WIDGET_PAD    )
+#define WIDGET_GAP    style_el_gap()   /* installed layout style (base) + var-stack override */
+#define WIDGET_PAD    style_el_pad()   /*   -- so a set-once / kit / zero layout style drives flow */
 #define WIDGET_MIN_W  style_var( GUI_VAR_MIN_CELL_W    )
 #define WIN_BORDER    style_var( GUI_VAR_WIN_BORDER    )
 #define WIN_TITLE_H   style_var( GUI_VAR_WIN_TITLE_H   )

@@ -222,23 +222,51 @@ checkable_cell( gui_id_t id, const char* label )
     return c;
 }
 
+/*==============================================================================================
+    The bare checkbox control, then the labeled composition over it.
+
+    checkbox_face is the single-widget PAINT (indicator box + border + check mark), shared so the
+    bare control and the labeled convenience cannot drift.  gui_checkbox_bare is the control ALONE --
+    one widget, no label, its cell taken from flow or next_item_rect.  gui_checkbox is the
+    convenience: the SAME control plus a SEPARATE label emission, no longer one welded body (the label
+    is its own draw, the way slider_float / input_text already emit theirs via draw_field_label).
+==============================================================================================*/
+
+static void
+checkbox_face( gui_rect_t box, gui_item_state_t st, bool on )
+{
+    draw_fill( box, col_item_bg( st ) );
+    draw_outline( box, WIN_BORDER, COL_BORDER );
+    /* Indicator: a 'v' tick (default), a filled disc, or an 'X' cross per GUI_VAR_CHECK_STYLE. */
+    if ( on ) draw_check_indicator( box, COL_CHECK_MARK );
+}
+
+bool
+gui_checkbox_bare( const char* id_str, bool* v )
+{
+    gui_id_t   id   = item_id( id_str );
+    gui_rect_t cell = cell_next_w( CHECKBOX_SZ, WIDGET_H );   /* flow or next_item_rect */
+    f32        by   = rect_align( cell, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
+    gui_rect_t box  = { cell.x, by, CHECKBOX_SZ, CHECKBOX_SZ };
+
+    gui_item_state_t st = item_state( id, box, ITEM_BUTTON );
+    checkbox_face( box, st, *v );
+    if ( st.clicked ) { *v = !( *v ); redraw_request(); }
+    return st.clicked;
+}
+
 bool
 gui_checkbox( const char* label, bool* v )
 {
     gui_id_t         id = item_id( label );
     checkable_cell_t c  = checkable_cell( id, label );
 
-    draw_fill( c.box, col_item_bg( c.st ) );
-    draw_outline( c.box, WIN_BORDER, COL_BORDER );
+    /* the bare control's face on the placed box ... */
+    checkbox_face( c.box, c.st, *v );
 
-    if ( *v )
-    {
-        /* Indicator: a 'v' tick (default), a filled disc, or an 'X' cross per GUI_VAR_CHECK_STYLE. */
-        draw_check_indicator( c.box, COL_CHECK_MARK );
-    }
-
-    /* Draw the label plainly -- no ellipsis (markers still stripped); a label too wide for its
-       track overflows and is bounded by the window clip, matching text() and the input widgets. */
+    /* ... and the label emitted SEPARATELY -- plainly, no ellipsis (markers still stripped); a label
+       too wide for its track overflows and is bounded by the window clip, matching text() and the
+       input widgets. */
     draw_label( c.label_x, c.label_y, COL_TEXT, label );
 
     bool changed = false;

@@ -384,6 +384,7 @@ const gui_api_t g_gui_api_struct =
     .progress_bar                       = gui_progress_bar,
     .arrow_button                       = gui_arrow_button,
     .checkbox                           = gui_checkbox,
+    .checkbox_bare                      = gui_checkbox_bare,
     .radio_button                       = gui_radio_button,
     .slider_float                       = gui_slider_float,
     .slider_float_step                  = gui_slider_float_step,
