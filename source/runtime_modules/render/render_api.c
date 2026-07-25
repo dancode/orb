@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     render_api.c -- render module wiring.
     Implements the render_api_t vtable struct and the mod_desc_t lifecycle descriptor.

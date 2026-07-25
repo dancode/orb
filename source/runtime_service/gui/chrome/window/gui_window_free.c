@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     runtime_service/gui/chrome/window/gui_window_free.c -- The free-float window: geometry + gesture
     resolution (window_begin_ex) and its public front doors (window_begin, viewport_shell).

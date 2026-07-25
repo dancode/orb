@@ -1,4 +1,4 @@
-﻿/*==============================================================================================
+/*==============================================================================================
 
     engine/ref/ref_host.h - Host-only reflection API: lifecycle, frames, registration, lookup,
     walkers, serialization, diagnostics, and tests. Includes ref.h.

@@ -1,4 +1,4 @@
-﻿/* engine/ref/ref_access.c - Type, field, attribute lookups and iteration.
+/* engine/ref/ref_access.c - Type, field, attribute lookups and iteration.
 
    ref_stricmp_eq: portable ASCII case-insensitive equality used to confirm hash-table
    matches. ref_hash_str is case-insensitive, so lookups by name must confirm with a

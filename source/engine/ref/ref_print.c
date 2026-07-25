@@ -1,4 +1,4 @@
-﻿/* engine/ref/ref_print.c - Diagnostics: type description strings and console dump.
+/* engine/ref/ref_print.c - Diagnostics: type description strings and console dump.
 
    These are debug/editor utilities -- not used in shipping builds. ref_field_describe
    reconstructs a C-style declaration string (e.g. "const vec3_t*") from packed mods.

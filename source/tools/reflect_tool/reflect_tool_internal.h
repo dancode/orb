@@ -1,4 +1,4 @@
-﻿#ifndef REFLECT_TOOL_INTERNAL_H
+#ifndef REFLECT_TOOL_INTERNAL_H
 #define REFLECT_TOOL_INTERNAL_H
 /*==============================================================================================
 

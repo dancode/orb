@@ -1,4 +1,4 @@
-﻿/* engine/ref/ref_serialize.c - Binary read/write gated on schema_hash.
+/* engine/ref/ref_serialize.c - Binary read/write gated on schema_hash.
 
    Save format: a 20-byte header followed by a raw sizeof(T) byte copy of the instance.
    Before writing, pointer slots are zeroed (runtime addresses have no meaning on reload)
