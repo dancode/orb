@@ -121,18 +121,23 @@ typedef struct
 
 typedef struct
 {
-    /* COORDINATE SPACES.  Every scalar below lives in exactly one of two spaces, and mixing
-       them in one formula is a bug (it splices the scroll offset into the result):
-         CANVAS -- scroll-biased screen coordinates: the content's position after the
-                   -scroll bias, sliding under the view as the region scrolls.  The pen,
-                   content column, and highwater are canvas values; so is every cell rect
-                   handed to a widget.
-         SCREEN -- fixed to the glass: outer, view, origin_*, band_bottom, parent_clip.
-       A width/height derived canvas-from-canvas (content_avail) or screen-from-screen
-       (view.w - pads) is scroll-free; anchoring a canvas point against a screen edge bakes
-       the live scroll into the number -- the multiline box once grew wider as its window
-       scrolled for exactly this reason.  When a rule needs both spaces, convert explicitly
-       through scroll->scroll_x/y. */
+    /* ANCHORS.  Every position below is a coordinate on the same glass -- what differs is what
+       it is anchored to, and each is tagged CANVAS or SCREEN where it is declared:
+         CANVAS -- content-anchored: the position after the -scroll bias, sliding under the view
+                   as the region scrolls.  The pen, content column, and highwater are canvas
+                   values; so is every cell rect handed to a widget (which is why a widget can
+                   draw and hit-test its cell with no conversion at all).
+         SCREEN -- frame-anchored: pinned to the glass.  outer, view, origin_*, band_bottom,
+                   parent_clip.
+       Crossing anchors to COMPARE is legal and routine (a pen against band_bottom asks "has
+       content reached the visible band end", and that is the intended question).  Adding a
+       scroll-free SIZE to either anchor is legal too (content_x + a view-derived width).  The
+       one illegal operation is SUBTRACTING two differently anchored positions to obtain a size
+       or extent: the live scroll lands in the result, so the number is right at scroll 0 and
+       wrong by exactly the scroll everywhere else -- the multiline box once grew wider as its
+       window scrolled for precisely this reason.  Both legitimate crossings live behind the
+       anchor seam in flow/gui_layout_core.c (canv_from_scr_*, content_extent_*); a bare
+       +/- scroll->scroll_x/y in a formula outside it is the bug, not the fix. */
 
     /* The PEN (content_x, pen_y; x has no independent motion -- a line always starts at
        content_x) is where the next item goes; the HIGHWATER (high_x, high_y) is the monotonic

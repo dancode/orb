@@ -434,11 +434,21 @@ is deliberate.
    region can hover or press inside a gutter or under the title bar -- the bars hit-test
    after pop restores the parent clip. Bar-over-widget arbitration is therefore structural,
    not an emission-order accident.
-4. **Two coordinate spaces; never mix them in one formula.** CANVAS values (pen, content
-   column, highwater, every cell rect) carry the -scroll bias; SCREEN values (`outer`,
-   `view`, `origin_*`, `band_bottom`, clips) do not. A width anchored canvas-point-to-screen-
-   edge bakes the live scroll offset into the result (a box that stretches as you scroll).
-   The space of every `layout_frame_t` field is tagged on the struct.
+4. **One glass space, two anchors; never subtract across them to get a size.** CANVAS values
+   (pen, content column, highwater, every cell rect) are content-anchored -- they carry the
+   -scroll bias and slide as the region scrolls. SCREEN values (`outer`, `view`, `origin_*`,
+   `band_bottom`, clips) are frame-anchored. Both are absolute positions on the same glass,
+   which is why a cell rect draws and hit-tests with no conversion, and why crossing anchors
+   to *compare* is correct and everywhere (pen vs `band_bottom` = "has content reached the
+   visible band end?"). Adding a scroll-free *size* to either anchor is fine too
+   (`content_x + ( view.w - pads )`). The single illegal operation is **subtracting two
+   differently anchored positions to obtain a size or extent** -- the live scroll offset lands
+   in the result, so it is right at scroll 0 and wrong by exactly the scroll after that (a box
+   that stretches as you scroll; a panel that measures short). Both legitimate crossings live
+   behind one seam in `flow/gui_layout_core.c`: `canv_from_scr_*` applies the bias (the pen
+   seed), `content_extent_x/y` cancels it (the pop measure, the split-panel measure). A bare
+   `+/- scroll_x/y` in a formula anywhere else is the bug, not the fix. The anchor of every
+   `layout_frame_t` field is tagged on the struct.
 5. **Passive rows size to the content column; interactive surfaces size to the view.** The
    column (`content_avail`) can legitimately run wider than the view when a sibling
    overflowed -- text rows may ride it (the bar overpaints and out-claims them). An opaque

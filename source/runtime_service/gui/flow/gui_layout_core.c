@@ -110,6 +110,64 @@ content_reach( layout_frame_t* f, f32 x, f32 y )
 
 /*==============================================================================================
 
+    Anchors -- the ONE crossing between content-anchored and frame-anchored positions.
+
+    Every position in a layout frame is a coordinate on the same glass; what differs is what it is
+    anchored to.  CONTENT-anchored values (content_x, pen_y, high_x/y, and every cell rect minted
+    from them) carry the -scroll bias, so they slide as the region scrolls.  FRAME-anchored values
+    (outer, view, origin_x/y, band_bottom, clips) are pinned to the glass.
+
+    Crossing anchors to COMPARE is legal and routine -- both sides are glass positions, which is
+    exactly why a cell rect hit-tests against the view clip and draws with no conversion at all.
+    Adding a scroll-free SIZE to a position of either anchor is legal too (a wrap edge is
+    content_x + a view-derived width).  The one illegal operation is SUBTRACTING two differently
+    anchored positions to obtain a size or extent: the live scroll offset lands in the result, so
+    the number is right at scroll 0 and drifts by exactly the scroll everywhere else -- the
+    multiline box that grew wider as its window scrolled, the split panel that measured short.
+
+    That subtraction happens here and nowhere else.  Outside this seam, a bare +/- scroll_x/y
+    inside a formula is the bug, not the fix.
+
+==============================================================================================*/
+
+/* Frame-anchored -> content-anchored: where a fixed glass position lands once the region's scroll
+   has slid the content under it.  Seeding the pen and outlining the measured content are the only
+   crossings that need it. */
+
+static f32 canv_from_scr_x( const layout_frame_t* f, f32 x ) { return x - f->scroll->scroll_x; }
+static f32 canv_from_scr_y( const layout_frame_t* f, f32 y ) { return y - f->scroll->scroll_y; }
+
+/* Content-anchored -> frame-anchored: the inverse, answering "where would this content sit with
+   the region unscrolled".  Only the extent measure below needs it. */
+
+static f32 scr_from_canv_x( const layout_frame_t* f, f32 x ) { return x + f->scroll->scroll_x; }
+static f32 scr_from_canv_y( const layout_frame_t* f, f32 y ) { return y + f->scroll->scroll_y; }
+
+/* THE content measure: how far the highwater climbed from the unscrolled content origin -- the
+   region's true content size, independent of where it happens to be scrolled to.  Both readers go
+   through it (layout_pop_region for the scroll range + autosize, split_pop_panel for the panel
+   height it feeds back) rather than open-coding `high - origin`, which is a cross-anchor subtraction
+   that reads perfectly and under-measures by exactly the scroll offset.  Clamped at 0 so an empty
+   region measures 0 -- consumers use content <= 0 as the "never measured" premeasure sentinel.
+   The y face also drops anchor_bias, the presentation-only shift GUI_WIN_ANCHOR_BOTTOM gives the
+   block, so the measure stays the true content height. */
+
+static f32
+content_extent_x( const layout_frame_t* f )
+{
+    f32 w = scr_from_canv_x( f, f->high_x ) - f->origin_x;
+    return ( w > 0.0f ) ? w : 0.0f;
+}
+
+static f32
+content_extent_y( const layout_frame_t* f )
+{
+    f32 h = scr_from_canv_y( f, f->high_y ) - f->origin_y - f->anchor_bias;
+    return ( h > 0.0f ) ? h : 0.0f;
+}
+
+/*==============================================================================================
+
     Grid lattice -- the theme's grid_quantum (gui_style_t; 0/1 = off) snaps CONTENT-DRIVEN sizes
     so resolved flex tracks and natural widths land on the same px lattice the theme metrics
     were already quantized to (layout_compute).  Authored sizes are never snapped: a fixed-px
@@ -629,8 +687,8 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     f->pad           = pad;   /* kept: the pads join the measured canvas at pop */
     f->origin_x      = f->outer.x + pad.l;
     f->origin_y      = f->outer.y + pad.t;
-    f->content_x     = f->origin_x - f->scroll->scroll_x;
-    f->pen_y     = f->origin_y - f->scroll->scroll_y;
+    f->content_x     = canv_from_scr_x( f, f->origin_x );   /* the bias enters the frame here */
+    f->pen_y         = canv_from_scr_y( f, f->origin_y );   /*   ... and only here            */
 
     /* Bottom anchor (GUI_WIN_ANCHOR_BOTTOM): when last frame's content underfills the view, drop the
        whole block by the slack so the last (newest) row hugs the view bottom and the empty space

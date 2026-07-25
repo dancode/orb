@@ -311,14 +311,15 @@ layout_pop_region( void )
        means no trailing gap to correct for. */
     layout_row_break( f );
 
-    /* Content extent = how far the highwater climbed from the unscrolled origin (add the scroll back
-       to cancel the bias), plus the region pads on that axis: the canvas the scroll range covers
-       includes the breathing above the first item and below the last, so scrolling to the end
-       leaves the same air under the content as a short region shows above it.  An empty region
-       still measures 0 -- consumers use content <= 0 as the "never measured" premeasure sentinel.
-       Both axes read the highwater pair symmetrically.  Stored for next frame's gutter + knob. */
-    f32 items_h = ( f->high_y + f->scroll->scroll_y ) - f->origin_y - f->anchor_bias;
-    f32 items_w = ( f->high_x + f->scroll->scroll_x ) - f->origin_x;
+    /* Content extent comes from the anchor seam (content_extent_*, flow/gui_layout_core.c): the
+       highwater's climb from the unscrolled origin, with the scroll bias cancelled there so this
+       measure means the same thing at any scroll offset.  The region pads join it on each axis --
+       the canvas the scroll range covers includes the breathing above the first item and below the
+       last, so scrolling to the end leaves the same air under the content as a short region shows
+       above it.  An empty region still measures 0 (the "never measured" premeasure sentinel).
+       Stored for next frame's gutter + knob. */
+    f32 items_h = content_extent_y( f );
+    f32 items_w = content_extent_x( f );
     f32 content_h = ( items_h > 0.0f ) ? items_h + f->pad.t + f->pad.b : 0.0f;
     f32 content_w = ( items_w > 0.0f ) ? items_w + f->pad.l + f->pad.r : 0.0f;
     f->scroll->content_h = content_h;
@@ -333,7 +334,8 @@ layout_pop_region( void )
        so it is emit-gated here rather than captured into the overlay list. */
     if ( gui_debug_get_layers() & GUI_DBG_CONTENT )
     {
-        f32 top = f->origin_y - f->scroll->scroll_y;
+        f32 top = canv_from_scr_y( f, f->origin_y );   /* cross to content anchor FIRST, so the
+                                                          spans below stay content-to-content */
         draw_push_rect_outline( f->content_x, top, f->high_x - f->content_x, f->high_y - top,
                                 2.0f, 0, GUI_COLOR( 0xA0, 0xF0, 0xA0, 0xFF ) );
     }

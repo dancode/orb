@@ -44,15 +44,17 @@ split_push_panel( gui_rect_t rect )
 }
 
 /* Pop the current panel and return the content height it actually emitted: commit the open line
-   and read the highwater -- under gap-before, high_y is the exact content end, so the stored
-   height feeds back stably (a button_fill that fills to it reclaims the same size next frame). */
+   and measure through the anchor seam -- under gap-before, high_y is the exact content end, so the
+   stored height feeds back stably (a button_fill that fills to it reclaims the same size next
+   frame).  content_extent_y rather than a hand-rolled `high_y - origin_y`: a split panel opens
+   through sublayout_open and never scrolls today, so the two agree, but the hand-rolled form is a
+   cross-anchor subtraction that would silently measure short the day a panel does scroll. */
 static f32
 split_pop_panel( void )
 {
     layout_frame_t* f = lf();
     layout_row_break( f );   /* close any partially-filled multi-column row */
-    f32 h = f->high_y - f->origin_y;
-    if ( h < 0.0f ) h = 0.0f;
+    f32 h = content_extent_y( f );
     s_id_sp           = f->id_restore;
     s_scope.clip = f->parent_clip;
     if ( s_layout_sp ) --s_layout_sp;
