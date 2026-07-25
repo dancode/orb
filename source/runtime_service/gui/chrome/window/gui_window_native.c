@@ -15,7 +15,7 @@
         native_popin_request                   -- button-triggered tear-off / merge-back request
         native_caption_chrome               -- window_end's caption strip (draw + interact)
 
-    Included by gui.c after gui_window.c (gesture policy state) and before
+    Included by gui_chrome.c after gui_window.c (gesture policy state) and before
     gui_window_free.c (window_begin_ex / window_end, which call everything here).
 
 ==============================================================================================*/

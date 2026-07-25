@@ -26,8 +26,8 @@
 
     Emitted internally (debug_overlays_emit, gui_frame_overlay.c) at the default context's
     ctx_end while debug_enable is on; the F10 hotkey owns the open flag and the window's X
-    button writes it back to false.  Included by gui.c after the popup tier (tooltips) and
-    before gui_frame_overlay.c / gui_frame_loop.c.  Compiled out unless GUI_PIPELINE_DASHBOARD
+    button writes it back to false.  Included by gui_debug.c; the frame unit's overlay driver
+    opens it across the boundary through debug/gui_debug.h.  Compiled out unless GUI_PIPELINE_DASHBOARD
     (gui_render.h); gui_pipeline_dashboard stays a no-op stub then.
 
 ==============================================================================================*/

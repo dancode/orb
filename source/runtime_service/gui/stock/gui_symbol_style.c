@@ -4,14 +4,14 @@
 
     The symbol emitters that resolve their OWN look -- a theme style-var pick
     (GUI_VAR_ARROW/CHECK/SEPARATOR_STYLE), a style metric (WIN_BORDER, checkmark_pad), or the
-    ambient control rounding (ROUND_WIDGET) -- live in the stock unit
-    so the draw unit ends parameter-pure: a draw routine takes its colors and sizes as
-    parameters; these read the live style, which makes them element material (the first layer
-    astride style and draw).  Each composes the pure emitters it left behind through the
-    public gui_draw_* surface (gui_host.h) or the render primitives directly.
+    ambient control rounding (ROUND_WIDGET).  They live here rather than in the draw unit so that
+    unit ends parameter-pure: a draw routine takes its colors and sizes as parameters, while these
+    read the live style -- which makes them stock material, the first layer astride style and
+    draw.  Each composes the pure emitter it left behind, through the public gui_draw_* surface
+    (gui_host.h) or the render primitives directly.
 
-    The public wrappers (gui_draw_arrow / gui_draw_close / gui_draw_frame)
-    live at the foot -- they sit with their targets so the draw unit never calls upward.
+    The public wrappers (gui_draw_arrow / gui_draw_close / gui_draw_frame) live at the foot,
+    beside their targets, so the draw unit never calls upward.
 
 ==============================================================================================*/
 // clang-format off

@@ -15,7 +15,7 @@
     (gui_dock_serialize.c) build on the same node tree -- the drag path drives these very verbs, while
     the loader rebuilds the tree straight from the gui_dock_core.c node pool.
 
-    Included by gui.c after gui_dock_core.c + gui_dock_drag.c (and before gui_dock_serialize.c, though
+    Included by gui_chrome.c after gui_dock_core.c + gui_dock_drag.c (and before gui_dock_serialize.c, though
     that ordering doesn't matter -- this file and gui_dock_serialize.c don't call each other).
 
 ==============================================================================================*/

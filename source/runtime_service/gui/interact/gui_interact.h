@@ -6,7 +6,7 @@
 
     The record-agnostic interaction elements the chrome recipes ride: edge resize, move-drag
     with deferred press, drag-and-drop, and the feat_* window feature kit.  Mechanisms decide;
-    they never paint (gesture feedback paint lives up in element / chrome).  Its own TU
+    they never paint (gesture feedback paint lives up in stock / chrome).  Its own TU
     (root gui_interact.c).  Stack position: after style (each unit .c lists its sub-stack).
 
     (The item protocol and the anim utilities are the interact SERVER's -- core/gui_core.h.

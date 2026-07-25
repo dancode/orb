@@ -20,7 +20,7 @@
     band, a collapsed window shrinks it to the title bar, a frame-only shell offers only its
     caption.
 
-    Included by gui.c in the frame group.
+    Included by gui_frame.c -- the orchestrator unit is the only one that may stamp both servers.
 
 ==============================================================================================*/
 // clang-format off

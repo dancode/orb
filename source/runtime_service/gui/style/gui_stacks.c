@@ -2,25 +2,28 @@
 
     runtime_service/gui/style/gui_stacks.c -- Bracketing vocabulary: id scope, item flags, style.
 
-    The thin public wrappers for the three push / pop / next stacks a caller brackets widgets with:
-        push_id / pop_id           -- id-scope levels for repeated widgets (id stack, core/gui_id.c)
-        push_item_flag / next_     -- per-item behavior tweaks (item-flag stack, core/gui_ctx.c)
-        push_style_color / _var    -- per-item theme overrides (style stacks, gui_style_core.c)
+    The verbs a caller brackets widgets with -- thin wrappers, no machinery of their own:
 
-    Pure caller vocabulary (the machinery / vocabulary split: the stacks and their resolution
-    live in the machinery files; the verbs a user speaks live here).  Nothing in the lib below
-    depends on these wrappers; internal uses (combo's push_id for its list rows) are deliberate
-    dogfooding through the gui_host.h declarations.
+        push_id / pop_id            id-scope levels for repeated widgets    -> core/gui_id.c
+        push_item_flag / next_      per-item behavior tweaks                -> core/gui_ctx.c
+        disabled_begin / _end       the named scope over GUI_ITEM_DISABLED
+        push_style_color / _var     per-item theme overrides                -> gui_style_core.c
+        style_color                 the resolved read back out of the palette
+        scale_push / _pop           a named density step, as three paired var pushes
+        set_check/bullet/arrow_style   persistent indicator-shape writes
 
-    NOTE the cross-cut, carried whole into the style unit: the id
-    and item-flag brackets forward DOWN to interact-server seams (id_push / item_flag_push,
-    core/gui_core.h -- style -> core is the graph's own edge); the style color / var / scale
-    brackets forward to this unit's own statics (gui_style_core.c, included above, so those
-    stay static).  If a later increment wants the core brackets beside their machinery, only
-    the down-forwarding wrappers move.
+    Pure caller vocabulary (the machinery / vocabulary split: the stacks and their resolution live
+    in the machinery files; the verbs a user speaks live here).  Nothing in the lib below depends
+    on these wrappers; internal uses (combo's push_id for its list rows) are deliberate dogfooding
+    through the gui_host.h declarations.
 
-    Included by gui_style.c LAST -- above both machinery files.  gui_api.c (frame unit) wires
-    these into the vtable through the gui_host.h declarations.
+    The forwarding cuts two ways, which is why this file sits in the style unit: the id and
+    item-flag brackets forward DOWN to interact-server seams (style -> core is the graph's own
+    edge), while the style color / var / scale brackets reach this unit's own statics in
+    gui_style_core.c -- which is what keeps those static.
+
+    Included by gui_style.c LAST, above both machinery files.  gui_api.c (frame unit) wires these
+    into the vtable through the gui_host.h declarations.
 
 ==============================================================================================*/
 // clang-format off
@@ -86,7 +89,7 @@ void gui_disabled_end( void ) { item_flag_pop(); }
     push overrides a slot for every widget until the matching pop; pop takes a count, so two pushes
     are undone with one pop_style_*( 2 ), mirroring ImGui.  next_style_* overrides a slot for just
     the next widget, no pop needed.  Colors are abgr (GUI_COLOR); vars are f32 pixels.  The slots
-    are gui_col_t / gui_style_var_t.  See gui_style.c for the resolution model.
+    are gui_col_t / gui_style_var_t.  See gui_style_core.c for the resolution model.
 
         gui()->push_style_color( GUI_COL_WIDGET_BG,  GUI_COLOR( 0xFF,0,0,0xFF ) );  // red
         gui()->push_style_color( GUI_COL_WIDGET_HOT, GUI_COLOR( 0xFF,0x40,0x40,0xFF ) );

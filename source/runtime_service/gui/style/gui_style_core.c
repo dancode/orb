@@ -211,7 +211,12 @@ static void style_next_var( gui_style_var_t slot, f32 value )
 }
 
 /*==============================================================================================
-    Seam hooks -- called from the shared item boundary in gui_ctx.c.
+    Seam hooks -- driven from OUTSIDE this unit, at the shared per-item boundary.
+
+    style never paints and never reaches up, so it does not call these itself: the impure
+    wrappers in stock/gui_adornment.c (item_flags_resolve / item_flags_chrome_reset) run them
+    alongside the flag half in core/gui_ctx.c, and the frame orchestrator runs style_new_frame
+    alongside ctx_new_frame.  Flags, colors, and vars therefore all latch on one boundary.
 ==============================================================================================*/
 
 /* Promote the pending next-item overrides into the active per-item layer and clear the pending.
@@ -256,30 +261,21 @@ style_new_frame( void )
 }
 
 /*==============================================================================================
-    
-    The style vocabulary -- the macros every later tier reads style through.
+    The element bridge -- resolving against the INSTALLED element style (S1)
 
-    Each read resolves through style_var / style_col above (the theme base with any push_style_*
-    / next_style_* override applied), so every call site honors the stacks with no change.  They
-    live here with the resolver -- core -- because every tier-2 role consumes them: the
-    composer sizes cells and gutters with the METRICS group, widgets measure natural sizes and
-    seat labels with the same numbers, and presentation paints with the SKIN group.  Grouped by
-    the two gui_style_t categories (see gui.h).
+    The three reads that source from the stock unit's element style rather than the theme
+    directly.  Each layers the same way: a transient push_style_* / next_style_* override on the
+    projected slot wins (chrome's own mechanism, unchanged), else the installed element style
+    supplies the value -- so a kit that overwrites gui()->el_style() restyles stock widget bodies
+    and flow spacing with one dial.  With no override and no kit overwrite each equals its plain
+    style_col / style_var exactly, so default chrome is unchanged by construction.
 
+    (The vocabulary macros these back -- COL_*, WIDGET_*, ROUND_* -- are defined in
+    style/gui_style.h, beside the cross-unit declarations, since every tier above reads them.)
 ==============================================================================================*/
 
-/* The vocabulary macros over these reads (WIDGET_H / WIN_BORDER / ROUND_* / ...) live in
-   style/gui_style.h: the flow unit sizes cells with the same numbers the
-   widgets and skin read, so the definitions live with the cross-unit declarations. */
-
-/* style_el_col -- resolve one element-shaped color for stock chrome.
-   The role x state projects onto its theme slot through g_gui_el_slot_map (the element
-   unit's table, shared with el_style_derive so the two directions cannot drift).  A push /
-   next_style_color override on that slot wins -- chrome's own override mechanism keeps
-   working unchanged -- otherwise the INSTALLED element style (S1) is the source, so a kit
-   that overwrites gui()->el_style() restyles stock widget bodies with the same dial.  With
-   no override and no kit overwrite this equals style_col( slot ) exactly (the derive reads
-   the same s_style the working set is seeded from): zero visual change by construction. */
+/* One element-shaped color: role x state projects onto its theme slot through g_gui_el_slot_map
+   (the stock unit's table, shared with el_style_derive so the two directions cannot drift). */
 u32
 style_el_col( u8 role, u8 state )
 {
@@ -290,14 +286,11 @@ style_el_col( u8 role, u8 state )
     return gui_el_style()->col[ role ][ state ];   /* S1: the installed element style */
 }
 
-/* style_el_pad / style_el_gap -- the LAYOUT-STYLE metric twins of style_el_col, for the two spacing
-   floats the rect dispatcher applies (cell_next_w's inter-cell gap + the region / label pad).  A
-   push_style_var / scale_push override on the slot wins (detected as resolved != the unstacked base,
-   the same test style_el_col uses for colors); else the INSTALLED layout style (gui_el_style's pad /
-   gap, so a kit -- or a set-once layout style -- controls flow spacing, and zero means zero).  With
-   no override and no kit overwrite this equals style_var(slot) exactly, so default chrome is
-   unchanged.  (pad / gap / border_w / line_h are the layout-style group inside gui_el_style; the
-   colors stay separate lookup -- this is the seam the color-theme / layout-theme split falls on.) */
+/* The metric twins, for the two spacing floats the rect dispatcher applies (cell_next_w's
+   inter-cell gap + the region / label pad).  The override test is "resolved != the unstacked
+   base", the metric form of style_el_col's colour test; zero means zero.  (pad / gap / border_w /
+   line_h are the layout-style group inside gui_el_style, looked up separately from the colors --
+   this is the seam the color-theme / layout-theme split falls on.) */
 static f32
 style_el_metric( gui_style_var_t slot, f32 el_value )
 {
@@ -308,10 +301,6 @@ style_el_metric( gui_style_var_t slot, f32 el_value )
 
 f32 style_el_pad( void ) { return style_el_metric( GUI_VAR_WIDGET_PAD, gui_el_style()->pad ); }
 f32 style_el_gap( void ) { return style_el_metric( GUI_VAR_WIDGET_GAP, gui_el_style()->gap ); }
-
-/* The COL_* color vocabulary (element-shaped reads through style_el_col + the chrome tokens
-   on style_col) live in style/gui_style.h: the chrome unit paints with
-   the same palette the core's paint helpers read. */
 
 /*==============================================================================================
     State -> color projections -- style resolution proper.  The interact state arrives as a

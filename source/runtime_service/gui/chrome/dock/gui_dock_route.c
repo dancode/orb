@@ -9,7 +9,7 @@
     dock_window_chrome (gui_dock_drag.c).  window/ names none of those directly; a build
     without docking is a stub implementation of this file.
 
-    Included by gui.c last of the dock/ files, so every internal it dispatches to is already
+    Included by gui_chrome.c last of the dock/ files, so every internal it dispatches to is already
     in scope; the callers in window/ reach it through the chrome/gui_chrome.h forward declarations.
 
 ==============================================================================================*/

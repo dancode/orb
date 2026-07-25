@@ -1,5 +1,5 @@
-#ifndef GUI_STYLE_INTERNAL_H
-#define GUI_STYLE_INTERNAL_H
+#ifndef GUI_STYLE_H
+#define GUI_STYLE_H
 /*==============================================================================================
 
     runtime_service/gui/style/gui_style.h -- style resolution (the style unit).
@@ -65,7 +65,8 @@ u32 style_col( gui_col_t slot );
 #define CHECKBOX_SZ   style_var( GUI_VAR_CHECKBOX_SZ   )
 #define SLIDER_KNOB_W style_var( GUI_VAR_SLIDER_KNOB_W )
 
-/* 2. SKIN -- paint-only corner-radius categories + insets (see gui_style.c for the story). */
+/* 2. SKIN -- paint-only corner-radius categories + insets (authored per theme in
+   style/gui_theme.c; they move no rect, which is what separates them from the metrics above). */
 #define ROUND_WIN        style_var( GUI_VAR_WIN_ROUNDING    )
 #define ROUND_WIDGET     style_var( GUI_VAR_WIDGET_ROUNDING )
 #define ROUND_GRAB       style_var( GUI_VAR_GRAB_ROUNDING   )
@@ -131,9 +132,9 @@ u32 col_item_bg( gui_item_state_t st );
 u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color_enum );
 
-/* The per-item ambient wrappers (item_flags_resolve / item_flags_chrome_reset) found their
-   home: stock/gui_adornment.c, declared in stock/gui_stock_internal.h -- they
-   apply draw-state consequences, and style never paints. */
+/* The per-item ambient wrappers that DRIVE the seam hooks above (item_flags_resolve /
+   item_flags_chrome_reset) live in stock/gui_adornment.c, declared in stock/gui_stock_internal.h:
+   they apply draw-state consequences, and style never paints. */
 
 /* Decentralized memory accounting -- this unit's fixed statics (root gui_style.c foot),
    summed into cpu_frontend_bytes by gui_ui_memory (gui_ui_mem.c). */
@@ -141,4 +142,4 @@ u32 gui_style_unit_mem_bytes( void );
 
 // clang-format on
 /*============================================================================================*/
-#endif    // GUI_STYLE_INTERNAL_H
+#endif    // GUI_STYLE_H

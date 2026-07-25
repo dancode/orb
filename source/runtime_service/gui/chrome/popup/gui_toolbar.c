@@ -36,7 +36,7 @@
             gui()->toolbar_end();
             gui()->scale_pop();
 
-    Included by gui.c after gui_menu.c, so the popup internals (popup_open_id, popup_is_open_id,
+    Included by gui_chrome.c after gui_menu.c, so the popup internals (popup_open_id, popup_is_open_id,
     popup_set_anchor, popup_begin_common_id, GUI_POPUP_SALT, GUI_POPUP_BASE_FLAGS) are in scope.
 
 ==============================================================================================*/

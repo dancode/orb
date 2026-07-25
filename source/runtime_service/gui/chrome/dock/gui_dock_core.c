@@ -10,7 +10,7 @@
     chrome (gui_dock_drag.c), layout save/load (gui_dock_serialize.c) -- is built on these
     primitives and lives in the sibling dock/ files, included after this one.
 
-    Included by gui.c first among the dock/ files: dock_node_alloc / _free / _find /
+    Included by gui_chrome.c first among the dock/ files: dock_node_alloc / _free / _find /
     dock_leaf_remove_tab / dock_collapse are plain statics, not forward-declared in chrome/gui_chrome.h,
     so every other dock file needs this one already in scope.  (window/ reaches
     dock_find_window_node only through the route seam, chrome/dock/gui_dock_route.c.)

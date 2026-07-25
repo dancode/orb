@@ -17,9 +17,9 @@
 
     slider_render is the shared visual: track frame, fill bar, knob, and centered value text.
 
-    Included by gui.c after the widget family files (shares item_state, gui_field_row,
-    cell_next, the COL_* palette, and the WIDGET_/WIN_ layout macros from
-    stock/gui_adornment.c).
+    Included by gui_chrome.c after the widget family files, sharing their vocabulary: item_state
+    (core), cell_next (flow), gui_field_row (stock), and the COL_* / WIDGET_ / WIN_ macros
+    (style/gui_style.h).
 
 ==============================================================================================*/
 // clang-format off

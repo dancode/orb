@@ -10,7 +10,8 @@
     compute it.  The pool STORAGE and the bind verb stay with the server (core/gui_ctx.c:
     s_ctx_pool, ctx_bind); this file is the policy over them.
 
-    Included by gui.c in the frame group.
+    Included by gui_frame.c -- the block allocation sizes chrome's records, so it needs
+    whole-stack type visibility that only the orchestrator unit has.
 
 ==============================================================================================*/
 // clang-format off

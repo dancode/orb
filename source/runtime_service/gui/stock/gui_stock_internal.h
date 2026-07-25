@@ -11,30 +11,23 @@
     wrappers the emit/chrome seams call, the styled painters the widgets and chrome compose,
     and the unit's memory seam.
 
-    Not here, deliberately: the adornments invoked from BELOW are declared in their
-    consumer's documented upward-seam block -- draw_nav_ring (core/gui_core.h),
-    draw_drop_ring (interact/gui_interact.h) -- and the style bridge this unit rides
-    (el_style_derive, g_gui_el_slot_map) stays in style/gui_style.h.  One decl, one home.
+    ONE DECL, ONE HOME -- so most of what this unit defines is NOT declared here.  Anything a
+    lower unit invokes across its documented upward seam is declared with that LOWEST consumer:
+    item_flags_resolve / item_flags_chrome_reset and the child-box trio in flow/gui_flow.h,
+    draw_nav_ring in core/gui_core.h, draw_drop_ring in interact/gui_interact.h.  The style
+    bridge this unit rides (el_style_derive, g_gui_el_slot_map) stays in style/gui_style.h.
+    What is left below is what only chrome and the widget set above consume.
 
 ==============================================================================================*/
 
 // clang-format off
 
-/* Per-item ambient application (stock/gui_adornment.c): item_flags_resolve at the cell emit
-   seam; item_flags_chrome_reset at every chrome seam -- wrappers over the interact server's
-   pure halves.  Declared in flow/gui_flow.h: flow is their lowest consumer (its
-   emit / region seams drive them). */
+/* The self-measure the button family shares (stock/gui_adornment.c): visible label span plus the
+   standard inset.  Its caption sibling gui_field_row is public, declared in gui_host.h. */
+f32 label_natural_w( const char* s );
 
-/* Label paint (stock/gui_adornment.c): gui_field_row draws a labeled widget's own label per the
-   ambient gui_field_t (geometry = field_geom_split, flow/gui_flow.h; declared in gui_host.h).
-   label_natural_w is the self-measure the button family shares. */
-f32        label_natural_w ( const char* s );
-
-/* System adornments (stock/gui_adornment.c) invoked from below across documented upward
-   seams are declared with their LOWEST consumer: draw_nav_ring (core/gui_core.h),
-   draw_drop_ring (interact/gui_interact.h), the child box pair + resize highlight
-   (flow/gui_flow.h's upward block).  Only the focus border -- consumed from chrome's
-   window ends, ABOVE this unit -- is declared here. */
+/* The one adornment consumed from ABOVE (stock/gui_adornment.c): chrome's window ends paint it
+   over their own border to mark the window holding keyboard focus. */
 void draw_window_focus_border( gui_rect_t r );
 
 /* The styled half of the symbol palette (stock/gui_symbol_style.c): emitters that resolve

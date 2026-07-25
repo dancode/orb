@@ -38,8 +38,9 @@
     by position, Down drops back into the body.  Tab and the body arrows never touch chrome.
     Scrollbars and drag strips are no keyboard targets at all (s_scope.nav.skip).
 
-    Included by gui.c after gui_popup.c (so the popup stack is in scope)
-    and before gui_frame_loop.c (so gui_ctx_begin can call nav_new_frame).
+    Included by gui_chrome.c after gui_popup.c, so the popup stack is in scope.  The frame
+    orchestrator drives nav_new_frame from gui_ctx_begin in ANOTHER unit (frame/gui_frame_loop.c),
+    reaching it across the boundary through chrome/gui_chrome.h -- not by include order.
 
 ==============================================================================================*/
 // clang-format off

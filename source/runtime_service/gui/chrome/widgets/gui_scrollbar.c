@@ -13,7 +13,8 @@
     (core/gui_item.c), so the bar never lists as a keyboard target (neither Tab nor the
     chrome lane).
 
-    Included by gui.c in the widgets/ tier; the region engine reaches it through the forward
+    Included by gui_chrome.c in the widgets/ group; the region engine (a LOWER unit) reaches it
+    across the unit boundary through the forward
     declaration in flow/gui_flow.h (the same cross-order seam size_animate uses for gui_anim_f32).
 
 ==============================================================================================*/

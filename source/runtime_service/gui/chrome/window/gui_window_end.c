@@ -16,7 +16,7 @@
     helpers gui_window_end reuses for the auto-fit grip -- all defined in gui_window_free.c,
     included just before this file.
 
-    Included by gui.c right after gui_window_free.c.
+    Included by gui_chrome.c right after gui_window_free.c.
 
 ==============================================================================================*/
 // clang-format off

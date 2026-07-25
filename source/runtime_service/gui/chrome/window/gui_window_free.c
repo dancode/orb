@@ -18,7 +18,7 @@
     (item_state); the style vocabulary (WIDGET_* / WIN_* / COL_*) resolves in
     style/gui_style_core.c.
 
-    Included by gui.c after the widget family files, so the window record (gui_window.c), the
+    Included by gui_chrome.c after the widget family files, so the window record (gui_window.c), the
     shared widget core, and the leaf widgets are all in scope.
 
 ==============================================================================================*/

@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/draw/gui_canvas.c -- Custom-draw / canvas surface of the user tier.
+    runtime_service/gui/draw/gui_canvas.c -- the custom-draw / canvas vocabulary.
 
     Placement primitives for a rect the caller already holds, rather than a self-laying-out
     control: canvas() reserves the rect (a cell like any widget); draw_rect / draw_text are the
@@ -11,9 +11,10 @@
     custom layout.  The interaction half of the tier (gui_item / invisible_button) is
     core/gui_item.c (gui_item); together they are the substrate a user widget is written on.
 
-    Included by gui.c in the user/ tier (last of the tiers -- pure vocabulary, no state); needs
-    only cell_next / rect_align (core+compose) and the draw_push_* backend calls, all in
-    scope far above.
+    Included by gui_draw.c last -- pure vocabulary, no state of its own.  canvas() and image()
+    are the only two verbs here that reserve a cell, and cell_next belongs to the FLOW unit
+    above: they reach it through the one seam declaration in draw/gui_draw.h (the draw unit's
+    single documented upward call), never by include order.
 
 ==============================================================================================*/
 // clang-format off

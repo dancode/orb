@@ -16,9 +16,9 @@
     Shared scratch buffer: one static slot (only one field can be focused at a time), keyed by id.
     Focus gain seeds it from the current value; Enter / focus loss parses it back.
 
-    Included by gui.c after gui_widget_slider.c (which is after the widget family files, so
-    item_state, gui_field_row, input_field_edit, and the COL_* / WIDGET_ / WIN_
-    style vocabulary from gui_style.c are all in scope).
+    Included by gui_chrome.c after gui_widget_slider.c, so item_state, gui_field_row, and
+    input_field_edit are all in scope; the COL_* / WIDGET_ / WIN_ style vocabulary comes from
+    style/gui_style.h.
 
 ==============================================================================================*/
 // clang-format off

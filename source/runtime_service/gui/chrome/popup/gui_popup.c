@@ -24,8 +24,9 @@
     and restore the cross-cutting state begin/window_end touch (see gui_overlay_save_t), and a
     root draw-clip is pushed so the popup escapes the parent window's bounds.
 
-    Included by gui.c after gui_window_free.c (so window_begin_ex is in scope) and before
-    gui_frame_loop.c (so gui_ctx_begin can call popup_close_check / popup_apply_modal).
+    Included by gui_chrome.c after gui_window_free.c, so window_begin_ex is in scope.  The frame
+    orchestrator drives popup_close_check / popup_apply_modal from gui_ctx_begin in ANOTHER unit
+    (frame/gui_frame_loop.c), reaching them across the boundary through chrome/gui_chrome.h.
 
 ==============================================================================================*/
 // clang-format off

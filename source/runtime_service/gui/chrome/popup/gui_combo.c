@@ -19,7 +19,7 @@
     Each comes in a generic Begin/End form (full control over the rows) and a one-liner over an
     array of strings, mirroring Dear ImGui's BeginCombo/Combo and BeginListBox/ListBox split.
 
-    Included by gui.c after gui_popup.c, so the popup internals (popup_open_id, popup_is_open_id,
+    Included by gui_chrome.c after gui_popup.c, so the popup internals (popup_open_id, popup_is_open_id,
     popup_set_anchor, popup_begin_common_id, GUI_POPUP_*) and every widget / layout helper above
     are all in scope.
 

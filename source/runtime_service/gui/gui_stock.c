@@ -2,10 +2,10 @@
 
     runtime_service/gui/gui_stock.c -- GUI_STOCK translation unit: the reference widget set.
 
-    THE STOCK TIER (formerly "element"): the example widgets that combine interact state with
-    styled paint over a caller-supplied rect.  This is the layer astride both servers -- below
-    it, style resolves and never emits, draw emits and never resolves; stock is where the two
-    meet, the rect CONSUMER over the rects flow carves.
+    THE STOCK TIER: the example widgets that combine interact state with styled paint over a
+    caller-supplied rect.  This is the layer astride both servers -- below it, style resolves and
+    never emits, draw emits and never resolves; stock is where the two meet, the rect CONSUMER
+    over the rects flow carves.
 
     Where it sits in the stack (see GUI_ARCHITECTURE.md):
 

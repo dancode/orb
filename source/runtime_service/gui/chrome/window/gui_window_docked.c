@@ -13,7 +13,7 @@
     paths commit for window_end to read.  Mirrors the same-kind separation dock/ already
     keeps between its own core/drag/float/serialize files.
 
-    Included by gui.c right before gui_window_free.c, whose window_begin_ex calls
+    Included by gui_chrome.c right before gui_window_free.c, whose window_begin_ex calls
     window_begin_docked as its dock branch.
 
 ==============================================================================================*/

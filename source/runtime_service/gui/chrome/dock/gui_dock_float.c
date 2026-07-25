@@ -25,7 +25,7 @@
     A group dissolves when one tab remains: the survivor inherits the frame and returns to
     free-floating (dock_node_remove_window, gui_dock_core.c).
 
-    Included by gui.c after gui_dock_core.c (node pool + leaf edits in scope) and before
+    Included by gui_chrome.c after gui_dock_core.c (node pool + leaf edits in scope) and before
     gui_dock_drag.c (which calls dock_float_hit / dock_float_request directly).
     window/ reaches dock_float_resolve / dock_float_service_request only through the route seam
     (chrome/dock/gui_dock_route.c, included after this file).

@@ -25,7 +25,7 @@
     big-class keyed slot the engine fetches; its type (gui_medit_state_t), the engine entry
     (medit_edit), and the line-geometry readers (medit_sel, medit_line_count, medit_line_end,
     medit_row_start, medit_caret_rowx) come from the engine seam (interact/gui_interact.h).
-    Included by gui.c after chrome/widgets/gui_input.c so the paint helpers are all in scope; the
+    Included by gui_chrome.c after chrome/widgets/gui_input.c so the paint helpers are in scope; the
     child bracket resolves through the gui_host.h declarations like every other compound widget.
 
 ==============================================================================================*/

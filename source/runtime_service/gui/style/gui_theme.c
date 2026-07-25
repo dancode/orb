@@ -9,8 +9,8 @@
                         via gui_style_get() (theme_name then goes anonymous / NULL).
         s_style      -- s_style_base scaled to the active font's type size (em) by layout_compute;
                         every other file's WIDGET_ / WIN_ metrics and default colors ultimately
-                        read this (through gui_style.c's push-stack resolver + vocabulary macros,
-                        gui_symbol.c's check/bullet/arrow style setters, ...).
+                        read this, through gui_style_core.c's push-stack resolver and the
+                        vocabulary macros over it (style/gui_style.h).
 
     The theme API (theme_list/set/get/reset) and gui_style_get() are the public surface over
     that state; layout_compute is the font-driven rescale, invoked across the unit seam by

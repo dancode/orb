@@ -34,9 +34,10 @@
             s_interaction) so item_state (core/gui_item.c) can read it inline; this file
             is the only place that sets it.
 
-    Included by gui.c after the widget family files -- needs lf() / layout_frame_t (gui_ctx.c,
-    flow/gui_layout_core.c), id_push/id_pop (core/gui_id.c), and layout_set_default
-    (flow/gui_layout_core.c) already in scope.
+    Included by gui_chrome.c after the widget family files.  Its replay scope pushes a bare layout
+    frame, so it needs lf() / layout_frame_t / layout_set_default (the flow unit, via
+    flow/gui_flow.h) and id_push / id_pop (the interact server, via core/gui_core.h) -- both
+    resolved across unit boundaries by header, not by include order.
 
 ==============================================================================================*/
 // clang-format off

@@ -3,23 +3,24 @@
     runtime_service/gui/stock/gui_adornment.c -- Per-item ambient application + the system
     adornments.
 
-    Home in the stock unit -- everything here is
-    STYLED paint or style/draw application, which is stock material (the first layer astride
-    both servers).  Three groups:
+    Everything here is styled paint, or the application of style / draw state -- stock material
+    by definition, since stock is the first layer astride both servers.  Three groups, in file
+    order:
 
-      - the impure per-item wrappers (item_flags_resolve / item_flags_chrome_reset): style and
-        draw consequences over the interact server's pure seams (item_flags_take /
+      - per-item ambient application (item_flags_resolve / item_flags_chrome_reset): the style
+        and draw consequences over the interact server's pure seams (item_flags_take /
         item_flags_chrome_drop, core/gui_ctx.c);
-      - the label paint (gui_field_row + label_natural_w): gui_field_row draws a labeled widget's own
-        label per the ambient gui_field_t; its geometry half (field_geom_split) lives with the
-        composer in flow, the paint and the WIDGET_PAD self-measure here;
-      - the system adornments (nav ring, focus border, drop ring, child box, resize
-        highlight): the units below decide WHEN one paints -- across their documented upward
-        seams (core/gui_core.h, interact/gui_interact.h, flow/gui_flow.h) -- and the paint
-        policy (color, thickness, extent) lives here with the rest of the skin.
+      - the label paint (label_natural_w + gui_field_row): gui_field_row draws a labeled widget's
+        own label per the ambient gui_field_t.  Its geometry half (field_geom_split) lives with
+        the composer in flow -- the paint and the WIDGET_PAD self-measure are here;
+      - the system adornments (nav ring, focus border, drop ring, child box, resize highlight):
+        the units below decide WHEN one paints, across their documented upward seams
+        (core/gui_core.h, interact/gui_interact.h, flow/gui_flow.h), and the paint POLICY --
+        color, thickness, extent -- lives here with the rest of the skin.
 
-    The style vocabulary (WIDGET_* / WIN_* / COL_* macros) lives with its resolver in
-    style/gui_style.h -- this file only consumes it.
+    The style vocabulary this consumes (WIDGET_* / WIN_* / COL_*) and the state -> color
+    projections (col_item_bg & co) both live with their resolver in the style unit; state -> color
+    is resolution by nature, and all three take the interact state as a parameter.
 
 ==============================================================================================*/
 // clang-format off
@@ -30,8 +31,7 @@
     The core unit resolves WHAT the flags are (item_flags_take / item_flags_chrome_drop,
     core/gui_ctx.c); these wrappers apply the style and draw consequences -- the per-item style
     commit, the disabled dim, the default rounding -- which the interact server itself must
-    never touch.  Callers (the cell emit seam, the chrome seams, the pane bracket) keep the
-    original names.  Style owns the commit, element the adornment.
+    never touch.  Style owns the commit, stock the adornment.
 ==============================================================================================*/
 
 /* Disabled items draw at this opacity (the rest of the dim is in the draw list's global alpha). */
@@ -71,6 +71,10 @@ item_flags_chrome_reset( void )
        read after the item override is cleared so a trailing widget's next-* radius cannot leak in. */
     draw_set_rounding( style_var( GUI_VAR_WIN_ROUNDING ) );
 }
+
+/*==============================================================================================
+    Label paint -- the self-measure, and the one caption seam.
+==============================================================================================*/
 
 /* The natural width a label-sized widget requests from the composer: the visible span plus the
    standard inset on both sides.  THE self-measurement formula -- button, small_button, menu
@@ -117,10 +121,6 @@ gui_field_row( const char* label )
     draw_label_fit( label_r.x, text_center_y( cell.y, cell.h ), COL_TEXT, label, label_r.w );
     gui_next_item_rect( control_r );
 }
-
-/* The state -> color projections (col_frame_bg, col_item_bg, col_item_bg_anim) live in the
-   style unit (style/gui_style_core.c): state -> color is style resolution by
-   nature, and all three take the interact state as a parameter. */
 
 /*==============================================================================================
     System adornments -- the uniform highlight rings and edge markers the interaction services

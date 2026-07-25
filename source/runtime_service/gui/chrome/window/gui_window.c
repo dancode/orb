@@ -15,7 +15,9 @@
     window_begin / window_end, where the layout dimensions (title-bar height, padding) are in
     scope.
 
-    Included by gui.c after gui_ctx.c so s_interaction (hover_win) and s_io are in scope.
+    Included by gui_chrome.c first among the window/ files.  The ambient records it reads
+    (s_interaction's hover_win, s_io) belong to the interact server in another unit, reached
+    through core/gui_core.h + core/gui_ctx.h.
 
 ==============================================================================================*/
 // clang-format off

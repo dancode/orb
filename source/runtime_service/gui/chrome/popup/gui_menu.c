@@ -24,7 +24,7 @@
       menu_bar_begin      -- the strip a WIN_MENUBAR window reserved below its title bar (a region
                              over s_build.win.menubar_rect, drawn outside the body's scrolling flow).
 
-    Included by gui.c after gui_combo.c, so the popup internals (popup_open_id,
+    Included by gui_chrome.c after gui_combo.c, so the popup internals (popup_open_id,
     popup_is_open_id, popup_set_anchor, popup_begin_common_id, the g_ctx->popup.open stack, the
     GUI_POPUP_* constants), the region push/pop helpers, and every widget / layout primitive are
     all in scope.

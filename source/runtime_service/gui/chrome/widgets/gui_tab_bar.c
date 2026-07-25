@@ -34,8 +34,8 @@
     positions rather than placed by the layout engine, so they carry no meaningful nav coordinate.
     Tab switching is mouse-driven; the active body's widgets navigate as usual.
 
-    Included by gui.c after gui_widget_numeric.c, so item_id / cell_next / item_state / GUI_STATE and
-    the draw + style helpers are all in scope.
+    Included by gui_chrome.c after gui_widget_numeric.c; item_id / cell_next / item_state /
+    GUI_STATE and the draw + style helpers all resolve through the sub-stack headers.
 
 ==============================================================================================*/
 // clang-format off
