@@ -612,8 +612,10 @@ cache_diff_windows( void )
     clip makes equal-clip shapes tessellate back-to-back so they can merge into one GPU draw call.
 
     The permutation is a COUNTING SORT by clip group: one walk collects the groups and counts
-    each group's plain and volatile populations, offsets are prefix-summed, and two placement
-    walks scatter the commands to their final positions.  Every walk touches only this window's
+    each group's population, offsets are prefix-summed, and a second walk scatters the commands to
+    their final positions.  The sort is STABLE -- commands keep their emission order within a
+    group, because paint order inside one clip is load-bearing (a window's titlebar chrome
+    overpaints the content scrolled under it; see walk 2).  Every walk touches only this window's
     own commands (the chain), so the cost is O(window cmds), not O(clip groups x all segments)
     as the old rescan was -- the difference is what a 20x window pays per changed frame.
 
@@ -689,8 +691,7 @@ cache_tess_window( const render_win_hash_t* wh )
        plain commands by their own clip, volatile ranges by their anchor's clip (a range stays
        whole -- see the placement comment below). */
     clip_groups_t cg = { .n_clips = 0, .memo_ci = 0xFF };
-    u32  plain_cnt[ RENDER_MAX_CLIP_GROUPS ] = { 0 };
-    u32  vol_cnt  [ RENDER_MAX_CLIP_GROUPS ] = { 0 };
+    u32  grp_cnt[ RENDER_MAX_CLIP_GROUPS ] = { 0 };
     bool overflow = false;
 
     for ( u16 si = wh->seg_head; si != SEG_CHAIN_END && !overflow; si = s_seg_next[ si ] )
@@ -704,7 +705,7 @@ cache_tess_window( const render_win_hash_t* wh )
                 if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
                 u32 g = clip_group_of( &cg, ci );
                 if ( g == ~0u ) { overflow = true; break; }
-                ++plain_cnt[ g ];
+                ++grp_cnt[ g ];
             }
             else
             {
@@ -722,7 +723,7 @@ cache_tess_window( const render_win_hash_t* wh )
                         u8 ci = s_draw.cmds[ j ].clip_idx;
                         if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
                         if ( clip_group_of( &cg, ci ) == ~0u ) { overflow = true; break; }
-                        ++vol_cnt[ ag ];
+                        ++grp_cnt[ ag ];
                     }
                 }
                 i = hi - 1;   /* loop ++ lands one past the range */
@@ -744,24 +745,27 @@ cache_tess_window( const render_win_hash_t* wh )
         return;
     }
 
-    /* Prefix-sum the group offsets: each group's span is [plain block][volatile block], groups
-       laid out in first-seen order -- the same final layout the old per-group rescan produced. */
-    u32 plain_off[ RENDER_MAX_CLIP_GROUPS ];
-    u32 vol_off  [ RENDER_MAX_CLIP_GROUPS ];
+    /* Prefix-sum the group offsets: one span per group, groups laid out in first-seen order. */
+    u32 grp_off[ RENDER_MAX_CLIP_GROUPS ];
     for ( u32 g = 0; g < cg.n_clips; ++g )
     {
-        plain_off[ g ] = n;  n += plain_cnt[ g ];
-        vol_off  [ g ] = n;  n += vol_cnt  [ g ];
+        grp_off[ g ] = n;  n += grp_cnt[ g ];
     }
 
-    /* Walk 2 -- scatter.  Plain commands land at their own group's plain cursor, in emission
-       order.  Volatile ranges land whole at their ANCHOR group's volatile cursor: a range must
-       stay CONTIGUOUS in the permutation (tess_dispatch brackets one capture span per range), so
-       it cannot be split across groups.  Appending ranges after the group's plain commands keeps
-       those mergeable into a single batch on both sides of the widget; the block's own commands
-       are forced separate regardless, since a patch must be able to rewrite their elem_counts.
-       The one trade: a block paints after same-clip sibling content of its window, so it must
-       not rely on that content overdrawing it. */
+    /* Walk 2 -- scatter.  Every command lands at its group's single cursor in EMISSION order,
+       volatile ranges included: the permutation reorders across groups, never within one.
+       Paint order within a clip group is load-bearing, which is why the volatile block cannot be
+       appended at the end of its group (it was, and this is the bug that cost): a window shares
+       ONE clip rect across its background, its scrolled content and its titlebar/border chrome
+       (window_open_body, chrome/window/gui_window_free.c), and relies on the chrome window_end
+       emits LAST to overpaint whatever scrolled under it.  A block hoisted past that chrome draws
+       over the titlebar instead of under it.
+         A range still lands WHOLE at its ANCHOR's group -- it must stay CONTIGUOUS in the
+       permutation (tess_dispatch brackets one capture span per range) and so cannot be split
+       across groups -- but at the position its first command occupied, not at the tail.  The cost
+       is one extra batch per block whose group has plain commands on both sides of it (they can no
+       longer merge through it); the block's own commands were always forced separate anyway, since
+       a patch must be able to rewrite their elem_counts. */
     for ( u16 si = wh->seg_head; si != SEG_CHAIN_END; si = s_seg_next[ si ] )
     {
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
@@ -772,8 +776,8 @@ cache_tess_window( const render_win_hash_t* wh )
                 u8 ci = s_draw.cmds[ i ].clip_idx;
                 if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
                 u32 g = clip_group_of( &cg, ci );
-                s_win_font [ plain_off[ g ] ] = segs[ si ].font;
-                s_win_order[ plain_off[ g ]++ ] = (u16)i;
+                s_win_font [ grp_off[ g ] ]   = segs[ si ].font;
+                s_win_order[ grp_off[ g ]++ ] = (u16)i;
             }
             else
             {
@@ -785,8 +789,8 @@ cache_tess_window( const render_win_hash_t* wh )
                     for ( u32 j = i; j < hi; ++j )
                         if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ j ].clip_idx ] ) )
                         {
-                            s_win_font [ vol_off[ g ] ] = segs[ si ].font;
-                            s_win_order[ vol_off[ g ]++ ] = (u16)j;
+                            s_win_font [ grp_off[ g ] ]   = segs[ si ].font;
+                            s_win_order[ grp_off[ g ]++ ] = (u16)j;
                         }
                 }
                 i = hi - 1;

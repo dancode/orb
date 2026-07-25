@@ -187,11 +187,13 @@ gui_perf_overlay( int mode )
 
     f32 fps = s_perf.fps;
 
-    f32 top_y = 34.0f;
-    gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
-    if ( mb && mb->last_frame == gui_frame_index() )
-        top_y += mb->h;
-
+    /* Below the viewport's chrome, not below a hardcoded guess at it: gui_viewport_content_y is
+       where host content starts -- the native caption band when the surface is gui-shelled
+       (borderless) plus the main menu bar on frames one is emitted -- the same work top the
+       maximize pin and the window drag clamp use.  Adding the bar HEIGHT to a fixed offset (what
+       this did) ignores where the bar actually sits, so every overlay landed ON the caption band
+       of a borderless window instead of under the bar below it. */
+    f32 top_y = gui_viewport_content_y( 0 ) + 34.0f;
 
     float left_x = 8.0f;
 
@@ -348,10 +350,8 @@ gui_state_overlay( int mode )
     if ( mode <= 0 )
         return;
 
-    f32 top_y = 34.0f;   /* matches perf_overlay's base so the two HUDs share one top edge */
-    gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
-    if ( mb && mb->last_frame == gui_frame_index() )
-        top_y += mb->h;
+    /* Same work top + base offset as perf_overlay, so the two HUDs share one top edge. */
+    f32 top_y = gui_viewport_content_y( 0 ) + 34.0f;
 
     /* Fixed offset to the right of perf_overlay's top-left HUD so both can be shown at once
        without overlap -- perf_overlay hugs its content and stays narrow, so a flat offset is
@@ -670,10 +670,8 @@ debug_hotkeys( void )
 static void
 gui_debug_selector_menu( void )
 {
-    f32 top_y = 8.0f;
-    gui_window_t* mb = window_find( id_hash( "##MainMenuBar" ) );
-    if ( mb && mb->last_frame == gui_frame_index() )
-        top_y += mb->h;
+    /* Work top (caption band + menu bar) + this panel's own margin -- see perf_overlay. */
+    f32 top_y = gui_viewport_content_y( 0 ) + 8.0f;
 
     f32 w = 190.0f;
     f32 x = (f32)s_io.display_w - w - 8.0f;
