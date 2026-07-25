@@ -33,7 +33,7 @@ gui_comp_input( const char* id_str, gui_rect_t rect, f32 pad, char* buf, u32 buf
     out.state = st;
 
     /* The engine works in a content rect inset horizontally by pad, so it never sees the widget
-       margin; it leaves cursor / anchor / scroll_x / blink_t on the keyed slot. */
+       margin; it leaves cursor / anchor / pan_x / blink_t on the keyed slot. */
     gui_rect_t content = { rect.x + pad, rect.y, rect.w - 2.0f * pad, rect.h };
     input_field_result_t res = edit_field( id, content, st, buf, bufsz );
 
@@ -43,7 +43,7 @@ gui_comp_input( const char* id_str, gui_rect_t rect, f32 pad, char* buf, u32 buf
 
     const gui_edit_state_t* es = GUI_STATE( gui_edit_state_t, id );
 
-    f32 text_x  = content.x - es->scroll_x;
+    f32 text_x  = content.x - es->pan_x;
     out.text_x  = text_x;
     out.text_y  = content.y + ( content.h - font_char_h() ) * 0.5f;   /* one line, vertically centered */
 

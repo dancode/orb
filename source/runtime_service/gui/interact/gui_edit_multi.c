@@ -14,7 +14,7 @@
     interact mechanism may not reach: the VERTICAL scroll, which belongs to the enclosing child
     REGION (flow, above this layer) -- the widget writes the region's scroll_y to chase the caret's
     row -- and all painting.  The one entry is medit_edit(): drive it once per frame over the inner
-    content rect and it runs the whole field-internal frame, leaving caret / anchor / scroll_x /
+    content rect and it runs the whole field-internal frame, leaving caret / anchor / pan_x /
     blink on the keyed state slot for the widget to chase and paint.
 
     Enter inserts a newline here (it never submits or drops focus -- Escape reverts and leaves,
@@ -624,7 +624,7 @@ medit_apply_mouse( gui_rect_t inner, gui_item_state_t st, char* buf, u32 len,
 {
     if ( !( st.pressed || st.active ) ) return;
 
-    f32 px  = s_io.mouse_x - inner.x + es->scroll_x;
+    f32 px  = s_io.mouse_x - inner.x + es->pan_x;
     f32 py  = s_io.mouse_y - inner.y;
     i32 row = ( py < 0.0f ) ? -1 : (i32)( py / line_h );
     u32 off = medit_offset_at( buf, len, row, px );
@@ -690,14 +690,14 @@ medit_apply_mouse( gui_rect_t inner, gui_item_state_t st, char* buf, u32 len,
 ==============================================================================================*/
 
 static void
-medit_hscroll( gui_rect_t inner, const char* buf, gui_medit_state_t* es )
+medit_hpan( gui_rect_t inner, const char* buf, gui_medit_state_t* es )
 {
     u32 crow; f32 cx;
     medit_caret_rowx( buf, es->cursor, &crow, &cx );
     f32 vis_w = inner.w;
     if ( vis_w < 0.0f ) vis_w = 0.0f;
-    if ( cx - es->scroll_x < 0.0f )  es->scroll_x = cx;
-    if ( cx - es->scroll_x > vis_w ) es->scroll_x = cx - vis_w;
+    if ( cx - es->pan_x < 0.0f )  es->pan_x = cx;
+    if ( cx - es->pan_x > vis_w ) es->pan_x = cx - vis_w;
 }
 
 /*==============================================================================================
@@ -709,7 +709,7 @@ medit_hscroll( gui_rect_t inner, const char* buf, gui_medit_state_t* es )
     horizontally and reports any change to the item record.  Returns { changed, active }: `active`
     (any caret / edit activity this frame) tells the widget when to chase the caret vertically by
     scrolling the enclosing region -- the one thing an interact mechanism may not reach.  Leaves
-    caret / anchor / scroll_x / blink on the keyed state slot for the widget to chase and paint;
+    caret / anchor / pan_x / blink on the keyed state slot for the widget to chase and paint;
     `inner` is the text content rect (the widget's cell already inset), `vis_rows` the page size.
 ==============================================================================================*/
 medit_result_t
@@ -748,7 +748,7 @@ medit_edit( gui_id_t id, gui_rect_t inner, gui_item_state_t st, u32 vis_rows, f3
     }
 
     /* Pan the caret into view horizontally every frame so a programmatic move is honoured. */
-    medit_hscroll( inner, buf, es );
+    medit_hpan( inner, buf, es );
 
     /* Report the edit to the item record (is_item_deactivated_after_edit, core/gui_query.c). */
     if ( r.changed )

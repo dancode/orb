@@ -84,9 +84,14 @@ bool feat_collapse_live( gui_id_t id );
 ==============================================================================================*/
 
 /* Persisted per-id edit state.  cursor + anchor describe the selection ([min,max), equal = none).
-   blink_t (caret-blink dt accumulator) and scroll_x (horizontal pixel bias) are engine-owned
+   blink_t (caret-blink dt accumulator) and pan_x (horizontal pixel bias) are engine-owned
    presentation fields kept here so the whole field state is one keyed slot.  16 bytes -- fits
-   within GUI_STATE_CAP. */
+   within GUI_STATE_CAP.
+
+   pan_x, NOT scroll_x: this is a field-internal pan in the text's own content space, unrelated to
+   the REGION scroll of flow (f->scroll->scroll_x) and its canvas/screen anchors.  The two were
+   named alike and read alike, and a widget that "corrected" one with the other would be wrong
+   twice. */
 
 typedef struct
 {
@@ -94,7 +99,7 @@ typedef struct
     u16  cursor;           // byte offset of the caret
     u16  anchor;           // passive end of the selection; cursor == anchor -> none
     u16  dbl_lo, dbl_hi;   // double-clicked word bounds (word-drag mode)
-    u16  scroll_x;         // horizontal scroll bias in px (engine-owned)
+    u16  pan_x;            // horizontal pan in px, text content space (engine-owned)
     u8   word_sel;         // nonzero while in a word-select drag
     u8   _pad;
 
@@ -106,8 +111,8 @@ typedef struct { bool changed; bool enter; } input_field_result_t;
 
 /* The engine entry: run one full non-paint frame of a single-line field over a caller buffer.
    `content` is the text-area rect (the widget's box already inset); `st` is the item state.  The
-   engine fetches its own keyed edit state by id, runs keys + mouse + scroll + blink, and leaves
-   cursor / anchor / scroll_x / blink_t on that slot for the widget to paint. */
+   engine fetches its own keyed edit state by id, runs keys + mouse + pan + blink, and leaves
+   cursor / anchor / pan_x / blink_t on that slot for the widget to paint. */
 
 input_field_result_t edit_field( gui_id_t id, gui_rect_t content, gui_item_state_t st,
                                  char* buf, u32 bufsz );
@@ -136,7 +141,7 @@ void edit_sel      ( const gui_edit_state_t* es, u32* lo, u32* hi, bool* has ); 
 ==============================================================================================*/
 
 /* Persisted per-id editor state (big-class keyed slot).  cursor / anchor are byte offsets with
-   the single-line selection contract ([min,max), equal = bare caret).  scroll_x is the horizontal
+   the single-line selection contract ([min,max), equal = bare caret).  pan_x is the horizontal
    pan chasing the caret (vertical scroll belongs to the child region, not this state).  pref_x is
    the sticky preferred column for vertical caret movement (the x the caret aims for when Up / Down
    crosses a shorter line); pref_valid gates it because 0.0 is a real column.  36 bytes. */
@@ -148,7 +153,7 @@ typedef struct
     u32  anchor;       // passive end of the selection; cursor == anchor -> none
     u32  dbl_lo;       // word start of the double-clicked word (word-drag mode)
     u32  dbl_hi;       // word end of the double-clicked word  (word-drag mode)
-    f32  scroll_x;     // horizontal pixel pan (caret chase)
+    f32  pan_x;        // horizontal pan in px, text content space (caret chase)
     f32  pref_x;       // preferred caret column (pixels) for vertical movement
     u8   word_sel;     // nonzero while in word-select drag (set by double-click)
     u8   pref_valid;   // pref_x holds a live column (0.0 is a real column, so a flag)
@@ -164,7 +169,7 @@ typedef struct { bool changed; bool active; } medit_result_t;
 /* The engine entry: run one full field-internal frame of a multiline editor over a caller buffer.
    `inner` is the text content rect (the widget's cell already inset), `st` the item state,
    `vis_rows` the page-scroll size, `line_h` the row pitch.  The engine fetches its own keyed
-   editor state by id and leaves cursor / anchor / scroll_x / blink on it for the widget. */
+   editor state by id and leaves cursor / anchor / pan_x / blink on it for the widget. */
 
 medit_result_t medit_edit( gui_id_t id, gui_rect_t inner, gui_item_state_t st, u32 vis_rows,
                            f32 line_h, char* buf, u32 bufsz );

@@ -33,7 +33,7 @@
 
 /*==============================================================================================
     Paint -- per-row selection highlight, pan-clipped text, and the blinking caret into the
-    canvas cell.  Reads the state the engine resolved (cursor / anchor / scroll_x / blink_t) and
+    canvas cell.  Reads the state the engine resolved (cursor / anchor / pan_x / blink_t) and
     measures with the engine's text_x_at + line geometry.
 
     Painting iterates only the rows intersecting the region view (the child's scissor would clip
@@ -48,7 +48,7 @@ medit_paint( gui_rect_t inner, const char* buf, u32 len, const gui_medit_state_t
     const f32 line_h = font_line_h();
     const f32 char_h = font_char_h();
 
-    f32 text_x  = inner.x - es->scroll_x;
+    f32 text_x  = inner.x - es->pan_x;
     f32 clip_x0 = inner.x;
     f32 clip_x1 = inner.x + inner.w;
 
@@ -143,8 +143,8 @@ medit_field_edit( gui_id_t id, char* buf, u32 bufsz )
     u32 vis_rows = (u32)( lf()->view.h / line_h );
     if ( vis_rows < 1u ) vis_rows = 1u;
 
-    /* The engine runs the whole field-internal frame (keys, mouse, hscroll, blink, undo) and
-       leaves the resolved caret / anchor / scroll_x / blink on the keyed editor-state slot. */
+    /* The engine runs the whole field-internal frame (keys, mouse, hpan, blink, undo) and
+       leaves the resolved caret / anchor / pan_x / blink on the keyed editor-state slot. */
     medit_result_t r = medit_edit( id, inner, st, vis_rows, line_h, buf, bufsz );
 
     len = edit_strlen( buf, bufsz );                       /* keys may have resized buf */

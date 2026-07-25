@@ -608,7 +608,7 @@ edit_apply_mouse( gui_rect_t content, gui_item_state_t st, char* buf, u32 len,
        keeps extending the selection even after the cursor leaves the box.  text_offset_at clamps
        a cursor past either edge to 0 / len, so a drag past the ends selects to start / end. */
 
-    f32 px  = s_io.mouse_x - content.x + es->scroll_x;
+    f32 px  = s_io.mouse_x - content.x + es->pan_x;
     u32 off = text_offset_at( buf, len, px );
 
     if ( st.pressed && s_io.mouse_double[ 0 ] )
@@ -675,19 +675,20 @@ edit_apply_mouse( gui_rect_t content, gui_item_state_t st, char* buf, u32 len,
 }
 
 /*==============================================================================================
-    Scroll-into-view -- bias the content horizontally so the caret stays inside the visible width.
+    Pan-into-view -- bias the content horizontally so the caret stays inside the visible width.
     Runs every frame (focused or not) so a programmatic caret move from outside is also honoured;
-    content.w is the visible text width (the box already inset by the widget).
+    content.w is the visible text width (the box already inset by the widget).  This pan is the
+    field's own, in the text's content space -- nothing to do with the enclosing region's scroll.
 ==============================================================================================*/
 
 static void
-edit_scroll( gui_rect_t content, const char* buf, gui_edit_state_t* es )
+edit_pan( gui_rect_t content, const char* buf, gui_edit_state_t* es )
 {
     f32 cx    = text_x_at( buf, es->cursor );
     f32 vis_w = content.w;
     if ( vis_w < 0.0f ) vis_w = 0.0f;
-    if ( cx - (f32)es->scroll_x < 0.0f )  es->scroll_x = (u16)cx;
-    if ( cx - (f32)es->scroll_x > vis_w ) es->scroll_x = (u16)( cx - vis_w );
+    if ( cx - (f32)es->pan_x < 0.0f )  es->pan_x = (u16)cx;
+    if ( cx - (f32)es->pan_x > vis_w ) es->pan_x = (u16)( cx - vis_w );
 }
 
 /*==============================================================================================
@@ -697,9 +698,9 @@ edit_scroll( gui_rect_t content, const char* buf, gui_edit_state_t* es )
     while focused -- runs the key hook, honours a queued set_edit_cursor_end, initialises the undo
     ring on first focus, publishes the live-selection fact for window-level text selection, applies
     every key command, then the mouse selection drag, then advances the caret-blink clock.  Every
-    frame (focused or not) it scrolls the caret into view so a programmatic move is honoured, and
+    frame (focused or not) it pans the caret into view so a programmatic move is honoured, and
     reports any change to the item record.  Returns { changed, enter } and leaves cursor / anchor /
-    scroll_x / blink_t on the state slot for the wrapping widget to paint; the widget supplies the
+    pan_x / blink_t on the state slot for the wrapping widget to paint; the widget supplies the
     content rect, the colors, and the box chrome, and does nothing else.
 ==============================================================================================*/
 input_field_result_t
@@ -754,8 +755,8 @@ edit_field( gui_id_t id, gui_rect_t content, gui_item_state_t st, char* buf, u32
         else               es->blink_t += s_io.dt;
     }
 
-    /* Scroll the caret into view every frame so a programmatic move from outside is honoured. */
-    edit_scroll( content, buf, es );
+    /* Pan the caret into view every frame so a programmatic move from outside is honoured. */
+    edit_pan( content, buf, es );
 
     /* Report the edit to the item record (is_item_deactivated_after_edit, core/gui_query.c). */
     if ( res.changed )

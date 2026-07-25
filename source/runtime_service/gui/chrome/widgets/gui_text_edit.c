@@ -24,7 +24,7 @@
 /* Paint a focused-or-not field over its content rect: the selection highlight behind the text,
    the glyph-clipped text, and the blinking caret -- all inside the content interior so scrolled
    content does not bleed past the border.  Reads the state the engine left on the slot
-   (cursor / anchor / scroll_x / blink_t); measures with the engine's text_x_at.  Runs every frame
+   (cursor / anchor / pan_x / blink_t); measures with the engine's text_x_at.  Runs every frame
    so a programmatic caret move from outside is honoured and the field always repaints its content.
 
    Glyph-level horizontal clip: the scrolled text is hard-cut to the [clip_x0, clip_x1] window at
@@ -40,7 +40,7 @@ edit_paint( gui_rect_t content, const char* buf, const gui_edit_state_t* es, boo
     bool has_sel;
     edit_sel( es, &sel_lo, &sel_hi, &has_sel );
 
-    f32 text_x  = content.x - es->scroll_x;
+    f32 text_x  = content.x - es->pan_x;
     f32 text_y  = text_center_y( content.y, content.h );
     f32 clip_x0 = content.x;
     f32 clip_x1 = content.x + content.w;
@@ -109,8 +109,8 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
        so it never sees the widget's padding); vertical extent unchanged for centering + caret. */
     gui_rect_t content = { box.x + WIDGET_PAD, box.y, box.w - 2.0f * WIDGET_PAD, box.h };
 
-    /* The engine runs the whole non-paint frame (keys, mouse, scroll, blink, undo) and leaves the
-       resolved cursor / anchor / scroll_x / blink_t on the keyed edit-state slot. */
+    /* The engine runs the whole non-paint frame (keys, mouse, pan, blink, undo) and leaves the
+       resolved cursor / anchor / pan_x / blink_t on the keyed edit-state slot. */
     input_field_result_t res = edit_field( id, content, st, buf, bufsz );
 
     edit_paint( content, buf, GUI_STATE( gui_edit_state_t, id ), st.focused );
