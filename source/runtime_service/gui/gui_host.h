@@ -78,11 +78,13 @@ f32         gui_viewport_caption_h  ( gui_vp_t vp );
 void        gui_viewport_size       ( gui_vp_t vp, i32* out_w, i32* out_h );
 f32         gui_viewport_content_y  ( gui_vp_t vp );
 
-/* boot-tier host front end (gui_boot.c) */
+/* boot path (gui_boot.c) -- the alternative to the runtime host: gui owns the main surface AND
+   the loop shape.  A host on the runtime path (run_host_main) calls none of these; it calls the
+   frame verbs above and drives its own window, pump, and present.  See BOOT PATH in gui_api.h. */
 gui_vp_t    gui_boot                ( const gui_boot_desc_t* desc );
-bool        gui_frame_poll          ( f32* out_dt );
-bool        gui_present_begin       ( rhi_cmd_t* out_cmd );
-void        gui_present_end         ( void );
+bool        gui_boot_poll           ( f32* out_dt );
+bool        gui_boot_present_begin  ( rhi_cmd_t* out_cmd );
+void        gui_boot_present_end    ( void );
 
 /* gui-owned floater surfaces (window + context owned by gui) */
 gui_vp_t    gui_viewport_spawn          ( const char* title, i32 x, i32 y, i32 w, i32 h );

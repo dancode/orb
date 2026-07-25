@@ -24,7 +24,8 @@
     frame/gui_frame_font.c       -- font API (load/use/push/pop/active_id) + the font -> layout bridge (gui_style_apply)
     frame/gui_viewport.c         -- surface record lifecycle (viewport_create/destroy) + viewport open/resize/
                                       close + gui-owned floater lifecycle (spawn/update/render_floaters)
-    frame/gui_boot.c             -- one-call host front end: boot, frame_poll, present_begin/present
+    frame/gui_boot.c             -- THE BOOT PATH: boot + boot_poll + the boot_present pair (plus
+                                      frame_pace, shared with the runtime path)
     frame/gui_pane.c             -- the pane bracket: pane_tag + gui_pane_begin/end stamp BOTH servers
     frame/gui_context.c          -- public multi-context lifecycle + the context block allocation
 
@@ -157,8 +158,8 @@ void           viewport_destroy( gui_vp_t vp );                                 
 // after gui_frame_loop.c: gui_viewport_render_floaters calls gui_render(), defined there.
 #include "runtime_service/gui/frame/gui_viewport.c"
 
-// Boot-tier host front end -- one-call setup (boot) + the canonical loop (frame_poll,
-// present_begin/present).  Last: it composes the lifecycle, viewport, and window layers above.
+// The boot path -- one-call setup (boot), its pump (boot_poll), and its render pair
+// (boot_present_*).  Last: it composes the lifecycle, viewport, and window layers above.
 #include "runtime_service/gui/frame/gui_boot.c"
 
 // MEMORY ACCOUNTING: sizeof-sums this unit's fixed statics for gui_mem_stats (cpu_frontend_bytes).

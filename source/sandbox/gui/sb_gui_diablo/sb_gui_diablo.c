@@ -639,7 +639,7 @@ main( int argc, char** argv )
     ui_kit_install();   /* the kit owns the element look -- install after every font landing */
 
     f32 dt = 0.0f;
-    while ( !s_quit && gui()->frame_poll( &dt ) )
+    while ( !s_quit && gui()->boot_poll( &dt ) )
     {
         /* font selection is frame-global state: switch BETWEEN frames (pre frame_begin), and
            read the key from app()'s snapshot -- gui's io snapshot belongs to the frame scope.
@@ -663,8 +663,8 @@ main( int argc, char** argv )
         }
         gui()->frame_end();
 
-        gui()->present_begin( NULL );
-        gui()->present_end();
+        gui()->boot_present_begin( NULL );
+        gui()->boot_present_end();
         gui()->frame_pace( 4, 16 );
     }
 

@@ -732,7 +732,7 @@ main( int argc, char** argv )
     gui()->print_mem_stats();
 
     f32 dt = 0.0f;
-    while ( gui()->frame_poll( &dt ) )
+    while ( gui()->boot_poll( &dt ) )
     {
         /* Exponential frame-time average -- smooth enough to read, fast enough to react. */
         s_dt_avg += ( dt - s_dt_avg ) * 0.05f;
@@ -745,8 +745,8 @@ main( int argc, char** argv )
         }
         gui()->frame_end();
 
-        gui()->present_begin( NULL );
-        gui()->present_end();
+        gui()->boot_present_begin( NULL );
+        gui()->boot_present_end();
         gui()->frame_pace( 0, 0 ); // ( 4, 16 );
     }
 

@@ -14,8 +14,8 @@
         5  GUI_STYLE   -- a kit promotes its own palette over the stock_* set
         6  GUI_CHROME  -- one stock window for contrast: the optional policy layer
 
-    Also the reference for what gui()->boot sets up: the minimal loop is boot -> frame_poll ->
-    frame_begin -> ctx_begin .. ctx_end -> frame_end -> present_begin/present_end -> frame_pace.
+    Also the reference for what gui()->boot sets up: the minimal loop is boot -> boot_poll ->
+    frame_begin -> ctx_begin .. ctx_end -> frame_end -> the boot_present pair -> frame_pace.
 
 ==============================================================================================*/
 
@@ -460,7 +460,7 @@ main( int argc, char** argv )
     }
 
     f32 dt = 0.0f;
-    while ( gui()->frame_poll( &dt ) )
+    while ( gui()->boot_poll( &dt ) )
     {
         if ( gui()->frame_begin( dt ) )
         {
@@ -470,10 +470,10 @@ main( int argc, char** argv )
         }
         gui()->frame_end();
 
-        /* present_begin opens the main surface's frame (cleared to the boot color); present_end
-           draws the gui and presents.  This pair is what places the 2D frame in the backend. */
-        gui()->present_begin( NULL );
-        gui()->present_end();
+        /* The boot pair: begin opens the main surface's frame (cleared to the boot color), end
+           draws the gui and presents.  This is what places the 2D frame in the backend. */
+        gui()->boot_present_begin( NULL );
+        gui()->boot_present_end();
 
         gui()->frame_pace( 4, 16 );
     }

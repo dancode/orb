@@ -6,7 +6,7 @@
     and the per-category files it includes), grouped under a main menu bar -- one menu per
     category, one checkable item per demo window.  This host is 100% gui-focused and runs the
     boot-tier easy-mode loop: gui()->boot() owns the window + render context (the borderless
-    chrome shell auto-emits each frame), frame_poll/present_begin/present_end drive the frame.
+    chrome shell auto-emits each frame), boot_poll/boot_present_begin/boot_present_end drive the frame.
     Rendering itself is not under test here (see sb_vulkan for that).
 
 ==============================================================================================*/
@@ -80,10 +80,10 @@ main( int argc, char** argv )
     }
 
    gui()->debug_enable( true );
-    /* Main loop -- frame_poll pumps the OS and routes events (rhi swapchain resize, gui input
+    /* Main loop -- boot_poll pumps the OS and routes events (rhi swapchain resize, gui input
        + floater lifecycle); false on quit or main-window close. */
     f32 dt = 0.0f;
-    while ( gui()->frame_poll( &dt ) )
+    while ( gui()->boot_poll( &dt ) )
     {
         /* Build the UI -- balanced scopes; emit is skipped entirely on provably clean frames
            (frame_begin false), render then replays the preserved tessellation.  ex_frame owns
@@ -101,8 +101,8 @@ main( int argc, char** argv )
 
         /* Present the main surface + every gui-owned floater (viewport reconcile, minimized
            guard, clear to the boot color -- all inside). */
-        gui()->present_begin( NULL );
-        gui()->present_end();
+        gui()->boot_present_begin( NULL );
+        gui()->boot_present_end();
 
         /* Frame pacing: spin at 4 ms (~250 Hz); with idle skip on (I) block on OS input while
            the UI is static, 16 ms (~60 Hz) while a widget animation settles. */

@@ -136,13 +136,13 @@ main( int argc, char** argv )
     printf( "[sb_gui_editor] Scene panel: RMB look + WASD fly, LMB drive/select, RMB+LMB/MMB pan, Alt+LMB orbit\n" );
 
     /* ------------------------------------------------------------------------------ */
-    /* Main loop.  frame_poll pumps the OS and routes every event (rhi swapchain resize,
+    /* Main loop.  boot_poll pumps the OS and routes every event (rhi swapchain resize,
        gui input + floater lifecycle); false = quit or main-window close.  Input still
        reads through app()'s snapshot API as before.                                   */
 
     f32 dt = 0.0f;
 
-    while ( gui()->frame_poll( &dt ) )
+    while ( gui()->boot_poll( &dt ) )
     {
         if ( app()->key_pressed( APP_KEY_ESCAPE ) || g_ed.request_quit )
             goto quit;
@@ -205,17 +205,17 @@ main( int argc, char** argv )
         gui()->frame_end();
 
         /* ------------------------------------------------------------------------------ */
-        /* Render.  present_begin opens the main surface's frame (clear included) and hands
-           out the live cmd for the offscreen scene pass; present_end draws the gui over it,
+        /* Render.  boot_present_begin opens the main surface's frame (clear included) and hands
+           out the live cmd for the offscreen scene pass; boot_present_end draws the gui over it,
            presents, and renders the floaters -- called unconditionally (minimized-safe).  */
 
         rhi_cmd_t cmd;
-        if ( gui()->present_begin( &cmd ) )
+        if ( gui()->boot_present_begin( &cmd ) )
         {
             if ( emitted && scene_render )
                 ed_viewport_render( cmd );
         }
-        gui()->present_end();
+        gui()->boot_present_end();
 
         /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
            on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */

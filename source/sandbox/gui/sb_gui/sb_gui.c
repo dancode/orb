@@ -1384,13 +1384,13 @@ main( int argc, char** argv )
         gui()->style_apply();
     }
     /* ------------------------------------------------------------------------------ */
-    /* Start render loop.  frame_poll pumps the OS and routes every event (rhi swapchain
+    /* Start render loop.  boot_poll pumps the OS and routes every event (rhi swapchain
        resize, gui input + floater lifecycle); false = quit or main-window close.  Frame
        hooks and the debug driver were wired by boot() above. */
 
     f32 dt = 0.0f;
 
-    while ( gui()->frame_poll( &dt ) )
+    while ( gui()->boot_poll( &dt ) )
     {
 
         /* ------------------------------------------------------------------------------ */
@@ -1478,12 +1478,12 @@ main( int argc, char** argv )
 
         gui()->frame_end();
 
-        /* Render + present: a balanced pair.  present_begin opens the main surface's frame
+        /* Render + present: a balanced pair.  boot_present_begin opens the main surface's frame
            (cleared to the boot color) -- its bool gates host render passes, none here (see
-           sb_gui_editor for that use); present_end draws the gui, presents, and renders every
+           sb_gui_editor for that use); boot_present_end draws the gui, presents, and renders every
            owned floater.  Both minimized-safe. */
-        gui()->present_begin( NULL );
-        gui()->present_end();
+        gui()->boot_present_begin( NULL );
+        gui()->boot_present_end();
 
         /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
            on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */

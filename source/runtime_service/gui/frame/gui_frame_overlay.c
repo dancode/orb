@@ -25,7 +25,7 @@
     clock -- it is a leaf of rhi + app -- so the host hands it a monotonic seconds callback through
     perf_overlay(); gui brackets the frame with it.  The emit clock opens at frame_begin and is
     latched on the first render() of the frame; the render clock sums the render() flush calls; the
-    present clock (boot-tier only) times the present pair and subtracts the render flush already
+    present clock (boot path only) times the present pair and subtracts the render flush already
     counted, so it reports the non-render present overhead -- dominated by the frame_begin fence wait
     (GPU backpressure).  emit + render + present then account for the whole CPU frame.  All three
     raw measurements are folded into smoothed (EMA) readouts at the next frame_begin, so the panel
@@ -40,13 +40,13 @@ static struct
     f64             emit_ms;            /* this frame: frame_begin -> first render() (ms)     */
     f64             rend_ms;            /* this frame: accumulated render() wall time (ms)    */
     bool            emit_captured;      /* emit_ms latched on the first render() this frame   */
-    f64             t_present_start;    /* clock() at gui_present_begin entry (0 = not armed) */
+    f64             t_present_start;    /* clock() at boot_present_begin entry (0 = not armed) */
     f64             pres_ms;            /* this frame: present pair wall minus render (ms)    */
     f32             fps;                /* smoothed readouts shown by the overlay             */
     f32             s_emit_ms;
     f32             s_rend_ms;
     f32             s_pres_ms;
-    f32             s_poll_ms;          /* smoothed frame_poll (pump + input) span            */
+    f32             s_poll_ms;          /* smoothed boot_poll (pump + input) span            */
     f32             s_wait_ms;          /* smoothed frame_pace sleep / idle wait span         */
 
 } s_perf;
@@ -116,13 +116,13 @@ perf_render_end( f64 t0 )
         s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
 }
 
-/* Present bracket -- boot-tier only (gui_present_begin / gui_present_end, gui_boot.c).  Arm the
-   clock at present_begin entry so the span covers the whole pair: floater reconcile, the frame_begin
+/* Present bracket -- boot-tier only (gui_boot_present_begin / _end, gui_boot.c).  Arm the
+   clock at begin entry so the span covers the whole pair: floater reconcile, the frame_begin
    fence wait (CPU parks on GPU completion here), swapchain acquire, the gui_render flush, submit,
-   present, and floater presents.  At present_end exit, subtract rend_ms -- the render flush is shown
+   present, and floater presents.  At the end's exit, subtract rend_ms -- the render flush is shown
    on its own row and lives inside this span -- leaving the NON-render present overhead, which is
    dominated by the fence wait (GPU backpressure).  emit + render + present then sum to the CPU frame.
-   Attach-path hosts never call the present pair, so pres_ms stays 0 and the row reads zero for them. */
+   Runtime-path hosts never call the present pair, so pres_ms stays 0 and the row reads zero for them. */
 static void
 perf_present_begin( void )
 {
@@ -138,8 +138,9 @@ perf_present_end( void )
     s_perf.pres_ms = span > 0.0 ? span : 0.0;   /* clamp: render flush can't exceed the pair span */
 }
 
-/* Poll + pace brackets -- boot-tier (gui_frame_poll / gui_frame_pace, gui_boot.c).  These are the
-   last two unmeasured phases of the loop: frame_poll (OS pump + gamepad + input snapshot) and
+/* Poll + pace brackets (gui_boot_poll / gui_frame_pace, gui_boot.c).  The poll row is boot-path
+   only; the pace row appears for any host that calls frame_pace.  These are the
+   last two unmeasured phases of the loop: boot_poll (OS pump + gamepad + input snapshot) and
    frame_pace (the end-of-loop sleep / idle wait).  The pace span is the "wait time" -- a
    frame_pace(4,16) sleep otherwise hides ~4 ms from the breakdown, which is exactly what made the
    totals not add up.  With these, emit + render + present + poll + wait accounts for the whole

@@ -397,7 +397,7 @@ main( int argc, char** argv )
     }
 
     f32 dt = 0.0f;
-    while ( gui()->frame_poll( &dt ) )
+    while ( gui()->boot_poll( &dt ) )
     {
         if ( gui()->frame_begin( dt ) )
         {
@@ -407,8 +407,8 @@ main( int argc, char** argv )
         }
         gui()->frame_end();
 
-        gui()->present_begin( NULL );
-        gui()->present_end();
+        gui()->boot_present_begin( NULL );
+        gui()->boot_present_end();
         gui()->frame_pace( 4, 16 );
     }
 

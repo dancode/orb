@@ -1612,7 +1612,7 @@ typedef struct
     gui_clock_fn              clock;      /* frame hooks (gui links no sys) -- see frame_set_hooks */
     gui_sleep_fn              sleep;
     gui_wait_events_fn        wait;
-    f32                       clear[ 4 ]; /* present() clear color; alpha 0 = default dark        */
+    f32                       clear[ 4 ]; /* boot_present_begin clear color; alpha 0 = dark        */
     bool                      debug;      /* arm the debug hotkey driver (debug_enable)            */
 
 } gui_boot_desc_t;

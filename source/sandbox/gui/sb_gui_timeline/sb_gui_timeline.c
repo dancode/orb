@@ -80,7 +80,7 @@ main( int argc, char** argv )
     tl_workload_init();
 
     f32 dt = 0.0f;
-    while ( gui()->frame_poll( &dt ) )
+    while ( gui()->boot_poll( &dt ) )
     {
         prof_frame_mark();
         PROF_ZONE_BEGIN( "host/frame" );
@@ -108,8 +108,8 @@ main( int argc, char** argv )
         PROF_ZONE_END();
 
         PROF_ZONE_BEGIN( "host/present" );
-        gui()->present_begin( NULL );
-        gui()->present_end();
+        gui()->boot_present_begin( NULL );
+        gui()->boot_present_end();
         PROF_ZONE_END();
 
         PROF_ZONE_END();    /* host/frame -- pacing wait tracked separately below */

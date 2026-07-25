@@ -381,7 +381,7 @@ main( int argc, char** argv )
     }
 
     f32 dt = 0.0f;
-    while ( gui()->frame_poll( &dt ) && !s_quit )
+    while ( gui()->boot_poll( &dt ) && !s_quit )
     {
         /* Drain queued command text (console submits, exec files). */
         core()->cmd_pump();
@@ -431,8 +431,8 @@ main( int argc, char** argv )
         }
         gui()->frame_end();
 
-        gui()->present_begin( NULL );
-        gui()->present_end();
+        gui()->boot_present_begin( NULL );
+        gui()->boot_present_end();
         gui()->frame_pace( 4, 16 );
     }
 
