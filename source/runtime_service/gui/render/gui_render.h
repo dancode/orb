@@ -273,14 +273,22 @@ void                gui_build_dump_geometry( void );
     accepted (text may grow/shrink etc); only outgrowing it falls back to one real frame, which
     recaptures at the larger size.
 
+    The block's LAYOUT footprint travels the same seam as a second, independent measurement:
+    gui_volatile_cb reports the extent each real emit claimed (gui_volatile_footprint), and each
+    idle replay reports its own (gui_replay_scope_measure).  Geometry that outgrows its reservation
+    and layout that outgrows its cell are the two ways a block can exceed what the cache holds for
+    it, and both now cost exactly one real frame instead of drawing wrong -- see gui.h's
+    fixed-footprint contract.
+
     Reverse direction (backend -> core): gui_update_volatile needs a valid layout/id scope for the
     callback to emit into, which only the UI unit owns (lf(), the id stack).  gui_replay_scope_enter
-    / _exit are the two functions that cross back -- the same kind of unit-seam exception as
-    gui_dbg_build_viewport above, just two of them instead of one.
+    / _exit / _measure are the functions that cross back -- the same kind of unit-seam exception as
+    gui_dbg_build_viewport above, just three of them instead of one.
 ==============================================================================================*/
 
 void     gui_volatile_cb_open ( gui_id_t id );                 // (re)open row `id`; cmd_lo = current cmd_count
 void     gui_volatile_stamp   ( f32 x, f32 y, f32 w );          // fill win/z/vp/font/clip + cursor stamp for the open row
+void     gui_volatile_footprint( f32 w, f32 h );                // layout extent this real emit claimed, for the reflow check
 void     gui_volatile_cb_close( gui_volatile_fn fn );           // cmd_hi + fn for the open row; tags the command range
 void     gui_update_volatile  ( void );
 u32      gui_volatile_row_count( void );                        // registered registry rows (perf overlay, vs GUI_MAX_VOLATILE)
@@ -288,8 +296,9 @@ bool     gui_volatile_live    ( void );                         // any row patch
                                                                 //   presenting at cadence instead of block-waiting on input
 
 /* Implemented in the UI unit (chrome/widgets/gui_volatile.c); called only from gui_update_volatile. */
-void     gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w );
-void     gui_replay_scope_exit ( bool force_redraw );
+void     gui_replay_scope_enter  ( gui_id_t id, f32 x, f32 y, f32 w );
+void     gui_replay_scope_measure( f32* out_w, f32* out_h );    // extent the replay claimed, in gui_volatile_footprint terms
+void     gui_replay_scope_exit   ( bool force_redraw );
 
 /*==============================================================================================
     RENDER: GPU resources + flush (pipeline/gui_render.c)

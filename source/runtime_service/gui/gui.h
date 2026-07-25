@@ -996,12 +996,16 @@ typedef struct
     resolved on real frames, which is guaranteed since input changes always force one.
 
     CONTRACT -- fixed layout footprint: the block's PIXELS may change every frame, but the space
-    it occupies in the layout must not.  Surrounding widgets are retained and only re-lay-out on
-    real frames; a block whose size varies (e.g. text gaining a digit) shoves its neighbours
-    around on real frames while they sit frozen on idle ones -- visible jitter, plus the window
-    re-tessellates every real frame because the neighbours' positions really did change.  Use
-    fixed-size formatting ("%8.3f" with a mono font), a fixed canvas(), or padding to keep the
-    footprint constant.
+    it occupies in the layout should not.  Surrounding widgets are retained and only re-lay-out on
+    real frames, so a block that grows (e.g. text gaining a digit) is drawing over neighbours that
+    cannot move until layout runs again.  This is CHECKED, not merely asked for: the layout extent
+    each replay claims is compared against the last real emit's, and a change forces one real
+    frame -- the same self-healing cost as outgrowing the geometry reservation, so a footprint that
+    varies is a performance cost (a real frame per change) rather than a visual defect.  A callback
+    whose layout simply does not reproduce under the replay scope is caught after a few frames and
+    the check latches off for it (Debug asserts).  Still prefer fixed-size formatting ("%8.3f" with
+    a mono font), a fixed canvas(), or padding: a footprint that changes every frame gives up the
+    idle skip entirely, which is the whole point of the widget.
 
     CONTRACT -- flow layouts only: the replay scope is a minimal single-column stack at the cell
     the block occupied, so stack and columns call sites replay exactly (a block in a multi-track

@@ -16,6 +16,15 @@
     (cache_invalidate_window) so the next real frame re-tessellates it, and the recapture reserves
     the larger size.  Reservations are grow-only per id.
 
+    Layout integrity: the reservation above bounds what a block may DRAW; the second, independent
+    check bounds the space it may OCCUPY.  gui_volatile_cb measures the layout extent every real
+    emit claims (gui_volatile_footprint), each replay measures its own the same way
+    (gui_replay_scope_measure), and a disagreement forces one real frame -- a block that grows past
+    its cell overlaps neighbours that are frozen cached geometry and cannot move until layout runs
+    again, so the fixed-footprint contract in gui.h is now enforced rather than merely documented.
+    volatile_footprint_reflow carries the strike counter that keeps a callback which NEVER agrees
+    from buying a real frame every frame forever.
+
     Position integrity: a row never stores an absolute buffer address.  It stores its position
     RELATIVE to the owning window's slot (local_vert_base / local_idx_base / local_cmd_base) plus
     the slot's tessellation generation at capture time (tess_gen, bumped by cache_build_frame on
@@ -71,6 +80,16 @@
 #define VOL_IDX_PAD       192u   /* index headroom (~1.5x vertices for quad-heavy content)       */
 #define VOL_CMD_PAD       2u     /* dormant GPU-command slots reserved past the block's live run */
 
+/* Layout-footprint reflow check (volatile_footprint_reflow).  EPS absorbs the sub-pixel noise of
+   two independent layout passes agreeing.  STRIKES bounds one specific pathology -- see
+   gui_volatile_footprint: a block whose footprint keeps CHANGING is legitimate (it buys a real
+   frame per change, which is the point), but a callback that simply does not lay out the same way
+   under the replay scope would buy one every single frame forever, silently retiring the idle skip
+   with no way to reach agreement.  The two are told apart by whether the real emit that follows a
+   forced frame agrees with what the replay drew. */
+#define VOL_FOOT_EPS      0.5f
+#define VOL_FOOT_STRIKES  4u
+
 /* Field widths: GUI_MAX_VERTS (16K), GUI_MAX_IDX (48K) and GUI_MAX_CMDS (1024) all fit u16, and
    the local_* offsets are bounded by them.  tess_gen is full u32 -- it must never alias across a
    wrap, since it is the sole guard that a patch writes into geometry produced by the exact
@@ -89,6 +108,16 @@ typedef struct
     u8               clip_idx;
     bool             active;           // a capture exists (retired on patch failure until recaptured)
     bool             hidden;           // whole range was clip-empty at emit -- nothing on screen
+
+    /* Layout footprint: the extent the block claimed at its last REAL emit, measured by the probe
+       in gui_volatile_cb (UI unit).  Idle replays measure their own the same way and compare --
+       the geometry reservation guards what the block DRAWS, this guards the space it OCCUPIES. */
+    f32              foot_w, foot_h;     // real emit's extent (the reference a replay is checked against)
+    f32              rfoot_w, rfoot_h;   // extent of the replay that forced the pending real frame
+    u8               foot_strikes;       // real frames that disagreed with the replay that forced them
+    bool             foot_valid;         // a real emit measured it (the probe ran)
+    bool             foot_pending;       // a reflow-forced real frame is owed a verdict
+    bool             foot_unstable;      // latched after VOL_FOOT_STRIKES: stop buying frames for it
 
     /* Ambient s_draw scalars in effect at the moment gui_volatile_begin stamped this row --
        alpha, rounding, and the text-clip window are read directly off s_draw by the raw draw_
@@ -181,6 +210,74 @@ gui_volatile_stamp( f32 x, f32 y, f32 w )
     row->rounding     = s_draw.rounding;
     row->text_clip_x0 = s_draw.text_clip_x0;
     row->text_clip_x1 = s_draw.text_clip_x1;
+}
+
+static bool
+volatile_foot_eq( f32 aw, f32 ah, f32 bw, f32 bh )
+{
+    return fabsf( aw - bw ) <= VOL_FOOT_EPS && fabsf( ah - bh ) <= VOL_FOOT_EPS;
+}
+
+/* Called by gui_volatile_cb (chrome/widgets/gui_volatile.c) right after the callback returns
+   during real emit, before the bracket closes -- records the layout extent the block just claimed,
+   measured relative to its cell origin.  This is the reference every idle replay checks itself
+   against (volatile_footprint_reflow), re-measured on EVERY real emit so a block that legitimately
+   changes size settles immediately: the replay that spotted the change bought this frame, this
+   frame laid the neighbours out around the new size, and the next replay agrees again.
+     This is also where the two ways a footprint can disagree are told apart, because only here is
+   the answer known.  A real frame forced by a reflow arrives owing a verdict (foot_pending): if it
+   lays out to the size the replay drew, the replay was RIGHT -- the content genuinely changed, the
+   forced frame did its job, strikes clear.  If it lays out to some other size, the replay and the
+   real emit simply disagree about the same content, and no number of forced frames will close the
+   gap; count a strike, and once they run out stop buying frames for this row (a permanent
+   full-rate redraw is a worse failure than the overlap it was trying to fix). */
+void
+gui_volatile_footprint( f32 w, f32 h )
+{
+    if ( s_open_id == GUI_ID_NONE ) return;
+    gui_volatile_slot_t* row = volatile_find( s_open_id );
+    if ( !row ) return;
+
+    if ( row->foot_pending )
+    {
+        row->foot_pending = false;
+        if ( volatile_foot_eq( w, h, row->rfoot_w, row->rfoot_h ) )
+            row->foot_strikes = 0;
+        else if ( ++row->foot_strikes >= VOL_FOOT_STRIKES )
+        {
+            row->foot_unstable = true;   /* set first: the assert below reads it, and a runtime
+                                            expression keeps MSVC's constant-conditional warning off */
+            ORB_ASSERT_MSG( !row->foot_unstable,
+                            "gui volatile: callback lays out to a different size on replay than at "
+                            "real emit -- not reproducible under the replay scope (gui.h: flow "
+                            "layouts only, no ambient layout modifiers)" );
+        }
+    }
+
+    row->foot_w     = w;
+    row->foot_h     = h;
+    row->foot_valid = true;
+}
+
+/* True when a replay's layout extent disagrees with what the last real emit claimed -- the block
+   grew (or shrank) out of the cell the retained neighbours were laid out against, so what is on
+   screen right now is wrong: the neighbours are frozen cached geometry and cannot move until a
+   real frame re-runs layout.  Buying that frame is the entire remedy; the caller folds the result
+   into gui_replay_scope_exit's force_redraw, exactly as it does a reservation overflow.  The
+   replay's own measurement is kept so the frame it just bought can be graded (gui_volatile_footprint). */
+static bool
+volatile_footprint_reflow( gui_volatile_slot_t* row, f32 w, f32 h )
+{
+    if ( !row->foot_valid || row->foot_unstable )
+        return false;
+
+    if ( volatile_foot_eq( w, h, row->foot_w, row->foot_h ) )
+        return false;
+
+    row->rfoot_w      = w;
+    row->rfoot_h      = h;
+    row->foot_pending = true;
+    return true;
 }
 
 /* Called by gui_volatile_cb right after the callback returns during real emit -- closes the
@@ -549,7 +646,14 @@ gui_update_volatile( void )
         row->fn( row->id, true );
         u32 cmd_hi = s_draw.cmd_count;
 
-        bool ok = volatile_patch( row, cmd_ck, cmd_hi );
+        /* Measure before the scope pops -- the layout half of "does this still fit what the cache
+           holds for it", checked whether or not the geometry patch itself succeeds. */
+        f32 foot_w, foot_h;
+        gui_replay_scope_measure( &foot_w, &foot_h );
+
+        bool ok     = volatile_patch( row, cmd_ck, cmd_hi );
+        bool reflow = volatile_footprint_reflow( row, foot_w, foot_h );
+
         if ( ok )
             cache_count_volatile_patch( 1 );
         else
@@ -561,7 +665,9 @@ gui_update_volatile( void )
             cache_invalidate_window( row->win );
         }
 
-        gui_replay_scope_exit( !ok );
+        /* Either failure mode costs exactly one real frame: geometry that outgrew its reservation
+           recaptures bigger, layout that outgrew its cell re-lays-out the neighbours around it. */
+        gui_replay_scope_exit( !ok || reflow );
 
         /* Roll s_draw back -- nothing the callback emitted this call belongs in the real frame's
            persistent state, match or not. */

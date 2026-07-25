@@ -449,6 +449,7 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
        font here, at the frame boundary, instead of as an invisible UI downstream: this is the
        first point in the lifecycle where "no font" is knowably wrong (init() with
        GUI_FONT_NONE is legal -- the host may load its own before the first frame). */
+
     GUI_CONTRACT( font_valid(),
                   "ctx_begin() with no active font -- s_style is still the zero-font base, so "
                   "every widget measures 0 x 0 and the UI paints nothing.  Pass a built-in font "
@@ -456,6 +457,7 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
 
     /* The build must sit inside the frame: emitted before frame_begin the widgets land in a draw
        list that is about to be reset, emitted after frame_end in one already sealed and rendered. */
+
     GUI_CONTRACT( s_frame_phase == GUI_PHASE_BUILD,
                   "ctx_begin() outside the build -- the emit belongs between frame_begin() and "
                   "frame_end().\n" );
