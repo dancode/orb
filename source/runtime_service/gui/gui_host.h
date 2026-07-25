@@ -90,7 +90,7 @@ void        gui_viewport_update         ( void );
 void        gui_viewport_render_floaters( void );
 
 /* event routing -- the host drains the app event ring and forwards each event */
-bool gui_event( const app_event_t* ev );
+app_event_result_t gui_event( const app_event_t* ev );
 
 /*===============================================  GUI_DRAW  ================================================*/
 

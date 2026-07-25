@@ -321,13 +321,14 @@ vk_context_size( i32 ctx_id, i32* out_w, i32* out_h )
 /*============================================================================================*/
 
 /* Route a host app_event_t into the rhi context pool.  On APP_EV_WIN_RESIZE, finds the context
-   whose win_id matches and calls vk_context_resize.  Always returns false: resize events are
-   informational and must also reach gui()->event() for viewport size updates. */
-static bool
+   whose win_id matches and calls vk_context_resize.  A resize is a broadcast event -- the ui
+   viewport and the host track the same size change -- so a serviced resize answers SHARED and
+   rhi never consumes anything. */
+static app_event_result_t
 vk_event( const app_event_t* ev )
 {
     if ( ev->type != APP_EV_WIN_RESIZE )
-        return false;
+        return APP_EVENT_PASS;
 
     for ( i32 i = 0; i < RHI_CTX_MAX; ++i )
     {
@@ -336,10 +337,10 @@ vk_event( const app_event_t* ev )
         if ( vk.contexts[ i ].win_id == ev->win_id )
         {
             vk_context_resize( i, ev->data.win_resize.w, ev->data.win_resize.h );
-            return false;   /* not consumed; gui->event() also needs WIN_RESIZE */
+            return APP_EVENT_SHARED;   /* gui()->event() also needs WIN_RESIZE */
         }
     }
-    return false;
+    return APP_EVENT_PASS;   /* resize for a window rhi has no context for */
 }
 
 /*============================================================================================*/

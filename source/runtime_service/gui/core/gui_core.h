@@ -472,8 +472,9 @@ gui_state_usage_t gui_state_usage( void );
                      only picks the moment -- the same split as draw_nav_ring.
     gui_owned_window_event   the io pump's ONE call up into its orchestrator (frame unit):
                      OS resize / close events for a gui-OWNED floater are serviced against
-                     the viewport pool the orchestrator manages.  Returns true when win_id
-                     is an owned viewport (event consumed).  Defined in frame/gui_frame_loop.c.
+                     the viewport pool the orchestrator manages.  Answers the app_event_result_t
+                     routing schema -- CONSUMED only for an owned viewport.  Defined in
+                     frame/gui_viewport.c.
     DBG_* / STEP_SET_OWNER   debug capture stamps (debug/gui_debug.h) -- severable tooling,
                      compiled away outside Debug.
 ==============================================================================================*/
@@ -482,7 +483,7 @@ gui_state_usage_t gui_state_usage( void );
                            the ring clear of the view edge with it */
 void draw_nav_ring( gui_rect_t r, bool captured );
 void nav_scroll_chase( gui_rect_t r );
-bool gui_owned_window_event( const app_event_t* ev );
+app_event_result_t gui_owned_window_event( const app_event_t* ev );
 
 /* Decentralized memory accounting: the core unit's fixed statics (ambient records, io snapshot,
    id/flag stacks, context pool array), summed at the foot of gui_core.c for gui_ui_memory. */

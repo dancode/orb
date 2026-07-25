@@ -37,9 +37,10 @@
     Frame order
     -----------
     [pump OS events]          app()->pump_events()
-    [event drain]             app()->next_event() per frame: rhi()->event (swapchain resize),
-                              gui()->event (input, floaters), desc->on_event (leftovers);
-                              main WIN_CLOSE goes through desc->on_close_request (veto).
+    [event drain]             app()->next_event() per frame, offered to rhi()->event (swapchain
+                              resize), gui()->event (input, floaters), desc->on_event (leftovers)
+                              until one answers APP_EVENT_CONSUMED; a surviving main WIN_CLOSE
+                              goes through desc->on_close_request (veto).
     [frame clock]             run_clock_update()
     [console poll]            sys, if RUN_HOST_CONSOLE
     [cmd pump]                cmd_pump() -- queued command text (console, exec, +cmdline)
@@ -625,21 +626,26 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* -- drain event ring ------------------------------------------ */
 
-        /* Drain events.  rhi()->event() routes WIN_RESIZE to the matching swapchain; gui()->event()
-           updates viewport sizes and handles input (text, scroll, mouse state; owned-floater
-           closes are consumed here too).  on_event taps whatever is left; any WIN_CLOSE that
-           survives is the main window's -- on_close_request may veto it (save prompts). */
+        /* Drain events.  Sinks are offered each event in order -- rhi (swapchain resize), gui
+           (viewport sizes, input, owned-floater lifecycle), the host's on_event tap -- and each
+           answers on the app_event_result_t schema (app.h).  The routing rule is ONE line with no
+           per-event-type exceptions: stop at the first APP_EVENT_CONSUMED.  A sink that acted on a
+           broadcast event (a resize reaching swapchain + viewport + host) answers APP_EVENT_SHARED
+           and routing carries on.  Any WIN_CLOSE that survives the whole chain is the main
+           window's -- on_close_request may veto it (save prompts). */
 
         if ( windowed )
         {
             app_event_t ev;
             while ( app()->next_event( &ev ) )
             {
-                if ( rhi() ) rhi()->event( &ev );
-                if ( gui() && gui()->event( &ev ) )
+                if ( rhi() && rhi()->event( &ev ) == APP_EVENT_CONSUMED )
                     continue;
 
-                if ( desc->on_event && desc->on_event( &ev ) )
+                if ( gui() && gui()->event( &ev ) == APP_EVENT_CONSUMED )
+                    continue;
+
+                if ( desc->on_event && desc->on_event( &ev ) == APP_EVENT_CONSUMED )
                     continue;
 
                 /* Digital edges nobody consumed reach the bind system (auto-repeat filtered:

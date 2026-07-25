@@ -73,9 +73,9 @@ typedef struct rhi_api_s
 
     /* Forward an app_event_t from the host event ring.  Handles APP_EV_WIN_RESIZE by
        finding the context whose win_id matches and calling context_resize internally.
-       Always returns false (resize events are not consumed -- gui()->event() must also
-       see them to update its viewport sizes). */
-    bool (*event)( const app_event_t* ev );
+       Never returns APP_EVENT_CONSUMED: a rebuilt swapchain is APP_EVENT_SHARED, because
+       gui()->event() must also see the resize to update its viewport sizes. */
+    app_event_result_t (*event)( const app_event_t* ev );
 
     /* ---- Frame ---- */
 

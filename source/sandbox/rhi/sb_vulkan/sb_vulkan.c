@@ -162,12 +162,14 @@ main( int argc, char** argv )
         last_time    = now_time;
 
         /* Drain the app event ring once: rhi routes WIN_RESIZE to the swapchain, gui consumes
-           the input events it cares about, the host keeps only the close. */
+           the input events it cares about, the host keeps only the close.  Routing stops at the
+           first sink answering APP_EVENT_CONSUMED (app_event_result_t, app.h). */
         app_event_t ev;
         while ( app()->next_event( &ev ) )
         {
-            rhi()->event( &ev );
-            if ( gui()->event( &ev ) )
+            if ( rhi()->event( &ev ) == APP_EVENT_CONSUMED )
+                continue;
+            if ( gui()->event( &ev ) == APP_EVENT_CONSUMED )
                 continue;
 
             if ( ev.type == APP_EV_WIN_CLOSE )

@@ -268,7 +268,8 @@ gui_vp_t vp0 = gui()->viewport_open( win_id );    // attach gui to the EXISTING 
 while ( app pump )                                // host pumps OS events itself
 {
     // events: rhi()->event() first (swapchain resize), then gui()->event( &ev );
-    //         true = gui consumed it (input, floater lifecycle); leftovers go to the app
+    //         each answers app_event_result_t -- stop routing at APP_EVENT_CONSUMED (input,
+    //         floater lifecycle); SHARED/PASS keep going, so leftovers reach the app
     bool gui_ran = gui()->frame_begin( dt );      // false = clean frame, SKIP the build
     if ( gui_ran )
     {

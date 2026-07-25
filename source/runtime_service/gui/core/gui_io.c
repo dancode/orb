@@ -180,56 +180,59 @@ io_add_wheel( f32 delta )
 /* Forward one drained app event to gui.  The host loops its event ring and
    passes every event here; gui unpacks the input events it cares about (text +
    scroll) so that logic lives in one place instead of in every host's switch.
-   Returns true when gui consumed the event, letting hosts skip their own
-   handling for it (e.g. `if ( gui()->event( &ev ) ) continue;`). */
 
-bool
+   Answers the app_event_result_t routing schema (app.h): PASS = untouched, SHARED = acted on
+   but the event is broadcast, CONSUMED = gui owns it and routing stops.  Hosts need no
+   per-event-type knowledge -- the whole rule is
+   `if ( gui()->event( &ev ) == APP_EVENT_CONSUMED ) continue;`. */
+
+app_event_result_t
 gui_event( const app_event_t* ev )
 {
     switch ( ev->type )
     {
         case APP_EV_CHAR:
             io_add_char( ev->data.text.codepoint );
-            return true;
+            return APP_EVENT_CONSUMED;
 
         case APP_EV_MOUSE_WHEEL:
             s_pending_mouse_win     = ev->win_id;   /* route the wheel to the cursor's surface */
             s_pending_mouse_win_set = true;
             io_add_wheel( (f32)ev->data.mouse_wheel.delta );
-            return true;
+            return APP_EVENT_CONSUMED;
 
         case APP_EV_CLIPBOARD:
             io_add_paste( ev->data.clipboard.text );
-            return true;
+            return APP_EVENT_CONSUMED;
 
         /* Key state is polled, not event-borne: io_frame_begin samples every key into s_io each
            frame, and consumers read it through the tier model (key_claim / is_key_pressed).  So key
            events need no handling here -- including the debug layer hotkeys (NP1-NP5), which now live
            with the rest of the debug driver in debug_hotkeys (frame/gui_frame_overlay.c) on the same
            polled channel as F9/F10/P/O, instead of this separate event-time path.  Falls through to
-           the default (not consumed), so an unbound F-key still reaches the host's bind system. */
+           the default (PASS), so an unbound F-key still reaches the host's bind system. */
 
         /* Position + buttons are still resolved by io_frame_begin from the polled snapshot (client
            coords of the window the cursor is in); these events carry the win_id that identifies
-           WHICH window that is, so the host viewport can be resolved.  Not consumed -- the
+           WHICH window that is, so the host viewport can be resolved.  SHARED, not CONSUMED -- the
            mouse-capture fence (want_capture_mouse) decides UI-vs-scene at read time, not here. */
         case APP_EV_MOUSE_MOVE:
         case APP_EV_MOUSE_DOWN:
         case APP_EV_MOUSE_UP:
             s_pending_mouse_win     = ev->win_id;
             s_pending_mouse_win_set = true;
-            return false;
+            return APP_EVENT_SHARED;
 
-        /* An gui-OWNED floater's OS window resize/close is gui's to service (it owns that
-           window + rhi context).  Delegate to the viewport-pool helper: it consumes the event
-           (returns true) only when win_id is an owned surface, so a host window's resize/close
-           still falls through to the host. */
+        /* A gui-OWNED floater's OS window resize/close is gui's to service (it owns that
+           window + rhi context).  Delegate to the viewport-pool helper, which grades the event
+           against the pool: CONSUMED for an owned surface, SHARED for the host's primary
+           surface gui only tracks, PASS for a window gui knows nothing about. */
         case APP_EV_WIN_RESIZE:
         case APP_EV_WIN_CLOSE:
             return gui_owned_window_event( ev );
 
         default:
-            return false;
+            return APP_EVENT_PASS;
     }
 }
 

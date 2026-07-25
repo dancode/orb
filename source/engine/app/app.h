@@ -285,6 +285,34 @@ typedef struct app_event_s
 } app_event_t;
 
 /*==============================================================================================
+    Event routing result -- the schema every event sink shares.
+
+    A host drains the event ring and offers each event to its sinks in a fixed order (rhi, gui,
+    the host's own tap, the bind system).  Every sink answers with one of three states, and the
+    routing rule is a single line with no per-event-type exceptions:
+
+        keep offering the event to the next sink until one returns APP_EVENT_CONSUMED.
+
+      APP_EVENT_PASS      not mine; I did nothing with it.
+      APP_EVENT_SHARED    I acted on it, but the event is a broadcast -- later sinks still need
+                          it.  A window resize legitimately reaches the swapchain AND the ui
+                          viewport AND the host; none of them is "the" owner.
+      APP_EVENT_CONSUMED  I own this event exclusively; routing stops here.
+
+    SHARED exists so "I handled it" and "nobody else may have it" stay separate answers.  A bool
+    return fuses them, which forces every broadcast case to lie ("handled but returns false")
+    and makes the routing rule unreadable without knowing which types are the exceptions.
+==============================================================================================*/
+
+typedef enum app_event_result_e
+{
+    APP_EVENT_PASS = 0,   // sink ignored the event; keep routing
+    APP_EVENT_SHARED,     // sink acted on it, but it is broadcast; keep routing
+    APP_EVENT_CONSUMED,   // sink owns it; stop routing
+
+} app_event_result_t;
+
+/*==============================================================================================
     Input — key codes
 ==============================================================================================*/
 

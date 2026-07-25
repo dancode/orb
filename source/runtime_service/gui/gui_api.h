@@ -340,17 +340,22 @@ typedef struct gui_api_s
     void        ( *ctx_end           )( void );
 
     /* Host input -- the host owns the app event ring drain and forwards each event here.
-       event() handles:
-         - APP_EV_CHAR / MOUSE_WHEEL / CLIPBOARD: input state; returns true (consumed).
-         - APP_EV_MOUSE_MOVE / _DOWN / _UP: routes the cursor to the correct viewport; returns false.
-         - APP_EV_WIN_RESIZE: updates the matching viewport's drawable size (primary or owned
-           floater).  Also drives rhi context resize for owned floaters (gui owns those contexts).
-           Returns true only for owned floater events; primary resize returns false so
-           rhi()->event() can also handle the swapchain rebuild.
-         - APP_EV_WIN_CLOSE: marks an owned floater for teardown (returns true); primary window
-           close returns false so the host can exit. */
+       Answers with the app_event_result_t routing schema (app.h): the host keeps routing until
+       a sink returns APP_EVENT_CONSUMED.  gui consumes only what it exclusively owns:
 
-    bool ( *event )( const app_event_t* ev );
+         - APP_EV_CHAR / MOUSE_WHEEL / CLIPBOARD:  input state gui alone keeps  -> CONSUMED.
+         - APP_EV_MOUSE_MOVE / _DOWN / _UP:        records which viewport the cursor is over,
+           but the UI-vs-scene decision is the capture fence's at read time      -> SHARED.
+         - APP_EV_WIN_RESIZE:  updates the matching viewport's drawable size.  A gui-OWNED
+           floater is gui's window end to end -> CONSUMED; the primary window is the host's
+           surface that gui merely tracks     -> SHARED, so rhi()->event() and the host still
+           see it.  A resize for an unknown window is PASS.
+         - APP_EV_WIN_CLOSE:   an owned floater is marked for teardown -> CONSUMED; any other
+           window's close is not gui's business at all                 -> PASS, so the host's
+           close-to-quit path runs.
+         - everything else: PASS. */
+
+    app_event_result_t ( *event )( const app_event_t* ev );
 
     /*============================================================================================================
         GUI_DRAW -- render server  (render/ + draw/)

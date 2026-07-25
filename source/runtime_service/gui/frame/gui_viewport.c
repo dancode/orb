@@ -304,10 +304,12 @@ gui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
    swapchain rebuild -- gui no longer calls rhi()->context_resize() here.
    For WIN_CLOSE:  marks an owned floater for teardown at the next viewport_update.
 
-   Returns true (consumed) only when win_id is an gui-owned floater, so the host's close-to-quit
-   path and rhi()->event() still fire for the primary (host-owned) window. */
+   Grades the event on the app_event_result_t schema by OWNERSHIP of the window, not by event
+   type: a gui-owned floater is gui's end to end (CONSUMED), the host's primary window is a
+   surface gui merely tracks (SHARED for a resize, PASS for a close, so rhi()->event() and the
+   host's close-to-quit path both still run), and an unknown win_id is PASS. */
 
-bool                            /* non-static: gui_event (core/gui_io.c) delegates across the TU seam */
+app_event_result_t              /* non-static: gui_event (core/gui_io.c) delegates across the TU seam */
 gui_owned_window_event( const app_event_t* ev )
 {
     /* Walk all live viewports (index 0 = primary, 1+ = secondary/owned). */
@@ -324,19 +326,16 @@ gui_owned_window_event( const app_event_t* ev )
             vp->disp_w       = ev->data.win_resize.w;
             vp->disp_h       = ev->data.win_resize.h;
             s_viewport_dirty = true;   /* layout must recompute for the new surface size */
-            /* Owned floaters: gui owns the window+context, so consume the event.
-               Primary viewport: return false -- rhi()->event() also needs to rebuild the swapchain
-               and the host may want to track the size for other purposes. */
-            return vp->owned;
+            return vp->owned ? APP_EVENT_CONSUMED : APP_EVENT_SHARED;
         }
         else if ( ev->type == APP_EV_WIN_CLOSE && vp->owned )
         {
-            vp->pending_close = true;   /* torn down at the next viewport_update */
-            return true;               /* consumed: gui owns this window's close lifecycle */
+            vp->pending_close = true;    /* torn down at the next viewport_update */
+            return APP_EVENT_CONSUMED;   /* gui owns this window's close lifecycle */
         }
         break;   /* found the viewport; primary close falls through to host */
     }
-    return false;
+    return APP_EVENT_PASS;
 }
 
 /* Tear a window off the main surface into its own floater.  Placement depends on how the tear-off

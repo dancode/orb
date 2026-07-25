@@ -17,8 +17,9 @@
     the dep graph generically — each module call is intentional.
 
         [pump OS events] <- app()->pump_events() — false = window closed (when windowed)
-        [event drain]    <- rhi()->event / gui()->event routing; on_event sees the rest;
-                            WIN_CLOSE consults on_close_request before quitting
+        [event drain]    <- rhi()->event / gui()->event / on_event, in that order; each answers
+                            app_event_result_t and routing stops at the first CONSUMED;
+                            a surviving WIN_CLOSE consults on_close_request before quitting
         [console poll]   <- sys, if RUN_HOST_CONSOLE
         [clock update]   <- run_clock_update() — stamps app_time, dt, frame_number
         [on_update]      <- desc callback — game logic, every frame, no widget calls
@@ -50,8 +51,10 @@
     on_close_request : main-window X pressed; return true to allow the quit, false to veto
                        ("unsaved changes" flows). NULL = close immediately.  run_host_quit()
                        is programmatic and final — it does not consult this.
-    on_event         : optional raw-event tap; sees each event rhi/gui did not consume;
-                       return true to consume it (a consumed WIN_CLOSE skips the quit path).
+    on_event         : optional raw-event tap; sees each event rhi/gui did not consume.
+                       Answers the app_event_result_t schema (app.h): APP_EVENT_CONSUMED stops
+                       routing (a consumed WIN_CLOSE skips the quit path), APP_EVENT_SHARED
+                       means "I acted, keep routing", APP_EVENT_PASS means "not mine".
 
     Quit
     ----
@@ -174,7 +177,7 @@ typedef struct run_host_desc_s
     void ( *on_update )( f32 dt );                // each frame — game logic, no widgets
     void ( *on_gui )( f32 dt );                   // dirty frames only — the widget build
     bool ( *on_close_request )( void );           // X pressed: true = quit, false = veto
-    bool ( *on_event )( const app_event_t* ev );  // unconsumed events; true = consumed
+    app_event_result_t ( *on_event )( const app_event_t* ev );   // see app_event_result_t (app.h)
 
 } run_host_desc_t;
 
