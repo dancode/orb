@@ -2,24 +2,23 @@
 
     runtime_service/gui/flow/gui_scroll.c -- Scroll region engine.
 
-    Implements the shared scrollable-region mechanism used by both window bodies and
-    child_begin boxes:
+    The shared scrollable-region mechanism behind both window bodies and child_begin boxes, in
+    file order:
 
-        gui_region_t        persistent scroll + content-size state, keyed by id
-        scroll_clamp        pin a scroll offset into [0, content - view]
+        region_get          persistent scroll + content-size state, keyed by id
+        region_spill_tol /
+        scroll_clamp        the scroll range: [0, content - view], with the sub-quantum tolerance
         layout_push_region  open a region: reserve gutters, clamp scroll, seed a layout frame
         layout_pop_region   close a region: measure content, emit the bars, claim the wheel
-
-    The persistent state for child_begin boxes is kept in the shared keyed pool
-    (gui_state_get); window bodies pass pointers to their own gui_window_t fields.
+        nav_scroll_chase    the keyboard analogue of the wheel, over the open region stack
 
     The scrollbar itself is a stock widget (chrome/widgets/gui_scrollbar.c) -- this engine only
     reserves its gutter and hands it the track rect + scroll slot at pop, through the forward
     declaration in flow/gui_flow.h.  Compose produces rects; the widget owns feel + look.
 
-    Included by gui.c after gui_layout_core.c (provides cell_next, layout_frame_t, lf,
-    layout_clear, layout_set_default, item_flags_chrome_reset) and before gui_layout_child.c
-    and gui_layout.c which call layout_push/pop_region.
+    Included by gui_flow.c after gui_layout_core.c (which provides layout_frame_t / lf /
+    layout_seed_content / layout_row_break) and before gui_layout_child.c and gui_layout.c, which
+    call layout_push/pop_region.
 
 ==============================================================================================*/
 
@@ -27,13 +26,11 @@
 /*==============================================================================================
     Persistent region state
 
-    Child regions need their scroll offset and last-measured content size to survive across
-    frames, keyed by id, exactly the way windows keep those fields inline in gui_window_t.
-    Windows do not use this pool -- they pass pointers to their own record -- so only child_begin
-    fetches a record, from the shared keyed state pool (gui_ctx.c) by region id.  No dedicated
-    table or recycling logic lives here: the pool stamps the slot each frame and reclaims it once
-    the id goes cold, and hands back zeroed storage on first sight so a new child opens at the top
-    with no measured size.
+    A child_begin box rents its scroll offset + measured content size from the keyed state pool by
+    region id; a window passes a pointer to its own gui_window_t fields instead, so this engine
+    never cares where the persistence lives.  No recycling logic is needed here -- the pool stamps
+    the slot each frame, reclaims it once the id goes cold, and hands back zeroed storage on first
+    sight, so a new child opens at the top with no measured size.
 ==============================================================================================*/
 
 /* gui_region_t is the small class's sizing tenant -- the assert lives with the tenant. */
@@ -47,72 +44,8 @@ region_get( gui_id_t id )
 }
 
 /*==============================================================================================
-    Nav scroll chase (here; the moment is picked by the interact server)
-
-    Bring the nav cursor's rect into view -- the keyboard analogue of the wheel.  Runs once, on
-    the frame the cursor was adopted (g_ctx->nav.scroll_chase), for the layout-placed cursor
-    item: walk the open region stack innermost-out and nudge each region's scroll so the item is
-    visible, correcting the rect level by level so an item deep in a nested child pulls every
-    ancestor into line.  Like the wheel, the new offset only reaches the screen next frame (this
-    frame's pen already used the old one), so wants_redraw forces the follow-up frame.  Invoked
-    from nav_item_register (core/gui_nav_item.c) across the server's documented upward seam: walking
-    regions and moving scroll is composition machinery, so the act lives here and behavior only
-    picks the moment -- the same split as draw_nav_ring.
-==============================================================================================*/
-
-void
-nav_scroll_chase( gui_rect_t r )
-{
-    const f32 pad = NAV_RING + 2.0f;   /* breathing room so the ring lands clear of the view edge */
-
-    u32 top = ( s_layout_sp <= GUI_LAYOUT_DEPTH ) ? s_layout_sp : GUI_LAYOUT_DEPTH;
-    for ( i32 i = (i32)top - 1; i >= 0; --i )
-    {
-        layout_frame_t* f = &s_layout_stack[ i ];
-        if ( f->flags & GUI_WIN_NOSCROLL ) continue;
-
-        f32 vx0 = f->view.x;   /* the region's resolved view rect: the same gutter-adjusted */
-        f32 vy0 = f->view.y;   /* extents the region's own scrollbars are sized against     */
-
-        /* Overshoot per axis: pull the near edge in (top-aligning an item taller than the view),
-           else the far edge.  Clamped into the scroll range measured last frame, so a chase can
-           never scroll past the content -- the same clamp the wheel applies. */
-        f32 dy = 0.0f;
-        if ( r.h > f->view.h - 2.0f * pad || r.y < vy0 + pad )
-            dy = r.y - ( vy0 + pad );
-        else if ( r.y + r.h > vy0 + f->view.h - pad )
-            dy = ( r.y + r.h ) - ( vy0 + f->view.h - pad );
-
-        f32 max_y  = f->scroll->content_h - f->view.h;
-        if ( max_y < 0.0f ) max_y = 0.0f;
-        f32 want_y = clampf( f->scroll->scroll_y + dy, 0.0f, max_y );
-        dy = want_y - f->scroll->scroll_y;
-
-        f32 dx = 0.0f;
-        if ( r.w > f->view.w - 2.0f * pad || r.x < vx0 + pad )
-            dx = r.x - ( vx0 + pad );
-        else if ( r.x + r.w > vx0 + f->view.w - pad )
-            dx = ( r.x + r.w ) - ( vx0 + f->view.w - pad );
-
-        f32 max_x  = f->scroll->content_w - f->view.w;
-        if ( max_x < 0.0f ) max_x = 0.0f;
-        f32 want_x = clampf( f->scroll->scroll_x + dx, 0.0f, max_x );
-        dx = want_x - f->scroll->scroll_x;
-
-        if ( dy != 0.0f || dx != 0.0f )
-        {
-            f->scroll->scroll_y = want_y;
-            f->scroll->scroll_x = want_x;
-            r.y -= dy;   /* where the item lands next frame -- the ancestors check that position */
-            r.x -= dx;
-            redraw_request();
-        }
-    }
-}
-
-/*==============================================================================================
     scroll_clamp -- pin a scroll offset into [0, content - view].  The one place the scroll range
-    is defined; shared by the gutter reservation (push), the wheel (pop), and any future caller.
+    is defined; shared by the gutter reservation (push), the wheel (pop), and the nav chase.
 ==============================================================================================*/
 
 /* Sub-quantum spill tolerance.  Lattice-quantized content (auto rows / natural sizes ceil to
@@ -412,6 +345,70 @@ layout_pop_region( void )
         p->line.cross  = outer.y;
         p->line.ext    = outer.h;
         p->line.open   = false;
+    }
+}
+
+/*==============================================================================================
+    nav_scroll_chase -- the keyboard analogue of the wheel, over the regions still open.
+
+    Runs once, on the frame the nav cursor was adopted (g_ctx->nav.scroll_chase), for the
+    layout-placed cursor item: walk the open region stack innermost-out and nudge each region's
+    scroll until the item is visible, correcting the rect level by level so an item deep in a
+    nested child pulls every ancestor into line.  Like the wheel, the new offset only reaches the
+    screen next frame (this frame's pen already used the old one), so it forces the follow-up.
+
+    Invoked from nav_item_register (core/gui_nav_item.c) across the interact server's documented
+    upward seam: walking regions and moving scroll is composition machinery, so the ACT lives here
+    and behavior only picks the moment -- the same split as draw_nav_ring.
+==============================================================================================*/
+
+void
+nav_scroll_chase( gui_rect_t r )
+{
+    const f32 pad = NAV_RING + 2.0f;   /* breathing room so the ring lands clear of the view edge */
+
+    u32 top = ( s_layout_sp <= GUI_LAYOUT_DEPTH ) ? s_layout_sp : GUI_LAYOUT_DEPTH;
+    for ( i32 i = (i32)top - 1; i >= 0; --i )
+    {
+        layout_frame_t* f = &s_layout_stack[ i ];
+        if ( f->flags & GUI_WIN_NOSCROLL ) continue;
+
+        f32 vx0 = f->view.x;   /* the region's resolved view rect: the same gutter-adjusted */
+        f32 vy0 = f->view.y;   /* extents the region's own scrollbars are sized against     */
+
+        /* Overshoot per axis: pull the near edge in (top-aligning an item taller than the view),
+           else the far edge.  Clamped into the scroll range measured last frame, so a chase can
+           never scroll past the content -- the same clamp the wheel applies. */
+        f32 dy = 0.0f;
+        if ( r.h > f->view.h - 2.0f * pad || r.y < vy0 + pad )
+            dy = r.y - ( vy0 + pad );
+        else if ( r.y + r.h > vy0 + f->view.h - pad )
+            dy = ( r.y + r.h ) - ( vy0 + f->view.h - pad );
+
+        f32 max_y  = f->scroll->content_h - f->view.h;
+        if ( max_y < 0.0f ) max_y = 0.0f;
+        f32 want_y = clampf( f->scroll->scroll_y + dy, 0.0f, max_y );
+        dy = want_y - f->scroll->scroll_y;
+
+        f32 dx = 0.0f;
+        if ( r.w > f->view.w - 2.0f * pad || r.x < vx0 + pad )
+            dx = r.x - ( vx0 + pad );
+        else if ( r.x + r.w > vx0 + f->view.w - pad )
+            dx = ( r.x + r.w ) - ( vx0 + f->view.w - pad );
+
+        f32 max_x  = f->scroll->content_w - f->view.w;
+        if ( max_x < 0.0f ) max_x = 0.0f;
+        f32 want_x = clampf( f->scroll->scroll_x + dx, 0.0f, max_x );
+        dx = want_x - f->scroll->scroll_x;
+
+        if ( dy != 0.0f || dx != 0.0f )
+        {
+            f->scroll->scroll_y = want_y;
+            f->scroll->scroll_x = want_x;
+            r.y -= dy;   /* where the item lands next frame -- the ancestors check that position */
+            r.x -= dx;
+            redraw_request();
+        }
     }
 }
 

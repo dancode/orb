@@ -15,16 +15,17 @@
     (split_begin/next/end) are separate features built on the same sublayout_open primitive --
     they live in gui_sublayout.c and gui_split.c, included just after this file.
 
-    Included by gui.c after gui_scroll.c (provides layout_push/pop_region, region_get,
-    scroll_clamp) and interact/gui_resize.c (provides the resize_item protocol +
-    resize_apply_edges); the chrome paint comes from stock/gui_adornment.c
-    (draw_child_bg / draw_child_border / draw_resize_highlight).
+    Included by gui_flow.c after gui_scroll.c (which provides layout_push/pop_region + region_get);
+    the resize protocol (resize_item / resize_apply_edges) resolves cross-unit from
+    interact/gui_resize.c, and the chrome paint from stock/gui_adornment.c (draw_child_bg /
+    draw_child_border / draw_resize_highlight).
 
 ==============================================================================================*/
 // clang-format off
 
 /*==============================================================================================
-    child_begin / child_end -- a nested scrollable region inside the current layout.
+    Size bounds -- the absolute floor a resize drag stops at, and the one-shot [min,max] box
+    window_set_next_size_constraints latches for the next child_begin.
 ==============================================================================================*/
 
 /* Smallest a resizeable child may be dragged to: a couple of rows wide, one row plus border tall. */

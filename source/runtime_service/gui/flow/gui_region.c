@@ -28,8 +28,8 @@
     (surface_hover_nominate, core/gui_surface.c) -- occlusion is a tier-1 concern shared
     by every top-level rect, which is why the contest sits below both callers.
 
-    Included by gui.c after gui_layout_child.c (provides layout_push/pop_region, GUI_STATE,
-    REGION_PAD_DEFAULT) -- no window/ dependency, like gui_table.c.
+    Included by gui_flow.c after the sub-layout / split files (it needs layout_push/pop_region and
+    REGION_PAD_DEFAULT) -- no window/ dependency of its own.
 
 ==============================================================================================*/
 // clang-format off
@@ -108,3 +108,6 @@ gui_region_end( void )
 {
     layout_pop_region();
 }
+
+// clang-format on
+/*============================================================================================*/

@@ -1,20 +1,31 @@
 ﻿/*==============================================================================================
 
-    runtime_service/gui/flow/gui_layout.c -- Public layout API verbs + the sz_ sizing family.
+    runtime_service/gui/flow/gui_layout.c -- The public layout vocabulary.
 
-    Defines the per-region template-shaping calls (gui_stack, gui_row,
-    gui_cols, gui_grid, gui_bar, gui_strip, gui_field_split,
-    gui_form, gui_indent/unindent, gui_content_avail, etc.).
+    Every layout verb a caller speaks, over the engine in gui_layout_core.c.  Nothing here holds
+    machinery of its own beyond the rect algebra at the foot -- these are the names, the argument
+    conventions, and the one-shot latches; the resolving happens below.
 
-    The scrollable region engine (layout_push/pop_region, gui_region_t, scroll_clamp) is in
-    gui_scroll.c, included just before this file; the scrollbar it emits is a stock
-    widget (chrome/widgets/gui_scrollbar.c).
+    File order, grouped by what the caller is doing:
 
-    Child box and sub-layout lifecycle (gui_child_begin/child_end, gui_push/pop_layout,
-    gui_window_set_next_size_constraints) is in gui_layout_child.c, also included before
-    this file.
+        template headers   stack / row / cols_n / cols / row2-4, layout_default
+        same_line          the line-continuation pair
+        field + form       the ambient labeled-row split
+        align + next_item  region alignment, and the one-shot per-item overrides
+        grid               grid / grid_cells -- the fixed matrix over the band
+        pack mode          bar / strip, and the run modifiers (size / nextline / wrap)
+        indent             shift the content column, re-resolving the template against it
+        sizing (sz_)       intent -> pixels; the one family that produces a dimension
+        queries            cursor_screen_pos / content_avail / view_avail / content_rect
+        region verbs       empty / rows_clip / scroll_by -- act on the region that is open
+        rect algebra       split / carve / anchor -- pure math over a caller rect, nothing
+                           emitted and no region required
 
-    Included by gui.c after gui_layout_child.c.
+    The region ENGINE the headers shape (layout_push/pop_region, scroll_clamp, nav_scroll_chase)
+    is gui_scroll.c's, and the child / sub-layout lifecycles are gui_layout_child.c's and
+    gui_sublayout.c's -- all included before this file.
+
+    Included by gui_flow.c after those, second to last.
 
 ==============================================================================================*/
 // clang-format off
@@ -338,6 +349,43 @@ gui_pack_wrap( void )
 }
 
 /*==============================================================================================
+    indent / unindent -- shift the active region's content column right (or back), so subsequent
+    rows lay out inset.  The single mechanism behind tree_node's nesting, but usable on its own to
+    inset any block of widgets.  w <= 0 uses the standard step (one row height, so a tree child
+    lines up under its parent's label, past the fold arrow).  Finishes any open row first, moves
+    the pen to the new column edge, and re-resolves the flow template against the narrowed width;
+    always balance an indent with an unindent of the same width.  Flow layouts (stack / columns)
+    only -- a grid / pack carries its own resolved geometry and ignores the reflow.
+==============================================================================================*/
+
+void
+gui_indent( f32 w )
+{
+    layout_frame_t* f = lf();
+    if ( f->mode == GUI_MODE_GRID ) return;   /* flow / pack only -- a grid carries a fixed matrix */
+    if ( w <= 0.0f ) w = WIDGET_H;       /* default step: one row height (aligns under the arrow) */
+
+    layout_row_break( f );               /* close the current row before shifting the column */
+    f->content_x += w;
+    f->content_w -= w;
+    if ( f->content_w < 0.0f ) f->content_w = 0.0f;
+    layout_reflow( f );
+}
+
+void
+gui_unindent( f32 w )
+{
+    layout_frame_t* f = lf();
+    if ( f->mode == GUI_MODE_GRID ) return;   /* flow / pack only, mirroring indent */
+    if ( w <= 0.0f ) w = WIDGET_H;
+
+    layout_row_break( f );
+    f->content_x -= w;
+    f->content_w += w;
+    layout_reflow( f );
+}
+
+/*==============================================================================================
     Sizing (sz_) -- the one public family that turns intent into a pixel dimension.  Everything
     a caller feeds to row / cols / child_begin / window_set_next_size that is not a fraction or
     a fill comes from here; layout verbs consume sizes, sz_ produces them.
@@ -414,11 +462,40 @@ f32 gui_sz_chars( f32 n ) { return n * font_text_w( "0" ); }
 f32 gui_sz_fit_row( f32 content_h ) { f32 m = WIDGET_H - font_char_h(); return content_h + ( m > 0.0f ? m : 0.0f ); }
 f32 gui_sz_fit_col( f32 content_w ) { return content_w + 2.0f * WIDGET_PAD; }
 
+/*==============================================================================================
+    Layout queries -- read where the next item would land, and how much room is left.
+
+    All four answer from the layout pen, so read them WHERE the next widget would land; they
+    advance as items emit.  cursor_screen_pos is the primitive the other three are built on.
+==============================================================================================*/
+
+/* Screen position where the next item would be emitted -- the GetCursorScreenPos analogue.  Anchor
+   custom draw_* geometry to the layout pen without reserving a cell first; pair with content_avail()
+   for the space ahead.  Mode-aware: a pack run (or an armed same_line) reports the running line
+   pen, a mid-row flow reports the next open cell, and a fresh row reports the gap-before line
+   origin. */
+gui_vec2_t
+gui_cursor_screen_pos( void )
+{
+    layout_frame_t* f = lf();
+
+    if ( f->line.open && ( f->mode == GUI_MODE_PACK || f->line.cont_pending ) )
+    {
+        if ( f->mode == GUI_MODE_PACK && f->line.pack_dir == GUI_PACK_VERTICAL )
+            return ( gui_vec2_t ){ f->line.cross, f->line.main };   /* strip: pen runs down     */
+        return ( gui_vec2_t ){ f->line.main, f->line.cross };       /* bar / continuation: right */
+    }
+    if ( f->line.open && f->line.col > 0 )
+        return ( gui_vec2_t ){ f->tmpl.cellx[ f->line.col ], f->line.cross }; /* next cell on the open row */
+
+    return ( gui_vec2_t ){ f->content_x, layout_next_y( f ) };      /* a fresh line at the pen   */
+}
+
 /* Remaining free space in the current region from the layout pen -- the GetContentRegionAvail
    analogue.  Width is what a flex widget would fill (the content column from the pen to its right
    edge); height is the room left before the region bottom (the grid band end / view bottom).  Use
-   it to size a child_begin to the leftover space, or to lay widgets out by hand.  Measured from the
-   pen, so call it where the next widget would land; the height is most meaningful before scrolling. */
+   it to size a child_begin to the leftover space, or to lay widgets out by hand.  The height is
+   most meaningful before scrolling. */
 gui_vec2_t
 gui_content_avail( void )
 {
@@ -450,6 +527,33 @@ gui_view_avail( void )
     if ( vis_w < 0.0f ) vis_w = 0.0f;
     if ( a.x > vis_w )  a.x = vis_w;
     return a;
+}
+
+/* The current region's available area as a screen rect: the layout pen (top-left) joined with the
+   room ahead (content_avail).  The rect to hand gui()->split, or to carve with the rect_cut_*
+   helpers, when laying a band out by hand. */
+gui_rect_t
+gui_content_rect( void )
+{
+    gui_vec2_t p = gui_cursor_screen_pos();
+    gui_vec2_t a = gui_content_avail();
+    return ( gui_rect_t ){ p.x, p.y, a.x, a.y };
+}
+
+/*==============================================================================================
+    Region verbs -- they act on the region that is currently open (unlike the rect algebra below,
+    which is pure math over a caller rect).
+==============================================================================================*/
+
+/* Reserve a w x h block in the layout and return its screen rect, advancing the pen like any widget
+   (the ImGui Dummy analogue) -- blank space, or a slot to fill with custom draw_* geometry / make
+   clickable with invisible_button.  `w` is the main-axis size: honored in a pack run or on a
+   same_line, while column / grid flow sizes the width to the track as for every widget.  The
+   returned rect is always the actual reserved space, so draw into it rather than assuming w x h. */
+gui_rect_t
+gui_empty( f32 w, f32 h )
+{
+    return cell_next_w( w, h );
 }
 
 /*============================================================================================*/
@@ -558,38 +662,15 @@ gui_scroll_by( f32 dx, f32 dy )
     redraw_request();
 }
 
-/* Screen position where the next item would be emitted -- the GetCursorScreenPos analogue.  Anchor
-   custom draw_* geometry to the layout pen without reserving a cell first; pair with content_avail()
-   for the space ahead.  Mode-aware: a pack run (or an armed same_line) reports the running line
-   pen, a mid-row flow reports the next open cell, and a fresh row reports the gap-before line
-   origin.  (Read it where the next widget would land -- it advances as items emit.) */
-gui_vec2_t
-gui_cursor_screen_pos( void )
-{
-    layout_frame_t* f = lf();
+/*==============================================================================================
+    Rect algebra -- split / carve / anchor.
 
-    if ( f->line.open && ( f->mode == GUI_MODE_PACK || f->line.cont_pending ) )
-    {
-        if ( f->mode == GUI_MODE_PACK && f->line.pack_dir == GUI_PACK_VERTICAL )
-            return ( gui_vec2_t ){ f->line.cross, f->line.main };   /* strip: pen runs down     */
-        return ( gui_vec2_t ){ f->line.main, f->line.cross };       /* bar / continuation: right */
-    }
-    if ( f->line.open && f->line.col > 0 )
-        return ( gui_vec2_t ){ f->tmpl.cellx[ f->line.col ], f->line.cross }; /* next cell on the open row */
-
-    return ( gui_vec2_t ){ f->content_x, layout_next_y( f ) };      /* a fresh line at the pen   */
-}
-
-/* The current region's available area as a screen rect: the layout pen (top-left) joined with the
-   room ahead (content_avail).  The rect to hand gui()->split, or to carve with the rect_cut_*
-   helpers, when laying a band out by hand.  Like content_avail, read it where the next item lands. */
-gui_rect_t
-gui_content_rect( void )
-{
-    gui_vec2_t p = gui_cursor_screen_pos();
-    gui_vec2_t a = gui_content_avail();
-    return ( gui_rect_t ){ p.x, p.y, a.x, a.y };
-}
+    Pure math over a caller-supplied rect: no state, no cached sizes, nothing emitted, and no open
+    region required.  Each returns rects the caller then fills (push_layout_overlay / flow_begin,
+    or next_item_rect for a single widget), and each composes with itself -- a returned rect can be
+    split, carved, or anchored again.  These are the single-pass, known-size companion to the
+    measuring layout templates above.
+==============================================================================================*/
 
 /* split -- carve `area` into panels along `axis` using the overloaded column unit ( >1 px, ==1 fill,
    (0,1) fraction; the exact rule cols() uses ), writing each panel's screen rect into out[].  Returns
@@ -747,54 +828,6 @@ gui_anchor( gui_rect_t parent, gui_anchor_t a )
     anchor_axis( parent.y, parent.h, a.min.y, a.max.y, a.pivot.y, a.size.y, a.off.t, a.off.b,
                  &r.y, &r.h );
     return r;
-}
-
-/* Reserve a w x h block in the layout and return its screen rect, advancing the pen like any widget
-   (the ImGui Dummy analogue) -- blank space, or a slot to fill with custom draw_* geometry / make
-   clickable with invisible_button.  `w` is the main-axis size: honored in a pack run or on a
-   same_line, while column / grid flow sizes the width to the track as for every widget.  The
-   returned rect is always the actual reserved space, so draw into it rather than assuming w x h. */
-gui_rect_t
-gui_empty( f32 w, f32 h )
-{
-    return cell_next_w( w, h );
-}
-
-/*==============================================================================================
-    indent / unindent -- shift the active region's content column right (or back), so subsequent
-    rows lay out inset.  The single mechanism behind tree_node's nesting, but usable on its own to
-    inset any block of widgets.  w <= 0 uses the standard step (one row height, so a tree child
-    lines up under its parent's label, past the fold arrow).  Finishes any open row first, moves
-    the pen to the new column edge, and re-resolves the flow template against the narrowed width;
-    always balance an indent with an unindent of the same width.  Flow layouts (stack / columns)
-    only -- a grid / pack carries its own resolved geometry and ignores the reflow.
-==============================================================================================*/
-
-void
-gui_indent( f32 w )
-{
-    layout_frame_t* f = lf();
-    if ( f->mode == GUI_MODE_GRID ) return;   /* flow / pack only -- a grid carries a fixed matrix */
-    if ( w <= 0.0f ) w = WIDGET_H;       /* default step: one row height (aligns under the arrow) */
-
-    layout_row_break( f );               /* close the current row before shifting the column */
-    f->content_x += w;
-    f->content_w -= w;
-    if ( f->content_w < 0.0f ) f->content_w = 0.0f;
-    layout_reflow( f );
-}
-
-void
-gui_unindent( f32 w )
-{
-    layout_frame_t* f = lf();
-    if ( f->mode == GUI_MODE_GRID ) return;   /* flow / pack only, mirroring indent */
-    if ( w <= 0.0f ) w = WIDGET_H;
-
-    layout_row_break( f );
-    f->content_x -= w;
-    f->content_w += w;
-    layout_reflow( f );
 }
 
 // clang-format on

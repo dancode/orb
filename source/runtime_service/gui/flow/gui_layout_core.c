@@ -4,37 +4,38 @@
 
     The engine the public layout API (gui_layout.c) drives.  It carves a region's content area
     into cells from a repeating row / column template (or a fixed grid, or a pack run) and hands
-    the next cell to each widget, hiding the layout shape from the widgets entirely.  Two halves:
+    the next cell to each widget, hiding the layout shape from the widgets entirely.
 
-        - track resolver + template installers (the overloaded-unit math in unit_resolve /
-          layout_resolve_tracks, the layout_template_reset / layout_modifiers_reset seams,
-          layout_seed_content, and layout_set / _grid / _reflow / _clear) -- the "what shape
-          is this region" mechanism;
-        - cell emitters (cell_next_w, grid_next_rect, pack_next_rect,
-          field_geom_split) -- the per-item "hand out the next rect" mechanism.
+    File order -- the mechanism from the storage up to the emit seam:
+
+        layout-frame stack   the storage + lf(), the frames being composition's records
+        cursor helpers       the pen / highwater advances (extent_track, content_reach)
+        anchors              the ONE crossing between content- and frame-anchored positions
+        grid lattice         quant_* -- the theme's grid_quantum bound to the live style
+        natural tracks       measured feedback: a 0 column resolves to last frame's widest item
+        track resolver       layout_resolve_tracks + the scalar unit_resolve behind it
+        line machinery       line_commit / pack_line_break / layout_pen_jump / layout_row_break
+        template installers  layout_set / _grid / _reflow / _clear / _default, layout_seed_content,
+                             and the push/pop_layout_state bracket over a scoped shape change
+        cell emitters        line_place_pen / line_place_cell / grid_next_rect, under cell_next_w
+        ambient field        the s_field label authority + field_geom_split's two-track geometry
 
     This tier composes and never paints: field_geom_split hands out a labeled row's two-track
     geometry, and its painting companion gui_field_row (which draws the label) lives with the rest of
     the label grammar in stock/gui_adornment.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD /
     ...) resolves in style/gui_style_core.c.
 
-    Part of the flow unit (gui_flow.c); rect_align and item_flags_resolve resolve cross-unit (in
-    scope) and before gui_layout.c (which calls layout_set / cell_next / the region
-    helpers).
+    Part of the flow unit (gui_flow.c), first of its includes: everything below composes over the
+    cell emitters here.  The one ordering debt runs the other way -- gui_replay_scope_enter/_exit
+    (chrome/widgets/gui_volatile.c) push a bare layout frame through layout_set_default, so that
+    file must be included after this one.
 
 ==============================================================================================*/
 // clang-format off
 
-/* REGION_PAD_DEFAULT (the inset every window body / child opens with) lives in flow/gui_flow.h:
-   window chrome opens its body region with it. */
-
 /*==============================================================================================
-    Layout-frame stack (here -- the frames are composition's records)
-
-    Every scrollable region (a window body or a child_begin box) pushes one frame; the top frame
-    owns the layout pen and the content column leaf widgets emit into.  The rest of the frame is the
-    resolve context layout_pop_region needs to measure content and draw the region's scrollbars.
-    Storage is just the fixed array, so a deep nesting costs nothing beyond these slots.
+    Layout-frame stack -- the storage behind the type in flow/gui_flow.h.  Just a fixed array, so
+    deep nesting costs nothing beyond these slots.
 ==============================================================================================*/
 
 layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
@@ -56,9 +57,7 @@ lf( void )
 }
 
 /*==============================================================================================
-
-    Layout cursor helpers
-
+    Layout cursor helpers -- the pen and highwater advances
 ==============================================================================================*/
 
 /* mod.gap_x / mod.gap_y store the caller's raw request (0 = theme default), not a resolved
@@ -109,25 +108,12 @@ content_reach( layout_frame_t* f, f32 x, f32 y )
 }
 
 /*==============================================================================================
+    Anchors -- THE crossing between content-anchored and frame-anchored positions.
 
-    Anchors -- the ONE crossing between content-anchored and frame-anchored positions.
-
-    Every position in a layout frame is a coordinate on the same glass; what differs is what it is
-    anchored to.  CONTENT-anchored values (content_x, pen_y, high_x/y, and every cell rect minted
-    from them) carry the -scroll bias, so they slide as the region scrolls.  FRAME-anchored values
-    (outer, view, origin_x/y, band_bottom, clips) are pinned to the glass.
-
-    Crossing anchors to COMPARE is legal and routine -- both sides are glass positions, which is
-    exactly why a cell rect hit-tests against the view clip and draws with no conversion at all.
-    Adding a scroll-free SIZE to a position of either anchor is legal too (a wrap edge is
-    content_x + a view-derived width).  The one illegal operation is SUBTRACTING two differently
-    anchored positions to obtain a size or extent: the live scroll offset lands in the result, so
-    the number is right at scroll 0 and drifts by exactly the scroll everywhere else -- the
-    multiline box that grew wider as its window scrolled, the split panel that measured short.
-
-    That subtraction happens here and nowhere else.  Outside this seam, a bare +/- scroll_x/y
-    inside a formula is the bug, not the fix.
-
+    The full doctrine (which fields carry which anchor, and why comparing across them is legal but
+    SUBTRACTING across them is the bug) lives with layout_frame_t in flow/gui_flow.h.  This is its
+    enforcement: the cross-anchor subtraction happens in these four functions and nowhere else, so
+    a bare +/- scroll_x/y inside a formula outside this seam is the bug, not the fix.
 ==============================================================================================*/
 
 /* Frame-anchored -> content-anchored: where a fixed glass position lands once the region's scroll
@@ -734,11 +720,6 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
 }
 
 /*============================================================================================*/
-/* volatile_layout_push / volatile_layout_pop -- a minimal layout-frame push/pop at an explicit
-   (x, y, w), used only by the volatile-widget replay scope, now live in chrome/widgets/gui_volatile.c
-   (gui_replay_scope_enter/_exit) alongside the rest of that feature. Both call
-   layout_set_default (below), which is why they must be textually included after this file. */
-
 /* Replace the active flow template on the current frame.  Finishes any open row first, then
    resolves the columns into cell geometry once (they are constant for every row of the template).
    The next widget starts a fresh row of the new shape; it repeats until set again. */
@@ -1109,11 +1090,17 @@ cell_next_w( f32 natural_w, f32 h )
 /* The common case: fill the track cell (natural_w < 0 => no same_line preference). */
 gui_rect_t cell_next( f32 h ) { return cell_next_w( -1.0f, h ); }
 
-/*============================================================================================*/
-/* The ambient label ("pair") layout -- the shared authority the _label widget variants read
-   (gui.h, gui_field_t).  A flow static, set once and reused: gui_field_row (element) resolves each
-   labeled row against it, so all forms align without re-declaring the split per widget.  Zeroed
-   at startup = the built-in default (labels shown, trailing at their natural width). */
+/*==============================================================================================
+    Ambient field -- the labeled ("pair") row authority
+
+    A set-once authority like a style, not a per-region modifier: gui_field_row (stock) resolves
+    every labeled row against this one record, so a whole form aligns without re-declaring the
+    split per widget.  Three pieces -- the record, the one-shot skip, and the pure geometry the
+    painter drives.
+==============================================================================================*/
+
+/* The record itself (gui_field_t, gui.h).  Zeroed at startup = the built-in default: labels
+   shown, trailing at their natural width. */
 static gui_field_t s_field;
 
 void         gui_field_set( const gui_field_t* f ) { s_field = f ? *f : ( gui_field_t ){ 0 }; }

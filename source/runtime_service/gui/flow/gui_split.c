@@ -16,7 +16,8 @@
     Nesting: up to GUI_SPLIT_DEPTH splits may be open simultaneously (independent of the
     layout stack depth since push/pop happen within begin/next/end, not across them).
 
-    Included by gui.c right after gui_sublayout.c.
+    Included by gui_flow.c right after gui_sublayout.c, whose sublayout_open it pushes panels
+    through.
 
 ==============================================================================================*/
 // clang-format off

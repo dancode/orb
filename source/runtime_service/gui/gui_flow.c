@@ -29,6 +29,8 @@
     flow/gui_split.c         -- split panels: persisted pair heights
     flow/gui_region.c        -- the root-level region (window-free composition)
     flow/gui_layout.c        -- public layout verbs + the sz_ sizing family
+    flow/gui_table_engine.c  -- widget-agnostic table machinery: column tracks + pair-resize,
+                                the sort state machine, fixed-pitch row virtualization
 
 ==============================================================================================*/
 

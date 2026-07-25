@@ -2,15 +2,21 @@
 
     runtime_service/gui/flow/gui_sublayout.c -- Transient sub-layout lifecycle.
 
-    push_layout / pop_layout open a transient sub-layout inside one cell of the parent template:
-    no scroll, no clip, no persistent state, no frame.  It is the recursive completion of the
-    cell model -- a cell can host a layout, the way a window or child does.
+    A transient layout frame over a caller-resolved rect: no scroll, no clip, no persistent state,
+    no chrome.  The recursive completion of the cell model -- a cell can host a layout, the way a
+    window or child does.
 
-    sublayout_open is the shared primitive behind push_layout, push_layout_overlay, and the
-    split-panel pusher in gui_split.c (included just after this file) -- each opens a transient
-    frame over a caller-resolved rect, differing only in how that rect was obtained.
+        sublayout_open      the shared primitive; every opener below is a way of PICKING the rect
+        push_layout         ... the next cell of the parent template (advances the parent)
+        push_layout_overlay ... an explicit screen rect (parent flow untouched)
+        flow_begin / _cell / _end
+                            ... the same primitive under the public rect <-> flow crossing names
+        pop_layout          closes any of them
 
-    Included by gui.c right after gui_layout_child.c.
+    The split-panel pusher in gui_split.c (included just after this file) is a fourth caller of
+    sublayout_open, kept there with the rest of that feature.
+
+    Included by gui_flow.c right after gui_layout_child.c.
 
 ==============================================================================================*/
 // clang-format off
