@@ -171,7 +171,7 @@ void gui_pop_clip( void );
 
 /*===============================================  GUI_CORE  ================================================*/
 
-/* behavior on caller rects (interact/gui_behavior.c): the shared interaction
+/* behavior on caller rects (core/gui_item.c): the shared interaction
    state machine run over a rect YOU derived.  item() reports the full state; invisible_button
    is its click bit.  A custom widget = rect (canvas/split/carve) + item() + draw_*. */
 gui_item_state_t gui_item( const char* id_str, gui_rect_t r );

@@ -276,7 +276,7 @@ typedef struct
 
     /* Scroll-to-view request: set when a resolver adopts a new cursor item, consumed by
        nav_item_register when that item registers -- if its rect sits outside its region's view,
-       the region (and its ancestors) scroll it into view (nav_scroll_chase, core/gui_item.c).
+       the region (and its ancestors) scroll it into view (nav_scroll_chase, flow/gui_scroll.c).
        One-shot per adoption so the chase never fights the wheel or a scrollbar drag. */
     bool        scroll_chase;
 

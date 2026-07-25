@@ -130,7 +130,7 @@ gui_field_row( const char* label )
 ==============================================================================================*/
 
 /* NAV_RING (the focus-ring inset) is declared in core/gui_core.h beside this painter's upward
-   seam: the nav scroll chase (core/gui_item.c) reads it to keep the ring clear of the view edge. */
+   seam: the nav scroll chase (flow/gui_scroll.c) reads it to keep the ring clear of the view edge. */
 
 /* Keyboard-nav focus ring: an outline just outside the item rect, painted before the item's
    own background so the fill leaves the border visible (nav_item_register invokes it across

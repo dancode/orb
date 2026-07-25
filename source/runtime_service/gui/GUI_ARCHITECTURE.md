@@ -166,7 +166,9 @@ Three roles, one contract (the units carry the same names):
   (`gui_drag.c`), the move-drag protocol + deferred-press latch (`gui_move.c`), the
   edge-resize mechanism (`gui_resize.c`), and the standard item protocol (`core/gui_item.c`:
   `item_state`, plus `item_grab` for hot chrome that is not a widget; the compound-widget
-  bracket `gui_item_sub_begin/end` and its full form `gui_item_sub_layout_begin`). Each
+  bracket `gui_item_sub_begin/end` and its full form `gui_item_sub_layout_begin`; the two
+  steps big enough to own a file sit beside it -- keyboard-focus policy `core/gui_focus.c`
+  and the nav registration seam `core/gui_nav_item.c`). Each
   service knows a capability (exclusivity, clicks, tracking) over (id, rect); none knows a
   slider. This tier plus core are the ONLY writers of the `s_interaction` arbitration fields:
   higher tiers claim through the core verbs (`interact_claim`, `interact_hover_fence`) and
@@ -224,7 +226,7 @@ The style vocabulary itself (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with i
 the style unit (`style/gui_style_core.c`) since all three roles read it. `chrome/` is its
 CLIENT -- the chrome (and stock) widget set is written on the same substrate a user widget
 uses, not a privileged layer. The caller's vocabulary lives with its machinery -- canvas in draw, query
-readers in core, bracketing stacks in style, behavior verbs in interact -- and internal uses
+readers in core, gesture verbs in interact, `gui_item` with the item protocol in core -- and internal uses
 deliberately dogfood the public surface through gui_host.h.
 
 A custom widget (`game_ui_slider()`) never needs skin or spacing metrics -- it brings its own

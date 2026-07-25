@@ -21,18 +21,22 @@
     services, not from a flag on this function.
 
     The ownership state itself (s_interaction) lives in core/gui_ctx.c -- the context owns the
-    record; this file is the service that arbitrates it.  Everything behavior consumes about
-    "where is this item emitting" comes from the interaction scope (s_scope, same file): the
-    owner window, the interaction clip, the chrome suppression, and the per-item flag/nav stamps,
-    all placed there by composition at its seams.  Behavior never reads the composer scratch
-    (s_build) -- the scope record IS the composition->behavior contract.
+    record and the verbs over it (interact_idle / interact_claim / ...); this file is the recipe
+    that runs them in order.  Everything behavior consumes about "where is this item emitting"
+    comes from the interaction scope (s_scope, same file): the owner window, the interaction
+    clip, the chrome suppression, and the per-item flag/nav stamps, all placed there by
+    composition at its seams.  Behavior never reads the composer scratch (s_build) -- the scope
+    record IS the composition->behavior contract.
 
-    LAYERING NOTE: nav_item_register invokes the present-tier focus ring (draw_nav_ring,
-    stock/gui_adornment.c) -- behavior decides WHEN the system adornment paints; the paint
-    policy (color, thickness, extent) lives with the skin.  See the comment at that site.
+    The two steps big enough to own their own files are called from here and live beside it:
+    the nav registration seam (nav_item_register, core/gui_nav_item.c) and the focus policy
+    (focus_allowed / focus_request_take, core/gui_focus.c).
 
-    Part of the core unit (gui_core.c); draw_nav_ring / NAV_RING resolve cross-unit, and
-    every consumer (flow/ scrollbars, widgets/, window/ chrome, dock/, table/).
+    The file ends with its public door: gui_item / gui_invisible_button, the same protocol run
+    from a LABEL and a caller-derived rect -- a custom widget is rect + item() + draw_*.
+
+    Part of the core unit (gui_core.c); its consumers are every tier above (flow/ scrollbars,
+    widgets/, window/ chrome, dock/, table/) plus gui()->item callers.
 
 ==============================================================================================*/
 // clang-format off
@@ -68,225 +72,6 @@ item_repeat_tick( bool pressed )
         return true;
     }
     return false;
-}
-
-/* Keyboard-nav per-item seam.  Called from item_state for every item that belongs to the nav
-   window (s_scope.win == g_ctx->nav.win), the keyboard mirror of the hover hit-test above.  It does
-   three things: records the item into the frame's nav list (with the structural region/line stamp
-   the layout engine latched when it placed it -- gui_nav.c resolves the next move as index math
-   over this list), notes whether the nav cursor was seen, and -- for the current nav item --
-   lights the focus ring and synthesizes a click from an Enter/Space activation so every widget
-   activates from the keyboard with no per-widget code, exactly as a mouse click flows through
-   st.clicked. */
-
-/* nav_scroll_chase (bring the nav cursor's rect into view) lives in flow/gui_scroll.c:
-   walking the open region stack and nudging scroll offsets is composition machinery, so the
-   act lives with flow and behavior only picks the MOMENT -- the same split as draw_nav_ring.
-   Declared in this server's upward-seams block (core/gui_core.h). */
-
-static void
-nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kind_t kind )
-{
-    /* Dormant gate: while the keyboard is fully disengaged (nav_finish cleared reg_all -- no
-       cursor, not active, no menu bar, no value edit) the list append below is bookkeeping no
-       resolver will read, so skip it.  Everything below is inert anyway then (no cursor means
-       is_cur can never hit).  Type-ahead candidates still enter via nav_item_stamp_label, and
-       the first Tab/arrow sets nav.active so the NEXT emission registers fully and the
-       first-focus recovery lands the cursor -- one frame, the lag nav already runs on. */
-    if ( !g_ctx->nav.reg_all )
-        return;
-
-    bool is_cur = ( id == g_ctx->nav.id );
-    if ( is_cur )
-        g_ctx->nav.id_seen = true;
-
-    /* Append to the nav item list (emission order == Tab order).  A layout-placed item carries
-       the region/line coordinate cell_next_w latched; anything interacting without a
-       layout cell -- title-bar buttons, dock tabs -- lists as chrome, the F6 lane: Tab and the
-       body arrows skip it, F6 hops onto the strip and Left/Right walk it (gui_nav.c).
-       Scrollbars and drag strips never reach here at all (s_scope.nav.skip). */
-
-    bool placed = s_scope.nav.placed;
-    if ( placed && g_ctx->nav.first_item == GUI_ID_NONE )
-        g_ctx->nav.first_item = id;   /* first-focus / recovery landing spot */
-
-    if ( g_ctx->nav.item_count >= GUI_NAV_ITEMS_MAX )
-    {
-        /* List full: items past the cap never register, so Tab / arrows silently cannot reach
-           them.  Warn so a keyboard dead zone in a huge window traces to this cap (and to
-           rows_clip as the usual fix) instead of reading as a nav bug. */
-        GUI_WARN_ONCE( "nav item list full (%u) -- further items are unreachable by "
-                       "keyboard nav this frame. Virtualize rows (rows_clip) or raise "
-                       "GUI_NAV_ITEMS_MAX (core/gui_ctx.h).\n", (unsigned)GUI_NAV_ITEMS_MAX );
-    }
-    else
-    {
-        gui_nav_item_t* it = &g_ctx->nav.items[ g_ctx->nav.item_count++ ];
-        it->id       = id;
-        it->rect     = r;
-        it->region   = placed ? s_scope.nav.region : 0;
-        it->line     = placed ? s_scope.nav.line   : 0;
-        it->chrome    = !placed;
-        it->drag_kind = ( kind == ITEM_DRAG );
-        it->label[0]  = 0;   /* type-ahead opt-in: nav_item_stamp_label fills it in, if called */
-    }
-
-    /* Current item: draw the outline ring whenever a nav cursor exists (even in mouse mode, so it
-       keeps its location), and -- only while the keyboard is the active instrument (nav_highlight)
-       -- give it the fill (st->nav, read by col_item_bg / col_frame_bg) and apply a pending
-       activation.  The ring is drawn before the widget's own background (item_state runs
-       first), inset outward by NAV_RING so the fill leaves the border visible.
-
-       LAYERING NOTE: the ring is invoked from here because it is a system adornment that must
-       be uniform across every widget -- stock and custom alike -- and must paint beneath the
-       item's own fill, and no single presentation seam exists after behavior that every widget
-       passes through.  The paint itself (color, thickness, extent) is draw_nav_ring in
-       stock/gui_adornment.c; behavior only picks the moment.  Do not add style reads or
-       raw draws to this tier. */
-
-    if ( is_cur && g_ctx->nav.active )
-    {
-        /* Fresh adoption: scroll the item into view (once).  Only a placed item chases -- its
-           region stack is the one open right now; chrome sits outside the scrolling content. */
-        if ( g_ctx->nav.scroll_chase )
-        {
-            g_ctx->nav.scroll_chase = false;
-            if ( placed )
-                nav_scroll_chase( r );
-        }
-
-        bool captured = ( g_ctx->nav.edit_id == id || g_ctx->nav.solo_drag_id == id );
-        draw_nav_ring( r, captured );
-
-        if ( g_ctx->nav.highlight )
-        {
-            st->nav = true;
-            if ( g_ctx->nav.activate )
-            {
-                if ( kind == ITEM_DRAG )
-                {
-                    /* A value widget (slider, drag box) does not click -- activation captures it
-                       for keyboard editing: Left/Right then step the value (st->nav_adjust below)
-                       until Enter/Space/Esc or a mouse press releases (gui_nav.c). */
-                    g_ctx->nav.edit_id = id;
-                }
-                else
-                {
-                    st->pressed = st->clicked = true;
-                    if ( kind == ITEM_FOCUSABLE )
-                        s_interaction.focused_id = id;  /* Enter on an input box -> enter text capture */
-                }
-
-                /* Consume the activating keys + any text so the item just focused does not also see
-                   this frame's Enter (instant blur) or type the activating Space. */
-
-                g_ctx->nav.activate = false;
-                key_claim( APP_KEY_ENTER );
-                key_claim( APP_KEY_SPACE );
-                s_io.text[ 0 ] = '\0';
-            }
-        }
-
-        /* Captured for value edit -- explicitly (edit_id, via Enter/Space) or implicitly (solo_drag_id,
-           a lone DRAG widget on its row -- see gui_nav.c): keep the fill on (even if a mouse move
-           dropped nav_highlight) and hand the widget this frame's arrow step to apply to its value.
-           st->focused mirrors the FOCUSABLE meaning ("owns keyboard input right now") onto DRAG
-           widgets, so slider/drag presentation can reuse the same focused-border convention as
-           text/numeric fields (gui_input.c, gui_widget_numeric.c) instead of inventing a second
-           visual language. */
-        if ( captured )
-        {
-            st->nav        = true;
-            st->nav_adjust = g_ctx->nav.edit_dir;
-            st->focused    = true;
-        }
-    }
-}
-
-/* Type-ahead opt-in: called right after item_state by a list-y widget (gui_selectable) to
-   stamp its label onto the nav item entry that call just registered, so gui_nav.c's type-ahead
-   resolver can prefix-match it.  A no-op if the item did not register this frame (wrong nav
-   window, nav_skip) or GUI_ITEM_NO_TYPEAHEAD opted it out -- its label stays "" (nav_item_register
-   already cleared it), which the resolver skips. */
-void
-nav_item_stamp_label( gui_id_t id, const char* label )
-{
-    if ( s_scope.flags & GUI_ITEM_NO_TYPEAHEAD ) return;
-
-    /* Dormant-frame append: nav_item_register skipped this item (keyboard disengaged), but a
-       LABELED item is a type-ahead candidate and type-ahead must be able to engage nav from
-       cold -- so the labeled subset always registers.  Mirror the item_state early-outs that
-       would have prevented the registration (disabled / deaf / replay / wrong nav window). */
-    if ( !g_ctx->nav.reg_all )
-    {
-        if ( s_scope.win != g_ctx->nav.win ) return;
-        if ( ( s_scope.flags & GUI_ITEM_DISABLED ) || !g_ctx->listening || s_replay_mode ) return;
-        if ( g_ctx->nav.item_count >= GUI_NAV_ITEMS_MAX ) return;
-
-        gui_nav_item_t* nit = &g_ctx->nav.items[ g_ctx->nav.item_count++ ];
-        nit->id        = id;
-        nit->rect      = s_scope.last_rect;
-        nit->region    = s_scope.nav.placed ? s_scope.nav.region : 0;
-        nit->line      = s_scope.nav.placed ? s_scope.nav.line   : 0;
-        nit->chrome    = !s_scope.nav.placed;
-        nit->drag_kind = false;   /* a labeled selectable is never an ITEM_DRAG widget */
-        nit->label[ 0 ] = 0;      /* filled below */
-    }
-
-    if ( g_ctx->nav.item_count == 0 ) return;
-
-    gui_nav_item_t* it = &g_ctx->nav.items[ g_ctx->nav.item_count - 1 ];
-    if ( it->id != id ) return;
-
-    u32 n = 0;
-    for ( ; label[ n ] && n < sizeof( it->label ) - 1; ++n )
-        it->label[ n ] = ( label[ n ] >= 'A' && label[ n ] <= 'Z' ) ? (char)( label[ n ] + 32 ) : label[ n ];
-    it->label[ n ] = 0;
-}
-
-/* Programmatic focus request (public: gui()->set_keyboard_focus).  Latched until the next
-   focusable widget passes through item_state, which takes keyboard focus as if clicked.
-   Persisting across frames is deliberate: a request queued after this frame's field has
-   already emitted lands on that field next frame. */
-
-static bool s_focus_request = false;
-
-void
-gui_set_keyboard_focus( void )
-{
-    s_focus_request = true;
-}
-
-/* Focus confinement -- the CONFINE half of the exclusive input mode (see gui_modal_scope_live in
-   core/gui_ctx.c).  While a GUI_WIN_MODAL window is live, only its own widgets may take keyboard
-   focus: no background window can steal it, exactly as a held active_id denies interaction to
-   every other item during a drag.  This is what lets an exclusive window (the dev console) seat
-   focus once, as an event, instead of re-stealing it every frame.  The HOLD half (sticky focus,
-   "cannot select nothing") lives in interaction_frame_reset. */
-
-static bool
-focus_allowed( gui_id_t win )
-{
-    return !gui_modal_scope_live() || win == g_ctx->modal.win_id;
-}
-
-/* Drop keyboard/text focus entirely (Enter commit, Escape revert).  The arbitration verb for
-   ending a focus capture -- widgets call this instead of writing the interaction record raw;
-   the record itself stays owned by core/gui_ctx.c.
-
-   Exclusive input mode -- the HOLD rule's second half.  Focus can fall to nothing two ways: a
-   press on dead space (guarded in interaction_frame_reset) and a widget releasing its own capture
-   here (Enter submit / Escape).  A game menu honors neither: it always keeps a selection.  So
-   while the live exclusive mode owns the focused widget, this release is a no-op -- the console
-   input keeps its caret after every command instead of going dead until the next click.  A focus
-   MOVE (clicking / tabbing to another field) never comes through here; it overwrites focused_id
-   directly in item_state, so navigation within the mode still works. */
-void
-item_focus_release( void )
-{
-    if ( gui_modal_scope_live() && s_interaction.focused_win == g_ctx->modal.win_id )
-        return;
-    s_interaction.focused_id = GUI_ID_NONE;
 }
 
 /* Unified hover/active/focus/click state machine.  Call once per widget with the
@@ -367,14 +152,12 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
          s_interaction.hover_id = id;
 
     /* Programmatic focus: a queued set_keyboard_focus request lands on the first focusable
-       widget emitted after it -- the keyboard twin of click-to-focus below.  Skipped for a
-       window the exclusive fence denies, so the request stays latched and lands on the modal
-       window's own input rather than a background field emitted earlier in the frame. */
-    if ( s_focus_request && kind == ITEM_FOCUSABLE && focus_allowed( s_scope.win ) )
-    {
-        s_focus_request          = false;
+       widget emitted after it -- the keyboard twin of click-to-focus below.  Taken only for a
+       window the exclusive fence allows, so the request stays latched and lands on the modal
+       window's own input rather than a background field emitted earlier in the frame
+       (both verbs: core/gui_focus.c). */
+    if ( kind == ITEM_FOCUSABLE && focus_allowed( s_scope.win ) && focus_request_take() )
         s_interaction.focused_id = id;
-    }
 
     /* Press: capture active (and focus for focusable widgets) on button-down. */
     if ( s_interaction.hover_id == id && s_io.mouse_pressed[ 0 ] )
@@ -514,61 +297,33 @@ gui_item_sub_end( gui_item_sub_t s )
 }
 
 /*==============================================================================================
-    Gate predicates -- the interaction questions every gesture gate asks, named once.
+    The public door -- the protocol from a LABEL and a caller-derived rect.
 
-    These are the read half of the arbitration state above: pure queries, no writes, so any
-    tier may call them (declared in core/gui_core.h for the files included before this one).
-    They exist so a compound gesture gate reads as a sentence at the call site instead of a
-    chain of raw field comparisons.
+    gui_item() is the user-UI behavior seam: run this file's state machine over a rect the
+    CALLER derived (a canvas() cut, a split/carve panel, custom math) and report the resolved
+    state.  A user widget is built on it: get a rect, ask for behavior, draw your own
+    presentation -- and it hovers, press-captures, clicks, and registers for keyboard nav
+    exactly like a stock widget, including the modal-while-dragging freeze and the last-item
+    queries (is_item_hovered, popup_context_item_begin).  The stock widgets differ only in
+    where their rect comes from (the composer) -- not in the protocol.
+
+    The caller's vocabulary lives with its machinery, so these sit here rather than in the
+    gesture unit: item_id (core/gui_id.c) resolves the label grammar, item_state above does
+    the rest, and there is no translation layer -- item_state's result IS the public record.
 ==============================================================================================*/
 
-/* Nothing holds the pointer capture: no widget, drag, or resize is in flight. */
+gui_item_state_t
+gui_item( const char* id_str, gui_rect_t r )
+{
+    return item_state( item_id( id_str ), r, ITEM_BUTTON );
+}
+
+/* gui_item reduced to its click bit -- the one-liner convenience. */
 bool
-interact_idle( void )
+gui_invisible_button( const char* id_str, gui_rect_t r )
 {
-    return s_interaction.active_id == GUI_ID_NONE;
+    return gui_item( id_str, r ).clicked;
 }
-
-/* `id` holds the pointer capture (its press-drag gesture is in flight). */
-bool
-interact_held( gui_id_t id )
-{
-    return s_interaction.active_id == id;
-}
-
-/* Claim the pointer capture for `id` (held by `button`) -- the write half of the pair above.
-   The one sanctioned door for a HIGHER tier to start a press-drag gesture: core/ and
-   interact/ are the only raw writers of the arbitration fields, so chrome-side gestures
-   (window text selection's fallback press) claim through this verb instead of poking
-   s_interaction directly.  Release is global, as for every gesture: the frame reset drops
-   active_id when `button` lifts. */
-void
-interact_claim( gui_id_t id, u8 button )
-{
-    s_interaction.active_id     = id;
-    s_interaction.active_button = button;
-}
-
-/* The cursor is over window `win_id`'s bare surface: it is the front-most window under the
-   cursor AND no widget sits under the cursor -- the gate for chrome gestures (title-bar drag,
-   double-click collapse, context-menu press) that must yield to any widget above them. */
-bool
-interact_hover_bare( gui_id_t win_id )
-{
-    return s_interaction.hover_win == win_id && s_interaction.hover_id == GUI_ID_NONE;
-}
-
-/* Point the hover-window arbitration at `owner`, making every OTHER window inert for the rest
-   of this frame: item_state gates all hover on s_build.win.id == hover_win, so redirecting
-   hover_win freezes everything behind the owner with no per-widget code -- the window-scale
-   analogue of active_id drag-modality.  The verb behind the popup modal fence
-   (popup_apply_modal); exists so this tier stays the only writer of s_interaction. */
-void
-interact_hover_fence( gui_id_t owner )
-{
-    s_interaction.hover_win = owner;
-}
-
 
 // clang-format on
 /*============================================================================================*/

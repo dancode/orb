@@ -4,7 +4,7 @@
 
     The library of record-agnostic interaction elements over the interact server:
     move-drag with deferred press, edge resize, drag-and-drop payload
-    transfer, the feat_* window feature kit, and the public behavior verbs.  Every mechanism
+    transfer, the feat_* window feature kit, and the two text-edit engines.  Every mechanism
     consumes (id, rect, io) plus caller-owned state and produces DECISIONS -- new geometry,
     gesture liveness, a delivered payload.  None knows a widget, and none paints.
 
@@ -27,7 +27,6 @@
     interact/gui_resize.c    -- edge-resize mechanism: hit-test, grab, edge apply
     interact/gui_drag.c      -- drag-and-drop: threshold machine + typed payload (source/target)
     interact/gui_feature.c   -- feat_* kit: window features as freestanding id-keyed mechanisms
-    interact/gui_behavior.c  -- public behavior on caller rects: gui_item, invisible_button
     interact/gui_edit.c      -- single-line text edit engine: buffer / cursor / selection / undo,
                                 glyph measurement, mouse-drag select, scroll-into-view (no paint)
     interact/gui_edit_multi.c -- multi-line text edit engine: 2D caret, line geometry, undo,
@@ -65,7 +64,6 @@
 #include "runtime_service/gui/interact/gui_resize.c"
 #include "runtime_service/gui/interact/gui_drag.c"
 #include "runtime_service/gui/interact/gui_feature.c"
-#include "runtime_service/gui/interact/gui_behavior.c"
 #include "runtime_service/gui/interact/gui_edit.c"
 #include "runtime_service/gui/interact/gui_edit_multi.c"
 

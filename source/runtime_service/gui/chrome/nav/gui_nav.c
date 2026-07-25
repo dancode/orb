@@ -25,12 +25,12 @@
          always wins and Up exactly undoes Down.  (The list is one frame old, the same deferral
          hover_win runs on; the resolve itself happens on the keypress frame.)  An adoption arms
          the scroll chase: a cursor landing outside its region's view scrolls into it
-         (nav_scroll_chase, core/gui_item.c).
+         (nav_scroll_chase, flow/gui_scroll.c).
       3. Choose nav_win (nav_choose_window): the top open popup if any (popups capture nav exactly
          as popup_apply_modal steals hover_win), else the explicit target window, else the
          front-most normal window.
 
-    The per-item half lives in nav_item_register (core/gui_item.c), called from item_state:
+    The per-item half lives in nav_item_register (core/gui_nav_item.c), called from item_state:
     each item in nav_win appends itself to the list and -- if it is the nav cursor -- lights the
     focus ring and takes a synthesized click from an activation.  Chrome (title-bar buttons,
     dock tabs: anything not placed by a layout cell) forms its own lane: F6 hops between the
@@ -640,7 +640,7 @@ nav_move_horizontal( i32 cur, gui_nav_item_t c )
        neighbor either way, so Left/Right had no navigation meaning here at all and auto-adjusts
        instead of doing nothing -- no Enter/Space capture needed, and Up/Down stay untouched (unlike
        edit_id capture, which fences them).  edit_dir is consumed this same frame by
-       nav_item_register (core/gui_item.c) via nav.solo_drag_id, resolved fresh in nav_finish. */
+       nav_item_register (core/gui_nav_item.c) via nav.solo_drag_id, resolved fresh in nav_finish. */
     if ( c.drag_kind && nav_row_is_solo( cur ) )
         nav->edit_dir = step;
 }

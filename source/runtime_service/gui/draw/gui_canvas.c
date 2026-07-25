@@ -9,7 +9,7 @@
     (gui_icon.c, backend unit).  None of these consume the row template beyond canvas() and
     image() -- they act on a rect, not on cell_next's cursor -- so they compose with any
     custom layout.  The interaction half of the tier (gui_item / invisible_button) is
-    gui_behavior.c, included beside it; together they are the substrate a user widget is written on.
+    core/gui_item.c (gui_item); together they are the substrate a user widget is written on.
 
     Included by gui.c in the user/ tier (last of the tiers -- pure vocabulary, no state); needs
     only cell_next / rect_align (core+compose) and the draw_push_* backend calls, all in

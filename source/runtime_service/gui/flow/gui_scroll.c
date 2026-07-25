@@ -55,7 +55,7 @@ region_get( gui_id_t id )
     visible, correcting the rect level by level so an item deep in a nested child pulls every
     ancestor into line.  Like the wheel, the new offset only reaches the screen next frame (this
     frame's pen already used the old one), so wants_redraw forces the follow-up frame.  Invoked
-    from nav_item_register (core/gui_item.c) across the server's documented upward seam: walking
+    from nav_item_register (core/gui_nav_item.c) across the server's documented upward seam: walking
     regions and moving scroll is composition machinery, so the act lives here and behavior only
     picks the moment -- the same split as draw_nav_ring.
 ==============================================================================================*/

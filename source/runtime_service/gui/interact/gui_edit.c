@@ -22,8 +22,8 @@
     seam with the multiline wrapper (chrome/widgets/gui_text_edit_multi.c).
 
     The persisted per-id edit state (gui_edit_state_t) lives in the keyed state pool; the widget
-    allocates it and hands this engine a pointer.  gui_clipboard_set / item_focus_release are the
-    interact server's (core/gui_io.c, core/gui_item.c); cursor_set is core's (core/gui_ctx.c).
+    allocates it and hands this engine a pointer.  gui_clipboard_set / focus_release are the
+    interact server's (core/gui_io.c, core/gui_focus.c); cursor_set is core's (core/gui_ctx.c).
 
 ==============================================================================================*/
 // clang-format off
@@ -564,7 +564,7 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
     if ( s_io.keys_pressed[ APP_KEY_ENTER ] )
     {
         s_undo.for_id    = GUI_ID_NONE;
-        item_focus_release();
+        focus_release();
         res.enter = true;
     }
     if ( s_io.keys_pressed[ APP_KEY_ESCAPE ] )
@@ -579,7 +579,7 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
             len = rv_len;
         }
         s_undo.for_id    = GUI_ID_NONE;
-        item_focus_release();
+        focus_release();
     }
 
     *len_io   = len;

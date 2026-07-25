@@ -344,29 +344,37 @@ void             item_mark_edited( void );         /* focus edit latch          
 extern bool s_replay_mode;          /* core/gui_ctx.c -- volatile idle-replay phase flag      */
 extern u32  s_popup_begin_count;    /* core/gui_ctx.c -- popup nesting depth (per-frame)      */
 
-/* Interaction gate predicates (core/gui_item.c) -- the read half of the arbitration state,
-   named once so compound gesture gates read as sentences.  Pure queries, no writes: interact/
-   stays the only writer of s_interaction.  Non-static (the flow unit's
-   region wheel gate reads interact_idle). */
+/* Interaction arbitration (core/gui_ctx.c) -- the verbs over the s_interaction record, defined
+   with it.  The read half is named once so compound gesture gates read as sentences; the write
+   half is the sanctioned door for a higher tier to start a gesture / fence a window, keeping
+   core/ + interact/ the only raw writers of the arbitration fields. */
 bool interact_idle      ( void );             /* nothing holds the pointer capture      */
 bool interact_held      ( gui_id_t id );      /* id's press-drag gesture is in flight   */
 bool interact_hover_bare( gui_id_t win_id );  /* cursor on win_id, no widget beneath it */
 void interact_claim( gui_id_t id, u8 button );/* claim the capture -- the one door for a
                                                  higher tier to start a press-drag       */
+void interact_hover_fence( gui_id_t owner );  /* aim hover at one window (modal fence)  */
 
-/* Exclusive input mode (focus scope) -- true while a GUI_WIN_MODAL window is live (emitted this
-   frame or last).  Defined in core/gui_ctx.c; read by focus_allowed (core/gui_item.c) to
-   confine focus to the mode.  See the exclusive-mode block in gui_ctx.c for the full model. */
-static bool gui_modal_scope_live( void );
+/* Keyboard focus (core/gui_focus.c) -- the policy over s_interaction's focused_id: the CONFINE
+   and HOLD rules of the exclusive input mode (a live GUI_WIN_MODAL window), the programmatic
+   request latch behind gui_set_keyboard_focus, and the release verb.  The claim paths themselves
+   are item_state's (a press, a nav activation, a granted request). */
+bool focus_allowed     ( gui_id_t win );   /* may a widget in win take focus (confine)   */
+bool focus_scope_holds ( gui_id_t id );    /* the live mode owns id -- keep it (hold)    */
+bool focus_request_take( void );           /* consume a pending programmatic request     */
+void focus_release     ( void );           /* Enter commit / Escape revert               */
 
-/* the item protocol (core/gui_item.c) -- the behavior seam every widget rides. */
+/* the item protocol (core/gui_item.c) -- the behavior seam every widget rides, plus the bare
+   grab protocol for hot chrome that is not a widget (dock splitter, table column boundary). */
 gui_item_state_t item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind );
-void             item_focus_release( void );
-void             nav_item_stamp_label( gui_id_t id, const char* label );
+bool             item_grab ( gui_id_t id, gui_rect_t r, bool gate, bool* active );
 
-/* chrome grab + modal fence (core/gui_item.c). */
-bool item_grab( gui_id_t id, gui_rect_t r, bool gate, bool* active );
-void interact_hover_fence( gui_id_t owner );
+/* the keyboard-nav per-item seam (core/gui_nav_item.c) -- the registration half of nav; the
+   resolver over the list it builds is chrome (chrome/nav/gui_nav.c).  item_state calls
+   nav_item_register for every item of the nav window; a list-y widget adds its label right
+   after, opting into type-ahead. */
+void nav_item_register  ( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kind_t kind );
+void nav_item_stamp_label( gui_id_t id, const char* label );
 
 /* Compound-widget bracket (core/gui_item.c) -- the formal seam for "a widget made of
    widgets".  The outer widget runs item_state for ITS id/rect first, then brackets its inner
@@ -454,11 +462,11 @@ gui_state_usage_t gui_state_usage( void );
     discipline: explicit and few, listed here so the whole set is visible at once).
 
     draw_nav_ring    the ONE system-adornment paint this server invokes (nav_item_register,
-                     core/gui_item.c): the ring must land beneath the item's own fill and no
+                     core/gui_nav_item.c): the ring must land beneath the item's own fill and no
                      presentation seam after behavior exists that every widget passes through.
                      Behavior picks the MOMENT; the paint policy (color, thickness) lives with
                      the skin (stock/gui_adornment.c).  Do not add more.
-    nav_scroll_chase the keyboard scroll-into-view (nav_item_register, core/gui_item.c):
+    nav_scroll_chase the keyboard scroll-into-view (nav_item_register, core/gui_nav_item.c):
                      walking the open region stack and moving scroll offsets is composition
                      machinery, so the act lives with flow (flow/gui_scroll.c) and behavior
                      only picks the moment -- the same split as draw_nav_ring.

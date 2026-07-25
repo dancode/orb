@@ -13,7 +13,8 @@
     It knows nothing of style, themes, or drawing.  It never includes the render server's
     header (render/gui_render.h) -- the two servers meet only in the frame orchestrator (the
     pane bracket, frame/gui_pane.c).  Its few documented upward calls are listed in the
-    upward-seams block of core/gui_core.h (draw_nav_ring + the severable debug stamps).
+    upward-seams block of core/gui_core.h (draw_nav_ring, nav_scroll_chase + the severable
+    debug stamps).
 
     It does NOT define the module API pointer storage (MOD_USE_RHI / MOD_USE_APP): those
     globals live in gui.c and are fetched once at module init; this unit reads app() through
@@ -29,7 +30,12 @@
     core/gui_state.c     -- keyed state pool: gui_state_get/peek, the three slot classes
     core/gui_surface.c   -- surface service: window records, placement channel, z dispenser,
                              hover-win contest, surface reassignment slot
-    core/gui_item.c      -- the standard item protocol: item_state, item_grab, nav registration
+    core/gui_focus.c     -- keyboard-focus policy: the exclusive input mode's confine / hold
+                             rules, the request latch, the release verb
+    core/gui_nav_item.c  -- the keyboard-nav per-item seam: registration into the frame's nav
+                             list (the resolver over that list is chrome/nav/gui_nav.c)
+    core/gui_item.c      -- the standard item protocol: item_state, item_grab, the compound
+                             bracket, and the public door (gui_item / invisible_button)
     core/gui_anim.c      -- retained-state animation utilities: dampers, timers (keyed-state
                              tenants -- server-side so style blends and interact tweens share them)
     core/gui_query.c     -- the public interact query readers: want_capture_*, is_item_*, is_key_*
@@ -70,6 +76,8 @@
 #include "runtime_service/gui/core/gui_state.c"
 
 #include "runtime_service/gui/core/gui_surface.c"
+#include "runtime_service/gui/core/gui_focus.c"
+#include "runtime_service/gui/core/gui_nav_item.c"
 #include "runtime_service/gui/core/gui_item.c"
 #include "runtime_service/gui/core/gui_anim.c"
 

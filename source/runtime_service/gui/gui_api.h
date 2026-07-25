@@ -18,7 +18,7 @@
         GUI_STOCK    comp_* widget logic + the stock_* reference renders over it
         GUI_CHROME   OPTIONAL policy layer: windows, dock, popups, flow widgets, themes
         GUI_DEBUG    severable diagnostics
-
+    
     Everything below GUI_CHROME stands alone -- chrome is one client of the strata, not the
     system.  A kit builds its own UI from frame + draw + core + surface + rect/flow, and
     promotes its own style; sb_gui_base is the bottom-up proof, tier by tier.

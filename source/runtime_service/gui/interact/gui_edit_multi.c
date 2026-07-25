@@ -600,7 +600,7 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
             }
         }
         s_medit_undo.for_id = GUI_ID_NONE;
-        item_focus_release();
+        focus_release();
     }
 
     *len_io     = len;

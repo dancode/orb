@@ -3,7 +3,11 @@
     runtime_service/gui/core/gui_ctx.c -- Immediate-mode context state and per-frame drivers.
 
     Declares all persistent ambient and frame-scratch state (s_interaction, s_build, gui_nav_state_t,
-    layout_frame_t, gui_context_t) and drives the per-frame lifecycle via ctx_new_frame.  Owns the
+    layout_frame_t, gui_context_t), owns the VERBS over those records (the item-flag stack, the
+    cursor request, the interact_* arbitration doors), and drives the per-frame lifecycle via
+    interaction_frame_reset / ctx_new_frame.  One rule places a function here: it defines, reads,
+    writes, or resets an ambient record -- the POLICY over a record lives with its feature
+    (keyboard focus: core/gui_focus.c; nav registration: core/gui_nav_item.c).  Owns the
     context pool storage (s_ctx_pool, ctx_bind); the PUBLIC multi-context lifecycle, the block
     ALLOCATION (ctx_alloc_slot -- it sizes chrome's records, whole-stack knowledge), and the
     memory-stats aggregation live in the frame unit.
@@ -109,7 +113,7 @@ u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
     scoped window records itself into the nav item list as it emits (with the region + line the
     layout engine stamped when it placed it), and the next nav_new_frame resolves a move as index
     math over that list -- one frame deferred, exactly as hover_win lags the cursor.  gui_nav.c
-    drives it; nav_item_register (core/gui_item.c) is the per-item seam.
+    drives it; nav_item_register (core/gui_nav_item.c) is the per-item seam.
 ==============================================================================================*/
 
 /* ... this is inside the context now */
@@ -383,47 +387,60 @@ cursor_flush( void )
 }
 
 /*==============================================================================================
-    Exclusive input mode (focus scope) -- the game-menu model of UI focus.
+    Interaction arbitration -- the verbs over s_interaction, defined with the record.
 
-    A GUI_WIN_MODAL window is an exclusive input MODE, the immediate-mode analogue of a game's
-    menu screen: while it is up it owns interaction (the hover fence, window_modal_apply) AND
-    keyboard focus.  Two rules make focus behave like a menu selection rather than a desktop
-    caret:
-
-      confine  -- only the mode's own widgets may TAKE focus (focus_allowed, core/gui_item.c);
-                  no background window can steal it.
-      hold     -- focus is STICKY within the mode: it never falls to nothing.  Focus can drop two
-                  ways and the mode blocks both -- a press on non-focusable dead space
-                  (interaction_frame_reset below) and a widget releasing its own capture on Enter /
-                  Escape (item_focus_release, core/gui_item.c).  You cannot "select nothing"
-                  inside a menu; focus only MOVES when another focusable widget in the mode claims
-                  it (a direct focused_id overwrite, not a release), so the console input keeps its
-                  caret across dead-space clicks AND across every command it submits.
-
-    Both key off modal.win_id + seen_frame, exactly like the hover fence -- one exclusive-mode
-    fact, read three ways.  FUTURE: a stack of modes (nested dialogs) would push/pop this the way
-    the popup layer already stacks; today there is one level, which the console needs.
+    The read half is the questions every gesture gate asks, named once so a compound gate reads
+    as a sentence at the call site instead of a chain of raw field comparisons; the write half is
+    the two sanctioned doors a higher tier starts a gesture through.  core/ and interact/ are the
+    only writers of the arbitration fields: everything above claims through these and reads the
+    record for gating, never writes it raw.  Pure over the record -- no policy, no rect math; the
+    per-item recipe that runs them in order is item_state (core/gui_item.c).
 ==============================================================================================*/
 
-/* An exclusive input mode is live -- a GUI_WIN_MODAL window emitted this frame or last (the
-   console re-stamps modal.seen_frame at its window_begin every frame it is open, so the fence
-   never lapses while it is up and lapses one frame after it closes). */
-
-static bool
-gui_modal_scope_live( void )
+/* Nothing holds the pointer capture: no widget, drag, or resize is in flight. */
+bool
+interact_idle( void )
 {
-    u32 f = g_ctx->retained.frame;
-    return g_ctx->modal.win_id != 0u &&
-           ( g_ctx->modal.seen_frame == f || g_ctx->modal.seen_frame + 1u == f );
+    return s_interaction.active_id == GUI_ID_NONE;
 }
 
-/* True when the live exclusive mode owns `id` -- the focused widget belongs to the modal window.
-   The frame-begin focus-clear consults this to keep the mode's focus sticky. */
-static bool
-focus_scope_holds( gui_id_t id )
+/* `id` holds the pointer capture (its press-drag gesture is in flight). */
+bool
+interact_held( gui_id_t id )
 {
-    return id != GUI_ID_NONE && gui_modal_scope_live() &&
-           s_interaction.focused_win == g_ctx->modal.win_id;
+    return s_interaction.active_id == id;
+}
+
+/* The cursor is over window `win_id`'s bare surface: it is the front-most window under the
+   cursor AND no widget sits under the cursor -- the gate for chrome gestures (title-bar drag,
+   double-click collapse, context-menu press) that must yield to any widget above them. */
+bool
+interact_hover_bare( gui_id_t win_id )
+{
+    return s_interaction.hover_win == win_id && s_interaction.hover_id == GUI_ID_NONE;
+}
+
+/* Claim the pointer capture for `id` (held by `button`) -- the write half of the pair above.
+   The one sanctioned door for a HIGHER tier to start a press-drag gesture, so chrome-side
+   gestures (window text selection's fallback press) claim through this verb instead of poking
+   the record directly.  Release is global, as for every gesture: interaction_frame_reset below
+   drops active_id when `button` lifts. */
+void
+interact_claim( gui_id_t id, u8 button )
+{
+    s_interaction.active_id     = id;
+    s_interaction.active_button = button;
+}
+
+/* Point the hover-window arbitration at `owner`, making every OTHER window inert for the rest
+   of this frame: item_state gates all hover on s_scope.win == hover_win, so redirecting
+   hover_win freezes everything behind the owner with no per-widget code -- the window-scale
+   analogue of active_id drag-modality.  The verb behind the popup modal fence
+   (popup_apply_modal). */
+void
+interact_hover_fence( gui_id_t owner )
+{
+    s_interaction.hover_win = owner;
 }
 
 /*==============================================================================================
@@ -470,7 +487,8 @@ interaction_frame_reset( void )
        focused widget, a press on non-focusable dead space keeps the focus instead of clearing it;
        a press on another focusable widget in the mode still moves focus (that widget overwrites
        focused_id in item_state).  This is what lets the console input keep its caret while the
-       user sweeps a scrollback text selection -- the mode stays "on the input". */
+       user sweeps a scrollback text selection -- the mode stays "on the input".  The mode itself
+       and both of its rules live in core/gui_focus.c; this is the HOLD rule's first half. */
     if ( s_io.mouse_pressed[ 0 ] && !focus_scope_holds( s_interaction.focused_id ) )
         s_interaction.focused_id = GUI_ID_NONE;
 
