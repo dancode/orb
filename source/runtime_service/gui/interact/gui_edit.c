@@ -228,6 +228,8 @@ void
 gui_set_edit_cursor_end( void )
 {
     s_cursor_end_request = true;
+    gui_request_redraw();   /* the request persists until a focused field runs and consumes it --
+                               on a clean frame none does, so it must pull a build forward. */
 }
 
 /* Key passthrough hook (public: gui()->set_edit_key_hook).  The next FOCUSED field to run

@@ -131,6 +131,8 @@ gui_viewport_open( i32 win_id )
     if ( (u32)win_id + 1u > s_vp_count )
         s_vp_count = (u32)win_id + 1u;
 
+    redraw_request();   /* a fresh surface has no cached geometry to replay -- the first build
+                           after it opens must actually run, whatever the input did. */
     return (gui_vp_t)win_id;
 }
 
@@ -168,9 +170,13 @@ gui_viewport_resize( gui_vp_t vp, i32 w, i32 h )
 {
     if ( vp >= GUI_MAX_VIEWPORTS )
         return;
+    if ( s_vp_pool[ vp ].disp_w == w && s_vp_pool[ vp ].disp_h == h )
+        return;                 /* hosts republish size every frame -- raise only on a real change */
 
     s_vp_pool[ vp ].disp_w = w;
     s_vp_pool[ vp ].disp_h = h;
+    redraw_request();           /* every layout resolves against the surface size; a programmatic
+                                   resize carries no input edge of its own to ride in on */
 }
 
 /* Close a viewport and release its GPU geometry buffers.  Works for the primary (0) and secondary
@@ -201,6 +207,8 @@ gui_viewport_close( gui_vp_t vp )
     {
         --s_vp_count;
     }
+
+    redraw_request();   /* the migrated windows must be re-emitted against the primary surface */
 }
 
 /*==============================================================================================

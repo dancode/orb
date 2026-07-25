@@ -60,7 +60,7 @@
 
 bool res_atlas_init          ( void );   // create the texture + resident buffer, paint the assist band
 void res_atlas_shutdown      ( void );   // destroy the texture, free the resident buffer + tenant sources
-void res_atlas_flush_upload  ( void );   // re-upload the resident buffer to the GPU if dirty (deferred)
+bool res_atlas_flush_upload  ( void );   // re-upload if dirty (deferred); true when pixels were sent
 
 /*==============================================================================================
     Tenant registration -- fonts (draw/gui_glyph_internal.c) and icons (gui_icon.c) pack through here.

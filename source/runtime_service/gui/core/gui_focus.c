@@ -127,6 +127,8 @@ void
 gui_set_keyboard_focus( void )
 {
     s_focus_request = true;
+    redraw_request();   /* the latch is consumed by the next build -- on a clean frame no widget
+                           runs to claim it, so the request would sit armed and never land. */
 }
 
 // clang-format on

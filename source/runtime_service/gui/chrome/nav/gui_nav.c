@@ -1233,10 +1233,19 @@ nav_new_frame( void )
 void
 gui_window_set_nav( const char* title )
 {
-    g_ctx->nav.focused_win = title ? id_hash( title ) : GUI_ID_NONE;
+    gui_id_t want = title ? id_hash( title ) : GUI_ID_NONE;
+    bool     edge = ( g_ctx->nav.focused_win != want ) || !g_ctx->nav.active
+                                                       || !g_ctx->nav.highlight;
+
+    g_ctx->nav.focused_win = want;
     g_ctx->nav.id          = GUI_ID_NONE;   /* first item of the new window takes focus */
     g_ctx->nav.active    = true;
     g_ctx->nav.highlight = true;
+
+    /* Focus resolves during the next nav_new_frame, so hand one build forward -- but only on a
+       real change: a tool re-asserting focus every frame must not pin the UI dirty. */
+    if ( edge )
+        redraw_request();
 }
 
 // clang-format on

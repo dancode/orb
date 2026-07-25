@@ -33,7 +33,12 @@ gui_dockspace_inset( gui_vp_t vp, f32 top )
 {
     if ( vp >= GUI_MAX_VIEWPORTS )
         return;
-    s_vp_pool[ vp ].dock_inset = ( top > 0.0f ) ? top : 0.0f;
+    f32 inset = ( top > 0.0f ) ? top : 0.0f;
+    if ( s_vp_pool[ vp ].dock_inset == inset )
+        return;                  /* native shells republish the caption band EVERY frame -- an
+                                    unconditional raise here would defeat idle skip permanently. */
+    s_vp_pool[ vp ].dock_inset = inset;
+    redraw_request();            /* a changed inset retiles the whole dockspace */
 }
 
 /* Ensure viewport vp hosts a dock tree, lay it out over the surface (below any native caption band),
@@ -246,6 +251,8 @@ gui_dock_window( const char* title, gui_dock_id_t node_id )
         return;
 
     dock_leaf_tab_add( n, id_hash( title ), title );
+    redraw_request();   /* the retiled layout appears next build (the interactive drop path already
+                           raises this in gui_dock_core.c; the programmatic verb must match) */
 }
 
 /* Remove a window from its node, returning it to free-floating.  A node emptied by this is collapsed
@@ -260,6 +267,7 @@ gui_dock_undock( const char* title )
     if ( !n )
         return;
     dock_node_remove_window( n, wid );
+    redraw_request();   /* undock retiles the tree: next build, same as dock_window above */
 }
 
 bool

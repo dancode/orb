@@ -203,13 +203,17 @@ res_atlas_shutdown( void )
     s_res.ready  = false;
 }
 
-void
+/* Returns true when pixels actually reached the GPU this call.  The frame loop turns that into a
+   forced rebuild: new resident art (an icon registered between frames) only becomes visible once a
+   widget emits it, and on a clean frame no widget runs at all. */
+bool
 res_atlas_flush_upload( void )
 {
     if ( !s_res.ready || !s_res.dirty )
-        return;
+        return false;
     gui_atlas_upload( &s_res.atlas, s_res.pixels );
     s_res.dirty = false;
+    return true;
 }
 
 /*==============================================================================================

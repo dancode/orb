@@ -361,8 +361,12 @@ void
 gui_window_set_open( const char* title, bool open )
 {
     gui_window_t* win = window_find( id_hash( title ) );
-    if ( win )
-        win->closed = !open;
+    if ( !win || win->closed == !open )
+        return;                 /* no edge: a host mirroring its own bool every frame must not
+                                   pin the UI dirty forever -- raise only on a real change. */
+    win->closed = !open;
+    redraw_request();           /* show/hide lands in the NEXT build; without this a toggle driven
+                                   from a menu or a hotkey freezes until the mouse moves again. */
 }
 
 bool

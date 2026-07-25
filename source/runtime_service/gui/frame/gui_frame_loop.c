@@ -25,6 +25,7 @@
 /* Boot-path seams -- defined in gui_boot.c (same TU, included after this file): teardown of the
    boot-owned window/context from gui_shutdown, and the auto chrome-shell emit at the default
    context's ctx_begin.  Both no-op when the host did not boot(). */
+
 static void boot_shutdown( void );
 static void boot_shell_emit( void );
 
@@ -339,8 +340,12 @@ gui_frame_begin( f32 dt )
 
     /* Push any resource-atlas changes (a font (re)load above, or icons registered since last frame)
        to the GPU at this safe between-frames point.  Unconditional: fonts pack into the shared atlas
-       too, so the flush must run even when the icons layer is off. */
-    res_atlas_flush_upload();
+       too, so the flush must run even when the icons layer is off.  An upload that actually landed
+       forces a rebuild -- register_icon / load_icon live in the draw layer, below core, so they
+       cannot raise the flag themselves; the arriving pixels are the signal, and without it art
+       registered while the UI is idle stays invisible until the next unrelated input. */
+    if ( res_atlas_flush_upload() )
+        s_frame_dirty = true;
 
     if ( s_frame_dirty )
     {
@@ -460,9 +465,12 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
 
     /* Push the context bound on entry; ctx_end restores it.  Count truthfully past the cap so a
        too-deep nesting still balances against ctx_end (the saved slot just aliases the top). */
-    if ( s_ctx_save_sp < GUI_CTX_STACK_DEPTH )
-         s_ctx_save_stack[ s_ctx_save_sp ] = g_ctx;
-       ++s_ctx_save_sp;
+    {
+        if ( s_ctx_save_sp < GUI_CTX_STACK_DEPTH )
+             s_ctx_save_stack[ s_ctx_save_sp ] = g_ctx;
+
+        ++s_ctx_save_sp;
+    }
     
     gui_context_t* c = s_ctx_pool[ ctx_handle ];
     ctx_bind( c );

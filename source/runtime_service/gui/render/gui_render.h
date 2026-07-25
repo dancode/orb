@@ -93,7 +93,7 @@ bool icon_get      ( gui_icon_id_t id,
     internal and reached through the font_/icon_ accessors below.
 ==============================================================================================*/
 
-void            res_atlas_flush_upload  ( void );   // re-upload the resident atlas to the GPU if dirty
+bool            res_atlas_flush_upload  ( void );   // re-upload if dirty; true when pixels were sent
 
 /*==============================================================================================
     EMIT: CPU draw list (pipeline/gui_emit_draw.c)

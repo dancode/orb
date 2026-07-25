@@ -736,9 +736,20 @@ typedef struct gui_api_s
        state change made DURING this build only the next build can show -- the click that switches
        which screen is emitted, a custom widget (gui()->item) mutating the model it draws.  Input
        edges dirty only the frame they land on; without this, that next frame reads clean and
-       render() replays the stale cached geometry until the mouse moves again.  Stock widgets do
-       not need it (they re-read state in the same frame); the internal pop-time mutations
-       (scroll, dock collapse, style edits) already raise the same flag. */
+       render() replays the stale cached geometry until the mouse moves again.
+
+       GUI STATE DIRTIES ITSELF -- YOUR STATE IS YOURS TO DECLARE.  Every gui verb that mutates
+       something displayed raises this flag internally: window_set_open, popup_open, the dock verbs
+       (dock_window / undock / clear / load / maximize / inset), viewport open / close / resize,
+       ctx_set_listening, set_keyboard_focus, window_set_nav, set_edit_cursor_end, theme / style /
+       font changes, scroll, and every anim step.  So request_redraw is for exactly ONE residual
+       case: the HOST mutating its own model between or during builds.  Stock widgets never need it
+       (they re-read state in the same frame).
+
+       Internal raises fire on the state-change EDGE, not on the call -- a verb re-asserted every
+       frame with an unchanged value must not raise, or the UI can never go idle.  Any new mutating
+       verb follows the same rule; a build-only ambient call (push_style_*, the next_item_* one-shots)
+       must never raise, since being inside a build already means the frame is dirty. */
     void ( *request_redraw )( void );
 
     /* frame_dirty -- true when the current frame must perform a full widget emit: input changed,

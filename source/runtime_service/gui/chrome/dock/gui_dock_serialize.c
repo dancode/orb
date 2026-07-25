@@ -115,6 +115,7 @@ gui_dock_clear( gui_vp_t vp )
     if ( !g_ctx->dock.pool || vp >= GUI_MAX_VIEWPORTS )
         return;
     dock_free_viewport_tree( vp );
+    redraw_request();   /* wholesale layout discard, typically driven from between frames */
 }
 
 /* Line cursor over the blob: copy the next line (sans newline) into out, advance past it; false at
@@ -224,6 +225,8 @@ gui_dock_load( gui_vp_t vp, const char* text )
 
     dock_free_viewport_tree( vp );
     s_vp_pool[ vp ].dock_root = dock_ref( dock_parse_node( &r, vp ) );
+    redraw_request();   /* a restored layout is the classic between-frames mutation: without this
+                           the UI keeps replaying the pre-load geometry until something else moves */
     return true;
 }
 

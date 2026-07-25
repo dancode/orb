@@ -95,8 +95,13 @@ ctx_pool_init( void )
 void
 gui_ctx_set_listening( gui_ctx_id_t ctx, bool listen )
 {
-    if ( ctx >= 0 && ctx < GUI_CTX_POOL_MAX && s_ctx_pool[ ctx ] )
-        s_ctx_pool[ ctx ]->listening = listen;
+    if ( ctx < 0 || ctx >= GUI_CTX_POOL_MAX || !s_ctx_pool[ ctx ] )
+        return;
+    if ( s_ctx_pool[ ctx ]->listening == listen )
+        return;                 /* no edge -- hosts re-assert routing every frame */
+    s_ctx_pool[ ctx ]->listening = listen;
+    redraw_request();           /* deaf/live changes what the widgets return; rebuild once so the
+                                   switch is visible without waiting on unrelated input */
 }
 
 /* Allocate a fresh secondary context sized to `cfg` (NULL = the internal maxima).

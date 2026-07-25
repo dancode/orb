@@ -163,6 +163,11 @@ popup_open_id( gui_id_t id, f32 ax, f32 ay )
     p->rect        = ( gui_rect_t ){ 0 };
 
     g_ctx->popup.open_count = depth + 1u;        /* opening closes anything deeper */
+
+    /* The popup itself is only emitted by the NEXT build, so the frame that opens it must hand one
+       more build forward.  Safe to raise unconditionally here: every caller (gui_popup_open, combo,
+       menu, toolbar) gates this on a genuine open edge, never re-calling it while already open. */
+    redraw_request();
 }
 
 void
