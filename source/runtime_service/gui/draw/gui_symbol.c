@@ -36,7 +36,7 @@
     Shared geometry helpers
 ==============================================================================================*/
 
-/* Make a vec2 (the backend file owns its own v2; this is the UI unit's local one). */
+/* Make a vec2 (the render server owns its own v2; this is the draw unit's local one). */
 static gui_vec2_t sv2( f32 x, f32 y ) { return ( gui_vec2_t ){ x, y }; }
 
 /* Segment count for an arc of radius r sweeping `sweep` radians: ~one segment per 6px of arc

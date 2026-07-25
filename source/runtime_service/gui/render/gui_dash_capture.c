@@ -191,7 +191,7 @@ dash_capture_flush( u32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 i
 }
 
 /*==============================================================================================
-    Shell seam (called from gui_dashboard.c, UI unit)
+    Shell seam (called from debug/gui_dashboard.c)
 ==============================================================================================*/
 
 const dash_snapshot_t* gui_dash_snapshot   ( void )    { return &s_dash.snap; }

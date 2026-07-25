@@ -4,10 +4,11 @@
 
     The top of the stack and nothing else: boots both servers, owns the viewports and
     the app/sys wiring, pumps io into the interact server, hands each surface's GPU pieces to
-    the render server at flush.  Everything with a role of its own is one of the ten carved
-    units at this directory's root -- the model, the dependency graph, and the role map live in
-    GUI_ARCHITECTURE.md, not here.  The module face (vtable + descriptor + the app/rhi API
-    pointer storage) is the SEPARATE gui.c unit; this unit is pure orchestration.
+    the render server at flush.  Everything with a role of its own is one of the carved units
+    at this directory's root (the roster is the `unit` list under `target gui` in orb.targets)
+    -- the model, the dependency graph, and the role map live in GUI_ARCHITECTURE.md, not here.
+    The module face (vtable + descriptor + the app/rhi API pointer storage) is the SEPARATE
+    gui.c unit; this unit is pure orchestration.
 
     The frame unit owns NO unit header: its public face IS gui.h / gui_api.h / gui_host.h, and
     its few internal seams are forward-declared below the includes.  It is the only unit that
@@ -15,19 +16,18 @@
     the orchestrator (the units call up only through the documented upward seams in their own
     headers).
 
-    THIS UNIT's constituents (each carved unit lists its own):
+    THIS UNIT's constituents, in include order (each carved unit lists its own):
 
     frame/gui_frame_overlay.c    -- built-in perf / state HUD overlays + the frame-timing helpers they read
                                       (home -- conductor code, never part of the debug unit)
-
     frame/gui_frame_loop.c       -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, clip
     frame/gui_frame_font.c       -- font API (load/use/push/pop/active_id) + the font -> layout bridge (gui_style_apply)
+    frame/gui_pane.c             -- the pane bracket: pane_tag + gui_pane_begin/end stamp BOTH servers
+    frame/gui_context.c          -- public multi-context lifecycle + the context block allocation
     frame/gui_viewport.c         -- surface record lifecycle (viewport_create/destroy) + viewport open/resize/
                                       close + gui-owned floater lifecycle (spawn/update/render_floaters)
     frame/gui_boot.c             -- THE BOOT PATH: boot + boot_poll + the boot_present pair (plus
                                       frame_pace, shared with the runtime path)
-    frame/gui_pane.c             -- the pane bracket: pane_tag + gui_pane_begin/end stamp BOTH servers
-    frame/gui_context.c          -- public multi-context lifecycle + the context block allocation
 
     gui_ui_mem.c                 -- frontend memory accounting (gui_ui_memory) + the gui_mem_stats
                                       aggregation; must be the last constituent include so it sees them all
@@ -92,10 +92,9 @@ void           viewport_destroy( gui_vp_t vp );                                 
     Unity build
 ==============================================================================================*/
 
-/* The render backend (render/resource/gui_atlas, gui_font, gui_icon; render/pipeline/gui_shader,
-   gui_emit_draw, gui_emit_path, gui_build_tess, gui_build_volatile, gui_build_cache, gui_render;
-   render/gui_debug_overlay) is the SECOND unit -- compiled separately via gui_render.c.  This
-   unit calls into it through the draw_* / font_* / gui_render_* declarations in gui_render.h. */
+/* THE RENDER SERVER is its OWN translation unit (gui_render.c): the shared atlas, the emit ->
+   build -> submit pipeline, the debug overlay, and the captures.  This unit calls into it
+   through the draw_* / gui_render_* declarations in render/gui_render.h. */
 
 /*----------------------------------  LIBRARY: GUI_CORE  ----------------------------------*/
 // THE INTERACT SERVER is its OWN translation unit (gui_core.c): io, ids, keyed

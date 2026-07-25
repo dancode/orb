@@ -30,7 +30,7 @@ col_lerp( u32 ca, u32 cb, f32 t )
 
 /* Place an extent `len` within the span [org, org+avail) along one axis: centered, against the far
    edge, or (default) the near edge.  The one axis primitive every aligned placement resolves
-   through -- rect_align below for a box, and draw_text_in (gui_text.c) per line of a text
+   through -- rect_align below for a box, and draw_text_in (draw/gui_canvas.c) per line of a text
    block -- so a centered label, a right-flushed caption, and a bottom-anchored run share one rule. */
 
 static f32

@@ -1,10 +1,10 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/pipeline/gui_build_volatile.c -- Volatile widgets, BUILD-unit half.
+    runtime_service/gui/render/pipeline/gui_build_volatile.c -- Volatile widgets, render half.
 
     An inline-emit callback replayed in place on frames the UI build is skipped entirely
     (gui_frame_dirty() false) -- see gui.h (gui_volatile_fn) for the full contract and
-    chrome/widgets/gui_volatile.c for the UI-unit half of this seam.
+    chrome/widgets/gui_volatile.c for the frontend half of this seam.
 
     Design: every volatile block owns a RESERVED, PADDED sub-region of its window's geometry
     slot -- a vertex span, an index span, and a run of GPU commands, each allocated with headroom
@@ -110,7 +110,8 @@ typedef struct
     bool             hidden;           // whole range was clip-empty at emit -- nothing on screen
 
     /* Layout footprint: the extent the block claimed at its last REAL emit, measured by the probe
-       in gui_volatile_cb (UI unit).  Idle replays measure their own the same way and compare --
+       in gui_volatile_cb (chrome/widgets/gui_volatile.c).  Idle replays measure their own the same
+       way and compare --
        the geometry reservation guards what the block DRAWS, this guards the space it OCCUPIES. */
     f32              foot_w, foot_h;     // real emit's extent (the reference a replay is checked against)
     f32              rfoot_w, rfoot_h;   // extent of the replay that forced the pending real frame

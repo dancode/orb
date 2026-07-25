@@ -3,7 +3,7 @@
     runtime_service/gui/render/gui_debug_overlay.c -- Bolt-on debug overlay.
 
     A second, independent draw list that is emitted from inside the regular gui code (via the
-    DBG_* capture macros in gui.c) and flushed LAST, on top of the finished UI.  It visualizes
+    DBG_* capture macros in debug/gui_debug.h) and flushed LAST, on top of the finished UI.  It visualizes
     things the normal UI hides: every widget's interaction rect, the window edge-resize grab
     bands, window frames (with the hover window highlighted), and the clip/scissor stack.
 
@@ -21,9 +21,9 @@
 
     Active layers are chosen at runtime with gui()->debug_set_layers( gui_dbg_layer_t mask ).
 
-    Included by gui_render.c last, after gui_render.c so s_render, render_ortho, gui_push_t,
-    and the font_* atlas helpers are in scope.  The ambient build viewport it tags rects with lives
-    in the UI unit (s_build), reached across the unit seam via gui_dbg_build_viewport().
+    Included by gui_render.c after the whole pipeline -- it needs s_render, render_ortho, and
+    gui_push_t from pipeline/gui_submit.c in scope.  The ambient build viewport it tags rects with
+    lives in the core unit (s_build, core/gui_ctx.c), reached across the seam via gui_dbg_build_viewport().
 
 ==============================================================================================*/
 // clang-format off
@@ -105,7 +105,7 @@ static struct
     Debug Name Registry -- id -> source string, so the state overlay can show a readable label
     instead of a hash.  Populated every frame at the DBG_NAME( id, str ) call sites (item_id,
     window_begin_ex, region/child/table id mint points); read back by gui_debug_name(), which the
-    UI unit calls from gui_state_overlay().  Open-addressed like gui_state_get (core/gui_state.c):
+    state overlay calls from gui_state_overlay().  Open-addressed like gui_state_get (core/gui_state.c):
     linear probe, home-bucket overwrite when full -- a rare degradation, not an overflow, and fine
     for a debug tool.  No staleness tracking; a name simply goes stale (but harmless) once its id
     stops being emitted.
@@ -194,7 +194,7 @@ dbg_push_outline( u32 vp, gui_rect_t r, f32 thickness, u32 abgr )
 }
 
 /*==============================================================================================
-    Capture entry points -- called via the DBG_* macros in gui.c.
+    Capture entry points -- called via the DBG_* macros in debug/gui_debug.h.
     gui_dbg_build_viewport() routes each command to the correct viewport.
 ==============================================================================================*/
 

@@ -15,7 +15,7 @@
 /*==============================================================================================
     Atlas sync -- pack every (re)loaded font's resident pixels into the shared atlas.
 
-    Called once per frame by the UI unit at frame_begin -- a safe point between frames -- so the GPU
+    Called once per frame by the frame orchestrator at frame_begin -- a safe point between frames -- so the GPU
     atlas swap (register / upload) never interleaves with an in-flight frame, nor, across the
     multi-context floater pass, with frames still in flight (the VK_ERROR_DEVICE_LOST hazard a
     mid-frame atlas rebuild used to risk).  A font is loaded render-free by the font/ resource

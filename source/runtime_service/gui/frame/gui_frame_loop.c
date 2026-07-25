@@ -7,11 +7,13 @@
     loading/selection and the font -> layout bridge (gui_style_apply) live in gui_frame_font.c;
     the between-frames commit of deferred font reloads (gui_font_flush_deferred) is a frame_begin
     step and stays here.  Viewport open/resize/close and the gui-owned floater surfaces
-    (spawn/update/render_floaters) live in gui_viewport.c, included just after this file; memory
-    stats and the multi-context lifecycle (ctx_create/destroy/bind/set_listening) live in
-    core/gui_ctx.c, next to the context pool they operate on.  The perf / state HUD
-    overlays and the frame-timing helpers the lifecycle here calls live in gui_frame_overlay.c,
-    included just before this file.
+    (spawn/update/render_floaters) live in gui_viewport.c, included just after this file; the
+    multi-context lifecycle (ctx_create/destroy/bind/set_listening) and the context block
+    allocation live in gui_context.c, a sibling in this unit -- the storage they operate on is
+    the interact server's (s_ctx_pool, core/gui_ctx.c), but tearing a context down is
+    orchestrator work.  The perf / state HUD overlays and the frame-timing helpers the lifecycle
+    here calls live in gui_frame_overlay.c, included just before this file.
+
     Included by the gui_frame.c unit root (the frame orchestrator), which the gui.c module
     face then names in its vtable.
 

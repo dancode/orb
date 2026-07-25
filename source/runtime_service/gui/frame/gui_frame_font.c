@@ -2,16 +2,20 @@
 
     runtime_service/gui/frame/gui_frame_font.c -- Font API + the font -> layout bridge.
 
-    The UI-unit font surface (load / load_builtin / load_into /
-    use / push / pop / active_id), the push/pop font stack, the asset-path helper the builtin
-    loader resolves through, and gui_style_apply -- the font -> layout bridge that rebuilds the
-    scaled layout metrics from the active font whenever a theme, font, or deferred reload lands.
+    The PUBLIC font surface (load / load_builtin / load_into / use / push / pop / active_id),
+    the push/pop font stack, the asset-path helper the builtin loader resolves through, and
+    gui_style_apply -- the font -> layout bridge that rebuilds the scaled layout metrics from
+    the active font whenever a theme, font, or deferred reload lands.
 
-    The font REGISTRY itself lives in the render backend unit; this file drives it through the
-    font_load / font_use / font_active_id accessors (render/gui_render.h) and rescales layout
-    from the active font's metrics (font_em / font_char_h / font_line_h).  The between-frames
-    commit of deferred reloads (gui_font_flush_deferred) stays in gui_frame_loop.c -- it is a
-    frame_begin step, not part of this public surface.
+    Nothing about a font is stored here.  The registry and the parse are the font/ leaf
+    (font/gui_font.h), the atlas upload is the draw unit (draw/gui_glyph.c); this file only
+    orders those around and, on every landing, re-derives layout from the active font's metrics
+    (font_em / font_char_h / font_line_h).  That last step is the reason the surface sits in the
+    orchestrator rather than in font/: a font change is a LAYOUT event, and only this unit sees
+    both sides of it.
+
+    The between-frames commit of deferred reloads (gui_font_flush_deferred) stays in
+    gui_frame_loop.c -- it is a frame_begin step, not part of this public surface.
 
     Included by the gui_frame.c unit root next to gui_frame_loop.c; the root supplies every
     header (fmt / sys / the unit seams) before including either constituent.
@@ -21,12 +25,6 @@
 
 /*==============================================================================================
     Font API
-
-    The font registry lives in the render backend unit;
-
-    This UI-unit API drives it through the font_load / font_use accessors (gui_render.h)
-    and rebuilds layout from the active font's metrics (font_em / font_char_h / font_line_h)
-        -- the font -> layout bridge.
 ==============================================================================================*/
 
 /* Saved active-font ids for push_font / pop_font; small fixed depth -- font pushes are coarse

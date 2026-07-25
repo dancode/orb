@@ -5,8 +5,8 @@
     See gui_atlas.h for the rationale.  Three functions, each mirroring the create/upload/
     destroy sequence that used to be duplicated between the font registry and the icon atlas.
 
-    Included by gui_render.c before gui_font.h / gui_font_internal.c / gui_font.c / gui_icon.c
-    (all resource/).
+    First include in gui_render.c: gui_res_atlas.c builds THE shared atlas on top of these
+    three, and every stage after it renders from what that atlas holds.
 
 ==============================================================================================*/
 // clang-format off

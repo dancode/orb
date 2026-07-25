@@ -29,7 +29,8 @@
     res_atlas_generation bumps on every structural (UV-affecting) change so the retained render cache
     can fold it into its per-window hash and re-tessellate geometry whose baked UVs went stale.
 
-    Included by gui_render.c before resource/gui_font.h (fonts + icons are tenants of this atlas).
+    Included by gui_render.c before the pipeline stages that sample it, and by gui_draw.c, whose
+    fonts and icons are this atlas's tenants -- they pack in from outside the render unit.
 
 ==============================================================================================*/
 #pragma once

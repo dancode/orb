@@ -7,12 +7,15 @@
     tess_ensure_gpu_cmd (gui_build_tess.c).  draw_push_text copies its string into the frame
     text pool and emits one glyph-run command.
 
-    draw_push_icon also lives here, not in resource/gui_icon.c: it queues a semantic command
-    exactly like every other draw_push_*, reading the icon resource's icon_get / icon_atlas_idx
-    accessors rather than the resource reaching up into EMIT itself.
+    draw_push_icon lives here rather than with the icon resource: it queues a semantic command
+    exactly like every other draw_push_*, so EMIT stays the one place a command is born and the
+    resource never reaches up into it.
 
-    Included by gui_render.c after resource/gui_font.c / resource/gui_icon.c so font_glyph /
-    icon_get / icon_atlas_idx are in scope.
+    First of the pipeline includes in gui_render.c.  The resolvers it calls -- font_glyph,
+    icon_get, icon_atlas_idx -- are NOT in this unit: fonts and icons are the draw unit's, and
+    the server reaches them through the glyph/sprite source contract declared in
+    render/gui_render.h, which the draw unit implements.  Nothing here depends on include order
+    for them.
 
 ==============================================================================================*/
 // clang-format off
@@ -21,8 +24,8 @@
     gui_gpu_cmd_t -- backend-private GPU draw command.
 
     One bounded range of indices sharing a texture slot and scissor rect -- the unit the GPU
-    sees.  Not exposed in gui.h.  The public gui_cmd_t carries semantic shapes; the render
-    backend (gui_render.c) tessellates those into these at flush time.
+    sees.  Not exposed in gui.h.  The public gui_cmd_t carries semantic shapes; the BUILD phase
+    (gui_build_tess.c) tessellates those into these.
 ==============================================================================================*/
 
 typedef struct
@@ -786,8 +789,8 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
     draw_push_icon -- push one registered icon quad into the draw list.
 
     An icon is just a textured quad sourced from the icon atlas instead of the font atlas, so
-    this reuses draw_push_rect_filled wholesale; icon_get / icon_atlas_idx (resource/gui_icon.c)
-    supply the cached UVs and the bindless slot.  No-op for an invalid id.
+    this reuses draw_push_rect_filled wholesale; icon_get (the sprite source contract, supplied
+    by the draw unit) hands back the cached UVs.  No-op for an invalid id.
 ==============================================================================================*/
 
 void

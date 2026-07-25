@@ -35,8 +35,8 @@
     context in turn targets whichever records are live.
 ==============================================================================================*/
 
-/* Hover / active / focus, persisting across frames.  Tier: ambient singular (ARCHITECTURE.md
-   sec 1).  Field notes worth keeping by the definition:
+/* Hover / active / focus, persisting across frames.  Tier: ambient singular -- one physical user,
+   so one record for the whole app.  Field notes worth keeping by the definition:
 
      repeat_t / repeat_on  one timer serves GUI_ITEM_BUTTON_REPEAT -- only one widget is active
                            at a time; both reset on the press frame.
@@ -269,8 +269,9 @@ f32 vp_h( gui_vp_t vp ) { i32 h = s_vp_pool[ vp ].disp_h; return h > 0 ? (f32)h 
     Pointer hit test
 
     Cursor (s_io) inside a rect -- the one primitive every hover gate, chrome grab, and hover
-    nomination is built on.  Its rect-vs-rect sibling (rect_intersect) is shared geometry defined
-    in gui.c ahead of the unity includes, so the draw units can use it for clipping too.
+    nomination is built on.  Its rect-vs-rect sibling (rect_intersect) is not here: it needs no
+    ambient cursor, so it is static inline in the leaf rect kit (rect/gui_rect.h) where every
+    unit -- including the render server, for clip nesting -- can reach it.
 ==============================================================================================*/
 
 bool

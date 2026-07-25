@@ -119,7 +119,7 @@ select_capture_build( void )
 }
 
 /*============================================================================================*/
-/* Read accessors for the UI unit's controller. */
+/* Read accessors for the selection controller (chrome/window/gui_select.c). */
 
 u32 select_capture_serial( void ) { return s_select_cap.serial; }
 u32 select_run_count     ( void ) { return s_select_cap.run_count; }

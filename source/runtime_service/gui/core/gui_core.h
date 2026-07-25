@@ -126,9 +126,9 @@ typedef enum
 
     One pointer, one keyboard, one mouse, so none of it is per-viewport or per-context: a single
     global shared by every context, into which listening contexts nominate hover / active during
-    their emit.  Tier: ambient singular (see ARCHITECTURE.md sec 1, state tiers).  Field story
-    lives with the definition site (core/gui_ctx.c).  interact/ stays the only WRITER of the
-    arbitration fields; everything else reads.
+    their emit.  Tier: ambient singular -- one set for the whole app (the three state tiers are
+    named at their definitions in core/gui_ctx.c).  Field story lives with that definition site.
+    interact/ stays the only WRITER of the arbitration fields; everything else reads.
 ==============================================================================================*/
 
 typedef struct

@@ -6,8 +6,10 @@
     buffer, the master stb_rect_pack area, the fixed assist band, and the tenant table (one retained
     pixel copy per packed font/icon so a repack can re-blit without going back to disk).
 
-    Included by gui_render.c after resource/gui_atlas.c and before resource/gui_font.h so fonts and
-    icons -- which pack into it -- see these entry points.
+    Included by gui_render.c after resource/gui_atlas.c (whose create/upload/destroy it wraps) and
+    before every pipeline stage, which resolve their UVs out of what is packed here.  The tenants
+    themselves -- fonts and icons -- are the DRAW unit's, one level up: they pack in from outside
+    through the res_atlas_* entry points this file exports via gui_res_atlas.h.
 
 ==============================================================================================*/
 // clang-format off

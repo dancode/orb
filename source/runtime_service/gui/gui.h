@@ -10,14 +10,19 @@
     the engine `app` layer (Win32), rendering goes through `rhi` (Vulkan).  The host drives a
     frame_begin -> ctx_begin/widgets/ctx_end -> frame_end -> render() lifecycle each frame.
 
-    Read ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is the
-    orientation map: the three state tiers (ambient-singular / per-context retained via g_ctx /
-    frame-scratch), the three unity TUs (gui.c UI unit + gui_render.c render unit +
-    stock/gui_stock.c stock unit), the
-    EMIT -> BUILD -> RENDER pipeline, and the invariants.  Header split follows the house
-    convention: this file (types) -> gui_api.h (DLL) -> gui_host.h (hosts/sandboxes).
+    Read GUI_ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is
+    the orientation map: the two-server model, the widget tiers, the frame lifecycle, and the
+    region / scroll / clip invariants.  The unit roster is the `unit` list under `target gui`
+    in orb.targets, and each unit's root .c heads itself with its own constituents.  Header
+    split follows the house convention: this file (types) -> gui_api.h (DLL) -> gui_host.h
+    (hosts/sandboxes).
 
-    Two caches make an idle UI cheap (see ARCHITECTURE.md sec 6):
+    State sits in three tiers, and which tier a record is in decides its lifetime: ambient
+    singular (s_interaction, s_io -- one set for the whole app), per-context retained (g_ctx->,
+    surviving frames), and frame scratch (s_build, s_scope -- reset every frame).  core/gui_ctx.c
+    holds all three and names each at its definition.
+
+    Two caches make an idle UI cheap:
     1. CPU emit skip (s_frame_dirty, gui_frame_loop.c): a single global bool.  When no input, animation,
        or render delta occurred, the whole emit phase is skipped and the previous frame's draw list
        is reused.
@@ -1708,7 +1713,7 @@ typedef struct
     u32 cpu_select_bytes;   // text-selection run capture buffer (always compiled; a product feature)
     u32 cpu_debug_bytes;    // debug overlay + name registry + dashboard snapshot + command stepper
                             //   (each 0 when its feature is compiled out -- Release builds)
-    u32 cpu_frontend_bytes; // UI-unit statics: io snapshot, style/theme state, layout/id stacks,
+    u32 cpu_frontend_bytes; // frontend statics: io snapshot, style/theme state, layout/id stacks,
                             //   undo buffers, gesture latches (gui_ui_mem.c) -- small by design;
                             //   the frontend's real state is the malloc'd context blocks below
     u32 cpu_static_total;   // sum of the section above

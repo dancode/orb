@@ -14,12 +14,13 @@
     tessellator resolves glyph UVs and the emit layer resolves icon UVs against the tables
     this unit installs and manages.
 
-    Constituents (draw/):
-        gui_glyph_internal.c / gui_glyph.c  -- glyph atlas upload + UV dispatch (the font resource is the font/ leaf)
-        gui_icon.c / gui_icon_load.c                   -- icon registry + PNG -> R8 loader
-        gui_paint.c                                    -- paint floor + fitted text painters
-        gui_symbol.c                                   -- symbol marks + shape palette + gui_draw_* surface
-        gui_canvas.c                                   -- custom-draw placement/metric/hit-test API
+    Constituents (draw/), in include order:
+        gui_glyph_internal.c / gui_glyph.c   -- glyph atlas upload + UV dispatch (the metrics half
+                                                 of fonts is the font/ leaf, below this unit)
+        gui_icon.c / gui_icon_load.c         -- icon registry + PNG -> R8 loader
+        gui_paint.c                          -- paint floor + fitted text painters
+        gui_symbol.c                         -- symbol marks + shape palette + gui_draw_* surface
+        gui_canvas.c                         -- custom-draw placement/metric/hit-test API
 
 ==============================================================================================*/
 

@@ -8,13 +8,13 @@
     the feat_* kit), chrome/dock/, chrome/popup/, and chrome/nav/ (core-classified as a peer
     focus service, but it reads/drives the popup stack, so it lives here).
 
-    One of the carved translation units (beside gui.c, gui_render.c, gui_core.c, gui_style.c,
-    gui_interact.c, gui_flow.c, gui_element.c, gui_draw.c, gui_debug.c).  The compiler enforces the boundary: everything
-    resolves through the public gui_* surface (gui_host.h), the backend draw API
-    (gui_render.h), and the unit headers below it -- the ambient records, the
-    core service seams (item / id / io / state / style / paint / gesture services), and the
-    flow unit's emit surface.  Chrome's few core-facing definitions (scrollbar_widget, the
-    viewport request slot) are seams the other direction.
+    One of the carved translation units (the full roster is the `unit` list under `target gui`
+    in orb.targets).  The compiler enforces the boundary: everything resolves through the
+    public gui_* surface (gui_host.h), the backend draw API (gui_render.h), and the unit
+    headers below it -- the ambient records, the core service seams (item / id / io / state /
+    style / paint / gesture services), and the flow unit's emit surface.  Chrome's few
+    core-facing definitions (scrollbar_widget, the viewport request slot) are seams the other
+    direction.
 
     Include order inside the unit is the static-visibility dependency order, unchanged from
     the unity list gui.c carried: widgets -> table -> window -> dock -> popup -> nav.

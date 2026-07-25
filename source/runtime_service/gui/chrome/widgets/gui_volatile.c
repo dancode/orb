@@ -1,18 +1,18 @@
 /*==============================================================================================
 
-    runtime_service/gui/chrome/widgets/gui_volatile.c -- Volatile widgets, UI-unit half.
+    runtime_service/gui/chrome/widgets/gui_volatile.c -- Volatile widgets, chrome half.
 
     A "volatile" callback contains ordinary UI emit calls (text, colored rects, etc).  It runs
     inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
     any other code, no special behavior.  On an idle frame (frame_begin returned false, no
-    ctx_begin/emit ran), gui_frame_end calls gui_update_volatile internally; the backend (BUILD unit,
-    render/pipeline/gui_build_volatile.c) re-invokes the same callback standalone, re-tessellates its
+    ctx_begin/emit ran), gui_frame_end calls gui_update_volatile internally; the render server's half
+    (render/pipeline/gui_build_volatile.c) re-invokes the same callback standalone, re-tessellates its
     output, and patches it into the padded region reserved for the block inside its window's
     cached geometry (any output that fits is accepted; only outgrowing the reservation costs a
     real frame) -- see gui.h (gui_volatile_fn) for the full contract and gui_render.h for the
     unit-seam declarations shared with the backend half.
 
-    Everything in THIS file is the UI-unit side of the seam:
+    Everything in THIS file is the frontend side of the seam:
 
         gui_volatile_cb / gui_volatile_begin / gui_volatile_end
             The public API (gui_api.h vtable: volatile_cb / volatile_begin / volatile_end).
@@ -26,11 +26,11 @@
             gui_replay_scope_enter/_exit installs around a standalone callback invocation.
 
         gui_replay_scope_enter / gui_replay_scope_exit
-            The reverse half of the unit seam: gui_update_volatile (backend unit) calls these
+            The reverse half of the unit seam: gui_update_volatile (the render server) calls these
             around each row's replay so the callback's ordinary gui()->text()/rect_filled()/...
             calls have a valid (if minimal) layout frame and id scope to emit into, without
             running ctx_begin/ctx_new_frame or touching anything else about the real frame's UI
-            state.  s_replay_mode itself lives in gui_ctx.c (ambient state, same tier as
+            state.  s_replay_mode itself lives in core/gui_ctx.c (ambient state, same tier as
             s_interaction) so item_state (core/gui_item.c) can read it inline; this file
             is the only place that sets it.
 

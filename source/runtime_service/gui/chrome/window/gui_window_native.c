@@ -9,11 +9,11 @@
     WM_NCHITTEST.  So the gui side only pins geometry, draws chrome, and calls
     window_set_native_frame.  This file is everything of that story:
 
-        window_is_native / window_native_id -- the identity tests begin and end both gate on
-        native_caption_buttons              -- the one layout for holes AND drawn buttons
-        window_sync_native                  -- geometry pin + frame publish + restore tracking
-        native_popin_request                   -- button-triggered tear-off / merge-back request
-        native_caption_chrome               -- window_end's caption strip (draw + interact)
+        window_is_native / window_native_id  -- the identity tests both begin and end gate on
+        native_caption_buttons               -- the one layout for holes AND drawn buttons
+        window_sync_native                   -- geometry pin + frame publish + restore tracking
+        native_popin_request                 -- button-triggered tear-off / merge-back request
+        native_caption_chrome                -- window_end's caption strip (draw + interact)
 
     Included by gui_chrome.c after gui_window.c (gesture policy state) and before
     gui_window_free.c (window_begin_ex / window_end, which call everything here).

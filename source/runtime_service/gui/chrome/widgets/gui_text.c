@@ -10,7 +10,7 @@
 
     Press widgets (button, checkbox, radio_button, selectable) are in gui_button.c; folding
     rows (collapsing_header, tree_node) in gui_tree.c; text fields in gui_input.c -- all
-    included after this file in gui.c.
+    included after this file in gui_chrome.c.
 
 ==============================================================================================*/
 // clang-format off

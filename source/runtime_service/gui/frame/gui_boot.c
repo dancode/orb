@@ -1,6 +1,7 @@
 /*==============================================================================================
 
-    gui_boot.c -- THE BOOT PATH: one-call setup and the quick gui loop it belongs to.
+    runtime_service/gui/frame/gui_boot.c -- THE BOOT PATH: one-call setup and the quick gui loop
+    it belongs to.
 
     TIER NOTE: this is the TEST-BED methodology -- for sandboxes, demos, and quick tools where
     the UI is the whole application and setup boilerplate is pure friction.  It is the

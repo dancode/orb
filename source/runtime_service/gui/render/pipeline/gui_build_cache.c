@@ -9,7 +9,7 @@
         BUILD  (this file)        once per frame: diff each window's commands against last frame,
                                    reuse unchanged geometry in place, tessellate changed windows,
                                    then z-sort the result into a dispatch table.
-        RENDER (gui_render.c)     once per surface: upload changed geometry and emit one indexed
+        RENDER (gui_submit.c)     once per surface: upload changed geometry and emit one indexed
                                    draw call per cached GPU command.
 
     BUILD runs lazily on the first surface flush (cache_build_frame, guarded by s_frame_built)

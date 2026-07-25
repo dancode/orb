@@ -507,10 +507,11 @@ static u32 viewport_index_for_window( i32 win_id );
     g_ctx via the aliases in gui_ctx.c -- g_ctx->retained, g_ctx->nav, the popup open-set -- so switching
     contexts is a single pointer assignment (ctx_bind): no copy, no backup/restore.
 
-    Ambient state (s_interaction) and frame scratch (s_build, the stacks, s_draw) stay global by design
-    -- tier 1 (one physical user) and tier 3 (scratch reused across contexts each frame); see
-    ARCHITECTURE.md.  s_io (hardware input snapshot) is always shared.  The `listening` flag gates whether a bound context
-    receives hover / click / nav updates -- a deaf context renders but returns inert widget state.
+    Ambient state (s_interaction) and frame scratch (s_build, the stacks, s_draw) stay global by
+    design -- one physical user, and scratch that every context reuses in turn each frame.  s_io
+    (the hardware input snapshot) is always shared.  The `listening` flag gates whether a bound
+    context receives hover / click / nav updates -- a deaf context renders but returns inert
+    widget state.
 ==============================================================================================*/
 
 typedef struct gui_context_t

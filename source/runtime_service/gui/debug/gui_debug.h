@@ -1,5 +1,5 @@
-#ifndef GUI_DEBUG_INTERNAL_H
-#define GUI_DEBUG_INTERNAL_H
+#ifndef GUI_DEBUG_H
+#define GUI_DEBUG_H
 /*==============================================================================================
 
     runtime_service/gui/debug/gui_debug.h -- server introspection (the debug unit).
@@ -110,4 +110,4 @@ u32  gui_debug_unit_mem_bytes( void );          /* debug unit: its fixed statics
 
 // clang-format on
 /*============================================================================================*/
-#endif    // GUI_DEBUG_INTERNAL_H
+#endif    // GUI_DEBUG_H

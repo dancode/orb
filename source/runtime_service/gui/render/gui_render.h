@@ -53,9 +53,9 @@ ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
 
 // clang-format off
 /*==============================================================================================
-    Backend lifecycle (gui_render.c) -- the seam the UI unit calls to stand up / tear down the
-    whole render backend.  Internally wraps gui_render_init/shutdown (gui_render.c), which are
-    not exposed past this header.
+    Backend lifecycle (gui_render.c) -- the seam the frame orchestrator calls to stand up / tear
+    down the whole render backend.  Internally wraps gui_render_init/shutdown (pipeline/
+    gui_submit.c), which are not exposed past this header.
 ==============================================================================================*/
 
 bool gui_backend_init( void );
@@ -88,9 +88,9 @@ bool icon_get      ( gui_icon_id_t id,
     Shared resource atlas (resource/gui_res_atlas.c)
 
     THE one R8 texture core UI draws from: fonts, icons and the solid/dash assists all pack into it,
-    so they share a bindless slot and batch into one draw per clip/viewport scope.  The UI unit only
-    needs the deferred-upload flush; everything else (packing, sampling accessors) is backend-
-    internal and reached through the font_/icon_ accessors below.
+    so they share a bindless slot and batch into one draw per clip/viewport scope.  Past this seam
+    only the deferred-upload flush is needed; everything else (packing, sampling accessors) is
+    backend-internal and reached through the source-contract accessors above.
 ==============================================================================================*/
 
 bool            res_atlas_flush_upload  ( void );   // re-upload if dirty; true when pixels were sent
@@ -145,9 +145,9 @@ void draw_push_rect_filled      ( f32 x, f32 y, f32 w, f32 h,
    (timeline bars, graph columns).  Square, current clip, per-entry color. */
 void draw_push_rect_list        ( const gui_rect_col_t* rects, u32 count );
 
-/* Push one registered icon quad (atlas tex_idx + cached UVs from resource/gui_icon.c) into the
-   draw list; no-op for an invalid id.  Reuses draw_push_rect_filled -- an icon is just a textured
-   quad sourced from the icon atlas instead of the font atlas. */
+/* Push one registered icon quad into the draw list; no-op for an invalid id.  UVs come from
+   icon_get (the sprite source contract above); reuses draw_push_rect_filled -- an icon is just a
+   textured quad, sampled from the same shared atlas as text. */
 void draw_push_icon             ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr );
 
 void draw_push_rect_gradient    ( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal );
@@ -225,7 +225,7 @@ void                gui_build_frame_reset( void );
 
 /* Per-frame render stats: gui_render_stats returns the last published frame's totals;
    gui_build_stats_publish promotes the in-progress accumulator to the published value and
-   resets it -- called once per frame by gui_frame_begin (the UI unit), before draw_reset. */
+   resets it -- called once per frame by gui_frame_begin (frame/gui_frame_loop.c), before draw_reset. */
 
 gui_render_stats_t  gui_render_stats        ( void );
 void                gui_build_stats_publish( void );
@@ -237,7 +237,7 @@ void                gui_build_set_retained_skip( bool on );
 bool                gui_build_retained_skip( void );
 
 /* True when the PREVIOUS frame's render produced any change (a window appeared, vanished, or
-   changed content).  Read from the UI unit during frame_begin (before this frame's cache_build_frame
+   changed content).  Read during frame_begin (before this frame's cache_build_frame
    runs) so s_cache.any_changed still holds last frame's result.  Used with io_dirty and wants_redraw
    to decide whether to skip the widget emit phase entirely (Level 3 retained skip). */
 
@@ -255,10 +255,10 @@ void                gui_build_dump_geometry( void );
     The feature's actual logic is entirely in two files, one per unit -- read those for the full
     picture; this header is only the boundary between them:
 
-        chrome/widgets/gui_volatile.c            -- UI unit: gui()->volatile_cb/_begin/_end (gui_api.h),
-                                             the replay scope (layout + id), gui_replay_scope_enter/_exit.
-        render/pipeline/gui_build_volatile.c -- BUILD unit: the registry, capture at real emit, and
-                                             gui_update_volatile (run internally by frame_end).
+        chrome/widgets/gui_volatile.c        -- CHROME side: gui()->volatile_cb/_begin/_end (gui_api.h),
+                                                the replay scope (layout + id), gui_replay_scope_enter/_exit.
+        render/pipeline/gui_build_volatile.c -- RENDER side: the registry, capture at real emit, and
+                                                gui_update_volatile (run internally by frame_end).
 
     Forward direction (core -> backend, the normal call direction for this header): gui_volatile_cb
     (chrome/widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
@@ -280,8 +280,8 @@ void                gui_build_dump_geometry( void );
     it, and both now cost exactly one real frame instead of drawing wrong -- see gui.h's
     fixed-footprint contract.
 
-    Reverse direction (backend -> core): gui_update_volatile needs a valid layout/id scope for the
-    callback to emit into, which only the UI unit owns (lf(), the id stack).  gui_replay_scope_enter
+    Reverse direction (backend -> frontend): gui_update_volatile needs a valid layout/id scope for
+    the callback to emit into, which only the frontend owns (lf(), the id stack).  gui_replay_scope_enter
     / _exit / _measure are the functions that cross back -- the same kind of unit-seam exception as
     gui_dbg_build_viewport above, just three of them instead of one.
 ==============================================================================================*/
@@ -295,13 +295,13 @@ u32      gui_volatile_row_count( void );                        // registered re
 bool     gui_volatile_live    ( void );                         // any row patchable RIGHT NOW -- gui_frame_pace must keep
                                                                 //   presenting at cadence instead of block-waiting on input
 
-/* Implemented in the UI unit (chrome/widgets/gui_volatile.c); called only from gui_update_volatile. */
+/* Implemented in chrome/widgets/gui_volatile.c; called only from gui_update_volatile. */
 void     gui_replay_scope_enter  ( gui_id_t id, f32 x, f32 y, f32 w );
 void     gui_replay_scope_measure( f32* out_w, f32* out_h );    // extent the replay claimed, in gui_volatile_footprint terms
 void     gui_replay_scope_exit   ( bool force_redraw );
 
 /*==============================================================================================
-    RENDER: GPU resources + flush (pipeline/gui_render.c)
+    RENDER: GPU resources + flush (pipeline/gui_submit.c)
 
     gui_render_init/shutdown are NOT declared here -- they're an implementation detail of
     gui_backend_init/exit (above) now, called directly within the gui_render.c unity TU.
@@ -355,7 +355,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
 
     Split across the two units the same way the feature itself is split:
 
-        gui_dashboard.c (UI unit)          -- the WINDOW + every panel painter: an ordinary
+        debug/gui_dashboard.c              -- the WINDOW + every panel painter: an ordinary
                                               GUI_WIN_DEBUG_BAND window drawn with the standard
                                               draw API and normal tooltips.  The band system
                                               (GUI_WIN_DEBUG_BAND, gui.h) is what keeps it
@@ -377,7 +377,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
     #undef GUI_PIPELINE_DASHBOARD
 #endif
 
-/* The dashboard window's id (id_hash of its title), defined in gui_dashboard.c (UI unit); stays
+/* The dashboard window's id (id_hash of its title), defined in debug/gui_dashboard.c; stays
    0 when the feature is compiled out or the window has never been emitted.  Read by the dash
    capture to mark the dashboard's own slot in the memory map ("observer marked, not hidden");
    its stats/idle-skip exemption now comes from GUI_WIN_DEBUG_BAND, not from this id. */
@@ -389,7 +389,7 @@ extern gui_id_t g_gui_dash_window_id;
         Pipeline snapshot -- copied at two defined pipeline moments (end of cache_build_frame,
         end of each surface's gui_render_flush) so the dashboard displays a coherent picture,
         never mid-mutation, and can freeze it.  These types live in the seam header because the
-        SHELL (gui_dashboard.c, UI unit) now draws every panel itself with the standard draw API,
+        SHELL (debug/gui_dashboard.c) now draws every panel itself with the standard draw API,
         reading the snapshot through gui_dash_snapshot(); the backend keeps only the capture
         (render/gui_dash_capture.c).  Plain data mirrors -- no backend-private type leaks.
     ------------------------------------------------------------------------------------------*/

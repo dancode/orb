@@ -13,7 +13,8 @@
     feeds them in.  The shared atlas owns the resident copy and the deferred GPU upload, so
     registration stays safe to call mid-frame (the upload lands at the next frame_begin flush).
 
-    Included by gui_render.c after resource/gui_font.c (and after gui_res_atlas.c).
+    Included by gui_draw.c after the glyph pair, both being tenants of the same atlas.  The atlas
+    itself is the render server's (gui_res_atlas.c, another TU), reached through its header.
 
 ==============================================================================================*/
 // clang-format off

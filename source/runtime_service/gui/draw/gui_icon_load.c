@@ -20,8 +20,7 @@
     private to this (gui backend) translation unit -- the asset service compiles its own external
     copy (asset_image.c), and a host that links both must not see the two collide.
 
-    Included by gui_render.c after resource/gui_icon.c (needs icon_register) and after
-    resource/gui_font.c (which pulled in sys_host.h for sys_root_dir).
+    Included by gui_draw.c immediately after gui_icon.c, whose icon_register it feeds.
 
 ==============================================================================================*/
 // clang-format off
