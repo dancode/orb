@@ -97,11 +97,11 @@ MOD_USE_APP;
 /* MEMORY ACCOUNTING: this unit's fixed statics, reported to gui_ui_memory (gui_ui_mem.c)
    through the chrome/gui_chrome.h seam.  Last so every static aggregate above is in scope. */
 u32
-gui_chrome_unit_mem_bytes( void )
+chrome_unit_mem_bytes( void )
 {
     u32 b = 0;
     /* Both text-edit undo rings (single-line s_undo + multiline s_medit_undo) moved to the
-       interact edit engines and are counted by gui_interact_unit_mem_bytes. */
+       interact edit engines and are counted by interact_unit_mem_bytes. */
     b += (u32)( sizeof( s_num_edit_buf ) + sizeof( s_tabbars ) );
     b += (u32)( sizeof( s_tab ) + sizeof( s_tab_scroll_dummy ) );
     b += (u32)sizeof( s_select );   /* window text selection (chrome/window/gui_select.c) */

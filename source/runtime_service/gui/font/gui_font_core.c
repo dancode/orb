@@ -157,7 +157,7 @@ font_registry_reset( void )
 /* Decentralized memory accounting -- the registry plus each loaded font's resident R8 glyph pixels
    (the atlas holds its own GPU copy, counted render-side). */
 u32
-gui_font_unit_mem_bytes( void )
+font_unit_mem_bytes( void )
 {
     u32 b = (u32)sizeof( s_fonts );
     for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )

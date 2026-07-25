@@ -20,7 +20,7 @@
 // clang-format off
 
 gui_mem_stats_t
-gui_backend_memory( u32 live_viewports )
+backend_memory( u32 live_viewports )
 {
     gui_mem_stats_t s;
     memset( &s, 0, sizeof( s ) );
@@ -31,7 +31,7 @@ gui_backend_memory( u32 live_viewports )
     s.gpu_index_bytes   = live_viewports * RHI_MAX_FRAMES_IN_FLIGHT * (u32)GUI_IB_REGION_BYTES;
     s.gpu_texture_bytes = res_atlas_bytes();
 #ifdef GUI_DEBUG_OVERLAY
-    /* The overlay's own VB/IB (one region per viewport per frame-in-flight, gui_debug_init). */
+    /* The overlay's own VB/IB (one region per viewport per frame-in-flight, dbg_init). */
     if ( rhi_handle_valid( s_dbg.vb ) )
         s.gpu_debug_bytes = (u32)( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS
                                  * ( GUI_DBG_VB_REGION_BYTES + GUI_DBG_IB_REGION_BYTES ) );
@@ -57,7 +57,7 @@ gui_backend_memory( u32 live_viewports )
 
     /* Fonts + icons are the DRAW unit's statics now (registry slots, reload queue, icon
        tables) -- reported through its seam so the bucket stays populated. */
-    s.cpu_font_bytes = gui_draw_unit_mem_bytes();
+    s.cpu_font_bytes = draw_unit_mem_bytes();
 
     /* Shared resource atlas (packer + tenant bookkeeping). */
     s.cpu_res_bytes = (u32)sizeof( s_res );

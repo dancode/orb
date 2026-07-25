@@ -695,7 +695,7 @@ gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect
 
     /* The same resolver the column / field tracks use, so the unit rule is identical everywhere. */
     f32 pos[ GUI_LAYOUT_COLS ], size[ GUI_LAYOUT_COLS ];
-    layout_resolve_tracks( tracks, n, origin, extent, g, pos, size );
+    layout_tracks_resolve( tracks, n, origin, extent, g, pos, size );
 
     for ( u32 i = 0; i < n; ++i )
         out[ i ] = horiz ? ( gui_rect_t ){ pos[ i ], area.y, size[ i ], area.h }
@@ -712,7 +712,7 @@ gui_split( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect
     fraction), with two control sentinels (GUI_CUT_X / GUI_CUT_Y) that turn a flat list into a
     tree: a size followed by a CUT is a container of that size subdivided on the named axis; a
     size followed by anything else is a leaf.  The form opens with a leading CUT that fills the
-    whole area.  Resolution is a stack walk -- one layout_resolve_tracks per container (the same
+    whole area.  Resolution is a stack walk -- one layout_tracks_resolve per container (the same
     engine cols uses), leaf rects streamed to out[] in reading order -- with no per-leaf storage.
 ==============================================================================================*/
 
@@ -759,7 +759,7 @@ carve_list( const f32* p, gui_axis_t axis, gui_rect_t area, f32 gap,
     /* Phase 2: one resolve -- the same track engine cols() drives. */
     bool h = ( axis == GUI_AXIS_X );
     f32  pos[ GUI_LAYOUT_COLS ], size[ GUI_LAYOUT_COLS ];
-    layout_resolve_tracks( sizes, c, h ? area.x : area.y, h ? area.w : area.h, gap, pos, size );
+    layout_tracks_resolve( sizes, c, h ? area.x : area.y, h ? area.w : area.h, gap, pos, size );
 
     /* Phase 3: emit leaves in reading order; recurse containers with the flipped axis. */
     for ( u32 i = 0; i < c; ++i )

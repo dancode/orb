@@ -11,7 +11,7 @@
         dash_capture_flush -- end of each surface's gui_render_flush: frame-in-flight index,
                               upload spans, upload bytes/batches, draw calls.
 
-    The shell reads the snapshot through gui_dash_snapshot() (gui_render.h) and draws the
+    The shell reads the snapshot through dash_snapshot() (gui_render.h) and draws the
     panels itself with the standard draw API, as an ordinary GUI_WIN_DEBUG_BAND window: the
     band system packs its geometry after every main-band slot and keeps it out of the stats
     and any_changed signals, so the dashboard never pollutes the arena layout or the metrics
@@ -194,10 +194,10 @@ dash_capture_flush( u32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 i
     Shell seam (called from debug/gui_dashboard.c)
 ==============================================================================================*/
 
-const dash_snapshot_t* gui_dash_snapshot   ( void )    { return &s_dash.snap; }
-void                   gui_dash_set_enabled( bool on ) { s_dash.enabled = on; }
-void                   gui_dash_set_freeze ( bool on ) { s_dash.freeze = on; }
-bool                   gui_dash_frozen     ( void )    { return s_dash.freeze; }
+const dash_snapshot_t* dash_snapshot   ( void )    { return &s_dash.snap; }
+void                   dash_set_enabled( bool on ) { s_dash.enabled = on; }
+void                   dash_set_freeze ( bool on ) { s_dash.freeze = on; }
+bool                   dash_frozen     ( void )    { return s_dash.freeze; }
 
 #endif /* GUI_PIPELINE_DASHBOARD */
 

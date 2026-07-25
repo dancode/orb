@@ -56,7 +56,7 @@
 #define GUI_DASH_PATTERN_COUNT     4
 
 /*==============================================================================================
-    Lifecycle (called from gui_backend_init / gui_backend_exit and frame_begin).
+    Lifecycle (called from backend_init / backend_exit and frame_begin).
 ==============================================================================================*/
 
 bool res_atlas_init          ( void );   // create the texture + resident buffer, paint the assist band

@@ -147,7 +147,7 @@ table_init_widths( gui_table_t* t, f32* out )
 /* Resolve column positions and widths through the engine (persist override > setup > stretch).
    x / w are the screen-space origin and total width of the column strip. */
 static void
-table_resolve_columns( gui_table_t* t, f32 x, f32 w )
+table_columns_resolve( gui_table_t* t, f32 x, f32 w )
 {
     f32 init_w[ GUI_TABLE_COLS_MAX ];
     i32 init_n = table_init_widths( t, init_w );
@@ -241,7 +241,7 @@ table_open_body( gui_table_t* t )
 
     /* Resolve from the newly-opened region's content geometry -- content_w already excludes the
        vertical scrollbar gutter, so header and body columns share one authoritative width. */
-    table_resolve_columns( t, lf()->content_x, lf()->content_w );
+    table_columns_resolve( t, lf()->content_x, lf()->content_w );
     t->body_rect.x = lf()->content_x;
     t->body_rect.w = lf()->content_w;
 

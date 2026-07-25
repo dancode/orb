@@ -603,7 +603,7 @@ extern u32            s_ctx_pool_count;                 /* live slot count; alwa
 void           ctx_bind      ( gui_context_t* ctx );    /* NULL rebinds the default           */
 void           ctx_new_frame ( void );                  /* per-context scratch reset          */
 
-void           interaction_frame_reset( void );         /* once per APP frame (frame_begin)   */
+void           interact_new_frame( void );         /* once per APP frame (frame_begin)   */
 void           cursor_flush  ( void );                  /* push last frame's cursor to the OS */
 
 // clang-format on

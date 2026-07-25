@@ -14,7 +14,7 @@
 
     BUILD runs lazily on the first surface flush (cache_build_frame, guarded by s_frame_built)
     because the semantic command list is shared across every surface -- the geometry it produces
-    is surface-independent.  gui_build_frame_reset clears the guard at frame_begin.
+    is surface-independent.  build_frame_reset clears the guard at frame_begin.
 
 ==============================================================================================*/
 // clang-format off
@@ -35,7 +35,7 @@ const char* gui_debug_name( gui_id_t id );
 static bool s_frame_built;
 
 void
-gui_build_frame_reset( void )
+build_frame_reset( void )
 {
     s_frame_built = false;
 }
@@ -50,7 +50,7 @@ gui_build_frame_reset( void )
     cache_count_upload -- draw_calls, upload_batches, upload_bytes) runs every single frame, real
     or idle, once per surface flush, because the GPU replays cached geometry every frame regardless.
 
-    gui_build_stats_publish runs at every frame_begin, real or idle.  It must NOT blanket-zero
+    build_stats_publish runs at every frame_begin, real or idle.  It must NOT blanket-zero
     accum: the BUILD fields are plain assignments ("="), not accumulations, so on an idle frame
     they still hold the last real frame's correct totals and should be left alone -- publishing
     them again is exactly right (nothing changed).  Only the SUBMIT fields need a per-frame reset,
@@ -76,7 +76,7 @@ gui_render_stats( void )
 }
 
 void
-gui_build_stats_publish( void )
+build_stats_publish( void )
 {
     s_stats.published = s_stats.accum;
     s_stats.accum.draw_calls       = 0;
@@ -87,7 +87,7 @@ gui_build_stats_publish( void )
 
 /* Defined here (forward-declared in gui_build_volatile.c, included just above this file) because
    it needs s_stats.  Counts a volatile row patched in place this frame, whether via idle replay
-   (gui_update_volatile) or a live real-frame reuse-patch (volatile_patch_reused_window). */
+   (volatile_update) or a live real-frame reuse-patch (volatile_patch_reused_window). */
 static void
 cache_count_volatile_patch( u32 n )
 {
@@ -128,8 +128,8 @@ cache_count_upload( u32 batches, u32 bytes )
 
 static bool s_retained_cache = true;
 
-void gui_build_set_retained_skip( bool on ) { s_retained_cache = on; }
-bool gui_build_retained_skip    ( void )    { return s_retained_cache; }
+void build_set_retained_skip( bool on ) { s_retained_cache = on; }
+bool build_retained_skip    ( void )    { return s_retained_cache; }
 
 /* Debug-band windows (GUI_WIN_DEBUG_BAND: the perf overlay, the pipeline dashboard, their
    popups/tooltips) are exempted from: (1) the vert/tri/win totals they may themselves display
@@ -265,7 +265,7 @@ static win_geo_slot_t*  s_slots_prev = s_slots_b;   // previous frame (read)
 static win_geo_slot_t*  s_dispatch [ RENDER_MAX_WIN ];
 static u32              s_dispatch_count;
 
-/* Volatile widgets (gui_volatile_cb_open/_stamp/_close, gui_update_volatile, the registry and
+/* Volatile widgets (volatile_cb_open/_stamp/_close, volatile_update, the registry and
    volatile_patch) live in their own file -- render/pipeline/gui_build_volatile.c, included right
    before this one; see that file's header for the full feature description.  The pieces that stay HERE
    are the three helpers it forward-declares (cache_count_volatile_patch above,
@@ -401,7 +401,7 @@ static struct
    frame's cache_build_frame runs; s_cache.any_changed still holds last frame's result then.
    When false on a frame with no input and no animation, the host may skip the widget emit. */
 bool
-gui_build_any_changed( void )
+build_any_changed( void )
 {
     return s_cache.any_changed;
 }
@@ -505,7 +505,7 @@ cache_diff_windows( void )
                 clip_used[ s_draw.cmds[ i ].clip_idx ] = 1;
 
             /* A volatile-tagged command NEVER participates in its window's hash -- the block is
-               presentation-only by contract and patched out of band (gui_update_volatile on idle
+               presentation-only by contract and patched out of band (volatile_update on idle
                frames, volatile_patch_reused_window on reused real frames), so its ever-drifting
                bytes must not force the whole window to retessellate, and the hash behaves
                identically whether the retained skip is on or off.  The one thing checked here is
@@ -564,7 +564,7 @@ cache_diff_windows( void )
             s_cache.any_changed = true;
 
         /* A debug-band readout's own text (live FPS/ms/vert counters) changes practically every
-           real frame it is visible -- if that alone kept any_changed true, gui_build_any_changed()
+           real frame it is visible -- if that alone kept any_changed true, build_any_changed()
            would report "something changed" forever and frame_dirty would never go false again,
            silently defeating idle-skip for the WHOLE app for as long as the readout is on screen.
            s_cache.cur[i].changed above still flags true so cache_build_frame retessellates the
@@ -878,7 +878,7 @@ cache_validate_geometry( void )
 
 /* Host entry point (gui()->debug_dump_geometry): print the current slot table on demand. */
 void
-gui_build_dump_geometry( void )
+build_dump_geometry( void )
 {
     cache_dump_slots( "manual" );
 }
@@ -1216,7 +1216,7 @@ cache_build_frame( void )
 
     /* Command-stepper capture: the frame's segments are closed and every emit pool is complete,
        nothing is diffed or tessellated yet -- the exact seam to freeze the live command list.
-       A no-op unless GUI_CMD_STEPPER and a capture was requested (gui_step_capture). */
+       A no-op unless GUI_CMD_STEPPER and a capture was requested (step_capture). */
     STEP_CAPTURE_BUILD();
 
     /* Text-selection run capture: same seam.  Rebuilds the selection run buffer for any window

@@ -26,7 +26,7 @@
     leaves the scene live; the Capture button freezes and Release lets go.  The X button only
     hides the window -- hiding does NOT release an active freeze (Release does).
     The , . step hotkeys keep working alongside (they scrub with key repeat; the buttons do not).
-    Compiled out unless GUI_CMD_STEPPER (gui_render.h); gui_step_window stays a no-op stub then.
+    Compiled out unless GUI_CMD_STEPPER (gui_render.h); step_window stays a no-op stub then.
 
 ==============================================================================================*/
 // clang-format off
@@ -83,7 +83,7 @@ step_name( gui_id_t id, char* buf, u32 bufsz )
 static void
 step_seek_dirty( u32 cursor )
 {
-    gui_step_seek( cursor );
+    step_seek( cursor );
     redraw_request();
 }
 
@@ -225,7 +225,7 @@ step_highlight_rect( gui_rect_t r, u32 vp, u32 abgr )
 }
 
 void
-gui_step_window( bool* open )
+step_window( bool* open )
 {
     if ( !( open && *open ) )
         return;
@@ -239,24 +239,24 @@ gui_step_window( bool* open )
         gui_stack();
 
         /* State row: the freeze toggle plus the cursor readout. */
-        bool frozen = gui_step_frozen();
+        bool frozen = step_frozen();
         if ( gui_button( frozen ? "Release" : "Capture" ) )
         {
-            if ( frozen ) gui_step_release();
-            else          gui_step_capture();
+            if ( frozen ) step_release();
+            else          step_capture();
             s_step_play  = false;
             s_step_accum = 0.0f;
             redraw_request();
         }
         gui_same_line( -1.0f );
         if ( frozen )
-            gui_textf( "frozen   %u / %u", gui_step_cursor(), gui_step_count() );
+            gui_textf( "frozen   %u / %u", step_cursor(), step_count() );
         else
             gui_text( "live -- Capture freezes this frame's command list" );
 
         if ( frozen )
         {
-            u32 cnt = gui_step_count();
+            u32 cnt = step_count();
 
             /* Play: advance by rate * dt with a fractional carry, stop at the frame's end.
                Runs before the controls read the cursor so the row shows this frame's position. */
@@ -267,14 +267,14 @@ gui_step_window( bool* open )
                 if ( step > 0 )
                 {
                     s_step_accum -= (f32)step;
-                    gui_step_seek( gui_step_cursor() + step );   /* clamps to cnt */
+                    step_seek( step_cursor() + step );   /* clamps to cnt */
                 }
-                if ( gui_step_cursor() >= cnt )
+                if ( step_cursor() >= cnt )
                     s_step_play = false;
                 redraw_request();   /* keep pumping frames while playing */
             }
 
-            u32 cur = gui_step_cursor();
+            u32 cur = step_cursor();
 
             /* Transport: seek to start / one back / one forward / seek to end, then Play.
                Single steps -- the , . hotkeys cover held scrubbing (key repeat), the slider
@@ -295,7 +295,7 @@ gui_step_window( bool* open )
             {
                 s_step_play = !s_step_play;
                 if ( s_step_play && cur >= cnt )
-                    gui_step_seek( 0 );
+                    step_seek( 0 );
                 s_step_accum = 0.0f;
                 redraw_request();
             }
@@ -306,10 +306,10 @@ gui_step_window( bool* open )
                the same numeric cursor in the other sequence -- the scene recomposes accordingly. */
             gui_drag_int( "rate##step_rate", &s_step_rate, 0.25f, 1, 60, "%d cmd/s" );
 
-            bool paint = gui_step_paint_order();
+            bool paint = step_paint_order();
             if ( gui_checkbox( "Paint order", &paint ) )
             {
-                gui_step_set_paint_order( paint );
+                step_set_paint_order( paint );
                 redraw_request();
             }
             gui_same_line( -1.0f );
@@ -326,7 +326,7 @@ gui_step_window( bool* open )
                 if ( !hw || !( hw->flags & GUI_WIN_DEBUG_BAND ) )
                 {
                     u32 idx;
-                    if ( gui_step_pick( s_io.mouse_x, s_io.mouse_y, s_io.mouse_viewport, &idx ) )
+                    if ( step_pick( s_io.mouse_x, s_io.mouse_y, s_io.mouse_viewport, &idx ) )
                         step_seek_dirty( idx + 1 );   /* the picked command becomes current */
                 }
             }
@@ -338,11 +338,11 @@ gui_step_window( bool* open )
             if ( cnt > 0 )
             {
                 gui_rect_t sr   = gui_get_item_rect();
-                u32        nseg = gui_step_seg_count();
+                u32        nseg = step_seg_count();
                 for ( u32 si = 1; si < nseg; ++si )   /* boundary 0 is the track start; skip it */
                 {
                     step_seg_info_t sg;
-                    if ( !gui_step_seg_info( si, &sg ) )
+                    if ( !step_seg_info( si, &sg ) )
                         break;
                     f32 x = sr.x + sr.w * ( (f32)sg.lo / (f32)cnt );
                     gui_draw_rect( x, sr.y + sr.h - 4.0f, 1.0f, 4.0f, STEP_COL_DIM );
@@ -352,7 +352,7 @@ gui_step_window( bool* open )
             /* Inspector: the current command -- the LAST visible one, cursor - 1. */
             gui_separator_text( "Command" );
             step_cmd_info_t ci = { 0 };
-            bool have_cmd = cur > 0 && gui_step_cmd_info( cur - 1, &ci );
+            bool have_cmd = cur > 0 && step_cmd_info( cur - 1, &ci );
             if ( !have_cmd )
             {
                 /* Same fixed shape as a decoded command (5 text rows + the swatch row), so the
@@ -390,11 +390,11 @@ gui_step_window( bool* open )
             {
                 gui_stack();   /* the child is a fresh layout frame: declare its mode first */
                 char nb[ 12 ], lbl[ 96 ];
-                u32  nseg = gui_step_seg_count();
+                u32  nseg = step_seg_count();
                 for ( u32 si = 0; si < nseg; ++si )
                 {
                     step_seg_info_t sg;
-                    if ( !gui_step_seg_info( si, &sg ) )
+                    if ( !step_seg_info( si, &sg ) )
                         break;
                     /* Fields first, name LAST: a "##" inside a window title (an instance suffix)
                        hides the rest of the label, so it may only ever eat the name's tail. */
@@ -439,7 +439,7 @@ gui_step_window( bool* open )
 
 /* No-op stub so the emit site (debug_overlays_emit) needs no build guard of its own. */
 void
-gui_step_window( bool* open )
+step_window( bool* open )
 {
     (void)open;
 }

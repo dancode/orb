@@ -481,7 +481,7 @@ app_event_result_t gui_owned_window_event( const app_event_t* ev );
 
 /* Decentralized memory accounting: the core unit's fixed statics (ambient records, io snapshot,
    id/flag stacks, context pool array), summed at the foot of gui_core.c for gui_ui_memory. */
-u32 gui_core_unit_mem_bytes( void );
+u32 core_unit_mem_bytes( void );
 
 // clang-format on
 /*============================================================================================*/

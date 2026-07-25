@@ -272,7 +272,7 @@ f32  layout_next_y  ( layout_frame_t* f );
 void layout_pen_jump( layout_frame_t* f, f32 y );
 void layout_row_break( layout_frame_t* f );
 void layout_set_default( layout_frame_t* f );
-void layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap,
+void layout_tracks_resolve( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap,
                             f32* out_pos, f32* out_size );
 
 void layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad,
@@ -366,7 +366,7 @@ void draw_resize_highlight( gui_rect_t r, u8 edges );
 gui_item_flags_t item_flags_resolve( void );
 void             item_flags_chrome_reset( void );
 
-u32 gui_flow_unit_mem_bytes( void );               /* the flow unit's fixed statics           */
+u32 flow_unit_mem_bytes( void );                  /* the flow unit's fixed statics        */
 
 // clang-format on
 /*============================================================================================*/

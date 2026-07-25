@@ -274,12 +274,12 @@ style_new_frame( void )
     style/gui_style.h, beside the cross-unit declarations, since every tier above reads them.)
 ==============================================================================================*/
 
-/* One element-shaped color: role x state projects onto its theme slot through g_gui_el_slot_map
+/* One element-shaped color: role x state projects onto its theme slot through g_el_slot_map
    (the stock unit's table, shared with el_style_derive so the two directions cannot drift). */
 u32
 style_el_col( u8 role, u8 state )
 {
-    gui_col_t slot     = (gui_col_t)g_gui_el_slot_map[ role ][ state ];
+    gui_col_t slot     = (gui_col_t)g_el_slot_map[ role ][ state ];
     u32       resolved = style_col( slot );
     if ( resolved != s_style.colors[ slot ] )      /* stack override in effect -- it wins */
         return resolved;

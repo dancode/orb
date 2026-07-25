@@ -14,7 +14,7 @@
     upper tier's data, so each can be understood (or deleted) top-down:
 
         T0  freeze / replay   cmds + hashes + segments + side pools; step_capture_build and
-                              step_restore_emit (the two pipeline hooks), g_gui_step_frozen
+                              step_restore_emit (the two pipeline hooks), g_step_frozen
                               (the emit-suppression flag).  This alone is a working freezer.
         T1  display order     order / disp_segs / disp_pos: the SAME frozen data viewed in emit
                               order (generation) or paint order (z).  The cursor, the restore,
@@ -68,10 +68,10 @@
 ==============================================================================================*/
 
 /* Read by the emit hot path (STEP_EMIT_SUPPRESSED) to suppress live band-0 pushes per frame. */
-bool g_gui_step_frozen;
+bool g_step_frozen;
 
 /* A latched request (capture / release / seek / order toggle) needs one more emit to take
-   effect; frame_begin reads this through gui_step_pending().  Cleared when the emit runs
+   effect; frame_begin reads this through step_pending().  Cleared when the emit runs
    (step_restore_emit -- the restore consumes the cursor, and a same-frame capture request is
    taken by the build that follows). */
 static bool s_step_pending;
@@ -79,8 +79,8 @@ static bool s_step_pending;
 static struct
 {
     /* --- request latches + mode ------------------------------------------------------------ */
-    bool want_capture;   /* latched by gui_step_capture(); taken at the next cache_build_frame  */
-    bool want_release;   /* latched by gui_step_release(); applied at the next draw_reset       */
+    bool want_capture;   /* latched by step_capture(); taken at the next cache_build_frame  */
+    bool want_release;   /* latched by step_release(); applied at the next draw_reset       */
     u32  cursor;         /* replay shows the first `cursor` commands of the ACTIVE order        */
     bool paint_order;    /* display/replay order: false = emit (generation), true = paint (z)   */
 
@@ -178,29 +178,29 @@ step_build_order( void )
     below apply them at the frame seams.
 ==============================================================================================*/
 
-void gui_step_capture( void )  { s_step.want_capture = true;  s_step_pending = true; }
-void gui_step_release( void )  { s_step.want_release = true;  s_step_pending = true; }
-bool gui_step_frozen ( void )  { return g_gui_step_frozen; }
-bool gui_step_pending( void )  { return s_step_pending; }
-bool gui_step_paint_order( void )  { return s_step.paint_order; }
-u32  gui_step_count  ( void )  { return g_gui_step_frozen ? s_step.cmd_count : 0; }
-u32  gui_step_cursor ( void )  { return s_step.cursor; }
+void step_capture( void )  { s_step.want_capture = true;  s_step_pending = true; }
+void step_release( void )  { s_step.want_release = true;  s_step_pending = true; }
+bool step_frozen ( void )  { return g_step_frozen; }
+bool step_pending( void )  { return s_step_pending; }
+bool step_paint_order( void )  { return s_step.paint_order; }
+u32  step_count  ( void )  { return g_step_frozen ? s_step.cmd_count : 0; }
+u32  step_cursor ( void )  { return s_step.cursor; }
 
 void
-gui_step_seek( u32 cursor )
+step_seek( u32 cursor )
 {
     s_step.cursor  = cursor < s_step.cmd_count ? cursor : s_step.cmd_count;
     s_step_pending = true;   /* set even for a same-value seek: the play transport leans on it */
 }
 
 void
-gui_step_set_paint_order( bool on )
+step_set_paint_order( bool on )
 {
     if ( s_step.paint_order == on )
         return;
     s_step.paint_order = on;
     s_step_pending     = true;
-    if ( g_gui_step_frozen )
+    if ( g_step_frozen )
         step_build_order();   /* cursor keeps its numeric position in the new order */
 }
 
@@ -219,7 +219,7 @@ step_capture_build( void )
     if ( !s_step.want_capture )
         return;
     s_step.want_capture = false;
-    if ( g_gui_step_frozen )
+    if ( g_step_frozen )
         return;   /* already frozen -- a second capture would snapshot the replay itself */
 
     /* Band-0 segments only, compacted (see the banner contract). */
@@ -263,7 +263,7 @@ step_capture_build( void )
     /* Freeze showing the whole frame: the first frozen build is visually identical to the live
        frame it replaces (only volatile-carrying windows retess once -- see the file banner). */
     s_step.cursor     = w;
-    g_gui_step_frozen = true;
+    g_step_frozen = true;
 }
 
 /*==============================================================================================
@@ -280,10 +280,10 @@ step_restore_emit( void )
     if ( s_step.want_release )
     {
         s_step.want_release = false;
-        g_gui_step_frozen   = false;   /* this frame emits live again; the hash diff retesses any
+        g_step_frozen   = false;   /* this frame emits live again; the hash diff retesses any
                                           window whose live content differs from the frozen prefix */
     }
-    if ( !g_gui_step_frozen )
+    if ( !g_step_frozen )
         return;
 
     u32 cur = s_step.cursor;   /* clamped at seek time */
@@ -447,9 +447,9 @@ step_cmd_bounds( const gui_cmd_t* c )
 }
 
 bool
-gui_step_cmd_info( u32 index, step_cmd_info_t* out )
+step_cmd_info( u32 index, step_cmd_info_t* out )
 {
-    if ( !g_gui_step_frozen || index >= s_step.cmd_count )
+    if ( !g_step_frozen || index >= s_step.cmd_count )
         return false;
 
     /* `index` is a DISPLAY position; resolve it through the active order. */
@@ -476,15 +476,15 @@ gui_step_cmd_info( u32 index, step_cmd_info_t* out )
 }
 
 u32
-gui_step_seg_count( void )
+step_seg_count( void )
 {
-    return g_gui_step_frozen ? s_step.seg_count : 0;
+    return g_step_frozen ? s_step.seg_count : 0;
 }
 
 bool
-gui_step_seg_info( u32 index, step_seg_info_t* out )
+step_seg_info( u32 index, step_seg_info_t* out )
 {
-    if ( !g_gui_step_frozen || index >= s_step.seg_count )
+    if ( !g_step_frozen || index >= s_step.seg_count )
         return false;
 
     /* Display-domain segment: the list shows (and seeks in) the active order. */
@@ -539,9 +539,9 @@ gui_step_seg_info( u32 index, step_seg_info_t* out )
 ==============================================================================================*/
 
 bool
-gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index )
+step_pick( f32 x, f32 y, u32 vp, u32* out_index )
 {
-    if ( !g_gui_step_frozen )
+    if ( !g_step_frozen )
         return false;
 
     for ( u32 t = s_step.cmd_count; t-- > 0; )

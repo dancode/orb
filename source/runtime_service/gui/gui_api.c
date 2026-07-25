@@ -475,9 +475,9 @@ const gui_api_t g_gui_api_struct =
     .debug_hotkeys_armed                = gui_debug_hotkeys_armed,
     .debug_set_render_mode              = gui_render_set_mode,
     .debug_get_render_mode              = gui_render_get_mode,
-    .debug_dump_geometry                = gui_build_dump_geometry,
-    .set_retained_skip                  = gui_build_set_retained_skip,
-    .retained_skip                      = gui_build_retained_skip,
+    .debug_dump_geometry                = build_dump_geometry,
+    .set_retained_skip                  = build_set_retained_skip,
+    .retained_skip                      = build_retained_skip,
 
 };
 

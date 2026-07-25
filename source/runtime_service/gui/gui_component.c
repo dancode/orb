@@ -55,7 +55,7 @@
 ==============================================================================================*/
 
 u32
-gui_component_unit_mem_bytes( void )
+component_unit_mem_bytes( void )
 {
     return 0;
 }

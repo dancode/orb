@@ -83,10 +83,10 @@ Upward calls stay explicit and few, and each is DECLARED in its lowest consumer'
 (higher consumers see it through the stack): core -> `draw_nav_ring`, `nav_scroll_chase`,
 `gui_owned_window_event`; draw -> `label_vis_len`, `cell_next(_w)` (canvas placement); flow ->
 `scrollbar_widget`, the child box paint trio; render -> the glyph/sprite source contract +
-`gui_draw_unit_mem_bytes`; frame steps (chrome's window/popup/nav/dock upkeep) are declared in
+`draw_unit_mem_bytes`; frame steps (chrome's window/popup/nav/dock upkeep) are declared in
 `chrome/gui_chrome.h`. Do not add more.
 
-Every unit ends with a `gui_<unit>_unit_mem_bytes()` seam; `gui_ui_mem.c` (frame) aggregates.
+Every unit ends with a `<unit>_unit_mem_bytes()` seam; `gui_ui_mem.c` (frame) aggregates.
 
 ## Widget tiers -- component / stock / chrome (the point of the whole stack)
 
@@ -212,6 +212,11 @@ Static-function charter (how internals stay organized):
 4. The door is at the bottom: pure leaf helpers first, mechanism next (bottom-up), the file's
    seam / public face last (`cell_next_w` ends gui_layout_core.c, `window_begin_ex` ends
    gui_window_free.c).
+5. `gui_` marks the CALLER's door, nothing else. A seam that crosses units but never leaves the
+   system keeps its family prefix (`build_*`, `backend_*`, `step_*`, `dash_*`, `dbg_*`,
+   `volatile_*`, `replay_scope_*`) so a name tells you at a glance whether a host could call it.
+   The exceptions are the core services a widget author uses through gui_host.h anyway
+   (`gui_state_*`, `gui_anim*`, `gui_item*`), which are public and named so.
 
 The canonical leaf widget is four lines, one per seam:
 
@@ -362,7 +367,7 @@ For any size value `t`:
   carve) have no measure and it collapses to zero there
 - `t < 0`   : unset/terminator (`GUI_END = -1.0f` ends track lists)
 
-Two resolvers only: `layout_resolve_tracks` (lists) and `unit_resolve` (scalar). Flex/fraction
+Two resolvers only: `layout_tracks_resolve` (lists) and `unit_resolve` (scalar). Flex/fraction
 tracks floor at `WIDGET_MIN_W` and the row overflows into the clip; fixed px never floors.
 
 ### Modes -- a region opens UNDECLARED (GUI_MODE_NONE)

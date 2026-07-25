@@ -7,13 +7,13 @@
                         authored for em=12.
         s_style_base -- the mutable user base style: a copy of the active theme, or freely edited
                         via gui_style_get() (theme_name then goes anonymous / NULL).
-        s_style      -- s_style_base scaled to the active font's type size (em) by layout_compute;
+        s_style      -- s_style_base scaled to the active font's type size (em) by metrics_compute;
                         every other file's WIDGET_ / WIN_ metrics and default colors ultimately
                         read this, through gui_style_core.c's push-stack resolver and the
                         vocabulary macros over it (style/gui_style.h).
 
     The theme API (theme_list/set/get/reset) and gui_style_get() are the public surface over
-    that state; layout_compute is the font-driven rescale, invoked across the unit seam by
+    that state; metrics_compute is the font-driven rescale, invoked across the unit seam by
     gui_style_apply (frame/gui_frame_font.c) whenever a font loads or activates -- the rescale
     needs font metrics this unit must not read itself.  style_new_frame (gui_style_core.c)
     reseeds the push-stacks' base layer from s_style each frame; gui_theme_reset() calls it
@@ -39,7 +39,7 @@
     set it to 1 (or 0) in a theme for free-pixel metrics, larger for a blockier feel.
 ==============================================================================================*/
 
-/* Font type size (em) used by layout_compute; updated by font_load(). */
+/* Font type size (em) used by metrics_compute; updated by font_load(). */
 u32 s_font_size = 0;
 
 /* Shared authoring blocks -- the built-in themes repeat large identical spans (a 17-slot palette,
@@ -119,7 +119,7 @@ u32 s_font_size = 0;
     .win_focus_border = 2
 
 /* Built-in theme registry.  Each entry is a complete gui_style_t authored for em=12;
-   layout_compute scales the metrics to the active font.  Add more here; the array is const
+   metrics_compute scales the metrics to the active font.  Add more here; the array is const
    so its name pointers remain stable for the lifetime of the process. */
 static const gui_theme_t k_themes[] =
 {
@@ -376,7 +376,7 @@ lat_round( f32 v, u32 q )
 
 /* Snap a scaled metric onto the grid lattice: nearest multiple of q, floored at one quantum so
    a nonzero authored metric never vanishes.  Zero stays zero (an authored "none" is preserved).
-   Only reached from the GUI_GRID_LATTICE-gated block in layout_compute, so it lives under the gate
+   Only reached from the GUI_GRID_LATTICE-gated block in metrics_compute, so it lives under the gate
    rather than lingering as an unused static when snapping is compiled out. */
 
 #if GUI_GRID_LATTICE
@@ -395,7 +395,7 @@ metric_quantize( u32 v, u32 q )
    unit must not touch and passes them in as parameters. */
 
 void
-layout_compute( u32 em, u32 char_h, u32 line_h )
+metrics_compute( u32 em, u32 char_h, u32 line_h )
 {
     if ( em < 8u ) em = 8u;
     s_font_size = em;

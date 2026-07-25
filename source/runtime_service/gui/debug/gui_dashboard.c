@@ -18,7 +18,7 @@
     "Second band" toggle folds the debug band back in (dimmed and marked in the maps, split out in
     the headers) when you want to see the observer's own cost.
 
-    Data comes from the backend capture (render/gui_dash_capture.c) via gui_dash_snapshot():
+    Data comes from the backend capture (render/gui_dash_capture.c) via dash_snapshot():
     a coherent copy taken at the end of cache_build_frame / gui_render_flush.  The shell emits
     one frame after a capture, so the display lags the pipeline by one frame -- the standard
     self-measurement lag.  Hover tooltips resolve against the same snapshot the bars were drawn
@@ -28,18 +28,18 @@
     ctx_end while debug_enable is on; the F10 hotkey owns the open flag and the window's X
     button writes it back to false.  Included by gui_debug.c; the frame unit's overlay driver
     opens it across the boundary through debug/gui_debug.h.  Compiled out unless GUI_PIPELINE_DASHBOARD
-    (gui_render.h); gui_pipeline_dashboard stays a no-op stub then.
+    (gui_render.h); dash_window stays a no-op stub then.
 
 ==============================================================================================*/
 // clang-format off
 
 /* The dashboard window's id -- stays 0 when the feature is compiled out or never emitted.
    Used to mark the dashboard's own slot in the memory map and to gate the hover tooltips. */
-gui_id_t g_gui_dash_window_id = 0;
+gui_id_t g_dash_window_id = 0;
 
 #ifdef GUI_PIPELINE_DASHBOARD
 
-#define DASH_SHELL_TITLE "Pipeline Dashboard"   /* id_hash of this = g_gui_dash_window_id */
+#define DASH_SHELL_TITLE "Pipeline Dashboard"   /* id_hash of this = g_dash_window_id */
 
 /*==============================================================================================
     Colors
@@ -166,7 +166,7 @@ dash_tip_at( gui_rect_t r )
 {
     if ( s_tip_done )
         return false;
-    if ( s_interaction.hover_win != g_gui_dash_window_id )
+    if ( s_interaction.hover_win != g_dash_window_id )
         return false;
     if ( !gui_is_mouse_hovering_rect( r ) )
         return false;
@@ -278,7 +278,7 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
 
         /* Diff pulse / self-marker outlines. */
         gui_rect_t seg = { x0, bar.y, xa - x0, bar.h };
-        if ( sl->win == g_gui_dash_window_id )
+        if ( sl->win == g_dash_window_id )
             dash_outline( seg, DASH_COL_SELF );
         else if ( sl->changed )
             dash_outline( seg, DASH_COL_CHANGED );
@@ -299,7 +299,7 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
             {
                 gui_stack();
                 gui_textf( "window  %s%s%s", dash_name( sl->win, nb, sizeof( nb ) ),
-                           sl->win == g_gui_dash_window_id ? "  (this dashboard)" : "",
+                           sl->win == g_dash_window_id ? "  (this dashboard)" : "",
                            sl->band != 0 ? "  [debug band]" : "" );
                 gui_textf( "verts   [%u..%u)  alloc %u  (pad %u)", sl->vert_base,
                            sl->vert_base + sl->vert_count, sl->vert_alloc,
@@ -331,7 +331,7 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
 {
     const f32  row_h  = 22.0f;
     f32        y      = r.y + 2.0f;
-    const bool frozen = gui_dash_frozen();   /* the active region rotates every frame; call it out
+    const bool frozen = dash_frozen();   /* the active region rotates every frame; call it out
                                                 only when frozen so it never strobes at framerate */
 
     for ( u32 vp = 0; vp < GUI_MAX_VIEWPORTS; ++vp )
@@ -637,7 +637,7 @@ dash_panel_stats( gui_rect_t r, const dash_snapshot_t* sn )
 {
     const gui_render_stats_t* st = &sn->stats;
     const f32                 lh = font_line_h();
-    bool                      fz = gui_dash_frozen();
+    bool                      fz = dash_frozen();
 
     dash_textf( r.x + 2.0f, r.y, r.x + r.w, DASH_COL_TEXT,
                 "draws %u (hwm %u)   upload %u B / %u wr   vol patched %u",
@@ -664,7 +664,7 @@ dash_shell_panel( const char* title, f32 h,
                   void ( *painter )( gui_rect_t, const dash_snapshot_t* ) )
 {
     gui_separator_text( title );
-    painter( gui_canvas( h ), gui_dash_snapshot() );
+    painter( gui_canvas( h ), dash_snapshot() );
 }
 
 /* The memory maps share one painter parameterized by axis -- wrap them for the panel table. */
@@ -672,15 +672,15 @@ static void dash_panel_vbmap( gui_rect_t r, const dash_snapshot_t* sn ) { dash_p
 static void dash_panel_ibmap( gui_rect_t r, const dash_snapshot_t* sn ) { dash_panel_memmap( r, false, sn ); }
 
 void
-gui_pipeline_dashboard( bool* open )
+dash_window( bool* open )
 {
     /* Gate the backend captures first, open or not -- a closed dashboard costs two branches. */
     bool is_open = ( open && *open );
-    gui_dash_set_enabled( is_open );
+    dash_set_enabled( is_open );
     if ( !is_open )
         return;
 
-    g_gui_dash_window_id = id_hash( DASH_SHELL_TITLE );
+    g_dash_window_id = id_hash( DASH_SHELL_TITLE );
 
     /* The host said open: reopen the pool entry if the X button hid it on an earlier run. */
     gui_window_set_open( DASH_SHELL_TITLE, true );
@@ -696,9 +696,9 @@ gui_pipeline_dashboard( bool* open )
            bars -- off by default so the whole picture is a real application's usage with the
            self-measuring observer filtered out; full range scales the maps to the cap vs the hwm;
            show pad breaks out each slot's alloc headroom vs one flat fill. */
-        bool frozen = gui_dash_frozen();
+        bool frozen = dash_frozen();
         if ( gui_checkbox( "Freeze", &frozen ) )
-            gui_dash_set_freeze( frozen );
+            dash_set_freeze( frozen );
         gui_same_line( -1.0f );
         gui_checkbox( "Second band", &s_show_second_band );
         gui_same_line( -1.0f );
@@ -729,7 +729,7 @@ gui_pipeline_dashboard( bool* open )
 /* No-op stub: the vtable slot exists in every build so func_api_size is identical across a
    hot-reload (the debug-slot ABI rule, gui_api.h). */
 void
-gui_pipeline_dashboard( bool* open )
+dash_window( bool* open )
 {
     (void)open;
 }

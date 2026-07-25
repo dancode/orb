@@ -993,7 +993,7 @@ typedef struct
     reservation; outgrowing it costs one automatic real frame, after which the block re-captures
     with a larger reservation (grow-only per widget).  The block's commands are also excluded from
     the window's retained-cache hash, so an animating block never forces its window to
-    re-tessellate -- see gui_volatile_cb / gui_volatile_begin / gui_update_volatile.
+    re-tessellate -- see gui_volatile_cb / gui_volatile_begin.
 
     Interactive widgets (button, etc) are safe to call from a volatile callback but are inert
     during replay: hover/active/focus reflect whatever the last real frame established, but a

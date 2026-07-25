@@ -5,7 +5,7 @@
     A "volatile" callback contains ordinary UI emit calls (text, colored rects, etc).  It runs
     inline during a real (dirty) frame via gui()->volatile_cb -- its widgets render exactly like
     any other code, no special behavior.  On an idle frame (frame_begin returned false, no
-    ctx_begin/emit ran), gui_frame_end calls gui_update_volatile internally; the render server's half
+    ctx_begin/emit ran), gui_frame_end calls volatile_update internally; the render server's half
     (render/pipeline/gui_build_volatile.c) re-invokes the same callback standalone, re-tessellates its
     output, and patches it into the padded region reserved for the block inside its window's
     cached geometry (any output that fits is accepted; only outgrowing the reservation costs a
@@ -23,10 +23,10 @@
         volatile_layout_push / volatile_layout_pop
             A minimal layout-frame push/pop at an explicit (x, y, w) -- lighter than
             layout_push_region (no scrollbar gutter, no clip push, no id_push): the replay scope
-            gui_replay_scope_enter/_exit installs around a standalone callback invocation.
+            replay_scope_enter/_exit installs around a standalone callback invocation.
 
-        gui_replay_scope_enter / gui_replay_scope_exit
-            The reverse half of the unit seam: gui_update_volatile (the render server) calls these
+        replay_scope_enter / replay_scope_exit
+            The reverse half of the unit seam: volatile_update (the render server) calls these
             around each row's replay so the callback's ordinary gui()->text()/rect_filled()/...
             calls have a valid (if minimal) layout frame and id scope to emit into, without
             running ctx_begin/ctx_new_frame or touching anything else about the real frame's UI
@@ -47,7 +47,7 @@
 ==============================================================================================*/
 
 /* Layout-footprint probe -- the state gui_volatile_begin parks so gui_volatile_cb can read back
-   the extent the block claimed and hand it to the backend (gui_volatile_footprint).  File scope
+   the extent the block claimed and hand it to the backend (volatile_footprint).  File scope
    for the same reason the backend's s_open_id is: exactly one gui_volatile_cb invocation is ever
    in flight, nesting is not supported. */
 static f32  s_foot_x, s_foot_y;             // cell origin the open block was stamped at
@@ -55,7 +55,7 @@ static f32  s_foot_high_x, s_foot_high_y;   // caller's highwater, parked for th
 static bool s_foot_open;                    // gui_volatile_begin ran for the block now emitting
 
 /* gui_volatile_cb wraps one real-emit invocation of `fn` so the backend can bracket the exact
-   command range it produces (gui_volatile_cb_open/_close, gui_render.h); the callback itself
+   command range it produces (volatile_cb_open/_close, gui_render.h); the callback itself
    calls gui_volatile_begin/end from inside its own body, per the caller's own code -- begin
    stamps the layout cursor position the callback started at (needed to reconstruct a matching
    scope on replay), end is a reserved no-op (see gui_volatile_end).  `label` is hashed the same way item_id() hashes a
@@ -65,11 +65,11 @@ void
 gui_volatile_cb( const char* label, gui_volatile_fn fn )
 {
     gui_id_t id = id_combine( id_seed(), id_hash( label ) );
-    gui_volatile_cb_open( id );
+    volatile_cb_open( id );
     fn( id, false );
 
     /* Close the footprint probe gui_volatile_begin opened: report the extent this block claimed
-       relative to its cell origin -- the same terms gui_replay_scope_measure reports a replay in,
+       relative to its cell origin -- the same terms replay_scope_measure reports a replay in,
        so the backend can compare the two and buy a real frame when they diverge -- then merge the
        caller's parked highwater back as a max, leaving the region measuring exactly what it would
        have without the probe.  A callback that never called gui_volatile_begin leaves the probe
@@ -77,22 +77,22 @@ gui_volatile_cb( const char* label, gui_volatile_fn fn )
     if ( s_foot_open )
     {
         layout_frame_t* f = lf();
-        gui_volatile_footprint( f->high_x - s_foot_x, f->high_y - s_foot_y );
+        volatile_footprint( f->high_x - s_foot_x, f->high_y - s_foot_y );
         if ( s_foot_high_x > f->high_x ) f->high_x = s_foot_high_x;
         if ( s_foot_high_y > f->high_y ) f->high_y = s_foot_high_y;
         s_foot_open = false;
     }
-    gui_volatile_cb_close( fn );
+    volatile_cb_close( fn );
 }
 
 void
 gui_volatile_begin( void )
 {
     /* s_build.item_flags (the begin_disabled/end_disabled stack) and the style push/pop stacks
-       (s_col_sp/s_var_sp, gui_style.c) are NOT part of the seam gui_replay_scope_enter reconstructs
+       (s_col_sp/s_var_sp, gui_style.c) are NOT part of the seam replay_scope_enter reconstructs
        on an idle-frame replay -- only the id scope and a minimal layout frame are.  ctx_new_frame
        resets both to empty at the start of every REAL frame (style_new_frame, gui_ctx.c's
-       frame_begin), so by the time an idle frame's gui_update_volatile re-invokes this callback
+       frame_begin), so by the time an idle frame's volatile_update re-invokes this callback
        standalone, they read back as "nothing pushed" regardless of what ancestor
        begin_disabled()/push_style_color()/push_style_var() scope this volatile_cb call was
        actually nested in at real emit.  draw_set_alpha/draw_set_rounding (item_flags_resolve) and
@@ -126,7 +126,7 @@ gui_volatile_begin( void )
         w = f->tmpl.cellw[ c ];
         y = ( c == 0 ) ? layout_next_y( f ) : f->line.cross;
     }
-    gui_volatile_stamp( x, y, w );
+    volatile_stamp( x, y, w );
 
     /* Open the footprint probe: rebase the frame's highwater onto this block's own cell origin so
        gui_volatile_cb reads back the extent THIS block claimed.  The highwater is a running max
@@ -149,7 +149,7 @@ gui_volatile_end( void )
 
 /*==============================================================================================
     volatile_layout_push / volatile_layout_pop -- a minimal layout frame at an explicit (x, y, w),
-    used only by gui_replay_scope_enter/_exit below.  Unlike layout_push_region this reserves no
+    used only by replay_scope_enter/_exit below.  Unlike layout_push_region this reserves no
     scrollbar gutter, pushes no clip, and calls no id_push -- the caller handles id scoping
     itself.  layout_set_default installs a plain single-column stack and resets the
     modifier/template state, so a widget can be placed immediately without tripping the
@@ -190,19 +190,19 @@ volatile_layout_pop( void )
 }
 
 /*==============================================================================================
-    gui_replay_scope_enter / _exit -- the reverse half of the volatile-widget seam (see
-    gui_render.h).  gui_update_volatile (render/pipeline/gui_build_volatile.c) calls these around each
+    replay_scope_enter / _exit -- the reverse half of the volatile-widget seam (see
+    gui_render.h).  volatile_update (render/pipeline/gui_build_volatile.c) calls these around each
     row's standalone replay invocation so the callback's ordinary gui()->text()/rect_filled()/...
     calls have a valid (if minimal) layout frame and id scope to emit into, without running
     ctx_begin/ctx_new_frame or touching anything else about the real frame's UI state.
 ==============================================================================================*/
 
-/* Origin of the minimal replay frame, so gui_replay_scope_measure can report the extent the
+/* Origin of the minimal replay frame, so replay_scope_measure can report the extent the
    replayed callback claimed relative to it (volatile_layout_push seeds the highwater there). */
 static f32 s_replay_x, s_replay_y;
 
 void
-gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w )
+replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w )
 {
     id_push( id );
     volatile_layout_push( x, y, w );
@@ -213,11 +213,11 @@ gui_replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w )
 
 /* Read back the layout extent the replayed callback just claimed, in the same terms
    gui_volatile_cb reports a real emit in (relative to the block's cell origin, highwater seeded
-   there).  Called by gui_update_volatile after the callback returns and before _exit pops the
+   there).  Called by volatile_update after the callback returns and before _exit pops the
    frame; the backend compares it against the real emit's footprint and forces one real frame when
    they diverge, since the neighbours a grown block now overlaps are frozen cached geometry. */
 void
-gui_replay_scope_measure( f32* out_w, f32* out_h )
+replay_scope_measure( f32* out_w, f32* out_h )
 {
     layout_frame_t* f = lf();
     *out_w = f->high_x - s_replay_x;
@@ -225,7 +225,7 @@ gui_replay_scope_measure( f32* out_w, f32* out_h )
 }
 
 void
-gui_replay_scope_exit( bool force_redraw )
+replay_scope_exit( bool force_redraw )
 {
     volatile_layout_pop();
     id_pop();

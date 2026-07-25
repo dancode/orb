@@ -11,7 +11,7 @@
     that is known to be small beats one that is unknown.
 
     Also home to gui_mem_stats / gui_print_mem_stats: the full-footprint aggregation reads BOTH
-    servers (gui_backend_memory + the core pool), which makes it orchestrator work, not
+    servers (backend_memory + the core pool), which makes it orchestrator work, not
     interact-server work.
 
     MUST be the LAST include in the gui_frame.c unit root: every line below is a sizeof over
@@ -31,36 +31,36 @@ gui_ui_memory( void )
 
     /* core/ -- THE INTERACT SERVER is its own unit (gui_core.c) and accounts for its
        own statics (ambient records, io snapshot, id/flag stacks, context pool) via its seam. */
-    b += gui_core_unit_mem_bytes();
+    b += core_unit_mem_bytes();
 
     /* style/ -- THE STYLE UNIT is its own unit (gui_style.c) and accounts for its
        own statics (base/active style, theme table, stacks + pair tables) via its seam. */
-    b += gui_style_unit_mem_bytes();
+    b += style_unit_mem_bytes();
 
     /* flow/ -- THE FLOW UNIT is its own unit (gui_flow.c) and accounts for its own
        statics (layout state pool, split stack, sublayout sink) via its seam. */
-    b += gui_flow_unit_mem_bytes();
+    b += flow_unit_mem_bytes();
 
     /* interact/ -- THE INTERACT UNIT is its own unit (gui_interact.c) and accounts
        for its own statics (the drag payload slot) via its seam; the text-selection controller
        moved to chrome (chrome/window/gui_select.c) and is counted there. */
-    b += gui_interact_unit_mem_bytes();
+    b += interact_unit_mem_bytes();
 
     /* component/ -- THE COMPONENT UNIT (widget logic, staging) accounts for its own statics
        (none yet) via its seam (gui_component.c). */
-    b += gui_component_unit_mem_bytes();
+    b += component_unit_mem_bytes();
 
     /* stock/ -- THE STOCK UNIT (reference widget set) accounts for its own statics (the
        installed element style + the slot map) via its seam (gui_stock.c). */
-    b += gui_stock_unit_mem_bytes();
+    b += stock_unit_mem_bytes();
 
     /* widgets/ + table/ + dock/ + popup/ -- the chrome unit accounts for its own statics
        (gui_chrome.c seam). */
-    b += gui_chrome_unit_mem_bytes();
+    b += chrome_unit_mem_bytes();
 
     /* text/ -- THE TEXT LEAF (gui_font.c) accounts for the loaded-font registry (glyph metric
        tables) via its seam; it moved down from the draw unit so both servers can measure text. */
-    b += gui_font_unit_mem_bytes();
+    b += font_unit_mem_bytes();
 
     /* frame/ + root -- lifecycle stacks, boot/present state. */
     b += (u32)( sizeof( s_ctx_save_stack ) + sizeof( s_font_stack )
@@ -75,7 +75,7 @@ gui_ui_memory( void )
        unit; the dashboard / stepper statics moved to the debug unit (gui_debug.c), which
        reports its own fixed footprint through the seam. */
     b += (u32)sizeof( s_perf );
-    b += gui_debug_unit_mem_bytes();
+    b += debug_unit_mem_bytes();
 
     return b;
 }
@@ -85,7 +85,7 @@ gui_ui_memory( void )
 
     A full accounting of the gui system's resident footprint, split by where it lives (GPU device
     memory / fixed CPU .bss / per-context CPU heap).  The backend fills its own buckets through
-    gui_backend_memory (GPU buffers + the fixed backend buffers); this unit owns the aggregation,
+    backend_memory (GPU buffers + the fixed backend buffers); this unit owns the aggregation,
     counting the live GPU surfaces to scale the geometry buffers and summing the per-context
     malloc blocks (core's pool, reached through the gui_ctx.h externs) for the heap total.
     See gui_mem_stats_t (gui.h) for the bucket meanings.
@@ -104,7 +104,7 @@ gui_mem_stats( void )
 
     /* Backend fills GPU + CPU .bss; this unit adds the frontend statics, the CPU-heap context
        blocks, and the totals. */
-    gui_mem_stats_t s = gui_backend_memory( live_viewports );
+    gui_mem_stats_t s = backend_memory( live_viewports );
 
     s.cpu_frontend_bytes = gui_ui_memory();
     s.cpu_static_total  += s.cpu_frontend_bytes;

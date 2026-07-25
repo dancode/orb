@@ -6,7 +6,7 @@
     a time (one mouse), so the whole feature is a single module-static slot: which item the drag
     started from, the typed payload bytes it carries, and the per-frame source/target bracket
     state.  Tier: ambient singular, like s_interaction -- shared across contexts, reset by
-    drag_new_frame from frame_begin (gui_frame_loop.c) alongside interaction_frame_reset.
+    drag_new_frame from frame_begin (gui_frame_loop.c) alongside interact_new_frame.
 
     Sources arm on an item's press and go live once the cursor moves past GUI_DRAG_THRESH -- the
     same click-vs-drag threshold split the dock tab drag uses.  While live, the source item keeps
@@ -53,7 +53,7 @@ static struct
 } s_drag;
 
 /* Frame reset, called from frame_begin (frame/gui_frame_loop.c, cross-unit) next to
-   interaction_frame_reset.  The drag (and its payload) survives through the release frame --
+   interact_new_frame.  The drag (and its payload) survives through the release frame --
    accept reads it on mouse_released -- and clears on the first fully-idle frame after,
    mirroring how active_id is released. */
 void

@@ -91,7 +91,7 @@ gui_draw_shutdown( void )
 /* The draw unit's fixed statics, for the decentralized memory accounting: the icon tables (the
    loaded-font registry + its resident pixels are the font/ resource's, counted there). */
 u32
-gui_draw_unit_mem_bytes( void )
+draw_unit_mem_bytes( void )
 {
     return (u32)( sizeof( s_icons ) + sizeof( s_builtin_icons ) );
 }

@@ -48,7 +48,7 @@ void press_defer_cancel( void );
 bool press_defer_crossed( gui_id_t id );
 
 /* the chrome drag source + the frame-driven lifecycle reset (interact/gui_drag.c).
-   drag_new_frame: called from frame_begin beside interaction_frame_reset. */
+   drag_new_frame: called from frame_begin beside interact_new_frame. */
 bool drag_from_chrome( gui_id_t id, f32 press_x, f32 press_y, const char* type,
                        const void* data, u32 size );
 void drag_new_frame( void );
@@ -184,7 +184,7 @@ void medit_caret_rowx ( const char* buf, u32 off, u32* row, f32* x );  /* (row, 
 
 /* Decentralized memory accounting -- this unit's fixed statics (root gui_interact.c foot),
    summed into cpu_frontend_bytes by gui_ui_memory (gui_ui_mem.c). */
-u32 gui_interact_unit_mem_bytes( void );
+u32 interact_unit_mem_bytes( void );
 
 // clang-format on
 /*============================================================================================*/

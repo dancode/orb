@@ -76,9 +76,9 @@
 ==============================================================================================*/
 
 u32
-gui_stock_unit_mem_bytes( void )
+stock_unit_mem_bytes( void )
 {
-    return (u32)( sizeof( s_el_style ) + sizeof( g_gui_el_slot_map ) );
+    return (u32)( sizeof( s_el_style ) + sizeof( g_el_slot_map ) );
 }
 
 /*============================================================================================*/

@@ -4,7 +4,7 @@
 
     runtime_service/gui/render/pipeline/gui_shader.h -- Embedded SPIR-V for the gui pipeline.
 
-    FROZEN FALLBACK.  These arrays are the zero-cook-step path: gui_render_init prefers the
+    FROZEN FALLBACK.  These arrays are the zero-cook-step path: render_init prefers the
     cooked bin/shaders/gui.{vs,ps}.oshd pair (from shaders/gui.{vs,ps}.hlsl via
     cook_shaders.bat) and uses these arrays only when that pair is absent.  New shader work
     happens in the HLSL twins; keep this GLSL and the HLSL byte-identical in their push

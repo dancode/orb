@@ -18,8 +18,8 @@
 
     Layout integrity: the reservation above bounds what a block may DRAW; the second, independent
     check bounds the space it may OCCUPY.  gui_volatile_cb measures the layout extent every real
-    emit claims (gui_volatile_footprint), each replay measures its own the same way
-    (gui_replay_scope_measure), and a disagreement forces one real frame -- a block that grows past
+    emit claims (volatile_footprint), each replay measures its own the same way
+    (replay_scope_measure), and a disagreement forces one real frame -- a block that grows past
     its cell overlaps neighbours that are frozen cached geometry and cannot move until layout runs
     again, so the fixed-footprint contract in gui.h is now enforced rather than merely documented.
     volatile_footprint_reflow carries the strike counter that keeps a callback which NEVER agrees
@@ -36,8 +36,8 @@
     a stale address physically cannot be produced.
 
     Real emit: gui_volatile_cb (chrome/widgets/gui_volatile.c) brackets one inline invocation of the
-    caller's callback with gui_volatile_cb_open/_close (this file), which record the command range
-    it produced and tag it with the row id; gui_volatile_stamp (called from inside the callback by
+    caller's callback with volatile_cb_open/_close (this file), which record the command range
+    it produced and tag it with the row id; volatile_stamp (called from inside the callback by
     gui_volatile_begin) records the window/z/vp/font/clip context, the ambient
     alpha/rounding/text-clip scalars a raw draw_ call reads directly, and the layout cursor
     position.  When the window tessellates, tess_dispatch (gui_build_tess.c) calls
@@ -56,9 +56,9 @@
     Updates run on two paths, both through volatile_patch (re-tessellate into scratch at the tail
     of s_tess, capacity-check against the reservation, copy in, rewrite the block's GPU commands):
 
-        gui_update_volatile          -- idle frames: the host calls it in place of
+        volatile_update          -- idle frames: the host calls it in place of
                                         ctx_begin/emit/ctx_end; each row's callback is re-invoked
-                                        standalone inside gui_replay_scope_enter/_exit and patched.
+                                        standalone inside replay_scope_enter/_exit and patched.
         volatile_patch_reused_window -- real frames where the window's slot is reused: patches from
                                         the commands this frame's live emit already produced.
 
@@ -82,7 +82,7 @@
 
 /* Layout-footprint reflow check (volatile_footprint_reflow).  EPS absorbs the sub-pixel noise of
    two independent layout passes agreeing.  STRIKES bounds one specific pathology -- see
-   gui_volatile_footprint: a block whose footprint keeps CHANGING is legitimate (it buys a real
+   volatile_footprint: a block whose footprint keeps CHANGING is legitimate (it buys a real
    frame per change, which is the point), but a callback that simply does not lay out the same way
    under the replay scope would buy one every single frame forever, silently retiring the idle skip
    with no way to reach agreement.  The two are told apart by whether the real emit that follows a
@@ -123,7 +123,7 @@ typedef struct
     /* Ambient s_draw scalars in effect at the moment gui_volatile_begin stamped this row --
        alpha, rounding, and the text-clip window are read directly off s_draw by the raw draw_
        calls a callback makes, the same way cur_win/cur_z/cur_vp/cur_font are.  Stamped here and
-       reinstalled by gui_update_volatile for the duration of the standalone replay call so the
+       reinstalled by volatile_update for the duration of the standalone replay call so the
        callback sees the same ambient values it drew with at real emit, whatever the idle frame's
        leftover s_draw state happens to be. */
     f32              alpha, rounding, text_clip_x0, text_clip_x1;
@@ -149,7 +149,7 @@ static bool cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32*
 static void cache_invalidate_window( gui_id_t win );
 static void cache_slots_extent( u32* out_vert_end, u32* out_idx_end );
 
-/* The row currently mid-callback during real emit (between gui_volatile_cb_open and _close).
+/* The row currently mid-callback during real emit (between volatile_cb_open and _close).
    Only one gui_volatile_cb invocation is ever in flight at a time -- nesting is not supported. */
 static gui_id_t s_open_id    = GUI_ID_NONE;
 static u32      s_open_cmd_lo;
@@ -181,7 +181,7 @@ volatile_find_or_add( gui_id_t id )
    gracefully: the bracket never opens, the commands stay untagged, and the widget behaves as a
    plain (hash-participating) widget that animates through ordinary dirty frames. */
 void
-gui_volatile_cb_open( gui_id_t id )
+volatile_cb_open( gui_id_t id )
 {
     if ( !volatile_find_or_add( id ) )
     {
@@ -196,7 +196,7 @@ gui_volatile_cb_open( gui_id_t id )
    real emit -- stamps the emit context (window/z/vp/font/clip) and the layout cursor position
    (x, y, w) the callback started at, so replay can reconstruct a matching scope later. */
 void
-gui_volatile_stamp( f32 x, f32 y, f32 w )
+volatile_stamp( f32 x, f32 y, f32 w )
 {
     if ( s_open_id == GUI_ID_NONE ) return;
     gui_volatile_slot_t* row = volatile_find( s_open_id );
@@ -233,7 +233,7 @@ volatile_foot_eq( f32 aw, f32 ah, f32 bw, f32 bh )
    gap; count a strike, and once they run out stop buying frames for this row (a permanent
    full-rate redraw is a worse failure than the overlap it was trying to fix). */
 void
-gui_volatile_footprint( f32 w, f32 h )
+volatile_footprint( f32 w, f32 h )
 {
     if ( s_open_id == GUI_ID_NONE ) return;
     gui_volatile_slot_t* row = volatile_find( s_open_id );
@@ -264,8 +264,8 @@ gui_volatile_footprint( f32 w, f32 h )
    grew (or shrank) out of the cell the retained neighbours were laid out against, so what is on
    screen right now is wrong: the neighbours are frozen cached geometry and cannot move until a
    real frame re-runs layout.  Buying that frame is the entire remedy; the caller folds the result
-   into gui_replay_scope_exit's force_redraw, exactly as it does a reservation overflow.  The
-   replay's own measurement is kept so the frame it just bought can be graded (gui_volatile_footprint). */
+   into replay_scope_exit's force_redraw, exactly as it does a reservation overflow.  The
+   replay's own measurement is kept so the frame it just bought can be graded (volatile_footprint). */
 static bool
 volatile_footprint_reflow( gui_volatile_slot_t* row, f32 w, f32 h )
 {
@@ -288,7 +288,7 @@ volatile_footprint_reflow( gui_volatile_slot_t* row, f32 w, f32 h )
    window tessellates, so there is nothing to capture or patch until it becomes visible again --
    which takes a scroll, which is input, which is a real frame. */
 void
-gui_volatile_cb_close( gui_volatile_fn fn )
+volatile_cb_close( gui_volatile_fn fn )
 {
     if ( s_open_id == GUI_ID_NONE ) return;
     gui_volatile_slot_t* row = volatile_find( s_open_id );
@@ -545,13 +545,13 @@ volatile_patch_reused_window( gui_id_t win )
 
 /* Registered row count -- the perf overlay's "vol rows" readout against GUI_MAX_VOLATILE. */
 u32
-gui_volatile_row_count( void )
+volatile_row_count( void )
 {
     return s_volatile_count;
 }
 
 /* True while at least one row would actually patch on an idle frame -- the same filter
-   gui_update_volatile applies (active, on screen, window slot live at the captured generation).
+   volatile_update applies (active, on screen, window slot live at the captured generation).
    gui_frame_pace reads this to keep presenting at the animation cadence instead of blocking on
    OS input: a volatile block only advances when a frame runs, so a blocking wait freezes it
    until a timeout/spurious wakeup and the animation stutters at the wait interval. */
@@ -576,9 +576,9 @@ gui_volatile_live( void )
    mismatch), or that are clip-hidden, are skipped silently -- they are not on screen, and the
    real frame that changes that also recaptures them.  A patch FAILURE (reservation overflow)
    retires the row, invalidates the window, and asks for one real frame via
-   gui_replay_scope_exit's force_redraw so nothing stays visibly stale. */
+   replay_scope_exit's force_redraw so nothing stays visibly stale. */
 void
-gui_update_volatile( void )
+volatile_update( void )
 {
     if ( s_draw.seg_count == 0 )
         return;   /* no frame has ever emitted -- nothing to patch, and no segment to checkpoint */
@@ -627,7 +627,7 @@ gui_update_volatile( void )
 
         /* Same reasoning as the clip-stack force below: alpha/rounding/text-clip are ambient
            scalars a raw draw_ call reads directly, not part of the minimal scope
-           gui_replay_scope_enter reconstructs, so without this the callback would draw with
+           replay_scope_enter reconstructs, so without this the callback would draw with
            whatever an unrelated idle frame's leftover s_draw state happens to be. */
         s_draw.alpha        = row->alpha;
         s_draw.rounding     = row->rounding;
@@ -643,14 +643,14 @@ gui_update_volatile( void )
         s_draw.clip_idx_stack[ 0 ] = row->clip_idx;
         s_draw.clip_depth          = 1;
 
-        gui_replay_scope_enter( row->id, row->x, row->y, row->w );
+        replay_scope_enter( row->id, row->x, row->y, row->w );
         row->fn( row->id, true );
         u32 cmd_hi = s_draw.cmd_count;
 
         /* Measure before the scope pops -- the layout half of "does this still fit what the cache
            holds for it", checked whether or not the geometry patch itself succeeds. */
         f32 foot_w, foot_h;
-        gui_replay_scope_measure( &foot_w, &foot_h );
+        replay_scope_measure( &foot_w, &foot_h );
 
         bool ok     = volatile_patch( row, cmd_ck, cmd_hi );
         bool reflow = volatile_footprint_reflow( row, foot_w, foot_h );
@@ -668,7 +668,7 @@ gui_update_volatile( void )
 
         /* Either failure mode costs exactly one real frame: geometry that outgrew its reservation
            recaptures bigger, layout that outgrew its cell re-lays-out the neighbours around it. */
-        gui_replay_scope_exit( !ok || reflow );
+        replay_scope_exit( !ok || reflow );
 
         /* Roll s_draw back -- nothing the callback emitted this call belongs in the real frame's
            persistent state, match or not. */

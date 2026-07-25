@@ -26,7 +26,7 @@
     core/gui_io.c        -- io snapshot service: app -> io, event drain, io_frame_begin/end, s_io
     core/gui_ctx.c       -- ambient records (s_interaction, s_build, s_scope), the bracketing
                              stacks, the context pool + viewport table, the interact_* verbs,
-                             and the per-frame drivers (interaction_frame_reset, ctx_new_frame)
+                             and the per-frame drivers (interact_new_frame, ctx_new_frame)
     core/gui_id.c        -- identity service: id_hash/combine, scope stack, the label grammar
     core/gui_state.c     -- keyed state pool: gui_state_get/peek, the three slot classes
     core/gui_surface.c   -- surface service: window records, placement channel, z dispenser,
@@ -92,9 +92,9 @@
 ==============================================================================================*/
 
 u32
-gui_core_unit_mem_bytes( void )
+core_unit_mem_bytes( void )
 {
-    /* s_layout_stack lives in the flow unit -- counted by gui_flow_unit_mem_bytes. */
+    /* s_layout_stack lives in the flow unit -- counted by flow_unit_mem_bytes. */
     return (u32)( sizeof( s_interaction ) + sizeof( s_build ) + sizeof( s_scope )
                 + sizeof( s_io ) + sizeof( s_click_elapsed )
                 + sizeof( s_click_x ) + sizeof( s_click_y )

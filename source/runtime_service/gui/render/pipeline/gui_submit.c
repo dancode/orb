@@ -10,7 +10,7 @@
 
     Two responsibilities live here:
 
-      - GPU resources (gui_render_init / _shutdown): the shared pipeline + font sampler, created
+      - GPU resources (render_init / _shutdown): the shared pipeline + font sampler, created
         once; and a surface's own vertex/index buffers (surface_geo_create / surface_geo_destroy),
         created per render target.  These are immutable across frames and shared by every surface.
 
@@ -57,7 +57,7 @@ typedef struct
 #define GUI_IB_REGION_BYTES  ( GUI_MAX_IDX   * sizeof( u16 ) )
 
 /*==============================================================================================
-    Shared GPU resources -- created once in gui_render_init, destroyed in gui_render_shutdown.
+    Shared GPU resources -- created once in render_init, destroyed in render_shutdown.
 
     Immutable across frames and shared by every viewport (and the debug overlay), so never a
     per-viewport or per-frame bottleneck.  Per-viewport surfaces own only their vb/ib (in
@@ -100,7 +100,7 @@ render_ortho( f32 out[ 16 ], f32 w, f32 h )
     Per surface so each has an independent vb/ib ring (one region per frame-in-flight).  Called
     once per surface by the orchestrator's viewport_create/destroy (frame/gui_viewport.c), which
     own every non-GPU field of the surface record -- this server only mints and frees the pair.
-    The shared pipeline / sampler / atlas are NOT here -- those are created once in gui_render_init.
+    The shared pipeline / sampler / atlas are NOT here -- those are created once in render_init.
 ==============================================================================================*/
 
 bool
@@ -192,8 +192,8 @@ render_try_oshd_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
     return true;
 }
 
-bool
-gui_render_init( void )
+static bool
+render_init( void )
 {
     /* Cooked .oshd pair when present, embedded SPIR-V otherwise (see render_try_oshd_shaders). */
     rhi_shader_t vert = { RHI_NULL_HANDLE };
@@ -300,8 +300,8 @@ gui_render_init( void )
     return true;
 }
 
-void
-gui_render_shutdown( void )
+static void
+render_shutdown( void )
 {
     // Peak draw-list usage over the run, so the caps can be tuned with real numbers.
     printf( "[gui] peak draw-list usage: verts %u/%u (%.1f%%), idx %u/%u (%.1f%%)%s\n",
@@ -330,7 +330,7 @@ gui_render_shutdown( void )
     memset( &s_render, 0, sizeof( s_render ) );
 }
 
-/* Memory accounting lives in render/gui_render_mem.c (gui_backend_memory) -- the LAST include
+/* Memory accounting lives in render/gui_render_mem.c (backend_memory) -- the LAST include
    of the unity TU, so it can sizeof every backend static, including the capture/debug files
    included after this one. */
 

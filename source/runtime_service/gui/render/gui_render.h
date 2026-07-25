@@ -13,7 +13,7 @@
 
     The reverse direction is almost nothing: the glyph/sprite source contract (implemented
     by the draw unit over tables beside the atlas), the volatile replay-scope pair, and the
-    debug overlay's ambient build viewport (gui_dbg_build_viewport) -- each one documented at
+    debug overlay's ambient build viewport (dbg_build_viewport) -- each one documented at
     its declaration.
 
     The module API pointers (rhi() / app()) are NOT redefined here: g_rhi_api_ptr / g_app_api_ptr
@@ -24,7 +24,7 @@
     named for the function prefix each stage exports.  Tessellation primitives (gui_build_tess.c)
     have no public surface -- driven entirely from within BUILD -- so there is no section for them.
 
-    0. Backend lifecycle (gui_backend_init/exit)
+    0. Backend lifecycle (backend_init/exit)
     1. Glyph / sprite source contract + the shared atlas
     2. EMIT -- CPU draw list
     3. BUILD -- retained cache
@@ -54,12 +54,12 @@ ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
 // clang-format off
 /*==============================================================================================
     Backend lifecycle (gui_render.c) -- the seam the frame orchestrator calls to stand up / tear
-    down the whole render backend.  Internally wraps gui_render_init/shutdown (pipeline/
+    down the whole render backend.  Internally wraps render_init/shutdown (pipeline/
     gui_submit.c), which are not exposed past this header.
 ==============================================================================================*/
 
-bool gui_backend_init( void );
-void gui_backend_exit( void );
+bool backend_init( void );
+void backend_exit( void );
 
 /*==============================================================================================
     Glyph / sprite source contract -- the data the server resolves at tess/emit time
@@ -221,32 +221,32 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
    surface flush); every other live surface that frame reuses the result.  Called by
    gui_frame_begin right after draw_reset, before the build emits any new commands. */
 
-void                gui_build_frame_reset( void );
+void                build_frame_reset       ( void );
 
 /* Per-frame render stats: gui_render_stats returns the last published frame's totals;
-   gui_build_stats_publish promotes the in-progress accumulator to the published value and
+   build_stats_publish promotes the in-progress accumulator to the published value and
    resets it -- called once per frame by gui_frame_begin (frame/gui_frame_loop.c), before draw_reset. */
 
 gui_render_stats_t  gui_render_stats        ( void );
-void                gui_build_stats_publish( void );
+void                build_stats_publish     ( void );
 
 /* Retained-skip optimization: when on (default), an unchanged frame (all per-window hashes match
    the previous frame) skips tessellation and reuses s_tess.  Toggle for benchmarking or debugging. */
 
-void                gui_build_set_retained_skip( bool on );
-bool                gui_build_retained_skip( void );
+void                build_set_retained_skip ( bool on );
+bool                build_retained_skip     ( void );
 
 /* True when the PREVIOUS frame's render produced any change (a window appeared, vanished, or
    changed content).  Read during frame_begin (before this frame's cache_build_frame
    runs) so s_cache.any_changed still holds last frame's result.  Used with io_dirty and wants_redraw
    to decide whether to skip the widget emit phase entirely (Level 3 retained skip). */
 
-bool                gui_build_any_changed( void );
+bool                build_any_changed       ( void );
 
 /* Debug: print the cached-geometry slot table (window, z/vp, vertex/index/command bounds) to
    stdout.  On-demand companion to the per-frame disjoint-layout assert that runs in debug builds. */
 
-void                gui_build_dump_geometry( void );
+void                build_dump_geometry     ( void );
 
 /*==============================================================================================
     Volatile widgets -- an inline-emit callback replayed in place on frames the UI build is
@@ -256,55 +256,55 @@ void                gui_build_dump_geometry( void );
     picture; this header is only the boundary between them:
 
         chrome/widgets/gui_volatile.c        -- CHROME side: gui()->volatile_cb/_begin/_end (gui_api.h),
-                                                the replay scope (layout + id), gui_replay_scope_enter/_exit.
+                                                the replay scope (layout + id), replay_scope_enter/_exit.
         render/pipeline/gui_build_volatile.c -- RENDER side: the registry, capture at real emit, and
-                                                gui_update_volatile (run internally by frame_end).
+                                                volatile_update (run internally by frame_end).
 
     Forward direction (core -> backend, the normal call direction for this header): gui_volatile_cb
     (chrome/widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
-    gui_volatile_cb_open records where its commands start, gui_volatile_stamp (called from inside
+    volatile_cb_open records where its commands start, volatile_stamp (called from inside
     the callback body, by gui_volatile_begin) records the window/z/vp/font/clip context and the
-    layout cursor position, and gui_volatile_cb_close records where they end and tags the range.
+    layout cursor position, and volatile_cb_close records where they end and tags the range.
     tess_dispatch (gui_build_tess.c) then reserves the block a padded region of its window's slot
     (vertices, indices, and its own GPU commands, each with headroom past the live geometry).
-    gui_update_volatile is called internally by gui_frame_end on frames where
+    volatile_update is called internally by gui_frame_end on frames where
     frame_dirty() is false: it re-invokes each row's callback standalone, re-tessellates the
     result, and patches it into the reserved region -- any output that FITS the reservation is
     accepted (text may grow/shrink etc); only outgrowing it falls back to one real frame, which
     recaptures at the larger size.
 
     The block's LAYOUT footprint travels the same seam as a second, independent measurement:
-    gui_volatile_cb reports the extent each real emit claimed (gui_volatile_footprint), and each
-    idle replay reports its own (gui_replay_scope_measure).  Geometry that outgrows its reservation
+    gui_volatile_cb reports the extent each real emit claimed (volatile_footprint), and each
+    idle replay reports its own (replay_scope_measure).  Geometry that outgrows its reservation
     and layout that outgrows its cell are the two ways a block can exceed what the cache holds for
     it, and both now cost exactly one real frame instead of drawing wrong -- see gui.h's
     fixed-footprint contract.
 
-    Reverse direction (backend -> frontend): gui_update_volatile needs a valid layout/id scope for
-    the callback to emit into, which only the frontend owns (lf(), the id stack).  gui_replay_scope_enter
+    Reverse direction (backend -> frontend): volatile_update needs a valid layout/id scope for
+    the callback to emit into, which only the frontend owns (lf(), the id stack).  replay_scope_enter
     / _exit / _measure are the functions that cross back -- the same kind of unit-seam exception as
-    gui_dbg_build_viewport above, just three of them instead of one.
+    dbg_build_viewport above, just three of them instead of one.
 ==============================================================================================*/
 
-void     gui_volatile_cb_open ( gui_id_t id );                 // (re)open row `id`; cmd_lo = current cmd_count
-void     gui_volatile_stamp   ( f32 x, f32 y, f32 w );          // fill win/z/vp/font/clip + cursor stamp for the open row
-void     gui_volatile_footprint( f32 w, f32 h );                // layout extent this real emit claimed, for the reflow check
-void     gui_volatile_cb_close( gui_volatile_fn fn );           // cmd_hi + fn for the open row; tags the command range
-void     gui_update_volatile  ( void );
-u32      gui_volatile_row_count( void );                        // registered registry rows (perf overlay, vs GUI_MAX_VOLATILE)
-bool     gui_volatile_live    ( void );                         // any row patchable RIGHT NOW -- gui_frame_pace must keep
+void     volatile_cb_open   ( gui_id_t id );                    // (re)open row `id`; cmd_lo = current cmd_count
+void     volatile_stamp     ( f32 x, f32 y, f32 w );            // fill win/z/vp/font/clip + cursor stamp for the open row
+void     volatile_footprint ( f32 w, f32 h );                   // layout extent this real emit claimed, for the reflow check
+void     volatile_cb_close  ( gui_volatile_fn fn );             // cmd_hi + fn for the open row; tags the command range
+void     volatile_update    ( void );
+u32      volatile_row_count ( void );                           // registered registry rows (perf overlay, vs GUI_MAX_VOLATILE)
+bool     gui_volatile_live  ( void );                           // any row patchable RIGHT NOW -- gui_frame_pace must keep
                                                                 //   presenting at cadence instead of block-waiting on input
 
-/* Implemented in chrome/widgets/gui_volatile.c; called only from gui_update_volatile. */
-void     gui_replay_scope_enter  ( gui_id_t id, f32 x, f32 y, f32 w );
-void     gui_replay_scope_measure( f32* out_w, f32* out_h );    // extent the replay claimed, in gui_volatile_footprint terms
-void     gui_replay_scope_exit   ( bool force_redraw );
+/* Implemented in chrome/widgets/gui_volatile.c; called only from volatile_update. */
+void     replay_scope_enter  ( gui_id_t id, f32 x, f32 y, f32 w );
+void     replay_scope_measure( f32* out_w, f32* out_h );    // extent the replay claimed, in volatile_footprint terms
+void     replay_scope_exit   ( bool force_redraw );
 
 /*==============================================================================================
     RENDER: GPU resources + flush (pipeline/gui_submit.c)
 
-    gui_render_init/shutdown are NOT declared here -- they're an implementation detail of
-    gui_backend_init/exit (above) now, called directly within the gui_render.c unity TU.
+    render_init/shutdown are NOT declared here -- they are TU-local statics, an implementation
+    detail of backend_init/exit (above) called directly within the gui_render.c unity TU.
 ==============================================================================================*/
 
 void                gui_render_flush        ( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
@@ -315,12 +315,12 @@ void                gui_render_flush        ( rhi_buffer_t vb, rhi_buffer_t ib, 
    every fixed CPU static the backend TU defines (see render/gui_render_mem.c).  The CPU-heap
    context bytes and the totals are filled by the frontend (gui_mem_stats), which owns the
    context pool. */
-gui_mem_stats_t     gui_backend_memory      ( u32 live_viewports );
+gui_mem_stats_t     backend_memory          ( u32 live_viewports );
 
 /* The accounting seam: the font/icon resources live one unit up (draw), so this server
    fills its font bucket by asking the draw unit for its fixed footprint.  Home declaration
    in draw/gui_draw.h; redeclared here because the server cannot see a library header. */
-u32                 gui_draw_unit_mem_bytes ( void );
+u32                 draw_unit_mem_bytes     ( void );
 
 /* Debug render mode (normal / wireframe / batch-tint) -- backs gui()->debug_set/get_render_mode.
    The flush reads it to pick the fill vs. wireframe pipeline and the per-draw debug push constants. */
@@ -364,7 +364,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
         render/gui_dash_capture.c         -- the CAPTURE: copies the snapshot types below at
                                               defined pipeline points (end of cache_build_frame,
                                               end of each surface's flush) for the shell to read
-                                              one frame later through gui_dash_snapshot().
+                                              one frame later through dash_snapshot().
 
     The build switch mirrors GUI_DEBUG_OVERLAY: auto-on for Debug builds, force-off with
     GUI_NO_PIPELINE_DASHBOARD.  Computed here so BOTH units agree.
@@ -381,7 +381,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
    0 when the feature is compiled out or the window has never been emitted.  Read by the dash
    capture to mark the dashboard's own slot in the memory map ("observer marked, not hidden");
    its stats/idle-skip exemption now comes from GUI_WIN_DEBUG_BAND, not from this id. */
-extern gui_id_t g_gui_dash_window_id;
+extern gui_id_t g_dash_window_id;
 
 #ifdef GUI_PIPELINE_DASHBOARD
 
@@ -390,7 +390,7 @@ extern gui_id_t g_gui_dash_window_id;
         end of each surface's gui_render_flush) so the dashboard displays a coherent picture,
         never mid-mutation, and can freeze it.  These types live in the seam header because the
         SHELL (debug/gui_dashboard.c) now draws every panel itself with the standard draw API,
-        reading the snapshot through gui_dash_snapshot(); the backend keeps only the capture
+        reading the snapshot through dash_snapshot(); the backend keeps only the capture
         (render/gui_dash_capture.c).  Plain data mirrors -- no backend-private type leaks.
     ------------------------------------------------------------------------------------------*/
 
@@ -470,10 +470,10 @@ extern gui_id_t g_gui_dash_window_id;
        frame, open or closed, so a closed dashboard costs two branches; snapshot() returns the
        held capture (stable while frozen).  The shell reads it one frame behind the build that
        produced it -- the standard self-measurement lag. */
-    const dash_snapshot_t* gui_dash_snapshot   ( void );
-    void                   gui_dash_set_enabled( bool on );
-    void                   gui_dash_set_freeze ( bool on );
-    bool                   gui_dash_frozen     ( void );
+    const dash_snapshot_t* dash_snapshot   ( void );
+    void                   dash_set_enabled( bool on );
+    void                   dash_set_freeze ( bool on );
+    bool                   dash_frozen     ( void );
 
     /* Capture hooks, called from the pipeline files (which the unity chain includes before
        gui_dash_capture.c) via the DASH_* macros below:
@@ -516,28 +516,28 @@ extern gui_id_t g_gui_dash_window_id;
 
     /* Frozen-replay flag, read per push by the emit hot path (STEP_EMIT_SUPPRESSED below).
        Defined in gui_step_capture.c; written only at the frame seams. */
-    extern bool g_gui_step_frozen;
+    extern bool g_step_frozen;
 
     /* Shell seam (the stepper window + debug_hotkeys).  capture/release/seek LATCH: capture
        applies at the next cache_build_frame, release and the cursor at the next frame's
        draw_reset -- a frame is never half live, half frozen.  Every latched request self-raises
-       gui_step_pending(), which frame_begin folds into frame_dirty (STEP_FRAME_PENDING) so the
+       step_pending(), which frame_begin folds into frame_dirty (STEP_FRAME_PENDING) so the
        serving emit always runs -- per-context wants_redraw is NOT reliable for this (any later
        ctx_begin wipes it).  count is the frozen band-0 command total (0 while live); seek
        clamps to it. */
-    void gui_step_capture( void );
-    void gui_step_release( void );
-    bool gui_step_pending( void );
-    bool gui_step_frozen ( void );
-    u32  gui_step_count  ( void );
-    u32  gui_step_cursor ( void );
-    void gui_step_seek   ( u32 cursor );
+    void step_capture( void );
+    void step_release( void );
+    bool step_pending( void );
+    bool step_frozen ( void );
+    u32  step_count  ( void );
+    u32  step_cursor ( void );
+    void step_seek   ( u32 cursor );
 
     /* Display/replay order: emit (generation order, the default) or paint (segments z-sorted,
        approximating dispatch).  The cursor, both info queries below, and the replay itself all
        live in the active order; toggling keeps the cursor's numeric position. */
-    void gui_step_set_paint_order( bool on );
-    bool gui_step_paint_order    ( void );
+    void step_set_paint_order( bool on );
+    bool step_paint_order    ( void );
 
     /* Inspector read seam -- one frozen command / segment resolved for display, valid only while
        frozen (both return false otherwise).  Resolution happens backend-side because the frozen
@@ -566,9 +566,9 @@ extern gui_id_t g_gui_dash_window_id;
 
     } step_seg_info_t;
 
-    bool gui_step_cmd_info ( u32 index, step_cmd_info_t* out );
-    u32  gui_step_seg_count( void );
-    bool gui_step_seg_info ( u32 index, step_seg_info_t* out );
+    bool step_cmd_info ( u32 index, step_cmd_info_t* out );
+    u32  step_seg_count( void );
+    bool step_seg_info ( u32 index, step_seg_info_t* out );
 
     /* Pick: topmost VISIBLE frozen command whose bounds contain the point on viewport `vp` --
        "what drew this pixel".  Always resolves topmost in PAINT order (whatever the display
@@ -576,7 +576,7 @@ extern gui_id_t g_gui_dash_window_id;
        A topmost hit that is unattributed chrome/background (owner 0) refuses the pick -- a
        missed click is a no-op, never a seek onto a window's body fill.  False while live, on
        a miss, or on a chrome hit. */
-    bool gui_step_pick( f32 x, f32 y, u32 vp, u32* out_index );
+    bool step_pick( f32 x, f32 y, u32 vp, u32* out_index );
 
     /* The attribution stamp (draw_set_cmd_owner / STEP_SET_OWNER) is declared in
        debug/gui_debug.h -- the interact server calls it; the definition stays in
@@ -591,11 +591,11 @@ extern gui_id_t g_gui_dash_window_id;
 
     #define STEP_CAPTURE_BUILD()      step_capture_build()
     #define STEP_RESTORE_EMIT()       step_restore_emit()
-    #define STEP_FRAME_PENDING()      gui_step_pending()
+    #define STEP_FRAME_PENDING()      step_pending()
     /* True while a frozen frame is replayed and the current emission targets the main band --
        every such push is dropped at the source so the live UI underneath cannot disturb the
        replay.  Expanded only inside the emit unit, where s_draw is in scope. */
-    #define STEP_EMIT_SUPPRESSED()    ( g_gui_step_frozen && s_draw.cur_band == 0 )
+    #define STEP_EMIT_SUPPRESSED()    ( g_step_frozen && s_draw.cur_band == 0 )
 
 #else
     #define STEP_CAPTURE_BUILD()      ( (void)0 )

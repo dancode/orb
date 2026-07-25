@@ -337,7 +337,7 @@ fallback regeneration procedure.
 ### The file-presence toggle
 
 How do you make a feature opt-in without adding config plumbing? The smallest mechanism that
-works: **file presence.** At init, `gui_render_init` and `draw_material_init` probe for
+works: **file presence.** At init, `render_init` and `draw_material_init` probe for
 `<exe_dir>/shaders/<base>.{vs,ps}.oshd`:
 
 ```c
@@ -426,7 +426,7 @@ cook time (offline, once per shader edit):
     (cook_shaders.bat, or asset_tool over a project tree)
 
 init time:
-    gui_render_init
+    render_init
       -> probe <exe>/shaders/gui.{vs,ps}.oshd .......... both present
       -> rhi()->shader_load_oshd x2 .................... parse, validate bindless
                                                           contract, cache reflection

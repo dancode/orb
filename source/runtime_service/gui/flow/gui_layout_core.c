@@ -13,7 +13,7 @@
         anchors              the ONE crossing between content- and frame-anchored positions
         grid lattice         quant_* -- the theme's grid_quantum bound to the live style
         natural tracks       measured feedback: a 0 column resolves to last frame's widest item
-        track resolver       layout_resolve_tracks + the scalar unit_resolve behind it
+        track resolver       layout_tracks_resolve + the scalar unit_resolve behind it
         line machinery       line_commit / pack_line_break / layout_pen_jump / layout_row_break
         template installers  layout_set / _grid / _reflow / _clear / _default, layout_seed_content,
                              and the push/pop_layout_state bracket over a scoped shape change
@@ -26,7 +26,7 @@
     ...) resolves in style/gui_style_core.c.
 
     Part of the flow unit (gui_flow.c), first of its includes: everything below composes over the
-    cell emitters here.  The one ordering debt runs the other way -- gui_replay_scope_enter/_exit
+    cell emitters here.  The one ordering debt runs the other way -- replay_scope_enter/_exit
     (chrome/widgets/gui_volatile.c) push a bare layout frame through layout_set_default, so that
     file must be included after this one.
 
@@ -156,7 +156,7 @@ content_extent_y( const layout_frame_t* f )
 
     Grid lattice -- the theme's grid_quantum (gui_style_t; 0/1 = off) snaps CONTENT-DRIVEN sizes
     so resolved flex tracks and natural widths land on the same px lattice the theme metrics
-    were already quantized to (layout_compute).  Authored sizes are never snapped: a fixed-px
+    were already quantized to (metrics_compute).  Authored sizes are never snapped: a fixed-px
     track, an explicit row_h, a line.fit_next / pack_size are taken verbatim -- unit-first authoring
     goes through gui_sz_u(), which is on-lattice by construction.  Content sizes round UP (text is
     never clipped); divided space rounds DOWN (tracks never overflow their extent).
@@ -247,7 +247,7 @@ nat_track_note( layout_frame_t* f, u32 col, f32 natural_w )
 
 /* Substitute every natural (== 0) track in `tracks` with last frame's measure (floored at the
    minimum cell width) and record which columns feed the measure back.  Runs at install, before
-   the resolve, so layout_resolve_tracks and indent's reflow only ever see px for these tracks. */
+   the resolve, so layout_tracks_resolve and indent's reflow only ever see px for these tracks. */
 static void
 nat_tracks_substitute( layout_frame_t* f, f32* tracks, u32 n )
 {
@@ -291,7 +291,7 @@ nat_tracks_substitute( layout_frame_t* f, f32* tracks, u32 n )
    iterative form. */
 
 void
-layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap,
+layout_tracks_resolve( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap,
                        f32* out_pos, f32* out_size )
 {
     const f32 min_w = WIDGET_MIN_W;
@@ -371,7 +371,7 @@ layout_resolve_tracks( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
 
 /*============================================================================================*/
 /* Resolve one overloaded size unit against a single span -- the scalar form of the rule
-   layout_resolve_tracks applies to a whole list (see gui_layout_t): > 1 fixed px, == 1 fill the
+   layout_tracks_resolve applies to a whole list (see gui_layout_t): > 1 fixed px, == 1 fill the
    available extent, (0,1) a fraction of it, == 0 the natural measure.  < 0 (unset) is natural
    with a fill fallback for an item that has no natural measure -- the pack-mode default.  The
    single-value sites (line.pack_size_next, the one-shot cell line.fit_next) resolve through here, so the
@@ -739,7 +739,7 @@ layout_set( const f32* cols, f32 row_h, f32 gap_x, f32 gap_y )
     f->tmpl.ncols = layout_copy_tracks( cols, tracks );
     nat_tracks_substitute( f, tracks, f->tmpl.ncols );   /* natural (0) -> last frame's measure */
     for ( u32 i = 0; i < f->tmpl.ncols; ++i ) f->tmpl.cols[ i ] = tracks[ i ];   /* kept for indent reflow */
-    layout_resolve_tracks( tracks, f->tmpl.ncols, f->content_x, f->content_w, mod_gap_x( f ),
+    layout_tracks_resolve( tracks, f->tmpl.ncols, f->content_x, f->content_w, mod_gap_x( f ),
                            f->tmpl.cellx, f->tmpl.cellw );
 }
 
@@ -752,7 +752,7 @@ static void
 layout_reflow( layout_frame_t* f )
 {
     if ( f->mode == GUI_MODE_STACK || f->mode == GUI_MODE_COLUMNS )
-        layout_resolve_tracks( f->tmpl.cols, f->tmpl.ncols, f->content_x, f->content_w,
+        layout_tracks_resolve( f->tmpl.cols, f->tmpl.ncols, f->content_x, f->content_w,
                                mod_gap_x( f ), f->tmpl.cellx, f->tmpl.cellw );
 }
 
@@ -778,14 +778,14 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
     f32 tracks[ GUI_LAYOUT_COLS ];
     f->tmpl.ncols = layout_copy_tracks( cols, tracks );
     nat_tracks_substitute( f, tracks, f->tmpl.ncols );   /* columns measure back; rows cannot */
-    layout_resolve_tracks( tracks, f->tmpl.ncols, f->content_x, f->content_w, mod_gap_x( f ),
+    layout_tracks_resolve( tracks, f->tmpl.ncols, f->content_x, f->content_w, mod_gap_x( f ),
                            f->tmpl.cellx, f->tmpl.cellw );
 
     f->tmpl.nrows = layout_copy_tracks( rows, tracks );
     f32 grid_top = layout_next_y( f );   /* gap-before: the band opens below prior content */
     f32 grid_h   = f->band_bottom - grid_top;
     if ( grid_h < 0.0f ) grid_h = 0.0f;
-    layout_resolve_tracks( tracks, f->tmpl.nrows, grid_top, grid_h, mod_gap_y( f ),
+    layout_tracks_resolve( tracks, f->tmpl.nrows, grid_top, grid_h, mod_gap_y( f ),
                            f->tmpl.rowy, f->tmpl.rowh );
 
     f->nav_line = ++s_build.nav_line_seq;   /* grid row 0 opens as a fresh nav line */
@@ -795,7 +795,7 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
 /* Resolve one cell's horizontal box -- the fit-then-align sequence every cell placement (flow or
    grid) shares: decide how big before align_x decides where.  A one-shot line.fit_next (overloaded
    unit -- see gui_layout_t) always wins when set, taken as authored intent even past the cell
-   edge, exactly like a fixed track px is never floored (layout_resolve_tracks).  Unset (-1, the
+   edge, exactly like a fixed track px is never floored (layout_tracks_resolve).  Unset (-1, the
    common case) falls back to the widget's own natural_w signal: a natural width smaller than the
    cell shrinks to it (a button hugs its label), anything else fills the cell verbatim -- the
    per-widget-type default every emit already carries, now consulted for every mode, not just
@@ -1115,7 +1115,7 @@ static bool s_field_skip;
 void gui_skip_label ( void ) { s_field_skip = true; }
 bool field_skip_take( void ) { bool s = s_field_skip; s_field_skip = false; return s; }
 
-/* Pure two-track geometry for a labeled row (see gui_flow.h).  Shares layout_resolve_tracks --
+/* Pure two-track geometry for a labeled row (see gui_flow.h).  Shares layout_tracks_resolve --
    the same resolver columns use -- so a field split obeys the overloaded unit rule; the NONE
    (trailing) branch is the plain "control left, label trailing right" math. */
 void
@@ -1139,7 +1139,7 @@ field_geom_split( gui_rect_t cell, gui_label_side_t side, f32 control_u, f32 lab
     else                          { tracks[ 0 ] = control_u; tracks[ 1 ] = label_w;   ctl_i = 0; lab_i = 1; }
 
     f32 pos[ 2 ], size[ 2 ];
-    layout_resolve_tracks( tracks, 2, cell.x, cell.w, pad, pos, size );
+    layout_tracks_resolve( tracks, 2, cell.x, cell.w, pad, pos, size );
 
     f32 cw = size[ ctl_i ];
     if ( cw < min_ctrl ) cw = min_ctrl;

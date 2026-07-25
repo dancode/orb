@@ -30,7 +30,7 @@ void               el_style_install( void );  /* stock/gui_stock.c: the landing 
 
 /* THE role x state -> gui_col_t slot projection (stock unit owns it) -- shared by
    el_style_derive and style_el_col so the two directions of the strata bridge cannot drift. */
-extern const u8 g_gui_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ];
+extern const u8 g_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ];
 
 /* gui_style_core.c: resolve one element-shaped color for STOCK chrome -- a push-stack
    override on the projected slot wins (chrome's own mechanism), else the INSTALLED element
@@ -114,7 +114,7 @@ void style_new_frame( void );
 
 /* The em rescale (style/gui_theme.c) -- gui_style_apply (frame/gui_frame_font.c) reads the active
    font's metrics (draw-unit material style must not touch) and passes them down here. */
-void layout_compute( u32 em, u32 char_h, u32 line_h );
+void metrics_compute( u32 em, u32 char_h, u32 line_h );
 
 /* lattice snapping (style/gui_theme.c) -- the grid-quantum rounders composition and chrome
    share (identity when the lattice is off or q <= 1). */
@@ -138,7 +138,7 @@ u32 col_frame_bg( gui_item_state_t st, u32 idle_color_enum );
 
 /* Decentralized memory accounting -- this unit's fixed statics (root gui_style.c foot),
    summed into cpu_frontend_bytes by gui_ui_memory (gui_ui_mem.c). */
-u32 gui_style_unit_mem_bytes( void );
+u32 style_unit_mem_bytes( void );
 
 // clang-format on
 /*============================================================================================*/

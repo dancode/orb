@@ -15,7 +15,7 @@
     lower unit invokes across its documented upward seam is declared with that LOWEST consumer:
     item_flags_resolve / item_flags_chrome_reset and the child-box trio in flow/gui_flow.h,
     draw_nav_ring in core/gui_core.h, draw_drop_ring in interact/gui_interact.h.  The style
-    bridge this unit rides (el_style_derive, g_gui_el_slot_map) stays in style/gui_style.h.
+    bridge this unit rides (el_style_derive, g_el_slot_map) stays in style/gui_style.h.
     What is left below is what only chrome and the widget set above consume.
 
 ==============================================================================================*/
@@ -39,7 +39,7 @@ void draw_close_x        ( gui_rect_t box, u32 color );
 void draw_check_indicator( gui_rect_t box, u32 col );
 void draw_rule           ( f32 x, f32 yc, f32 w, f32 thickness, u32 col );
 
-u32 gui_stock_unit_mem_bytes( void );          /* the stock unit's fixed statics */
+u32 stock_unit_mem_bytes( void );          /* the stock unit's fixed statics */
 
 // clang-format on
 /*============================================================================================*/

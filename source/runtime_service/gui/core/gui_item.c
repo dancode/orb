@@ -179,7 +179,7 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
     st.clicked = s_io.mouse_released[ 0 ] && s_interaction.hover_id == id && s_interaction.active_id == id;
 
     /* Record which window owns the keyboard focus, for the exclusive-scope focus lock (a modal
-       input mode holds its focus sticky; see interaction_frame_reset).  Refreshed every frame the
+       input mode holds its focus sticky; see interact_new_frame).  Refreshed every frame the
        focused widget re-emits, so it always names that widget's current window. */
     if ( st.focused )
         s_interaction.focused_win = s_scope.win;

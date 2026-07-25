@@ -15,7 +15,7 @@
                                        by focus_allowed.
       focus_release (here)          -- Enter commit / Escape revert: the widget drops its own
                                        capture.
-      interaction_frame_reset       -- a press on dead space drops focus, unless the exclusive
+      interact_new_frame       -- a press on dead space drops focus, unless the exclusive
         (core/gui_ctx.c)               mode holds it (focus_scope_holds).
 
     Included by gui_core.c after core/gui_ctx.c (it reads the ambient record and g_ctx->modal)
@@ -36,7 +36,7 @@
                   background window can steal it.
       hold     -- focus is STICKY within the mode: it never falls to nothing.  Focus can drop two
                   ways and the mode blocks both -- a press on non-focusable dead space
-                  (interaction_frame_reset, core/gui_ctx.c) and a widget releasing its own
+                  (interact_new_frame, core/gui_ctx.c) and a widget releasing its own
                   capture on Enter / Escape (focus_release below).  You cannot "select nothing"
                   inside a menu; focus only MOVES when another focusable widget in the mode claims
                   it (a direct focused_id overwrite, not a release), so the console input keeps its
@@ -60,7 +60,7 @@ modal_scope_live( void )
 }
 
 /* True when the live exclusive mode owns `id` -- the focused widget belongs to the modal window.
-   The frame-begin focus-clear (interaction_frame_reset) consults this to keep the mode's focus
+   The frame-begin focus-clear (interact_new_frame) consults this to keep the mode's focus
    sticky: the HOLD rule's first half. */
 bool
 focus_scope_holds( gui_id_t id )

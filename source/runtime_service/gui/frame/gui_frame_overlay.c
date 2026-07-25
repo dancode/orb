@@ -181,7 +181,7 @@ overlay_backdrop( gui_id_t id, f32 x, f32 y )
 }
 
 static void
-gui_perf_overlay( int mode )
+overlay_perf( int mode )
 {
     if ( mode <= 0 )
         return;
@@ -268,7 +268,7 @@ gui_perf_overlay( int mode )
                 gui_textf( "verts ret %u/%u", rs.vert_retained, rs.vert_count  );
                 gui_textf( "tris ret  %u/%u", rs.tri_retained,  rs.tri_count   );
                 gui_textf( "vol patch %u",    rs.volatile_patched              );
-                gui_textf( "vol rows  %u/%u", gui_volatile_row_count(), GUI_MAX_VOLATILE );
+                gui_textf( "vol rows  %u/%u", volatile_row_count(), GUI_MAX_VOLATILE );
 
                 /* Upload stats: GPU memory bandwidth. */
                 gui_new_line( 2.0f );
@@ -306,7 +306,7 @@ gui_perf_overlay( int mode )
         {
             gui_new_line( 2.0f );
             gui_textf( "emit  %s", gui_force_redraw()        ? "forced  " : "on-dirty" );
-            gui_textf( "tess  %s", gui_build_retained_skip() ? "cached  " : "always  " );
+            gui_textf( "tess  %s", build_retained_skip() ? "cached  " : "always  " );
             gui_textf( "pace  %s", gui_idle_skip()           ? "idleskip" : "spin    " );
         }
 
@@ -329,7 +329,7 @@ gui_perf_overlay( int mode )
 /* id -> "name" or "0x########" -- round-robins through a few static scratch buffers so multiple
    ids can be formatted into the same gui_textf() call without clobbering each other. */
 static const char*
-dbg_id_str( gui_id_t id )
+overlay_id_str( gui_id_t id )
 {
     static char   bufs[ 4 ][ 24 ];
     static u32    next = 0;
@@ -346,7 +346,7 @@ dbg_id_str( gui_id_t id )
 }
 
 static void
-gui_state_overlay( int mode )
+overlay_state( int mode )
 {
     if ( mode <= 0 )
         return;
@@ -365,17 +365,17 @@ gui_state_overlay( int mode )
         gui_stack();
         gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
 
-        gui_textf( "Hover   %s", dbg_id_str( s_interaction.hover_id ) );
-        gui_textf( "Active  %s (btn %u)", dbg_id_str( s_interaction.active_id ), s_interaction.active_button );
-        gui_textf( "Window  %s", dbg_id_str( s_interaction.hover_win ) );
+        gui_textf( "Hover   %s", overlay_id_str( s_interaction.hover_id ) );
+        gui_textf( "Active  %s (btn %u)", overlay_id_str( s_interaction.active_id ), s_interaction.active_button );
+        gui_textf( "Window  %s", overlay_id_str( s_interaction.hover_win ) );
 
         bool show_extended_rows = ( mode >= 2 );
         if ( show_extended_rows )
         {
             gui_new_line( 2.0f );
-            gui_textf( "Focused %s", dbg_id_str( s_interaction.focused_id ) );
-            gui_textf( "Nav id  %s", dbg_id_str( g_ctx->nav.id ) );
-            gui_textf( "Nav win %s", dbg_id_str( g_ctx->nav.win ) );
+            gui_textf( "Focused %s", overlay_id_str( s_interaction.focused_id ) );
+            gui_textf( "Nav id  %s", overlay_id_str( g_ctx->nav.id ) );
+            gui_textf( "Nav win %s", overlay_id_str( g_ctx->nav.win ) );
             gui_textf( "Mouse   %6.1f, %6.1f", s_io.mouse_x, s_io.mouse_y );
         }
 
@@ -387,7 +387,7 @@ gui_state_overlay( int mode )
             if ( g_ctx->popup.open_count )
             {
                 gui_id_t top_popup = g_ctx->popup.open[ g_ctx->popup.open_count - 1u ].id;
-                gui_textf( "Top pop %s", dbg_id_str( top_popup ) );
+                gui_textf( "Top pop %s", overlay_id_str( top_popup ) );
             }
             gui_textf( "Ctx salt 0x%08X", g_ctx->retained.id_salt );
         }
@@ -443,7 +443,7 @@ gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
                 (picking a command under the mouse is the stepper window's Pick toggle -- a
                 hotkey fought the focused window's keyboard nav / type-ahead)
 
-    While armed, a dense checkbox-list selector (gui_debug_selector_menu, right edge of the
+    While armed, a dense checkbox-list selector (debug_selector_menu, right edge of the
     viewport) is also up, mirroring NP+ / NP- as sliders alongside the levers that no longer have
     keys of their own: retained skip (tessellation cache), force redraw, and idle skip -- toggled
     there now instead of the old C / F / I letters. It is part of debug rendering, so it never
@@ -525,14 +525,14 @@ debug_reset( void )
     gui_render_set_mode( GUI_RENDER_NORMAL );   /* wireframe / batch tint -> normal */
     gui_debug_set_layers( 0 );                  /* clear all NP1-7 layer rects      */
 
-    s_dbg_retained_skip_saved = gui_build_retained_skip();
+    s_dbg_retained_skip_saved = build_retained_skip();
     s_dbg_force_redraw_saved  = gui_force_redraw();
-    gui_build_set_retained_skip( true );        /* normal: skip tess when unchanged */
+    build_set_retained_skip( true );        /* normal: skip tess when unchanged */
     gui_set_force_redraw( false );              /* normal: allow clean-frame emit skip */
 
 #ifdef GUI_CMD_STEPPER
-    if ( gui_step_frozen() )
-        gui_step_release();                     /* unfreeze back to live emission */
+    if ( step_frozen() )
+        step_release();                     /* unfreeze back to live emission */
 #endif
 
     redraw_request();
@@ -545,7 +545,7 @@ debug_reset( void )
 static void
 debug_restore( void )
 {
-    gui_build_set_retained_skip( s_dbg_retained_skip_saved );
+    build_set_retained_skip( s_dbg_retained_skip_saved );
     gui_set_force_redraw( s_dbg_force_redraw_saved );
 }
 
@@ -629,7 +629,7 @@ debug_hotkeys( void )
     }
 
     /* Perf / state overlay tiers keep a quick keyboard cycle (numpad +/-, away from the letter
-       row so they read as a pair) alongside their checkbox-list slider (gui_debug_selector_menu
+       row so they read as a pair) alongside their checkbox-list slider (debug_selector_menu
        below) -- these two are flipped often enough while chasing a frame that a click is friction.
        C/F/I lost their letter keys entirely: single booleans toggled rarely, better discovered as
        checkboxes than memorized as hotkeys. */
@@ -649,7 +649,7 @@ debug_hotkeys( void )
     /* , . step the frozen replay cursor (repeat-aware so holding scrubs; shift steps by 16).
        The seek latches -- it applies at the next frame's restore -- so wants_redraw is required
        here or the clean-frame emit skip would sit on the stale cursor (the deferred-update rule). */
-    if ( gui_step_frozen() )
+    if ( step_frozen() )
     {
         u32  stride = ( gui_is_key_down( APP_KEY_LSHIFT ) || gui_is_key_down( APP_KEY_RSHIFT ) )
                           ? 16u : 1u;
@@ -657,13 +657,13 @@ debug_hotkeys( void )
         bool fwd    = gui_is_key_pressed_repeat( APP_KEY_PERIOD );
         if ( back || fwd )
         {
-            u32 c = gui_step_cursor();
+            u32 c = step_cursor();
             if ( back )
                 c = c > stride ? c - stride : 0u;
             else
                 c = c + stride;               /* seek clamps to the frozen command count */
-            gui_step_seek( c );
-            printf( "[gui] command stepper: %u/%u\n", gui_step_cursor(), gui_step_count() );
+            step_seek( c );
+            printf( "[gui] command stepper: %u/%u\n", step_cursor(), step_count() );
             redraw_request();
         }
     }
@@ -683,7 +683,7 @@ debug_hotkeys( void )
     must be clickable, but its own geometry still has to stay out of the very stats/counts it is
     used to tweak -- the same arena-band exemption the perf/state overlays get. */
 static void
-gui_debug_selector_menu( void )
+debug_selector_menu( void )
 {
     /* Work top (caption band + menu bar) + this panel's own margin -- see perf_overlay. */
     f32 top_y = gui_viewport_content_y( 0 ) + 8.0f;
@@ -701,9 +701,9 @@ gui_debug_selector_menu( void )
         if ( gui_checkbox( "Force redraw", &force ) )
             gui_set_force_redraw( force );
 
-        bool cached = gui_build_retained_skip();
+        bool cached = build_retained_skip();
         if ( gui_checkbox( "Tess cache", &cached ) )
-            gui_build_set_retained_skip( cached );
+            build_set_retained_skip( cached );
 
         gui_checkbox( "Idle skip", &s_idle_skip );
 
@@ -720,14 +720,14 @@ gui_debug_selector_menu( void )
 static void
 debug_overlays_emit( void )
 {
-    gui_pipeline_dashboard( &s_dbg_dash_open );
-    gui_step_window( &s_dbg_step_open );
+    dash_window( &s_dbg_dash_open );
+    step_window( &s_dbg_step_open );
     if ( s_dbg_hotkeys_armed )
-        gui_debug_selector_menu();
+        debug_selector_menu();
     /* Tier state is no longer zeroed on disarm (debug_reset) so the selector menu can remember
        it -- gate visibility on the arm here instead, the same net effect (hidden while off). */
-    gui_perf_overlay ( s_dbg_hotkeys_armed ? s_dbg_perf_mode  : 0 );
-    gui_state_overlay( s_dbg_hotkeys_armed ? s_dbg_state_mode : 0 );
+    overlay_perf ( s_dbg_hotkeys_armed ? s_dbg_perf_mode  : 0 );
+    overlay_state( s_dbg_hotkeys_armed ? s_dbg_state_mode : 0 );
 }
 
 /* NOTE: gui_frame_pace() -- the end-of-loop idle sleep -- lives in gui_boot.c, the boot-tier

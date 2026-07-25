@@ -13,9 +13,9 @@
 
 // clang-format off
 
-void gui_pipeline_dashboard( bool* open );      /* debug unit: F10 dashboard (stub w/o feature) */
-void gui_step_window       ( bool* open );      /* debug unit: F8 command stepper window        */
-u32  gui_debug_unit_mem_bytes( void );          /* debug unit: its fixed statics, for mem stats */
+void dash_window          ( bool* open );   /* debug unit: F10 dashboard (stub w/o feature) */
+void step_window          ( bool* open );   /* debug unit: F8 command stepper window        */
+u32  debug_unit_mem_bytes ( void );         /* debug unit: its fixed statics, for mem stats */
 
 /*==============================================================================================
     DEBUG OVERLAY capture seams (gui_debug_overlay.c, render unit) -- Debug builds only.
@@ -43,13 +43,13 @@ u32  gui_debug_unit_mem_bytes( void );          /* debug unit: its fixed statics
 #ifdef GUI_DEBUG_OVERLAY
 
     /* Lifecycle, driven by gui_frame_loop.c (frame unit) under the same #ifdef. */
-    bool gui_debug_init    ( void );
-    void gui_debug_shutdown( void );
-    void gui_debug_reset   ( void );
-    void gui_debug_flush   ( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+    bool dbg_init    ( void );
+    void dbg_shutdown( void );
+    void dbg_reset   ( void );
+    void dbg_flush   ( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
     /* Capture entry points -- called from every unit via the DBG_* macros below.  Each tags its
-       command with the ambient build viewport (gui_dbg_build_viewport, core/gui_ctx.c). */
+       command with the ambient build viewport (dbg_build_viewport, core/gui_ctx.c). */
     void dbg_capture_widget( gui_id_t id, gui_rect_t r, bool hover, bool active );
     void dbg_capture_clip  ( gui_rect_t r, u32 depth );
     void dbg_capture_window( gui_rect_t r, bool is_hover );
@@ -58,7 +58,7 @@ u32  gui_debug_unit_mem_bytes( void );          /* debug unit: its fixed statics
     void dbg_capture_region( gui_rect_t view, gui_rect_t hit_clip, f32 sb_w, f32 sb_h );
 
     /* Name registry -- records the source string behind an id as it is minted (widget label,
-       window/popup title, region/child/table id string), so gui_state_overlay() can show a
+       window/popup title, region/child/table id string), so overlay_state() can show a
        readable name instead of a hash.  See gui_debug_name() in gui_host.h for the reader. */
     void dbg_name_register( gui_id_t id, const char* str );
 
@@ -72,7 +72,7 @@ u32  gui_debug_unit_mem_bytes( void );          /* debug unit: its fixed statics
 
     /* Ambient build viewport (s_build.win.viewport, core/gui_ctx.c) -- the capture functions
        live in the render unit, so they read it through this accessor rather than the static. */
-    u32 gui_dbg_build_viewport( void );
+    u32 dbg_build_viewport( void );
 
 #else
     #define DBG_WIDGET( id, r, hov, act ) ( (void)0 )

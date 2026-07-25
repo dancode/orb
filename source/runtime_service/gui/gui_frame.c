@@ -82,7 +82,7 @@ bool           viewport_create ( gui_vp_t vp, rhi_texture_t target, i32 win_id )
 void           viewport_destroy( gui_vp_t vp );                                               /* gui_viewport.c */
 
 /* The theme registry, base/active style state (s_style_base, s_style, s_font_size), the style
-   stacks, and layout_compute live in the STYLE UNIT (gui_style.c); this unit reads
+   stacks, and metrics_compute live in the STYLE UNIT (gui_style.c); this unit reads
    s_style and the resolvers through the style/gui_style.h externs + seams.
 
    The shared stateless helpers (saturate, clampf, rect_intersect) are static inline in

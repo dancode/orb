@@ -20,14 +20,14 @@
 
     Documented upward seams (the strata bridge -- see style/gui_style.h):
       - style_el_col reads the INSTALLED element style (gui_el_style, stock unit) and
-        projects role x state through g_gui_el_slot_map (the stock unit's table).
+        projects role x state through g_el_slot_map (the stock unit's table).
       - gui_theme_reset calls gui_style_apply (frame/gui_frame_font.c): the rescale needs the
         active font's metrics (draw unit), which style itself must not touch.
 
     Include order matters: each file can reference statics from files included above it.
 
     style/gui_theme.c      -- theme registry, base/active style state (s_style_base, s_style),
-                              theme API, the grid lattice, layout_compute (the em rescale)
+                              theme API, the grid lattice, metrics_compute (the em rescale)
     style/gui_style_core.c -- the stacks machinery: one slot space, push/pop/next resolution,
                               the item/chrome seam hooks, state -> color projections
     style/gui_stacks.c     -- the caller's bracketing vocabulary: push/pop id, item flags,
@@ -66,7 +66,7 @@
 ==============================================================================================*/
 
 u32
-gui_style_unit_mem_bytes( void )
+style_unit_mem_bytes( void )
 {
     return (u32)( sizeof( s_style_base ) + sizeof( s_style ) + sizeof( k_themes )
                 + sizeof( s_slot ) + sizeof( s_col_stack ) + sizeof( s_var_stack )

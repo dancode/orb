@@ -23,7 +23,7 @@
 
     Included by gui_render.c after the whole pipeline -- it needs s_render, render_ortho, and
     gui_push_t from pipeline/gui_submit.c in scope.  The ambient build viewport it tags rects with
-    lives in the core unit (s_build, core/gui_ctx.c), reached across the seam via gui_dbg_build_viewport().
+    lives in the core unit (s_build, core/gui_ctx.c), reached across the seam via dbg_build_viewport().
 
 ==============================================================================================*/
 // clang-format off
@@ -105,7 +105,7 @@ static struct
     Debug Name Registry -- id -> source string, so the state overlay can show a readable label
     instead of a hash.  Populated every frame at the DBG_NAME( id, str ) call sites (item_id,
     window_begin_ex, region/child/table id mint points); read back by gui_debug_name(), which the
-    state overlay calls from gui_state_overlay().  Open-addressed like gui_state_get (core/gui_state.c):
+    state overlay calls from overlay_state().  Open-addressed like gui_state_get (core/gui_state.c):
     linear probe, home-bucket overwrite when full -- a rare degradation, not an overflow, and fine
     for a debug tool.  No staleness tracking; a name simply goes stale (but harmless) once its id
     stops being emitted.
@@ -195,7 +195,7 @@ dbg_push_outline( u32 vp, gui_rect_t r, f32 thickness, u32 abgr )
 
 /*==============================================================================================
     Capture entry points -- called via the DBG_* macros in debug/gui_debug.h.
-    gui_dbg_build_viewport() routes each command to the correct viewport.
+    dbg_build_viewport() routes each command to the correct viewport.
 ==============================================================================================*/
 
 void
@@ -204,7 +204,7 @@ dbg_capture_widget( gui_id_t id, gui_rect_t r, bool hover, bool active )
     (void)id;
     if ( !( s_dbg.layers & GUI_DBG_INTERACT ) ) return;
     u32 c = active ? DBG_COL_ACTIVE : ( hover ? DBG_COL_HOVER : DBG_COL_WIDGET );
-    dbg_push_outline( gui_dbg_build_viewport(), r, 1.0f, c );
+    dbg_push_outline( dbg_build_viewport(), r, 1.0f, c );
 }
 
 void
@@ -212,7 +212,7 @@ dbg_capture_layout( gui_rect_t r )
 {
     if ( !( s_dbg.layers & GUI_DBG_LAYOUT ) ) return;
     u32 c = GUI_COLOR( 0xFF, 0x00, 0xFF, 0x80 ); // Magenta outline for layout bounds
-    dbg_push_outline( gui_dbg_build_viewport(), r, 1.0f, c );
+    dbg_push_outline( dbg_build_viewport(), r, 1.0f, c );
 }
 
 void
@@ -226,7 +226,7 @@ dbg_capture_clip( gui_rect_t r, u32 depth )
         GUI_COLOR( 0xC0, 0x60, 0xF0, 0xFF ),
         GUI_COLOR( 0x60, 0xF0, 0x90, 0xFF ),
     };
-    u32 vp   = gui_dbg_build_viewport();
+    u32 vp   = dbg_build_viewport();
     u32 lvl  = depth ? depth - 1u : 0u;       /* 0 = outermost (root/window) clip */
     u32 c    = depth_rgb[ lvl & 3u ];
 
@@ -251,7 +251,7 @@ void
 dbg_capture_region( gui_rect_t view, gui_rect_t hit_clip, f32 sb_w, f32 sb_h )
 {
     if ( !( s_dbg.layers & GUI_DBG_REGION ) ) return;
-    u32 vp = gui_dbg_build_viewport();
+    u32 vp = dbg_build_viewport();
 
     dbg_push_fill( vp, hit_clip, DBG_COL_HITCLIP );
     if ( sb_w > 0.0f )
@@ -265,7 +265,7 @@ void
 dbg_capture_window( gui_rect_t r, bool is_hover )
 {
     if ( !( s_dbg.layers & GUI_DBG_WINDOW ) ) return;
-    dbg_push_outline( gui_dbg_build_viewport(), r,
+    dbg_push_outline( dbg_build_viewport(), r,
                       is_hover ? 2.0f : 1.0f,
                       is_hover ? DBG_COL_WIN_HOVER : DBG_COL_WIN );
 }
@@ -274,7 +274,7 @@ void
 dbg_capture_resize( gui_rect_t band, u8 hot_edges )
 {
     if ( !( s_dbg.layers & GUI_DBG_RESIZE ) ) return;
-    dbg_push_outline( gui_dbg_build_viewport(), band,
+    dbg_push_outline( dbg_build_viewport(), band,
                       hot_edges ? 2.0f : 1.0f,
                       hot_edges ? DBG_COL_RESIZE_HOT : DBG_COL_RESIZE );
 }
@@ -284,7 +284,7 @@ dbg_capture_resize( gui_rect_t band, u8 hot_edges )
 ==============================================================================================*/
 
 bool
-gui_debug_init( void )
+dbg_init( void )
 {
     s_dbg.vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
         .size       = RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS * GUI_DBG_VB_REGION_BYTES,
@@ -310,7 +310,7 @@ gui_debug_init( void )
 }
 
 void
-gui_debug_shutdown( void )
+dbg_shutdown( void )
 {
     if ( rhi_handle_valid( s_dbg.ib ) ) rhi()->buffer_destroy( s_dbg.ib );
     if ( rhi_handle_valid( s_dbg.vb ) ) rhi()->buffer_destroy( s_dbg.vb );
@@ -318,7 +318,7 @@ gui_debug_shutdown( void )
 }
 
 void
-gui_debug_reset( void )
+dbg_reset( void )
 {
     s_dbg.cmd_count = 0;
     s_dbg.overflow  = false;
@@ -352,7 +352,7 @@ dbg_expand_quad( f32 wu, f32 wv, f32 x, f32 y, f32 w, f32 h, u32 abgr,
 }
 
 void
-gui_debug_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
+dbg_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     if ( vp >= GUI_MAX_VIEWPORTS ) return;
     if ( s_dbg.cmd_count == 0 || !rhi_cmd_valid( cmd ) ) return;

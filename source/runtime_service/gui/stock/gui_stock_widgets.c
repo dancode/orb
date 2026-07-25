@@ -43,7 +43,7 @@ static gui_el_style_t s_el_style;
    bridge: el_style_derive below (S2 -> S1: theme lands, slots compile into the installed
    style) and style_el_col (style/gui_style_core.c: stock chrome reads element-shaped values back
    through the installed style, stack overrides winning). */
-const u8 g_gui_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] =
+const u8 g_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] =
 {
     /*             IDLE                HOT                    ACTIVE              DIM                  */
     /* BG     */ { GUI_COL_WIDGET_BG,  GUI_COL_WIDGET_HOT,    GUI_COL_WIDGET_ACT, GUI_COL_CHILD_BG     },
@@ -68,7 +68,7 @@ el_style_derive( void )
 
     for ( u32 role = 0; role < GUI_EL_ROLE_COUNT; ++role )
         for ( u32 state = 0; state < GUI_EL_STATE_COUNT; ++state )
-            e->col[ role ][ state ] = s->colors[ g_gui_el_slot_map[ role ][ state ] ];
+            e->col[ role ][ state ] = s->colors[ g_el_slot_map[ role ][ state ] ];
 }
 
 /* Mutable access to the installed style -- the kit (S3) tuning door.  Ad-hoc writes last until

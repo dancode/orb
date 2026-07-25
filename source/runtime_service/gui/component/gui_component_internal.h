@@ -55,7 +55,7 @@
 
 // clang-format off
 
-u32 gui_component_unit_mem_bytes( void );        /* the component unit's fixed statics (none yet) */
+u32 component_unit_mem_bytes( void );        /* the component unit's fixed statics (none yet) */
 
 // clang-format on
 /*============================================================================================*/

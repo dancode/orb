@@ -44,8 +44,9 @@
     pipeline/gui_build_tess.c       -- BUILD: CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
     pipeline/gui_build_volatile.c   -- BUILD: volatile-widget inline-emit replay (see gui_render.h)
     pipeline/gui_build_cache.c      -- BUILD: retained frame-geometry cache: cache_build_frame, s_cache, s_dispatch,
-                                        gui_build_* public API
-    pipeline/gui_submit.c           -- RENDER: GPU resources + flush: viewport_create/destroy, gui_render_* public API
+                                        the build_* seam
+    pipeline/gui_submit.c           -- RENDER: GPU resources + flush: surface_geo_create/destroy, the
+                                        gui_render_* public API (render_init/shutdown stay TU-local)
 
     gui_debug_overlay.c             -- DEBUG OVERLAY: bolt-on second draw list, flushed on top (Debug only).  Stays
                                         at the render/ root -- it reads resource/ AND pipeline/ internals plus the
@@ -53,7 +54,7 @@
     gui_dash_capture.c              -- CAPTURE: pipeline snapshot for the dashboard shell (GUI_PIPELINE_DASHBOARD)
     gui_select_capture.c            -- CAPTURE: flagged windows' text runs, for chrome's selection controller
     gui_step_capture.c              -- CAPTURE: band-0 command list + the frozen-frame reload (GUI_CMD_STEPPER)
-    gui_render_mem.c                -- MEMORY ACCOUNTING: gui_backend_memory sizeof-sums every backend static;
+    gui_render_mem.c                -- MEMORY ACCOUNTING: backend_memory sizeof-sums every backend static;
                                         must be included last so it sees them all.
 
 ==============================================================================================*/
@@ -149,9 +150,9 @@
 ==============================================================================================*/
 
 bool
-gui_backend_init( void )
+backend_init( void )
 {
-    if ( !gui_render_init() )   /* shared pipeline / sampler (gui_render.c) */
+    if ( !render_init() )   /* shared pipeline / sampler (gui_render.c) */
         return false;
 
     /* The shared resource atlas is core, not optional: fonts pack into it too, so it must exist
@@ -159,7 +160,7 @@ gui_backend_init( void )
        the render pipeline (which owns the sampler) and before any font/icon registration. */
     if ( !res_atlas_init() )
     {
-        gui_render_shutdown();
+        render_shutdown();
         return false;
     }
 
@@ -169,10 +170,10 @@ gui_backend_init( void )
 }
 
 void
-gui_backend_exit( void )
+backend_exit( void )
 {
     res_atlas_shutdown();
-    gui_render_shutdown();
+    render_shutdown();
 }
 
 /*============================================================================================*/

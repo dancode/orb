@@ -338,7 +338,7 @@ Real build_tool targets can come later if wanted; the boundary is the header, no
                     gui_el_style_t; per-widget theme slots retire into chrome tokens.
                     DONE 2026-07-21 (element-vocab resolver form, user-chosen over the
                     breaking literal purge): NEW style_el_col( role, state ) in
-                    core/gui_style.c -- projects through g_gui_el_slot_map (the element
+                    core/gui_style.c -- projects through g_el_slot_map (the element
                     unit's table, now shared with el_style_derive so the strata bridge's two
                     directions cannot drift), push/next_style_color overrides win, otherwise
                     the INSTALLED element style is the source.  10 COL_ macros re-pointed to

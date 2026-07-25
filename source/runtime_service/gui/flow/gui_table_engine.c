@@ -41,7 +41,7 @@ table_tracks_resolve( const gui_table_persist_t* p, const f32* init_w, i32 init_
     }
 
     /* Zero gap between columns -- dividers are chrome lines, not gaps. */
-    layout_resolve_tracks( tracks, (u32)ncols, x, w, 0.0f, out_x, out_w );
+    layout_tracks_resolve( tracks, (u32)ncols, x, w, 0.0f, out_x, out_w );
 }
 
 /* Pair-resize: the dragged boundary grows the column on its left and gives the difference back

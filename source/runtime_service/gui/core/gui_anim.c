@@ -210,7 +210,7 @@ gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active )
 /* Map the public enum onto the base math_ease shapers.  NULL == linear (gui_anim_timer treats a NULL
    shaper as the identity), so GUI_EASE_LINEAR and any out-of-range value fall through to it. */
 static gui_ease_fn
-gui_ease_lookup( gui_ease_t e )
+ease_lookup( gui_ease_t e )
 {
     switch ( e )
     {
@@ -229,7 +229,7 @@ gui_ease_lookup( gui_ease_t e )
 f32
 gui_anim_ease( gui_id_t id, gui_ease_t ease, bool* out_active )
 {
-    return gui_anim_timer( id, gui_ease_lookup( ease ), out_active );
+    return gui_anim_timer( id, ease_lookup( ease ), out_active );
 }
 
 /* The typed channels are all "chase" animations -- glide to a new data state, no intro from a rest

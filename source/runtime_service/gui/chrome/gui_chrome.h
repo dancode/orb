@@ -127,7 +127,7 @@ void popup_apply_modal    ( void );   /* chrome/popup/gui_popup.c: per-frame mod
 void popup_close_check    ( void );   /* chrome/popup/gui_popup.c: click-outside close (frame)       */
 void nav_new_frame        ( void );   /* chrome/nav/gui_nav.c: per-frame nav turnover                */
 void dock_hidden_refresh  ( void );   /* chrome/dock/gui_dock_core.c: hidden-node upkeep (frame)     */
-u32  gui_chrome_unit_mem_bytes( void );
+u32  chrome_unit_mem_bytes( void );
 
 /* gui_popup.c is included after the widgets/ files; selectable calls this to auto-close the
    enclosing popup on click (the Dear ImGui CloseCurrentPopup default behavior). */

@@ -60,9 +60,9 @@ void draw_dropdown_arrow( gui_rect_t box, u32 color );
     the frame orchestrator right after the server (gui_draw_boot), torn down before it.
 ==============================================================================================*/
 
-bool gui_draw_boot    ( void );          /* font registry + icon layer (gui_draw.c) */
-void gui_draw_shutdown( void );
-u32  gui_draw_unit_mem_bytes( void );    /* the draw unit's fixed statics, for mem stats
+bool gui_draw_boot      ( void );        /* font registry + icon layer (gui_draw.c) */
+void gui_draw_shutdown  ( void );
+u32  draw_unit_mem_bytes( void );        /* the draw unit's fixed statics, for mem stats
                                             (also redeclared in render/gui_render.h -- the
                                             seam that fills the server's font bucket) */
 

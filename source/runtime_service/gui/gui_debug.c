@@ -48,7 +48,7 @@
    through the debug/gui_debug.h seam -- each carved unit accounts for itself.  Last include-order
    position so every static aggregate above is in scope. */
 u32
-gui_debug_unit_mem_bytes( void )
+debug_unit_mem_bytes( void )
 {
     u32 b = 0;
 #ifdef GUI_PIPELINE_DASHBOARD

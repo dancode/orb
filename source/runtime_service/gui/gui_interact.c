@@ -75,7 +75,7 @@
 ==============================================================================================*/
 
 u32
-gui_interact_unit_mem_bytes( void )
+interact_unit_mem_bytes( void )
 {
     return (u32)( sizeof( s_drag ) + sizeof( s_undo ) + sizeof( s_medit_undo ) );
 }

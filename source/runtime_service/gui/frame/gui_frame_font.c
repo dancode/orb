@@ -45,7 +45,7 @@ gui_style_apply( void )
     if ( !font_valid() )
         return;
 
-    layout_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
+    metrics_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
 
     /* Re-install the element style from the freshly scaled metrics: the registered style
        source (a kit that owns the look -- style_source_set), else the default S2 -> S1 compile

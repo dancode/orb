@@ -93,7 +93,7 @@ font_shutdown( void )
 {
     /* Clear the CPU font registry (font/ resource -- frees resident pixels).  Fonts own no GPU
        resource of their own -- their atlas pixel copy lives in the shared resource atlas, torn down
-       once by res_atlas_shutdown (gui_backend_exit). */
+       once by res_atlas_shutdown (backend_exit). */
     font_registry_reset();
 }
 

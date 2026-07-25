@@ -109,7 +109,7 @@ font_slot_t*    font_active_slot        ( void );       // active slot (render's
 void            font_registry_reset     ( void );       // clear the registry + active pointers (shutdown)
 
 /* Decentralized memory accounting -- the registry, summed into cpu_frontend_bytes. */
-u32 gui_font_unit_mem_bytes( void );
+u32 font_unit_mem_bytes( void );
 
 // clang-format on
 /*============================================================================================*/

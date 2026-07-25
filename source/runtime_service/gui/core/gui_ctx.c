@@ -18,7 +18,7 @@
         viewport table    s_vp_pool + the win_id -> slot and drawable-size lookups
         pointer           rect_hit, the hardware-cursor request / flush
         arbitration       the interact_* verbs over hover / active, the focus edit latch
-        frame drivers     interaction_frame_reset (once per APP frame), ctx_new_frame (once per
+        frame drivers     interact_new_frame (once per APP frame), ctx_new_frame (once per
                           CONTEXT), and the frame-clock / redraw doors over the retained record
 
     Included by gui_core.c after core/gui_io.c, so s_io is in scope.
@@ -41,7 +41,7 @@
      repeat_t / repeat_on  one timer serves GUI_ITEM_BUTTON_REPEAT -- only one widget is active
                            at a time; both reset on the press frame.
      hover_win             one frame deferred: window_begin nominates into next_hover_win,
-                           interaction_frame_reset promotes it.  Only the hover window
+                           interact_new_frame promotes it.  Only the hover window
                            hit-tests its widgets.
      mouse_cursor          last writer wins (exactly one widget hovers, and resize bands
                            suppress widget hover); cursor_flush pushes it to the OS one frame
@@ -53,7 +53,7 @@
 gui_interaction_t s_interaction;
 
 /* True only while a volatile-widget callback is replayed standalone on an idle frame; set and
-   cleared by gui_replay_scope_enter/_exit (chrome/widgets/gui_volatile.c).  Same tier as
+   cleared by replay_scope_enter/_exit (chrome/widgets/gui_volatile.c).  Same tier as
    hover_id/active_id: item_state reads it to short-circuit before any hit-test or record write,
    so a replay renders against the state the last real frame established and can never acquire
    state or see a fresh click. */
@@ -92,7 +92,7 @@ gui_scope_t s_scope;
    unit) tags each captured rect with the ambient build viewport through this accessor -- declared
    in gui_render.h, Debug builds only. */
 
-u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
+u32 dbg_build_viewport( void ) { return s_build.win.viewport; }
 
 #endif
 
@@ -297,7 +297,7 @@ void cursor_set( app_cursor_t c )
 }
 
 /* Push the requested shape to the OS window under the pointer.  Reads last frame's request +
-   hover state (called before interaction_frame_reset promotes the new frame's hover).
+   hover state (called before interact_new_frame promotes the new frame's hover).
    app()->window_set_cursor is sticky, so dedupe on (window, shape); and on the frame gui releases
    the mouse, push ARROW once so a stale I-beam / resize shape does not linger -- after which the
    cursor belongs to the host (game scene).  Called once per app frame from gui_frame_begin. */
@@ -371,7 +371,7 @@ interact_hover_bare( gui_id_t win_id )
 
 /* Claim the pointer capture for `id` (held by `button`) -- the one sanctioned door for a HIGHER
    tier to start a press-drag, so chrome-side gestures claim through this instead of poking the
-   record.  Release is global: interaction_frame_reset drops active_id when `button` lifts. */
+   record.  Release is global: interact_new_frame drops active_id when `button` lifts. */
 void
 interact_claim( gui_id_t id, u8 button )
 {
@@ -398,7 +398,7 @@ void item_mark_edited( void ) { s_interaction.focused_id_edited = true; }
 /*==============================================================================================
     Frame drivers
 
-    Two resets, at two rates.  interaction_frame_reset turns over the GLOBAL records once per APP
+    Two resets, at two rates.  interact_new_frame turns over the GLOBAL records once per APP
     frame (one mouse, one keyboard, one hover window); ctx_new_frame turns over the frame scratch
     and ticks the retained clock once per CONTEXT.  Calling the global one per context would let
     the second ctx_begin clobber the hover_win / active_id the first resolved.
@@ -406,7 +406,7 @@ void item_mark_edited( void ) { s_interaction.focused_id_edited = true; }
 
 /* Once per app frame, from gui_frame_begin, before any ctx_begin. */
 void
-interaction_frame_reset( void )
+interact_new_frame( void )
 {
     /* Snapshot the active + focused ids before this frame mutates them: the previous-frame
        baselines the is_item_activated / is_item_deactivated edge readers (core/gui_query.c) and

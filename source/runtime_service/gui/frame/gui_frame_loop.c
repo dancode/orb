@@ -128,14 +128,14 @@ gui_init( gui_builtin_font_t font )
 
     /* init: shared pipeline / sampler / atlas + optional layers */
 
-    if ( !gui_backend_init() )
+    if ( !backend_init() )
         return false;
 
     /* The draw unit's resources (fonts + icons) register into the shared atlas the
        server just created -- the orchestrator boots them in dependency order. */
     if ( !gui_draw_boot() )
     {
-        gui_backend_exit();
+        backend_exit();
         return false;
     }
 
@@ -158,7 +158,7 @@ gui_init( gui_builtin_font_t font )
 
 #ifdef GUI_DEBUG_OVERLAY
     /* Debug overlay GPU buffers.  Non-fatal: a failure just leaves the overlay dark. */
-    if ( gui_debug_init() == false ) {
+    if ( dbg_init() == false ) {
          printf( "[gui] WARNING: debug overlay buffers failed; overlay disabled\n" );
     }
 #endif
@@ -184,7 +184,7 @@ gui_shutdown( void )
     s_frame_phase = GUI_PHASE_IDLE;
 
     #ifdef GUI_DEBUG_OVERLAY
-    gui_debug_shutdown();
+    dbg_shutdown();
     #endif
 
     /* Destroy GPU surfaces once -- the one global s_vp_pool (including any gui-owned floaters),
@@ -192,7 +192,7 @@ gui_shutdown( void )
     for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
         viewport_destroy( v );
     gui_draw_shutdown();      /* draw unit resources (fonts + icons) leave the atlas first */
-    gui_backend_exit();       /* shared pipeline / sampler / atlas */
+    backend_exit();       /* shared pipeline / sampler / atlas */
 
     /* Free all context blocks. */
     for ( u32 i = 0; i < s_ctx_pool_count; ++i )
@@ -297,7 +297,7 @@ gui_frame_begin( f32 dt )
     /* caption_inset is NOT cleared here.  Native shell windows republish it during the build, so
        the field always reflects the last frame the shell was active. */
 
-    /* Push last frame's cursor request to the OS BEFORE interaction_frame_reset promotes the new
+    /* Push last frame's cursor request to the OS BEFORE interact_new_frame promotes the new
        hover_win and io_frame_begin overwrites mouse_viewport -- cursor_flush reads both as the
        previous frame left them, keeping the requested shape and its target window coherent. */
 
@@ -306,7 +306,7 @@ gui_frame_begin( f32 dt )
     /* Promote last frame's render-stat accumulator to the published value BEFORE draw_reset, so a
        build that reads render_stats() this frame sees the previous frame's completed totals. */
 
-    gui_build_stats_publish();
+    build_stats_publish();
 
     /* Refresh the IO snapshot, computing s_io_dirty as a side-effect. */
     io_frame_begin( disp_w, disp_h, dt );
@@ -323,7 +323,7 @@ gui_frame_begin( f32 dt )
     s_frame_dirty = s_force_redraw
                  || io_dirty()
                  || g_ctx->retained.wants_redraw
-                 || gui_build_any_changed()
+                 || build_any_changed()
                  || STEP_FRAME_PENDING();   /* a latched stepper request (seek/capture/release)
                                                must reach its serving emit; per-context
                                                wants_redraw can be wiped by a later ctx_begin */
@@ -354,22 +354,22 @@ gui_frame_begin( f32 dt )
         /* Full rebuild: clear the draw list and tessellation so the emit phase writes fresh
            commands, and reset global interaction state for this frame's hit tests. */
         draw_reset( disp_w, disp_h );
-        gui_build_frame_reset();   /* s_frame_built = false; rebuilt on first render() */
+        build_frame_reset();   /* s_frame_built = false; rebuilt on first render() */
 
         /* Reset global interaction state exactly once per app frame.  hover_win promotion and
            active_id release happen here -- NOT in ctx_new_frame -- so subsequent ctx_begin
            calls for additional contexts do not clobber hover nominations from earlier ones. */
-        interaction_frame_reset();
+        interact_new_frame();
         drag_new_frame();          /* drag-and-drop lifecycle rides the same once-per-frame reset */
     }
-    /* Clean frame: draw_reset / gui_build_frame_reset / interaction_frame_reset are all
+    /* Clean frame: draw_reset / build_frame_reset / interact_new_frame are all
        skipped.  s_draw.cmds is preserved from the previous frame; s_frame_built remains true
        so cache_build_frame returns immediately and reuses the existing s_tess + s_dispatch.
        Interaction state (hover_win, active_id, focused_id) persists unchanged -- the cursor
        has not moved, so last frame's hover is still valid. */
 
 #ifdef GUI_DEBUG_OVERLAY
-    gui_debug_reset();         /* clear the overlay's per-frame geometry (always) */
+    dbg_reset();         /* clear the overlay's per-frame geometry (always) */
 #endif
 
     return s_frame_dirty;
@@ -398,7 +398,7 @@ gui_frame_end( void )
     /* Clean frame: no emit ran, the preserved draw list will be replayed verbatim -- patch the
        volatile widgets (gui()->volatile_cb registrations) in place so they keep animating. */
     if ( !s_frame_dirty )
-        gui_update_volatile();
+        volatile_update();
 
     /* Build cost concludes here: latch emit_ms for the perf overlay (render is timed separately). */
     perf_frame_end();
@@ -446,7 +446,7 @@ void
 gui_ctx_begin( gui_ctx_id_t ctx_handle )
 {
     /* Every widget this context emits lays out off the active font's metrics (s_style, scaled by
-       gui_style_apply/layout_compute) -- with none activated s_style is still zero-initialized and
+       gui_style_apply/metrics_compute) -- with none activated s_style is still zero-initialized and
        everything collapses to zero size (see gui_init's font_valid() gate).  Catch the missing
        font here, at the frame boundary, instead of as an invisible UI downstream: this is the
        first point in the lifecycle where "no font" is knowably wrong (init() with
@@ -604,7 +604,7 @@ gui_render( gui_vp_t vp, rhi_cmd_t cmd )
     f64 t0 = perf_render_begin();
     gui_render_flush( v->vb, v->ib, v->target, vp, cmd, v->disp_w, v->disp_h );
 #ifdef GUI_DEBUG_OVERLAY
-    gui_debug_flush( vp, cmd, v->disp_w, v->disp_h );   /* each viewport flushes its own rects */
+    dbg_flush( vp, cmd, v->disp_w, v->disp_h );   /* each viewport flushes its own rects */
 #endif
     perf_render_end( t0 );
 }

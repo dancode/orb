@@ -29,8 +29,8 @@
    shared num_edit_field (gui_text_edit.c); this wrapper owns only the input-style frame draw and,
    when not focused, the static value display.  Returns true and writes *out only on a commit. */
 static bool
-input_num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
-                 const char* fmt, bool is_int, double cur, double* out )
+num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
+           const char* fmt, bool is_int, double cur, double* out )
 {
     /* Box background and border. */
     draw_fill( box_r, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );
@@ -106,7 +106,7 @@ input_scalar( const char* label, double cur, double* out,
     gui_rect_t   box_r = { ctrl.x, ctrl.y, ctrl.w - btn_w, ctrl.h };
     gui_item_state_t st    = item_state( id, box_r, ITEM_FOCUSABLE );
 
-    bool   changed = input_num_field( id, box_r, st, fmt, is_int, cur, out );
+    bool   changed = num_field( id, box_r, st, fmt, is_int, cur, out );
     double base    = changed ? *out : cur;
 
     if ( has_steps )
@@ -184,7 +184,7 @@ input_float_n( const char* label, f32* v, u32 n, const char* fmt )
         gui_item_state_t st = item_state( sid, sub, ITEM_FOCUSABLE );
 
         double out;
-        if ( input_num_field( sid, sub, st, fmt, false, (double)v[ i ], &out ) )
+        if ( num_field( sid, sub, st, fmt, false, (double)v[ i ], &out ) )
         {
             v[ i ]  = (f32)out;
             changed = true;
