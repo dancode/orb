@@ -12,10 +12,10 @@
     gameplay never acts on a keystroke gui consumed (typing in a field) or a click that was
     really a widget / window drag.
 
-    Included by gui.c in the user/ tier (last of the tiers); reads s_interaction, s_build,
-    g_ctx->nav, g_ctx->popup.open_count, rect_hit (core/gui_ctx.c) and s_io (core/gui_io.c), all in
-    scope far above.  Internal readers (the frame overlay's hotkeys, the dashboard's hover
-    check) are deliberate dogfooding through the gui_host.h declarations.
+    Included by gui_core.c last -- everything it reads (s_interaction, s_scope, rect_hit from
+    core/gui_ctx.c; s_io from core/gui_io.c; g_ctx->nav and the popup count) is in scope far
+    above.  Internal readers (the frame overlay's hotkeys, the dashboard's hover check) go
+    through these same public declarations: deliberate dogfooding.
 
 ==============================================================================================*/
 // clang-format off

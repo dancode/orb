@@ -30,14 +30,15 @@
     Zero-on-create is part of the contract: a tenant's fields must make 0 the natural default
     (a "no sort" is 0, not -1), since a reclaimed or fresh slot always starts zeroed.
 
-    Included by gui.c after core/gui_id.c (the identity service that mints the keys) --
+    Included by gui_core.c after core/gui_id.c (the identity service that mints the keys) --
     g_ctx / g_ctx->retained come from core/gui_ctx.c above both.
 
 ==============================================================================================*/
 // clang-format off
 
-/* The small class's sizing tenant (gui_region_t) asserts its fit beside its definition
-   (flow/gui_scroll.c) -- this server does not see the tenants' shapes. */
+/* Each class's sizing tenant asserts its own fit beside its definition (gui_region_t in
+   flow/gui_scroll.c, gui_table_persist_t in chrome/table/gui_table.c) -- this server never sees
+   the tenants' shapes. */
 
 /*============================================================================================*/
 /* One class table: base array, slot stride, slot count.  Resolved from the requested size by
@@ -145,9 +146,6 @@ gui_state_get( gui_id_t id, u32 size )
 }
 
 /*============================================================================================*/
-/* Typed sugar: a zero-on-create T* persisted by id.  sizeof(T) must be <= GUI_STATE_BIG_CAP. */
-
-/*============================================================================================*/
 /* Read-only, non-allocating, non-stamping probe for `id`.  `size` must be the same tenant size
    the gets for this id use (the GUI_STATE_PEEK sugar passes sizeof(T)) -- it picks the class,
    and a mismatched size probes the wrong table.  Returns a pointer to the slot's payload when
@@ -174,10 +172,8 @@ gui_state_peek( gui_id_t id, u32 size )
 /* Pool load metric: live (touched this frame or last) and occupied (live + not-yet-reclaimed
    tombstones) slot counts per class.  Live is the real working set -- what the partition sizes
    should be judged against; occupied is how full the probe actually walks.  A full-table walk
-   (~1K slots), so call it when displaying (the perf overlay), not unconditionally per frame. */
-
-/* gui_state_usage_t lives in core/gui_core.h: the perf overlay (frame unit) reads the
-   pool usage across the unit seam. */
+   (~1K slots), so call it when displaying (the perf overlay, which reads gui_state_usage_t
+   across the unit seam via core/gui_core.h), not unconditionally per frame. */
 
 static void
 state_count_class( state_class_t c, u32* out_live, u32* out_used )
@@ -206,10 +202,6 @@ gui_state_usage( void )
     state_count_class( g, &u.big_live,   &u.big_used   );  u.big_cap   = g.count;
     return u;
 }
-
-/*============================================================================================*/
-/* Animation utilities (gui_anim_f32, ...) live in core/gui_anim.c,
-   resolved through the style unit which provides the color palette they blend. */
 
 // clang-format on
 /*============================================================================================*/

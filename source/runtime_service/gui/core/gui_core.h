@@ -17,18 +17,14 @@
 
 // clang-format off
 /*==============================================================================================
-    Loud-overflow reporting
+    Loud-overflow rule
 
-    Every fixed pool in the gui follows the same saturation rule: never fail hard, never be
-    silent.  The overflowing site degrades gracefully (drop / share / evict) but reports ONCE
-    per run so the symptom traces to its cap instead of reading as a rendering or input bug.
-    This macro is the report half: printf so the message reaches plain consoles (the engine log
-    may not be up yet), fflush so it lands before a follow-up ORB_ASSERT_MSG_ONCE can trap.
+    Every fixed pool in the gui saturates the same way: never fail hard, never be silent.  The
+    overflowing site degrades gracefully (drop / share / evict) but reports ONCE per run, so the
+    symptom traces to its cap instead of reading as a rendering or input bug.  The report macro
+    is GUI_WARN_ONCE, and it lives in the leaf shared kit (rect/gui_rect.h) rather than here --
+    the render server's pools follow the same rule and must not reach into this header for it.
 ==============================================================================================*/
-
-/* GUI_WARN_ONCE lives in rect/gui_rect.h: the render server's pools follow the same
-   saturation rule and it must not reach into this header for the report macro -- the leaf
-   shared kit is the one header every unit stands on. */
 
 /*==============================================================================================
     Server capacities
@@ -288,12 +284,10 @@ typedef struct
 
 } gui_retained_t;
 
-/* Frame clock + redraw request (core/gui_ctx.c) -- the read / request doors over the retained
-   record for layers above the server.  gui_frame_index() is the monotonic per-context build
-   counter (bumped at ctx_begin), read for emit-gating; redraw_request() raises the bound
-   context's dirty flag.  Consumers call these instead of reaching into g_ctx->retained -- the
-   record's shape stays the server's.  The owner (this unit's clock / anim / item writes, the
-   frame loop's clear + read) still touches the fields directly. */
+/* Frame clock + redraw request (core/gui_ctx.c) -- the read / request doors layers above the
+   server use instead of reaching into g_ctx->retained, so the record's shape stays the server's.
+   gui_frame_index() is the monotonic per-context build counter (bumped at ctx_begin), read for
+   emit-gating; redraw_request() raises the bound context's dirty flag. */
 u32  gui_frame_index( void );
 void redraw_request ( void );
 

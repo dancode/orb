@@ -15,8 +15,8 @@
     The keyed per-widget state pool that these ids address is the companion service in
     core/gui_state.c, included immediately after this file.
 
-    Included by gui.c after core/gui_ctx.c, which defines g_ctx (needed for g_ctx->retained /
-    gui_context_t) and the id-stack variables (s_id_stack[], s_id_sp) referenced below.
+    Included by gui_core.c after core/gui_ctx.c, which defines g_ctx (for the per-context id
+    salt) and the id-stack storage (s_id_stack[], s_id_sp) the verbs below operate on.
 
 ==============================================================================================*/
 // clang-format off
@@ -53,11 +53,9 @@ id_combine( gui_id_t seed, u32 key )
 }
 
 /*==============================================================================================
-    Id-scope stack functions
-
-    id_seed/push/pop operate on the s_id_stack[] / s_id_sp variables declared in gui_ctx.c.
-    The top of the stack is the seed every widget id combines against; regions seed it
-    automatically, and push_id / pop_id add temporary levels for repeated widgets in one region.
+    Id-scope stack verbs -- over the storage (s_id_stack[], s_id_sp) and under the contract both
+    declared in core/gui_ctx.c.  The top of the stack is the seed every widget id combines
+    against; over-deep pushes alias the top slot, and id_seed clamps its read to match.
 ==============================================================================================*/
 
 /* Current scope seed -- top of the stack, or NONE when empty (a bare top-level widget). */
@@ -83,9 +81,6 @@ id_pop( void )
 {
     if ( s_id_sp ) --s_id_sp;
 }
-
-/* The keyed state pool (gui_state_get / gui_state_peek / GUI_STATE) is the companion tracking
-   service in core/gui_state.c, included next. */
 
 /*==============================================================================================
 

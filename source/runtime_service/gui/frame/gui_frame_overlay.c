@@ -457,6 +457,20 @@ gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
 ==============================================================================================*/
 
 
+/* The master switch everything in this section is gated on: gui_debug_enable( true ) opts a host
+   into the debug driver at all, and NP_DOT then arms the individual hotkeys below. */
+
+static bool s_debug_enabled;
+
+void gui_debug_enable( bool enable )
+{
+    s_debug_enabled = enable;
+    if ( enable )
+        printf( "[gui] debug driver on -- press numpad '.' (NP_DOT) to arm the debug hotkeys\n" );
+}
+
+bool gui_debug_is_enabled( void ) { return s_debug_enabled; }
+
 static int  s_dbg_perf_mode;     /* perf overlay tier, NP_ADD cycles 0..4                   */
 static int  s_dbg_state_mode;    /* state overlay tier, NP_SUB cycles 0..3                  */
 static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */

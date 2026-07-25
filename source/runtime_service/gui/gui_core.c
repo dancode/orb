@@ -18,14 +18,15 @@
 
     It does NOT define the module API pointer storage (MOD_USE_RHI / MOD_USE_APP): those
     globals live in gui.c and are fetched once at module init; this unit reads app() through
-    the same inline accessors (extern g_*_api_ptr) from app_api.h -- the io half owns the
-    OS-input boundary (event drain, key snapshot, clipboard, hardware cursor).
+    the same inline accessors (extern g_*_api_ptr) from app_api.h, since it owns the OS-input
+    boundary (event drain, key snapshot, clipboard, hardware cursor).
 
     Include order matters: each file can reference statics from files included above it.
 
     core/gui_io.c        -- io snapshot service: app -> io, event drain, io_frame_begin/end, s_io
-    core/gui_ctx.c       -- ambient records (s_interaction, s_build, s_scope), context pool
-                             storage, per-frame drivers (ctx_new_frame, interaction_frame_reset)
+    core/gui_ctx.c       -- ambient records (s_interaction, s_build, s_scope), the bracketing
+                             stacks, the context pool + viewport table, the interact_* verbs,
+                             and the per-frame drivers (interaction_frame_reset, ctx_new_frame)
     core/gui_id.c        -- identity service: id_hash/combine, scope stack, the label grammar
     core/gui_state.c     -- keyed state pool: gui_state_get/peek, the three slot classes
     core/gui_surface.c   -- surface service: window records, placement channel, z dispenser,

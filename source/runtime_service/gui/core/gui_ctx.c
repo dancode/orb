@@ -1,139 +1,120 @@
 /*==============================================================================================
 
-    runtime_service/gui/core/gui_ctx.c -- Immediate-mode context state and per-frame drivers.
+    runtime_service/gui/core/gui_ctx.c -- the interact server's state, and the per-frame drivers
+    that turn it over.
 
-    Declares all persistent ambient and frame-scratch state (s_interaction, s_build, gui_nav_state_t,
-    layout_frame_t, gui_context_t), owns the VERBS over those records (the item-flag stack, the
-    cursor request, the interact_* arbitration doors), and drives the per-frame lifecycle via
-    interaction_frame_reset / ctx_new_frame.  One rule places a function here: it defines, reads,
-    writes, or resets an ambient record -- the POLICY over a record lives with its feature
-    (keyboard focus: core/gui_focus.c; nav registration: core/gui_nav_item.c).  Owns the
-    context pool storage (s_ctx_pool, ctx_bind); the PUBLIC multi-context lifecycle, the block
-    ALLOCATION (ctx_alloc_slot -- it sizes chrome's records, whole-stack knowledge), and the
-    memory-stats aggregation live in the frame unit.
+    One rule places code here: it DEFINES an ambient record, resets one, or is a bare verb over
+    one.  The POLICY over a record lives with its feature -- keyboard focus in core/gui_focus.c,
+    nav registration in core/gui_nav_item.c, the per-item recipe in core/gui_item.c.  The record
+    TYPES live in core/gui_core.h (s_interaction, s_scope) and core/gui_ctx.h (s_build,
+    gui_context_t); this file holds the instances.
 
-    ID hashing and the keyed state pool (id_hash, id_combine, id_seed/push/pop, gui_state_get,
-    GUI_STATE) are in core/gui_id.c + core/gui_state.c, included just after this file.
+    Sections, in file order:
 
-    Public IO accessors (gui_want_capture_*, gui_is_key_*, gui_is_mouse_*, etc.) are in
-    core/gui_query.c, the interact server's read surface.
+        ambient records   s_interaction, s_replay_mode, s_build, s_scope
+        bracketing        the item-flag stack + its verbs, the id-scope stack storage (verbs in
+                          core/gui_id.c), the popup nesting counter
+        context pool      s_ctx_pool + ctx_bind -- the whole multi-context seam
+        viewport table    s_vp_pool + the win_id -> slot and drawable-size lookups
+        pointer           rect_hit, the hardware-cursor request / flush
+        arbitration       the interact_* verbs over hover / active, the focus edit latch
+        frame drivers     interaction_frame_reset (once per APP frame), ctx_new_frame (once per
+                          CONTEXT), and the frame-clock / redraw doors over the retained record
 
-    Included by gui_core.c (the INTERACT SERVER unit) after core/gui_io.c so s_io is in scope.
+    Included by gui_core.c after core/gui_io.c, so s_io is in scope.
 
 ==============================================================================================*/
 // clang-format off
 
 /*==============================================================================================
-    State
+    Ambient records
+
+    One pointer, one keyboard, one mouse, so none of this is per-viewport or per-context: a
+    single set of globals every context nominates into during its emit.  Contexts build
+    sequentially on one thread, so the frame scratch is shared for the same reason -- each
+    context in turn targets whichever records are live.
 ==============================================================================================*/
 
-/* s_build.win.rec points at a live gui_window_t pool record (window types in core/gui_ctx.h; the
-   pool is reached through g_ctx) so window_end can write scroll / content extent back into it. */
+/* Hover / active / focus, persisting across frames.  Tier: ambient singular (ARCHITECTURE.md
+   sec 1).  Field notes worth keeping by the definition:
 
-/* Ambient interaction state -- the one live hover / active / focus, persisting across frames.  One
-   pointer, one keyboard, one mouse, so none of it is per-viewport or per-context: a single global
-   shared by every context, into which listening contexts nominate hover / active during their emit.
-   Tier: ambient singular (see ARCHITECTURE.md sec 1, state tiers).  The TYPE lives in
-   core/gui_core.h (gui_interaction_t, extern'd for the carved units); this file stays
-   the owner: it defines, resets, and turns the record over.  Field notes worth keeping close:
-
-   - Auto-repeat (repeat_t / repeat_on, GUI_ITEM_BUTTON_REPEAT): only one widget is active at a
-     time, so a single timer suffices; both reset on the press frame.
-   - Window occlusion is one frame deferred: window_begin nominates into next_hover_win,
-     ctx_new_frame promotes it to hover_win; only the hover window hit-tests its widgets.
-   - mouse_cursor: last writer wins (exactly one widget hovers; resize bands suppress widget
-     hover); cursor_flush pushes it to the OS one frame later; reset each frame.
-   - Focus departure (focused_id_at_frame_start / focus_ended_*): the departing widget's id +
-     edit history latch for one frame so is_item_deactivated_after_edit can read them. */
+     repeat_t / repeat_on  one timer serves GUI_ITEM_BUTTON_REPEAT -- only one widget is active
+                           at a time; both reset on the press frame.
+     hover_win             one frame deferred: window_begin nominates into next_hover_win,
+                           interaction_frame_reset promotes it.  Only the hover window
+                           hit-tests its widgets.
+     mouse_cursor          last writer wins (exactly one widget hovers, and resize bands
+                           suppress widget hover); cursor_flush pushes it to the OS one frame
+                           later; reset each frame.
+     focused_id_at_frame_start / focus_ended_*
+                           the departing widget's id + edit history latch for one frame so
+                           is_item_deactivated_after_edit can read them. */
 
 gui_interaction_t s_interaction;
 
-/* True only while a volatile-widget callback is replayed standalone on an idle frame; set/cleared
-   by gui_replay_scope_enter/_exit (chrome/widgets/gui_volatile.c).  Ambient frame-phase state, same tier as
-   hover_id/active_id: item_state (core/gui_item.c) reads it inline to short-circuit before any
-   hit-test or write to s_interaction/s_build -- a replay renders against the hover/active/focus the
-   last real frame established and can never acquire state or see a fresh click, since interaction is
-   resolved only on real frames. */
+/* True only while a volatile-widget callback is replayed standalone on an idle frame; set and
+   cleared by gui_replay_scope_enter/_exit (chrome/widgets/gui_volatile.c).  Same tier as
+   hover_id/active_id: item_state reads it to short-circuit before any hit-test or record write,
+   so a replay renders against the state the last real frame established and can never acquire
+   state or see a fresh click. */
 
 bool s_replay_mode;
 
-/* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as the
-   widget tree is walked.  Nothing here survives begin_frame: it is set and repopulated by the
-   window_begin / child_begin / widget calls, never read across a frame boundary.  Because contexts
-   build sequentially on one thread, this stays a single global builder reused by each context in
-   turn rather than per-context state.  Tier: frame scratch. */
+/* Frame-build scratch -- "where am I emitting right now", rebuilt every frame as the widget
+   tree is walked.  Nothing here survives frame_begin.  Field notes:
 
-/* The TYPE lives in core/gui_ctx.h (gui_build_t, extern'd for the carved units);
-   this file stays the owner (defines and resets it).  Notes worth keeping by the definition:
+     win                   everything window_begin stamps and window_end consumes, in ONE record,
+                           so the popup seam saves and restores it with a single assignment; the
+                           fields after it are frame-global channels that must SURVIVE that seam.
+     item_flags / next_*   the push-model behavior set; item_flags_take resolves the value for
+                           the widget now emitting into s_scope.flags.
+     combo_open / combo_item_clicked
+                           combo dropdown coordination (gui_combo.c) -- a click in the body
+                           dismisses the combo with no caller code; reset each frame as a
+                           safety net.
 
-   - win: everything window_begin stamps and window_end consumes, one record (gui_win_ctx_t) so
-     the popup seam saves/restores it with a single assignment; the fields after it are
-     frame-global channels that must SURVIVE that seam.
-   - Layout pen + scroll region state live on the layout-frame stack below; the window is just
-     the root frame.
-   - item_flags / next_set / next_val: the push-model behavior set; the value resolved for the
-     widget currently emitting is latched into s_scope.flags by item_flags_take.
-   - combo_open / combo_item_clicked: combo dropdown coordination (gui_combo.c) -- a click in
-     the body dismisses the combo with no caller code; reset each frame as a safety net.
-   - Nav state is NOT part of this scratch: it lives in g_ctx->nav so the builder stays small. */
+   Layout pen and scroll state are NOT here (they live on the layout-frame stack, the window
+   being just its root frame), nor is nav state (g_ctx->nav) -- the builder stays small. */
 
 gui_build_t s_build;
 
-/* The interaction scope -- the declared contract between composition and behavior; the full
-   contract lives with the type (gui_scope_t, core/gui_core.h).  Stamped directly by composition
-   at its seams, read by behavior, saved/restored wholesale at the popup seam -- a field added to
-   the type only needs its per-frame reset in ctx_new_frame below.  Tier: frame scratch, same
-   lifetime as s_build. */
+/* The interaction scope -- the declared contract between composition and behavior (full contract
+   with the type, core/gui_core.h).  Composition stamps it at its seams, behavior reads only it
+   (never s_build) and publishes its result back into last_*.  The overlay seam saves and restores
+   it wholesale, so a field added to the type only needs its per-frame reset in ctx_new_frame.
+   Tier: frame scratch, same lifetime as s_build. */
 
 gui_scope_t s_scope;
 
-/*==============================================================================================
-
-    Debug Overlay Accessors
-
-==============================================================================================*/
-
 #ifdef GUI_DEBUG_OVERLAY
 
-/* The debug overlay (gui_debug_overlay.c) lives in the render backend unit and tags each captured rect
-   with the ambient build viewport. s_build is private to this unit, so the overlay reads it
-   across the unit seam through this accessor (declared in gui_render.h, Debug builds only). */
+/* s_build is private to this unit; the debug overlay (gui_debug_overlay.c, in the render backend
+   unit) tags each captured rect with the ambient build viewport through this accessor -- declared
+   in gui_render.h, Debug builds only. */
 
 u32 gui_dbg_build_viewport( void ) { return s_build.win.viewport; }
 
 #endif
 
 /*==============================================================================================
-    Keyboard navigation state (g_ctx->nav)
-
-    The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather than
-    the mouse -- plus the menu-bar state machine layered on it.  gui_nav_state_t is defined in
-    core/gui_ctx.h; the instance is the g_ctx->nav member of the bound context, reached through g_ctx, so
-    each context keeps its own cursor.  Movement is structural, not spatial: every item of the
-    scoped window records itself into the nav item list as it emits (with the region + line the
-    layout engine stamped when it placed it), and the next nav_new_frame resolves a move as index
-    math over that list -- one frame deferred, exactly as hover_win lags the cursor.  gui_nav.c
-    drives it; nav_item_register (core/gui_nav_item.c) is the per-item seam.
-==============================================================================================*/
-
-/* ... this is inside the context now */
-
-/*==============================================================================================
     Item-flag stack
 
-    push_item_flag saves the current merged value here and pop_item_flag restores it, so a push
-    nests cleanly regardless of which bits it touched.  An over-deep push aliases the top slot and
-    is still counted truthfully, mirroring the id / layout stacks, so push/pop stay paired.
+    The push-model behavior set (disabled, button-repeat, ...).  item_flag_push saves the current
+    merged value and item_flag_pop restores it, so a push nests cleanly regardless of which bits
+    it touched; item_flag_next queues a one-shot override for the next widget only.  item_flags_
+    take resolves the two into the per-item scope at the emit seam.
+
+    An over-deep push aliases the top slot and is still counted truthfully, mirroring the id /
+    layout stacks, so push/pop stay paired past the cap.
 ==============================================================================================*/
 
 #define GUI_ITEM_FLAG_DEPTH 16
 
 static gui_item_flags_t s_item_flag_stack[ GUI_ITEM_FLAG_DEPTH ];
-static u32                s_item_flag_sp;
+static u32              s_item_flag_sp;
 
-/* Push: save the current merged flags, then set or clear `flag` in the live set.  Non-static:
-   the public brackets (gui_push_item_flag / gui_disabled_begin, style/gui_stacks.c) wrap these
-   from the frame unit. */
+/* Save the current merged flags, then set or clear `flag` in the live set.  Non-static: the
+   public brackets (gui_push_item_flag / gui_disabled_begin, style/gui_stacks.c) wrap these. */
 void
 item_flag_push( gui_item_flags_t flag, bool enable )
 {
@@ -145,7 +126,7 @@ item_flag_push( gui_item_flags_t flag, bool enable )
     else          s_build.item_flags &= ~flag;
 }
 
-/* Pop: restore the merged flags saved by the matching push. */
+/* Restore the merged flags saved by the matching push. */
 void
 item_flag_pop( void )
 {
@@ -155,8 +136,8 @@ item_flag_pop( void )
     s_build.item_flags = s_item_flag_stack[ i ];
 }
 
-/* Next-item override: mark `flag` as controlled for the next widget, with its on/off value.
-   Consumed (and cleared) by item_flags_take when that widget emits -- no pop needed. */
+/* Mark `flag` as controlled for the NEXT widget, with its on/off value.  Consumed and cleared by
+   item_flags_take when that widget emits -- no pop needed. */
 void
 item_flag_next( gui_item_flags_t flag, bool enable )
 {
@@ -165,12 +146,11 @@ item_flag_next( gui_item_flags_t flag, bool enable )
     else          s_build.next_val &= ~flag;
 }
 
-/* Take the flags for the item now emitting: the stack value with the one-shot next-item override
-   applied over it (the override wins on the bits it controls), then clear the override and latch
-   the result into the scope for item_state / widgets to read.  This is the PURE half of the
-   per-item seam: the style commit and the ambient draw application (alpha dim, default rounding)
-   live in the item_flags_resolve wrapper (stock/gui_adornment.c) -- the interact server never
-   touches a style value or the draw state. */
+/* Take the flags for the item now emitting: the stack value with the one-shot override applied
+   over it (the override wins on the bits it controls), then clear the override and latch the
+   result into the scope for item_state / widgets to read.  The PURE half of the per-item seam --
+   the style commit and ambient draw application live in item_flags_resolve
+   (stock/gui_adornment.c); this server never touches a style value or the draw state. */
 gui_item_flags_t
 item_flags_take( void )
 {
@@ -182,103 +162,92 @@ item_flags_take( void )
 }
 
 /* Clear the per-item scope before chrome runs -- the pure half of item_flags_chrome_reset
-   (stock/gui_adornment.c), which also restores the ambient draw/style state.  Window/child
-   borders, scrollbars, and titlebars are not items; without this they would inherit whatever
-   the last body widget latched. */
+   (stock/gui_adornment.c), which also restores the ambient draw/style state.  Window borders,
+   scrollbars, and title bars are not items; without this they would inherit whatever the last
+   body widget latched. */
 void
 item_flags_chrome_drop( void )
 {
-    s_scope.flags  = GUI_ITEM_NONE;
+    s_scope.flags      = GUI_ITEM_NONE;
     s_scope.nav.placed = false;   /* chrome is not an item to keyboard nav either: whatever
-                                          interacts past this seam lists in the F6 chrome lane */
+                                     interacts past this seam lists in the F6 chrome lane */
 }
 
 /*==============================================================================================
-    Popup stack
+    Id-scope stack (verbs in core/gui_id.c)
 
-    The open popups form a stack, parent -> child: index 0 is the top-level popup, each deeper index
-    one opened inside the one above.  It is the source of truth for open / close, nesting, and the
-    click-outside policy; the popups themselves render as ordinary windows on a reserved high z-band
-    (gui_popup.c).  Two counters, split by lifetime:
+    The top of this stack is the seed every widget id combines against, so identical labels in
+    different scopes never collide.  Regions seed it automatically (layout_push_region /
+    layout_pop_region); push_id / pop_id add temporary levels for repeated widgets inside one
+    region (list rows keyed by index).  Reset to empty each frame.
 
-      g_ctx->popup.open_count  -- persists across frames (per context); the live open set is [0, count).
-      s_popup_begin_count -- rebuilt each frame; the popup nesting depth while emitting.  popup_open
-                             writes a request at this depth; popup_begin matches its id against it.
-
-    A popup is a top-level overlay begun while its parent window is still open, yet it must lay out,
-    clip, and paint independent of that parent.  gui_overlay_save_t (chrome/gui_chrome.h) holds the parent
-    context -- whole-struct copies of the window context, interaction scope, and draw scope, plus the
-    parent's top layout frame -- so popup_end restores the parent verbatim; the stack counters
-    balance through the normal push/pop, so no slot is reused or lost.
+    Over-deep pushes alias the top slot rather than writing past the array, and id_seed clamps its
+    read the same way -- so deep nesting degrades instead of crashing.
 ==============================================================================================*/
 
-/* The open set (g_ctx->popup.open) and its count (g_ctx->popup.open_count) are per-context members reached
-   through g_ctx; s_popup_begin_count is per-frame scratch and stays a plain global. */
-u32           s_popup_begin_count;   // current popup nesting depth (rebuilt per frame)
+#define GUI_ID_STACK_DEPTH 32
+
+static gui_id_t s_id_stack[ GUI_ID_STACK_DEPTH ];
+u32             s_id_sp;
 
 /*==============================================================================================
-    Keyed state pool -- persistent per-id widget state.
+    Popup nesting depth (frame scratch)
 
-    The store a widget uses to keep a few bytes alive across frames, keyed by its id (a region's
-    scroll offset, a tree node's open flag, a combo's popup state).  It is a member of the bound
-    context's retained store (gui_retained_t); gui_state_get and the open-addressing / tombstone
-    contract live in core/gui_state.c, next to the id system that keys it (core/gui_id.c).
+    The open popup SET persists per context (g_ctx->popup.open / open_count, ordered parent ->
+    child).  This counter is its per-frame half: the nesting depth while emitting.  popup_open
+    writes a request at this depth and popup_begin matches its id against it, so the two counters
+    balance through the normal push/pop and no slot is reused or lost.  The stack contract itself
+    is chrome/popup/gui_popup.c's.
 ==============================================================================================*/
+
+u32 s_popup_begin_count;   // current popup nesting depth (rebuilt per frame)
 
 /*==============================================================================================
-    gui_context_t -- the bound per-context retained state ("bind and use").
+    Context pool -- the whole multi-context seam
 
-    A context is the emission session the code binds once and emits ALL its windows into; it owns the
-    state that must persist between frames for that UI.  Every retained access in the module spells
-    the bound context out -- g_ctx->retained (id salt + frame clock + keyed state pool), g_ctx->nav
-    (the nav cursor location + menu mode), the popup open-set, the window / dock pools -- so
-    per-context state is visibly distinct from the global s_* scratch at every call site, and
-    switching contexts is a single pointer assignment (ctx_bind): no copy, no backup/restore.
+    A context is the emission session code binds once and emits ALL its windows into; it owns the
+    state that must persist between frames for that UI (gui_context_t, core/gui_ctx.h).  Slot 0 is
+    the default context -- bound at init, freed only at shutdown, never torn down by ctx_destroy;
+    slots 1..N come from ctx_create and share the same single-malloc block layout.  The storage is
+    the server's; the PUBLIC lifecycle and the block ALLOCATION (which sizes chrome's records, so
+    it needs whole-stack type visibility) live in frame/gui_context.c.
 
-    The frame clock (g_ctx->retained.frame) advances per context, at ctx_begin, NOT per app-frame: a
-    context not rebuilt on a given frame must not tick, or its live keyed-state entries would read as
-    cold and be reclaimed (losing scroll / open state) while it is merely hidden.  Window / popup /
-    combo "appearing" detection keys off the same per-context clock.
+    Binding copies nothing, and every retained access spells the bound context out (g_ctx->retained,
+    g_ctx->nav, g_ctx->win) so per-context state reads as distinct from the global s_* scratch at
+    every call site.
 
-    Ambient state (one user: s_interaction, s_io) and frame scratch (s_build, the stacks, s_draw) are
-    NOT per context -- they stay global and target whichever context is bound.  Viewports are not
-    per-context either (s_vp_pool, above): every context shares the same real OS windows / RHI
-    contexts, and differs from another only in which of its OWN windows assign into which slot.
+    The frame clock (g_ctx->retained.frame) advances per CONTEXT at ctx_begin, not per app frame:
+    a context not rebuilt on a given frame must not tick, or its live keyed-state entries would
+    read as cold and be reclaimed -- losing scroll / open state -- while it is merely hidden.
 ==============================================================================================*/
-
-/* Context pool.  Slot 0 is the default context (heap-allocated and bound at init, freed only at
-   shutdown -- never torn down by ctx_destroy at runtime); slots 1..N are secondary contexts from
-   ctx_create, all sharing the same single-malloc block layout.  Each context's `listening` flag
-   gates whether it receives hover / click / nav input. */
-
-/* GUI_CTX_POOL_MAX lives in core/gui_ctx.h: the public lifecycle (frame/gui_context.c) walks
-   the pool too.  The pool itself is the interact server's storage; the frame unit reaches it
-   through the externs there. */
 
 gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
 u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
+gui_context_t* g_ctx = NULL;       /* the bound context (extern'd in core/gui_ctx.h) */
 
-/* bound context (extern'd in core/gui_ctx.h for the carved units) */
-gui_context_t* g_ctx = NULL;   
-
-/* The one real viewport table -- see the extern comment in core/gui_ctx.h.  A plain zero-init
-   global, not part of any context's malloc block: it is sized once at compile time (APP_WIN_MAX,
-   the same small cap RHI_CTX_MAX matches) and outlives every context. */
-
-gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
-u32            s_vp_count;
-
-/* Bind the active context; every alias above resolves into it from here on.  NULL rebinds the
-   default.  This is the whole multi-context seam -- no state is copied. */
+/* Bind the active context; NULL rebinds the default. */
 void
 ctx_bind( gui_context_t* ctx )
 {
     g_ctx = ctx ? ctx : s_ctx_pool[ 0 ];
 }
 
-/* Resolve an app win_id to its viewport index.  Searches the one global viewport table (s_vp_pool)
-   for a live slot (one with GPU buffers) whose recorded win_id matches; falls back to 0 (main
-   swapchain) if none found.  Context-independent -- there is only one table.
+/*==============================================================================================
+    Viewport table -- the one real surface set
+
+    Not per-context: OS windows and RHI contexts are a genuinely global, small, fixed-size
+    resource (APP_WIN_MAX), so every context that ever existed shares this ONE table and differs
+    from another only in which of its own windows assign into which slot.  [0] is the main
+    swapchain, the rest are floaters.  A plain zero-init global -- not part of any context's
+    malloc block -- sized once at compile time and outliving every context; the open/close
+    lifecycle over it is frame/gui_viewport.c's.
+==============================================================================================*/
+
+gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
+u32            s_vp_count;
+
+/* Resolve an app win_id to its viewport slot: the live slot (one with GPU buffers) whose recorded
+   win_id matches, else 0 (the main swapchain).  Context-independent -- there is only one table.
    Forward-declared in core/gui_ctx.h; called by the mouse-input path in core/gui_io.c. */
 static u32
 viewport_index_for_window( i32 win_id )
@@ -286,32 +255,22 @@ viewport_index_for_window( i32 win_id )
     for ( u32 i = 0; i < APP_WIN_MAX; ++i )
         if ( rhi_handle_valid( s_vp_pool[ i ].vb ) && s_vp_pool[ i ].win_id == win_id )
             return i;
-    return 0;   /* no live slot matches -> main swapchain surface */
+    return 0;
 }
 
-/*==============================================================================================
-    Id-scope stack
+/* Drawable size of a surface: its own extent once opened, else the s_io snapshot of the primary
+   OS window (0 = not yet opened, or closed).  Every window-placement and clip computation goes
+   through these rather than spelling the fallback out inline. */
 
-    The top of this stack is the seed every widget id combines against, so identical labels in
-    different scopes never collide.  Regions seed it automatically (layout_push_region pushes the
-    region id, layout_pop_region restores), and push_id / pop_id add temporary levels for repeated
-    widgets inside one region (e.g. list rows keyed by index).  Reset to empty each frame.
-
-    Over-deep pushes alias the top slot rather than writing past the array, and id_seed clamps its
-    read the same way -- mirroring the layout stack, so deep nesting degrades instead of crashing.
-==============================================================================================*/
-
-#define GUI_ID_STACK_DEPTH 32
-
-static gui_id_t s_id_stack[ GUI_ID_STACK_DEPTH ];
-u32        s_id_sp;
-
-/* id_seed / id_push / id_pop / id_hash / id_combine and the keyed-state pool (gui_state_get,
-   GUI_STATE) are in core/gui_id.c + core/gui_state.c, included just after this file. they operate on s_id_stack / s_id_sp
-   and g_ctx->retained (via g_ctx) defined here. */
+f32 vp_w( gui_vp_t vp ) { i32 w = s_vp_pool[ vp ].disp_w; return w > 0 ? (f32)w : (f32)s_io.display_w; }
+f32 vp_h( gui_vp_t vp ) { i32 h = s_vp_pool[ vp ].disp_h; return h > 0 ? (f32)h : (f32)s_io.display_h; }
 
 /*==============================================================================================
-    rect_hit -- true when the mouse cursor (from s_io) is inside the given rect
+    Pointer hit test
+
+    Cursor (s_io) inside a rect -- the one primitive every hover gate, chrome grab, and hover
+    nomination is built on.  Its rect-vs-rect sibling (rect_intersect) is shared geometry defined
+    in gui.c ahead of the unity includes, so the draw units can use it for clipping too.
 ==============================================================================================*/
 
 bool
@@ -321,36 +280,26 @@ rect_hit( gui_rect_t r )
         && s_io.mouse_y >= r.y && s_io.mouse_y < r.y + r.h;
 }
 
-/* rect_intersect (rect overlap) is a shared geometry helper defined in gui.c, ahead of the
-   unity includes, so gui_emit_draw.c can use it for clip intersection too. */
-
-/* Directional moves are resolved structurally over the nav item list (gui_nav.c), not scored
-   over rects -- the geometric scorer that lived here (nav_score_dir) is gone with it. */
-
 /*==============================================================================================
     Hardware cursor
 
     gui owns the OS cursor shape only while it owns the mouse (hover_win set, or a widget drag in
-    flight) -- the same want_capture_mouse fence non-UI code gates on.  A widget requests a shape for
-    the frame with cursor_set; cursor_flush (called at frame_begin) pushes the PREVIOUS frame's
-    request to the OS window the cursor was over, deferred one frame exactly like hover_win.
-
-    app()->window_set_cursor is sticky (it latches win->cursor), so the request is flushed only on a
-    change, and on the frame gui releases the mouse it pushes ARROW once so a stale I-beam / resize
-    shape does not linger on that window -- after which the cursor is left to the host (game scene).
+    flight) -- the same want_capture_mouse fence non-UI code gates on.  A widget requests a shape
+    for the frame with cursor_set; cursor_flush pushes the PREVIOUS frame's request to the OS
+    window the cursor was over, deferred one frame exactly like hover_win.
 ==============================================================================================*/
 
-/* Request a hardware cursor shape for this frame.  Last writer wins (one hover per frame). */
-void cursor_set( app_cursor_t c ) 
-{ 
-    s_interaction.mouse_cursor = c; 
+/* Request a shape for this frame.  Last writer wins (one hover per frame). */
+void cursor_set( app_cursor_t c )
+{
+    s_interaction.mouse_cursor = c;
 }
 
-/* Flush the requested cursor to the OS window under the pointer.  Reads last frame's request +
-   hover state (called before interaction_frame_reset promotes the new frame's hover).  Dedupes on
-   (window, shape) so an unchanged cursor is not re-posted every frame.  Non-static: called
-   once per app frame from gui_frame_begin (frame/gui_frame_loop.c). */
-
+/* Push the requested shape to the OS window under the pointer.  Reads last frame's request +
+   hover state (called before interaction_frame_reset promotes the new frame's hover).
+   app()->window_set_cursor is sticky, so dedupe on (window, shape); and on the frame gui releases
+   the mouse, push ARROW once so a stale I-beam / resize shape does not linger -- after which the
+   cursor belongs to the host (game scene).  Called once per app frame from gui_frame_begin. */
 void
 cursor_flush( void )
 {
@@ -377,8 +326,7 @@ cursor_flush( void )
     }
     else if ( s_flushed_win >= 0 )
     {
-        /* Release edge: gui no longer owns the mouse -- clear our shape once, then leave the
-           cursor to the host so game / scene code can set its own. */
+        /* Release edge: clear our shape once, then leave the cursor to the host. */
         if ( s_flushed_cur != APP_CURSOR_ARROW )
             app()->window_set_cursor( s_flushed_win, APP_CURSOR_ARROW );
         s_flushed_win = -1;
@@ -389,12 +337,12 @@ cursor_flush( void )
 /*==============================================================================================
     Interaction arbitration -- the verbs over s_interaction, defined with the record.
 
-    The read half is the questions every gesture gate asks, named once so a compound gate reads
-    as a sentence at the call site instead of a chain of raw field comparisons; the write half is
-    the two sanctioned doors a higher tier starts a gesture through.  core/ and interact/ are the
-    only writers of the arbitration fields: everything above claims through these and reads the
-    record for gating, never writes it raw.  Pure over the record -- no policy, no rect math; the
-    per-item recipe that runs them in order is item_state (core/gui_item.c).
+    The read half is the questions every gesture gate asks, named once so a compound gate reads as
+    a sentence instead of a chain of raw field comparisons; the write half is the two sanctioned
+    doors a higher tier starts a gesture through.  core/ and interact/ are the only writers of the
+    arbitration fields: everything above claims through these and reads the record for gating.
+    Pure over the record -- no policy, no rect math; the per-item recipe that runs them in order
+    is item_state (core/gui_item.c).
 ==============================================================================================*/
 
 /* Nothing holds the pointer capture: no widget, drag, or resize is in flight. */
@@ -411,8 +359,8 @@ interact_held( gui_id_t id )
     return s_interaction.active_id == id;
 }
 
-/* The cursor is over window `win_id`'s bare surface: it is the front-most window under the
-   cursor AND no widget sits under the cursor -- the gate for chrome gestures (title-bar drag,
+/* The cursor is over window `win_id`'s BARE surface: it is the front-most window under the cursor
+   AND no widget sits beneath the cursor -- the gate for chrome gestures (title-bar drag,
    double-click collapse, context-menu press) that must yield to any widget above them. */
 bool
 interact_hover_bare( gui_id_t win_id )
@@ -420,11 +368,9 @@ interact_hover_bare( gui_id_t win_id )
     return s_interaction.hover_win == win_id && s_interaction.hover_id == GUI_ID_NONE;
 }
 
-/* Claim the pointer capture for `id` (held by `button`) -- the write half of the pair above.
-   The one sanctioned door for a HIGHER tier to start a press-drag gesture, so chrome-side
-   gestures (window text selection's fallback press) claim through this verb instead of poking
-   the record directly.  Release is global, as for every gesture: interaction_frame_reset below
-   drops active_id when `button` lifts. */
+/* Claim the pointer capture for `id` (held by `button`) -- the one sanctioned door for a HIGHER
+   tier to start a press-drag, so chrome-side gestures claim through this instead of poking the
+   record.  Release is global: interaction_frame_reset drops active_id when `button` lifts. */
 void
 interact_claim( gui_id_t id, u8 button )
 {
@@ -432,33 +378,39 @@ interact_claim( gui_id_t id, u8 button )
     s_interaction.active_button = button;
 }
 
-/* Point the hover-window arbitration at `owner`, making every OTHER window inert for the rest
-   of this frame: item_state gates all hover on s_scope.win == hover_win, so redirecting
-   hover_win freezes everything behind the owner with no per-widget code -- the window-scale
-   analogue of active_id drag-modality.  The verb behind the popup modal fence
-   (popup_apply_modal). */
+/* Point hover arbitration at `owner`, making every OTHER window inert for the rest of this frame:
+   item_state gates all hover on s_scope.win == hover_win, so redirecting hover_win freezes
+   everything behind the owner with no per-widget code -- the window-scale analogue of active_id
+   drag-modality.  The verb behind the popup modal fence (popup_apply_modal). */
 void
 interact_hover_fence( gui_id_t owner )
 {
     s_interaction.hover_win = owner;
 }
 
+/* Mark the focused item as edited this frame -- called by input_field_edit whenever the buffer
+   changes.  Accumulates in focused_id_edited (never cleared while focus stays); frame_end
+   snapshots it into focus_ended_edited when focus departs, so is_item_deactivated_after_edit can
+   read it for one frame after. */
+void item_mark_edited( void ) { s_interaction.focused_id_edited = true; }
+
 /*==============================================================================================
-    ctx_new_frame -- reset per-frame hover state; call at the start of each frame
+    Frame drivers
+
+    Two resets, at two rates.  interaction_frame_reset turns over the GLOBAL records once per APP
+    frame (one mouse, one keyboard, one hover window); ctx_new_frame turns over the frame scratch
+    and ticks the retained clock once per CONTEXT.  Calling the global one per context would let
+    the second ctx_begin clobber the hover_win / active_id the first resolved.
 ==============================================================================================*/
 
-/* Reset the per-frame GLOBAL interaction snapshot.  Called ONCE per application frame from
-   gui_frame_begin before any ctx_begin -- shared across all contexts (there is one mouse,
-   one keyboard, one hover window).  Must NOT be called from ctx_new_frame (which runs per
-   context) or the second ctx_begin would clobber hover_win/active_id set by the first. */
+/* Once per app frame, from gui_frame_begin, before any ctx_begin. */
 void
 interaction_frame_reset( void )
 {
-    /* Snapshot the active item before this frame mutates it -- the previous-frame baseline the
-       is_item_activated / is_item_deactivated edge readers compare against (core/gui_query.c). */
-    s_interaction.active_id_prev = s_interaction.active_id;
-
-    /* Snapshot focused_id so frame_end can detect whether focus moved this frame. */
+    /* Snapshot the active + focused ids before this frame mutates them: the previous-frame
+       baselines the is_item_activated / is_item_deactivated edge readers (core/gui_query.c) and
+       frame_end's focus-departure check compare against. */
+    s_interaction.active_id_prev            = s_interaction.active_id;
     s_interaction.focused_id_at_frame_start = s_interaction.focused_id;
 
     /* Widget hover is rebuilt from hit tests during emission; clear it now. */
@@ -481,49 +433,38 @@ interaction_frame_reset( void )
     }
 
     /* Drop keyboard focus on any press; the widget under the cursor re-claims it immediately
-       (input_text sets focused_id from hover_id + press this same frame).  EXCEPTION -- an
-       exclusive input mode (a GUI_WIN_MODAL window; the dev console) holds its focus the way a
-       game menu holds a selection: you cannot "select nothing" inside it.  While the mode owns the
-       focused widget, a press on non-focusable dead space keeps the focus instead of clearing it;
-       a press on another focusable widget in the mode still moves focus (that widget overwrites
-       focused_id in item_state).  This is what lets the console input keep its caret while the
-       user sweeps a scrollback text selection -- the mode stays "on the input".  The mode itself
-       and both of its rules live in core/gui_focus.c; this is the HOLD rule's first half. */
+       (input_text sets focused_id from hover_id + press this same frame).  EXCEPTION -- the HOLD
+       rule: while a live exclusive input mode (a GUI_WIN_MODAL window; the dev console) owns the
+       focused widget, a press on non-focusable dead space keeps the focus instead of clearing it,
+       so the console input holds its caret while the user sweeps a scrollback selection.  A press
+       on another focusable widget in the mode still moves focus (item_state overwrites
+       focused_id).  The mode and both of its rules live in core/gui_focus.c. */
     if ( s_io.mouse_pressed[ 0 ] && !focus_scope_holds( s_interaction.focused_id ) )
         s_interaction.focused_id = GUI_ID_NONE;
 
     /* Cleared each frame; the focused text field re-asserts it during its emit (input_field_edit). */
     s_interaction.focus_has_selection = false;
 
-    /* Fresh cursor request for the new frame -- defaults to the arrow until a widget asks otherwise. */
+    /* Fresh cursor request -- the arrow until a widget asks otherwise. */
     s_interaction.mouse_cursor = APP_CURSOR_ARROW;
 }
 
-/* Mark the currently focused item as edited this frame.  Called by input_field_edit whenever the
-   buffer changes.  Accumulates in focused_id_edited (never cleared while focus stays); frame_end
-   snapshots it into focus_ended_edited when focus departs so is_item_deactivated_after_edit can
-   read it for one frame after the focus moves. */
-void item_mark_edited( void ) { s_interaction.focused_id_edited = true; }
-
-/* Per-context frame reset: rebuilds the frame-scratch and per-context retained state.
-   Called by ctx_begin (frame/gui_frame_loop.c) for every context -- does NOT touch the global
-   s_interaction fields (those are reset once per app frame by interaction_frame_reset). */
+/* Once per context, from ctx_begin (frame/gui_frame_loop.c).  Touches no global s_interaction
+   field -- those are the reset above.  The layout-stack reset and the per-frame STYLE reset are
+   the flow and style units' own; ctx_begin pairs all three, since this server knows nothing of
+   either. */
 void
 ctx_new_frame( void )
 {
-    /* Last-item introspection resets to "no item": a query before any widget this frame (or in
-       a frame that emits none) reports false rather than reading a stale rect / status. */
+    /* Last-item introspection resets to "no item": a query before any widget this frame (or in a
+       frame that emits none) reports false rather than reading a stale rect / status. */
     s_scope.last_id     = GUI_ID_NONE;
     s_scope.last_rect   = ( gui_rect_t ){ 0 };
     s_scope.last_status = ( gui_item_state_t ){ 0 };
 
-    /* The layout stack's frame reset (s_layout_sp = 0) rides gui_ctx_begin -- the
-       stack is the flow unit's, and the orchestrator pairs the two resets
-       (ctx_new_frame + style_new_frame).  The interaction clip starts at the full display,
-       and the wheel is unclaimed. */
     s_id_sp               = 0;       /* fresh id-scope stack; regions/push_id reseed it */
-    s_build.wheel_used    = false;
-    s_build.win.viewport  = 0;       /* ambient viewport resets to primary each frame */
+    s_build.wheel_used    = false;   /* the wheel starts unclaimed */
+    s_build.win.viewport  = 0;       /* ambient viewport resets to primary */
 
     /* Fresh nav-stamp dispensers; nothing is placed until a layout cell is handed out. */
 
@@ -536,12 +477,13 @@ ctx_new_frame( void )
 
     s_popup_begin_count = 0;
 
-    /* Combo body coordination is per-frame and re-set by begin/combo_end; clear as a safety net. */
+    /* Combo body coordination is per-frame and re-set by combo_begin / combo_end; clear as a
+       safety net. */
 
     s_build.combo_open          = false;
     s_build.combo_item_clicked  = false;
 
-    /* Fresh item-flag state each frame: empty stack, no next-item override, nothing disabled. */
+    /* Fresh item-flag state: empty stack, no next-item override, nothing disabled. */
 
     s_item_flag_sp              = 0;
     s_build.item_flags          = GUI_ITEM_NONE;
@@ -549,38 +491,19 @@ ctx_new_frame( void )
     s_build.next_val            = GUI_ITEM_NONE;
     s_scope.flags               = GUI_ITEM_NONE;
 
-    /* The per-frame STYLE reset (style_new_frame) is not called from here: this server knows
-       nothing of style.  ctx_begin (frame/gui_frame_loop.c) runs it right after this returns. */
+    /* The interaction clip starts at the full display, and the context's clock ticks. */
+
     s_scope.clip = ( gui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
     ++g_ctx->retained.frame;
 }
 
-/* Public IO accessors (gui_want_capture_*, gui_is_key_*, gui_is_mouse_*, gui_get_*)
-   are defined in core/gui_query.c, included in the user/ tier below.
-   They read s_interaction, g_ctx->nav, g_ctx->popup.open_count, s_build, s_io, and rect_hit --
-   all visible in the unity build at that point. */
-
-/*==============================================================================================
-    Viewport display-size accessors.
-
-    A viewport's stored disp_w / disp_h is the authoritative drawable size once a surface has
-    been opened.  Before the first open (or after a close), it is 0 and the per-frame s_io
-    snapshot -- populated from the primary OS window -- is the best available fallback.  Every
-    window-placement and clip-rect computation uses one of these two helpers rather than spelling
-    the ternary out inline.
-==============================================================================================*/
-
-f32 vp_w( gui_vp_t vp ) { i32 w = s_vp_pool[ vp ].disp_w; return w > 0 ? (f32)w : (f32)s_io.display_w; }
-f32 vp_h( gui_vp_t vp ) { i32 h = s_vp_pool[ vp ].disp_h; return h > 0 ? (f32)h : (f32)s_io.display_h; }
-
 /*==============================================================================================
     Frame clock + redraw request -- the read / request doors over the retained record.
 
-    Layers above the interact server read the monotonic build counter through gui_frame_index()
-    for emit-gating, and raise the bound context's dirty flag through redraw_request(), rather
-    than reaching into g_ctx->retained.  The owner still touches the fields directly: the bump
-    lives in ctx_new_frame above, the anim / item writes in their own files, and the frame loop
-    keeps the clear + read (gui_frame_loop.c).
+    Layers above the server read the monotonic per-context build counter for emit-gating and raise
+    the bound context's dirty flag through these, rather than reaching into g_ctx->retained.  The
+    owner still touches the fields directly: the bump is in ctx_new_frame above, the anim / item
+    writes are in their own files, and the frame loop keeps the clear + read.
 ==============================================================================================*/
 
 u32  gui_frame_index( void ) { return g_ctx->retained.frame; }

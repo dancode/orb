@@ -20,7 +20,7 @@
 // clang-format off
 
 /*==============================================================================================
-    gui_anim_f32 -- single-channel exponential-decay animation
+    Single-channel exponential-decay damper -- gui_anim_f32_from, and gui_anim_f32 over it
 
     Steps a named float toward `target` each frame.  `speed` is in Hz-like units:
     10  ~  250 ms to 95% of target
@@ -31,18 +31,16 @@
     own slot without colliding with other per-widget state:
 
         f32 t = gui_anim_f32( id_combine( id, 1u ), hovered ? 1.0f : 0.0f, 10.0f );
+
+    The two differ only in what a channel with NO history reads as.  gui_anim_f32 assumes it is
+    already AT its target -- correct when a first appearance should not animate (size_animate: a
+    widget shows at its natural size and eases only on later changes).  A transient highlight is
+    the opposite: `rest` is its natural start and the target is the passing state, so first sight
+    must ramp FROM rest.  gui_anim_f32 is just the _from variant with rest == target; give
+    hover/press/focus channels rest = their off value (0).
 ==============================================================================================*/
 
 typedef struct { f32 current; } gui_anim_f32_t;
-
-/* gui_anim_f32_from -- damper seeded from an explicit rest value on first sight.
-
-   The primitive above assumes a channel with no history is already AT its target -- correct when a
-   value's first appearance should not animate (size_animate: a widget shows at its natural size and
-   eases only on later changes).  A transient highlight is the opposite: its rest state (`rest`) is
-   the natural start and the target is the passing state, so first sight must ramp FROM rest, not
-   snap to target.  This variant seeds `current` from `rest` when there is no slot; gui_anim_f32 is
-   just this with rest == target.  Give hover/press/focus channels rest = their off value (0). */
 f32
 gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed )
 {

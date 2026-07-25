@@ -41,7 +41,6 @@
 ==============================================================================================*/
 // clang-format off
 
-
 /* Auto-repeat cadence for a held button (GUI_ITEM_BUTTON_REPEAT): the pause before the first
    repeat, then the interval between repeats.  Seconds; matches the familiar key-repeat feel. */
 
@@ -213,12 +212,11 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
        from the overlay too, rather than drawing an interaction rect outside the clip box. */
 
 #ifdef GUI_DEBUG_OVERLAY
+    if ( eligible )
     {
-        if ( eligible ) {
-            gui_rect_t vis = rect_intersect( r, s_scope.clip );
-            if ( vis.w > 0.0f && vis.h > 0.0f )
-                 DBG_WIDGET( id, vis, st.hover, st.active );
-        }
+        gui_rect_t vis = rect_intersect( r, s_scope.clip );
+        if ( vis.w > 0.0f && vis.h > 0.0f )
+            DBG_WIDGET( id, vis, st.hover, st.active );
     }
 #endif
 

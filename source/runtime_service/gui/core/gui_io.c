@@ -2,27 +2,25 @@
 
     runtime_service/gui/core/gui_io.c -- App input -> gui IO snapshot.
 
-    The input frame is bracketed like everything else in gui:
+    Input reaches gui two ways, and the frame is bracketed around both:
 
-        gui_event()          -- during the host's ring drain (BEFORE frame_begin), writes the
-                                 event-borne input (typed text, wheel, clipboard paste) straight
-                                 into s_io, accumulating across the several events of one frame.
-        io_frame_begin()  -- from gui_frame_begin: samples the POLLED input (mouse position +
-                                 buttons, per-key state for all APP_KEY_COUNT keys, display size)
-                                 and computes s_io_dirty.  Does not touch the event-borne fields --
-                                 the drain already filled them.
-        io_frame_end()    -- from gui_frame_end: clears the one-frame fields (text/wheel/paste)
-                                 so each is non-empty only on the frame its event arrived.
+        gui_event()      -- during the host's ring drain (BEFORE frame_begin): writes the
+                            EVENT-borne input (typed text, wheel, clipboard paste) straight into
+                            s_io, accumulating across the several events of one frame.
+        io_frame_begin() -- from gui_frame_begin: samples the POLLED input (mouse position +
+                            buttons, per-key state, display size) and computes s_io_dirty.  Never
+                            touches the event-borne fields -- the drain already filled them.
+        io_frame_end()   -- from gui_frame_end: clears the one-frame fields (text/wheel/paste) so
+                            each is non-empty only on the frame its event arrived.
 
-    The app event ring is single-consumer; the host drains it (for resize etc.) and hands each
-    event to gui_event(), so gui does not drain the ring itself.  Because the drain completes
-    before frame_begin, one storage slot per field suffices -- gui_event fills it, widgets read it,
-    io_frame_end clears it -- with no separate pending buffer.  The result lives in s_io.
+    The app event ring is single-consumer: the host drains it and hands each event here, so gui
+    never drains it itself.  Because that drain completes before frame_begin, one storage slot per
+    field suffices -- gui_event fills it, widgets read it, io_frame_end clears it -- with no
+    pending buffer.  The result is s_io, the one snapshot every tier above reads.
 
-    File order: state -> snapshot readers -> event intake -> input frame lifecycle -> the debug
-    layer toggle.
+    File order: state -> snapshot readers -> event intake -> frame lifecycle.
 
-    Included by gui.c after gui_emit_draw.c.
+    Included by gui_core.c first, ahead of everything that reads s_io.
 
 ==============================================================================================*/
 
@@ -78,10 +76,6 @@ static bool s_pending_mouse_win_set;
 static f32 s_click_elapsed[ 3 ] = { 1.0e9f, 1.0e9f, 1.0e9f };   /* start "long ago" */
 static f32 s_click_x[ 3 ], s_click_y[ 3 ];
 
-/* Debug-layer master toggle (public pair at the bottom of this file); lives beside the
-   snapshot because the hotkey driver reads it on the same polled channel. */
-static bool s_debug_enabled;
-
 /*==============================================================================================
     Snapshot readers -- the queries later tiers ask of s_io, named once.
 ==============================================================================================*/
@@ -94,15 +88,13 @@ bool io_ctrl ( void ) { return s_io.keys_down[ APP_KEY_LCTRL  ] || s_io.keys_dow
 bool io_shift( void ) { return s_io.keys_down[ APP_KEY_LSHIFT ] || s_io.keys_down[ APP_KEY_RSHIFT ]; }
 bool io_alt  ( void ) { return s_io.keys_down[ APP_KEY_LALT   ] || s_io.keys_down[ APP_KEY_RALT   ]; }
 
-/* Claim a key edge for this frame -- the single choke point every consumer (item activation, nav
-   type-ahead, nav mnemonics, and any future claimant) routes through instead of hand-zeroing s_io
-   fields at its own call site.  Zeroes both the initial-press and repeat edges so neither a plain
-   check nor a repeat-aware check downstream in the same frame sees the key; keys_down / keys_released
-   are untouched on purpose -- a claim silences "was this just pressed", not "is it physically held"
-   (a held key still reads as held for e.g. continuous camera movement even after something claims its
-   press edge).  Returns whether there was actually a live edge to take, so a caller can tell "I used
-   it" from "there was nothing there anyway".  See gui_want_capture_keyboard (core/gui_query.c) for the
-   full per-frame tier order this primitive is tier 2 of. */
+/* Claim a key edge for this frame -- the one choke point every consumer (item activation, nav
+   type-ahead, mnemonics) routes through instead of hand-zeroing s_io at its own call site.  Zeroes
+   both the initial-press and repeat edges, so nothing later in the frame sees the key either way;
+   keys_down / keys_released stay untouched on purpose -- a claim silences "was this just pressed",
+   not "is it physically held".  Returns whether there was a live edge to take, so a caller can
+   tell "I used it" from "there was nothing there".  This is tier 2 of the keyboard routing model
+   laid out at gui_want_capture_keyboard (core/gui_query.c). */
 bool
 key_claim( app_key_t k )
 {
@@ -113,15 +105,14 @@ key_claim( app_key_t k )
 }
 
 /*==============================================================================================
-    Event intake -- gui_event() and the io_add_* feeders it unpacks the app ring through,
-    running during the host's drain, before frame_begin.  Not part of the public widget API.
+    Event intake -- gui_event() and the io_add_* feeders it unpacks the app ring through, running
+    during the host's drain, before frame_begin.  Not part of the public widget API.
 
-    Clipboard: outbound (cut / copy) goes straight to the OS clipboard through the app module
-    (app()->clipboard_set), so copied text is available to other applications.  Inbound (paste)
-    is event-driven: the platform reads the OS clipboard on the paste gesture and posts an
-    APP_EV_CLIPBOARD event, which gui_event writes straight into s_io.paste for the focused field
-    to consume this frame; io_frame_end clears it after.  gui owns no clipboard buffer of its
-    own -- it is a pure conduit between the OS and the focused field.
+    The clipboard passes through here too, in both directions, because gui owns no clipboard
+    buffer of its own -- it is a pure conduit between the OS and the focused field.  Outbound
+    (cut / copy) goes straight out via app()->clipboard_set, so other applications see it;
+    inbound (paste) arrives as an APP_EV_CLIPBOARD event that lands in s_io.paste for the focused
+    field to consume this frame, cleared by io_frame_end after.
 ==============================================================================================*/
 
 /* Copy n bytes of `s` to the OS clipboard, dropping control characters (a single-line field's
@@ -378,23 +369,6 @@ io_frame_end( void )
     s_io.mouse_wheel = 0.0f;
     s_io.paste[ 0 ]  = '\0';
     s_io_paste_set   = false;
-}
-
-/*==============================================================================================
-    Debug layer toggle -- the public master switch the debug driver (debug_hotkeys,
-    frame/gui_frame_overlay.c) is gated on.
-==============================================================================================*/
-
-void gui_debug_enable( bool enable )
-{
-    s_debug_enabled = enable;
-    if ( enable )
-        printf( "[gui] debug driver on -- press numpad '.' (NP_DOT) to arm the debug hotkeys\n" );
-}
-
-bool gui_debug_is_enabled( void )
-{
-    return s_debug_enabled;
 }
 
 // clang-format on

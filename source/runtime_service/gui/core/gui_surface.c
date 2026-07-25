@@ -10,26 +10,24 @@
     window DOES -- title-bar drags, resize grips, collapse, tear-off gestures, chrome paint --
     is window/ policy layered on these services.
 
-    Following the house pattern, the records themselves live in gui_context_t
-    (core/gui_ctx.c owns storage + frame turnover: the window pool g_ctx->win.pool /
-    g_ctx->win.count / g_ctx->win.scratch, the dispenser g_ctx->win.z_counter, and the hover nominee
-    fields in s_interaction, promoted to hover_win at frame turnover); this file owns their
-    behavior.  The OS half of the surface story -- the viewport records (gui_viewport_t) and
-    their open/close lifecycle -- stays with the context and the conductor (gui_frame.c),
-    since creating a surface is an app()/rhi() operation the tiers never perform.
+    Per the house pattern the STORAGE lives with the context (core/gui_ctx.c: the window pool
+    g_ctx->win.*, the z dispenser g_ctx->win.z_counter, and the hover nominee fields in
+    s_interaction that frame turnover promotes to hover_win); this file owns the behavior over it.
+    The OS half of the surface story -- the viewport records and their open/close lifecycle --
+    stays with the frame orchestrator, since creating a surface is an app()/rhi() operation the
+    tiers never perform.
 
-    Included by gui_core.c (the INTERACT SERVER unit) after the ambient
-    records (gui_ctx.c) -- a root region enters the same hover contest a window does, so the
-    contest sits in the server both reach through the gui_core.h seams.
+    Included by gui_core.c after the ambient records (gui_ctx.c) -- a root region enters the same
+    hover contest a window does, so the contest sits in the server both reach through the
+    gui_core.h seams.
 
 ==============================================================================================*/
 // clang-format off
 
 /*==============================================================================================
-
-    - Find the window for this GUID or create it from the initial geometry.
-    - Never returns NULL; an overflowing table falls back to a transient scratch entry.    
-
+    The window record door -- find the record for this id, or create it from the caller's initial
+    geometry.  Never returns NULL: a full pool retires the oldest dormant slot, and a pool with
+    nothing retirable falls back to a shared transient scratch entry.
 ==============================================================================================*/
 
 gui_window_t*
@@ -125,12 +123,10 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
     return win;
 }
 
-/*==============================================================================================
-    window_find -- locate an existing window record by id, or NULL.  Unlike window_get this never
-    creates one; used by the post-build reconcile (viewport_update) to reach the window a
-    tear-off / merge-back gesture named, where creating a phantom record would be wrong.  A
-    GUI_ID_NONE query is "no window" and short-circuits -- no real record ever carries that id.
-==============================================================================================*/
+/* Locate an existing record by id, or NULL -- unlike window_get this never creates one.  The
+   post-build reconcile (viewport_update) reads through it to reach the window a tear-off /
+   merge-back gesture named, where creating a phantom record would be wrong.  A GUI_ID_NONE query
+   is "no window" and short-circuits: no real record ever carries that id. */
 
 gui_window_t*                  /* non-static: a cross-unit seam (core/gui_ctx.h) */
 window_find( gui_id_t id )
@@ -254,25 +250,16 @@ window_apply_next( gui_window_t* win, bool appearing )
 
     The dispenser never climbs anywhere near the fixed bands.  A record placed in the overlay
     band also carries win->overlay -- the TYPE fact ("an anchored overlay, not a window") the
-    nav / dock / native tests key on -- so z itself stays pure paint order.
+    nav / dock / native tests key on -- so z itself stays pure paint order.  The four band macros
+    live in core/gui_core.h, since the flow unit's root region and the popup layer stamp the same
+    bands; the two verbs below are the only authors of a z VALUE.  Nothing outside this file
+    touches g_ctx->win.z_counter or the constants raw.
 ==============================================================================================*/
 
-/* The four z-band macros (GUI_REGION_BG_Z / GUI_REGION_Z / GUI_Z_OVERLAY / GUI_REGION_FG_Z)
-   live in core/gui_core.h -- the flow unit's root region and the
-   popup layer stamp the same bands. */
-
-/*==============================================================================================
-    surface_z_raise -- the z dispenser's single verb: bring a stacked entity to the front.
-
-    Returns the z the entity should hold: a fresh top-of-stack value, or its own z unchanged
-    when it is already the most recently raised (no value is burned re-raising the top).  The
-    dispenser (g_ctx->win.z_counter) is monotonic and shared by windows, floating dock groups, and
-    appearing windows alike, so every raise lands strictly above everything raised before it.
-    This tier is the ONLY author of z values: window/dock raise through this verb, and the
-    popup layer stamps the overlay band through surface_z_overlay below -- nothing outside this
-    file touches g_ctx->win.z_counter or the band constants raw.
-==============================================================================================*/
-
+/* Bring a stacked entity to the front: a fresh top-of-stack z, or its own z unchanged when it is
+   already the most recently raised (no value burned re-raising the top).  The dispenser is
+   monotonic and shared by windows, floating dock groups, and appearing windows alike, so every
+   raise lands strictly above everything raised before it. */
 u32
 surface_z_raise( u32 z )
 {

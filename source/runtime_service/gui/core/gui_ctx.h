@@ -359,22 +359,25 @@ typedef struct
 
 } gui_win_ctx_t;
 
-/*==============================================================================================
-    Render viewport (orchestration in frame/gui_viewport.c; the GPU flush takes its buffer
-    fields as parameters -- the render server never sees this record)
-
-    One render surface a context drives: GPU buffers + a color target, the OS window hosting it, and
-    the routing/ownership bookkeeping for host-provided vs gui-owned (torn-off floater) surfaces.
-    [0] is the main swapchain; the rest are floaters.  Held by value in gui_context_t vp.pool.
-==============================================================================================*/
-
 /* Pool index of a dock node (into gui_context_t dock.pool), not to be confused with gui_dock_id_t
    (the stable id_hash-style handle exposed to callers).  The pool is fixed-size and never compacts,
    so an index stays valid across frames exactly like the pointer it replaces -- but at 2 bytes
-   instead of 8.  dock_ref()/dock_at() (gui_dock_core.c) convert to/from a live pointer. */
+   instead of 8.  dock_ref()/dock_at() (gui_dock_core.c) convert to/from a live pointer.  Declared
+   here because the viewport record below holds each surface's dock-tree root by ref. */
 
 typedef u16 gui_dock_ref_t;
 #define GUI_DOCK_REF_NONE ( (gui_dock_ref_t)0xFFFFu )
+
+/*==============================================================================================
+    Render viewport (orchestration in frame/gui_viewport.c; the GPU flush takes its buffer fields
+    as parameters -- the render server never sees this record)
+
+    One render surface: GPU buffers + a color target, the OS window hosting it, the drawable
+    extent and reserved top bands, the dock tree tiling it, and the routing / ownership
+    bookkeeping that separates host-provided surfaces from gui-owned (torn-off floater) ones.
+    [0] is the main swapchain; the rest are floaters.  Held by value in the global s_vp_pool
+    below -- viewports are NOT per-context.
+==============================================================================================*/
 
 typedef struct
 {
