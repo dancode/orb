@@ -331,6 +331,13 @@ Invariants:
   wants_redraw (input, animation, `volatile_cb`).
 - `volatile_cb` blocks keep animating on skipped frames but MUST keep a fixed layout
   footprint (constant size; pad printf fields).
+- The lifecycle above is CHECKED, not just documented: `init` refuses to run without a live rhi
+  context (and refuses a second init), `viewport_open` refuses a window with no rhi context or a
+  slot already open, and `ctx_begin` / `viewport_update` / `render` report -- once per call site,
+  in every build, with the rule they broke -- a build with no active font, an emit outside
+  `frame_begin`/`frame_end`, a `viewport_update` inside the build, a render before the draw list
+  is sealed, a floater left waiting to be freed, and a viewport whose size disagrees with its
+  swapchain (a resize that reached `gui()->event` but not `rhi()->event`, or the reverse).
 
 ## Layout engine (flow/gui_layout_core.c = mechanism, flow/gui_layout.c = public verbs)
 

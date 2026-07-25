@@ -28,9 +28,92 @@
 static void boot_shutdown( void );
 static void boot_shell_emit( void );
 
+/*==============================================================================================
+    Lifecycle contract -- catching host misuse at the seam that names it
+
+    Every rule below fails LATE and silently if it is not checked here: a gui built without a
+    device has no pipeline (renders nothing), a build with no font measures every rect at 0 x 0,
+    a frame rendered before frame_end replays an unsealed draw list, and a floater freed outside
+    viewport_update tears down a surface an in-flight draw list still references.  Each check
+    reports the rule it broke and how to satisfy it, once per call site, in EVERY build -- a
+    Release host must still learn why its UI is dead -- and traps in Debug so the offending call
+    is on the stack.  `cond` is evaluated twice, so it must be side-effect free.
+==============================================================================================*/
+
+#define GUI_CONTRACT( cond, ... )                                                   \
+    do                                                                              \
+    {                                                                               \
+        static bool reported_ = false;                                              \
+        if ( !reported_ && !( cond ) )                                              \
+        {                                                                           \
+            reported_ = true;                                                       \
+            printf( "[gui] CONTRACT: " __VA_ARGS__ );                               \
+            fflush( stdout );        /* flush before the once-assert can trap */    \
+            ORB_ASSERT_MSG_ONCE( cond, "gui lifecycle contract violated -- see the "\
+                                       "[gui] CONTRACT line above" );               \
+        }                                                                           \
+    }                                                                               \
+    while ( 0 )
+
+/* True between a successful init() and shutdown().  Guards the public entry points that would
+   otherwise fault on state init() creates (the context pool, the pipeline, the atlas) rather
+   than report the missing init. */
+static bool s_gui_ready = false;
+
+/* Where the current frame stands.  The lifecycle is a strict sequence -- build, seal, sync,
+   render -- and each step is only safe once the one before it has run; the latch lets each
+   entry point name the step the host skipped instead of failing three calls later. */
+typedef enum gui_frame_phase_e
+{
+    GUI_PHASE_IDLE = 0,   /* between frames -- nothing open                                */
+    GUI_PHASE_BUILD,      /* frame_begin ran; widgets may emit                             */
+    GUI_PHASE_SEALED,     /* frame_end ran; the draw list is final                         */
+    GUI_PHASE_SYNCED,     /* viewport_update ran; surfaces reconciled -- safe to render    */
+
+} gui_frame_phase_t;
+
+static gui_frame_phase_t s_frame_phase = GUI_PHASE_IDLE;
+
+/*============================================================================================*/
+/* True when at least one rhi render context is live.  init() builds its pipeline, sampler and
+   atlas up front, so the device must already exist -- and scanning contexts (rather than asking
+   for a device flag) also proves the swapchain-bearing context the host will hand to
+   viewport_open is open.  context_size touches no device state, so it is safe to call before
+   rhi()->init() has ever run. */
+
+static bool
+rhi_context_any_live( void )
+{
+    for ( i32 i = 0; i < (i32)GUI_MAX_VIEWPORTS; ++i )
+        if ( rhi()->context_size( i, NULL, NULL ) )
+            return true;
+    return false;
+}
+
+/*============================================================================================*/
+
 bool
 gui_init( gui_builtin_font_t font )
 {
+    /* Both preconditions produce a gui that runs but paints nothing, so fail here rather than
+       leave the host to discover it as a blank window: a second init strands the first one's
+       GPU resources and rebinds the context pool under any viewport already open, and an init
+       with no live device has nothing to create the pipeline / sampler / atlas from. */
+
+    if ( s_gui_ready )
+    {
+        printf( "[gui] CONTRACT: init() called twice -- shutdown() before re-initializing.\n" );
+        return false;
+    }
+
+    if ( !rhi_context_any_live() )
+    {
+        printf( "[gui] CONTRACT: init() before a live rhi device -- call rhi()->init() and "
+                "rhi()->context_open( win ) for the window gui will render into, THEN init(). "
+                "Without a device there is no pipeline and every frame renders nothing.\n" );
+        return false;
+    }
+
     /* Seed the style base from the default theme before any font init runs; font_load calls
        gui_style_apply which scales s_style_base -- it must be non-zero first. */
 
@@ -81,6 +164,7 @@ gui_init( gui_builtin_font_t font )
        window drawn through the normal pipeline (gui_dashboard.c); the backend keeps only the
        snapshot capture, which owns no GPU resources (render/gui_dash_capture.c). */
 
+    s_gui_ready = true;
     return true;
 }
 
@@ -89,6 +173,13 @@ gui_init( gui_builtin_font_t font )
 void
 gui_shutdown( void )
 {
+    /* Idempotent: a host that tears down after a FAILED init (or twice) would otherwise
+       double-free the atlas and the context blocks. */
+    if ( !s_gui_ready )
+        return;
+    s_gui_ready   = false;
+    s_frame_phase = GUI_PHASE_IDLE;
+
     #ifdef GUI_DEBUG_OVERLAY
     gui_debug_shutdown();
     #endif
@@ -170,6 +261,19 @@ gui_font_flush_deferred( void )
 bool
 gui_frame_begin( f32 dt )
 {
+    /* No init means no context pool -- every step below dereferences g_ctx. */
+    GUI_CONTRACT( s_gui_ready, "frame_begin() before a successful init() -- check the bool "
+                               "init() returned; gui has no context pool to build into.\n" );
+    if ( !s_gui_ready )
+        return false;
+
+    /* Still mid-build means last frame never sealed.  frame_end is unconditional (THE BEGIN /
+       END RULE): skipping it strands the volatile replay, the perf clock and the focus latch. */
+    GUI_CONTRACT( s_frame_phase != GUI_PHASE_BUILD,
+                  "frame_begin() with the previous frame still open -- call frame_end() every "
+                  "frame, whatever frame_begin returned.\n" );
+    s_frame_phase = GUI_PHASE_BUILD;
+
     s_ctx_save_sp      = 0;       /* fresh context scope stack; a leaked binding cannot survive a frame */
     s_any_redraw       = false;   /* re-accumulated at each ctx_end from that context's animations */
     s_overlays_emitted = false;   /* debug overlays emit once, at the default context's ctx_end */
@@ -315,6 +419,13 @@ gui_frame_end( void )
     /* Clear the one-frame event-borne input (text/wheel/paste) now that the widgets have read it.
        Runs every frame, including clean ones, so it stays cleared before the next ring drain. */
     io_frame_end();
+
+    /* Sealed: the draw list is final.  viewport_update may now free surfaces, and render may
+       replay.  Reported (not corrected) when frame_begin never ran -- the phase still advances
+       so one stray call cannot cascade into a second complaint from render. */
+    GUI_CONTRACT( s_frame_phase == GUI_PHASE_BUILD,
+                  "frame_end() without a matching frame_begin() this frame.\n" );
+    s_frame_phase = GUI_PHASE_SEALED;
 }
 
 /*============================================================================================*/
@@ -330,8 +441,19 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
     /* Every widget this context emits lays out off the active font's metrics (s_style, scaled by
        gui_style_apply/layout_compute) -- with none activated s_style is still zero-initialized and
        everything collapses to zero size (see gui_init's font_valid() gate).  Catch the missing
-       font here, at the frame boundary, instead of as an invisible UI downstream. */
-    ORB_ASSERT( font_valid() );
+       font here, at the frame boundary, instead of as an invisible UI downstream: this is the
+       first point in the lifecycle where "no font" is knowably wrong (init() with
+       GUI_FONT_NONE is legal -- the host may load its own before the first frame). */
+    GUI_CONTRACT( font_valid(),
+                  "ctx_begin() with no active font -- s_style is still the zero-font base, so "
+                  "every widget measures 0 x 0 and the UI paints nothing.  Pass a built-in font "
+                  "to init(), or font_load() one before the first frame.\n" );
+
+    /* The build must sit inside the frame: emitted before frame_begin the widgets land in a draw
+       list that is about to be reset, emitted after frame_end in one already sealed and rendered. */
+    GUI_CONTRACT( s_frame_phase == GUI_PHASE_BUILD,
+                  "ctx_begin() outside the build -- the emit belongs between frame_begin() and "
+                  "frame_end().\n" );
 
     if ( ctx_handle < 0 || ctx_handle >= (i32)s_ctx_pool_count || !s_ctx_pool[ ctx_handle ] )
          ctx_handle = GUI_CTX_DEFAULT;
@@ -411,12 +533,59 @@ gui_ctx_end( void )
    The viewport's stored disp_w/h drive the GPU viewport and scissor clamping.
    The debug overlay is also painted when vp == 0 (the primary).  GUI_VP_INVALID is a no-op. */
 
+/* The two ordering rules only a render can catch, both of which produce a working-looking frame:
+
+     - a surface still flagged pending_close means viewport_update() has not run since the build.
+       It is the ONLY safe point to free a surface (no in-flight draw list references one there),
+       so the floater is instead torn down at some arbitrary later point -- or never.
+
+     - a viewport sized differently from the swapchain it flushes into means the resize reached
+       one of gui / rhi but not the other: rhi()->event() must run before (or alongside)
+       gui()->event(), so a WIN_RESIZE rebuilds the swapchain and re-sizes the viewport in the
+       same drain.  gui laid out for the old surface; the frame renders stretched or clipped. */
+
+static void
+render_contract_check( gui_vp_t vp, const gui_viewport_t* v )
+{
+    if ( s_frame_phase != GUI_PHASE_SYNCED )
+    {
+        bool pending = false;
+        for ( u32 i = 1; i < s_vp_count; ++i )
+            pending = pending || ( s_vp_pool[ i ].owned && s_vp_pool[ i ].pending_close );
+
+        GUI_CONTRACT( !pending,
+                      "render() with a floater surface still waiting to be freed -- call "
+                      "viewport_update() after frame_end() and before render(); it is the only "
+                      "safe point to free a surface.\n" );
+    }
+
+    /* Owned floaters carry their own rhi context; a host-provided surface uses the slot
+       convention (viewport index == win_id == rhi context id). */
+    i32 ctx_id = v->owned ? v->rhi_ctx : v->win_id;
+    i32 sw = 0, sh = 0;
+    if ( ctx_id >= 0 && rhi()->context_size( ctx_id, &sw, &sh )
+         && sw > 0 && sh > 0 && v->disp_w > 0 && v->disp_h > 0 )
+    {
+        GUI_CONTRACT( sw == v->disp_w && sh == v->disp_h,
+                      "viewport %u is laid out for %d x %d but its swapchain is %d x %d -- route "
+                      "rhi()->event() before (or alongside) gui()->event() so one resize reaches "
+                      "both.\n", (u32)vp, v->disp_w, v->disp_h, sw, sh );
+    }
+}
+
+/*============================================================================================*/
+
 void
 gui_render( gui_vp_t vp, rhi_cmd_t cmd )
 {
     if ( vp >= GUI_MAX_VIEWPORTS )
         return;
     gui_viewport_t* v = &s_vp_pool[ vp ];
+
+    /* Rendering an open build replays a draw list the emit is still writing into. */
+    GUI_CONTRACT( s_frame_phase != GUI_PHASE_BUILD,
+                  "render() before frame_end() -- the draw list is not sealed yet.\n" );
+    render_contract_check( vp, v );
 
     /* Latch the emit time (first render of the frame) and bracket the flush -- "conclude cost at
        render": emit ends here, render time accumulates across every render() call this frame. */

@@ -88,19 +88,42 @@ viewport_destroy( gui_vp_t vp )
 gui_vp_t
 gui_viewport_open( i32 win_id )
 {
+    GUI_CONTRACT( s_gui_ready, "viewport_open() before a successful init() -- gui has no GPU "
+                               "resources to build a surface from yet.\n" );
+    if ( !s_gui_ready )
+        return GUI_VP_INVALID;
+
     /* Slot index == win_id; an open window guarantees the slot is free. */
+    GUI_CONTRACT( win_id >= 0 && win_id < (i32)GUI_MAX_VIEWPORTS,
+                  "viewport_open( %d ): win_id outside [0, %u).\n", win_id, GUI_MAX_VIEWPORTS );
     if ( win_id < 0 || win_id >= (i32)GUI_MAX_VIEWPORTS )
         return GUI_VP_INVALID;
 
     gui_viewport_t* vp = &s_vp_pool[ win_id ];
-    ORB_ASSERT( !rhi_handle_valid( vp->vb ) );   /* slot must be free */
+
+    /* A second open on a live slot would strand the first surface's GPU buffers with no handle
+       left to reach them -- refuse instead of leaking. */
+    bool slot_free = !rhi_handle_valid( vp->vb );
+    GUI_CONTRACT( slot_free, "viewport_open( %d ): that slot is already open.\n", win_id );
+    if ( !slot_free )
+        return GUI_VP_INVALID;
+
+    /* The window's rhi context must exist first: gui flushes into ITS swapchain, and the slot
+       convention is index == win_id == rhi context id.  Without it every render() on this
+       viewport is a silent no-op.  The query doubles as the size read below. */
+    i32  w = 0, h = 0;
+    bool ctx_live = rhi()->context_size( win_id, &w, &h );
+    GUI_CONTRACT( ctx_live, "viewport_open( %d ): no live rhi context for that window -- call "
+                            "rhi()->context_open( win ) before attaching a viewport to it.\n",
+                            win_id );
+    if ( !ctx_live )
+        return GUI_VP_INVALID;
 
     if ( !viewport_create( (gui_vp_t)win_id, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
         return GUI_VP_INVALID;
 
-    /* Query current window size from app() -- avoids the host passing redundant w/h. */
-    i32 w = 0, h = 0;
-    app()->window_get_size( win_id, &w, &h );
+    /* Size from the rhi context, not app(): the swapchain extent IS what gui flushes into, so
+       the two start the frame in agreement (the render-time size check reads the same pair). */
     vp->disp_w = w;
     vp->disp_h = h;
 
@@ -242,8 +265,14 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
 
     vp->rhi_ctx = ctx;
     vp->owned   = true;    /* gui created the window + context -> gui destroys them */
-    vp->disp_w  = w;
-    vp->disp_h  = h;
+
+    /* Size from the context, not the requested w/h: the swapchain extent is what this surface
+       actually flushes into, and the OS is free to clamp a spawn (min size, work area, DPI).
+       Same rule as viewport_open -- layout and surface start the frame in agreement. */
+    i32 cw = 0, ch = 0;
+    if ( !rhi()->context_size( ctx, &cw, &ch ) || cw <= 0 || ch <= 0 ) { cw = w; ch = h; }
+    vp->disp_w  = cw;
+    vp->disp_h  = ch;
 
     if ( (u32)win_id + 1u > s_vp_count )
         s_vp_count = (u32)win_id + 1u;
@@ -513,6 +542,13 @@ viewport_teardown_owned( void )
 void
 gui_viewport_update( void )
 {
+    /* Freeing a surface mid-build would pull it out from under a draw list still being written;
+       after render it is already too late (the frame drew into a surface marked for teardown).
+       The one safe window is between frame_end and the first render -- name it when missed. */
+    GUI_CONTRACT( s_frame_phase != GUI_PHASE_BUILD,
+                  "viewport_update() inside the build -- it frees surfaces, so it must run "
+                  "after frame_end() and before render().\n" );
+
     /* (1) Tear-off / merge-back: a window whose title was dragged off its host surface (enqueued by
        window_begin_ex) changes which surface hosts it.  Resolved against the REQUEST's owner
        context (stamped at enqueue time), not whichever context happens to be bound now -- by this
@@ -532,6 +568,10 @@ gui_viewport_update( void )
 
     /* (2) Tear down owned surfaces the user closed or abandoned, then compact the count. */
     viewport_teardown_owned();
+
+    /* Surfaces reconciled: render may now flush this frame's geometry. */
+    if ( s_frame_phase == GUI_PHASE_SEALED )
+        s_frame_phase = GUI_PHASE_SYNCED;
 }
 
 /* Present every gui-owned floater surface from the shared draw list: open a frame on the

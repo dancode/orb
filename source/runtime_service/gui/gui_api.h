@@ -227,8 +227,11 @@ typedef struct gui_api_s
        whichever viewport was most recently emitted into this frame).
 
        viewport_open()   -- open a surface for OS window win_id.  The initial drawable size is
-                            queried from app() internally -- no redundant w/h parameters.
-                            Returns a valid handle or GUI_VP_INVALID if the pool is full.
+                            queried from that window's rhi context internally -- no redundant w/h
+                            parameters.  Returns a valid handle, or GUI_VP_INVALID (with the rule
+                            printed) when init() has not run, win_id is out of range, the slot is
+                            already open, or the window has no live rhi context -- open it with
+                            rhi()->context_open( win ) first, since gui flushes into ITS swapchain.
                             The first call creates the primary (index 0); call before any frames.
                             win_id routes mouse events from that OS window to this surface.
        viewport_close()  -- close a viewport and release its GPU geometry buffers.  Works for both
