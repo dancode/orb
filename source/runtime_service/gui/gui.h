@@ -6,10 +6,12 @@
 
     In-house 2D interaction renderer for ORB: draw + interact servers, root surfaces, rect and
     flow composition, styled element cores -- with chrome (windows / dock / stock widgets) as an
-    OPTIONAL policy layer on top.  No Dear ImGui, no GLFW/SDL: windowing/input come from
-    the engine `app` layer (Win32), rendering goes through `rhi` (Vulkan).  The host drives a
-    frame_begin -> ctx_begin/widgets/ctx_end -> frame_end -> render() lifecycle each frame.
-
+    OPTIONAL policy layer on top.  
+    
+    Windowing/input come from the engine `app` layer (Win32) 
+    Rndering goes through `rhi` (Vulkan).  The host drives a frame_begin:
+        -> ctx_begin/widgets/ctx_end -> frame_end -> render() lifecycle each frame.
+    
     Read GUI_ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is
     the orientation map: the two-server model, the widget tiers, the frame lifecycle, and the
     region / scroll / clip invariants.  The unit roster is the `unit` list under `target gui`
@@ -26,7 +28,7 @@
     1. CPU emit skip (s_frame_dirty, gui_frame_loop.c): a single global bool.  When no input, animation,
        or render delta occurred, the whole emit phase is skipped and the previous frame's draw list
        is reused.
-    2. GPU tessellation cache (gui_build_cache.c): granular per window.  A per-window hash mismatch
+    2. GPU tessellation cache (gui_build_cache.c): granular per window. A per-window hash mismatch
        re-tessellates only that window's slot; sibling windows reuse their geometry in place.
 
     Contents -- types sit in DEPENDENCY order (a struct follows the enums it embeds), each
@@ -49,8 +51,8 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "runtime_service/gui/rect/gui_rect.h"      /* GUI_RECT leaf kit: geometry types + carve math */
-#include "runtime_service/gui/gui_element.h"   /* GUI_ELEMENT types: the slim el style (S1)      */
+#include "runtime_service/gui/rect/gui_rect.h"      // GUI_RECT leaf kit: geometry types + carve math
+#include "runtime_service/gui/gui_element.h"        // GUI_ELEMENT types: the slim el style (S1)
 
 // clang-format off
 /*==============================================================================================
@@ -224,6 +226,7 @@ typedef enum
        push_style_color, and paints with the resolved read (gui()->style_color( slot )) -- so
        custom drawing rides the theme + the push/next stacks exactly like stock chrome.  Themes
        leave them zero (transparent): an unseeded user slot draws nothing, loudly. */
+
     GUI_COL_USER_0,
     GUI_COL_USER_1,
     GUI_COL_USER_2,
@@ -1695,36 +1698,40 @@ typedef struct
 typedef struct
 {
     /* --- GPU device memory (dynamic). --- */
-    u32 gpu_vertex_bytes;   // per-viewport VB regions, summed over live surfaces x frames-in-flight
-    u32 gpu_index_bytes;    // per-viewport IB regions, summed over live surfaces x frames-in-flight
-    u32 gpu_texture_bytes;  // font atlases (each already includes its white + dash rows)
-    u32 gpu_debug_bytes;    // debug-overlay VB/IB (Debug builds; 0 when compiled out / not created)
-    u32 gpu_total;          // sum of the section above
-    u32 viewport_count;     // live GPU surfaces contributing to gpu_vertex/index_bytes
+
+    u32 gpu_vertex_bytes;       // per-viewport VB regions, summed over live surfaces x frames-in-flight
+    u32 gpu_index_bytes;        // per-viewport IB regions, summed over live surfaces x frames-in-flight
+    u32 gpu_texture_bytes;      // font atlases (each already includes its white + dash rows)
+    u32 gpu_debug_bytes;        // debug-overlay VB/IB (Debug builds; 0 when compiled out / not created)
+    u32 gpu_total;              // sum of the section above
+    u32 viewport_count;         // live GPU surfaces contributing to gpu_vertex/index_bytes
 
     /* --- CPU static memory (.bss + .rdata; fixed backend buffers, resident the whole run). --- */
-    u32 cpu_drawlist_bytes; // EMIT: s_draw (cmds + hashes + point/rect/text/clip pools) + path stroker
-    u32 cpu_tess_bytes;     // BUILD: s_tess CPU vertex / index / GPU-command staging + arc tables
-    u32 cpu_cache_bytes;    // retained cache: slot tables, stable cmd cache, diff records, seg chains,
-                            //   permutation scratch, volatile registry, stats
-    u32 cpu_font_bytes;     // font registry slots (CPU glyph metrics) + reload queue, excl. GPU atlas
-    u32 cpu_res_bytes;      // shared R8 atlas registry (packer/tenants) + icon registry
-    u32 cpu_render_bytes;   // RENDER: pipeline/sampler state + embedded SPIR-V bytecode
-    u32 cpu_select_bytes;   // text-selection run capture buffer (always compiled; a product feature)
-    u32 cpu_debug_bytes;    // debug overlay + name registry + dashboard snapshot + command stepper
-                            //   (each 0 when its feature is compiled out -- Release builds)
-    u32 cpu_frontend_bytes; // frontend statics: io snapshot, style/theme state, layout/id stacks,
-                            //   undo buffers, gesture latches (gui_ui_mem.c) -- small by design;
-                            //   the frontend's real state is the malloc'd context blocks below
-    u32 cpu_static_total;   // sum of the section above
+
+    u32 cpu_drawlist_bytes;     // EMIT: s_draw (cmds + hashes + point/rect/text/clip pools) + path stroker
+    u32 cpu_tess_bytes;         // BUILD: s_tess CPU vertex / index / GPU-command staging + arc tables
+    u32 cpu_cache_bytes;        // retained cache: slot tables, stable cmd cache, diff records, seg chains,
+                                //   permutation scratch, volatile registry, stats
+    u32 cpu_font_bytes;         // font registry slots (CPU glyph metrics) + reload queue, excl. GPU atlas
+    u32 cpu_res_bytes;          // shared R8 atlas registry (packer/tenants) + icon registry
+    u32 cpu_render_bytes;       // RENDER: pipeline/sampler state + embedded SPIR-V bytecode
+    u32 cpu_select_bytes;       // text-selection run capture buffer (always compiled; a product feature)
+    u32 cpu_debug_bytes;        // debug overlay + name registry + dashboard snapshot + command stepper
+                                //   (each 0 when its feature is compiled out -- Release builds)
+    u32 cpu_frontend_bytes;     // frontend statics: io snapshot, style/theme state, layout/id stacks,
+                                //   undo buffers, gesture latches (gui_ui_mem.c) -- small by design;
+                                //   the frontend's real state is the malloc'd context blocks below
+    u32 cpu_static_total;       // sum of the section above
 
     /* --- CPU dynamic memory (heap; one malloc block per live context). --- */
-    u32 cpu_context_bytes;  // sum over live contexts of the single ctx block (header + all pools)
-    u32 context_count;      // live contexts contributing to cpu_context_bytes
-    u32 cpu_dynamic_total;  // heap total (== cpu_context_bytes today; named for the section subtotal)
+
+    u32 cpu_context_bytes;      // sum over live contexts of the single ctx block (header + all pools)
+    u32 context_count;          // live contexts contributing to cpu_context_bytes
+    u32 cpu_dynamic_total;      // heap total (== cpu_context_bytes today; named for the section subtotal)
 
     /* --- Grand total: everything the gui system holds right now. --- */
-    u32 total_bytes;        // gpu_total + cpu_static_total + cpu_dynamic_total
+
+    u32 total_bytes;            // gpu_total + cpu_static_total + cpu_dynamic_total
 
 } gui_mem_stats_t;
 
@@ -1739,23 +1746,23 @@ typedef struct
 
 typedef struct
 {
-    u32 cmd_count;      // semantic draw commands the UI emitted
-    u32 clip_count;     // clip table entries referenced by those commands (debug band excluded)
-    u32 seg_count;      // command segments cut this frame (per-(win,z,vp,font,band) spans)
-    u32 text_pool_used; // bytes of the per-frame text pool consumed (cap: GUI_MAX_TEXT_POOL)
-    u32 vert_count;     // tessellated vertices (total, including retained)
-    u32 tri_count;      // tessellated triangles (total, including retained)            
-    u32 draw_calls;     // GPU indexed draw calls (batches), summed over surfaces       
+    u32 cmd_count;          // semantic draw commands the UI emitted
+    u32 clip_count;         // clip table entries referenced by those commands (debug band excluded)
+    u32 seg_count;          // command segments cut this frame (per-(win,z,vp,font,band) spans)
+    u32 text_pool_used;     // bytes of the per-frame text pool consumed (cap: GUI_MAX_TEXT_POOL)
+    u32 vert_count;         // tessellated vertices (total, including retained)
+    u32 tri_count;          // tessellated triangles (total, including retained)            
+    u32 draw_calls;         // GPU indexed draw calls (batches), summed over surfaces       
 
-    u32 win_total;      // windows tracked this frame
-    u32 win_retained;   // windows whose geometry was reused (no re-tessellation)
-    u32 vert_retained;  // vertices that came from prev-frame copy, not re-tessellated
-    u32 tri_retained;   // triangles retained from prev-frame copy
+    u32 win_total;          // windows tracked this frame
+    u32 win_retained;       // windows whose geometry was reused (no re-tessellation)
+    u32 vert_retained;      // vertices that came from prev-frame copy, not re-tessellated
+    u32 tri_retained;       // triangles retained from prev-frame copy
 
-    u32 upload_batches; // number of buffer write calls per frame
-    u32 upload_bytes;   // total bytes uploaded to GPU vertex and index buffers
+    u32 upload_batches;     // number of buffer write calls per frame
+    u32 upload_bytes;       // total bytes uploaded to GPU vertex and index buffers
 
-    u32 volatile_patched; // volatile_cb rows whose geometry was patched in place this frame
+    u32 volatile_patched;   // volatile_cb rows whose geometry was patched in place this frame
                            // (idle replay or a live real-frame reuse-patch) -- a separate signal
                            // from win_retained: a window with an animating volatile widget still
                            // counts as fully retained; this is what actually moved.

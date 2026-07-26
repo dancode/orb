@@ -62,6 +62,12 @@ gui_style_apply( void )
         redraw_request();
 }
 
+void
+gui_asset_path( const char* relative, char* out, int out_size )
+{
+    fmt_snprintf( out, (size_t)out_size, "%s/%s", sys_root_dir(), relative );
+}
+
 u32
 gui_font_load( const char* path )
 {
@@ -96,12 +102,6 @@ gui_font_load_into( u32 id, const char* path )
        frame_begin (font_atlas_sync), where layout follows via gui_font_flush_deferred.  Nothing to
        rescale here. */
     return font_load_into( id, path );
-}
-
-void
-gui_asset_path( const char* relative, char* out, int out_size )
-{
-    fmt_snprintf( out, (size_t)out_size, "%s/%s", sys_root_dir(), relative );
 }
 
 void

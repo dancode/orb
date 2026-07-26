@@ -62,55 +62,68 @@ struct rhi_cmd_s; typedef struct rhi_cmd_s* rhi_cmd_t;
 
 typedef struct gui_api_s
 {
-
     /*============================================================================================================
         GUI_FRAME -- lifecycle  (frame/)
-        The door and the conductor: init/boot, frame phases, pacing, viewports, contexts,
-        event routing, memory / render stats.  Owns per-frame ordering; no widgets.  Every
-        section below emits inside the frame scope this one opens.
+        The door and the conductor: init/boot, frame phases, pacing, viewports, contexts, event routing, 
+        memory / render stats -- Owns per-frame ordering; no widgets.
+        Every section below emits inside the frame scope this one opens.
     =============================================================================================================*/
 
     /* GPU resource lifecycle.
-        init()      -- call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
-                       `font` optionally loads one of the built-in presets (gui_builtin_font_t,
-                       gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
-                       yourself. A failed built-in load is non-fatal (a warning; init still
-                       succeeds without text).
-        shutdown()  -- call before rhi()->shutdown(); destroys all GPU resources.
-        font_load() -- load a pre-baked .orb_font atlas into a new font id and make it active;
-                       call after init(). Returns the new id (>= 1), or 0 on failure.
-        font_load_builtin() -- font_load for a built-in preset (gui_builtin_font_t): the enum
-                       already knows its asset path, so no path plumbing at the call site.
-                       Same contract as font_load -- a NEW id, activated (the init()/boot()
-                       preset in slot 0 is untouched; font_use( 0 ) switches back).  Returns
-                       the new id, or 0 for GUI_FONT_NONE / an unknown preset / a failed load.
-        asset_path() -- resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
-                       the build root, one level above the executable -- the same convention
-                       load_icon and the built-in font/icon presets resolve through. Writes the
-                       resolved path into `out` (out_size bytes); for a caller that wants the
-                       absolute path itself (e.g. a plain fopen) rather than a load_icon call. */
+    
+        init() 
+            : call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
+              `font` optionally loads one of the built-in presets (gui_builtin_font_t,
+              gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
+              yourself. A failed built-in load is non-fatal (a warning; init still
+              succeeds without text).
 
-    bool                ( *init      )( gui_builtin_font_t font );
-    void                ( *shutdown  )( void );
-    u32                 ( *font_load )( const char* path );
-    u32                 ( *font_load_builtin )( gui_builtin_font_t font );
-    void                ( *asset_path )( const char* relative, char* out, int out_size );
+        shutdown()  
+            : call before rhi()->shutdown(); destroys all GPU resources.
+
+        asset_path() 
+            : resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
+              the build root, one level above the executable -- the same convention
+              load_icon and the built-in font/icon presets resolve through. Writes the
+              resolved path into `out` (out_size bytes); for a caller that wants the
+              absolute path itself (e.g. a plain fopen) rather than a load_icon call.
+
+        font_load()
+            : load a pre-baked .orb_font atlas into a new font id and make it active;
+              call after init(). Returns the new id (>= 1), or 0 on failure.
+
+        font_load_builtin()
+            : font_load for a built-in preset (gui_builtin_font_t): the enum
+              already knows its asset path, so no path plumbing at the call site.
+              Same contract as font_load -- a NEW id, activated (the init()/boot()
+              preset in slot 0 is untouched; font_use( 0 ) switches back).  Returns
+              the new id, or 0 for GUI_FONT_NONE / an unknown preset / a failed load. */
+
+    bool                ( *init      )          ( gui_builtin_font_t font );
+    void                ( *shutdown  )          ( void );
+    void                ( *asset_path )         ( const char* relative, char* out, int out_size );
+
+    u32                 ( *font_load )          ( const char* path );
+    u32                 ( *font_load_builtin )  ( gui_builtin_font_t font );
+    
+    /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
+       backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
+       bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */
+
+    gui_mem_stats_t     ( *mem_stats       )    ( void );
+    void                ( *print_mem_stats )    ( void );
+
+    /* Per-frame render statistics (geometry + batch counts) for the LAST completed frame.
+       Published at frame_begin, so a read during the build reflects the previous frame -- the
+       standard one-frame lag.  Feeds an FPS / performance overlay without re-deriving counts. */
+
+    gui_render_stats_t  ( *render_stats )( void );
+
 
     /* A host on the BOOT PATH (see that band, after the frame lifecycle below) calls boot()
        instead of this block -- it runs exactly these calls, in this order, from one descriptor.
        The runtime host does its own setup here and never boots. */
 
-    /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
-       backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
-       bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */
-
-    gui_mem_stats_t     ( *mem_stats       )( void );
-    void                ( *print_mem_stats )( void );
-
-    /* Per-frame render statistics (geometry + batch counts) for the LAST completed frame.
-       Published at frame_begin, so a read during the build reflects the previous frame -- the
-       standard one-frame lag.  Feeds an FPS / performance overlay without re-deriving counts. */
-    gui_render_stats_t  ( *render_stats )( void );
 
     /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are no longer emitted
        by host code.  debug_enable( true ) arms an internal hotkey driver (numpad '.' arms the group,
