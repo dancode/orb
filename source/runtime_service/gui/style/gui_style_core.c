@@ -69,26 +69,33 @@ style_var_base( gui_style_var_t v )
     Style State -- ONE slot space, one mechanism.
 
     Colors and vars are the same machine over different value types, so they share one slot
-    space: colors occupy [0, GUI_COL_COUNT), vars [GUI_COL_COUNT, STYLE_SLOT_COUNT) with their
-    f32 carried as raw bits.  The typed accessors below are the only place the ranges are mapped.
+    space: WITHIN this block colors occupy [0, GUI_COL_COUNT), vars [GUI_COL_COUNT,
+    STYLE_SLOT_COUNT) with their f32 carried as raw bits.  The typed accessors below are the
+    only place the ranges are mapped -- and the only place the block's base is added.
 
-    Working set: the base with the push/pop stacks applied -- the value an unscoped read returns.
+    The block is TRANSITIONAL: one aggregate covering chrome's palette and its vars, so the
+    registry seam lands with no behavior change.  It splits into an instanced element schema,
+    chrome's private tokens, and the var block next; the read path below does not change when
+    it does, because every read already goes through a base.
 
-    Stacks: saved (slot, previous) pairs so pop restores regardless of which slots a push touched.  
-    
+    Working set: the store with the push/pop stacks applied -- the value an unscoped read
+    returns.  It lives in s_work (style/gui_style_block.c); nothing here owns storage.
+
+    Stacks: saved (slot, previous) pairs so pop restores regardless of which slots a push touched.
+
     TWO stacks, one per public pop verb: pop_style_color and pop_style_var each pop their
-    own pushes, so an interleaved push_color / push_var sequence unwinds correctly 
+    own pushes, so an interleaved push_color / push_var sequence unwinds correctly
     (the same reason Dear ImGui keeps two).
 
     Next-item layers: a small list of (slot, value) overrides, `next` filled by next_style_* and
-    promoted to `item` (the active per-widget override) at the resolve seam, then cleared.  
-    
+    promoted to `item` (the active per-widget override) at the resolve seam, then cleared.
+
     Both are tiny lists -- usually empty -- so a read scans only what is active.
 
 ==============================================================================================*/
 
 #define GUI_STYLE_STACK_DEPTH 32
-#define STYLE_VAR_BASE        GUI_COL_COUNT                    /* var slot range starts here */
+#define STYLE_VAR_BASE        GUI_COL_COUNT                    /* var range, WITHIN the block */
 #define STYLE_SLOT_COUNT      ( GUI_COL_COUNT + GUI_VAR_COUNT )
 
 /* f32 <-> raw bits, so one u32 slot space carries both value types. */
@@ -104,7 +111,6 @@ typedef struct
 
 } style_stack_t;
 
-static u32           s_slot[ STYLE_SLOT_COUNT ];      // working set (base + stacks)
 static style_stack_t s_col_stack;                     // push_style_color's stack
 static style_stack_t s_var_stack;                     // push_style_var's stack
 
@@ -112,6 +118,12 @@ static style_pair_t  s_next[ STYLE_SLOT_COUNT ];      // next-item pending
 static u32           s_next_n;
 static style_pair_t  s_item[ STYLE_SLOT_COUNT ];      // active for the current item
 static u32           s_item_n;
+
+/* The transitional block: registered once at the first style_new_frame, base cached here.
+   Every read / push / next below adds it, so the base path is live from day one (it is 0
+   today -- this block registers first -- and stops being 0 the moment a second block does). */
+static u16  s_chrome_base  = 0;
+static bool s_blocks_ready = false;
 
 /*==============================================================================================
 
@@ -126,7 +138,9 @@ static u32           s_item_n;
 
 ==============================================================================================*/
 
-/* This is what every COL_* / metric macro ultimately resolves to. */
+/* This is what every COL_* / metric macro ultimately resolves to.  `slot` is ABSOLUTE (the
+   block's base already added by the typed face below) -- the working set is one flat space
+   across every registered block. */
 
 static u32
 style_read( u32 slot )
@@ -135,8 +149,8 @@ style_read( u32 slot )
     for ( u32 i = 0; i < s_item_n; ++i )
         if ( s_item[ i ].slot == (u16)slot ) return s_item[ i ].val;
 
-    /* normal style value working set (base + push/pop) */
-    return s_slot[ slot ];
+    /* normal style value working set (store + push/pop) */
+    return s_work[ slot ];
 }
 
 static void
@@ -144,9 +158,9 @@ style_push( style_stack_t* st, u32 slot, u32 val )
 {
     ORB_ASSERT( st->sp < GUI_STYLE_STACK_DEPTH && "style push: stack overflow -- mismatched push/pop" );
     if ( st->sp < GUI_STYLE_STACK_DEPTH )
-        st->save[ st->sp ] = ( style_pair_t ){ (u16)slot, s_slot[ slot ] };
+        st->save[ st->sp ] = ( style_pair_t ){ (u16)slot, s_work[ slot ] };
     ++st->sp;
-    s_slot[ slot ] = val;
+    s_work[ slot ] = val;
 }
 
 static void
@@ -156,7 +170,7 @@ style_pop( style_stack_t* st, u32 count )
     {
         --st->sp;
         if ( st->sp < GUI_STYLE_STACK_DEPTH )
-            s_slot[ st->save[ st->sp ].slot ] = st->save[ st->sp ].val;
+            s_work[ st->save[ st->sp ].slot ] = st->save[ st->sp ].val;
     }
 }
 
@@ -172,21 +186,25 @@ style_next( u32 slot, u32 val )
 }
 
 /*==============================================================================================
-    Typed faces -- the color / var range mapping, in one place each.
+    Typed faces -- the color / var range mapping AND the block base, in one place each.
+
+    These four (plus the two next_ setters below) are the ONLY places s_chrome_base is added.
+    A read site says COL_TEXT; it never sees a base, which is what keeps the split ahead a
+    macro-local change rather than a 199-site one.
 ==============================================================================================*/
 
-u32 style_col( gui_col_t slot )       { return style_read( (u32)slot ); }
-f32 style_var( gui_style_var_t slot ) { return style_bits_f32( style_read( STYLE_VAR_BASE + (u32)slot ) ); }
+u32 style_col( gui_col_t slot )       { return style_read( s_chrome_base + (u32)slot ); }
+f32 style_var( gui_style_var_t slot ) { return style_bits_f32( style_read( s_chrome_base + STYLE_VAR_BASE + (u32)slot ) ); }
 
-static void style_push_color( gui_col_t slot, u32 abgr ) 
+static void style_push_color( gui_col_t slot, u32 abgr )
 {
-    if ( slot < GUI_COL_COUNT ) 
-         style_push( &s_col_stack, (u32)slot, abgr );
+    if ( slot < GUI_COL_COUNT )
+         style_push( &s_col_stack, s_chrome_base + (u32)slot, abgr );
 }
 void style_push_var( gui_style_var_t slot, f32 value )
 {
-    if ( slot < GUI_VAR_COUNT ) 
-         style_push( &s_var_stack, STYLE_VAR_BASE + (u32)slot, style_f32_bits( value ) );
+    if ( slot < GUI_VAR_COUNT )
+         style_push( &s_var_stack, s_chrome_base + STYLE_VAR_BASE + (u32)slot, style_f32_bits( value ) );
 }
 static void style_pop_color( u32 count ) 
 { 
@@ -203,11 +221,11 @@ void style_pop_var  ( u32 count )
 
 static void style_next_color( gui_col_t slot, u32 abgr )
 {
-    if ( slot < GUI_COL_COUNT ) style_next( (u32)slot, abgr );
+    if ( slot < GUI_COL_COUNT ) style_next( s_chrome_base + (u32)slot, abgr );
 }
 static void style_next_var( gui_style_var_t slot, f32 value )
 {
-    if ( slot < GUI_VAR_COUNT ) style_next( STYLE_VAR_BASE + (u32)slot, style_f32_bits( value ) );
+    if ( slot < GUI_VAR_COUNT ) style_next( s_chrome_base + STYLE_VAR_BASE + (u32)slot, style_f32_bits( value ) );
 }
 
 /*==============================================================================================
@@ -243,18 +261,66 @@ style_chrome_reset( void )
     s_item_n = 0;
 }
 
-/* Reset the per-frame style state: re-seed the working set from the base (so an unbalanced push
-   cannot leak across frames), empty the stacks, and clear both next-item layers.  Called from
-   gui_ctx_begin (frame/gui_frame_loop.c), paired with ctx_new_frame, and from gui_theme_reset. */
+/*==============================================================================================
+    The transitional block -- registration and its install fn.
+==============================================================================================*/
+
+/* Fill the block's store run from the active style: the colors verbatim, the vars through the
+   font-derived resolver above.  This is the body style_new_frame used to write straight into
+   the working set; it now lands in the INSTALLED layer, and the reseed copies it down. */
+
+static void
+style_chrome_install( void* user, u32* dst, u16 count )
+{
+    UNUSED( user );
+    UNUSED( count );
+
+    for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
+        dst[ i ] = s_style.colors[ i ];
+
+    for ( u32 i = 0; i < GUI_VAR_COUNT; ++i )
+        dst[ STYLE_VAR_BASE + i ] = style_f32_bits( style_var_base( (gui_style_var_t)i ) );
+}
+
+/* One-time registration, driven from style_new_frame rather than an init entry point: the unit
+   has none, and new_frame is guaranteed to run before any read (gui_theme_set at gui_init calls
+   it through gui_theme_reset).  Promote it to a real style_init when the orchestrator grows one. */
+
+static void
+style_blocks_bootstrap( void )
+{
+    if ( s_blocks_ready ) return;
+    s_blocks_ready = true;
+
+    style_block_desc_t d =
+    {
+        .name      = "chrome",
+        .count     = STYLE_SLOT_COUNT,
+        .instances = 1,
+        .install   = style_chrome_install,
+        .user      = NULL,
+    };
+
+    s_chrome_base = style_block_work_base( style_block_register( &d ) );
+}
+
+/* Reset the per-frame style state: re-derive the installed layer, re-seed the working set from
+   it (so an unbalanced push cannot leak across frames), empty the stacks, and clear both
+   next-item layers.  Called from gui_ctx_begin (frame/gui_frame_loop.c), paired with
+   ctx_new_frame, and from gui_theme_reset.
+
+   The store refill runs per frame because the transitional block sources live from s_style --
+   a direct style_get() edit or a set_check_style write must land on the next frame, as it
+   always has.  Once blocks own their own installed data the refill moves to the style landing
+   (gui_style_apply) and this drops to the reseed alone. */
 
 void
 style_new_frame( void )
 {
-    for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
-        s_slot[ i ] = s_style.colors[ i ];
+    style_blocks_bootstrap();
 
-    for ( u32 i = 0; i < GUI_VAR_COUNT; ++i )
-        s_slot[ STYLE_VAR_BASE + i ] = style_f32_bits( style_var_base( (gui_style_var_t)i ) );
+    style_store_refill();   /* installed layer <- theme / font-derived base */
+    style_work_reseed();    /* working set <- installed layer               */
 
     s_col_stack.sp = s_var_stack.sp = 0;
     s_next_n = s_item_n = 0;

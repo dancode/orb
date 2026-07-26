@@ -8,7 +8,9 @@
     stacks, the lattice, and the color/metric vocabulary macros every layer above sizes and
     paints with.  Stack position: after the core pair (each unit .c lists its sub-stack).
 
-    Its own TU (root gui_style.c: gui_theme.c + gui_style_core.c + gui_stacks.c).
+    Its own TU (root gui_style.c: gui_theme.c + gui_style_block.c + gui_style_core.c +
+    gui_stacks.c).  Values live in the block backend (gui_style_block.c): every slot, whatever
+    its vocabulary, is a based run in one store / working-set pair.
     Resolution is PURE: interact state arrives as PARAMETERS (col_item_bg( st )),
     never queried from core, so style resolves with no interact server present -- the one
     sanctioned exception is col_item_bg_anim's explicit ride on core's keyed anim utility.

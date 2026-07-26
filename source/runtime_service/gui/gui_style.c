@@ -26,12 +26,14 @@
 
     Include order matters: each file can reference statics from files included above it.
 
-    style/gui_theme.c      -- theme registry, base/active style state (s_style_base, s_style),
-                              theme API, the grid lattice, metrics_compute (the em rescale)
-    style/gui_style_core.c -- the stacks machinery: one slot space, push/pop/next resolution,
-                              the item/chrome seam hooks, state -> color projections
-    style/gui_stacks.c     -- the caller's bracketing vocabulary: push/pop id, item flags,
-                              style color/var, scale ramp, disabled scope
+    style/gui_theme.c       -- theme registry, base/active style state (s_style_base, s_style),
+                               theme API, the grid lattice, metrics_compute (the em rescale)
+    style/gui_style_block.c -- the value backend: the block registry and the store / work
+                               arrays every style slot lives in, whatever its vocabulary
+    style/gui_style_core.c  -- the stacks machinery over one registered block: push/pop/next
+                               resolution, the item/chrome seam hooks, state -> color projections
+    style/gui_stacks.c      -- the caller's bracketing vocabulary: push/pop id, item flags,
+                               style color/var, scale ramp, disabled scope
 
 ==============================================================================================*/
 
@@ -56,20 +58,22 @@
 ==============================================================================================*/
 
 #include "runtime_service/gui/style/gui_theme.c"
+#include "runtime_service/gui/style/gui_style_block.c"
 #include "runtime_service/gui/style/gui_style_core.c"
 #include "runtime_service/gui/style/gui_stacks.c"
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory
-    (gui_ui_mem.c): the base + active style, the theme table (.rdata), and the stack /
-    override-pair tables.
+    (gui_ui_mem.c): the base + active style, the theme table (.rdata), the block backend
+    (registry + store + work set), and the stack / override-pair tables.
 ==============================================================================================*/
 
 u32
 style_unit_mem_bytes( void )
 {
     return (u32)( sizeof( s_style_base ) + sizeof( s_style ) + sizeof( k_themes )
-                + sizeof( s_slot ) + sizeof( s_col_stack ) + sizeof( s_var_stack )
+                + sizeof( s_block ) + sizeof( s_store ) + sizeof( s_work )
+                + sizeof( s_col_stack ) + sizeof( s_var_stack )
                 + sizeof( s_next ) + sizeof( s_item ) );
 }
 
