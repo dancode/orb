@@ -392,6 +392,11 @@ const gui_style_t* gui_style_peek( void );
 void               gui_style_apply( void );
 
 void gui_style_source_set( gui_style_source_fn fn, void* user );
+
+gui_style_set_t gui_style_set_create ( gui_style_source_fn fn, void* user );
+void            gui_style_set_push   ( gui_style_set_t set );
+void            gui_style_set_pop    ( void );
+gui_style_set_t gui_style_set_current( void );
 void gui_push_style_color( gui_col_t slot, u32 abgr );
 void gui_pop_style_color( u32 count );
 void gui_next_style_color( gui_col_t slot, u32 abgr );
@@ -399,6 +404,7 @@ void gui_push_style_var( gui_style_var_t var, f32 value );
 void gui_pop_style_var( u32 count );
 void gui_next_style_var( gui_style_var_t var, f32 value );
 u32  gui_style_color( gui_col_t slot );
+const char* gui_style_color_name( gui_col_t slot );
 void gui_scale_push( gui_scale_t s );
 void gui_scale_pop( void );
 void gui_set_check_style( u8 style );

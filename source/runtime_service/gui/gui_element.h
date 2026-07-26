@@ -8,13 +8,17 @@
     4x4 role/state palette.  Deliberately NO per-widget slots (btn_bg_hover, slot_border_hot,
     ...): per-widget color is either a call parameter (stock_meter's fill) or a token in the
     kit above.  Renders read ONLY this struct; themes never reach them directly -- every style
-    landing re-installs it through the registered style source (a kit that owns the look,
-    gui()->style_source_set), else the default S2 compile from the chrome theme.
+    landing re-installs it from the chrome theme, then lets the owning style source overwrite
+    what it owns.
+
+    One copy per style SET (gui_style_set_t, gui.h): chrome's is set 0, and a kit takes its own
+    with gui()->style_set_create so both looks stay installed at once.  This struct is the
+    layout of one such copy.
 
     Two doors, and the difference matters: gui()->el_color( role, state ) is the RESOLVED read
     (push_style_color / next_style_color overrides win) -- use it in any render, stock or your
-    own.  gui()->el_style() is the raw installed struct, for a kit INSTALLING a look; reading
-    ->col[][] through it at paint time bypasses the style stack.
+    own.  gui()->el_style() is the raw installed struct of the CURRENT set, for a kit INSTALLING
+    a look; reading ->col[][] through it at paint time bypasses the style stack.
 
     Naming: el_ is this palette; the widget set that paints from it is stock_ (gui_api.h,
     GUI_STOCK).  A user widget is a stock render's sibling and reads the same palette.

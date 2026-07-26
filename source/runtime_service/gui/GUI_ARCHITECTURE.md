@@ -501,9 +501,12 @@ it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
 - Custom draw: `canvas(h)` reserves a cell; `draw_rect/line/circle/text/draw_text_in` take
   caller rects, composing with split/carve/anchor. Colors are u32 ABGR (`GUI_COLOR(r,g,b,a)`).
 - Style: `style_get()` + edit + `style_apply()`, or scoped `push_style_color/pop_style_color`.
-  A kit that owns the element look registers `style_source_set(fn, user)`: the source is
-  invoked at every style landing (font / theme / scale) to re-install `el_style()`, replacing
-  the default chrome-theme compile instead of being clobbered by it.
+  A kit that owns the whole application's look registers `style_source_set(fn, user)` on the
+  default set; the source is invoked at every style landing (font / theme / scale) to re-install
+  `el_style()`, deriving from the chrome theme first so it need only overwrite what it owns.
+  A kit that wants its look BESIDE chrome's takes a set of its own -- `style_set_create(fn,
+  user)` once, then `style_set_push/pop` around its UI. Both looks stay installed; neither
+  clobbers the other.
 - Drag-drop: `drag_source_begin` + `drag_payload_set` (emit preview widgets) /
   `drag_target_begin` + `drag_payload_accept`; payload copied by value.
 

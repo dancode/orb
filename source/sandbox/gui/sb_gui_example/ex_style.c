@@ -56,15 +56,22 @@ ex_style_themes( void )
     Style Stacks -- push/pop color + var overrides, one-shot next_*, and the scale ramp.
 ==============================================================================================*/
 
-/* Names for every themeable color slot, indexed by gui_col_t. */
-static const char* s_col_names[ GUI_COL_COUNT ] = {
-    "TEXT", "TEXT_DIM", "WINDOW_BG", "CHILD_BG", "TITLE_BG", "BORDER",
-    "WIDGET_BG", "WIDGET_HOT", "WIDGET_ACT", "WIDGET_FG", "CHECK_MARK",
-    "SLIDER_TRACK", "RESIZE_HOT", "INPUT_BG", "INPUT_FOCUS", "CURSOR",
-    "NAV_HIGHLIGHT", "NAV_CAPTURE", "FOCUS_BORDER",
-    "USER_0", "USER_1", "USER_2", "USER_3",
-    "USER_4", "USER_5", "USER_6", "USER_7",
-};
+/* Slot names come from the engine (style_color_name) rather than a table kept in step with
+   gui_col_t by hand -- built once, since combo() wants a contiguous array of pointers. */
+static const char**
+ex_col_names( void )
+{
+    static const char* names[ GUI_COL_COUNT ];
+    static bool        built = false;
+
+    if ( !built )
+    {
+        for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
+            names[ i ] = gui()->style_color_name( ( gui_col_t )i );
+        built = true;
+    }
+    return names;
+}
 
 /* The var subset with obvious visual effect, plus a sensible slider range for each. */
 typedef struct { const char* name; gui_style_var_t var; f32 lo, hi; } ex_var_row_t;
@@ -104,7 +111,7 @@ ex_style_stacks( void )
         /* --- color override: pick a slot + a color, pushed around the sample window --------- */
         gui()->separator_text( "push_style_color (scopes the sample window)" );
         gui()->checkbox( "Push the color", &col_on );
-        gui()->combo( "slot", &col_sel, s_col_names, GUI_COL_COUNT );
+        gui()->combo( "slot", &col_sel, ex_col_names(), GUI_COL_COUNT );
         gui()->color_edit4( "color", col_val, GUI_COLOR_EDIT_NONE );
 
         /* --- var override: pick a metric + value ------------------------------------------- */

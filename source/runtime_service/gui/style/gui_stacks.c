@@ -109,11 +109,11 @@ void gui_push_style_var( gui_style_var_t var, f32 value )   { style_push_var( va
 void gui_pop_style_var ( u32 count )                          { style_pop_var( count ); }
 void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( var, value ); }
 
-/* Resolved read of one palette slot -- theme base with any push / next override applied, the
-   same value a stock widget would paint with right now.  THE public door to the user-extended
-   range (GUI_COL_USER_*): a kit seeds a user slot (style_get()->colors[...] or push) and paints
-   its custom drawing with this read, so its colors ride the theme + stacks like stock chrome.
-   Reading a core slot (border, backgrounds) for custom chrome is equally legitimate. */
+/* Resolved read of one palette slot -- the installed value with any push / next override
+   applied, the same value a stock widget would paint with right now.  The generic door for code
+   holding a gui_col_t: custom chrome that wants the theme's border or backgrounds reads it here
+   and rides the stacks like stock chrome does.  (A render that speaks roles and states should
+   use el_color instead -- one load, no route.) */
 u32 gui_style_color( gui_col_t slot )
 {
     return ( slot < GUI_COL_COUNT ) ? style_col( slot ) : 0u;

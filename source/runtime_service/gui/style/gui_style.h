@@ -14,38 +14,37 @@
     Resolution is PURE: interact state arrives as PARAMETERS (col_item_bg( st )),
     never queried from core, so style resolves with no interact server present -- the one
     sanctioned exception is col_item_bg_anim's explicit ride on core's keyed anim utility.
-    The color id table is core ids + a user-extended range at the end (GUI_COL_USER_*, gui.h),
-    read back through the public gui_style_color().
+    The public color id table (gui_col_t, gui.h) is a NAMING layer over the blocks: a name
+    resolves to one or more slots, read back through gui_style_color() / gui_style_color_name().
 
 ==============================================================================================*/
 
 // clang-format off
 
 /*==============================================================================================
-    The element bridge -- the strata seam between the style unit and the stock unit
+    The element stratum -- resolved reads over the element block
 ==============================================================================================*/
 
-const gui_style_t* style_active( void );      /* style/gui_theme.c: the active scaled style  */
-void               el_style_derive( void );   /* stock/gui_stock.c: the S2->S1 compile   */
-void               el_style_install( void );  /* stock/gui_stock.c: the landing funnel --
-                                                 registered style source, else el_style_derive */
+const gui_style_t* style_active( void );   /* style/gui_theme.c: the active scaled style */
 
-/* THE role x state -> gui_col_t slot projection (stock unit owns it) -- shared by
-   el_style_derive and style_el_col so the two directions of the strata bridge cannot drift. */
-extern const u8 g_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ];
+/* A style LANDING (gui_style_core.c): theme / font / scale changed, so every block re-derives
+   its installed values.  Driven across the unit seam by gui_style_apply (frame/gui_frame_font.c)
+   after the metrics rescale -- which is where the element stratum tracks a theme or font change. */
+void style_landing( void );
 
-/* gui_style_core.c: resolve one element-shaped color for STOCK chrome -- a push-stack
-   override on the projected slot wins (chrome's own mechanism), else the INSTALLED element
-   style value (S1 -- so a kit that overwrites el_style restyles stock widget bodies too).
-   With no override and no kit overwrite this equals style_col( slot ) exactly. */
+/* gui_style_core.c: resolve one element value -- the installed element style with any
+   push_style_* / next_style_* override applied, since both live in the same slot.  THE seam
+   every stock render, every user widget (through gui_el_color), and chrome's element-shaped
+   COL_* macros read. */
 u32 style_el_col( u8 role, u8 state );
 
-/* style_el_pad / style_el_gap (gui_style_core.c) -- the layout-style spacing floats the rect
-   dispatcher applies, resolved installed-layout-style-as-base with the var stack (push_style_var /
-   scale_push) overriding: the metric twins of style_el_col.  WIDGET_PAD / WIDGET_GAP read through
-   these, so a kit's (or a set-once) gui_el_style pad / gap drives flow spacing and zero means zero. */
+/* The metric twins: the element spacing the rect dispatcher applies (cell_next_w's inter-cell
+   gap + the region / label pad) and the frame line width the renders inset by.  WIDGET_PAD /
+   WIDGET_GAP read through these and GUI_VAR_WIDGET_PAD / _GAP push onto the same slots, so a
+   kit's installed spacing and a scale_push meet in one place and zero means zero. */
 f32 style_el_pad( void );
 f32 style_el_gap( void );
+f32 style_el_border_w( void );
 
 /*==============================================================================================
     Style resolution + the vocabulary macros
@@ -75,9 +74,10 @@ u32 style_col( gui_col_t slot );
 #define CHECK_PAD        ( (f32)s_style.checkmark_pad )
 #define WIN_FOCUS_BORDER style_var( GUI_VAR_WIN_FOCUS_BORDER )
 
-/* The COL_* color vocabulary: the element-shaped subset speaks roles x states through
-   style_el_col (sourcing from the installed element style, stack overrides winning); the
-   rest are CHROME TOKENS on style_col. */
+/* The COL_* color vocabulary, and the block split made visible: the element-shaped subset
+   speaks roles x states over the ELEMENT block (the stratum chrome shares with stock widgets
+   and a kit's own), the rest are chrome's PRIVATE TOKENS -- the colors with no role.  Both are
+   one indexed load; style_col( gui_col_t ) is the generic door for code holding a slot id. */
 #define COL_TEXT         style_el_col( GUI_EL_TEXT,   GUI_EL_IDLE   )
 #define COL_TEXT_DIM     style_el_col( GUI_EL_TEXT,   GUI_EL_DIM    )
 #define COL_WIDGET_BG    style_el_col( GUI_EL_BG,     GUI_EL_IDLE   )
@@ -88,16 +88,16 @@ u32 style_col( gui_col_t slot );
 #define COL_WIDGET_FG    style_el_col( GUI_EL_ACCENT, GUI_EL_IDLE   )
 #define COL_CHECK_MARK   style_el_col( GUI_EL_ACCENT, GUI_EL_ACTIVE )
 #define COL_SLIDER_TRACK style_el_col( GUI_EL_ACCENT, GUI_EL_DIM    )
+#define COL_NAV          style_el_col( GUI_EL_ACCENT, GUI_EL_HOT    )
 
-#define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG     )
-#define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG      )
-#define COL_RESIZE_HOT   style_col( GUI_COL_RESIZE_HOT    )
-#define COL_INPUT_BG     style_col( GUI_COL_INPUT_BG      )
-#define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS   )
-#define COL_CURSOR       style_col( GUI_COL_CURSOR        )
-#define COL_NAV          style_col( GUI_COL_NAV_HIGHLIGHT )
-#define COL_NAV_CAPTURE  style_col( GUI_COL_NAV_CAPTURE   )
-#define COL_FOCUS_BORDER style_col( GUI_COL_FOCUS_BORDER  )
+#define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG    )
+#define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG     )
+#define COL_RESIZE_HOT   style_col( GUI_COL_RESIZE_HOT   )
+#define COL_INPUT_BG     style_col( GUI_COL_INPUT_BG     )
+#define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS  )
+#define COL_CURSOR       style_col( GUI_COL_CURSOR       )
+#define COL_NAV_CAPTURE  style_col( GUI_COL_NAV_CAPTURE  )
+#define COL_FOCUS_BORDER style_col( GUI_COL_FOCUS_BORDER )
 
 /* style stack push/pop by slot (gui_style_core.c). */
 void style_push_var( gui_style_var_t slot, f32 value );

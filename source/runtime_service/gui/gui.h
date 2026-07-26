@@ -166,11 +166,21 @@ typedef void ( *gui_text_cb_fn )( char* buf, u32 len, u32 bufsz, void* user );
    acts on it -- the Quake-console passthrough (history, completion, scrollback keys). */
 typedef bool ( *gui_edit_key_fn )( u32 key, bool ctrl, bool shift, bool repeat, void* user );
 
-/* The installed-element-style OWNER (see style_source_set, GUI_STYLE).  Invoked at every style
-   landing (font activation, theme_set / theme_reset / style_apply) AFTER the layout metrics
-   rescale, so the owner re-derives its look against fresh numbers.  The source writes the
-   installed style through gui()->el_style(). */
+/* The installed-element-style OWNER (see style_source_set / style_set_create, GUI_STYLE).
+   Invoked at every style landing (font activation, theme_set / theme_reset / style_apply) AFTER
+   the layout metrics rescale, so the owner re-derives its look against fresh numbers.  The
+   source writes the installed style through gui()->el_style(), which points at the set being
+   installed for the duration of the call. */
 typedef void ( *gui_style_source_fn )( void* user );
+
+/* A style SET -- one installed copy of the element stratum.  Set 0 is chrome's and always
+   exists; gui()->style_set_create() takes another, and style_set_push / _pop bracket the UI
+   that resolves through it.  Two looks stay installed side by side, so an editor's chrome and
+   a game's kit can each own one instead of overwriting a single shared palette. */
+typedef u32 gui_style_set_t;
+
+#define GUI_STYLE_SET_DEFAULT ( ( gui_style_set_t )0 )   /* chrome's set */
+#define GUI_STYLE_SET_MAX     4                          /* installed sets, chrome's included */
 
 /* Monotonic wall-clock source (seconds), supplied by the host to the built-in perf overlay.
    gui has no timing service of its own (it is a leaf of rhi + app), so the host hands it a
@@ -196,6 +206,13 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     The palette is shared rather than per-widget-type (one GUI_COL_WIDGET_BG, not Button +
     Checkbox + ...), matching the engine's single-palette theme: to recolor one button, bracket it
     with push/pop (only that button draws between them), or use next_style_color for a one-shot.
+
+    These are the public NAMES; the values live in two blocks behind them (the element stratum a
+    style set instances, and chrome's private tokens).  A name is a handle to one or more slots,
+    so a push reaches every cell that name covers -- GUI_COL_TEXT covers idle/hot/active text.
+    A kit wanting colors of its OWN keeps them in its own struct and passes them to draw_*;
+    there is no reserved range here to claim, because a color no engine code reads has nothing
+    to gain from living in the engine's enum.
 ==============================================================================================*/
 
 typedef enum
@@ -220,25 +237,7 @@ typedef enum
     GUI_COL_NAV_CAPTURE,    /* nav ring when the item has captured keyboard value-edit input */
     GUI_COL_FOCUS_BORDER,   /* outline around the keyboard-focused window  */
 
-    /* User-extended range -- reserved palette slots no engine code ever reads.  A kit or game
-       HUD claims one by aliasing it locally (enum my_kit_accent = GUI_COL_USER_0), seeds it in
-       the base style (style_get()->colors[ slot ] = ...; style_apply()) or scopes it with
-       push_style_color, and paints with the resolved read (gui()->style_color( slot )) -- so
-       custom drawing rides the theme + the push/next stacks exactly like stock chrome.  Themes
-       leave them zero (transparent): an unseeded user slot draws nothing, loudly. */
-
-    GUI_COL_USER_0,
-    GUI_COL_USER_1,
-    GUI_COL_USER_2,
-    GUI_COL_USER_3,
-    GUI_COL_USER_4,
-    GUI_COL_USER_5,
-    GUI_COL_USER_6,
-    GUI_COL_USER_7,
-
     GUI_COL_COUNT,          /* slot count -- not a color                   */
-
-    GUI_COL_USER_COUNT = GUI_COL_COUNT - GUI_COL_USER_0,   /* size of the user range */
 
 } gui_col_t;
 

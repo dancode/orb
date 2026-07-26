@@ -74,7 +74,8 @@ style_unit_mem_bytes( void )
     return (u32)( sizeof( s_style_base ) + sizeof( s_style ) + sizeof( k_themes )
                 + sizeof( s_block ) + sizeof( s_store ) + sizeof( s_work )
                 + sizeof( s_col_stack ) + sizeof( s_var_stack )
-                + sizeof( s_next ) + sizeof( s_item ) );
+                + sizeof( s_next ) + sizeof( s_item )
+                + sizeof( s_set_stack ) + sizeof( s_set_source ) + sizeof( s_set_user ) );
 }
 
 /*============================================================================================*/

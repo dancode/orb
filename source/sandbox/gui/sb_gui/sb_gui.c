@@ -784,38 +784,6 @@ se_enum( const char* label, u8* field, const char* const* names, i32 count )
     return changed;
 }
 
-/* Display names for the color slots, indexed by gui_col_t. */
-static const char* const k_col_names[ GUI_COL_COUNT ] =
-{
-    [ GUI_COL_TEXT          ] = "Text",
-    [ GUI_COL_TEXT_DIM      ] = "Text Dim",
-    [ GUI_COL_WINDOW_BG     ] = "Window BG",
-    [ GUI_COL_CHILD_BG      ] = "Child BG",
-    [ GUI_COL_TITLE_BG      ] = "Title BG",
-    [ GUI_COL_BORDER        ] = "Border",
-    [ GUI_COL_WIDGET_BG     ] = "Widget BG",
-    [ GUI_COL_WIDGET_HOT    ] = "Widget Hot",
-    [ GUI_COL_WIDGET_ACT    ] = "Widget Active",
-    [ GUI_COL_WIDGET_FG     ] = "Widget FG",
-    [ GUI_COL_CHECK_MARK    ] = "Check Mark",
-    [ GUI_COL_SLIDER_TRACK  ] = "Slider Track",
-    [ GUI_COL_RESIZE_HOT    ] = "Resize Hot",
-    [ GUI_COL_INPUT_BG      ] = "Input BG",
-    [ GUI_COL_INPUT_FOCUS   ] = "Input Focus",
-    [ GUI_COL_CURSOR        ] = "Cursor",
-    [ GUI_COL_NAV_HIGHLIGHT ] = "Nav Highlight",
-    [ GUI_COL_NAV_CAPTURE   ] = "Nav Capture",
-    [ GUI_COL_FOCUS_BORDER  ] = "Focus Border",
-    [ GUI_COL_USER_0        ] = "User 0",
-    [ GUI_COL_USER_1        ] = "User 1",
-    [ GUI_COL_USER_2        ] = "User 2",
-    [ GUI_COL_USER_3        ] = "User 3",
-    [ GUI_COL_USER_4        ] = "User 4",
-    [ GUI_COL_USER_5        ] = "User 5",
-    [ GUI_COL_USER_6        ] = "User 6",
-    [ GUI_COL_USER_7        ] = "User 7",
-};
-
 static void
 show_style_editor( bool* p_open )
 {
@@ -880,7 +848,7 @@ show_style_editor( bool* p_open )
     // gui()->field_label_left( 90.0f );
 
     for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
-        changed |= se_color( k_col_names[ i ], &work.colors[ i ] );
+        changed |= se_color( gui()->style_color_name( ( gui_col_t )i ), &work.colors[ i ] );
 
     /* --- Metrics (can move rects) ---------------------------------------------------------- */
     gui()->separator_text( "Metrics" );

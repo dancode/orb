@@ -40,17 +40,30 @@
 #define STYLE_STORE_MAX  256    // installed slots: all blocks, all instances
 #define STYLE_WORK_MAX   128    // working slots: all blocks, current instance only
 
-/* Refill one instance's run of the store.  Called for every instance at every store refill,
-   so a block re-derives its installed values instead of being clobbered.  (Block-level today
-   because every block is single-instance; the per-instance sources a kit registers arrive
-   with the set stack, and the fn moves onto the instance record then.) */
-typedef void ( *style_install_fn )( void* user, u32* dst, u16 count );
+/* Refill one instance's run of the store.  Called for every instance at every store refill, so
+   a block re-derives its installed values instead of being clobbered.  `instance` is which run
+   dst points at: a multi-instance block (the element schema, one instance per style set) fills
+   each from a different owner. */
+typedef void ( *style_install_fn )( void* user, u32* dst, u16 count, u16 instance );
+
+/* WHEN a block re-derives.  The distinction is about where the block's data comes from, and it
+   is load-bearing: a block whose installed values can be POKED between landings (the element
+   style, through gui_el_style()) must not be refilled per frame or the poke dies immediately;
+   a block that mirrors live state (s_style, written by set_check_style with no apply) must be,
+   or the write never lands. */
+typedef enum
+{
+    STYLE_REFILL_LANDING = 0,   // theme / font landings only -- pokes survive between them
+    STYLE_REFILL_FRAME          // every frame as well -- the block mirrors live state
+
+} style_refill_t;
 
 typedef struct style_block_desc_t
 {
     const char*      name;        // diagnostic only -- the registry never keys on it
     u16              count;       // slots per instance
     u16              instances;   // 1 for a single-instance block
+    u8               refill;      // style_refill_t
     style_install_fn install;     // fills one instance's run of the store
     void*            user;        // passed back to install
 
@@ -66,6 +79,7 @@ typedef struct style_block_t
     u16              count;       // slots per instance
     u16              instances;   //
     u16              current;     // which instance is mirrored into the work run
+    u8               refill;      // style_refill_t
 
 } style_block_t;
 
@@ -101,6 +115,7 @@ style_block_register( const style_block_desc_t* d )
     b->count      = d->count;
     b->instances  = instances;
     b->current    = 0;
+    b->refill     = d->refill;
     b->store_base = s_store_used;
     b->work_base  = s_work_used;
 
@@ -117,37 +132,71 @@ style_block_work_base( u16 blk )
     return s_block[ blk ].work_base;
 }
 
+/* The store run of one instance -- the INSTALLED values, writable.  The door a style source
+   (and gui_el_style) writes its look through; reads go to the work set instead. */
+static u32*
+style_block_instance( u16 blk, u16 inst )
+{
+    const style_block_t* b = &s_block[ blk ];
+    if ( inst >= b->instances ) inst = 0;
+    return &s_store[ b->store_base + inst * b->count ];
+}
+
+static u16  style_block_current  ( u16 blk )            { return s_block[ blk ].current; }
+static u16  style_block_instances( u16 blk )            { return s_block[ blk ].instances; }
+static void style_block_set_current( u16 blk, u16 inst )
+{
+    if ( inst < s_block[ blk ].instances ) s_block[ blk ].current = inst;
+}
+
+/* Is an absolute work slot inside this block's run?  The filter a single-block reseed uses to
+   decide which live overrides have to be re-applied over the freshly mirrored values. */
+static bool
+style_slot_in_block( u16 slot, u16 blk )
+{
+    const style_block_t* b = &s_block[ blk ];
+    return slot >= b->work_base && slot < (u16)( b->work_base + b->count );
+}
+
 /*==============================================================================================
     The two refresh steps.
 
-    store_refill -- run every install fn: the installed layer re-derives from whatever it
-                    sources (the active theme today, a kit's palette after the split).
+    store_refill -- run install fns: the installed layer re-derives from whatever it sources.
+                    `landing` true runs every block (a theme / font change); false runs only
+                    the STYLE_REFILL_FRAME blocks, leaving poke-able installed data alone.
     work_reseed  -- mirror each block's CURRENT instance into its work run, discarding whatever
                     overrides had been written over it.  Callers re-apply live overrides after.
 ==============================================================================================*/
 
 static void
-style_store_refill( void )
+style_store_refill( bool landing )
 {
     for ( u16 i = 0; i < s_block_n; ++i )
     {
         const style_block_t* b = &s_block[ i ];
         if ( !b->install ) continue;
+        if ( !landing && b->refill != STYLE_REFILL_FRAME ) continue;
 
         for ( u16 inst = 0; inst < b->instances; ++inst )
-            b->install( b->user, &s_store[ b->store_base + inst * b->count ], b->count );
+            b->install( b->user, &s_store[ b->store_base + inst * b->count ], b->count, inst );
     }
+}
+
+/* Mirror ONE block's current instance into its work run.  The set-switch primitive: swapping
+   which instance a block resolves through is this copy plus a replay of the live overrides. */
+static void
+style_block_reseed( u16 blk )
+{
+    const style_block_t* b = &s_block[ blk ];
+    const u32*           src = &s_store[ b->store_base + b->current * b->count ];
+
+    for ( u16 s = 0; s < b->count; ++s ) s_work[ b->work_base + s ] = src[ s ];
 }
 
 static void
 style_work_reseed( void )
 {
-    for ( u16 i = 0; i < s_block_n; ++i )
-    {
-        const style_block_t* b = &s_block[ i ];
-        for ( u16 s = 0; s < b->count; ++s )
-            s_work[ b->work_base + s ] = s_store[ b->store_base + b->current * b->count + s ];
-    }
+    for ( u16 i = 0; i < s_block_n; ++i ) style_block_reseed( i );
 }
 
 // clang-format on

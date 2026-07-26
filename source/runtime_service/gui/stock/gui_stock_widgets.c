@@ -12,16 +12,16 @@
     gui_el_color, GUI_EL_BG ...).  Two vocabularies, deliberately -- a user widget is a sibling
     of a stock_* render and reads the same el_ palette.
 
-    Style contract: renders resolve every color through style_el_col (the style unit) -- the
-    INSTALLED element style by default, an active push_style_color override winning.  So a stock
-    widget reads exactly what chrome reads (chrome's COL_* macros ARE style_el_col), and a caller
-    can push_style_color around a stock_* the same way; absent any override this is byte-identical
-    to the raw installed palette, so a kit that owns the look (gui_style_source_set) still wins by
-    default.  gui_el_color is this same seam published for a user's own render.  The installed
-    style is re-derived at every landing (gui_style_apply / theme_set / theme_reset / font
-    activation) through el_style_install(): the registered style source, else the default S2
-    compile (el_style_derive).  A kit may also poke values ad hoc via gui_el_style().  Renders
-    still never NAME a gui_col_t slot or walk the theme -- style_el_col is the one seam.
+    Style contract: renders resolve every color through style_el_col (the style unit) -- one
+    read of the element slot, which holds the installed value with any push_style_color /
+    next_style_color override already applied.  So a stock widget reads exactly what chrome
+    reads (chrome's element-shaped COL_* macros ARE style_el_col), and a caller can
+    push_style_color around a stock_* the same way.  gui_el_color is this same seam published
+    for a user's own render.  The installed values are re-derived at every style landing
+    (gui_style_apply / theme_set / theme_reset / font activation), through the registered style
+    source if a kit owns the look (gui_style_source_set); a kit may also poke gui_el_style()
+    ad hoc.  Renders still never NAME a gui_col_t slot or walk the theme -- style_el_col is
+    the one seam.
 
     Dependency contract: the stock_* renders call gui_core (item, ids, io, redraw) + gui_draw
     (draw_*) + gui_rect + the comp_* components only -- NEVER the flow layout engine -- and
@@ -33,77 +33,13 @@
 // clang-format off
 
 /*==============================================================================================
-    The installed element style (S1) + the S2 compiler hook.
+    The element style lives in the style unit now.
+
+    Its storage is the element BLOCK (style/gui_style_core.c): the installed run is laid out as
+    gui_el_style_t, so gui_el_style() hands back a typed view onto it and the theme projection
+    (g_el_slot_map) is an install-time step this unit no longer has to know about.  What stays
+    here is what stock actually is -- renders over that stratum, reading it through style_el_*.
 ==============================================================================================*/
-
-static gui_el_style_t s_el_style;
-
-/* THE role x state -> theme slot map: the single source of truth for how the element
-   vocabulary projects onto the chrome slot table.  Drives both directions of the strata
-   bridge: el_style_derive below (S2 -> S1: theme lands, slots compile into the installed
-   style) and style_el_col (style/gui_style_core.c: stock chrome reads element-shaped values back
-   through the installed style, stack overrides winning). */
-const u8 g_el_slot_map[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] =
-{
-    /*             IDLE                HOT                    ACTIVE              DIM                  */
-    /* BG     */ { GUI_COL_WIDGET_BG,  GUI_COL_WIDGET_HOT,    GUI_COL_WIDGET_ACT, GUI_COL_CHILD_BG     },
-    /* BORDER */ { GUI_COL_BORDER,     GUI_COL_WIDGET_FG,     GUI_COL_WIDGET_FG,  GUI_COL_BORDER       },
-    /* TEXT   */ { GUI_COL_TEXT,       GUI_COL_TEXT,          GUI_COL_TEXT,       GUI_COL_TEXT_DIM     },
-    /* ACCENT */ { GUI_COL_WIDGET_FG,  GUI_COL_NAV_HIGHLIGHT, GUI_COL_CHECK_MARK, GUI_COL_SLIDER_TRACK },
-};
-
-/* Re-derive the element style from the active theme -- the S2 -> S1 compile step, and the
-   DEFAULT style source: el_style_install (below) routes every landing here unless a kit has
-   registered its own owner, so elements track the chrome look without ever reading it. */
-void
-el_style_derive( void )
-{
-    const gui_style_t* s = style_active();   /* the ACTIVE (font-scaled) style, not the em=12 base */
-    gui_el_style_t*    e = &s_el_style;
-
-    e->pad      = (f32)s->widget_pad;
-    e->gap      = (f32)s->widget_gap;
-    e->border_w = (f32)s->win_border;
-    e->line_h   = 0.0f;                          /* live active-font basis */
-
-    for ( u32 role = 0; role < GUI_EL_ROLE_COUNT; ++role )
-        for ( u32 state = 0; state < GUI_EL_STATE_COUNT; ++state )
-            e->col[ role ][ state ] = s->colors[ g_el_slot_map[ role ][ state ] ];
-}
-
-/* Mutable access to the installed style -- the kit (S3) tuning door.  Ad-hoc writes last until
-   the next style landing re-installs; a kit that OWNS the look registers a style source below
-   so its values are re-derived, not clobbered, at every landing. */
-gui_el_style_t*
-gui_el_style( void )
-{
-    return &s_el_style;
-}
-
-/* The registered style source -- the S3 promotion seam: the OWNER of the installed style.
-   NULL = the default owner, chrome's theme compiler (el_style_derive above). */
-static gui_style_source_fn s_style_source      = NULL;
-static void*               s_style_source_user = NULL;
-
-/* The landing funnel: gui_style_apply calls this at every style landing (font activation,
-   theme_set / theme_reset), after the metrics rescale.  Routes to whichever owner is
-   registered, so a kit's promoted look survives theme / font / scale landings. */
-void
-el_style_install( void )
-{
-    if ( s_style_source ) s_style_source( s_style_source_user );
-    else                  el_style_derive();
-}
-
-void
-gui_style_source_set( gui_style_source_fn fn, void* user )
-{
-    s_style_source      = fn;
-    s_style_source_user = user;
-    el_style_install();             /* promotion / restoration lands immediately */
-    if ( g_ctx )                    /* guard: callable before any context exists */
-        gui_request_redraw();       /* the restyle must survive an idle frame    */
-}
 
 /* col shorthand for the element bodies below -- routed through style_el_col so a push_style_color
    override wins and a delegating stock widget sees the SAME value chrome does; with no override
@@ -162,7 +98,7 @@ el_visible_text( const char* label, char* buf, u32 bufsz )
 void
 gui_stock_panel( gui_rect_t r )
 {
-    gui_draw_frame( r, EL_COL( BG, DIM ), EL_COL( BORDER, DIM ), s_el_style.border_w );
+    gui_draw_frame( r, EL_COL( BG, DIM ), EL_COL( BORDER, DIM ), style_el_border_w() );
 }
 
 /* A text run seated in r per align.  The one-role element; a colored variant is just
@@ -180,11 +116,11 @@ gui_stock_label( gui_rect_t r, gui_align_t align, const char* text )
 static void
 stock_button_label( gui_rect_t r, const char* text )
 {
-    f32 avail = r.w - 2.0f * s_el_style.pad;
+    f32 avail = r.w - 2.0f * style_el_pad();
     if ( label_width( text ) <= avail )
         gui_draw_text_in( r, GUI_ALIGN_CENTER, EL_COL( TEXT, IDLE ), text );
     else
-        draw_label_fit( r.x + s_el_style.pad, text_center_y( r.y, r.h ),
+        draw_label_fit( r.x + style_el_pad(), text_center_y( r.y, r.h ),
                         EL_COL( TEXT, IDLE ), text, avail );
 }
 
@@ -217,7 +153,7 @@ gui_stock_check( gui_rect_t r, const char* id_str, bool* v )
 
     gui_draw_frame( c.box, EL_COL( BG, DIM ),
                     ( c.state.hover || c.state.nav ) ? EL_COL( BORDER, HOT ) : EL_COL( BORDER, IDLE ),
-                    s_el_style.border_w );
+                    style_el_border_w() );
     if ( *v )
         gui_draw_check_mark( gui_rect_pad( c.box, c.box.w * 0.22f ), EL_COL( ACCENT, IDLE ) );
 
@@ -277,8 +213,8 @@ gui_stock_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* 
 
     u32 lb = ( cy.prev.state.hover || cy.prev.state.nav ) ? EL_COL( BORDER, HOT ) : EL_COL( BORDER, IDLE );
     u32 rb = ( cy.next.state.hover || cy.next.state.nav ) ? EL_COL( BORDER, HOT ) : EL_COL( BORDER, IDLE );
-    gui_draw_frame( cy.prev_box, EL_COL( BG, DIM ), lb, s_el_style.border_w );
-    gui_draw_frame( cy.next_box, EL_COL( BG, DIM ), rb, s_el_style.border_w );
+    gui_draw_frame( cy.prev_box, EL_COL( BG, DIM ), lb, style_el_border_w() );
+    gui_draw_frame( cy.next_box, EL_COL( BG, DIM ), rb, style_el_border_w() );
     gui_draw_chevron( gui_rect_pad( cy.prev_box, cy.prev_box.w * 0.30f ), GUI_DIR_LEFT,  2.0f, EL_COL( TEXT, IDLE ) );
     gui_draw_chevron( gui_rect_pad( cy.next_box, cy.next_box.w * 0.30f ), GUI_DIR_RIGHT, 2.0f, EL_COL( TEXT, IDLE ) );
 
@@ -296,14 +232,14 @@ gui_stock_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* 
 bool
 gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
 {
-    gui_comp_input_t in = gui_comp_input( id_str, r, s_el_style.pad, buf, bufsz );
+    gui_comp_input_t in = gui_comp_input( id_str, r, style_el_pad(), buf, bufsz );
     gui_item_state_t st = in.state;
 
     gui_draw_frame( r,
                     st.focused ? EL_COL( BG, ACTIVE ) : style_el_col( GUI_EL_BG, el_state( st ) ),
                     ( st.focused || st.hover || st.nav ) ? EL_COL( BORDER, HOT )
                                                          : EL_COL( BORDER, IDLE ),
-                    s_el_style.border_w );
+                    style_el_border_w() );
 
     if ( in.selection.w > 0.0f )
         draw_fill( in.selection, EL_COL( ACCENT, DIM ) );
@@ -335,7 +271,7 @@ gui_stock_selectable( gui_rect_t r, const char* label, bool* selected )
 
     char        vis[ 128 ];
     const char* text = el_visible_text( label, vis, sizeof vis );
-    gui_rect_t  tr   = { r.x + s_el_style.pad, r.y, r.w - 2.0f * s_el_style.pad, r.h };
+    gui_rect_t  tr   = { r.x + style_el_pad(), r.y, r.w - 2.0f * style_el_pad(), r.h };
     gui_draw_text_in( tr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, EL_COL( TEXT, IDLE ), text );
 
     return s.state.clicked;

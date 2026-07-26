@@ -24,8 +24,9 @@
     Three constituents, three faces of the same role:
 
     stock/gui_stock_widgets.c  -- the public stock_* renders: fill EXACTLY the rect they are
-                                     handed, read ONLY the installed element style
-                                     (gui_el_style_t; el_style_derive compiles the theme in)
+                                     handed, read ONLY the element stratum (style_el_col /
+                                     style_el_pad; the style unit owns its storage and the
+                                     theme compile that fills it)
     stock/gui_adornment.c     -- per-item ambient application (item_flags_resolve /
                                      item_flags_chrome_reset), the label paint
                                      (gui_field_row, label_natural_w), and the system
@@ -72,13 +73,14 @@
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory
-    (gui_ui_mem.c).  The installed element style + the role x state slot map.
+    (gui_ui_mem.c).  Nothing left to count: the element style's storage moved into the style
+    unit's block backend, and the renders themselves are stateless.
 ==============================================================================================*/
 
 u32
 stock_unit_mem_bytes( void )
 {
-    return (u32)( sizeof( s_el_style ) + sizeof( g_el_slot_map ) );
+    return 0u;
 }
 
 /*============================================================================================*/

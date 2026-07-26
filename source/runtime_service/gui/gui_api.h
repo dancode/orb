@@ -1295,14 +1295,38 @@ typedef struct gui_api_s
     const gui_style_t* (*style_peek)( void );   /* read-only base -- does NOT mark theme anonymous  */
     void               (*style_apply)( void );
 
-    /* style_source_set -- register the OWNER of the installed element style: the promotion seam
-       a kit uses to put its own look into service.  The source is invoked immediately, then again
-       at every style landing (font activation, theme_set / theme_reset / style_apply) AFTER the
-       layout metrics rescale -- so the kit re-derives against fresh numbers instead of being
-       clobbered by the default compile.  Inside the source, write through el_style()
-       (GUI_ELEMENT) and read metrics via style_peek / the sz_ family.  fn NULL restores the
-       default owner: chrome's theme compiler. */
+    /* style_source_set -- register the OWNER of the DEFAULT style set (set 0), the one chrome
+       and any unbracketed UI resolve through: the promotion seam a kit uses to restyle the whole
+       application.  The source is invoked immediately, then again at every style landing (font
+       activation, theme_set / theme_reset / style_apply) AFTER the layout metrics rescale -- so
+       the kit re-derives against fresh numbers instead of being clobbered by the default compile.
+       Inside the source, write through el_style() (GUI_ELEMENT) and read metrics via style_peek /
+       the sz_ family.  fn NULL restores the default owner: chrome's theme compiler. */
     void ( *style_source_set )( gui_style_source_fn fn, void* user );
+
+    /* Style SETS -- two looks installed side by side instead of one overwriting the other.
+
+       A set is one installed copy of the element stratum with its own owner.  Set 0 is chrome's;
+       style_set_create takes another and style_set_push / _pop bracket the UI that resolves
+       through it.  So an editor's chrome keeps its theme while a game's kit paints its own, and
+       neither has to win -- which a single installed element style could not express.
+
+       The source is invoked exactly like style_source_set's, at create and at every landing; a
+       set that installs only the rows it cares about inherits the theme for the rest.  A push
+       is a mirror plus a replay of live overrides, so a push_style_color bracketing the switch
+       still applies inside it, and reads cost the same in any set.
+
+           g_kit_set = gui()->style_set_create( kit_style_source, NULL );   // once
+           gui()->style_set_push( g_kit_set );
+           ... the kit's windows and widgets ...
+           gui()->style_set_pop();
+
+       Sets are capped at GUI_STYLE_SET_MAX (gui.h).  An unbalanced push cannot outlive the
+       frame: style resets to set 0 at the frame boundary, like the style stacks. */
+    gui_style_set_t ( *style_set_create  )( gui_style_source_fn fn, void* user );
+    void            ( *style_set_push    )( gui_style_set_t set );
+    void            ( *style_set_pop     )( void );
+    gui_style_set_t ( *style_set_current )( void );
 
     /* Style stacks -- the push-model theme override (gui_col_t colors, gui_style_var_t metrics).
        push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
@@ -1323,11 +1347,13 @@ typedef struct gui_api_s
     void ( *pop_style_var    )( u32 count );
     void ( *next_style_var   )( gui_style_var_t var, f32 value );
 
-    /* style_color() -- resolved read of one palette slot (theme base + push/next overrides):
-       the value a stock widget would paint with right now.  The public door to the
-       user-extended range (GUI_COL_USER_*): seed a user slot, paint custom drawing with this
-       read, and it rides the theme + stacks like stock chrome. */
-    u32  ( *style_color      )( gui_col_t slot );
+    /* style_color() -- resolved read of one palette slot (installed value + push/next
+       overrides): the value a stock widget would paint with right now.  The generic door for
+       custom chrome holding a gui_col_t; a render that speaks roles and states wants el_color.
+       style_color_name() is the engine's display name for a slot, so a style editor enumerates
+       the palette instead of keeping a parallel table in step with an enum it does not own. */
+    u32         ( *style_color      )( gui_col_t slot );
+    const char* ( *style_color_name )( gui_col_t slot );
 
     /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
        BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
