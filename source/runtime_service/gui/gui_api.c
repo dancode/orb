@@ -13,7 +13,7 @@
     Vtable struct  (extern const -- referenced by MOD_GATEWAY_STATIC and func_api pointer)
 ==============================================================================================*/
 
-const gui_api_t g_gui_api_struct = 
+const gui_api_t g_gui_api_struct =
 {
 
     /*===============================================  GUI_FRAME  ===============================================*/
@@ -257,7 +257,7 @@ const gui_api_t g_gui_api_struct =
     .same_line                          = gui_same_line,
     .stack_same_line                    = gui_stack_same_line,
     .skip                               = gui_skip,
-    .separator                          = gui_separator,
+    .new_line                           = gui_new_line,
     .canvas                             = gui_canvas,
     .sz_u                               = gui_sz_u,
     .sz_row_gap                         = gui_sz_row_gap,
@@ -396,7 +396,7 @@ const gui_api_t g_gui_api_struct =
     .text_disabled                      = gui_text_disabled,
     .text_wrapped                       = gui_text_wrapped,
     .bullet                             = gui_bullet,
-    .new_line                           = gui_new_line,
+    .separator                          = gui_separator,
     .label_text                         = gui_label_text,
     .button                             = gui_button,
     .small_button                       = gui_small_button,
@@ -492,7 +492,7 @@ const gui_api_t g_gui_api_struct =
 static bool
 gui_mod_init( void* state, get_api_fn get_api )
 {
-    UNUSED( state );  
+    UNUSED( state );
     UNUSED( get_api );
 
     /* Cache sibling API pointers.  GPU resources are NOT created here; the host

@@ -452,10 +452,10 @@ gui_set_item_tooltip( const char* text )
     if ( gui_tooltip_begin() )
     {
         gui_stack();          /* tooltip body lays out like any region: declare a stack first */
-        
+
         f32  max_w = (f32)s_font_size * 35.0f;
         if ( max_w < 100.0f ) max_w = 100.0f;
-        
+
         f32 avail = (f32)s_io.display_w * 0.9f;
         if ( max_w > avail && avail > 10.0f ) max_w = avail;
 

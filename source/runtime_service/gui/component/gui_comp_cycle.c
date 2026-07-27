@@ -19,7 +19,7 @@
    push of the caller id (so the two caps get distinct, stable ids), and step *idx with wrap.
    comp_button already requests the redraw on a cap click, so a stepped index shows next frame. */
 gui_comp_cycle_t
-gui_comp_cycle( const char* id, gui_rect_t rect, i32* idx, i32 count )
+gui_comp_cycle( const char* id_str, gui_rect_t rect, i32* idx, i32 count )
 {
     gui_comp_cycle_t out  = ( gui_comp_cycle_t ){ 0 };
     gui_rect_t       full = rect;
@@ -28,7 +28,7 @@ gui_comp_cycle( const char* id, gui_rect_t rect, i32* idx, i32 count )
     out.next_box = gui_rect_cut_right( &rect, rect.h );
     out.label    = rect;                                   /* the remaining center band */
 
-    gui_push_id( id );
+    gui_push_id( id_str );
     i32 old  = *idx;
     out.prev = gui_comp_button( "##prev", out.prev_box );
     out.next = gui_comp_button( "##next", out.next_box );

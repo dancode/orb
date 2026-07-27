@@ -43,9 +43,9 @@
 // clang-format off
 
 bool
-gui_toolbar_begin( const char* str_id )
+gui_toolbar_begin( const char* id_str )
 {
-    gui_push_id( str_id );
+    gui_push_id( id_str );
     gui_push_layout_state();   // hand the caller's shape back verbatim at toolbar_end
     gui_bar();
     return true;
@@ -161,7 +161,7 @@ gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* 
     gui_id_t                 pid = id_combine( id, GUI_POPUP_SALT );
     gui_toolbar_dd_state_t* ds  = GUI_STATE( gui_toolbar_dd_state_t, id );
 
-    // The was_open guard prevents the same click from closing then 
+    // The was_open guard prevents the same click from closing then
     // immediately reopening the popup.
     bool was_open = ( ds->open_frame + 1u == gui_frame_index() );
     if ( st.clicked && !was_open )

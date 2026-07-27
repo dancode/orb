@@ -275,31 +275,13 @@ gui_progress_bar( f32 fraction, const char* overlay )
 }
 
 /*==============================================================================================
-    Spacers -- cell-consuming widgets that emit no interaction.
+    Rules -- cell-consuming spacers that PAINT, and emit no interaction.
 
     Each takes the next cell from the active template exactly like a real widget, so they compose
-    with rows and grids the same way: skip() leaves a hole (a blank cell of one standard line, the
-    natural way to step over a grid slot), spacing() inserts a blank gap of a chosen height, and
-    separator() draws a thin rule centered in its cell.  That these fall out as one-liners on
-    cell_next is the point of the cell model -- "advance one slot" needs no special case.
+    with rows and grids the same way.  Their paintless siblings -- skip() and new_line(), which
+    only advance the pen -- live with the composer in flow/gui_layout.c; the split is the one that
+    runs through the whole stack, since a rule is a skin decision and an advance is not.
 ==============================================================================================*/
-
-/* Consume one cell and draw nothing -- a blank slot of one standard line height. */
-void
-gui_skip( void )
-{
-    cell_next( WIDGET_H );
-}
-
-/* Break to a fresh line of height h and draw nothing: undoes a same_line and inserts a blank line
-   between runs (the ImGui NewLine, generalized).  A line has no body to measure, so its own
-   "natural" size is literally zero: h == 0 is a true zero-height break, not a fallback.  h < 0
-   defers to the theme's line height (font_char_h()), the vertical mirror of same_line(-1). */
-void
-gui_new_line( f32 h )
-{
-    cell_next( h >= 0.0f ? h : font_char_h() );
-}
 
 /* A horizontal rule: a thin line spanning the cell width, centered in a half-height cell -- a
    full line of dead air reads as a section break, not a divider (worst under the roomy ramp).

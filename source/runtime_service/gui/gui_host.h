@@ -107,9 +107,9 @@ u32  gui_font_active_id     ( void );
 void gui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr );
 void gui_draw_rects( const gui_rect_col_t* rects, u32 count );
 void gui_draw_text( f32 x, f32 y, u32 abgr, const char* str );
-gui_vec2_t gui_text_size( const char* s );
-void gui_draw_text_in( gui_rect_t r, gui_align_t align, u32 col, const char* s );
-void gui_draw_text_clipped( gui_rect_t r, gui_align_t align, u32 col, const char* s );
+gui_vec2_t gui_text_size( const char* str );
+void gui_draw_text_in( gui_rect_t r, gui_align_t align, u32 col, const char* str );
+void gui_draw_text_clipped( gui_rect_t r, gui_align_t align, u32 col, const char* str );
 
 /* volatile blocks (per-frame retessellated custom draws) */
 void gui_volatile_begin( void );
@@ -181,7 +181,7 @@ bool gui_invisible_button( const char* id_str, gui_rect_t r );
 bool gui_is_mouse_hovering_rect( gui_rect_t r );
 
 /* id stack */
-void gui_push_id( const char* str );
+void gui_push_id( const char* id_str );
 void gui_push_id_int( i32 i );
 void gui_pop_id( void );
 
@@ -263,12 +263,12 @@ bool gui_force_redraw( void );
 /*==============================================  GUI_SURFACE  ==============================================*/
 
 /* pane -- the minimal top-level surface occupant: identity + hover/z contest + base clip */
-gui_pane_t gui_pane_begin( const char* id, gui_rect_t r, gui_region_tier_t tier,
+gui_pane_t gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier,
                            gui_vp_t vp, gui_win_flags_t flags );
 void       gui_pane_end( void );
 
 /* root region -- a fixed-rect layout primitive with no window chrome */
-bool gui_region_begin( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
+bool gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
                        gui_win_flags_t flags );
 void gui_region_end( void );
 void gui_scroll_by( f32 dx, f32 dy );
@@ -291,7 +291,7 @@ gui_rect_t gui_anchor( gui_rect_t parent, gui_anchor_t a );
 /*===============================================  GUI_FLOW  ================================================*/
 
 /* child regions + sub-layouts */
-bool gui_child_begin( const char* id, f32 w, f32 h, gui_win_flags_t flags );
+bool gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags );
 void gui_child_end( void );
 void gui_push_layout( void );
 void gui_push_layout_overlay( gui_rect_t rect );
@@ -333,7 +333,7 @@ void         gui_skip_label( void );
 void         gui_field_row( const char* label );
 
 /* layout - grid */
-void gui_grid( gui_layout_t desc );
+void gui_grid( gui_grid_t desc );
 void gui_grid_cells( u32 ncols, u32 nrows );
 
 /* layout - bar + strip pack runs */
@@ -360,7 +360,7 @@ void gui_next_item_align( gui_align_t a );
 void gui_same_line( f32 spacing );
 void gui_stack_same_line( f32 spacing );
 void gui_skip( void );
-void gui_separator( void );
+void gui_new_line( f32 h );
 
 /* canvas -- reserve a full-width drawing area in the layout (draw/gui_canvas.c) */
 gui_rect_t gui_canvas( f32 height );
@@ -422,23 +422,23 @@ void gui_scale_pop( void );
 
 /* component (widget logic, no paint -- component/) + its stock_* reference render
    (stock/gui_stock_widgets.c).  A widget of your own is the stock render's sibling. */
-gui_comp_slider_t     gui_comp_slider     ( const char* id, gui_rect_t rect, f32* v, f32 lo, f32 hi );
+gui_comp_slider_t     gui_comp_slider     ( const char* id_str, gui_rect_t rect, f32* v, f32 lo, f32 hi );
 gui_comp_slider_t     gui_comp_slider_ex  ( const gui_comp_slider_desc_t* desc );
 bool                  gui_stock_slider    ( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
-gui_comp_button_t     gui_comp_button     ( const char* id, gui_rect_t rect );
+gui_comp_button_t     gui_comp_button     ( const char* id_str, gui_rect_t rect );
 bool                  gui_stock_button    ( gui_rect_t r, const char* label );
-gui_comp_check_t      gui_comp_check      ( const char* id, gui_rect_t rect, bool* v );
+gui_comp_check_t      gui_comp_check      ( const char* id_str, gui_rect_t rect, bool* v );
 bool                  gui_stock_check     ( gui_rect_t r, const char* id_str, bool* v );
-gui_comp_cycle_t      gui_comp_cycle      ( const char* id, gui_rect_t rect, i32* idx, i32 count );
+gui_comp_cycle_t      gui_comp_cycle      ( const char* id_str, gui_rect_t rect, i32* idx, i32 count );
 bool                  gui_stock_cycle     ( gui_rect_t r, const char* id_str, i32* idx, const char* const* items, i32 count );
-gui_comp_selectable_t gui_comp_selectable ( const char* id, gui_rect_t rect, bool* selected );
+gui_comp_selectable_t gui_comp_selectable ( const char* id_str, gui_rect_t rect, bool* selected );
 bool                  gui_stock_selectable( gui_rect_t r, const char* label, bool* selected );
-gui_comp_input_t      gui_comp_input      ( const char* id, gui_rect_t rect, f32 pad, char* buf, u32 bufsz );
+gui_comp_input_t      gui_comp_input      ( const char* id_str, gui_rect_t rect, f32 pad, char* buf, u32 bufsz );
 bool                  gui_stock_input     ( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
 
 /* the inert three -- no component (no interaction to extract), render-only by design */
 void gui_stock_panel( gui_rect_t r );
-void gui_stock_label( gui_rect_t r, gui_align_t align, const char* text );
+void gui_stock_label( gui_rect_t r, gui_align_t align, const char* str );
 void gui_stock_meter( gui_rect_t r, f32 frac, u32 fill_abgr );
 
 /*==============================================  GUI_CHROME  ===============================================*/
@@ -473,15 +473,15 @@ bool gui_dock_load( gui_vp_t vp, const char* text );
 void gui_dock_clear( gui_vp_t vp );
 
 /* popup + tooltip */
-void gui_popup_open( const char* id );
-bool gui_popup_begin( const char* id, gui_win_flags_t flags );
-bool gui_popup_modal_begin( const char* id, const char* title, gui_win_flags_t flags );
+void gui_popup_open( const char* id_str );
+bool gui_popup_begin( const char* id_str, gui_win_flags_t flags );
+bool gui_popup_modal_begin( const char* id_str, const char* title, gui_win_flags_t flags );
 void gui_popup_end( void );
 void gui_popup_close_current( void );
-bool gui_popup_is_open( const char* id );
-bool gui_popup_context_item_begin( const char* id );
-bool gui_popup_context_window_begin( const char* id );
-void gui_set_item_tooltip( const char* text );
+bool gui_popup_is_open( const char* id_str );
+bool gui_popup_context_item_begin( const char* id_str );
+bool gui_popup_context_window_begin( const char* id_str );
+void gui_set_item_tooltip( const char* str );
 bool gui_tooltip_begin( void );
 void gui_tooltip_end( void );
 
@@ -496,7 +496,7 @@ void gui_menu_end( void );
 bool gui_menu_item( const char* label, const char* shortcut, bool* selected );
 
 /* toolbar */
-bool gui_toolbar_begin( const char* str_id );
+bool gui_toolbar_begin( const char* id_str );
 void gui_toolbar_end( void );
 bool gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip );
 bool gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip );
@@ -512,7 +512,7 @@ void gui_text_colored( u32 abgr, const char* str );
 void gui_text_disabled( const char* str );
 void gui_text_wrapped( const char* str );
 void gui_bullet( void );
-void gui_new_line( f32 h );
+void gui_separator( void );
 void gui_label_text( const char* label, const char* value );
 bool gui_button( const char* label );
 bool gui_small_button( const char* label );
@@ -567,7 +567,7 @@ bool gui_tree_node( const char* label );
 void gui_tree_pop( void );
 
 /* widget - tab bar */
-bool gui_tab_bar_begin( const char* str_id, gui_tab_bar_flags_t flags );
+bool gui_tab_bar_begin( const char* id_str, gui_tab_bar_flags_t flags );
 void gui_tab_bar_end( void );
 bool gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags );
 void gui_tab_item_end( void );
@@ -576,7 +576,7 @@ void gui_tab_item_end( void );
 void gui_indent( f32 w );
 void gui_unindent( f32 w );
 void gui_separator_text( const char* label );
-void gui_help_marker( const char* text );
+void gui_help_marker( const char* str );
 
 /* tables (chrome/table/gui_table.c, chrome unit) */
 bool gui_table_begin( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 height );

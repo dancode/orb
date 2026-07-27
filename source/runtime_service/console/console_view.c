@@ -287,7 +287,7 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
            a FIXED one-line input pinned at the bottom.  The grid resolves both across the body
            interior (pen to floor), gaps and pad included -- so the scrollback cell's height is the
            layout's answer, not ours, and the input can never be squeezed off the bottom. */
-        gui()->grid( ( gui_layout_t ){
+        gui()->grid( ( gui_grid_t ){
             .cols = { 1.0f, GUI_END },
             .rows = { 1.0f, line_h, GUI_END },
         } );

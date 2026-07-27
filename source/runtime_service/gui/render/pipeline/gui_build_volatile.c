@@ -90,10 +90,18 @@
 #define VOL_FOOT_EPS      0.5f
 #define VOL_FOOT_STRIKES  4u
 
-/* Field widths: GUI_MAX_VERTS (16K), GUI_MAX_IDX (48K) and GUI_MAX_CMDS (1024) all fit u16, and
-   the local_* offsets are bounded by them.  tess_gen is full u32 -- it must never alias across a
-   wrap, since it is the sole guard that a patch writes into geometry produced by the exact
-   tessellation pass that captured it. */
+/* Largest value a slot's u16 count / slot-local offset can carry (see the field-width note on
+   gui_volatile_slot_t).  Reservations clamp to it; live geometry past it is not captured. */
+#define VOL_LOCAL_MAX     0xFFFFu
+
+/* Field widths: every count and slot-local offset below is u16, so a captured block addresses at
+   most 64K of each resource.  GUI_MAX_VERTS (32K) and GUI_MAX_CMDS (1K) sit under that by
+   construction; GUI_MAX_IDX (3x verts) does NOT, so volatile_range_close refuses to capture a
+   block whose indices would not fit rather than truncating the cast -- unreachable for a real
+   volatile block (an animating readout is a handful of quads) and independent of how the pools
+   are sized later.  tess_gen is full u32 -- it must never alias across a wrap, since it is the
+   sole guard that a patch writes into geometry produced by the exact tessellation pass that
+   captured it. */
 typedef struct
 {
     gui_id_t         id, win;
@@ -358,6 +366,21 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 cmd_open )
     if ( vb_open  + res_v > GUI_MAX_VERTS ) res_v = GUI_MAX_VERTS - vb_open;
     if ( ib_open  + res_i > GUI_MAX_IDX   ) res_i = GUI_MAX_IDX   - ib_open;
     if ( cmd_open + res_c > GUI_MAX_CMDS  ) res_c = GUI_MAX_CMDS  - cmd_open;
+
+    /* u16 field widths (see the slot struct): the reservation shrinks to what the row can address,
+       exactly as it shrinks to the arena above, and a block whose LIVE geometry already overruns
+       16 bits is left uncaptured -- it still renders, it just never replays.  Keeps every cast
+       below provably lossless without tying the row layout to the pool sizes. */
+    if ( res_v > VOL_LOCAL_MAX ) res_v = VOL_LOCAL_MAX;
+    if ( res_i > VOL_LOCAL_MAX ) res_i = VOL_LOCAL_MAX;
+    if ( res_c > VOL_LOCAL_MAX ) res_c = VOL_LOCAL_MAX;
+
+    if ( nv > VOL_LOCAL_MAX || ni > VOL_LOCAL_MAX || nc > VOL_LOCAL_MAX
+         || ( ib_open - s_tess.slot_idx_base ) > VOL_LOCAL_MAX )
+    {
+        row->active = false;
+        return;
+    }
 
     /* Advance the write heads over the reservation; pad the command run with dormant commands so
        the slot's [cmd_base, cmd_base + cmd_count) range stays dense.  The gap vertices/indices

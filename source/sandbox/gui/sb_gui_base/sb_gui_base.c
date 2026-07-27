@@ -185,7 +185,7 @@ tier_stock( void )
     /* comp_slider( id, rect, v, lo, hi ) is the plain form; _ex takes the desc when a component
        needs more than the common case -- here a wider handle than the default. */
     gui_comp_slider_t sl = gui()->comp_slider_ex( &( gui_comp_slider_desc_t ){
-        .id = "t3_comp", .rect = cs, .v = &s_custom, .lo = 0.0f, .hi = 1.0f, .handle_w = 14.0f } );
+        .id_str = "t3_comp", .rect = cs, .v = &s_custom, .lo = 0.0f, .hi = 1.0f, .handle_w = 14.0f } );
     
     f32 gy = cs.y + cs.h * 0.5f;
     gui()->draw_rect( cs.x, gy - 2.0f, cs.w, 4.0f, PANEL_LN );

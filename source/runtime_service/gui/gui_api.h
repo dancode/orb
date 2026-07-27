@@ -18,7 +18,7 @@
         GUI_STOCK    comp_* widget logic + the stock_* reference renders over it
         GUI_CHROME   OPTIONAL policy layer: windows, dock, popups, flow widgets, themes
         GUI_DEBUG    severable diagnostics
-    
+
     Everything below GUI_CHROME stands alone -- chrome is one client of the strata, not the
     system.  A kit builds its own UI from frame + draw + core + surface + rect/flow, and
     promotes its own style; sb_gui_base is the bottom-up proof, tier by tier.
@@ -64,24 +64,24 @@ typedef struct gui_api_s
 {
     /*============================================================================================================
         GUI_FRAME -- lifecycle  (frame/)
-        The door and the conductor: init/boot, frame phases, pacing, viewports, contexts, event routing, 
+        The door and the conductor: init/boot, frame phases, pacing, viewports, contexts, event routing,
         memory / render stats -- Owns per-frame ordering; no widgets.
         Every section below emits inside the frame scope this one opens.
     =============================================================================================================*/
 
     /* GPU resource lifecycle.
-    
-        init() 
+
+        init()
             : call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
               `font` optionally loads one of the built-in presets (gui_builtin_font_t,
               gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
               yourself. A failed built-in load is non-fatal (a warning; init still
               succeeds without text).
 
-        shutdown()  
+        shutdown()
             : call before rhi()->shutdown(); destroys all GPU resources.
 
-        asset_path() 
+        asset_path()
             : resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
               the build root, one level above the executable -- the same convention
               load_icon and the built-in font/icon presets resolve through. Writes the
@@ -105,7 +105,7 @@ typedef struct gui_api_s
 
     u32                 ( *font_load )          ( const char* path );
     u32                 ( *font_load_builtin )  ( gui_builtin_font_t font );
-    
+
     /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
        backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
        bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */
@@ -395,7 +395,7 @@ typedef struct gui_api_s
          frame_end()                    -- seal the build; volatile replay on clean frames.
        A single-context host runs exactly one ctx_begin(GUI_CTX_DEFAULT)/ctx_end pair. */
 
-    gui_ctx_id_t( *ctx_create        )( const gui_ctx_config_t* cfg );
+    gui_ctx_id_t ( *ctx_create       )( const gui_ctx_config_t* cfg );
     void        ( *ctx_destroy       )( gui_ctx_id_t ctx );
     void        ( *ctx_bind          )( gui_ctx_id_t ctx );
     void        ( *ctx_set_listening )( gui_ctx_id_t ctx, bool listen );
@@ -473,13 +473,13 @@ typedef struct gui_api_s
     void ( *volatile_end   )( void );   // called from inside fn: reserved, no-op today
 
     /* text_size -- laid-out pixel size of s (widest line x line span; '\n' breaks).  CalcTextSize. */
-    gui_vec2_t ( *text_size )( const char* s );
+    gui_vec2_t ( *text_size )( const char* str );
 
     /* draw_text_in -- draw s aligned within rect r (gui_align_t; multi-line, each line aligned).
        The placement primitive: "right-align this caption in the canvas" with no hand-computed edge.
        draw_text_clipped is the single-line variant that ellipsizes to r's width. */
-    void ( *draw_text_in      )( gui_rect_t r, gui_align_t align, u32 col, const char* s );
-    void ( *draw_text_clipped )( gui_rect_t r, gui_align_t align, u32 col, const char* s );
+    void ( *draw_text_in      )( gui_rect_t r, gui_align_t align, u32 col, const char* str );
+    void ( *draw_text_clipped )( gui_rect_t r, gui_align_t align, u32 col, const char* str );
 
     /* Icons -- a runtime-built R8 atlas of arbitrary symbols (folder, gear, check, editor glyphs).
        register_icon packs a raw monochrome bitmap (row-major coverage, w*h bytes) and returns a
@@ -644,7 +644,7 @@ typedef struct gui_api_s
        but ids from the whole string; "pre###key" ids only from "###key", so a changing visible
        prefix (a counter) keeps a stable id. */
 
-    void ( *push_id     )( const char* str );
+    void ( *push_id     )( const char* id_str );
     void ( *push_id_int )( i32 i );
     void ( *pop_id      )( void );
 
@@ -698,13 +698,13 @@ typedef struct gui_api_s
        drag in flight anywhere; drag_payload_peek inspects it without being a target.  The dock
        tab-strip publishes its tab drags as type "gui.dock_tab" (payload: the window's gui_id_t). */
 
-    bool ( *drag_source_begin   )( gui_drag_flags_t flags );
-    void ( *drag_source_end     )( void );
-    bool ( *drag_payload_set    )( const char* type, const void* data, u32 size );
-    bool ( *drag_target_begin   )( void );
+    bool                      ( *drag_source_begin   )( gui_drag_flags_t flags );
+    void                      ( *drag_source_end     )( void );
+    bool                      ( *drag_payload_set    )( const char* type, const void* data, u32 size );
+    bool                      ( *drag_target_begin   )( void );
     const gui_drag_payload_t* ( *drag_payload_accept )( const char* type, gui_drag_flags_t flags );
-    void ( *drag_target_end     )( void );
-    bool ( *drag_active         )( void );
+    void                      ( *drag_target_end     )( void );
+    bool                      ( *drag_active         )( void );
     const gui_drag_payload_t* ( *drag_payload_peek   )( void );
 
     /*===========================  queries -- io snapshot, item state, redraw state  ============================*/
@@ -742,15 +742,15 @@ typedef struct gui_api_s
        interaction; activated / deactivated are the press / release edges (deactivated is the natural
        "commit on release" seam); visible is true when any of the item's rect survives the region
        clip; get_item_rect returns its screen rect (GetItemRectMin/Max/Size in one). */
-    bool         ( *is_item_hovered     )( void );
-    bool         ( *is_item_active      )( void );
-    bool         ( *is_item_clicked     )( void );
-    bool         ( *is_item_focused     )( void );
-    bool         ( *is_item_activated   )( void );
-    bool         ( *is_item_deactivated            )( void );
-    bool         ( *is_item_deactivated_after_edit )( void );
-    bool         ( *is_item_visible                )( void );
-    gui_rect_t ( *get_item_rect       )( void );
+    bool       ( *is_item_hovered                )( void );
+    bool       ( *is_item_active                 )( void );
+    bool       ( *is_item_clicked                )( void );
+    bool       ( *is_item_focused                )( void );
+    bool       ( *is_item_activated              )( void );
+    bool       ( *is_item_deactivated            )( void );
+    bool       ( *is_item_deactivated_after_edit )( void );
+    bool       ( *is_item_visible                )( void );
+    gui_rect_t ( *get_item_rect                  )( void );
 
     bool ( *is_key_down              )( app_key_t key );
     bool ( *is_key_pressed           )( app_key_t key );
@@ -770,7 +770,7 @@ typedef struct gui_api_s
        a shape gui cannot infer -- e.g. APP_CURSOR_HAND over a custom clickable -- for this frame;
        the last request wins and is flushed to the OS window under the pointer while gui owns the
        mouse, then reset to APP_CURSOR_ARROW next frame.  get_mouse_cursor reads the current request. */
-    void         ( *cursor_set )( app_cursor_t c );
+    void         ( *cursor_set       )( app_cursor_t c );
     app_cursor_t ( *get_mouse_cursor )( void );
 
     /* set_keyboard_focus -- queue a programmatic focus request: the next focusable widget emitted
@@ -866,7 +866,7 @@ typedef struct gui_api_s
        GUI_VP_INVALID = primary surface.  Root-level, never nests; always pair with pane_end.
        region_begin below = this + persisted scroll + a layout; window_begin = this + the
        persisted record + stock chrome. */
-    gui_pane_t ( *pane_begin )( const char* id, gui_rect_t r, gui_region_tier_t tier,
+    gui_pane_t ( *pane_begin )( const char* id_str, gui_rect_t r, gui_region_tier_t tier,
                                 gui_vp_t vp, gui_win_flags_t flags );
     void       ( *pane_end   )( void );
 
@@ -881,7 +881,7 @@ typedef struct gui_api_s
        by `tier` (gui_region_tier_t: MID over windows / under popups, BG, FG); interactive by
        default -- competes for hover in the same z contest as windows (opt out with
        GUI_WIN_NO_INPUT; see gui_region.c).  Always returns true; always pair with region_end. */
-    bool ( *region_begin )( const char* id, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
+    bool ( *region_begin )( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
                             gui_win_flags_t flags );
     void ( *region_end   )( void );
 
@@ -947,7 +947,7 @@ typedef struct gui_api_s
        push_layout_overlay, and nest by splitting a returned rect again.  Single-pass and known-size --
        it never measures content, so size panels with px / fraction / fill, not content-driven sizes. */
     gui_rect_t ( *content_rect )( void );
-    u32        ( *split )( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
+    u32        ( *split        )( gui_rect_t area, gui_axis_t axis, const f32* sizes, f32 gap, gui_rect_t* out );
 
     /* carve -- a whole nested partition from one flat f32 `form`: the recursive form of split.  The
        form is a GUI_END-terminated list in the same overloaded unit as cols, with GUI_CUT_X /
@@ -987,7 +987,7 @@ typedef struct gui_api_s
        with child_end -- the parent layout resumes directly below the box.  Fill it with any
        widgets (e.g. selectable rows for a list box).  Always returns true. */
 
-    bool ( *child_begin )( const char* id, f32 w, f32 h, gui_win_flags_t flags );
+    bool ( *child_begin )( const char* id_str, f32 w, f32 h, gui_win_flags_t flags );
 
     /* Sub-layout -- carve the next cell into its own little layout, the way a window or child hosts
        one, but transient: no scroll, no clip, no persistent state, no frame.  push_layout consumes
@@ -1060,7 +1060,7 @@ typedef struct gui_api_s
        grid() takes the full descriptor (cols + rows); grid_cells() is the uniform nc x nr case.
 
        gui()->grid_cells( 3, 2 );  for (i<6) gui()->button(name[i]);  // 3x2 of buttons
-       grid()       -- cols x rows from the descriptor (row_h ignored; grid uses rows).
+       grid()       -- cols x rows from a gui_grid_t descriptor (tracks + gaps + align).
 
        Pack mode -- the print run: place items one after another along an axis at natural size, the
        widget sizing itself (vs columns/grid, where the cell sizes the widget).  pack_size() overrides
@@ -1074,31 +1074,31 @@ typedef struct gui_api_s
        pack_wrap()  -- opt the run into auto-wrap: a natural / fixed item that overruns the line
                        breaks to a fresh one first (flex-wrap; a fill always fits, never wraps). */
 
-    void ( *layout_default    )( void );
-    void ( *stack             )( void );
-    void ( *row               )( f32 row_h );
-    void ( *cols              )( const f32* tracks );
-    void ( *cols_n            )( u32 n );
-    void ( *row_cols          )( f32 row_h, const f32* tracks );
-    void ( *row_cols_n        )( f32 row_h, u32 n );
-    void ( *row2              )( f32 a, f32 b );
-    void ( *row3              )( f32 a, f32 b, f32 c );
-    void ( *row4              )( f32 a, f32 b, f32 c, f32 d );
-    void ( *form              )( gui_label_side_t side, f32 label_w );
-    void ( *field_split       )( gui_label_side_t side, f32 label, f32 control );
-    void ( *field_label_left  )( f32 width );
-    void ( *field_label_right )( f32 width );
-    void         ( *field_set  )( const gui_field_t* f );
-    gui_field_t* ( *field_get  )( void );
-    void         ( *skip_label )( void );
-    void         ( *field_row      )( const char* label );
-    void ( *grid              )( gui_layout_t desc );
-    void ( *grid_cells        )( u32 ncols, u32 nrows );
-    void ( *bar               )( void );
-    void ( *strip             )( void );
-    void ( *pack_size         )( f32 unit );
-    void ( *pack_nextline     )( void );
-    void ( *pack_wrap         )( void );
+    void         ( *layout_default    )( void );
+    void         ( *stack             )( void );
+    void         ( *row               )( f32 row_h );
+    void         ( *cols              )( const f32* tracks );
+    void         ( *cols_n            )( u32 n );
+    void         ( *row_cols          )( f32 row_h, const f32* tracks );
+    void         ( *row_cols_n        )( f32 row_h, u32 n );
+    void         ( *row2              )( f32 a, f32 b );
+    void         ( *row3              )( f32 a, f32 b, f32 c );
+    void         ( *row4              )( f32 a, f32 b, f32 c, f32 d );
+    void         ( *form              )( gui_label_side_t side, f32 label_w );
+    void         ( *field_split       )( gui_label_side_t side, f32 label, f32 control );
+    void         ( *field_label_left  )( f32 width );
+    void         ( *field_label_right )( f32 width );
+    void         ( *field_set         )( const gui_field_t* f );
+    gui_field_t* ( *field_get         )( void );
+    void         ( *skip_label        )( void );
+    void         ( *field_row         )( const char* label );
+    void         ( *grid              )( gui_grid_t desc );
+    void         ( *grid_cells        )( u32 ncols, u32 nrows );
+    void         ( *bar               )( void );
+    void         ( *strip             )( void );
+    void         ( *pack_size         )( f32 unit );
+    void         ( *pack_nextline     )( void );
+    void         ( *pack_wrap         )( void );
 
     /* push_layout_state / pop_layout_state -- save the region's declared shape (mode + template +
        modifiers) and restore it later, so a helper that switches into bar() / grid() / whatever
@@ -1119,7 +1119,7 @@ typedef struct gui_api_s
        Persists like the row template and is independent of the columns: row() / row_cols() leave it
        untouched, layout_default() clears it.  Governs where natural-sized content sits (a text run, a
        checkbox box, a button's label); a frame-filling widget still fills its cell.  The `align`
-       field of layout() / grid() sets the same thing as part of a full descriptor.
+       field of a gui_grid_t descriptor sets the same thing as part of the grid() call.
 
            gui()->row2( 0.5f, 0.5f );  gui()->align( GUI_ALIGN_RIGHT );   // right-aligned columns
 
@@ -1160,19 +1160,21 @@ typedef struct gui_api_s
            gui()->button("OK");  gui()->same_line( 0.0f );  gui()->button("Cancel");
            gui()->text("A");  gui()->new_line( -1.0f );  gui()->text("B");  // one blank line between
 
-       Spacers -- cell-consuming composition that emits nothing interactive:
+       Paintless spacers -- cell-consuming composition that emits nothing at all:
        skip()      -- leave one blank cell (a hole; the natural way to step over a grid slot).
-       separator() -- a thin horizontal rule centered in its cell. */
+       new_line()  -- break to a fresh blank line of height h (see same_line above).
+       The rules that DRAW into a cell -- separator() / separator_text() -- are chrome's, over
+       these same cells; they sit with the other painting widgets in GUI_CHROME. */
 
-    void ( *align      )( gui_align_t a );
-    void ( *next_item_fit )( f32 unit );
-    void ( *next_item_h )( f32 unit );
-    void ( *next_item_rect )( gui_rect_t r );
-    void ( *next_item_align )( gui_align_t a );
-    void ( *same_line  )( f32 spacing );
-    void ( *stack_same_line )( f32 spacing );
-    void ( *skip       )( void );
-    void ( *separator  )( void );
+    void ( *align            )( gui_align_t a );
+    void ( *next_item_fit    )( f32 unit );
+    void ( *next_item_h      )( f32 unit );
+    void ( *next_item_rect   )( gui_rect_t r );
+    void ( *next_item_align  )( gui_align_t a );
+    void ( *same_line        )( f32 spacing );
+    void ( *stack_same_line  )( f32 spacing );
+    void ( *skip             )( void );
+    void ( *new_line         )( f32 h );
 
     /* canvas() -- reserve a full-width drawing area of `height` px in the layout (height <= 0 fills
        the rest of the region) and return its screen rect, for custom geometry drawn with the
@@ -1214,15 +1216,15 @@ typedef struct gui_api_s
 
            gui()->row( gui()->sz_fit_row( 128 ) );               // a row sized for a 128px image
            f32 w = gui()->sz_fit_col( gui()->text_size("Name").x ); // a column sized to a label */
-    f32 ( *sz_u         )( f32 n );
-    f32 ( *sz_row_gap   )( void );
-    f32 ( *sz_rows_h    )( u32 n );
+    f32 ( *sz_u            )( f32 n );
+    f32 ( *sz_row_gap      )( void );
+    f32 ( *sz_rows_h       )( u32 n );
     f32 ( *sz_child_rows_h )( u32 n );    /* outer child/window height to hold exactly n rows */
-    f32 ( *sz_scale_row )( gui_scale_t s );
-    f32 ( *sz_line_h    )( void );
-    f32 ( *sz_chars     )( f32 n );
-    f32 ( *sz_fit_row   )( f32 content_h );
-    f32 ( *sz_fit_col   )( f32 content_w );
+    f32 ( *sz_scale_row    )( gui_scale_t s );
+    f32 ( *sz_line_h       )( void );
+    f32 ( *sz_chars        )( f32 n );
+    f32 ( *sz_fit_row      )( f32 content_h );
+    f32 ( *sz_fit_col      )( f32 content_w );
 
     /* content_avail() -- remaining free space in the current region from the layout pen: the width
        a flex widget would fill and the height left before the region bottom.  The ImGui
@@ -1257,7 +1259,7 @@ typedef struct gui_api_s
        with invisible_button.  `w` is the main-axis size (honored in pack / same_line; column flow
        sizes to the track). */
     gui_vec2_t ( *cursor_screen_pos )( void );
-    gui_rect_t ( *empty )( f32 w, f32 h );
+    gui_rect_t ( *empty             )( f32 w, f32 h );
 
     /* flow_begin / flow_cell / flow_end -- the named rect <-> flow seam pair.  flow_begin opens
        the layout engine inside ANY rect, however it was produced (cut_* algebra, split, carve,
@@ -1280,7 +1282,7 @@ typedef struct gui_api_s
        mode inside each), heights cached per id.  A layout composition (flow/gui_split.c).  The
        worked example, with button_width / button_fill sizing the right panel, is under GUI_CHROME
        -- these three verbs are documented once, there. */
-    void ( *split_begin   )( const char* id, f32 right_w );
+    void ( *split_begin   )( const char* id_str, f32 right_w );
     void ( *split_next    )( void );
     void ( *split_end     )( void );
 
@@ -1291,9 +1293,9 @@ typedef struct gui_api_s
         these; the named theme presets are chrome's style kit and live with it (GUI_CHROME).
     =============================================================================================================*/
 
-    gui_style_t*       (*style_get)( void );    /* mutable base -- marks the theme anonymous       */
-    const gui_style_t* (*style_peek)( void );   /* read-only base -- does NOT mark theme anonymous  */
-    void               (*style_apply)( void );
+    gui_style_t*       ( *style_get   )( void );   /* mutable base -- marks the theme anonymous      */
+    const gui_style_t* ( *style_peek  )( void );   /* read-only base -- does NOT mark it anonymous   */
+    void               ( *style_apply )( void );   /* rescale the active metrics from the base       */
 
     /* style_source_set -- register the OWNER of the DEFAULT style set (set 0), the one chrome
        and any unbracketed UI resolve through: the promotion seam a kit uses to restyle the whole
@@ -1424,25 +1426,25 @@ typedef struct gui_api_s
        value and knob never disagree.  The positional form covers the common case; comp_slider_ex
        takes the full desc (gui_comp_slider_desc_t: snap step, handle width, nav step).
        stock_slider draws a styled groove + handle, leaving any value text to the caller. */
-    gui_comp_slider_t     ( *comp_slider      )( const char* id, gui_rect_t rect, f32* v, f32 lo, f32 hi );
+    gui_comp_slider_t     ( *comp_slider      )( const char* id_str, gui_rect_t rect, f32* v, f32 lo, f32 hi );
     gui_comp_slider_t     ( *comp_slider_ex   )( const gui_comp_slider_desc_t* desc );
     bool                  ( *stock_slider     )( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );
 
     /* button -- the press protocol; the simplest component and the shape the rest follow.  It
        takes a pure ID: the displayed label is the render's business (stock_button passes the
        label as both, so the "##hidden" / "###stable" grammar still applies). */
-    gui_comp_button_t     ( *comp_button      )( const char* id, gui_rect_t rect );
+    gui_comp_button_t     ( *comp_button      )( const char* id_str, gui_rect_t rect );
     bool                  ( *stock_button     )( gui_rect_t r, const char* label );
 
     /* check -- toggle over an inscribed square box (returned as .box: the hit AND the paint
        target).  cycle -- a "< value >" stepper composing a comp_button per cap; it takes `count`
        for the wrap but NOT the strings, which the render draws at .label.  selectable --
        comp_button plus an optional *selected toggle (NULL = a click-only row). */
-    gui_comp_check_t      ( *comp_check       )( const char* id, gui_rect_t rect, bool* v );
+    gui_comp_check_t      ( *comp_check       )( const char* id_str, gui_rect_t rect, bool* v );
     bool                  ( *stock_check      )( gui_rect_t r, const char* id_str, bool* v );
-    gui_comp_cycle_t      ( *comp_cycle       )( const char* id, gui_rect_t rect, i32* idx, i32 count );
+    gui_comp_cycle_t      ( *comp_cycle       )( const char* id_str, gui_rect_t rect, i32* idx, i32 count );
     bool                  ( *stock_cycle      )( gui_rect_t r, const char* id_str, i32* idx, const char* const* items, i32 count );
-    gui_comp_selectable_t ( *comp_selectable  )( const char* id, gui_rect_t rect, bool* selected );
+    gui_comp_selectable_t ( *comp_selectable  )( const char* id_str, gui_rect_t rect, bool* selected );
     bool                  ( *stock_selectable )( gui_rect_t r, const char* label, bool* selected );
 
     /* input -- the richest component: runs the SAME edit engine chrome's input_text drives (keys,
@@ -1452,7 +1454,7 @@ typedef struct gui_api_s
        state or measuring a glyph.  A press claims keyboard focus; buf is caller-owned,
        NUL-terminated, edited in place.  Enter / submit policy stays with the caller
        (set_edit_key_hook, or chrome's input_text for the labeled form-row treatment). */
-    gui_comp_input_t      ( *comp_input       )( const char* id, gui_rect_t rect, f32 pad, char* buf, u32 bufsz );
+    gui_comp_input_t      ( *comp_input       )( const char* id_str, gui_rect_t rect, f32 pad, char* buf, u32 bufsz );
     bool                  ( *stock_input      )( gui_rect_t r, const char* id_str, char* buf, u32 bufsz );
 
     /* The inert three -- no interaction, so no logic to extract; render-only by design.
@@ -1460,7 +1462,7 @@ typedef struct gui_api_s
        seated per align.  stock_meter -- framed fill bar whose fill color is a CALL PARAMETER
        (per-widget color is kit business, not a style slot). */
     void ( *stock_panel )( gui_rect_t r );
-    void ( *stock_label )( gui_rect_t r, gui_align_t align, const char* text );
+    void ( *stock_label )( gui_rect_t r, gui_align_t align, const char* str );
     void ( *stock_meter )( gui_rect_t r, f32 frac, u32 fill_abgr );
 
     /*============================================================================================================
@@ -1568,18 +1570,18 @@ typedef struct gui_api_s
            gui()->dock_window( "Viewport",   root );   // center; tab more windows here with root */
 
     gui_dock_id_t ( *dockspace_over_viewport )( gui_vp_t vp, gui_dockspace_flags_t flags );
-    gui_dock_id_t ( *dock_split )( gui_dock_id_t node, gui_dir_t dir, f32 ratio,
-                                     gui_dock_id_t* out_remain );
+    gui_dock_id_t ( *dock_split              )( gui_dock_id_t node, gui_dir_t dir, f32 ratio,
+                                                gui_dock_id_t* out_remain );
     /* dock_split_root() -- split the WHOLE viewport tree, carving a new leaf along a full edge (`dir`).
        Unlike dock_split (a single leaf), this wraps the root in a new split so the pane spans the entire
        side -- the way to place a full-height column beside an existing top/bottom stack.  Returns the
        new leaf id (dock windows into it), or GUI_DOCK_NONE.  Also the commit path of an edge drop. */
-    gui_dock_id_t ( *dock_split_root )( gui_vp_t vp, gui_dir_t dir, f32 ratio );
-    void ( *dock_window )( const char* title, gui_dock_id_t node );
-    void ( *dock_undock )( const char* title );
-    bool ( *window_is_docked )( const char* title );
-    void ( *dock_window_maximize )( const char* title, bool on );
-    bool ( *window_is_dock_maximized )( const char* title );
+    gui_dock_id_t ( *dock_split_root          )( gui_vp_t vp, gui_dir_t dir, f32 ratio );
+    void          ( *dock_window              )( const char* title, gui_dock_id_t node );
+    void          ( *dock_undock              )( const char* title );
+    bool          ( *window_is_docked         )( const char* title );
+    void          ( *dock_window_maximize     )( const char* title, bool on );
+    bool          ( *window_is_dock_maximized )( const char* title );
 
     /* Floating tab groups -- tabbing WITHOUT split panes.  window_tab() merges window `title` onto
        window `onto_title`'s frame: a free target grows a floating tab group around itself (shared
@@ -1642,14 +1644,14 @@ typedef struct gui_api_s
        Auto-sized popups (the default) measure their content on the appearing frame off-screen and
        snap into place the next frame, so there is no first-frame size pop. */
 
-    void ( *popup_open          )( const char* id );
-    bool ( *popup_begin         )( const char* id, gui_win_flags_t flags );
-    bool ( *popup_modal_begin   )( const char* id, const char* title, gui_win_flags_t flags );
+    void ( *popup_open          )( const char* id_str );
+    bool ( *popup_begin         )( const char* id_str, gui_win_flags_t flags );
+    bool ( *popup_modal_begin   )( const char* id_str, const char* title, gui_win_flags_t flags );
     void ( *popup_end           )( void );
     void ( *popup_close_current )( void );
-    bool ( *popup_is_open        )( const char* id );
+    bool ( *popup_is_open       )( const char* id_str );
 
-    /* 
+    /*
         Context menus -- open a popup on a right-click.  _item binds to the previous widget (the one
         emitted just before the call); _window binds to empty space in the current window.  Use them
         in place of the popup_open + popup_begin pair:
@@ -1658,10 +1660,10 @@ typedef struct gui_api_s
             if ( gui()->popup_context_item_begin( "row_ctx" ) ) { ... }
             gui()->popup_end();
     */
-    bool ( *popup_context_item_begin   )( const char* id );
-    bool ( *popup_context_window_begin )( const char* id );
+    bool ( *popup_context_item_begin   )( const char* id_str );
+    bool ( *popup_context_window_begin )( const char* id_str );
 
-    /* 
+    /*
         Tooltips -- a non-interactive overlay shown at the cursor while the previous widget is
         hovered.  set_item_tooltip is the one-liner; tooltip_begin / tooltip_end wrap a multi-widget
         body (the return gates the body; tooltip_end is unconditional).
@@ -1674,12 +1676,12 @@ typedef struct gui_api_s
 
            gui()->checkbox( "No mouse", &flag );
            gui()->same_line( 0.0f );
-           gui()->help_marker( "Disable mouse inputs and interactions." ); 
+           gui()->help_marker( "Disable mouse inputs and interactions." );
     */
-    void ( *set_item_tooltip )( const char* text );
+    void ( *set_item_tooltip )( const char* str );
     bool ( *tooltip_begin    )( void );
     void ( *tooltip_end      )( void );
-    void ( *help_marker      )( const char* text );
+    void ( *help_marker      )( const char* str );
 
     /* Menus -- a coordination layer over the popup stack.  A menu bar holds menu_begin entries;
        each opens a submenu popup that holds menu_items and further menu_begin entries (nesting on
@@ -1715,12 +1717,12 @@ typedef struct gui_api_s
     /* main_menu_bar_h() -- the band height main_menu_bar_begin occupies (theme-derived).  Use it
        to stack host strips (toolbars, dockspace_inset) below the bar instead of re-deriving the
        height from font metrics -- it stays truthful when the theme or scale ramp retunes. */
-    f32  ( *main_menu_bar_h     )( void );
-    bool ( *menu_bar_begin      )( void );
-    void ( *menu_bar_end        )( void );
-    bool ( *menu_begin )( const char* label );
-    void ( *menu_end   )( void );
-    bool ( *menu_item  )( const char* label, const char* shortcut, bool* selected );
+    f32  ( *main_menu_bar_h )( void );
+    bool ( *menu_bar_begin  )( void );
+    void ( *menu_bar_end    )( void );
+    bool ( *menu_begin      )( const char* label );
+    void ( *menu_end        )( void );
+    bool ( *menu_item       )( const char* label, const char* shortcut, bool* selected );
 
     /* Toolbar -- an icon strip built on bar() (flow/).  toolbar_begin id-scopes the strip so
        two toolbars' buttons never collide, then opens a bar() run; toolbar_end pops it.  Emit
@@ -1750,7 +1752,7 @@ typedef struct gui_api_s
            gui()->toolbar_end();
            gui()->scale_pop(); */
 
-    bool ( *toolbar_begin           )( const char* str_id );
+    bool ( *toolbar_begin           )( const char* id_str );
     void ( *toolbar_end             )( void );
     bool ( *toolbar_button          )( const char* id_str, gui_icon_id_t icon, const char* tooltip );
     bool ( *toolbar_toggle          )( const char* id_str, gui_icon_id_t icon, bool* v, const char* tooltip );
@@ -1771,14 +1773,14 @@ typedef struct gui_api_s
 
     /* text_colored / text_disabled -- a text run in an explicit colour / the dim secondary colour.
        text_wrapped -- a run word-wrapped to the region content width (paragraphs, help blurbs).
-       bullet -- a standalone bullet glyph; new_line -- break + a blank line of height h (undo
-       same_line).  h == 0 is a literal zero-height break; h < 0 defers to the theme's line height
-       (the vertical mirror of same_line's own 0-literal / negative-defers rule). */
+       bullet -- a standalone bullet glyph.  separator -- a thin horizontal rule centered in its
+       cell (separator_text, the labeled form, is below with the other headers); both honor
+       GUI_VAR_SEPARATOR_SHAPE.  The paintless cell spacers skip / new_line are GUI_FLOW's. */
     void ( *text_colored  )( u32 abgr, const char* str );
     void ( *text_disabled )( const char* str );
     void ( *text_wrapped  )( const char* str );
     void ( *bullet        )( void );
-    void ( *new_line      )( f32 h );
+    void ( *separator     )( void );
 
     /* label_text -- a read-only "value + label" row that lays out like the labeled value widgets
        (label track / control track under a form or field_split, trailing label otherwise) but is
@@ -1809,11 +1811,11 @@ typedef struct gui_api_s
     /* slider_float -- draggable [lo,hi] slider; returns true while dragging.  The current value is
        drawn centered on the track by default ("%.3f"); set GUI_ITEM_NO_VALUE_TEXT (push or
        next_item_flag) to hide it for a bare slider. */
-    bool ( *slider_float)( const char* label, f32* v, f32 lo, f32 hi );
+    bool ( *slider_float )( const char* label, f32* v, f32 lo, f32 hi );
 
     /* slider_float_step -- slider_float that quantizes the value to `step` (e.g. 0.25 snaps to the
        quarter marks); step <= 0 is continuous, identical to slider_float. */
-    bool ( *slider_float_step)( const char* label, f32* v, f32 lo, f32 hi, f32 step );
+    bool ( *slider_float_step )( const char* label, f32* v, f32 lo, f32 hi, f32 step );
 
     /* slider_int -- integer slider over [lo,hi]; every track position lands on a whole value, drawn
        centered ("%d").  Same GUI_ITEM_NO_VALUE_TEXT suppression as slider_float. */
@@ -1971,7 +1973,7 @@ typedef struct gui_api_s
                gui()->tab_item_end();
            }
            gui()->tab_bar_end(); */
-    bool ( *tab_bar_begin  )( const char* str_id, gui_tab_bar_flags_t flags );
+    bool ( *tab_bar_begin  )( const char* id_str, gui_tab_bar_flags_t flags );
     void ( *tab_bar_end    )( void );
     bool ( *tab_item_begin )( const char* label, bool* p_open, gui_tab_item_flags_t flags );
     void ( *tab_item_end   )( void );
@@ -2060,7 +2062,7 @@ typedef struct gui_api_s
                                         to call every frame (only reorders on a header click).
        table_set_bg_color( target, abgr ) -- override the current row's or cell's background. */
 
-    bool ( *table_begin            )( const char* id, i32 ncols, gui_table_flags_t flags, f32 height );
+    bool ( *table_begin            )( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 height );
     void ( *table_end              )( void );
     void ( *table_setup_column     )( const char* label, gui_table_col_flags_t flags, f32 width );
     void ( *table_headers_row      )( void );
@@ -2107,10 +2109,10 @@ typedef struct gui_api_s
            // ... many style pushes ...
            gui()->theme_reset();                   // clear everything, back to base */
 
-    const gui_theme_t* (*theme_list )( u32* count_out );
-    bool               (*theme_set  )( const char* name );
-    const char*        (*theme_get  )( void );
-    void               (*theme_reset)( void );
+    const gui_theme_t* ( *theme_list  )( u32* count_out );
+    bool               ( *theme_set   )( const char* name );
+    const char*        ( *theme_get   )( void );
+    void               ( *theme_reset )( void );
 
     /*============================================================================================================
         GUI_DEBUG -- overlays, dashboard, stepper  (debug/)
@@ -2169,7 +2171,7 @@ typedef struct gui_api_s
     /* Debug render mode -- how the main UI draw list is rasterized (gui_render_mode_t): NORMAL,
        WIREFRAME (triangle edges), or BATCH (per-draw-call color tint).  A pipeline + push-constant
        switch, so it is live in every build (not gated to Debug like the overlay layers above). */
-    void                ( *debug_set_render_mode )( gui_render_mode_t mode );
+    void              ( *debug_set_render_mode )( gui_render_mode_t mode );
     gui_render_mode_t ( *debug_get_render_mode )( void );
 
     /* Dump the retained cache's slot table (each window's vertex/index/command bounds) to stdout.

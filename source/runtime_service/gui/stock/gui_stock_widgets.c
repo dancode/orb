@@ -164,7 +164,7 @@ bool
 gui_stock_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
 {
     gui_comp_slider_t s = gui_comp_slider_ex( &( gui_comp_slider_desc_t ){
-        .id = id_str, .rect = r, .v = v, .lo = lo, .hi = hi, .handle_w = 8.0f } );
+        .id_str = id_str, .rect = r, .v = v, .lo = lo, .hi = hi, .handle_w = 8.0f } );
 
     /* Groove: a centered band; the value bar fills it to the component's fraction. */
     gui_rect_t track = gui_rect_align( r, r.w, r.h * 0.30f, GUI_ALIGN_CENTER );

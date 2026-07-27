@@ -43,7 +43,7 @@
 
 /* Active row template (the row / cols headers).  Persists and repeats: each widget fills the
    next cell, wrapping to a fresh row of the same shape when the columns run out.  See
-   gui_layout_t in gui.h for the unit rule.  The resolved cell geometry is computed once when a
+   THE OVERLOADED UNIT in gui.h.  The resolved cell geometry is computed once when a
    template is installed (the source track list is kept only so indent can re-resolve): flow uses
    cellx/cellw for every row; grid uses cellx/cellw x rowy/rowh as the fixed matrix.  cols
    indexes [0,ncols), rows [0,nrows). */

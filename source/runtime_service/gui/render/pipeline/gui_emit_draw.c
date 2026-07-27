@@ -159,7 +159,7 @@ fnv1a_u32( u32 h, u32 v )
 
 /*==============================================================================================
     COMMDN STEPPING
- 
+
     draw_emit_blocked -- the one gate every draw_push_* entry point checks before spending a
     command slot (and, by early-outing first, any pool space): the command list is full, or the
     command stepper is replaying a frozen frame and live main-band emission is suppressed at the

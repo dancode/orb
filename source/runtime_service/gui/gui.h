@@ -6,12 +6,12 @@
 
     In-house 2D interaction renderer for ORB: draw + interact servers, root surfaces, rect and
     flow composition, styled stock widgets -- with chrome (windows / dock / chrome widgets) as an
-    OPTIONAL policy layer on top.  
-    
-    Windowing/input come from the engine `app` layer (Win32) 
-    Rndering goes through `rhi` (Vulkan).  The host drives a frame_begin:
-        -> ctx_begin/widgets/ctx_end -> frame_end -> render() lifecycle each frame.
-    
+    OPTIONAL policy layer on top.
+
+    Windowing / input come from the engine `app` layer (Win32); rendering goes through `rhi`
+    (Vulkan).  The host drives one lifecycle each frame:
+        frame_begin -> ctx_begin / widgets / ctx_end -> frame_end -> render.
+
     Read GUI_ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is
     the orientation map: the two-server model, the widget tiers, the frame lifecycle, and the
     region / scroll / clip invariants.  The unit roster is the `unit` list under `target gui`
@@ -158,7 +158,7 @@ typedef enum
    length (excluding NUL); bufsz is the total buffer capacity. */
 typedef void ( *gui_text_cb_fn )( char* buf, u32 len, u32 bufsz, void* user );
 
-/* Key hook consulted by the FOCUSED text field before its own key handling 
+/* Key hook consulted by the FOCUSED text field before its own key handling
    (see set_edit_key_hook).  Called once per key down this frame; key is an app_key_t value,
    repeat is true on OS auto-repeat ticks (false on the initial press).  Return true to
    consume: the key is cleared from the frame io, so neither the field nor any later widget
@@ -200,8 +200,8 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     THE color vocabulary of the whole GUI, and there is no second one.  Chrome, the stock
     widgets, and a kit's own renders all name a color as a (role, phase) cell, and all of them
     resolve through the same instanced style -- so "the editor look" and "the game look" are two
-    instances of one schema rather than two schemas.  There is no flat color enum: five roles
-    times four phases ARE the 20 cells of gui_style_t.col below.
+    instances of one schema rather than two schemas.  There is no flat color enum: six roles
+    times four phases ARE the 24 cells of gui_style_t.col below.
 
         push_style_color( GUI_ROLE_BG,   GUI_PHASE_HOT, abgr );   // one cell, until the pop
         push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, abgr );   // the whole phase row
@@ -251,7 +251,7 @@ typedef enum
    not a state, because gui_item_state_t is the interact server's flag set and GUI_STATE_* is the
    retained per-id pool: a phase is what item_phase() DISTILLS a state into for the style.
 
-   The same four steps mean the analogous thing for every role, which is what lets one 5x4 grid
+   The same four steps mean the analogous thing for every role, which is what lets one 6x4 grid
    replace a flat palette plus its per-widget token residue:
 
      role     IDLE              HOT                  ACTIVE                 DIM
@@ -491,7 +491,7 @@ typedef enum
 
 typedef struct gui_style_t
 {
-    /* SKIN: the 5x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
+    /* SKIN: the 6x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
        above).  GUI_COLOR packs R,G,B,A bytes; a cell is read with style_color( role, phase ). */
     u32 col[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 
@@ -543,55 +543,49 @@ void         gui_style_apply( void );
 
 typedef struct gui_theme_t
 {
-    const char* name;    /* human-readable key used by theme_set / theme_get */
-    gui_style_t style;   /* complete color + metric snapshot                 */
+    const char* name;    // human-readable key used by theme_set / theme_get
+    gui_style_t style;   // complete color + metric snapshot
 
 } gui_theme_t;
 
-const gui_theme_t* gui_theme_list ( u32* count_out );    /* enumerate built-in themes           */
+const gui_theme_t* gui_theme_list ( u32* count_out );    /* enumerate built-in themes            */
 bool               gui_theme_set  ( const char* name );  /* switch to named theme + reset stacks */
 const char*        gui_theme_get  ( void );              /* active theme name, NULL if anonymous */
 void               gui_theme_reset( void );              /* restore base + clear push stacks     */
 
 /*==============================================================================================
-    GUI_FLOW -- layout template
+    GUI_FLOW -- THE OVERLOADED UNIT: one sizing rule, every track
 
-    A region (a window body or a child_begin box) lays widgets out by carving its content area
-    into cells.  A layout header installs a template that *persists and repeats*: every widget
-    fills the next cell.  A region opens UNDECLARED (no template): the first layout header in its
-    body names the mode -- stack() for the single flex column of auto height (the classic vertical
-    stack), or columns / grid / form for the others.  See gui_layout_mode_t.
+    The single most-referenced rule in the system, and the reason there is no second sizing
+    vocabulary: ONE f32 says fixed / fill / fraction / natural, and every place that divides
+    space reads it the same way -- the flow templates (row / cols / grid / pack), the one-shot
+    overrides (next_item_fit / next_item_h / pack_size), the field split, and the stateless
+    carve math (split / carve).  Both axes, every consumer:
 
-    Two modes, chosen by whether `rows` is set:
-
-      Flow  (rows empty)  -- `cols` describe one row; it repeats *downward*, the pen accumulates,
-                             and content grows + scrolls.  The everyday lists / forms / panels.
-
-      Grid  (rows set)    -- `cols` x `rows` partition a *bounded* box (the region's content area
-                             from the current pen to its bottom) into a fixed matrix, resolved up
-                             front.  Widgets fill cells row-major; both axes are fixed, nothing
-                             scrolls.  Titlebars, toolbars, split panes, dashboards, image grids.
-
-    Column / row sizes use one overloaded f32 (the same rule on both axes):
-        > 1.0         fixed pixels
+        > 1.0         fixed pixels -- explicit px is authored intent and is never floored
         == 1.0        fill -- an equal share of the leftover (several fills split it evenly)
         (0.0, 1.0)    fraction of the gap-adjusted available extent
-        == 0.0        natural size -- the item's own content size.  Pack resolves it per item
-                      with content in hand.  A pre-divided COLUMN track (cols / grid columns)
-                      has none at resolve time, so it resolves against MEASURED FEEDBACK: the
+        == 0.0        natural -- the item's own content size.  Pack resolves it per item with
+                      content in hand.  A pre-divided COLUMN track (cols / grid columns) has no
+                      content at resolve time, so it resolves against MEASURED FEEDBACK: the
                       widest natural item placed in that column last frame (one-frame lag, the
                       same feedback autosize windows run on; floored at the minimum cell width
-                      until something measures).  The label-sized form column:
-                      cols( (f32[]){ 0, 1.0f, GUI_END } ).  Grid ROW tracks have no vertical
-                      measure and still collapse to zero -- use fill / fraction / px there.
+                      until something measures).  The label-sized form column is just
+                      cols( (f32[]){ 0, 1.0f, GUI_END } ).  Grid ROW tracks and the pure-math
+                      callers (split / carve / field_split) have no measure to fall back on and
+                      collapse to zero -- use fill / fraction / px there.
         <  0.0        GUI_END, the track-list terminator
 
-    Gaps sit *between* cells and are subtracted before distribution, so a widget never sees or
-    reasons about spacing -- it just fills the rect it is handed.
+    Flex and fraction tracks floor at GUI_VAR_MIN_CELL and the row overflows into the clip;
+    fixed px never floors.  Gaps sit *between* cells and are subtracted before distribution, so
+    a widget never sees or reasons about spacing -- it just fills the rect it is handed.
 
-    Scope: this unit sizes tracks (row / cols / grid / next_item_fit / field_split) only.  Pure
-    spacing calls (same_line, new_line) look similar but aren't -- a gap has no content, so its
-    0 is a literal zero, not a content measure; see their own docs.
+    Scope: this rule sizes TRACKS only.  Pure spacing calls (same_line, new_line) look similar
+    but are not -- a gap has no content, so their 0 is a literal zero rather than a content
+    measure; see their own docs.
+
+    Which METHODOLOGY divides the space is a separate axis, named by the region's layout header
+    -- see gui_layout_mode_t.
 
 ==============================================================================================*/
 
@@ -643,7 +637,7 @@ typedef struct gui_item_state_t
    displacement, no track) is the model's other pivot -- not this call. */
 typedef struct gui_comp_slider_desc_t
 {
-    const char* id;        // interaction identity (label-hashed)
+    const char* id_str;    // interaction identity (label-hashed)
     gui_rect_t  rect;      // the region the handle travels within (the groove)
     f32*        v;         // value, read and written in place (clamped + snapped)
     f32         lo, hi;    // value range; lo < hi
@@ -759,15 +753,27 @@ typedef struct
 
 } gui_anchor_t;
 
-typedef struct
-{
-    f32             cols[ GUI_LAYOUT_COLS ];    // column tracks, GUI_END-terminated (see unit rule)
-    f32             rows[ GUI_LAYOUT_COLS ];    // row tracks; empty/NULL => flow mode, else grid mode
-    f32             row_h;                      // flow only -- row height: 0 = auto, >0 = pixels
-    f32             gap_x, gap_y;               // inter-cell spacing; 0 = theme default
-    gui_align_t     align;                      // content alignment within each cell (0 = LEFT | TOP)
+/*==============================================================================================
+    GUI_FLOW -- grid descriptor: the full-control form of gui()->grid.
 
-} gui_layout_t;
+    Both track lists are GUI_END-terminated and sized with THE OVERLOADED UNIT (the GUI_FLOW
+    banner above); together they partition the band from the pen to the region's bottom into a
+    fixed matrix that widgets fill row-major.  gui()->grid_cells( nc, nr ) is the uniform case
+    and needs none of this.  Built as a compound literal at the call site:
+
+        gui()->grid( ( gui_grid_t ){ .cols  = { 120.0f, 1.0f, GUI_END },
+                                     .rows  = { 1.0f, 1.0f, GUI_END },
+                                     .align = GUI_ALIGN_CENTER } );
+==============================================================================================*/
+
+typedef struct gui_grid_t
+{
+    f32         cols[ GUI_LAYOUT_COLS ];   // column tracks, GUI_END-terminated
+    f32         rows[ GUI_LAYOUT_COLS ];   // row tracks, GUI_END-terminated
+    f32         gap_x, gap_y;              // inter-cell spacing; 0 = the style's GUI_VAR_GAP
+    gui_align_t align;                     // content alignment within each cell (0 = LEFT | TOP)
+
+} gui_grid_t;
 
 /*==============================================================================================
     GUI_FLOW -- layout mode: the next-item methodology a region is laying out under.
@@ -849,7 +855,7 @@ typedef enum
     .label=120 } is a 120px label column + a flex control; { .side=LEFT, .label=0.35f } a 35/65
     split.  In NONE (trailing) mode both are ignored and the label hugs the right at its width. */
 
-typedef struct gui_field_s
+typedef struct gui_field_t
 {
     f32  label;      // label track size when side is LEFT/RIGHT (overloaded unit; 0 = natural width)
     f32  control;    // control track size (overloaded unit; 0 = fill the rest)
@@ -1011,9 +1017,9 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
    diagonal or a multi-segment polyline treats CENTER_BIASED as CENTER and relies on antialiasing.) */
 typedef enum
 {
-    GUI_STROKE_CENTER_BIASED = 0,   // centered + snapped to the pixel grid (default) 
-    GUI_STROKE_CENTER,              // centered on the path, no snap                  
-    GUI_STROKE_INSIDE,              // whole width on the interior side of a CW-screen ring 
+    GUI_STROKE_CENTER_BIASED = 0,   // centered + snapped to the pixel grid (default)
+    GUI_STROKE_CENTER,              // centered on the path, no snap
+    GUI_STROKE_INSIDE,              // whole width on the interior side of a CW-screen ring
     GUI_STROKE_OUTSIDE,             // whole width on the exterior side of a CW-screen ring
 
 } gui_stroke_align_t;
@@ -1031,9 +1037,9 @@ typedef enum
 
 typedef struct
 {
-    f32 x, y; // pixel position */
-    f32 u, v; // texture UV     */
-    u32 abgr; // packed color   */
+    f32 x, y;   // pixel position
+    f32 u, v;   // texture UV
+    u32 abgr;   // packed color
 
 } gui_draw_vert_t;
 
@@ -1474,7 +1480,7 @@ typedef enum
 #define GUI_RESIZE_T  ( 1u << 2 )
 #define GUI_RESIZE_B  ( 1u << 3 )
 
-typedef struct gui_pane_s
+typedef struct gui_pane_t
 {
     gui_id_t   id;      // identity: hover attribution, state pool key, draw segment tag
     gui_rect_t rect;    // where it is; hit test + base clip derive from it
@@ -1572,26 +1578,26 @@ typedef enum
 typedef enum
 {
     GUI_TABLE_NONE            = 0,
-    GUI_TABLE_BORDERS_H       = 1 << 0,   // horizontal row dividers (between rows)         
-    GUI_TABLE_BORDERS_V       = 1 << 1,   // vertical column dividers (between columns)     
-    GUI_TABLE_BORDERS_OUTER   = 1 << 2,   // outer frame border around the whole table      
+    GUI_TABLE_BORDERS_H       = 1 << 0,   // horizontal row dividers (between rows)
+    GUI_TABLE_BORDERS_V       = 1 << 1,   // vertical column dividers (between columns)
+    GUI_TABLE_BORDERS_OUTER   = 1 << 2,   // outer frame border around the whole table
     GUI_TABLE_BORDERS         = GUI_TABLE_BORDERS_H | GUI_TABLE_BORDERS_V | GUI_TABLE_BORDERS_OUTER,
-    GUI_TABLE_SCROLL_Y        = 1 << 3,   // table body scrolls vertically                  
-    GUI_TABLE_SCROLL_X        = 1 << 4,   // table body scrolls horizontally                
-    GUI_TABLE_SORTABLE        = 1 << 5,   // clicking a header column header sorts          
-    GUI_TABLE_ROW_STRIPES     = 1 << 6,   // alternating even/odd row background tint       
-    GUI_TABLE_RESIZABLE       = 1 << 7,   // drag column borders to resize                  
-    GUI_TABLE_NO_HEADER       = 1 << 8,   // skip table_headers_row entirely                
+    GUI_TABLE_SCROLL_Y        = 1 << 3,   // table body scrolls vertically
+    GUI_TABLE_SCROLL_X        = 1 << 4,   // table body scrolls horizontally
+    GUI_TABLE_SORTABLE        = 1 << 5,   // clicking a header column header sorts
+    GUI_TABLE_ROW_STRIPES     = 1 << 6,   // alternating even/odd row background tint
+    GUI_TABLE_RESIZABLE       = 1 << 7,   // drag column borders to resize
+    GUI_TABLE_NO_HEADER       = 1 << 8,   // skip table_headers_row entirely
 
 } gui_table_flags_t;
 
 typedef enum
 {
     GUI_TABLE_COL_NONE         = 0,
-    GUI_TABLE_COL_FIXED        = 1 << 0,  // fixed pixel width -- does not stretch          
-    GUI_TABLE_COL_STRETCH      = 1 << 1,  // fill remaining space (default when width==0)   
-    GUI_TABLE_COL_NO_RESIZE    = 1 << 2,  // pins this column's right boundary (no drag)    
-    GUI_TABLE_COL_NO_SORT      = 1 << 3,  // not clickable for sort                         
+    GUI_TABLE_COL_FIXED        = 1 << 0,  // fixed pixel width -- does not stretch
+    GUI_TABLE_COL_STRETCH      = 1 << 1,  // fill remaining space (default when width==0)
+    GUI_TABLE_COL_NO_RESIZE    = 1 << 2,  // pins this column's right boundary (no drag)
+    GUI_TABLE_COL_NO_SORT      = 1 << 3,  // not clickable for sort
     GUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  // FUTURE: right-align cell content (flag reserved, unconsumed)
     GUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  // FUTURE: center cell content (flag reserved, unconsumed)
 
@@ -1601,8 +1607,8 @@ typedef enum
 typedef enum
 {
     GUI_TABLE_BG_NONE = 0,
-    GUI_TABLE_BG_ROW,     // tint the current entire row    
-    GUI_TABLE_BG_CELL,    // tint the current cell only     
+    GUI_TABLE_BG_ROW,     // tint the current entire row
+    GUI_TABLE_BG_CELL,    // tint the current cell only
 
 } gui_table_bg_target_t;
 
@@ -1610,7 +1616,7 @@ typedef enum
 typedef struct
 {
     i32  col;          // sorted column index; -1 = unsorted
-    bool descending;   // false = ascending                  
+    bool descending;   // false = ascending
 
 } gui_table_sort_specs_t;
 
@@ -1620,8 +1626,8 @@ typedef struct
 typedef struct
 {
     const char* str;      // alphabetical key (used when is_num is false)
-    f64         num;      // numeric key (used when is_num is true)       
-    bool        is_num;   // true = compare num; false = compare str      
+    f64         num;      // numeric key (used when is_num is true)
+    bool        is_num;   // true = compare num; false = compare str
 
 } gui_table_sort_value_t;
 
@@ -1650,9 +1656,9 @@ typedef enum
     GUI_FONT_ROBOTO_16,
     GUI_FONT_CASCADIA_MONO_12,
     GUI_FONT_CASCADIA_MONO_16,
-    GUI_FONT_CASCADIA_MONO_20, 
+    GUI_FONT_CASCADIA_MONO_20,
     GUI_FONT_CASCADIA_CODE_16
-    
+
 } gui_builtin_font_t;
 
 /*==============================================================================================
@@ -1667,17 +1673,17 @@ typedef enum
 
 typedef struct
 {
-    const char*               title;      /* OS window title; doubles as the chrome shell caption  */
-    i32                       x, y;       /* window position; 0,0 = OS centers                     */
-    i32                       w, h;       /* client size; 0,0 = 50% of the desktop work area       */
-    bool                      os_chrome;  /* true = stock OS frame; false (default) = borderless
-                                             window with the gui chrome shell auto-emitted         */
-    gui_builtin_font_t        font;       /* built-in preset; GUI_FONT_NONE = caller font_load()s  */
-    gui_clock_fn              clock;      /* frame hooks (gui links no sys) -- see frame_set_hooks */
-    gui_sleep_fn              sleep;
-    gui_wait_events_fn        wait;
-    f32                       clear[ 4 ]; /* boot_present_begin clear color; alpha 0 = dark        */
-    bool                      debug;      /* arm the debug hotkey driver (debug_enable)            */
+    const char*        title;      // OS window title; doubles as the chrome shell caption
+    i32                x, y;       // window position; 0,0 = OS centers
+    i32                w, h;       // client size; 0,0 = 50% of the desktop work area
+    bool               os_chrome;  // true = stock OS frame; false (default) = borderless window
+                                   //   with the gui chrome shell auto-emitted
+    gui_builtin_font_t font;       // built-in preset; GUI_FONT_NONE = caller font_load()s
+    gui_clock_fn       clock;      // frame hooks (gui links no sys) -- see frame_set_hooks
+    gui_sleep_fn       sleep;
+    gui_wait_events_fn wait;
+    f32                clear[ 4 ]; // boot_present_begin clear color; alpha 0 = dark
+    bool               debug;      // arm the debug hotkey driver (debug_enable)
 
 } gui_boot_desc_t;
 
@@ -1685,42 +1691,42 @@ typedef struct
     GUI_FRAME -- limits
 ==============================================================================================*/
 
-/* 16K verts covers the busiest measured frame (all sb_gui demo windows + the pipeline
-   dashboard peak ~9K) with headroom, and keeps vertex indices well within u16 range
-   (64K would sit right at the 65535 ceiling).  The 2x index ratio suits quad-dominated
-   UI (6 idx per 4 verts = 1.5:1; AA paths/arcs stay under 2:1); the geometry that would
-   exceed it overflows a frame's tessellation, not the buffer sizing.  The per-frame
-   region sizes that fall out of these (VB 320 KB, IB 64 KB) are both 256-byte aligned,
-   so each frame-in-flight region stays independently addressable -- note that this only
-   matters if the VB/IB are ever moved off HOST_COHERENT memory, in which case regions
-   would need rounding up to nonCoherentAtomSize to flush apart. */
+/* 32K verts covers the busiest measured frame (all sb_gui demo windows + the pipeline
+   dashboard peak ~9K) several times over, and stays well inside u16 vertex indices (64K
+   would sit right at the 65535 ceiling).  The 3x index ratio clears both mixes with room
+   to spare -- quads run 6 idx per 4 verts (1.5:1) and AA paths / arcs stay under 2:1 --
+   so geometry that would exceed it overflows a frame's tessellation, not the buffer
+   sizing.  The per-frame region sizes that fall out of these (VB 640 KB, IB 192 KB) are
+   both 256-byte aligned, so each frame-in-flight region stays independently addressable
+   -- note that this only matters if the VB/IB are ever moved off HOST_COHERENT memory, in
+   which case regions would need rounding up to nonCoherentAtomSize to flush apart. */
 
 #ifdef GUI_STRESS_TEST
 
 /* Stress-bench build (the gui_stress lib variant, sb_gui_stress): the per-frame pools scale
-       ~4x so the bench can push past shipping load without tripping caps.  Two are ceiling-bound,
-       not 4x: verts stop just under 64K (u16 indices) and the clip table at 256 (u8 index). */
+   ~4x so the bench can push past shipping load without tripping caps.  Two are ceiling-bound,
+   not 4x: verts stop just under 64K (u16 indices) and the clip table at 256 (u8 index). */
 
-#define GUI_MAX_VERTS           ( 60 * 1024 )
-#define GUI_MAX_CMDS            8192
-#define GUI_MAX_PATH_PTS        32768
-#define GUI_MAX_RECT_ENTRIES    16384
-#define GUI_MAX_TEXT_POOL       ( 64 * 1024 )
-#define GUI_MAX_CLIP_RECTS      256
+#define GUI_MAX_VERTS        ( 60 * 1024 )   /* per-frame tessellated vertices                   */
+#define GUI_MAX_CMDS         8192            /* per-frame semantic draw commands                 */
+#define GUI_MAX_PATH_PTS     32768           /* per-frame total polyline / path point pool       */
+#define GUI_MAX_RECT_ENTRIES 16384           /* per-frame total draw_rects batch pool            */
+#define GUI_MAX_TEXT_POOL    ( 64 * 1024 )   /* per-frame flat string copy pool for text cmds    */
+#define GUI_MAX_CLIP_RECTS   256             /* per-frame clip table entries; u8 index caps at 256 */
 
 #else
 
-#define GUI_MAX_VERTS           ( 32 * 1024 )
-#define GUI_MAX_CMDS            1024
-#define GUI_MAX_PATH_PTS        2048                 /* per-frame total polyline/path point pool */
-#define GUI_MAX_RECT_ENTRIES    4096               /* per-frame total draw_rects batch pool */
-#define GUI_MAX_TEXT_POOL       ( 16 * 1024 )        /* per-frame flat string copy pool for text cmds */
-#define GUI_MAX_CLIP_RECTS  64                   /* per-frame clip table entries; u8 index so max is 256 */
+#define GUI_MAX_VERTS        ( 32 * 1024 )   /* per-frame tessellated vertices                   */
+#define GUI_MAX_CMDS         1024            /* per-frame semantic draw commands                 */
+#define GUI_MAX_PATH_PTS     2048            /* per-frame total polyline / path point pool       */
+#define GUI_MAX_RECT_ENTRIES 4096            /* per-frame total draw_rects batch pool            */
+#define GUI_MAX_TEXT_POOL    ( 16 * 1024 )   /* per-frame flat string copy pool for text cmds    */
+#define GUI_MAX_CLIP_RECTS   64              /* per-frame clip table entries; u8 index caps at 256 */
 
 #endif
 
-#define GUI_MAX_IDX        ( GUI_MAX_VERTS * 3 )
-#define GUI_CLIP_DEPTH     32
+#define GUI_MAX_IDX          ( GUI_MAX_VERTS * 3 )   /* 2x index ratio suits quad-dominated UI   */
+#define GUI_CLIP_DEPTH       32                      /* push_clip / pop_clip nesting depth       */
 
 /* Command segments: one contiguous span of the command list per (z, vp) the emit path stamps, cut
    wherever draw_set_sort_key / draw_set_viewport change the tag.  The render backend orders these
@@ -1807,8 +1813,8 @@ typedef struct
     u32 seg_count;          // command segments cut this frame (per-(win,z,vp,font,band) spans)
     u32 text_pool_used;     // bytes of the per-frame text pool consumed (cap: GUI_MAX_TEXT_POOL)
     u32 vert_count;         // tessellated vertices (total, including retained)
-    u32 tri_count;          // tessellated triangles (total, including retained)            
-    u32 draw_calls;         // GPU indexed draw calls (batches), summed over surfaces       
+    u32 tri_count;          // tessellated triangles (total, including retained)
+    u32 draw_calls;         // GPU indexed draw calls (batches), summed over surfaces
 
     u32 win_total;          // windows tracked this frame
     u32 win_retained;       // windows whose geometry was reused (no re-tessellation)
@@ -1836,16 +1842,16 @@ typedef struct
 
 typedef enum
 {
-    GUI_DBG_NONE     = 0,         // overlay off                                          }
-    GUI_DBG_WINDOW   = 1 << 0,    // window outer frames; the hover window stands out     }
-    GUI_DBG_INTERACT = 1 << 1,    // per-widget interaction rects (hover/active tinted)   }
-    GUI_DBG_RESIZE   = 1 << 2,    // window edge-resize grab bands; hot when armed        }
-    GUI_DBG_CLIP     = 1 << 3,    // clip (scissor) rectangle stack, colored by depth     }
-    GUI_DBG_LAYOUT   = 1 << 4,    // layout allocated space per widget                    }
-    GUI_DBG_CONTENT  = 1 << 5,    // measured content rect per scrollable region -- drawn }
-                                  // in the MAIN list so it scrolls with its content      }
-    GUI_DBG_REGION   = 1 << 6,    // per-region screen geometry: view rect, reserved      }
-                                  // scrollbar gutters, and the body's interaction clip   }
+    GUI_DBG_NONE     = 0,         // overlay off
+    GUI_DBG_WINDOW   = 1 << 0,    // window outer frames; the hover window stands out
+    GUI_DBG_INTERACT = 1 << 1,    // per-widget interaction rects (hover/active tinted)
+    GUI_DBG_RESIZE   = 1 << 2,    // window edge-resize grab bands; hot when armed
+    GUI_DBG_CLIP     = 1 << 3,    // clip (scissor) rectangle stack, colored by depth
+    GUI_DBG_LAYOUT   = 1 << 4,    // layout allocated space per widget
+    GUI_DBG_CONTENT  = 1 << 5,    // measured content rect per scrollable region -- drawn
+                                  //   in the MAIN list so it scrolls with its content
+    GUI_DBG_REGION   = 1 << 6,    // per-region screen geometry: view rect, reserved
+                                  //   scrollbar gutters, and the body's interaction clip
 
     GUI_DBG_ALL      = GUI_DBG_WINDOW | GUI_DBG_INTERACT | GUI_DBG_RESIZE | GUI_DBG_CLIP | GUI_DBG_LAYOUT
                      | GUI_DBG_CONTENT | GUI_DBG_REGION,
@@ -1869,11 +1875,11 @@ typedef enum
 
 typedef enum
 {
-    GUI_RENDER_NORMAL    = 0,   // normal textured / blended UI                       */
-    GUI_RENDER_WIREFRAME = 1,   // triangle edges only (wireframe)                    */
-    GUI_RENDER_BATCH     = 2,   // per-draw-call color tint (batch boundary view)     */
+    GUI_RENDER_NORMAL    = 0,   // normal textured / blended UI
+    GUI_RENDER_WIREFRAME = 1,   // triangle edges only (wireframe)
+    GUI_RENDER_BATCH     = 2,   // per-draw-call color tint (batch boundary view)
 
-    GUI_RENDER_MODE_COUNT,      // mode count -- not a mode                           */
+    GUI_RENDER_MODE_COUNT,      // mode count -- not a mode
 
 } gui_render_mode_t;
 

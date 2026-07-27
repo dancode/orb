@@ -16,9 +16,9 @@
    comp_button already asked for the next emit (a click drives a caller selection not visible
    until then), so nothing more is needed here. */
 gui_comp_selectable_t
-gui_comp_selectable( const char* id, gui_rect_t rect, bool* selected )
+gui_comp_selectable( const char* id_str, gui_rect_t rect, bool* selected )
 {
-    gui_comp_button_t b = gui_comp_button( id, rect );
+    gui_comp_button_t b = gui_comp_button( id_str, rect );
 
     if ( b.state.clicked && selected )
         *selected = !*selected;

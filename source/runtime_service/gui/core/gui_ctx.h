@@ -146,13 +146,13 @@ void          window_apply_next( gui_window_t* win, bool appearing );
 
 typedef struct
 {
-    bool        has_pos, has_size;     // a value is queued on this axis 
-    gui_cond_t  pos_cond, size_cond;   // when to apply it               
+    bool        has_pos, has_size;     // a value is queued on this axis
+    gui_cond_t  pos_cond, size_cond;   // when to apply it
     f32         pos_x, pos_y;
     f32         size_w, size_h;
 
-    bool        has_viewport;          // a viewport reassignment is queued for the next window 
-    u32         viewport;              // its target surface index                              
+    bool        has_viewport;          // a viewport reassignment is queued for the next window
+    u32         viewport;              // its target surface index
 
 } gui_next_win_t;
 
@@ -162,7 +162,7 @@ typedef struct
     bool        by_drag;    // true = seamless title-bar drag; false = detach-button click
     gui_id_t    win_id;     // the dragged window record
     u32         from_vp;    // surface it was on (0 = main -> tear off; else floater -> merge)
-    const char* title;      // window title, to label the spawned floater's OS window 
+    const char* title;      // window title, to label the spawned floater's OS window
     bool        has_home;   // re-open of a closed floater: spawn reads the record's restore
 
     /* The context whose win.pool holds win_id, stamped at enqueue time (window_begin_ex /

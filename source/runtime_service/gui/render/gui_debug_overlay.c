@@ -90,7 +90,7 @@ static struct
     bool       overflow;    /* a push was dropped this frame */
 
     dbg_cmd_t  cmds[ GUI_DBG_MAX_CMDS ];
-    
+
     /* Scratch buffers: filled per-viewport at flush time, discarded after upload. */
 
     gui_draw_vert_t scratch_verts [ GUI_DBG_FLUSH_MAX_VERTS ];

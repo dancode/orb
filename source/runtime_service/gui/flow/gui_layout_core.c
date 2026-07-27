@@ -206,7 +206,7 @@ quant_ceil( f32 v )
     the region measures independently, and a vanished template's slots age out on their own.
     The resolve floors at WIDGET_MIN_W so a first appearance (nothing measured yet) opens
     usable instead of collapsed.  Flow columns and grid COLUMNS feed back; grid ROWS have no
-    vertical natural signal and still collapse (see gui_layout_t).
+    vertical natural signal and still collapse (see THE OVERLOADED UNIT, gui.h).
 
 ==============================================================================================*/
 
@@ -269,12 +269,12 @@ nat_tracks_substitute( layout_frame_t* f, f32* tracks, u32 n )
 
     One resolver does both axes (here, only columns are wired); the row template lives on the
     layout frame and persists until changed, so widgets emit cell-by-cell while staying wholly
-    agnostic to the layout shape.  See gui_layout_t (gui.h) for the overloaded unit rule.
+    agnostic to the layout shape.  See THE OVERLOADED UNIT (gui.h) for the track sizing rule.
 
 ==============================================================================================*/
 
 /* Resolve a track list into pixel [pos,size] pairs along one axis.  `n` tracks (>= 1) are laid
-   from `origin` across `extent`, with `gap` between each.  Units (see gui_layout_t): >1 fixed px,
+   from `origin` across `extent`, with `gap` between each.  Units (THE OVERLOADED UNIT, gui.h): >1 fixed px,
    ==1 fill (equal share of the leftover -- several fills split it), (0,1) fraction of the gap-
    adjusted extent, ==0 natural.  This is a pre-divide (up-front) resolve with no content in hand,
    so a 0/natural track collapses to zero width HERE -- the column installers substitute measured
@@ -371,7 +371,7 @@ layout_tracks_resolve( const f32* tracks, u32 n, f32 origin, f32 extent, f32 gap
 
 /*============================================================================================*/
 /* Resolve one overloaded size unit against a single span -- the scalar form of the rule
-   layout_tracks_resolve applies to a whole list (see gui_layout_t): > 1 fixed px, == 1 fill the
+   layout_tracks_resolve applies to a whole list (THE OVERLOADED UNIT, gui.h): > 1 fixed px, == 1 fill the
    available extent, (0,1) a fraction of it, == 0 the natural measure.  < 0 (unset) is natural
    with a fill fallback for an item that has no natural measure -- the pack-mode default.  The
    single-value sites (line.pack_size_next, the one-shot cell line.fit_next) resolve through here, so the
@@ -583,7 +583,7 @@ gui_push_layout_state( void )
     layout_frame_t* f = lf();
     layout_row_break( f );
     if ( s_layout_state_stack_depth < GUI_LAYOUT_STATE_STACK_MAX ) {
-         s_layout_state_stack[ s_layout_state_stack_depth++ ] = 
+         s_layout_state_stack[ s_layout_state_stack_depth++ ] =
             ( layout_state_t ){ f->mode, f->tmpl, f->mod };
     }
 }
@@ -616,9 +616,9 @@ layout_modifiers_reset( layout_frame_t* f )
 /*============================================================================================*/
 /* Open a region UNDECLARED: zero the template state and leave the mode NONE so the first layout
    header (stack / columns / grid / ...) installs real geometry.  A widget emitted before any
-   header trips the guard in cell_next_w.  Called when a region or sub-layout opens (the
-   old silent single-column default is gone) and by gui_pad after re-insetting -- the modifiers
-   and iteration state start from a known state every region. */
+   header trips the guard in cell_next_w.  Called whenever a region or sub-layout opens (the old
+   silent single-column default is gone), so the modifiers and iteration state start from a known
+   state every region. */
 
 static void
 layout_clear( layout_frame_t* f )
@@ -655,8 +655,8 @@ layout_set_default( layout_frame_t* f )
 
 /*============================================================================================*/
 /* Seed the frame's content column + pen from its outer box and a pad inset, leaving the template
-   UNDECLARED.  The one derivation of the content geometry: layout_push_region (region open),
-   sublayout_open (transient cell frame), and gui_pad (re-inset) all route through here.  Requires
+   UNDECLARED.  The one derivation of the content geometry: layout_push_region (region open) and
+   sublayout_open (transient cell frame) both route through here.  Requires
    outer, scroll, and the resolved view rect (f->view) already set on the frame.  The live pen
    is biased by -scroll so widgets slide under the clip, while origin_* stays unscrolled so the
    content extent measures cleanly at pop; band_bottom is the grid band end / view bottom. */
@@ -794,7 +794,7 @@ layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
 /*============================================================================================*/
 /* Resolve one cell's horizontal box -- the fit-then-align sequence every cell placement (flow or
    grid) shares: decide how big before align_x decides where.  A one-shot line.fit_next (overloaded
-   unit -- see gui_layout_t) always wins when set, taken as authored intent even past the cell
+   unit -- gui.h) always wins when set, taken as authored intent even past the cell
    edge, exactly like a fixed track px is never floored (layout_tracks_resolve).  Unset (-1, the
    common case) falls back to the widget's own natural_w signal: a natural width smaller than the
    cell shrinks to it (a button hugs its label), anything else fills the cell verbatim -- the

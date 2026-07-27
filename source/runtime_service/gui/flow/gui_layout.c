@@ -34,10 +34,9 @@
     Public layout API -- shape the active region's repeating row template.
 
     These set the template on the current region; it persists and repeats for every subsequent
-    widget until set again (or the region ends).  No push/pop: a region opens with the default
-    (one flex column, auto height), and each call simply replaces it.  See gui_layout_t for
-    the column unit rule.  gui_pad sets the region padding -- the inset between the region box
-    and where the layout starts -- distinct from the item padding carried in the template.
+    widget until set again (or the region ends).  No push/pop: a region opens UNDECLARED, the
+    first header names its mode, and each later call simply replaces the template.  Track sizes
+    are THE OVERLOADED UNIT (gui.h) throughout.
 ==============================================================================================*/
 
 /* stack -- the explicit header for a single full-width flex column, rows accumulating + scrolling
@@ -146,6 +145,21 @@ gui_stack_same_line( f32 spacing )
     gui_same_line( spacing );
 }
 
+/* The two PAINTLESS spacers: pure cell consumption, so they live with the composer rather than with
+   the rules that draw (separator / separator_text are chrome's, over the same cell_next).  Each
+   takes the next cell from the active template exactly like a real widget, so both compose with
+   rows and grids with no special case -- which is the point of the cell model.
+
+   skip     -- leave one blank slot of a standard row: the natural way to step over a grid cell.
+   new_line -- break to a fresh line of height h and draw nothing, undoing a same_line and inserting
+               a blank line between runs (ImGui NewLine, generalized).  A line has no body to
+               measure, so its own "natural" is literally zero: h == 0 is a true zero-height break,
+               not a fallback, and h < 0 defers to the theme's line height -- the vertical mirror of
+               same_line( -1 ). */
+
+void gui_skip    ( void )  { cell_next( WIDGET_H ); }
+void gui_new_line( f32 h ) { cell_next( h >= 0.0f ? h : font_char_h() ); }
+
 /* Field split -- the labeled value widgets (input_text, slider_float, checkbox) split their cell
    into a label track + a control track and lay out as an aligned "Label  [control]" form from a
    single call.  `side` places the label on the left or right; `label` / `control` are two sizes in
@@ -245,10 +259,10 @@ void gui_next_item_h( f32 unit ) { lf()->line.h_next = unit; }
 void gui_next_item_rect( gui_rect_t r ) { lf()->line.rect_next = r; lf()->line.rect_next_set = true; }
 
 /* Grid mode: partition the band from the pen to the region bottom into desc.cols x desc.rows
-   (both GUI_END-terminated, overloaded units).  Uses cols, rows, gaps, and align; row_h is
-   flow-only and ignored.  Widgets then fill cells row-major; nothing scrolls. */
+   (both GUI_END-terminated, overloaded units).  Widgets then fill cells row-major; nothing
+   scrolls.  gui_grid_cells is the uniform nc x nr case and needs no descriptor. */
 void
-gui_grid( gui_layout_t desc )
+gui_grid( gui_grid_t desc )
 {
     layout_set_grid( desc.cols, desc.rows, desc.gap_x, desc.gap_y );
     lf()->mod.align = (u8)desc.align;   /* full template carries the content alignment too */

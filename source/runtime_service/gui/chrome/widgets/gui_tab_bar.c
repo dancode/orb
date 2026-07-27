@@ -48,7 +48,7 @@ typedef struct { gui_id_t selected; } gui_tabbar_state_t;
    selection when the previously-selected tab is no longer present. */
 typedef struct
 {
-    gui_id_t             id;          // bar id (item_id of str_id, within its pushed scope)
+    gui_id_t             id;          // bar id (item_id of id_str, within its pushed scope)
     gui_rect_t           strip;       // the reserved strip row (screen rect)
     f32                  x;           // running pen: left edge of the next chip
     gui_tabbar_state_t*  st;          // persisted selection slot
@@ -84,11 +84,11 @@ static u32              s_tabbar_attempt;
 ==============================================================================================*/
 
 bool
-gui_tab_bar_begin( const char* str_id, gui_tab_bar_flags_t flags )
+gui_tab_bar_begin( const char* id_str, gui_tab_bar_flags_t flags )
 {
     ++s_tabbar_attempt;          /* counted before any early-out: tab_bar_end pairs against this */
 
-    gui_push_id( str_id );
+    gui_push_id( id_str );
 
     gui_rect_t strip = cell_next( WIDGET_H );   /* one row for the tab strip; body flows below */
 

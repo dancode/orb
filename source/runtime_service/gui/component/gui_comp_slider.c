@@ -46,7 +46,7 @@ gui_comp_slider_ex( const gui_comp_slider_desc_t* d )
     if ( handle_w > r.w ) handle_w = r.w;
     f32 travel = r.w - handle_w;                                   /* the handle's left-edge sweep */
 
-    gui_item_state_t st = gui_item( d->id, r );
+    gui_item_state_t st = gui_item( d->id_str, r );
     out.state = st;
 
     f32 old = *v;
@@ -93,10 +93,10 @@ gui_comp_slider_ex( const gui_comp_slider_desc_t* d )
    nav step (5% of the range).  Everything the desc adds -- a snap grid, a specific handle extent,
    an explicit keyboard step -- is what _ex is for. */
 gui_comp_slider_t
-gui_comp_slider( const char* id, gui_rect_t rect, f32* v, f32 lo, f32 hi )
+gui_comp_slider( const char* id_str, gui_rect_t rect, f32* v, f32 lo, f32 hi )
 {
     return gui_comp_slider_ex( &( gui_comp_slider_desc_t ){
-        .id = id, .rect = rect, .v = v, .lo = lo, .hi = hi } );
+        .id_str = id_str, .rect = rect, .v = v, .lo = lo, .hi = hi } );
 }
 
 // clang-format on

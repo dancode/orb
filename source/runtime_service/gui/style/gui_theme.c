@@ -98,7 +98,7 @@ var_is_pixels( u8 cls )
     return cls == GUI_CLASS_METRIC || cls == GUI_CLASS_STROKE || cls == GUI_CLASS_SKIN;
 }
 
-/* Shared authoring blocks -- the built-in themes repeat large identical spans (the 5x4 palette,
+/* Shared authoring blocks -- the built-in themes repeat large identical spans (the 6x4 palette,
    the density ramp, the shape picks), so those live once here as designated-initializer fragments
    and each theme below reads as "this palette + these few deltas".  A theme is still a plain
    gui_style_t aggregate; these macros only save the copy-paste (and the silent-typo risk).
@@ -261,7 +261,7 @@ gui_style_peek( void )
     return &s_style_base;
 }
 
-/*==============================================================================================    
+/*==============================================================================================
     Theme API -- named style snapshots that form the root of the push/pop stack.
 
     gui_theme_reset() is the "large style change" escape hatch: it restores s_style_base from
@@ -327,7 +327,7 @@ gui_theme_reset( void )
     style_new_frame();  /* reseed the working slot set from s_style, clear all push stacks */
 }
 
-/*==============================================================================================    
+/*==============================================================================================
     Grid lattice -- the ONE home of the quantum-snapping arithmetic.  Every place that snaps a size
     or a cumulative edge onto the theme's grid_quantum px lattice (theme metric quantize below,
     layout track resolve, natural widths, pack pens, scroll spill tolerance) routes through these

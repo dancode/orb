@@ -118,8 +118,19 @@ vocabulary: chrome, stock, and a user widget all name a color the same way. Each
 render sits over a `gui_comp_*` logic core; all are public (`gui_host.h` / the vtable), and a
 user widget is the stock render's sibling over the same `comp_*` call.
 
-CALL shape: every component opens `(id, rect, ...)`. A parameter-rich one ADDS an `_ex` desc
-twin, never replaces the positional form (`comp_slider` / `comp_slider_ex`).
+CALL shape: every component opens `(id, rect, ...)` -- logic first, so the identity that keyed the
+state leads. A parameter-rich one ADDS an `_ex` desc twin, never replaces the positional form
+(`comp_slider` / `comp_slider_ex`). Every `stock_*` RENDER opens `(rect, ...)` instead -- the rect
+leads because a render is a rect consumer and the inert three (`stock_panel` / `stock_label` /
+`stock_meter`) have no id at all. The two orders are the two tiers, not an oversight: reading
+`(id, rect)` tells you you are calling logic, `(rect, id)` that you are calling paint.
+
+NAMING -- three string parameters, three spellings, no overlap, so one glance at a signature says
+what the string is for:
+
+    id_str    identity only, never drawn (`gui_id_t id` is the hashed value it produces)
+    label     a widget's displayed NAME, which doubles as its identity via the `##` grammar
+    str       a run of content the caller wants painted (`text`, `draw_text`, `tooltip`)
 
 RESULT shape: `gui_item_state_t state` FIRST (so it is at offset 0 for every component), then any
 geometry, then only the outcomes `state` does not already carry -- never a second spelling of
@@ -359,7 +370,8 @@ handed the next cell.
 
 ### The one overloaded unit rule (used EVERYWHERE: tracks, splits, fit, pack)
 
-For any size value `t`:
+Its canonical statement is the `GUI_FLOW -- THE OVERLOADED UNIT` banner in `gui.h`; every other
+mention in the tree points there rather than restating it. In brief, for any size value `t`:
 - `t > 1`   : fixed pixels (never floored -- explicit px is authored intent)
 - `t == 1`  : fill (equal share of leftover; multiple fills split it)
 - `0 < t < 1`: fraction of the gap-adjusted extent
@@ -381,7 +393,7 @@ The first layout header names the mode. A widget emitted before ANY header is a 
 |---|---|---|
 | `stack()` / `row(h)` | STACK | one flex column, rows accumulate + scroll (the default list) |
 | `cols(tracks)` / `cols_n(n)` / `row2/3/4(...)` / `row_cols(h,tracks)` | COLUMNS | repeating pre-divided column template; wraps row-major |
-| `grid(desc)` / `grid_cells(nc,nr)` | GRID | fixed cols x rows matrix from pen to region bottom, both axes resolved up front; no scroll; overflow clamps to last cell |
+| `grid(gui_grid_t)` / `grid_cells(nc,nr)` | GRID | fixed cols x rows matrix from pen to region bottom, both axes resolved up front; no scroll; overflow clamps to last cell |
 | `bar()` / `strip()` | PACK | print run: items at natural size along the axis; `pack_size(u)` overrides next item; `pack_nextline()` breaks; `pack_wrap()` opts the run into auto-wrap at the line edge |
 
 Flow cell sizing: a widget with a natural width (button, checkbox, text) shrinks to it and is
@@ -399,7 +411,9 @@ everything.
 
 Other flow verbs: `same_line(spacing)` / `stack_same_line` (one-shot pen placement continuing
 the previous item's line), `indent()/unindent()` (shift content column, reflow; flow only),
-`empty(w,h)` (reserve a block, the Dummy analogue), `new_line`, `separator_text`.
+`empty(w,h)` (reserve a block, the Dummy analogue), and the two PAINTLESS cell spacers
+`skip()` / `new_line(h)`. The rules that draw into a cell -- `separator` / `separator_text` --
+are chrome's over the same `cell_next`; the split is paint, not placement.
 
 Sizing: the `sz_` family is the one category that turns intent into a pixel dimension; layout
 verbs consume what it produces. Grid-first, in order of preference: `sz_u(n)` (quanta to px),

@@ -15,14 +15,14 @@
    The click drives a caller-visible flip the current frame's screen can't show, so like every
    button the component asks for the next emit itself. */
 gui_comp_check_t
-gui_comp_check( const char* id, gui_rect_t rect, bool* v )
+gui_comp_check( const char* id_str, gui_rect_t rect, bool* v )
 {
     gui_comp_check_t out = ( gui_comp_check_t ){ 0 };
 
     f32 side = ( rect.w < rect.h ) ? rect.w : rect.h;
     out.box  = gui_rect_align( rect, side, side, GUI_ALIGN_CENTER );
 
-    out.state = gui_item( id, out.box );   /* the inscribed box IS the hit */
+    out.state = gui_item( id_str, out.box );   /* the inscribed box IS the hit */
     if ( out.state.clicked )
     {
         *v          = !*v;

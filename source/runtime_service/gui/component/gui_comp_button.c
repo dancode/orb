@@ -28,11 +28,11 @@
    A click is a host state change this frame's screen cannot show yet, so the component asks for
    the next emit itself (else the retained cache replays the stale screen until the mouse moves). */
 gui_comp_button_t
-gui_comp_button( const char* id, gui_rect_t rect )
+gui_comp_button( const char* id_str, gui_rect_t rect )
 {
     gui_comp_button_t out = ( gui_comp_button_t ){ 0 };
 
-    out.state = gui_item( id, rect );   /* ITEM_BUTTON: hover / press-capture / click / nav / repeat */
+    out.state = gui_item( id_str, rect );   /* ITEM_BUTTON: hover / press-capture / click / nav / repeat */
 
     if ( out.state.clicked )
         gui_request_redraw();

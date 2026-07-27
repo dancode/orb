@@ -475,7 +475,7 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
 
         ++s_ctx_save_sp;
     }
-    
+
     gui_context_t* c = s_ctx_pool[ ctx_handle ];
     ctx_bind( c );
 
@@ -615,7 +615,7 @@ gui_render( gui_vp_t vp, rhi_cmd_t cmd )
 
 void
 gui_push_clip( f32 x, f32 y, f32 w, f32 h )
-{    
+{
     draw_push_clip_rect( x, y, w, h );
 }
 
