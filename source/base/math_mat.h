@@ -210,8 +210,14 @@ mat4_inverse( mat4_t a )
     inv[ 11 ] = -m[0]*m[5]*m[11]  + m[0]*m[7]*m[9]   + m[4]*m[1]*m[11] - m[4]*m[3]*m[9]  - m[8]*m[1]*m[7]   + m[8]*m[3]*m[5];
     inv[ 15 ] =  m[0]*m[5]*m[10]  - m[0]*m[6]*m[9]   - m[4]*m[1]*m[10] + m[4]*m[2]*m[9]  + m[8]*m[1]*m[6]   - m[8]*m[2]*m[5];
 
+    /* Singular guard, spelled as a direct two-sided range test on the divisor rather than
+       f32_abs( det ) < F32_EPSILON.  Identical semantics (NaN fails both, and falls through
+       both), but the compiler's value-range propagation can follow it -- through the f32_abs
+       call it cannot, so MSVC raised C4723 "potential divide by 0" on the reciprocal below at
+       /O2 and the warnings-as-errors build failed.  Same shape as the vec / quat normalizers,
+       which compare the divisor itself and have never warned. */
     f32 det = m[ 0 ] * inv[ 0 ] + m[ 1 ] * inv[ 4 ] + m[ 2 ] * inv[ 8 ] + m[ 3 ] * inv[ 12 ];
-    if ( f32_abs( det ) < F32_EPSILON )
+    if ( det > -F32_EPSILON && det < F32_EPSILON )
         return mat4_identity();         // singular: no inverse
 
     f32    inv_det = 1.0f / det;
@@ -319,7 +325,7 @@ mat3_inverse( mat3_t a )
     f32 c01 = m[ 7 ] * m[ 2 ] - m[ 1 ] * m[ 8 ];
     f32 c02 = m[ 1 ] * m[ 5 ] - m[ 4 ] * m[ 2 ];
     f32 det = m[ 0 ] * c00 + m[ 3 ] * c01 + m[ 6 ] * c02;
-    if ( f32_abs( det ) < F32_EPSILON )
+    if ( det > -F32_EPSILON && det < F32_EPSILON )   // singular -- see mat4_inverse on the spelling
         return mat3_identity();
 
     f32 inv_det = 1.0f / det;

@@ -1297,7 +1297,7 @@ typedef struct gui_api_s
     const gui_style_t* ( *style_peek  )( void );   /* read-only base -- does NOT mark it anonymous   */
     void               ( *style_apply )( void );   /* rescale the active metrics from the base       */
 
-    /* style_bake -- derive s->col[][] from s->palette: the step between what a theme AUTHORS
+    /* style_bake -- derive s->col[][][] from s->palette: the step between what a theme AUTHORS
        (seven seeds and a five-number ramp, gui_palette_t) and what a render READS (the 8x4
        colour grid).  Pure and in-place; touches no metric.
 
@@ -1309,7 +1309,7 @@ typedef struct gui_api_s
            e->palette.seed[ GUI_SEED_SURFACE ] = charcoal;
            e->palette.seed[ GUI_SEED_ACCENT  ] = gold;
            e->palette.ramp[ GUI_RAMP_HOVER   ] = 0.5f;
-           gui()->style_bake( e );                                 // all 32 cells derive
+           gui()->style_bake( e );                                 // all 96 cells derive
            e->col[ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;      // the one bespoke cell */
     void               ( *style_bake  )( gui_style_t* s );
 
@@ -1382,6 +1382,17 @@ typedef struct gui_api_s
     void ( *push_style_seed  )( gui_style_seed_t seed, u32 abgr );
     void ( *pop_style_seed   )( u32 count );
 
+    /* The look-qualified pair -- the same colour stack, addressing a cell by all three
+       coordinates.  GUI_LOOK_ALL spans both planes as ONE push (the look-axis twin of
+       GUI_PHASE_ALL), and pop_style_color takes any of them back: a look is a coordinate on a
+       colour, not a different kind of override, so it does not earn a fourth stack.
+
+           gui()->push_style_color_look( GUI_ROLE_BG, GUI_PHASE_ALL, GUI_LOOK_SELECT, gold );
+           ... selected rows in this list are gold, unselected ones untouched ...
+           gui()->pop_style_color( 1 ); */
+    void ( *push_style_color_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr );
+    void ( *next_style_color_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr );
+
     /* The RESOLVED reads -- the other half of the stacks above, and what every render actually
        calls.  style_color returns a (role, phase) cell of the installed style (kit-owned when a
        style source is registered) with any live push_style_color / next_style_color override
@@ -1394,24 +1405,35 @@ typedef struct gui_api_s
            gui_comp_button_t b = gui()->comp_button( "save", r );
            u32 face = gui()->style_color( GUI_ROLE_BG, gui()->item_phase( b.state ) );
 
+       style_color_look adds the third coordinate, for a widget whose CALLER knows the item is
+       chosen.  There is no item_look beside item_phase and there cannot be: a phase is distilled
+       from interact state, while nothing the interact server tracks knows what your data has
+       selected.  Pass the look in, and a selected row keeps its hover and press feedback instead
+       of freezing on one cell:
+
+           u32 face = gui()->style_color_look( GUI_ROLE_BG, gui()->item_phase( b.state ),
+                                               chosen ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL );
+
        style_edit -- the raw INSTALLED style of the current set, mutable: the kit tuning door for
        INSTALLING a look, and the same gui_style_t a theme is authored as.  Ad-hoc writes last
        until the next style landing re-installs them; a kit that OWNS the look registers
        style_source_set (or style_set_create) so its style is re-derived rather than clobbered at
-       every landing.  Do not read ->col[][] through it at paint time -- that bypasses the style
+       every landing.  Do not read ->col[][][] through it at paint time -- that bypasses the style
        stacks; use style_color. */
-    gui_style_phase_t ( *item_phase  )( gui_item_state_t st );
-    u32               ( *style_color )( gui_style_role_t role, gui_style_phase_t phase );
-    gui_style_t*      ( *style_edit  )( void );
+    gui_style_phase_t ( *item_phase       )( gui_item_state_t st );
+    u32               ( *style_color      )( gui_style_role_t role, gui_style_phase_t phase );
+    u32               ( *style_color_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
+    gui_style_t*      ( *style_edit       )( void );
 
-    /* The schema, described by the engine that owns it -- so a style editor WALKS the five axes
-       (role, phase, seed, ramp, var) instead of keeping parallel tables in step with enums it
-       does not own.  Display names for each, plus what kind of number a var holds
+    /* The schema, described by the engine that owns it -- so a style editor WALKS the six axes
+       (role, phase, look, seed, ramp, var) instead of keeping parallel tables in step with enums
+       it does not own.  Display names for each, plus what kind of number a var holds
        (gui_style_class_t): its class says whether it is a size, a stroke, a radius, the lattice
        pitch, or an enum pick, which is exactly what an editor needs to group it and choose a
        slider or a combo.  An unnamed index reads "?" rather than running off the end. */
     const char*       ( *style_role_name  )( gui_style_role_t role );
     const char*       ( *style_phase_name )( gui_style_phase_t phase );
+    const char*       ( *style_look_name  )( gui_style_look_t look );
     const char*       ( *style_seed_name  )( gui_style_seed_t seed );
     const char*       ( *style_ramp_name  )( gui_style_ramp_t ramp );
     const char*       ( *style_var_name   )( gui_style_var_t var );

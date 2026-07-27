@@ -200,8 +200,8 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     THE color vocabulary of the whole GUI, and there is no second one.  Chrome, the stock
     widgets, and a kit's own renders all name a color as a (role, phase) cell, and all of them
     resolve through the same instanced style -- so "the editor look" and "the game look" are two
-    instances of one schema rather than two schemas.  There is no flat color enum: eight roles
-    times four phases ARE the 32 cells of gui_style_t.col below.
+    instances of one schema rather than two schemas.  There is no flat color enum: twelve roles
+    times four phases times two looks ARE the 96 cells of gui_style_t.col below.
 
         push_style_color( GUI_ROLE_BG,   GUI_PHASE_HOT, abgr );   // one cell, until the pop
         push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, abgr );   // the whole phase row
@@ -226,8 +226,9 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 
     Two doors, and the difference matters: gui()->style_color( role, phase ) is the RESOLVED
     read (push_style_color / next_style_color overrides win) -- use it in any render, stock or
-    your own.  gui()->style_edit() is the raw installed struct of the CURRENT set, for a kit
-    INSTALLING a look; reading ->col[][] through it at paint time bypasses the style stacks.
+    your own; style_color_look adds the third coordinate for a widget that can be selected.
+    gui()->style_edit() is the raw installed struct of the CURRENT set, for a kit INSTALLING a
+    look; reading ->col[][][] through it at paint time bypasses the style stacks.
 ==============================================================================================*/
 
 /* What the color is FOR.  Eight roles cover every surface the GUI paints.
@@ -266,7 +267,22 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
    collides with that neighbour in some phase -- on BG it matches the hovered track exactly, on
    ACCENT it matches the fill.  GRAB is authored per theme as the palette's CONTRAST ANCHOR,
    opposite in polarity to the theme itself (light on a dark theme, dark on a light one), which is
-   a value no phase of a shared row can hold in both directions. */
+   a value no phase of a shared row can hold in both directions.
+
+   The four STATUS roles answer a different question from the eight above: not "what surface is
+   this" but "what is this telling me".  INFO / OK / WARN / ERROR is the severity ladder, and it
+   earns rows because every consumer that needed one grew a PRIVATE palette instead -- the
+   pipeline dashboard carried its own OK / WARN / BAD literals, the content debug layer its own
+   green, the drop overlay its own blue.  A private literal is a colour the theme cannot reach:
+   switch to the light theme and a saturated dark-theme green is still sitting there, and a kit
+   that re-seeded its whole UI gold still gets a stock blue drop preview.
+
+   They take the phase axis like every other role, with one deliberate stretch, called out here
+   because it is the single place the axis does not mean quite the same thing: a status role's
+   DIM is the FIELD form of the signal -- the hue faded far enough into the ground to be a banner
+   or a row tint rather than a mark.  Elsewhere DIM is a quieter version of the same thing; here
+   it is the same hue in its other job, because a quiet status is IDLE at reduced alpha (a draw
+   concern, not a palette one) while a status FIELD has no other cell it could live in. */
 
 typedef enum
 {
@@ -278,6 +294,12 @@ typedef enum
     GUI_ROLE_ACCENT,      // the value a control HOLDS: slider / progress fill, empty track
     GUI_ROLE_MARK,        // the indicator a control SHOWS: check, radio dot, nav ring
     GUI_ROLE_GRAB,        // movable part of a track control: slider knob, scrollbar thumb
+
+    GUI_ROLE_INFO,        // status: a neutral notice -- a hint, a count, a note
+    GUI_ROLE_OK,          // status: healthy, passing, connected, within budget
+    GUI_ROLE_WARN,        // status: near a limit, deprecated, degraded
+    GUI_ROLE_ERROR,       // status: failed, over a limit, disconnected
+
     GUI_ROLE_COUNT
 
 } gui_style_role_t;
@@ -286,20 +308,28 @@ typedef enum
    not a state, because gui_item_state_t is the interact server's flag set and GUI_STATE_* is the
    retained per-id pool: a phase is what item_phase() DISTILLS a state into for the style.
 
-   The same four steps mean the analogous thing for every role, which is what lets one 8x4 grid
+   The same four steps mean the analogous thing for every role, which is what lets one 12x4 grid
    replace a flat palette plus its per-widget token residue:
 
      role     IDLE              HOT                  ACTIVE                 DIM
      -------  ----------------  -------------------  ---------------------  ------------------
-     PANEL    window body       hovered surface      selected surface       child / recessed
+     PANEL    window body       hovered surface      pressed surface        child / recessed
      TITLE    bar, inactive tab hovered tab          focused bar, live tab  de-emphasized bar
      BG       control face      hovered face         pressed / focused      inert face
      BORDER   frame line        hovered / resize     focused window ring    subdued frame
      TEXT     body text, caret  text on a hot face   text on a pressed one  secondary text
-     ACCENT   value fill        nav highlight        mark, captured nav     empty track
+     ACCENT   value fill        engaged fill         dragged fill           empty track
+     MARK     check, radio dot  nav ring             captured-nav ring      inert mark
+     GRAB     knob / thumb      hovered knob         dragged knob           inert knob
+     status   the signal        hovered signal       pressed signal         the FIELD (banner)
 
    DIM doubles as the inert variant throughout: a recessed panel is PANEL[DIM], an empty value
-   track is ACCENT[DIM], secondary text is TEXT[DIM].
+   track is ACCENT[DIM], secondary text is TEXT[DIM] -- and, for the status roles only, the
+   banner tint behind a message rather than a quieter ink (see gui_style_role_t).
+
+   Note what is NOT on this axis: whether the item is SELECTED.  That was the old reading of
+   ACTIVE and it cost the library its hover feedback on every list row; it is now the look axis
+   below, because a selection persists while a phase does not.
 
    TITLE[ACTIVE] is authored as the window BODY colour in every built-in theme, which is what
    makes a live tab merge into the panel it owns.  A focused WINDOW is signalled by its border
@@ -320,6 +350,52 @@ typedef enum
 } gui_style_phase_t;
 
 /*==============================================================================================
+    GUI_STYLE -- the look axis: what the item IS, beside what is happening TO it
+
+    The third and last coordinate, and the one the grid was missing.  A phase is TRANSIENT: the
+    pointer is over this, the button is down on this -- facts the interact server tracks, which
+    is why gui_item_phase() can distil one from a state.  A look is PERSISTENT and comes from the
+    caller's own data: this row is the chosen one.  The two are orthogonal, and until they had
+    separate axes the grid had no way to say so.
+
+    The collapse showed up as one line, repeated in every list widget in the library:
+
+        draw_fill( r, selected ? COL_BG_ACTIVE : COL_BG_HOT );      // the old selectable
+
+    Selected and pressed were the same cell, so hovering a selected row did nothing at all: the
+    feedback the rest of the schema spends four cells per role providing was simply absent on the
+    widget people click most, and a selected row could not be shown as pressed either.  Meanwhile
+    PANEL[ACTIVE] -- "the selected surface" -- had no reader anywhere, because the widget that
+    wanted it was busy borrowing BG[ACTIVE].  Fifteen sites read that one cell and meant five
+    different things by it: pressed, toggled on, menu open, focused, selected.
+
+    So the grid is two PLANES of the same twelve roles and four phases.  NORMAL is exactly the
+    grid that was there before and is what every unqualified read still gets; SELECT is the same
+    derivation run against a chosen GROUND, so a selected row hovers, presses and dims like any
+    other surface does:
+
+        style_color     ( GUI_ROLE_BG, phase )                      // NORMAL -- the default
+        style_color_look( GUI_ROLE_BG, phase, GUI_LOOK_SELECT )     // the chosen one
+
+    There is deliberately no gui_item_look() beside gui_item_phase(), and the absence is the
+    point: a phase can be distilled from interact state because interaction is what the server
+    watches, while only the caller knows what is selected.  A widget takes the look as an
+    argument, the same way gui_selectable already takes its bool.
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_LOOK_NORMAL = 0,   // the ordinary item
+    GUI_LOOK_SELECT,       // the chosen one: selected row, toggled button, open menu, sort column
+    GUI_LOOK_COUNT,
+
+    /* Not a plane -- the "both planes" selector, the look-axis twin of GUI_PHASE_ALL.  Only the
+       push / next verbs accept it; a read names one look. */
+    GUI_LOOK_ALL = GUI_LOOK_COUNT
+
+} gui_style_look_t;
+
+/*==============================================================================================
     GUI_STYLE -- the seed palette: what a theme AUTHORS
 
     The grid above is what a RENDER reads.  It is not what a theme WRITES.  Those used to be the
@@ -331,7 +407,7 @@ typedef enum
     rule the schema had no way to say.  Every theme retyped it by hand and any of the 64 literals
     could drift off the ramp with nothing to catch it.
 
-    So a theme authors SEVEN colours and FIVE numbers, and gui_style_bake derives the 32 cells:
+    So a theme authors ELEVEN colours and SIX numbers, and gui_style_bake derives the 96 cells:
 
         seeds  -- the source colours, one per surface KIND (not per role, not per phase)
         ramp   -- how far a cell travels per interaction step, per theme
@@ -345,8 +421,8 @@ typedef enum
 
         gui_style_t* e = gui()->style_edit();
         e->palette.seed[ GUI_SEED_ACCENT ] = gold;
-        gui()->style_bake( e );                                    // 32 cells re-derive
-        e->col[ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;         // the one bespoke cell
+        gui()->style_bake( e );                                    // 96 cells re-derive
+        e->col[ GUI_LOOK_NORMAL ][ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;   // one bespoke cell
 
     Alpha rides through: a seed's alpha byte is carried onto every cell derived from it, so a
     translucent panel seed yields a translucent panel in all four phases without four literals.
@@ -354,8 +430,10 @@ typedef enum
 
 /* The source colours.  One per surface KIND, which is a coarser axis than the role -- PANEL and
    TITLE are both the container surface, so both derive from SURFACE and the ramp separates them.
-   Seven seeds cover the eight roles because TITLE has no colour of its own: a caption band is a
-   lifted surface, which is a derivation, not a decision. */
+   Eleven seeds cover twelve roles because TITLE has no colour of its own: a caption band is a
+   lifted surface, which is a derivation, not a decision.  The four status hues DO each get one --
+   a severity ladder is a set of independent editorial choices (how orange is "warning" in this
+   product?) and no derivation can guess them from an accent. */
 typedef enum
 {
     GUI_SEED_SURFACE = 0,   // container base: window body, panel, and the band over it
@@ -365,11 +443,17 @@ typedef enum
     GUI_SEED_ACCENT,        // THE hue: value fills, hover wash, focus ring, nav highlight
     GUI_SEED_MARK,          // the affirmative indicator hue: check, radio dot
     GUI_SEED_GRAB,          // the contrast anchor: knobs and thumbs, opposite the theme
+
+    GUI_SEED_INFO,          // status hue: a neutral notice
+    GUI_SEED_OK,            // status hue: healthy / passing
+    GUI_SEED_WARN,          // status hue: near a limit
+    GUI_SEED_ERROR,         // status hue: failed / over a limit
+
     GUI_SEED_COUNT
 
 } gui_style_seed_t;
 
-/* HOW FAR a derived cell travels -- the theme's personality, in five numbers, each 0..1, and
+/* HOW FAR a derived cell travels -- the theme's personality, in six numbers, each 0..1, and
    the index into gui_palette_t.ramp.  Authored per theme rather than fixed, because a step that
    reads as one notch on a near-black surface reads as four on a near-white one: the light and
    dark built-ins carry visibly different recess values for exactly that reason.  A ramp of all
@@ -384,11 +468,12 @@ typedef enum
     GUI_RAMP_FADE,        // how far an inert cell fades toward the surface (the DIM phase)
     GUI_RAMP_RECESS,      // how far a recessed surface / empty track sinks below its base
     GUI_RAMP_STEP,        // one lift notch for the accent, border and anchor ramps
+    GUI_RAMP_SELECT,      // how far a CHOSEN surface washes toward the accent -- the SELECT plane
     GUI_RAMP_COUNT
 
 } gui_style_ramp_t;
 
-/* The authored half of a style, in full: seven colours and five numbers, 48 bytes.  Small
+/* The authored half of a style, in full: eleven colours and six numbers, 68 bytes.  Small
    enough that a theme is worth having dozens of, or deriving live from a single accent the
    user picked. */
 typedef struct gui_palette_t
@@ -605,17 +690,21 @@ typedef enum
 
 typedef struct gui_style_t
 {
-    /* SKIN: the AUTHORED colour -- seven seeds and a five-number ramp (gui_palette_t, above).
-       Writing here changes nothing on its own; gui_style_bake derives col[][] below from it.
+    /* SKIN: the AUTHORED colour -- eleven seeds and a six-number ramp (gui_palette_t, above).
+       Writing here changes nothing on its own; gui_style_bake derives col[][][] below from it.
        First in the struct because it is first in the pipeline, and because push_style_seed
        addresses a seed by slot exactly as push_style_var addresses a var. */
     gui_palette_t palette;
 
-    /* SKIN: the 8x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
-       above), and the DERIVED half: gui_style_bake writes all 32 cells from the palette, then
-       a kit may overwrite any of them.  GUI_COLOR packs R,G,B,A bytes; a cell is read with
-       style_color( role, phase ). */
-    u32 col[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
+    /* SKIN: the 2x12x4 color grid -- THE color vocabulary (gui_style_look_t x gui_style_role_t x
+       gui_style_phase_t, above), and the DERIVED half: gui_style_bake writes all 96 cells from
+       the palette, then a kit may overwrite any of them.  GUI_COLOR packs R,G,B,A bytes; a cell
+       is read with style_color( role, phase ) for the NORMAL plane, style_color_look for either.
+
+       LOOK is the outer index so that each plane is one contiguous 48-cell run in the flat slot
+       space -- which is what keeps the NORMAL plane's layout, and therefore every compile-time
+       colour slot, byte-identical to what it was before the SELECT plane existed. */
+    u32 col[ GUI_LOOK_COUNT ][ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 
     /* METRICS + SKIN scalars, indexed by gui_style_var_t -- the push_style_var vocabulary.
        Authored in px at em=12 and rescaled by gui_style_apply; the enum below documents each
@@ -647,8 +736,8 @@ const gui_style_t* gui_style_peek( void );
 
 void         gui_style_apply( void );
 
-/* gui_style_bake() -- derive the 32-cell colour grid from s->palette, in place.  The one step
-   between what a theme AUTHORS and what a render READS, and the only writer of col[][] the
+/* gui_style_bake() -- derive the 96-cell colour grid from s->palette, in place.  The one step
+   between what a theme AUTHORS and what a render READS, and the only writer of col[][][] the
    engine has.  Pure: a function of the palette alone, so the same palette always bakes to the
    same grid, and it never touches var / scales.
 
@@ -663,9 +752,9 @@ void         gui_style_bake( gui_style_t* s );
     GUI_CHROME -- themes (chrome's named style presets)
 
     A theme is a named gui_style_t snapshot: a human-readable name paired with a seed palette,
-    the layout metrics, and the density ramp.  Its col[][] is left EMPTY -- theme_set bakes the
-    grid from the palette on the way in, so a built-in theme is authored as seven colours and a
-    ramp rather than as 32 literals.  The active theme is the root layer every push_style_color /
+    the layout metrics, and the density ramp.  Its col[][][] is left EMPTY -- theme_set bakes the
+    grid from the palette on the way in, so a built-in theme is authored as eleven colours and a
+    ramp rather than as 96 literals.  The active theme is the root layer every push_style_color /
     push_style_var / push_style_seed overrides relative to.  Switching or resetting a theme clears
     the push stacks immediately -- use this instead of managing deep push/pop sequences for large
     style changes.

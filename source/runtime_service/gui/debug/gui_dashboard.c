@@ -43,23 +43,37 @@ gui_id_t g_dash_window_id = 0;
 
 /*==============================================================================================
     Colors
+
+    Two kinds live here, and the split is the point.
+
+    SEVERITY is the engine's, and reads out of the style's status roles -- OK / WARN / ERROR.
+    The dashboard used to carry its own literals for these, which is how a diagnostic ends up
+    shouting a saturated dark-theme green at you on a light theme.  A severity is a claim the
+    whole application makes, so it belongs to the palette; four other consumers were making the
+    same claim in their own hex, which is what earned the status roles their rows.
+
+    The rest genuinely IS private and stays that way: an instrument's near-black backdrop, its
+    highwater marker, its CATEGORICAL region palette.  Those are not severities -- a categorical
+    palette's job is to make ten things distinguishable from each other, not to rank them -- and
+    a theme has no opinion about them worth inheriting.
 ==============================================================================================*/
+
+#define DASH_COL_OK         COL_OK_IDLE
+#define DASH_COL_WARN       COL_WARN_IDLE
+#define DASH_COL_BAD        COL_ERROR_IDLE
+#define DASH_COL_OVERFLOW   COL_ERROR_IDLE
+#define DASH_COL_FIF_ACTIVE COL_OK_IDLE
 
 #define DASH_COL_TEXT       GUI_COLOR( 0xD8, 0xD8, 0xD8, 0xFF )
 #define DASH_COL_TEXT_DIM   GUI_COLOR( 0x90, 0x90, 0x90, 0xFF )
 #define DASH_COL_BG         GUI_COLOR( 0x14, 0x14, 0x18, 0xFF )
 #define DASH_COL_HWM        GUI_COLOR( 0xF0, 0xE0, 0x40, 0xE0 )
-#define DASH_COL_OVERFLOW   GUI_COLOR( 0xEE, 0x40, 0x30, 0xFF )
 #define DASH_COL_CHANGED    GUI_COLOR( 0xFF, 0xFF, 0xFF, 0xD0 )
 #define DASH_COL_SELF       GUI_COLOR( 0x50, 0xE0, 0xF0, 0xFF )
 #define DASH_COL_VOLATILE   GUI_COLOR( 0xFF, 0xFF, 0xFF, 0x60 )
-#define DASH_COL_FIF_ACTIVE GUI_COLOR( 0x66, 0xDD, 0x55, 0xFF )
 #define DASH_COL_FIF_IDLE   GUI_COLOR( 0x40, 0x40, 0x48, 0xFF )
 #define DASH_COL_SPAN_VERT  GUI_COLOR( 0x66, 0xBB, 0xEE, 0xFF )
 #define DASH_COL_SPAN_IDX   GUI_COLOR( 0xBB, 0x88, 0xEE, 0xFF )
-#define DASH_COL_OK         GUI_COLOR( 0x66, 0xDD, 0x55, 0xFF )
-#define DASH_COL_WARN       GUI_COLOR( 0xE0, 0xC0, 0x40, 0xFF )
-#define DASH_COL_BAD        GUI_COLOR( 0xEE, 0x55, 0x44, 0xFF )
 #define DASH_COL_CUT_TEX    GUI_COLOR( 0xF0, 0xC0, 0x40, 0xFF )
 #define DASH_COL_CUT_CLIP   GUI_COLOR( 0xE0, 0x50, 0xE0, 0xFF )
 #define DASH_COL_CUT_FORCE  GUI_COLOR( 0xFF, 0xFF, 0xFF, 0xC0 )

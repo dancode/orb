@@ -31,11 +31,16 @@ const gui_style_t* style_active( void );   /* style/gui_theme.c: the active scal
    after the metrics rescale -- which is where the style tracks a theme or font change. */
 void style_landing( void );
 
-/* The two coordinate systems, and there are only two.  A color is a (role, phase) cell of the
-   color grid; a scalar is a gui_style_var_t.  Both are the installed value with any
+/* The two coordinate systems, and there are only two.  A color is a (look, role, phase) cell of
+   the color grid; a scalar is a gui_style_var_t.  Both are the installed value with any
    push_style_* / next_style_* override already applied, since an override lands in the same
-   slot -- one indexed load, nothing to scan. */
-u32 style_col( u8 role, u8 phase );
+   slot -- one indexed load, nothing to scan.
+
+   style_col is the NORMAL plane, which is what an unqualified read means and what every macro
+   below resolves to; style_col_look names the plane for the handful of widgets whose caller
+   knows the item is selected. */
+u32 style_col     ( u8 role, u8 phase );
+u32 style_col_look( u8 role, u8 phase, u8 look );
 f32 style_var( gui_style_var_t var );
 
 /* One field of one density-ramp step (field: 0 = row, 1 = pad, 2 = gap).  Read through the block
@@ -94,11 +99,19 @@ f32 style_scale( gui_scale_t s, u32 field );
     style_color from outside the library) instead -- same seam, no macro.
 
     Not every cell has a reader, and that is not a gap: the grid is wired uniformly because the
-    schema is uniform.  A PANEL never goes hot or active (a container has no interaction of its
-    own -- window focus reads on BORDER[ACTIVE]), and TEXT never goes hot because any text that
-    can be hot is inside a widget, and the text widgets return no state.  The cells stay filled so
-    a role behaves like every other role; nothing is missing -- and since the bake fills them,
-    the unread ones now cost a theme author nothing rather than a dozen literals.
+    schema is uniform.  TEXT never goes hot because any text that can be hot is inside a widget,
+    and the text widgets return no state.  The cells stay filled so a role behaves like every
+    other role; nothing is missing -- and since the bake fills them, the unread ones now cost a
+    theme author nothing rather than a dozen literals.
+
+    THERE IS NO COL_SEL_* FAMILY, and the omission is deliberate rather than unfinished.  A macro
+    can only spell a CONSTANT, and role and phase are routinely constant at a read site -- chrome
+    genuinely knows it is painting the border, idle.  A look never is: every single selection read
+    in the library is of the form `chosen ? ... : ...`, because a look is a fact about the
+    caller's DATA, not about the draw.  Ninety-six names to serve zero constant readers would be
+    ninety-six more chances for the grid and its spelling to drift, which is the exact debt the
+    pre-grid token table cost us.  Widgets that can be selected go through style_col_look or the
+    col_item_bg_look projection below, and pass the look along.
 ==============================================================================================*/
 
 /*                             role               phase                                          */
@@ -141,6 +154,30 @@ f32 style_scale( gui_scale_t s, u32 field );
 #define COL_GRAB_HOT       style_col( GUI_ROLE_GRAB,   GUI_PHASE_HOT    )  /* hovered knob       */
 #define COL_GRAB_ACTIVE    style_col( GUI_ROLE_GRAB,   GUI_PHASE_ACTIVE )  /* dragged knob       */
 #define COL_GRAB_DIM       style_col( GUI_ROLE_GRAB,   GUI_PHASE_DIM    )  /* inert knob         */
+
+/* The severity ladder.  IDLE is the signal (ink, icon, bar, rule); DIM is the FIELD -- the same
+   hue dropped nearly into the ground, for the banner behind a message rather than the message.
+   HOT / ACTIVE exist for the status that is also a control (a "3 errors" chip you can click). */
+
+#define COL_INFO_IDLE      style_col( GUI_ROLE_INFO,   GUI_PHASE_IDLE   )  /* notice             */
+#define COL_INFO_HOT       style_col( GUI_ROLE_INFO,   GUI_PHASE_HOT    )  /* hovered notice     */
+#define COL_INFO_ACTIVE    style_col( GUI_ROLE_INFO,   GUI_PHASE_ACTIVE )  /* pressed notice     */
+#define COL_INFO_DIM       style_col( GUI_ROLE_INFO,   GUI_PHASE_DIM    )  /* notice banner      */
+
+#define COL_OK_IDLE        style_col( GUI_ROLE_OK,     GUI_PHASE_IDLE   )  /* healthy            */
+#define COL_OK_HOT         style_col( GUI_ROLE_OK,     GUI_PHASE_HOT    )  /* hovered healthy    */
+#define COL_OK_ACTIVE      style_col( GUI_ROLE_OK,     GUI_PHASE_ACTIVE )  /* pressed healthy    */
+#define COL_OK_DIM         style_col( GUI_ROLE_OK,     GUI_PHASE_DIM    )  /* healthy banner     */
+
+#define COL_WARN_IDLE      style_col( GUI_ROLE_WARN,   GUI_PHASE_IDLE   )  /* caution            */
+#define COL_WARN_HOT       style_col( GUI_ROLE_WARN,   GUI_PHASE_HOT    )  /* hovered caution    */
+#define COL_WARN_ACTIVE    style_col( GUI_ROLE_WARN,   GUI_PHASE_ACTIVE )  /* pressed caution    */
+#define COL_WARN_DIM       style_col( GUI_ROLE_WARN,   GUI_PHASE_DIM    )  /* caution banner     */
+
+#define COL_ERROR_IDLE     style_col( GUI_ROLE_ERROR,  GUI_PHASE_IDLE   )  /* failure            */
+#define COL_ERROR_HOT      style_col( GUI_ROLE_ERROR,  GUI_PHASE_HOT    )  /* hovered failure    */
+#define COL_ERROR_ACTIVE   style_col( GUI_ROLE_ERROR,  GUI_PHASE_ACTIVE )  /* pressed failure    */
+#define COL_ERROR_DIM      style_col( GUI_ROLE_ERROR,  GUI_PHASE_DIM    )  /* failure banner     */
 
 /*==============================================================================================
     Stacks, sets, and the seam hooks
@@ -185,6 +222,7 @@ extern u32 s_font_size;         /* style/gui_theme.c -- active em (0 = never set
 /* State -> color projections (gui_style_core.c) -- pure: the state flags arrive as
    parameters; col_item_bg_anim alone rides core's keyed anim utility, explicitly. */
 u32 col_item_bg( gui_item_state_t st );
+u32 col_item_bg_look( gui_item_state_t st, gui_style_look_t look );
 u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color );
 u32 col_grab( gui_item_state_t st );

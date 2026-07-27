@@ -364,14 +364,20 @@ gui_selectable( const char* label, bool* selected )
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
     nav_item_stamp_label( id, label );   /* type-ahead opt-in (GUI_ITEM_NO_TYPEAHEAD to skip) */
 
-    /* Fill: selected rows use the active tint, a hovered row the hot tint; otherwise the row
-       is transparent so the region background shows through. */
+    /* Fill: a chosen row reads out of the SELECT plane, an unchosen one out of NORMAL, and both
+       take their phase from the live state -- so a selected row still lifts under the cursor and
+       sinks under a press.  It used to be `on ? COL_BG_ACTIVE : COL_BG_HOT`, which spent the
+       selection to say it and left the most-clicked widget in the library with no hover feedback
+       at all.  Idle and unchosen still paints nothing, so the region background shows through. */
     bool on = ( selected && *selected );
     if ( on || st.hover || st.nav )
-        draw_fill( r, on ? COL_BG_ACTIVE : COL_BG_HOT );
+        draw_fill( r, col_item_bg_look( st, on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL ) );
 
-    /* Label, left-aligned with the standard padding. */
-    draw_label( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT_IDLE, label );
+    /* Label, left-aligned with the standard padding -- read through the SAME plane as the fill,
+       so a kit that recolours the selection can recolour what is written on it. */
+    draw_label( r.x + WIDGET_PAD, text_center_y( r.y, r.h ),
+                style_col_look( GUI_ROLE_TEXT, GUI_PHASE_IDLE,
+                                on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL ), label );
     cell_reach( r.x + WIDGET_PAD + label_width( label ) );   /* natural width may exceed the row */
 
     if ( st.clicked && selected )

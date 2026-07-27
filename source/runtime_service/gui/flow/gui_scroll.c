@@ -268,7 +268,7 @@ layout_pop_region( void )
        high_x, (origin_y - scroll_y)..high_y) in the SAME scrolled screen space the content itself
        just drew in, so the box lands exactly on the emitted geometry's true bounds -- if it
        doesn't hug the longest visible line, the highwater measurement (not the eye) is wrong.
-       Light green, distinct from the layout layer's magenta cell rects.  Unlike the other debug
+       The OK signal, distinct from the layout layer's magenta cell rects.  Unlike the other debug
        layers this draws into the MAIN list (the box must scroll with the content it measures),
        so it is emit-gated here rather than captured into the overlay list. */
     if ( gui_debug_get_layers() & GUI_DBG_CONTENT )
@@ -276,7 +276,7 @@ layout_pop_region( void )
         f32 top = canv_from_scr_y( f, f->origin_y );   /* cross to content anchor FIRST, so the
                                                           spans below stay content-to-content */
         draw_push_rect_outline( f->content_x, top, f->high_x - f->content_x, f->high_y - top,
-                                2.0f, 0, GUI_COLOR( 0xA0, 0xF0, 0xA0, 0xFF ) );
+                                2.0f, 0, COL_OK_IDLE );
     }
 
     /* Region-geometry debug layer (GUI_DBG_REGION): the view rect, the reserved gutters, and

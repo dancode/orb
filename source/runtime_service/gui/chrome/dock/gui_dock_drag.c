@@ -52,8 +52,13 @@
    lose a tie to a splitter gutter or any other chrome it overlaps. */
 #define DOCK_OVERLAY_WIN        ( (gui_id_t)0xD0C0DA6u )            /* synthetic slot id, draw-side only */
 #define DOCK_OVERLAY_Z          0xF8000000u                         /* topmost band -- above GUI_REGION_FG_Z    */
-#define DOCK_OVERLAY_FILL       GUI_COLOR( 90, 160, 245,  64 )      /* translucent drop-region preview   */
-#define DOCK_OVERLAY_LINE       GUI_COLOR( 90, 160, 245, 200 )      /* its outline                       */
+/* The drop preview's colour is the INFO signal, not a literal.  It used to be a hardcoded blue,
+   which meant a kit that re-seeded its whole UI gold still got a stock blue drop graphic -- a
+   private literal is a colour the theme cannot reach.  Alpha is punched in here rather than
+   authored into the seed because these two are the SAME signal at two weights (a wash and its
+   outline), which is a draw decision, not a palette one. */
+#define DOCK_OVERLAY_FILL       ( ( COL_INFO_IDLE & 0x00FFFFFFu ) |  64u << 24 )   /* drop-region preview */
+#define DOCK_OVERLAY_LINE       ( ( COL_INFO_IDLE & 0x00FFFFFFu ) | 200u << 24 )   /* its outline         */
 
 /* Drop zones of the per-node 5-way: the chip the cursor is over (NONE = over the node but no chip). */
 typedef enum

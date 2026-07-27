@@ -1,15 +1,23 @@
 /*==============================================================================================
 
-    runtime_service/gui/style/gui_bake.c -- The bake: seven seeds and a ramp -> the 32-cell grid.
+    runtime_service/gui/style/gui_bake.c -- The bake: a seed palette -> the 96-cell colour grid.
 
     The one step between what a theme AUTHORS (gui_palette_t) and what a render READS
-    (gui_style_t.col), and the only writer of col[][] in the engine.  Pure: a function of the
+    (gui_style_t.col), and the only writer of col[][][] in the engine.  Pure: a function of the
     palette alone -- no ambient state, no interact query, no draw call, not even a read of the
     active style -- so the same palette always bakes the same grid, and a caller can bake a
     scratch gui_style_t that is not installed anywhere.
 
     Included by gui_style.c FIRST: gui_theme_set bakes on the way in, and the seed push in
     gui_style_core.c re-bakes into the working run, so both files below need it.
+
+    ONE derivation, run TWICE.  The grid is two planes -- NORMAL and SELECT -- and they are not
+    two rulesets: bake_plane says what each role means across the four phases, and the two planes
+    differ only in the GROUND they are told to sit on.  NORMAL gets the theme's surface; SELECT
+    gets that surface washed toward the accent.  Everything follows from the ground, including
+    the polarity (a light theme with a saturated selection fill flips to a light-on-dark read
+    inside the selection automatically, because bake_pole asks the ground, not the theme).  That
+    is the whole reason a second plane is affordable: it costs a parameter, not a ruleset.
 
     WHY sRGB AND NOT LINEAR LIGHT.  Every blend here is a plain byte lerp in gamma-encoded sRGB,
     which is deliberate and is not the usual "we did not get around to it".  Linear light is the
@@ -25,7 +33,7 @@
 // clang-format off
 
 /*==============================================================================================
-    The colour operations -- five verbs, and the whole ramp is written in them.
+    The colour operations -- six verbs, and the whole ramp is written in them.
 
     Alpha is never blended, only carried: every op keeps the alpha of its FIRST argument.  That
     is what lets a translucent seed (a HUD panel at 0xF0) yield a translucent cell in all four
@@ -36,10 +44,10 @@
 #define BAKE_WHITE 0x00FFFFFFu   /* rgb only -- alpha comes from the blend's first argument */
 #define BAKE_BLACK 0x00000000u
 
-/* Perceptual weight of a colour, 0..255 -- Rec.601 luma.  Two callers: the pole decides the
-   theme's polarity from it, and MUTE uses it as the grey a hue drains toward.  Integer: the bake
-   runs at a landing, but there is no reason to pay for float here and the weights are exact in
-   8 bits. */
+/* Perceptual weight of a colour, 0..255 -- Rec.601 luma.  Three callers: the pole decides a
+   plane's polarity from it, MUTE uses it as the grey a hue drains toward, and the ink guard
+   measures separation with it.  Integer: the bake runs at a landing, but there is no reason to
+   pay for float here and the weights are exact in 8 bits. */
 static u32
 bake_lum( u32 c )
 {
@@ -68,17 +76,18 @@ bake_mix( u32 a, u32 b, f32 t )
     return out;
 }
 
-/* The theme's POLE -- the end of the greyscale a dark theme reaches toward and a light theme
-   reaches away from, decided once from the surface.  Everything that has to "come forward" moves
-   toward it: on a dark theme forward is lighter, on a light theme forward is darker.  Derived
+/* A plane's POLE -- the end of the greyscale a dark ground reaches toward and a light ground
+   reaches away from, decided once from the ground.  Everything that has to "come forward" moves
+   toward it: over a dark ground forward is lighter, over a light one forward is darker.  Derived
    rather than authored, because a theme that had to declare its own polarity could declare it
-   wrongly, and nothing else in the palette would make sense afterwards.
+   wrongly, and nothing else in the palette would make sense afterwards -- and because the SELECT
+   plane's ground is itself derived, so there is nobody to ask.
 
-   An earlier cut asked the question per colour -- move away from whatever the surface's luma is
-   -- which reads well until the colour IS the surface (the title band) and the comparison has no
+   An earlier cut asked the question per colour -- move away from whatever the ground's luma is --
+   which reads well until the colour IS the ground (the title band) and the comparison has no
    direction left to give: the tie-break fired one way for both polarities and light themes grew a
    title bar you could not see. */
-static u32 bake_pole( u32 surface ) { return ( bake_lum( surface ) < 128u ) ? BAKE_WHITE : BAKE_BLACK; }
+static u32 bake_pole( u32 ground ) { return ( bake_lum( ground ) < 128u ) ? BAKE_WHITE : BAKE_BLACK; }
 
 /* LIFT -- bring c forward, toward the pole.  The one direction verb, and the reason no role
    needs a light variant and a dark variant of its ramp. */
@@ -91,12 +100,12 @@ static u32 bake_lift( u32 c, f32 t, u32 pole )      { return bake_mix( c, pole, 
    than a constant here. */
 static u32 bake_recess( u32 c, f32 t )              { return bake_mix( c, BAKE_BLACK, t ); }
 
-/* FADE -- retire c toward the surface it sits on.  The DIM phase for anything that is drawn ON a
-   container: secondary text, a subdued frame, an inert mark. */
-static u32 bake_fade( u32 c, f32 t, u32 surface )   { return bake_mix( c, surface, t ); }
+/* FADE -- retire c toward the ground it sits on.  The DIM phase for anything drawn ON a
+   container: secondary text, a subdued frame, an inert mark, a status banner. */
+static u32 bake_fade( u32 c, f32 t, u32 ground )    { return bake_mix( c, ground, t ); }
 
-/* WASH -- carry c toward the accent.  Interaction feedback: the hot and pressed steps of every
-   surface that reacts. */
+/* WASH -- carry c toward the accent.  Interaction feedback (the hot and pressed steps of every
+   surface that reacts) and, at the SELECT ramp, the chosen ground itself. */
 static u32 bake_wash( u32 c, f32 t, u32 accent )    { return bake_mix( c, accent, t ); }
 
 /* MUTE -- drain the chroma out of c toward its own luma, leaving lightness alone.  Only the
@@ -109,17 +118,62 @@ bake_mute( u32 c, f32 t )
     return bake_mix( c, l | ( l << 8 ) | ( l << 16 ), t );
 }
 
+/* The ink GUARD -- the one invariant in the bake, and the only op that can decline to act.
+
+   Ink is the single colour in the palette with a hard legibility floor, and it is the one the
+   SELECT plane can most easily break: a theme authors its ink against the SURFACE, then a
+   selection puts a saturated accent underneath it and nobody re-checked.  A light theme with a
+   deep selection fill is exactly the case -- near-black ink on a near-black blue.
+
+   So: measure the luma separation the ink actually has from the ground it is about to sit on,
+   and if it falls short, drive the ink toward that ground's pole by precisely enough to reach
+   the floor.  Precisely, not by a guessed nudge -- luma is linear in the channels and bake_mix
+   is linear in t, and the pole is pure white (luma 255) or pure black (luma 0), so the t that
+   lands exactly on the floor solves in one divide.
+
+   Note what it does NOT do: it never touches an ink that is already legible.  Both built-in
+   themes clear the floor by 80-odd on both planes, so this is a no-op for them and stays out of
+   the way of a hand-tuned palette; it exists to rescue a kit that re-seeded a ground without
+   thinking about what was written on it. */
+
+#define BAKE_INK_DELTA 110   /* minimum ink-vs-ground luma separation, of 255 */
+
+static u32
+bake_ink_on( u32 ink, u32 ground )
+{
+    const i32 g = (i32)bake_lum( ground );
+    const i32 i = (i32)bake_lum( ink    );
+    const i32 d = ( i > g ) ? i - g : g - i;
+
+    if ( d >= BAKE_INK_DELTA ) return ink;   /* already legible -- leave the theme's choice alone */
+
+    /* Solve bake_mix's t for the exact floor.  Toward white: L(t) = i + (255 - i) * t.
+       Toward black: L(t) = i * (1 - t).  Out-of-reach targets solve to t > 1 and bake_mix
+       clamps, which lands on the pole itself -- the best available answer. */
+    f32 t;
+    if ( g < 128 ) t = ( i >= 255 ) ? 1.0f : (f32)( g + BAKE_INK_DELTA - i ) / (f32)( 255 - i );
+    else           t = ( i <=   0 ) ? 1.0f : 1.0f - (f32)( g - BAKE_INK_DELTA ) / (f32)i;
+
+    return bake_mix( ink, bake_pole( ground ), t );
+}
+
 /*==============================================================================================
-    The derivation -- eight roles, each a sentence in the verbs above.
+    The derivation -- twelve roles, each a sentence in the verbs above.
 
     Written out role by role rather than driven from a data table, because each row is an
     editorial claim about what that role MEANS across the phases, and a table of opcodes would
-    bury exactly the thing a theme author needs to read.  The claims:
+    bury exactly the thing a theme author needs to read.  The four status rows ARE a loop, and
+    for the opposite reason: a severity ladder is one claim instanced four times, so writing it
+    out four times would only invite the four copies to drift apart.
+
+    Everything here is stated relative to the GROUND and the INK it is handed, never to the
+    surface seed -- that is what makes the same twelve sentences correct for a selection.  The
+    claims:
 
       PANEL   a container reacts WEAKLY -- it is background.  A fifth of the wash on hover with
-              no lift behind it, the full wash when selected, and it sinks when recessed.
-      TITLE   a caption band is a LIFTED surface, which is why it needs no seed of its own.  Its
-              ACTIVE cell is the bare surface, so a live tab merges into the body it owns -- the
+              no lift behind it, the full wash when pressed, and it sinks when recessed.
+      TITLE   a caption band is a LIFTED ground, which is why it needs no seed of its own.  Its
+              ACTIVE cell is the bare ground, so a live tab merges into the body it owns -- the
               one invariant the old literals had to be trusted to preserve by hand.
       BG      a control reacts FULLY: wash on hover then separate from the ground, wash on press
               then sink.  Hot rises, active deepens -- that is the whole pressed-button read.
@@ -128,59 +182,62 @@ bake_mute( u32 c, f32 t )
       TEXT    ink does not react.  Three identical cells is not redundancy here, it is the claim:
               text on a hot face is the same ink, the FACE moved.  Only DIM differs.
       ACCENT  the value a control holds -- a straight three-step lift, the one honest ramp in the
-              palette.  Its DIM is the EMPTY track, so it comes off the control seed, not off the
+              palette.  Its DIM is the EMPTY track, so it comes off the control face, not off the
               accent: an empty slider well is a well, not a faded fill.
       MARK    the indicator a control shows.  IDLE and ACTIVE are the same mark (a check does not
               change colour when you press it); HOT is the nav ring, which is accent business.
       GRAB    the contrast anchor -- authored opposite the theme's polarity, so its ramp is a
               lift away from the ground and it travels FURTHEST, since a knob has to stay legible
               against both a hovering track and a filled bar at once.
+      status  a signal, at three lift steps, and then the FIELD: DIM drops the hue nearly all the
+              way into the ground so it can be a banner behind a message rather than a mark on
+              one.  The mute first is what keeps a saturated warning from reading as a stripe of
+              orange paint at 15% -- chroma survives fading far better than lightness does.
 ==============================================================================================*/
 
-void
-gui_style_bake( gui_style_t* s )
+/* The severity ladder, as the pairing the loop below walks.  Two parallel tables rather than one
+   table of structs: they are indexed together exactly once, and the enums are the real schema. */
+static const u8 k_sev_role[ 4 ] = { GUI_ROLE_INFO, GUI_ROLE_OK,   GUI_ROLE_WARN, GUI_ROLE_ERROR };
+static const u8 k_sev_seed[ 4 ] = { GUI_SEED_INFO, GUI_SEED_OK,   GUI_SEED_WARN, GUI_SEED_ERROR };
+
+static void
+bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
+            u32 ground, u32 control, u32 ink )
 {
-    if ( !s ) return;
+    const f32 hover  = p->ramp[ GUI_RAMP_HOVER  ];
+    const f32 press  = p->ramp[ GUI_RAMP_PRESS  ];
+    const f32 fade   = p->ramp[ GUI_RAMP_FADE   ];
+    const f32 recess = p->ramp[ GUI_RAMP_RECESS ];
+    const f32 step   = p->ramp[ GUI_RAMP_STEP   ];
 
-    const f32 hover   = s->palette.ramp[ GUI_RAMP_HOVER  ];
-    const f32 press   = s->palette.ramp[ GUI_RAMP_PRESS  ];
-    const f32 fade    = s->palette.ramp[ GUI_RAMP_FADE   ];
-    const f32 recess  = s->palette.ramp[ GUI_RAMP_RECESS ];
-    const f32 step    = s->palette.ramp[ GUI_RAMP_STEP   ];
+    const u32 line   = p->seed[ GUI_SEED_LINE   ];
+    const u32 accent = p->seed[ GUI_SEED_ACCENT ];
+    const u32 mark   = p->seed[ GUI_SEED_MARK   ];
+    const u32 grab   = p->seed[ GUI_SEED_GRAB   ];
 
-    const u32 surface = s->palette.seed[ GUI_SEED_SURFACE ];
-    const u32 control = s->palette.seed[ GUI_SEED_CONTROL ];
-    const u32 ink     = s->palette.seed[ GUI_SEED_INK     ];
-    const u32 line    = s->palette.seed[ GUI_SEED_LINE    ];
-    const u32 accent  = s->palette.seed[ GUI_SEED_ACCENT  ];
-    const u32 mark    = s->palette.seed[ GUI_SEED_MARK    ];
-    const u32 grab    = s->palette.seed[ GUI_SEED_GRAB    ];
-
-    const u32 pole = bake_pole( surface );
+    const u32 pole = bake_pole( ground );
 
     /* The band a title sits in, derived once: both its IDLE cell and the base its DIM fades from
-       are this lifted, faintly accented surface.  It lifts by a ramp STEP rather than by the
+       are this lifted, faintly accented ground.  It lifts by a ramp STEP rather than by the
        recess, because the recess is authored per polarity (a light theme sinks far less than a
        dark one) and a caption band has to stay equally visible in both. */
-    const u32 band = bake_wash( bake_lift( surface, step * 0.60f, pole ), hover * 0.12f, accent );
-
-    u32 ( *col )[ GUI_PHASE_COUNT ] = s->col;
+    const u32 band = bake_wash( bake_lift( ground, step * 0.60f, pole ), hover * 0.12f, accent );
 
     /* PANEL -- the container.  A fifth of the hover and no lift at all: background should tint,
-       not move.  Selection is the full wash, sunk half a step so a picked row reads as pressed
+       not move.  Pressed is the full wash, sunk half a step so a held surface reads as pressed
        rather than merely coloured. */
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = surface;
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( surface, hover * 0.20f, accent );
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( surface, press, accent ),
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.20f, accent );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( ground, press, accent ),
                                                              step * 0.50f );
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = bake_recess( surface, recess );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = bake_recess( ground, recess );
 
-    /* TITLE -- the lifted band.  ACTIVE is the bare surface: a live tab IS its panel. */
+    /* TITLE -- the lifted band.  ACTIVE is the bare ground: a live tab IS its panel. */
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = band;
-    col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( surface, hover, accent ),
+    col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( ground, hover, accent ),
                                                            step, pole );
-    col[ GUI_ROLE_TITLE ][ GUI_PHASE_ACTIVE ] = surface;
-    col[ GUI_ROLE_TITLE ][ GUI_PHASE_DIM    ] = bake_fade( band, fade, surface );
+    col[ GUI_ROLE_TITLE ][ GUI_PHASE_ACTIVE ] = ground;
+    col[ GUI_ROLE_TITLE ][ GUI_PHASE_DIM    ] = bake_fade( band, fade, ground );
 
     /* BG -- the control face.  Hot comes forward, active sinks back: that pair IS the pressed
        read, and it is the one place the two direction verbs are deliberately opposed. */
@@ -194,15 +251,16 @@ gui_style_bake( gui_style_t* s )
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_IDLE   ] = line;
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_HOT    ] = bake_lift( accent, step, pole );
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step, pole );
-    col[ GUI_ROLE_BORDER ][ GUI_PHASE_DIM    ] = bake_fade( line, fade, surface );
+    col[ GUI_ROLE_BORDER ][ GUI_PHASE_DIM    ] = bake_fade( line, fade, ground );
 
-    /* TEXT -- ink does not react; the face under it does. */
+    /* TEXT -- ink does not react; the face under it does.  The ink arrived already guarded
+       against this plane's ground (see bake_ink_on), so all four cells inherit that floor. */
     col[ GUI_ROLE_TEXT ][ GUI_PHASE_IDLE   ] = ink;
     col[ GUI_ROLE_TEXT ][ GUI_PHASE_HOT    ] = ink;
     col[ GUI_ROLE_TEXT ][ GUI_PHASE_ACTIVE ] = ink;
-    col[ GUI_ROLE_TEXT ][ GUI_PHASE_DIM    ] = bake_fade( ink, fade, surface );
+    col[ GUI_ROLE_TEXT ][ GUI_PHASE_DIM    ] = bake_fade( ink, fade, ground );
 
-    /* ACCENT -- the value held.  DIM is the empty track, so it comes off the CONTROL seed. */
+    /* ACCENT -- the value held.  DIM is the empty track, so it comes off the CONTROL face. */
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_IDLE   ] = accent;
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_HOT    ] = bake_lift( accent, step,        pole );
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step * 2.0f, pole );
@@ -212,16 +270,61 @@ gui_style_bake( gui_style_t* s )
     col[ GUI_ROLE_MARK ][ GUI_PHASE_IDLE   ] = mark;
     col[ GUI_ROLE_MARK ][ GUI_PHASE_HOT    ] = bake_lift( accent, step, pole );
     col[ GUI_ROLE_MARK ][ GUI_PHASE_ACTIVE ] = mark;
-    col[ GUI_ROLE_MARK ][ GUI_PHASE_DIM    ] = bake_fade( bake_mute( mark, 0.80f ), fade, surface );
+    col[ GUI_ROLE_MARK ][ GUI_PHASE_DIM    ] = bake_fade( bake_mute( mark, 0.80f ), fade, ground );
 
     /* GRAB -- the contrast anchor, and the longest ramp in the palette.  Its DIM fades further
-       than any other role's: the anchor is the one colour authored to sit as far from the surface
+       than any other role's: the anchor is the one colour authored to sit as far from the ground
        as the palette goes, so the ordinary fade leaves an inert knob still shouting. */
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_IDLE   ] = grab;
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_HOT    ] = bake_lift( grab, step * 3.0f, pole );
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_ACTIVE ] = bake_lift( grab, step * 6.0f, pole );
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_DIM    ] = bake_fade( grab, fade + ( 1.0f - fade ) * 0.40f,
-                                                          surface );
+                                                          ground );
+
+    /* INFO / OK / WARN / ERROR -- the severity ladder.  Three lift steps and then the field. */
+    for ( u32 i = 0; i < 4; ++i )
+    {
+        const u32 r   = k_sev_role[ i ];
+        const u32 sev = p->seed[ k_sev_seed[ i ] ];
+
+        col[ r ][ GUI_PHASE_IDLE   ] = sev;
+        col[ r ][ GUI_PHASE_HOT    ] = bake_lift( sev, step,        pole );
+        col[ r ][ GUI_PHASE_ACTIVE ] = bake_lift( sev, step * 2.0f, pole );
+        col[ r ][ GUI_PHASE_DIM    ] = bake_fade( bake_mute( sev, 0.25f ),
+                                                  fade + ( 1.0f - fade ) * 0.72f, ground );
+    }
+}
+
+/*==============================================================================================
+    The two planes.  NORMAL sits on the theme's surface; SELECT sits on that surface washed to
+    the accent by the SELECT ramp -- deeper than the press wash, because a selection persists and
+    a press does not, so it has to survive being looked at for minutes rather than a frame.
+
+    The control face is washed by the same amount, so a button inside a selected row still reads
+    as a control ON that row rather than as a hole punched through it.  The ink is guarded
+    separately per plane, which is the whole reason a light theme can carry a deep selection.
+==============================================================================================*/
+
+void
+gui_style_bake( gui_style_t* s )
+{
+    if ( !s ) return;
+
+    const gui_palette_t* p = &s->palette;
+
+    const u32 surface = p->seed[ GUI_SEED_SURFACE ];
+    const u32 control = p->seed[ GUI_SEED_CONTROL ];
+    const u32 ink     = p->seed[ GUI_SEED_INK     ];
+    const u32 accent  = p->seed[ GUI_SEED_ACCENT  ];
+    const f32 select  = p->ramp[ GUI_RAMP_SELECT  ];
+
+    bake_plane( s->col[ GUI_LOOK_NORMAL ], p, surface, control, bake_ink_on( ink, surface ) );
+
+    const u32 sel_ground  = bake_wash( surface, select, accent );
+    const u32 sel_control = bake_wash( control, select, accent );
+
+    bake_plane( s->col[ GUI_LOOK_SELECT ], p, sel_ground, sel_control,
+                bake_ink_on( ink, sel_ground ) );
 }
 
 // clang-format on

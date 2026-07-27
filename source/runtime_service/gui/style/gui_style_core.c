@@ -33,10 +33,10 @@
     field by slot.  The static assert below is what makes the two views one thing.  Four runs
     inside the struct, all equal citizens -- that equality is the whole point of the schema:
 
-        palette                   -- the AUTHORED colour: seven seeds and a five-number ramp
-        col    [ role ][ phase ]  -- the 8x4 color grid DERIVED from it, THE color vocabulary
-        var    [ gui_style_var_t ]-- every scalar the style has, metrics and skin alike
-        scales [ gui_scale_t ]    -- the density ramp scale_push reads
+        palette                        -- the AUTHORED colour: eleven seeds and a six-number ramp
+        col [ look ][ role ][ phase ]  -- the 2x12x4 grid DERIVED from it, THE color vocabulary
+        var    [ gui_style_var_t ]     -- every scalar the style has, metrics and skin alike
+        scales [ gui_scale_t ]         -- the density ramp scale_push reads
 
     An earlier design split these across three blocks with different instance counts, so a style
     set owned the colors and three metrics while chrome kept the rest.  That asymmetry is what
@@ -44,8 +44,10 @@
     chrome is simply the set at index 0.
 
     Two coordinate systems index the one space, both plain base-plus-offset -- no route table, no
-    inversion, no name-to-slot map.  A color is ( role, phase ); a scalar is a gui_style_var_t.
-    That is the entire addressing story.
+    inversion, no name-to-slot map.  A color is ( look, role, phase ); a scalar is a
+    gui_style_var_t.  That is the entire addressing story.  Look is the OUTER colour index, which
+    is what let the SELECT plane be added without moving a single existing slot: the NORMAL plane
+    still occupies exactly the addresses it did when it was the only plane.
 
     The palette is the ONE run whose slots are not read directly by anything above: a render never
     asks for a seed, it asks for a cell.  The seeds live in the slot space anyway so that a seed
@@ -62,9 +64,10 @@
 
     THREE stacks, one per public pop verb: pop_style_color, pop_style_var and pop_style_seed each
     pop their own pushes, so an interleaved sequence unwinds correctly (the same reason Dear ImGui
-    keeps two).  The seed stack is separate for a second reason as well -- its entries are an
-    order of magnitude wider, since one seed push displaces the whole derived grid, and there is
-    no reason to make the var stack pay 140 bytes an entry for a fan it never uses.
+    keeps two).  The seed stack is separate for a second reason as well -- its entries are two
+    orders of magnitude wider, since one seed push displaces the whole derived grid on BOTH
+    planes, and there is no reason to make the var stack pay 400 bytes an entry for a fan it
+    never uses.
 
     Next-item layer: next_style_* queues (slot, value) pairs in `next`; at the per-item resolve
     seam they are WRITTEN THROUGH into the working set, and `item` remembers what each slot held
@@ -84,13 +87,19 @@
 #define STYLE_SEED_BASE   0
 #define STYLE_RAMP_BASE   ( STYLE_SEED_BASE  + GUI_SEED_COUNT   )
 #define STYLE_COL_BASE    ( STYLE_RAMP_BASE  + GUI_RAMP_COUNT   )
-#define STYLE_COL_COUNT   ( GUI_ROLE_COUNT * GUI_PHASE_COUNT )
+#define STYLE_PLANE_COUNT ( GUI_ROLE_COUNT * GUI_PHASE_COUNT )     /* one look's worth of cells */
+#define STYLE_COL_COUNT   ( GUI_LOOK_COUNT * STYLE_PLANE_COUNT )
 #define STYLE_VAR_BASE    ( STYLE_COL_BASE   + STYLE_COL_COUNT )
 #define STYLE_SCALE_BASE  ( STYLE_VAR_BASE   + GUI_VAR_COUNT    )
 #define STYLE_SCALE_COUNT ( GUI_SCALE_COUNT * 3 )                  /* row, pad, gap per step */
 #define STYLE_SLOT_COUNT  ( STYLE_SCALE_BASE + STYLE_SCALE_COUNT )
 
-#define STYLE_COL_SLOT( role, phase ) ( STYLE_COL_BASE + (u32)( role ) * GUI_PHASE_COUNT + (u32)( phase ) )
+/* Look is the OUTER index, so each plane is one contiguous run and the NORMAL plane keeps the
+   exact slot numbers it had before the look axis existed -- which is why adding a second plane
+   cost no read site anything. */
+#define STYLE_COL_SLOT( look, role, phase ) \
+    ( STYLE_COL_BASE + ( (u32)( look ) * GUI_ROLE_COUNT + (u32)( role ) ) * GUI_PHASE_COUNT \
+                     + (u32)( phase ) )
 
 /* The load-bearing equivalence: the struct a theme is authored as and the flat run an override
    indexes are the SAME bytes.  Break the field order and this fires at compile time. */
@@ -126,8 +135,9 @@ static union
 
 static u16 s_set_cur;                     // which set s_work currently mirrors
 
-/* The widest fan-out one public push can have: a full phase row (GUI_PHASE_ALL). */
-#define STYLE_FAN_MAX GUI_PHASE_COUNT
+/* The widest fan-out one public push can have: a full phase row (GUI_PHASE_ALL) on both planes
+   at once (GUI_LOOK_ALL). */
+#define STYLE_FAN_MAX ( GUI_PHASE_COUNT * GUI_LOOK_COUNT )
 
 /* f32 <-> raw bits, so one u32 slot space carries both value types. */
 static inline u32 style_f32_bits( f32 f ) { union { f32 f; u32 u; } c = { .f = f }; return c.u; }
@@ -288,12 +298,17 @@ style_next( u32 slot, u32 val )
     rewrites off the 230-odd chrome read sites.
 ==============================================================================================*/
 
-static u16 style_col_slot( u8 role, u8 phase ) { return (u16)STYLE_COL_SLOT( role, phase ); }
-static u16 style_var_slot( u32 var )           { return (u16)( STYLE_VAR_BASE + var ); }
+static u16 style_col_slot( u8 look, u8 role, u8 phase ) { return (u16)STYLE_COL_SLOT( look, role, phase ); }
+static u16 style_var_slot( u32 var )                    { return (u16)( STYLE_VAR_BASE + var ); }
 
 /* One indexed load.  No projection, no override test, no fallback chain -- the installed value
-   and any override live in the SAME slot, which is what the flat space bought. */
-u32 style_col( u8 role, u8 phase ) { return style_read( style_col_slot( role, phase ) ); }
+   and any override live in the SAME slot, which is what the flat space bought.
+
+   The unqualified read is the NORMAL plane, and that is the whole migration story for the look
+   axis: a compile-time (role, phase) still folds to a compile-time slot, at the same address it
+   had before, so the 230-odd chrome read sites never learned a third coordinate exists. */
+u32 style_col     ( u8 role, u8 phase )          { return style_read( style_col_slot( GUI_LOOK_NORMAL, role, phase ) ); }
+u32 style_col_look( u8 role, u8 phase, u8 look ) { return style_read( style_col_slot( look, role, phase ) ); }
 
 f32 style_var( gui_style_var_t var )
 {
@@ -310,27 +325,34 @@ style_scale( gui_scale_t s, u32 field )
     return style_bits_f32( style_read( STYLE_SCALE_BASE + (u32)s * 3u + field ) );
 }
 
-/* Collect the slots a public color push spans: one cell, or a whole phase row for GUI_PHASE_ALL. */
+/* Collect the slots a public color push spans.  Two independent "whole axis" selectors --
+   GUI_PHASE_ALL and GUI_LOOK_ALL -- so the fan is a rectangle over both, from one cell up to
+   both planes of a whole phase row.  Written as one nested walk rather than a special case per
+   selector, because the two axes behave identically here and a special case would only be a
+   second place for them to drift. */
 static u8
-style_col_fan( u8 role, u8 phase, u16* out )
+style_col_fan( u8 role, u8 phase, u8 look, u16* out )
 {
-    if ( role >= GUI_ROLE_COUNT ) return 0;
+    if ( role >= GUI_ROLE_COUNT || phase > GUI_PHASE_ALL || look > GUI_LOOK_ALL ) return 0;
 
-    if ( phase == GUI_PHASE_ALL )
-    {
-        for ( u8 s = 0; s < GUI_PHASE_COUNT; ++s ) out[ s ] = style_col_slot( role, s );
-        return GUI_PHASE_COUNT;
-    }
-    if ( phase < GUI_PHASE_COUNT ) { out[ 0 ] = style_col_slot( role, phase ); return 1; }
+    const u8 l0 = ( look  == GUI_LOOK_ALL  ) ? 0 : look;
+    const u8 l1 = ( look  == GUI_LOOK_ALL  ) ? GUI_LOOK_COUNT  : (u8)( look  + 1 );
+    const u8 p0 = ( phase == GUI_PHASE_ALL ) ? 0 : phase;
+    const u8 p1 = ( phase == GUI_PHASE_ALL ) ? GUI_PHASE_COUNT : (u8)( phase + 1 );
 
-    return 0;
+    u8 n = 0;
+    for ( u8 l = l0; l < l1; ++l )
+        for ( u8 p = p0; p < p1; ++p )
+            out[ n++ ] = style_col_slot( l, role, p );
+
+    return n;
 }
 
 static void
-style_push_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr )
+style_push_color( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr )
 {
     u16 slot[ STYLE_FAN_MAX ];
-    u8  n = style_col_fan( (u8)role, (u8)phase, slot );
+    u8  n = style_col_fan( (u8)role, (u8)phase, (u8)look, slot );
     if ( n ) style_push( &s_col_stack, slot, n, abgr );
 }
 
@@ -351,10 +373,10 @@ void        style_pop_var  ( u32 count ) { style_pop( &s_var_stack, count ); }
 ==============================================================================================*/
 
 static void
-style_next_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr )
+style_next_color( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr )
 {
     u16 slot[ STYLE_FAN_MAX ];
-    u8  n = style_col_fan( (u8)role, (u8)phase, slot );
+    u8  n = style_col_fan( (u8)role, (u8)phase, (u8)look, slot );
     for ( u8 i = 0; i < n; ++i ) style_next( slot[ i ], abgr );
 }
 
@@ -373,9 +395,10 @@ style_next_var( gui_style_var_t var, f32 value )
     ramp step apart -- just built from somewhere else.  That is what "recolour this panel" means
     nearly every time it is asked for, and it had no verb at all until the seeds existed.
 
-    Cost lands where it belongs.  A re-bake is 32 derived cells plus 32 saved ones, paid once per
+    Cost lands where it belongs.  A re-bake is 96 derived cells plus 96 saved ones, paid once per
     push; reads stay one indexed load, exactly as before, because the derived values land in the
-    same slots any other override writes.
+    same slots any other override writes.  Re-seeding the ACCENT moves the selection planes too,
+    which is the behaviour you want and could not have got from any number of colour pushes.
 ==============================================================================================*/
 
 /* Re-derive the grid from the working run's own palette.  This is the union earning its keep:
@@ -576,6 +599,10 @@ static const char* const k_role_name[ GUI_ROLE_COUNT ] =
     [ GUI_ROLE_ACCENT ] = "Accent",
     [ GUI_ROLE_MARK   ] = "Mark",
     [ GUI_ROLE_GRAB   ] = "Grab",
+    [ GUI_ROLE_INFO   ] = "Info",
+    [ GUI_ROLE_OK     ] = "OK",
+    [ GUI_ROLE_WARN   ] = "Warn",
+    [ GUI_ROLE_ERROR  ] = "Error",
 };
 
 static const char* const k_phase_name[ GUI_PHASE_COUNT ] =
@@ -586,13 +613,20 @@ static const char* const k_phase_name[ GUI_PHASE_COUNT ] =
     [ GUI_PHASE_DIM    ] = "Dim",
 };
 
+static const char* const k_look_name[ GUI_LOOK_COUNT ] =
+{
+    [ GUI_LOOK_NORMAL ] = "Normal",
+    [ GUI_LOOK_SELECT ] = "Selected",
+};
+
 /* The var axis is described once, in gui_theme.c's k_var table (name + class together), because
    metrics_compute needs the class and is included above this file; the two palette axes are
    named there for the same reason of proximity to the themes that author them.  These are the
-   read doors -- five axes, one accessor each, no table anywhere above this line. */
+   read doors -- six axes, one accessor each, no table anywhere above this line. */
 
 const char* gui_style_role_name ( gui_style_role_t r )  { return ( (u32)r < GUI_ROLE_COUNT  && k_role_name [ r ]       ) ? k_role_name [ r ]       : "?"; }
 const char* gui_style_phase_name( gui_style_phase_t p ) { return ( (u32)p < GUI_PHASE_COUNT && k_phase_name[ p ]       ) ? k_phase_name[ p ]       : "?"; }
+const char* gui_style_look_name ( gui_style_look_t l )  { return ( (u32)l < GUI_LOOK_COUNT  && k_look_name [ l ]       ) ? k_look_name [ l ]       : "?"; }
 const char* gui_style_seed_name ( gui_style_seed_t s )  { return ( (u32)s < GUI_SEED_COUNT  && k_seed_name [ s ]       ) ? k_seed_name [ s ]       : "?"; }
 const char* gui_style_ramp_name ( gui_style_ramp_t r )  { return ( (u32)r < GUI_RAMP_COUNT  && k_ramp_name [ r ]       ) ? k_ramp_name [ r ]       : "?"; }
 const char* gui_style_var_name  ( gui_style_var_t v )   { return ( (u32)v < GUI_VAR_COUNT   && k_var       [ v ].name  ) ? k_var       [ v ].name  : "?"; }
@@ -835,6 +869,27 @@ col_frame_bg( gui_item_state_t st, u32 idle_color )
 u32 col_item_bg( gui_item_state_t st )
 {
     return col_frame_bg( st, COL_BG_IDLE );
+}
+
+/* The control face of an item that can be CHOSEN -- col_item_bg with the third coordinate.
+
+   This is the projection the library was missing, and its absence is what made every list widget
+   write `selected ? COL_BG_ACTIVE : COL_BG_HOT`: with only two axes, saying "selected" cost you
+   the ability to say "hovered", so a selected row went inert the moment it became selected.
+   Here the phase is distilled from the live state exactly as it always was, and the LOOK picks
+   which plane that phase is read out of -- so a chosen row lifts on hover and sinks on press
+   like every other surface in the system, one plane over.
+
+   The phase distillation is spelled out rather than deferred to gui_item_phase() because that
+   lives in stock/, above this unit -- the same reason col_frame_bg spells it out. */
+u32
+col_item_bg_look( gui_item_state_t st, gui_style_look_t look )
+{
+    u8 phase = st.active             ? GUI_PHASE_ACTIVE
+             : ( st.hover || st.nav ) ? GUI_PHASE_HOT
+                                      : GUI_PHASE_IDLE;
+
+    return style_col_look( GUI_ROLE_BG, phase, (u8)look );
 }
 
 /* The movable part of a track control -- slider knob, scrollbar thumb -- off the GRAB row.

@@ -204,10 +204,13 @@ gui_menu_begin( const char* label )
     if ( popup_is_open_id( pid ) )
         popup_set_anchor( pid, anchor_x, anchor_y );
 
-    /* Entry visuals: lit while hovered / nav-highlighted or while its submenu is open. */
+    /* Entry visuals: lit while hovered / nav-highlighted or while its submenu is open.  An open
+       entry is the CHOSEN one of its bar -- the SELECT plane -- so it keeps its hover step and a
+       cursor moving along an open menu bar still reads as moving. */
     if ( st.hover || st.nav || this_open )
         draw_push_rect_filled( box.x, box.y, box.w, box.h, 0,0,1,1, 0,
-                               this_open ? COL_BG_ACTIVE : COL_BG_HOT );
+                               this_open ? col_item_bg_look( st, GUI_LOOK_SELECT )
+                                         : COL_BG_HOT );
 
     draw_label( box.x + WIDGET_PAD, text_center_y( box.y, box.h ), COL_TEXT_IDLE, label );
 

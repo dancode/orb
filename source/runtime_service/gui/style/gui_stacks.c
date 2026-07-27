@@ -105,11 +105,26 @@ void gui_disabled_end( void ) { item_flag_pop(); }
         gui()->push_style_var( GUI_VAR_PAD, 20.0f );
         gui()->button( "Roomy" );
         gui()->pop_style_var( 1 );
+
+    The plain verbs address the NORMAL plane, which is what an unqualified colour means
+    everywhere in the system.  The _look pair adds the third coordinate and accepts GUI_LOOK_ALL
+    to span both planes as ONE push -- so recolouring "the text, selected or not" is still a
+    single balanced push_style_color_look, not two:
+
+        gui()->push_style_color_look( GUI_ROLE_TEXT, GUI_PHASE_ALL, GUI_LOOK_ALL, ink );
+        ... every text cell in the grid, both planes ...
+        gui()->pop_style_color( 1 );                        // still ONE entry, ONE pop
 ==============================================================================================*/
 
-void gui_push_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_push_color( role, phase, abgr ); }
+void gui_push_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_push_color( role, phase, GUI_LOOK_NORMAL, abgr ); }
 void gui_pop_style_color ( u32 count )                                          { style_pop_color( count ); }
-void gui_next_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_next_color( role, phase, abgr ); }
+void gui_next_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_next_color( role, phase, GUI_LOOK_NORMAL, abgr ); }
+
+/* The look-qualified pair.  No pop of their own: a look push is a colour push, so it lands on
+   the colour stack and pop_style_color takes it back -- one stack per pop verb, and adding a
+   coordinate to a cell address does not make it a different kind of override. */
+void gui_push_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr ) { style_push_color( role, phase, look, abgr ); }
+void gui_next_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr ) { style_next_color( role, phase, look, abgr ); }
 
 void gui_push_style_var( gui_style_var_t var, f32 value )   { style_push_var( var, value ); }
 void gui_pop_style_var ( u32 count )                          { style_pop_var( count ); }

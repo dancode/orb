@@ -80,14 +80,18 @@ ui_kit_install( void )
     e->palette.ramp[ GUI_RAMP_FADE   ] = 0.45f;
     e->palette.ramp[ GUI_RAMP_RECESS ] = 0.30f;
     e->palette.ramp[ GUI_RAMP_STEP   ] = 0.18f;
+    e->palette.ramp[ GUI_RAMP_SELECT ] = 0.45f;   /* a dark kit: a deep wash swallows the gold */
 
     gui()->style_bake( e );
 
     /* The two the ramp cannot know: this kit's panels are painted scenery, not surfaces you can
        interact with, so they must not react at all.  Bake first, disagree after -- which is the
        whole reason the bake is a call and not a side effect. */
-    e->col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = s_style.panel_bg;
-    e->col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = s_style.panel_bg;
+    for ( u32 look = 0; look < GUI_LOOK_COUNT; ++look )
+    {
+        e->col[ look ][ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = s_style.panel_bg;
+        e->col[ look ][ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = s_style.panel_bg;
+    }
 }
 
 /*==============================================================================================

@@ -263,13 +263,34 @@ ex_style_stacks( void )
         static char stxt[ 24 ] = "sample";
         gui()->input_text( "sample input (click to focus)", stxt, sizeof( stxt ) );
 
-        gui()->separator_text( "Combo / selectable (row hover/select = COL_BG_HOT/_ACT)" );
+        /* The look axis, live: row B ships selected.  Hover BOTH rows -- the selected one still
+           lifts, which is the whole point of the second plane.  Before it existed, "selected"
+           and "pressed" were one cell, so a selected row stopped reacting entirely. */
+        gui()->separator_text( "Combo / selectable (GUI_LOOK_NORMAL vs GUI_LOOK_SELECT)" );
         static i32          combo_sel      = 0;
         static const char*  combo_items[]  = { "Alpha", "Beta", "Gamma" };
         gui()->combo( "sample combo", &combo_sel, combo_items, 3 );
         static bool sel_a = false, sel_b = true;
-        gui()->selectable( "selectable row A", &sel_a );
-        gui()->selectable( "selectable row B", &sel_b );
+        gui()->selectable( "selectable row A -- hover me", &sel_a );
+        gui()->selectable( "selectable row B -- selected, hover me too", &sel_b );
+
+        /* The status roles: the severity ladder, each as its signal and then as its FIELD (the
+           DIM cell), which is the banner tint a message sits on. */
+        gui()->separator_text( "Status roles (IDLE = the signal, DIM = the field behind it)" );
+        {
+            static const gui_style_role_t sev[] = { GUI_ROLE_INFO, GUI_ROLE_OK,
+                                                    GUI_ROLE_WARN, GUI_ROLE_ERROR };
+            for ( u32 i = 0; i < 4; ++i )
+            {
+                gui_rect_t band = gui()->canvas( gui()->sz_rows_h( 1 ) );
+                gui()->draw_rect( band.x, band.y, band.w, band.h,
+                                  gui()->style_color( sev[ i ], GUI_PHASE_DIM ) );
+                gui()->draw_text_in( ( gui_rect_t ){ band.x + 6.0f, band.y, band.w - 12.0f, band.h },
+                                     GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+                                     gui()->style_color( sev[ i ], GUI_PHASE_IDLE ),
+                                     gui()->style_role_name( sev[ i ] ) );
+            }
+        }
 
         gui()->separator_text( "Progress + child region (COL_ACCENT_IDLE / COL_PANEL_DIM)" );
         gui()->progress_bar( 0.66f, NULL );

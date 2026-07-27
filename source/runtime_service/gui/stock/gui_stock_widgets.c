@@ -69,6 +69,15 @@ gui_style_color( gui_style_role_t role, gui_style_phase_t phase )
     return style_col( (u8)role, (u8)phase );
 }
 
+/* gui_style_color_look -- the same read with the third coordinate named.  A user widget whose
+   caller knows the item is chosen reads through this instead, and gets a selection that still
+   hovers and presses; gui_style_color is exactly this with GUI_LOOK_NORMAL. */
+u32
+gui_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look )
+{
+    return style_col_look( (u8)role, (u8)phase, (u8)look );
+}
+
 /* The "##id" label grammar for a DISPLAYED label: the suffix carries identity, never pixels.
    Returns the visible span -- the original pointer when there is no suffix (no copy), else the
    head copied into buf.  Shared by the label-bearing renders (stock_button, stock_selectable). */
@@ -260,8 +269,9 @@ gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
     return in.changed;
 }
 
-/* Full-width selectable row: transparent when idle so the surface behind shows through, the HOT
-   tint on hover / nav, the ACTIVE tint when selected.  THE row primitive under lists, combos,
+/* Full-width selectable row: transparent when idle so the surface behind shows through, and
+   otherwise the BG face of whichever plane the selection picks -- so a chosen row reacts to the
+   cursor exactly as an unchosen one does.  THE row primitive under lists, combos,
    trees, and menus -- the pure core, carrying none of chrome's policy (type-ahead stamp, popup /
    combo dismiss on click).  That policy stays in chrome's gui_selectable, which is free to compose
    this.  The component owns the press + the *selected toggle (NULL = a click-only row, the caller
@@ -274,12 +284,15 @@ gui_stock_selectable( gui_rect_t r, const char* label, bool* selected )
 
     bool on = ( selected && *selected );
     if ( on || s.state.hover || s.state.nav )
-        gui_draw_rect( r.x, r.y, r.w, r.h, on ? STYLE_COL( BG, ACTIVE ) : STYLE_COL( BG, HOT ) );
+        gui_draw_rect( r.x, r.y, r.w, r.h,
+                       col_item_bg_look( s.state, on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL ) );
 
     char        vis[ 128 ];
     const char* text = stock_visible_text( label, vis, sizeof vis );
     gui_rect_t  tr   = { r.x + WIDGET_PAD, r.y, r.w - 2.0f * WIDGET_PAD, r.h };
-    gui_draw_text_in( tr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, STYLE_COL( TEXT, IDLE ), text );
+    gui_draw_text_in( tr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+                      style_col_look( GUI_ROLE_TEXT, GUI_PHASE_IDLE,
+                                      on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL ), text );
 
     return s.state.clicked;
 }

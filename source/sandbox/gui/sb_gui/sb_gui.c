@@ -875,12 +875,23 @@ show_style_editor( bool* p_open )
        Editing a cell here is still legitimate and still sticks: it is the "bake, then disagree"
        shape a kit uses, just spelled interactively.  Touch a seed or a ramp value above and the
        disagreement is overwritten, because that is what re-deriving means. */
-    for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
+    for ( u32 l = 0; l < GUI_LOOK_COUNT; ++l )
     {
-        gui()->separator_text( gui()->style_role_name( ( gui_style_role_t )r ) );
-        gui()->push_id( gui()->style_role_name( ( gui_style_role_t )r ) );
-        for ( u32 s = 0; s < GUI_PHASE_COUNT; ++s )
-            changed |= se_color( gui()->style_phase_name( ( gui_style_phase_t )s ), &work.col[ r ][ s ] );
+        gui()->push_id( gui()->style_look_name( ( gui_style_look_t )l ) );
+        for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
+        {
+            char head[ 64 ];
+            snprintf( head, sizeof head, "%s / %s",
+                      gui()->style_look_name( ( gui_style_look_t )l ),
+                      gui()->style_role_name( ( gui_style_role_t )r ) );
+
+            gui()->separator_text( head );
+            gui()->push_id( gui()->style_role_name( ( gui_style_role_t )r ) );
+            for ( u32 s = 0; s < GUI_PHASE_COUNT; ++s )
+                changed |= se_color( gui()->style_phase_name( ( gui_style_phase_t )s ),
+                                     &work.col[ l ][ r ][ s ] );
+            gui()->pop_id();
+        }
         gui()->pop_id();
     }
 

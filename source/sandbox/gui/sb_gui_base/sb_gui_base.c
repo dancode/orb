@@ -273,50 +273,46 @@ install_palette( i32 which )
     es->var[ GUI_VAR_GAP    ] = 6.0f;
     es->var[ GUI_VAR_BORDER ] = 1.0f;
 
+    /* Two looks, each authored as SEEDS and derived -- not as a hand-typed grid.  This used to be
+       two 32-literal tables memcpy'd straight over es->col, which is precisely the duplication the
+       seed palette exists to retire: a quarter of those cells were restatements of the others, and
+       the two tables restated the same ones.  It also could not survive the schema growing -- a
+       fixed-size literal grid silently under-fills the moment a role is added.
+
+       Seven seeds and a ramp instead.  The status hues are deliberately NOT set: a kit's style is
+       seeded from the active theme before this runs, so INFO / OK / WARN / ERROR arrive already
+       filled and a kit inherits a severity ladder it has no opinion about. */
+
     if ( which == 0 )   /* ember -- warm dark */
     {
-        u32 c[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ] = {
-            /* PANEL  */ { GUI_COLOR( 0x24, 0x1A, 0x14, 0xFF ), GUI_COLOR( 0x30, 0x22, 0x18, 0xFF ),
-                           GUI_COLOR( 0x5E, 0x3C, 0x22, 0xFF ), GUI_COLOR( 0x1A, 0x13, 0x10, 0xFF ) },
-            /* TITLE  */ { GUI_COLOR( 0x3A, 0x28, 0x1C, 0xFF ), GUI_COLOR( 0x4A, 0x34, 0x24, 0xFF ),
-                           GUI_COLOR( 0x24, 0x1A, 0x14, 0xFF ), GUI_COLOR( 0x2C, 0x20, 0x18, 0xFF ) },
-            /* BG     */ { GUI_COLOR( 0x2E, 0x20, 0x18, 0xFF ), GUI_COLOR( 0x46, 0x30, 0x20, 0xFF ),
-                           GUI_COLOR( 0x5E, 0x3C, 0x22, 0xFF ), GUI_COLOR( 0x24, 0x1C, 0x16, 0xFF ) },
-            /* BORDER */ { GUI_COLOR( 0x7A, 0x50, 0x2C, 0xFF ), GUI_COLOR( 0xA8, 0x6C, 0x38, 0xFF ),
-                           GUI_COLOR( 0xD8, 0x8C, 0x44, 0xFF ), GUI_COLOR( 0x4A, 0x36, 0x24, 0xFF ) },
-            /* TEXT   */ { GUI_COLOR( 0xF0, 0xDC, 0xC0, 0xFF ), GUI_COLOR( 0xFF, 0xEC, 0xD4, 0xFF ),
-                           GUI_COLOR( 0xFF, 0xF4, 0xE4, 0xFF ), GUI_COLOR( 0x9A, 0x84, 0x6C, 0xFF ) },
-            /* ACCENT */ { GUI_COLOR( 0xFF, 0xA0, 0x20, 0xFF ), GUI_COLOR( 0xFF, 0xB4, 0x44, 0xFF ),
-                           GUI_COLOR( 0xFF, 0xC8, 0x68, 0xFF ), GUI_COLOR( 0x6E, 0x4C, 0x1E, 0xFF ) },
-            /* MARK   */ { GUI_COLOR( 0xFF, 0xC8, 0x68, 0xFF ), GUI_COLOR( 0xFF, 0xB4, 0x44, 0xFF ),
-                           GUI_COLOR( 0xFF, 0xC8, 0x68, 0xFF ), GUI_COLOR( 0x7A, 0x64, 0x48, 0xFF ) },
-            /* GRAB   */ { GUI_COLOR( 0xE8, 0xD4, 0xB8, 0xFF ), GUI_COLOR( 0xFF, 0xF0, 0xDC, 0xFF ),
-                           GUI_COLOR( 0xFF, 0xFF, 0xFF, 0xFF ), GUI_COLOR( 0x6E, 0x5C, 0x48, 0xFF ) },
-        };
-        memcpy( es->col, c, sizeof c );
+        es->palette.seed[ GUI_SEED_SURFACE ] = GUI_COLOR( 0x24, 0x1A, 0x14, 0xFF );
+        es->palette.seed[ GUI_SEED_CONTROL ] = GUI_COLOR( 0x2E, 0x20, 0x18, 0xFF );
+        es->palette.seed[ GUI_SEED_INK     ] = GUI_COLOR( 0xF0, 0xDC, 0xC0, 0xFF );
+        es->palette.seed[ GUI_SEED_LINE    ] = GUI_COLOR( 0x7A, 0x50, 0x2C, 0xFF );
+        es->palette.seed[ GUI_SEED_ACCENT  ] = GUI_COLOR( 0xFF, 0xA0, 0x20, 0xFF );
+        es->palette.seed[ GUI_SEED_MARK    ] = GUI_COLOR( 0xFF, 0xC8, 0x68, 0xFF );
+        es->palette.seed[ GUI_SEED_GRAB    ] = GUI_COLOR( 0xE8, 0xD4, 0xB8, 0xFF );
     }
     else                /* ice -- cool dark */
     {
-        u32 c[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ] = {
-            /* PANEL  */ { GUI_COLOR( 0x14, 0x1C, 0x26, 0xFF ), GUI_COLOR( 0x1A, 0x24, 0x30, 0xFF ),
-                           GUI_COLOR( 0x2A, 0x42, 0x5E, 0xFF ), GUI_COLOR( 0x0E, 0x14, 0x1C, 0xFF ) },
-            /* TITLE  */ { GUI_COLOR( 0x1E, 0x2A, 0x38, 0xFF ), GUI_COLOR( 0x28, 0x38, 0x4A, 0xFF ),
-                           GUI_COLOR( 0x14, 0x1C, 0x26, 0xFF ), GUI_COLOR( 0x18, 0x22, 0x2E, 0xFF ) },
-            /* BG     */ { GUI_COLOR( 0x18, 0x22, 0x2E, 0xFF ), GUI_COLOR( 0x22, 0x32, 0x46, 0xFF ),
-                           GUI_COLOR( 0x2A, 0x42, 0x5E, 0xFF ), GUI_COLOR( 0x14, 0x1C, 0x26, 0xFF ) },
-            /* BORDER */ { GUI_COLOR( 0x34, 0x58, 0x7A, 0xFF ), GUI_COLOR( 0x48, 0x7C, 0xA8, 0xFF ),
-                           GUI_COLOR( 0x5C, 0xA0, 0xD8, 0xFF ), GUI_COLOR( 0x26, 0x3A, 0x4A, 0xFF ) },
-            /* TEXT   */ { GUI_COLOR( 0xC8, 0xE0, 0xF0, 0xFF ), GUI_COLOR( 0xDC, 0xEE, 0xFF, 0xFF ),
-                           GUI_COLOR( 0xEC, 0xF6, 0xFF, 0xFF ), GUI_COLOR( 0x6C, 0x84, 0x9A, 0xFF ) },
-            /* ACCENT */ { GUI_COLOR( 0x30, 0xC0, 0xE8, 0xFF ), GUI_COLOR( 0x54, 0xD0, 0xF4, 0xFF ),
-                           GUI_COLOR( 0x78, 0xE0, 0xFF, 0xFF ), GUI_COLOR( 0x1E, 0x50, 0x60, 0xFF ) },
-            /* MARK   */ { GUI_COLOR( 0x78, 0xE0, 0xFF, 0xFF ), GUI_COLOR( 0x54, 0xD0, 0xF4, 0xFF ),
-                           GUI_COLOR( 0x78, 0xE0, 0xFF, 0xFF ), GUI_COLOR( 0x3A, 0x5C, 0x6E, 0xFF ) },
-            /* GRAB   */ { GUI_COLOR( 0xC8, 0xE0, 0xF0, 0xFF ), GUI_COLOR( 0xE4, 0xF2, 0xFF, 0xFF ),
-                           GUI_COLOR( 0xFF, 0xFF, 0xFF, 0xFF ), GUI_COLOR( 0x46, 0x58, 0x6A, 0xFF ) },
-        };
-        memcpy( es->col, c, sizeof c );
+        es->palette.seed[ GUI_SEED_SURFACE ] = GUI_COLOR( 0x14, 0x1C, 0x26, 0xFF );
+        es->palette.seed[ GUI_SEED_CONTROL ] = GUI_COLOR( 0x18, 0x22, 0x2E, 0xFF );
+        es->palette.seed[ GUI_SEED_INK     ] = GUI_COLOR( 0xC8, 0xE0, 0xF0, 0xFF );
+        es->palette.seed[ GUI_SEED_LINE    ] = GUI_COLOR( 0x34, 0x58, 0x7A, 0xFF );
+        es->palette.seed[ GUI_SEED_ACCENT  ] = GUI_COLOR( 0x30, 0xC0, 0xE8, 0xFF );
+        es->palette.seed[ GUI_SEED_MARK    ] = GUI_COLOR( 0x78, 0xE0, 0xFF, 0xFF );
+        es->palette.seed[ GUI_SEED_GRAB    ] = GUI_COLOR( 0xC8, 0xE0, 0xF0, 0xFF );
     }
+
+    /* Both kits share one personality: a high-contrast dark look with a deep press. */
+    es->palette.ramp[ GUI_RAMP_HOVER  ] = 0.35f;
+    es->palette.ramp[ GUI_RAMP_PRESS  ] = 0.55f;
+    es->palette.ramp[ GUI_RAMP_FADE   ] = 0.45f;
+    es->palette.ramp[ GUI_RAMP_RECESS ] = 0.30f;
+    es->palette.ramp[ GUI_RAMP_STEP   ] = 0.14f;
+    es->palette.ramp[ GUI_RAMP_SELECT ] = 0.50f;
+
+    gui()->style_bake( es );
 }
 
 /* the registered owner: re-derives the kit look at every style landing.  ONE source serves both
