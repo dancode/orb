@@ -412,12 +412,11 @@ gui_style_t*      gui_style_edit      ( void );
 const char*       gui_style_role_name ( gui_style_role_t role );
 const char*       gui_style_phase_name( gui_style_phase_t phase );
 const char*       gui_style_var_name  ( gui_style_var_t var );
+gui_style_class_t gui_style_var_class ( gui_style_var_t var );
+const char*       gui_style_class_name( gui_style_class_t cls );
 
 void gui_scale_push( gui_scale_t s );
 void gui_scale_pop( void );
-void gui_set_check_style( u8 style );
-void gui_set_bullet_style( u8 style );
-void gui_set_arrow_style( u8 style );
 
 /*===============================================  GUI_STOCK  ===============================================*/
 

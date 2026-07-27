@@ -64,6 +64,11 @@ ui_kit_install( void )
     e->col[ GUI_ROLE_PANEL  ][ GUI_PHASE_ACTIVE ] = s_style.panel_bg;
     e->col[ GUI_ROLE_PANEL  ][ GUI_PHASE_DIM    ] = s_style.slot_bg;
 
+    e->col[ GUI_ROLE_TITLE  ][ GUI_PHASE_IDLE   ] = s_style.panel_bg;
+    e->col[ GUI_ROLE_TITLE  ][ GUI_PHASE_HOT    ] = s_style.btn_bg_hover;
+    e->col[ GUI_ROLE_TITLE  ][ GUI_PHASE_ACTIVE ] = s_style.panel_bg;
+    e->col[ GUI_ROLE_TITLE  ][ GUI_PHASE_DIM    ] = s_style.slot_bg;
+
     e->col[ GUI_ROLE_BG     ][ GUI_PHASE_IDLE   ] = s_style.btn_bg;
     e->col[ GUI_ROLE_BG     ][ GUI_PHASE_HOT    ] = s_style.btn_bg_hover;
     e->col[ GUI_ROLE_BG     ][ GUI_PHASE_ACTIVE ] = s_style.btn_bg_press;

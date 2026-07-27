@@ -523,9 +523,9 @@ typedef struct gui_api_s
        the broader shape
        palette (frames, per-corner rounded rects, polygons, arcs / pie, beziers, dashes, checker /
        hatch / gradient fills, soft shadows, outlined / shadowed text, grips, spinners) is exposed so
-       editor / custom widgets can paint them.  Implemented in gui_symbol.c.  (The global
-       indicator-shape selectors set_check_style / _bullet_style / _arrow_style live with the style
-       API (GUI_STYLE), since they are style state rather than draw calls.)
+       editor / custom widgets can paint them.  Implemented in gui_symbol.c.  (WHICH mark a widget
+       draws -- tick vs disc, triangle vs chevron -- is style, not a draw call: a theme authors
+       the GUI_VAR_*_SHAPE pick and push_style_var scopes it.)
 
        Pipeline note: draw_gradient is an exact one-quad blend via per-vertex color
        (GUI_CMD_RECT_GRADIENT); draw_shadow (layered rings) is still an approximation that a
@@ -1374,12 +1374,17 @@ typedef struct gui_api_s
     u32               ( *style_color )( gui_style_role_t role, gui_style_phase_t phase );
     gui_style_t*      ( *style_edit  )( void );
 
-    /* Display names for the schema's three axes -- engine-owned, so a style editor walks the
-       roles, the phases, and the vars instead of keeping parallel tables in step with enums it
-       does not own.  An unnamed index reads "?" rather than running off the end. */
-    const char* ( *style_role_name  )( gui_style_role_t role );
-    const char* ( *style_phase_name )( gui_style_phase_t phase );
-    const char* ( *style_var_name   )( gui_style_var_t var );
+    /* The schema, described by the engine that owns it -- so a style editor WALKS roles, phases
+       and vars instead of keeping parallel tables in step with enums it does not own.  Display
+       names for each axis, plus what kind of number a var holds (gui_style_class_t): its class
+       says whether it is a size, a stroke, a radius, the lattice pitch, or an enum pick, which
+       is exactly what an editor needs to group it and choose a slider or a combo.  An unnamed
+       index reads "?" rather than running off the end. */
+    const char*       ( *style_role_name  )( gui_style_role_t role );
+    const char*       ( *style_phase_name )( gui_style_phase_t phase );
+    const char*       ( *style_var_name   )( gui_style_var_t var );
+    gui_style_class_t ( *style_var_class  )( gui_style_var_t var );
+    const char*       ( *style_class_name )( gui_style_class_t cls );
 
     /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
        BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
@@ -1389,13 +1394,6 @@ typedef struct gui_api_s
     void ( *scale_push )( gui_scale_t s );
     void ( *scale_pop  )( void );
 
-    /* Global indicator-shape selectors -- set the default check / bullet / arrow glyph the chrome
-       draws (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t).  These are style
-       state, not draw calls: scope a change locally instead with push_style_var on
-       GUI_VAR_CHECK_SHAPE / _BULLET_SHAPE / _ARROW_SHAPE. */
-    void ( *set_check_style  )( u8 style );
-    void ( *set_bullet_style )( u8 style );
-    void ( *set_arrow_style  )( u8 style );
 
     /*============================================================================================================
         GUI_STOCK -- components + the reference widget set  (component/ + stock/)

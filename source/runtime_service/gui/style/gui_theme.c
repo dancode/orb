@@ -42,6 +42,62 @@
 /* Font type size (em) used by metrics_compute; updated by font_load(). */
 u32 s_font_size = 0;
 
+/*==============================================================================================
+    The var schema -- ONE table describing every scalar the style has.
+
+    Display name + class, designated by index so an entry cannot slide out of alignment.  This
+    is the whole description of a var: metrics_compute reads the class to decide scaling and
+    snapping, gui_style_var_name / _class publish both, and a style editor groups its sliders
+    from them instead of keeping a parallel list.  Adding a var is one line HERE plus one in the
+    enum -- there is no third place that has to be remembered.
+==============================================================================================*/
+
+typedef struct { const char* name; u8 cls; } style_var_info_t;
+
+static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
+{
+    [ GUI_VAR_ROW             ] = { "Row Height",      GUI_CLASS_METRIC },
+    [ GUI_VAR_PAD             ] = { "Padding",         GUI_CLASS_METRIC },
+    [ GUI_VAR_GAP             ] = { "Gap",             GUI_CLASS_METRIC },
+    [ GUI_VAR_INDICATOR       ] = { "Indicator Size",  GUI_CLASS_METRIC },
+    [ GUI_VAR_GUTTER          ] = { "Knob / Gutter",   GUI_CLASS_METRIC },
+    [ GUI_VAR_MIN_CELL        ] = { "Min Cell Width",  GUI_CLASS_METRIC },
+    [ GUI_VAR_TITLE_H         ] = { "Title Height",    GUI_CLASS_METRIC },
+
+    [ GUI_VAR_BORDER          ] = { "Border Width",    GUI_CLASS_STROKE },
+
+    [ GUI_VAR_ROUND           ] = { "Widget Rounding", GUI_CLASS_SKIN   },
+    [ GUI_VAR_PANEL_ROUND     ] = { "Panel Rounding",  GUI_CLASS_SKIN   },
+
+    [ GUI_VAR_GRID_Q          ] = { "Grid Quantum",    GUI_CLASS_PITCH  },
+
+    [ GUI_VAR_CHECK_SHAPE     ] = { "Check Shape",     GUI_CLASS_SHAPE  },
+    [ GUI_VAR_BULLET_SHAPE    ] = { "Bullet Shape",    GUI_CLASS_SHAPE  },
+    [ GUI_VAR_ARROW_SHAPE     ] = { "Arrow Shape",     GUI_CLASS_SHAPE  },
+    [ GUI_VAR_SEPARATOR_SHAPE ] = { "Separator Shape", GUI_CLASS_SHAPE  },
+    [ GUI_VAR_PROGRESS_SHAPE  ] = { "Progress Shape",  GUI_CLASS_SHAPE  },
+    [ GUI_VAR_KNOB_SHAPE      ] = { "Knob Shape",      GUI_CLASS_SHAPE  },
+    [ GUI_VAR_MENU_CHECK      ] = { "Menu Check",      GUI_CLASS_SHAPE  },
+};
+
+/* Section labels for the classes above -- an editor's group headings. */
+static const char* const k_class_name[ GUI_CLASS_COUNT ] =
+{
+    [ GUI_CLASS_METRIC ] = "Metrics",
+    [ GUI_CLASS_STROKE ] = "Strokes",
+    [ GUI_CLASS_SKIN   ] = "Skin",
+    [ GUI_CLASS_PITCH  ] = "Lattice",
+    [ GUI_CLASS_SHAPE  ] = "Shapes",
+};
+
+/* The three px classes: everything the em rescale multiplies.  A PITCH is a raw lattice count
+   and a SHAPE is an enum -- scaling either would be meaningless, not merely wrong. */
+static bool
+var_is_pixels( u8 cls )
+{
+    return cls == GUI_CLASS_METRIC || cls == GUI_CLASS_STROKE || cls == GUI_CLASS_SKIN;
+}
+
 /* Shared authoring blocks -- the built-in themes repeat large identical spans (the 5x4 palette,
    the density ramp, the shape picks), so those live once here as designated-initializer fragments
    and each theme below reads as "this palette + these few deltas".  A theme is still a plain
@@ -56,7 +112,8 @@ u32 s_font_size = 0;
 #define THEME_PALETTE_DARK \
     .col = { \
     /*                    IDLE                              HOT                               ACTIVE                            DIM                            */ \
-    [ GUI_ROLE_PANEL  ] = { GUI_COLOR( 0x24,0x24,0x24,0xFF ), GUI_COLOR( 0x2A,0x30,0x38,0xFF ), GUI_COLOR( 0x10,0x60,0xA0,0xFF ), GUI_COLOR( 0x1C,0x1C,0x1C,0xFF ) }, \
+    [ GUI_ROLE_PANEL  ] = { GUI_COLOR( 0x24,0x24,0x24,0xFF ), GUI_COLOR( 0x2E,0x2E,0x2E,0xFF ), GUI_COLOR( 0x10,0x60,0xA0,0xFF ), GUI_COLOR( 0x1C,0x1C,0x1C,0xFF ) }, \
+    [ GUI_ROLE_TITLE  ] = { GUI_COLOR( 0x2A,0x30,0x38,0xFF ), GUI_COLOR( 0x50,0x80,0xB0,0xFF ), GUI_COLOR( 0x24,0x24,0x24,0xFF ), GUI_COLOR( 0x26,0x29,0x2C,0xFF ) }, \
     [ GUI_ROLE_BG     ] = { GUI_COLOR( 0x40,0x40,0x40,0xFF ), GUI_COLOR( 0x50,0x80,0xB0,0xFF ), GUI_COLOR( 0x30,0x60,0x90,0xFF ), GUI_COLOR( 0x30,0x30,0x30,0xFF ) }, \
     [ GUI_ROLE_BORDER ] = { GUI_COLOR( 0x80,0x80,0x80,0xFF ), GUI_COLOR( 0x40,0xA0,0xF0,0xFF ), GUI_COLOR( 0x40,0xA0,0xF0,0xFF ), GUI_COLOR( 0x50,0x50,0x50,0xFF ) }, \
     [ GUI_ROLE_TEXT   ] = { GUI_COLOR( 0xF0,0xF0,0xF0,0xFF ), GUI_COLOR( 0xF0,0xF0,0xF0,0xFF ), GUI_COLOR( 0xF0,0xF0,0xF0,0xFF ), GUI_COLOR( 0xA0,0xA0,0xA0,0xFF ) }, \
@@ -69,7 +126,8 @@ u32 s_font_size = 0;
 #define THEME_PALETTE_LIGHT \
     .col = { \
     /*                    IDLE                              HOT                               ACTIVE                            DIM                            */ \
-    [ GUI_ROLE_PANEL  ] = { GUI_COLOR( 0xE2,0xE2,0xE6,0xFF ), GUI_COLOR( 0xAE,0xB4,0xC0,0xFF ), GUI_COLOR( 0x50,0x6C,0x94,0xFF ), GUI_COLOR( 0xD6,0xD7,0xDC,0xFF ) }, \
+    [ GUI_ROLE_PANEL  ] = { GUI_COLOR( 0xE2,0xE2,0xE6,0xFF ), GUI_COLOR( 0xED,0xED,0xF1,0xFF ), GUI_COLOR( 0x50,0x6C,0x94,0xFF ), GUI_COLOR( 0xD6,0xD7,0xDC,0xFF ) }, \
+    [ GUI_ROLE_TITLE  ] = { GUI_COLOR( 0xAE,0xB4,0xC0,0xFF ), GUI_COLOR( 0x86,0xA6,0xD2,0xFF ), GUI_COLOR( 0xE2,0xE2,0xE6,0xFF ), GUI_COLOR( 0xCD,0xD0,0xD7,0xFF ) }, \
     [ GUI_ROLE_BG     ] = { GUI_COLOR( 0xEC,0xEC,0xF0,0xFF ), GUI_COLOR( 0x86,0xA6,0xD2,0xFF ), GUI_COLOR( 0x5C,0x82,0xB4,0xFF ), GUI_COLOR( 0xDC,0xDC,0xE2,0xFF ) }, \
     [ GUI_ROLE_BORDER ] = { GUI_COLOR( 0xB4,0xB5,0xBC,0xFF ), GUI_COLOR( 0x44,0x6C,0xA6,0xFF ), GUI_COLOR( 0x44,0x6C,0xA6,0xFF ), GUI_COLOR( 0xC8,0xC9,0xCF,0xFF ) }, \
     [ GUI_ROLE_TEXT   ] = { GUI_COLOR( 0x20,0x22,0x26,0xFF ), GUI_COLOR( 0x20,0x22,0x26,0xFF ), GUI_COLOR( 0x20,0x22,0x26,0xFF ), GUI_COLOR( 0x6C,0x6E,0x74,0xFF ) }, \
@@ -172,8 +230,10 @@ static gui_style_t s_style_base;
    edits via gui_style_get() without subsequently calling gui_theme_set(). */
 static const char* s_theme_name = NULL;
 
-/* The active style, scaled from s_style_base for the current font size. */
-gui_style_t s_style;
+/* The active style: s_style_base scaled to the current font size.  Private -- style_active() is
+   the read door, metrics_compute the only writer.  A poke here would not survive the next
+   rescale, which rebuilds the whole struct from s_style_base. */
+static gui_style_t s_style;
 
 gui_style_t*
 gui_style_get( void )
@@ -376,15 +436,17 @@ metrics_compute( u32 em, u32 char_h, u32 line_h )
 
     f32 scale = (f32)em / 12.0f;
 
-    /* Colors, the lattice pitch, and the shape picks carry over verbatim. */
+    /* Colors carry over verbatim; so do the lattice pitch and the shape picks, which the loop
+       below skips by class. */
     s_style = s_style_base;
 
-    /* Scale the pixel metrics proportionally.  One loop over the scaled span rather than a line
-       per field: the enum defines which vars are pixels (everything below GUI_VAR_SCALED_COUNT),
-       so adding a metric needs no edit here at all -- the failure mode where a new field was
-       declared but nobody remembered to rescale it cannot happen any more. */
-    for ( u32 i = 0; i < GUI_VAR_SCALED_COUNT; ++i )
-        s_style.var[ i ] = s_style_base.var[ i ] * scale;
+    /* Scale every var that is a pixel count.  Driven by the class table, not by a line per field
+       and not by an enum range: a new metric declares its class beside its name and is scaled
+       from that moment, so the failure mode where a field was added but nobody remembered to
+       rescale it cannot happen. */
+    for ( u32 i = 0; i < GUI_VAR_COUNT; ++i )
+        if ( var_is_pixels( k_var[ i ].cls ) )
+            s_style.var[ i ] = s_style_base.var[ i ] * scale;
 
     /* The ramp steps are metrics like any other: same factor. */
     for ( u32 i = 0; i < GUI_SCALE_COUNT; ++i )
@@ -432,17 +494,15 @@ metrics_compute( u32 em, u32 char_h, u32 line_h )
     u32 q = (u32)s_style_base.var[ GUI_VAR_GRID_Q ];
     if ( q > 1 )
     {
-        /* Row-level metrics snap; strokes and radii stay free.  BORDER, ROUND and PANEL_ROUND are
-           absent on purpose -- a hairline or a corner radius snapped to a 16px lattice would
-           quadruple, so they keep their scaled pixel value even though they shape geometry. */
-        s_style.var[ GUI_VAR_ROW ] = lat_ceil( s_style.var[ GUI_VAR_ROW ], q );   /* ceil: keep font floor */
+        /* GUI_CLASS_METRIC snaps and nothing else does -- which is exactly why STROKE and SKIN
+           are their own classes rather than metrics: a hairline or a corner radius snapped to a
+           16px lattice would quadruple.  ROW rounds UP so the font floor above is never undone;
+           every other metric goes to nearest. */
+        s_style.var[ GUI_VAR_ROW ] = lat_ceil( s_style.var[ GUI_VAR_ROW ], q );
 
-        static const gui_style_var_t k_snap[] = {
-            GUI_VAR_PAD, GUI_VAR_GAP, GUI_VAR_MIN_CELL,
-            GUI_VAR_TITLE_H, GUI_VAR_INDICATOR, GUI_VAR_GUTTER,
-        };
-        for ( u32 i = 0; i < sizeof( k_snap ) / sizeof( k_snap[ 0 ] ); ++i )
-            s_style.var[ k_snap[ i ] ] = metric_quantize( s_style.var[ k_snap[ i ] ], q );
+        for ( u32 i = 0; i < GUI_VAR_COUNT; ++i )
+            if ( k_var[ i ].cls == GUI_CLASS_METRIC && i != GUI_VAR_ROW )
+                s_style.var[ i ] = metric_quantize( s_style.var[ i ], q );
 
         /* Ramp steps land on the same lattice: rows ceil (keep the font floor), pads and gaps
            snap to nearest.  The whole ramp retunes together when the quantum or font changes. */

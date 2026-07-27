@@ -222,16 +222,23 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     INSTALLING a look; reading ->col[][] through it at paint time bypasses the style stacks.
 ==============================================================================================*/
 
-/* What the color is FOR.  Five roles cover every surface the GUI paints.
+/* What the color is FOR.  Six roles cover every surface the GUI paints.
 
    PANEL vs BG is the container / control split, and it is the one distinction that has to exist:
-   a window body, a child region, and a title bar are surfaces the layout CARVES, while a button
-   face, an input field, and a check box are surfaces a widget FILLS.  They recede and advance in
-   opposite directions (a panel sits under its contents, a control sits over its panel), so one
-   shared "background" cannot serve both. */
+   a window body and a child region are surfaces the layout CARVES, while a button face, an input
+   field, and a check box are surfaces a widget FILLS.  They recede and advance in opposite
+   directions (a panel sits under its contents, a control sits over its panel), so one shared
+   "background" cannot serve both.
+
+   TITLE is the third surface kind: a caption band that LABELS a container rather than being one
+   -- a window title bar, a tab, a menu bar, a table header.  It earns a row because its four
+   states are genuinely its own; folded into PANEL it forced the phase axis to mean something
+   different for that one role, and a tab then had to reach into THREE roles to say active /
+   hovered / idle.  Now it says TITLE and picks a phase, like everything else. */
 typedef enum
 {
-    GUI_ROLE_PANEL = 0,   // container surface: window body, child region, title bar
+    GUI_ROLE_PANEL = 0,   // container surface: window body, child region
+    GUI_ROLE_TITLE,       // caption band over a container: title bar, tab, menu bar, table header
     GUI_ROLE_BG,          // control surface: button face, input field, check box, cycle end caps
     GUI_ROLE_BORDER,      // frame line, focus ring, resize edge
     GUI_ROLE_TEXT,        // glyphs, caret
@@ -249,14 +256,19 @@ typedef enum
 
      role     IDLE              HOT                  ACTIVE                 DIM
      -------  ----------------  -------------------  ---------------------  ------------------
-     PANEL    window body       title bar            focused title bar      child / recessed
+     PANEL    window body       hovered surface      selected surface       child / recessed
+     TITLE    bar, inactive tab hovered tab          focused bar, live tab  de-emphasized bar
      BG       control face      hovered face         pressed / focused      inert face
      BORDER   frame line        hovered / resize     focused window ring    subdued frame
      TEXT     body text, caret  text on a hot face   text on a pressed one  secondary text
      ACCENT   value fill        nav highlight        mark, captured nav     empty track
 
    DIM doubles as the inert variant throughout: a recessed panel is PANEL[DIM], an empty value
-   track is ACCENT[DIM], secondary text is TEXT[DIM]. */
+   track is ACCENT[DIM], secondary text is TEXT[DIM].
+
+   TITLE[ACTIVE] is authored as the window BODY colour in every built-in theme, which is what
+   makes a live tab merge into the panel it owns.  A focused WINDOW is signalled by its border
+   (BORDER[ACTIVE]), not by its caption, so the two do not fight. */
 typedef enum
 {
     GUI_PHASE_IDLE = 0,   // at rest
@@ -313,8 +325,11 @@ typedef struct gui_scale_metrics_t
     var uses the style's installed value.  Values are f32 pixels (the shape picks carry a small
     integer in the same f32 slot -- one storage rule, no special case).
 
-    Grouped by the two gui_style_t categories: METRICS can move rects (scale_push rides on the
-    first three), SKIN only changes how paint lands inside rects composition already fixed.
+    Ordered by MEANING, in the two gui_style_t categories: METRICS can move rects (scale_push
+    rides on the first three), SKIN only changes how paint lands inside rects composition already
+    fixed.  How each var is TREATED -- scaled, snapped, left alone -- is a separate question, and
+    it is answered per var by gui_style_class_t below rather than by position here.  Order is
+    therefore free: a var may be inserted wherever it reads best.
 
     Every scalar the style has is here.  That is the rule that replaced the old split, where
     caret width and checkmark inset sat in the struct as fields no push could reach -- if a
@@ -334,21 +349,12 @@ typedef enum
     GUI_VAR_GUTTER,         // slider knob width AND the scrollbar gutter thickness
     GUI_VAR_MIN_CELL,       // floor a flex/fraction track shrinks to before overflow
     GUI_VAR_TITLE_H,        // window title bar height -- the body starts below it
+    GUI_VAR_GRID_Q,         // px lattice the metrics above snap onto (0/1 = off)
 
-    /* 2. SKIN -- paint-only */
+    /* 2. SKIN -- paint-only: radii, then the shape picks (an enum in the same f32 slot) */
 
     GUI_VAR_ROUND,          // corner radius: control frames, slider knobs, scrollbar grabs
     GUI_VAR_PANEL_ROUND,    // corner radius: windows / children / popups; 0 = square
-
-    /* The em-scaled span ends here: gui_style_apply multiplies vars [0, GUI_VAR_SCALED_COUNT)
-       by the font ratio and copies the rest verbatim.  Everything below is a pitch or a pick,
-       neither of which means anything scaled. */
-    GUI_VAR_SCALED_COUNT,
-
-    GUI_VAR_GRID_Q = GUI_VAR_SCALED_COUNT,   // px lattice metrics snap onto (0/1 = off)
-
-    /* 3. SKIN shape picks -- an enum carried in the f32 slot (see the enums below) */
-
     GUI_VAR_CHECK_SHAPE,    // checkbox/menu indicator: 0 = 'v' tick, 1 = disc, 2 = 'X' (gui_check_style_t)
     GUI_VAR_BULLET_SHAPE,   // bullet glyph: 0 = disc, 1 = square (gui_bullet_style_t)
     GUI_VAR_ARROW_SHAPE,    // directional arrow: 0 = triangle, 1 = chevron (gui_arrow_style_t)
@@ -357,9 +363,35 @@ typedef enum
     GUI_VAR_KNOB_SHAPE,     // slider knob: 0 = bar, 1 = circle (gui_slider_knob_t)
     GUI_VAR_MENU_CHECK,     // menu check gutter: 0 = plain, 1 = bordered box (gui_menu_check_t)
 
-    GUI_VAR_COUNT,          // var count -- not a metric
+    GUI_VAR_COUNT,          // var count -- not a var
 
 } gui_style_var_t;
+
+/* What KIND of number a var holds -- the mechanical half of the schema, declared once per var
+   beside its display name (style/gui_theme.c) and read back through gui()->style_var_class.
+   Two questions, and every var answers both by naming a class:
+
+     class    em-scaled?   lattice-snapped?   what it is
+     -------  -----------  -----------------  --------------------------------------------
+     METRIC   yes          yes                a size that positions a rect; seams must align
+     STROKE   yes          no                 a line width -- snapping a hairline quadruples it
+     SKIN     yes          no                 a paint-only radius, same reason
+     PITCH    no           n/a                the lattice quantum itself, in raw pixels
+     SHAPE    no           n/a                an enum pick carried in the f32 slot
+
+   This replaced an ordering trap: the scaled span used to be an enum range, so a metric declared
+   past the marker silently never scaled.  A class is declared at the same site as the name, so
+   the failure mode is now a missing table entry the compiler can be asked about. */
+typedef enum
+{
+    GUI_CLASS_METRIC = 0,
+    GUI_CLASS_STROKE,
+    GUI_CLASS_SKIN,
+    GUI_CLASS_PITCH,
+    GUI_CLASS_SHAPE,
+    GUI_CLASS_COUNT
+
+} gui_style_class_t;
 
 /* Checkbox / menu-item indicator shape (GUI_VAR_CHECK_SHAPE).  Default is the tick. */
 typedef enum
@@ -444,9 +476,10 @@ typedef enum
    read is GUI_VAR_BORDER, because the resize hit zone straddles the border -- border is
    geometry.)
 
-   The struct IS the layout of one style-set instance in the value backend (style/
-   gui_style_block.c), asserted field-for-slot there, so gui()->style_edit() can hand a kit a
-   typed pointer straight at the installed run with no copy and no offset table. */
+   The struct IS the storage: the installed layer is an array of it, one per style set, and the
+   resolved working run is its u32 image (asserted field-for-slot in style/gui_style_core.c).
+   So gui()->style_edit() hands a kit the struct itself, and a style read is one indexed load at
+   an offset the compiler already knows. */
 
 /* GUI_GRID_LATTICE -- compile-time master switch for grid_quantum snapping.  1 (default) keeps
    the feature; define 0 (e.g. -DGUI_GRID_LATTICE=0) to strip every snap to identity so the lattice

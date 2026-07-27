@@ -303,11 +303,10 @@ const gui_api_t g_gui_api_struct =
     .style_role_name                    = gui_style_role_name,
     .style_phase_name                   = gui_style_phase_name,
     .style_var_name                     = gui_style_var_name,
+    .style_var_class                    = gui_style_var_class,
+    .style_class_name                   = gui_style_class_name,
     .scale_push                         = gui_scale_push,
     .scale_pop                          = gui_scale_pop,
-    .set_check_style                    = gui_set_check_style,
-    .set_bullet_style                   = gui_set_bullet_style,
-    .set_arrow_style                    = gui_set_arrow_style,
 
     /*===============================================  GUI_STOCK  ===============================================*/
 

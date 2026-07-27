@@ -97,7 +97,7 @@ window_end_titlebar( gui_window_t* win, bool native )
            flush with the surface edges.  A shelf chip is never dimmed (it parks at the bottom,
            away from the viewport chrome, and needs to read as a window handle). */
         bool maxed   = win && win->maximized && !s_build.win.minimized;
-        u32  bar_col = maxed ? col_lerp( COL_TITLE_BG, COL_WIN_BG, 0.6f ) : COL_TITLE_BG;
+        u32  bar_col = maxed ? COL_TITLE_DIM : COL_TITLE_BG;
         if ( maxed )
             draw_set_rounding( 0.0f );
         draw_push_rect_filled( s_build.win.x, s_build.win.y, s_build.win.w, title_h, 0.0f, 0.0f, 1.0f, 1.0f, 0, bar_col );

@@ -853,16 +853,23 @@ show_style_editor( bool* p_open )
         gui()->pop_id();
     }
 
-    /* --- Metrics + skin scalars: walk the var enum ------------------------------------------
-       The shape picks live in the same array but want a combo rather than a slider, so they are
-       listed after the sliders with their value names -- the one place a range or a name list
-       still has to be authored per var. */
-    gui()->separator_text( "Metrics + Skin" );
-    for ( u32 v = 0; v < GUI_VAR_SCALED_COUNT; ++v )
-        changed |= se_f32( gui()->style_var_name( ( gui_style_var_t )v ), &work.var[ v ], 0.0f, 64.0f );
-    changed |= se_f32( gui()->style_var_name( GUI_VAR_GRID_Q ), &work.var[ GUI_VAR_GRID_Q ], 0.0f, 32.0f );
+    /* --- Scalars: a section per var CLASS, both walked from the engine -----------------------
+       Nothing here names a var or knows which ones scale.  Asking each var for its class is what
+       replaced two hardcoded enum ranges, so a new var appears in the right section on its own.
+       Shapes are skipped: a pick wants a combo over its value names, which the engine does not
+       own -- that is the one thing still authored per var, below. */
+    for ( u32 c = 0; c < GUI_CLASS_COUNT; ++c )
+    {
+        if ( c == GUI_CLASS_SHAPE ) continue;
 
-    gui()->separator_text( "Shapes" );
+        gui()->separator_text( gui()->style_class_name( ( gui_style_class_t )c ) );
+        for ( u32 v = 0; v < GUI_VAR_COUNT; ++v )
+            if ( gui()->style_var_class( ( gui_style_var_t )v ) == ( gui_style_class_t )c )
+                changed |= se_f32( gui()->style_var_name( ( gui_style_var_t )v ),
+                                   &work.var[ v ], 0.0f, 64.0f );
+    }
+
+    gui()->separator_text( gui()->style_class_name( GUI_CLASS_SHAPE ) );
     static const char* const nm_check   [] = { "Tick", "Disc", "Cross" };
     static const char* const nm_bullet  [] = { "Disc", "Square" };
     static const char* const nm_arrow   [] = { "Filled", "Chevron" };

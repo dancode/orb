@@ -604,7 +604,7 @@ dock_window_chrome( gui_dock_node_t* node )
 
         /* Active tab takes the body colour so it reads as joined to the content below; the rest stay
            on the title band, lifting to the hover colour under the cursor. */
-        u32 bg   = is_active ? COL_WIN_BG : ( st.hover ? COL_WIDGET_HOT : COL_TITLE_BG );
+        u32 bg   = is_active ? COL_TITLE_ACTIVE : ( st.hover ? COL_TITLE_HOT : COL_TITLE_BG );
         u32 tcol = ( is_active || st.hover ) ? COL_TEXT : COL_TEXT_DIM;
         /* Tabs in a docked node stay square: the active tab takes the body colour to read as joined
            to the content below, and a rounded corner would break that seam. */

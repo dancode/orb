@@ -25,13 +25,15 @@
 
 /*==============================================================================================
 
-    Style State -- ONE block, one instance per style set, one flat working set.
+    Style State -- one installed style per set, one flat working set.
 
-    gui_style_t (gui.h) IS the block's slot layout, asserted below, so the installed run can be
-    handed to a kit as that struct with no copy and no offset table.  Three runs inside it, all
-    equal citizens -- that equality is the whole point of the schema:
+    gui_style_t (gui.h) IS the storage, twice over: the installed layer is an ARRAY of it (one
+    whole style per set, so a kit can be handed a typed pointer with no copy and no offset
+    table), and the working set is the same struct's u32 image, so an override can address any
+    field by slot.  The static assert below is what makes the two views one thing.  Three runs
+    inside the struct, all equal citizens -- that equality is the whole point of the schema:
 
-        col    [ role ][ phase ]  -- the 5x4 color grid, THE color vocabulary
+        col    [ role ][ phase ]  -- the 6x4 color grid, THE color vocabulary
         var    [ gui_style_var_t ]-- every scalar the style has, metrics and skin alike
         scales [ gui_scale_t ]    -- the density ramp scale_push reads
 
@@ -45,7 +47,8 @@
     That is the entire addressing story.
 
     Working set: the installed layer with the push/pop stacks applied -- the value an unscoped
-    read returns.  It lives in s_work (style/gui_style_block.c); nothing here owns storage.
+    read returns.  ONE run, always the current set's, so a read is s_work[ slot ] with a
+    COMPILE-TIME slot: no block base to load, no instance arithmetic, nothing to scan.
 
     Stacks: saved (slot, previous) pairs so pop restores regardless of which slots a push
     touched.  One PUSH is one stack entry even when it spans a whole phase row (GUI_PHASE_ALL), so
@@ -67,7 +70,7 @@
 
 #define GUI_STYLE_STACK_DEPTH 32
 
-/* The block's slot layout -- field order of gui_style_t.  Three runs, laid end to end. */
+/* The slot layout -- field order of gui_style_t.  Three runs, laid end to end. */
 #define STYLE_COL_BASE    0
 #define STYLE_COL_COUNT   ( GUI_ROLE_COUNT * GUI_PHASE_COUNT )
 #define STYLE_VAR_BASE    ( STYLE_COL_BASE   + STYLE_COL_COUNT )
@@ -77,8 +80,27 @@
 
 #define STYLE_COL_SLOT( role, phase ) ( STYLE_COL_BASE + (u32)( role ) * GUI_PHASE_COUNT + (u32)( phase ) )
 
+/* The load-bearing equivalence: the struct a theme is authored as and the flat run an override
+   indexes are the SAME bytes.  Break the field order and this fires at compile time. */
 ORB_STATIC_ASSERT( sizeof( gui_style_t ) == STYLE_SLOT_COUNT * sizeof( u32 ),
-                   "style block layout must mirror gui_style_t field order" );
+                   "style slot layout must mirror gui_style_t field order" );
+
+/*  The two layers, and there are only two.
+
+    s_store -- INSTALLED.  One complete gui_style_t per set: what the theme compiled plus what
+               that set's source overwrote.  Written only by style_install; never by a push.
+               Typed, so gui_style_edit() hands a kit &s_store[set] with no cast.
+    s_work  -- RESOLVED.  The CURRENT set's installed values with every push / next override
+               already written in.  The only array a read touches, and it is a file static of
+               known size -- so COL_TEXT compiles to a load from a fixed address, which is the
+               whole reason the sets live behind an index instead of the reads living behind a
+               base pointer.
+
+    Capacity is the array bound: a fifth set is a compile error, not a first-frame assert. */
+
+static gui_style_t s_store[ GUI_STYLE_SET_MAX ];   // installed, one per set
+static u32         s_work [ STYLE_SLOT_COUNT ];    // resolved -- what every read indexes
+static u16         s_set_cur;                      // which set s_work currently mirrors
 
 /* The widest fan-out one public push can have: a full phase row (GUI_PHASE_ALL). */
 #define STYLE_FAN_MAX GUI_PHASE_COUNT
@@ -127,12 +149,8 @@ static u32           s_item_n;
    set is a coarse scope (a window, a panel, a HUD), never a per-widget one. */
 #define GUI_STYLE_SET_DEPTH 8
 
-static u16 s_set_stack[ GUI_STYLE_SET_DEPTH ];        // saved instance per push
+static u16 s_set_stack[ GUI_STYLE_SET_DEPTH ];        // saved set per push
 static u32 s_set_sp;                                  // count of pushes, not index
-
-/* Where the block landed.  Cached at bootstrap; the only base any read adds. */
-static u16  s_blk = 0, s_base = 0;
-static bool s_blocks_ready = false;
 
 /*==============================================================================================
 
@@ -147,8 +165,8 @@ static bool s_blocks_ready = false;
 
 ==============================================================================================*/
 
-/* This is what every COL_* / metric macro ultimately resolves to.  `slot` is ABSOLUTE (the
-   block's base already added by the typed faces below). */
+/* This is what every COL_* / metric macro ultimately resolves to: one indexed load of a static
+   array at a slot the caller knew at compile time. */
 
 static u32
 style_read( u32 slot )
@@ -218,14 +236,14 @@ style_next( u32 slot, u32 val )
 }
 
 /*==============================================================================================
-    The typed faces -- the ONLY places a base is added.
+    The typed faces -- coordinate to slot, and nothing else.
 
-    A read site says COL_TEXT or WIDGET_PAD; it never sees a base, which is what kept this whole
-    rebuild off the 180 chrome read sites.
+    A read site says COL_TEXT or WIDGET_PAD; it never sees a slot, which is what kept the schema
+    rewrites off the 230-odd chrome read sites.
 ==============================================================================================*/
 
-static u16 style_col_slot( u8 role, u8 phase ) { return (u16)( s_base + STYLE_COL_SLOT( role, phase ) ); }
-static u16 style_var_slot( u32 var )           { return (u16)( s_base + STYLE_VAR_BASE + var ); }
+static u16 style_col_slot( u8 role, u8 phase ) { return (u16)STYLE_COL_SLOT( role, phase ); }
+static u16 style_var_slot( u32 var )           { return (u16)( STYLE_VAR_BASE + var ); }
 
 /* One indexed load.  No projection, no override test, no fallback chain -- the installed value
    and any override live in the SAME slot, which is what the flat space bought. */
@@ -237,13 +255,13 @@ f32 style_var( gui_style_var_t var )
     return style_bits_f32( style_read( style_var_slot( (u32)var ) ) );
 }
 
-/* The ramp, read through the block so a kit's DENSE is a kit's own.  scale_push turns a step
-   into three var pushes; sz_scale_row reads one without pushing. */
+/* The ramp, read from the working set like everything else so a kit's DENSE is a kit's own.
+   scale_push turns a step into three var pushes; sz_scale_row reads one without pushing. */
 f32
 style_scale( gui_scale_t s, u32 field )
 {
     if ( (u32)s >= GUI_SCALE_COUNT ) s = GUI_SCALE_STD;
-    return style_bits_f32( style_read( s_base + STYLE_SCALE_BASE + (u32)s * 3u + field ) );
+    return style_bits_f32( style_read( STYLE_SCALE_BASE + (u32)s * 3u + field ) );
 }
 
 /* Collect the slots a public color push spans: one cell, or a whole phase row for GUI_PHASE_ALL. */
@@ -383,8 +401,8 @@ style_stack_replay( style_stack_t* st )
     }
 }
 
-/* One block now, so a set switch and a landing reseed the same run -- the only_blk filter the
-   three-block layout needed is gone with it. */
+/* One run, so a set switch and a landing reseed exactly the same slots -- there is nothing to
+   filter by, which is what the block layer used to need. */
 static void
 style_overrides_replay( void )
 {
@@ -408,6 +426,7 @@ style_overrides_replay( void )
 static const char* const k_role_name[ GUI_ROLE_COUNT ] =
 {
     [ GUI_ROLE_PANEL  ] = "Panel",
+    [ GUI_ROLE_TITLE  ] = "Title",
     [ GUI_ROLE_BG     ] = "Control",
     [ GUI_ROLE_BORDER ] = "Border",
     [ GUI_ROLE_TEXT   ] = "Text",
@@ -422,34 +441,25 @@ static const char* const k_phase_name[ GUI_PHASE_COUNT ] =
     [ GUI_PHASE_DIM    ] = "Dim",
 };
 
-static const char* const k_var_name[ GUI_VAR_COUNT ] =
-{
-    [ GUI_VAR_ROW             ] = "Row Height",
-    [ GUI_VAR_PAD             ] = "Padding",
-    [ GUI_VAR_GAP             ] = "Gap",
-    [ GUI_VAR_BORDER          ] = "Border Width",
-    [ GUI_VAR_INDICATOR       ] = "Indicator Size",
-    [ GUI_VAR_GUTTER          ] = "Knob / Gutter",
-    [ GUI_VAR_MIN_CELL        ] = "Min Cell Width",
-    [ GUI_VAR_TITLE_H         ] = "Title Height",
-    [ GUI_VAR_ROUND           ] = "Widget Rounding",
-    [ GUI_VAR_PANEL_ROUND     ] = "Panel Rounding",
-    [ GUI_VAR_GRID_Q          ] = "Grid Quantum",
-    [ GUI_VAR_CHECK_SHAPE     ] = "Check Shape",
-    [ GUI_VAR_BULLET_SHAPE    ] = "Bullet Shape",
-    [ GUI_VAR_ARROW_SHAPE     ] = "Arrow Shape",
-    [ GUI_VAR_SEPARATOR_SHAPE ] = "Separator Shape",
-    [ GUI_VAR_PROGRESS_SHAPE  ] = "Progress Shape",
-    [ GUI_VAR_KNOB_SHAPE      ] = "Knob Shape",
-    [ GUI_VAR_MENU_CHECK      ] = "Menu Check",
-};
+/* The var axis is described once, in gui_theme.c's k_var table (name + class together), because
+   metrics_compute needs the class and is included above this file.  These are the read doors. */
 
-const char* gui_style_role_name ( gui_style_role_t r )   { return ( (u32)r < GUI_ROLE_COUNT  && k_role_name [ r ] ) ? k_role_name [ r ] : "?"; }
-const char* gui_style_phase_name( gui_style_phase_t p )  { return ( (u32)p < GUI_PHASE_COUNT && k_phase_name[ p ] ) ? k_phase_name[ p ] : "?"; }
-const char* gui_style_var_name( gui_style_var_t v ){ return ( (u32)v < GUI_VAR_COUNT      && k_var_name  [ v ] ) ? k_var_name  [ v ] : "?"; }
+const char* gui_style_role_name ( gui_style_role_t r )  { return ( (u32)r < GUI_ROLE_COUNT  && k_role_name [ r ]       ) ? k_role_name [ r ]       : "?"; }
+const char* gui_style_phase_name( gui_style_phase_t p ) { return ( (u32)p < GUI_PHASE_COUNT && k_phase_name[ p ]       ) ? k_phase_name[ p ]       : "?"; }
+const char* gui_style_var_name  ( gui_style_var_t v )   { return ( (u32)v < GUI_VAR_COUNT   && k_var       [ v ].name  ) ? k_var       [ v ].name  : "?"; }
+const char* gui_style_class_name( gui_style_class_t c ) { return ( (u32)c < GUI_CLASS_COUNT && k_class_name[ c ]       ) ? k_class_name[ c ]       : "?"; }
+
+/* What KIND of number a var holds -- what the em rescale and the lattice snap branch on, and
+   what lets a style editor group its sliders without a table of its own.  An out-of-range var
+   reads as a SHAPE, the class that is neither scaled nor snapped, so a bad index changes nothing. */
+gui_style_class_t
+gui_style_var_class( gui_style_var_t v )
+{
+    return ( (u32)v < GUI_VAR_COUNT ) ? (gui_style_class_t)k_var[ v ].cls : GUI_CLASS_SHAPE;
+}
 
 /*==============================================================================================
-    The block -- its install fn and the per-set owners that overwrite it.
+    The installed layer -- how a set gets filled, and the two refresh steps over it.
 ==============================================================================================*/
 
 /* Per-SET owners.  Set 0 is chrome's and exists always; a kit takes a set of its own with
@@ -464,48 +474,37 @@ static u16                 s_set_count = 1;   /* set 0 is chrome's */
    the set being filled, so a source writes its OWN look and not the one on screen. */
 static i32 s_installing = -1;
 
-/* Seed the instance from the active theme, then let this set's owner overwrite whatever it cares
-   about (it writes through gui_style_edit(), which points at this same run).  The seed is one
-   struct copy now that the theme and the block share a layout -- the old role/phase projection
-   table lived here and is simply gone.
+/* Seed one set from the active theme, then let its owner overwrite whatever it cares about (the
+   owner writes through gui_style_edit(), which points at this same struct).  The seed is one
+   struct assignment because the theme and the installed layer are the same type.
 
    Seeding FIRST is what lets a kit install only the part it owns -- the accent row, say -- and
    inherit the rest of the theme instead of leaving stale values behind. */
 static void
-style_install( void* user, u32* dst, u16 count, u16 instance )
+style_install( u16 set )
 {
-    UNUSED( user );
-    UNUSED( count );
+    s_store[ set ] = *style_active();   /* the ACTIVE (font-scaled) style, not the em=12 base */
 
-    *(gui_style_t*)dst = *style_active();   /* the ACTIVE (font-scaled) style, not the em=12 base */
-
-    if ( instance < GUI_STYLE_SET_MAX && s_set_source[ instance ] )
+    if ( s_set_source[ set ] )
     {
         i32 saved    = s_installing;
-        s_installing = (i32)instance;       /* style_edit() -> THIS set's run */
-        s_set_source[ instance ]( s_set_user[ instance ] );
+        s_installing = (i32)set;        /* style_edit() -> THIS set's struct */
+        s_set_source[ set ]( s_set_user[ set ] );
         s_installing = saved;
     }
 }
 
-/* One-time registration, driven from style_new_frame rather than an init entry point: the unit
-   has none, and new_frame is guaranteed to run before any read (gui_theme_set at gui_init calls
-   it through gui_theme_reset).  Promote it to a real style_init when the orchestrator grows one. */
-
+/* Mirror the current set into the working run, discarding whatever overrides sat over it.
+   Every caller re-applies the live ones after (style_overrides_replay). */
 static void
-style_blocks_bootstrap( void )
+style_work_reseed( void )
 {
-    if ( s_blocks_ready ) return;
-    s_blocks_ready = true;
-
-    s_blk = style_block_register( &( style_block_desc_t ){
-        .name = "style", .count = STYLE_SLOT_COUNT, .instances = GUI_STYLE_SET_MAX,
-        .refill = STYLE_REFILL_LANDING, .install = style_install } );
-
-    s_base = style_block_work_base( s_blk );
+    const u32* src = (const u32*)&s_store[ s_set_cur ];
+    for ( u32 i = 0; i < STYLE_SLOT_COUNT; ++i ) s_work[ i ] = src[ i ];
 }
 
-/* A style LANDING: theme / font / scale changed, so every instance re-derives.  Driven across
+/* A style LANDING: theme / font / scale changed, so EVERY set re-derives -- including ones not
+   currently on screen, so a style_set_push later in the frame finds fresh values.  Driven across
    the unit seam by gui_style_apply (frame/gui_frame_font.c), after the metrics rescale, and by
    gui_style_source_set when an owner is registered or cleared.
 
@@ -516,8 +515,8 @@ style_blocks_bootstrap( void )
 void
 style_landing( void )
 {
-    style_blocks_bootstrap();
-    style_store_refill( true );
+    for ( u16 set = 0; set < GUI_STYLE_SET_MAX; ++set ) style_install( set );
+
     style_work_reseed();
     style_overrides_replay();
 }
@@ -529,20 +528,20 @@ style_landing( void )
 
    Order matters now that overrides are written through: the reseed has already overwritten
    every slot, so the live records are stale and their counts can simply be zeroed -- unwinding
-   them afterwards would write last frame's values back over the fresh ones. */
+   them afterwards would write last frame's values back over the fresh ones.
+
+   The INSTALLED layer is deliberately left alone: only a landing re-derives it, which is what
+   lets an ad-hoc gui_style_edit() poke survive to be picked up by the reseed below. */
 
 void
 style_new_frame( void )
 {
-    style_blocks_bootstrap();
-
     /* Back to chrome's set before the reseed, so an unbalanced style_set_push cannot carry a
        kit's look into the next frame any more than an unbalanced push_style_color can. */
-    s_set_sp = 0;
-    style_block_set_current( s_blk, 0 );
+    s_set_sp  = 0;
+    s_set_cur = 0;
 
-    style_store_refill( false );   /* landing-only block: nothing to refill, pokes survive */
-    style_work_reseed();           /* working set <- installed layer                       */
+    style_work_reseed();           /* working set <- installed layer */
 
     s_col_stack.sp = s_var_stack.sp = 0;
     s_next_n = s_item_n = 0;
@@ -561,9 +560,7 @@ style_new_frame( void )
 gui_style_set_t
 gui_style_set_create( gui_style_source_fn fn, void* user )
 {
-    style_blocks_bootstrap();
-
-    bool have_room = s_set_count < style_block_instances( s_blk );
+    bool have_room = s_set_count < GUI_STYLE_SET_MAX;
 
     ORB_ASSERT( have_room && "style sets exhausted -- raise GUI_STYLE_SET_MAX" );
     if ( !have_room )
@@ -574,32 +571,30 @@ gui_style_set_create( gui_style_source_fn fn, void* user )
     s_set_source[ set ] = fn;
     s_set_user  [ set ] = user;
 
-    style_landing();                    /* fill the new instance now, alongside every other */
+    style_landing();                    /* fill the new set now, alongside every other */
     if ( g_ctx ) gui_request_redraw();
 
     return set;
 }
 
 static void
-style_set_activate( u16 inst )
+style_set_activate( u16 set )
 {
-    if ( inst == style_block_current( s_blk ) ) return;
+    if ( set == s_set_cur ) return;
 
-    style_block_set_current( s_blk, inst );
-    style_block_reseed( s_blk );     /* work run <- that set's installed values */
+    s_set_cur = set;
+    style_work_reseed();             /* work run <- that set's installed values */
     style_overrides_replay();        /* live overrides back on top, rebased     */
 }
 
 void
 gui_style_set_push( gui_style_set_t set )
 {
-    style_blocks_bootstrap();
-
     if ( (u32)set >= s_set_count ) set = 0;
 
     ORB_ASSERT( s_set_sp < GUI_STYLE_SET_DEPTH && "style set push: too deep -- mismatched push/pop" );
     if ( s_set_sp < GUI_STYLE_SET_DEPTH )
-        s_set_stack[ s_set_sp ] = style_block_current( s_blk );
+        s_set_stack[ s_set_sp ] = s_set_cur;
     ++s_set_sp;
 
     style_set_activate( (u16)set );
@@ -615,7 +610,7 @@ gui_style_set_pop( void )
         style_set_activate( s_set_stack[ s_set_sp ] );
 }
 
-gui_style_set_t gui_style_set_current( void ) { return (gui_style_set_t)style_block_current( s_blk ); }
+gui_style_set_t gui_style_set_current( void ) { return (gui_style_set_t)s_set_cur; }
 
 /* Set-stack depth + unwind-to-depth: the containment pair a region uses, mirroring how it
    restores the id scope.  A region inherits the ambient set rather than choosing one -- that is
@@ -638,19 +633,17 @@ style_set_unwind( u32 depth )
     The installed style -- the typed view a kit writes its look through.
 ==============================================================================================*/
 
-/* Mutable access to the installed style: a typed view straight onto this set's store run, which
-   is laid out as this struct (asserted at the top of this file).  Writes land in the INSTALLED
-   layer, so they survive the per-frame reseed and are re-derived at the next landing -- the
-   documented ad-hoc-poke contract.  A poke outside a landing becomes visible on the next frame's
-   reseed; a source registered through gui_style_source_set lands immediately, because
-   registering runs a landing. */
+/* Mutable access to the installed style: this set's struct, directly.  Writes land in the
+   INSTALLED layer, so they survive the per-frame reseed and are re-derived at the next landing --
+   the documented ad-hoc-poke contract.  A poke outside a landing becomes visible on the next
+   frame's reseed; a source registered through gui_style_source_set lands immediately, because
+   registering runs a landing.  Callable before the first frame: the store is zero-initialised
+   static storage, so there is nothing to bootstrap. */
 gui_style_t*
 gui_style_edit( void )
 {
-    style_blocks_bootstrap();   /* callable before the first frame */
-
-    u16 inst = ( s_installing >= 0 ) ? (u16)s_installing : style_block_current( s_blk );
-    return ( gui_style_t* )style_block_instance( s_blk, inst );
+    u16 set = ( s_installing >= 0 ) ? (u16)s_installing : s_set_cur;
+    return &s_store[ set ];
 }
 
 /* Own the DEFAULT set.  Set 0 is what chrome and any unbracketed UI resolve through, so a
@@ -659,8 +652,6 @@ gui_style_edit( void )
 void
 gui_style_source_set( gui_style_source_fn fn, void* user )
 {
-    style_blocks_bootstrap();
-
     s_set_source[ 0 ] = fn;
     s_set_user  [ 0 ] = user;
 

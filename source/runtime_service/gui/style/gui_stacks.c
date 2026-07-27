@@ -10,7 +10,6 @@
         push_style_color / _var     per-item theme overrides                -> gui_style_core.c
         style_color                 the resolved read back out of the palette
         scale_push / _pop           a named density step, as three paired var pushes
-        set_check/bullet/arrow_style   persistent indicator-shape writes
 
     Pure caller vocabulary (the machinery / vocabulary split: the stacks and their resolution live
     in the machinery files; the verbs a user speaks live here).  Nothing in the lib below depends
@@ -175,20 +174,11 @@ gui_sz_scale_row( gui_scale_t s )
     return style_scale( s, SCALE_ROW );
 }
 
-/* Global indicator-shape setters (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t):
-   persistent writes to the active style record, landed immediately so the change is visible
-   this frame.  Scope a change with push_style_var on the matching GUI_VAR_*_SHAPE instead; the
-   styled emitters that read the picks live in stock/gui_symbol_style.c. */
-static void
-style_set_shape( gui_style_var_t var, u8 shape )
-{
-    s_style.var[ var ] = (f32)shape;
-    style_landing();     /* the installed sets re-derive from s_style, so this must re-run */
-}
-
-void gui_set_check_style ( u8 style ) { style_set_shape( GUI_VAR_CHECK_SHAPE,  style ); }
-void gui_set_bullet_style( u8 style ) { style_set_shape( GUI_VAR_BULLET_SHAPE, style ); }
-void gui_set_arrow_style ( u8 style ) { style_set_shape( GUI_VAR_ARROW_SHAPE,  style ); }
+/* The seven GUI_VAR_*_SHAPE picks have no setter verb of their own: a theme AUTHORS one and
+   push_style_var scopes it, which is the same pair every other style value gets.  Three global
+   setters used to live here, from when chrome derived every look and there were no base widget
+   builders to push around; the alternate renders they selected are untouched and still live in
+   stock/gui_symbol_style.c. */
 
 // clang-format on
 /*============================================================================================*/

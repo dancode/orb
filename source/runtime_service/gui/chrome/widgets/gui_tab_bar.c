@@ -223,7 +223,7 @@ gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags 
 
     /* Active chip takes the body colour (joined to the content below); the rest sit on the title
        band and lift to the hover colour under the cursor.  Square, like the dock tabs. */
-    u32 bg   = is_active ? COL_WIN_BG : ( st.hover ? COL_WIDGET_HOT : COL_TITLE_BG );
+    u32 bg   = is_active ? COL_TITLE_ACTIVE : ( st.hover ? COL_TITLE_HOT : COL_TITLE_BG );
     u32 tcol = ( is_active || st.hover ) ? COL_TEXT : COL_TEXT_DIM;
 
     f32 save_round = draw_rounding();

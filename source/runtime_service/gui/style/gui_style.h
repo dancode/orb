@@ -8,10 +8,10 @@
     stacks, the lattice, and the color/metric vocabulary macros every layer above sizes and
     paints with.  Stack position: after the core pair (each unit .c lists its sub-stack).
 
-    Its own TU (root gui_style.c: gui_theme.c + gui_style_block.c + gui_style_core.c +
-    gui_stacks.c).  Values live in the block backend (gui_style_block.c): ONE block whose slot
-    layout is gui_style_t itself, instanced once per style set, so chrome and a kit each own a
-    complete style rather than a kit owning a subset of one.
+    Its own TU (root gui_style.c: gui_theme.c + gui_style_core.c + gui_stacks.c).  Values live
+    in gui_style_core.c: one whole gui_style_t installed per style set, plus the resolved working
+    run every read indexes -- so chrome and a kit each own a complete style rather than a kit
+    owning a subset of one.
     Resolution is PURE: interact state arrives as PARAMETERS (col_item_bg( st )),
     never queried from core, so style resolves with no interact server present -- the one
     sanctioned exception is col_item_bg_anim's explicit ride on core's keyed anim utility.
@@ -70,7 +70,7 @@ f32 style_scale( gui_scale_t s, u32 field );
 /*==============================================================================================
     3. COLORS -- the color grid, one macro per cell and no cell with two names.
 
-    This table IS gui_style_t.col: five roles down, four phases across.  Every name below is the
+    This table IS gui_style_t.col: six roles down, four phases across.  Every name below is the
     established one for that cell, so the 180 read sites above never learned that the flat
     palette and chrome's private tokens went away -- which is exactly why they could.  A name
     here is chrome's SPELLING of a cell, not a cell of its own: nothing reachable through these
@@ -83,9 +83,14 @@ f32 style_scale( gui_scale_t s, u32 field );
 
 /*                          role              IDLE / HOT / ACTIVE / DIM                        */
 #define COL_WIN_BG        style_col( GUI_ROLE_PANEL,  GUI_PHASE_IDLE   )  /* window body        */
-#define COL_TITLE_BG      style_col( GUI_ROLE_PANEL,  GUI_PHASE_HOT    )  /* title bar          */
-#define COL_TITLE_ACTIVE  style_col( GUI_ROLE_PANEL,  GUI_PHASE_ACTIVE )  /* focused title bar  */
+#define COL_PANEL_HOT     style_col( GUI_ROLE_PANEL,  GUI_PHASE_HOT    )  /* hovered surface    */
+#define COL_PANEL_SEL     style_col( GUI_ROLE_PANEL,  GUI_PHASE_ACTIVE )  /* selected surface   */
 #define COL_CHILD_BG      style_col( GUI_ROLE_PANEL,  GUI_PHASE_DIM    )  /* child / recessed   */
+
+#define COL_TITLE_BG      style_col( GUI_ROLE_TITLE,  GUI_PHASE_IDLE   )  /* bar, inactive tab  */
+#define COL_TITLE_HOT     style_col( GUI_ROLE_TITLE,  GUI_PHASE_HOT    )  /* hovered tab        */
+#define COL_TITLE_ACTIVE  style_col( GUI_ROLE_TITLE,  GUI_PHASE_ACTIVE )  /* focused bar / tab  */
+#define COL_TITLE_DIM     style_col( GUI_ROLE_TITLE,  GUI_PHASE_DIM    )  /* de-emphasized bar  */
 
 #define COL_WIDGET_BG     style_col( GUI_ROLE_BG,     GUI_PHASE_IDLE   )  /* control face       */
 #define COL_WIDGET_HOT    style_col( GUI_ROLE_BG,     GUI_PHASE_HOT    )  /* hovered face       */
@@ -142,8 +147,10 @@ f32 lat_floor_min( f32 v, u32 q );
 f32 lat_ceil     ( f32 v, u32 q );
 f32 lat_round    ( f32 v, u32 q );
 
-extern gui_style_t s_style;     /* style/gui_theme.c -- the ACTIVE (scaled) style       */
-extern u32         s_font_size; /* style/gui_theme.c -- active em (0 = never set)       */
+/* The ACTIVE (font-scaled) style is PRIVATE to gui_theme.c -- style_active() above is the only
+   read door, and metrics_compute the only writer.  Nothing outside the theme file may poke it:
+   the next rescale rebuilds it wholesale from the base, so a poke there silently evaporates. */
+extern u32 s_font_size;         /* style/gui_theme.c -- active em (0 = never set) */
 
 /* State -> color projections (gui_style_core.c) -- pure: the state flags arrive as
    parameters; col_item_bg_anim alone rides core's keyed anim utility, explicitly. */
