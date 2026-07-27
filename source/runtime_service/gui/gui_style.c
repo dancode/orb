@@ -18,11 +18,13 @@
     criterion): applying a resolved value to the draw state (alpha, rounding) is the impure
     wrappers' job (item_flags_resolve / item_flags_chrome_reset, stock/gui_adornment.c).
 
-    Documented upward seams (the strata bridge -- see style/gui_style.h):
-      - style_el_col reads the INSTALLED element style (gui_el_style, stock unit) and
-        projects role x state through g_el_slot_map (the stock unit's table).
+    Documented upward seam (the strata bridge -- see style/gui_style.h):
       - gui_theme_reset calls gui_style_apply (frame/gui_frame_font.c): the rescale needs the
         active font's metrics (draw unit), which style itself must not touch.
+
+    The style used to reach UP into the stock unit for the installed element palette and its
+    projection table.  It does not any more: gui_style_t IS the installed layout, so the whole
+    schema lives here and stock reads it back down through style_el_col.
 
     Include order matters: each file can reference statics from files included above it.
 

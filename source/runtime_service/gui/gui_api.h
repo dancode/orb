@@ -1300,16 +1300,17 @@ typedef struct gui_api_s
        application.  The source is invoked immediately, then again at every style landing (font
        activation, theme_set / theme_reset / style_apply) AFTER the layout metrics rescale -- so
        the kit re-derives against fresh numbers instead of being clobbered by the default compile.
-       Inside the source, write through el_style() (GUI_ELEMENT) and read metrics via style_peek /
-       the sz_ family.  fn NULL restores the default owner: chrome's theme compiler. */
+       Inside the source, write through style_edit() and read metrics via style_peek / the sz_
+       family.  fn NULL restores the default owner: chrome's theme compiler. */
     void ( *style_source_set )( gui_style_source_fn fn, void* user );
 
     /* Style SETS -- two looks installed side by side instead of one overwriting the other.
 
-       A set is one installed copy of the element stratum with its own owner.  Set 0 is chrome's;
+       A set is one installed copy of the WHOLE style -- colors, metrics, skin, density ramp --
+       with its own owner.  Set 0 is chrome's;
        style_set_create takes another and style_set_push / _pop bracket the UI that resolves
        through it.  So an editor's chrome keeps its theme while a game's kit paints its own, and
-       neither has to win -- which a single installed element style could not express.
+       neither has to win.
 
        The source is invoked exactly like style_source_set's, at create and at every landing; a
        set that installs only the rows it cares about inherits the theme for the rest.  A push
@@ -1328,32 +1329,28 @@ typedef struct gui_api_s
     void            ( *style_set_pop     )( void );
     gui_style_set_t ( *style_set_current )( void );
 
-    /* Style stacks -- the push-model theme override (gui_col_t colors, gui_style_var_t metrics).
-       push overrides a slot until the matching pop (pop takes a count, like ImGui); next_style_*
-       overrides for just the next widget, no pop.  Colors are abgr (GUI_COLOR); vars are f32 px.
-       Like the item flags, this is callsite-free: every widget already reads the palette + metrics
-       through the resolver, so an override reaches them without any widget change.
+    /* Style stacks -- the push-model theme override.  A color names a (role, state) cell of the
+       element grid; a var names a gui_style_var_t scalar.  push overrides until the matching pop
+       (pop takes a count, like ImGui); next_style_* overrides for just the next widget, no pop.
+       Colors are abgr (GUI_COLOR); vars are f32 px.  Like the item flags, this is callsite-free:
+       every widget already reads the grid + metrics through the resolver, so an override reaches
+       them without any widget change.
 
-           gui()->push_style_color( GUI_COL_WIDGET_BG, GUI_COLOR( 0xFF, 0, 0, 0xFF ) );
-           gui()->push_style_var( GUI_VAR_WIDGET_PAD, 20.0f );
+       GUI_EL_ALL as the state selects the whole row -- "recolour the text", the common case --
+       and still counts as ONE push, so it takes one pop.
+
+           gui()->push_style_color( GUI_EL_BG, GUI_EL_IDLE, GUI_COLOR( 0xFF, 0, 0, 0xFF ) );
+           gui()->push_style_var( GUI_VAR_PAD, 20.0f );
            gui()->button( "Big Red" );
            gui()->pop_style_var( 1 );
            gui()->pop_style_color( 1 ); */
 
-    void ( *push_style_color )( gui_col_t slot, u32 abgr );
+    void ( *push_style_color )( gui_el_role_t role, gui_el_state_t state, u32 abgr );
     void ( *pop_style_color  )( u32 count );
-    void ( *next_style_color )( gui_col_t slot, u32 abgr );
+    void ( *next_style_color )( gui_el_role_t role, gui_el_state_t state, u32 abgr );
     void ( *push_style_var   )( gui_style_var_t var, f32 value );
     void ( *pop_style_var    )( u32 count );
     void ( *next_style_var   )( gui_style_var_t var, f32 value );
-
-    /* style_color() -- resolved read of one palette slot (installed value + push/next
-       overrides): the value a stock widget would paint with right now.  The generic door for
-       custom chrome holding a gui_col_t; a render that speaks roles and states wants el_color.
-       style_color_name() is the engine's display name for a slot, so a style editor enumerates
-       the palette instead of keeping a parallel table in step with an enum it does not own. */
-    u32         ( *style_color      )( gui_col_t slot );
-    const char* ( *style_color_name )( gui_col_t slot );
 
     /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
        BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
@@ -1366,7 +1363,7 @@ typedef struct gui_api_s
     /* Global indicator-shape selectors -- set the default check / bullet / arrow glyph the chrome
        draws (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t).  These are style
        state, not draw calls: scope a change locally instead with push_style_var on
-       GUI_VAR_CHECK_STYLE / _BULLET_STYLE / _ARROW_STYLE. */
+       GUI_VAR_CHECK_SHAPE / _BULLET_SHAPE / _ARROW_SHAPE. */
     void ( *set_check_style  )( u8 style );
     void ( *set_bullet_style )( u8 style );
     void ( *set_arrow_style  )( u8 style );
@@ -1401,14 +1398,22 @@ typedef struct gui_api_s
        COL_* macros read, so a push_style_color around your widget behaves exactly as it does
        around a stock one.
 
-       el_style -- the raw INSTALLED element style, mutable: the kit (S3) tuning door for
-       INSTALLING a look.  Ad-hoc writes last until the next style landing re-installs them; a kit
-       that OWNS the look registers style_source_set (GUI_STYLE) so its palette is re-derived
-       rather than clobbered at every landing.  Do not read ->col[][] through it at paint time --
-       that bypasses the style stack; use el_color. */
+       style_edit -- the raw INSTALLED style of the current set, mutable: the kit (S3) tuning door
+       for INSTALLING a look, and the same gui_style_t a theme is authored as.  Ad-hoc writes last
+       until the next style landing re-installs them; a kit that OWNS the look registers
+       style_source_set (or style_set_create) so its style is re-derived rather than clobbered at
+       every landing.  Do not read ->col[][] through it at paint time -- that bypasses the style
+       stack; use el_color. */
     gui_el_state_t  ( *item_phase )( gui_item_state_t st );
     u32             ( *el_color   )( gui_el_role_t role, gui_el_state_t state );
-    gui_el_style_t* ( *el_style   )( void );
+    gui_style_t*    ( *style_edit )( void );
+
+    /* Display names for the schema's three axes -- engine-owned, so a style editor walks the
+       roles, the states, and the vars instead of keeping parallel tables in step with enums it
+       does not own.  An unnamed index reads "?" rather than running off the end. */
+    const char*     ( *el_role_name   )( gui_el_role_t role );
+    const char*     ( *el_state_name  )( gui_el_state_t state );
+    const char*     ( *style_var_name )( gui_style_var_t var );
 
     /*=====================================  the component / render pairs  ======================================*/
 

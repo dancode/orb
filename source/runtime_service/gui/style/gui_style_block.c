@@ -30,15 +30,17 @@
 // clang-format off
 
 /*==============================================================================================
-    Capacities.  The store is sized for the split ahead (an instanced element schema plus
-    chrome's tokens, its vars, and a kit block or two); the work set only ever holds one
-    instance per block, so it stays a fraction of the store.  Both are asserted at register
-    time -- an overflow is a build-time authoring error, not a runtime condition.
+    Capacities.  The store carries every slot of every instance, so it scales with
+    GUI_STYLE_SET_MAX: one gui_style_t is ~50 slots, so the four built-in sets alone are ~200.
+    The work set only ever holds one instance per block, so it stays a fraction of the store.
+    Both are asserted at register time -- an overflow is an authoring error, not a runtime
+    condition, but it fires on the first frame rather than at compile time, so the store is
+    sized with real headroom for another block (a kit's own) and a wider schema.
 ==============================================================================================*/
 
 #define STYLE_BLOCK_MAX  8      // registered blocks
-#define STYLE_STORE_MAX  256    // installed slots: all blocks, all instances
-#define STYLE_WORK_MAX   128    // working slots: all blocks, current instance only
+#define STYLE_STORE_MAX  1024   // installed slots: all blocks, all instances
+#define STYLE_WORK_MAX   256    // working slots: all blocks, current instance only
 
 /* Refill one instance's run of the store.  Called for every instance at every store refill, so
    a block re-derives its installed values instead of being clobbered.  `instance` is which run
@@ -48,7 +50,7 @@ typedef void ( *style_install_fn )( void* user, u32* dst, u16 count, u16 instanc
 
 /* WHEN a block re-derives.  The distinction is about where the block's data comes from, and it
    is load-bearing: a block whose installed values can be POKED between landings (the element
-   style, through gui_el_style()) must not be refilled per frame or the poke dies immediately;
+   style, through gui_style_edit()) must not be refilled per frame or the poke dies immediately;
    a block that mirrors live state (s_style, written by set_check_style with no apply) must be,
    or the write never lands. */
 typedef enum
@@ -133,7 +135,7 @@ style_block_work_base( u16 blk )
 }
 
 /* The store run of one instance -- the INSTALLED values, writable.  The door a style source
-   (and gui_el_style) writes its look through; reads go to the work set instead. */
+   (and gui_style_edit) writes its look through; reads go to the work set instead. */
 static u32*
 style_block_instance( u16 blk, u16 inst )
 {

@@ -6,11 +6,11 @@
     not a privileged default.  Every stock_* fills EXACTLY the rect it is handed -- no hidden
     padding, no flow, no layout reservation -- and composes the three ambient services:
     behavior (the comp_* logic core, or gui_item directly for the inert three), presentation
-    (the public draw_* surface), and the slim element style (gui_el_style_t, gui_element.h).
+    (the public draw_* surface), and the element style axis (gui_element.h).
 
-    Naming: stock_* is the WIDGET SET; el_* is the STYLE STRATUM it paints from (gui_el_style_t,
-    gui_el_color, GUI_EL_BG ...).  Two vocabularies, deliberately -- a user widget is a sibling
-    of a stock_* render and reads the same el_ palette.
+    Naming: stock_* is the WIDGET SET; el_* is the STYLE AXIS it paints from (gui_el_color,
+    GUI_EL_BG ...).  Two vocabularies, deliberately -- a user widget is a sibling of a stock_*
+    render and reads the same cells.
 
     Style contract: renders resolve every color through style_el_col (the style unit) -- one
     read of the element slot, which holds the installed value with any push_style_color /
@@ -19,9 +19,8 @@
     push_style_color around a stock_* the same way.  gui_el_color is this same seam published
     for a user's own render.  The installed values are re-derived at every style landing
     (gui_style_apply / theme_set / theme_reset / font activation), through the registered style
-    source if a kit owns the look (gui_style_source_set); a kit may also poke gui_el_style()
-    ad hoc.  Renders still never NAME a gui_col_t slot or walk the theme -- style_el_col is
-    the one seam.
+    source if a kit owns the look (gui_style_source_set); a kit may also poke gui_style_edit()
+    ad hoc.  Renders still never walk the theme -- style_el_col is the one seam.
 
     Dependency contract: the stock_* renders call gui_core (item, ids, io, redraw) + gui_draw
     (draw_*) + gui_rect + the comp_* components only -- NEVER the flow layout engine -- and
@@ -33,12 +32,11 @@
 // clang-format off
 
 /*==============================================================================================
-    The element style lives in the style unit now.
+    The style lives in the style unit.
 
-    Its storage is the element BLOCK (style/gui_style_core.c): the installed run is laid out as
-    gui_el_style_t, so gui_el_style() hands back a typed view onto it and the theme projection
-    (g_el_slot_map) is an install-time step this unit no longer has to know about.  What stays
-    here is what stock actually is -- renders over that stratum, reading it through style_el_*.
+    Its storage is the style BLOCK (style/gui_style_core.c): the installed run is laid out as
+    gui_style_t, so gui_style_edit() hands back a typed view onto it.  What stays here is what
+    stock actually is -- renders over that schema, reading it through style_el_*.
 ==============================================================================================*/
 
 /* col shorthand for the element bodies below -- routed through style_el_col so a push_style_color
@@ -62,7 +60,7 @@ gui_item_phase( gui_item_state_t st )
 
 /* gui_el_color -- the resolved element palette read: the installed style (kit-owned when a style
    source is registered), with an active push_style_color / next_style_color override winning.
-   THE color door for a user widget: reading gui_el_style()->col[][] directly bypasses the style
+   THE color door for a user widget: reading gui_style_edit()->col[][] directly bypasses the style
    stack, so a push_style_color around a user widget would silently do nothing while it works on
    every stock widget.  This is the same seam the stock renders and chrome's COL_* macros read. */
 u32
@@ -98,7 +96,7 @@ el_visible_text( const char* label, char* buf, u32 bufsz )
 void
 gui_stock_panel( gui_rect_t r )
 {
-    gui_draw_frame( r, EL_COL( BG, DIM ), EL_COL( BORDER, DIM ), style_el_border_w() );
+    gui_draw_frame( r, EL_COL( PANEL, DIM ), EL_COL( BORDER, DIM ), WIN_BORDER );
 }
 
 /* A text run seated in r per align.  The one-role element; a colored variant is just
@@ -116,11 +114,11 @@ gui_stock_label( gui_rect_t r, gui_align_t align, const char* text )
 static void
 stock_button_label( gui_rect_t r, const char* text )
 {
-    f32 avail = r.w - 2.0f * style_el_pad();
+    f32 avail = r.w - 2.0f * WIDGET_PAD;
     if ( label_width( text ) <= avail )
         gui_draw_text_in( r, GUI_ALIGN_CENTER, EL_COL( TEXT, IDLE ), text );
     else
-        draw_label_fit( r.x + style_el_pad(), text_center_y( r.y, r.h ),
+        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ),
                         EL_COL( TEXT, IDLE ), text, avail );
 }
 
@@ -153,7 +151,7 @@ gui_stock_check( gui_rect_t r, const char* id_str, bool* v )
 
     gui_draw_frame( c.box, EL_COL( BG, DIM ),
                     ( c.state.hover || c.state.nav ) ? EL_COL( BORDER, HOT ) : EL_COL( BORDER, IDLE ),
-                    style_el_border_w() );
+                    WIN_BORDER );
     if ( *v )
         gui_draw_check_mark( gui_rect_pad( c.box, c.box.w * 0.22f ), EL_COL( ACCENT, IDLE ) );
 
@@ -213,8 +211,8 @@ gui_stock_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* 
 
     u32 lb = ( cy.prev.state.hover || cy.prev.state.nav ) ? EL_COL( BORDER, HOT ) : EL_COL( BORDER, IDLE );
     u32 rb = ( cy.next.state.hover || cy.next.state.nav ) ? EL_COL( BORDER, HOT ) : EL_COL( BORDER, IDLE );
-    gui_draw_frame( cy.prev_box, EL_COL( BG, DIM ), lb, style_el_border_w() );
-    gui_draw_frame( cy.next_box, EL_COL( BG, DIM ), rb, style_el_border_w() );
+    gui_draw_frame( cy.prev_box, EL_COL( BG, DIM ), lb, WIN_BORDER );
+    gui_draw_frame( cy.next_box, EL_COL( BG, DIM ), rb, WIN_BORDER );
     gui_draw_chevron( gui_rect_pad( cy.prev_box, cy.prev_box.w * 0.30f ), GUI_DIR_LEFT,  2.0f, EL_COL( TEXT, IDLE ) );
     gui_draw_chevron( gui_rect_pad( cy.next_box, cy.next_box.w * 0.30f ), GUI_DIR_RIGHT, 2.0f, EL_COL( TEXT, IDLE ) );
 
@@ -232,14 +230,14 @@ gui_stock_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* 
 bool
 gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
 {
-    gui_comp_input_t in = gui_comp_input( id_str, r, style_el_pad(), buf, bufsz );
+    gui_comp_input_t in = gui_comp_input( id_str, r, WIDGET_PAD, buf, bufsz );
     gui_item_state_t st = in.state;
 
     gui_draw_frame( r,
                     st.focused ? EL_COL( BG, ACTIVE ) : style_el_col( GUI_EL_BG, el_state( st ) ),
                     ( st.focused || st.hover || st.nav ) ? EL_COL( BORDER, HOT )
                                                          : EL_COL( BORDER, IDLE ),
-                    style_el_border_w() );
+                    WIN_BORDER );
 
     if ( in.selection.w > 0.0f )
         draw_fill( in.selection, EL_COL( ACCENT, DIM ) );
@@ -271,7 +269,7 @@ gui_stock_selectable( gui_rect_t r, const char* label, bool* selected )
 
     char        vis[ 128 ];
     const char* text = el_visible_text( label, vis, sizeof vis );
-    gui_rect_t  tr   = { r.x + style_el_pad(), r.y, r.w - 2.0f * style_el_pad(), r.h };
+    gui_rect_t  tr   = { r.x + WIDGET_PAD, r.y, r.w - 2.0f * WIDGET_PAD, r.h };
     gui_draw_text_in( tr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, EL_COL( TEXT, IDLE ), text );
 
     return s.state.clicked;

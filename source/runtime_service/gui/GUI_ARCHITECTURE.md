@@ -40,7 +40,7 @@ The two servers NEVER see each other. Everything else is a LIBRARY over them:
     gui_interact.c   interact/   interact/gui_interact.h         gesture mechanisms (move/resize/drag/feat)
     gui_flow.c       flow/       flow/gui_flow.h                 layout: THE rect producer
     gui_component.c  component/  component/gui_component_internal.h  widget LOGIC, no paint
-    gui_stock.c      stock/      gui_element.h (el_ palette) +   reference widget set (stock_* renders),
+    gui_stock.c      stock/      gui_element.h (el_ axis) +      reference widget set (stock_* renders),
                                  stock/gui_stock_internal.h      astride both servers
     gui_chrome.c     chrome/     chrome/gui_chrome.h             product windowing policy (6 folders)
     gui_debug.c      debug/      debug/gui_debug.h               server introspection (severable)
@@ -112,7 +112,7 @@ only its logic is shared. Four rungs, each a client of the one below:
   handle, and neither is favored.
 
 Status: the widget set is `stock_*` throughout; the old `el_*` widget names are gone (the `el_`
-prefix now names ONLY the style stratum -- `gui_el_style_t`, `gui_el_color`, `GUI_EL_BG`). Each
+prefix now names ONLY the style axis -- `gui_el_color`, `GUI_EL_BG`, `GUI_EL_HOT`). Each
 `gui_stock_*` render sits over a `gui_comp_*` logic core; all are public (`gui_host.h` / the
 vtable), and a user widget is the stock render's sibling over the same `comp_*` call.
 
@@ -140,7 +140,7 @@ The two verbs that make a user widget a real sibling, both public: `gui()->item_
 maps interaction to a palette state (ACTIVE / HOT / IDLE, nav counting as HOT) and
 `gui()->el_color( role, state )` is the RESOLVED palette read -- the same seam the stock renders
 and chrome's `COL_*` macros use, so `push_style_color` reaches a user widget exactly as it
-reaches a stock one. Reading `el_style()->col[][]` at paint time instead bypasses the style stack.
+reaches a stock one. Reading `style_edit()->col[][]` at paint time instead bypasses the stack.
 
 No component (deliberately): `stock_panel` / `stock_label` / `stock_meter` are inert paint -- no
 interaction, no logic to extract -- so they stay render-only. Not every widget needs one. Proven
@@ -503,7 +503,7 @@ it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
 - Style: `style_get()` + edit + `style_apply()`, or scoped `push_style_color/pop_style_color`.
   A kit that owns the whole application's look registers `style_source_set(fn, user)` on the
   default set; the source is invoked at every style landing (font / theme / scale) to re-install
-  `el_style()`, deriving from the chrome theme first so it need only overwrite what it owns.
+  `style_edit()`, seeded from the chrome theme first so it need only overwrite what it owns.
   A kit that wants its look BESIDE chrome's takes a set of its own -- `style_set_create(fn,
   user)` once, then `style_set_push/pop` around its UI. Both looks stay installed; neither
   clobbers the other.

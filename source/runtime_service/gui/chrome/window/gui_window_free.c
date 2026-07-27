@@ -180,7 +180,7 @@ bool gui_window_anim_is_enabled( void )    { return s_win_anim; }
 
 /* Shelf chip width -- wide enough for a legible title, resting on the grid lattice. */
 static f32
-window_shelf_chip_w( void ) { return lat_ceil( WIN_TITLE_H * 7.0f, s_style.grid_quantum ); }
+window_shelf_chip_w( void ) { return lat_ceil( WIN_TITLE_H * 7.0f, GRID_Q ); }
 
 /* A window occupies a shelf slot only while LIVE: minimized and emitted this frame or last (the
    window_begin recency test `appearing` uses).  A closed chip (its last_frame deliberately
@@ -335,7 +335,7 @@ static f32 window_min_h( f32 title_h ) { return title_h + WIDGET_H + WIN_BORDER;
    would smooth it.  q<=1 or GUI_GRID_LATTICE=0 -> identity (free-pixel windows, the pre-grid feel).
    The per-gesture callers snap the MOVING edge only and hold the pinned far edge fixed, so a snap
    never drags the opposite edge. */
-static f32 window_snap( f32 v ) { return lat_round( v, s_style.grid_quantum ); }
+static f32 window_snap( f32 v ) { return lat_round( v, GRID_Q ); }
 
 /*==============================================================================================
     Auto-resize
@@ -385,7 +385,7 @@ window_fit_size( const char* title, f32 title_h, f32 mb_h, bool collapsible,
        case.  Ceil (not round) so the hug never crops the content it was measured to hold; the
        content extent is already lattice-ceiled, so this only absorbs the sub-quantum chrome slack
        (the free-pixel border). */
-    u32 q = s_style.grid_quantum;
+    u32 q = GRID_Q;
     *out_w = lat_ceil( want_w, q );
     *out_h = lat_ceil( want_h, q );
 }

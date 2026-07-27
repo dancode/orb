@@ -104,7 +104,7 @@ draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 color )
     gui_draw_polyline( p, 3, thickness, GUI_STROKE_CENTER, false, color );
 }
 
-/* draw_arrow + draw_collapse_arrow (the GUI_VAR_ARROW_STYLE pick) live in
+/* draw_arrow + draw_collapse_arrow (the GUI_VAR_ARROW_SHAPE pick) live in
    stock/gui_symbol_style.c; the chevron variant routes back through
    gui_draw_chevron below. */
 
@@ -134,7 +134,7 @@ draw_check_mark( gui_rect_t box, u32 color )
    affordance mark).  Scales off min(w,h) like draw_check_mark rather than off box.h alone like
    draw_arrow, so it drops cleanly into a narrow side column without overrunning the column width.
    Fixed DOWN orientation -- unlike draw_arrow it is not a general direction glyph and does not
-   follow GUI_VAR_ARROW_STYLE; the toolbar affordance stays this one mark regardless of theme. */
+   follow GUI_VAR_ARROW_SHAPE; the toolbar affordance stays this one mark regardless of theme. */
 void
 draw_dropdown_arrow( gui_rect_t box, u32 color )
 {
@@ -149,7 +149,7 @@ draw_dropdown_arrow( gui_rect_t box, u32 color )
 }
 
 /* Bullet glyph: a small filled disc centered at (cx,cy) (Dear ImGui RenderBullet).  The round
-   sibling of the square bullet -- the bullet widget picks between them on GUI_VAR_BULLET_STYLE. */
+   sibling of the square bullet -- the bullet widget picks between them on GUI_VAR_BULLET_SHAPE. */
 void
 draw_bullet( f32 cx, f32 cy, f32 r, u32 color )
 {

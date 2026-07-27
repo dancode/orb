@@ -9,99 +9,109 @@
     paints with.  Stack position: after the core pair (each unit .c lists its sub-stack).
 
     Its own TU (root gui_style.c: gui_theme.c + gui_style_block.c + gui_style_core.c +
-    gui_stacks.c).  Values live in the block backend (gui_style_block.c): every slot, whatever
-    its vocabulary, is a based run in one store / working-set pair.
+    gui_stacks.c).  Values live in the block backend (gui_style_block.c): ONE block whose slot
+    layout is gui_style_t itself, instanced once per style set, so chrome and a kit each own a
+    complete style rather than a kit owning a subset of one.
     Resolution is PURE: interact state arrives as PARAMETERS (col_item_bg( st )),
     never queried from core, so style resolves with no interact server present -- the one
     sanctioned exception is col_item_bg_anim's explicit ride on core's keyed anim utility.
-    The public color id table (gui_col_t, gui.h) is a NAMING layer over the blocks: a name
-    resolves to one or more slots, read back through gui_style_color() / gui_style_color_name().
 
 ==============================================================================================*/
 
 // clang-format off
 
 /*==============================================================================================
-    The element stratum -- resolved reads over the element block
+    The resolved reads -- the stack-honoring accessors every tier-2 role consumes.
 ==============================================================================================*/
 
 const gui_style_t* style_active( void );   /* style/gui_theme.c: the active scaled style */
 
-/* A style LANDING (gui_style_core.c): theme / font / scale changed, so every block re-derives
-   its installed values.  Driven across the unit seam by gui_style_apply (frame/gui_frame_font.c)
-   after the metrics rescale -- which is where the element stratum tracks a theme or font change. */
+/* A style LANDING (gui_style_core.c): theme / font / scale changed, so every set re-derives its
+   installed values.  Driven across the unit seam by gui_style_apply (frame/gui_frame_font.c)
+   after the metrics rescale -- which is where the style tracks a theme or font change. */
 void style_landing( void );
 
-/* gui_style_core.c: resolve one element value -- the installed element style with any
-   push_style_* / next_style_* override applied, since both live in the same slot.  THE seam
-   every stock render, every user widget (through gui_el_color), and chrome's element-shaped
-   COL_* macros read. */
+/* The two coordinate systems, and there are only two.  A color is a (role, state) cell of the
+   element grid; a scalar is a gui_style_var_t.  Both are the installed value with any
+   push_style_* / next_style_* override already applied, since an override lands in the same
+   slot -- one indexed load, nothing to scan. */
 u32 style_el_col( u8 role, u8 state );
+f32 style_var   ( gui_style_var_t var );
 
-/* The metric twins: the element spacing the rect dispatcher applies (cell_next_w's inter-cell
-   gap + the region / label pad) and the frame line width the renders inset by.  WIDGET_PAD /
-   WIDGET_GAP read through these and GUI_VAR_WIDGET_PAD / _GAP push onto the same slots, so a
-   kit's installed spacing and a scale_push meet in one place and zero means zero. */
-f32 style_el_pad( void );
-f32 style_el_gap( void );
-f32 style_el_border_w( void );
+/* One field of one density-ramp step (field: 0 = row, 1 = pad, 2 = gap).  Read through the block
+   like everything else, so a kit's DENSE is the kit's own and not chrome's. */
+f32 style_scale( gui_scale_t s, u32 field );
 
 /*==============================================================================================
-    Style resolution + the vocabulary macros
+    1. METRICS -- can move a rect
 ==============================================================================================*/
 
-/* style resolution (gui_style_core.c) -- the stack-honoring reads every tier-2 role consumes,
-   and the vocabulary macros over them (the composer sizes cells with the same numbers the
-   widgets and skin read). */
-f32 style_var( gui_style_var_t slot );
-u32 style_col( gui_col_t slot );
+#define WIDGET_H      style_var( GUI_VAR_ROW       )
+#define WIDGET_PAD    style_var( GUI_VAR_PAD       )
+#define WIDGET_GAP    style_var( GUI_VAR_GAP       )
+#define WIN_BORDER    style_var( GUI_VAR_BORDER    )
+#define CHECKBOX_SZ   style_var( GUI_VAR_INDICATOR )
+#define SLIDER_KNOB_W style_var( GUI_VAR_GUTTER    )
+#define WIDGET_MIN_W  style_var( GUI_VAR_MIN_CELL  )
+#define WIN_TITLE_H   style_var( GUI_VAR_TITLE_H   )
 
-/* 1. METRICS -- can move a rect */
-#define WIDGET_H      style_var( GUI_VAR_LINE_SIZE     )
-#define WIDGET_GAP    style_el_gap()   /* installed layout style (base) + var-stack override */
-#define WIDGET_PAD    style_el_pad()   /*   -- so a set-once / kit / zero layout style drives flow */
-#define WIDGET_MIN_W  style_var( GUI_VAR_MIN_CELL_W    )
-#define WIN_BORDER    style_var( GUI_VAR_WIN_BORDER    )
-#define WIN_TITLE_H   style_var( GUI_VAR_WIN_TITLE_H   )
-#define CHECKBOX_SZ   style_var( GUI_VAR_CHECKBOX_SZ   )
-#define SLIDER_KNOB_W style_var( GUI_VAR_SLIDER_KNOB_W )
+/* The lattice pitch, as the u32 the lat_* rounders take.  A style value like any other, so a
+   kit can carry its own grid; 0 / 1 means the lattice is off. */
+#define GRID_Q        ( (u32)style_var( GUI_VAR_GRID_Q ) )
 
-/* 2. SKIN -- paint-only corner-radius categories + insets (authored per theme in
-   style/gui_theme.c; they move no rect, which is what separates them from the metrics above). */
-#define ROUND_WIN        style_var( GUI_VAR_WIN_ROUNDING    )
-#define ROUND_WIDGET     style_var( GUI_VAR_WIDGET_ROUNDING )
-#define ROUND_GRAB       style_var( GUI_VAR_GRAB_ROUNDING   )
-#define CHECK_PAD        ( (f32)s_style.checkmark_pad )
-#define WIN_FOCUS_BORDER style_var( GUI_VAR_WIN_FOCUS_BORDER )
+/*==============================================================================================
+    2. SKIN -- paint-only: corner radii and the mark-shape picks (authored per theme in
+    style/gui_theme.c).  They move no rect, which is what separates them from the metrics above.
+==============================================================================================*/
 
-/* The COL_* color vocabulary, and the block split made visible: the element-shaped subset
-   speaks roles x states over the ELEMENT block (the stratum chrome shares with stock widgets
-   and a kit's own), the rest are chrome's PRIVATE TOKENS -- the colors with no role.  Both are
-   one indexed load; style_col( gui_col_t ) is the generic door for code holding a slot id. */
-#define COL_TEXT         style_el_col( GUI_EL_TEXT,   GUI_EL_IDLE   )
-#define COL_TEXT_DIM     style_el_col( GUI_EL_TEXT,   GUI_EL_DIM    )
-#define COL_WIDGET_BG    style_el_col( GUI_EL_BG,     GUI_EL_IDLE   )
-#define COL_WIDGET_HOT   style_el_col( GUI_EL_BG,     GUI_EL_HOT    )
-#define COL_WIDGET_ACT   style_el_col( GUI_EL_BG,     GUI_EL_ACTIVE )
-#define COL_CHILD_BG     style_el_col( GUI_EL_BG,     GUI_EL_DIM    )
-#define COL_BORDER       style_el_col( GUI_EL_BORDER, GUI_EL_IDLE   )
-#define COL_WIDGET_FG    style_el_col( GUI_EL_ACCENT, GUI_EL_IDLE   )
-#define COL_CHECK_MARK   style_el_col( GUI_EL_ACCENT, GUI_EL_ACTIVE )
-#define COL_SLIDER_TRACK style_el_col( GUI_EL_ACCENT, GUI_EL_DIM    )
-#define COL_NAV          style_el_col( GUI_EL_ACCENT, GUI_EL_HOT    )
+#define ROUND_WIDGET  style_var( GUI_VAR_ROUND       )   /* control frames, knobs, grabs */
+#define ROUND_WIN     style_var( GUI_VAR_PANEL_ROUND )   /* windows, children, popups    */
 
-#define COL_WIN_BG       style_col( GUI_COL_WINDOW_BG    )
-#define COL_TITLE_BG     style_col( GUI_COL_TITLE_BG     )
-#define COL_RESIZE_HOT   style_col( GUI_COL_RESIZE_HOT   )
-#define COL_INPUT_BG     style_col( GUI_COL_INPUT_BG     )
-#define COL_INPUT_FOCUS  style_col( GUI_COL_INPUT_FOCUS  )
-#define COL_CURSOR       style_col( GUI_COL_CURSOR       )
-#define COL_NAV_CAPTURE  style_col( GUI_COL_NAV_CAPTURE  )
-#define COL_FOCUS_BORDER style_col( GUI_COL_FOCUS_BORDER )
+/*==============================================================================================
+    3. COLORS -- the element grid, one macro per cell and no cell with two names.
+
+    This table IS gui_style_t.col: five roles down, four states across.  Every name below is the
+    established one for that cell, so the 180 read sites above never learned that the flat
+    palette and chrome's private tokens went away -- which is exactly why they could.
+
+    Reading across a row shows what a state MEANS for that role; the axis is documented once, in
+    gui_element.h.  A render that speaks roles and states generically wants gui()->el_color
+    instead -- same seam, no macro.
+==============================================================================================*/
+
+/*                          role              IDLE / HOT / ACTIVE / DIM                        */
+#define COL_WIN_BG        style_el_col( GUI_EL_PANEL,  GUI_EL_IDLE   )  /* window body        */
+#define COL_TITLE_BG      style_el_col( GUI_EL_PANEL,  GUI_EL_HOT    )  /* title bar          */
+#define COL_TITLE_ACTIVE  style_el_col( GUI_EL_PANEL,  GUI_EL_ACTIVE )  /* focused title bar  */
+#define COL_CHILD_BG      style_el_col( GUI_EL_PANEL,  GUI_EL_DIM    )  /* child / recessed   */
+
+#define COL_WIDGET_BG     style_el_col( GUI_EL_BG,     GUI_EL_IDLE   )  /* control face       */
+#define COL_WIDGET_HOT    style_el_col( GUI_EL_BG,     GUI_EL_HOT    )  /* hovered face       */
+#define COL_WIDGET_ACT    style_el_col( GUI_EL_BG,     GUI_EL_ACTIVE )  /* pressed / focused  */
+#define COL_WIDGET_DIM    style_el_col( GUI_EL_BG,     GUI_EL_DIM    )  /* inert face         */
+
+#define COL_BORDER        style_el_col( GUI_EL_BORDER, GUI_EL_IDLE   )  /* frame line         */
+#define COL_RESIZE_HOT    style_el_col( GUI_EL_BORDER, GUI_EL_HOT    )  /* hovered edge       */
+#define COL_FOCUS_BORDER  style_el_col( GUI_EL_BORDER, GUI_EL_ACTIVE )  /* focused ring       */
+#define COL_BORDER_DIM    style_el_col( GUI_EL_BORDER, GUI_EL_DIM    )  /* subdued frame      */
+
+#define COL_TEXT          style_el_col( GUI_EL_TEXT,   GUI_EL_IDLE   )  /* body text, caret   */
+#define COL_TEXT_HOT      style_el_col( GUI_EL_TEXT,   GUI_EL_HOT    )  /* on a hot face      */
+#define COL_TEXT_ACT      style_el_col( GUI_EL_TEXT,   GUI_EL_ACTIVE )  /* on a pressed face  */
+#define COL_TEXT_DIM      style_el_col( GUI_EL_TEXT,   GUI_EL_DIM    )  /* secondary text     */
+
+#define COL_WIDGET_FG     style_el_col( GUI_EL_ACCENT, GUI_EL_IDLE   )  /* value fill         */
+#define COL_NAV           style_el_col( GUI_EL_ACCENT, GUI_EL_HOT    )  /* nav highlight      */
+#define COL_CHECK_MARK    style_el_col( GUI_EL_ACCENT, GUI_EL_ACTIVE )  /* mark, captured nav */
+#define COL_SLIDER_TRACK  style_el_col( GUI_EL_ACCENT, GUI_EL_DIM    )  /* empty track        */
+
+/*==============================================================================================
+    Stacks, sets, and the seam hooks
+==============================================================================================*/
 
 /* style stack push/pop by slot (gui_style_core.c). */
-void style_push_var( gui_style_var_t slot, f32 value );
-void style_pop_var( u32 count );
+void style_push_var( gui_style_var_t var, f32 value );
+void style_pop_var ( u32 count );
 
 /* True while no ambient style scope is open (the volatile-replay precondition). */
 bool style_stacks_empty( void );
@@ -137,7 +147,7 @@ extern u32         s_font_size; /* style/gui_theme.c -- active em (0 = never set
    parameters; col_item_bg_anim alone rides core's keyed anim utility, explicitly. */
 u32 col_item_bg( gui_item_state_t st );
 u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
-u32 col_frame_bg( gui_item_state_t st, u32 idle_color_enum );
+u32 col_frame_bg( gui_item_state_t st, u32 idle_color );
 
 /* The per-item ambient wrappers that DRIVE the seam hooks above (item_flags_resolve /
    item_flags_chrome_reset) live in stock/gui_adornment.c, declared in stock/gui_stock_internal.h:

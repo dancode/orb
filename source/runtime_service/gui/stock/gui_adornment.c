@@ -69,7 +69,7 @@ item_flags_chrome_reset( void )
     style_chrome_reset();   /* drop lingering next_style_* overrides; keep the push/pop stack */
     /* Chrome (window / child / dock backgrounds, title bars, borders) defaults to the window radius,
        read after the item override is cleared so a trailing widget's next-* radius cannot leak in. */
-    draw_set_rounding( style_var( GUI_VAR_WIN_ROUNDING ) );
+    draw_set_rounding( style_var( GUI_VAR_PANEL_ROUND ) );
 }
 
 /*==============================================================================================
@@ -136,7 +136,7 @@ gui_field_row( const char* label )
    own background so the fill leaves the border visible (nav_item_register invokes it across
    the core unit's one paint seam -- see the upward-seam block in core/gui_core.h).
    captured selects the ring color: plain nav-highlight (COL_NAV) vs. a value widget that has
-   captured the keyboard for Left/Right editing (COL_NAV_CAPTURE) -- this is the one adornment
+   captured the keyboard for Left/Right editing (COL_CHECK_MARK) -- this is the one adornment
    every widget passes through, so it is the single place that makes "input captured" read as a
    real, theme-wide-consistent state change instead of looking identical to plain nav focus. */
 void
@@ -144,7 +144,7 @@ draw_nav_ring( gui_rect_t r, bool captured )
 {
     draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
                             r.w + 2.0f * NAV_RING, r.h + 2.0f * NAV_RING,
-                            WIN_BORDER, 0, captured ? COL_NAV_CAPTURE : COL_NAV );
+                            WIN_BORDER, 0, captured ? COL_CHECK_MARK : COL_NAV );
 }
 
 /* Focused-window frame: a bolder, accent-coloured outline painted over the window's own border to
@@ -155,7 +155,7 @@ draw_nav_ring( gui_rect_t r, bool captured )
 void
 draw_window_focus_border( gui_rect_t r )
 {
-    f32 t = WIN_FOCUS_BORDER;
+    f32 t = WIN_BORDER;
     if ( t <= 0.0f ) return;
     draw_outline( r, t, COL_FOCUS_BORDER );
 }

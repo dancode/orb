@@ -97,8 +97,8 @@ medit_paint( gui_rect_t inner, const char* buf, u32 len, const gui_medit_state_t
             bool caret_vis = ( ( (u32)( es->blink_t * 2.0f ) ) & 1u ) == 0u;
             f32  cxp       = text_x + text_x_at( buf + ls, es->cursor - ls );
             if ( caret_vis && cxp >= clip_x0 - 0.5f && cxp <= clip_x1 + 0.5f )
-                draw_fill( ( gui_rect_t ){ cxp, ry, (f32)s_style.cursor_w, char_h },
-                           COL_CURSOR );
+                draw_fill( ( gui_rect_t ){ cxp, ry, (f32)WIN_BORDER, char_h },
+                           COL_TEXT );
         }
 
         if ( le >= len ) break;
@@ -132,7 +132,7 @@ medit_field_edit( gui_id_t id, char* buf, u32 bufsz )
     gui_item_state_t st = item_state( id, content, ITEM_FOCUSABLE );
 
     /* Field-tinted fill under the text: the input-box read on top of the child's own frame. */
-    draw_fill( content, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );
+    draw_fill( content, st.focused ? COL_WIDGET_ACT : col_frame_bg( st, COL_WIDGET_BG ) );
 
     /* Content rect: the cell inset by WIDGET_PAD on left / right (the engine + paint work in this
        space, so neither sees the widget's padding); vertical extent unchanged -- rows start at

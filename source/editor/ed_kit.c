@@ -23,7 +23,7 @@ ed_prop_row( const char* label )
     gui_rect_t lab = gui_rect_cut_left( &row, row.w * ED_PROP_LABEL_FRAC );
 
     gui()->draw_text_in( lab, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
-                         gui()->el_style()->col[ GUI_EL_TEXT ][ GUI_EL_DIM ], label );
+                         gui()->el_color( GUI_EL_TEXT, GUI_EL_DIM ), label );
     return row;
 }
 

@@ -86,38 +86,35 @@ void gui_disabled_end( void ) { item_flag_pop(); }
 /*==============================================================================================
     push_style_color / push_style_var (+ pop / next) -- the push-model theme override.
 
-    push overrides a slot for every widget until the matching pop; pop takes a count, so two pushes
-    are undone with one pop_style_*( 2 ), mirroring ImGui.  next_style_* overrides a slot for just
-    the next widget, no pop needed.  Colors are abgr (GUI_COLOR); vars are f32 pixels.  The slots
-    are gui_col_t / gui_style_var_t.  See gui_style_core.c for the resolution model.
+    push overrides a cell for every widget until the matching pop; pop takes a count, so two pushes
+    are undone with one pop_style_*( 2 ), mirroring ImGui.  next_style_* overrides for just the
+    next widget, no pop needed.  Colors are abgr (GUI_COLOR); vars are f32 pixels.
 
-        gui()->push_style_color( GUI_COL_WIDGET_BG,  GUI_COLOR( 0xFF,0,0,0xFF ) );  // red
-        gui()->push_style_color( GUI_COL_WIDGET_HOT, GUI_COLOR( 0xFF,0x40,0x40,0xFF ) );
+    A color names a (role, state) cell of the element grid.  GUI_EL_ALL selects the whole state
+    row as ONE push, which is what recolouring "the text" or "the border" nearly always means --
+    and it stays one entry, so it takes one pop:
+
+        gui()->push_style_color( GUI_EL_BG, GUI_EL_IDLE, GUI_COLOR( 0xFF,0,0,0xFF ) );      // red
+        gui()->push_style_color( GUI_EL_BG, GUI_EL_HOT,  GUI_COLOR( 0xFF,0x40,0x40,0xFF ) );
         gui()->button( "Red Button" );
-        gui()->pop_style_color( 2 );                                                    // both
+        gui()->pop_style_color( 2 );                                             // both
 
-        gui()->push_style_var( GUI_VAR_WIDGET_PAD, 20.0f );
+        gui()->push_style_color( GUI_EL_TEXT, GUI_EL_ALL, GUI_COLOR( 0,0xFF,0,0xFF ) );
+        gui()->button( "Green label, hovered or not" );
+        gui()->pop_style_color( 1 );                                             // all four cells
+
+        gui()->push_style_var( GUI_VAR_PAD, 20.0f );
         gui()->button( "Roomy" );
         gui()->pop_style_var( 1 );
 ==============================================================================================*/
 
-void gui_push_style_color( gui_col_t slot, u32 abgr )       { style_push_color( slot, abgr ); }
-void gui_pop_style_color ( u32 count )                        { style_pop_color( count ); }
-void gui_next_style_color( gui_col_t slot, u32 abgr )       { style_next_color( slot, abgr ); }
+void gui_push_style_color( gui_el_role_t role, gui_el_state_t state, u32 abgr ) { style_push_color( role, state, abgr ); }
+void gui_pop_style_color ( u32 count )                                          { style_pop_color( count ); }
+void gui_next_style_color( gui_el_role_t role, gui_el_state_t state, u32 abgr ) { style_next_color( role, state, abgr ); }
 
 void gui_push_style_var( gui_style_var_t var, f32 value )   { style_push_var( var, value ); }
 void gui_pop_style_var ( u32 count )                          { style_pop_var( count ); }
 void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( var, value ); }
-
-/* Resolved read of one palette slot -- the installed value with any push / next override
-   applied, the same value a stock widget would paint with right now.  The generic door for code
-   holding a gui_col_t: custom chrome that wants the theme's border or backgrounds reads it here
-   and rides the stacks like stock chrome does.  (A render that speaks roles and states should
-   use el_color instead -- one load, no route.) */
-u32 gui_style_color( gui_col_t slot )
-{
-    return ( slot < GUI_COL_COUNT ) ? style_col( slot ) : 0u;
-}
 
 /*==============================================================================================
     scale_push / scale_pop -- scope a named density step (the theme's scale ramp, gui_scale_t)
@@ -149,14 +146,19 @@ u32 gui_style_color( gui_col_t slot )
         }
 ==============================================================================================*/
 
+/* The ramp steps read through style_scale, not s_style, so a step means whatever the CURRENT
+   style set says it means -- a kit's DENSE is the kit's own, exactly like its colors. */
+#define SCALE_ROW 0u
+#define SCALE_PAD 1u
+#define SCALE_GAP 2u
+
 void
 gui_scale_push( gui_scale_t s )
 {
     if ( (u32)s >= GUI_SCALE_COUNT ) s = GUI_SCALE_STD;   /* clamp, like the other stacks */
-    const gui_scale_metrics_t* m = &s_style.scales[ s ];
-    style_push_var( GUI_VAR_LINE_SIZE,  (f32)m->row );
-    style_push_var( GUI_VAR_WIDGET_PAD, (f32)m->pad );
-    style_push_var( GUI_VAR_WIDGET_GAP, (f32)m->gap );
+    style_push_var( GUI_VAR_ROW, style_scale( s, SCALE_ROW ) );
+    style_push_var( GUI_VAR_PAD, style_scale( s, SCALE_PAD ) );
+    style_push_var( GUI_VAR_GAP, style_scale( s, SCALE_GAP ) );
 }
 
 void
@@ -170,17 +172,23 @@ gui_scale_pop( void )
 f32
 gui_sz_scale_row( gui_scale_t s )
 {
-    if ( (u32)s >= GUI_SCALE_COUNT ) s = GUI_SCALE_STD;
-    return (f32)s_style.scales[ s ].row;
+    return style_scale( s, SCALE_ROW );
 }
 
 /* Global indicator-shape setters (gui_check_style_t / gui_bullet_style_t / gui_arrow_style_t):
-   persistent writes to the active style record (a style write is style-unit material).  Scope
-   a change with push_style_var on the matching GUI_VAR_*_STYLE
-   instead; the styled emitters that read the picks live in stock/gui_symbol_style.c. */
-void gui_set_check_style ( u8 style ) { s_style.check_style  = style; }
-void gui_set_bullet_style( u8 style ) { s_style.bullet_style = style; }
-void gui_set_arrow_style ( u8 style ) { s_style.arrow_style  = style; }
+   persistent writes to the active style record, landed immediately so the change is visible
+   this frame.  Scope a change with push_style_var on the matching GUI_VAR_*_SHAPE instead; the
+   styled emitters that read the picks live in stock/gui_symbol_style.c. */
+static void
+style_set_shape( gui_style_var_t var, u8 shape )
+{
+    s_style.var[ var ] = (f32)shape;
+    style_landing();     /* the installed sets re-derive from s_style, so this must re-run */
+}
+
+void gui_set_check_style ( u8 style ) { style_set_shape( GUI_VAR_CHECK_SHAPE,  style ); }
+void gui_set_bullet_style( u8 style ) { style_set_shape( GUI_VAR_BULLET_SHAPE, style ); }
+void gui_set_arrow_style ( u8 style ) { style_set_shape( GUI_VAR_ARROW_SHAPE,  style ); }
 
 // clang-format on
 /*============================================================================================*/

@@ -6,7 +6,7 @@
 
     The stock unit (root gui_stock.c) is the first layer astride both servers: styled paint
     over interact state.  Its PUBLIC surface (the stock_* renders, plus the el_ style stratum
-    gui_el_style_t / el_color) stays in gui_element.h and the GUI_STOCK band of gui_api.h;
+    el_color / the role x state axis) stays in gui_element.h and the GUI_STOCK band of gui_api.h;
     this header holds only what crosses a unit boundary inside the system -- the per-item
     wrappers the emit/chrome seams call, the styled painters the widgets and chrome compose,
     and the unit's memory seam.
@@ -15,7 +15,7 @@
     lower unit invokes across its documented upward seam is declared with that LOWEST consumer:
     item_flags_resolve / item_flags_chrome_reset and the child-box trio in flow/gui_flow.h,
     draw_nav_ring in core/gui_core.h, draw_drop_ring in interact/gui_interact.h.  The style
-    bridge this unit rides (el_style_derive, g_el_slot_map) stays in style/gui_style.h.
+    bridge this unit rides (style_el_col) stays in style/gui_style.h.
     What is left below is what only chrome and the widget set above consume.
 
 ==============================================================================================*/

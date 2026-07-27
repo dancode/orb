@@ -201,7 +201,7 @@ window_sync_native( gui_window_t* win, gui_win_flags_t flags )
        windows stay flush with its edges.  0 when the grid is off (grid_quantum <= 1 or the
        GUI_GRID_LATTICE compile switch is off) -> free-pixel resize, the pre-grid behavior. */
 #if GUI_GRID_LATTICE
-    i32 step = ( s_style.grid_quantum > 1 ) ? ( i32 )s_style.grid_quantum : 0;
+    i32 step = ( GRID_Q > 1 ) ? ( i32 )GRID_Q : 0;
 #else
     i32 step = 0;
 #endif

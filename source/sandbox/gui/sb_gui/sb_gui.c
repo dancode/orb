@@ -429,7 +429,7 @@ show_hud_demo( bool* p_open )
         gui_rect_t hb = gui_anchor_box( hud, 200.0f, 20.0f, GUI_ALIGN_LEFT | GUI_ALIGN_BOTTOM, pad );
         gui()->push_layout_overlay( hb );
             gui()->stack();
-            gui()->push_style_color( GUI_COL_WIDGET_FG, good );
+            gui()->push_style_color( GUI_EL_ACCENT, GUI_EL_IDLE, good );
             gui()->progress_bar( 0.72f, "HP 72/100" );
             gui()->pop_style_color( 1 );
         gui()->pop_layout();
@@ -751,32 +751,28 @@ se_color( const char* label, u32* field )
 
 /* One u8 metric/skin scalar -> an integer slider over [lo,hi].  Returns true on edit. */
 static bool
-se_u8( const char* label, u8* field, i32 lo, i32 hi )
+se_f32( const char* label, f32* field, f32 lo, f32 hi )
 {
-    i32 v = *field;
-    if ( gui()->slider_int( label, &v, lo, hi ) )
-    {
-        *field = (u8)v;
-        return true;
-    }
-    return false;
+    return gui()->slider_float( label, field, lo, hi );
 }
 
 /* One enum-valued u8 knob -> a combo of named variants.  Returns true on selection change. */
 static bool
-se_enum( const char* label, u8* field, const char* const* names, i32 count )
+se_shape( gui_style_var_t var, f32* vars, const char* const* names, i32 count )
 {
-    i32  cur     = ( *field < (u8)count ) ? *field : 0;
+    i32  cur     = (i32)vars[ var ];
     bool changed = false;
-    if ( gui()->combo_begin( label, names[ cur ], GUI_COMBO_NONE ) )
+    if ( cur < 0 || cur >= count ) cur = 0;
+
+    if ( gui()->combo_begin( gui()->style_var_name( var ), names[ cur ], GUI_COMBO_NONE ) )
     {
         for ( i32 i = 0; i < count; ++i )
         {
             bool sel = ( i == cur );
             if ( gui()->selectable( names[ i ], &sel ) )
             {
-                *field  = (u8)i;
-                changed = true;
+                vars[ var ] = (f32)i;
+                changed     = true;
             }
         }
         gui()->combo_end();
@@ -841,39 +837,32 @@ show_style_editor( bool* p_open )
     gui_style_t work    = *gui()->style_peek();
     bool        changed = false;
 
-    /* --- Colors ---------------------------------------------------------------------------- */
-    gui()->separator_text( "Colors" );
-    f32 label_width = gui()->text_size( "widget_rounding" ).x;
+    f32 label_width = gui()->text_size( "Separator Shape" ).x;
     gui()->form( GUI_LABEL_RIGHT, label_width );
-    // gui()->field_label_left( 90.0f );
 
-    for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
-        changed |= se_color( gui()->style_color_name( ( gui_col_t )i ), &work.colors[ i ] );
+    /* --- Colors: the element grid, a section per role --------------------------------------
+       Nothing here names an individual color.  The editor walks roles x states and asks the
+       engine for the labels, so a new role or state shows up with no edit to this file -- which
+       is the whole reason the flat palette and its parallel name table went away. */
+    for ( u32 r = 0; r < GUI_EL_ROLE_COUNT; ++r )
+    {
+        gui()->separator_text( gui()->el_role_name( ( gui_el_role_t )r ) );
+        gui()->push_id( gui()->el_role_name( ( gui_el_role_t )r ) );
+        for ( u32 s = 0; s < GUI_EL_STATE_COUNT; ++s )
+            changed |= se_color( gui()->el_state_name( ( gui_el_state_t )s ), &work.col[ r ][ s ] );
+        gui()->pop_id();
+    }
 
-    /* --- Metrics (can move rects) ---------------------------------------------------------- */
-    gui()->separator_text( "Metrics" );
-    changed |= se_u8( "line_size",     &work.line_size,     8, 48  );
-    changed |= se_u8( "widget_gap",    &work.widget_gap,    0, 24  );
-    changed |= se_u8( "widget_pad",    &work.widget_pad,    0, 24  );
-    changed |= se_u8( "min_cell_w",    &work.min_cell_w,    8, 128 );
-    changed |= se_u8( "grid_quantum",  &work.grid_quantum,  0, 32  );
-    changed |= se_u8( "win_border",    &work.win_border,    0, 8   );
-    changed |= se_u8( "win_title_h",   &work.win_title_h,   12, 48 );
-    changed |= se_u8( "checkbox_sz",   &work.checkbox_sz,   8, 32  );
-    changed |= se_u8( "slider_knob_w", &work.slider_knob_w, 4, 32  );
+    /* --- Metrics + skin scalars: walk the var enum ------------------------------------------
+       The shape picks live in the same array but want a combo rather than a slider, so they are
+       listed after the sliders with their value names -- the one place a range or a name list
+       still has to be authored per var. */
+    gui()->separator_text( "Metrics + Skin" );
+    for ( u32 v = 0; v < GUI_VAR_SCALED_COUNT; ++v )
+        changed |= se_f32( gui()->style_var_name( ( gui_style_var_t )v ), &work.var[ v ], 0.0f, 64.0f );
+    changed |= se_f32( gui()->style_var_name( GUI_VAR_GRID_Q ), &work.var[ GUI_VAR_GRID_Q ], 0.0f, 32.0f );
 
-    /* --- Skin: rounding + fine geometry (paint only) --------------------------------------- */
-    gui()->separator_text( "Skin - Rounding" );
-    changed |= se_u8( "win_rounding",     &work.win_rounding,     0, 24 );
-    changed |= se_u8( "widget_rounding",  &work.widget_rounding,  0, 16 );
-    changed |= se_u8( "grab_rounding",    &work.grab_rounding,    0, 16 );
-    changed |= se_u8( "win_focus_border", &work.win_focus_border, 0, 8  );
-    changed |= se_u8( "checkmark_pad",   &work.checkmark_pad,   0, 12 );
-    changed |= se_u8( "cursor_w",        &work.cursor_w,        1, 6  );
-    changed |= se_u8( "cursor_inset",    &work.cursor_inset,    0, 12 );
-
-    /* --- Skin: shape variants (enum combos) ------------------------------------------------ */
-    gui()->separator_text( "Skin - Shapes" );
+    gui()->separator_text( "Shapes" );
     static const char* const nm_check   [] = { "Tick", "Disc", "Cross" };
     static const char* const nm_bullet  [] = { "Disc", "Square" };
     static const char* const nm_arrow   [] = { "Filled", "Chevron" };
@@ -881,13 +870,13 @@ show_style_editor( bool* p_open )
     static const char* const nm_progress[] = { "Solid", "Gradient" };
     static const char* const nm_knob    [] = { "Bar", "Circle" };
     static const char* const nm_menu    [] = { "Plain", "Box" };
-    changed |= se_enum( "check_style",     &work.check_style,     nm_check,    3 );
-    changed |= se_enum( "bullet_style",    &work.bullet_style,    nm_bullet,   2 );
-    changed |= se_enum( "arrow_style",     &work.arrow_style,     nm_arrow,    2 );
-    changed |= se_enum( "separator_style", &work.separator_style, nm_sep,      2 );
-    changed |= se_enum( "progress_style",  &work.progress_style,  nm_progress, 2 );
-    changed |= se_enum( "slider_knob",     &work.slider_knob,     nm_knob,     2 );
-    changed |= se_enum( "menu_check",      &work.menu_check,      nm_menu,     2 );
+    changed |= se_shape( GUI_VAR_CHECK_SHAPE,     work.var, nm_check,    3 );
+    changed |= se_shape( GUI_VAR_BULLET_SHAPE,    work.var, nm_bullet,   2 );
+    changed |= se_shape( GUI_VAR_ARROW_SHAPE,     work.var, nm_arrow,    2 );
+    changed |= se_shape( GUI_VAR_SEPARATOR_SHAPE, work.var, nm_sep,      2 );
+    changed |= se_shape( GUI_VAR_PROGRESS_SHAPE,  work.var, nm_progress, 2 );
+    changed |= se_shape( GUI_VAR_KNOB_SHAPE,      work.var, nm_knob,     2 );
+    changed |= se_shape( GUI_VAR_MENU_CHECK,      work.var, nm_menu,     2 );
     
     gui()->form( GUI_LABEL_RIGHT, 0.0 );
 
@@ -1338,15 +1327,14 @@ main( int argc, char** argv )
     {
         gui_style_t* style = gui()->style_get();
 
-        // Modify any colors
-        style->colors[GUI_COL_WINDOW_BG] = GUI_COLOR( 0x20, 0x20, 0x20, 0xFF );
-        style->colors[GUI_COL_TEXT]      = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
+        // Modify any color: a (role, state) cell of the element grid
+        style->col[GUI_EL_PANEL][GUI_EL_IDLE] = GUI_COLOR( 0x20, 0x20, 0x20, 0xFF );
+        style->col[GUI_EL_TEXT ][GUI_EL_IDLE] = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
 
-        // Modify any skin (STYLE) knobs -- metrics are authored for a baseline em=12
-        style->win_rounding    = 0;         // Square windows
-        style->widget_rounding = 0;         // No bevel on buttons
-        style->grab_rounding = 0;
-        // style->widget_gap      = 12;     // More breathing room
+        // Modify any skin (STYLE) knob -- metrics are authored for a baseline em=12
+        style->var[GUI_VAR_PANEL_ROUND] = 0;    // Square windows
+        style->var[GUI_VAR_ROUND]       = 0;    // No bevel on buttons
+        // style->var[GUI_VAR_GAP]      = 12;   // More breathing room
 
         // Re-scale and apply the changes across the UI
         gui()->style_apply();

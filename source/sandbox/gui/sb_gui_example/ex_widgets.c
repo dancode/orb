@@ -315,10 +315,10 @@ ex_widgets_sliders( void )
         gui()->drag_float( "max", &hi, 0.05f, -100.0f, 100.0f, "%.1f" );
         if ( hi < lo ) hi = lo;
         gui()->checkbox( "GUI_ITEM_NO_VALUE_TEXT (bare tracks)", &hide_value );
-        gui()->checkbox( "Circle knob (GUI_VAR_SLIDER_KNOB)",    &circle );
+        gui()->checkbox( "Circle knob (GUI_VAR_KNOB_SHAPE)",    &circle );
 
         gui()->push_item_flag( GUI_ITEM_NO_VALUE_TEXT, hide_value );
-        gui()->push_style_var( GUI_VAR_SLIDER_KNOB, circle ? 1.0f : 0.0f );
+        gui()->push_style_var( GUI_VAR_KNOB_SHAPE, circle ? 1.0f : 0.0f );
 
         gui()->separator_text( "slider_float / _step / slider_int" );
         static f32 sf = 5.0f;

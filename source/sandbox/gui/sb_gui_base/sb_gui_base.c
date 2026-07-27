@@ -267,16 +267,17 @@ static i32 s_t5_pal = 0;
 static void
 install_palette( i32 which )
 {
-    gui_el_style_t* es = gui()->el_style();
+    gui_style_t* es = gui()->style_edit();
 
-    es->pad      = 6.0f;
-    es->gap      = 6.0f;
-    es->border_w = 1.0f;
-    es->line_h   = 0.0f;   /* follow the active font */
+    es->var[ GUI_VAR_PAD    ] = 6.0f;
+    es->var[ GUI_VAR_GAP    ] = 6.0f;
+    es->var[ GUI_VAR_BORDER ] = 1.0f;
 
     if ( which == 0 )   /* ember -- warm dark */
     {
         u32 c[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] = {
+            /* PANEL  */ { GUI_COLOR( 0x24, 0x1A, 0x14, 0xFF ), GUI_COLOR( 0x3A, 0x28, 0x1C, 0xFF ),
+                           GUI_COLOR( 0x5E, 0x3C, 0x22, 0xFF ), GUI_COLOR( 0x1A, 0x13, 0x10, 0xFF ) },
             /* BG     */ { GUI_COLOR( 0x2E, 0x20, 0x18, 0xFF ), GUI_COLOR( 0x46, 0x30, 0x20, 0xFF ),
                            GUI_COLOR( 0x5E, 0x3C, 0x22, 0xFF ), GUI_COLOR( 0x24, 0x1C, 0x16, 0xFF ) },
             /* BORDER */ { GUI_COLOR( 0x7A, 0x50, 0x2C, 0xFF ), GUI_COLOR( 0xA8, 0x6C, 0x38, 0xFF ),
@@ -291,6 +292,8 @@ install_palette( i32 which )
     else                /* ice -- cool dark */
     {
         u32 c[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] = {
+            /* PANEL  */ { GUI_COLOR( 0x14, 0x1C, 0x26, 0xFF ), GUI_COLOR( 0x1E, 0x2A, 0x38, 0xFF ),
+                           GUI_COLOR( 0x2A, 0x42, 0x5E, 0xFF ), GUI_COLOR( 0x0E, 0x14, 0x1C, 0xFF ) },
             /* BG     */ { GUI_COLOR( 0x18, 0x22, 0x2E, 0xFF ), GUI_COLOR( 0x22, 0x32, 0x46, 0xFF ),
                            GUI_COLOR( 0x2A, 0x42, 0x5E, 0xFF ), GUI_COLOR( 0x14, 0x1C, 0x26, 0xFF ) },
             /* BORDER */ { GUI_COLOR( 0x34, 0x58, 0x7A, 0xFF ), GUI_COLOR( 0x48, 0x7C, 0xA8, 0xFF ),
@@ -305,7 +308,7 @@ install_palette( i32 which )
 }
 
 /* the registered owner: re-derives the kit look at every style landing.  ONE source serves both
-   modes below -- it writes through el_style(), which during an install points at whichever set
+   modes below -- it writes through style_edit(), which during an install points at whichever set
    is being filled, so the same function installs into set 0 or into the kit's own set. */
 static void
 t5_style_source( void* user )
@@ -375,7 +378,7 @@ tier_style( void )
     gui()->stock_slider( gui_rect_cut_top( &r, 24.0f ), "t5_slider", &s_level, 0.0f, 1.0f );
     r.y += 6.0f;  r.h -= 6.0f;
     gui()->stock_meter( gui_rect_cut_top( &r, 18.0f ), s_level,
-                     gui()->el_style()->col[ GUI_EL_ACCENT ][ GUI_EL_IDLE ] );
+                     gui()->el_color( GUI_EL_ACCENT, GUI_EL_IDLE ) );
     r.y += 6.0f;  r.h -= 6.0f;
     static char s_field[ 48 ] = "kit-styled field";
     gui()->stock_input( gui_rect_cut_top( &r, 26.0f ), "t5_input", s_field, sizeof s_field );

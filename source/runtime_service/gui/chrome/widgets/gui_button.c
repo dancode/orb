@@ -263,7 +263,7 @@ checkbox_face( gui_rect_t box, gui_item_state_t st, bool on )
 {
     draw_fill( box, col_item_bg( st ) );
     draw_outline( box, WIN_BORDER, COL_BORDER );
-    /* Indicator: a 'v' tick (default), a filled disc, or an 'X' cross per GUI_VAR_CHECK_STYLE. */
+    /* Indicator: a 'v' tick (default), a filled disc, or an 'X' cross per GUI_VAR_CHECK_SHAPE. */
     if ( on ) draw_check_indicator( box, COL_CHECK_MARK );
 }
 
@@ -326,7 +326,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
     draw_push_circle_filled( cx, cy, rad,              segs, COL_BORDER );
     draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, col_item_bg( c.st ) );
     if ( on )
-        draw_push_circle_filled( cx, cy, rad - CHECK_PAD, segs, COL_CHECK_MARK );
+        draw_push_circle_filled( cx, cy, rad - WIDGET_PAD, segs, COL_CHECK_MARK );
 
     if ( c.show_label ) draw_label_fit( c.label_x, c.label_y, COL_TEXT, label, c.label_w );
 

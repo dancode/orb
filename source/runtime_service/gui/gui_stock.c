@@ -18,14 +18,14 @@
     (source/runtime_service/gui/component/); the three inert ones (panel / label / meter) have
     no component because they have no interaction to extract.
 
-    Naming: stock_ is the WIDGET SET; el_ is the STYLE STRATUM it paints from (gui_el_style_t,
-    gui_el_color, GUI_EL_BG).  Two vocabularies on purpose.
+    Naming: stock_ is the WIDGET SET; el_ is the STYLE AXIS it paints from (gui_el_color,
+    GUI_EL_BG, GUI_EL_HOT).  Two vocabularies on purpose.
 
     Three constituents, three faces of the same role:
 
     stock/gui_stock_widgets.c  -- the public stock_* renders: fill EXACTLY the rect they are
                                      handed, read ONLY the element stratum (style_el_col /
-                                     style_el_pad; the style unit owns its storage and the
+                                     WIDGET_PAD; the style unit owns its storage and the
                                      theme compile that fills it)
     stock/gui_adornment.c     -- per-item ambient application (item_flags_resolve /
                                      item_flags_chrome_reset), the label paint

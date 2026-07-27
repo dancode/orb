@@ -58,7 +58,7 @@ static f32
 region_spill_tol( void )
 {
 #if GUI_GRID_LATTICE
-    u32 q = s_style.grid_quantum;
+    u32 q = GRID_Q;
     return ( q > 1 ) ? (f32)q : 0.0f;
 #else
     return 0.0f;

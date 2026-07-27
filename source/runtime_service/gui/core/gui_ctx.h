@@ -260,7 +260,7 @@ typedef struct
        no Enter/Space capture required.  Up/Down are untouched (never fenced), unlike edit_id
        capture.  Resolved once per frame in nav_finish (last frame's list, before it resets) and
        consumed by nav_item_register during this frame's emission to mirror edit_id's captured
-       presentation (st->focused, the COL_NAV_CAPTURE ring) and to gate st->nav_adjust. */
+       presentation (st->focused, the COL_CHECK_MARK ring) and to gate st->nav_adjust. */
     gui_id_t    solo_drag_id;
 
     bool        id_seen;       // id was emitted in win this frame (else it went stale)

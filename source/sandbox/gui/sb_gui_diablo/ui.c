@@ -53,9 +53,16 @@ ui_style( void )
 void
 ui_kit_install( void )
 {
-    gui_el_style_t* e = gui()->el_style();
+    gui_style_t* e = gui()->style_edit();
 
-    e->border_w = s_style.border_w;
+    e->var[ GUI_VAR_BORDER ] = s_style.border_w;
+
+    /* The container surfaces the kit paints its screens on -- one role now, so the panel look is
+       installed here beside the controls instead of passed to every draw_ call. */
+    e->col[ GUI_EL_PANEL  ][ GUI_EL_IDLE   ] = s_style.panel_bg;
+    e->col[ GUI_EL_PANEL  ][ GUI_EL_HOT    ] = s_style.panel_bg;
+    e->col[ GUI_EL_PANEL  ][ GUI_EL_ACTIVE ] = s_style.panel_bg;
+    e->col[ GUI_EL_PANEL  ][ GUI_EL_DIM    ] = s_style.slot_bg;
 
     e->col[ GUI_EL_BG     ][ GUI_EL_IDLE   ] = s_style.btn_bg;
     e->col[ GUI_EL_BG     ][ GUI_EL_HOT    ] = s_style.btn_bg_hover;

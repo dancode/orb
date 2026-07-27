@@ -54,7 +54,7 @@ game_ui_install( void )
 
     /* Only the accent row: the stock BG/BORDER/TEXT derivation already matches this game's
        plain look, and the smallest install that shows the dial is the honest one. */
-    gui_el_style_t* e = gui()->el_style();
+    gui_style_t* e = gui()->style_edit();
 
     e->col[ GUI_EL_ACCENT ][ GUI_EL_IDLE   ] = GAME_UI_TEAL;
     e->col[ GUI_EL_ACCENT ][ GUI_EL_HOT    ] = GAME_UI_TEAL;

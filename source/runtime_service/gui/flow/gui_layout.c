@@ -419,7 +419,7 @@ gui_unindent( f32 w )
 f32
 gui_sz_u( f32 n )
 {
-    u32 q = s_style.grid_quantum;
+    u32 q = GRID_Q;
     return n * (f32)( q > 1 ? q : 1 );
 }
 

@@ -66,10 +66,10 @@ edit_paint( gui_rect_t content, const char* buf, const gui_edit_state_t* es, boo
         if ( in_visible_half_of_blink_cycle )
         {
             f32 cx = text_x + text_x_at( buf, es->cursor );
-            draw_fill( ( gui_rect_t ){ cx, content.y + (f32)s_style.cursor_inset,
-                                       (f32)s_style.cursor_w,
-                                       content.h - 2.0f * (f32)s_style.cursor_inset },
-                       COL_CURSOR );
+            draw_fill( ( gui_rect_t ){ cx, content.y + (f32)WIDGET_PAD,
+                                       (f32)WIN_BORDER,
+                                       content.h - 2.0f * (f32)WIDGET_PAD },
+                       COL_TEXT );
         }
     }
 }

@@ -169,7 +169,7 @@ typedef bool ( *gui_edit_key_fn )( u32 key, bool ctrl, bool shift, bool repeat, 
 /* The installed-element-style OWNER (see style_source_set / style_set_create, GUI_STYLE).
    Invoked at every style landing (font activation, theme_set / theme_reset / style_apply) AFTER
    the layout metrics rescale, so the owner re-derives its look against fresh numbers.  The
-   source writes the installed style through gui()->el_style(), which points at the set being
+   source writes the installed style through gui()->style_edit(), which points at the set being
    installed for the duration of the call. */
 typedef void ( *gui_style_source_fn )( void* user );
 
@@ -198,48 +198,22 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 /*==============================================================================================
     GUI_STYLE -- style colors
 
-    The themeable color slots, the ImGuiCol_ analogue.  Each names one entry of the shared palette
-    the widgets draw from; push_style_color( slot, abgr ) overrides it for every widget until the
-    matching pop_style_color, next_style_color overrides it for just the next widget, and a slot
-    left unpushed uses the theme default.  Colors are packed with GUI_COLOR (byte order R,G,B,A).
+    There is no flat color enum.  A color is named by a (role, state) pair on the element axis
+    (gui_el_role_t / gui_el_state_t, gui_element.h): five roles times four states, the 20 cells
+    of gui_style_t.col below.
 
-    The palette is shared rather than per-widget-type (one GUI_COL_WIDGET_BG, not Button +
-    Checkbox + ...), matching the engine's single-palette theme: to recolor one button, bracket it
-    with push/pop (only that button draws between them), or use next_style_color for a one-shot.
+        push_style_color( GUI_EL_BG,   GUI_EL_HOT, abgr );   // one cell, until the pop
+        push_style_color( GUI_EL_TEXT, GUI_EL_ALL, abgr );   // the whole state row
+        next_style_color( GUI_EL_BG,   GUI_EL_ALL, abgr );   // just the next widget
 
-    These are the public NAMES; the values live in two blocks behind them (the element stratum a
-    style set instances, and chrome's private tokens).  A name is a handle to one or more slots,
-    so a push reaches every cell that name covers -- GUI_COL_TEXT covers idle/hot/active text.
-    A kit wanting colors of its OWN keeps them in its own struct and passes them to draw_*;
-    there is no reserved range here to claim, because a color no engine code reads has nothing
-    to gain from living in the engine's enum.
+    The grid is shared rather than per-widget-type (one BG row, not Button + Checkbox + ...):
+    to recolor one button, bracket it with push/pop, or use next_style_color for a one-shot.
+    Colors are packed with GUI_COLOR (byte order R,G,B,A).
+
+    A kit wanting colors of its OWN keeps them in its own struct and passes them to draw_*; a
+    color no engine code reads has nothing to gain from living in the engine's grid.
+
 ==============================================================================================*/
-
-typedef enum
-{
-    GUI_COL_TEXT,           /* label / glyph text                          */
-    GUI_COL_TEXT_DIM,       /* secondary text (trailing labels)            */
-    GUI_COL_WINDOW_BG,      /* window body background                      */
-    GUI_COL_CHILD_BG,       /* child region background                     */
-    GUI_COL_TITLE_BG,       /* window title bar                            */
-    GUI_COL_BORDER,         /* window / widget outlines                    */
-    GUI_COL_WIDGET_BG,      /* idle widget body (button, checkbox, knob)   */
-    GUI_COL_WIDGET_HOT,     /* hovered widget body                         */
-    GUI_COL_WIDGET_ACT,     /* pressed / active widget body                */
-    GUI_COL_WIDGET_FG,      /* widget foreground accent (slider fill)      */
-    GUI_COL_CHECK_MARK,     /* checkbox tick / radio dot                   */
-    GUI_COL_SLIDER_TRACK,   /* slider + scrollbar track                    */
-    GUI_COL_RESIZE_HOT,     /* hot resize edge / size grip                 */
-    GUI_COL_INPUT_BG,       /* text input field background                 */
-    GUI_COL_INPUT_FOCUS,    /* focused text input field background         */
-    GUI_COL_CURSOR,         /* text input caret                           */
-    GUI_COL_NAV_HIGHLIGHT,  /* keyboard-nav focus ring around the nav item */
-    GUI_COL_NAV_CAPTURE,    /* nav ring when the item has captured keyboard value-edit input */
-    GUI_COL_FOCUS_BORDER,   /* outline around the keyboard-focused window  */
-
-    GUI_COL_COUNT,          /* slot count -- not a color                   */
-
-} gui_col_t;
 
 /*==============================================================================================
     GUI_STYLE -- global style configuration
@@ -262,20 +236,143 @@ typedef enum
 
 } gui_scale_t;
 
-/* One ramp step's metrics.  Authored in px at em=12 like every other theme metric; em-scaled,
-   grid-quantized, and font-floored (a row always holds a text line) by gui_style_apply. */
+/* One ramp step's metrics.  Authored in px at em=12 like every other style metric; em-scaled,
+   grid-quantized, and font-floored (a row always holds a text line) by gui_style_apply.  The
+   three fields mirror GUI_VAR_ROW / _PAD / _GAP, which is what scale_push pushes them onto. */
 typedef struct gui_scale_metrics_t
 {
-    u8 row;   // row height (the step's WIDGET_H)
-    u8 pad;   // frame / content padding
-    u8 gap;   // gap between consecutive widgets
+    f32 row;   // row height (the step's WIDGET_H)
+    f32 pad;   // frame / content padding
+    f32 gap;   // gap between consecutive widgets
 
 } gui_scale_metrics_t;
 
-/* ONE struct, TWO categories.  They stay together because the machinery treats them all
-   identically -- themes snapshot them, the style stacks override them, style_var/style_col
-   resolve them, gui_style_apply em-scales them -- and ONE test sorts every field between the
-   two categories: can a read of this field move a rect?
+/*==============================================================================================
+    GUI_STYLE -- style vars
+
+    The tunable scalars, the ImGuiStyleVar_ analogue, and the index into gui_style_t.var.  Each
+    names one number the layout or the widgets read; push_style_var( var, value ) overrides it
+    until the matching pop_style_var, next_style_var for just the next widget, and an unpushed
+    var uses the style's installed value.  Values are f32 pixels (the shape picks carry a small
+    integer in the same f32 slot -- one storage rule, no special case).
+
+    Grouped by the two gui_style_t categories: METRICS can move rects (scale_push rides on the
+    first three), SKIN only changes how paint lands inside rects composition already fixed.
+
+    Every scalar the style has is here.  That is the rule that replaced the old split, where
+    caret width and checkmark inset sat in the struct as fields no push could reach -- if a
+    number is worth having, it is worth being overridable, and if it is not worth overriding it
+    is not worth being a style field.
+==============================================================================================*/
+
+typedef enum
+{
+    /* 1. METRICS -- can move a rect (scale_push/scale_pop override the first three) */
+
+    GUI_VAR_ROW = 0,        // widget row height (the frame height)
+    GUI_VAR_PAD,            // interior padding: region inset, label inset, natural-width pad
+    GUI_VAR_GAP,            // space between consecutive widgets / cells
+    GUI_VAR_BORDER,         // frame line width -- consumes space: child heights, bar tracks, resize zones
+    GUI_VAR_INDICATOR,      // square indicator side (checkbox / radio) -- feeds the natural width
+    GUI_VAR_GUTTER,         // slider knob width AND the scrollbar gutter thickness
+    GUI_VAR_MIN_CELL,       // floor a flex/fraction track shrinks to before overflow
+    GUI_VAR_TITLE_H,        // window title bar height -- the body starts below it
+
+    /* 2. SKIN -- paint-only */
+
+    GUI_VAR_ROUND,          // corner radius: control frames, slider knobs, scrollbar grabs
+    GUI_VAR_PANEL_ROUND,    // corner radius: windows / children / popups; 0 = square
+
+    /* The em-scaled span ends here: gui_style_apply multiplies vars [0, GUI_VAR_SCALED_COUNT)
+       by the font ratio and copies the rest verbatim.  Everything below is a pitch or a pick,
+       neither of which means anything scaled. */
+    GUI_VAR_SCALED_COUNT,
+
+    GUI_VAR_GRID_Q = GUI_VAR_SCALED_COUNT,   // px lattice metrics snap onto (0/1 = off)
+
+    /* 3. SKIN shape picks -- an enum carried in the f32 slot (see the enums below) */
+
+    GUI_VAR_CHECK_SHAPE,    // checkbox/menu indicator: 0 = 'v' tick, 1 = disc, 2 = 'X' (gui_check_style_t)
+    GUI_VAR_BULLET_SHAPE,   // bullet glyph: 0 = disc, 1 = square (gui_bullet_style_t)
+    GUI_VAR_ARROW_SHAPE,    // directional arrow: 0 = triangle, 1 = chevron (gui_arrow_style_t)
+    GUI_VAR_SEPARATOR_SHAPE,// separator rule: 0 = solid, 1 = dashed (gui_separator_style_t)
+    GUI_VAR_PROGRESS_SHAPE, // progress_bar fill: 0 = solid, 1 = gradient (gui_progress_style_t)
+    GUI_VAR_KNOB_SHAPE,     // slider knob: 0 = bar, 1 = circle (gui_slider_knob_t)
+    GUI_VAR_MENU_CHECK,     // menu check gutter: 0 = plain, 1 = bordered box (gui_menu_check_t)
+
+    GUI_VAR_COUNT,          // var count -- not a metric
+
+} gui_style_var_t;
+
+/* Checkbox / menu-item indicator shape (GUI_VAR_CHECK_SHAPE).  Default is the tick. */
+typedef enum
+{
+    GUI_CHECK_TICK  = 0,   // a two-stroke 'v' check mark
+    GUI_CHECK_DISC  = 1,   // a filled disc inside the box
+    GUI_CHECK_CROSS = 2,   // a two-diagonal 'X' cross
+
+} gui_check_style_t;
+
+/* Bullet glyph shape (GUI_VAR_BULLET_SHAPE).  Default is the disc (Dear ImGui's RenderBullet). */
+typedef enum
+{
+    GUI_BULLET_DISC   = 0,   // a small filled circle
+    GUI_BULLET_SQUARE = 1,   // a small filled square
+
+} gui_bullet_style_t;
+
+/* Directional arrow shape (GUI_VAR_ARROW_SHAPE).  Default is the solid triangle.  Threads through
+   every arrow the chrome draws -- arrow_button, the collapse fold, the combo / submenu arrow, the
+   dock overlay -- since they all route through draw_arrow, exactly as check / bullet do. */
+typedef enum
+{
+    GUI_ARROW_FILLED  = 0,   // a filled triangle pointing the direction
+    GUI_ARROW_CHEVRON = 1,   // a stroked '>' chevron (two strokes to an apex)
+
+} gui_arrow_style_t;
+
+/* Separator rule shape (GUI_VAR_SEPARATOR_SHAPE).  Default is the solid rule.  Honored by
+   separator() and the leading / trailing rules of separator_text(). */
+typedef enum
+{
+    GUI_SEPARATOR_SOLID  = 0,   // a continuous filled rule
+    GUI_SEPARATOR_DASHED = 1,   // a dashed rule
+
+} gui_separator_style_t;
+
+/* progress_bar fill style (GUI_VAR_PROGRESS_SHAPE).  Default is the solid fill; the gradient
+   variant glosses the fill from the foreground accent to a brighter tint (top to bottom). */
+typedef enum
+{
+    GUI_PROGRESS_SOLID    = 0,   // a flat foreground-accent fill
+    GUI_PROGRESS_GRADIENT = 1,   // a top-to-bottom gradient gloss
+
+} gui_progress_style_t;
+
+/* Slider / drag knob shape (GUI_VAR_KNOB_SHAPE).  Default is the bar grab; the circle variant
+   draws a round handle (raise GUI_VAR_ROUND instead for a pill bar). */
+typedef enum
+{
+    GUI_SLIDER_KNOB_BAR    = 0,   // a rectangular grab (corner-rounded)
+    GUI_SLIDER_KNOB_CIRCLE = 1,   // a circular handle
+
+} gui_slider_knob_t;
+
+/* Menu item check gutter style (GUI_VAR_MENU_CHECK).  Default is the bordered box, which draws
+   an idle checkbox frame in the gutter whether or not the item is selected; the plain variant
+   renders no box and only the indicator symbol when selected. */
+typedef enum
+{
+    GUI_MENU_CHECK_PLAIN = 0,   // indicator only when selected; no idle box
+    GUI_MENU_CHECK_BOX   = 1,   // bordered box always; indicator when selected
+
+} gui_menu_check_t;
+
+/* ONE struct, THREE runs, and every one of them instanced per style set.  They stay together
+   because the machinery treats them all identically -- themes author them, style sources
+   overwrite them, the style stacks override them, style_var / el_color resolve them, and
+   gui_style_apply em-scales them.  ONE test sorts a var between the two categories the enum is
+   grouped by: can a read of this field move a rect?
 
      1. METRICS -- the spacing/size vocabulary.  One set of numbers consumed at two moments:
         composition (the composer divides space into cells -- row heights, gaps, region insets,
@@ -283,12 +380,16 @@ typedef struct gui_scale_metrics_t
         natural size it REQUESTS through cell_next_w, then seats its label / indicator
         inside the finished cell with the same pad).  Only the composer POSITIONS rects;
         widgets only measure and request -- that is the composition contract.
-     2. SKIN -- paint-only: colors, corner roundings, mark shapes, caret geometry.  A read of
-        these can only change pixels inside a rect composition already fixed; none ever sizes
-        or moves a cell.
+     2. SKIN -- paint-only: colors, corner roundings, mark shapes.  A read of these can only
+        change pixels inside a rect composition already fixed; none ever sizes or moves a cell.
 
    Behavior (interact/) consumes neither category: it takes finished rects.  (Its one metric
-   read is win_border, because the resize hit zone straddles the border -- border is geometry.) */
+   read is GUI_VAR_BORDER, because the resize hit zone straddles the border -- border is
+   geometry.)
+
+   The struct IS the layout of one style-set instance in the value backend (style/
+   gui_style_block.c), asserted field-for-slot there, so gui()->style_edit() can hand a kit a
+   typed pointer straight at the installed run with no copy and no offset table. */
 
 /* GUI_GRID_LATTICE -- compile-time master switch for grid_quantum snapping.  1 (default) keeps
    the feature; define 0 (e.g. -DGUI_GRID_LATTICE=0) to strip every snap to identity so the lattice
@@ -300,41 +401,19 @@ typedef struct gui_scale_metrics_t
 
 typedef struct gui_style_t
 {
-    u32 colors[ GUI_COL_COUNT ]; // SKIN: theme default palette (GUI_COLOR packs R,G,B,A bytes)
+    /* SKIN: the 5x4 element grid -- THE color vocabulary (gui_element.h).  GUI_COLOR packs
+       R,G,B,A bytes; a cell is read with el_color( role, state ). */
+    u32 col[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ];
 
-    /* 1. METRICS -- can move a rect: cell sizes, insets, gutters, and natural-size inputs */
-    u8 line_size;          // widget row height
-    u8 widget_gap;         // vertical gap between consecutive widgets
-    u8 widget_pad;         // region inset (composer) AND label inset / natural-width pad (widgets)
-    u8 min_cell_w;         // floor a flex/fraction track shrinks to before overflow
-    u8 grid_quantum;       // px lattice row-level metrics snap to after font scaling (0/1 = off)
-    u8 win_border;         // outline thickness -- consumes space: child heights, bar tracks, resize zones
-    u8 win_title_h;        // window title bar height -- the body starts below it
-    u8 checkbox_sz;        // checkbox indicator side -- feeds the checkbox's natural width
-    u8 slider_knob_w;      // slider knob width AND the scrollbar gutter thickness regions reserve
+    /* METRICS + SKIN scalars, indexed by gui_style_var_t -- the push_style_var vocabulary.
+       Authored in px at em=12 and rescaled by gui_style_apply; the enum below documents each
+       slot.  An array rather than named fields because the enum IS the field list: one order,
+       one place to add a var, and a style editor can walk it. */
+    f32 var[ GUI_VAR_COUNT ];
 
-    /* 2. SKIN -- paint-only: never sizes a cell */
-    u8 win_rounding;       // corner radius: windows / children / popups
-    u8 widget_rounding;    // corner radius: control frames
-    u8 grab_rounding;      // corner radius: slider knobs / scrollbar grabs
-    u8 win_focus_border;   // focused-window outline thickness (paint-only; over the normal border)
-
-    /* Widget knobs */
-    u8 checkmark_pad;      // inset of the check mark inside the checkbox
-    u8 cursor_w;           // input text caret width
-    u8 cursor_inset;       // input text caret top/bottom inset
-
-    /* Widget style */
-    u8 check_style;        // checkbox/menu indicator: 0='v' tick, 1=disc, 2='X' (gui_check_style_t)
-    u8 bullet_style;       // bullet glyph: 0=disc, 1=square (gui_bullet_style_t)
-    u8 arrow_style;        // directional arrow: 0=triangle, 1=chevron (gui_arrow_style_t)
-    u8 separator_style;    // separator rule: 0=solid, 1=dashed (gui_separator_style_t)
-    u8 progress_style;     // progress fill: 0=solid, 1=gradient (gui_progress_style_t)
-    u8 slider_knob;        // slider knob: 0=bar, 1=circle (gui_slider_knob_t)
-    u8 menu_check;         // menu check gutter: 0=plain, 1=box (gui_menu_check_t)
-
-    /* The scale ramp (see gui_scale_t) -- METRICS per density step.  STD mirrors
-       line_size / widget_pad / widget_gap. */
+    /* The density ramp (see gui_scale_t) -- METRICS per step, what scale_push pushes onto
+       GUI_VAR_ROW / _PAD / _GAP.  STD is authored to mirror those three, so an unpushed UI is
+       unchanged.  Instanced with everything else, so a kit's DENSE is its own. */
     gui_scale_metrics_t scales[ GUI_SCALE_COUNT ];
 
 } gui_style_t;
@@ -383,118 +462,6 @@ const gui_theme_t* gui_theme_list ( u32* count_out );    /* enumerate built-in t
 bool               gui_theme_set  ( const char* name );  /* switch to named theme + reset stacks */
 const char*        gui_theme_get  ( void );              /* active theme name, NULL if anonymous */
 void               gui_theme_reset( void );              /* restore base + clear push stacks     */
-
-/*==============================================================================================
-    GUI_STYLE -- style vars
-
-    The tunable scalar metrics, the ImGuiStyleVar_ analogue.  Each names one scalar the layout
-    or widgets read; push_style_var( var, value ) overrides it until the matching pop_style_var,
-    next_style_var for just the next widget, and an unpushed var uses the font-derived default
-    (recomputed when the font changes).  Values are f32 pixels.
-
-    Grouped by the same two categories as gui_style_t (one mechanism, two audiences):
-    METRICS slots can move rects (scale_push rides on the first three); SKIN slots only
-    change how paint lands inside rects composition already fixed.
-
-    Only metrics that flow through the shared accessor are listed, so every slot here is honored
-    uniformly everywhere it is read; purely cosmetic internals (caret width, checkmark inset) are
-    intentionally left off rather than exposed as half-working knobs.
-==============================================================================================*/
-
-typedef enum
-{
-    /* 1. METRICS -- can move a rect (scale_push/scale_pop override the first three) */
-
-    GUI_VAR_LINE_SIZE,      // widget row height (the frame height)
-    GUI_VAR_WIDGET_GAP,     // gap between consecutive widgets / cells
-    GUI_VAR_WIDGET_PAD,     // content padding inside a frame (FramePadding)
-    GUI_VAR_MIN_CELL_W,     // min width a flex cell shrinks to
-    GUI_VAR_WIN_BORDER,     // outline thickness -- consumes space (child heights, bar tracks)
-    GUI_VAR_WIN_TITLE_H,    // window title bar height -- the body starts below it
-    GUI_VAR_CHECKBOX_SZ,    // checkbox / radio indicator side -- feeds the natural width
-    GUI_VAR_SLIDER_KNOB_W,  // slider knob width + the scrollbar gutter thickness
-
-    /* 2. SKIN -- paint-only */
-
-    GUI_VAR_WIN_ROUNDING,   // corner radius for windows / children / popups; 0 = square
-    GUI_VAR_WIDGET_ROUNDING,// corner radius for control frames (button/checkbox/input/...)
-    GUI_VAR_GRAB_ROUNDING,  // corner radius for slider knobs + scrollbar grabs
-    GUI_VAR_WIN_FOCUS_BORDER,// focused-window outline thickness (paint-only; does not consume space)
-    GUI_VAR_CHECK_STYLE,    // checkbox/menu indicator: 0 = 'v' tick, 1 = filled disc, 2 = 'X' cross (gui_check_style_t)
-    GUI_VAR_BULLET_STYLE,   // bullet glyph: 0 = filled disc, 1 = square (gui_bullet_style_t)
-    GUI_VAR_ARROW_STYLE,    // directional arrow: 0 = filled triangle, 1 = stroked chevron (gui_arrow_style_t)
-    GUI_VAR_SEPARATOR_STYLE,// separator rule: 0 = solid, 1 = dashed (gui_separator_style_t)
-    GUI_VAR_PROGRESS_STYLE, // progress_bar fill: 0 = solid, 1 = vertical gradient (gui_progress_style_t)
-    GUI_VAR_SLIDER_KNOB,    // slider knob shape: 0 = bar, 1 = circle (gui_slider_knob_t)
-    GUI_VAR_MENU_CHECK,     // menu item check gutter: 0 = plain indicator, 1 = bordered box (gui_menu_check_t)
-
-    GUI_VAR_COUNT,          // var count -- not a metric
-
-} gui_style_var_t;
-
-/* Checkbox / menu-item indicator shape (GUI_VAR_CHECK_STYLE).  Default is the tick. */
-typedef enum
-{
-    GUI_CHECK_TICK  = 0,   // a two-stroke 'v' check mark
-    GUI_CHECK_DISC  = 1,   // a filled disc inside the box
-    GUI_CHECK_CROSS = 2,   // a two-diagonal 'X' cross
-
-} gui_check_style_t;
-
-/* Bullet glyph shape (GUI_VAR_BULLET_STYLE).  Default is the disc (Dear ImGui's RenderBullet). */
-typedef enum
-{
-    GUI_BULLET_DISC   = 0,   // a small filled circle
-    GUI_BULLET_SQUARE = 1,   // a small filled square
-
-} gui_bullet_style_t;
-
-/* Directional arrow shape (GUI_VAR_ARROW_STYLE).  Default is the solid triangle.  Threads through
-   every arrow the chrome draws -- arrow_button, the collapse fold, the combo / submenu arrow, the
-   dock overlay -- since they all route through draw_arrow, exactly as check / bullet do. */
-typedef enum
-{
-    GUI_ARROW_FILLED  = 0,   // a filled triangle pointing the direction
-    GUI_ARROW_CHEVRON = 1,   // a stroked '>' chevron (two strokes to an apex)
-
-} gui_arrow_style_t;
-
-/* Separator rule shape (GUI_VAR_SEPARATOR_STYLE).  Default is the solid rule.  Honored by
-   separator() and the leading / trailing rules of separator_text(). */
-typedef enum
-{
-    GUI_SEPARATOR_SOLID  = 0,   // a continuous filled rule
-    GUI_SEPARATOR_DASHED = 1,   // a dashed rule           
-
-} gui_separator_style_t;
-
-/* progress_bar fill style (GUI_VAR_PROGRESS_STYLE).  Default is the solid fill; the gradient
-   variant glosses the fill from the foreground accent to a brighter tint (top to bottom). */
-typedef enum
-{
-    GUI_PROGRESS_SOLID    = 0,   // a flat foreground-accent fill
-    GUI_PROGRESS_GRADIENT = 1,   // a top-to-bottom gradient gloss
-
-} gui_progress_style_t;
-
-/* Slider / drag knob shape (GUI_VAR_SLIDER_KNOB).  Default is the bar grab; the circle variant
-   draws a round handle (raise GUI_VAR_GRAB_ROUNDING instead for a pill bar). */
-typedef enum
-{
-    GUI_SLIDER_KNOB_BAR    = 0,   // a rectangular grab (grab-rounded)
-    GUI_SLIDER_KNOB_CIRCLE = 1,   // a circular handle                
-
-} gui_slider_knob_t;
-
-/* Menu item check gutter style (GUI_VAR_MENU_CHECK).  Default is the bordered box, which draws
-   an idle checkbox frame in the gutter whether or not the item is selected; the plain variant
-   renders no box and only the indicator symbol when selected. */
-typedef enum
-{
-    GUI_MENU_CHECK_PLAIN = 0,   // indicator only when selected; no idle box
-    GUI_MENU_CHECK_BOX   = 1,   // bordered box always; indicator when selected
-
-} gui_menu_check_t;
 
 /*==============================================================================================
     GUI_FLOW -- layout template

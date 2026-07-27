@@ -44,9 +44,12 @@ ex_style_themes( void )
         /* style_peek reads the base without marking the theme anonymous. */
         gui()->separator_text( "Base metrics (style_peek)" );
         const gui_style_t* st = gui()->style_peek();
-        gui()->textf( "line_size %u   widget_gap %u   widget_pad %u", st->line_size, st->widget_gap, st->widget_pad );
-        gui()->textf( "win_title_h %u   win_border %u   grid_quantum %u", st->win_title_h, st->win_border, st->grid_quantum );
-        gui()->textf( "roundings: win %u  widget %u  grab %u", st->win_rounding, st->widget_rounding, st->grab_rounding );
+        gui()->textf( "row %.0f   gap %.0f   pad %.0f",
+                      st->var[ GUI_VAR_ROW ], st->var[ GUI_VAR_GAP ], st->var[ GUI_VAR_PAD ] );
+        gui()->textf( "title_h %.0f   border %.0f   grid_q %.0f",
+                      st->var[ GUI_VAR_TITLE_H ], st->var[ GUI_VAR_BORDER ], st->var[ GUI_VAR_GRID_Q ] );
+        gui()->textf( "rounding: panel %.0f  widget %.0f",
+                      st->var[ GUI_VAR_PANEL_ROUND ], st->var[ GUI_VAR_ROUND ] );
         gui()->text_disabled( "(a full live editor lives in sb_gui's Style Editor)" );
     }
     gui()->window_end();
@@ -56,18 +59,37 @@ ex_style_themes( void )
     Style Stacks -- push/pop color + var overrides, one-shot next_*, and the scale ramp.
 ==============================================================================================*/
 
-/* Slot names come from the engine (style_color_name) rather than a table kept in step with
-   gui_col_t by hand -- built once, since combo() wants a contiguous array of pointers. */
+/* Axis names come from the engine rather than tables kept in step with the enums by hand --
+   built once, since combo() wants a contiguous array of pointers. */
 static const char**
-ex_col_names( void )
+ex_role_names( void )
 {
-    static const char* names[ GUI_COL_COUNT ];
+    static const char* names[ GUI_EL_ROLE_COUNT ];
     static bool        built = false;
 
     if ( !built )
     {
-        for ( u32 i = 0; i < GUI_COL_COUNT; ++i )
-            names[ i ] = gui()->style_color_name( ( gui_col_t )i );
+        for ( u32 i = 0; i < GUI_EL_ROLE_COUNT; ++i )
+            names[ i ] = gui()->el_role_name( ( gui_el_role_t )i );
+        built = true;
+    }
+    return names;
+}
+
+/* The state list carries one extra entry past the four cells: GUI_EL_ALL, the whole-row push.
+   Showing it in the same combo is the point -- picking "All" and picking "Hot" are the same
+   verb with a different reach, not two different APIs. */
+static const char**
+ex_state_names( void )
+{
+    static const char* names[ GUI_EL_STATE_COUNT + 1 ];
+    static bool        built = false;
+
+    if ( !built )
+    {
+        for ( u32 i = 0; i < GUI_EL_STATE_COUNT; ++i )
+            names[ i ] = gui()->el_state_name( ( gui_el_state_t )i );
+        names[ GUI_EL_ALL ] = "All (whole row)";
         built = true;
     }
     return names;
@@ -77,14 +99,16 @@ ex_col_names( void )
 typedef struct { const char* name; gui_style_var_t var; f32 lo, hi; } ex_var_row_t;
 
 static const ex_var_row_t s_var_rows[] = {
-    { "LINE_SIZE",       GUI_VAR_LINE_SIZE,       12.0f, 48.0f },
-    { "WIDGET_GAP",      GUI_VAR_WIDGET_GAP,       0.0f, 24.0f },
-    { "WIDGET_PAD",      GUI_VAR_WIDGET_PAD,       0.0f, 24.0f },
-    { "WIDGET_ROUNDING", GUI_VAR_WIDGET_ROUNDING,  0.0f, 16.0f },
-    { "GRAB_ROUNDING",   GUI_VAR_GRAB_ROUNDING,    0.0f, 16.0f },
-    { "CHECKBOX_SZ",     GUI_VAR_CHECKBOX_SZ,      8.0f, 32.0f },
-    { "SLIDER_KNOB_W",   GUI_VAR_SLIDER_KNOB_W,    4.0f, 32.0f },
+    { "ROW",         GUI_VAR_ROW,         12.0f, 48.0f },
+    { "GAP",         GUI_VAR_GAP,          0.0f, 24.0f },
+    { "PAD",         GUI_VAR_PAD,          0.0f, 24.0f },
+    { "ROUND",       GUI_VAR_ROUND,        0.0f, 16.0f },
+    { "PANEL_ROUND", GUI_VAR_PANEL_ROUND,  0.0f, 24.0f },
+    { "INDICATOR",   GUI_VAR_INDICATOR,    8.0f, 32.0f },
+    { "GUTTER",      GUI_VAR_GUTTER,       4.0f, 32.0f },
 };
+
+#define EX_VAR_ROWS ( (i32)( sizeof( s_var_rows ) / sizeof( s_var_rows[ 0 ] ) ) )
 
 static void
 ex_style_stacks( void )
@@ -92,7 +116,8 @@ ex_style_stacks( void )
     /* col_on/col_sel/... must outlive this window's body: the push wraps a SECOND window
        (the sample), spawned after this one closes, so the pushed slot/value has to survive
        past window_end below. */
-    static i32  col_sel      = GUI_COL_WIDGET_BG;
+    static i32  role_sel     = GUI_EL_BG;
+    static i32  state_sel    = GUI_EL_ALL;
     static f32  col_val[ 4 ] = { 0.8f, 0.2f, 0.2f, 1.0f };
     static bool col_on       = true;
     static i32  var_sel      = 0;
@@ -111,20 +136,21 @@ ex_style_stacks( void )
         /* --- color override: pick a slot + a color, pushed around the sample window --------- */
         gui()->separator_text( "push_style_color (scopes the sample window)" );
         gui()->checkbox( "Push the color", &col_on );
-        gui()->combo( "slot", &col_sel, ex_col_names(), GUI_COL_COUNT );
+        gui()->combo( "role",  &role_sel,  ex_role_names(),  GUI_EL_ROLE_COUNT );
+        gui()->combo( "state", &state_sel, ex_state_names(), GUI_EL_STATE_COUNT + 1 );
         gui()->color_edit4( "color", col_val, GUI_COLOR_EDIT_NONE );
 
         /* --- var override: pick a metric + value ------------------------------------------- */
         gui()->separator_text( "push_style_var (scopes the sample window)" );
         gui()->checkbox( "Push the var", &var_on );
-        static const char* var_names[ 7 ];
-        for ( i32 i = 0; i < 7; i++ ) var_names[ i ] = s_var_rows[ i ].name;
-        gui()->combo( "var", &var_sel, var_names, 7 );
+        static const char* var_names[ EX_VAR_ROWS ];
+        for ( i32 i = 0; i < EX_VAR_ROWS; i++ ) var_names[ i ] = s_var_rows[ i ].name;
+        gui()->combo( "var", &var_sel, var_names, EX_VAR_ROWS );
         gui()->slider_float( "value", &var_val, s_var_rows[ var_sel ].lo, s_var_rows[ var_sel ].hi );
 
         /* --- next_style_color / next_style_var: one widget only, no pop -------------------- */
         gui()->separator_text( "next_style_color (one-shot)" );
-        gui()->next_style_color( GUI_COL_WIDGET_BG, GUI_COLOR( 0x20, 0x70, 0x30, 0xFF ) );
+        gui()->next_style_color( GUI_EL_BG, GUI_EL_ALL, GUI_COLOR( 0x20, 0x70, 0x30, 0xFF ) );
         gui()->button( "only this button is green" );
         gui()->button( "this one is stock again" );
 
@@ -149,13 +175,14 @@ ex_style_stacks( void )
     gui()->window_end();
 
     /* --- the sample window: pushed BEFORE window_begin and popped AFTER window_end, so the
-       override brackets the window's own chrome (WINDOW_BG / TITLE_BG / BORDER) as well as
-       every widget kind inside it -- a slot that only affects hover/active/focus states or
-       only shows on a specific widget kind is now easy to tell apart from one that simply
-       does not apply here, instead of guessing from one cramped block of 4 widgets. */
+       override brackets the window's own chrome (the PANEL and BORDER roles) as well as every
+       widget kind inside it -- a cell that only affects one interaction state, or only shows on
+       a specific widget kind, is easy to tell apart from one that simply does not apply here.
+       Picking role PANEL vs role BG is the clearest demonstration of the split the grid added:
+       one repaints the window and its children, the other repaints the controls on them. */
     u32 abgr = GUI_COLOR( (u8)( col_val[ 0 ] * 255.0f ), (u8)( col_val[ 1 ] * 255.0f ),
                           (u8)( col_val[ 2 ] * 255.0f ), (u8)( col_val[ 3 ] * 255.0f ) );
-    if ( col_on ) gui()->push_style_color( (gui_col_t)col_sel, abgr );
+    if ( col_on ) gui()->push_style_color( (gui_el_role_t)role_sel, (gui_el_state_t)state_sel, abgr );
     if ( var_on ) gui()->push_style_var( s_var_rows[ var_sel ].var, var_val );
 
     if ( ex_begin( "Style Stacks Sample", 380, 620, GUI_WIN_NONE ) )
@@ -240,12 +267,12 @@ ex_style_shape_tags( void )
         gui()->checkbox( "Gradient progress",  &gradient );
         gui()->checkbox( "Circle slider knob", &circle_knob );
 
-        gui()->push_style_var( GUI_VAR_CHECK_STYLE,     (f32)check_idx );
-        gui()->push_style_var( GUI_VAR_BULLET_STYLE,    square_bull ? 1.0f : 0.0f );
-        gui()->push_style_var( GUI_VAR_ARROW_STYLE,     chevron     ? 1.0f : 0.0f );
-        gui()->push_style_var( GUI_VAR_SEPARATOR_STYLE, dashed      ? 1.0f : 0.0f );
-        gui()->push_style_var( GUI_VAR_PROGRESS_STYLE,  gradient    ? 1.0f : 0.0f );
-        gui()->push_style_var( GUI_VAR_SLIDER_KNOB,     circle_knob ? 1.0f : 0.0f );
+        gui()->push_style_var( GUI_VAR_CHECK_SHAPE,     (f32)check_idx );
+        gui()->push_style_var( GUI_VAR_BULLET_SHAPE,    square_bull ? 1.0f : 0.0f );
+        gui()->push_style_var( GUI_VAR_ARROW_SHAPE,     chevron     ? 1.0f : 0.0f );
+        gui()->push_style_var( GUI_VAR_SEPARATOR_SHAPE, dashed      ? 1.0f : 0.0f );
+        gui()->push_style_var( GUI_VAR_PROGRESS_SHAPE,  gradient    ? 1.0f : 0.0f );
+        gui()->push_style_var( GUI_VAR_KNOB_SHAPE,     circle_knob ? 1.0f : 0.0f );
 
         gui()->separator_text( "Sample widgets honoring the tags" );
 

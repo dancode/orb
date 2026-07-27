@@ -96,9 +96,12 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
 
     /* Track frame.  Unlike a button, a slider has a handle on top, so the frame must not take the
        same hover/active colour the knob does (col_item_bg below) or the highlight would swallow
-       the handle.  It lifts to a subtler tint -- distinct from the knob in every state -- so the
-       hover still reads as a fill while the knob stays clearly the brighter element. */
-    u32 track_col = ( st.hover || st.nav || st.active ) ? COL_INPUT_FOCUS : COL_SLIDER_TRACK;
+       the handle.  The track therefore lifts WITHIN the accent role -- DIM at rest to IDLE when
+       engaged -- while the knob lifts along the BG row, so the two can never collide in any
+       state.  (It used to borrow the input-focus token for this; that token folded into
+       BG[ACTIVE], which is exactly the knob's pressed colour, so staying on ACCENT is both the
+       cheaper fix and the one that says what it means.) */
+    u32 track_col = ( st.hover || st.nav || st.active ) ? COL_WIDGET_FG : COL_SLIDER_TRACK;
     draw_fill( track_r, track_col );
     /* Captured for keyboard value edit (st.focused -- see nav_item_register) gets the same border
        lift text/numeric fields use on focus, so going from nav highlight to Left/Right-adjust reads
@@ -115,10 +118,10 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
 
     /* Knob (grab): the brighter hover/active element, outlined so its edge stays crisp against the
        track and the fill bar regardless of how close their colours get.  A bar grab by default
-       (grab radius -- raise GUI_VAR_GRAB_ROUNDING for a pill), or a circular handle when
-       GUI_VAR_SLIDER_KNOB selects it. */
+       (grab radius -- raise GUI_VAR_ROUND for a pill), or a circular handle when
+       GUI_VAR_KNOB_SHAPE selects it. */
     f32 knob_x = track_r.x + t * ( track_r.w - SLIDER_KNOB_W );
-    if ( style_var( GUI_VAR_SLIDER_KNOB ) >= 0.5f )
+    if ( style_var( GUI_VAR_KNOB_SHAPE ) >= 0.5f )
     {
         f32 kcx = knob_x + SLIDER_KNOB_W * 0.5f;
         f32 kcy = track_r.y + track_r.h * 0.5f;
@@ -129,7 +132,7 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
     else
     {
         f32 save_round = draw_rounding();
-        draw_set_rounding( ROUND_GRAB );
+        draw_set_rounding( ROUND_WIDGET );
         gui_rect_t knob_r = { knob_x, track_r.y, SLIDER_KNOB_W, track_r.h };
         draw_fill   ( knob_r, col_item_bg( st ) );
         draw_outline( knob_r, WIN_BORDER, COL_BORDER );
@@ -349,7 +352,7 @@ drag_text_enter( gui_id_t id, gui_item_state_t* st )
 static void
 drag_text_frame( gui_rect_t box_r, gui_item_state_t st )
 {
-    draw_fill( box_r, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );
+    draw_fill( box_r, st.focused ? COL_WIDGET_ACT : col_frame_bg( st, COL_WIDGET_BG ) );
     draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
 }
 
@@ -659,7 +662,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
 
     /* ---- Inline row: [preview_sq] [drag0 .. dragN-1] | label ---- */
     f32 preview_w = (f32)WIDGET_H;
-    f32 gap       = (f32)s_style.widget_gap;
+    f32 gap       = WIDGET_GAP;
     gui_rect_t ctrl = r;   /* gui_field_row emitted the label; the whole control track is ours */
 
     /* Clickable color square -- placed first for fast visual identification. */

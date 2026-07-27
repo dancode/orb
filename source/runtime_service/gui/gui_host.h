@@ -397,14 +397,12 @@ gui_style_set_t gui_style_set_create ( gui_style_source_fn fn, void* user );
 void            gui_style_set_push   ( gui_style_set_t set );
 void            gui_style_set_pop    ( void );
 gui_style_set_t gui_style_set_current( void );
-void gui_push_style_color( gui_col_t slot, u32 abgr );
+void gui_push_style_color( gui_el_role_t role, gui_el_state_t state, u32 abgr );
 void gui_pop_style_color( u32 count );
-void gui_next_style_color( gui_col_t slot, u32 abgr );
+void gui_next_style_color( gui_el_role_t role, gui_el_state_t state, u32 abgr );
 void gui_push_style_var( gui_style_var_t var, f32 value );
 void gui_pop_style_var( u32 count );
 void gui_next_style_var( gui_style_var_t var, f32 value );
-u32  gui_style_color( gui_col_t slot );
-const char* gui_style_color_name( gui_col_t slot );
 void gui_scale_push( gui_scale_t s );
 void gui_scale_pop( void );
 void gui_set_check_style( u8 style );
@@ -416,7 +414,10 @@ void gui_set_arrow_style( u8 style );
 /* the el_ palette: the phase mapping + the resolved read every render picks a face with */
 gui_el_state_t  gui_item_phase( gui_item_state_t st );
 u32             gui_el_color  ( gui_el_role_t role, gui_el_state_t state );
-gui_el_style_t* gui_el_style  ( void );
+const char*     gui_el_role_name  ( gui_el_role_t role );
+const char*     gui_el_state_name ( gui_el_state_t state );
+const char*     gui_style_var_name( gui_style_var_t var );
+gui_style_t*    gui_style_edit( void );
 
 /* component (widget logic, no paint -- component/) + its stock_* reference render
    (stock/gui_stock_widgets.c).  A widget of your own is the stock render's sibling. */

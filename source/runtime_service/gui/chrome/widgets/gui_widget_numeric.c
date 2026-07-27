@@ -33,7 +33,7 @@ num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
            const char* fmt, bool is_int, double cur, double* out )
 {
     /* Box background and border. */
-    draw_fill( box_r, st.focused ? COL_INPUT_FOCUS : col_frame_bg( st, COL_INPUT_BG ) );
+    draw_fill( box_r, st.focused ? COL_WIDGET_ACT : col_frame_bg( st, COL_WIDGET_BG ) );
     draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
 
     /* input_* seed the editor with the same format they display, so the field opens on the value

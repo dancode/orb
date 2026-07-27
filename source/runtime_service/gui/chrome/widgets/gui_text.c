@@ -140,7 +140,7 @@ gui_textf( const char* fmt, ... )
 
 /*==============================================================================================
     bullet_glyph -- the shared mark for bullet / bullet_text: a filled disc (RenderBullet) by
-    default, or a square when GUI_VAR_BULLET_STYLE is set.  `br` is the bsz x bsz cell already
+    default, or a square when GUI_VAR_BULLET_SHAPE is set.  `br` is the bsz x bsz cell already
     placed in the row; the square draws with rounding forced off so the frame radius cannot bend a
     tiny mark into a dot.
 ==============================================================================================*/
@@ -148,7 +148,7 @@ gui_textf( const char* fmt, ... )
 static void
 bullet_glyph( gui_rect_t br, f32 bsz, u32 col )
 {
-    if ( style_var( GUI_VAR_BULLET_STYLE ) >= 0.5f )
+    if ( style_var( GUI_VAR_BULLET_SHAPE ) >= 0.5f )
     {
         f32 save_round = draw_rounding();
         draw_set_rounding( 0.0f );
@@ -178,7 +178,7 @@ gui_bullet_text( const char* str )
     gui_rect_t r = cell_next_w( bsz + gap + tw, ch );
 
     /* Bullet mark, vertically centered in the row; then the run just past it.  A disc by default
-       (RenderBullet), or a square when GUI_VAR_BULLET_STYLE selects it. */
+       (RenderBullet), or a square when GUI_VAR_BULLET_SHAPE selects it. */
     gui_rect_t br = rect_align( r, bsz, bsz, GUI_ALIGN_VCENTER );
     bullet_glyph( br, bsz, COL_TEXT );
     draw_push_text( r.x + bsz + gap, r.y, COL_TEXT, str );
@@ -243,12 +243,12 @@ gui_progress_bar( f32 fraction, const char* overlay )
     gui_rect_t r = cell_next( WIDGET_H );
 
     /* Track, then the fill bar up to the fraction, then the border on top so the fill stays inside.
-       Solid fill by default; a top-to-bottom gradient gloss when GUI_VAR_PROGRESS_STYLE selects it. */
+       Solid fill by default; a top-to-bottom gradient gloss when GUI_VAR_PROGRESS_SHAPE selects it. */
     draw_fill( r, COL_SLIDER_TRACK );
     f32 fw = fraction * r.w;
     if ( fw > 0.0f )
     {
-        if ( style_var( GUI_VAR_PROGRESS_STYLE ) >= 0.5f )
+        if ( style_var( GUI_VAR_PROGRESS_SHAPE ) >= 0.5f )
             draw_gradient( ( gui_rect_t ){ r.x, r.y, fw, r.h },
                            COL_WIDGET_FG, col_lerp( COL_WIDGET_FG, 0xFFFFFFFFu, 0.45f ), true );
         else
@@ -303,7 +303,7 @@ gui_new_line( f32 h )
 
 /* A horizontal rule: a thin line spanning the cell width, centered in a half-height cell -- a
    full line of dead air reads as a section break, not a divider (worst under the roomy ramp).
-   Solid by default; a dashed rule when GUI_VAR_SEPARATOR_STYLE selects it (draw_rule). */
+   Solid by default; a dashed rule when GUI_VAR_SEPARATOR_SHAPE selects it (draw_rule). */
 void
 gui_separator( void )
 {

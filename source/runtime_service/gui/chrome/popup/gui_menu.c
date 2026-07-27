@@ -285,9 +285,9 @@ gui_main_menu_bar_begin( void )
 
     /* Bar sits flush across the display edge: pin the window radius to 0 only for the body-background
        fill window_begin draws inline below, so it comes out square the first time rather than reading
-       the ambient GUI_VAR_WIN_ROUNDING theme value.  Popped immediately after -- narrow on purpose, so
+       the ambient GUI_VAR_PANEL_ROUND theme value.  Popped immediately after -- narrow on purpose, so
        it does not also flatten a dropdown/submenu popup a caller opens between begin and end. */
-    style_push_var( GUI_VAR_WIN_ROUNDING, 0.0f );
+    style_push_var( GUI_VAR_PANEL_ROUND, 0.0f );
 
     bool vis = gui_window_begin( "##MainMenuBar",
                                    GUI_WIN_NOTITLEBAR | GUI_WIN_NOMOVE | GUI_WIN_NORESIZE
@@ -314,7 +314,7 @@ void
 gui_main_menu_bar_end( void )
 {
     /* Same narrow bracket as begin, this time around the border outline window_end draws inline. */
-    style_push_var( GUI_VAR_WIN_ROUNDING, 0.0f );
+    style_push_var( GUI_VAR_PANEL_ROUND, 0.0f );
     gui_window_end();
     style_pop_var( 1 );
 }

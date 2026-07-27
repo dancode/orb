@@ -173,7 +173,7 @@ content_extent_y( const layout_frame_t* f )
 static f32
 quant_floor_min( f32 v )
 {
-    return lat_floor_min( v, s_style.grid_quantum );
+    return lat_floor_min( v, GRID_Q );
 }
 
 /* Largest lattice multiple <= v (0 allowed -- no one-quantum floor).  For snapping a CUMULATIVE
@@ -184,14 +184,14 @@ quant_floor_min( f32 v )
 static f32
 quant_floor( f32 v )
 {
-    return lat_floor( v, s_style.grid_quantum );
+    return lat_floor( v, GRID_Q );
 }
 
 /* Smallest lattice multiple >= v. */
 static f32
 quant_ceil( f32 v )
 {
-    return lat_ceil( v, s_style.grid_quantum );
+    return lat_ceil( v, GRID_Q );
 }
 
 /*==============================================================================================
