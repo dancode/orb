@@ -316,6 +316,26 @@ f32 style_var( gui_style_var_t var )
     return style_bits_f32( style_read( style_var_slot( (u32)var ) ) );
 }
 
+/* A SHAPE pick, read back as the enum it is.  The GUI_CLASS_SHAPE vars carry a small enum in an
+   f32 slot -- the price of one uniform var space -- and getting it back out is a ROUNDING, not a
+   truncation and not a threshold.
+
+   It earns a function because the seven read sites had grown FOUR different spellings of it:
+   `style_var( x ) >= 0.5f` (five sites), `(u32)style_var( x ) == ENUM` (one), and
+   `(u32)( style_var( x ) + 0.5f )` (one).  Only the last is correct, and the other two are each
+   wrong in their own way.  The truncating cast turns a slot holding 0.999999 -- which is what an
+   f32 round-trip through a style editor or an interpolated push can leave -- into pick 0, so a
+   theme silently renders the wrong glyph.  The 0.5f threshold is a BOOLEAN test wearing a pick's
+   clothing: it is only correct while a var has exactly two values, and CHECK_SHAPE already has
+   three (tick / disc / cross), which is precisely why that one site had to spell it differently.
+   One accessor, rounding once, and a pick can grow a third value without hunting call sites. */
+u32
+style_shape( gui_style_var_t var )
+{
+    f32 v = style_var( var );
+    return ( v <= 0.0f ) ? 0u : (u32)( v + 0.5f );   /* negatives clamp rather than wrap huge */
+}
+
 /* The ramp, read from the working set like everything else so a kit's DENSE is a kit's own.
    scale_push turns a step into three var pushes; sz_scale_row reads one without pushing. */
 f32

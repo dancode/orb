@@ -24,7 +24,7 @@
 void
 draw_arrow( gui_rect_t box, gui_dir_t dir, u32 color )
 {
-    if ( style_var( GUI_VAR_ARROW_SHAPE ) >= 0.5f )
+    if ( style_shape( GUI_VAR_ARROW_SHAPE ) == GUI_ARROW_CHEVRON )
     {
         f32 t = floorf( box.h * 0.13f );  if ( t < 1.5f ) t = 1.5f;
         gui_draw_chevron( box, dir, t, color );
@@ -75,7 +75,7 @@ draw_close_x( gui_rect_t box, u32 color )
 void
 draw_check_indicator( gui_rect_t box, u32 col )
 {
-    u32 style = (u32)( style_var( GUI_VAR_CHECK_SHAPE ) + 0.5f );
+    u32 style = style_shape( GUI_VAR_CHECK_SHAPE );
     if ( style == GUI_CHECK_DISC )
         /* Radius as a FRACTION of the box, like the tick and cross above.  Subtracting a padding
            metric instead lets the mark vanish outright the moment that metric reaches the box's
@@ -96,7 +96,7 @@ draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col )
 {
     if ( w <= 0.0f )
         return;
-    if ( style_var( GUI_VAR_SEPARATOR_SHAPE ) >= 0.5f )
+    if ( style_shape( GUI_VAR_SEPARATOR_SHAPE ) == GUI_SEPARATOR_DASHED )
         gui_draw_dashed_line( x, yc, x + w, yc, 6.0f, 4.0f, thickness, col );
     else
         draw_push_rect_filled( x, yc - thickness * 0.5f, w, thickness, 0, 0, 1, 1, 0, col );

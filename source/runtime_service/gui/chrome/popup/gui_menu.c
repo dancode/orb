@@ -90,7 +90,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
     {
         f32 bx = r.x + WIDGET_PAD;
         f32 by = rect_align( r, CHECKBOX_SZ, CHECKBOX_SZ, GUI_ALIGN_VCENTER ).y;
-        bool draw_box = ( (u32)style_var( GUI_VAR_MENU_CHECK ) == GUI_MENU_CHECK_BOX );
+        bool draw_box = ( style_shape( GUI_VAR_MENU_CHECK ) == GUI_MENU_CHECK_BOX );
         if ( draw_box )
         {
             draw_push_rect_filled ( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, col_item_bg( st ) );

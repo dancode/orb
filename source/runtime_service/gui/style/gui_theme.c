@@ -71,6 +71,8 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
 
     [ GUI_VAR_GRID_Q          ] = { "Grid Quantum",    GUI_CLASS_PITCH  },
 
+    [ GUI_VAR_DISABLED_ALPHA  ] = { "Disabled Alpha",  GUI_CLASS_RATIO  },
+
     [ GUI_VAR_CHECK_SHAPE     ] = { "Check Shape",     GUI_CLASS_SHAPE  },
     [ GUI_VAR_BULLET_SHAPE    ] = { "Bullet Shape",    GUI_CLASS_SHAPE  },
     [ GUI_VAR_ARROW_SHAPE     ] = { "Arrow Shape",     GUI_CLASS_SHAPE  },
@@ -116,11 +118,13 @@ static const char* const k_class_name[ GUI_CLASS_COUNT ] =
     [ GUI_CLASS_STROKE ] = "Strokes",
     [ GUI_CLASS_SKIN   ] = "Skin",
     [ GUI_CLASS_PITCH  ] = "Lattice",
+    [ GUI_CLASS_RATIO  ] = "Ratios",
     [ GUI_CLASS_SHAPE  ] = "Shapes",
 };
 
-/* The three px classes: everything the em rescale multiplies.  A PITCH is a raw lattice count
-   and a SHAPE is an enum -- scaling either would be meaningless, not merely wrong. */
+/* The three px classes: everything the em rescale multiplies.  A PITCH is a raw lattice count,
+   a RATIO is a unitless fraction and a SHAPE is an enum -- scaling any of them would be
+   meaningless, not merely wrong. */
 static bool
 var_is_pixels( u8 cls )
 {
@@ -236,7 +240,9 @@ var_is_pixels( u8 cls )
         [ GUI_VAR_ROUND           ] = ( ROUND ), \
         [ GUI_VAR_PANEL_ROUND     ] = ( PANEL_ROUND ), \
         [ GUI_VAR_GRID_Q          ] = ( GRID_Q ), \
-        /* 3. SHAPE PICKS */ \
+        /* 3. RATIOS -- unitless */ \
+        [ GUI_VAR_DISABLED_ALPHA  ] = 0.5f, \
+        /* 4. SHAPE PICKS */ \
         [ GUI_VAR_CHECK_SHAPE     ] = GUI_CHECK_TICK, \
         [ GUI_VAR_BULLET_SHAPE    ] = GUI_BULLET_DISC, \
         [ GUI_VAR_ARROW_SHAPE     ] = GUI_ARROW_FILLED, \

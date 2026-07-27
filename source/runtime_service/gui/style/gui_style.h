@@ -43,6 +43,12 @@ u32 style_col     ( u8 role, u8 phase );
 u32 style_col_look( u8 role, u8 phase, u8 look );
 f32 style_var( gui_style_var_t var );
 
+/* A GUI_CLASS_SHAPE var read back as its enum -- a rounding, and the ONE spelling for it.  Never
+   compare a shape var with >= 0.5f (a two-value assumption) or cast it truncating (0.999999 is a
+   legal slot value and truncates to the wrong pick).  See the definition for the four idioms
+   this replaced. */
+u32 style_shape( gui_style_var_t var );
+
 /* One field of one density-ramp step (field: 0 = row, 1 = pad, 2 = gap).  Read through the block
    like everything else, so a kit's DENSE is the kit's own and not chrome's. */
 f32 style_scale( gui_scale_t s, u32 field );
@@ -71,6 +77,11 @@ f32 style_scale( gui_scale_t s, u32 field );
 
 #define ROUND_WIDGET  style_var( GUI_VAR_ROUND       )   /* control frames, knobs, grabs */
 #define ROUND_WIN     style_var( GUI_VAR_PANEL_ROUND )   /* windows, children, popups    */
+
+/* The disabled dim, as a style value like any other -- so a kit can soften or disable it, and
+   push_style_var can scope it.  Was a file-local #define in stock/gui_adornment.c, which put the
+   one number every disabled widget in the system reads outside the schema entirely. */
+#define DISABLED_ALPHA style_var( GUI_VAR_DISABLED_ALPHA )
 
 /*==============================================================================================
     3. COLORS -- the color grid, one macro per cell and no cell with two names.

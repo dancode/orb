@@ -120,41 +120,59 @@ bake_mute( u32 c, f32 t )
 
 /* The ink GUARD -- the one invariant in the bake, and the only op that can decline to act.
 
-   Ink is the single colour in the palette with a hard legibility floor, and it is the one the
-   SELECT plane can most easily break: a theme authors its ink against the SURFACE, then a
-   selection puts a saturated accent underneath it and nobody re-checked.  A light theme with a
-   deep selection fill is exactly the case -- near-black ink on a near-black blue.
+   Ink is the single colour in the palette with a hard legibility floor, and it is the only one
+   that has to survive faces it never met: a theme author picks an ink by looking at it on the
+   SURFACE, and the bake then puts it on a hovered control, a pressed one, a selection fill and
+   a pressed selection -- six derived grounds, none of which anyone eyeballed.  A light theme is
+   where it bites: near-black ink is fine on 0xE2E2E6 and marginal on a pressed blue.
 
    So: measure the luma separation the ink actually has from the ground it is about to sit on,
-   and if it falls short, drive the ink toward that ground's pole by precisely enough to reach
-   the floor.  Precisely, not by a guessed nudge -- luma is linear in the channels and bake_mix
-   is linear in t, and the pole is pure white (luma 255) or pure black (luma 0), so the t that
-   lands exactly on the floor solves in one divide.
+   and if it falls short, push it FURTHER ONTO THE SIDE IT IS ALREADY ON by precisely enough to
+   reach the floor.  Precisely, not by a guessed nudge -- luma is linear in the channels and
+   bake_mix is linear in t, and each end of the greyscale has luma 255 or 0, so the t that lands
+   exactly on the floor solves in one divide.
 
-   Note what it does NOT do: it never touches an ink that is already legible.  Both built-in
-   themes clear the floor by 80-odd on both planes, so this is a no-op for them and stays out of
-   the way of a hand-tuned palette; it exists to rescue a kit that re-seeded a ground without
-   thinking about what was written on it. */
+   The direction rule is "stay on your side", NOT bake_pole, and the difference is load-bearing.
+   A pole-based guard asks whether the GROUND is dark, which flips at luma 128 -- so a face that
+   drifts across the boundary under a hover animation would invert its label mid-transition, and
+   a light theme's pressed button (which lands at luma 123) would take WHITE text while the same
+   button one shade lighter took black.  Extending the separation the ink already has is
+   continuous in the ink/ground relationship and keeps a dark-ink theme dark-inked.  The pole is
+   only the tie-break for the degenerate case where the two luminances are exactly equal, which
+   is the one time "your side" does not exist.
 
-#define BAKE_INK_DELTA 110   /* minimum ink-vs-ground luma separation, of 255 */
+   Note what it does NOT do: it never touches ink that is already legible.  Both built-in themes
+   clear the floor on almost every cell, so this is very nearly a no-op for them and stays out of
+   the way of a hand-tuned palette; it exists to rescue the cells nobody looked at.
+
+   And note what it deliberately does not COVER: the status hues are left exactly as authored.
+   Ink is guarded because it composites against six derived faces the author never sees; a status
+   seed composites against one ground the author is looking at while picking it.  Guarding those
+   too would be the bake overruling a deliberate editorial choice on the strength of a number. */
+
+#define BAKE_INK_DELTA 110   /* minimum ink-vs-face luma separation, of 255                    */
+#define BAKE_DIM_DELTA  70   /* the same floor for SECONDARY ink, which is meant to be quieter */
 
 static u32
-bake_ink_on( u32 ink, u32 ground )
+bake_ink_on( u32 ink, u32 ground, i32 want )
 {
     const i32 g = (i32)bake_lum( ground );
     const i32 i = (i32)bake_lum( ink    );
-    const i32 d = ( i > g ) ? i - g : g - i;
 
-    if ( d >= BAKE_INK_DELTA ) return ink;   /* already legible -- leave the theme's choice alone */
+    if ( ( ( i > g ) ? i - g : g - i ) >= want ) return ink;   /* already legible -- leave it */
+
+    /* Which way is "further from the ground"?  The side the ink is already on; if it is on
+       neither (equal luma), fall back to the ground's own polarity. */
+    const bool up = ( i > g ) || ( i == g && g < 128 );
 
     /* Solve bake_mix's t for the exact floor.  Toward white: L(t) = i + (255 - i) * t.
        Toward black: L(t) = i * (1 - t).  Out-of-reach targets solve to t > 1 and bake_mix
-       clamps, which lands on the pole itself -- the best available answer. */
+       clamps, which lands on the end of the greyscale -- the best available answer. */
     f32 t;
-    if ( g < 128 ) t = ( i >= 255 ) ? 1.0f : (f32)( g + BAKE_INK_DELTA - i ) / (f32)( 255 - i );
-    else           t = ( i <=   0 ) ? 1.0f : 1.0f - (f32)( g - BAKE_INK_DELTA ) / (f32)i;
+    if ( up ) t = ( i >= 255 ) ? 1.0f : (f32)( g + want - i ) / (f32)( 255 - i );
+    else      t = ( i <=   0 ) ? 1.0f : 1.0f - (f32)( g - want ) / (f32)i;
 
-    return bake_mix( ink, bake_pole( ground ), t );
+    return bake_mix( ink, up ? BAKE_WHITE : BAKE_BLACK, t );
 }
 
 /*==============================================================================================
@@ -253,12 +271,26 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step, pole );
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_DIM    ] = bake_fade( line, fade, ground );
 
-    /* TEXT -- ink does not react; the face under it does.  The ink arrived already guarded
-       against this plane's ground (see bake_ink_on), so all four cells inherit that floor. */
-    col[ GUI_ROLE_TEXT ][ GUI_PHASE_IDLE   ] = ink;
-    col[ GUI_ROLE_TEXT ][ GUI_PHASE_HOT    ] = ink;
-    col[ GUI_ROLE_TEXT ][ GUI_PHASE_ACTIVE ] = ink;
-    col[ GUI_ROLE_TEXT ][ GUI_PHASE_DIM    ] = bake_fade( ink, fade, ground );
+    /* TEXT -- ink does not react BY CHOICE: all four cells start from the one ink, because text
+       on a hot face is the same ink and it is the FACE that moved.  Each is then guarded against
+       the face it will actually sit on (bake_ink_on), which is the only thing that can make them
+       differ -- and only by as much as legibility demands.  Written after BG deliberately: the
+       guard reads the very cells above.
+
+       HOT and ACTIVE guard against BG, not PANEL or TITLE, because BG is the face that travels
+       furthest -- it takes the full wash plus a lift or a sink, where a container takes a fifth
+       of the wash.  Clear BG and the quieter surfaces are clear by construction.
+
+       DIM has a floor of its own, and a lower one: secondary text is MEANT to recede, so holding
+       it to the body-text separation would defeat the fade that makes it secondary.  It is still
+       a floor -- receding is not the same as disappearing. */
+    col[ GUI_ROLE_TEXT ][ GUI_PHASE_IDLE   ] = bake_ink_on( ink, ground, BAKE_INK_DELTA );
+    col[ GUI_ROLE_TEXT ][ GUI_PHASE_HOT    ] = bake_ink_on( ink, col[ GUI_ROLE_BG ][ GUI_PHASE_HOT ],
+                                                            BAKE_INK_DELTA );
+    col[ GUI_ROLE_TEXT ][ GUI_PHASE_ACTIVE ] = bake_ink_on( ink, col[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ],
+                                                            BAKE_INK_DELTA );
+    col[ GUI_ROLE_TEXT ][ GUI_PHASE_DIM    ] = bake_ink_on( bake_fade( ink, fade, ground ), ground,
+                                                            BAKE_DIM_DELTA );
 
     /* ACCENT -- the value held.  DIM is the empty track, so it comes off the CONTROL face. */
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_IDLE   ] = accent;
@@ -301,8 +333,9 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     a press does not, so it has to survive being looked at for minutes rather than a frame.
 
     The control face is washed by the same amount, so a button inside a selected row still reads
-    as a control ON that row rather than as a hole punched through it.  The ink is guarded
-    separately per plane, which is the whole reason a light theme can carry a deep selection.
+    as a control ON that row rather than as a hole punched through it.  The RAW ink goes to both
+    planes -- the guard is applied per CELL inside bake_plane, against the specific face each ink
+    cell will sit on, which is what lets a light theme carry a deep selection at all.
 ==============================================================================================*/
 
 void
@@ -318,13 +351,12 @@ gui_style_bake( gui_style_t* s )
     const u32 accent  = p->seed[ GUI_SEED_ACCENT  ];
     const f32 select  = p->ramp[ GUI_RAMP_SELECT  ];
 
-    bake_plane( s->col[ GUI_LOOK_NORMAL ], p, surface, control, bake_ink_on( ink, surface ) );
+    bake_plane( s->col[ GUI_LOOK_NORMAL ], p, surface, control, ink );
 
     const u32 sel_ground  = bake_wash( surface, select, accent );
     const u32 sel_control = bake_wash( control, select, accent );
 
-    bake_plane( s->col[ GUI_LOOK_SELECT ], p, sel_ground, sel_control,
-                bake_ink_on( ink, sel_ground ) );
+    bake_plane( s->col[ GUI_LOOK_SELECT ], p, sel_ground, sel_control, ink );
 }
 
 // clang-format on

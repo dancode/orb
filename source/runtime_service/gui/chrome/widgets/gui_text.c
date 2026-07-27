@@ -148,7 +148,7 @@ gui_textf( const char* fmt, ... )
 static void
 bullet_glyph( gui_rect_t br, f32 bsz, u32 col )
 {
-    if ( style_var( GUI_VAR_BULLET_SHAPE ) >= 0.5f )
+    if ( style_shape( GUI_VAR_BULLET_SHAPE ) == GUI_BULLET_SQUARE )
     {
         f32 save_round = draw_rounding();
         draw_set_rounding( 0.0f );
@@ -248,7 +248,7 @@ gui_progress_bar( f32 fraction, const char* overlay )
     f32 fw = fraction * r.w;
     if ( fw > 0.0f )
     {
-        if ( style_var( GUI_VAR_PROGRESS_SHAPE ) >= 0.5f )
+        if ( style_shape( GUI_VAR_PROGRESS_SHAPE ) == GUI_PROGRESS_GRADIENT )
             draw_gradient( ( gui_rect_t ){ r.x, r.y, fw, r.h },
                            COL_ACCENT_IDLE, col_lerp( COL_ACCENT_IDLE, 0xFFFFFFFFu, 0.45f ), true );
         else

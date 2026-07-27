@@ -132,7 +132,7 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
        A bar grab by default (grab radius -- raise GUI_VAR_ROUND for a pill), or a circular handle
        when GUI_VAR_KNOB_SHAPE selects it. */
     f32 knob_x = track_r.x + t * ( track_r.w - SLIDER_KNOB_W );
-    if ( style_var( GUI_VAR_KNOB_SHAPE ) >= 0.5f )
+    if ( style_shape( GUI_VAR_KNOB_SHAPE ) == GUI_SLIDER_KNOB_CIRCLE )
     {
         f32 kcx = knob_x + SLIDER_KNOB_W * 0.5f;
         f32 kcy = track_r.y + track_r.h * 0.5f;

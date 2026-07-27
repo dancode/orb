@@ -34,9 +34,6 @@
     never touch.  Style owns the commit, stock the adornment.
 ==============================================================================================*/
 
-/* Disabled items draw at this opacity (the rest of the dim is in the draw list's global alpha). */
-#define GUI_DISABLED_ALPHA 0.5f
-
 /* Resolve the flags for the item now emitting, then apply their ambient consequences.  Called
    once per item from cell_next_w (the universal emit seam). */
 gui_item_flags_t
@@ -48,7 +45,9 @@ item_flags_resolve( void )
        layer so it applies for this widget's whole draw, then clears for the following one. */
     style_item_commit();
 
-    draw_set_alpha( ( f & GUI_ITEM_DISABLED ) ? GUI_DISABLED_ALPHA : 1.0f );
+    /* The disabled dim, read through the style like every other value: a kit can soften it, and
+       push_style_var scopes it (the rest of the dim is the draw list's global alpha). */
+    draw_set_alpha( ( f & GUI_ITEM_DISABLED ) ? DISABLED_ALPHA : 1.0f );
     /* Default this widget's rects to the control-frame radius (base + push/pop + next-* override).
        A widget that draws a grab (slider knob, scrollbar) or a squared-off mark (check, bullet)
        overrides draw_set_rounding locally for that sub-element. */

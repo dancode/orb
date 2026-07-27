@@ -904,11 +904,15 @@ show_style_editor( bool* p_open )
     {
         if ( c == GUI_CLASS_SHAPE ) continue;
 
+        /* Range comes off the CLASS too -- a ratio is 0..1, a pixel value 0..64.  One more thing
+           the editor asks the engine rather than tabulating per var. */
+        f32 hi = ( c == GUI_CLASS_RATIO ) ? 1.0f : 64.0f;
+
         gui()->separator_text( gui()->style_class_name( ( gui_style_class_t )c ) );
         for ( u32 v = 0; v < GUI_VAR_COUNT; ++v )
             if ( gui()->style_var_class( ( gui_style_var_t )v ) == ( gui_style_class_t )c )
                 changed |= se_f32( gui()->style_var_name( ( gui_style_var_t )v ),
-                                   &work.var[ v ], 0.0f, 64.0f );
+                                   &work.var[ v ], 0.0f, hi );
     }
 
     gui()->separator_text( gui()->style_class_name( GUI_CLASS_SHAPE ) );

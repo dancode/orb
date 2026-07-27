@@ -562,6 +562,11 @@ typedef enum
     GUI_VAR_KNOB_SHAPE,     // slider knob: 0 = bar, 1 = circle (gui_slider_knob_t)
     GUI_VAR_MENU_CHECK,     // menu check gutter: 0 = plain, 1 = bordered box (gui_menu_check_t)
 
+    /* 3. RATIO -- unitless 0..1 fractions.  Neither scaled nor snapped: a fraction has no
+       pixels in it to scale and no lattice to land on. */
+
+    GUI_VAR_DISABLED_ALPHA, // opacity a disabled item draws at (1 = no dim at all)
+
     GUI_VAR_COUNT,          // var count -- not a var
 
 } gui_style_var_t;
@@ -576,7 +581,14 @@ typedef enum
      STROKE   yes          no                 a line width -- snapping a hairline quadruples it
      SKIN     yes          no                 a paint-only radius, same reason
      PITCH    no           n/a                the lattice quantum itself, in raw pixels
+     RATIO    no           n/a                a unitless 0..1 fraction -- no pixels to scale
      SHAPE    no           n/a                an enum pick carried in the f32 slot
+
+   RATIO exists because every other non-pick class is em-SCALED, and scaling a fraction is
+   simply wrong: a disabled item at 0.5 opacity would become 0.9 at a large font.  It is not
+   SHAPE either, despite sharing "unscaled" -- a shape is a pick a tool offers as a combo over
+   named values, a ratio is a number it offers as a 0..1 slider, and that difference is the
+   whole reason an editor asks for the class.
 
    This replaced an ordering trap: the scaled span used to be an enum range, so a metric declared
    past the marker silently never scaled.  A class is declared at the same site as the name, so
@@ -587,6 +599,7 @@ typedef enum
     GUI_CLASS_STROKE,
     GUI_CLASS_SKIN,
     GUI_CLASS_PITCH,
+    GUI_CLASS_RATIO,
     GUI_CLASS_SHAPE,
     GUI_CLASS_COUNT
 
