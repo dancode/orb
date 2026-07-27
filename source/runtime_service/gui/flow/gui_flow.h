@@ -205,6 +205,7 @@ typedef struct
 
     gui_rect_t      parent_clip;        // SCREEN: s_scope.clip to restore at pop
     u32             id_restore;         // id-scope depth to restore at pop (see id stack below)
+    u32             set_restore;        // style-set depth to restore at pop (same containment rule)
 
     /* Child edge-resize (child_begin CHILD_RESIZE_*): the armed/hot edges of this child's border
        and the s_scope.resize_hot to restore at child_end.  child_begin sets both (0 for a

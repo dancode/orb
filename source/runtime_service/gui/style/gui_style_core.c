@@ -743,6 +743,23 @@ gui_style_set_pop( void )
 
 gui_style_set_t gui_style_set_current( void ) { return (gui_style_set_t)style_block_current( s_el_blk ); }
 
+/* Set-stack depth + unwind-to-depth: the containment pair a region uses, mirroring how it
+   restores the id scope.  A region inherits the ambient set rather than choosing one -- that is
+   what lets a caller bracket a whole window from outside it -- but an unbalanced push inside
+   the region cannot escape it and restyle everything drawn after. */
+
+u32
+style_set_depth( void )
+{
+    return s_set_sp;
+}
+
+void
+style_set_unwind( u32 depth )
+{
+    while ( s_set_sp > depth ) gui_style_set_pop();
+}
+
 /*==============================================================================================
     The element bridge -- the stratum's public reads.
 

@@ -103,8 +103,13 @@ u32 style_col( gui_col_t slot );
 void style_push_var( gui_style_var_t slot, f32 value );
 void style_pop_var( u32 count );
 
-/* True while both push_style stacks are empty (the volatile-replay precondition). */
+/* True while no ambient style scope is open (the volatile-replay precondition). */
 bool style_stacks_empty( void );
+
+/* Style-set containment (gui_style_core.c) -- the pair a region uses to keep an unbalanced
+   style_set_push from escaping it, exactly as id_restore does for the id scope. */
+u32  style_set_depth ( void );
+void style_set_unwind( u32 depth );
 
 /* The item / chrome / frame seam hooks (gui_style_core.c) -- driven from OUTSIDE this unit:
    style_item_commit / style_chrome_reset by the impure per-item wrappers (stock/

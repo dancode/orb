@@ -254,10 +254,12 @@ tier_flow( void )
 }
 
 /*==============================================================================================
-    Tier 5 -- GUI_STYLE: a kit PROMOTES its own look.  style_source_set registers the kit as
-    the OWNER of the installed element style: invoked immediately and again at every style
-    landing (font / theme / scale), so the palette survives instead of being clobbered by the
-    chrome theme compiler.  Entering/leaving the tier registers/restores -- see build_frame.
+    Tier 5 -- GUI_STYLE: a kit PROMOTES its own look.  A registered source is invoked immediately
+    and again at every style landing (font / theme / scale), so the palette is re-derived instead
+    of clobbered by the chrome theme compiler.  Two targets, on the pane's toggle: style_source_set
+    owns the DEFAULT set (chrome included), style_set_create owns a set of the kit's own that only
+    its pane is bracketed with -- co-existence, both looks installed at once.  Entering/leaving the
+    tier registers/restores -- see build_frame.
 ==============================================================================================*/
 
 static i32 s_t5_pal = 0;
@@ -302,12 +304,44 @@ install_palette( i32 which )
     }
 }
 
-/* the registered owner: re-derives the kit look at every style landing */
+/* the registered owner: re-derives the kit look at every style landing.  ONE source serves both
+   modes below -- it writes through el_style(), which during an install points at whichever set
+   is being filled, so the same function installs into set 0 or into the kit's own set. */
 static void
 t5_style_source( void* user )
 {
     UNUSED( user );
     install_palette( s_t5_pal );
+}
+
+/*----------------------------------------------------------------------------------------------
+    The two ways to own a look, on a toggle so the difference is visible rather than described:
+
+      SET 0    style_source_set -- the kit owns the DEFAULT set, so everything resolves through
+               it: the pane, and the chrome around it too.
+      OWN SET  style_set_create + push/pop -- the kit owns a set of its own and brackets only its
+               pane.  Chrome keeps the theme; both looks stay installed at once.
+
+    Flip it and watch the hint line and tier chrome revert while the pane holds its palette.
+----------------------------------------------------------------------------------------------*/
+
+static bool            s_t5_scoped = false;                    // false = own set 0
+static gui_style_set_t s_t5_set    = GUI_STYLE_SET_DEFAULT;    // created on first scoped entry
+
+/* Point the kit's look at whichever target the toggle selects, and clear the other one. */
+static void
+t5_own( bool scoped )
+{
+    if ( scoped )
+    {
+        gui()->style_source_set( NULL, NULL );          /* hand set 0 back to the theme */
+        if ( s_t5_set == GUI_STYLE_SET_DEFAULT )
+            s_t5_set = gui()->style_set_create( t5_style_source, NULL );
+    }
+    else
+    {
+        gui()->style_source_set( t5_style_source, NULL );
+    }
 }
 
 static void
@@ -317,17 +351,24 @@ tier_style( void )
     static f32  s_level  = 0.6f;
     static const char* const s_pals[] = { "ember", "ice" };
 
-    gui_rect_t area = { 140.0f, 120.0f, 380.0f, 250.0f };
+    if ( s_t5_scoped )
+        gui()->style_set_push( s_t5_set );
+
+    gui_rect_t area = { 140.0f, 120.0f, 380.0f, 280.0f };
     gui_pane_t p = gui()->pane_begin( "t5_pane", area, GUI_REGION_MID, GUI_VP_INVALID,
                                       GUI_WIN_NONE );
     gui()->stock_panel( p.rect );
 
     gui_rect_t r = gui_rect_pad( p.rect, 10.0f );
     gui()->stock_label( gui_rect_cut_top( &r, 26.0f ), GUI_ALIGN_LEFT,
-                     "the SAME stock_* renders, the kit palette" );
+                     s_t5_scoped ? "my own set -- chrome keeps the theme"
+                                 : "the SAME stock_* renders, the kit palette" );
+    r.y += 6.0f;  r.h -= 6.0f;
+    if ( gui()->stock_check( gui_rect_cut_top( &r, 26.0f ), "t5_scope", &s_t5_scoped ) )
+        t5_own( s_t5_scoped );
     r.y += 6.0f;  r.h -= 6.0f;
     if ( gui()->stock_cycle( gui_rect_cut_top( &r, 26.0f ), "t5_pal", &s_t5_pal, s_pals, 2 ) )
-        install_palette( s_t5_pal );   /* restyle now; the source keeps it across landings */
+        gui()->style_apply();          /* a landing: every set re-derives, ours through its source */
     r.y += 6.0f;  r.h -= 6.0f;
     gui()->stock_check( gui_rect_cut_top( &r, 26.0f ), "t5_check", &s_check );
     r.y += 6.0f;  r.h -= 6.0f;
@@ -342,6 +383,9 @@ tier_style( void )
     gui()->stock_button( gui_rect_cut_top( &r, 30.0f ), "stock_button" );
 
     gui()->pane_end();
+
+    if ( s_t5_scoped )
+        gui()->style_set_pop();
 }
 
 /*==============================================================================================
@@ -386,11 +430,13 @@ build_frame( void )
             if ( gui()->is_key_pressed( ( app_key_t )( APP_KEY_0 + k ) ) )
                 s_tier = k;
 
-    /* entering the style tier promotes the kit as style owner; leaving restores the default
-       owner (chrome's theme compiler) -- both through the one promotion seam */
+    /* entering the style tier promotes the kit as style owner -- of the default set, or of a set
+       of its own (the tier's toggle); leaving hands set 0 back to chrome's theme compiler.  A set
+       the kit created stays created: it is installed alongside chrome's, not instead of it, so
+       there is nothing to tear down. */
     static i32 s_prev = 1;
     if ( s_tier == 5 && s_prev != 5 )
-        gui()->style_source_set( t5_style_source, NULL );
+        t5_own( s_t5_scoped );
     if ( s_prev == 5 && s_tier != 5 )
         gui()->style_source_set( NULL, NULL );
     s_prev = s_tier;

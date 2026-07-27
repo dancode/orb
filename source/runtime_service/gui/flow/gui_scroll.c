@@ -118,6 +118,12 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     f->id_restore = s_id_sp;
     id_push( id );
 
+    /* Same containment rule for the style set: a region remembers the set depth it opened at, so
+       a style_set_push the caller left unbalanced inside it cannot restyle its siblings for the
+       rest of the frame.  The region does not CHANGE the set -- it inherits whatever is current,
+       which is what lets a kit bracket a whole window from outside it. */
+    f->set_restore = style_set_depth();
+
     const f32 knob = SLIDER_KNOB_W;
 
     /* Policy: ALWAYS_* force a static bar; NOSCROLL hides every bar (wheel still works);
@@ -333,7 +339,8 @@ layout_pop_region( void )
        exact bottom (the gap before whatever follows is owed via gap_pending, not appended), and
        line.prev_item / the line record are stamped so same_line after child_end anchors to the box.
        The root region (a window body) has no parent frame. */
-    s_id_sp = f->id_restore;   /* unwind this region's id scope (and any leaked push_id) */
+    s_id_sp = f->id_restore;            /* unwind this region's id scope (and any leaked push_id) */
+    style_set_unwind( f->set_restore ); /* and any leaked style_set_push */
     gui_rect_t outer = f->outer;
     --s_layout_sp;
     if ( s_layout_sp > 0 )
