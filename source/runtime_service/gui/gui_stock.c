@@ -18,14 +18,14 @@
     (source/runtime_service/gui/component/); the three inert ones (panel / label / meter) have
     no component because they have no interaction to extract.
 
-    Naming: stock_ is the WIDGET SET; el_ is the STYLE AXIS it paints from (gui_el_color,
-    GUI_EL_BG, GUI_EL_HOT).  Two vocabularies on purpose.
+    Naming: stock_ is the WIDGET SET; style_ is the LOOK it paints from (style_col over the
+    GUI_ROLE_* x GUI_PHASE_* grid).  ONE vocabulary -- the same cells chrome names.
 
     Three constituents, three faces of the same role:
 
     stock/gui_stock_widgets.c  -- the public stock_* renders: fill EXACTLY the rect they are
-                                     handed, read ONLY the element stratum (style_el_col /
-                                     WIDGET_PAD; the style unit owns its storage and the
+                                     handed, and resolve every look through style_col /
+                                     style_var (the style unit owns the storage and the
                                      theme compile that fills it)
     stock/gui_adornment.c     -- per-item ambient application (item_flags_resolve /
                                      item_flags_chrome_reset), the label paint
@@ -39,8 +39,8 @@
                                      unit's parameter-pure emitters
 
     Cross-unit declarations live in stock/gui_stock_internal.h (the umbrella slot between flow
-    and chrome); the public stock_* surface is the GUI_STOCK band of gui_api.h, and the el_
-    style stratum it paints from stays in gui_element.h.
+    and chrome); the public stock_* surface is the GUI_STOCK band of gui_api.h, and the style
+    grid it paints from is gui.h's -- the same one chrome reads.
 
 ==============================================================================================*/
 
@@ -73,8 +73,8 @@
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory
-    (gui_ui_mem.c).  Nothing left to count: the element style's storage moved into the style
-    unit's block backend, and the renders themselves are stateless.
+    (gui_ui_mem.c).  Nothing left to count: the style's storage lives in the style unit's block
+    backend, and the renders themselves are stateless.
 ==============================================================================================*/
 
 u32

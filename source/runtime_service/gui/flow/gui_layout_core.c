@@ -1014,7 +1014,7 @@ cell_next_w( f32 natural_w, f32 h )
        anchored box, a hand-cut band.  THE seam that makes every widget layout-agnostic: the same
        gui_button() takes its rect from the flow template OR from here, so a rect-first call site
        (next_item_rect(box); button(...)) and a flow call site (button(...)) run identical code -- and
-       the el_* rect cores become optional sugar over it.  A pure placement override: it consumes the
+       the stock_* rect renders become optional sugar over it.  A pure placement override: it consumes the
        height one-shot, moves no pen, and grows no highwater (reserve with empty() if a region must
        size around it), so it needs no declared mode and returns before the emit-before-header guard.
        Nav is still latched so item_state keys it. */

@@ -860,7 +860,7 @@ typedef struct gui_api_s
        identity (items inside attribute to this pane), enters the hover/z contest at the tier's
        band (same contest windows and popups compete in), and pushes the base clip (draw + hit)
        to the rect -- NOTHING else: no pool record, no persistence, no layout, no background
-       paint, no scroll.  The caller owns every pixel (el_* / draw_* over carved rects) and any
+       paint, no scroll.  The caller owns every pixel (stock_* / draw_* over carved rects) and any
        cross-frame state; open flow inside with flow_begin( pane.rect ) if wanted.  Flags
        honored: GUI_WIN_NO_INPUT (pure display), GUI_WIN_NO_CLIP, GUI_WIN_DEBUG_BAND.  vp
        GUI_VP_INVALID = primary surface.  Root-level, never nests; always pair with pane_end.
@@ -1141,7 +1141,7 @@ typedef struct gui_api_s
                       producer (a carve / split / anchor leaf, a hand-cut band).  The rect-first door
                       onto the WHOLE widget set -- any gui_* widget takes its rect from here instead
                       of the flow template, so one call site works under manual, carved, or flow
-                      layout, and the el_* rect cores are optional sugar over it.  Pure placement: no
+                      layout, and the stock_* rect renders are optional sugar over it.  Pure placement: no
                       pen advance, no highwater, no declared mode needed; reserve with empty() if a
                       region must size around it.
 
@@ -1329,28 +1329,57 @@ typedef struct gui_api_s
     void            ( *style_set_pop     )( void );
     gui_style_set_t ( *style_set_current )( void );
 
-    /* Style stacks -- the push-model theme override.  A color names a (role, state) cell of the
-       element grid; a var names a gui_style_var_t scalar.  push overrides until the matching pop
+    /* Style stacks -- the push-model theme override.  A color names a (role, phase) cell of the
+       color grid; a var names a gui_style_var_t scalar.  push overrides until the matching pop
        (pop takes a count, like ImGui); next_style_* overrides for just the next widget, no pop.
        Colors are abgr (GUI_COLOR); vars are f32 px.  Like the item flags, this is callsite-free:
        every widget already reads the grid + metrics through the resolver, so an override reaches
        them without any widget change.
 
-       GUI_EL_ALL as the state selects the whole row -- "recolour the text", the common case --
+       GUI_PHASE_ALL as the phase selects the whole row -- recolour all four text cells --
        and still counts as ONE push, so it takes one pop.
 
-           gui()->push_style_color( GUI_EL_BG, GUI_EL_IDLE, GUI_COLOR( 0xFF, 0, 0, 0xFF ) );
+           gui()->push_style_color( GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_COLOR( 0xFF, 0, 0, 0xFF ) );
            gui()->push_style_var( GUI_VAR_PAD, 20.0f );
            gui()->button( "Big Red" );
            gui()->pop_style_var( 1 );
            gui()->pop_style_color( 1 ); */
 
-    void ( *push_style_color )( gui_el_role_t role, gui_el_state_t state, u32 abgr );
+    void ( *push_style_color )( gui_style_role_t role, gui_style_phase_t phase, u32 abgr );
     void ( *pop_style_color  )( u32 count );
-    void ( *next_style_color )( gui_el_role_t role, gui_el_state_t state, u32 abgr );
+    void ( *next_style_color )( gui_style_role_t role, gui_style_phase_t phase, u32 abgr );
     void ( *push_style_var   )( gui_style_var_t var, f32 value );
     void ( *pop_style_var    )( u32 count );
     void ( *next_style_var   )( gui_style_var_t var, f32 value );
+
+    /* The RESOLVED reads -- the other half of the stacks above, and what every render actually
+       calls.  style_color returns a (role, phase) cell of the installed style (kit-owned when a
+       style source is registered) with any live push_style_color / next_style_color override
+       already applied; item_phase distils an interact state into the phase to ask for.  THE
+       color door for a widget of your own -- the same seam the stock renders and chrome's
+       internal COL_* macros read, so a push_style_color around your widget behaves exactly as
+       it does around a stock one.  nav counts as HOT, so a keyboard-navigated widget lights
+       like a hovered one; GUI_PHASE_DIM is the inert variant a render picks deliberately.
+
+           gui_comp_button_t b = gui()->comp_button( "save", r );
+           u32 face = gui()->style_color( GUI_ROLE_BG, gui()->item_phase( b.state ) );
+
+       style_edit -- the raw INSTALLED style of the current set, mutable: the kit tuning door for
+       INSTALLING a look, and the same gui_style_t a theme is authored as.  Ad-hoc writes last
+       until the next style landing re-installs them; a kit that OWNS the look registers
+       style_source_set (or style_set_create) so its style is re-derived rather than clobbered at
+       every landing.  Do not read ->col[][] through it at paint time -- that bypasses the style
+       stacks; use style_color. */
+    gui_style_phase_t ( *item_phase  )( gui_item_state_t st );
+    u32               ( *style_color )( gui_style_role_t role, gui_style_phase_t phase );
+    gui_style_t*      ( *style_edit  )( void );
+
+    /* Display names for the schema's three axes -- engine-owned, so a style editor walks the
+       roles, the phases, and the vars instead of keeping parallel tables in step with enums it
+       does not own.  An unnamed index reads "?" rather than running off the end. */
+    const char* ( *style_role_name  )( gui_style_role_t role );
+    const char* ( *style_phase_name )( gui_style_phase_t phase );
+    const char* ( *style_var_name   )( gui_style_var_t var );
 
     /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
        BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on
@@ -1383,37 +1412,12 @@ typedef struct gui_api_s
         set instead.)
 
             gui_comp_button_t b = gui()->comp_button( "save", r );          // logic
-            u32 face = gui()->el_color( GUI_EL_BG, gui()->item_phase( b.state ) );
-            gui()->draw_round_rect( r, 8,8,8,8, true, 0.0f, face );          // your look
+            u32 face = gui()->style_color( GUI_ROLE_BG, gui()->item_phase( b.state ) );  // look
+            gui()->draw_round_rect( r, 8,8,8,8, true, 0.0f, face );          // your paint
+
+        The two style reads that pairing needs (item_phase / style_color) sit with the rest of
+        the style surface in GUI_STYLE above -- ONE vocabulary, whichever tier you build on.
     =============================================================================================================*/
-
-    /* item_phase -- interaction state -> palette state (ACTIVE / HOT / IDLE), the one mapping
-       every render needs; nav counts as HOT so a keyboard-navigated widget lights like a hovered
-       one.  Pair with el_color and a custom render is two lines.  (GUI_EL_DIM is the inert /
-       disabled variant: a render picks it deliberately, never from live interaction.)
-
-       el_color -- the RESOLVED element palette read: the installed style (kit-owned when a style
-       source is registered) with an active push_style_color / next_style_color override winning.
-       THE color door for a widget of your own -- the same seam the stock renders and chrome's
-       COL_* macros read, so a push_style_color around your widget behaves exactly as it does
-       around a stock one.
-
-       style_edit -- the raw INSTALLED style of the current set, mutable: the kit (S3) tuning door
-       for INSTALLING a look, and the same gui_style_t a theme is authored as.  Ad-hoc writes last
-       until the next style landing re-installs them; a kit that OWNS the look registers
-       style_source_set (or style_set_create) so its style is re-derived rather than clobbered at
-       every landing.  Do not read ->col[][] through it at paint time -- that bypasses the style
-       stack; use el_color. */
-    gui_el_state_t  ( *item_phase )( gui_item_state_t st );
-    u32             ( *el_color   )( gui_el_role_t role, gui_el_state_t state );
-    gui_style_t*    ( *style_edit )( void );
-
-    /* Display names for the schema's three axes -- engine-owned, so a style editor walks the
-       roles, the states, and the vars instead of keeping parallel tables in step with enums it
-       does not own.  An unnamed index reads "?" rather than running off the end. */
-    const char*     ( *el_role_name   )( gui_el_role_t role );
-    const char*     ( *el_state_name  )( gui_el_state_t state );
-    const char*     ( *style_var_name )( gui_style_var_t var );
 
     /*=====================================  the component / render pairs  ======================================*/
 
@@ -1421,7 +1425,7 @@ typedef struct gui_api_s
        BAR and HANDLE rects.  Absolute-position mapping: the handle CENTER tracks the cursor, so
        value and knob never disagree.  The positional form covers the common case; comp_slider_ex
        takes the full desc (gui_comp_slider_desc_t: snap step, handle width, nav step).
-       stock_slider draws an el-styled groove + handle, leaving any value text to the caller. */
+       stock_slider draws a styled groove + handle, leaving any value text to the caller. */
     gui_comp_slider_t     ( *comp_slider      )( const char* id, gui_rect_t rect, f32* v, f32 lo, f32 hi );
     gui_comp_slider_t     ( *comp_slider_ex   )( const gui_comp_slider_desc_t* desc );
     bool                  ( *stock_slider     )( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi );

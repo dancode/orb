@@ -552,7 +552,7 @@ gui_viewport_update( void )
     /* Freeing a surface mid-build would pull it out from under a draw list still being written;
        after render it is already too late (the frame drew into a surface marked for teardown).
        The one safe window is between frame_end and the first render -- name it when missed. */
-    GUI_CONTRACT( s_frame_phase != GUI_PHASE_BUILD,
+    GUI_CONTRACT( s_frame_phase != GUI_FRAME_BUILD,
                   "viewport_update() inside the build -- it frees surfaces, so it must run "
                   "after frame_end() and before render().\n" );
 
@@ -577,8 +577,8 @@ gui_viewport_update( void )
     viewport_teardown_owned();
 
     /* Surfaces reconciled: render may now flush this frame's geometry. */
-    if ( s_frame_phase == GUI_PHASE_SEALED )
-        s_frame_phase = GUI_PHASE_SYNCED;
+    if ( s_frame_phase == GUI_FRAME_SEALED )
+        s_frame_phase = GUI_FRAME_SYNCED;
 }
 
 /* Present every gui-owned floater surface from the shared draw list: open a frame on the

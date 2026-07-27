@@ -40,7 +40,7 @@ The two servers NEVER see each other. Everything else is a LIBRARY over them:
     gui_interact.c   interact/   interact/gui_interact.h         gesture mechanisms (move/resize/drag/feat)
     gui_flow.c       flow/       flow/gui_flow.h                 layout: THE rect producer
     gui_component.c  component/  component/gui_component_internal.h  widget LOGIC, no paint
-    gui_stock.c      stock/      gui_element.h (el_ axis) +      reference widget set (stock_* renders),
+    gui_stock.c      stock/      the style grid (gui.h) +        reference widget set (stock_* renders),
                                  stock/gui_stock_internal.h      astride both servers
     gui_chrome.c     chrome/     chrome/gui_chrome.h             product windowing policy (6 folders)
     gui_debug.c      debug/      debug/gui_debug.h               server introspection (severable)
@@ -111,10 +111,12 @@ only its logic is shared. Four rungs, each a client of the one below:
   payoff: the same slider logic drives the editor's flat handle and a game's diamond-and-art
   handle, and neither is favored.
 
-Status: the widget set is `stock_*` throughout; the old `el_*` widget names are gone (the `el_`
-prefix now names ONLY the style axis -- `gui_el_color`, `GUI_EL_BG`, `GUI_EL_HOT`). Each
-`gui_stock_*` render sits over a `gui_comp_*` logic core; all are public (`gui_host.h` / the
-vtable), and a user widget is the stock render's sibling over the same `comp_*` call.
+Status: the widget set is `stock_*` throughout and the `el_` prefix is gone entirely -- the
+elements became the components, and the style axis it briefly named is now just `style_`
+(`style_col` inside, `gui()->style_color` outside, over `GUI_ROLE_*` x `GUI_PHASE_*`). ONE
+vocabulary: chrome, stock, and a user widget all name a color the same way. Each `gui_stock_*`
+render sits over a `gui_comp_*` logic core; all are public (`gui_host.h` / the vtable), and a
+user widget is the stock render's sibling over the same `comp_*` call.
 
 CALL shape: every component opens `(id, rect, ...)`. A parameter-rich one ADDS an `_ex` desc
 twin, never replaces the positional form (`comp_slider` / `comp_slider_ex`).
@@ -137,8 +139,8 @@ geometry, then only the outcomes `state` does not already carry -- never a secon
   public verbs, never touching `gui_edit_state_t` or measuring a glyph.
 
 The two verbs that make a user widget a real sibling, both public: `gui()->item_phase( state )`
-maps interaction to a palette state (ACTIVE / HOT / IDLE, nav counting as HOT) and
-`gui()->el_color( role, state )` is the RESOLVED palette read -- the same seam the stock renders
+distils an interact state into a style PHASE (ACTIVE / HOT / IDLE, nav counting as HOT) and
+`gui()->style_color( role, phase )` is the RESOLVED grid read -- the same seam the stock renders
 and chrome's `COL_*` macros use, so `push_style_color` reaches a user widget exactly as it
 reaches a stock one. Reading `style_edit()->col[][]` at paint time instead bypasses the stack.
 

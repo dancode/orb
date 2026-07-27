@@ -68,14 +68,14 @@ static bool s_gui_ready = false;
    entry point name the step the host skipped instead of failing three calls later. */
 typedef enum gui_frame_phase_e
 {
-    GUI_PHASE_IDLE = 0,   /* between frames -- nothing open                                */
-    GUI_PHASE_BUILD,      /* frame_begin ran; widgets may emit                             */
-    GUI_PHASE_SEALED,     /* frame_end ran; the draw list is final                         */
-    GUI_PHASE_SYNCED,     /* viewport_update ran; surfaces reconciled -- safe to render    */
+    GUI_FRAME_IDLE = 0,   /* between frames -- nothing open                                */
+    GUI_FRAME_BUILD,      /* frame_begin ran; widgets may emit                             */
+    GUI_FRAME_SEALED,     /* frame_end ran; the draw list is final                         */
+    GUI_FRAME_SYNCED,     /* viewport_update ran; surfaces reconciled -- safe to render    */
 
 } gui_frame_phase_t;
 
-static gui_frame_phase_t s_frame_phase = GUI_PHASE_IDLE;
+static gui_frame_phase_t s_frame_phase = GUI_FRAME_IDLE;
 
 /*============================================================================================*/
 /* True when at least one rhi render context is live.  init() builds its pipeline, sampler and
@@ -181,7 +181,7 @@ gui_shutdown( void )
     if ( !s_gui_ready )
         return;
     s_gui_ready   = false;
-    s_frame_phase = GUI_PHASE_IDLE;
+    s_frame_phase = GUI_FRAME_IDLE;
 
     #ifdef GUI_DEBUG_OVERLAY
     dbg_shutdown();
@@ -272,10 +272,10 @@ gui_frame_begin( f32 dt )
 
     /* Still mid-build means last frame never sealed.  frame_end is unconditional (THE BEGIN /
        END RULE): skipping it strands the volatile replay, the perf clock and the focus latch. */
-    GUI_CONTRACT( s_frame_phase != GUI_PHASE_BUILD,
+    GUI_CONTRACT( s_frame_phase != GUI_FRAME_BUILD,
                   "frame_begin() with the previous frame still open -- call frame_end() every "
                   "frame, whatever frame_begin returned.\n" );
-    s_frame_phase = GUI_PHASE_BUILD;
+    s_frame_phase = GUI_FRAME_BUILD;
 
     s_ctx_save_sp      = 0;       /* fresh context scope stack; a leaked binding cannot survive a frame */
     s_any_redraw       = false;   /* re-accumulated at each ctx_end from that context's animations */
@@ -430,9 +430,9 @@ gui_frame_end( void )
     /* Sealed: the draw list is final.  viewport_update may now free surfaces, and render may
        replay.  Reported (not corrected) when frame_begin never ran -- the phase still advances
        so one stray call cannot cascade into a second complaint from render. */
-    GUI_CONTRACT( s_frame_phase == GUI_PHASE_BUILD,
+    GUI_CONTRACT( s_frame_phase == GUI_FRAME_BUILD,
                   "frame_end() without a matching frame_begin() this frame.\n" );
-    s_frame_phase = GUI_PHASE_SEALED;
+    s_frame_phase = GUI_FRAME_SEALED;
 }
 
 /*============================================================================================*/
@@ -460,7 +460,7 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
     /* The build must sit inside the frame: emitted before frame_begin the widgets land in a draw
        list that is about to be reset, emitted after frame_end in one already sealed and rendered. */
 
-    GUI_CONTRACT( s_frame_phase == GUI_PHASE_BUILD,
+    GUI_CONTRACT( s_frame_phase == GUI_FRAME_BUILD,
                   "ctx_begin() outside the build -- the emit belongs between frame_begin() and "
                   "frame_end().\n" );
 
@@ -559,7 +559,7 @@ gui_ctx_end( void )
 static void
 render_contract_check( gui_vp_t vp, const gui_viewport_t* v )
 {
-    if ( s_frame_phase != GUI_PHASE_SYNCED )
+    if ( s_frame_phase != GUI_FRAME_SYNCED )
     {
         bool pending = false;
         for ( u32 i = 1; i < s_vp_count; ++i )
@@ -595,7 +595,7 @@ gui_render( gui_vp_t vp, rhi_cmd_t cmd )
     gui_viewport_t* v = &s_vp_pool[ vp ];
 
     /* Rendering an open build replays a draw list the emit is still writing into. */
-    GUI_CONTRACT( s_frame_phase != GUI_PHASE_BUILD,
+    GUI_CONTRACT( s_frame_phase != GUI_FRAME_BUILD,
                   "render() before frame_end() -- the draw list is not sealed yet.\n" );
     render_contract_check( vp, v );
 

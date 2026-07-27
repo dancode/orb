@@ -64,32 +64,32 @@ ex_style_themes( void )
 static const char**
 ex_role_names( void )
 {
-    static const char* names[ GUI_EL_ROLE_COUNT ];
+    static const char* names[ GUI_ROLE_COUNT ];
     static bool        built = false;
 
     if ( !built )
     {
-        for ( u32 i = 0; i < GUI_EL_ROLE_COUNT; ++i )
-            names[ i ] = gui()->el_role_name( ( gui_el_role_t )i );
+        for ( u32 i = 0; i < GUI_ROLE_COUNT; ++i )
+            names[ i ] = gui()->style_role_name( ( gui_style_role_t )i );
         built = true;
     }
     return names;
 }
 
-/* The state list carries one extra entry past the four cells: GUI_EL_ALL, the whole-row push.
+/* The state list carries one extra entry past the four cells: GUI_PHASE_ALL, the whole-row push.
    Showing it in the same combo is the point -- picking "All" and picking "Hot" are the same
    verb with a different reach, not two different APIs. */
 static const char**
 ex_state_names( void )
 {
-    static const char* names[ GUI_EL_STATE_COUNT + 1 ];
+    static const char* names[ GUI_PHASE_COUNT + 1 ];
     static bool        built = false;
 
     if ( !built )
     {
-        for ( u32 i = 0; i < GUI_EL_STATE_COUNT; ++i )
-            names[ i ] = gui()->el_state_name( ( gui_el_state_t )i );
-        names[ GUI_EL_ALL ] = "All (whole row)";
+        for ( u32 i = 0; i < GUI_PHASE_COUNT; ++i )
+            names[ i ] = gui()->style_phase_name( ( gui_style_phase_t )i );
+        names[ GUI_PHASE_ALL ] = "All (whole row)";
         built = true;
     }
     return names;
@@ -116,8 +116,8 @@ ex_style_stacks( void )
     /* col_on/col_sel/... must outlive this window's body: the push wraps a SECOND window
        (the sample), spawned after this one closes, so the pushed slot/value has to survive
        past window_end below. */
-    static i32  role_sel     = GUI_EL_BG;
-    static i32  state_sel    = GUI_EL_ALL;
+    static i32  role_sel     = GUI_ROLE_BG;
+    static i32  state_sel    = GUI_PHASE_ALL;
     static f32  col_val[ 4 ] = { 0.8f, 0.2f, 0.2f, 1.0f };
     static bool col_on       = true;
     static i32  var_sel      = 0;
@@ -136,8 +136,8 @@ ex_style_stacks( void )
         /* --- color override: pick a slot + a color, pushed around the sample window --------- */
         gui()->separator_text( "push_style_color (scopes the sample window)" );
         gui()->checkbox( "Push the color", &col_on );
-        gui()->combo( "role",  &role_sel,  ex_role_names(),  GUI_EL_ROLE_COUNT );
-        gui()->combo( "state", &state_sel, ex_state_names(), GUI_EL_STATE_COUNT + 1 );
+        gui()->combo( "role",  &role_sel,  ex_role_names(),  GUI_ROLE_COUNT );
+        gui()->combo( "state", &state_sel, ex_state_names(), GUI_PHASE_COUNT + 1 );
         gui()->color_edit4( "color", col_val, GUI_COLOR_EDIT_NONE );
 
         /* --- var override: pick a metric + value ------------------------------------------- */
@@ -150,7 +150,7 @@ ex_style_stacks( void )
 
         /* --- next_style_color / next_style_var: one widget only, no pop -------------------- */
         gui()->separator_text( "next_style_color (one-shot)" );
-        gui()->next_style_color( GUI_EL_BG, GUI_EL_ALL, GUI_COLOR( 0x20, 0x70, 0x30, 0xFF ) );
+        gui()->next_style_color( GUI_ROLE_BG, GUI_PHASE_ALL, GUI_COLOR( 0x20, 0x70, 0x30, 0xFF ) );
         gui()->button( "only this button is green" );
         gui()->button( "this one is stock again" );
 
@@ -182,7 +182,7 @@ ex_style_stacks( void )
        one repaints the window and its children, the other repaints the controls on them. */
     u32 abgr = GUI_COLOR( (u8)( col_val[ 0 ] * 255.0f ), (u8)( col_val[ 1 ] * 255.0f ),
                           (u8)( col_val[ 2 ] * 255.0f ), (u8)( col_val[ 3 ] * 255.0f ) );
-    if ( col_on ) gui()->push_style_color( (gui_el_role_t)role_sel, (gui_el_state_t)state_sel, abgr );
+    if ( col_on ) gui()->push_style_color( (gui_style_role_t)role_sel, (gui_style_phase_t)state_sel, abgr );
     if ( var_on ) gui()->push_style_var( s_var_rows[ var_sel ].var, var_val );
 
     if ( ex_begin( "Style Stacks Sample", 380, 620, GUI_WIN_NONE ) )

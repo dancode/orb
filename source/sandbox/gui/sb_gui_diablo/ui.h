@@ -5,8 +5,8 @@
     sandbox/gui/sb_gui_diablo/ui.h -- the game KIT (S3) over gui's element tier.
 
     Originally the proving ground for the rect-first API; GUI_STACK_PLAN increment 3 promoted
-    its widget cores into gui proper as the el_* elements (gui_api.h GUI_ELEMENT), and this
-    layer shrank to what a game kit is: a palette installed into the element style
+    its widget cores into gui proper as the stock_* renders (gui_api.h GUI_STOCK), and this
+    layer shrank to what a game kit is: a palette installed into the style
     (ui_kit_install), thin names over the cores, and the game-flavored widgets (slot, globe,
     title) the engine has no business shipping.  The three rules still govern everything:
 
@@ -143,8 +143,8 @@ bool ui_cycle ( gui_rect_t r, i32* idx, const char* const* items, i32 count );
     different colors sets them before its widgets and (optionally) restores after.
 ==============================================================================================*/
 
-/* Install the kit look: compiles this palette into gui's element style (gui()->el_style), so
-   the promoted el_* cores behind ui_button / ui_check / ui_slider / ui_cycle / ui_meter render
+/* Install the kit look: compiles this palette into gui's style (gui()->style_edit), so
+   the promoted stock_* renders behind ui_button / ui_check / ui_slider / ui_cycle / ui_meter
    ember-gold.  The theme system re-derives the installed style at every theme / font landing,
    so call once after boot AND again after any font_use / theme_set. */
 void ui_kit_install( void );

@@ -34,7 +34,7 @@
 #include "runtime_modules/render/render_api.h"
 
 #include "sample_game.h"
-#include "project/sample_game/game_ui.h"   /* the game kit (S3) -- HUD over gui's el_* tier */
+#include "project/sample_game/game_ui.h"   /* the game kit (S3) -- HUD over gui's stock tier */
 
 MOD_USE_CORE;
 MOD_USE_RENDER;

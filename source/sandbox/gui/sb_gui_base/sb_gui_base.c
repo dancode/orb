@@ -109,11 +109,11 @@ tier_surface( void )
     /* item_phase folds the interaction flags into the one three-way rule every render uses
        (ACTIVE / HOT / IDLE, nav counting as HOT) -- so a widget of your own picks its face
        exactly the way a stock one does, without re-deriving the mapping. */
-    static const u32 FACE[ GUI_EL_STATE_COUNT ] = {
-        [ GUI_EL_IDLE   ] = GUI_COLOR( 0x30, 0x32, 0x38, 0xFF ),
-        [ GUI_EL_HOT    ] = GUI_COLOR( 0x40, 0x40, 0x48, 0xFF ),
-        [ GUI_EL_ACTIVE ] = GUI_COLOR( 0x50, 0x38, 0x18, 0xFF ),
-        [ GUI_EL_DIM    ] = GUI_COLOR( 0x28, 0x28, 0x2C, 0xFF ),
+    static const u32 FACE[ GUI_PHASE_COUNT ] = {
+        [ GUI_PHASE_IDLE   ] = GUI_COLOR( 0x30, 0x32, 0x38, 0xFF ),
+        [ GUI_PHASE_HOT    ] = GUI_COLOR( 0x40, 0x40, 0x48, 0xFF ),
+        [ GUI_PHASE_ACTIVE ] = GUI_COLOR( 0x50, 0x38, 0x18, 0xFF ),
+        [ GUI_PHASE_DIM    ] = GUI_COLOR( 0x28, 0x28, 0x2C, 0xFF ),
     };
     gui()->draw_frame( box, FACE[ gui()->item_phase( st ) ], s_on ? AMBER : PANEL_LN, 1.0f );
     gui()->draw_text_in( box, GUI_ALIGN_CENTER, INK, s_on ? "ON  -- click me" : "OFF -- click me" );
@@ -207,15 +207,15 @@ tier_stock( void )
 
     gui()->stock_button( bl, "stock_button" );
 
-    /* a USER button: a rounded pill over the same component.  el_color reads the INSTALLED
+    /* a USER button: a rounded pill over the same component.  style_color reads the INSTALLED
        palette through the style stack -- the same seam stock_button and chrome read -- so this
        fork tracks the theme and honors a push_style_color exactly as the stock render does,
        while owning its own shape.  (Hard-coding colors here instead would opt out of both.) */
     gui_comp_button_t cb    = gui()->comp_button( "t3_pill", foot );
-    gui_el_state_t    phase = gui()->item_phase( cb.state );
+    gui_style_phase_t    phase = gui()->item_phase( cb.state );
     gui()->draw_round_rect( foot, 8.0f, 8.0f, 8.0f, 8.0f, true, 0.0f,
-                            gui()->el_color( GUI_EL_BG, phase ) );
-    gui()->draw_text_in( foot, GUI_ALIGN_CENTER, gui()->el_color( GUI_EL_TEXT, phase ),
+                            gui()->style_color( GUI_ROLE_BG, phase ) );
+    gui()->draw_text_in( foot, GUI_ALIGN_CENTER, gui()->style_color( GUI_ROLE_TEXT, phase ),
                          "comp_button" );
 
     gui()->pane_end();
@@ -275,7 +275,7 @@ install_palette( i32 which )
 
     if ( which == 0 )   /* ember -- warm dark */
     {
-        u32 c[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] = {
+        u32 c[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ] = {
             /* PANEL  */ { GUI_COLOR( 0x24, 0x1A, 0x14, 0xFF ), GUI_COLOR( 0x3A, 0x28, 0x1C, 0xFF ),
                            GUI_COLOR( 0x5E, 0x3C, 0x22, 0xFF ), GUI_COLOR( 0x1A, 0x13, 0x10, 0xFF ) },
             /* BG     */ { GUI_COLOR( 0x2E, 0x20, 0x18, 0xFF ), GUI_COLOR( 0x46, 0x30, 0x20, 0xFF ),
@@ -291,7 +291,7 @@ install_palette( i32 which )
     }
     else                /* ice -- cool dark */
     {
-        u32 c[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ] = {
+        u32 c[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ] = {
             /* PANEL  */ { GUI_COLOR( 0x14, 0x1C, 0x26, 0xFF ), GUI_COLOR( 0x1E, 0x2A, 0x38, 0xFF ),
                            GUI_COLOR( 0x2A, 0x42, 0x5E, 0xFF ), GUI_COLOR( 0x0E, 0x14, 0x1C, 0xFF ) },
             /* BG     */ { GUI_COLOR( 0x18, 0x22, 0x2E, 0xFF ), GUI_COLOR( 0x22, 0x32, 0x46, 0xFF ),
@@ -378,7 +378,7 @@ tier_style( void )
     gui()->stock_slider( gui_rect_cut_top( &r, 24.0f ), "t5_slider", &s_level, 0.0f, 1.0f );
     r.y += 6.0f;  r.h -= 6.0f;
     gui()->stock_meter( gui_rect_cut_top( &r, 18.0f ), s_level,
-                     gui()->el_color( GUI_EL_ACCENT, GUI_EL_IDLE ) );
+                     gui()->style_color( GUI_ROLE_ACCENT, GUI_PHASE_IDLE ) );
     r.y += 6.0f;  r.h -= 6.0f;
     static char s_field[ 48 ] = "kit-styled field";
     gui()->stock_input( gui_rect_cut_top( &r, 26.0f ), "t5_input", s_field, sizeof s_field );

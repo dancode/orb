@@ -9,9 +9,9 @@
     kit shape the stack was built for:
 
       - RECTS ARE THE CURRENCY: the HUD bracket hands back the screen as a rect; the caller
-        cuts and places with gui_rect_* math, then fills rects with el_* cores.
+        cuts and places with gui_rect_* math, then fills rects with stock_* renders.
       - THE KIT OWNS THE LOOK: game_ui_install compiles the project's palette into gui's
-        element style (gui()->el_style), so the el_* cores render this game's accent.  The
+        style (gui()->style_edit), so the stock renders paint this game's accent.  The
         theme system re-derives the installed style at every theme / font landing, so
         install after those -- for this host shape, once at on_start is enough.
       - SOFT GUI: the project runs under gui-less hosts too (sb_host_game).  game_ui_wire
@@ -31,7 +31,7 @@
 bool game_ui_wire ( get_api_fn get_api );   // soft gui fetch (init/reload); false = gui-less host, fine
 bool game_ui_ready( void );                 // gui landed? every other entry no-ops when false
 
-void game_ui_install( void );               // compile the kit palette into the element style (S3 -> S1)
+void game_ui_install( void );               // compile the kit palette into the style (S3 -> S1)
 
 /* HUD surface bracket: a chrome-free, non-scrolling fullscreen region on gui_vp (below any
    caption band), returned as THE root rect all HUD math cuts from.  Always pair. */

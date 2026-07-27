@@ -389,7 +389,7 @@ show_font_tool( void )
                faces follow in default color. */
             bool project = ( i < s_ft.local_count );
             if ( project )
-                gui()->push_style_color( GUI_EL_TEXT, GUI_EL_ALL, GUI_COLOR( 0x7C, 0xD9, 0x92, 0xFF ) );
+                gui()->push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, GUI_COLOR( 0x7C, 0xD9, 0x92, 0xFF ) );
 
             bool sel = ( i == s_ft.sel );
             if ( gui()->selectable( s_ft.names[ i ], &sel ) )

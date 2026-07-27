@@ -31,7 +31,7 @@
     handed to a kit as that struct with no copy and no offset table.  Three runs inside it, all
     equal citizens -- that equality is the whole point of the schema:
 
-        col    [ role ][ state ]  -- the 5x4 element grid, THE color vocabulary
+        col    [ role ][ phase ]  -- the 5x4 color grid, THE color vocabulary
         var    [ gui_style_var_t ]-- every scalar the style has, metrics and skin alike
         scales [ gui_scale_t ]    -- the density ramp scale_push reads
 
@@ -41,14 +41,14 @@
     chrome is simply the set at index 0.
 
     Two coordinate systems index the one space, both plain base-plus-offset -- no route table, no
-    inversion, no name-to-slot map.  A color is ( role, state ); a scalar is a gui_style_var_t.
+    inversion, no name-to-slot map.  A color is ( role, phase ); a scalar is a gui_style_var_t.
     That is the entire addressing story.
 
     Working set: the installed layer with the push/pop stacks applied -- the value an unscoped
     read returns.  It lives in s_work (style/gui_style_block.c); nothing here owns storage.
 
     Stacks: saved (slot, previous) pairs so pop restores regardless of which slots a push
-    touched.  One PUSH is one stack entry even when it spans a whole state row (GUI_EL_ALL), so
+    touched.  One PUSH is one stack entry even when it spans a whole phase row (GUI_PHASE_ALL), so
     pop_style_color( 1 ) always undoes exactly one push_style_color.
 
     TWO stacks, one per public pop verb: pop_style_color and pop_style_var each pop their
@@ -69,19 +69,19 @@
 
 /* The block's slot layout -- field order of gui_style_t.  Three runs, laid end to end. */
 #define STYLE_COL_BASE    0
-#define STYLE_COL_COUNT   ( GUI_EL_ROLE_COUNT * GUI_EL_STATE_COUNT )
+#define STYLE_COL_COUNT   ( GUI_ROLE_COUNT * GUI_PHASE_COUNT )
 #define STYLE_VAR_BASE    ( STYLE_COL_BASE   + STYLE_COL_COUNT )
 #define STYLE_SCALE_BASE  ( STYLE_VAR_BASE   + GUI_VAR_COUNT    )
 #define STYLE_SCALE_COUNT ( GUI_SCALE_COUNT * 3 )                  /* row, pad, gap per step */
 #define STYLE_SLOT_COUNT  ( STYLE_SCALE_BASE + STYLE_SCALE_COUNT )
 
-#define STYLE_COL_SLOT( role, state ) ( STYLE_COL_BASE + (u32)( role ) * GUI_EL_STATE_COUNT + (u32)( state ) )
+#define STYLE_COL_SLOT( role, phase ) ( STYLE_COL_BASE + (u32)( role ) * GUI_PHASE_COUNT + (u32)( phase ) )
 
 ORB_STATIC_ASSERT( sizeof( gui_style_t ) == STYLE_SLOT_COUNT * sizeof( u32 ),
                    "style block layout must mirror gui_style_t field order" );
 
-/* The widest fan-out one public push can have: a full state row (GUI_EL_ALL). */
-#define STYLE_FAN_MAX GUI_EL_STATE_COUNT
+/* The widest fan-out one public push can have: a full phase row (GUI_PHASE_ALL). */
+#define STYLE_FAN_MAX GUI_PHASE_COUNT
 
 /* f32 <-> raw bits, so one u32 slot space carries both value types. */
 static inline u32 style_f32_bits( f32 f ) { union { f32 f; u32 u; } c = { .f = f }; return c.u; }
@@ -224,12 +224,12 @@ style_next( u32 slot, u32 val )
     rebuild off the 180 chrome read sites.
 ==============================================================================================*/
 
-static u16 style_col_slot( u8 role, u8 state ) { return (u16)( s_base + STYLE_COL_SLOT( role, state ) ); }
+static u16 style_col_slot( u8 role, u8 phase ) { return (u16)( s_base + STYLE_COL_SLOT( role, phase ) ); }
 static u16 style_var_slot( u32 var )           { return (u16)( s_base + STYLE_VAR_BASE + var ); }
 
 /* One indexed load.  No projection, no override test, no fallback chain -- the installed value
    and any override live in the SAME slot, which is what the flat space bought. */
-u32 style_el_col( u8 role, u8 state ) { return style_read( style_col_slot( role, state ) ); }
+u32 style_col( u8 role, u8 phase ) { return style_read( style_col_slot( role, phase ) ); }
 
 f32 style_var( gui_style_var_t var )
 {
@@ -246,27 +246,27 @@ style_scale( gui_scale_t s, u32 field )
     return style_bits_f32( style_read( s_base + STYLE_SCALE_BASE + (u32)s * 3u + field ) );
 }
 
-/* Collect the slots a public color push spans: one cell, or a whole state row for GUI_EL_ALL. */
+/* Collect the slots a public color push spans: one cell, or a whole phase row for GUI_PHASE_ALL. */
 static u8
-style_col_fan( u8 role, u8 state, u16* out )
+style_col_fan( u8 role, u8 phase, u16* out )
 {
-    if ( role >= GUI_EL_ROLE_COUNT ) return 0;
+    if ( role >= GUI_ROLE_COUNT ) return 0;
 
-    if ( state == GUI_EL_ALL )
+    if ( phase == GUI_PHASE_ALL )
     {
-        for ( u8 s = 0; s < GUI_EL_STATE_COUNT; ++s ) out[ s ] = style_col_slot( role, s );
-        return GUI_EL_STATE_COUNT;
+        for ( u8 s = 0; s < GUI_PHASE_COUNT; ++s ) out[ s ] = style_col_slot( role, s );
+        return GUI_PHASE_COUNT;
     }
-    if ( state < GUI_EL_STATE_COUNT ) { out[ 0 ] = style_col_slot( role, state ); return 1; }
+    if ( phase < GUI_PHASE_COUNT ) { out[ 0 ] = style_col_slot( role, phase ); return 1; }
 
     return 0;
 }
 
 static void
-style_push_color( gui_el_role_t role, gui_el_state_t state, u32 abgr )
+style_push_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr )
 {
     u16 slot[ STYLE_FAN_MAX ];
-    u8  n = style_col_fan( (u8)role, (u8)state, slot );
+    u8  n = style_col_fan( (u8)role, (u8)phase, slot );
     if ( n ) style_push( &s_col_stack, slot, n, abgr );
 }
 
@@ -287,10 +287,10 @@ void        style_pop_var  ( u32 count ) { style_pop( &s_var_stack, count ); }
 ==============================================================================================*/
 
 static void
-style_next_color( gui_el_role_t role, gui_el_state_t state, u32 abgr )
+style_next_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr )
 {
     u16 slot[ STYLE_FAN_MAX ];
-    u8  n = style_col_fan( (u8)role, (u8)state, slot );
+    u8  n = style_col_fan( (u8)role, (u8)phase, slot );
     for ( u8 i = 0; i < n; ++i ) style_next( slot[ i ], abgr );
 }
 
@@ -401,25 +401,25 @@ style_overrides_replay( void )
 /*==============================================================================================
     Display names -- engine-owned, so a style editor walks the schema instead of keeping a
     parallel table in step with enums it does not own.  Designated by index, so an entry cannot
-    slide out of alignment the way a positional list can; a newly added role / state / var simply
+    slide out of alignment the way a positional list can; a newly added role / phase / var simply
     reads "?" until it is named here.
 ==============================================================================================*/
 
-static const char* const k_role_name[ GUI_EL_ROLE_COUNT ] =
+static const char* const k_role_name[ GUI_ROLE_COUNT ] =
 {
-    [ GUI_EL_PANEL  ] = "Panel",
-    [ GUI_EL_BG     ] = "Control",
-    [ GUI_EL_BORDER ] = "Border",
-    [ GUI_EL_TEXT   ] = "Text",
-    [ GUI_EL_ACCENT ] = "Accent",
+    [ GUI_ROLE_PANEL  ] = "Panel",
+    [ GUI_ROLE_BG     ] = "Control",
+    [ GUI_ROLE_BORDER ] = "Border",
+    [ GUI_ROLE_TEXT   ] = "Text",
+    [ GUI_ROLE_ACCENT ] = "Accent",
 };
 
-static const char* const k_state_name[ GUI_EL_STATE_COUNT ] =
+static const char* const k_phase_name[ GUI_PHASE_COUNT ] =
 {
-    [ GUI_EL_IDLE   ] = "Idle",
-    [ GUI_EL_HOT    ] = "Hot",
-    [ GUI_EL_ACTIVE ] = "Active",
-    [ GUI_EL_DIM    ] = "Dim",
+    [ GUI_PHASE_IDLE   ] = "Idle",
+    [ GUI_PHASE_HOT    ] = "Hot",
+    [ GUI_PHASE_ACTIVE ] = "Active",
+    [ GUI_PHASE_DIM    ] = "Dim",
 };
 
 static const char* const k_var_name[ GUI_VAR_COUNT ] =
@@ -444,8 +444,8 @@ static const char* const k_var_name[ GUI_VAR_COUNT ] =
     [ GUI_VAR_MENU_CHECK      ] = "Menu Check",
 };
 
-const char* gui_el_role_name ( gui_el_role_t r )   { return ( (u32)r < GUI_EL_ROLE_COUNT  && k_role_name [ r ] ) ? k_role_name [ r ] : "?"; }
-const char* gui_el_state_name( gui_el_state_t s )  { return ( (u32)s < GUI_EL_STATE_COUNT && k_state_name[ s ] ) ? k_state_name[ s ] : "?"; }
+const char* gui_style_role_name ( gui_style_role_t r )   { return ( (u32)r < GUI_ROLE_COUNT  && k_role_name [ r ] ) ? k_role_name [ r ] : "?"; }
+const char* gui_style_phase_name( gui_style_phase_t p )  { return ( (u32)p < GUI_PHASE_COUNT && k_phase_name[ p ] ) ? k_phase_name[ p ] : "?"; }
 const char* gui_style_var_name( gui_style_var_t v ){ return ( (u32)v < GUI_VAR_COUNT      && k_var_name  [ v ] ) ? k_var_name  [ v ] : "?"; }
 
 /*==============================================================================================
@@ -466,7 +466,7 @@ static i32 s_installing = -1;
 
 /* Seed the instance from the active theme, then let this set's owner overwrite whatever it cares
    about (it writes through gui_style_edit(), which points at this same run).  The seed is one
-   struct copy now that the theme and the block share a layout -- the old role/state projection
+   struct copy now that the theme and the block share a layout -- the old role/phase projection
    table lived here and is simply gone.
 
    Seeding FIRST is what lets a kit install only the part it owns -- the accent row, say -- and

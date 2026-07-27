@@ -2,7 +2,7 @@
 
     project/sample_game/game_ui.c -- the game kit implementation.
 
-    Thin by design, like every kit: the cores are gui's el_* elements; this file owns only
+    Thin by design, like every kit: the renders are gui's stock_* widgets; this file owns only
     the palette (teal, matching the orbiting square), the HUD surface bracket, and the
     game-flavored composites.  See game_ui.h for the kit rules.
 
@@ -43,7 +43,7 @@ game_ui_ready( void )
 }
 
 /*==============================================================================================
-    The S3 -> S1 compile step -- install the game's accent into the element style.
+    The S3 -> S1 compile step -- install the game's accent into the style.
 ==============================================================================================*/
 
 void
@@ -56,10 +56,10 @@ game_ui_install( void )
        plain look, and the smallest install that shows the dial is the honest one. */
     gui_style_t* e = gui()->style_edit();
 
-    e->col[ GUI_EL_ACCENT ][ GUI_EL_IDLE   ] = GAME_UI_TEAL;
-    e->col[ GUI_EL_ACCENT ][ GUI_EL_HOT    ] = GAME_UI_TEAL;
-    e->col[ GUI_EL_ACCENT ][ GUI_EL_ACTIVE ] = GAME_UI_TEAL;
-    e->col[ GUI_EL_ACCENT ][ GUI_EL_DIM    ] = GAME_UI_TEAL_DIM;
+    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_IDLE   ] = GAME_UI_TEAL;
+    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_HOT    ] = GAME_UI_TEAL;
+    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_ACTIVE ] = GAME_UI_TEAL;
+    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_DIM    ] = GAME_UI_TEAL_DIM;
 }
 
 /*==============================================================================================

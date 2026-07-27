@@ -297,6 +297,12 @@ const gui_api_t g_gui_api_struct =
     .push_style_var                     = gui_push_style_var,
     .pop_style_var                      = gui_pop_style_var,
     .next_style_var                     = gui_next_style_var,
+    .item_phase                         = gui_item_phase,
+    .style_color                        = gui_style_color,
+    .style_edit                         = gui_style_edit,
+    .style_role_name                    = gui_style_role_name,
+    .style_phase_name                   = gui_style_phase_name,
+    .style_var_name                     = gui_style_var_name,
     .scale_push                         = gui_scale_push,
     .scale_pop                          = gui_scale_pop,
     .set_check_style                    = gui_set_check_style,
@@ -304,13 +310,6 @@ const gui_api_t g_gui_api_struct =
     .set_arrow_style                    = gui_set_arrow_style,
 
     /*===============================================  GUI_STOCK  ===============================================*/
-
-    .item_phase                         = gui_item_phase,
-    .el_color                           = gui_el_color,
-    .style_edit                         = gui_style_edit,
-    .el_role_name                       = gui_el_role_name,
-    .el_state_name                      = gui_el_state_name,
-    .style_var_name                     = gui_style_var_name,
 
     .comp_slider                        = gui_comp_slider,
     .comp_slider_ex                     = gui_comp_slider_ex,

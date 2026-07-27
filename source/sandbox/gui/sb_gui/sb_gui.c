@@ -429,7 +429,7 @@ show_hud_demo( bool* p_open )
         gui_rect_t hb = gui_anchor_box( hud, 200.0f, 20.0f, GUI_ALIGN_LEFT | GUI_ALIGN_BOTTOM, pad );
         gui()->push_layout_overlay( hb );
             gui()->stack();
-            gui()->push_style_color( GUI_EL_ACCENT, GUI_EL_IDLE, good );
+            gui()->push_style_color( GUI_ROLE_ACCENT, GUI_PHASE_IDLE, good );
             gui()->progress_bar( 0.72f, "HP 72/100" );
             gui()->pop_style_color( 1 );
         gui()->pop_layout();
@@ -840,16 +840,16 @@ show_style_editor( bool* p_open )
     f32 label_width = gui()->text_size( "Separator Shape" ).x;
     gui()->form( GUI_LABEL_RIGHT, label_width );
 
-    /* --- Colors: the element grid, a section per role --------------------------------------
+    /* --- Colors: the style grid, a section per role ----------------------------------------
        Nothing here names an individual color.  The editor walks roles x states and asks the
        engine for the labels, so a new role or state shows up with no edit to this file -- which
        is the whole reason the flat palette and its parallel name table went away. */
-    for ( u32 r = 0; r < GUI_EL_ROLE_COUNT; ++r )
+    for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
     {
-        gui()->separator_text( gui()->el_role_name( ( gui_el_role_t )r ) );
-        gui()->push_id( gui()->el_role_name( ( gui_el_role_t )r ) );
-        for ( u32 s = 0; s < GUI_EL_STATE_COUNT; ++s )
-            changed |= se_color( gui()->el_state_name( ( gui_el_state_t )s ), &work.col[ r ][ s ] );
+        gui()->separator_text( gui()->style_role_name( ( gui_style_role_t )r ) );
+        gui()->push_id( gui()->style_role_name( ( gui_style_role_t )r ) );
+        for ( u32 s = 0; s < GUI_PHASE_COUNT; ++s )
+            changed |= se_color( gui()->style_phase_name( ( gui_style_phase_t )s ), &work.col[ r ][ s ] );
         gui()->pop_id();
     }
 
@@ -1327,9 +1327,9 @@ main( int argc, char** argv )
     {
         gui_style_t* style = gui()->style_get();
 
-        // Modify any color: a (role, state) cell of the element grid
-        style->col[GUI_EL_PANEL][GUI_EL_IDLE] = GUI_COLOR( 0x20, 0x20, 0x20, 0xFF );
-        style->col[GUI_EL_TEXT ][GUI_EL_IDLE] = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
+        // Modify any color: a (role, phase) cell of the style grid
+        style->col[GUI_ROLE_PANEL][GUI_PHASE_IDLE] = GUI_COLOR( 0x20, 0x20, 0x20, 0xFF );
+        style->col[GUI_ROLE_TEXT ][GUI_PHASE_IDLE] = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
 
         // Modify any skin (STYLE) knob -- metrics are authored for a baseline em=12
         style->var[GUI_VAR_PANEL_ROUND] = 0;    // Square windows

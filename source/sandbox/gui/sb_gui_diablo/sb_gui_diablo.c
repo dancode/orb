@@ -650,7 +650,7 @@ main( int argc, char** argv )
         if ( s_font_req >= 0 )
         {
             gui()->font_use( s_font_req == 0 ? 0 : font_big );
-            ui_kit_install();   /* font_use re-derived the element style -- re-install the kit */
+            ui_kit_install();   /* font_use re-derived the style -- re-install the kit */
             s_opt_font = s_font_req;
             s_font_req = -1;
         }

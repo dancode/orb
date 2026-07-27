@@ -90,16 +90,16 @@ void gui_disabled_end( void ) { item_flag_pop(); }
     are undone with one pop_style_*( 2 ), mirroring ImGui.  next_style_* overrides for just the
     next widget, no pop needed.  Colors are abgr (GUI_COLOR); vars are f32 pixels.
 
-    A color names a (role, state) cell of the element grid.  GUI_EL_ALL selects the whole state
+    A color names a (role, phase) cell of the color grid.  GUI_PHASE_ALL selects the whole phase
     row as ONE push, which is what recolouring "the text" or "the border" nearly always means --
     and it stays one entry, so it takes one pop:
 
-        gui()->push_style_color( GUI_EL_BG, GUI_EL_IDLE, GUI_COLOR( 0xFF,0,0,0xFF ) );      // red
-        gui()->push_style_color( GUI_EL_BG, GUI_EL_HOT,  GUI_COLOR( 0xFF,0x40,0x40,0xFF ) );
+        gui()->push_style_color( GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_COLOR( 0xFF,0,0,0xFF ) );      // red
+        gui()->push_style_color( GUI_ROLE_BG, GUI_PHASE_HOT,  GUI_COLOR( 0xFF,0x40,0x40,0xFF ) );
         gui()->button( "Red Button" );
         gui()->pop_style_color( 2 );                                             // both
 
-        gui()->push_style_color( GUI_EL_TEXT, GUI_EL_ALL, GUI_COLOR( 0,0xFF,0,0xFF ) );
+        gui()->push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, GUI_COLOR( 0,0xFF,0,0xFF ) );
         gui()->button( "Green label, hovered or not" );
         gui()->pop_style_color( 1 );                                             // all four cells
 
@@ -108,9 +108,9 @@ void gui_disabled_end( void ) { item_flag_pop(); }
         gui()->pop_style_var( 1 );
 ==============================================================================================*/
 
-void gui_push_style_color( gui_el_role_t role, gui_el_state_t state, u32 abgr ) { style_push_color( role, state, abgr ); }
+void gui_push_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_push_color( role, phase, abgr ); }
 void gui_pop_style_color ( u32 count )                                          { style_pop_color( count ); }
-void gui_next_style_color( gui_el_role_t role, gui_el_state_t state, u32 abgr ) { style_next_color( role, state, abgr ); }
+void gui_next_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_next_color( role, phase, abgr ); }
 
 void gui_push_style_var( gui_style_var_t var, f32 value )   { style_push_var( var, value ); }
 void gui_pop_style_var ( u32 count )                          { style_pop_var( count ); }

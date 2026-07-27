@@ -31,12 +31,12 @@ const gui_style_t* style_active( void );   /* style/gui_theme.c: the active scal
    after the metrics rescale -- which is where the style tracks a theme or font change. */
 void style_landing( void );
 
-/* The two coordinate systems, and there are only two.  A color is a (role, state) cell of the
-   element grid; a scalar is a gui_style_var_t.  Both are the installed value with any
+/* The two coordinate systems, and there are only two.  A color is a (role, phase) cell of the
+   color grid; a scalar is a gui_style_var_t.  Both are the installed value with any
    push_style_* / next_style_* override already applied, since an override lands in the same
    slot -- one indexed load, nothing to scan. */
-u32 style_el_col( u8 role, u8 state );
-f32 style_var   ( gui_style_var_t var );
+u32 style_col( u8 role, u8 phase );
+f32 style_var( gui_style_var_t var );
 
 /* One field of one density-ramp step (field: 0 = row, 1 = pad, 2 = gap).  Read through the block
    like everything else, so a kit's DENSE is the kit's own and not chrome's. */
@@ -68,42 +68,44 @@ f32 style_scale( gui_scale_t s, u32 field );
 #define ROUND_WIN     style_var( GUI_VAR_PANEL_ROUND )   /* windows, children, popups    */
 
 /*==============================================================================================
-    3. COLORS -- the element grid, one macro per cell and no cell with two names.
+    3. COLORS -- the color grid, one macro per cell and no cell with two names.
 
-    This table IS gui_style_t.col: five roles down, four states across.  Every name below is the
+    This table IS gui_style_t.col: five roles down, four phases across.  Every name below is the
     established one for that cell, so the 180 read sites above never learned that the flat
-    palette and chrome's private tokens went away -- which is exactly why they could.
+    palette and chrome's private tokens went away -- which is exactly why they could.  A name
+    here is chrome's SPELLING of a cell, not a cell of its own: nothing reachable through these
+    macros is unreachable through style_col, which is what makes chrome an ordinary consumer.
 
-    Reading across a row shows what a state MEANS for that role; the axis is documented once, in
-    gui_element.h.  A render that speaks roles and states generically wants gui()->el_color
-    instead -- same seam, no macro.
+    Reading across a row shows what a phase MEANS for that role; the grid is documented once, in
+    gui.h.  A render that speaks roles and phases generically wants style_col (or gui()->
+    style_color from outside the library) instead -- same seam, no macro.
 ==============================================================================================*/
 
 /*                          role              IDLE / HOT / ACTIVE / DIM                        */
-#define COL_WIN_BG        style_el_col( GUI_EL_PANEL,  GUI_EL_IDLE   )  /* window body        */
-#define COL_TITLE_BG      style_el_col( GUI_EL_PANEL,  GUI_EL_HOT    )  /* title bar          */
-#define COL_TITLE_ACTIVE  style_el_col( GUI_EL_PANEL,  GUI_EL_ACTIVE )  /* focused title bar  */
-#define COL_CHILD_BG      style_el_col( GUI_EL_PANEL,  GUI_EL_DIM    )  /* child / recessed   */
+#define COL_WIN_BG        style_col( GUI_ROLE_PANEL,  GUI_PHASE_IDLE   )  /* window body        */
+#define COL_TITLE_BG      style_col( GUI_ROLE_PANEL,  GUI_PHASE_HOT    )  /* title bar          */
+#define COL_TITLE_ACTIVE  style_col( GUI_ROLE_PANEL,  GUI_PHASE_ACTIVE )  /* focused title bar  */
+#define COL_CHILD_BG      style_col( GUI_ROLE_PANEL,  GUI_PHASE_DIM    )  /* child / recessed   */
 
-#define COL_WIDGET_BG     style_el_col( GUI_EL_BG,     GUI_EL_IDLE   )  /* control face       */
-#define COL_WIDGET_HOT    style_el_col( GUI_EL_BG,     GUI_EL_HOT    )  /* hovered face       */
-#define COL_WIDGET_ACT    style_el_col( GUI_EL_BG,     GUI_EL_ACTIVE )  /* pressed / focused  */
-#define COL_WIDGET_DIM    style_el_col( GUI_EL_BG,     GUI_EL_DIM    )  /* inert face         */
+#define COL_WIDGET_BG     style_col( GUI_ROLE_BG,     GUI_PHASE_IDLE   )  /* control face       */
+#define COL_WIDGET_HOT    style_col( GUI_ROLE_BG,     GUI_PHASE_HOT    )  /* hovered face       */
+#define COL_WIDGET_ACT    style_col( GUI_ROLE_BG,     GUI_PHASE_ACTIVE )  /* pressed / focused  */
+#define COL_WIDGET_DIM    style_col( GUI_ROLE_BG,     GUI_PHASE_DIM    )  /* inert face         */
 
-#define COL_BORDER        style_el_col( GUI_EL_BORDER, GUI_EL_IDLE   )  /* frame line         */
-#define COL_RESIZE_HOT    style_el_col( GUI_EL_BORDER, GUI_EL_HOT    )  /* hovered edge       */
-#define COL_FOCUS_BORDER  style_el_col( GUI_EL_BORDER, GUI_EL_ACTIVE )  /* focused ring       */
-#define COL_BORDER_DIM    style_el_col( GUI_EL_BORDER, GUI_EL_DIM    )  /* subdued frame      */
+#define COL_BORDER        style_col( GUI_ROLE_BORDER, GUI_PHASE_IDLE   )  /* frame line         */
+#define COL_RESIZE_HOT    style_col( GUI_ROLE_BORDER, GUI_PHASE_HOT    )  /* hovered edge       */
+#define COL_FOCUS_BORDER  style_col( GUI_ROLE_BORDER, GUI_PHASE_ACTIVE )  /* focused ring       */
+#define COL_BORDER_DIM    style_col( GUI_ROLE_BORDER, GUI_PHASE_DIM    )  /* subdued frame      */
 
-#define COL_TEXT          style_el_col( GUI_EL_TEXT,   GUI_EL_IDLE   )  /* body text, caret   */
-#define COL_TEXT_HOT      style_el_col( GUI_EL_TEXT,   GUI_EL_HOT    )  /* on a hot face      */
-#define COL_TEXT_ACT      style_el_col( GUI_EL_TEXT,   GUI_EL_ACTIVE )  /* on a pressed face  */
-#define COL_TEXT_DIM      style_el_col( GUI_EL_TEXT,   GUI_EL_DIM    )  /* secondary text     */
+#define COL_TEXT          style_col( GUI_ROLE_TEXT,   GUI_PHASE_IDLE   )  /* body text, caret   */
+#define COL_TEXT_HOT      style_col( GUI_ROLE_TEXT,   GUI_PHASE_HOT    )  /* on a hot face      */
+#define COL_TEXT_ACT      style_col( GUI_ROLE_TEXT,   GUI_PHASE_ACTIVE )  /* on a pressed face  */
+#define COL_TEXT_DIM      style_col( GUI_ROLE_TEXT,   GUI_PHASE_DIM    )  /* secondary text     */
 
-#define COL_WIDGET_FG     style_el_col( GUI_EL_ACCENT, GUI_EL_IDLE   )  /* value fill         */
-#define COL_NAV           style_el_col( GUI_EL_ACCENT, GUI_EL_HOT    )  /* nav highlight      */
-#define COL_CHECK_MARK    style_el_col( GUI_EL_ACCENT, GUI_EL_ACTIVE )  /* mark, captured nav */
-#define COL_SLIDER_TRACK  style_el_col( GUI_EL_ACCENT, GUI_EL_DIM    )  /* empty track        */
+#define COL_WIDGET_FG     style_col( GUI_ROLE_ACCENT, GUI_PHASE_IDLE   )  /* value fill         */
+#define COL_NAV           style_col( GUI_ROLE_ACCENT, GUI_PHASE_HOT    )  /* nav highlight      */
+#define COL_CHECK_MARK    style_col( GUI_ROLE_ACCENT, GUI_PHASE_ACTIVE )  /* mark, captured nav */
+#define COL_SLIDER_TRACK  style_col( GUI_ROLE_ACCENT, GUI_PHASE_DIM    )  /* empty track        */
 
 /*==============================================================================================
     Stacks, sets, and the seam hooks

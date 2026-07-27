@@ -48,7 +48,7 @@ static struct
 
 /* pane_begin -- open the raw block for a caller building its own chrome: tag + hover
    nomination + base clip, nothing else.  No pool record, no persistence, no layout, no
-   background paint: the caller owns every pixel (el_* / draw_* over carved rects) and any
+   background paint: the caller owns every pixel (stock_* / draw_* over carved rects) and any
    cross-frame state (open flags, dragged position) lives with the caller.  Rect-first: flow
    is available inside via flow_begin( pane.rect ) if wanted.  vp GUI_VP_INVALID = primary. */
 gui_pane_t

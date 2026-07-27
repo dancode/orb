@@ -5,7 +5,7 @@
     runtime_service/gui/gui.h -- gui module types (the public type header).
 
     In-house 2D interaction renderer for ORB: draw + interact servers, root surfaces, rect and
-    flow composition, styled element cores -- with chrome (windows / dock / stock widgets) as an
+    flow composition, styled stock widgets -- with chrome (windows / dock / chrome widgets) as an
     OPTIONAL policy layer on top.  
     
     Windowing/input come from the engine `app` layer (Win32) 
@@ -42,8 +42,8 @@
     GUI_RECT     -- anchor frame, split axis
                     (the leaf geometry types + rect algebra live in gui_rect.h, included first)
     GUI_FLOW     -- layout template / modes, pack, field label side
-    GUI_STYLE    -- style colors, global style config, style vars
-    GUI_ELEMENT  -- the slim el style (gui_element.h, included first)
+    GUI_STYLE    -- the color grid (role x phase), density ramp, style vars, shape picks, the
+                    style struct: ONE schema, and every layer above names its look in it
     GUI_CHROME   -- themes, window drag / cond / flags, dockspace, combo, tab bar, tables,
                     color edit flags
     GUI_DEBUG    -- overlay layers, render mode
@@ -52,7 +52,6 @@
 
 #include "orb.h"
 #include "runtime_service/gui/rect/gui_rect.h"      // GUI_RECT leaf kit: geometry types + carve math
-#include "runtime_service/gui/gui_element.h"        // GUI_ELEMENT types: the slim el style (S1)
 
 // clang-format off
 /*==============================================================================================
@@ -173,7 +172,7 @@ typedef bool ( *gui_edit_key_fn )( u32 key, bool ctrl, bool shift, bool repeat, 
    installed for the duration of the call. */
 typedef void ( *gui_style_source_fn )( void* user );
 
-/* A style SET -- one installed copy of the element stratum.  Set 0 is chrome's and always
+/* A style SET -- one installed copy of gui_style_t, the whole schema.  Set 0 is chrome's and always
    exists; gui()->style_set_create() takes another, and style_set_push / _pop bracket the UI
    that resolves through it.  Two looks stay installed side by side, so an editor's chrome and
    a game's kit can each own one instead of overwriting a single shared palette. */
@@ -196,24 +195,82 @@ typedef void ( *gui_sleep_fn )( i32 milliseconds );
 typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 
 /*==============================================================================================
-    GUI_STYLE -- style colors
+    GUI_STYLE -- the color grid: what a color is FOR, and when
 
-    There is no flat color enum.  A color is named by a (role, state) pair on the element axis
-    (gui_el_role_t / gui_el_state_t, gui_element.h): five roles times four states, the 20 cells
-    of gui_style_t.col below.
+    THE color vocabulary of the whole GUI, and there is no second one.  Chrome, the stock
+    widgets, and a kit's own renders all name a color as a (role, phase) cell, and all of them
+    resolve through the same instanced style -- so "the editor look" and "the game look" are two
+    instances of one schema rather than two schemas.  There is no flat color enum: five roles
+    times four phases ARE the 20 cells of gui_style_t.col below.
 
-        push_style_color( GUI_EL_BG,   GUI_EL_HOT, abgr );   // one cell, until the pop
-        push_style_color( GUI_EL_TEXT, GUI_EL_ALL, abgr );   // the whole state row
-        next_style_color( GUI_EL_BG,   GUI_EL_ALL, abgr );   // just the next widget
+        push_style_color( GUI_ROLE_BG,   GUI_PHASE_HOT, abgr );   // one cell, until the pop
+        push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, abgr );   // the whole phase row
+        next_style_color( GUI_ROLE_BG,   GUI_PHASE_ALL, abgr );   // just the next widget
 
     The grid is shared rather than per-widget-type (one BG row, not Button + Checkbox + ...):
     to recolor one button, bracket it with push/pop, or use next_style_color for a one-shot.
-    Colors are packed with GUI_COLOR (byte order R,G,B,A).
+    Deliberately NO per-widget slots (btn_bg_hover, slot_border_hot, ...) -- per-widget color is
+    either a call parameter (stock_meter's fill) or a token in the kit above.  Colors are packed
+    with GUI_COLOR (byte order R,G,B,A).
 
     A kit wanting colors of its OWN keeps them in its own struct and passes them to draw_*; a
     color no engine code reads has nothing to gain from living in the engine's grid.
 
+    Two doors, and the difference matters: gui()->style_color( role, phase ) is the RESOLVED
+    read (push_style_color / next_style_color overrides win) -- use it in any render, stock or
+    your own.  gui()->style_edit() is the raw installed struct of the CURRENT set, for a kit
+    INSTALLING a look; reading ->col[][] through it at paint time bypasses the style stacks.
 ==============================================================================================*/
+
+/* What the color is FOR.  Five roles cover every surface the GUI paints.
+
+   PANEL vs BG is the container / control split, and it is the one distinction that has to exist:
+   a window body, a child region, and a title bar are surfaces the layout CARVES, while a button
+   face, an input field, and a check box are surfaces a widget FILLS.  They recede and advance in
+   opposite directions (a panel sits under its contents, a control sits over its panel), so one
+   shared "background" cannot serve both. */
+typedef enum
+{
+    GUI_ROLE_PANEL = 0,   // container surface: window body, child region, title bar
+    GUI_ROLE_BG,          // control surface: button face, input field, check box, cycle end caps
+    GUI_ROLE_BORDER,      // frame line, focus ring, resize edge
+    GUI_ROLE_TEXT,        // glyphs, caret
+    GUI_ROLE_ACCENT,      // emphasis: marks, value fills, nav highlight
+    GUI_ROLE_COUNT
+
+} gui_style_role_t;
+
+/* WHICH of a role's four colors -- the interaction step that selects the cell.  Called a PHASE,
+   not a state, because gui_item_state_t is the interact server's flag set and GUI_STATE_* is the
+   retained per-id pool: a phase is what item_phase() DISTILLS a state into for the style.
+
+   The same four steps mean the analogous thing for every role, which is what lets one 5x4 grid
+   replace a flat palette plus its per-widget token residue:
+
+     role     IDLE              HOT                  ACTIVE                 DIM
+     -------  ----------------  -------------------  ---------------------  ------------------
+     PANEL    window body       title bar            focused title bar      child / recessed
+     BG       control face      hovered face         pressed / focused      inert face
+     BORDER   frame line        hovered / resize     focused window ring    subdued frame
+     TEXT     body text, caret  text on a hot face   text on a pressed one  secondary text
+     ACCENT   value fill        nav highlight        mark, captured nav     empty track
+
+   DIM doubles as the inert variant throughout: a recessed panel is PANEL[DIM], an empty value
+   track is ACCENT[DIM], secondary text is TEXT[DIM]. */
+typedef enum
+{
+    GUI_PHASE_IDLE = 0,   // at rest
+    GUI_PHASE_HOT,        // cursor over / keyboard nav on the item
+    GUI_PHASE_ACTIVE,     // pressed / captured / focused
+    GUI_PHASE_DIM,        // inert, disabled, de-emphasized, recessed
+    GUI_PHASE_COUNT,
+
+    /* Not a cell -- the "whole row" selector push_style_color takes, so recoloring TEXT or BORDER
+       is one balanced push instead of four.  Only the push / next verbs accept it; a read names
+       one phase. */
+    GUI_PHASE_ALL = GUI_PHASE_COUNT
+
+} gui_style_phase_t;
 
 /*==============================================================================================
     GUI_STYLE -- global style configuration
@@ -370,7 +427,7 @@ typedef enum
 
 /* ONE struct, THREE runs, and every one of them instanced per style set.  They stay together
    because the machinery treats them all identically -- themes author them, style sources
-   overwrite them, the style stacks override them, style_var / el_color resolve them, and
+   overwrite them, the style stacks override them, style_var / style_color resolve them, and
    gui_style_apply em-scales them.  ONE test sorts a var between the two categories the enum is
    grouped by: can a read of this field move a rect?
 
@@ -401,9 +458,9 @@ typedef enum
 
 typedef struct gui_style_t
 {
-    /* SKIN: the 5x4 element grid -- THE color vocabulary (gui_element.h).  GUI_COLOR packs
-       R,G,B,A bytes; a cell is read with el_color( role, state ). */
-    u32 col[ GUI_EL_ROLE_COUNT ][ GUI_EL_STATE_COUNT ];
+    /* SKIN: the 5x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
+       above).  GUI_COLOR packs R,G,B,A bytes; a cell is read with style_color( role, phase ). */
+    u32 col[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 
     /* METRICS + SKIN scalars, indexed by gui_style_var_t -- the push_style_var vocabulary.
        Authored in px at em=12 and rescaled by gui_style_apply; the enum below documents each

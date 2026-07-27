@@ -48,7 +48,7 @@ gui_style_apply( void )
     metrics_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
 
     /* A style LANDING: every style block re-derives its installed values from the freshly
-       scaled metrics -- the element stratum through the theme compile plus whatever a
+       scaled metrics -- the color grid through the theme compile plus whatever a
        registered style source overwrites (a kit that owns the look -- style_source_set), the
        rest from the active theme.  This is how style tracks a theme / font change. */
     style_landing();

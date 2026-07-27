@@ -4,7 +4,7 @@
 
     The neutral BACKEND under every style value.  It knows nothing about colors, metrics, or
     chrome: a block is a named run of u32 slots with a fill function, and the registry hands
-    back a base.  Everything with a slot vocabulary (chrome's palette, the element stratum, a
+    back a base.  Everything with a slot vocabulary (chrome's theme, a kit's own style set, a
     kit's private set) registers one and reads through its base -- which is what lets two
     schemas, or two INSTANCES of one schema, sit in the same space without colliding.
 

@@ -45,8 +45,8 @@ ui_style( void )
     return &s_style;
 }
 
-/* The S3 -> S1 compile step: install the ember-gold palette into gui's element style, so the
-   promoted el_* cores (which ui_button / ui_check / ui_slider / ui_cycle / ui_meter now
+/* The S3 -> S1 compile step: install the ember-gold palette into gui's style, so the
+   promoted stock_* renders (which ui_button / ui_check / ui_slider / ui_cycle / ui_meter now
    delegate to) render this kit's look.  The theme system re-derives the installed style at
    every theme / font landing (gui_style_apply), so call this after boot AND after any
    font_use / theme_set -- the kit owns the element look by having the last word. */
@@ -59,30 +59,30 @@ ui_kit_install( void )
 
     /* The container surfaces the kit paints its screens on -- one role now, so the panel look is
        installed here beside the controls instead of passed to every draw_ call. */
-    e->col[ GUI_EL_PANEL  ][ GUI_EL_IDLE   ] = s_style.panel_bg;
-    e->col[ GUI_EL_PANEL  ][ GUI_EL_HOT    ] = s_style.panel_bg;
-    e->col[ GUI_EL_PANEL  ][ GUI_EL_ACTIVE ] = s_style.panel_bg;
-    e->col[ GUI_EL_PANEL  ][ GUI_EL_DIM    ] = s_style.slot_bg;
+    e->col[ GUI_ROLE_PANEL  ][ GUI_PHASE_IDLE   ] = s_style.panel_bg;
+    e->col[ GUI_ROLE_PANEL  ][ GUI_PHASE_HOT    ] = s_style.panel_bg;
+    e->col[ GUI_ROLE_PANEL  ][ GUI_PHASE_ACTIVE ] = s_style.panel_bg;
+    e->col[ GUI_ROLE_PANEL  ][ GUI_PHASE_DIM    ] = s_style.slot_bg;
 
-    e->col[ GUI_EL_BG     ][ GUI_EL_IDLE   ] = s_style.btn_bg;
-    e->col[ GUI_EL_BG     ][ GUI_EL_HOT    ] = s_style.btn_bg_hover;
-    e->col[ GUI_EL_BG     ][ GUI_EL_ACTIVE ] = s_style.btn_bg_press;
-    e->col[ GUI_EL_BG     ][ GUI_EL_DIM    ] = s_style.slot_bg;
+    e->col[ GUI_ROLE_BG     ][ GUI_PHASE_IDLE   ] = s_style.btn_bg;
+    e->col[ GUI_ROLE_BG     ][ GUI_PHASE_HOT    ] = s_style.btn_bg_hover;
+    e->col[ GUI_ROLE_BG     ][ GUI_PHASE_ACTIVE ] = s_style.btn_bg_press;
+    e->col[ GUI_ROLE_BG     ][ GUI_PHASE_DIM    ] = s_style.slot_bg;
 
-    e->col[ GUI_EL_BORDER ][ GUI_EL_IDLE   ] = s_style.btn_border;
-    e->col[ GUI_EL_BORDER ][ GUI_EL_HOT    ] = s_style.btn_border_hover;
-    e->col[ GUI_EL_BORDER ][ GUI_EL_ACTIVE ] = s_style.btn_border_hover;
-    e->col[ GUI_EL_BORDER ][ GUI_EL_DIM    ] = s_style.panel_border;
+    e->col[ GUI_ROLE_BORDER ][ GUI_PHASE_IDLE   ] = s_style.btn_border;
+    e->col[ GUI_ROLE_BORDER ][ GUI_PHASE_HOT    ] = s_style.btn_border_hover;
+    e->col[ GUI_ROLE_BORDER ][ GUI_PHASE_ACTIVE ] = s_style.btn_border_hover;
+    e->col[ GUI_ROLE_BORDER ][ GUI_PHASE_DIM    ] = s_style.panel_border;
 
-    e->col[ GUI_EL_TEXT   ][ GUI_EL_IDLE   ] = s_style.text;
-    e->col[ GUI_EL_TEXT   ][ GUI_EL_HOT    ] = s_style.text;
-    e->col[ GUI_EL_TEXT   ][ GUI_EL_ACTIVE ] = s_style.text;
-    e->col[ GUI_EL_TEXT   ][ GUI_EL_DIM    ] = s_style.text_dim;
+    e->col[ GUI_ROLE_TEXT   ][ GUI_PHASE_IDLE   ] = s_style.text;
+    e->col[ GUI_ROLE_TEXT   ][ GUI_PHASE_HOT    ] = s_style.text;
+    e->col[ GUI_ROLE_TEXT   ][ GUI_PHASE_ACTIVE ] = s_style.text;
+    e->col[ GUI_ROLE_TEXT   ][ GUI_PHASE_DIM    ] = s_style.text_dim;
 
-    e->col[ GUI_EL_ACCENT ][ GUI_EL_IDLE   ] = s_style.title;
-    e->col[ GUI_EL_ACCENT ][ GUI_EL_HOT    ] = s_style.slot_border_hot;
-    e->col[ GUI_EL_ACCENT ][ GUI_EL_ACTIVE ] = s_style.title;
-    e->col[ GUI_EL_ACCENT ][ GUI_EL_DIM    ] = s_style.meter_bg;
+    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_IDLE   ] = s_style.title;
+    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_HOT    ] = s_style.slot_border_hot;
+    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_ACTIVE ] = s_style.title;
+    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_DIM    ] = s_style.meter_bg;
 }
 
 /*==============================================================================================
@@ -199,10 +199,10 @@ ui_title( gui_rect_t r, const char* text )
     gui()->draw_text_shadow( box.x, box.y, text, s_style.title, s_style.title_shadow, 2.0f, 2.0f );
 }
 
-/* UNIFIED (layout-seam pass): no el_ vocabulary -- the stock widget driven by an explicit rect.
+/* UNIFIED (layout-seam pass): no kit vocabulary -- the stock widget driven by an explicit rect.
    next_item_rect makes cell_next_w hand gui_button THIS rect verbatim (no flow pad / gap), so the
-   button fills r exactly, the el_ atom's zero-padding property with one widget set.  The kit look
-   still arrives through ui_kit_install's installed element style. */
+   button fills r exactly, the stock render's zero-padding property with one widget set.  The kit
+   look still arrives through ui_kit_install's installed style. */
 bool
 ui_button( gui_rect_t r, const char* label )
 {
@@ -257,7 +257,7 @@ ui_globe( gui_rect_t r, f32 frac, u32 fill_abgr, const char* caption )
         gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, caption );
 }
 
-/* PROMOTED: gui()->stock_meter (track colors from the installed element style; fill stays a
+/* PROMOTED: gui()->stock_meter (track colors from the installed style; fill stays a
    call parameter -- the per-widget color rule). */
 void
 ui_meter( gui_rect_t r, f32 frac, u32 fill_abgr )

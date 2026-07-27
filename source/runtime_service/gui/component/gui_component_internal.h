@@ -28,7 +28,7 @@
     a second spelling of state.clicked).  Because state sits at offset 0 for all of them, one
     render idiom works over every component:
 
-        u32 face = gui()->el_color( GUI_EL_BG, gui()->item_phase( x.state ) );
+        u32 face = gui()->style_color( GUI_ROLE_BG, gui()->item_phase( x.state ) );
 
     THE COMPONENTS (each has a reference render gui_stock_* in stock/gui_stock_widgets.c; all
     public via gui_host.h / the vtable; a user widget is their sibling over the same comp_* call):

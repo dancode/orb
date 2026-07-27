@@ -486,7 +486,7 @@ ex_windows_menus( void )
 
 /*==============================================================================================
     Raw Pane -- pane_begin / pane_end: the minimal top-level surface occupant (GUI_STACK_PLAN
-    section 5), with ALL chrome hand-built from rect cuts + el_* cores.  The acceptance check:
+    section 5), with ALL chrome hand-built from rect cuts + stock_* renders.  The acceptance check:
     the pane competes for hover/z correctly beside stock windows -- drag the control window
     over it and cycle the tier to watch the one z contest resolve both paint order and input.
 ==============================================================================================*/
@@ -504,7 +504,7 @@ ex_windows_pane( void )
     {
         gui()->stack();
         gui()->text( "the pane to the right is pane_begin + hand-built chrome:" );
-        gui()->text( "no pool record, no layout, no stock paint -- rect cuts + el_*." );
+        gui()->text( "no pool record, no layout, no chrome paint -- rect cuts + stock_*." );
         gui()->text( "drag THIS window over it: MID floats above every window," );
         gui()->text( "BG sinks under any raised window, FG tops even popups." );
 

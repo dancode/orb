@@ -50,7 +50,7 @@ gui_button( const char* label )
     /* Placement is all chrome adds: reserve the natural-width cell (shrinks to it in stack /
        same_line, fills to fit in columns), then paint the stock face through the element core.
        Since the color seam closed (stock_button uses the same col_item_bg_anim over the same
-       style_el_col palette), the core paints exactly what this widget used to -- this is the
+       style_col palette), the core paints exactly what this widget used to -- this is the
        canonical four-line widget collapsed to composer + core. */
     gui_rect_t r = cell_next_w( label_natural_w( label ), WIDGET_H );
     return gui_stock_button( r, label );

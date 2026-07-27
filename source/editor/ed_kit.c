@@ -3,7 +3,7 @@
     editor/ed_kit.c -- editor kit implementation.
 
     Thin like every kit: no state, no style of its own.  The label column reads the
-    installed element style's dim text (labels recede, values read), and the value zone is
+    installed style's dim text (labels recede, values read), and the value zone is
     plain flow -- the stock chrome renders itself.
 
 ==============================================================================================*/
@@ -23,7 +23,7 @@ ed_prop_row( const char* label )
     gui_rect_t lab = gui_rect_cut_left( &row, row.w * ED_PROP_LABEL_FRAC );
 
     gui()->draw_text_in( lab, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
-                         gui()->el_color( GUI_EL_TEXT, GUI_EL_DIM ), label );
+                         gui()->style_color( GUI_ROLE_TEXT, GUI_PHASE_DIM ), label );
     return row;
 }
 

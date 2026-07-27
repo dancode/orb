@@ -126,7 +126,7 @@ void           viewport_destroy( gui_vp_t vp );                                 
 // stock/ -- GUI_STOCK is its OWN translation unit (root gui_stock.c): the stock_* renders
 // plus the absorbed styled painters (per-item wrappers, system adornments, the styled
 // symbol half), reached through stock/gui_stock_internal.h.
-// gui_style_apply (frame/, below) calls across to el_style_derive at every theme/font landing.
+// gui_style_apply (frame/, below) drives a style landing at every theme/font change.
 
 /*----------------------------------  LIBRARY: GUI_DEBUG  ----------------------------------*/
 

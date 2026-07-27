@@ -22,9 +22,9 @@
       - gui_theme_reset calls gui_style_apply (frame/gui_frame_font.c): the rescale needs the
         active font's metrics (draw unit), which style itself must not touch.
 
-    The style used to reach UP into the stock unit for the installed element palette and its
+    The style used to reach UP into the stock unit for the installed palette and its
     projection table.  It does not any more: gui_style_t IS the installed layout, so the whole
-    schema lives here and stock reads it back down through style_el_col.
+    schema lives here and stock reads it back down through style_col.
 
     Include order matters: each file can reference statics from files included above it.
 
