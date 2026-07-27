@@ -840,10 +840,41 @@ show_style_editor( bool* p_open )
     f32 label_width = gui()->text_size( "Separator Shape" ).x;
     gui()->form( GUI_LABEL_RIGHT, label_width );
 
-    /* --- Colors: the style grid, a section per role ----------------------------------------
+    /* --- Palette: the AUTHORED colour, and the fastest knob in the panel --------------------
+       Twelve numbers that drive all 32 cells below.  Drag one ramp slider and the entire grid
+       re-derives in the same frame -- which is the whole argument for the bake, made visible:
+       the cells are a projection of this, not a parallel thing to keep in step with it.
+
+       The re-bake is gated on the PALETTE changing rather than on `changed`, and the ordering
+       matters both ways: it runs before the grid section so the swatches show freshly derived
+       values this frame, and it does not run when only a cell changed, so a hand-edit below
+       survives instead of being eaten on the next keystroke. */
+    bool palette_changed = false;
+
+    gui()->separator_text( "Palette -- seeds" );
+    for ( u32 i = 0; i < GUI_SEED_COUNT; ++i )
+        palette_changed |= se_color( gui()->style_seed_name( ( gui_style_seed_t )i ),
+                                     &work.palette.seed[ i ] );
+
+    gui()->separator_text( "Palette -- ramp" );
+    for ( u32 i = 0; i < GUI_RAMP_COUNT; ++i )
+        palette_changed |= se_f32( gui()->style_ramp_name( ( gui_style_ramp_t )i ),
+                                   &work.palette.ramp[ i ], 0.0f, 1.0f );
+
+    if ( palette_changed )
+    {
+        gui()->style_bake( &work );
+        changed = true;
+    }
+
+    /* --- Colors: the DERIVED grid, a section per role ---------------------------------------
        Nothing here names an individual color.  The editor walks roles x states and asks the
        engine for the labels, so a new role or state shows up with no edit to this file -- which
-       is the whole reason the flat palette and its parallel name table went away. */
+       is the whole reason the flat palette and its parallel name table went away.
+
+       Editing a cell here is still legitimate and still sticks: it is the "bake, then disagree"
+       shape a kit uses, just spelled interactively.  Touch a seed or a ramp value above and the
+       disagreement is overwritten, because that is what re-deriving means. */
     for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
     {
         gui()->separator_text( gui()->style_role_name( ( gui_style_role_t )r ) );
@@ -1334,9 +1365,15 @@ main( int argc, char** argv )
     {
         gui_style_t* style = gui()->style_get();
 
-        // Modify any color: a (role, phase) cell of the style grid
-        style->col[GUI_ROLE_PANEL][GUI_PHASE_IDLE] = GUI_COLOR( 0x20, 0x20, 0x20, 0xFF );
-        style->col[GUI_ROLE_TEXT ][GUI_PHASE_IDLE] = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
+        // Recolor by SEED: change a source color, re-derive the 32-cell grid from it.  This is
+        // the usual door -- every role fed by the seed moves together and keeps its ramp.
+        style->palette.seed[GUI_SEED_SURFACE] = GUI_COLOR( 0x20, 0x20, 0x20, 0xFF );
+        style->palette.seed[GUI_SEED_INK    ] = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
+        gui()->style_bake( style );
+
+        // ...then disagree with the ramp on individual cells, if you want to.  Order matters:
+        // a cell written before the bake would simply be overwritten by it.
+        // style->col[GUI_ROLE_MARK][GUI_PHASE_IDLE] = GUI_COLOR( 0xFF, 0x40, 0x40, 0xFF );
 
         // Modify any skin (STYLE) knob -- metrics are authored for a baseline em=12
         style->var[GUI_VAR_PANEL_ROUND] = 0;    // Square windows

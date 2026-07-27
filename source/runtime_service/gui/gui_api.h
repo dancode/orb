@@ -1297,6 +1297,22 @@ typedef struct gui_api_s
     const gui_style_t* ( *style_peek  )( void );   /* read-only base -- does NOT mark it anonymous   */
     void               ( *style_apply )( void );   /* rescale the active metrics from the base       */
 
+    /* style_bake -- derive s->col[][] from s->palette: the step between what a theme AUTHORS
+       (seven seeds and a five-number ramp, gui_palette_t) and what a render READS (the 8x4
+       colour grid).  Pure and in-place; touches no metric.
+
+       Explicit rather than implicit, because a kit's usual shape is bake THEN overwrite: an
+       automatic bake would have to run before those writes (no effect) or after them (silently
+       eaten).  Naming the step makes the order yours.
+
+           gui_style_t* e = gui()->style_edit();
+           e->palette.seed[ GUI_SEED_SURFACE ] = charcoal;
+           e->palette.seed[ GUI_SEED_ACCENT  ] = gold;
+           e->palette.ramp[ GUI_RAMP_HOVER   ] = 0.5f;
+           gui()->style_bake( e );                                 // all 32 cells derive
+           e->col[ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;      // the one bespoke cell */
+    void               ( *style_bake  )( gui_style_t* s );
+
     /* style_source_set -- register the OWNER of the DEFAULT style set (set 0), the one chrome
        and any unbracketed UI resolve through: the promotion seam a kit uses to restyle the whole
        application.  The source is invoked immediately, then again at every style landing (font
@@ -1345,7 +1361,17 @@ typedef struct gui_api_s
            gui()->push_style_var( GUI_VAR_PAD, 20.0f );
            gui()->button( "Big Red" );
            gui()->pop_style_var( 1 );
-           gui()->pop_style_color( 1 ); */
+           gui()->pop_style_color( 1 );
+
+       push_style_seed is the third stack and the BULK verb: it replaces a source colour
+       (gui_style_seed_t) and re-derives the grid, so every role fed by that seed moves together
+       and each keeps its four-step ramp.  Reach for it whenever the ask is "recolour this",
+       and reach for GUI_PHASE_ALL only on a row that does not react -- TEXT, BORDER -- since
+       writing one value into four cells is exactly what kills a hover.
+
+           gui()->push_style_seed( GUI_SEED_ACCENT, gold );   // fills, washes, rings, nav
+           ... a gold panel ...
+           gui()->pop_style_seed( 1 ); */
 
     void ( *push_style_color )( gui_style_role_t role, gui_style_phase_t phase, u32 abgr );
     void ( *pop_style_color  )( u32 count );
@@ -1353,6 +1379,8 @@ typedef struct gui_api_s
     void ( *push_style_var   )( gui_style_var_t var, f32 value );
     void ( *pop_style_var    )( u32 count );
     void ( *next_style_var   )( gui_style_var_t var, f32 value );
+    void ( *push_style_seed  )( gui_style_seed_t seed, u32 abgr );
+    void ( *pop_style_seed   )( u32 count );
 
     /* The RESOLVED reads -- the other half of the stacks above, and what every render actually
        calls.  style_color returns a (role, phase) cell of the installed style (kit-owned when a
@@ -1376,14 +1404,16 @@ typedef struct gui_api_s
     u32               ( *style_color )( gui_style_role_t role, gui_style_phase_t phase );
     gui_style_t*      ( *style_edit  )( void );
 
-    /* The schema, described by the engine that owns it -- so a style editor WALKS roles, phases
-       and vars instead of keeping parallel tables in step with enums it does not own.  Display
-       names for each axis, plus what kind of number a var holds (gui_style_class_t): its class
-       says whether it is a size, a stroke, a radius, the lattice pitch, or an enum pick, which
-       is exactly what an editor needs to group it and choose a slider or a combo.  An unnamed
-       index reads "?" rather than running off the end. */
+    /* The schema, described by the engine that owns it -- so a style editor WALKS the five axes
+       (role, phase, seed, ramp, var) instead of keeping parallel tables in step with enums it
+       does not own.  Display names for each, plus what kind of number a var holds
+       (gui_style_class_t): its class says whether it is a size, a stroke, a radius, the lattice
+       pitch, or an enum pick, which is exactly what an editor needs to group it and choose a
+       slider or a combo.  An unnamed index reads "?" rather than running off the end. */
     const char*       ( *style_role_name  )( gui_style_role_t role );
     const char*       ( *style_phase_name )( gui_style_phase_t phase );
+    const char*       ( *style_seed_name  )( gui_style_seed_t seed );
+    const char*       ( *style_ramp_name  )( gui_style_ramp_t ramp );
     const char*       ( *style_var_name   )( gui_style_var_t var );
     gui_style_class_t ( *style_var_class  )( gui_style_var_t var );
     const char*       ( *style_class_name )( gui_style_class_t cls );

@@ -30,10 +30,11 @@
     gui_style_t (gui.h) IS the storage, twice over: the installed layer is an ARRAY of it (one
     whole style per set, so a kit can be handed a typed pointer with no copy and no offset
     table), and the working set is the same struct's u32 image, so an override can address any
-    field by slot.  The static assert below is what makes the two views one thing.  Three runs
+    field by slot.  The static assert below is what makes the two views one thing.  Four runs
     inside the struct, all equal citizens -- that equality is the whole point of the schema:
 
-        col    [ role ][ phase ]  -- the 6x4 color grid, THE color vocabulary
+        palette                   -- the AUTHORED colour: seven seeds and a five-number ramp
+        col    [ role ][ phase ]  -- the 8x4 color grid DERIVED from it, THE color vocabulary
         var    [ gui_style_var_t ]-- every scalar the style has, metrics and skin alike
         scales [ gui_scale_t ]    -- the density ramp scale_push reads
 
@@ -46,17 +47,24 @@
     inversion, no name-to-slot map.  A color is ( role, phase ); a scalar is a gui_style_var_t.
     That is the entire addressing story.
 
+    The palette is the ONE run whose slots are not read directly by anything above: a render never
+    asks for a seed, it asks for a cell.  The seeds live in the slot space anyway so that a seed
+    push is an override like any other -- saved, replayed and popped by the same machinery -- and
+    so that a set switch carries a kit's authored colour along with its derived colour.
+
     Working set: the installed layer with the push/pop stacks applied -- the value an unscoped
-    read returns.  ONE run, always the current set's, so a read is s_work[ slot ] with a
+    read returns.  ONE run, always the current set's, so a read is s_work.slot[ slot ] with a
     COMPILE-TIME slot: no block base to load, no instance arithmetic, nothing to scan.
 
     Stacks: saved (slot, previous) pairs so pop restores regardless of which slots a push
     touched.  One PUSH is one stack entry even when it spans a whole phase row (GUI_PHASE_ALL), so
     pop_style_color( 1 ) always undoes exactly one push_style_color.
 
-    TWO stacks, one per public pop verb: pop_style_color and pop_style_var each pop their
-    own pushes, so an interleaved push_color / push_var sequence unwinds correctly
-    (the same reason Dear ImGui keeps two).
+    THREE stacks, one per public pop verb: pop_style_color, pop_style_var and pop_style_seed each
+    pop their own pushes, so an interleaved sequence unwinds correctly (the same reason Dear ImGui
+    keeps two).  The seed stack is separate for a second reason as well -- its entries are an
+    order of magnitude wider, since one seed push displaces the whole derived grid, and there is
+    no reason to make the var stack pay 140 bytes an entry for a fan it never uses.
 
     Next-item layer: next_style_* queues (slot, value) pairs in `next`; at the per-item resolve
     seam they are WRITTEN THROUGH into the working set, and `item` remembers what each slot held
@@ -70,8 +78,12 @@
 
 #define GUI_STYLE_STACK_DEPTH 32
 
-/* The slot layout -- field order of gui_style_t.  Three runs, laid end to end. */
-#define STYLE_COL_BASE    0
+/* The slot layout -- field order of gui_style_t.  Four runs, laid end to end.  The palette runs
+   FIRST because it runs first in the pipeline: seeds and ramp are what a theme authors, the
+   colour grid is what the bake derives from them, and the metrics follow. */
+#define STYLE_SEED_BASE   0
+#define STYLE_RAMP_BASE   ( STYLE_SEED_BASE  + GUI_SEED_COUNT   )
+#define STYLE_COL_BASE    ( STYLE_RAMP_BASE  + GUI_RAMP_COUNT   )
 #define STYLE_COL_COUNT   ( GUI_ROLE_COUNT * GUI_PHASE_COUNT )
 #define STYLE_VAR_BASE    ( STYLE_COL_BASE   + STYLE_COL_COUNT )
 #define STYLE_SCALE_BASE  ( STYLE_VAR_BASE   + GUI_VAR_COUNT    )
@@ -99,8 +111,20 @@ ORB_STATIC_ASSERT( sizeof( gui_style_t ) == STYLE_SLOT_COUNT * sizeof( u32 ),
     Capacity is the array bound: a fifth set is a compile error, not a first-frame assert. */
 
 static gui_style_t s_store[ GUI_STYLE_SET_MAX ];   // installed, one per set
-static u32         s_work [ STYLE_SLOT_COUNT ];    // resolved -- what every read indexes
-static u16         s_set_cur;                      // which set s_work currently mirrors
+
+/* The resolved run, in BOTH of its views at once.  A read indexes .slot; the bake writes through
+   .style.  The union is not a convenience -- it is the static assert made usable: "the struct IS
+   the storage" stops being a claim the reader has to verify and becomes the declaration itself,
+   and re-deriving the grid after a seed push is gui_style_bake( &s_work.style ) rather than a
+   pointer cast the next reader has to talk themselves into. */
+static union
+{
+    gui_style_t style;                    // typed view -- what the bake reads and writes
+    u32         slot[ STYLE_SLOT_COUNT ]; // flat view  -- what every style read indexes
+
+} s_work;
+
+static u16 s_set_cur;                     // which set s_work currently mirrors
 
 /* The widest fan-out one public push can have: a full phase row (GUI_PHASE_ALL). */
 #define STYLE_FAN_MAX GUI_PHASE_COUNT
@@ -137,6 +161,28 @@ typedef struct
 static style_stack_t s_col_stack;                     // push_style_color's stack
 static style_stack_t s_var_stack;                     // push_style_var's stack
 
+/* The SEED stack -- push_style_seed's, and a different shape from the two above because a seed
+   push is a different KIND of override.  A colour push replaces a value; a seed push replaces a
+   SOURCE, and the whole grid is re-derived from it -- so the entry has to remember the grid it
+   displaced, not the one slot it named.  Slots are not stored: they are always the seed plus the
+   contiguous colour run, known at compile time.
+
+   Depth 8, not 32: a seed push is a coarse scope -- a panel, a HUD, a dialog -- exactly like a
+   style set, and for the same reason.  Nobody brackets a single widget with a re-derivation. */
+#define GUI_STYLE_SEED_DEPTH 8
+
+typedef struct
+{
+    u32 prev_col[ STYLE_COL_COUNT ];   // the whole derived grid, as it stood before the re-bake
+    u32 prev_seed;                     // what the named seed held
+    u32 cur;                           // what it was set to (replay re-applies this)
+    u8  seed;                          // which seed this push named
+
+} style_seed_save_t;
+
+static style_seed_save_t s_seed_stack[ GUI_STYLE_SEED_DEPTH ];
+static u32               s_seed_sp;                   // count of pushes, not index
+
 #define STYLE_NEXT_MAX ( STYLE_COL_COUNT + GUI_VAR_COUNT )
 
 static style_pair_t  s_next[ STYLE_NEXT_MAX ];        // queued by next_style_*: (slot, value)
@@ -171,7 +217,7 @@ static u32 s_set_sp;                                  // count of pushes, not in
 static u32
 style_read( u32 slot )
 {
-    return s_work[ slot ];   /* the installed value with every live override already applied */
+    return s_work.slot[ slot ];   /* the installed value with every live override already applied */
 }
 
 /* Put a saved value back.  If a next-item override is live on that slot, the restore belongs
@@ -184,7 +230,7 @@ style_restore( u16 slot, u32 val )
     for ( u32 i = 0; i < s_item_n; ++i )
         if ( s_item[ i ].slot == slot ) { s_item[ i ].prev = val; return; }
 
-    s_work[ slot ] = val;
+    s_work.slot[ slot ] = val;
 }
 
 /* Push one public override: every slot it spans takes the value, and the entry remembers all of
@@ -202,12 +248,12 @@ style_push( style_stack_t* st, const u16* slot, u8 n, u32 val )
         for ( u8 i = 0; i < n; ++i )
         {
             sv->slot[ i ] = slot[ i ];
-            sv->prev[ i ] = s_work[ slot[ i ] ];
+            sv->prev[ i ] = s_work.slot[ slot[ i ] ];
         }
     }
     ++st->sp;
 
-    for ( u8 i = 0; i < n; ++i ) s_work[ slot[ i ] ] = val;
+    for ( u8 i = 0; i < n; ++i ) s_work.slot[ slot[ i ] ] = val;
 }
 
 static void
@@ -319,6 +365,74 @@ style_next_var( gui_style_var_t var, f32 value )
 }
 
 /*==============================================================================================
+    The seed push -- re-derive rather than replace.
+
+    The verb GUI_PHASE_ALL could never be.  A phase-row push writes one value into four cells,
+    which flattens the ramp: pushed on BG it hands you a button that stops reacting to hover.
+    A seed push changes the SOURCE and re-runs the bake, so the four cells stay four colours a
+    ramp step apart -- just built from somewhere else.  That is what "recolour this panel" means
+    nearly every time it is asked for, and it had no verb at all until the seeds existed.
+
+    Cost lands where it belongs.  A re-bake is 32 derived cells plus 32 saved ones, paid once per
+    push; reads stay one indexed load, exactly as before, because the derived values land in the
+    same slots any other override writes.
+==============================================================================================*/
+
+/* Re-derive the grid from the working run's own palette.  This is the union earning its keep:
+   .style and .slot are the same bytes, so the bake reads the seeds a push just wrote and writes
+   the cells the next read will index, with no copy in or out. */
+static void
+style_rebake( void )
+{
+    gui_style_bake( &s_work.style );
+}
+
+static void
+style_push_seed( gui_style_seed_t seed, u32 abgr )
+{
+    if ( (u32)seed >= GUI_SEED_COUNT ) return;
+
+    ORB_ASSERT( s_seed_sp < GUI_STYLE_SEED_DEPTH && "style seed push: too deep -- mismatched push/pop" );
+    if ( s_seed_sp < GUI_STYLE_SEED_DEPTH )
+    {
+        style_seed_save_t* sv = &s_seed_stack[ s_seed_sp ];
+
+        sv->seed      = (u8)seed;
+        sv->cur       = abgr;
+        sv->prev_seed = s_work.slot[ STYLE_SEED_BASE + (u32)seed ];
+
+        for ( u32 i = 0; i < STYLE_COL_COUNT; ++i )
+            sv->prev_col[ i ] = s_work.slot[ STYLE_COL_BASE + i ];
+    }
+    ++s_seed_sp;
+
+    s_work.slot[ STYLE_SEED_BASE + (u32)seed ] = abgr;
+    style_rebake();
+}
+
+/* Put back the seed AND the grid it displaced.  The cells go back through style_restore, not by
+   plain assignment, so a next-item colour override live at the moment of the pop keeps its slot
+   -- the same rule a colour pop already follows, for the same reason: a pop must not punch
+   through a more specific scope. */
+static void
+style_pop_seed( u32 count )
+{
+    while ( count-- && s_seed_sp )
+    {
+        --s_seed_sp;
+        if ( s_seed_sp < GUI_STYLE_SEED_DEPTH )
+        {
+            const style_seed_save_t* sv = &s_seed_stack[ s_seed_sp ];
+
+            s_work.slot[ STYLE_SEED_BASE + sv->seed ] = sv->prev_seed;
+
+            for ( u32 i = 0; i < STYLE_COL_COUNT; ++i )
+                style_restore( (u16)( STYLE_COL_BASE + i ), sv->prev_col[ i ] );
+        }
+    }
+}
+
+/*==============================================================================================
     Seam hooks -- driven from OUTSIDE this unit, at the shared per-item boundary.
 
     style never paints and never reaches up, so it does not call these itself: the impure
@@ -337,7 +451,7 @@ style_item_unwind( void )
     while ( s_item_n )
     {
         --s_item_n;
-        s_work[ s_item[ s_item_n ].slot ] = s_item[ s_item_n ].prev;
+        s_work.slot[ s_item[ s_item_n ].slot ] = s_item[ s_item_n ].prev;
     }
 }
 
@@ -356,8 +470,8 @@ style_item_commit( void )
     {
         u16 slot = s_next[ i ].slot;
 
-        s_item[ s_item_n++ ] = ( style_item_t ){ slot, s_work[ slot ], s_next[ i ].val };
-        s_work[ slot ]       = s_next[ i ].val;
+        s_item[ s_item_n++ ] = ( style_item_t ){ slot, s_work.slot[ slot ], s_next[ i ].val };
+        s_work.slot[ slot ]       = s_next[ i ].val;
     }
     s_next_n = 0;
 }
@@ -395,24 +509,53 @@ style_stack_replay( style_stack_t* st )
         style_save_t* sv = &st->save[ e ];
         for ( u8 i = 0; i < sv->n; ++i )
         {
-            sv->prev[ i ]           = s_work[ sv->slot[ i ] ];   /* rebase onto the new value */
-            s_work[ sv->slot[ i ] ] = sv->cur;
+            sv->prev[ i ]           = s_work.slot[ sv->slot[ i ] ];   /* rebase onto the new value */
+            s_work.slot[ sv->slot[ i ] ] = sv->cur;
         }
     }
 }
 
+/* Seeds replay the same way, but a step further: re-applying the seed is not enough, the grid
+   has to be DERIVED again -- against the palette the new instance brought with it, which is the
+   whole point of pushing a seed rather than 32 cells.  Push gold over chrome's blue and switch to
+   a kit's ember set, and the cells land on ember-plus-gold, not on chrome's. */
+static void
+style_seed_replay( void )
+{
+    u32 n = ( s_seed_sp < GUI_STYLE_SEED_DEPTH ) ? s_seed_sp : GUI_STYLE_SEED_DEPTH;
+
+    for ( u32 e = 0; e < n; ++e )
+    {
+        style_seed_save_t* sv = &s_seed_stack[ e ];
+
+        sv->prev_seed = s_work.slot[ STYLE_SEED_BASE + sv->seed ];   /* rebase onto the new value */
+        for ( u32 i = 0; i < STYLE_COL_COUNT; ++i )
+            sv->prev_col[ i ] = s_work.slot[ STYLE_COL_BASE + i ];
+
+        s_work.slot[ STYLE_SEED_BASE + sv->seed ] = sv->cur;
+        style_rebake();
+    }
+}
+
 /* One run, so a set switch and a landing reseed exactly the same slots -- there is nothing to
-   filter by, which is what the block layer used to need. */
+   filter by, which is what the block layer used to need.
+
+   Seeds go FIRST, and that ordering is a rule rather than an accident: a seed push re-derives
+   every cell, so it supersedes any per-cell colour push that was outstanding when it landed.
+   Replaying seeds first reproduces the nesting that verb is actually used in -- bracket a region
+   with a seed, then tweak individual cells inside it -- and leaves the per-cell pushes on top
+   where the caller put them. */
 static void
 style_overrides_replay( void )
 {
+    style_seed_replay();
     style_stack_replay( &s_col_stack );
     style_stack_replay( &s_var_stack );
 
     for ( u32 i = 0; i < s_item_n; ++i )
     {
-        s_item[ i ].prev           = s_work[ s_item[ i ].slot ];
-        s_work[ s_item[ i ].slot ] = s_item[ i ].cur;
+        s_item[ i ].prev           = s_work.slot[ s_item[ i ].slot ];
+        s_work.slot[ s_item[ i ].slot ] = s_item[ i ].cur;
     }
 }
 
@@ -444,10 +587,14 @@ static const char* const k_phase_name[ GUI_PHASE_COUNT ] =
 };
 
 /* The var axis is described once, in gui_theme.c's k_var table (name + class together), because
-   metrics_compute needs the class and is included above this file.  These are the read doors. */
+   metrics_compute needs the class and is included above this file; the two palette axes are
+   named there for the same reason of proximity to the themes that author them.  These are the
+   read doors -- five axes, one accessor each, no table anywhere above this line. */
 
 const char* gui_style_role_name ( gui_style_role_t r )  { return ( (u32)r < GUI_ROLE_COUNT  && k_role_name [ r ]       ) ? k_role_name [ r ]       : "?"; }
 const char* gui_style_phase_name( gui_style_phase_t p ) { return ( (u32)p < GUI_PHASE_COUNT && k_phase_name[ p ]       ) ? k_phase_name[ p ]       : "?"; }
+const char* gui_style_seed_name ( gui_style_seed_t s )  { return ( (u32)s < GUI_SEED_COUNT  && k_seed_name [ s ]       ) ? k_seed_name [ s ]       : "?"; }
+const char* gui_style_ramp_name ( gui_style_ramp_t r )  { return ( (u32)r < GUI_RAMP_COUNT  && k_ramp_name [ r ]       ) ? k_ramp_name [ r ]       : "?"; }
 const char* gui_style_var_name  ( gui_style_var_t v )   { return ( (u32)v < GUI_VAR_COUNT   && k_var       [ v ].name  ) ? k_var       [ v ].name  : "?"; }
 const char* gui_style_class_name( gui_style_class_t c ) { return ( (u32)c < GUI_CLASS_COUNT && k_class_name[ c ]       ) ? k_class_name[ c ]       : "?"; }
 
@@ -502,7 +649,7 @@ static void
 style_work_reseed( void )
 {
     const u32* src = (const u32*)&s_store[ s_set_cur ];
-    for ( u32 i = 0; i < STYLE_SLOT_COUNT; ++i ) s_work[ i ] = src[ i ];
+    for ( u32 i = 0; i < STYLE_SLOT_COUNT; ++i ) s_work.slot[ i ] = src[ i ];
 }
 
 /* A style LANDING: theme / font / scale changed, so EVERY set re-derives -- including ones not
@@ -546,6 +693,7 @@ style_new_frame( void )
     style_work_reseed();           /* working set <- installed layer */
 
     s_col_stack.sp = s_var_stack.sp = 0;
+    s_seed_sp = 0;
     s_next_n = s_item_n = 0;
 }
 
@@ -729,12 +877,14 @@ col_item_bg_anim( gui_id_t id, gui_item_state_t st )
 /* True while NO ambient style scope is open -- the volatile-replay precondition check
    (chrome/widgets/gui_volatile.c) reads it through this predicate so the stack types stay
    private.  An idle-frame replay re-runs the callback outside whatever scope surrounded the
-   original emit, so any of these would silently re-colour the block: a push, a live next-item
+   original emit, so any of these would silently re-colour the block: a colour or var push, a
+   seed push (which re-derives the whole grid, so it is the loudest of them), a live next-item
    override, or a style set the replay will not be inside. */
 bool
 style_stacks_empty( void )
 {
-    return s_col_stack.sp == 0 && s_var_stack.sp == 0 && s_item_n == 0 && s_set_sp == 0;
+    return s_col_stack.sp == 0 && s_var_stack.sp == 0 && s_seed_sp == 0
+        && s_item_n == 0 && s_set_sp == 0;
 }
 
 // clang-format on

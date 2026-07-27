@@ -28,6 +28,10 @@
 
     Include order matters: each file can reference statics from files included above it.
 
+    style/gui_bake.c        -- the bake: seven seeds and a five-number ramp -> the 32-cell colour
+                               grid.  Pure, and depends on nothing above it, which is why it is
+                               first: the theme registry bakes on the way in and the seed stack
+                               re-bakes into the working run
     style/gui_theme.c       -- theme registry, base/active style state (s_style_base, s_style),
                                theme API, the grid lattice, metrics_compute (the em rescale)
     style/gui_style_core.c  -- the value store (one installed gui_style_t per set + the resolved
@@ -54,10 +58,12 @@
 #include "runtime_service/gui/debug/gui_debug.h"
 
 /*==============================================================================================
-    Unity build -- theme state first (the stacks re-seed from s_style), then the stack
-    machinery over it, then the public bracketing vocabulary over both.
+    Unity build -- the pure bake first (theme load and the seed stack both call it), then theme
+    state (the stacks re-seed from s_style), then the stack machinery over it, then the public
+    bracketing vocabulary over both.
 ==============================================================================================*/
 
+#include "runtime_service/gui/style/gui_bake.c"
 #include "runtime_service/gui/style/gui_theme.c"
 #include "runtime_service/gui/style/gui_style_core.c"
 #include "runtime_service/gui/style/gui_stacks.c"
@@ -73,7 +79,7 @@ style_unit_mem_bytes( void )
 {
     return (u32)( sizeof( s_style_base ) + sizeof( s_style ) + sizeof( k_themes )
                 + sizeof( s_store ) + sizeof( s_work )
-                + sizeof( s_col_stack ) + sizeof( s_var_stack )
+                + sizeof( s_col_stack ) + sizeof( s_var_stack ) + sizeof( s_seed_stack )
                 + sizeof( s_next ) + sizeof( s_item )
                 + sizeof( s_set_stack ) + sizeof( s_set_source ) + sizeof( s_set_user ) );
 }

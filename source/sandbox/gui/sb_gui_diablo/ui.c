@@ -49,7 +49,13 @@ ui_style( void )
    promoted stock_* renders (which ui_button / ui_check / ui_slider / ui_cycle / ui_meter now
    delegate to) render this kit's look.  The theme system re-derives the installed style at
    every theme / font landing (gui_style_apply), so call this after boot AND after any
-   font_use / theme_set -- the kit owns the element look by having the last word. */
+   font_use / theme_set -- the kit owns the element look by having the last word.
+
+   This used to be 32 assignments -- every cell of the grid, written one at a time, with
+   panel_bg spelled into three of them and text into another three.  It is now seven seeds, a
+   five-number ramp, one bake, and the two cells this kit genuinely disagrees with the ramp
+   about.  The ramp is where the kit's character actually lives: a 0.15 hover and a 0.30 press
+   is what makes ember-gold smoulder instead of flashing the way chrome's 0.60 / 0.75 does. */
 void
 ui_kit_install( void )
 {
@@ -57,49 +63,31 @@ ui_kit_install( void )
 
     e->var[ GUI_VAR_BORDER ] = s_style.border_w;
 
-    /* The container surfaces the kit paints its screens on -- one role now, so the panel look is
-       installed here beside the controls instead of passed to every draw_ call. */
-    e->col[ GUI_ROLE_PANEL  ][ GUI_PHASE_IDLE   ] = s_style.panel_bg;
-    e->col[ GUI_ROLE_PANEL  ][ GUI_PHASE_HOT    ] = s_style.panel_bg;
-    e->col[ GUI_ROLE_PANEL  ][ GUI_PHASE_ACTIVE ] = s_style.panel_bg;
-    e->col[ GUI_ROLE_PANEL  ][ GUI_PHASE_DIM    ] = s_style.slot_bg;
+    /* Seven source colours.  Note the alphas ride through the bake untouched, so the whole kit
+       stays translucent over the game behind it without restating 0xf0 thirty-two times. */
+    e->palette.seed[ GUI_SEED_SURFACE ] = s_style.panel_bg;          /* the leather backing   */
+    e->palette.seed[ GUI_SEED_CONTROL ] = s_style.btn_bg;            /* the raised plate      */
+    e->palette.seed[ GUI_SEED_INK     ] = s_style.text;              /* parchment             */
+    e->palette.seed[ GUI_SEED_LINE    ] = s_style.btn_border;        /* the tooled edge       */
+    e->palette.seed[ GUI_SEED_ACCENT  ] = s_style.btn_border_hover;  /* lit gold              */
+    e->palette.seed[ GUI_SEED_MARK    ] = s_style.title;             /* bright gold           */
+    e->palette.seed[ GUI_SEED_GRAB    ] = s_style.text;              /* the contrast anchor   */
 
-    e->col[ GUI_ROLE_TITLE  ][ GUI_PHASE_IDLE   ] = s_style.panel_bg;
-    e->col[ GUI_ROLE_TITLE  ][ GUI_PHASE_HOT    ] = s_style.btn_bg_hover;
-    e->col[ GUI_ROLE_TITLE  ][ GUI_PHASE_ACTIVE ] = s_style.panel_bg;
-    e->col[ GUI_ROLE_TITLE  ][ GUI_PHASE_DIM    ] = s_style.slot_bg;
+    /* A smouldering ramp, not a flashing one -- the whole difference between this kit's feel and
+       chrome's, and it is five numbers rather than a repainted grid. */
+    e->palette.ramp[ GUI_RAMP_HOVER  ] = 0.15f;
+    e->palette.ramp[ GUI_RAMP_PRESS  ] = 0.30f;
+    e->palette.ramp[ GUI_RAMP_FADE   ] = 0.45f;
+    e->palette.ramp[ GUI_RAMP_RECESS ] = 0.30f;
+    e->palette.ramp[ GUI_RAMP_STEP   ] = 0.18f;
 
-    e->col[ GUI_ROLE_BG     ][ GUI_PHASE_IDLE   ] = s_style.btn_bg;
-    e->col[ GUI_ROLE_BG     ][ GUI_PHASE_HOT    ] = s_style.btn_bg_hover;
-    e->col[ GUI_ROLE_BG     ][ GUI_PHASE_ACTIVE ] = s_style.btn_bg_press;
-    e->col[ GUI_ROLE_BG     ][ GUI_PHASE_DIM    ] = s_style.slot_bg;
+    gui()->style_bake( e );
 
-    e->col[ GUI_ROLE_BORDER ][ GUI_PHASE_IDLE   ] = s_style.btn_border;
-    e->col[ GUI_ROLE_BORDER ][ GUI_PHASE_HOT    ] = s_style.btn_border_hover;
-    e->col[ GUI_ROLE_BORDER ][ GUI_PHASE_ACTIVE ] = s_style.btn_border_hover;
-    e->col[ GUI_ROLE_BORDER ][ GUI_PHASE_DIM    ] = s_style.panel_border;
-
-    e->col[ GUI_ROLE_TEXT   ][ GUI_PHASE_IDLE   ] = s_style.text;
-    e->col[ GUI_ROLE_TEXT   ][ GUI_PHASE_HOT    ] = s_style.text;
-    e->col[ GUI_ROLE_TEXT   ][ GUI_PHASE_ACTIVE ] = s_style.text;
-    e->col[ GUI_ROLE_TEXT   ][ GUI_PHASE_DIM    ] = s_style.text_dim;
-
-    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_IDLE   ] = s_style.title;
-    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_HOT    ] = s_style.slot_border_hot;
-    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_ACTIVE ] = s_style.title;
-    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_DIM    ] = s_style.meter_bg;
-
-    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_IDLE   ] = s_style.title;
-    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_HOT    ] = s_style.slot_border_hot;
-    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_ACTIVE ] = s_style.title;
-    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_DIM    ] = s_style.text_dim;
-
-    /* GRAB is the kit's contrast anchor, not a shade of its furniture: a knob has to read against
-       the track under it AND the value fill beside it, both of which are s_style browns here. */
-    e->col[ GUI_ROLE_GRAB   ][ GUI_PHASE_IDLE   ] = s_style.text_dim;
-    e->col[ GUI_ROLE_GRAB   ][ GUI_PHASE_HOT    ] = s_style.text;
-    e->col[ GUI_ROLE_GRAB   ][ GUI_PHASE_ACTIVE ] = s_style.title;
-    e->col[ GUI_ROLE_GRAB   ][ GUI_PHASE_DIM    ] = s_style.slot_bg;
+    /* The two the ramp cannot know: this kit's panels are painted scenery, not surfaces you can
+       interact with, so they must not react at all.  Bake first, disagree after -- which is the
+       whole reason the bake is a call and not a side effect. */
+    e->col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = s_style.panel_bg;
+    e->col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = s_style.panel_bg;
 }
 
 /*==============================================================================================

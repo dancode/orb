@@ -80,6 +80,30 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
     [ GUI_VAR_MENU_CHECK      ] = { "Menu Check",      GUI_CLASS_SHAPE  },
 };
 
+/* The palette axes, named for the same reason the var axis is: a style editor walks the schema
+   instead of keeping a table in step with enums it does not own.  Designated by index, so an
+   entry cannot slide out of alignment; an unnamed addition reads "?" rather than misreporting a
+   neighbour. */
+static const char* const k_seed_name[ GUI_SEED_COUNT ] =
+{
+    [ GUI_SEED_SURFACE ] = "Surface",
+    [ GUI_SEED_CONTROL ] = "Control",
+    [ GUI_SEED_INK     ] = "Ink",
+    [ GUI_SEED_LINE    ] = "Line",
+    [ GUI_SEED_ACCENT  ] = "Accent",
+    [ GUI_SEED_MARK    ] = "Mark",
+    [ GUI_SEED_GRAB    ] = "Grab",
+};
+
+static const char* const k_ramp_name[ GUI_RAMP_COUNT ] =
+{
+    [ GUI_RAMP_HOVER  ] = "Hover Wash",
+    [ GUI_RAMP_PRESS  ] = "Press Wash",
+    [ GUI_RAMP_FADE   ] = "Inert Fade",
+    [ GUI_RAMP_RECESS ] = "Recess Sink",
+    [ GUI_RAMP_STEP   ] = "Lift Step",
+};
+
 /* Section labels for the classes above -- an editor's group headings. */
 static const char* const k_class_name[ GUI_CLASS_COUNT ] =
 {
@@ -98,44 +122,73 @@ var_is_pixels( u8 cls )
     return cls == GUI_CLASS_METRIC || cls == GUI_CLASS_STROKE || cls == GUI_CLASS_SKIN;
 }
 
-/* Shared authoring blocks -- the built-in themes repeat large identical spans (the 6x4 palette,
-   the density ramp, the shape picks), so those live once here as designated-initializer fragments
-   and each theme below reads as "this palette + these few deltas".  A theme is still a plain
-   gui_style_t aggregate; these macros only save the copy-paste (and the silent-typo risk).
+/*==============================================================================================
+    The palettes -- seven seeds and a five-number ramp per family, and .col left EMPTY.
 
-   A palette is authored as the color grid itself -- role by role, four phases across -- which
-   is the same shape a style source writes and the same shape the block stores.  There is no
-   projection step between the three any more. */
+    Every built-in used to carry 32 colour literals, and the two families restated the same
+    quarter of them: TEXT one colour in three phases, BORDER hot == active, MARK idle == active,
+    BG dim == ACCENT dim, TITLE active == PANEL idle.  Those are derivations, and they now live
+    once, in style/gui_bake.c, instead of once per theme in hex.  gui_theme_set bakes the grid on
+    the way in (theme_bake below), so nothing here authors a cell.
 
-/* The dark family palette -- shared by "dark", "rounded", and "quantum" (they diverge only in
-   metrics / skin, never in color). */
+    The ramps differ between the families, and that is the point rather than an oversight: a
+    fixed fraction toward black is a gentle inset on a near-black surface and a bruise on a
+    near-white one, so "light" recesses at 0.08 where "dark" recesses at 0.22.  Everything else
+    they agree on, which is what says the two looks really are one system.
+==============================================================================================*/
+
+/* The dark family -- shared by "dark", "rounded", and "quantum" (they diverge only in metrics /
+   skin, never in colour).  A near-black desktop, a steel-blue accent, a green affirmative, and a
+   near-white anchor for the knobs. */
 #define THEME_PALETTE_DARK \
-    .col = { \
-    /*                    IDLE                              HOT                               ACTIVE                            DIM                            */ \
-    [ GUI_ROLE_PANEL  ] = { GUI_COLOR( 0x24,0x24,0x24,0xFF ), GUI_COLOR( 0x2E,0x2E,0x2E,0xFF ), GUI_COLOR( 0x10,0x60,0xA0,0xFF ), GUI_COLOR( 0x1C,0x1C,0x1C,0xFF ) }, \
-    [ GUI_ROLE_TITLE  ] = { GUI_COLOR( 0x2A,0x30,0x38,0xFF ), GUI_COLOR( 0x50,0x80,0xB0,0xFF ), GUI_COLOR( 0x24,0x24,0x24,0xFF ), GUI_COLOR( 0x26,0x29,0x2C,0xFF ) }, \
-    [ GUI_ROLE_BG     ] = { GUI_COLOR( 0x40,0x40,0x40,0xFF ), GUI_COLOR( 0x50,0x80,0xB0,0xFF ), GUI_COLOR( 0x30,0x60,0x90,0xFF ), GUI_COLOR( 0x30,0x30,0x30,0xFF ) }, \
-    [ GUI_ROLE_BORDER ] = { GUI_COLOR( 0x80,0x80,0x80,0xFF ), GUI_COLOR( 0x40,0xA0,0xF0,0xFF ), GUI_COLOR( 0x40,0xA0,0xF0,0xFF ), GUI_COLOR( 0x50,0x50,0x50,0xFF ) }, \
-    [ GUI_ROLE_TEXT   ] = { GUI_COLOR( 0xF0,0xF0,0xF0,0xFF ), GUI_COLOR( 0xF0,0xF0,0xF0,0xFF ), GUI_COLOR( 0xF0,0xF0,0xF0,0xFF ), GUI_COLOR( 0xA0,0xA0,0xA0,0xFF ) }, \
-    [ GUI_ROLE_ACCENT ] = { GUI_COLOR( 0x20,0x90,0xD0,0xFF ), GUI_COLOR( 0x40,0xA0,0xF0,0xFF ), GUI_COLOR( 0x58,0xB4,0xFF,0xFF ), GUI_COLOR( 0x30,0x30,0x30,0xFF ) }, \
-    [ GUI_ROLE_MARK   ] = { GUI_COLOR( 0x18,0xE6,0x48,0xFF ), GUI_COLOR( 0x40,0xA0,0xF0,0xFF ), GUI_COLOR( 0x18,0xE6,0x48,0xFF ), GUI_COLOR( 0x4A,0x5A,0x4E,0xFF ) }, \
-    [ GUI_ROLE_GRAB   ] = { GUI_COLOR( 0xC8,0xCD,0xD4,0xFF ), GUI_COLOR( 0xE4,0xEA,0xF0,0xFF ), GUI_COLOR( 0xFF,0xFF,0xFF,0xFF ), GUI_COLOR( 0x60,0x64,0x68,0xFF ) }, \
+    .palette = { \
+        .seed = { \
+            [ GUI_SEED_SURFACE ] = GUI_COLOR( 0x24,0x24,0x24,0xFF ), \
+            [ GUI_SEED_CONTROL ] = GUI_COLOR( 0x40,0x40,0x40,0xFF ), \
+            [ GUI_SEED_INK     ] = GUI_COLOR( 0xF0,0xF0,0xF0,0xFF ), \
+            [ GUI_SEED_LINE    ] = GUI_COLOR( 0x80,0x80,0x80,0xFF ), \
+            [ GUI_SEED_ACCENT  ] = GUI_COLOR( 0x20,0x90,0xD0,0xFF ), \
+            [ GUI_SEED_MARK    ] = GUI_COLOR( 0x18,0xE6,0x48,0xFF ), \
+            [ GUI_SEED_GRAB    ] = GUI_COLOR( 0xC8,0xCD,0xD4,0xFF ), \
+        }, \
+        .ramp = { \
+            [ GUI_RAMP_HOVER  ] = 0.60f, \
+            [ GUI_RAMP_PRESS  ] = 0.75f, \
+            [ GUI_RAMP_FADE   ] = 0.45f, \
+            [ GUI_RAMP_RECESS ] = 0.22f, \
+            [ GUI_RAMP_STEP   ] = 0.18f, \
+        }, \
     }
 
-/* The light palette -- a soft neutral-grey desktop look (never a white glare): the window sits on
-   a calm mid-grey, panels recess a shade under it, controls raise a shade over it, and the accent
-   is a muted steel blue rather than a saturated primary so nothing vibrates against the grey. */
+/* The light family -- a soft neutral-grey desktop look (never a white glare): the window sits on
+   a calm mid-grey, controls raise a shade over it, and the accent is a muted steel blue rather
+   than a saturated primary so nothing vibrates against the grey.  The anchor inverts, as the
+   anchor always does -- near-black knobs on a light theme.
+
+   Its ramp is the gentler of the two, and every difference is the same fact seen from a
+   different angle: moves are LOUDER near white.  A 0.22 sink that reads as a subtle inset well
+   at 0x24 reads as a dirty smear at 0xE2, so recess drops to 0.08 -- and since a wash toward
+   this accent already darkens (the accent is darker than the control here, where on the dark
+   theme it is brighter), the hover and the lift step both come down too or a hovered button
+   lands halfway to navy. */
 #define THEME_PALETTE_LIGHT \
-    .col = { \
-    /*                    IDLE                              HOT                               ACTIVE                            DIM                            */ \
-    [ GUI_ROLE_PANEL  ] = { GUI_COLOR( 0xE2,0xE2,0xE6,0xFF ), GUI_COLOR( 0xED,0xED,0xF1,0xFF ), GUI_COLOR( 0x50,0x6C,0x94,0xFF ), GUI_COLOR( 0xD6,0xD7,0xDC,0xFF ) }, \
-    [ GUI_ROLE_TITLE  ] = { GUI_COLOR( 0xAE,0xB4,0xC0,0xFF ), GUI_COLOR( 0x86,0xA6,0xD2,0xFF ), GUI_COLOR( 0xE2,0xE2,0xE6,0xFF ), GUI_COLOR( 0xCD,0xD0,0xD7,0xFF ) }, \
-    [ GUI_ROLE_BG     ] = { GUI_COLOR( 0xEC,0xEC,0xF0,0xFF ), GUI_COLOR( 0x86,0xA6,0xD2,0xFF ), GUI_COLOR( 0x5C,0x82,0xB4,0xFF ), GUI_COLOR( 0xDC,0xDC,0xE2,0xFF ) }, \
-    [ GUI_ROLE_BORDER ] = { GUI_COLOR( 0xB4,0xB5,0xBC,0xFF ), GUI_COLOR( 0x44,0x6C,0xA6,0xFF ), GUI_COLOR( 0x44,0x6C,0xA6,0xFF ), GUI_COLOR( 0xC8,0xC9,0xCF,0xFF ) }, \
-    [ GUI_ROLE_TEXT   ] = { GUI_COLOR( 0x20,0x22,0x26,0xFF ), GUI_COLOR( 0x20,0x22,0x26,0xFF ), GUI_COLOR( 0x20,0x22,0x26,0xFF ), GUI_COLOR( 0x6C,0x6E,0x74,0xFF ) }, \
-    [ GUI_ROLE_ACCENT ] = { GUI_COLOR( 0x44,0x6C,0xA6,0xFF ), GUI_COLOR( 0x44,0x6C,0xA6,0xFF ), GUI_COLOR( 0x35,0x57,0x8A,0xFF ), GUI_COLOR( 0xC7,0xC8,0xCE,0xFF ) }, \
-    [ GUI_ROLE_MARK   ] = { GUI_COLOR( 0x2E,0x9E,0x54,0xFF ), GUI_COLOR( 0x44,0x6C,0xA6,0xFF ), GUI_COLOR( 0x2E,0x9E,0x54,0xFF ), GUI_COLOR( 0xA8,0xB0,0xA8,0xFF ) }, \
-    [ GUI_ROLE_GRAB   ] = { GUI_COLOR( 0x3A,0x40,0x4A,0xFF ), GUI_COLOR( 0x1E,0x22,0x2A,0xFF ), GUI_COLOR( 0x0A,0x0C,0x10,0xFF ), GUI_COLOR( 0xA8,0xAA,0xB2,0xFF ) }, \
+    .palette = { \
+        .seed = { \
+            [ GUI_SEED_SURFACE ] = GUI_COLOR( 0xE2,0xE2,0xE6,0xFF ), \
+            [ GUI_SEED_CONTROL ] = GUI_COLOR( 0xEC,0xEC,0xF0,0xFF ), \
+            [ GUI_SEED_INK     ] = GUI_COLOR( 0x20,0x22,0x26,0xFF ), \
+            [ GUI_SEED_LINE    ] = GUI_COLOR( 0xB4,0xB5,0xBC,0xFF ), \
+            [ GUI_SEED_ACCENT  ] = GUI_COLOR( 0x44,0x6C,0xA6,0xFF ), \
+            [ GUI_SEED_MARK    ] = GUI_COLOR( 0x2E,0x9E,0x54,0xFF ), \
+            [ GUI_SEED_GRAB    ] = GUI_COLOR( 0x3A,0x40,0x4A,0xFF ), \
+        }, \
+        .ramp = { \
+            [ GUI_RAMP_HOVER  ] = 0.50f, \
+            [ GUI_RAMP_PRESS  ] = 0.72f, \
+            [ GUI_RAMP_FADE   ] = 0.40f, \
+            [ GUI_RAMP_RECESS ] = 0.08f, \
+            [ GUI_RAMP_STEP   ] = 0.12f, \
+        }, \
     }
 
 /* The density ramp is identical across every built-in theme (STD mirrors the base metrics). */
@@ -281,6 +334,17 @@ gui_theme_list( u32* count_out )
     return k_themes;
 }
 
+/* Load a built-in into the base style: copy the authored half, then DERIVE the colour grid from
+   its palette.  The one place a theme's cells come into being -- k_themes authors no colour, so
+   without this every cell would be zero.  Any hand-authored override a theme ever wants belongs
+   after the bake call here, never in the table. */
+static void
+theme_install( const gui_theme_t* t )
+{
+    s_style_base = t->style;
+    gui_style_bake( &s_style_base );
+}
+
 bool
 gui_theme_set( const char* name )
 {
@@ -289,7 +353,7 @@ gui_theme_set( const char* name )
     {
         if ( strcmp( name, k_themes[ i ].name ) == 0 )
         {
-            s_style_base = k_themes[ i ].style;
+            theme_install( &k_themes[ i ] );
             s_theme_name = k_themes[ i ].name;
             gui_theme_reset();
             return true;
@@ -307,16 +371,18 @@ gui_theme_get( void )
 void
 gui_theme_reset( void )
 {
-    /* Restore s_style_base from the active named theme so anonymous style_get edits are
-       discarded.  If no theme is set (anonymous), s_style_base is left as-is and only
-       the push stacks are cleared. */
+    /* Restore s_style_base from the active named theme (palette copied, grid re-derived) so
+       anonymous style_get edits are discarded.  If no theme is set (anonymous), s_style_base is
+       left ALONE -- including its colour grid: an anonymous style may hold cells the caller
+       hand-authored after their own bake, and re-baking here would silently eat them.  Baking
+       is the caller's step for exactly that reason (see gui_style_bake). */
     if ( s_theme_name )
     {
         for ( u32 i = 0; i < k_theme_count; ++i )
         {
             if ( strcmp( s_theme_name, k_themes[ i ].name ) == 0 )
             {
-                s_style_base = k_themes[ i ].style;
+                theme_install( &k_themes[ i ] );
                 break;
             }
         }
@@ -440,8 +506,9 @@ metrics_compute( u32 em, u32 char_h, u32 line_h )
 
     f32 scale = (f32)em / 12.0f;
 
-    /* Colors carry over verbatim; so do the lattice pitch and the shape picks, which the loop
-       below skips by class. */
+    /* The palette and the baked grid carry over verbatim -- colour has no px in it, so an em
+       rescale must not touch either.  So do the lattice pitch and the shape picks, which the
+       loop below skips by class. */
     s_style = s_style_base;
 
     /* Scale every var that is a pixel count.  Driven by the class table, not by a line per field

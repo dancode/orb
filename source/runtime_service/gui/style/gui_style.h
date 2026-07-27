@@ -74,6 +74,12 @@ f32 style_scale( gui_scale_t s, u32 field );
     SPELLING of a cell, not a cell of its own: nothing reachable through these macros is
     unreachable through style_col, which is what makes chrome an ordinary consumer.
 
+    The cells themselves are DERIVED -- gui_style_bake (style/gui_bake.c) writes all 32 from the
+    seven-seed palette, and a theme authors no colour directly.  Nothing below this line changes
+    because of that: a read is still one indexed load of the same slot, and a kit that overwrites
+    a cell after baking still wins.  It only means the answer to "why is this cell that colour"
+    lives in the bake now, not in a hex literal.
+
     THE NAME IS THE CELL: COL_<ROLE>_<PHASE>, both halves spelled exactly as the enum suffixes in
     gui.h.  So a macro can be read off the grid and the grid read off a macro, with no table in
     between -- COL_BORDER_ACTIVE is BORDER x ACTIVE and nothing else.  The names used to be the
@@ -90,8 +96,9 @@ f32 style_scale( gui_scale_t s, u32 field );
     Not every cell has a reader, and that is not a gap: the grid is wired uniformly because the
     schema is uniform.  A PANEL never goes hot or active (a container has no interaction of its
     own -- window focus reads on BORDER[ACTIVE]), and TEXT never goes hot because any text that
-    can be hot is inside a widget, and the text widgets return no state.  The cells stay authored
-    so a role behaves like every other role; nothing is missing.
+    can be hot is inside a widget, and the text widgets return no state.  The cells stay filled so
+    a role behaves like every other role; nothing is missing -- and since the bake fills them,
+    the unread ones now cost a theme author nothing rather than a dozen literals.
 ==============================================================================================*/
 
 /*                             role               phase                                          */

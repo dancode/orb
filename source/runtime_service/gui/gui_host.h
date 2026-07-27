@@ -403,6 +403,8 @@ void gui_next_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 a
 void gui_push_style_var( gui_style_var_t var, f32 value );
 void gui_pop_style_var( u32 count );
 void gui_next_style_var( gui_style_var_t var, f32 value );
+void gui_push_style_seed( gui_style_seed_t seed, u32 abgr );
+void gui_pop_style_seed( u32 count );
 
 /* the resolved reads: the phase mapping + the grid cell every render picks a face with, plus
    the installed-style door a kit writes a look through and the three axis name tables */
@@ -411,6 +413,8 @@ u32               gui_style_color     ( gui_style_role_t role, gui_style_phase_t
 gui_style_t*      gui_style_edit      ( void );
 const char*       gui_style_role_name ( gui_style_role_t role );
 const char*       gui_style_phase_name( gui_style_phase_t phase );
+const char*       gui_style_seed_name ( gui_style_seed_t seed );
+const char*       gui_style_ramp_name ( gui_style_ramp_t ramp );
 const char*       gui_style_var_name  ( gui_style_var_t var );
 gui_style_class_t gui_style_var_class ( gui_style_var_t var );
 const char*       gui_style_class_name( gui_style_class_t cls );

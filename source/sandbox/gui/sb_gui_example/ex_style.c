@@ -42,8 +42,23 @@ ex_style_themes( void )
             gui()->theme_reset();
 
         /* style_peek reads the base without marking the theme anonymous. */
-        gui()->separator_text( "Base metrics (style_peek)" );
         const gui_style_t* st = gui()->style_peek();
+
+        /* The AUTHORED half -- what the theme actually wrote.  The 32 cells below are not in the
+           theme file at all; style_bake derives every one of them from these twelve numbers. */
+        gui()->separator_text( "Seed palette (style_peek->palette)" );
+        for ( u32 i = 0; i < GUI_SEED_COUNT; ++i )
+        {
+            u32 c = st->palette.seed[ i ];
+            gui()->textf( "%-8s  %02X %02X %02X",
+                          gui()->style_seed_name( (gui_style_seed_t)i ),
+                          c & 0xFF, ( c >> 8 ) & 0xFF, ( c >> 16 ) & 0xFF );
+        }
+        for ( u32 i = 0; i < GUI_RAMP_COUNT; ++i )
+            gui()->textf( "%-12s %.2f", gui()->style_ramp_name( (gui_style_ramp_t)i ),
+                          st->palette.ramp[ i ] );
+
+        gui()->separator_text( "Base metrics (style_peek)" );
         gui()->textf( "row %.0f   gap %.0f   pad %.0f",
                       st->var[ GUI_VAR_ROW ], st->var[ GUI_VAR_GAP ], st->var[ GUI_VAR_PAD ] );
         gui()->textf( "title_h %.0f   border %.0f   grid_q %.0f",
@@ -95,6 +110,22 @@ ex_state_names( void )
     return names;
 }
 
+/* Seed names, from the engine like the other axes. */
+static const char**
+ex_seed_names( void )
+{
+    static const char* names[ GUI_SEED_COUNT ];
+    static bool        built = false;
+
+    if ( !built )
+    {
+        for ( u32 i = 0; i < GUI_SEED_COUNT; ++i )
+            names[ i ] = gui()->style_seed_name( ( gui_style_seed_t )i );
+        built = true;
+    }
+    return names;
+}
+
 /* The var subset with obvious visual effect, plus a sensible slider range for each. */
 typedef struct { const char* name; gui_style_var_t var; f32 lo, hi; } ex_var_row_t;
 
@@ -120,9 +151,12 @@ ex_style_stacks( void )
     static i32  state_sel    = GUI_PHASE_ALL;
     static f32  col_val[ 4 ] = { 0.8f, 0.2f, 0.2f, 1.0f };
     static bool col_on       = true;
-    static i32  var_sel      = 0;
-    static f32  var_val      = 8.0f;
-    static bool var_on       = false;
+    static i32  var_sel       = 0;
+    static f32  var_val       = 8.0f;
+    static bool var_on        = false;
+    static i32  seed_sel      = GUI_SEED_ACCENT;
+    static f32  seed_val[ 4 ] = { 0.78f, 0.59f, 0.24f, 1.0f };
+    static bool seed_on       = false;
 
     if ( ex_begin( "Style Stacks", 440, 460, GUI_WIN_NONE ) )
     {
@@ -147,6 +181,14 @@ ex_style_stacks( void )
         for ( i32 i = 0; i < EX_VAR_ROWS; i++ ) var_names[ i ] = s_var_rows[ i ].name;
         gui()->combo( "var", &var_sel, var_names, EX_VAR_ROWS );
         gui()->slider_float( "value", &var_val, s_var_rows[ var_sel ].lo, s_var_rows[ var_sel ].hi );
+
+        /* --- seed override: replace a SOURCE colour and re-derive the grid ----------------- */
+        gui()->separator_text( "push_style_seed (scopes the sample window)" );
+        gui()->text_disabled( "Turn this on with role=BG state=All above and compare:" );
+        gui()->text_disabled( "PHASE_ALL flattens the row (hover dies), a seed re-derives it." );
+        gui()->checkbox( "Push the seed", &seed_on );
+        gui()->combo( "seed", &seed_sel, ex_seed_names(), GUI_SEED_COUNT );
+        gui()->color_edit4( "seed color", seed_val, GUI_COLOR_EDIT_NO_ALPHA );
 
         /* --- next_style_color / next_style_var: one widget only, no pop -------------------- */
         gui()->separator_text( "next_style_color (one-shot)" );
@@ -182,6 +224,14 @@ ex_style_stacks( void )
        one repaints the window and its children, the other repaints the controls on them. */
     u32 abgr = GUI_COLOR( (u8)( col_val[ 0 ] * 255.0f ), (u8)( col_val[ 1 ] * 255.0f ),
                           (u8)( col_val[ 2 ] * 255.0f ), (u8)( col_val[ 3 ] * 255.0f ) );
+    u32 seed_abgr = GUI_COLOR( (u8)( seed_val[ 0 ] * 255.0f ), (u8)( seed_val[ 1 ] * 255.0f ),
+                               (u8)( seed_val[ 2 ] * 255.0f ), 0xFF );
+
+    /* The seed push goes OUTSIDE the cell push, which is the nesting the verbs are built for:
+       re-derive the whole grid from a new source, then disagree with the ramp on named cells
+       inside it.  Reversing them would work too, but the re-bake would simply overwrite the
+       cell push, which is exactly what "bulk" means. */
+    if ( seed_on ) gui()->push_style_seed( (gui_style_seed_t)seed_sel, seed_abgr );
     if ( col_on ) gui()->push_style_color( (gui_style_role_t)role_sel, (gui_style_phase_t)state_sel, abgr );
     if ( var_on ) gui()->push_style_var( s_var_rows[ var_sel ].var, var_val );
 
@@ -234,6 +284,7 @@ ex_style_stacks( void )
 
     if ( var_on ) gui()->pop_style_var( 1 );
     if ( col_on ) gui()->pop_style_color( 1 );
+    if ( seed_on ) gui()->pop_style_seed( 1 );
 }
 
 /*==============================================================================================

@@ -116,6 +116,33 @@ void gui_pop_style_var ( u32 count )                          { style_pop_var( c
 void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( var, value ); }
 
 /*==============================================================================================
+    push_style_seed / pop_style_seed -- the BULK recolour: replace a source colour and re-derive.
+
+    The verb the grid could not express.  push_style_color takes one cell; GUI_PHASE_ALL takes a
+    row but writes one value into all four of its cells, which flattens the ramp -- push it on
+    GUI_ROLE_BG and you get a button that no longer reacts to hover.  So the only bulk colour verb
+    was the one you could not use on anything interactive.
+
+    A seed push replaces the SOURCE and re-runs the bake, so the cells stay four colours a ramp
+    step apart and every role that derives from that seed moves together:
+
+        gui()->push_style_seed( GUI_SEED_ACCENT, GUI_COLOR( 0xC8, 0x96, 0x3C, 0xFF ) );
+        ... this whole panel is gold: fills, hover washes, focus rings, nav highlight ...
+        gui()->pop_style_seed( 1 );
+
+    One push is one entry, so one pop undoes it, exactly like the other two stacks.  Nesting is
+    shallow by design (8 deep): this is a panel-sized scope, not a per-widget one -- for a single
+    widget, next_style_color is still the cheaper answer.
+
+    Note what it does NOT do: it never reaches the INSTALLED style.  A seed push is ambient scope
+    like every other push, cleared at the frame boundary.  To change a look permanently, write
+    the palette through style_edit() and call style_bake().
+==============================================================================================*/
+
+void gui_push_style_seed( gui_style_seed_t seed, u32 abgr ) { style_push_seed( seed, abgr ); }
+void gui_pop_style_seed ( u32 count )                       { style_pop_seed( count ); }
+
+/*==============================================================================================
     scale_push / scale_pop -- scope a named density step (the theme's scale ramp, gui_scale_t)
     over the widgets until the matching pop: one declaration instead of per-row pixel sizes.
 

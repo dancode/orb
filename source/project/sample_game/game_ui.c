@@ -18,9 +18,9 @@ MOD_USE_GUI;
 
 // clang-format off
 
-/* The scene accent as a gui color: the square's teal (0.20, 0.80, 0.70). */
+/* The scene accent as a gui color: the square's teal (0.20, 0.80, 0.70).  One constant, not two
+   -- the dim variant used to be hand-mixed here and is now the theme's own fade of this. */
 #define GAME_UI_TEAL      GUI_COLOR( 0x33, 0xCC, 0xB3, 0xFF )
-#define GAME_UI_TEAL_DIM  GUI_COLOR( 0x10, 0x30, 0x2C, 0xF0 )
 
 static bool s_has_gui = false;
 
@@ -52,19 +52,20 @@ game_ui_install( void )
     if ( !s_has_gui )
         return;
 
-    /* Only the accent row: the stock BG/BORDER/TEXT derivation already matches this game's
-       plain look, and the smallest install that shows the dial is the honest one. */
+    /* Two seeds: the game's hue, and nothing else.  The rest of the theme -- surface, control,
+       ink, line, the whole metric block -- is inherited as it stands, which is what "the
+       smallest install that shows the dial" now costs.
+
+       This was eight assignments, and six of them wrote ONE colour into the three reacting cells
+       of two rows: the accent stopped lifting on hover and the mark stopped lighting on nav,
+       because a flat row is a dead row.  Seeding and baking keeps both ramps alive and is
+       shorter. */
     gui_style_t* e = gui()->style_edit();
 
-    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_IDLE   ] = GAME_UI_TEAL;
-    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_HOT    ] = GAME_UI_TEAL;
-    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_ACTIVE ] = GAME_UI_TEAL;
-    e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_DIM    ] = GAME_UI_TEAL_DIM;
+    e->palette.seed[ GUI_SEED_ACCENT ] = GAME_UI_TEAL;
+    e->palette.seed[ GUI_SEED_MARK   ] = GAME_UI_TEAL;
 
-    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_IDLE   ] = GAME_UI_TEAL;
-    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_HOT    ] = GAME_UI_TEAL;
-    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_ACTIVE ] = GAME_UI_TEAL;
-    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_DIM    ] = GAME_UI_TEAL_DIM;
+    gui()->style_bake( e );
 }
 
 /*==============================================================================================

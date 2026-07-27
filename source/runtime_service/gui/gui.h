@@ -206,6 +206,14 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
         push_style_color( GUI_ROLE_BG,   GUI_PHASE_HOT, abgr );   // one cell, until the pop
         push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, abgr );   // the whole phase row
         next_style_color( GUI_ROLE_BG,   GUI_PHASE_ALL, abgr );   // just the next widget
+        push_style_seed ( GUI_SEED_ACCENT, abgr );                // re-seed, ramp intact
+
+    Note what the last two do NOT have in common.  GUI_PHASE_ALL writes one value into all four
+    cells of a row, which FLATTENS the ramp -- pushed on BG it gives you a button that no longer
+    reacts to hover, so it is the right verb for TEXT or BORDER and the wrong one for anything
+    interactive.  push_style_seed re-derives instead: the cells stay four different colours, one
+    ramp step apart, just built from a new source.  That is what "recolour this UI" almost always
+    means, and until the seeds existed there was no way to say it.
 
     The grid is shared rather than per-widget-type (one BG row, not Button + Checkbox + ...):
     to recolor one button, bracket it with push/pop, or use next_style_color for a one-shot.
@@ -278,7 +286,7 @@ typedef enum
    not a state, because gui_item_state_t is the interact server's flag set and GUI_STATE_* is the
    retained per-id pool: a phase is what item_phase() DISTILLS a state into for the style.
 
-   The same four steps mean the analogous thing for every role, which is what lets one 6x4 grid
+   The same four steps mean the analogous thing for every role, which is what lets one 8x4 grid
    replace a flat palette plus its per-widget token residue:
 
      role     IDLE              HOT                  ACTIVE                 DIM
@@ -310,6 +318,85 @@ typedef enum
     GUI_PHASE_ALL = GUI_PHASE_COUNT
 
 } gui_style_phase_t;
+
+/*==============================================================================================
+    GUI_STYLE -- the seed palette: what a theme AUTHORS
+
+    The grid above is what a RENDER reads.  It is not what a theme WRITES.  Those used to be the
+    same thing -- 32 hex literals per theme -- and the duplication proved they should not be: in
+    the old hand-authored dark palette, TEXT held one colour in three phases, BORDER[HOT] equalled
+    BORDER[ACTIVE], MARK[IDLE] equalled MARK[ACTIVE], BG[DIM] equalled ACCENT[DIM], and
+    TITLE[ACTIVE] equalled PANEL[IDLE].  About a quarter of the cells were restatements, and the
+    LIGHT palette restated exactly the same ones -- so the redundancy was structural, a derivation
+    rule the schema had no way to say.  Every theme retyped it by hand and any of the 64 literals
+    could drift off the ramp with nothing to catch it.
+
+    So a theme authors SEVEN colours and FIVE numbers, and gui_style_bake derives the 32 cells:
+
+        seeds  -- the source colours, one per surface KIND (not per role, not per phase)
+        ramp   -- how far a cell travels per interaction step, per theme
+
+    A seed is a colour a designer picks; a ramp is the personality of the theme (how much a
+    hover moves, how deep a press sits, how far an inert thing fades).  Neither is a cell.
+
+    The grid stays exactly as it was -- baking WRITES col[][], and a kit is free to overwrite any
+    cell afterwards.  Nothing is closed off: bake first for a coherent ramp, then hand-author the
+    two or three cells you actually want bespoke.
+
+        gui_style_t* e = gui()->style_edit();
+        e->palette.seed[ GUI_SEED_ACCENT ] = gold;
+        gui()->style_bake( e );                                    // 32 cells re-derive
+        e->col[ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;         // the one bespoke cell
+
+    Alpha rides through: a seed's alpha byte is carried onto every cell derived from it, so a
+    translucent panel seed yields a translucent panel in all four phases without four literals.
+==============================================================================================*/
+
+/* The source colours.  One per surface KIND, which is a coarser axis than the role -- PANEL and
+   TITLE are both the container surface, so both derive from SURFACE and the ramp separates them.
+   Seven seeds cover the eight roles because TITLE has no colour of its own: a caption band is a
+   lifted surface, which is a derivation, not a decision. */
+typedef enum
+{
+    GUI_SEED_SURFACE = 0,   // container base: window body, panel, and the band over it
+    GUI_SEED_CONTROL,       // control face base: button, input field, check box, track
+    GUI_SEED_INK,           // text base -- every glyph and the caret
+    GUI_SEED_LINE,          // frame line base: borders, rules, resize edges
+    GUI_SEED_ACCENT,        // THE hue: value fills, hover wash, focus ring, nav highlight
+    GUI_SEED_MARK,          // the affirmative indicator hue: check, radio dot
+    GUI_SEED_GRAB,          // the contrast anchor: knobs and thumbs, opposite the theme
+    GUI_SEED_COUNT
+
+} gui_style_seed_t;
+
+/* HOW FAR a derived cell travels -- the theme's personality, in five numbers, each 0..1, and
+   the index into gui_palette_t.ramp.  Authored per theme rather than fixed, because a step that
+   reads as one notch on a near-black surface reads as four on a near-white one: the light and
+   dark built-ins carry visibly different recess values for exactly that reason.  A ramp of all
+   zeroes bakes a flat, unreactive UI -- a legitimate look, and a useful debugging one.
+
+   An array rather than named fields, for the same reason gui_style_t.var is one: the enum IS
+   the field list, so a style editor walks the ramp with no table of its own. */
+typedef enum
+{
+    GUI_RAMP_HOVER = 0,   // how far a surface washes toward the accent when hot
+    GUI_RAMP_PRESS,       // how far it washes when pressed / selected -- deeper than hover
+    GUI_RAMP_FADE,        // how far an inert cell fades toward the surface (the DIM phase)
+    GUI_RAMP_RECESS,      // how far a recessed surface / empty track sinks below its base
+    GUI_RAMP_STEP,        // one lift notch for the accent, border and anchor ramps
+    GUI_RAMP_COUNT
+
+} gui_style_ramp_t;
+
+/* The authored half of a style, in full: seven colours and five numbers, 48 bytes.  Small
+   enough that a theme is worth having dozens of, or deriving live from a single accent the
+   user picked. */
+typedef struct gui_palette_t
+{
+    u32 seed[ GUI_SEED_COUNT ];   // the source colours
+    f32 ramp[ GUI_RAMP_COUNT ];   // how far each derivation travels
+
+} gui_palette_t;
 
 /*==============================================================================================
     GUI_STYLE -- global style configuration
@@ -518,8 +605,16 @@ typedef enum
 
 typedef struct gui_style_t
 {
+    /* SKIN: the AUTHORED colour -- seven seeds and a five-number ramp (gui_palette_t, above).
+       Writing here changes nothing on its own; gui_style_bake derives col[][] below from it.
+       First in the struct because it is first in the pipeline, and because push_style_seed
+       addresses a seed by slot exactly as push_style_var addresses a var. */
+    gui_palette_t palette;
+
     /* SKIN: the 8x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
-       above).  GUI_COLOR packs R,G,B,A bytes; a cell is read with style_color( role, phase ). */
+       above), and the DERIVED half: gui_style_bake writes all 32 cells from the palette, then
+       a kit may overwrite any of them.  GUI_COLOR packs R,G,B,A bytes; a cell is read with
+       style_color( role, phase ). */
     u32 col[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 
     /* METRICS + SKIN scalars, indexed by gui_style_var_t -- the push_style_var vocabulary.
@@ -552,13 +647,28 @@ const gui_style_t* gui_style_peek( void );
 
 void         gui_style_apply( void );
 
+/* gui_style_bake() -- derive the 32-cell colour grid from s->palette, in place.  The one step
+   between what a theme AUTHORS and what a render READS, and the only writer of col[][] the
+   engine has.  Pure: a function of the palette alone, so the same palette always bakes to the
+   same grid, and it never touches var / scales.
+
+   Explicit rather than automatic on purpose.  A kit writes seeds, bakes, then overwrites the
+   few cells it wants bespoke -- an implicit bake would have to run either before those writes
+   (no effect) or after them (silently discarded).  Naming the step makes the order the caller's,
+   and makes "I hand-authored this cell" survivable.  The built-in themes bake at theme_set. */
+
+void         gui_style_bake( gui_style_t* s );
+
 /*==============================================================================================
     GUI_CHROME -- themes (chrome's named style presets)
 
-    A theme is a named gui_style_t snapshot: a human-readable name paired with a complete set
-    of colors and layout metrics.  The active theme is the root layer every push_style_color /
-    push_style_var overrides relative to.  Switching or resetting a theme clears the push stacks
-    immediately -- use this instead of managing deep push/pop sequences for large style changes.
+    A theme is a named gui_style_t snapshot: a human-readable name paired with a seed palette,
+    the layout metrics, and the density ramp.  Its col[][] is left EMPTY -- theme_set bakes the
+    grid from the palette on the way in, so a built-in theme is authored as seven colours and a
+    ramp rather than as 32 literals.  The active theme is the root layer every push_style_color /
+    push_style_var / push_style_seed overrides relative to.  Switching or resetting a theme clears
+    the push stacks immediately -- use this instead of managing deep push/pop sequences for large
+    style changes.
 
         u32  n;
         const gui_theme_t* list = gui_theme_list( &n );  // enumerate built-ins
@@ -571,7 +681,7 @@ void         gui_style_apply( void );
 typedef struct gui_theme_t
 {
     const char* name;    // human-readable key used by theme_set / theme_get
-    gui_style_t style;   // complete color + metric snapshot
+    gui_style_t style;   // palette + metrics; .col is baked from .palette by theme_set
 
 } gui_theme_t;
 
