@@ -5,8 +5,8 @@
     runtime_service/gui/gui.h -- gui module types (the public type header).
 
     In-house 2D interaction renderer for ORB: draw + interact servers, root surfaces, rect and
-    flow composition, styled stock widgets -- with chrome (windows / dock / chrome widgets) as an
-    OPTIONAL policy layer on top.
+    flow composition, styled stock widgets -- with chrome (windows / dock / chrome widgets) 
+    as an OPTIONAL policy layer on top.
 
     Windowing / input come from the engine `app` layer (Win32); rendering goes through `rhi`
     (Vulkan).  The host drives one lifecycle each frame:
@@ -334,6 +334,7 @@ typedef enum
    TITLE[ACTIVE] is authored as the window BODY colour in every built-in theme, which is what
    makes a live tab merge into the panel it owns.  A focused WINDOW is signalled by its border
    (BORDER[ACTIVE]), not by its caption, so the two do not fight. */
+
 typedef enum
 {
     GUI_PHASE_IDLE = 0,   // at rest
