@@ -274,7 +274,7 @@ native_caption_chrome( gui_window_t* win, f32 title_h, f32 right_limit )
             draw_push_rect_filled( br.x, br.y, br.w, br.h, 0, 0, 1, 1, 0, bs.active ? COL_BG_ACTIVE : COL_BG_HOT );
         }
 
-        native_btn_draw_glyph( btns[ i ].kind, br, zoom, bs.hover ? COL_TEXT_IDLE : COL_TEXT_DIM );
+        native_btn_draw_glyph( btns[ i ].kind, br, zoom, col_btn_glyph( bs ) );
 
         if ( bs.clicked )
         {

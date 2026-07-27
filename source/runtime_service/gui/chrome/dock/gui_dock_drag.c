@@ -659,7 +659,7 @@ dock_window_chrome( gui_dock_node_t* node )
             draw_set_rounding( ROUND_WIDGET );
             draw_push_rect_filled( mx_r.x, mx_r.y, mx_r.w, mx_r.h, 0, 0, 1, 1, 0, mx_st.active ? COL_BG_ACTIVE : COL_BG_HOT );
         }
-        native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, mx_r, maxed, mx_st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM );
+        native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, mx_r, maxed, col_btn_glyph( mx_st ) );
 
         gui_rect_t band = { tx, y, mx_r.x - tx, th };
         bool band_double = band.w > 1.0f && s_io.mouse_double[ 0 ]

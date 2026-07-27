@@ -242,7 +242,7 @@ gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags 
         if ( cst.hover || cst.active )
             draw_push_rect_filled( close_r.x, close_r.y, close_r.w, close_r.h, 0, 0, 1, 1, 0,
                                    COL_BG_HOT );
-        gui_draw_close( close_r, cst.hover ? COL_TEXT_IDLE : COL_TEXT_DIM );
+        gui_draw_close( close_r, col_btn_glyph( cst ) );
         if ( cst.clicked )
         {
             *p_open                      = false;

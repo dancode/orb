@@ -238,6 +238,11 @@ u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color );
 u32 col_grab( gui_item_state_t st );
 
+/* Ink for a glyph on a bare icon button (fills only when hot/active) -- caption buttons, the dock
+   maximize pin, a tab close cross.  Uses the SAME hover-or-active predicate those callers fill
+   on; splitting the two is what put DIM ink on an ACTIVE fill.  See the definition. */
+u32 col_btn_glyph( gui_item_state_t st );
+
 /* The per-item ambient wrappers that DRIVE the seam hooks above (item_flags_resolve /
    item_flags_chrome_reset) live in stock/gui_adornment.c, declared in stock/gui_stock_internal.h:
    they apply draw-state consequences, and style never paints. */

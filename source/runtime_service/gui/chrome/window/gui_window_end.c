@@ -43,7 +43,7 @@ window_end_chip( gui_window_t* win, f32 title_h )
             draw_set_rounding( ROUND_WIDGET );
             draw_push_rect_filled( cl_r.x, cl_r.y, cl_r.w, cl_r.h, 0, 0, 1, 1, 0, cl_st.active ? COL_BG_ACTIVE : COL_BG_HOT );
         }
-        draw_close_x( cl_r, cl_st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM );
+        draw_close_x( cl_r, col_btn_glyph( cl_st ) );
         if ( cl_st.clicked && win )
         {
             win->closed = true;
@@ -62,7 +62,7 @@ window_end_chip( gui_window_t* win, f32 title_h )
         draw_set_rounding( ROUND_WIDGET );
         draw_push_rect_filled( re_r.x, re_r.y, re_r.w, re_r.h, 0, 0, 1, 1, 0, re_st.active ? COL_BG_ACTIVE : COL_BG_HOT );
     }
-    native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, re_r, true, re_st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM );
+    native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, re_r, true, col_btn_glyph( re_st ) );
     right_limit = re_r.x - WIDGET_PAD;
 
     /* A press anywhere else on the chip restores too -- the whole chip is the affordance. */
@@ -184,7 +184,7 @@ window_end_titlebar( gui_window_t* win, bool native )
                 draw_set_rounding( ROUND_WIDGET );
                 draw_push_rect_filled( cl_r.x, cl_r.y, cl_r.w, cl_r.h, 0, 0, 1, 1, 0, cl_st.active ? COL_BG_ACTIVE : COL_BG_HOT );
             }
-            draw_close_x( cl_r, cl_st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM );
+            draw_close_x( cl_r, col_btn_glyph( cl_st ) );
 
             if ( cl_st.clicked && win )
             {
@@ -211,7 +211,7 @@ window_end_titlebar( gui_window_t* win, bool native )
                 draw_push_rect_filled( mx_r.x, mx_r.y, mx_r.w, mx_r.h, 0, 0, 1, 1, 0, mx_st.active ? COL_BG_ACTIVE : COL_BG_HOT );
             }
             native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, mx_r, win->maximized,
-                                   mx_st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM );
+                                   col_btn_glyph( mx_st ) );
             if ( mx_st.clicked )
                 window_maximize_set( win, !win->maximized );
 
@@ -230,7 +230,7 @@ window_end_titlebar( gui_window_t* win, bool native )
                 draw_push_rect_filled( mn_r.x, mn_r.y, mn_r.w, mn_r.h, 0, 0, 1, 1, 0, mn_st.active ? COL_BG_ACTIVE : COL_BG_HOT );
             }
             native_btn_draw_glyph( NATIVE_BTN_MINIMIZE, mn_r, false,
-                                   mn_st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM );
+                                   col_btn_glyph( mn_st ) );
             if ( mn_st.clicked )
                 window_minimize_set( win, true );
 

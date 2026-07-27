@@ -912,6 +912,27 @@ col_item_bg_look( gui_item_state_t st, gui_style_look_t look )
     return style_col_look( GUI_ROLE_BG, phase, (u8)look );
 }
 
+/* The ink for a glyph drawn on a BARE ICON BUTTON -- one that paints no face at rest and fills
+   only once hot or pressed: caption buttons (close X, maximize box, minimize bar), the dock
+   maximize pin, a tab's close cross.
+
+   Keyed on hover OR active, which is the SAME predicate those callers fill on -- and that is the
+   whole point.  The two used to disagree: every one of them filled on ( hover || active ) but
+   inked on ( hover ) alone.  Press one and slide off it without releasing -- the item keeps
+   capture, so active stays true while hover goes false -- and the DIM ink ends up on the ACTIVE
+   fill.  Those two cells are 63 luma apart in the dark theme and 12 in the light one, which is
+   not a button with a symbol on it, it is a plain grey square.
+
+   Fixed here rather than by nudging the palette, because the palette was never wrong: DIM ink is
+   meant to sit on the title band, where it has 84-115 luma of separation, and it does.  It simply
+   must not be the ink chosen at the moment a pressed fill is underneath it.  One predicate, read
+   by both halves, is what makes that unrepresentable rather than merely fixed. */
+u32
+col_btn_glyph( gui_item_state_t st )
+{
+    return ( st.hover || st.active ) ? COL_TEXT_IDLE : COL_TEXT_DIM;
+}
+
 /* The movable part of a track control -- slider knob, scrollbar thumb -- off the GRAB row.
    Its own role rather than col_item_bg because a knob has TWO lifting neighbours: the track under
    it rides BG and the value fill beside it rides ACCENT, so a knob on either row matches one of
