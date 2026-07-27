@@ -94,15 +94,15 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
 {
     t = saturate( t );
 
-    /* Track frame.  Unlike a button, a slider has a handle on top, so the frame must not take the
-       same hover/active colour the knob does (col_item_bg below) or the highlight would swallow
-       the handle.  The track therefore lifts WITHIN the accent role -- DIM at rest to IDLE when
-       engaged -- while the knob lifts along the BG row, so the two can never collide in any
-       state.  (It used to borrow the input-focus token for this; that token folded into
-       BG[ACTIVE], which is exactly the knob's pressed colour, so staying on ACCENT is both the
-       cheaper fix and the one that says what it means.) */
-    u32 track_col = ( st.hover || st.nav || st.active ) ? COL_WIDGET_FG : COL_SLIDER_TRACK;
-    draw_fill( track_r, track_col );
+    /* Track frame -- the widget BODY, so it lifts exactly like every other control face: the same
+       col_frame_bg step the checkbox box, the drag box, and the input field take (BG[HOT] on
+       hover / nav, BG[ACTIVE] on press) over the track's own ACCENT[DIM] resting colour.  It used
+       to lift WITHIN the accent role instead (DIM -> IDLE), but ACCENT[IDLE] IS the value bar's
+       colour, so hovering painted the EMPTY remainder the same blue as the filled part and every
+       slider read as 100% full.  The knob keeps its own BG-row lift and stays legible on top by
+       its outline -- the reason that outline is there (see below). */
+    bool engaged = ( st.hover || st.nav || st.active );
+    draw_fill( track_r, col_frame_bg( st, COL_SLIDER_TRACK ) );
     /* Captured for keyboard value edit (st.focused -- see nav_item_register) gets the same border
        lift text/numeric fields use on focus, so going from nav highlight to Left/Right-adjust reads
        as a real state change instead of an invisible one. */
@@ -110,11 +110,19 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
 
     /* Fill bar up to t.  Round only the start (left) corners to match the track frame; keep the
        leading (right) edge facing the knob square, so a rounded leading edge never leaves a gap
-       between the fill and the handle.  Per-corner via draw_round_rect_ex (gui_symbol.c). */
+       between the fill and the handle.  Per-corner via draw_round_rect_ex (gui_symbol.c).
+
+       The bar lifts along its OWN role while engaged (ACCENT IDLE -> HOT), because the track it
+       sits in just lifted too: ACCENT[IDLE] against BG[HOT] is near-isoluminant in the dark
+       palette, so a fixed bar colour on a hovered track would trade one "looks full" read for
+       another.  Lifting both keeps the filled part the brighter, more saturated of the two in
+       every state.  (In the light palette ACCENT HOT == IDLE, where the bar is already the DARK
+       element against a lighter track and needs no lift -- so this is a no-op there.) */
     f32 fill_w = t * ( track_r.w - SLIDER_KNOB_W );
     if ( fill_w > 0.0f )
         draw_round_rect_ex( ( gui_rect_t ){ track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f },
-                            ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, true, 0.0f, COL_WIDGET_FG );
+                            ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, true, 0.0f,
+                            engaged ? COL_NAV : COL_WIDGET_FG );
 
     /* Knob (grab): the brighter hover/active element, outlined so its edge stays crisp against the
        track and the fill bar regardless of how close their colours get.  A bar grab by default

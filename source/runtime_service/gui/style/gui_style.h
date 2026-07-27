@@ -108,7 +108,7 @@ f32 style_scale( gui_scale_t s, u32 field );
 #define COL_TEXT_DIM      style_col( GUI_ROLE_TEXT,   GUI_PHASE_DIM    )  /* secondary text     */
 
 #define COL_WIDGET_FG     style_col( GUI_ROLE_ACCENT, GUI_PHASE_IDLE   )  /* value fill         */
-#define COL_NAV           style_col( GUI_ROLE_ACCENT, GUI_PHASE_HOT    )  /* nav highlight      */
+#define COL_NAV           style_col( GUI_ROLE_ACCENT, GUI_PHASE_HOT    )  /* nav ring, lit fill */
 #define COL_CHECK_MARK    style_col( GUI_ROLE_ACCENT, GUI_PHASE_ACTIVE )  /* mark, captured nav */
 #define COL_SLIDER_TRACK  style_col( GUI_ROLE_ACCENT, GUI_PHASE_DIM    )  /* empty track        */
 
