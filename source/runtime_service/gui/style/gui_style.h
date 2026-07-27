@@ -70,52 +70,70 @@ f32 style_scale( gui_scale_t s, u32 field );
 /*==============================================================================================
     3. COLORS -- the color grid, one macro per cell and no cell with two names.
 
-    This table IS gui_style_t.col: six roles down, four phases across.  Every name below is the
-    established one for that cell, so the 180 read sites above never learned that the flat
-    palette and chrome's private tokens went away -- which is exactly why they could.  A name
-    here is chrome's SPELLING of a cell, not a cell of its own: nothing reachable through these
-    macros is unreachable through style_col, which is what makes chrome an ordinary consumer.
+    This table IS gui_style_t.col: eight roles down, four phases across.  A name here is chrome's
+    SPELLING of a cell, not a cell of its own: nothing reachable through these macros is
+    unreachable through style_col, which is what makes chrome an ordinary consumer.
+
+    THE NAME IS THE CELL: COL_<ROLE>_<PHASE>, both halves spelled exactly as the enum suffixes in
+    gui.h.  So a macro can be read off the grid and the grid read off a macro, with no table in
+    between -- COL_BORDER_ACTIVE is BORDER x ACTIVE and nothing else.  The names used to be the
+    pre-grid palette's (COL_WIN_BG, COL_FOCUS_BORDER, COL_SLIDER_TRACK ...), kept verbatim so the
+    unification would not have to touch every read site; that debt is paid, and it cost a real
+    bug -- the names implied a vocabulary the grid no longer had.  Renaming is free (these are
+    aliases); ADDING a second name for a cell is not -- that re-opens the drift the old token
+    table had.  One cell, one name.
 
     Reading across a row shows what a phase MEANS for that role; the grid is documented once, in
     gui.h.  A render that speaks roles and phases generically wants style_col (or gui()->
     style_color from outside the library) instead -- same seam, no macro.
+
+    Not every cell has a reader, and that is not a gap: the grid is wired uniformly because the
+    schema is uniform.  A PANEL never goes hot or active (a container has no interaction of its
+    own -- window focus reads on BORDER[ACTIVE]), and TEXT never goes hot because any text that
+    can be hot is inside a widget, and the text widgets return no state.  The cells stay authored
+    so a role behaves like every other role; nothing is missing.
 ==============================================================================================*/
 
-/*                          role              IDLE / HOT / ACTIVE / DIM                        */
-#define COL_WIN_BG        style_col( GUI_ROLE_PANEL,  GUI_PHASE_IDLE   )  /* window body        */
-#define COL_PANEL_HOT     style_col( GUI_ROLE_PANEL,  GUI_PHASE_HOT    )  /* hovered surface    */
-#define COL_PANEL_SEL     style_col( GUI_ROLE_PANEL,  GUI_PHASE_ACTIVE )  /* selected surface   */
-#define COL_CHILD_BG      style_col( GUI_ROLE_PANEL,  GUI_PHASE_DIM    )  /* child / recessed   */
+/*                             role               phase                                          */
+#define COL_PANEL_IDLE     style_col( GUI_ROLE_PANEL,  GUI_PHASE_IDLE   )  /* window body        */
+#define COL_PANEL_HOT      style_col( GUI_ROLE_PANEL,  GUI_PHASE_HOT    )  /* hovered surface    */
+#define COL_PANEL_ACTIVE   style_col( GUI_ROLE_PANEL,  GUI_PHASE_ACTIVE )  /* selected surface   */
+#define COL_PANEL_DIM      style_col( GUI_ROLE_PANEL,  GUI_PHASE_DIM    )  /* child / recessed   */
 
-#define COL_TITLE_BG      style_col( GUI_ROLE_TITLE,  GUI_PHASE_IDLE   )  /* bar, inactive tab  */
-#define COL_TITLE_HOT     style_col( GUI_ROLE_TITLE,  GUI_PHASE_HOT    )  /* hovered tab        */
-#define COL_TITLE_ACTIVE  style_col( GUI_ROLE_TITLE,  GUI_PHASE_ACTIVE )  /* focused bar / tab  */
-#define COL_TITLE_DIM     style_col( GUI_ROLE_TITLE,  GUI_PHASE_DIM    )  /* de-emphasized bar  */
+#define COL_TITLE_IDLE     style_col( GUI_ROLE_TITLE,  GUI_PHASE_IDLE   )  /* bar, inactive tab  */
+#define COL_TITLE_HOT      style_col( GUI_ROLE_TITLE,  GUI_PHASE_HOT    )  /* hovered tab        */
+#define COL_TITLE_ACTIVE   style_col( GUI_ROLE_TITLE,  GUI_PHASE_ACTIVE )  /* focused bar / tab  */
+#define COL_TITLE_DIM      style_col( GUI_ROLE_TITLE,  GUI_PHASE_DIM    )  /* de-emphasized bar  */
 
-#define COL_WIDGET_BG     style_col( GUI_ROLE_BG,     GUI_PHASE_IDLE   )  /* control face       */
-#define COL_WIDGET_HOT    style_col( GUI_ROLE_BG,     GUI_PHASE_HOT    )  /* hovered face       */
-#define COL_WIDGET_ACT    style_col( GUI_ROLE_BG,     GUI_PHASE_ACTIVE )  /* pressed / focused  */
-#define COL_WIDGET_DIM    style_col( GUI_ROLE_BG,     GUI_PHASE_DIM    )  /* inert face         */
+#define COL_BG_IDLE        style_col( GUI_ROLE_BG,     GUI_PHASE_IDLE   )  /* control face       */
+#define COL_BG_HOT         style_col( GUI_ROLE_BG,     GUI_PHASE_HOT    )  /* hovered face       */
+#define COL_BG_ACTIVE      style_col( GUI_ROLE_BG,     GUI_PHASE_ACTIVE )  /* pressed / focused  */
+#define COL_BG_DIM         style_col( GUI_ROLE_BG,     GUI_PHASE_DIM    )  /* inert face         */
 
-#define COL_BORDER        style_col( GUI_ROLE_BORDER, GUI_PHASE_IDLE   )  /* frame line         */
-#define COL_BORDER_HOT    style_col( GUI_ROLE_BORDER, GUI_PHASE_HOT    )  /* hovered edge       */
-#define COL_FOCUS_BORDER  style_col( GUI_ROLE_BORDER, GUI_PHASE_ACTIVE )  /* focused ring       */
-#define COL_BORDER_DIM    style_col( GUI_ROLE_BORDER, GUI_PHASE_DIM    )  /* subdued frame      */
+#define COL_BORDER_IDLE    style_col( GUI_ROLE_BORDER, GUI_PHASE_IDLE   )  /* frame line         */
+#define COL_BORDER_HOT     style_col( GUI_ROLE_BORDER, GUI_PHASE_HOT    )  /* hovered edge       */
+#define COL_BORDER_ACTIVE  style_col( GUI_ROLE_BORDER, GUI_PHASE_ACTIVE )  /* focused ring       */
+#define COL_BORDER_DIM     style_col( GUI_ROLE_BORDER, GUI_PHASE_DIM    )  /* subdued frame      */
 
-#define COL_TEXT          style_col( GUI_ROLE_TEXT,   GUI_PHASE_IDLE   )  /* body text, caret   */
-#define COL_TEXT_HOT      style_col( GUI_ROLE_TEXT,   GUI_PHASE_HOT    )  /* on a hot face      */
-#define COL_TEXT_ACT      style_col( GUI_ROLE_TEXT,   GUI_PHASE_ACTIVE )  /* on a pressed face  */
-#define COL_TEXT_DIM      style_col( GUI_ROLE_TEXT,   GUI_PHASE_DIM    )  /* secondary text     */
+#define COL_TEXT_IDLE      style_col( GUI_ROLE_TEXT,   GUI_PHASE_IDLE   )  /* body text, caret   */
+#define COL_TEXT_HOT       style_col( GUI_ROLE_TEXT,   GUI_PHASE_HOT    )  /* on a hot face      */
+#define COL_TEXT_ACTIVE    style_col( GUI_ROLE_TEXT,   GUI_PHASE_ACTIVE )  /* on a pressed face  */
+#define COL_TEXT_DIM       style_col( GUI_ROLE_TEXT,   GUI_PHASE_DIM    )  /* secondary text     */
 
-#define COL_WIDGET_FG     style_col( GUI_ROLE_ACCENT, GUI_PHASE_IDLE   )  /* value fill         */
-#define COL_NAV           style_col( GUI_ROLE_ACCENT, GUI_PHASE_HOT    )  /* nav ring, lit fill */
-#define COL_CHECK_MARK    style_col( GUI_ROLE_ACCENT, GUI_PHASE_ACTIVE )  /* mark, captured nav */
-#define COL_SLIDER_TRACK  style_col( GUI_ROLE_ACCENT, GUI_PHASE_DIM    )  /* empty track        */
+#define COL_ACCENT_IDLE    style_col( GUI_ROLE_ACCENT, GUI_PHASE_IDLE   )  /* value fill         */
+#define COL_ACCENT_HOT     style_col( GUI_ROLE_ACCENT, GUI_PHASE_HOT    )  /* engaged fill       */
+#define COL_ACCENT_ACTIVE  style_col( GUI_ROLE_ACCENT, GUI_PHASE_ACTIVE )  /* dragged fill       */
+#define COL_ACCENT_DIM     style_col( GUI_ROLE_ACCENT, GUI_PHASE_DIM    )  /* empty track        */
 
-#define COL_GRAB          style_col( GUI_ROLE_GRAB,   GUI_PHASE_IDLE   )  /* knob / thumb       */
-#define COL_GRAB_HOT      style_col( GUI_ROLE_GRAB,   GUI_PHASE_HOT    )  /* hovered knob       */
-#define COL_GRAB_ACT      style_col( GUI_ROLE_GRAB,   GUI_PHASE_ACTIVE )  /* dragged knob       */
-#define COL_GRAB_DIM      style_col( GUI_ROLE_GRAB,   GUI_PHASE_DIM    )  /* inert knob         */
+#define COL_MARK_IDLE      style_col( GUI_ROLE_MARK,   GUI_PHASE_IDLE   )  /* check mark, dot    */
+#define COL_MARK_HOT       style_col( GUI_ROLE_MARK,   GUI_PHASE_HOT    )  /* nav ring           */
+#define COL_MARK_ACTIVE    style_col( GUI_ROLE_MARK,   GUI_PHASE_ACTIVE )  /* captured-nav ring  */
+#define COL_MARK_DIM       style_col( GUI_ROLE_MARK,   GUI_PHASE_DIM    )  /* inert mark         */
+
+#define COL_GRAB_IDLE      style_col( GUI_ROLE_GRAB,   GUI_PHASE_IDLE   )  /* knob / thumb       */
+#define COL_GRAB_HOT       style_col( GUI_ROLE_GRAB,   GUI_PHASE_HOT    )  /* hovered knob       */
+#define COL_GRAB_ACTIVE    style_col( GUI_ROLE_GRAB,   GUI_PHASE_ACTIVE )  /* dragged knob       */
+#define COL_GRAB_DIM       style_col( GUI_ROLE_GRAB,   GUI_PHASE_DIM    )  /* inert knob         */
 
 /*==============================================================================================
     Stacks, sets, and the seam hooks

@@ -273,12 +273,12 @@ table_draw_borders( gui_table_t* t, f32 content_bottom )
     if ( t->flags & GUI_TABLE_BORDERS_V )
     {
         for ( i32 i = 1; i < t->ncols; ++i )
-            draw_push_rect_filled( t->col_x[ i ], y0, 1.0f, h, 0, 0, 0, 0, 0, COL_BORDER );
+            draw_push_rect_filled( t->col_x[ i ], y0, 1.0f, h, 0, 0, 0, 0, 0, COL_BORDER_IDLE );
     }
 
     /* Outer frame around the used table box. */
     if ( t->flags & GUI_TABLE_BORDERS_OUTER )
-        draw_push_rect_outline( x0, y0, w, h, 1.0f, 0, COL_BORDER );
+        draw_push_rect_outline( x0, y0, w, h, 1.0f, 0, COL_BORDER_IDLE );
 
     /* Column-resize feedback: recolor the hot / dragged boundary in COL_BORDER_HOT, drawn LAST so
        it wins over the BORDERS_V divider that sits at the same x (and over the outer frame).  Drawn
@@ -477,7 +477,7 @@ table_draw_header( gui_table_t* t )
     draw_set_rounding( 0.0f );
 
     /* Full-width opaque header background (also the cover for rows scrolled under the header). */
-    draw_push_rect_filled( t->outer_rect.x, hy, t->outer_rect.w, hh, 0, 0, 0, 0, 0, COL_TITLE_BG );
+    draw_push_rect_filled( t->outer_rect.x, hy, t->outer_rect.w, hh, 0, 0, 0, 0, 0, COL_TITLE_IDLE );
 
     i8 sort_col = (i8)( t->persist->sort_col - 1 );   /* local is 0-based; -1 = unsorted */
 
@@ -491,7 +491,7 @@ table_draw_header( gui_table_t* t )
         /* Hover / active tint (state captured in table_header_interact). */
         if ( i == (i32)t->hdr_act || i == (i32)t->hdr_hot )
         {
-            u32 tint = ( i == (i32)t->hdr_act ) ? COL_WIDGET_ACT : COL_WIDGET_HOT;
+            u32 tint = ( i == (i32)t->hdr_act ) ? COL_BG_ACTIVE : COL_BG_HOT;
             draw_push_rect_filled( cx, hy, cw, hh, 0, 0, 0, 0, 0, tint );
         }
 
@@ -509,7 +509,7 @@ table_draw_header( gui_table_t* t )
                               lblx + lblw < hvx1 ? lblx + lblw : hvx1 );
         /* Vertically centered in the strip (a fixed gap offset drifts whenever the metric ramp
            changes the header height / glyph size ratio). */
-        draw_text_fit_n( lblx, hy + ( hh - font_char_h() ) * 0.5f, COL_TEXT, lbl, 0xFFFFFFFFu, lblw );
+        draw_text_fit_n( lblx, hy + ( hh - font_char_h() ) * 0.5f, COL_TEXT_IDLE, lbl, 0xFFFFFFFFu, lblw );
 
         /* Sort indicator triangle on the active sort column. */
         if ( sort_col == (i8)i )
@@ -520,10 +520,10 @@ table_draw_header( gui_table_t* t )
 
             if ( t->persist->sort_dir == 0 )    /* ascending: tip at top */
                 draw_push_triangle( tx - aw * 0.5f, ty + ah, tx, ty, tx + aw * 0.5f, ty + ah,
-                                    0, COL_TEXT );
+                                    0, COL_TEXT_IDLE );
             else                                 /* descending: tip at bottom */
                 draw_push_triangle( tx - aw * 0.5f, ty, tx, ty + ah, tx + aw * 0.5f, ty,
-                                    0, COL_TEXT );
+                                    0, COL_TEXT_IDLE );
         }
     }
 
@@ -583,7 +583,7 @@ gui_table_next_row( f32 min_h )
     /* Horizontal divider in the gap above this row (between the previous row and this one). */
     if ( ( t->flags & GUI_TABLE_BORDERS_H ) && t->cur_row > 0 )
         draw_push_rect_filled( t->body_rect.x, t->row_top, t->body_rect.w, 1.0f,
-                               0, 0, 0, 0, 0, COL_BORDER );
+                               0, 0, 0, 0, 0, COL_BORDER_IDLE );
 
     draw_set_rounding( save_round );
 }

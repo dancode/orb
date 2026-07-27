@@ -114,9 +114,9 @@ gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char*
     bool               on = ( v && *v );
 
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
-                           on ? COL_WIDGET_ACT : col_item_bg_anim( id, st ) );
+                           on ? COL_BG_ACTIVE : col_item_bg_anim( id, st ) );
     if ( on )
-        draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER );
+        draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER_IDLE );
 
     gui_draw_icon_in( toolbar_icon_rect( r ), icon, 0xFFFFFFFFu );
 
@@ -171,12 +171,12 @@ gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* 
 
     bool this_open = popup_is_open_id( pid );
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
-                           this_open ? COL_WIDGET_ACT : col_item_bg_anim( id, st ) );
+                           this_open ? COL_BG_ACTIVE : col_item_bg_anim( id, st ) );
 
     gui_rect_t icon_r  = { r.x, r.y, WIDGET_H, r.h };
     gui_rect_t arrow_r = { r.x + WIDGET_H, r.y, TB_DD_ARROW_W, r.h };
     gui_draw_icon_in( toolbar_icon_rect( icon_r ), icon, 0xFFFFFFFFu );
-    draw_dropdown_arrow( arrow_r, COL_TEXT );
+    draw_dropdown_arrow( arrow_r, COL_TEXT_IDLE );
 
     if ( tooltip && tooltip[ 0 ] && !this_open )
         gui_set_item_tooltip( tooltip );
@@ -208,7 +208,7 @@ gui_toolbar_separator( void )
 {
     gui_rect_t r = cell_next_w( WIDGET_PAD * 2.0f + WIN_BORDER, WIDGET_H );
     f32        x = r.x + ( r.w - WIN_BORDER ) * 0.5f;
-    draw_push_rect_filled( x, r.y + WIDGET_PAD, WIN_BORDER, r.h - 2.0f * WIDGET_PAD, 0,0,1,1, 0, COL_BORDER );
+    draw_push_rect_filled( x, r.y + WIDGET_PAD, WIN_BORDER, r.h - 2.0f * WIDGET_PAD, 0,0,1,1, 0, COL_BORDER_IDLE );
 }
 
 // clang-format on

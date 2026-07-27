@@ -101,28 +101,28 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
        colour, so hovering painted the EMPTY remainder the same blue as the filled part and every
        slider read as 100% full.  The knob does NOT ride this row (see col_grab below) -- if it
        did it would match the hovered track exactly and vanish into it. */
-    bool engaged = ( st.hover || st.nav || st.active );
-    draw_fill( track_r, col_frame_bg( st, COL_SLIDER_TRACK ) );
+    draw_fill( track_r, col_frame_bg( st, COL_ACCENT_DIM ) );
     /* Captured for keyboard value edit (st.focused -- see nav_item_register) gets the same border
        lift text/numeric fields use on focus, so going from nav highlight to Left/Right-adjust reads
        as a real state change instead of an invisible one. */
-    draw_outline( track_r, WIN_BORDER, st.focused ? COL_FOCUS_BORDER : COL_BORDER );
+    draw_outline( track_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
 
     /* Fill bar up to t.  Round only the start (left) corners to match the track frame; keep the
        leading (right) edge facing the knob square, so a rounded leading edge never leaves a gap
        between the fill and the handle.  Per-corner via draw_round_rect_ex (gui_symbol.c).
 
-       The bar lifts along its OWN role while engaged (ACCENT IDLE -> HOT), because the track it
-       sits in just lifted too: ACCENT[IDLE] against BG[HOT] is near-isoluminant in the dark
-       palette, so a fixed bar colour on a hovered track would trade one "looks full" read for
-       another.  Lifting both keeps the filled part the brighter, more saturated of the two in
-       every state.  (In the light palette ACCENT HOT == IDLE, where the bar is already the DARK
-       element against a lighter track and needs no lift -- so this is a no-op there.) */
+       The bar lifts along its OWN role, straight off gui_item_phase -- ACCENT is the value the
+       control HOLDS and its four cells are a real ramp (empty track / fill / engaged / dragged),
+       so the generic state->phase mapping applies here exactly as it does to a button face.  It
+       has to lift: the track it sits in lifts too, and ACCENT[IDLE] against BG[HOT] is
+       near-isoluminant in the dark palette, so a fixed bar colour on a hovered track would trade
+       one "looks full" read for another.  (Before the ACCENT/MARK split this cell held the check
+       mark -- a green -- and this line could not have been written.) */
     f32 fill_w = t * ( track_r.w - SLIDER_KNOB_W );
     if ( fill_w > 0.0f )
         draw_round_rect_ex( ( gui_rect_t ){ track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f },
                             ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, true, 0.0f,
-                            engaged ? COL_NAV : COL_WIDGET_FG );
+                            style_col( GUI_ROLE_ACCENT, gui_item_phase( st ) ) );
 
     /* Knob (grab): the GRAB row, which exists precisely so this element has somewhere to stand.
        It is the only part of the slider with two lifting neighbours -- the track beneath it and
@@ -138,7 +138,7 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
         f32 kcy = track_r.y + track_r.h * 0.5f;
         f32 kr  = track_r.h * 0.5f;
         draw_circle( kcx, kcy, kr, true,  0.0f,      col_grab( st ) );
-        draw_circle( kcx, kcy, kr, false, WIN_BORDER, COL_BORDER );
+        draw_circle( kcx, kcy, kr, false, WIN_BORDER, COL_BORDER_IDLE );
     }
     else
     {
@@ -146,7 +146,7 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
         draw_set_rounding( ROUND_WIDGET );
         gui_rect_t knob_r = { knob_x, track_r.y, SLIDER_KNOB_W, track_r.h };
         draw_fill   ( knob_r, col_grab( st ) );
-        draw_outline( knob_r, WIN_BORDER, COL_BORDER );
+        draw_outline( knob_r, WIN_BORDER, COL_BORDER_IDLE );
         draw_set_rounding( save_round );
     }
 
@@ -156,7 +156,7 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
         f32 tw    = font_text_w_n( value_text, 0xFFFFFFFFu );
         f32 tx    = track_r.x + ( track_r.w - tw ) * 0.5f;
         if ( tx < track_r.x + WIDGET_PAD ) tx = track_r.x + WIDGET_PAD;
-        draw_text_fit_n( tx, text_center_y( track_r.y, track_r.h ), COL_TEXT, value_text, 0xFFFFFFFFu, inner );
+        draw_text_fit_n( tx, text_center_y( track_r.y, track_r.h ), COL_TEXT_IDLE, value_text, 0xFFFFFFFFu, inner );
     }
 }
 
@@ -340,7 +340,7 @@ drag_value_text( gui_rect_t box_r, const char* buf )
     f32 tw = font_text_w_n( buf, 0xFFFFFFFFu );
     f32 tx = floorf( box_r.x + ( box_r.w - tw ) * 0.5f );
     if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
-    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT, buf,
+    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT_IDLE, buf,
                            0xFFFFFFFFu, box_r.x, box_r.x + box_r.w - WIDGET_PAD );
 }
 
@@ -363,8 +363,8 @@ drag_text_enter( gui_id_t id, gui_item_state_t* st )
 static void
 drag_text_frame( gui_rect_t box_r, gui_item_state_t st )
 {
-    draw_fill( box_r, st.focused ? COL_WIDGET_ACT : col_frame_bg( st, COL_WIDGET_BG ) );
-    draw_outline( box_r, WIN_BORDER, st.focused ? COL_FOCUS_BORDER : COL_BORDER );
+    draw_fill( box_r, st.focused ? COL_BG_ACTIVE : col_frame_bg( st, COL_BG_IDLE ) );
+    draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
 }
 
 static bool
@@ -421,9 +421,9 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
              && value_step_i32( v, st.nav_adjust, (i32)( v_speed + 0.5f ), v_min, v_max ) )
             changed = true;
 
-        u32 bg = col_frame_bg( st, COL_SLIDER_TRACK );
+        u32 bg = col_frame_bg( st, COL_ACCENT_DIM );
         draw_fill( box_r, bg );
-        draw_outline( box_r, WIN_BORDER, st.focused ? COL_FOCUS_BORDER : COL_BORDER );
+        draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
     }
 
     /* Value text -- unless the focused editor already painted its own (and caret), or the box is
@@ -527,9 +527,9 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
         if ( st.nav_adjust != 0 && value_step_f32( v, st.nav_adjust, v_speed, fmt, v_min, v_max ) )
             changed = true;
 
-        u32 bg = col_frame_bg( st, COL_SLIDER_TRACK );
+        u32 bg = col_frame_bg( st, COL_ACCENT_DIM );
         draw_fill( box_r, bg );
-        draw_outline( box_r, WIN_BORDER, st.focused ? COL_FOCUS_BORDER : COL_BORDER );
+        draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
     }
 
     /* Value text -- unless the focused editor already painted its own (and caret), or the box is
@@ -688,7 +688,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
         if ( pa < 255u )
             draw_checker( inner, 3.0f, GUI_COLOR( 200, 200, 200, 255 ), GUI_COLOR( 100, 100, 100, 255 ) );
         draw_fill( inner, abgr );
-        draw_outline( preview_r, WIN_BORDER, pst.hover ? COL_WIDGET_HOT : COL_BORDER );
+        draw_outline( preview_r, WIN_BORDER, pst.hover ? COL_BG_HOT : COL_BORDER_IDLE );
         draw_set_rounding( sv );
     }
 
@@ -734,7 +734,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
                     draw_checker( tp, 6.0f, GUI_COLOR( 200, 200, 200, 255 ),
                                   GUI_COLOR( 100, 100, 100, 255 ) );
                 draw_fill( tp, abgr );
-                draw_outline( tp, WIN_BORDER, COL_BORDER );
+                draw_outline( tp, WIN_BORDER, COL_BORDER_IDLE );
                 draw_set_rounding( sv );
             }
             gui_text( tip_hex );
@@ -832,7 +832,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
             if ( pa < 255u )
                 draw_checker( pp, 6.0f, GUI_COLOR( 200, 200, 200, 255 ), GUI_COLOR( 100, 100, 100, 255 ) );
             draw_fill( pp, abgr );
-            draw_outline( pp, WIN_BORDER, COL_BORDER );
+            draw_outline( pp, WIN_BORDER, COL_BORDER_IDLE );
             draw_set_rounding( sv );
         }
 

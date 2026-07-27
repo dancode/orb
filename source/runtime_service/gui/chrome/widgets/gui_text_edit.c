@@ -54,10 +54,10 @@ edit_paint( gui_rect_t content, const char* buf, const gui_edit_state_t* es, boo
         if ( sx1 > clip_x1 ) sx1 = clip_x1;
         if ( sx1 > sx0 )
             draw_fill( ( gui_rect_t ){ sx0, content.y + 1.0f, sx1 - sx0, content.h - 2.0f },
-                       COL_WIDGET_ACT );
+                       COL_BG_ACTIVE );
     }
 
-    draw_push_text_clip_n( text_x, text_y, COL_TEXT, buf, 0xFFFFFFFFu, clip_x0, clip_x1 );
+    draw_push_text_clip_n( text_x, text_y, COL_TEXT_IDLE, buf, 0xFFFFFFFFu, clip_x0, clip_x1 );
 
     /* Blinking caret: visible for the first 0.5 s of each 1 s cycle. */
     if ( focused )
@@ -69,7 +69,7 @@ edit_paint( gui_rect_t content, const char* buf, const gui_edit_state_t* es, boo
             draw_fill( ( gui_rect_t ){ cx, content.y + (f32)WIDGET_PAD,
                                        (f32)WIN_BORDER,
                                        content.h - 2.0f * (f32)WIDGET_PAD },
-                       COL_TEXT );
+                       COL_TEXT_IDLE );
         }
     }
 }

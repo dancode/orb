@@ -94,14 +94,14 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
         if ( draw_box )
         {
             draw_push_rect_filled ( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, col_item_bg( st ) );
-            draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER );
+            draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER_IDLE );
         }
         if ( *selected )
-            draw_check_indicator( ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_CHECK_MARK );
+            draw_check_indicator( ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_MARK_IDLE );
     }
 
     f32 lx = r.x + WIDGET_PAD + check_w;
-    draw_label( lx, text_center_y( r.y, r.h ), COL_TEXT, label );
+    draw_label( lx, text_center_y( r.y, r.h ), COL_TEXT_IDLE, label );
 
     /* Shortcut hint, dim and right-aligned in the row. */
     f32 sw = ( shortcut && shortcut[ 0 ] ) ? font_text_w( shortcut ) : 0.0f;
@@ -207,9 +207,9 @@ gui_menu_begin( const char* label )
     /* Entry visuals: lit while hovered / nav-highlighted or while its submenu is open. */
     if ( st.hover || st.nav || this_open )
         draw_push_rect_filled( box.x, box.y, box.w, box.h, 0,0,1,1, 0,
-                               this_open ? COL_WIDGET_ACT : COL_WIDGET_HOT );
+                               this_open ? COL_BG_ACTIVE : COL_BG_HOT );
 
-    draw_label( box.x + WIDGET_PAD, text_center_y( box.y, box.h ), COL_TEXT, label );
+    draw_label( box.x + WIDGET_PAD, text_center_y( box.y, box.h ), COL_TEXT_IDLE, label );
 
     if ( in_bar )
     {
@@ -219,7 +219,7 @@ gui_menu_begin( const char* label )
     {
         /* Submenu marker: a right-pointing arrow boxed at the row's right edge. */
         gui_rect_t arrow = { box.x + box.w - box.h, box.y, box.h, box.h };
-        draw_arrow( arrow, GUI_DIR_RIGHT, COL_TEXT );
+        draw_arrow( arrow, GUI_DIR_RIGHT, COL_TEXT_IDLE );
         cell_reach( box.x + WIDGET_PAD + label_width( label ) + box.h + WIDGET_PAD );
     }
 
@@ -344,7 +344,7 @@ gui_menu_bar_begin( void )
        body's top and side edges, where a rounded corner would visibly clip against them. */
     f32 save_round = draw_rounding();
     draw_set_rounding( 0.0f );
-    draw_push_rect_filled( bar.x, bar.y, bar.w, bar.h, 0,0,1,1, 0, COL_TITLE_BG );
+    draw_push_rect_filled( bar.x, bar.y, bar.w, bar.h, 0,0,1,1, 0, COL_TITLE_IDLE );
     draw_set_rounding( save_round );
 
     /* Save the body pen: the strip is drawn outside the body flow, so the body resumes from here. */

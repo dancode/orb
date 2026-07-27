@@ -96,16 +96,16 @@ gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t
     /* Box frame: a button-tinted field, a down arrow boxed at the right edge, and the preview text
        fitted into the room before the arrow. */
     draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0,0,1,1, 0, col_item_bg( st ) );
-    draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER );
+    draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER_IDLE );
 
     gui_rect_t arrow = { box.x + box.w - box.h, box.y, box.h, box.h };
-    draw_arrow( arrow, GUI_DIR_DOWN, COL_TEXT );
+    draw_arrow( arrow, GUI_DIR_DOWN, COL_TEXT_IDLE );
 
     if ( preview_value && preview_value[ 0 ] )
     {
         f32 avail = arrow.x - ( box.x + WIDGET_PAD ) - WIDGET_PAD;
         draw_text_fit_n( box.x + WIDGET_PAD, text_center_y( box.y, box.h ),
-                         COL_TEXT, preview_value, 0xFFFFFFFFu, avail );
+                         COL_TEXT_IDLE, preview_value, 0xFFFFFFFFu, avail );
     }
 
     /* Open the dropdown.  A HEIGHT_* cap makes it a fixed-width (box-wide), height-capped scrolling
@@ -250,7 +250,7 @@ gui_listbox_end( void )
     /* Trailing label, drawn past the box's right edge and aligned to its first row (markers
        stripped by draw_label, like every label).  Drawn under the parent clip after child_end. */
     if ( label_vis_len( label ) > 0 )
-        draw_label( box.x + box.w + WIDGET_PAD, text_center_y( box.y, WIDGET_H ), COL_TEXT, label );
+        draw_label( box.x + box.w + WIDGET_PAD, text_center_y( box.y, WIDGET_H ), COL_TEXT_IDLE, label );
 }
 
 /* One-liner over an array of strings: a scrolling list showing `height_in_items` rows (<= 0 picks

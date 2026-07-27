@@ -60,6 +60,11 @@ game_ui_install( void )
     e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_HOT    ] = GAME_UI_TEAL;
     e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_ACTIVE ] = GAME_UI_TEAL;
     e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_DIM    ] = GAME_UI_TEAL_DIM;
+
+    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_IDLE   ] = GAME_UI_TEAL;
+    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_HOT    ] = GAME_UI_TEAL;
+    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_ACTIVE ] = GAME_UI_TEAL;
+    e->col[ GUI_ROLE_MARK   ][ GUI_PHASE_DIM    ] = GAME_UI_TEAL_DIM;
 }
 
 /*==============================================================================================

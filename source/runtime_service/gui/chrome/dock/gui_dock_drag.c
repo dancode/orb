@@ -205,8 +205,8 @@ dock_overlay_end( void )
 static void
 dock_chip_draw( gui_rect_t cr, bool on )
 {
-    draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, on ? COL_WIDGET_HOT : COL_WIDGET_BG );
-    draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER );
+    draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, on ? COL_BG_HOT : COL_BG_IDLE );
+    draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER_IDLE );
 }
 
 /* The "tab here" glyph: a small square inset in a center chip (kept square while the chip itself
@@ -217,7 +217,7 @@ dock_chip_tab_glyph( gui_rect_t cr )
     f32 ins = cr.w * 0.28f;
     draw_set_rounding( 0.0f );
     draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
-                            WIN_BORDER, 0, COL_TEXT );
+                            WIN_BORDER, 0, COL_TEXT_IDLE );
     draw_set_rounding( ROUND_WIDGET );
 }
 
@@ -387,7 +387,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
             if ( z == DOCK_ZONE_CENTER )
                 dock_chip_tab_glyph( cr );
             else
-                draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT );
+                draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT_IDLE );
         }
 
     /* Edge chips: drawn against the dockspace edges, each pointing outward to read as "full side". */
@@ -396,7 +396,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         {
             gui_rect_t cr = dock_outer_chip_rect( root->rect, (dock_zone_t)z, s, margin );
             dock_chip_draw( cr, outer && (dock_zone_t)z == outer_zone );
-            draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT );
+            draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT_IDLE );
         }
 
     dock_overlay_end();
@@ -583,7 +583,7 @@ dock_window_chrome( gui_dock_node_t* node )
     f32 th = s_build.win.title_h;   /* tab-strip height (= WIN_TITLE_H, clamped for a tiny node) */
 
     draw_set_rounding( 0.0f );   /* the strip is a flat band behind the tabs */
-    draw_push_rect_filled( x, y, w, th, 0, 0, 1, 1, 0, COL_TITLE_BG );
+    draw_push_rect_filled( x, y, w, th, 0, 0, 1, 1, 0, COL_TITLE_IDLE );
 
     f32 tx = x;
     for ( u32 i = 0; i < node->tab_count; ++i )
@@ -604,8 +604,8 @@ dock_window_chrome( gui_dock_node_t* node )
 
         /* Active tab takes the body colour so it reads as joined to the content below; the rest stay
            on the title band, lifting to the hover colour under the cursor. */
-        u32 bg   = is_active ? COL_TITLE_ACTIVE : ( st.hover ? COL_TITLE_HOT : COL_TITLE_BG );
-        u32 tcol = ( is_active || st.hover ) ? COL_TEXT : COL_TEXT_DIM;
+        u32 bg   = is_active ? COL_TITLE_ACTIVE : ( st.hover ? COL_TITLE_HOT : COL_TITLE_IDLE );
+        u32 tcol = ( is_active || st.hover ) ? COL_TEXT_IDLE : COL_TEXT_DIM;
         /* Tabs in a docked node stay square: the active tab takes the body colour to read as joined
            to the content below, and a rounded corner would break that seam. */
         draw_push_rect_filled( tr.x, tr.y, tr.w, tr.h, 0, 0, 1, 1, 0, bg );
@@ -652,9 +652,9 @@ dock_window_chrome( gui_dock_node_t* node )
         if ( mx_st.hover || mx_st.active )
         {
             draw_set_rounding( ROUND_WIDGET );
-            draw_push_rect_filled( mx_r.x, mx_r.y, mx_r.w, mx_r.h, 0, 0, 1, 1, 0, mx_st.active ? COL_WIDGET_ACT : COL_WIDGET_HOT );
+            draw_push_rect_filled( mx_r.x, mx_r.y, mx_r.w, mx_r.h, 0, 0, 1, 1, 0, mx_st.active ? COL_BG_ACTIVE : COL_BG_HOT );
         }
-        native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, mx_r, maxed, mx_st.hover ? COL_TEXT : COL_TEXT_DIM );
+        native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, mx_r, maxed, mx_st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM );
 
         gui_rect_t band = { tx, y, mx_r.x - tx, th };
         bool band_double = band.w > 1.0f && s_io.mouse_double[ 0 ]
@@ -684,7 +684,7 @@ dock_window_chrome( gui_dock_node_t* node )
        angles.  Drawn before the undock handler so it never reads `node` after a drag-out collapses
        an emptied node. */
     draw_set_rounding( 0.0f );
-    draw_push_rect_outline( x, y, w, s_build.win.h, WIN_BORDER, 0, COL_BORDER );
+    draw_push_rect_outline( x, y, w, s_build.win.h, WIN_BORDER, 0, COL_BORDER_IDLE );
 
     /* Keyboard-focus marker: the node's active tab is the window being ended here, so overlay the
        focus border when it is the focused window -- the docked twin of window_end's marker. */

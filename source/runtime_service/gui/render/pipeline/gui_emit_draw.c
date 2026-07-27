@@ -847,7 +847,7 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
     (void)tex_idx;   /* outlines are always solid-color; tessellation uses the white texel */
     if ( draw_emit_blocked() )
         return;
-    /* Skip a fully transparent border (e.g. the perf overlay pushes COL_BORDER to alpha 0). */
+    /* Skip a fully transparent border (e.g. the perf overlay pushes COL_BORDER_IDLE to alpha 0). */
     u32 col = draw_apply_alpha( abgr );
     if ( ( col >> 24 ) == 0u )
         return;

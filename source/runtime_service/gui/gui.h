@@ -200,8 +200,8 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     THE color vocabulary of the whole GUI, and there is no second one.  Chrome, the stock
     widgets, and a kit's own renders all name a color as a (role, phase) cell, and all of them
     resolve through the same instanced style -- so "the editor look" and "the game look" are two
-    instances of one schema rather than two schemas.  There is no flat color enum: seven roles
-    times four phases ARE the 28 cells of gui_style_t.col below.
+    instances of one schema rather than two schemas.  There is no flat color enum: eight roles
+    times four phases ARE the 32 cells of gui_style_t.col below.
 
         push_style_color( GUI_ROLE_BG,   GUI_PHASE_HOT, abgr );   // one cell, until the pop
         push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, abgr );   // the whole phase row
@@ -222,7 +222,7 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     INSTALLING a look; reading ->col[][] through it at paint time bypasses the style stacks.
 ==============================================================================================*/
 
-/* What the color is FOR.  Seven roles cover every surface the GUI paints.
+/* What the color is FOR.  Eight roles cover every surface the GUI paints.
 
    PANEL vs BG is the container / control split, and it is the one distinction that has to exist:
    a window body and a child region are surfaces the layout CARVES, while a button face, an input
@@ -235,6 +235,20 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
    states are genuinely its own; folded into PANEL it forced the phase axis to mean something
    different for that one role, and a tab then had to reach into THREE roles to say active /
    hovered / idle.  Now it says TITLE and picks a phase, like everything else.
+
+   ACCENT vs MARK is the same split one level down, and it was earned the same way TITLE was --
+   by a role holding TOKENS in its phase slots instead of phases.  ACCENT used to mean "emphasis"
+   and carried four unrelated colors: value fill (IDLE), nav ring (HOT), check mark (ACTIVE),
+   empty track (DIM).  Four widgets' colors, not four states of one surface -- and the row proved
+   it three ways: the dark theme's ACTIVE cell was GREEN in a row of blues (a ramp does not jump
+   hue, a token table does); style_col( role, item_phase( st ) ) -- the one generic accessor the
+   grid offers -- turned a pressed widget green; and push_style_color( ACCENT, PHASE_ALL ) meant
+   nothing, since it recolored a mark and a track to one value.  It also cost a real bug: a
+   slider read "lift WITHIN the accent role, DIM at rest to IDLE when engaged", which is correct
+   phase-reasoning walking straight onto the value-fill token, so a hovered slider painted its
+   EMPTY half the filled colour.  Split, both rows are honest ramps: ACCENT is the value a
+   control HOLDS (empty track / fill / engaged / dragged) and MARK is the indicator it SHOWS
+   (mark / nav ring / captured-nav ring / inert).  item_phase now works on both.
 
    GRAB is the movable part of a track control -- a slider knob, a scrollbar thumb -- and it earns
    a row for a reason no other surface has: it is the one element that must stay legible against
@@ -253,7 +267,8 @@ typedef enum
     GUI_ROLE_BG,          // control surface: button face, input field, check box, cycle end caps
     GUI_ROLE_BORDER,      // frame line, focus ring, resize edge
     GUI_ROLE_TEXT,        // glyphs, caret
-    GUI_ROLE_ACCENT,      // emphasis: marks, value fills, nav highlight
+    GUI_ROLE_ACCENT,      // the value a control HOLDS: slider / progress fill, empty track
+    GUI_ROLE_MARK,        // the indicator a control SHOWS: check, radio dot, nav ring
     GUI_ROLE_GRAB,        // movable part of a track control: slider knob, scrollbar thumb
     GUI_ROLE_COUNT
 
@@ -503,7 +518,7 @@ typedef enum
 
 typedef struct gui_style_t
 {
-    /* SKIN: the 7x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
+    /* SKIN: the 8x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
        above).  GUI_COLOR packs R,G,B,A bytes; a cell is read with style_color( role, phase ). */
     u32 col[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 

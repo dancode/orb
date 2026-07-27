@@ -53,7 +53,7 @@ text_emit( u32 col, const char* str )
     cell_reach( x + tw );
 }
 
-void gui_text( const char* str ) { text_emit( COL_TEXT, str ); }
+void gui_text( const char* str ) { text_emit( COL_TEXT_IDLE, str ); }
 
 /* text_colored -- a text run in an explicit colour (GUI_COLOR abgr), the ImGui TextColored
    analogue.  text_disabled is the dim-text shorthand (COL_TEXT_DIM) for secondary / inert labels. */
@@ -117,7 +117,7 @@ gui_text_wrapped( const char* str )
     f32          h     = font_char_h() + (f32)( lines - 1u ) * font_line_h();
     gui_rect_t r     = cell_next( h );
 
-    text_wrap_walk( str, avail, true, r.x, r.y, COL_TEXT );
+    text_wrap_walk( str, avail, true, r.x, r.y, COL_TEXT_IDLE );
 }
 
 /*==============================================================================================
@@ -180,8 +180,8 @@ gui_bullet_text( const char* str )
     /* Bullet mark, vertically centered in the row; then the run just past it.  A disc by default
        (RenderBullet), or a square when GUI_VAR_BULLET_SHAPE selects it. */
     gui_rect_t br = rect_align( r, bsz, bsz, GUI_ALIGN_VCENTER );
-    bullet_glyph( br, bsz, COL_TEXT );
-    draw_push_text( r.x + bsz + gap, r.y, COL_TEXT, str );
+    bullet_glyph( br, bsz, COL_TEXT_IDLE );
+    draw_push_text( r.x + bsz + gap, r.y, COL_TEXT_IDLE, str );
     cell_reach( r.x + bsz + gap + tw );   /* natural width may exceed the row */
 }
 
@@ -200,7 +200,7 @@ gui_bullet( void )
 
     gui_rect_t r  = cell_next_w( bsz, ch );
     gui_rect_t br = rect_align( r, bsz, bsz, GUI_ALIGN_VCENTER );   /* centered in the row */
-    bullet_glyph( br, bsz, COL_TEXT );
+    bullet_glyph( br, bsz, COL_TEXT_IDLE );
     cell_reach( r.x + bsz );
 }
 
@@ -225,7 +225,7 @@ gui_label_text( const char* label, const char* value )
 
     /* The value is the primary content: draw it where a control would sit, vertically centered and
        fitted (ellipsized) to the track width.  Plain text -- no "##" grammar -- so it shows as-is. */
-    draw_text_fit_n( control.x, text_center_y( control.y, control.h ), COL_TEXT,
+    draw_text_fit_n( control.x, text_center_y( control.y, control.h ), COL_TEXT_IDLE,
                      value, 0xFFFFFFFFu, control.w );
 }
 
@@ -244,17 +244,17 @@ gui_progress_bar( f32 fraction, const char* overlay )
 
     /* Track, then the fill bar up to the fraction, then the border on top so the fill stays inside.
        Solid fill by default; a top-to-bottom gradient gloss when GUI_VAR_PROGRESS_SHAPE selects it. */
-    draw_fill( r, COL_SLIDER_TRACK );
+    draw_fill( r, COL_ACCENT_DIM );
     f32 fw = fraction * r.w;
     if ( fw > 0.0f )
     {
         if ( style_var( GUI_VAR_PROGRESS_SHAPE ) >= 0.5f )
             draw_gradient( ( gui_rect_t ){ r.x, r.y, fw, r.h },
-                           COL_WIDGET_FG, col_lerp( COL_WIDGET_FG, 0xFFFFFFFFu, 0.45f ), true );
+                           COL_ACCENT_IDLE, col_lerp( COL_ACCENT_IDLE, 0xFFFFFFFFu, 0.45f ), true );
         else
-            draw_fill( ( gui_rect_t ){ r.x, r.y, fw, r.h }, COL_WIDGET_FG );
+            draw_fill( ( gui_rect_t ){ r.x, r.y, fw, r.h }, COL_ACCENT_IDLE );
     }
-    draw_outline( r, WIN_BORDER, COL_BORDER );
+    draw_outline( r, WIN_BORDER, COL_BORDER_IDLE );
 
     /* Caption: caller text, or a default percentage; centered and fitted to the inner width. */
     char        buf[ 32 ];
@@ -269,7 +269,7 @@ gui_progress_bar( f32 fraction, const char* overlay )
         f32 tw = font_text_w( txt );
         f32 tx = r.x + ( r.w - tw ) * 0.5f;
         if ( tx < r.x + WIDGET_PAD ) tx = r.x + WIDGET_PAD;
-        draw_text_fit_n( tx, text_center_y( r.y, r.h ), COL_TEXT, txt, 0xFFFFFFFFu,
+        draw_text_fit_n( tx, text_center_y( r.y, r.h ), COL_TEXT_IDLE, txt, 0xFFFFFFFFu,
                          r.w - 2.0f * WIDGET_PAD );
     }
 }
@@ -291,7 +291,7 @@ gui_separator( void )
 {
     gui_rect_t r  = cell_next( WIDGET_H * 0.5f );
     gui_rect_t ln = rect_align( r, r.w, WIN_BORDER, GUI_ALIGN_VCENTER );
-    draw_rule( ln.x, ln.y + ln.h * 0.5f, ln.w, WIN_BORDER, COL_BORDER );
+    draw_rule( ln.x, ln.y + ln.h * 0.5f, ln.w, WIN_BORDER, COL_BORDER_IDLE );
 }
 
 /* A labeled rule: a short leading rule, the text, then a rule filling the rest -- "-- Text ----".
@@ -304,14 +304,14 @@ gui_separator_text( const char* label )
     f32          tw  = label_width( label );
     f32          pre = 2.0f * WIDGET_PAD;                /* short leading rule before the text */
 
-    draw_rule( r.x, ly, pre, WIN_BORDER, COL_BORDER );
+    draw_rule( r.x, ly, pre, WIN_BORDER, COL_BORDER_IDLE );
 
     f32 tx = r.x + pre + WIDGET_PAD;
-    draw_label( tx, text_center_y( r.y, r.h ), COL_TEXT, label );
+    draw_label( tx, text_center_y( r.y, r.h ), COL_TEXT_IDLE, label );
 
     f32 rx = tx + tw + WIDGET_PAD;                       /* trailing rule to the right edge */
     f32 rw = ( r.x + r.w ) - rx;
-    draw_rule( rx, ly, rw, WIN_BORDER, COL_BORDER );     /* draw_rule no-ops on rw <= 0 */
+    draw_rule( rx, ly, rw, WIN_BORDER, COL_BORDER_IDLE );     /* draw_rule no-ops on rw <= 0 */
 }
 
 // clang-format on

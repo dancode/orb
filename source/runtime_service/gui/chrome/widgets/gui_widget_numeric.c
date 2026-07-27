@@ -33,8 +33,8 @@ num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
            const char* fmt, bool is_int, double cur, double* out )
 {
     /* Box background and border. */
-    draw_fill( box_r, st.focused ? COL_WIDGET_ACT : col_frame_bg( st, COL_WIDGET_BG ) );
-    draw_outline( box_r, WIN_BORDER, st.focused ? COL_FOCUS_BORDER : COL_BORDER );
+    draw_fill( box_r, st.focused ? COL_BG_ACTIVE : col_frame_bg( st, COL_BG_IDLE ) );
+    draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
 
     /* input_* seed the editor with the same format they display, so the field opens on the value
        exactly as it was shown. */
@@ -50,7 +50,7 @@ num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
         if ( is_int ) fmt_snprintf( disp, NUM_BUF_CAP, fmt, (int)( committed ? *out : cur ) );
         else          fmt_snprintf( disp, NUM_BUF_CAP, fmt, committed ? *out : cur );
         draw_push_text( box_r.x + WIDGET_PAD, text_center_y( box_r.y, box_r.h ),
-                        COL_TEXT, disp );
+                        COL_TEXT_IDLE, disp );
     }
 
     return committed;
@@ -62,10 +62,10 @@ num_step_button( gui_id_t id, gui_rect_t r, bool is_minus )
 {
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
     draw_fill( r, col_item_bg( st ) );
-    draw_outline( r, WIN_BORDER, COL_BORDER );
+    draw_outline( r, WIN_BORDER, COL_BORDER_IDLE );
     const char* sym = is_minus ? "-" : "+";
     f32 sw = font_text_w( sym );
-    draw_push_text( r.x + ( r.w - sw ) * 0.5f, text_center_y( r.y, r.h ), COL_TEXT, sym );
+    draw_push_text( r.x + ( r.w - sw ) * 0.5f, text_center_y( r.y, r.h ), COL_TEXT_IDLE, sym );
     return st.clicked;
 }
 

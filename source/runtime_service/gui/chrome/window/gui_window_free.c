@@ -680,7 +680,7 @@ window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 tit
             f32 save_round = draw_rounding();
             if ( win->maximized && !win->minimized )
                 draw_set_rounding( 0.0f );
-            draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_WIN_BG );
+            draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_PANEL_IDLE );
             draw_set_rounding( save_round );
         }
 

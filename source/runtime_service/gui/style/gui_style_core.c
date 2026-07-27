@@ -92,7 +92,7 @@ ORB_STATIC_ASSERT( sizeof( gui_style_t ) == STYLE_SLOT_COUNT * sizeof( u32 ),
                Typed, so gui_style_edit() hands a kit &s_store[set] with no cast.
     s_work  -- RESOLVED.  The CURRENT set's installed values with every push / next override
                already written in.  The only array a read touches, and it is a file static of
-               known size -- so COL_TEXT compiles to a load from a fixed address, which is the
+               known size -- so COL_TEXT_IDLE compiles to a load from a fixed address, which is the
                whole reason the sets live behind an index instead of the reads living behind a
                base pointer.
 
@@ -238,7 +238,7 @@ style_next( u32 slot, u32 val )
 /*==============================================================================================
     The typed faces -- coordinate to slot, and nothing else.
 
-    A read site says COL_TEXT or WIDGET_PAD; it never sees a slot, which is what kept the schema
+    A read site says COL_TEXT_IDLE or WIDGET_PAD; it never sees a slot, which is what kept the schema
     rewrites off the 230-odd chrome read sites.
 ==============================================================================================*/
 
@@ -431,6 +431,7 @@ static const char* const k_role_name[ GUI_ROLE_COUNT ] =
     [ GUI_ROLE_BORDER ] = "Border",
     [ GUI_ROLE_TEXT   ] = "Text",
     [ GUI_ROLE_ACCENT ] = "Accent",
+    [ GUI_ROLE_MARK   ] = "Mark",
     [ GUI_ROLE_GRAB   ] = "Grab",
 };
 
@@ -676,8 +677,8 @@ gui_style_source_set( gui_style_source_fn fn, void* user )
 u32
 col_frame_bg( gui_item_state_t st, u32 idle_color )
 {
-    if ( st.active )            return COL_WIDGET_ACT;
-    if ( st.hover || st.nav )   return COL_WIDGET_HOT;   /* nav cursor lights the body like a hover */
+    if ( st.active )            return COL_BG_ACTIVE;
+    if ( st.hover || st.nav )   return COL_BG_HOT;   /* nav cursor lights the body like a hover */
     return idle_color;
 }
 
@@ -685,7 +686,7 @@ col_frame_bg( gui_item_state_t st, u32 idle_color )
    col_frame_bg with the plain widget background as the idle base. */
 u32 col_item_bg( gui_item_state_t st )
 {
-    return col_frame_bg( st, COL_WIDGET_BG );
+    return col_frame_bg( st, COL_BG_IDLE );
 }
 
 /* The movable part of a track control -- slider knob, scrollbar thumb -- off the GRAB row.
@@ -711,7 +712,7 @@ u32 col_grab( gui_item_state_t st )
    spare two channels sit unused (0/0/0) and are free for a widget-specific flourish later.
    Composite over the palette: BG -> HOT by the hot channel, then that -> ACT by the active
    one.  The primitive owns all storage, settle, and wants_redraw bookkeeping in a single peek;
-   an idle widget with no history lands on COL_WIDGET_BG. */
+   an idle widget with no history lands on COL_BG_IDLE. */
 
 #define ANIM_TAG_BG  0xA501u   /* id_combine salt: keeps this slot distinct from all other per-widget state */
 
@@ -722,7 +723,7 @@ col_item_bg_anim( gui_id_t id, gui_item_state_t st )
     gui_anim4_t target = { ( st.hover || st.nav ) ? 1.0f : 0.0f, st.active ? 1.0f : 0.0f, 0.0f, 0.0f };
     gui_anim4_t speed  = { 10.0f, 20.0f, 0.0f, 0.0f };
     gui_anim4_t a      = gui_anim4( id_combine( id, ANIM_TAG_BG ), rest, target, speed );
-    return col_lerp( col_lerp( COL_WIDGET_BG, COL_WIDGET_HOT, a.x ), COL_WIDGET_ACT, a.y );
+    return col_lerp( col_lerp( COL_BG_IDLE, COL_BG_HOT, a.x ), COL_BG_ACTIVE, a.y );
 }
 
 /* True while NO ambient style scope is open -- the volatile-replay precondition check

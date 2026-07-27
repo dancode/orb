@@ -644,7 +644,7 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
     if ( hot || active )
         cursor_set( ( n->split == GUI_DOCK_SPLIT_X ) ? APP_CURSOR_RESIZE_EW : APP_CURSOR_RESIZE_NS );
 
-    draw_push_rect_filled( sr.x, sr.y, sr.w, sr.h, 0, 0, 1, 1, 0, ( hot || active ) ? COL_BORDER_HOT : COL_BORDER );
+    draw_push_rect_filled( sr.x, sr.y, sr.w, sr.h, 0, 0, 1, 1, 0, ( hot || active ) ? COL_BORDER_HOT : COL_BORDER_IDLE );
 }
 
 /* Post-order walk: lay splitters of the children before this node's own, so a parent gutter paints
@@ -679,8 +679,8 @@ dock_tree_placeholders( gui_dock_node_t* n )
         if ( n->tab_count == 0 )
         {
             draw_set_rounding( 0.0f );   /* empty node tiles flush in the dock grid -- keep it square */
-            draw_push_rect_filled ( n->rect.x, n->rect.y, n->rect.w, n->rect.h, 0, 0, 1, 1, 0, COL_CHILD_BG );
-            draw_push_rect_outline( n->rect.x, n->rect.y, n->rect.w, n->rect.h, WIN_BORDER, 0, COL_BORDER );
+            draw_push_rect_filled ( n->rect.x, n->rect.y, n->rect.w, n->rect.h, 0, 0, 1, 1, 0, COL_PANEL_DIM );
+            draw_push_rect_outline( n->rect.x, n->rect.y, n->rect.w, n->rect.h, WIN_BORDER, 0, COL_BORDER_IDLE );
         }
         return;
     }

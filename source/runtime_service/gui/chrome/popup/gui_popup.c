@@ -466,7 +466,7 @@ gui_set_item_tooltip( const char* text )
         f32 h     = font_char_h() + (f32)( lines - 1u ) * font_line_h();
 
         gui_rect_t r = cell_next_w( final_w, h );
-        text_wrap_walk( text, final_w, true, r.x, r.y, COL_TEXT );
+        text_wrap_walk( text, final_w, true, r.x, r.y, COL_TEXT_IDLE );
         cell_reach( r.x + final_w );
     }
     gui_tooltip_end();
@@ -501,7 +501,7 @@ gui_help_marker( const char* text )
 
     /* Hoverable but inert: the returned click is ignored, only st.hover drives the brighten. */
     gui_item_state_t st = item_state( id, tr, ITEM_BUTTON );
-    draw_push_text( tr.x, tr.y, st.hover ? COL_TEXT : COL_TEXT_DIM, mark );
+    draw_push_text( tr.x, tr.y, st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM, mark );
     cell_reach( tr.x + mw );
 
     /* Bind the tooltip to the mark just emitted (s_scope.last_id / hover_id were set above). */

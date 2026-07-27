@@ -118,7 +118,7 @@ gui_field_row( const char* label )
     field_geom_split( cell, (gui_label_side_t)fld->side, fld->control > 0.0f ? fld->control : 1.0f,
                       label_track, WIDGET_MIN_W, WIDGET_PAD, &label_r, &control_r );
 
-    draw_label_fit( label_r.x, text_center_y( cell.y, cell.h ), COL_TEXT, label, label_r.w );
+    draw_label_fit( label_r.x, text_center_y( cell.y, cell.h ), COL_TEXT_IDLE, label, label_r.w );
     gui_next_item_rect( control_r );
 }
 
@@ -135,8 +135,8 @@ gui_field_row( const char* label )
 /* Keyboard-nav focus ring: an outline just outside the item rect, painted before the item's
    own background so the fill leaves the border visible (nav_item_register invokes it across
    the core unit's one paint seam -- see the upward-seam block in core/gui_core.h).
-   captured selects the ring color: plain nav-highlight (COL_NAV) vs. a value widget that has
-   captured the keyboard for Left/Right editing (COL_CHECK_MARK) -- this is the one adornment
+   captured selects the ring color: plain nav-highlight (COL_MARK_HOT) vs. a value widget that has
+   captured the keyboard for Left/Right editing (COL_MARK_ACTIVE) -- this is the one adornment
    every widget passes through, so it is the single place that makes "input captured" read as a
    real, theme-wide-consistent state change instead of looking identical to plain nav focus. */
 void
@@ -144,7 +144,7 @@ draw_nav_ring( gui_rect_t r, bool captured )
 {
     draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
                             r.w + 2.0f * NAV_RING, r.h + 2.0f * NAV_RING,
-                            WIN_BORDER, 0, captured ? COL_CHECK_MARK : COL_NAV );
+                            WIN_BORDER, 0, captured ? COL_MARK_ACTIVE : COL_MARK_HOT );
 }
 
 /* Focused-window frame: a bolder, accent-coloured outline painted over the window's own border to
@@ -157,7 +157,7 @@ draw_window_focus_border( gui_rect_t r )
 {
     f32 t = WIN_BORDER;
     if ( t <= 0.0f ) return;
-    draw_outline( r, t, COL_FOCUS_BORDER );
+    draw_outline( r, t, COL_BORDER_ACTIVE );
 }
 
 /* Drag-and-drop accept ring: a bolder outline around an open target whose type matched the
@@ -167,13 +167,13 @@ draw_window_focus_border( gui_rect_t r )
 void
 draw_drop_ring( gui_rect_t r )
 {
-    draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, 0, COL_NAV );
+    draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, 0, COL_MARK_HOT );
 }
 
 /* Child box chrome (flow/gui_layout_child.c invokes these around its region): the body
    fill under the region clips at child_begin, the border over the bar tracks at child_end. */
-void draw_child_bg    ( gui_rect_t r ) { draw_fill   ( r, COL_CHILD_BG ); }
-void draw_child_border( gui_rect_t r ) { draw_outline( r, WIN_BORDER, COL_BORDER ); }
+void draw_child_bg    ( gui_rect_t r ) { draw_fill   ( r, COL_PANEL_DIM ); }
+void draw_child_border( gui_rect_t r ) { draw_outline( r, WIN_BORDER, COL_BORDER_IDLE ); }
 
 /* Paint a bold line over each hot edge of an outline so it is obvious that the border is
    grabbable and which side will move.  Drawn just inside the rect, over the thin border.

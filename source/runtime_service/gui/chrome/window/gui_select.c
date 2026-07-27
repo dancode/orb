@@ -383,7 +383,7 @@ select_paint_under( void )
     if ( live_box && span.x1 > span.x0 && span.y1 > span.y0 )
         draw_push_rect_filled( span.x0, span.y0, span.x1 - span.x0, span.y1 - span.y0,
                                0, 0, 1, 1, 0,
-                               ( COL_WIDGET_ACT & 0x00FFFFFFu ) | 0x30000000u );
+                               ( COL_BG_ACTIVE & 0x00FFFFFFu ) | 0x30000000u );
 
     if ( select_exists() )
     {
@@ -401,7 +401,7 @@ select_paint_under( void )
                 ( gui_rect_t ){ rx0, r->y, rx1 - rx0, font_char_h() }, r->clip );
             if ( band.w > 0.0f && band.h > 0.0f )
                 draw_push_rect_filled( band.x, band.y, band.w, band.h,
-                                       0, 0, 1, 1, 0, COL_WIDGET_ACT );
+                                       0, 0, 1, 1, 0, COL_BG_ACTIVE );
         }
     }
 
@@ -430,8 +430,8 @@ select_paint_overlay( gui_id_t win, gui_rect_t body )
 
     if ( select_exists() )
     {
-        u32 tint = ( COL_CHECK_MARK & 0x00FFFFFFu ) | 0x50000000u;   // 0x50000000u;   /* ~30% alpha */
-        // u32 tint = ( COL_WIDGET_ACT & 0x00FFFFFFu ) | 0x48000000u;   /* ~28% alpha */
+        u32 tint = ( COL_MARK_IDLE & 0x00FFFFFFu ) | 0x50000000u;   // 0x50000000u;   /* ~30% alpha */
+        // u32 tint = ( COL_BG_ACTIVE & 0x00FFFFFFu ) | 0x48000000u;   /* ~28% alpha */
         u32 n    = select_run_count();
         for ( u32 i = 0; i < n; ++i )
         {
@@ -452,7 +452,7 @@ select_paint_overlay( gui_id_t win, gui_rect_t body )
     /* Marquee outline over everything (its fill sits under the content, from paint_under). */
     if ( live_box && span.x1 > span.x0 && span.y1 > span.y0 )
         draw_push_rect_outline( span.x0, span.y0, span.x1 - span.x0, span.y1 - span.y0,
-                                1.0f, 0, ( COL_WIDGET_ACT & 0x00FFFFFFu ) | 0xC0000000u );
+                                1.0f, 0, ( COL_BG_ACTIVE & 0x00FFFFFFu ) | 0xC0000000u );
 
     draw_set_rounding( save_round );
 }

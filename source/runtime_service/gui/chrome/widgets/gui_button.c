@@ -30,11 +30,11 @@ draw_button_label( gui_rect_t r, const char* label )
     if ( lw <= avail )
     {
         gui_rect_t lr = rect_align( r, lw, font_char_h(), GUI_ALIGN_CENTER );
-        draw_label( lr.x, lr.y, COL_TEXT, label );
+        draw_label( lr.x, lr.y, COL_TEXT_IDLE, label );
     }
     else
     {
-        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label, avail );
+        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT_IDLE, label, avail );
     }
 }
 
@@ -148,7 +148,7 @@ gui_arrow_button( const char* label, gui_dir_t dir )
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
     draw_fill( r, col_item_bg( st ) );
-    draw_arrow( r, dir, COL_TEXT );
+    draw_arrow( r, dir, COL_TEXT_IDLE );
 
     return st.clicked;
 }
@@ -262,9 +262,9 @@ static void
 checkbox_face( gui_rect_t box, gui_item_state_t st, bool on )
 {
     draw_fill( box, col_item_bg( st ) );
-    draw_outline( box, WIN_BORDER, COL_BORDER );
+    draw_outline( box, WIN_BORDER, COL_BORDER_IDLE );
     /* Indicator: a 'v' tick (default), a filled disc, or an 'X' cross per GUI_VAR_CHECK_SHAPE. */
-    if ( on ) draw_check_indicator( box, COL_CHECK_MARK );
+    if ( on ) draw_check_indicator( box, COL_MARK_IDLE );
 }
 
 bool
@@ -278,7 +278,7 @@ gui_checkbox( const char* label, bool* v )
     /* The label, when the field kept it -- plainly, no ellipsis (markers still stripped); a label
        too wide for its track overflows and is bounded by the window clip, matching text() and the
        input widgets. */
-    if ( c.show_label ) draw_label( c.label_x, c.label_y, COL_TEXT, label );
+    if ( c.show_label ) draw_label( c.label_x, c.label_y, COL_TEXT_IDLE, label );
 
     bool changed = false;
     if ( c.st.clicked )
@@ -326,12 +326,12 @@ gui_radio_button( const char* label, i32* v, i32 value )
        The dot is a FRACTION of the disc, not the radius less a padding metric: an absolute inset
        collapses the dot to nothing as soon as it reaches rad, and at the default indicator size
        it does exactly that.  A mark sizes itself to the box it sits in. */
-    draw_push_circle_filled( cx, cy, rad,              segs, COL_BORDER );
+    draw_push_circle_filled( cx, cy, rad,              segs, COL_BORDER_IDLE );
     draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, col_item_bg( c.st ) );
     if ( on )
-        draw_push_circle_filled( cx, cy, rad * 0.55f, segs, COL_CHECK_MARK );
+        draw_push_circle_filled( cx, cy, rad * 0.55f, segs, COL_MARK_IDLE );
 
-    if ( c.show_label ) draw_label_fit( c.label_x, c.label_y, COL_TEXT, label, c.label_w );
+    if ( c.show_label ) draw_label_fit( c.label_x, c.label_y, COL_TEXT_IDLE, label, c.label_w );
 
     bool changed = false;
     if ( c.st.clicked && v && *v != value )
@@ -368,10 +368,10 @@ gui_selectable( const char* label, bool* selected )
        is transparent so the region background shows through. */
     bool on = ( selected && *selected );
     if ( on || st.hover || st.nav )
-        draw_fill( r, on ? COL_WIDGET_ACT : COL_WIDGET_HOT );
+        draw_fill( r, on ? COL_BG_ACTIVE : COL_BG_HOT );
 
     /* Label, left-aligned with the standard padding. */
-    draw_label( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT, label );
+    draw_label( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT_IDLE, label );
     cell_reach( r.x + WIDGET_PAD + label_width( label ) );   /* natural width may exceed the row */
 
     if ( st.clicked && selected )

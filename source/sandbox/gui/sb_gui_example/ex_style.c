@@ -189,31 +189,31 @@ ex_style_stacks( void )
     {
         gui()->stack();
 
-        gui()->separator_text( "Text (COL_TEXT vs COL_TEXT_DIM)" );
-        gui()->text( "Plain text -- COL_TEXT" );
+        gui()->separator_text( "Text (COL_TEXT_IDLE vs COL_TEXT_DIM)" );
+        gui()->text( "Plain text -- COL_TEXT_IDLE" );
         gui()->text_disabled( "Disabled/dim text -- COL_TEXT_DIM" );
 
-        gui()->separator_text( "Buttons (COL_WIDGET_BG / _HOT / _ACT, label = COL_TEXT)" );
+        gui()->separator_text( "Buttons (COL_BG_IDLE / _HOT / _ACT, label = COL_TEXT_IDLE)" );
         gui()->button( "Sample button (hover/press me)" );
         static bool small_sb = true;
         gui()->small_button( "small" ); gui()->same_line( 8.0f );
         gui()->checkbox( "small_button's sibling", &small_sb );
 
-        gui()->separator_text( "Checkbox / radio (box = COL_WIDGET_BG, mark = COL_CHECK_MARK)" );
+        gui()->separator_text( "Checkbox / radio (box = COL_BG_IDLE, mark = COL_MARK_IDLE)" );
         static bool sb = true;
-        gui()->checkbox( "Sample checkbox (label = COL_TEXT)", &sb );
+        gui()->checkbox( "Sample checkbox (label = COL_TEXT_IDLE)", &sb );
         static i32 mode = 0;
         gui()->radio_button( "A", &mode, 0 ); gui()->same_line( -1.0f );
         gui()->radio_button( "B", &mode, 1 ); gui()->same_line( -1.0f );
         gui()->radio_button( "C", &mode, 2 );
 
-        gui()->separator_text( "Slider / input (field label = COL_TEXT_DIM, border = COL_BORDER)" );
+        gui()->separator_text( "Slider / input (field label = COL_TEXT_DIM, border = COL_BORDER_IDLE)" );
         static f32 sv = 5.0f;
         gui()->slider_float( "sample slider", &sv, 0.0f, 10.0f );
         static char stxt[ 24 ] = "sample";
         gui()->input_text( "sample input (click to focus)", stxt, sizeof( stxt ) );
 
-        gui()->separator_text( "Combo / selectable (row hover/select = COL_WIDGET_HOT/_ACT)" );
+        gui()->separator_text( "Combo / selectable (row hover/select = COL_BG_HOT/_ACT)" );
         static i32          combo_sel      = 0;
         static const char*  combo_items[]  = { "Alpha", "Beta", "Gamma" };
         gui()->combo( "sample combo", &combo_sel, combo_items, 3 );
@@ -221,12 +221,12 @@ ex_style_stacks( void )
         gui()->selectable( "selectable row A", &sel_a );
         gui()->selectable( "selectable row B", &sel_b );
 
-        gui()->separator_text( "Progress + child region (COL_WIDGET_FG / COL_CHILD_BG)" );
+        gui()->separator_text( "Progress + child region (COL_ACCENT_IDLE / COL_PANEL_DIM)" );
         gui()->progress_bar( 0.66f, NULL );
         if ( gui()->child_begin( "sample child", 0, 60.0f, GUI_WIN_NONE ) )
         {
             gui()->stack();
-            gui()->text( "child region body -- COL_CHILD_BG" );
+            gui()->text( "child region body -- COL_PANEL_DIM" );
         }
         gui()->child_end();
     }

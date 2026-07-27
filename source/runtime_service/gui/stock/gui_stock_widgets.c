@@ -153,7 +153,7 @@ gui_stock_check( gui_rect_t r, const char* id_str, bool* v )
 
     gui_draw_frame( c.box, col_item_bg( c.state ), STYLE_COL( BORDER, IDLE ), WIN_BORDER );
     if ( *v )
-        gui_draw_check_mark( gui_rect_pad( c.box, c.box.w * 0.22f ), STYLE_COL( ACCENT, ACTIVE ) );
+        gui_draw_check_mark( gui_rect_pad( c.box, c.box.w * 0.22f ), STYLE_COL( MARK, IDLE ) );
 
     return c.changed;
 }
@@ -174,7 +174,7 @@ gui_stock_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
        Value bar: the ACCENT row, lifted while engaged so it stays brighter than the lifted groove
        under it.  Handle: the GRAB row, the theme's contrast anchor, which is what keeps it legible
        against BOTH of its neighbours instead of matching one of them in some phase. */
-    bool engaged = ( s.state.hover || s.state.nav || s.state.active );
+    gui_style_phase_t ph = gui_item_phase( s.state );
 
     gui_rect_t track = gui_rect_align( r, r.w, r.h * 0.30f, GUI_ALIGN_CENTER );
     gui_draw_frame( track, col_frame_bg( s.state, STYLE_COL( ACCENT, DIM ) ),
@@ -182,8 +182,7 @@ gui_stock_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
     gui_rect_t fill = gui_rect_pad( track, 1.0f );
     fill.w *= s.frac;
     if ( fill.w > 0.0f )
-        gui_draw_rect( fill.x, fill.y, fill.w, fill.h,
-                       engaged ? STYLE_COL( ACCENT, HOT ) : STYLE_COL( ACCENT, IDLE ) );
+        gui_draw_rect( fill.x, fill.y, fill.w, fill.h, style_col( GUI_ROLE_ACCENT, ph ) );
 
     /* Handle: the component's x + width, the render's height (80% of r, centered). */
     gui_rect_t handle = { s.handle.x, r.y + r.h * 0.10f, s.handle.w, r.h * 0.80f };
@@ -246,14 +245,17 @@ gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
                     st.focused ? STYLE_COL( BORDER, ACTIVE ) : STYLE_COL( BORDER, IDLE ),
                     WIN_BORDER );
 
+    /* Selection band and caret read the same cells chrome's edit_paint uses: a selection is a
+       pressed FACE (BG[ACTIVE]) and a caret is TEXT, neither of which is an accent -- ACCENT is
+       the value a control holds, and a text field's value is its glyphs. */
     if ( in.selection.w > 0.0f )
-        draw_fill( in.selection, STYLE_COL( ACCENT, DIM ) );
+        draw_fill( in.selection, STYLE_COL( BG, ACTIVE ) );
 
     draw_push_text_clip_n( in.text_x, in.text_y, STYLE_COL( TEXT, IDLE ), buf, 0xFFFFFFFFu,
                            in.content.x, in.content.x + in.content.w );
 
     if ( in.caret.w > 0.0f )
-        draw_fill( in.caret, STYLE_COL( ACCENT, ACTIVE ) );
+        draw_fill( in.caret, STYLE_COL( TEXT, IDLE ) );
 
     return in.changed;
 }
