@@ -77,8 +77,11 @@ draw_check_indicator( gui_rect_t box, u32 col )
 {
     u32 style = (u32)( style_var( GUI_VAR_CHECK_SHAPE ) + 0.5f );
     if ( style == GUI_CHECK_DISC )
+        /* Radius as a FRACTION of the box, like the tick and cross above.  Subtracting a padding
+           metric instead lets the mark vanish outright the moment that metric reaches the box's
+           half-extent -- which it does at the default indicator size. */
         draw_push_circle_filled( box.x + box.w * 0.5f, box.y + box.h * 0.5f,
-                                 box.w * 0.5f - WIDGET_PAD, 16, col );
+                                 box.w * 0.30f, 16, col );
     else if ( style == GUI_CHECK_CROSS )
         draw_close_x( box, col );
     else

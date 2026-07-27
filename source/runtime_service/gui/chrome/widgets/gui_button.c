@@ -322,11 +322,14 @@ gui_radio_button( const char* label, i32* v, i32 value )
     const u32 segs = 16;   /* facets -- round at widget sizes */
     bool      on   = ( v && *v == value );
 
-    /* Border ring, then the well (hover/active tinted like a button knob), then the selected dot. */
+    /* Border ring, then the well (hover/active tinted like a button knob), then the selected dot.
+       The dot is a FRACTION of the disc, not the radius less a padding metric: an absolute inset
+       collapses the dot to nothing as soon as it reaches rad, and at the default indicator size
+       it does exactly that.  A mark sizes itself to the box it sits in. */
     draw_push_circle_filled( cx, cy, rad,              segs, COL_BORDER );
     draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, col_item_bg( c.st ) );
     if ( on )
-        draw_push_circle_filled( cx, cy, rad - WIDGET_PAD, segs, COL_CHECK_MARK );
+        draw_push_circle_filled( cx, cy, rad * 0.55f, segs, COL_CHECK_MARK );
 
     if ( c.show_label ) draw_label_fit( c.label_x, c.label_y, COL_TEXT, label, c.label_w );
 
