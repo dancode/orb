@@ -101,9 +101,9 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
     draw_fill( track, COL_SLIDER_TRACK );
     draw_set_rounding( ROUND_WIDGET );
     if ( vertical )
-        draw_fill( ( gui_rect_t ){ track.x, knob_off, track.w, knob_len }, col_item_bg( st ) );
+        draw_fill( ( gui_rect_t ){ track.x, knob_off, track.w, knob_len }, col_grab( st ) );
     else
-        draw_fill( ( gui_rect_t ){ knob_off, track.y, knob_len, track.h }, col_item_bg( st ) );
+        draw_fill( ( gui_rect_t ){ knob_off, track.y, knob_len, track.h }, col_grab( st ) );
     draw_set_rounding( save_round );
 }
 

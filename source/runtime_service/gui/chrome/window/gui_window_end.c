@@ -41,7 +41,7 @@ window_end_chip( gui_window_t* win, f32 title_h )
         if ( cl_st.hover || cl_st.active )
         {
             draw_set_rounding( ROUND_WIDGET );
-            draw_push_rect_filled( cl_r.x, cl_r.y, cl_r.w, cl_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+            draw_push_rect_filled( cl_r.x, cl_r.y, cl_r.w, cl_r.h, 0, 0, 1, 1, 0, cl_st.active ? COL_WIDGET_ACT : COL_WIDGET_HOT );
         }
         draw_close_x( cl_r, cl_st.hover ? COL_TEXT : COL_TEXT_DIM );
         if ( cl_st.clicked && win )
@@ -60,7 +60,7 @@ window_end_chip( gui_window_t* win, f32 title_h )
     if ( re_st.hover || re_st.active )
     {
         draw_set_rounding( ROUND_WIDGET );
-        draw_push_rect_filled( re_r.x, re_r.y, re_r.w, re_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+        draw_push_rect_filled( re_r.x, re_r.y, re_r.w, re_r.h, 0, 0, 1, 1, 0, re_st.active ? COL_WIDGET_ACT : COL_WIDGET_HOT );
     }
     native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, re_r, true, re_st.hover ? COL_TEXT : COL_TEXT_DIM );
     right_limit = re_r.x - WIDGET_PAD;
@@ -182,7 +182,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             if ( cl_st.hover || cl_st.active )
             {
                 draw_set_rounding( ROUND_WIDGET );
-                draw_push_rect_filled( cl_r.x, cl_r.y, cl_r.w, cl_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+                draw_push_rect_filled( cl_r.x, cl_r.y, cl_r.w, cl_r.h, 0, 0, 1, 1, 0, cl_st.active ? COL_WIDGET_ACT : COL_WIDGET_HOT );
             }
             draw_close_x( cl_r, cl_st.hover ? COL_TEXT : COL_TEXT_DIM );
 
@@ -208,7 +208,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             if ( mx_st.hover || mx_st.active )
             {
                 draw_set_rounding( ROUND_WIDGET );
-                draw_push_rect_filled( mx_r.x, mx_r.y, mx_r.w, mx_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+                draw_push_rect_filled( mx_r.x, mx_r.y, mx_r.w, mx_r.h, 0, 0, 1, 1, 0, mx_st.active ? COL_WIDGET_ACT : COL_WIDGET_HOT );
             }
             native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, mx_r, win->maximized,
                                    mx_st.hover ? COL_TEXT : COL_TEXT_DIM );
@@ -227,7 +227,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             if ( mn_st.hover || mn_st.active )
             {
                 draw_set_rounding( ROUND_WIDGET );
-                draw_push_rect_filled( mn_r.x, mn_r.y, mn_r.w, mn_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+                draw_push_rect_filled( mn_r.x, mn_r.y, mn_r.w, mn_r.h, 0, 0, 1, 1, 0, mn_st.active ? COL_WIDGET_ACT : COL_WIDGET_HOT );
             }
             native_btn_draw_glyph( NATIVE_BTN_MINIMIZE, mn_r, false,
                                    mn_st.hover ? COL_TEXT : COL_TEXT_DIM );
@@ -345,7 +345,7 @@ window_end_size_grip( gui_window_t* win, bool native, u8 hot_edges )
 
         /* Filled right-angle triangle, lit while hovered or actively resizing. */
         draw_push_triangle( gr.x + g, gr.y, gr.x + g, gr.y + g, gr.x, gr.y + g,
-                            0, ( hot || resizing ) ? COL_RESIZE_HOT : COL_TEXT_DIM );
+                            0, ( hot || resizing ) ? COL_BORDER_HOT : COL_TEXT_DIM );
     }
 }
 

@@ -88,6 +88,13 @@ ui_kit_install( void )
     e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_HOT    ] = s_style.slot_border_hot;
     e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_ACTIVE ] = s_style.title;
     e->col[ GUI_ROLE_ACCENT ][ GUI_PHASE_DIM    ] = s_style.meter_bg;
+
+    /* GRAB is the kit's contrast anchor, not a shade of its furniture: a knob has to read against
+       the track under it AND the value fill beside it, both of which are s_style browns here. */
+    e->col[ GUI_ROLE_GRAB   ][ GUI_PHASE_IDLE   ] = s_style.text_dim;
+    e->col[ GUI_ROLE_GRAB   ][ GUI_PHASE_HOT    ] = s_style.text;
+    e->col[ GUI_ROLE_GRAB   ][ GUI_PHASE_ACTIVE ] = s_style.title;
+    e->col[ GUI_ROLE_GRAB   ][ GUI_PHASE_DIM    ] = s_style.slot_bg;
 }
 
 /*==============================================================================================

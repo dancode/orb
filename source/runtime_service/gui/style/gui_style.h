@@ -98,7 +98,7 @@ f32 style_scale( gui_scale_t s, u32 field );
 #define COL_WIDGET_DIM    style_col( GUI_ROLE_BG,     GUI_PHASE_DIM    )  /* inert face         */
 
 #define COL_BORDER        style_col( GUI_ROLE_BORDER, GUI_PHASE_IDLE   )  /* frame line         */
-#define COL_RESIZE_HOT    style_col( GUI_ROLE_BORDER, GUI_PHASE_HOT    )  /* hovered edge       */
+#define COL_BORDER_HOT    style_col( GUI_ROLE_BORDER, GUI_PHASE_HOT    )  /* hovered edge       */
 #define COL_FOCUS_BORDER  style_col( GUI_ROLE_BORDER, GUI_PHASE_ACTIVE )  /* focused ring       */
 #define COL_BORDER_DIM    style_col( GUI_ROLE_BORDER, GUI_PHASE_DIM    )  /* subdued frame      */
 
@@ -111,6 +111,11 @@ f32 style_scale( gui_scale_t s, u32 field );
 #define COL_NAV           style_col( GUI_ROLE_ACCENT, GUI_PHASE_HOT    )  /* nav ring, lit fill */
 #define COL_CHECK_MARK    style_col( GUI_ROLE_ACCENT, GUI_PHASE_ACTIVE )  /* mark, captured nav */
 #define COL_SLIDER_TRACK  style_col( GUI_ROLE_ACCENT, GUI_PHASE_DIM    )  /* empty track        */
+
+#define COL_GRAB          style_col( GUI_ROLE_GRAB,   GUI_PHASE_IDLE   )  /* knob / thumb       */
+#define COL_GRAB_HOT      style_col( GUI_ROLE_GRAB,   GUI_PHASE_HOT    )  /* hovered knob       */
+#define COL_GRAB_ACT      style_col( GUI_ROLE_GRAB,   GUI_PHASE_ACTIVE )  /* dragged knob       */
+#define COL_GRAB_DIM      style_col( GUI_ROLE_GRAB,   GUI_PHASE_DIM    )  /* inert knob         */
 
 /*==============================================================================================
     Stacks, sets, and the seam hooks
@@ -157,6 +162,7 @@ extern u32 s_font_size;         /* style/gui_theme.c -- active em (0 = never set
 u32 col_item_bg( gui_item_state_t st );
 u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color );
+u32 col_grab( gui_item_state_t st );
 
 /* The per-item ambient wrappers that DRIVE the seam hooks above (item_flags_resolve /
    item_flags_chrome_reset) live in stock/gui_adornment.c, declared in stock/gui_stock_internal.h:

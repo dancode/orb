@@ -644,7 +644,7 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
     if ( hot || active )
         cursor_set( ( n->split == GUI_DOCK_SPLIT_X ) ? APP_CURSOR_RESIZE_EW : APP_CURSOR_RESIZE_NS );
 
-    draw_push_rect_filled( sr.x, sr.y, sr.w, sr.h, 0, 0, 1, 1, 0, ( hot || active ) ? COL_RESIZE_HOT : COL_BORDER );
+    draw_push_rect_filled( sr.x, sr.y, sr.w, sr.h, 0, 0, 1, 1, 0, ( hot || active ) ? COL_BORDER_HOT : COL_BORDER );
 }
 
 /* Post-order walk: lay splitters of the children before this node's own, so a parent gutter paints

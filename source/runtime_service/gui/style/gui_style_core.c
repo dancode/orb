@@ -431,6 +431,7 @@ static const char* const k_role_name[ GUI_ROLE_COUNT ] =
     [ GUI_ROLE_BORDER ] = "Border",
     [ GUI_ROLE_TEXT   ] = "Text",
     [ GUI_ROLE_ACCENT ] = "Accent",
+    [ GUI_ROLE_GRAB   ] = "Grab",
 };
 
 static const char* const k_phase_name[ GUI_PHASE_COUNT ] =
@@ -680,11 +681,25 @@ col_frame_bg( gui_item_state_t st, u32 idle_color )
     return idle_color;
 }
 
-/* Common case background color for a pushbutton / knob style widget.
+/* Common case background color for a pushbutton style widget.
    col_frame_bg with the plain widget background as the idle base. */
 u32 col_item_bg( gui_item_state_t st )
 {
     return col_frame_bg( st, COL_WIDGET_BG );
+}
+
+/* The movable part of a track control -- slider knob, scrollbar thumb -- off the GRAB row.
+   Its own role rather than col_item_bg because a knob has TWO lifting neighbours: the track under
+   it rides BG and the value fill beside it rides ACCENT, so a knob on either row matches one of
+   them exactly in some phase (on BG it vanishes into the hovered track; on ACCENT into the fill).
+   GRAB is authored per theme as the contrast anchor, opposite in polarity to the theme, which is
+   what keeps the knob readable against both at once.  There is no DIM step here: a phase is
+   selected from live interaction, and DIM is the deliberate inert face a render picks itself. */
+u32 col_grab( gui_item_state_t st )
+{
+    return style_col( GUI_ROLE_GRAB, st.active           ? GUI_PHASE_ACTIVE
+                                   : st.hover || st.nav  ? GUI_PHASE_HOT
+                                                         : GUI_PHASE_IDLE );
 }
 
 /* Animated background for a pushbutton-like widget: col_item_bg with the hover/active

@@ -99,14 +99,14 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
        hover / nav, BG[ACTIVE] on press) over the track's own ACCENT[DIM] resting colour.  It used
        to lift WITHIN the accent role instead (DIM -> IDLE), but ACCENT[IDLE] IS the value bar's
        colour, so hovering painted the EMPTY remainder the same blue as the filled part and every
-       slider read as 100% full.  The knob keeps its own BG-row lift and stays legible on top by
-       its outline -- the reason that outline is there (see below). */
+       slider read as 100% full.  The knob does NOT ride this row (see col_grab below) -- if it
+       did it would match the hovered track exactly and vanish into it. */
     bool engaged = ( st.hover || st.nav || st.active );
     draw_fill( track_r, col_frame_bg( st, COL_SLIDER_TRACK ) );
     /* Captured for keyboard value edit (st.focused -- see nav_item_register) gets the same border
        lift text/numeric fields use on focus, so going from nav highlight to Left/Right-adjust reads
        as a real state change instead of an invisible one. */
-    draw_outline( track_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
+    draw_outline( track_r, WIN_BORDER, st.focused ? COL_FOCUS_BORDER : COL_BORDER );
 
     /* Fill bar up to t.  Round only the start (left) corners to match the track frame; keep the
        leading (right) edge facing the knob square, so a rounded leading edge never leaves a gap
@@ -124,17 +124,20 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
                             ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, true, 0.0f,
                             engaged ? COL_NAV : COL_WIDGET_FG );
 
-    /* Knob (grab): the brighter hover/active element, outlined so its edge stays crisp against the
-       track and the fill bar regardless of how close their colours get.  A bar grab by default
-       (grab radius -- raise GUI_VAR_ROUND for a pill), or a circular handle when
-       GUI_VAR_KNOB_SHAPE selects it. */
+    /* Knob (grab): the GRAB row, which exists precisely so this element has somewhere to stand.
+       It is the only part of the slider with two lifting neighbours -- the track beneath it and
+       the fill bar it butts against -- and GRAB is authored per theme as the contrast anchor
+       (light knob on a dark theme, dark knob on a light one), so it reads against both without
+       depending on the outline to carry it.  The outline stays as the edge, not as the contrast.
+       A bar grab by default (grab radius -- raise GUI_VAR_ROUND for a pill), or a circular handle
+       when GUI_VAR_KNOB_SHAPE selects it. */
     f32 knob_x = track_r.x + t * ( track_r.w - SLIDER_KNOB_W );
     if ( style_var( GUI_VAR_KNOB_SHAPE ) >= 0.5f )
     {
         f32 kcx = knob_x + SLIDER_KNOB_W * 0.5f;
         f32 kcy = track_r.y + track_r.h * 0.5f;
         f32 kr  = track_r.h * 0.5f;
-        draw_circle( kcx, kcy, kr, true,  0.0f,      col_item_bg( st ) );
+        draw_circle( kcx, kcy, kr, true,  0.0f,      col_grab( st ) );
         draw_circle( kcx, kcy, kr, false, WIN_BORDER, COL_BORDER );
     }
     else
@@ -142,7 +145,7 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
         f32 save_round = draw_rounding();
         draw_set_rounding( ROUND_WIDGET );
         gui_rect_t knob_r = { knob_x, track_r.y, SLIDER_KNOB_W, track_r.h };
-        draw_fill   ( knob_r, col_item_bg( st ) );
+        draw_fill   ( knob_r, col_grab( st ) );
         draw_outline( knob_r, WIN_BORDER, COL_BORDER );
         draw_set_rounding( save_round );
     }
@@ -361,7 +364,7 @@ static void
 drag_text_frame( gui_rect_t box_r, gui_item_state_t st )
 {
     draw_fill( box_r, st.focused ? COL_WIDGET_ACT : col_frame_bg( st, COL_WIDGET_BG ) );
-    draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
+    draw_outline( box_r, WIN_BORDER, st.focused ? COL_FOCUS_BORDER : COL_BORDER );
 }
 
 static bool
@@ -420,7 +423,7 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
 
         u32 bg = col_frame_bg( st, COL_SLIDER_TRACK );
         draw_fill( box_r, bg );
-        draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
+        draw_outline( box_r, WIN_BORDER, st.focused ? COL_FOCUS_BORDER : COL_BORDER );
     }
 
     /* Value text -- unless the focused editor already painted its own (and caret), or the box is
@@ -526,7 +529,7 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
 
         u32 bg = col_frame_bg( st, COL_SLIDER_TRACK );
         draw_fill( box_r, bg );
-        draw_outline( box_r, WIN_BORDER, st.focused ? COL_WIDGET_HOT : COL_BORDER );
+        draw_outline( box_r, WIN_BORDER, st.focused ? COL_FOCUS_BORDER : COL_BORDER );
     }
 
     /* Value text -- unless the focused editor already painted its own (and caret), or the box is

@@ -140,17 +140,20 @@ gui_stock_button( gui_rect_t r, const char* label )
 
 /* stock_check -- the reference render over gui_comp_check: a framed square box with a check mark
    when *v is set.  The component inscribes the box and owns the toggle; this only draws it.  True
-   on the change frame. */
+   on the change frame.
+
+   The box is a control FACE, so it lifts the way every face in the kit lifts: col_item_bg along
+   the BG row, border held at BORDER[IDLE].  It used to do the opposite (fill pinned at BG[DIM],
+   border lifting to BORDER[HOT]) -- which made the reference checkbox respond to a hover in the
+   mirror image of chrome's, so a reader forking stock got a different answer per widget. */
 bool
 gui_stock_check( gui_rect_t r, const char* id_str, bool* v )
 {
     gui_comp_check_t c = gui_comp_check( id_str, r, v );
 
-    gui_draw_frame( c.box, STYLE_COL( BG, DIM ),
-                    ( c.state.hover || c.state.nav ) ? STYLE_COL( BORDER, HOT ) : STYLE_COL( BORDER, IDLE ),
-                    WIN_BORDER );
+    gui_draw_frame( c.box, col_item_bg( c.state ), STYLE_COL( BORDER, IDLE ), WIN_BORDER );
     if ( *v )
-        gui_draw_check_mark( gui_rect_pad( c.box, c.box.w * 0.22f ), STYLE_COL( ACCENT, IDLE ) );
+        gui_draw_check_mark( gui_rect_pad( c.box, c.box.w * 0.22f ), STYLE_COL( ACCENT, ACTIVE ) );
 
     return c.changed;
 }
@@ -166,19 +169,25 @@ gui_stock_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
     gui_comp_slider_t s = gui_comp_slider_ex( &( gui_comp_slider_desc_t ){
         .id_str = id_str, .rect = r, .v = v, .lo = lo, .hi = hi, .handle_w = 8.0f } );
 
-    /* Groove: a centered band; the value bar fills it to the component's fraction. */
+    /* Three layers, three rows -- the assignment chrome's slider_render uses, and the reason GRAB
+       exists as a role.  Groove: a control face over its own ACCENT[DIM] rest (col_frame_bg).
+       Value bar: the ACCENT row, lifted while engaged so it stays brighter than the lifted groove
+       under it.  Handle: the GRAB row, the theme's contrast anchor, which is what keeps it legible
+       against BOTH of its neighbours instead of matching one of them in some phase. */
+    bool engaged = ( s.state.hover || s.state.nav || s.state.active );
+
     gui_rect_t track = gui_rect_align( r, r.w, r.h * 0.30f, GUI_ALIGN_CENTER );
-    gui_draw_frame( track, STYLE_COL( ACCENT, DIM ), STYLE_COL( BORDER, DIM ), 1.0f );
+    gui_draw_frame( track, col_frame_bg( s.state, STYLE_COL( ACCENT, DIM ) ),
+                    STYLE_COL( BORDER, DIM ), 1.0f );
     gui_rect_t fill = gui_rect_pad( track, 1.0f );
     fill.w *= s.frac;
     if ( fill.w > 0.0f )
-        gui_draw_rect( fill.x, fill.y, fill.w, fill.h, STYLE_COL( ACCENT, IDLE ) );
+        gui_draw_rect( fill.x, fill.y, fill.w, fill.h,
+                       engaged ? STYLE_COL( ACCENT, HOT ) : STYLE_COL( ACCENT, IDLE ) );
 
     /* Handle: the component's x + width, the render's height (80% of r, centered). */
     gui_rect_t handle = { s.handle.x, r.y + r.h * 0.10f, s.handle.w, r.h * 0.80f };
-    gui_style_phase_t ph = gui_item_phase( s.state );
-    gui_draw_frame( handle, style_col( GUI_ROLE_BG, ph ),
-                    ( ph != GUI_PHASE_IDLE ) ? STYLE_COL( BORDER, HOT ) : STYLE_COL( BORDER, IDLE ), 1.0f );
+    gui_draw_frame( handle, col_grab( s.state ), STYLE_COL( BORDER, IDLE ), 1.0f );
 
     return s.changed;
 }
@@ -206,10 +215,9 @@ gui_stock_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* 
 {
     gui_comp_cycle_t cy = gui_comp_cycle( id_str, r, idx, count );
 
-    u32 lb = ( cy.prev.state.hover || cy.prev.state.nav ) ? STYLE_COL( BORDER, HOT ) : STYLE_COL( BORDER, IDLE );
-    u32 rb = ( cy.next.state.hover || cy.next.state.nav ) ? STYLE_COL( BORDER, HOT ) : STYLE_COL( BORDER, IDLE );
-    gui_draw_frame( cy.prev_box, STYLE_COL( BG, DIM ), lb, WIN_BORDER );
-    gui_draw_frame( cy.next_box, STYLE_COL( BG, DIM ), rb, WIN_BORDER );
+    /* Each cap is a control face and lifts like one (col_item_bg, border held) -- see stock_check. */
+    gui_draw_frame( cy.prev_box, col_item_bg( cy.prev.state ), STYLE_COL( BORDER, IDLE ), WIN_BORDER );
+    gui_draw_frame( cy.next_box, col_item_bg( cy.next.state ), STYLE_COL( BORDER, IDLE ), WIN_BORDER );
     gui_draw_chevron( gui_rect_pad( cy.prev_box, cy.prev_box.w * 0.30f ), GUI_DIR_LEFT,  2.0f, STYLE_COL( TEXT, IDLE ) );
     gui_draw_chevron( gui_rect_pad( cy.next_box, cy.next_box.w * 0.30f ), GUI_DIR_RIGHT, 2.0f, STYLE_COL( TEXT, IDLE ) );
 
@@ -230,10 +238,12 @@ gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
     gui_comp_input_t in = gui_comp_input( id_str, r, WIDGET_PAD, buf, bufsz );
     gui_item_state_t st = in.state;
 
+    /* Face lifts along BG (focus pinned to ACTIVE, the captured face), border carries focus alone
+       on BORDER[ACTIVE] -- the same two rules chrome's input_text uses, so the pair really is one
+       look driven by one component. */
     gui_draw_frame( r,
-                    st.focused ? STYLE_COL( BG, ACTIVE ) : style_col( GUI_ROLE_BG, gui_item_phase( st ) ),
-                    ( st.focused || st.hover || st.nav ) ? STYLE_COL( BORDER, HOT )
-                                                         : STYLE_COL( BORDER, IDLE ),
+                    st.focused ? STYLE_COL( BG, ACTIVE ) : col_item_bg( st ),
+                    st.focused ? STYLE_COL( BORDER, ACTIVE ) : STYLE_COL( BORDER, IDLE ),
                     WIN_BORDER );
 
     if ( in.selection.w > 0.0f )

@@ -280,12 +280,12 @@ table_draw_borders( gui_table_t* t, f32 content_bottom )
     if ( t->flags & GUI_TABLE_BORDERS_OUTER )
         draw_push_rect_outline( x0, y0, w, h, 1.0f, 0, COL_BORDER );
 
-    /* Column-resize feedback: recolor the hot / dragged boundary in COL_RESIZE_HOT, drawn LAST so
+    /* Column-resize feedback: recolor the hot / dragged boundary in COL_BORDER_HOT, drawn LAST so
        it wins over the BORDERS_V divider that sits at the same x (and over the outer frame).  Drawn
        here -- in the parent clip after the one table clip is popped -- for the same reason the
        dividers are: so it is not half-clipped by the table box edge.  Square like all table chrome. */
     if ( t->resize_hot >= 0 && t->resize_hot < t->ncols - 1 )
-        draw_push_rect_filled( t->col_x[ t->resize_hot + 1 ], y0, 1.0f, h, 0, 0, 0, 0, 0, COL_RESIZE_HOT );
+        draw_push_rect_filled( t->col_x[ t->resize_hot + 1 ], y0, 1.0f, h, 0, 0, 0, 0, 0, COL_BORDER_HOT );
 
     draw_set_rounding( save_round );
 }

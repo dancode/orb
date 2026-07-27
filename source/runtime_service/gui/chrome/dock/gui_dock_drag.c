@@ -652,7 +652,7 @@ dock_window_chrome( gui_dock_node_t* node )
         if ( mx_st.hover || mx_st.active )
         {
             draw_set_rounding( ROUND_WIDGET );
-            draw_push_rect_filled( mx_r.x, mx_r.y, mx_r.w, mx_r.h, 0, 0, 1, 1, 0, COL_WIDGET_HOT );
+            draw_push_rect_filled( mx_r.x, mx_r.y, mx_r.w, mx_r.h, 0, 0, 1, 1, 0, mx_st.active ? COL_WIDGET_ACT : COL_WIDGET_HOT );
         }
         native_btn_draw_glyph( NATIVE_BTN_MAXIMIZE, mx_r, maxed, mx_st.hover ? COL_TEXT : COL_TEXT_DIM );
 

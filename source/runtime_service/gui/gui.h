@@ -200,8 +200,8 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     THE color vocabulary of the whole GUI, and there is no second one.  Chrome, the stock
     widgets, and a kit's own renders all name a color as a (role, phase) cell, and all of them
     resolve through the same instanced style -- so "the editor look" and "the game look" are two
-    instances of one schema rather than two schemas.  There is no flat color enum: six roles
-    times four phases ARE the 24 cells of gui_style_t.col below.
+    instances of one schema rather than two schemas.  There is no flat color enum: seven roles
+    times four phases ARE the 28 cells of gui_style_t.col below.
 
         push_style_color( GUI_ROLE_BG,   GUI_PHASE_HOT, abgr );   // one cell, until the pop
         push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, abgr );   // the whole phase row
@@ -222,7 +222,7 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     INSTALLING a look; reading ->col[][] through it at paint time bypasses the style stacks.
 ==============================================================================================*/
 
-/* What the color is FOR.  Six roles cover every surface the GUI paints.
+/* What the color is FOR.  Seven roles cover every surface the GUI paints.
 
    PANEL vs BG is the container / control split, and it is the one distinction that has to exist:
    a window body and a child region are surfaces the layout CARVES, while a button face, an input
@@ -234,7 +234,18 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
    -- a window title bar, a tab, a menu bar, a table header.  It earns a row because its four
    states are genuinely its own; folded into PANEL it forced the phase axis to mean something
    different for that one role, and a tab then had to reach into THREE roles to say active /
-   hovered / idle.  Now it says TITLE and picks a phase, like everything else. */
+   hovered / idle.  Now it says TITLE and picks a phase, like everything else.
+
+   GRAB is the movable part of a track control -- a slider knob, a scrollbar thumb -- and it earns
+   a row for a reason no other surface has: it is the one element that must stay legible against
+   TWO lifting neighbours at once.  A track control paints three layers, and each of the other two
+   already owns a row: the track body lifts along BG (it is a control face, so it hovers like a
+   button), and the value fill lifts along ACCENT.  A knob drawn from either row therefore
+   collides with that neighbour in some phase -- on BG it matches the hovered track exactly, on
+   ACCENT it matches the fill.  GRAB is authored per theme as the palette's CONTRAST ANCHOR,
+   opposite in polarity to the theme itself (light on a dark theme, dark on a light one), which is
+   a value no phase of a shared row can hold in both directions. */
+
 typedef enum
 {
     GUI_ROLE_PANEL = 0,   // container surface: window body, child region
@@ -243,6 +254,7 @@ typedef enum
     GUI_ROLE_BORDER,      // frame line, focus ring, resize edge
     GUI_ROLE_TEXT,        // glyphs, caret
     GUI_ROLE_ACCENT,      // emphasis: marks, value fills, nav highlight
+    GUI_ROLE_GRAB,        // movable part of a track control: slider knob, scrollbar thumb
     GUI_ROLE_COUNT
 
 } gui_style_role_t;
@@ -491,7 +503,7 @@ typedef enum
 
 typedef struct gui_style_t
 {
-    /* SKIN: the 6x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
+    /* SKIN: the 7x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
        above).  GUI_COLOR packs R,G,B,A bytes; a cell is read with style_color( role, phase ). */
     u32 col[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 
