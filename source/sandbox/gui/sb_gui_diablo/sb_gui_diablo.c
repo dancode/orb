@@ -431,11 +431,21 @@ screen_stats( gui_vp_t vp )
     ui_label_c( head, GUI_ALIGN_LEFT  | GUI_ALIGN_VCENTER, ui_style()->text,     "ATTRIBUTES" );
     ui_label_c( head, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER, ui_style()->title,    buf );
 
+    /* Stepper cells are sized FROM the glyph, not from a guessed unit: a button face reserves a
+       widget pad on both sides of its label, and a cell narrower than that ellipsizes the label
+       away to nothing -- a square 1.2u box silently painted a "+"-less plate.  button_width() is
+       that minimum; take the wider of the pair so the two steppers stay a matched column. */
+    const f32 step_wp = gui()->button_width( "+" );
+    const f32 step_wm = gui()->button_width( "-" );
+    const f32 step_w  = ( step_wp > step_wm ) ? step_wp : step_wm;
+    const f32 step_h  = ui_u( 1.2f );
+    const f32 step_col= step_w + ui_u( 0.3f );    /* cell = button + the gap to its neighbour */
+
     for ( i32 i = 0; i < 4; ++i )
     {
         gui_rect_t row  = ui_cut_top( &in, row_h );
-        gui_rect_t plus = ui_place( ui_cut_right( &row, ui_u( 1.5f ) ), ui_u( 1.2f ), ui_u( 1.2f ), GUI_ALIGN_CENTER );
-        gui_rect_t minus= ui_place( ui_cut_right( &row, ui_u( 1.5f ) ), ui_u( 1.2f ), ui_u( 1.2f ), GUI_ALIGN_CENTER );
+        gui_rect_t plus = ui_place( ui_cut_right( &row, step_col ), step_w, step_h, GUI_ALIGN_CENTER );
+        gui_rect_t minus= ui_place( ui_cut_right( &row, step_col ), step_w, step_h, GUI_ALIGN_CENTER );
         ui_cut_right( &row, ui_u( 0.5f ) );
 
         gui()->push_id_int( i );
