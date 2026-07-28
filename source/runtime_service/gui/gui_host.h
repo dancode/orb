@@ -424,6 +424,18 @@ void gui_next_style_color_look( gui_style_role_t role, gui_style_phase_t phase, 
 /* the resolved reads: the phase mapping + the grid cell every render picks a face with, plus
    the installed-style door a kit writes a look through and the axis name tables */
 gui_style_phase_t gui_item_phase       ( gui_item_state_t st );
+/* the FACE plane -- art installed on a style cell (see gui_api.h's GUI_STYLE band) */
+gui_style_face_t gui_style_brush_add( const gui_brush_t* brush );
+void gui_push_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face );
+void gui_pop_style_face ( u32 count );
+void gui_next_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face );
+void gui_push_style_face_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, gui_style_face_t face );
+const gui_brush_t* gui_style_face     ( gui_style_role_t role, gui_style_phase_t phase );
+const gui_brush_t* gui_style_face_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
+void gui_draw_face     ( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase );
+void gui_draw_face_look( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
+void gui_draw_face_item( gui_rect_t r, gui_item_state_t st );
+
 u32               gui_style_color      ( gui_style_role_t role, gui_style_phase_t phase );
 u32               gui_style_color_look ( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
 gui_style_t*      gui_style_edit      ( void );

@@ -39,7 +39,7 @@ The two servers NEVER see each other. Everything else is a LIBRARY over them:
     gui_render.c     render/     render/gui_render.h             RENDER SERVER
     gui_draw.c       draw/       draw/gui_draw.h                 drawing routines + font/icon/sprite resources
     gui_core.c       core/       core/gui_core.h + gui_ctx.h     INTERACT SERVER (services + storage)
-    gui_style.c      style/      style/gui_style.h               state flags in, colors/metrics out
+    gui_style.c      style/      style/gui_style.h               state flags in, colors/faces/metrics out
     gui_interact.c   interact/   interact/gui_interact.h         gesture mechanisms (move/resize/drag/feat)
     gui_flow.c       flow/       flow/gui_flow.h                 layout: THE rect producer
     gui_component.c  component/  component/gui_component_internal.h  widget LOGIC, no paint
@@ -216,6 +216,16 @@ Three roles, one contract (the units carry the same names):
   TESSELLATION time (`tess_sprite`), holding its authored corners at any destination size, and
   the whole frame stays ONE command in ONE batch. Public face: `gui()->draw_brush` over the
   sprite registry (`register_sprite` / `load_sprite` / `sprite_set_slice`, `draw/gui_sprite.c`).
+
+  Where a widget's surface COMES FROM is then the FACE plane (`stock/gui_face.c`): a brush
+  installed on a `(look, role, phase)` cell -- the same coordinate the colour grid uses, in a
+  parallel run -- which replaces that cell's flat fill. Every surface fill in stock and chrome
+  paints through `draw_face*` rather than `draw_fill`, so a theme that installs faces restyles the
+  whole widget set with none of it edited; a cell with no face (0, the default) falls straight
+  through to its colour. A face SUPPRESSES the border its cell would have been given -- authored
+  art carries its own edge -- which is why the painters take the border and the caller does not
+  draw it. Each painter mirrors one colour projection (`col_item_bg` -> `draw_face_item`, and so
+  on) so a site converts by changing one call.
 
 A widget (the chrome unit) is the only combiner: it asks composition for a rect, hands it to
 behavior, hands both results to presentation. The public `gui_item`/`canvas`/`draw_*` verbs
@@ -529,6 +539,9 @@ it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
 - Custom draw: `canvas(h)` reserves a cell; `draw_rect/line/circle/text/draw_text_in` take
   caller rects, composing with split/carve/anchor. Colors are u32 ABGR (`GUI_COLOR(r,g,b,a)`).
 - Style: `style_get()` + edit + `style_apply()`, or scoped `push_style_color/pop_style_color`.
+  `push_style_face` is the same verb over the FACE plane (art on a cell, see the presentation
+  note above); `style_brush_add` registers a brush in the set's pool and must be called from the
+  set's SOURCE, since the pool is cleared at every landing.
   A kit that owns the whole application's look registers `style_source_set(fn, user)` on the
   default set; the source is invoked at every style landing (font / theme / scale) to re-install
   `style_edit()`, seeded from the chrome theme first so it need only overwrite what it owns.

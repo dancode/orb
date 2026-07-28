@@ -35,6 +35,8 @@
 
         palette                        -- the AUTHORED colour: eleven seeds and a six-number ramp
         col [ look ][ role ][ phase ]  -- the 2x12x4 grid DERIVED from it, THE color vocabulary
+        face[ look ][ role ][ phase ]  -- the same grid again, as brush HANDLES: art that replaces
+                                          the flat fill for a cell (0 = none, the default)
         var    [ gui_style_var_t ]     -- every scalar the style has, metrics and skin alike
         scales [ gui_scale_t ]         -- the density ramp scale_push reads
 
@@ -44,8 +46,9 @@
     chrome is simply the set at index 0.
 
     Two coordinate systems index the one space, both plain base-plus-offset -- no route table, no
-    inversion, no name-to-slot map.  A color is ( look, role, phase ); a scalar is a
-    gui_style_var_t.  That is the entire addressing story.  Look is the OUTER colour index, which
+    inversion, no name-to-slot map.  A color OR A FACE is ( look, role, phase ) -- the same
+    coordinate into two parallel runs, which is the whole reason a face costs no new machinery; a
+    scalar is a gui_style_var_t.  That is the entire addressing story.  Look is the OUTER colour index, which
     is what let the SELECT plane be added without moving a single existing slot: the NORMAL plane
     still occupies exactly the addresses it did when it was the only plane.
 
@@ -62,9 +65,9 @@
     touched.  One PUSH is one stack entry even when it spans a whole phase row (GUI_PHASE_ALL), so
     pop_style_color( 1 ) always undoes exactly one push_style_color.
 
-    THREE stacks, one per public pop verb: pop_style_color, pop_style_var and pop_style_seed each
-    pop their own pushes, so an interleaved sequence unwinds correctly (the same reason Dear ImGui
-    keeps two).  The seed stack is separate for a second reason as well -- its entries are two
+    FOUR stacks, one per public pop verb: pop_style_color, pop_style_face, pop_style_var and
+    pop_style_seed each pop their own pushes, so an interleaved sequence unwinds correctly (the
+    same reason Dear ImGui keeps two).  The seed stack is separate for a second reason as well -- its entries are two
     orders of magnitude wider, since one seed push displaces the whole derived grid on BOTH
     planes, and there is no reason to make the var stack pay 400 bytes an entry for a fan it
     never uses.
@@ -89,7 +92,8 @@
 #define STYLE_COL_BASE    ( STYLE_RAMP_BASE  + GUI_RAMP_COUNT   )
 #define STYLE_PLANE_COUNT ( GUI_ROLE_COUNT * GUI_PHASE_COUNT )     /* one look's worth of cells */
 #define STYLE_COL_COUNT   ( GUI_LOOK_COUNT * STYLE_PLANE_COUNT )
-#define STYLE_VAR_BASE    ( STYLE_COL_BASE   + STYLE_COL_COUNT )
+#define STYLE_FACE_BASE   ( STYLE_COL_BASE   + STYLE_COL_COUNT )   /* the face plane mirrors col */
+#define STYLE_VAR_BASE    ( STYLE_FACE_BASE  + STYLE_COL_COUNT )
 #define STYLE_SCALE_BASE  ( STYLE_VAR_BASE   + GUI_VAR_COUNT    )
 #define STYLE_SCALE_COUNT ( GUI_SCALE_COUNT * 3 )                  /* row, pad, gap per step */
 #define STYLE_SLOT_COUNT  ( STYLE_SCALE_BASE + STYLE_SCALE_COUNT )
@@ -100,6 +104,13 @@
 #define STYLE_COL_SLOT( look, role, phase ) \
     ( STYLE_COL_BASE + ( (u32)( look ) * GUI_ROLE_COUNT + (u32)( role ) ) * GUI_PHASE_COUNT \
                      + (u32)( phase ) )
+
+/* The face plane is the colour plane's exact shape one base along, so ONE offset expression
+   serves both -- a face cell and its colour cell are always the same distance apart, which is
+   what lets the fan collector below emit either simply by picking a base. */
+#define STYLE_FACE_SLOT( look, role, phase ) \
+    ( STYLE_FACE_BASE + ( (u32)( look ) * GUI_ROLE_COUNT + (u32)( role ) ) * GUI_PHASE_COUNT \
+                      + (u32)( phase ) )
 
 /* The load-bearing equivalence: the struct a theme is authored as and the flat run an override
    indexes are the SAME bytes.  Break the field order and this fires at compile time. */
@@ -170,6 +181,19 @@ typedef struct
 
 static style_stack_t s_col_stack;                     // push_style_color's stack
 static style_stack_t s_var_stack;                     // push_style_var's stack
+static style_stack_t s_face_stack;                    // push_style_face's stack
+
+/* The brush BODIES, per set.  Only the HANDLE lives in the slot space (gui_style_t.face), which is
+   the split that makes the face plane free: a handle is a u32 like every other slot, so push /
+   pop / next / set-switch / replay all work on it with no new machinery, while the brush itself --
+   24 bytes, registered once, named from many cells -- stays out of a run that is copied wholesale
+   on every set switch and every landing.
+
+   Indexed [set][handle - 1]; handle 0 is GUI_FACE_NONE and never resolves.  Per SET rather than
+   global so a kit's art is its own: a handle only means something inside the set that issued it,
+   exactly as a colour cell only means something inside the set that authored it. */
+static gui_brush_t s_brush  [ GUI_STYLE_SET_MAX ][ GUI_STYLE_BRUSH_MAX ];
+static u32         s_brush_n[ GUI_STYLE_SET_MAX ];
 
 /* The SEED stack -- push_style_seed's, and a different shape from the two above because a seed
    push is a different KIND of override.  A colour push replaces a value; a seed push replaces a
@@ -298,8 +322,9 @@ style_next( u32 slot, u32 val )
     rewrites off the 230-odd chrome read sites.
 ==============================================================================================*/
 
-static u16 style_col_slot( u8 look, u8 role, u8 phase ) { return (u16)STYLE_COL_SLOT( look, role, phase ); }
-static u16 style_var_slot( u32 var )                    { return (u16)( STYLE_VAR_BASE + var ); }
+static u16 style_col_slot ( u8 look, u8 role, u8 phase ) { return (u16)STYLE_COL_SLOT ( look, role, phase ); }
+static u16 style_face_slot( u8 look, u8 role, u8 phase ) { return (u16)STYLE_FACE_SLOT( look, role, phase ); }
+static u16 style_var_slot ( u32 var )                    { return (u16)( STYLE_VAR_BASE + var ); }
 
 /* One indexed load.  No projection, no override test, no fallback chain -- the installed value
    and any override live in the SAME slot, which is what the flat space bought.
@@ -309,6 +334,32 @@ static u16 style_var_slot( u32 var )                    { return (u16)( STYLE_VA
    had before, so the 230-odd chrome read sites never learned a third coordinate exists. */
 u32 style_col     ( u8 role, u8 phase )          { return style_read( style_col_slot( GUI_LOOK_NORMAL, role, phase ) ); }
 u32 style_col_look( u8 role, u8 phase, u8 look ) { return style_read( style_col_slot( look, role, phase ) ); }
+
+/* The FACE read: the brush a cell names, or NULL when the cell names none -- which is the answer
+   for every cell of every theme that authors no art, and is why "has this cell a face?" costs one
+   indexed load and a compare against zero on the way to the ordinary colour fill.
+
+   Returns a pointer INTO the set's pool.  Valid until the pool is rewritten (a landing, since a
+   source re-registers its brushes), which is well inside one frame's paint -- callers use it and
+   drop it, exactly as they use a resolved colour. */
+const gui_brush_t*
+style_face_look( u8 role, u8 phase, u8 look )
+{
+    if ( role >= GUI_ROLE_COUNT || phase >= GUI_PHASE_COUNT || look >= GUI_LOOK_COUNT )
+        return NULL;
+
+    u32 h = style_read( style_face_slot( look, role, phase ) );
+    if ( h == GUI_FACE_NONE || h > s_brush_n[ s_set_cur ] )
+        return NULL;                 /* no face, or a handle from a set that no longer owns it */
+
+    return &s_brush[ s_set_cur ][ h - 1u ];
+}
+
+const gui_brush_t*
+style_face( u8 role, u8 phase )
+{
+    return style_face_look( role, phase, GUI_LOOK_NORMAL );
+}
 
 f32 style_var( gui_style_var_t var )
 {
@@ -345,13 +396,17 @@ style_scale( gui_scale_t s, u32 field )
     return style_bits_f32( style_read( STYLE_SCALE_BASE + (u32)s * 3u + field ) );
 }
 
-/* Collect the slots a public color push spans.  Two independent "whole axis" selectors --
+/* Collect the slots a public grid push spans.  Two independent "whole axis" selectors --
    GUI_PHASE_ALL and GUI_LOOK_ALL -- so the fan is a rectangle over both, from one cell up to
    both planes of a whole phase row.  Written as one nested walk rather than a special case per
    selector, because the two axes behave identically here and a special case would only be a
-   second place for them to drift. */
+   second place for them to drift.
+
+   `base` picks WHICH grid: the colour plane or the face plane.  They have identical shape, so one
+   collector serves both and a face push is a colour push that landed in a different run -- there
+   is no second fan to keep in step. */
 static u8
-style_col_fan( u8 role, u8 phase, u8 look, u16* out )
+style_grid_fan( u32 base, u8 role, u8 phase, u8 look, u16* out )
 {
     if ( role >= GUI_ROLE_COUNT || phase > GUI_PHASE_ALL || look > GUI_LOOK_ALL ) return 0;
 
@@ -363,7 +418,7 @@ style_col_fan( u8 role, u8 phase, u8 look, u16* out )
     u8 n = 0;
     for ( u8 l = l0; l < l1; ++l )
         for ( u8 p = p0; p < p1; ++p )
-            out[ n++ ] = style_col_slot( l, role, p );
+            out[ n++ ] = (u16)( base + ( (u32)l * GUI_ROLE_COUNT + (u32)role ) * GUI_PHASE_COUNT + p );
 
     return n;
 }
@@ -372,9 +427,22 @@ static void
 style_push_color( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr )
 {
     u16 slot[ STYLE_FAN_MAX ];
-    u8  n = style_col_fan( (u8)role, (u8)phase, (u8)look, slot );
+    u8  n = style_grid_fan( STYLE_COL_BASE, (u8)role, (u8)phase, (u8)look, slot );
     if ( n ) style_push( &s_col_stack, slot, n, abgr );
 }
+
+/* Scope a FACE over the same rectangle a colour push scopes.  Its own stack (the house rule: one
+   stack per public pop verb) so an interleaved colour / face / var sequence unwinds correctly. */
+static void
+style_push_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look,
+                 gui_style_face_t face )
+{
+    u16 slot[ STYLE_FAN_MAX ];
+    u8  n = style_grid_fan( STYLE_FACE_BASE, (u8)role, (u8)phase, (u8)look, slot );
+    if ( n ) style_push( &s_face_stack, slot, n, face );
+}
+
+static void style_pop_face( u32 count ) { style_pop( &s_face_stack, count ); }
 
 void style_push_var( gui_style_var_t var, f32 value )
 {
@@ -396,8 +464,17 @@ static void
 style_next_color( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr )
 {
     u16 slot[ STYLE_FAN_MAX ];
-    u8  n = style_col_fan( (u8)role, (u8)phase, (u8)look, slot );
+    u8  n = style_grid_fan( STYLE_COL_BASE, (u8)role, (u8)phase, (u8)look, slot );
     for ( u8 i = 0; i < n; ++i ) style_next( slot[ i ], abgr );
+}
+
+static void
+style_next_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look,
+                 gui_style_face_t face )
+{
+    u16 slot[ STYLE_FAN_MAX ];
+    u8  n = style_grid_fan( STYLE_FACE_BASE, (u8)role, (u8)phase, (u8)look, slot );
+    for ( u8 i = 0; i < n; ++i ) style_next( slot[ i ], face );
 }
 
 static void
@@ -593,6 +670,7 @@ style_overrides_replay( void )
 {
     style_seed_replay();
     style_stack_replay( &s_col_stack );
+    style_stack_replay( &s_face_stack );
     style_stack_replay( &s_var_stack );
 
     for ( u32 i = 0; i < s_item_n; ++i )
@@ -688,6 +766,12 @@ style_install( u16 set )
 {
     s_store[ set ] = *style_active();   /* the ACTIVE (font-scaled) style, not the em=12 base */
 
+    /* Drop the set's brushes before its source runs.  A source re-registers its art on every
+       landing (that is what a landing IS -- re-declare the look), so without this the pool would
+       grow by the source's whole art set per theme / font / scale change and exhaust itself after
+       a handful.  Safe because the handles it hands back are re-issued in the same order. */
+    s_brush_n[ set ] = 0;
+
     if ( s_set_source[ set ] )
     {
         i32 saved    = s_installing;
@@ -746,7 +830,7 @@ style_new_frame( void )
 
     style_work_reseed();           /* working set <- installed layer */
 
-    s_col_stack.sp = s_var_stack.sp = 0;
+    s_col_stack.sp = s_var_stack.sp = s_face_stack.sp = 0;
     s_seed_sp = 0;
     s_next_n = s_item_n = 0;
 }
@@ -848,6 +932,31 @@ gui_style_edit( void )
 {
     u16 set = ( s_installing >= 0 ) ? (u16)s_installing : s_set_cur;
     return &s_store[ set ];
+}
+
+/* Register a brush in a set's pool and hand back the handle a face cell names.  Called from a
+   style SOURCE (so the set being filled is the one that gets it) or ad hoc against the current
+   set, mirroring gui_style_edit's rule exactly.
+
+   Registration is IDEMPOTENT PER LANDING, not cumulative: the pool is reset when a set is
+   installed, so a source that registers its art every landing -- which is the only sane way to
+   write one, since a landing is where a source re-declares its whole look -- does not leak a new
+   handle per theme change.  That reset is also why handles are stable to hold across a frame but
+   not across a landing: re-read them from the source that made them. */
+gui_style_face_t
+gui_style_brush_add( const gui_brush_t* b )
+{
+    if ( !b ) return GUI_FACE_NONE;
+
+    u16 set = ( s_installing >= 0 ) ? (u16)s_installing : s_set_cur;
+
+    bool have_room = s_brush_n[ set ] < GUI_STYLE_BRUSH_MAX;
+    ORB_ASSERT( have_room && "style brush pool exhausted -- raise GUI_STYLE_BRUSH_MAX" );
+    if ( !have_room )
+        return GUI_FACE_NONE;      /* a flat colour beats a corrupt handle */
+
+    s_brush[ set ][ s_brush_n[ set ] ] = *b;
+    return (gui_style_face_t)( ++s_brush_n[ set ] );   /* 1-based; 0 stays GUI_FACE_NONE */
 }
 
 /* Own the DEFAULT set.  Set 0 is what chrome and any unbracketed UI resolve through, so a
@@ -979,7 +1088,7 @@ col_item_bg_anim( gui_id_t id, gui_item_state_t st )
 bool
 style_stacks_empty( void )
 {
-    return s_col_stack.sp == 0 && s_var_stack.sp == 0 && s_seed_sp == 0
+    return s_col_stack.sp == 0 && s_var_stack.sp == 0 && s_face_stack.sp == 0 && s_seed_sp == 0
         && s_item_n == 0 && s_set_sp == 0;
 }
 

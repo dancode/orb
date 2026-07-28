@@ -86,7 +86,7 @@ gui_button_fill( const char* label )
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_fill( r, col_item_bg_anim( id, st ) );
+    draw_face_item_anim( r, id, st );
     draw_button_label( r, label );
 
     return st.clicked;
@@ -108,7 +108,7 @@ gui_small_button( const char* label )
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_fill( r, col_item_bg( st ) );
+    draw_face_item( r, st );
     draw_button_label( r, label );
 
     return st.clicked;
@@ -147,7 +147,7 @@ gui_arrow_button( const char* label, gui_dir_t dir )
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_fill( r, col_item_bg( st ) );
+    draw_face_item( r, st );
     draw_arrow( r, dir, COL_TEXT_IDLE );
 
     return st.clicked;
@@ -261,7 +261,7 @@ checkable_cell( gui_id_t id, const char* label )
 static void
 checkbox_face( gui_rect_t box, gui_item_state_t st, bool on )
 {
-    draw_fill( box, col_item_bg( st ) );
+    draw_face_item( box, st );
     draw_outline( box, WIN_BORDER, COL_BORDER_IDLE );
     /* Indicator: a 'v' tick (default), a filled disc, or an 'X' cross per GUI_VAR_CHECK_SHAPE. */
     if ( on ) draw_check_indicator( box, COL_MARK_IDLE );
@@ -371,7 +371,7 @@ gui_selectable( const char* label, bool* selected )
        at all.  Idle and unchosen still paints nothing, so the region background shows through. */
     bool on = ( selected && *selected );
     if ( on || st.hover || st.nav )
-        draw_fill( r, col_item_bg_look( st, on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL ) );
+        draw_face_item_look( r, st, on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL );
 
     /* Label, left-aligned with the standard padding -- read through the SAME plane as the fill,
        so a kit that recolours the selection can recolour what is written on it. */

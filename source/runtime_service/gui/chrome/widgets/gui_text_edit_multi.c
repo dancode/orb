@@ -132,7 +132,8 @@ medit_field_edit( gui_id_t id, char* buf, u32 bufsz )
     gui_item_state_t st = item_state( id, content, ITEM_FOCUSABLE );
 
     /* Field-tinted fill under the text: the input-box read on top of the child's own frame. */
-    draw_fill( content, st.focused ? COL_BG_ACTIVE : col_frame_bg( st, COL_BG_IDLE ) );
+    if ( st.focused ) draw_face( content, GUI_ROLE_BG, GUI_PHASE_ACTIVE );
+    else              draw_face_field( content, st, GUI_ROLE_BG, GUI_PHASE_IDLE, 0u, 0.0f );
 
     /* Content rect: the cell inset by WIDGET_PAD on left / right (the engine + paint work in this
        space, so neither sees the widget's padding); vertical extent unchanged -- rows start at

@@ -90,7 +90,7 @@ gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip 
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, col_item_bg_anim( id, st ) );
+    draw_face_item_anim( r, id, st );
     gui_draw_icon_in( toolbar_icon_rect( r ), icon, 0xFFFFFFFFu );
 
     if ( tooltip && tooltip[ 0 ] )

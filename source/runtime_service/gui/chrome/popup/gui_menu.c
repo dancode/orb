@@ -78,7 +78,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
 
     /* Row highlight on hover / nav (active tint while pressed). */
     if ( st.hover || st.nav )
-        draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, col_item_bg( st ) );
+        draw_face_item( r, st );
 
     /* A fixed check-mark gutter on the left so checkable and plain items align.  With
        GUI_MENU_CHECK_BOX (default) a bordered idle box is always drawn when the item has a
@@ -93,7 +93,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
         bool draw_box = ( style_shape( GUI_VAR_MENU_CHECK ) == GUI_MENU_CHECK_BOX );
         if ( draw_box )
         {
-            draw_push_rect_filled ( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, 0,0,1,1, 0, col_item_bg( st ) );
+            draw_face_item( ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, st );
             draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER_IDLE );
         }
         if ( *selected )
@@ -347,7 +347,7 @@ gui_menu_bar_begin( void )
        body's top and side edges, where a rounded corner would visibly clip against them. */
     f32 save_round = draw_rounding();
     draw_set_rounding( 0.0f );
-    draw_push_rect_filled( bar.x, bar.y, bar.w, bar.h, 0,0,1,1, 0, COL_TITLE_IDLE );
+    draw_face( bar, GUI_ROLE_TITLE, GUI_PHASE_IDLE );
     draw_set_rounding( save_round );
 
     /* Save the body pen: the strip is drawn outside the body flow, so the body resumes from here. */

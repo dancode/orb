@@ -265,6 +265,79 @@ build_art( void )
 }
 
 /*==============================================================================================
+    THE FACE PLANE -- the payoff, and the reason step 1 was worth building.
+
+    Everything above draws art the caller asked for BY NAME.  This installs art on the style GRID
+    instead, at (look, role, phase) cells, and then draws nothing at all: the windows, buttons,
+    checkboxes, menus, sliders and scrollbars you see change because every one of them already
+    paints its surface through the grid.  Not one widget below is edited, and there is no widget
+    below -- this is chrome, the shipped product set, restyled by a theme.
+
+    A style SOURCE is the right home for it (rather than a one-time poke) because a source is
+    re-run at every style landing, which is also when the brush pool is cleared -- so registering
+    art here is what keeps the handles valid across a theme, font, or scale change.
+==============================================================================================*/
+
+static bool s_skin = false;   /* is the art theme installed? */
+
+static void
+art_theme_source( void* user )
+{
+    UNUSED( user );
+
+    gui_style_t* st = gui()->style_edit();
+    if ( s_art.frame == GUI_SPRITE_NONE )
+        return;                       /* art not registered yet -- leave the theme's colours */
+
+    /* Register this theme's art, then name the handles from cells.  Tinting is how ONE piece of
+       art serves a whole phase ramp: the same button face, lit for hover and warmed for press,
+       so the widget set keeps reacting exactly as it did on flat colour. */
+    gui_style_face_t panel = gui()->style_brush_add(
+        &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_art.frame,  .scale = 1.0f } );
+    gui_style_face_t title = gui()->style_brush_add(
+        &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_art.ribbon, .scale = 2.0f } );
+
+    gui_style_face_t face_idle = gui()->style_brush_add(
+        &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f } );
+    gui_style_face_t face_hot  = gui()->style_brush_add(
+        &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f,
+                          .col_a = GUI_COLOR( 0xFF, 0xE0, 0xB0, 0xFF ) } );
+    gui_style_face_t face_act  = gui()->style_brush_add(
+        &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f,
+                          .col_a = AMBER } );
+    gui_style_face_t grab      = gui()->style_brush_add(
+        &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f,
+                          .col_a = GUI_COLOR( 0xC0, 0xD8, 0xFF, 0xFF ) } );
+
+    /* Container surfaces. */
+    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = panel;
+    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = panel;
+    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = title;
+    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_TITLE ][ GUI_PHASE_DIM    ] = title;
+
+    /* Control faces, across the phase ramp -- this row is what reaches buttons, checkboxes, combo
+       fields, menu rows, tree nodes, input boxes and toolbar buttons all at once. */
+    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_BG ][ GUI_PHASE_IDLE   ] = face_idle;
+    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_BG ][ GUI_PHASE_HOT    ] = face_hot;
+    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ] = face_act;
+    st->face[ GUI_LOOK_SELECT ][ GUI_ROLE_BG ][ GUI_PHASE_IDLE   ] = face_act;
+
+    /* Knobs and thumbs: slider handles and both scrollbar grabs. */
+    for ( u32 p = 0; p < GUI_PHASE_COUNT; ++p )
+        st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_GRAB ][ p ] = grab;
+}
+
+/* Install / remove the art theme.  style_source_set runs a landing immediately, so the whole UI
+   changes on the frame the box is ticked -- and changes back just as completely, because a face
+   cell reverts to 0 and the colour underneath it was never touched. */
+static void
+skin_apply( bool on )
+{
+    s_skin = on;
+    gui()->style_source_set( on ? art_theme_source : NULL, NULL );
+}
+
+/*==============================================================================================
     Live controls -- the brush the specimen panels are filled with
 ==============================================================================================*/
 
@@ -534,6 +607,18 @@ window_controls( void )
 
         gui()->separator_text( "debug" );
         gui()->checkbox( "slice guides", &s_guides );
+
+        /* THE demo.  Tick it and every window, button, checkbox, combo, menu row, slider and
+           scrollbar in this application is drawn from art -- through the style grid, with no
+           widget code involved and none of chrome edited. */
+        gui()->separator_text( "the face plane" );
+        bool skin = s_skin;
+        if ( gui()->checkbox( "skin chrome with art", &skin ) )
+            skin_apply( skin );
+
+        gui()->text( "installs brushes on style cells;" );
+        gui()->text( "every widget already paints through" );
+        gui()->text( "the grid, so all of them change." );
 
         gui()->separator();
         gui()->text( "scale multiplies the slice insets," );

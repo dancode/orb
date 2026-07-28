@@ -477,7 +477,7 @@ table_draw_header( gui_table_t* t )
     draw_set_rounding( 0.0f );
 
     /* Full-width opaque header background (also the cover for rows scrolled under the header). */
-    draw_push_rect_filled( t->outer_rect.x, hy, t->outer_rect.w, hh, 0, 0, 0, 0, 0, COL_TITLE_IDLE );
+    draw_face( ( gui_rect_t ){ t->outer_rect.x, hy, t->outer_rect.w, hh }, GUI_ROLE_TITLE, GUI_PHASE_IDLE );
 
     i8 sort_col = (i8)( t->persist->sort_col - 1 );   /* local is 0-based; -1 = unsorted */
 

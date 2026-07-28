@@ -21,7 +21,7 @@
     Naming: stock_ is the WIDGET SET; style_ is the LOOK it paints from (style_col over the
     GUI_ROLE_* x GUI_PHASE_* grid).  ONE vocabulary -- the same cells chrome names.
 
-    Three constituents, three faces of the same role:
+    Four constituents, four faces of the same role:
 
     stock/gui_stock_widgets.c  -- the public stock_* renders: fill EXACTLY the rect they are
                                      handed, and resolve every look through style_col /
@@ -37,6 +37,13 @@
                                      indicator, rule, close, frame): emitters that resolve
                                      their own look from the live style, over the draw
                                      unit's parameter-pure emitters
+    stock/gui_face.c          -- the FACE painters: fill a rect for a style CELL, using the
+                                     cell's brush when the theme authored one and its flat
+                                     colour when it did not.  The paint half of the face
+                                     plane -- style resolves a brush and never emits, this
+                                     emits one; every widget's surface fill goes through it,
+                                     which is what lets a theme install art and have the
+                                     whole widget set pick it up untouched
 
     Cross-unit declarations live in stock/gui_stock_internal.h (the umbrella slot between flow
     and chrome); the public stock_* surface is the GUI_STOCK band of gui_api.h, and the style
@@ -44,6 +51,7 @@
 
 ==============================================================================================*/
 
+#include <stdio.h>    /* GUI_WARN_ONCE (rect/gui_rect.h) -- every unit root provides it */
 #include <math.h>     /* floorf -- the symbol glyph metrics */
 #include <string.h>
 
@@ -67,9 +75,12 @@
 
 /*============================================================================================*/
 
+/* Symbol style first: gui_face.c paints through gui_draw_frame, and the widget renders paint
+   through both. */
+#include "runtime_service/gui/stock/gui_symbol_style.c"
+#include "runtime_service/gui/stock/gui_face.c"
 #include "runtime_service/gui/stock/gui_stock_widgets.c"
 #include "runtime_service/gui/stock/gui_adornment.c"
-#include "runtime_service/gui/stock/gui_symbol_style.c"
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory

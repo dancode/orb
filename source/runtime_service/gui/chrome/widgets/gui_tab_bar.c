@@ -116,7 +116,7 @@ gui_tab_bar_begin( const char* id_str, gui_tab_bar_flags_t flags )
        in the body colour so it reads as joined to the content below. */
     f32 save_round = draw_rounding();
     draw_set_rounding( 0.0f );
-    draw_fill( strip, COL_TITLE_IDLE );
+    draw_face( strip, GUI_ROLE_TITLE, GUI_PHASE_IDLE );
     draw_push_rect_filled( strip.x, strip.y + strip.h - WIN_BORDER, strip.w, WIN_BORDER,
                            0, 0, 1, 1, 0, COL_BORDER_IDLE );
     draw_set_rounding( save_round );

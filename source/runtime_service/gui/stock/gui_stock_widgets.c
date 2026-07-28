@@ -102,7 +102,7 @@ stock_visible_text( const char* label, char* buf, u32 bufsz )
 void
 gui_stock_panel( gui_rect_t r )
 {
-    gui_draw_frame( r, STYLE_COL( PANEL, DIM ), STYLE_COL( BORDER, DIM ), WIN_BORDER );
+    draw_face_frame( r, GUI_ROLE_PANEL, GUI_PHASE_DIM, STYLE_COL( BORDER, DIM ), WIN_BORDER );
 }
 
 /* A text run seated in r per align.  The one-role render; a colored variant is just
@@ -139,7 +139,7 @@ gui_stock_button( gui_rect_t r, const char* label )
     gui_id_t          id = item_id( label );       /* the keyed id for the animation damper */
     gui_comp_button_t b  = gui_comp_button( label, r );
 
-    draw_fill( r, col_item_bg_anim( id, b.state ) );
+    draw_face_item_anim( r, id, b.state );
 
     char vis[ 128 ];
     stock_button_label( r, stock_visible_text( label, vis, sizeof vis ) );
@@ -160,7 +160,7 @@ gui_stock_check( gui_rect_t r, const char* id_str, bool* v )
 {
     gui_comp_check_t c = gui_comp_check( id_str, r, v );
 
-    gui_draw_frame( c.box, col_item_bg( c.state ), STYLE_COL( BORDER, IDLE ), WIN_BORDER );
+    draw_face_item_frame( c.box, c.state, STYLE_COL( BORDER, IDLE ), WIN_BORDER );
     if ( *v )
         gui_draw_check_mark( gui_rect_pad( c.box, c.box.w * 0.22f ), STYLE_COL( MARK, IDLE ) );
 
@@ -186,8 +186,8 @@ gui_stock_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
     gui_style_phase_t ph = gui_item_phase( s.state );
 
     gui_rect_t track = gui_rect_align( r, r.w, r.h * 0.30f, GUI_ALIGN_CENTER );
-    gui_draw_frame( track, col_frame_bg( s.state, STYLE_COL( ACCENT, DIM ) ),
-                    STYLE_COL( BORDER, DIM ), 1.0f );
+    draw_face_field( track, s.state, GUI_ROLE_ACCENT, GUI_PHASE_DIM,
+                     STYLE_COL( BORDER, DIM ), 1.0f );
     gui_rect_t fill = gui_rect_pad( track, 1.0f );
     fill.w *= s.frac;
     if ( fill.w > 0.0f )
@@ -195,7 +195,7 @@ gui_stock_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
 
     /* Handle: the component's x + width, the render's height (80% of r, centered). */
     gui_rect_t handle = { s.handle.x, r.y + r.h * 0.10f, s.handle.w, r.h * 0.80f };
-    gui_draw_frame( handle, col_grab( s.state ), STYLE_COL( BORDER, IDLE ), 1.0f );
+    draw_face_grab( handle, s.state, STYLE_COL( BORDER, IDLE ), 1.0f );
 
     return s.changed;
 }
@@ -207,7 +207,7 @@ gui_stock_meter( gui_rect_t r, f32 frac, u32 fill_abgr )
 {
     frac = ( frac < 0.0f ) ? 0.0f : ( frac > 1.0f ) ? 1.0f : frac;
 
-    gui_draw_frame( r, STYLE_COL( ACCENT, DIM ), STYLE_COL( BORDER, DIM ), 1.0f );
+    draw_face_frame( r, GUI_ROLE_ACCENT, GUI_PHASE_DIM, STYLE_COL( BORDER, DIM ), 1.0f );
     gui_rect_t fill = gui_rect_pad( r, 1.0f );
     fill.w *= frac;
     if ( fill.w > 0.0f )
@@ -224,8 +224,8 @@ gui_stock_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* 
     gui_comp_cycle_t cy = gui_comp_cycle( id_str, r, idx, count );
 
     /* Each cap is a control face and lifts like one (col_item_bg, border held) -- see stock_check. */
-    gui_draw_frame( cy.prev_box, col_item_bg( cy.prev.state ), STYLE_COL( BORDER, IDLE ), WIN_BORDER );
-    gui_draw_frame( cy.next_box, col_item_bg( cy.next.state ), STYLE_COL( BORDER, IDLE ), WIN_BORDER );
+    draw_face_item_frame( cy.prev_box, cy.prev.state, STYLE_COL( BORDER, IDLE ), WIN_BORDER );
+    draw_face_item_frame( cy.next_box, cy.next.state, STYLE_COL( BORDER, IDLE ), WIN_BORDER );
     gui_draw_chevron( gui_rect_pad( cy.prev_box, cy.prev_box.w * 0.30f ), GUI_DIR_LEFT,  2.0f, STYLE_COL( TEXT, IDLE ) );
     gui_draw_chevron( gui_rect_pad( cy.next_box, cy.next_box.w * 0.30f ), GUI_DIR_RIGHT, 2.0f, STYLE_COL( TEXT, IDLE ) );
 
@@ -249,10 +249,10 @@ gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
     /* Face lifts along BG (focus pinned to ACTIVE, the captured face), border carries focus alone
        on BORDER[ACTIVE] -- the same two rules chrome's input_text uses, so the pair really is one
        look driven by one component. */
-    gui_draw_frame( r,
-                    st.focused ? STYLE_COL( BG, ACTIVE ) : col_item_bg( st ),
-                    st.focused ? STYLE_COL( BORDER, ACTIVE ) : STYLE_COL( BORDER, IDLE ),
-                    WIN_BORDER );
+    if ( st.focused )
+        draw_face_frame( r, GUI_ROLE_BG, GUI_PHASE_ACTIVE, STYLE_COL( BORDER, ACTIVE ), WIN_BORDER );
+    else
+        draw_face_item_frame( r, st, STYLE_COL( BORDER, IDLE ), WIN_BORDER );
 
     /* Selection band and caret read the same cells chrome's edit_paint uses: a selection is a
        pressed FACE (BG[ACTIVE]) and a caret is TEXT, neither of which is an accent -- ACCENT is
@@ -284,8 +284,7 @@ gui_stock_selectable( gui_rect_t r, const char* label, bool* selected )
 
     bool on = ( selected && *selected );
     if ( on || s.state.hover || s.state.nav )
-        gui_draw_rect( r.x, r.y, r.w, r.h,
-                       col_item_bg_look( s.state, on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL ) );
+        draw_face_item_look( r, s.state, on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL );
 
     char        vis[ 128 ];
     const char* text = stock_visible_text( label, vis, sizeof vis );

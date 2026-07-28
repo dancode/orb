@@ -171,7 +171,7 @@ draw_drop_ring( gui_rect_t r )
 
 /* Child box chrome (flow/gui_layout_child.c invokes these around its region): the body
    fill under the region clips at child_begin, the border over the bar tracks at child_end. */
-void draw_child_bg    ( gui_rect_t r ) { draw_fill   ( r, COL_PANEL_DIM ); }
+void draw_child_bg    ( gui_rect_t r ) { draw_face( r, GUI_ROLE_PANEL, GUI_PHASE_DIM ); }
 void draw_child_border( gui_rect_t r ) { draw_outline( r, WIN_BORDER, COL_BORDER_IDLE ); }
 
 /* Paint a bold line over each hot edge of an outline so it is obvious that the border is

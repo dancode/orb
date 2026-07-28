@@ -32,7 +32,7 @@ gui_collapsing_header( const char* label )
     if ( st.clicked ) hs->open = !hs->open;
 
     /* Clickable bar with hover/active feedback, an arrow box on the left, then the label. */
-    draw_fill( r, col_item_bg( st ) );
+    draw_face_item( r, st );
 
     gui_rect_t arrow = { r.x, r.y, r.h, r.h };          /* a square the height of the bar */
     draw_collapse_arrow( arrow, !hs->open, COL_TEXT_IDLE );    /* closed -> points right */
@@ -71,7 +71,7 @@ gui_tree_node( const char* label )
 
     /* No framed bar: tint only on hover / active / nav (like selectable), so a tree is a list of rows. */
     if ( st.hover || st.active || st.nav )
-        draw_fill( r, col_item_bg( st ) );
+        draw_face_item( r, st );
 
     gui_rect_t arrow = { r.x, r.y, r.h, r.h };          /* fold arrow in a square at the left */
     draw_collapse_arrow( arrow, !hs->open, COL_TEXT_IDLE );    /* closed -> points right */

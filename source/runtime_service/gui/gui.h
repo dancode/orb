@@ -731,6 +731,22 @@ typedef struct gui_style_t
        colour slot, byte-identical to what it was before the SELECT plane existed. */
     u32 col[ GUI_LOOK_COUNT ][ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 
+    /* SKIN: the FACE plane -- the same 2x12x4 grid again, one gui_style_face_t handle per cell,
+       naming a brush from this set's brush pool (gui_style_brush_add) that REPLACES the flat
+       colour fill for that cell.  0 (GUI_FACE_NONE) everywhere by default, which means "just use
+       col" -- so a theme that authors no art behaves exactly as it did and pays one indexed load
+       it already had the cache line for.
+
+       This plane is why the brush exists.  A colour cell can only ever say "fill it with this";
+       a face cell can say "fill it with this nine-slice", and because it is addressed by the SAME
+       (look, role, phase) coordinate every render already resolves, a theme installing faces
+       restyles every widget that paints through the grid -- stock, chrome, and a user's own --
+       without one of them being edited.  The handle (not the brush body) lives in the slot space
+       so that push_style_face / next_style_face / a set switch are the SAME machinery a colour
+       push uses, with nothing new to keep in step; the bodies live beside the store, since a
+       brush is registered once and named many times. */
+    u32 face[ GUI_LOOK_COUNT ][ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
+
     /* METRICS + SKIN scalars, indexed by gui_style_var_t -- the push_style_var vocabulary.
        Authored in px at em=12 and rescaled by gui_style_apply; the enum below documents each
        slot.  An array rather than named fields because the enum IS the field list: one order,
@@ -1290,6 +1306,17 @@ typedef enum
 /* A tint of 0 means UNTINTED (white), not "invisible": a sprite brush that had to spell out
    GUI_COLOR(255,255,255,255) to show its own colours would make the common case the loud one.
    Pass an explicit alpha in col_a to fade a sprite. */
+/* A brush REGISTERED in a style set's pool, named by a face cell.  0 = no face (the cell falls
+   back to its flat colour).  Registration is per style SET, so a kit's art and chrome's are
+   separate pools and a handle only ever means something inside the set that issued it. */
+typedef u32 gui_style_face_t;
+#define GUI_FACE_NONE 0u
+
+/* Brushes one style set can hold.  Small on purpose: a face pool is a THEME's art -- a frame, a
+   button face, a track, a thumb, a header -- not an asset library.  A kit needing more art than
+   this is describing sprites, and should hand them to widgets directly. */
+#define GUI_STYLE_BRUSH_MAX 32u
+
 typedef struct
 {
     u8              kind;     // gui_brush_kind_t

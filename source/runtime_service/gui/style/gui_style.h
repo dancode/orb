@@ -43,6 +43,15 @@ u32 style_col     ( u8 role, u8 phase );
 u32 style_col_look( u8 role, u8 phase, u8 look );
 f32 style_var( gui_style_var_t var );
 
+/* The FACE read -- the same (look, role, phase) coordinate into the parallel brush-handle plane,
+   resolved to the brush itself.  NULL means the cell names no face, which is every cell of a
+   theme that authors no art: the caller falls back to style_col and nothing has changed.  Style
+   still never paints -- these RESOLVE a brush; the painters that consume one live in stock
+   (stock/gui_face.c), on the far side of the purity line, exactly like the colour projections'
+   painters do. */
+const gui_brush_t* style_face     ( u8 role, u8 phase );
+const gui_brush_t* style_face_look( u8 role, u8 phase, u8 look );
+
 /* A GUI_CLASS_SHAPE var read back as its enum -- a rounding, and the ONE spelling for it.  Never
    compare a shape var with >= 0.5f (a two-value assumption) or cast it truncating (0.999999 is a
    legal slot value and truncates to the wrong pick).  See the definition for the four idioms
@@ -197,6 +206,10 @@ f32 style_scale( gui_scale_t s, u32 field );
 /* style stack push/pop by slot (gui_style_core.c). */
 void style_push_var( gui_style_var_t var, f32 value );
 void style_pop_var ( u32 count );
+
+/* Register a brush in a set's pool; the handle is what a face cell names.  Reset per landing --
+   a source re-registers its art each time it is asked to install (see the definition). */
+gui_style_face_t gui_style_brush_add( const gui_brush_t* b );
 
 /* True while no ambient style scope is open (the volatile-replay precondition). */
 bool style_stacks_empty( void );

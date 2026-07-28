@@ -100,7 +100,7 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
        Docked nodes tile against each other at right angles, so the node draws square -- a rounded
        corner here would cut a gap into the seam between neighbours. */
     draw_set_rounding( 0.0f );
-    draw_push_rect_filled( win->x, win->y, win->w, win->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, COL_PANEL_IDLE );
+    draw_face( ( gui_rect_t ){ win->x, win->y, win->w, win->h }, GUI_ROLE_PANEL, GUI_PHASE_IDLE );
 
     /* FUTURE: docked windows reserve no menu-bar row -- GUI_WIN_MENUBAR is ignored on the docked
        path (the free-float path in window_begin_ex honors it via mb_h). */

@@ -126,6 +126,14 @@ void gui_next_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 a
 void gui_push_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr ) { style_push_color( role, phase, look, abgr ); }
 void gui_next_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr ) { style_next_color( role, phase, look, abgr ); }
 
+/* The FACE verbs -- the same four shapes over the parallel plane.  Their own stack (one per pop
+   verb, the house rule) so an interleaved colour / face / var sequence unwinds correctly; the
+   look-qualified push has no pop of its own for the same reason its colour twin has none. */
+void gui_push_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face ) { style_push_face( role, phase, GUI_LOOK_NORMAL, face ); }
+void gui_pop_style_face ( u32 count )                                                             { style_pop_face( count ); }
+void gui_next_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face ) { style_next_face( role, phase, GUI_LOOK_NORMAL, face ); }
+void gui_push_style_face_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, gui_style_face_t face ) { style_push_face( role, phase, look, face ); }
+
 void gui_push_style_var( gui_style_var_t var, f32 value )   { style_push_var( var, value ); }
 void gui_pop_style_var ( u32 count )                          { style_pop_var( count ); }
 void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( var, value ); }

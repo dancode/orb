@@ -1463,6 +1463,54 @@ typedef struct gui_api_s
     u32               ( *style_color_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
     gui_style_t*      ( *style_edit       )( void );
 
+    /*==========================  the FACE plane -- art where a colour was  ==========================*/
+
+    /* A face is a BRUSH installed on a (look, role, phase) cell: the same coordinate the colour
+       grid uses, in a parallel plane, replacing that cell's flat fill with a gradient or a
+       nine-slice.  This is the payoff of the brush -- because a face is addressed by the
+       coordinate every render already resolves, installing one restyles every widget that paints
+       through the grid (stock, chrome, and a user's own) with none of them edited.
+
+       Two steps.  Register the art in the set's pool, then name the handle from cells:
+
+           void my_theme( void* user )                       // a style source
+           {
+               gui_style_t*     st = gui()->style_edit();
+               gui_style_face_t f  = gui()->style_brush_add(
+                   &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = my_button_art } );
+
+               st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_BG ][ GUI_PHASE_IDLE ] = f;
+           }
+
+       Register inside a style SOURCE, not once at startup: the pool is cleared whenever a set is
+       installed (a theme, font or scale change), and a source is precisely the thing re-run at
+       that moment.  A handle is stable within a frame, not across a landing.
+
+       A cell with no face is 0 (GUI_FACE_NONE) and falls straight through to its colour, so a
+       theme that authors no art is unchanged and pays one indexed load.  A face SUPPRESSES the
+       border its cell would otherwise have been given -- authored art carries its own edge.
+
+       push / pop / next mirror the colour verbs exactly, including the GUI_PHASE_ALL and
+       GUI_LOOK_ALL fans, and pop their own stack so an interleaved colour / face / var sequence
+       unwinds correctly.  draw_face is the painter: fill a rect for a cell, using its face if it
+       has one and its colour if it does not -- the seam every converted widget paints through, and
+       the one a user widget should paint through to be skinnable by whoever installs the theme. */
+
+    gui_style_face_t ( *style_brush_add )( const gui_brush_t* brush );
+
+    void ( *push_style_face      )( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face );
+    void ( *pop_style_face       )( u32 count );
+    void ( *next_style_face      )( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face );
+    void ( *push_style_face_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, gui_style_face_t face );
+
+    /* The resolved read (NULL = the cell names no face) and the painter over it. */
+    const gui_brush_t* ( *style_face      )( gui_style_role_t role, gui_style_phase_t phase );
+    const gui_brush_t* ( *style_face_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
+
+    void ( *draw_face      )( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase );
+    void ( *draw_face_look )( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
+    void ( *draw_face_item )( gui_rect_t r, gui_item_state_t st );
+
     /* The schema, described by the engine that owns it -- so a style editor WALKS the six axes
        (role, phase, look, seed, ramp, var) instead of keeping parallel tables in step with enums
        it does not own.  Display names for each, plus what kind of number a var holds
