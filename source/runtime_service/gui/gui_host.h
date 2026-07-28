@@ -614,6 +614,8 @@ void gui_tab_item_end( void );
 /* widget - formatting */
 void gui_indent( f32 w );
 void gui_unindent( f32 w );
+void gui_box_begin( const char* label, gui_style_role_t role );
+void gui_box_end( void );
 void gui_separator_text( const char* label );
 void gui_help_marker( const char* str );
 

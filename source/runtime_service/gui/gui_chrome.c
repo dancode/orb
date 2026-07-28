@@ -64,6 +64,7 @@ MOD_USE_APP;
 #include "runtime_service/gui/chrome/widgets/gui_widget_slider.c"
 #include "runtime_service/gui/chrome/widgets/gui_widget_numeric.c"
 #include "runtime_service/gui/chrome/widgets/gui_tab_bar.c"
+#include "runtime_service/gui/chrome/widgets/gui_box.c"
 
 /* Table -- independent optional feature (no window dependency). */
 #include "runtime_service/gui/chrome/table/gui_table.c"
@@ -108,6 +109,7 @@ chrome_unit_mem_bytes( void )
     b += (u32)( sizeof( s_dock_drag ) + sizeof( s_dock_tab_drag ) + sizeof( s_dock_float_req ) );
     b += (u32)( sizeof( s_menubar_sink ) + sizeof( s_menubar_saved_clip )
               + sizeof( s_tooltip_save ) );
+    b += (u32)( sizeof( s_box ) + sizeof( s_box_sp ) );   /* the box decorator's nesting stack */
     return b;
 }
 

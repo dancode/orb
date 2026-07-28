@@ -245,6 +245,12 @@ Three roles, one contract (the units carry the same names):
   setting them to 0 makes the library snap down the same code path -- there is no animation
   branch. Faces CROSS-FADE rather than blend, since art does not interpolate: `face_span`
   collapses the mix onto the two cells the item lies between and alpha-composites them.
+- MEASURED extents are a different shape of motion and use a different damper. A natural column
+  width or a box height is resolved from LAST frame's measure (the engine is single-pass), so a
+  change is one wrong frame followed by a snap -- which reads as a glitch, not as motion.
+  `GUI_VAR_ANIM_SIZE` eases them through `gui_anim_track`, which unlike `gui_anim_f32` ALWAYS
+  stamps its slot: a value that sits still between changes would otherwise have its history
+  evicted and snap anyway. It adopts on first sight, so nothing grows in from zero.
 
 A widget (the chrome unit) is the only combiner: it asks composition for a rect, hands it to
 behavior, hands both results to presentation. The public `gui_item`/`canvas`/`draw_*` verbs
@@ -472,6 +478,13 @@ measurement lives with the draw family (`text_size`). Placement queries stay unp
 - `region_begin/region_end` -- fixed caller-owned rect, no chrome; position is app-owned per frame.
 - `push_layout_overlay( rect )` / `pop_layout` -- start a fresh layout frame over an arbitrary
   screen rect (no reservation). THE bridge from rect composition to real widgets.
+- `box_begin( label, role )` / `box_end` -- NOT a container: a DECORATOR. No region, no clip, no
+  scroll -- it insets the content column by one pad, paints `role` behind whatever is emitted,
+  and gives the column back. Reach for it wherever a card behind a few widgets would otherwise
+  have meant opening a `child_begin` for the rect alone. Its height comes from last frame's
+  measure (the surface must be pushed before its content), eased by `GUI_VAR_ANIM_SIZE`; the
+  layout always reserves max(painted, measured), so nothing below is ever drawn over. Stack and
+  columns only.
 
 ## Regions, scroll, and clipping -- the invariants
 

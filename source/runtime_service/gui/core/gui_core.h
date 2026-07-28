@@ -427,6 +427,10 @@ f32  gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active );
 void gui_anim_start( gui_id_t id, f32 duration );
 f32  gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 f32  gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed );
+/* The MEASURED-quantity damper: always stamps, so a value that sits still between changes still
+   has a history to ease from (the two above evict at rest and would snap).  Adopts on first
+   sight -- an appearance lands at its size rather than growing into it. */
+f32  gui_anim_track( gui_id_t anim_id, f32 target, f32 speed );
 gui_anim4_t gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed );
 
 /* The timer slot payload -- shared so the feat_* kit (interact/gui_feature.c) can PEEK a

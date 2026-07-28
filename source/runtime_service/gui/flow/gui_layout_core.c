@@ -208,6 +208,15 @@ quant_ceil( f32 v )
     usable instead of collapsed.  Flow columns and grid COLUMNS feed back; grid ROWS have no
     vertical natural signal and still collapse (see THE OVERLOADED UNIT, gui.h).
 
+    THE LAG IS DAMPED, not merely tolerated.  Undamped, a column whose widest item changes is
+    one frame too narrow and then SNAPS -- a single wrong frame, which is exactly the shape the
+    eye reads as a glitch rather than as motion.  Easing the resolved width through the shared
+    size damper (GUI_VAR_ANIM_SIZE) does not make the measure any less stale; it makes the
+    staleness legible, because a width that travels to its new value looks like the layout
+    deciding.  Rate 0 restores the snap for the whole library with no branch anywhere, exactly
+    as the interaction rates do.  The damped value is re-quantized: every other width on this
+    lattice is, and a track that settles half a quantum off would drag its whole row with it.
+
 ==============================================================================================*/
 
 typedef struct
@@ -218,15 +227,23 @@ typedef struct
 
 } nat_track_t;
 
-/* The column's slot, rolled to the current frame (stable <- last frame's accum, once).  A
-   transient sub-layout has no region id; its frame-order nav_region stands in -- stable while
-   the UI is stable, and a mis-key after a structural change just re-measures for a frame. */
-static nat_track_t*
-nat_track_touch( layout_frame_t* f, u32 col )
+/* The id a natural column's measure and its size damper both hang off: (region, install
+   ordinal, column).  A transient sub-layout has no region id; its frame-order nav_region stands
+   in -- stable while the UI is stable, and a mis-key after a structural change just re-measures
+   for a frame. */
+static gui_id_t
+nat_track_id( layout_frame_t* f, u32 col )
 {
     gui_id_t base = ( f->region_id != GUI_ID_NONE ) ? f->region_id
                                                     : id_combine( 0x4E415455u, f->nav_region );
-    nat_track_t* t = GUI_STATE( nat_track_t, id_combine( base, ( f->tmpl.seq << 3 ) | col ) );
+    return id_combine( base, ( f->tmpl.seq << 3 ) | col );
+}
+
+/* The column's slot, rolled to the current frame (stable <- last frame's accum, once). */
+static nat_track_t*
+nat_track_touch( layout_frame_t* f, u32 col )
+{
+    nat_track_t* t = GUI_STATE( nat_track_t, nat_track_id( f, col ) );
 
     u32 now = gui_frame_index();
     if ( t->frame != now ) { t->stable = t->accum; t->accum = 0.0f; t->frame = now; }
@@ -246,20 +263,33 @@ nat_track_note( layout_frame_t* f, u32 col, f32 natural_w )
 }
 
 /* Substitute every natural (== 0) track in `tracks` with last frame's measure (floored at the
-   minimum cell width) and record which columns feed the measure back.  Runs at install, before
-   the resolve, so layout_tracks_resolve and indent's reflow only ever see px for these tracks. */
+   minimum cell width, eased through the size damper) and record which columns feed the measure
+   back.  Runs at install, before the resolve, so layout_tracks_resolve and indent's reflow only
+   ever see px for these tracks.
+
+   The damper is armed only when the theme asks for one: at rate 0 the id is never handed over,
+   so no slot is probed and the resolve is the bare measure it always was. */
 static void
 nat_tracks_substitute( layout_frame_t* f, f32* tracks, u32 n )
 {
     f->tmpl.seq      = ++f->tmpl_seq;
     f->tmpl.nat_mask = 0;
+
+    f32 rate = style_var( GUI_VAR_ANIM_SIZE );
+
     for ( u32 i = 0; i < n; ++i )
     {
         if ( tracks[ i ] != 0.0f ) continue;
         f->tmpl.nat_mask |= (u8)( 1u << i );
         f32 m  = nat_track_touch( f, i )->stable;
         f32 mn = WIDGET_MIN_W;
-        tracks[ i ] = ( m > mn ) ? m : mn;
+        f32 w  = ( m > mn ) ? m : mn;
+        /* anim_TRACK, not anim_f32: a settled column width holds for thousands of frames, and the
+           resting damper evicts its slot -- leaving nothing to ease from at the one moment that
+           matters.  See gui_anim_track in core/gui_anim.c. */
+        if ( rate > 0.0f )
+            w = quant_ceil( gui_anim_track( id_combine( nat_track_id( f, i ), 0x5A31u ), w, rate ) );
+        tracks[ i ] = w;
     }
 }
 

@@ -2143,6 +2143,32 @@ typedef struct gui_api_s
     void ( *indent    )( f32 w );
     void ( *unindent  )( f32 w );
 
+    /* box_begin / box_end -- a styled SURFACE behind a run of widgets, sized to whatever they
+       turned out to be.  The decorator that sits between a widget's own face (a thing, so it has
+       a rect) and child_begin (a scroll region, with a clip, a scroll link and a layout frame --
+       far too much machine to put a card behind three labels).  A box owns no region: it insets
+       the content column by one pad, paints `role` behind, and gives the column back.
+
+           gui()->box_begin( "summary", GUI_ROLE_PANEL );
+           gui()->text( "Frames" );
+           gui()->slider_float( "budget", &ms, 0.0f, 33.0f );
+           gui()->box_end();
+
+       The surface is painted BEFORE its content, because painting order is emit order -- so its
+       HEIGHT comes from last frame's measure (x, w and the top are exact: a box spans the
+       content column at the pen).  That frame of lag is what GUI_VAR_ANIM_SIZE eases, so a box
+       whose content grows is seen growing rather than seen wrong once; the layout always
+       reserves the larger of painted and measured, so nothing below is ever drawn over.  A first
+       appearance therefore paints no surface for exactly one frame.
+
+       `role` picks the row of the style grid the surface comes from (PANEL for a card, BG for a
+       control-coloured well), so a theme that authored a FACE for that cell skins every box in
+       the build without touching a call site.  The box is an id scope like a child -- two boxes
+       may each hold an "ok".  STACK and COLUMNS only: neither a grid nor a pack has a content
+       height to measure, so a box in one is an inert scope.  Always balance; nesting caps at 8. */
+    void ( *box_begin )( const char* label, gui_style_role_t role );
+    void ( *box_end   )( void );
+
     /* Tab bar -- an in-window tabbed content switcher (the ImGuiTabBar analogue): a strip of
        clickable chips with only the selected tab's body emitted below it.  Distinct from docking,
        which tabs whole windows into a dock node -- this tabs SECTIONS of one window's body.

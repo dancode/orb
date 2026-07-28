@@ -753,6 +753,70 @@ panel_surface( void )
 }
 
 /*==============================================================================================
+    panel_box -- the DECORATOR: a surface behind a run of widgets
+
+    Every other surface in this sandbox belongs to a THING -- a widget's face, a window body --
+    because a surface needs a rect and only a thing has one.  A group of widgets is not a thing;
+    it is whatever got emitted between two calls, and its rect does not exist until the second.
+
+    box_begin / box_end is that missing rect.  It owns no region, no clip, and no scroll (the
+    reason it is not just child_begin), and it paints through the same style ROLE the rest of the
+    library paints through, so a theme that authors a FACE for that cell skins every box at once.
+
+    The row of buttons below adds and removes widgets INSIDE the box, which is the whole point:
+    the box has to find its own height, and it finds it from last frame's measure.  Drag the size
+    rate to 0 in the control window and the same edit becomes a snap after one wrong frame --
+    which is exactly the artifact GUI_VAR_ANIM_SIZE exists to cover.
+==============================================================================================*/
+
+static i32  s_box_rows = 3;
+static f32  s_row_val[ 8 ] = { 0.2f, 0.5f, 0.8f, 0.3f, 0.6f, 0.9f, 0.4f, 0.7f };
+static bool s_box_nested_on = true;
+
+static void
+panel_box( void )
+{
+    gui()->separator_text( "box -- a styled surface sized to whatever it ends up containing" );
+
+    /* Natural (0) tracks -- so this row is also the size damper's other half on show: the two
+       buttons size to their labels through the very feedback GUI_VAR_ANIM_SIZE eases. */
+    gui()->row_cols( 0.0f, ( f32[] ){ 0, 0, 1, GUI_END } );
+    if ( gui()->button( "add row" )    ) ++s_box_rows;
+    if ( gui()->button( "remove row" ) ) --s_box_rows;
+    gui()->text( "" );
+    if ( s_box_rows < 0 ) s_box_rows = 0;
+    if ( s_box_rows > 8 ) s_box_rows = 8;
+
+    gui()->stack();
+
+    gui()->box_begin( "summary", GUI_ROLE_PANEL );
+    {
+        gui()->text( "PANEL role -- the container surface" );
+        for ( i32 i = 0; i < s_box_rows; ++i )
+        {
+            char name[ 32 ];
+            snprintf( name, sizeof( name ), "row %d", i );
+            gui()->slider_float( name, &s_row_val[ i ], 0.0f, 1.0f );
+        }
+    }
+    gui()->box_end();
+
+    /* A second box, nested, on the control-surface row of the same grid -- so the two are the
+       same call with one argument changed, which is the argument for a role in the first place. */
+    gui()->box_begin( "nested", GUI_ROLE_PANEL );
+    {
+        gui()->text( "a box inside a box:" );
+        gui()->box_begin( "inner", GUI_ROLE_BG );
+        {
+            gui()->text( "BG role -- the control surface" );
+            gui()->checkbox( "each is its own id scope", &s_box_nested_on );
+        }
+        gui()->box_end();
+    }
+    gui()->box_end();
+}
+
+/*==============================================================================================
     The control window
 ==============================================================================================*/
 
@@ -957,6 +1021,7 @@ window_stage( void )
         panel_widget();
         panel_motion();
         panel_surface();
+        panel_box();
     }
     gui()->window_end();
 }

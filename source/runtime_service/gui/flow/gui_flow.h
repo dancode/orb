@@ -256,6 +256,10 @@ gui_rect_t cell_next_w( f32 natural_w, f32 h );    /* THE universal emit seam   
 gui_rect_t cell_next  ( f32 h );                   /* fill the track cell                     */
 void       cell_reach ( f32 right_x );             /* stretch the content high-water mark     */
 
+/* Narrow (or, negative, widen) the content column and re-resolve the template against it -- the
+   mechanism under indent / unindent, exported for the box decorator, which insets both sides. */
+void       layout_inset( f32 left, f32 right );
+
 /* Pure geometry for one labeled ("pair") row: split `cell` into a label rect and a control
    rect for the given side / track units.  NONE lays the control across the cell with the label
    trailing at label_w; LEFT / RIGHT lay two resolved tracks (control floored at min_ctrl,

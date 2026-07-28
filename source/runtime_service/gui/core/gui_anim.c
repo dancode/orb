@@ -77,6 +77,46 @@ gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed )
 }
 
 /*==============================================================================================
+    gui_anim_track -- ease a value that SITS STILL between changes
+
+    The two above are built for values that return to a rest: a hover weight, a press weight.
+    Their slot is deliberately dropped once the value settles AT rest, because reseeding from
+    rest reproduces it exactly, so the eviction is invisible and idle UI holds nothing.
+
+    A MEASURED quantity is the opposite shape and that rule breaks it.  A natural column's width
+    or a box's height settles and then stays there for thousands of frames -- with rest == target
+    (gui_anim_f32) the slot stops being stamped, ages out, and the next change reseeds from the
+    NEW value, which is a snap.  The damper is not wrong; it simply has no history left to ease
+    FROM.  That is not a tuning problem, it is why an eased size can look like it never eased.
+
+    So this one ALWAYS stamps.  It costs one retained float per animated quantity for as long as
+    the caller keeps asking -- the honest price of easing something that is otherwise static --
+    and it never ramps in from nothing: with no history it ADOPTS the target, so a first
+    appearance lands at its size instead of growing into it.
+==============================================================================================*/
+
+f32
+gui_anim_track( gui_id_t anim_id, f32 target, f32 speed )
+{
+    const gui_anim_f32_t* peek = GUI_STATE_PEEK( gui_anim_f32_t, anim_id );
+    f32 current = peek ? peek->current : target;   /* no history: adopt, never ramp in */
+
+    if ( fabsf( target - current ) >= 0.001f )
+    {
+        f32 dt = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
+        current += ( target - current ) * ( 1.0f - expf( -speed * dt ) );
+        g_ctx->retained.wants_redraw = true;   /* value changed this frame -- keep frames coming */
+    }
+    else
+    {
+        current = target;   /* settled: snap exactly onto the target */
+    }
+
+    GUI_STATE( gui_anim_f32_t, anim_id )->current = current;
+    return current;
+}
+
+/*==============================================================================================
     gui_anim4 -- four independent damper channels in ONE keyed slot
 
     The storage unit for any animated widget value.  gui_anim_f32_from keys one probe per channel, so

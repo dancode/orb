@@ -619,6 +619,7 @@ typedef enum
     GUI_VAR_ANIM_HOT,       // rate the hover / nav highlight fades in and out
     GUI_VAR_ANIM_ACTIVE,    // rate the pressed state fades -- faster: a press must feel immediate
     GUI_VAR_ANIM_SELECT,    // rate a selection / toggle crosses to the SELECT plane
+    GUI_VAR_ANIM_SIZE,      // rate a MEASURED extent eases to a new size (natural track, box height)
 
     GUI_VAR_COUNT,          // var count -- not a var
 

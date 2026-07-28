@@ -76,6 +76,7 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
     [ GUI_VAR_ANIM_HOT        ] = { "Hover Rate",      GUI_CLASS_RATE   },
     [ GUI_VAR_ANIM_ACTIVE     ] = { "Press Rate",      GUI_CLASS_RATE   },
     [ GUI_VAR_ANIM_SELECT     ] = { "Select Rate",     GUI_CLASS_RATE   },
+    [ GUI_VAR_ANIM_SIZE       ] = { "Size Rate",       GUI_CLASS_RATE   },
 
     [ GUI_VAR_CHECK_SHAPE     ] = { "Check Shape",     GUI_CLASS_SHAPE  },
     [ GUI_VAR_BULLET_SHAPE    ] = { "Bullet Shape",    GUI_CLASS_SHAPE  },
@@ -248,10 +249,14 @@ var_is_pixels( u8 cls )
         /* 3. RATIOS -- unitless */ \
         [ GUI_VAR_DISABLED_ALPHA  ] = 0.5f, \
         /* 4. RATES -- Hz-like damper speeds; 0 snaps.  Press is quicker than hover on purpose: \
-              a hover is an invitation and may drift, a press is an answer and must land. */ \
+              a hover is an invitation and may drift, a press is an answer and must land. \
+              SIZE is quicker still: it is not expressing anything, it is covering the frame of \
+              lag a single-pass engine owes on any MEASURED extent.  A snap there reads as a \
+              glitch; a fast settle reads as the layout deciding. */ \
         [ GUI_VAR_ANIM_HOT        ] = 10.0f, \
         [ GUI_VAR_ANIM_ACTIVE     ] = 20.0f, \
         [ GUI_VAR_ANIM_SELECT     ] = 12.0f, \
+        [ GUI_VAR_ANIM_SIZE       ] = 25.0f, \
         /* 5. SHAPE PICKS */ \
         [ GUI_VAR_CHECK_SHAPE     ] = GUI_CHECK_TICK, \
         [ GUI_VAR_BULLET_SHAPE    ] = GUI_BULLET_DISC, \

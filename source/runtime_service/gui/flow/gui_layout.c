@@ -372,31 +372,36 @@ gui_pack_wrap( void )
     only -- a grid / pack carries its own resolved geometry and ignores the reflow.
 ==============================================================================================*/
 
+/* Narrow the content column by `left` on one side and `right` on the other, closing the open row
+   first and re-resolving the template against what is left.  The mechanism indent has always
+   been -- indent is the one-sided case -- exported because a DECORATOR insets both sides at once
+   (chrome/widgets/gui_box.c) and re-deriving that here would be the same three lines twice.
+   Negative values widen, which is how a scope undoes itself.  Flow layouts only. */
 void
-gui_indent( f32 w )
+layout_inset( f32 left, f32 right )
 {
     layout_frame_t* f = lf();
     if ( f->mode == GUI_MODE_GRID ) return;   /* flow / pack only -- a grid carries a fixed matrix */
-    if ( w <= 0.0f ) w = WIDGET_H;       /* default step: one row height (aligns under the arrow) */
 
     layout_row_break( f );               /* close the current row before shifting the column */
-    f->content_x += w;
-    f->content_w -= w;
+    f->content_x += left;
+    f->content_w -= left + right;
     if ( f->content_w < 0.0f ) f->content_w = 0.0f;
     layout_reflow( f );
 }
 
 void
+gui_indent( f32 w )
+{
+    if ( w <= 0.0f ) w = WIDGET_H;       /* default step: one row height (aligns under the arrow) */
+    layout_inset( w, 0.0f );
+}
+
+void
 gui_unindent( f32 w )
 {
-    layout_frame_t* f = lf();
-    if ( f->mode == GUI_MODE_GRID ) return;   /* flow / pack only, mirroring indent */
     if ( w <= 0.0f ) w = WIDGET_H;
-
-    layout_row_break( f );
-    f->content_x -= w;
-    f->content_w += w;
-    layout_reflow( f );
+    layout_inset( -w, 0.0f );
 }
 
 /*==============================================================================================
