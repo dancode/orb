@@ -288,6 +288,36 @@ gui_draw_brush( gui_rect_t r, const gui_brush_t* brush )
     draw_fill_brush( r, brush );
 }
 
+/*==============================================================================================
+    Ambient corner rounding, published.
+
+    The radius is AMBIENT rather than a parameter because it applies to shapes pushed by verbs
+    that have no business growing one -- draw_texture_in, draw_brush, draw_frame.  The backend
+    resolves a rounded rect as an SDF surface (gui.h, the effect band), so this is also what
+    rounds a TEXTURED quad: the image samples underneath the coverage the shader computes, which
+    is a thing the old tessellated corner fan could not do at all.
+
+    Save and restore around the shapes it should affect -- it is a plain ambient value, not a
+    stack, and leaving it set leaks into whatever the caller draws next:
+
+        f32 save = gui()->draw_rounding();
+        gui()->draw_set_rounding( 8.0f );
+        gui()->draw_texture_in( r, tex, 0xFFFFFFFFu );
+        gui()->draw_set_rounding( save );
+==============================================================================================*/
+
+void
+gui_draw_set_rounding( f32 r )
+{
+    draw_set_rounding( r );
+}
+
+f32
+gui_draw_rounding( void )
+{
+    return draw_rounding();
+}
+
 /* Font atlas access -- bridges the font registry (gui_font.h / gui_render.h) to the RGBA texture
    primitives above, so a caller can preview a font's live GPU atlas (a texture like any other) via
    image_texture / draw_texture_in without reaching into the backend's internal font_slot_t. */

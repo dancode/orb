@@ -117,77 +117,6 @@ static struct
 } s_tess_stats;
 
 /*==============================================================================================
-    Cached corner geometry -- the rounded-rect optimization.
-
-    A rounded rectangle's four corners are the same quarter circle, only mirrored and translated.
-    So we sample the unit quarter arc (cos / sin at GUI_ROUND_SEGS+1 angles across 0..90 deg)
-    exactly once, then every corner of every rounded rect this run is that one table scaled by the
-    radius and offset to the corner centre with per-corner axis signs -- the cached unit arc is the
-    basis of the emit transform.  No sin / cos runs per rect; only once, on first use.
-
-    Segment count adapts to the radius (round_rect_segs): a small widget corner is visually
-    indistinguishable at 2 segments, so it needs far fewer triangles than a large window corner.
-    The count is kept to a divisor of GUI_ROUND_SEGS so a coarser arc is just the full table
-    STRIDED (k * GUI_ROUND_SEGS/segs) -- a full quarter at lower resolution with no extra trig,
-    so the single cached table still serves every tier.
-==============================================================================================*/
-
-#define GUI_ROUND_SEGS 8                                  /* max segments per corner (finest tier) */
-#define GUI_ROUND_PTS  ( 4 * ( GUI_ROUND_SEGS + 1 ) )   /* perimeter point count at the finest tier */
-
-static f32  s_arc_cos[ GUI_ROUND_SEGS + 1 ];
-static f32  s_arc_sin[ GUI_ROUND_SEGS + 1 ];
-static bool s_arc_ready;
-
-static void
-round_arc_init( void )
-{
-    if ( s_arc_ready ) return;
-    for ( u32 k = 0; k <= GUI_ROUND_SEGS; ++k )
-    {
-        f32 a = 1.5707963f * (f32)k / (f32)GUI_ROUND_SEGS;   /* 0 .. pi/2 */
-        s_arc_cos[ k ] = cosf( a );
-        s_arc_sin[ k ] = sinf( a );
-    }
-    s_arc_ready = true;
-}
-
-/* Segments per corner for a given radius -- restricted to divisors of GUI_ROUND_SEGS so the
-   cached unit arc can be strided (see the note above).  Small corners drop to 2 segments (a
-   visually clean bevel at a few pixels), mid radii to 4, large to the full 8. */
-static u32
-round_rect_segs( f32 r )
-{
-    if ( r <= 3.0f ) return 2;
-    if ( r <= 6.0f ) return 4;
-    return GUI_ROUND_SEGS;   /* 8 -- large (window) corners */
-}
-
-/* Build the rounded-rect perimeter, clockwise, into out[] (capacity GUI_ROUND_PTS).  Each corner
-   reuses the cached unit arc -- strided by GUI_ROUND_SEGS/segs so `segs` (a divisor of
-   GUI_ROUND_SEGS) gives a full quarter at that resolution -- scaled by r and translated to its
-   centre; the straight edges fall out between adjacent corners' shared endpoints.  Returns the
-   point count, 4 * (segs + 1). */
-static u32
-round_rect_perimeter( f32 x, f32 y, f32 w, f32 h, f32 r, u32 segs, gui_vec2_t* out )
-{
-    round_arc_init();
-    u32 st = GUI_ROUND_SEGS / segs;          /* table stride; segs divides GUI_ROUND_SEGS */
-    f32 xl = x + r,       yt = y + r;          /* near-corner arc centres */
-    f32 xr = x + w - r,   yb = y + h - r;      /* far-corner arc centres  */
-    u32 n = 0;
-    for ( u32 k = 0; k <= segs; ++k )   /* top-right: up   -> right */
-        out[ n++ ] = v2( xr + r * s_arc_sin[ k * st ], yt - r * s_arc_cos[ k * st ] );
-    for ( u32 k = 0; k <= segs; ++k )   /* bottom-right: right -> down */
-        out[ n++ ] = v2( xr + r * s_arc_cos[ k * st ], yb + r * s_arc_sin[ k * st ] );
-    for ( u32 k = 0; k <= segs; ++k )   /* bottom-left: down  -> left */
-        out[ n++ ] = v2( xl - r * s_arc_sin[ k * st ], yb + r * s_arc_cos[ k * st ] );
-    for ( u32 k = 0; k <= segs; ++k )   /* top-left: left   -> up   */
-        out[ n++ ] = v2( xl - r * s_arc_cos[ k * st ], yt - r * s_arc_sin[ k * st ] );
-    return n;
-}
-
-/*==============================================================================================
     Tessellation helpers -- mirrors of the draw_push_* functions in gui_emit_draw.c, but writing
     into s_tess instead of s_draw.  These are the backend half of the command-list split.
     Called from tess_dispatch; not called from anywhere else.
@@ -516,54 +445,157 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     tess_rect_filled( x + w - t, y + t,     t, h-2*t, 0,0,1,1, 0, abgr );
 }
 
-/* Tessellate a rounded filled rect as a triangle fan from the centre over the cached perimeter.
-   abgr has alpha pre-baked.  The origin is grid-snapped like tess_rect_filled so frames stay crisp. */
+/*==============================================================================================
+    The SDF surface -- every rounded shape, in four quads.
+
+    A rounded box used to be tessellated: a cached quarter arc fanned into ~37 vertices with hard
+    stair-stepped edges, and a texture could not ride on it at all.  Here the CPU emits only the
+    QUADRANTS and the fragment shader resolves the boundary exactly (gui.h, the effect band).
+
+    Why four quads and not one.  The fragment needs `|p| - c`, where p is its offset from the
+    shape centre.  The absolute value folds at the centre lines, and a linear interpolator cannot
+    reproduce a fold -- but within ONE QUADRANT the sign of p is fixed, so |p| is affine there and
+    the hardware interpolates it exactly.  Four quads is the cheapest partition on which the
+    interpolation is correct, and it is still less than half the vertices the arc fan cost.  The
+    quadrants meet at the centre lines where both sides evaluate to the same value, so there is
+    no seam.
+
+    The geometry is grown by `pad` past the box so the falloff has somewhere to land: a feathered
+    edge (and a shadow's whole soft skirt) is OUTSIDE the shape's own rect.  The BOUNDARY still
+    sits exactly on the authored rect -- pad moves the triangles, never the shape.
+
+    A RING carves its interior out: the band it paints is only `border` px wide, and rasterizing
+    the whole inside of a window frame at zero coverage is a real cost on a large panel.  Each
+    quadrant then emits an L (two quads) around the hole instead of one, which is where the 8/32
+    upper bound below comes from.
+
+    Every SDF surface samples the same atlas as everything else and carries its mode per VERTEX,
+    so it merges into whatever GPU command is already open: a soft shadow behind a panel costs
+    a batch split of zero.
+==============================================================================================*/
+
+/* Emit one SDF surface.  `r` is the corner radius, `feather` the total width of the falloff band
+   straddling the boundary (0 = hard edge), `border` the band width for GUI_FX_RING.  UVs span the
+   AUTHORED box and are clamped over the grown skirt, so a textured rounded quad cannot bleed into
+   its atlas neighbour where the coverage has already faded to nothing. */
 static void
-tess_round_rect_filled( f32 x, f32 y, f32 w, f32 h, f32 r, u32 abgr )
+tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, gui_fx_mode_t mode,
+             f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
+    if ( w <= 0.0f || h <= 0.0f )
+        return;
+
+    /* Origin grid-snapped like tess_rect_filled: the shape's straight edges must stay crisp, and
+       only its corners want sub-pixel resolution. */
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
 
-    static gui_vec2_t per[ GUI_ROUND_PTS ];   /* single-threaded backend; avoids a stack frame */
-    u32 m = round_rect_perimeter( x, y, w, h, r, round_rect_segs( r ), per );
+    f32 hx = w * 0.5f, hy = h * 0.5f;
+    f32 lim = ( hx < hy ) ? hx : hy;
+    if ( r > lim ) r = lim;                       /* a radius past half the short side is a capsule */
+    if ( r < 0.0f ) r = 0.0f;
+    if ( feather < 0.0f ) feather = 0.0f;
+    if ( feather > GUI_FX_FEATHER_MAX ) feather = GUI_FX_FEATHER_MAX;
+    if ( border  > GUI_FX_BORDER_MAX  ) border  = GUI_FX_BORDER_MAX;
 
-    u32 nv = m + 1, ni = m * 3;                   /* centre vertex + one fan triangle per edge */
+    /* tex_idx 0 = solid-color convention, same as tess_rect_filled: the atlas white texel. */
     f32 wu, wv;
-    gui_draw_vert_t* v;
-    u16* idx;
-    u16  base;
-    if ( !tess_prim_begin( nv, ni, &wu, &wv, &v, &idx, &base ) )
+    if ( tex_idx == 0 )
+    {
+        tex_idx = res_atlas_idx();
+        res_atlas_white_uv( &wu, &wv );
+        u0 = u1 = wu;
+        v0 = v1 = wv;
+    }
+
+    f32 pad = feather * 0.5f + 1.0f;              /* room for the falloff, plus a pixel of slack */
+    f32 ehx = hx + pad, ehy = hy + pad;           /* grown half-extent (geometry only)           */
+    f32 cx  = x + hx,   cy  = y + hy;
+    f32 kx  = hx - r,   ky  = hy - r;             /* the centre rect: |p| - k is the effect coord */
+    u32 fx  = gui_fx_pack( mode, r, feather, border );
+
+    /* The per-quadrant coverage, in quadrant-local |p| space: one box normally, two forming an L
+       when a RING has an interior worth skipping.
+
+       Sizing the hole is the whole subtlety.  It must lie entirely at d <= -(border + feather/2)
+       -- one pixel of it inside the painted band would notch the frame -- and the binding case is
+       its CORNER, which pokes diagonally toward the arc.  So the hole is the largest axis-aligned
+       box inscribed in the shape ERODED by that reach, whose corner sits on the eroded arc at 45
+       degrees.  Erode until nothing is left and there is simply no hole. */
+    f32 lo_x[ 2 ] = { 0.0f, 0.0f }, lo_y[ 2 ] = { 0.0f, 0.0f };
+    f32 hi_x[ 2 ] = { ehx,  0.0f }, hi_y[ 2 ] = { ehy,  0.0f };
+    u32 nbox = 1;
+
+    if ( mode == GUI_FX_RING )
+    {
+        f32 reach = border + feather * 0.5f;
+        f32 er    = r - reach;                    /* the eroded shape's radius */
+        if ( er < 0.0f ) er = 0.0f;
+        f32 hix = ( hx - reach - er ) + er * 0.70710678f;
+        f32 hiy = ( hy - reach - er ) + er * 0.70710678f;
+        if ( hix > 0.0f && hiy > 0.0f )
+        {
+            lo_x[ 0 ] = hix;  lo_y[ 0 ] = 0.0f;  hi_x[ 0 ] = ehx;  hi_y[ 0 ] = ehy;   /* side  */
+            lo_x[ 1 ] = 0.0f; lo_y[ 1 ] = hiy;  hi_x[ 1 ] = hix;  hi_y[ 1 ] = ehy;   /* end   */
+            nbox = 2;
+        }
+    }
+
+    u32 nv = 4u * nbox * 4u, ni = 4u * nbox * 6u;
+    if ( s_tess.vert_count + nv > GUI_MAX_VERTS || s_tess.idx_count + ni > GUI_MAX_IDX )
+    {
+        s_tess.overflow = true;
+        return;
+    }
+    if ( !tess_ensure_gpu_cmd( tex_idx ) )
         return;
 
-    v[ 0 ] = ( gui_draw_vert_t ){ x + w * 0.5f, y + h * 0.5f, wu, wv, abgr };   /* fan centre */
-    for ( u32 i = 0; i < m; ++i )
-        v[ 1 + i ] = ( gui_draw_vert_t ){ per[ i ].x, per[ i ].y, wu, wv, abgr };
+    f32 ulo = ( u0 < u1 ) ? u0 : u1, uhi = ( u0 < u1 ) ? u1 : u0;
+    f32 vlo = ( v0 < v1 ) ? v0 : v1, vhi = ( v0 < v1 ) ? v1 : v0;
 
-    u32 k = 0;
-    for ( u32 i = 0; i < m; ++i )
+    static const f32 sx[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };   /* quadrant, CCW from top-left */
+    static const f32 sy[ 4 ] = { -1.0f, -1.0f, 1.0f, 1.0f };
+    /* Corner of one quad, in that quad's own lo/hi box: (0,0) nearest the centre. */
+    static const f32 qu[ 4 ] = { 0.0f, 1.0f, 1.0f, 0.0f };
+    static const f32 qv[ 4 ] = { 0.0f, 0.0f, 1.0f, 1.0f };
+
+    u16              base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
+    gui_draw_vert_t* v    = &s_tess.verts[ s_tess.vert_count ];
+    u16*             idx  = &s_tess.indices[ s_tess.idx_count ];
+    u32              n    = 0;                     /* quad counter across quadrants x boxes */
+
+    for ( u32 q = 0; q < 4; ++q )
     {
-        idx[ k++ ] = base;
-        idx[ k++ ] = (u16)( base + 1 + i );
-        idx[ k++ ] = (u16)( base + 1 + ( i + 1 ) % m );
+        for ( u32 k = 0; k < nbox; ++k, ++n )
+        {
+            for ( u32 c = 0; c < 4; ++c )
+            {
+                /* ax/ay ARE |p| at this corner -- the quadrant sign is applied only to the
+                   position, which is why the effect coord needs no abs() in the shader. */
+                f32 ax = lo_x[ k ] + qu[ c ] * ( hi_x[ k ] - lo_x[ k ] );
+                f32 ay = lo_y[ k ] + qv[ c ] * ( hi_y[ k ] - lo_y[ k ] );
+                f32 px = cx + sx[ q ] * ax, py = cy + sy[ q ] * ay;
+                f32 tu = uhi > ulo ? u0 + ( u1 - u0 ) * ( px - x ) / w : u0;
+                f32 tv = vhi > vlo ? v0 + ( v1 - v0 ) * ( py - y ) / h : v0;
+                if ( tu < ulo ) tu = ulo;  if ( tu > uhi ) tu = uhi;
+                if ( tv < vlo ) tv = vlo;  if ( tv > vhi ) tv = vhi;
+                v[ n * 4 + c ] = ( gui_draw_vert_t ){ px, py, tu, tv, abgr, ax - kx, ay - ky, fx };
+            }
+            u16 b = (u16)( base + n * 4 );
+            idx[ n * 6 + 0 ] = b + 0; idx[ n * 6 + 1 ] = b + 1; idx[ n * 6 + 2 ] = b + 2;
+            idx[ n * 6 + 3 ] = b + 0; idx[ n * 6 + 4 ] = b + 2; idx[ n * 6 + 5 ] = b + 3;
+        }
     }
-    tess_prim_commit( nv, ni );
+
+    s_tess.vert_count += nv;
+    s_tess.idx_count  += ni;
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
 }
 
-/* Forward decl: the AA polyline stroker is defined further down but the rounded outline below
-   reuses it to stroke the perimeter loop. */
-static void tess_stroke_poly_aa( const gui_vec2_t* pts, u32 n, f32 thickness, f32 center_off,
-                                 bool closed, u32 abgr );
-
-/* Tessellate a rounded hollow rect by stroking the cached perimeter as a closed antialiased loop.
-   INSIDE alignment keeps the band within the rect, matching the square tess_rect_outline. */
-static void
-tess_round_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 r, f32 t, u32 abgr )
-{
-    static gui_vec2_t per[ GUI_ROUND_PTS ];
-    u32 m          = round_rect_perimeter( x, y, w, h, r, round_rect_segs( r ), per );
-    f32 center_off = stroke_center_offset( GUI_STROKE_INSIDE, t * 0.5f );
-    tess_stroke_poly_aa( per, m, t, center_off, true, abgr );
-}
+/* The antialiasing band a shape gets when nothing asked for a softer one -- one pixel, centred on
+   the boundary.  Named because it is the difference between "rounded" and "rounded and crisp",
+   and every rounded fill and frame in the library goes through it. */
+#define TESS_FX_AA  1.0f
 
 /* Tessellate a solid triangle into s_tess. */
 static void
@@ -939,26 +971,42 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
 
         switch ( c->type )
         {
+            /* A square rect keeps the one-quad fast path: it is pixel-aligned by construction, so
+               there is no edge for an SDF to resolve and nothing to gain.  Rounding is what turns
+               it into a surface -- and routing the TEXTURED case through as well is what finally
+               lets a rounded quad carry an image, which the arc fan never could. */
             case GUI_CMD_RECT_FILLED:
                 if ( c->rect.rounding > 0.0f )
-                    tess_round_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
-                                            c->rect.rounding, c->rect.abgr );
+                    tess_fx_box( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
+                                 c->rect.rounding, TESS_FX_AA, 0.0f, GUI_FX_BOX,
+                                 c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
+                                 c->rect.tex_idx, c->rect.abgr );
                 else
                     tess_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
                                       c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
                                       c->rect.tex_idx, c->rect.abgr );
                 break;
 
+            /* RING measures from the OUTER boundary inward, matching the square path's INSIDE
+               band (and the closed AA stroke this replaced). */
             case GUI_CMD_RECT_OUTLINE:
                 if ( c->rect_outline.rounding > 0.0f )
-                    tess_round_rect_outline( c->rect_outline.x, c->rect_outline.y,
-                                             c->rect_outline.w, c->rect_outline.h,
-                                             c->rect_outline.rounding, c->rect_outline.t,
-                                             c->rect_outline.abgr );
+                    tess_fx_box( c->rect_outline.x, c->rect_outline.y,
+                                 c->rect_outline.w, c->rect_outline.h,
+                                 c->rect_outline.rounding, TESS_FX_AA, c->rect_outline.t,
+                                 GUI_FX_RING, 0, 0, 1, 1, 0, c->rect_outline.abgr );
                 else
                     tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
                                        c->rect_outline.w, c->rect_outline.h,
                                        c->rect_outline.t, c->rect_outline.abgr );
+                break;
+
+            /* One surface with a wide feather.  What used to be six stacked rects pretending to
+               be a gaussian is now the exact same falloff the corners use, only spread out. */
+            case GUI_CMD_SHADOW:
+                tess_fx_box( c->shadow.x, c->shadow.y, c->shadow.w, c->shadow.h,
+                             c->shadow.rounding, c->shadow.feather, 0.0f, GUI_FX_BOX,
+                             0, 0, 1, 1, 0, c->shadow.abgr );
                 break;
 
             case GUI_CMD_TRIANGLE:

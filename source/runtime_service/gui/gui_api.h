@@ -548,6 +548,22 @@ typedef struct gui_api_s
 
     void ( *draw_brush )( gui_rect_t r, const gui_brush_t* brush );
 
+    /* Ambient corner rounding for the rect-shaped verbs (draw_rect / draw_brush / draw_frame /
+       draw_texture_in / draw_shadow).  Ambient rather than a parameter because it applies to
+       verbs that have no business growing one, and because a container wants to round everything
+       drawn inside it without every call site knowing.  A rounded rect resolves as an SDF surface
+       (gui.h, the effect band), which is what lets a TEXTURED quad round at all.
+
+       It is a plain value, not a stack -- save and restore around the shapes it should affect:
+
+           f32 save = gui()->draw_rounding();
+           gui()->draw_set_rounding( 8.0f );
+           gui()->draw_texture_in( r, tex, 0xFFFFFFFFu );
+           gui()->draw_set_rounding( save ); */
+
+    void ( *draw_set_rounding )( f32 r );
+    f32  ( *draw_rounding     )( void );
+
     /* Font atlas access -- the bindless index + pixel size backing a loaded font id, for previewing
        its live GPU atlas through image_texture / draw_texture_in above (0 / {0,0} if empty). */
     u32        ( *font_atlas_idx  )( u32 font_id );
@@ -566,10 +582,12 @@ typedef struct gui_api_s
        the GUI_VAR_*_SHAPE pick and push_style_var scopes it.)
 
        Pipeline note: draw_gradient is an exact one-quad blend via per-vertex color
-       (GUI_CMD_RECT_GRADIENT); draw_shadow (layered rings) is still an approximation that a
-       future multi-corner-color command would make exact, without changing this surface.  Angles
-       for arc / pie / progress are radians, screen-space (y
-       down).  `thickness` is the stroke width for the stroked forms. */
+       (GUI_CMD_RECT_GRADIENT), and draw_shadow / draw_round_rect (uniform radius) are exact SDF
+       surfaces -- four quads whose fragment shader resolves the boundary analytically, so their
+       edges are antialiased at any radius and softness and they merge into the batch already
+       open.  Only genuinely per-corner radii still walk a tessellated perimeter.  Angles for
+       arc / pie / progress are radians, screen-space (y down).  `thickness` is the stroke width
+       for the stroked forms. */
 
     void ( *draw_check_mark        )( gui_rect_t box, u32 col );
     void ( *draw_arrow             )( gui_rect_t box, gui_dir_t dir, u32 col );

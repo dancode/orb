@@ -378,6 +378,14 @@ step_cmd_bounds( const gui_cmd_t* c )
                                    c->rect_outline.w, c->rect_outline.h };
         case GUI_CMD_RECT_GRADIENT:
             return ( gui_rect_t ){ c->gradient.x, c->gradient.y, c->gradient.w, c->gradient.h };
+        /* The soft skirt is real painted area, so the highlight has to cover it -- a shadow
+           outlined at its box alone looks like the highlight is the thing that is wrong. */
+        case GUI_CMD_SHADOW:
+        {
+            f32 g = c->shadow.feather * 0.5f;
+            return ( gui_rect_t ){ c->shadow.x - g, c->shadow.y - g,
+                                   c->shadow.w + 2.0f * g, c->shadow.h + 2.0f * g };
+        }
         case GUI_CMD_TRIANGLE:
         {
             f32 x0 = c->tri.ax, x1 = c->tri.ax, y0 = c->tri.ay, y1 = c->tri.ay;

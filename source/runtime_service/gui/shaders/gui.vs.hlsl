@@ -24,16 +24,22 @@ struct gui_pc_t
 
 struct vs_in_t
 {
-    [[vk::location( 0 )]] float2 pos   : POSITION;
-    [[vk::location( 1 )]] float2 uv    : TEXCOORD0;
-    [[vk::location( 2 )]] float4 color : COLOR0;    // fed by a UNORM4 attrib -> normalized float4
+    [[vk::location( 0 )]] float2 pos      : POSITION;
+    [[vk::location( 1 )]] float2 uv       : TEXCOORD0;
+    [[vk::location( 2 )]] float4 color    : COLOR0;      // UNORM4 attrib -> normalized float4
+    [[vk::location( 3 )]] float2 fx_coord : TEXCOORD1;    // effect coord: |p| - c, shape-local px
+    [[vk::location( 4 )]] uint   fx       : TEXCOORD2;    // packed effect word; low nibble 0 = none
 };
 
+// nointerpolation on fx: the effect word names the SHAPE, which is constant over it -- an
+// interpolated bit field would blend a radius into a mode.
 struct vs_out_t
 {
-    float4 sv_pos : SV_Position;
-    float4 color  : COLOR0;
-    float2 uv     : TEXCOORD0;
+    float4                  sv_pos   : SV_Position;
+    float4                  color    : COLOR0;
+    float2                  uv       : TEXCOORD0;
+    float2                  fx_coord : TEXCOORD1;
+    nointerpolation uint    fx       : TEXCOORD2;
 };
 
 vs_out_t main( vs_in_t v )
@@ -43,5 +49,7 @@ vs_out_t main( vs_in_t v )
     o.sv_pos.y = -o.sv_pos.y;    // cancel the cook's -fvk-invert-y: mvp is already Vulkan-style
     o.color    = v.color;
     o.uv       = v.uv;
+    o.fx_coord = v.fx_coord;
+    o.fx       = v.fx;
     return o;
 }

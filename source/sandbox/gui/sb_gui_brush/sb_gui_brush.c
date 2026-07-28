@@ -663,6 +663,96 @@ panel_motion( void )
 }
 
 /*==============================================================================================
+    panel_surface -- the EFFECT BAND: shapes the fragment shader resolves
+
+    Everything above this panel is geometry the CPU tessellated.  A rounded corner was an arc
+    table fanned into triangles: ~37 vertices, hard stair-stepped edges, and a texture could not
+    ride on it.  A soft shadow was six stacked rects pretending to be a gaussian.
+
+    Here the vertex carries a signed-distance coordinate and a packed word naming the shape, so
+    each of these is FOUR quads and the boundary is computed per pixel.  Three consequences, in
+    the order the rows show them:
+
+        1  a radius is exact at any size -- including a full pill, where radius = half the height
+        2  the same distance drives a BAND, so a rounded frame is one surface, not a stroked loop
+        3  widen the falloff and the same surface IS the shadow -- and it can go behind a
+           textured, rounded quad, which is the combination nothing before this could draw
+
+    The whole row is one GPU batch with the text beside it.  That is the point of putting the
+    mode in the VERTEX rather than a push constant: an effect that split the batch would be a
+    thing you spent sparingly, and this one is free enough to put under every panel.
+==============================================================================================*/
+
+static void
+panel_surface( void )
+{
+    gui()->separator_text( "surface -- SDF shapes: analytic AA, soft edges, rounded art" );
+
+    gui_rect_t cell = gui()->canvas( 250.0f );
+    f32        x    = cell.x + 6.0f;
+    f32        y    = cell.y + 6.0f;
+
+    /* 1 -- radius sweep, ending in a pill (radius clamps to half the short side). */
+    gui()->draw_text( x, y, INK_DIM, "radius 0 / 3 / 8 / 16 / pill" );
+    {
+        static const f32 radii[ 5 ] = { 0.0f, 3.0f, 8.0f, 16.0f, 100.0f };
+        f32 bx = x;
+        for ( u32 i = 0; i < 5; ++i )
+        {
+            gui()->draw_round_rect( ( gui_rect_t ){ bx, y + 20.0f, 78.0f, 44.0f },
+                                    radii[ i ], radii[ i ], radii[ i ], radii[ i ],
+                                    true, 0.0f, TEAL );
+            bx += 86.0f;
+        }
+    }
+
+    /* 2 -- the same boundary as a BAND.  One surface per frame, at any border width. */
+    y += 78.0f;
+    gui()->draw_text( x, y, INK_DIM, "ring -- border 1 / 2 / 4 / 6 px, same one surface each" );
+    {
+        static const f32 bw[ 4 ] = { 1.0f, 2.0f, 4.0f, 6.0f };
+        f32 bx = x;
+        for ( u32 i = 0; i < 4; ++i )
+        {
+            gui()->draw_round_rect( ( gui_rect_t ){ bx, y + 20.0f, 98.0f, 44.0f },
+                                    12.0f, 12.0f, 12.0f, 12.0f, false, bw[ i ], AMBER );
+            bx += 106.0f;
+        }
+    }
+
+    /* 3 -- widen the falloff and the same surface is a shadow.  Drawn BEFORE the body, and the
+       body here is a rounded TEXTURED quad: ambient rounding applies to the image too, because
+       the coverage the shader computes multiplies whatever the sampler returned. */
+    y += 78.0f;
+    gui()->draw_text( x, y, INK_DIM, "shadow spread 3 / 8 / 18 -- last one under rounded art" );
+    {
+        static const f32 spread[ 3 ] = { 3.0f, 8.0f, 18.0f };
+        f32 bx = x + 10.0f;
+        for ( u32 i = 0; i < 3; ++i )
+        {
+            gui_rect_t body = { bx, y + 26.0f, 90.0f, 52.0f };
+
+            f32 save = gui()->draw_rounding();
+            gui()->draw_set_rounding( 10.0f );
+            gui()->draw_shadow( body, spread[ i ], GUI_COLOR( 0, 0, 0, 0xB0 ) );
+
+            if ( i == 2 && s_art.frame != GUI_SPRITE_NONE )
+                gui()->draw_sprite_in( body, s_art.frame, 0 );
+            else
+                gui()->draw_rect( body.x, body.y, body.w, body.h,
+                                  GUI_COLOR( 0x38, 0x3C, 0x46, 0xFF ) );
+            gui()->draw_set_rounding( save );
+
+            bx += 130.0f;
+        }
+    }
+
+    gui()->draw_text( cell.x + 470.0f, cell.y + 168.0f, INK_DIM, "16 verts per shape (the fan" );
+    gui()->draw_text( cell.x + 470.0f, cell.y + 186.0f, INK_DIM, "cost 37), and no batch split:" );
+    gui()->draw_text( cell.x + 470.0f, cell.y + 204.0f, INK_DIM, "the mode rides the vertex." );
+}
+
+/*==============================================================================================
     The control window
 ==============================================================================================*/
 
@@ -866,6 +956,7 @@ window_stage( void )
         panel_tile();
         panel_widget();
         panel_motion();
+        panel_surface();
     }
     gui()->window_end();
 }

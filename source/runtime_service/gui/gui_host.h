@@ -140,6 +140,8 @@ void gui_draw_sprite_in( gui_rect_t r, gui_sprite_id_t id, u32 tint_abgr );
 
 /* the widened paint floor -- fill a rect with a brush (solid / gradient / sprite / nine-slice) */
 void gui_draw_brush( gui_rect_t r, const gui_brush_t* brush );
+void gui_draw_set_rounding( f32 r );
+f32  gui_draw_rounding( void );
 
 /* font atlas access -- bindless index + pixel size for previewing a font's live GPU atlas */
 u32 gui_font_atlas_idx( u32 font_id );

@@ -1410,19 +1410,76 @@ typedef enum
 #define GUI_PATH_MAX 256            /* max points path_line_to accumulates before a stroke */
 
 /*==============================================================================================
-    GUI_DRAW -- draw vertex (20 bytes, single interleaved binding)
+    GUI_DRAW -- the effect band: a shape the FRAGMENT resolves
 
-    Vertex attribute layout (matches the gui pipeline):
+    Everything above this line is geometry the CPU tessellated: to round a corner the backend
+    walked an arc table and fanned triangles, so a "rounded rect" cost ~37 vertices, had hard
+    stair-stepped edges, and could not carry a texture.  A soft shadow was six stacked rects
+    pretending to be a gaussian.  Each of those is the same failure -- an effect the rasterizer
+    could evaluate exactly, approximated in vertices because the vertex had nowhere to say what
+    shape it belonged to.
+
+    The effect band is that missing sentence.  Every vertex carries a signed-distance coordinate
+    and one packed word naming the shape, so a rounded box is FOUR quads whose fragment shader
+    knows the exact boundary: analytic antialiasing, arbitrary softness, and the texture still
+    sampling underneath it.  Crucially the mode travels PER VERTEX, not in a push constant, so an
+    SDF surface, a glyph run and a plain fill share one draw call -- an effect can never split a
+    batch, which is what makes it affordable to use one on every widget.
+
+    Mode 0 (GUI_FX_NONE) is what every other primitive writes, and the fragment tests it first:
+    text, lines, sprites and square fills pay one compare and are byte-for-byte unchanged.
+
+    Vertex attribute layout (matches the gui pipeline), 32 bytes, single interleaved binding:
         location 0 : float2  (x, y)       offset  0   -- pixel-space position
         location 1 : float2  (u, v)       offset  8   -- texture UV [0..1]
         location 2 : UNORM4  (abgr u32)   offset 16   -- packed color, R8G8B8A8_UNORM
+        location 3 : float2  (ex, ey)     offset 20   -- effect coordinate (see below)
+        location 4 : UINT    (fx u32)     offset 28   -- packed effect word (flat)
 ==============================================================================================*/
+
+/* What the fragment does with the effect coordinate.  Four bits, so the band has room to grow
+   without touching the vertex again. */
+typedef enum
+{
+    GUI_FX_NONE = 0,   /* no effect -- (ex, ey) and the parameters are ignored (the default) */
+    GUI_FX_BOX  = 1,   /* filled rounded box: coverage 1 inside the boundary, feathered across it */
+    GUI_FX_RING = 2,   /* the same boundary as a BAND of `border` px lying INSIDE it             */
+
+} gui_fx_mode_t;
+
+/* The effect coordinate (ex, ey) is the shape-local quantity `|p| - c`, where p is the vertex's
+   offset from the shape centre and c the centre-rect half-extent (half-size minus the corner
+   radius).  The absolute value is why an SDF box is tessellated as four QUADRANT quads rather
+   than one: within a quadrant the sign of p is constant, so |p| is affine in p and the hardware's
+   linear interpolation reproduces it exactly.  Across one quad it would fold at the centre line.
+   The fragment then needs only `d = length( max( ex_ey, 0 ) ) - radius`. */
+
+/* The packed effect word.  Every field is a fixed-point pixel quantity sized to its physical
+   range: a corner radius can be half a panel, a shadow's falloff is tens of pixels, a border is
+   single digits.  Quantization is 1/8 px on radius and border and 1/4 px on feather -- all finer
+   than the rasterizer can show. */
+#define GUI_FX_MODE_BITS     4
+#define GUI_FX_RADIUS_MAX    511.875f    /* 12 bits at 1/8 px */
+#define GUI_FX_FEATHER_MAX   127.75f     /*  9 bits at 1/4 px */
+#define GUI_FX_BORDER_MAX    15.875f     /*  7 bits at 1/8 px */
+
+/* mode | radius (1/8 px) | feather (1/4 px) | border (1/8 px).  Callers clamp; this only packs. */
+static inline u32
+gui_fx_pack( gui_fx_mode_t mode, f32 radius, f32 feather, f32 border )
+{
+    u32 r = (u32)( radius  * 8.0f + 0.5f ) & 0xFFFu;
+    u32 f = (u32)( feather * 4.0f + 0.5f ) & 0x1FFu;
+    u32 b = (u32)( border  * 8.0f + 0.5f ) & 0x7Fu;
+    return ( (u32)mode & 0xFu ) | ( r << 4 ) | ( f << 16 ) | ( b << 25 );
+}
 
 typedef struct
 {
-    f32 x, y;   // pixel position
-    f32 u, v;   // texture UV
-    u32 abgr;   // packed color
+    f32 x, y;     // pixel position
+    f32 u, v;     // texture UV
+    u32 abgr;     // packed color
+    f32 ex, ey;   // effect coordinate: |p| - c, shape-local pixels (GUI_FX_NONE ignores it)
+    u32 fx;       // packed effect word (gui_fx_pack); low nibble 0 = no effect
 
 } gui_draw_vert_t;
 
@@ -1499,6 +1556,7 @@ typedef enum
     GUI_CMD_RECT_LIST,       // batch of solid rects from the per-frame rect pool (one cmd, N quads)
     GUI_CMD_SPRITE,          // RGBA sprite quad; nine-slice expanded at tessellation when the
                              //   sprite carries slice insets (1, 3 or 9 quads from one command)
+    GUI_CMD_SHADOW,          // soft rounded box: one GUI_FX_BOX surface with a wide feather
 
 } gui_cmd_type_t;
 
@@ -1525,7 +1583,7 @@ typedef enum
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (10 values)
+    u8 type;       // gui_cmd_type_t, fits u8 (12 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
@@ -1561,6 +1619,13 @@ typedef struct
            so the member carries no tail padding -- the retained-cache hash folds these bytes raw
            and stale padding from a differently-typed command would read as a spurious change. */
         struct { f32 x, y, w, h; f32 scale; u32 sprite; u32 abgr; u16 flags; u16 nine; } sprite;
+        /* Soft shadow / glow.  Its own member rather than a `feather` bolted onto rect: only this
+           command needs one, and rect is the hot variant every fill goes through -- widening it
+           would grow the whole command pool to carry a field almost nothing sets.  The shape is
+           the box, rounded by `rounding`; `feather` is the total width of the falloff band, which
+           straddles the boundary (half in, half out), so the geometry it tessellates to reaches
+           feather/2 past the box on every side. */
+        struct { f32 x, y, w, h; f32 rounding, feather;           u32 abgr; } shadow;
     };
 } gui_cmd_t;
 
@@ -2164,7 +2229,7 @@ typedef struct
     /* --- CPU static memory (.bss + .rdata; fixed backend buffers, resident the whole run). --- */
 
     u32 cpu_drawlist_bytes;     // EMIT: s_draw (cmds + hashes + point/rect/text/clip pools) + path stroker
-    u32 cpu_tess_bytes;         // BUILD: s_tess CPU vertex / index / GPU-command staging + arc tables
+    u32 cpu_tess_bytes;         // BUILD: s_tess CPU vertex / index / GPU-command staging
     u32 cpu_cache_bytes;        // retained cache: slot tables, stable cmd cache, diff records, seg chains,
                                 //   permutation scratch, volatile registry, stats
     u32 cpu_font_bytes;         // font registry slots (CPU glyph metrics) + reload queue, excl. GPU atlas

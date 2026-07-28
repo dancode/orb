@@ -41,8 +41,10 @@ backend_memory( u32 live_viewports )
     /* EMIT: the semantic draw list and the line/path stroker built on it. */
     s.cpu_drawlist_bytes = (u32)( sizeof( s_draw ) + sizeof( s_path ) );
 
-    /* BUILD: tessellation staging + the unit-arc tables the rounded-rect tessellator caches. */
-    s.cpu_tess_bytes = (u32)( sizeof( s_tess ) + sizeof( s_arc_cos ) + sizeof( s_arc_sin ) );
+    /* BUILD: tessellation staging.  The unit-arc tables that used to be counted here are gone --
+       rounded shapes are resolved by the fragment shader now (the effect band), so the backend
+       caches no corner geometry at all. */
+    s.cpu_tess_bytes = (u32)sizeof( s_tess );
 
     /* Retained cache: ping-pong slot tables, dispatch order, the id-keyed stable command cache
        (entries + counts + keys + occupancy), diff records + stats, per-window segment chains,

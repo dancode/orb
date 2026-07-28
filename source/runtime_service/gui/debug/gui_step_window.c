@@ -57,6 +57,7 @@ static f32  s_step_accum;
 static const char* k_step_type_name[] = {
     "rect_filled", "rect_outline", "triangle", "text", "circle_filled",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
+    "sprite", "shadow",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -170,6 +171,13 @@ step_cmd_detail( const step_cmd_info_t* ci )
         case GUI_CMD_RECT_LIST:
             gui_textf( "%u rects   pool offset %u", c->rect_list.count, c->rect_list.offset );
             break;
+        case GUI_CMD_SHADOW:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->shadow.x, c->shadow.y,
+                       c->shadow.w, c->shadow.h );
+            fmt_snprintf( b2, sizeof( b2 ), "round %.1f   feather %.1f", c->shadow.rounding,
+                          c->shadow.feather );
+            row2 = b2;
+            break;
     }
     gui_text( row2 ? row2 : " " );
 
@@ -199,6 +207,7 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_LINE:          step_swatch( r, r.x, "color", c->line.abgr );         break;
                 case GUI_CMD_POLYLINE:      step_swatch( r, r.x, "color", c->polyline.abgr );     break;
                 case GUI_CMD_DASHED_LINE:   step_swatch( r, r.x, "color", c->dash.abgr );         break;
+                case GUI_CMD_SHADOW:        step_swatch( r, r.x, "color", c->shadow.abgr );       break;
                 default:                                                                          break;
             }
             break;
@@ -368,7 +377,8 @@ step_window( bool* open )
             {
                 char nb[ 12 ], ob[ 12 ];
                 gui_textf( "#%u  %s   in %s", cur - 1,
-                           ci.cmd.type < 10 ? k_step_type_name[ ci.cmd.type ] : "?",
+                           ci.cmd.type < ARRAY_COUNT( k_step_type_name )
+                               ? k_step_type_name[ ci.cmd.type ] : "?",
                            step_name( ci.win, nb, sizeof( nb ) ) );
                 gui_textf( "widget %s", ci.owner ? step_name( ci.owner, ob, sizeof( ob ) )
                                                  : "(chrome)" );

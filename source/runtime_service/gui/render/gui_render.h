@@ -171,6 +171,11 @@ void draw_push_sprite           ( f32 x, f32 y, f32 w, f32 h, gui_sprite_id_t id
 
 void draw_push_rect_gradient    ( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal );
 
+/* Push a soft rounded box -- the SDF surface behind draw_shadow.  `feather` is the TOTAL width of
+   the falloff band and it straddles the boundary, so the geometry reaches feather/2 past the box
+   on every side while the shape itself stays exactly where it was authored. */
+void draw_push_shadow           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr );
+
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr );
 void draw_push_circle_filled    ( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr );

@@ -15,7 +15,10 @@ There are only three real things:
   the vertex colour tints it, sampled LINEAR, created lazily on the first registration). Knows nothing of ids-as-identity, interact
   state, style, or layout. Renders from an atlas that is PUSHED to it; it does not know what
   a font is (the glyph/sprite source contract in `render/gui_render.h` is implemented by the
-  draw unit).
+  draw unit).  Rounded shapes are not tessellated: the vertex carries an SDF coordinate and a
+  packed mode (the EFFECT BAND, `gui_draw_vert_t` in gui.h) and the fragment resolves the
+  boundary, so a rounded fill / frame / shadow is four quads with exact edges.  The mode rides
+  the vertex rather than a push constant precisely so an effect can never split a batch.
 - **INTERACT SERVER** (`core/`, unit `gui_core.c`): io routing + dedicated retained-mode
   storage -- the id namespace, the keyed state pool, the ambient interaction record, the item
   protocol, the pane/z contest, anim utilities. ALL retained record types live in its storage

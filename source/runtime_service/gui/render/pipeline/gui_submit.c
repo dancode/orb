@@ -229,11 +229,15 @@ render_init( void )
         }
     }
 
-    // Vertex layout: float2 pos @0, float2 uv @8, UNORM4 color @16, stride=20.
-    rhi_vertex_attrib_t attribs[ 3 ] = {
+    // Vertex layout: float2 pos @0, float2 uv @8, UNORM4 color @16, float2 fx coord @20,
+    // UINT fx word @28, stride=32.  Locations 3/4 are the effect band (gui.h): every primitive
+    // that is not an SDF surface leaves the word 0, and the fragment tests that first.
+    rhi_vertex_attrib_t attribs[ 5 ] = {
         { .binding = 0, .location = 0, .offset =  0, .format = RHI_VERTEX_FORMAT_FLOAT2 },
         { .binding = 0, .location = 1, .offset =  8, .format = RHI_VERTEX_FORMAT_FLOAT2 },
         { .binding = 0, .location = 2, .offset = 16, .format = RHI_VERTEX_FORMAT_UNORM4 },
+        { .binding = 0, .location = 3, .offset = 20, .format = RHI_VERTEX_FORMAT_FLOAT2 },
+        { .binding = 0, .location = 4, .offset = 28, .format = RHI_VERTEX_FORMAT_UINT   },
     };
 
     // Alpha blend: out = src_rgb*src_a + dst_rgb*(1-src_a).
@@ -254,8 +258,8 @@ render_init( void )
     rhi_pipeline_desc_t pdesc = {
         .vert               = vert,
         .frag               = frag,
-        .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ] },
-        .attrib_count       = 3,
+        .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ], attribs[ 3 ], attribs[ 4 ] },
+        .attrib_count       = 5,
         .vertex_stride      = sizeof( gui_draw_vert_t ),
         .cull               = RHI_CULL_NONE,
         .polygon_mode       = RHI_POLYGON_FILL,

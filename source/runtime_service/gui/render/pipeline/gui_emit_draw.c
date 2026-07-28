@@ -720,6 +720,7 @@ draw_hash_cmd( const gui_cmd_t* c )
                        c->rect_list.count * (u32)sizeof( gui_rect_col_t ) );   /* content while L1-hot */
             break;
         case GUI_CMD_SPRITE:        h = fnv1a( h, &c->sprite, sizeof c->sprite ); break;
+        case GUI_CMD_SHADOW:        h = fnv1a( h, &c->shadow, sizeof c->shadow ); break;
     }
     return h;
 }
@@ -904,6 +905,43 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
     c->gradient.col_a       = ca;
     c->gradient.col_b       = cb;
     c->gradient.horizontal  = horizontal;
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+}
+
+/*==============================================================================================
+    draw_push_shadow -- emit a soft rounded box as one semantic command.
+
+    `feather` is the total width of the falloff band, which straddles the shape's boundary: the
+    fill is solid feather/2 inside the box and gone feather/2 outside it.  One command, one SDF
+    surface, four quads -- and because the effect travels per vertex it merges into whatever GPU
+    batch is already open, so putting a shadow behind every floating panel costs no draw calls.
+==============================================================================================*/
+
+void
+draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
+{
+    if ( draw_emit_blocked() )
+        return;
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
+    /* Cull against the GROWN box: the skirt is real geometry and a shadow whose box is just off
+       screen still paints a band on it. */
+    f32 g = feather * 0.5f + 1.0f;
+    if ( draw_cull_box( x - g, y - g, w + 2.0f * g, h + 2.0f * g ) )
+        return;
+
+    gui_cmd_t* c      = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type           = GUI_CMD_SHADOW;
+    c->clip_idx       = s_draw.cur_clip_idx;
+    c->vp             = (u8)s_draw.cur_vp;
+    c->shadow.x        = x;
+    c->shadow.y        = y;
+    c->shadow.w        = w;
+    c->shadow.h        = h;
+    c->shadow.rounding = rounding;
+    c->shadow.feather  = feather;
+    c->shadow.abgr     = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 

@@ -16,9 +16,10 @@
 
     Most commands carry one abgr, but GUI_CMD_RECT_GRADIENT carries two and lets the GPU's
     per-vertex color interpolation blend them, so draw_gradient is an exact one-quad blend (not
-    banded).  draw_shadow's gaussian glow is approximated with layered rings (see draw_shadow);
-    everything else here is pixel-exact.  FUTURE: a multi-corner-color command, or routing the rings
-    through gradient quads, would make the shadow exact too -- without changing the public surface.
+    banded).  draw_shadow and the uniform-radius draw_round_rect hand their shape to the FRAGMENT
+    (GUI_CMD_SHADOW / a rounded rect command, both SDF surfaces -- see the effect band in gui.h):
+    exact edges at any radius and softness, four quads, no batch split.  Only genuinely per-corner
+    radii still walk a tessellated perimeter here.  Everything here is pixel-exact.
 
     Compiled in the DRAW unit (gui_draw.c) after gui_paint.c.  Everything here is
     PARAMETER-PURE: the emitters that resolve their own look (draw_arrow,
@@ -400,23 +401,18 @@ draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal )
     draw_push_rect_gradient( box.x, box.y, box.w, box.h, col_a, col_b, horizontal );
 }
 
-/* Soft drop shadow / glow behind `box`: concentric expanded rects, alpha falling outward by
-   `spread` px (popups, floating panels).  Approximated with a few layered rings on the single-color
-   pipeline -- not a true gaussian, but reads as a soft edge; honors the ambient rounding so it hugs
-   a rounded panel.  Draw it before the panel body. */
+/* Soft drop shadow / glow behind `box`, alpha falling off over `spread` px (popups, floating
+   panels).  ONE SDF surface: the fragment shader resolves the falloff exactly, so this is no
+   longer the six stacked rects that used to stand in for a gaussian -- and it costs four quads
+   in whatever batch is already open rather than six commands of its own.  Honors the ambient
+   rounding so it hugs a rounded panel.  Draw it before the panel body.
+
+   `spread` reads as "how far the shadow reaches", so it is HALF the falloff band: the fill is
+   solid until spread px inside the box and gone spread px outside it. */
 static void
 draw_shadow( gui_rect_t box, f32 spread, u32 col )
 {
-    enum { LAYERS = 6 };
-    u32 base_a = ( col >> 24 ) & 0xFFu;
-    for ( u32 k = 0; k < LAYERS; ++k )
-    {
-        f32 g = spread * ( (f32)( LAYERS - k ) / (f32)LAYERS );          /* k=0 widest */
-        u32 a = (u32)( (f32)base_a * ( (f32)( k + 1 ) / (f32)LAYERS ) * 0.5f );
-        u32 cc = ( col & 0x00FFFFFFu ) | ( a << 24 );
-        draw_push_rect_filled( box.x - g, box.y - g, box.w + 2.0f * g, box.h + 2.0f * g,
-                               0, 0, 1, 1, 0, cc );
-    }
+    draw_push_shadow( box.x, box.y, box.w, box.h, draw_rounding(), spread * 2.0f, col );
 }
 
 /*==============================================================================================
@@ -504,14 +500,18 @@ void
 gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
                          bool filled, f32 thickness, u32 col )
 {
-    /* Uniform-radius fast path: route a filled, equal-cornered rect through the backend's single
-       rounded-rect command (crisp AA, one command) instead of fanning a perimeter into triangles. */
+    /* Uniform-radius fast path: route an equal-cornered rect -- filled or stroked -- through the
+       backend's single rounded-rect command, which is an SDF surface (four quads, exact analytic
+       AA).  Only genuinely asymmetric corners still need the perimeter walk, and they pay a
+       tessellated arc and a polyline stroke for it. */
     bool equal_corners = ( r_tl == r_tr && r_tr == r_br && r_br == r_bl );
-    if ( filled && equal_corners )
+    if ( equal_corners )
     {
         f32 save = draw_rounding();
         draw_set_rounding( r_tl );
-        draw_push_rect_filled( box.x, box.y, box.w, box.h, 0, 0, 1, 1, 0, col );
+        if ( filled ) draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0, 0, 1, 1, 0, col );
+        else          draw_push_rect_outline( box.x, box.y, box.w, box.h,
+                                              thickness < 1.0f ? 1.0f : thickness, 0, col );
         draw_set_rounding( save );
         return;
     }
