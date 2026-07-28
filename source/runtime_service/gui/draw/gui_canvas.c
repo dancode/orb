@@ -197,7 +197,7 @@ gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col )
 /*==============================================================================================
     RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
     image) as a full-color quad.  Unlike image() (R8 icon atlas, texel = coverage), the texel IS
-    the color: GUI_TEX_RGBA_BIT on the command's tex_idx flips the fragment shader to RGBA
+    the color: GUI_TEX_RGBA in the command's tex_idx mode field flips the fragment shader to RGBA
     sampling, with the tint color multiplied in (0 defaults to opaque white = untinted).  The
     caller owns the texture and its bindless registration (rhi register_texture) and must keep
     the slot alive until the frame that last referenced it has retired.
@@ -209,7 +209,7 @@ gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr )
     if ( bindless_idx == 0 )
         return;   /* 0 is the RHI empty slot -- nothing to sample */
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0, 0, 1, 1,
-                           bindless_idx | GUI_TEX_RGBA_BIT,
+                           bindless_idx | GUI_TEX_MODE( GUI_TEX_RGBA ),
                            tint_abgr ? tint_abgr : 0xFFFFFFFFu );
 }
 

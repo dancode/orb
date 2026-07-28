@@ -368,7 +368,7 @@ tess_sprite( const gui_cmd_t* c )
     if ( !sprite_get( c->sprite.sprite, &u0, &v0, &u1, &v1, &sw, &sh, &sl ) || sw == 0 || sh == 0 )
         return;
 
-    tex |= GUI_TEX_RGBA_BIT;          /* the texel IS the colour; vertex colour tints it */
+    tex |= GUI_TEX_MODE( GUI_TEX_RGBA );   /* the texel IS the colour; vertex colour tints it */
 
     const u32 flags  = c->sprite.flags;
     const bool flipx = ( flags & GUI_BRUSH_FLIP_X ) != 0;
@@ -474,12 +474,15 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     a batch split of zero.
 ==============================================================================================*/
 
-/* Emit one SDF surface.  `r` is the corner radius, `feather` the total width of the falloff band
-   straddling the boundary (0 = hard edge), `border` the band width for GUI_FX_RING.  UVs span the
-   AUTHORED box and are clamped over the grown skirt, so a textured rounded quad cannot bleed into
-   its atlas neighbour where the coverage has already faded to nothing. */
+/* Emit one SDF surface.  `r` is the corner radius and `feather` the total width of the falloff band
+   straddling the boundary (0 = hard edge); both are read by every mode.  The remaining parameters
+   are MODE-SPECIFIC, mirroring the fx word's own re-partitioning -- `border` is the band width for
+   GUI_FX_RING, `rate`/`depth` the wave for GUI_FX_PULSE, and each mode ignores the other's.  UVs
+   span the AUTHORED box and are clamped over the grown skirt, so a textured rounded quad cannot
+   bleed into its atlas neighbour where the coverage has already faded to nothing. */
 static void
-tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, gui_fx_mode_t mode,
+tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rate, f32 depth,
+             gui_fx_mode_t mode,
              f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
     if ( w <= 0.0f || h <= 0.0f )
@@ -497,6 +500,10 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, gui_fx_
     if ( feather < 0.0f ) feather = 0.0f;
     if ( feather > GUI_FX_FEATHER_MAX ) feather = GUI_FX_FEATHER_MAX;
     if ( border  > GUI_FX_BORDER_MAX  ) border  = GUI_FX_BORDER_MAX;
+    if ( rate    < 0.0f ) rate  = 0.0f;
+    if ( rate    > GUI_FX_RATE_MAX ) rate = GUI_FX_RATE_MAX;
+    if ( depth   < 0.0f ) depth = 0.0f;
+    if ( depth   > 1.0f ) depth = 1.0f;
 
     /* tex_idx 0 = solid-color convention, same as tess_rect_filled: the atlas white texel. */
     f32 wu, wv;
@@ -512,7 +519,8 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, gui_fx_
     f32 ehx = hx + pad, ehy = hy + pad;           /* grown half-extent (geometry only)           */
     f32 cx  = x + hx,   cy  = y + hy;
     f32 kx  = hx - r,   ky  = hy - r;             /* the centre rect: |p| - k is the effect coord */
-    u32 fx  = gui_fx_pack( mode, r, feather, border );
+    u32 fx  = ( mode == GUI_FX_PULSE ) ? gui_fx_pack_pulse( r, feather, rate, depth )
+                                       : gui_fx_pack( mode, r, feather, border );
 
     /* The per-quadrant coverage, in quadrant-local |p| space: one box normally, two forming an L
        when a RING has an interior worth skipping.
@@ -668,6 +676,13 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
 {
     bool clipped = ( clip_x1 < GUI_TEXT_NO_CLIP );
     f32  cx      = x;
+
+    /* Hoisted: the active font cannot change mid-run, and this carries the sampling model, so it is
+       also what keeps a distance-field run in its own batch without the batcher knowing why. */
+    u32  tex = font_tex();
+    if ( tex == 0 )
+        return;                       /* the font's atlas is not up yet -- nothing to sample */
+
     for ( u32 i = 0; i < n && str[ i ]; ++i )
     {
         u8  ch = (u8)str[ i ];
@@ -682,7 +697,7 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
             if ( !clipped || ( gx0 >= clip_x0 && gx1 <= clip_x1 ) )
             {
                 /* Whole glyph (or no clipping): emit as-is -- the hot interior path. */
-                tess_rect_filled( gx0, y + oy, gw, gh, u0, v0, u1, v1, res_atlas_idx(), abgr );
+                tess_rect_filled( gx0, y + oy, gw, gh, u0, v0, u1, v1, tex, abgr );
             }
             else if ( gx1 > clip_x0 && gx0 < clip_x1 )
             {
@@ -699,8 +714,7 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
                     nu1 = u0 + du * ( ( clip_x1 - gx0 ) / gw );
                     nx1 = clip_x1;
                 }
-                tess_rect_filled( nx0, y + oy, nx1 - nx0, gh, nu0, v0, nu1, v1,
-                                  res_atlas_idx(), abgr );
+                tess_rect_filled( nx0, y + oy, nx1 - nx0, gh, nu0, v0, nu1, v1, tex, abgr );
             }
             /* else: glyph wholly outside the window -- drop it. */
         }
@@ -978,7 +992,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
             case GUI_CMD_RECT_FILLED:
                 if ( c->rect.rounding > 0.0f )
                     tess_fx_box( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
-                                 c->rect.rounding, TESS_FX_AA, 0.0f, GUI_FX_BOX,
+                                 c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
                                  c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
                                  c->rect.tex_idx, c->rect.abgr );
                 else
@@ -994,7 +1008,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
                     tess_fx_box( c->rect_outline.x, c->rect_outline.y,
                                  c->rect_outline.w, c->rect_outline.h,
                                  c->rect_outline.rounding, TESS_FX_AA, c->rect_outline.t,
-                                 GUI_FX_RING, 0, 0, 1, 1, 0, c->rect_outline.abgr );
+                                 0.0f, 0.0f, GUI_FX_RING,
+                                 0, 0, 1, 1, 0, c->rect_outline.abgr );
                 else
                     tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
                                        c->rect_outline.w, c->rect_outline.h,
@@ -1005,8 +1020,19 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
                be a gaussian is now the exact same falloff the corners use, only spread out. */
             case GUI_CMD_SHADOW:
                 tess_fx_box( c->shadow.x, c->shadow.y, c->shadow.w, c->shadow.h,
-                             c->shadow.rounding, c->shadow.feather, 0.0f, GUI_FX_BOX,
+                             c->shadow.rounding, c->shadow.feather, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
                              0, 0, 1, 1, 0, c->shadow.abgr );
+                break;
+
+            /* Geometrically a plain rounded fill -- the only thing PULSE changes is the packed
+               word, and therefore the fragment.  That is the point: the vertices this produces are
+               correct for every frame the pulse runs, so the window's retained slot is never
+               invalidated and the breathing costs no re-tessellation at all. */
+            case GUI_CMD_PULSE:
+                tess_fx_box( c->pulse.x, c->pulse.y, c->pulse.w, c->pulse.h,
+                             c->pulse.rounding, TESS_FX_AA, 0.0f,
+                             c->pulse.rate, c->pulse.depth, GUI_FX_PULSE,
+                             0, 0, 1, 1, 0, c->pulse.abgr );
                 break;
 
             case GUI_CMD_TRIANGLE:

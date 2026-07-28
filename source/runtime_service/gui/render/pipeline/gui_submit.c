@@ -30,7 +30,7 @@
 
 // clang-format off
 /*==============================================================================================
-    Push constant layout (84 bytes; must match gui_shader.h GLSL source)
+    Push constant layout (88 bytes; must match gui_shader.h GLSL source)
 ==============================================================================================*/
 
 typedef struct
@@ -40,9 +40,10 @@ typedef struct
     u32 samp_idx;       // bindless sampler slot            4 bytes
     u32 dbg_flat;       // debug: 1 = flat color (no atlas) 4 bytes
     u32 dbg_tint;       // debug: packed RGBA8 batch tint   4 bytes
-    u32 rgba_tex;       // 1 = full-RGBA image sampling     4 bytes
+    u32 tex_mode;       // gui_tex_mode_t sampling model    4 bytes
+    f32 time;           // frame clock, wrapped seconds     4 bytes
 
-} gui_push_t;         // total 84 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;         // total 88 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*==============================================================================================
     Per-frame geometry regions.
@@ -76,13 +77,18 @@ static struct
 
     /* Second sampler, bilinear, for the full-RGBA sampling model: authored sprite art and a
        caller's own textures (a scene render target).  Which one a draw binds is DERIVED from
-       GUI_TEX_RGBA_BIT rather than carried per command, because the bit already answers the
-       question -- coverage is glyphs and icons, which must stay point-sampled to render crisp,
+       the tex_idx MODE FIELD rather than carried per command, because the model already answers
+       the question -- coverage is glyphs and icons, which must stay point-sampled to render crisp,
        and colour is a picture, which must filter or it blocks up the moment it is stretched. */
     rhi_sampler_t   image_sampler;      // sampler for RGBA images (bilinear clamp)
     u32             image_sampler_idx;  // bindless slot for image_sampler
 
     gui_render_mode_t debug_mode;     // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
+
+    /* The frame clock handed down by the orchestrator (gui_render_set_time), already wrapped.
+       Held here rather than read from the IO snapshot because s_io lives in the frontend unit and
+       this server cannot see it -- the same one-way seam gui_render_set_mode crosses. */
+    f32 fx_time;                      // seconds since the first frame, wrapped; -> pc.time
 
 } s_render;
 
@@ -385,6 +391,20 @@ gui_render_get_mode( void )
     return s_render.debug_mode;
 }
 
+/*==============================================================================================
+    Frame clock -- the effect band's `time` push constant.
+
+    Handed down once per app frame from the orchestrator, which owns the IO snapshot this server
+    cannot see.  Wrapping is the CALLER's job so the wrap point is stated once, in the public
+    header, next to the constant that defines it.
+==============================================================================================*/
+
+void
+gui_render_set_time( f32 seconds )
+{
+    s_render.fx_time = seconds;
+}
+
 /* render_batch_debug_color -- a distinct, saturated, fully-opaque color per draw-call index for the BATCH
    view.  Packed RGBA8 (R low byte), matching the shader's dbg_tint decode and GUI_COLOR byte order.
    A 12-entry table cycles; consecutive entries are spread around the hue wheel so neighbouring
@@ -540,6 +560,10 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
     push.dbg_flat   = ( s_render.debug_mode == GUI_RENDER_NORMAL ) ? 0u : 1u;
     push.dbg_tint   = 0u;
 
+    /* Frame-constant, so it is written once here and left alone through the whole dispatch walk:
+       the effect band's clock costs no batch split and no per-draw work (gui.h, GUI_FX_TIME_WRAP). */
+    push.time = s_render.fx_time;
+
     u32 draw_calls = 0;   // indexed draws actually emitted this surface (one per non-empty command)
 
     /* Walk s_dispatch[] (z-sorted slot pointers) back-to-front.  Each slot owns a contiguous region
@@ -588,11 +612,15 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
                 .height = sy1 - sy0,
             } );
 
-            push.tex_idx  = dc->tex_idx & ~GUI_TEX_RGBA_BIT;
-            push.rgba_tex = ( dc->tex_idx & GUI_TEX_RGBA_BIT ) ? 1u : 0u;
-            /* Sampling model picks the sampler: colour filters, coverage stays point-sampled so
-               glyphs render crisp.  Falls back to the point sampler if the bilinear one failed. */
-            push.samp_idx = ( push.rgba_tex && s_render.image_sampler_idx )
+            push.tex_idx  = gui_tex_index( dc->tex_idx );
+            push.tex_mode = (u32)gui_tex_mode( dc->tex_idx );
+            /* The sampler is DERIVED from the model, never carried: COVERAGE is the one model that
+               must stay point-sampled (a filtered glyph atlas stops being crisp -- see the motion-
+               snap revert), and everything else filters.  Testing "not COVERAGE" rather than "is
+               RGBA" is deliberate: a distance-field model is coverage that FILTERS, so it lands on
+               the right side of this line the day it exists without touching it.  Falls back to the
+               point sampler if the bilinear one failed to create. */
+            push.samp_idx = ( push.tex_mode != (u32)GUI_TEX_COVERAGE && s_render.image_sampler_idx )
                           ? s_render.image_sampler_idx : s_render.font_sampler_idx;
             if ( batch_view )
                 push.dbg_tint = render_batch_debug_color( draw_calls );

@@ -7,23 +7,34 @@
     File layout (all values little-endian):
         orb_font_header_t   header
         orb_font_glyph_t    glyphs[ header.glyph_count ]
-        uint8_t             pixels[ header.atlas_w * header.atlas_h ]  (R8 grayscale)
+        uint8_t             pixels[ header.atlas_w * header.atlas_h ]  (R8: coverage, or a
+                                                                        distance field when
+                                                                        header.sdf_range > 0)
 
 ==============================================================================================*/
 
+#include <stddef.h>   /* offsetof -- the header base size is asserted below */
 #include <stdint.h>
 
 /* 'OFNT' -- bytes O,F,N,T in little-endian memory order */
 #define ORB_FONT_MAGIC    0x544E464Fu
 
 /* Format versions:
+     4  Header gained `sdf_range`, so a font can be a DISTANCE FIELD instead of coverage.  The
+        header grew by one u32; everything before it is unchanged, which is what lets the loader
+        read the base and then the tail (see ORB_FONT_HEADER_BASE_SIZE).
      3  Glyphs are packed full-height; the atlas is pure glyph coverage, no reserved band.  The gui
         runtime draws its white texel + dash-pattern rows from a shared resource atlas
         (gui_res_atlas.c), so a font no longer carries drawing assists of its own.
      2  (legacy, still loadable) Left the bottom 5 rows blank for gui to paint assists into at load.
    The on-disk structure is byte-identical across 2 and 3 -- only atlas_h differs (v2 carries the
    trailing band) -- so the loader accepts either version. */
-#define ORB_FONT_VERSION  3u
+#define ORB_FONT_VERSION  4u
+
+/* Byte size of the v2/v3 header -- magic through glyph_count.  A v4 reader loads this much, checks
+   the version, and only then reads the tail, so every older file still parses with the new struct
+   (the tail zero-fills, and zero is exactly the legacy meaning).  Asserted below. */
+#define ORB_FONT_HEADER_BASE_SIZE  36u
 
 /* Baked codepoint range -- the ASCII printable span U+0020 (space) .. U+007E (tilde).  This is the
    format contract shared by both bakers (dev_font, font_tool) and the runtime loader, so the glyph
@@ -44,9 +55,28 @@ typedef struct
     int32_t  line_gap;      /* extra spacing beyond ascent+descent      */
     uint32_t glyph_count;
 
+    /* ---- v4 tail; a v2/v3 file has none and reads back as 0 ---- */
+
+    /* 0  -- the pixels are COVERAGE: the byte is alpha, 0 = empty, 255 = solid.  Every font baked
+             before v4 is this, which is why 0 had to be its value.
+       >0 -- the pixels are a SIGNED DISTANCE FIELD and this is its SPREAD in pixels.  The byte
+             encoding is FreeType's (src/sdf): 128 is exactly ON the outline, >128 inside, <128
+             outside, and 127 byte-steps span `sdf_range` pixels.  So a texel's signed distance in
+             pixels is ( byte - 128 ) / 127 * sdf_range.
+             The GUI does not need that scale to render -- it recovers the edge with a screen-space
+             derivative, which is what makes an SDF font scale and rotate for free -- but the number
+             is what makes the file self-describing, and `font_tool info` prints it. */
+    uint32_t sdf_range;
+
     /* immediately followed by glyph_count * orb_font_glyph_t, then pixel data */
 
 } orb_font_header_t;
+
+/* The base size is a FILE CONTRACT, not a convenience: a v4 reader seeks by it.  If a field is ever
+   inserted before sdf_range this fires, which is the point -- silently shifting it would make every
+   pre-v4 font parse as garbage rather than fail. */
+_Static_assert( offsetof( orb_font_header_t, sdf_range ) == ORB_FONT_HEADER_BASE_SIZE,
+                "orb_font v2/v3 header prefix must stay 36 bytes" );
 
 typedef struct
 {

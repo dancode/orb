@@ -292,7 +292,8 @@ resolve_ttf( const char* ttf_path, char* out, int size )
 
 bool
 dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 count,
-                     int ascent, int descent, int line_gap, int size_px, const char* label )
+                     int ascent, int descent, int line_gap, int size_px,
+                     u32 sdf_range, const char* label )
 {
     if ( count > ORB_FONT_CP_COUNT )
     {
@@ -373,12 +374,17 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
         out_glyphs[ i ].advance   = (u16)glyphs[ i ].advance;
     }
 
+    u32 used_h = 0;   /* bottom-most packed row + 1 -- the page is cropped to this (see below) */
+
     for ( int ri = 0; ri < rect_count; ++ri )
     {
         if ( !rects[ ri ].was_packed ) continue;
 
         const dev_font_glyph_t* r  = &glyphs[ rects[ ri ].id ];
         orb_font_glyph_t*       og = &out_glyphs[ rects[ ri ].id ];
+
+        if ( (u32)rects[ ri ].y + (u32)r->h > used_h )
+            used_h = (u32)rects[ ri ].y + (u32)r->h;
 
         og->atlas_x   = (u16)rects[ ri ].x;
         og->atlas_y   = (u16)rects[ ri ].y;
@@ -397,6 +403,25 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
             memcpy( dst, src, (size_t)r->w );
         }
     }
+
+    /*------------------------------------------------------------------------------------------
+        Crop the page to the rows actually packed.
+
+        The size search above only tries SQUARE powers of two, so a glyph set that overflows one
+        step lands in the next and leaves most of it empty -- a 16px SDF face fills 512 wide but
+        only ~153 rows of a 512x512 page, so 70% of the file, the upload, and the runtime atlas
+        tenant is blank.  Height is the free axis: the buffer is row-major at a fixed atlas_w
+        stride, so the packed rows are already contiguous from the top and cropping is a smaller
+        write, not a re-blit.  Width is not croppable the same way and is not worth it -- the
+        skyline fills the full width first, which is exactly why the waste is all vertical.
+
+        No trailing gutter row is kept.  Within the page GLYPH_PAD separates NEIGHBOURS, and below
+        the last row there is no neighbour; at the runtime atlas the page is a tenant with its own
+        ring, which for a LINEAR-sampled atlas is edge-replicated (gui_res_atlas.c, extrude).
+    ------------------------------------------------------------------------------------------*/
+
+    if ( used_h > 0 && used_h < atlas_h )
+        atlas_h = used_h;
 
     /*------------------------------------------------------------------------------------------
         Write .orb_font.
@@ -420,6 +445,7 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
     hdr.descent     = descent;
     hdr.line_gap    = line_gap;
     hdr.glyph_count = count;
+    hdr.sdf_range   = sdf_range;
 
     fwrite( &hdr,       sizeof( hdr ),              1,         out );
     fwrite( out_glyphs, sizeof( orb_font_glyph_t ), count,     out );
@@ -427,8 +453,11 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
     fclose( out );
 
     f32 usage_pct = 100.0f * (f32)packed_area / ( (f32)atlas_w * (f32)atlas_h );
-    printf( "[dev_font] baked '%s' %d px -> '%s' (%u glyphs, %ux%u atlas, %.1f%% used, ascent %d, descent %d)\n",
-            label, size_px, out_path, count, atlas_w, atlas_h, usage_pct, ascent, descent );
+    printf( "[dev_font] baked '%s' %d px -> '%s' (%u glyphs, %ux%u atlas, %.1f%% used, ascent %d, descent %d%s",
+            label, size_px, out_path, count, atlas_w, atlas_h, usage_pct, ascent, descent,
+            sdf_range ? ", " : ")\n" );
+    if ( sdf_range )
+        printf( "sdf spread %u px)\n", sdf_range );
     return true;
 }
 
@@ -540,8 +569,11 @@ bake_font( const char* ttf_path, int size_px, const char* out_path )
     free( font_data );
 
     /* Pass 2 + 3 + write live in the shared back-end. */
+    /* Always coverage: stb_truetype rasterizes alpha, and the SDF path is FreeType-only (font_tool).
+       A dev-cache bake is a quick stand-in for a shipped atlas, and an SDF font is a deliberate
+       authored choice, not something to fall into by editing a TTF. */
     bool ok = dev_font_bake_write( out_path, s_glyphs, raw_count,
-                                   ascent_px, descent_px, line_gap_px, size_px, ttf_path );
+                                   ascent_px, descent_px, line_gap_px, size_px, 0u, ttf_path );
 
     for ( u32 i = 0; i < raw_count; ++i )
         if ( s_glyphs[ i ].bitmap )

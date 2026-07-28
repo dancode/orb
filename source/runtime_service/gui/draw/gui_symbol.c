@@ -415,6 +415,21 @@ draw_shadow( gui_rect_t box, f32 spread, u32 col )
     draw_push_shadow( box.x, box.y, box.w, box.h, draw_rounding(), spread * 2.0f, col );
 }
 
+/* A rounded fill whose alpha breathes, evaluated in the FRAGMENT off the shared frame clock.
+   The caller-visible difference from animating the color yourself is what it does NOT do: the
+   command's bytes are identical every frame, so the window's retained geometry is never
+   invalidated and the pulse re-tessellates nothing.  It is the cheap way to keep something
+   asking for attention on a screen full of static widgets.
+
+   `rate` is in Hz (quantized to 1/4 Hz) and `depth` the 0..1 fraction of alpha taken at the
+   trough.  Honors the ambient rounding.  The frame still has to be presented -- the caller runs
+   gui()->request_redraw() while the pulse is live (see GUI_FX_TIME_WRAP in gui.h). */
+static void
+draw_pulse( gui_rect_t box, f32 rate, f32 depth, u32 col )
+{
+    draw_push_pulse( box.x, box.y, box.w, box.h, draw_rounding(), rate, depth, col );
+}
+
 /*==============================================================================================
     Text effects + decorations
 ==============================================================================================*/
@@ -536,6 +551,7 @@ void gui_draw_checker ( gui_rect_t box, f32 cell, u32 col_a, u32 col_b )  { draw
 void gui_draw_hatch   ( gui_rect_t box, f32 spacing, f32 thickness, u32 col ) { draw_hatch( box, spacing, thickness, col ); }
 void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal ) { draw_gradient( box, col_a, col_b, horizontal ); }
 void gui_draw_shadow  ( gui_rect_t box, f32 spread, u32 col )             { draw_shadow( box, spread, col ); }
+void gui_draw_pulse   ( gui_rect_t box, f32 rate, f32 depth, u32 col )    { draw_pulse( box, rate, depth, col ); }
 
 /* text effects + decorations */
 void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline )

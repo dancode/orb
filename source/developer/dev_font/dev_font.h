@@ -87,10 +87,15 @@ bool        dev_font_resolve( const char* request, char* out_path, int out_path_
    .orb_font to out_path.  Both bakers call this after rasterizing (dev_font via stb_truetype,
    font_tool via FreeType) so the packing heuristic and file layout live in one place.  The caller
    owns each glyph's bitmap and frees it after this returns.  `label` names the source in the log
-   line.  Returns false and sets dev_font_last_error() on failure. */
+   line.  Returns false and sets dev_font_last_error() on failure.
+
+   sdf_range describes what the bytes in those bitmaps MEAN and goes straight to the header:
+   0 = coverage (the only thing the stb front-end can produce), > 0 = a distance field with that
+   spread in pixels.  Packing and layout are identical either way -- an SDF glyph is just a bigger
+   rect with different numbers in it -- which is why this stayed one back-end. */
 bool        dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 count,
                                  int ascent, int descent, int line_gap, int size_px,
-                                 const char* label );
+                                 u32 sdf_range, const char* label );
 
 const char* dev_font_last_error( void );
 

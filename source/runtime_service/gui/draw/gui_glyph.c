@@ -37,7 +37,11 @@ font_atlas_sync( void )
 
         if ( !font_slot_upload( slot ) )   /* slot keeps its previous atlas tenant; say so */
         {
+            /* Flushed: an unflushed warning is how this went unnoticed once already.  The symptom
+               downstream is silent -- the font's glyphs simply sample an empty atlas -- so this
+               line is the only thing that names the cause, and it must survive a redirect. */
             printf( "[gui] WARNING: font atlas upload failed for slot %u\n", id );
+            fflush( stdout );
             slot->needs_upload = false;    // don't retry a doomed upload every frame
             continue;
         }
@@ -53,16 +57,17 @@ font_atlas_sync( void )
     Atlas queries -- the shared atlas backing a font id (a texture preview reads these).
 ==============================================================================================*/
 
-/* Bindless index of the atlas backing font id `id` (0 for an empty / out-of-range slot).  Every
-   loaded font shares the one resource atlas, so this is the shared bindless slot for any used font.
-   A texture preview (sb_gui) draws this index -- it shows the whole shared atlas. */
+/* Bindless index of the atlas backing font id `id` (0 for an empty / out-of-range slot).  Coverage
+   fonts all share the one resource atlas; a distance-field font lives in its own.  A texture
+   preview (sb_gui) draws this index -- it shows that whole atlas.  Raw index, no mode field: a
+   preview draws the texture as a picture, not as text. */
 u32
 font_slot_atlas_idx( u32 id )
 {
     font_slot_t* slot = font_slot_ptr( id );
     if ( !slot || !slot->used )
         return 0;
-    return res_atlas_idx();
+    return slot->sdf_range ? res_sdf_idx() : res_atlas_idx();
 }
 
 /* Pixel dimensions of the atlas backing font id `id` (0,0 for an empty / out-of-range slot) -- the
@@ -73,7 +78,8 @@ font_slot_atlas_size( u32 id )
     font_slot_t* slot = font_slot_ptr( id );
     if ( !slot || !slot->used )
         return ( gui_vec2_t ){ 0.0f, 0.0f };
-    return ( gui_vec2_t ){ (f32)GUI_RES_ATLAS_W, (f32)GUI_RES_ATLAS_H };
+    return slot->sdf_range ? ( gui_vec2_t ){ (f32)GUI_SDF_ATLAS_W, (f32)GUI_SDF_ATLAS_H }
+                           : ( gui_vec2_t ){ (f32)GUI_RES_ATLAS_W, (f32)GUI_RES_ATLAS_H };
 }
 
 /*==============================================================================================
@@ -88,6 +94,13 @@ font_glyph( u8 ch,
             f32* advance )
 {
     font_slot_glyph( font_active_slot(), ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
+}
+
+/* Companion to font_glyph: the mode-tagged tex_idx a run of those glyphs draws with. */
+u32
+font_tex( void )
+{
+    return font_slot_tex( font_active_slot() );
 }
 
 // clang-format on

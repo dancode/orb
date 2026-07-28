@@ -6,7 +6,8 @@ layout(push_constant) uniform PC {
     uint samp_idx;
     uint dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color (wireframe / batch view)
     uint dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
-    uint rgba_tex;   // 1 = sample tex_idx as a full RGBA image (scene viewport), not R8 coverage
+    uint tex_mode;   // sampling model (gui_tex_mode_t): 0 = R8 coverage, 1 = full RGBA image
+    float time;      // effect-band frame clock, seconds wrapped to GUI_FX_TIME_WRAP (1024)
 } pc;
 
 layout(location = 0) in vec2 in_pos;

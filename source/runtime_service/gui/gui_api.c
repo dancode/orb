@@ -115,6 +115,7 @@ const gui_api_t g_gui_api_struct =
     .draw_hatch                         = gui_draw_hatch,
     .draw_gradient                      = gui_draw_gradient,
     .draw_shadow                        = gui_draw_shadow,
+    .draw_pulse                         = gui_draw_pulse,
     .draw_text_outline                  = gui_draw_text_outline,
     .draw_text_shadow                   = gui_draw_text_shadow,
     .draw_grip                          = gui_draw_grip,

@@ -80,6 +80,12 @@ void backend_exit( void );
 void font_glyph    ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
                             f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
 
+/* The tex_idx a glyph draw of the ACTIVE font must carry: its backing atlas's bindless slot with
+   the sampling model already in the mode field (gui.h).  The tessellator asks rather than reaching
+   for res_atlas_idx(), because which atlas a font lives in is a property of the FONT -- a
+   distance-field font packs elsewhere and samples differently.  0 when the atlas is not up yet. */
+u32  font_tex      ( void );
+
 /* Icon lookup: cached UVs (+ optional pixel size) for a registered icon id. */
 bool icon_get      ( gui_icon_id_t id,
                      f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );
@@ -175,6 +181,8 @@ void draw_push_rect_gradient    ( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col
    the falloff band and it straddles the boundary, so the geometry reaches feather/2 past the box
    on every side while the shape itself stays exactly where it was authored. */
 void draw_push_shadow           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr );
+void draw_push_pulse            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth,
+                                  u32 abgr );
 
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr );
@@ -351,6 +359,12 @@ u32                 draw_unit_mem_bytes     ( void );
 
 void                gui_render_set_mode     ( gui_render_mode_t mode );
 gui_render_mode_t   gui_render_get_mode     ( void );
+
+/* The effect band's frame clock (gui.h, GUI_FX_TIME_WRAP) -- pushed to the shader as pc.time.
+   Set once per app frame from frame_begin; the caller wraps.  Same one-way frontend -> backend
+   seam as set_mode: this server has no view of the IO snapshot that carries the clock. */
+
+void                gui_render_set_time     ( f32 seconds );
 
 /* A surface's own GPU geometry ring (one vb/ib region per frame-in-flight, sized by the
    server's caps).  The SURFACE RECORD (gui_viewport_t, core/gui_ctx.h) is not this server's

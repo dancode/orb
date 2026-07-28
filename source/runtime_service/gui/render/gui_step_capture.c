@@ -386,6 +386,8 @@ step_cmd_bounds( const gui_cmd_t* c )
             return ( gui_rect_t ){ c->shadow.x - g, c->shadow.y - g,
                                    c->shadow.w + 2.0f * g, c->shadow.h + 2.0f * g };
         }
+        case GUI_CMD_PULSE:
+            return ( gui_rect_t ){ c->pulse.x, c->pulse.y, c->pulse.w, c->pulse.h };
         case GUI_CMD_TRIANGLE:
         {
             f32 x0 = c->tri.ax, x1 = c->tri.ax, y0 = c->tri.ay, y1 = c->tri.ay;

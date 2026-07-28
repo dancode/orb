@@ -1442,9 +1442,10 @@ typedef enum
    without touching the vertex again. */
 typedef enum
 {
-    GUI_FX_NONE = 0,   /* no effect -- (ex, ey) and the parameters are ignored (the default) */
-    GUI_FX_BOX  = 1,   /* filled rounded box: coverage 1 inside the boundary, feathered across it */
-    GUI_FX_RING = 2,   /* the same boundary as a BAND of `border` px lying INSIDE it             */
+    GUI_FX_NONE  = 0,  /* no effect -- (ex, ey) and the parameters are ignored (the default) */
+    GUI_FX_BOX   = 1,  /* filled rounded box: coverage 1 inside the boundary, feathered across it */
+    GUI_FX_RING  = 2,  /* the same boundary as a BAND of `border` px lying INSIDE it             */
+    GUI_FX_PULSE = 3,  /* a BOX whose alpha breathes on pc.time -- the band's first clock reader */
 
 } gui_fx_mode_t;
 
@@ -1464,6 +1465,22 @@ typedef enum
 #define GUI_FX_FEATHER_MAX   127.75f     /*  9 bits at 1/4 px */
 #define GUI_FX_BORDER_MAX    15.875f     /*  7 bits at 1/8 px */
 
+/* THE FRAME CLOCK the fragment sees, in seconds, wrapped to GUI_FX_TIME_WRAP.  It rides the PUSH
+   CONSTANT, not the vertex, and that is the whole point: time is the same number for every shape
+   in the frame, so spending 4 bytes per vertex to repeat it would tax every glyph on screen to say
+   nothing new.  In the push constant it is free in the other direction too -- the flush writes it
+   once before the first draw of a surface and never touches it again, so unlike a per-draw effect
+   parameter it splits no batch.  A time-driven effect therefore re-emits NO geometry and adds NO
+   draw call: the retained cache keeps last frame's vertices and only the constant moves.
+   Caveat, and it is the whole cost: the idle skip means a frame is only presented when something
+   asks for one.  A purely shader-driven animation has no emit to raise wants_redraw, so whatever
+   owns the effect must call gui()->request_redraw() while it runs -- exactly as a volatile widget
+   does.  Time advancing is not the same as the frame advancing.
+   The wrap is a power of two so f32 still resolves ~0.1 ms at the far end, and so any effect whose
+   period divides 1024 s -- every power-of-two fraction of a second -- runs continuously across it.
+   Any other period sees one discontinuity every ~17 minutes. */
+#define GUI_FX_TIME_WRAP     1024.0
+
 /* mode | radius (1/8 px) | feather (1/4 px) | border (1/8 px).  Callers clamp; this only packs. */
 static inline u32
 gui_fx_pack( gui_fx_mode_t mode, f32 radius, f32 feather, f32 border )
@@ -1472,6 +1489,27 @@ gui_fx_pack( gui_fx_mode_t mode, f32 radius, f32 feather, f32 border )
     u32 f = (u32)( feather * 4.0f + 0.5f ) & 0x1FFu;
     u32 b = (u32)( border  * 8.0f + 0.5f ) & 0x7Fu;
     return ( (u32)mode & 0xFu ) | ( r << 4 ) | ( f << 16 ) | ( b << 25 );
+}
+
+/* PULSE re-partitions the word rather than asking for a wider one: the 28 parameter bits are FULL,
+   so a mode that wants a new field spends the one it does not use.  Radius and feather keep their
+   positions -- the shape is a BOX and the fragment decodes them with the same two shifts -- and the
+   7 bits RING spends on `border` become rate + depth.  This is the pattern any future mode follows.
+     rate  -- 4 bits at 1/4 Hz.  Quantized to quarters ON PURPOSE: rate * GUI_FX_TIME_WRAP is then
+              always a whole number of cycles, so every pulse crosses the clock wrap seamlessly.
+     depth -- 3 bits over 0..1.  The fraction of alpha the pulse removes at its trough; 0 is a
+              still box, 1 fades fully out and back. */
+#define GUI_FX_RATE_MAX      3.75f       /* 4 bits at 1/4 Hz */
+#define GUI_FX_DEPTH_STEPS   7.0f        /* 3 bits over 0..1 */
+
+static inline u32
+gui_fx_pack_pulse( f32 radius, f32 feather, f32 rate, f32 depth )
+{
+    u32 r  = (u32)( radius  * 8.0f + 0.5f ) & 0xFFFu;
+    u32 f  = (u32)( feather * 4.0f + 0.5f ) & 0x1FFu;
+    u32 hz = (u32)( rate    * 4.0f + 0.5f ) & 0xFu;
+    u32 dp = (u32)( depth * GUI_FX_DEPTH_STEPS + 0.5f ) & 0x7u;
+    return (u32)GUI_FX_PULSE | ( r << 4 ) | ( f << 16 ) | ( hz << 25 ) | ( dp << 29 );
 }
 
 typedef struct
@@ -1558,6 +1596,7 @@ typedef enum
     GUI_CMD_SPRITE,          // RGBA sprite quad; nine-slice expanded at tessellation when the
                              //   sprite carries slice insets (1, 3 or 9 quads from one command)
     GUI_CMD_SHADOW,          // soft rounded box: one GUI_FX_BOX surface with a wide feather
+    GUI_CMD_PULSE,           // rounded box whose alpha breathes on the shader clock (GUI_FX_PULSE)
 
 } gui_cmd_type_t;
 
@@ -1565,12 +1604,50 @@ typedef enum
    the tessellator's clip test never triggers and the whole-run fast path is taken. */
 #define GUI_TEXT_NO_CLIP 1e30f
 
-/* High bit of a rect command's tex_idx: sample the bindless texture as a full RGBA image (the
-   texel is the color, vertex color tints) instead of the default R8-coverage model (the texel's
-   R channel is alpha, vertex color supplies RGB).  Set by image_texture / draw_texture_in for
-   scene-viewport style external textures; the render backend strips the bit into the rgba_tex
-   push constant.  Batching is unaffected: commands split on the full 32-bit tex_idx value. */
-#define GUI_TEX_RGBA_BIT 0x80000000u
+/* THE SAMPLING MODEL -- the top 2 bits of a rect command's tex_idx.  What a texel MEANS to the
+   fragment: the one axis the shader branches on, and the axis the two atlases are already split
+   along (render/resource/gui_res_atlas.h).
+
+   It rides the tex_idx rather than taking a field of its own because it is a property of the
+   TEXTURE, not of the shape drawn with it, and because batching already splits on the full 32-bit
+   value -- two models can never merge into one draw call by accident, and no batch key had to grow
+   to say so.  The SAMPLER is then DERIVED from the mode at flush (gui_submit.c) and never carried
+   per command: coverage must stay point-sampled or glyphs stop being crisp, colour must filter or
+   it blocks up the moment it is stretched.
+
+   That derivation is the whole reason this is a mode and not the bool it started as: SDF was added
+   as a VALUE here, not as a format change.  Three of the four are spent; the last stays unnamed
+   until something emits it, the same rule the effect band's spare modes follow. */
+#define GUI_TEX_MODE_SHIFT  30u
+#define GUI_TEX_MODE_MASK   ( 3u << GUI_TEX_MODE_SHIFT )
+#define GUI_TEX_MODE( m )   ( (u32)( m ) << GUI_TEX_MODE_SHIFT )
+
+typedef enum
+{
+    GUI_TEX_COVERAGE = 0,   /* R8: the texel's R is alpha and the vertex colour supplies RGB --
+                               glyphs, icons, the drawing assists, every solid fill (white texel) */
+    GUI_TEX_RGBA     = 1,   /* RGBA: the texel IS the colour and the vertex colour tints it --
+                               sprite art, and a caller's own texture via draw_texture_in        */
+    GUI_TEX_SDF      = 2,   /* R8 SIGNED DISTANCE: 128 is the outline, and the fragment recovers
+                               coverage from the screen-space derivative rather than the texel.
+                               That is what lets distance-field text scale and rotate cleanly --
+                               and why it must filter, which is why it could not be a COVERAGE
+                               font wearing a different flag (orb_font.h, sdf_range)             */
+
+} gui_tex_mode_t;
+
+/* Split a command's tex_idx into its two halves: the model, and the bindless slot to sample. */
+static inline gui_tex_mode_t
+gui_tex_mode( u32 tex_idx )
+{
+    return (gui_tex_mode_t)( tex_idx >> GUI_TEX_MODE_SHIFT );
+}
+
+static inline u32
+gui_tex_index( u32 tex_idx )
+{
+    return tex_idx & ~GUI_TEX_MODE_MASK;
+}
 
 /* One semantic draw command.  The 4-byte header carries the command type, the index of the active
    scissor rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), and
@@ -1584,7 +1661,7 @@ typedef enum
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (12 values)
+    u8 type;       // gui_cmd_type_t, fits u8 (13 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
@@ -1627,6 +1704,14 @@ typedef struct
            straddles the boundary (half in, half out), so the geometry it tessellates to reaches
            feather/2 past the box on every side. */
         struct { f32 x, y, w, h; f32 rounding, feather;           u32 abgr; } shadow;
+        /* Pulsing rounded box.  The same surface a rounded fill emits, except its alpha is a
+           function of pc.time evaluated in the FRAGMENT.  That is the whole reason it exists as a
+           command instead of a caller animating the color: the geometry never changes, so the
+           window's retained slot stays valid and nothing re-tessellates while it breathes.  The
+           upload is unchanged -- retention saves the tessellation, not the buffer write.  The
+           frame must still be PRESENTED -- see GUI_FX_TIME_WRAP -- so a caller runs one
+           request_redraw per frame and pays no emit for it. */
+        struct { f32 x, y, w, h; f32 rounding, rate, depth;       u32 abgr; } pulse;
     };
 } gui_cmd_t;
 

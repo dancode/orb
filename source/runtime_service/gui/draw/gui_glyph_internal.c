@@ -29,16 +29,25 @@ font_slot_upload( font_slot_t* slot )
     if ( !slot->pixels )
         return false;
 
+    /* Which atlas depends on what the bytes mean.  A distance field must be sampled LINEAR and
+       coverage must stay NEAREST, and a sampler is chosen per draw, so the two cannot be tenants of
+       one texture -- the split is here, at the one point that decides where pixels land.  A slot
+       never changes kind without reloading, which is what makes the tenant handle unambiguous
+       despite naming a different atlas per slot. */
     u32 tenant;
     if ( slot->atlas_tenant )
     {
-        if ( !res_atlas_update( slot->atlas_tenant, slot->pixels, slot->atlas_w, slot->atlas_h ) )
+        bool ok = slot->sdf_range
+                ? res_sdf_update  ( slot->atlas_tenant, slot->pixels, slot->atlas_w, slot->atlas_h )
+                : res_atlas_update( slot->atlas_tenant, slot->pixels, slot->atlas_w, slot->atlas_h );
+        if ( !ok )
             return false;   // slot keeps its previous tenant intact
         tenant = slot->atlas_tenant;
     }
     else
     {
-        tenant = res_atlas_add( slot->pixels, slot->atlas_w, slot->atlas_h );
+        tenant = slot->sdf_range ? res_sdf_add  ( slot->pixels, slot->atlas_w, slot->atlas_h )
+                                 : res_atlas_add( slot->pixels, slot->atlas_w, slot->atlas_h );
         if ( tenant == 0 )
             return false;
     }
@@ -46,6 +55,26 @@ font_slot_upload( font_slot_t* slot )
     slot->atlas_tenant = tenant;
     slot->needs_upload = false;
     return true;
+}
+
+/*==============================================================================================
+    font_slot_tex -- the tex_idx a draw of this slot's glyphs must carry: the backing atlas's
+    bindless slot, with the sampling model in its mode field (gui.h, gui_tex_mode_t).
+
+    Packing the model into the same number the batcher already keys on is what keeps bitmap text,
+    distance-field text and every fill in one merge rule: two fonts of different kinds separate
+    into different draws automatically, because their tex_idx differ -- no batch key had to learn
+    what a font is.
+==============================================================================================*/
+
+static u32
+font_slot_tex( const font_slot_t* slot )
+{
+    if ( !slot->sdf_range )
+        return res_atlas_idx();
+
+    u32 idx = res_sdf_idx();
+    return idx ? ( idx | GUI_TEX_MODE( GUI_TEX_SDF ) ) : 0u;   /* 0 = atlas not up yet; draw skips */
 }
 
 /*==============================================================================================
@@ -67,11 +96,22 @@ font_slot_glyph( const font_slot_t* slot, u8 ch,
     const orb_font_glyph_t* g = &slot->lookup[ ch - ORB_FONT_CP_FIRST ];
 
     /* Glyph atlas_x/atlas_y are in the font's own baked pixel space; rebase by the font's live
-       page origin in the shared atlas (valid across repacks) and scale by the shared atlas dims. */
+       page origin in the shared atlas (valid across repacks) and scale by the shared atlas dims.
+       Which atlas is the slot's own -- the same split font_slot_upload made when it packed. */
     u32 px, py;
-    res_atlas_origin( slot->atlas_tenant, &px, &py );
-    f32 iw = res_atlas_inv_w();
-    f32 ih = res_atlas_inv_h();
+    f32 iw, ih;
+    if ( slot->sdf_range )
+    {
+        res_sdf_origin( slot->atlas_tenant, &px, &py );
+        iw = res_sdf_inv_w();
+        ih = res_sdf_inv_h();
+    }
+    else
+    {
+        res_atlas_origin( slot->atlas_tenant, &px, &py );
+        iw = res_atlas_inv_w();
+        ih = res_atlas_inv_h();
+    }
     *u0 = (f32)( px + g->atlas_x ) * iw;
     *v0 = (f32)( py + g->atlas_y ) * ih;
     *u1 = *u0 + (f32)g->w * iw;

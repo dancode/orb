@@ -57,6 +57,14 @@ typedef struct
     u32                 atlas_h;            // pixel height of `pixels`
     bool                needs_upload;       // pixels (re)loaded; the render side must pack them into the atlas
 
+    /* What the bytes in `pixels` MEAN: 0 = coverage, > 0 = a distance field with that spread in
+       pixels (orb_font.h, sdf_range).  It is a property of the LOADED FILE, so it is resolved once
+       here at parse time; the render side reads it to pick which atlas the glyphs pack into and
+       which sampling model their draws carry.  Metrics are identical either way -- an SDF glyph is
+       a larger bitmap with a compensating bearing, and the advance never moves -- so layout,
+       measurement and hit-testing never learn this exists. */
+    u32                 sdf_range;          // 0 = coverage bitmap; > 0 = distance field, spread px
+
 } font_slot_t;
 
 /*==============================================================================================

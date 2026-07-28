@@ -610,6 +610,17 @@ typedef struct gui_api_s
     void ( *draw_hatch             )( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
     void ( *draw_gradient          )( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
     void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );
+
+    /* A rounded fill whose alpha breathes on the shared frame clock, evaluated in the FRAGMENT.
+       Its point is what it avoids: the emitted command is byte-identical every frame, so the
+       window's retained geometry stays valid and the animation re-tessellates nothing -- unlike
+       easing the color yourself, which dirties the window's hash on every frame it moves and
+       throws that window's geometry away.  (The per-frame vertex UPLOAD is unaffected either way:
+       the frame's region is written whole regardless of what was retained.)  `rate` is in Hz (quantized to 1/4 Hz, max GUI_FX_RATE_MAX) and
+       `depth` the 0..1 fraction of alpha taken at the trough.  Honors the ambient rounding.
+       The clock advancing does not schedule a frame: call request_redraw while the pulse is
+       live, the same contract a volatile widget has. */
+    void ( *draw_pulse             )( gui_rect_t box, f32 rate, f32 depth, u32 col );
     void ( *draw_text_outline      )( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
     void ( *draw_text_shadow       )( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
     void ( *draw_grip              )( gui_rect_t box, u32 col );

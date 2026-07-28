@@ -721,6 +721,7 @@ draw_hash_cmd( const gui_cmd_t* c )
             break;
         case GUI_CMD_SPRITE:        h = fnv1a( h, &c->sprite, sizeof c->sprite ); break;
         case GUI_CMD_SHADOW:        h = fnv1a( h, &c->shadow, sizeof c->shadow ); break;
+        case GUI_CMD_PULSE:         h = fnv1a( h, &c->pulse,  sizeof c->pulse  ); break;
     }
     return h;
 }
@@ -942,6 +943,48 @@ draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abg
     c->shadow.rounding = rounding;
     c->shadow.feather  = feather;
     c->shadow.abgr     = col;
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+}
+
+/*==============================================================================================
+    draw_push_pulse -- emit a rounded box whose alpha breathes in the SHADER.
+
+    Geometrically identical to a rounded fill, and that identity is the feature: the command's
+    bytes do not change from frame to frame, so its hash does not change, so the window's cached
+    geometry stays valid and the pulse costs zero re-tessellation while it runs.  (The upload is
+    a separate matter: the frame's vertex region is written whole either way.)
+    An equivalent CPU animation -- easing the color's alpha and re-emitting -- would dirty the
+    window's hash every single frame and re-tessellate everything in it.
+
+    `rate` is in Hz (quantized to 1/4 Hz, see gui_fx_pack_pulse) and `depth` is the 0..1 fraction
+    of alpha removed at the trough.  The caller still owes one request_redraw per frame: the clock
+    advancing is not what schedules a frame (gui.h, GUI_FX_TIME_WRAP).
+==============================================================================================*/
+
+void
+draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, u32 abgr )
+{
+    if ( draw_emit_blocked() )
+        return;
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
+    /* One pixel of slack matches the tessellator's own pad -- the AA skirt is real geometry. */
+    if ( draw_cull_box( x - 1.0f, y - 1.0f, w + 2.0f, h + 2.0f ) )
+        return;
+
+    gui_cmd_t* c      = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type           = GUI_CMD_PULSE;
+    c->clip_idx       = s_draw.cur_clip_idx;
+    c->vp             = (u8)s_draw.cur_vp;
+    c->pulse.x        = x;
+    c->pulse.y        = y;
+    c->pulse.w        = w;
+    c->pulse.h        = h;
+    c->pulse.rounding = rounding;
+    c->pulse.rate     = rate;
+    c->pulse.depth    = depth;
+    c->pulse.abgr     = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 

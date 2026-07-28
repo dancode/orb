@@ -485,15 +485,18 @@ cache_diff_windows( void )
             s_seg_next[ s_cache.cur[ bi ].seg_tail ] = (u16)si;
         s_cache.cur[ bi ].seg_tail = (u16)si;
 
-        /* Fold z, vp, font, and BOTH atlas generations into the hash.  The font id alone is not
+        /* Fold z, vp, font, and EVERY atlas generation into the hash.  The font id alone is not
            enough: a live re-bake (font_load_into) changes glyph geometry, and a shared-atlas repack
            can shift every tenant's UVs, all while the font id and the (now shared, stable) bindless
            index are unchanged.  The generations bump on any such structural change, so folding
            them forces the affected windows to re-tessellate against the new packing.  The sprite
            atlas is folded on the same rule and for a sharper reason: a sprite command carries only
            its ID, so its UVs are resolved fresh at every tessellation -- this is what makes that
-           re-tessellation actually happen after a repack. */
-        u32 gen = res_atlas_generation() ^ ( res_sprite_generation() * 2654435761u );
+           re-tessellation actually happen after a repack.  The SDF atlas is folded because a
+           distance-field font's glyphs are its tenants and repack exactly the same way -- and
+           because its FIRST creation moves a font's draws from tex 0 to a real slot. */
+        u32 gen = res_atlas_generation() ^ ( res_sprite_generation() * 2654435761u )
+                                         ^ ( res_sdf_generation()    * 2246822519u );
         u32 h   = s_cache.cur[ bi ].hash;
         h = fnv1a_u32( h, segs[ si ].z    );
         h = fnv1a_u32( h, segs[ si ].vp   );

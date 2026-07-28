@@ -57,7 +57,7 @@ static f32  s_step_accum;
 static const char* k_step_type_name[] = {
     "rect_filled", "rect_outline", "triangle", "text", "circle_filled",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
-    "sprite", "shadow",
+    "sprite", "shadow", "pulse",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -117,8 +117,11 @@ step_cmd_detail( const step_cmd_info_t* ci )
         case GUI_CMD_RECT_FILLED:
             gui_textf( "rect %.0f,%.0f  %.0f x %.0f   round %.1f",
                        c->rect.x, c->rect.y, c->rect.w, c->rect.h, c->rect.rounding );
-            fmt_snprintf( b2, sizeof( b2 ), "tex %u%s", c->rect.tex_idx & ~GUI_TEX_RGBA_BIT,
-                      ( c->rect.tex_idx & GUI_TEX_RGBA_BIT ) ? "  (rgba)" : "" );
+            /* Naming the sampling model matters here: a glyph run that landed in the wrong one is
+               invisible in the geometry and obvious in this label. */
+            static const char* const k_tex_mode[ 4 ] = { "", "  (rgba)", "  (sdf)", "  (mode 3)" };
+            fmt_snprintf( b2, sizeof( b2 ), "tex %u%s", gui_tex_index( c->rect.tex_idx ),
+                          k_tex_mode[ gui_tex_mode( c->rect.tex_idx ) ] );
             row2 = b2;
             break;
         case GUI_CMD_RECT_OUTLINE:
@@ -178,6 +181,13 @@ step_cmd_detail( const step_cmd_info_t* ci )
                           c->shadow.feather );
             row2 = b2;
             break;
+        case GUI_CMD_PULSE:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->pulse.x, c->pulse.y,
+                       c->pulse.w, c->pulse.h );
+            fmt_snprintf( b2, sizeof( b2 ), "round %.1f   rate %.2f Hz   depth %.2f",
+                          c->pulse.rounding, c->pulse.rate, c->pulse.depth );
+            row2 = b2;
+            break;
     }
     gui_text( row2 ? row2 : " " );
 
@@ -208,6 +218,7 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_POLYLINE:      step_swatch( r, r.x, "color", c->polyline.abgr );     break;
                 case GUI_CMD_DASHED_LINE:   step_swatch( r, r.x, "color", c->dash.abgr );         break;
                 case GUI_CMD_SHADOW:        step_swatch( r, r.x, "color", c->shadow.abgr );       break;
+                case GUI_CMD_PULSE:         step_swatch( r, r.x, "color", c->pulse.abgr );        break;
                 default:                                                                          break;
             }
             break;

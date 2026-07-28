@@ -7,11 +7,14 @@
     tenant tables (one retained pixel copy per packed tenant so a repack can re-blit without going
     back to disk).
 
-    ONE mechanism, two instances.  Everything below the "Instances" banner takes a res_atlas_t* and
-    is blind to which atlas it is working on; the only things that differ are `bpp` (1 = coverage,
-    4 = colour) and `assist` (whether the bottom band is reserved).  The public res_atlas_* /
-    res_sprite_* pairs at the foot are the two bindings of that one mechanism -- which is why adding
-    the sprite atlas cost a struct and a set of wrappers rather than a second packer.
+    ONE mechanism, three instances.  Everything below the "Instances" banner takes a res_atlas_t*
+    and is blind to which atlas it is working on; what differs is `bpp` (1 = coverage or distance,
+    4 = colour), `assist` (whether the bottom band is reserved), `extrude` (whether a tenant gets a
+    private edge-replicated ring, which anything sampled LINEAR needs) and the DIMENSIONS -- a
+    distance-field page is several times the area of its coverage twin, so the SDF atlas has to be
+    larger or a font's page cannot be a tenant of it at all.  The public res_atlas_* / res_sprite_*
+    / res_sdf_* sets at the foot are the three bindings of that one mechanism -- which is why each
+    new atlas cost a struct and a set of wrappers rather than another packer.
 
     Included by gui_render.c after resource/gui_atlas.c (whose create/upload/destroy it wraps) and
     before every pipeline stage, which resolve their UVs out of what is packed here.  The tenants
@@ -50,7 +53,11 @@ typedef struct
 typedef struct
 {
     gui_atlas_t    atlas;                            // owned GPU texture + bindless index
-    u8*            pixels;                           // resident CPU staging (W*H*bpp)
+    u8*            pixels;                           // resident CPU staging (w*h*bpp)
+
+    /* Per instance, not global: a distance-field page is several times the area of its coverage
+       twin, so the SDF atlas must be larger or a font's page cannot be a tenant of it at all. */
+    u32            w, h;                             // texture dimensions in pixels
 
     u32            bpp;                              // 1 = R8 coverage, 4 = RGBA8 colour
     bool           assist;                           // reserve + paint the bottom assist band
@@ -69,7 +76,7 @@ typedef struct
     bool           extrude;                          // replicate the tenant's edge into the ring
 
     stbrp_context  pack;                             // master packer over the packable region
-    stbrp_node     nodes[ GUI_RES_ATLAS_W ];
+    stbrp_node     nodes[ GUI_RES_ATLAS_MAX_W ];     // sized for the widest instance
 
     res_tenant_t   tenants[ GUI_RES_ATLAS_MAX_TENANTS ];
 
@@ -92,12 +99,13 @@ typedef struct
 
 static res_atlas_t s_res;   // COVERAGE: glyphs, icons, the drawing assists
 static res_atlas_t s_spr;   // SPRITE:   authored RGBA art (sprite quads, nine-slice frames)
+static res_atlas_t s_sdf;   // SDF:      distance-field glyphs (scalable text)
 
 /* Rows this atlas leaves to the packer -- everything above its (optional) assist band. */
 static u32
 res_pack_h( const res_atlas_t* a )
 {
-    return a->assist ? ( GUI_RES_ATLAS_H - RES_ASSIST_ROWS ) : GUI_RES_ATLAS_H;
+    return a->assist ? ( a->h - RES_ASSIST_ROWS ) : a->h;
 }
 
 /*==============================================================================================
@@ -112,35 +120,35 @@ res_paint_assist( res_atlas_t* a )
     if ( !a->assist )
         return;
 
-    u32 white_row = GUI_RES_ATLAS_H - RES_ASSIST_ROWS;   // first band row
+    u32 white_row = a->h - RES_ASSIST_ROWS;              // first band row
     u32 dash_row0 = white_row + 1u;                      // dash rows follow the white row
 
     /* White texel strip: fill the white row opaque so any texel in it samples r=1.0. */
-    memset( &a->pixels[ white_row * GUI_RES_ATLAS_W ], 0xFF, GUI_RES_ATLAS_W );
+    memset( &a->pixels[ white_row * a->w ], 0xFF, a->w );
 
     /* Each dash row encodes ONE period: the leftmost duty*W texels opaque, the rest zero.  A dashed
        line samples the row with REPEAT-U so the full-width period tiles along the line. */
     for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
     {
-        u8* row = &a->pixels[ ( dash_row0 + p ) * GUI_RES_ATLAS_W ];
-        u32 on  = (u32)( s_dash_duty[ p ] * (f32)GUI_RES_ATLAS_W + 0.5f );
-        if ( on < 1 )                on = 1;
-        if ( on > GUI_RES_ATLAS_W )  on = GUI_RES_ATLAS_W;
-        memset( row, 0x00, GUI_RES_ATLAS_W );   // gap
+        u8* row = &a->pixels[ ( dash_row0 + p ) * a->w ];
+        u32 on  = (u32)( s_dash_duty[ p ] * (f32)a->w + 0.5f );
+        if ( on < 1 )      on = 1;
+        if ( on > a->w )   on = a->w;
+        memset( row, 0x00, a->w );              // gap
         memset( row, 0xFF, on );                // on-run
     }
 
-    a->white_u = 0.5f / (f32)GUI_RES_ATLAS_W;
-    a->white_v = ( (f32)white_row + 0.5f ) / (f32)GUI_RES_ATLAS_H;
+    a->white_u = 0.5f / (f32)a->w;
+    a->white_v = ( (f32)white_row + 0.5f ) / (f32)a->h;
     for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
-        a->dash_v[ p ] = ( (f32)( dash_row0 + p ) + 0.5f ) / (f32)GUI_RES_ATLAS_H;
+        a->dash_v[ p ] = ( (f32)( dash_row0 + p ) + 0.5f ) / (f32)a->h;
 }
 
 /* One pixel of the resident buffer, as bytes. */
 static u8*
 res_px( res_atlas_t* a, u32 x, u32 y )
 {
-    return &a->pixels[ ( (size_t)y * GUI_RES_ATLAS_W + x ) * a->bpp ];
+    return &a->pixels[ ( (size_t)y * a->w + x ) * a->bpp ];
 }
 
 /* Replicate a tenant's outermost row / column one pixel outward on all four sides (corners
@@ -204,7 +212,7 @@ res_pack_one( res_atlas_t* a, u32 w, u32 h, u32* ox, u32* oy )
 static bool
 res_repack( res_atlas_t* a )
 {
-    stbrp_init_target( &a->pack, GUI_RES_ATLAS_W, (int)res_pack_h( a ), a->nodes, GUI_RES_ATLAS_W );
+    stbrp_init_target( &a->pack, (int)a->w, (int)res_pack_h( a ), a->nodes, (int)a->w );
 
     /* Place tallest tenants first: stb_rect_pack's skyline packs tighter that way, and an
        incremental burst of registrations can otherwise leave later (larger) rects homeless. */
@@ -230,7 +238,7 @@ res_repack( res_atlas_t* a )
                             &nx[ k ], &ny[ k ] ) )
             return false;
 
-    memset( a->pixels, 0, (size_t)GUI_RES_ATLAS_W * GUI_RES_ATLAS_H * a->bpp );
+    memset( a->pixels, 0, (size_t)a->w * a->h * a->bpp );
     res_paint_assist( a );
     for ( u32 k = 0; k < n; ++k )
     {
@@ -250,9 +258,11 @@ res_repack( res_atlas_t* a )
 ==============================================================================================*/
 
 static bool
-res_init( res_atlas_t* a, u32 bpp, bool assist, bool extrude, const char* debug_name )
+res_init( res_atlas_t* a, u32 w, u32 h, u32 bpp, bool assist, bool extrude, const char* debug_name )
 {
     memset( a, 0, sizeof( *a ) );
+    a->w          = w;
+    a->h          = h;
     a->bpp        = bpp;
     a->assist     = assist;
     a->extrude    = extrude;
@@ -264,15 +274,15 @@ res_init( res_atlas_t* a, u32 bpp, bool assist, bool extrude, const char* debug_
     a->pad        = extrude ? ( 2u * GUI_RES_ATLAS_PAD ) : GUI_RES_ATLAS_PAD;
 
     /* Resident CPU copy: cleared to 0 (transparent) so unpacked space samples as empty. */
-    a->pixels = (u8*)calloc( (size_t)GUI_RES_ATLAS_W * GUI_RES_ATLAS_H * bpp, 1 );
+    a->pixels = (u8*)calloc( (size_t)w * h * bpp, 1 );
     if ( !a->pixels )
         return false;
 
     /* Packer works the region ABOVE the assist band; the band itself is fixed and never packed. */
-    stbrp_init_target( &a->pack, GUI_RES_ATLAS_W, (int)res_pack_h( a ), a->nodes, GUI_RES_ATLAS_W );
+    stbrp_init_target( &a->pack, (int)a->w, (int)res_pack_h( a ), a->nodes, (int)a->w );
     res_paint_assist( a );
 
-    if ( !gui_atlas_create( &a->atlas, GUI_RES_ATLAS_W, GUI_RES_ATLAS_H, bpp, a->pixels, debug_name ) )
+    if ( !gui_atlas_create( &a->atlas, w, h, bpp, a->pixels, debug_name ) )
     {
         free( a->pixels ); a->pixels = NULL;
         return false;
@@ -319,8 +329,20 @@ res_add( res_atlas_t* a, const u8* src, u32 w, u32 h )
 {
     if ( !a->ready || !src || w == 0 || h == 0 )
         return 0;
-    if ( w + a->pad > GUI_RES_ATLAS_W || h + a->pad > res_pack_h( a ) )
+
+    /* Oversize: the tenant is bigger than the whole texture, so no occupancy and no repack can ever
+       place it.  Loud, per the codebase's overflow rule, and it names the numbers -- this is not a
+       "getting full" condition that a smaller working set would fix, and it fails identically on
+       frame one and frame ten thousand.  A distance-field font page is what found this: it is
+       several times the area of its coverage twin, so it outgrew an atlas the coverage one fits in
+       with room to spare, and the only symptom downstream is that every glyph samples zero. */
+    if ( w + a->pad > a->w || h + a->pad > res_pack_h( a ) )
+    {
+        GUI_WARN_ONCE( "%s: tenant %ux%u does not fit a %ux%u atlas (+%u pad, %u usable rows) -- "
+                       "it is rejected whole; raise the atlas dimensions\n",
+                       a->debug_name, w, h, a->w, a->h, a->pad, res_pack_h( a ) );
         return 0;
+    }
 
     /* Claim a tenant slot and take our own copy of the pixels (needed to re-blit on a repack). */
     u32 idx = GUI_RES_ATLAS_MAX_TENANTS;
@@ -379,7 +401,7 @@ res_update( res_atlas_t* a, u32 handle, const u8* src, u32 w, u32 h )
         return true;
     }
 
-    if ( w + a->pad > GUI_RES_ATLAS_W || h + a->pad > res_pack_h( a ) )
+    if ( w + a->pad > a->w || h + a->pad > res_pack_h( a ) )
         return false;
 
     /* Different footprint: swap the source and repack (this tenant's old rect is freed, origins may
@@ -433,22 +455,25 @@ res_origin( const res_atlas_t* a, u32 handle, u32* ox, u32* oy )
 bool res_atlas_init( void )
 {
     memset( &s_spr, 0, sizeof( s_spr ) );   /* not created until the first sprite registers */
-    return res_init( &s_res, 1u, true, false, "gui_res_atlas" );
+    memset( &s_sdf, 0, sizeof( s_sdf ) );   /* not created until an SDF font loads          */
+    return res_init( &s_res, GUI_RES_ATLAS_W, GUI_RES_ATLAS_H, 1u, true, false, "gui_res_atlas" );
 }
 
 void res_atlas_shutdown( void )
 {
     res_destroy( &s_res );
     res_destroy( &s_spr );
+    res_destroy( &s_sdf );
 }
 
-/* Both atlases flush here so the frame loop keeps ONE upload seam.  Not short-circuited: a dirty
-   sprite atlas must upload even when the coverage atlas is clean, and the caller's "pixels were
-   sent" verdict is the OR of the two. */
+/* Every atlas flushes here so the frame loop keeps ONE upload seam.  Not short-circuited: a dirty
+   sprite or SDF atlas must upload even when the coverage atlas is clean, and the caller's "pixels
+   were sent" verdict is the OR across all three. */
 bool res_atlas_flush_upload( void )
 {
     bool sent = res_flush( &s_res );
-    return res_flush( &s_spr ) || sent;
+    sent      = res_flush( &s_spr ) || sent;
+    return      res_flush( &s_sdf ) || sent;
 }
 
 u32  res_atlas_add       ( const u8* src, u32 w, u32 h )              { return res_add   ( &s_res, src, w, h ); }
@@ -495,7 +520,8 @@ res_atlas_dash_v( f32 duty )
 u32
 res_sprite_add( const u8* rgba, u32 w, u32 h )
 {
-    if ( !s_spr.ready && !res_init( &s_spr, GUI_SPR_ATLAS_BPP, false, true, "gui_sprite_atlas" ) )
+    if ( !s_spr.ready && !res_init( &s_spr, GUI_RES_ATLAS_W, GUI_RES_ATLAS_H,
+                                    GUI_SPR_ATLAS_BPP, false, true, "gui_sprite_atlas" ) )
         return 0;
     return res_add( &s_spr, rgba, w, h );
 }
@@ -508,6 +534,42 @@ f32  res_sprite_inv_w      ( void ) { return 1.0f / (f32)GUI_RES_ATLAS_W; }
 f32  res_sprite_inv_h      ( void ) { return 1.0f / (f32)GUI_RES_ATLAS_H; }
 u32  res_sprite_generation ( void ) { return s_spr.generation; }
 u32  res_sprite_bytes      ( void ) { return s_spr.ready ? GUI_RES_ATLAS_W * GUI_RES_ATLAS_H * GUI_SPR_ATLAS_BPP : 0u; }
+
+/*==============================================================================================
+    THE SDF ATLAS -- public binding, created on demand.
+
+    Same R8 byte as the coverage atlas and the same packer; what differs is only what the byte
+    MEANS (128 = on the outline, see orb_font.h) and therefore how it must be sampled -- LINEAR, so
+    the fragment can take a derivative across it.  That single difference is the whole reason it
+    cannot be a tenant of the coverage atlas: a sampler is chosen per DRAW, and the coverage atlas
+    must stay NEAREST for bitmap glyphs to survive.
+
+    It EXTRUDES, unlike its coverage twin: a tenant's outer edge is replicated into its private
+    ring so a bilinear tap there cannot pull the cleared gutter's 0 -- which reads as "far outside"
+    and would carve a false outline around a glyph's padding.  Created by the first res_sdf_add, so
+    a build with no distance-field font pays neither the quarter-megabyte nor the bindless slot.
+==============================================================================================*/
+
+u32
+res_sdf_add( const u8* src, u32 w, u32 h )
+{
+    if ( !s_sdf.ready && !res_init( &s_sdf, GUI_SDF_ATLAS_W, GUI_SDF_ATLAS_H,
+                                    1u, false, true, "gui_sdf_atlas" ) )
+        return 0;
+    return res_add( &s_sdf, src, w, h );
+}
+
+bool res_sdf_update ( u32 handle, const u8* src, u32 w, u32 h ) { return res_update( &s_sdf, handle, src, w, h ); }
+void res_sdf_origin ( u32 handle, u32* ox, u32* oy )            { res_origin( &s_sdf, handle, ox, oy ); }
+
+u32  res_sdf_idx        ( void ) { return s_sdf.atlas.atlas_idx; }
+/* The dimension accessors read the CONSTANTS, never the instance: a lazily created atlas is asked
+   for its UV scale before it exists, and 1/0 is not a useful answer.  The instance's own w/h exist
+   for the mechanism (packing, blitting, clearing), which only ever runs on a live atlas. */
+f32  res_sdf_inv_w      ( void ) { return 1.0f / (f32)GUI_SDF_ATLAS_W; }
+f32  res_sdf_inv_h      ( void ) { return 1.0f / (f32)GUI_SDF_ATLAS_H; }
+u32  res_sdf_generation ( void ) { return s_sdf.generation; }
+u32  res_sdf_bytes      ( void ) { return s_sdf.ready ? GUI_SDF_ATLAS_W * GUI_SDF_ATLAS_H : 0u; }
 
 // clang-format on
 /*============================================================================================*/

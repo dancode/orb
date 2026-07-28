@@ -10,7 +10,8 @@ layout(push_constant) uniform PC {
     uint samp_idx;
     uint dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color (wireframe / batch view)
     uint dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
-    uint rgba_tex;   // 1 = sample tex_idx as a full RGBA image (scene viewport), not R8 coverage
+    uint tex_mode;   // sampling model (gui_tex_mode_t): 0 = R8 coverage, 1 = full RGBA image
+    float time;      // effect-band frame clock, seconds wrapped to GUI_FX_TIME_WRAP (1024)
 } pc;
 
 layout(location = 0) in  vec4 v_color;
@@ -35,8 +36,9 @@ vec3 srgb_to_linear( vec3 c )
 // The effect band (gui.h): coverage of the shape this fragment's vertex named, 1.0 when it named
 // none.  v_fx_coord is |p| - c, so the corner arc the CPU used to tessellate is simply where both
 // components go positive at once.
-//   mode 1 BOX  -- fill inside the boundary
-//   mode 2 RING -- the band of `border` px lying inside the boundary
+//   mode 1 BOX   -- fill inside the boundary
+//   mode 2 RING  -- the band of `border` px lying inside the boundary
+//   mode 3 PULSE -- BOX, alpha breathing on pc.time (rate + depth replace border in the word)
 // feather is the total width of the transition, straddling the boundary, so coverage is 0.5
 // exactly on it; feather 0 means a hard edge (no antialiasing).
 //
@@ -45,6 +47,11 @@ vec3 srgb_to_linear( vec3 c )
 // depth rather than proximity -- a border wider than the radius (the whole interior lands in the
 // band and fills), and a shadow whose falloff is wider than the radius (its core never reaches
 // full opacity).
+//
+// pc.time -- the wrapped frame clock -- is the band's animation seam, and PULSE is what reading it
+// looks like: frame-constant, so it costs no vertex change, no re-emit and no batch split.  The fx
+// word is fully packed, so a time-driven mode re-partitions the 28 parameter bits it already has
+// rather than asking for more.
 float fx_coverage()
 {
     uint mode = v_fx & 0xFu;
@@ -60,9 +67,20 @@ float fx_coverage()
     if ( mode == 2u )
         d = abs( d + border * 0.5 ) - border * 0.5;
 
-    if ( feather <= 0.0 )
-        return d <= 0.0 ? 1.0 : 0.0;
-    return clamp( 0.5 - d / feather, 0.0, 1.0 );
+    float cov = ( feather <= 0.0 ) ? ( d <= 0.0 ? 1.0 : 0.0 )
+                                   : clamp( 0.5 - d / feather, 0.0, 1.0 );
+
+    // PULSE reuses the same two shifts for radius/feather and reads the top 7 bits as rate+depth.
+    // The wave starts at its PEAK (cos 0 = 1 -> no attenuation), so a pulse fading in from nothing
+    // is never what the first frame shows.
+    if ( mode == 3u )
+    {
+        float rate  = float( ( v_fx >> 25 ) & 0xFu ) * 0.25;
+        float depth = float( ( v_fx >> 29 ) & 0x7u ) / 7.0;
+        cov *= 1.0 - depth * ( 0.5 - 0.5 * cos( 6.28318531 * rate * pc.time ) );
+    }
+
+    return cov;
 }
 
 void main()
@@ -98,13 +116,32 @@ void main()
     vec4  s   = texture( sampler2D( u_textures[pc.tex_idx], u_samplers[pc.samp_idx] ), v_uv );
     float cov = fx_coverage();
 
-    // Full-RGBA image path (scene viewport / arbitrary bindless texture): the texel IS the
-    // color, with the vertex color acting as a tint.  The texel arrives LINEAR: _SRGB-format
+    // GUI_TEX_RGBA -- full-RGBA image (scene viewport / arbitrary bindless texture): the texel IS
+    // the color, with the vertex color acting as a tint.  The texel arrives LINEAR: _SRGB-format
     // textures are hardware-decoded at sample time, and UNORM render targets hold linear data.
     // Only the authored tint color needs the sRGB decode.
-    if ( pc.rgba_tex != 0u )
+    // Compared against the exact model rather than "non-zero" so a model added later falls through
+    // to the coverage path only if that is what it actually wants.
+    if ( pc.tex_mode == 1u )
     {
         out_color = vec4( s.rgb * srgb_to_linear( v_color.rgb ), s.a * v_color.a * cov );
+        return;
+    }
+
+    // GUI_TEX_SDF -- distance-field text.  The texel is not coverage: 128/255 is exactly ON the
+    // outline, above is inside, below is outside (orb_font.h).  Coverage is recovered from the
+    // SCREEN-SPACE DERIVATIVE of that field, which is the whole reason this mode exists:
+    // fwidth(d) is how much the distance changes across one pixel HERE, so d/fwidth(d) is the
+    // distance to the edge measured in pixels no matter how the quad was scaled or rotated. The
+    // AA band is therefore always one pixel wide, and no per-vertex or per-draw parameter has to
+    // carry the scale -- which is why an SDF font costs the vertex format nothing.
+    // The max() guards the degenerate case: deep inside or far outside the field is flat, fwidth
+    // is 0, and d/0 would be a NaN rather than the saturated 1 or 0 that is wanted there.
+    if ( pc.tex_mode == 2u )
+    {
+        float d = s.r - ( 128.0 / 255.0 );
+        out_color = vec4( srgb_to_linear( v_color.rgb ),
+                          v_color.a * cov * clamp( d / max( fwidth( d ), 1e-6 ) + 0.5, 0.0, 1.0 ) );
         return;
     }
 

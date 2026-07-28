@@ -753,6 +753,154 @@ panel_surface( void )
 }
 
 /*==============================================================================================
+    panel_pulse -- animation that costs no re-emit
+
+    Every other moving thing in this sandbox animates the way an immediate-mode UI normally does:
+    the CPU eases a number, the widget re-emits with the new value, the window's hash changes, and
+    its geometry is thrown away and tessellated again.  That is correct, and for a slider grab
+    chasing the mouse it is exactly right -- the SHAPE is what moved.
+
+    A pulse is the case where nothing moved.  The rect is the same rect, frame after frame; only
+    its alpha is different, and alpha is something the fragment shader can work out for itself if
+    you hand it the clock.  So GUI_FX_PULSE does: the command's bytes are byte-identical every
+    frame, the window's hash never changes, and the breathing costs zero re-tessellation for as
+    long as it runs.  (The vertex upload is unchanged -- retention saves the tessellation, not
+    the buffer write.)
+
+    The right-hand pair is the A/B.  Both boxes use the same wave, one evaluated on the CPU and
+    one in the shader, and they are meant to look identical -- that is the point.  The numbers are
+    in the "pulse -- retention meter" window (and are there for a reason worth reading: see
+    window_pulse_meter below).  Turn the CPU box on and this window drops out of the retained set
+    every single frame, for an effect the GPU one gets for nothing.
+
+    What a pulse still owes: a frame to be PRESENTED.  The clock advancing is not what schedules
+    a frame, so the panel calls request_redraw once while it is visible.  One call covers every
+    pulse on the panel -- which is why this is cheap to overuse and the CPU version is not.
+==============================================================================================*/
+
+static bool s_pulse_cpu_on = false;
+
+/* The shader's wave, on the CPU: 1 - depth * (0.5 - 0.5*cos(2*pi*rate*t)).  Duplicated here on
+   purpose -- the demo is only honest if both sides compute the same number. */
+static f32
+pulse_wave( f32 rate, f32 depth, f64 t )
+{
+    f32 phase = (f32)( 6.28318531 * (f64)rate * t );
+    return 1.0f - depth * ( 0.5f - 0.5f * cosf( phase ) );
+}
+
+static void
+panel_pulse( void )
+{
+    gui()->separator_text( "pulse -- the shader reads the clock, so nothing re-tessellates" );
+
+    /* The whole per-frame cost of every pulse below. */
+    gui()->request_redraw();
+
+    gui_rect_t cell = gui()->canvas( 200.0f );
+    f32        x    = cell.x + 6.0f;
+    f32        y    = cell.y + 6.0f;
+
+    /* 1 -- rate sweep.  Quantized to 1/4 Hz by the packing, which is what lets every one of them
+       cross the clock's 1024 s wrap without a jump. */
+    gui()->draw_text( x, y, INK_DIM, "rate 0.5 / 1 / 2 Hz  (depth 0.85)" );
+    {
+        static const f32 rate[ 3 ] = { 0.5f, 1.0f, 2.0f };
+        f32 bx = x;
+        for ( u32 i = 0; i < 3; ++i )
+        {
+            gui()->draw_pulse( ( gui_rect_t ){ bx, y + 20.0f, 108.0f, 42.0f },
+                               rate[ i ], 0.85f, TEAL );
+            bx += 116.0f;
+        }
+    }
+
+    /* 2 -- depth sweep at one rate: how much alpha the trough takes, 0 = a still box. */
+    y += 76.0f;
+    gui()->draw_text( x, y, INK_DIM, "depth 0.25 / 0.5 / 0.75 / 1.0  (1 Hz)" );
+    {
+        static const f32 depth[ 4 ] = { 0.25f, 0.5f, 0.75f, 1.0f };
+        f32 bx = x;
+        for ( u32 i = 0; i < 4; ++i )
+        {
+            gui()->draw_pulse( ( gui_rect_t ){ bx, y + 20.0f, 84.0f, 42.0f },
+                               1.0f, depth[ i ], AMBER );
+            bx += 92.0f;
+        }
+    }
+
+    /* 3 -- the A/B.  Both boxes run the same wave; only where it is evaluated differs.  The
+       numbers live in the meter window, NOT here -- see the banner. */
+    f32 rx = cell.x + 470.0f;
+    gui()->draw_text( rx, cell.y + 6.0f, INK_DIM, "same wave, two ways:" );
+
+    gui()->draw_pulse( ( gui_rect_t ){ rx, cell.y + 30.0f, 110.0f, 44.0f }, 1.0f, 0.8f, PLUM );
+    gui()->draw_text( rx, cell.y + 82.0f, INK_DIM, "GPU: shader" );
+
+    if ( s_pulse_cpu_on )
+    {
+        f32 a   = pulse_wave( 1.0f, 0.8f, gui()->get_time() );
+        u32 col = GUI_COLOR( 0xB0, 0x60, 0xE0, (u32)( a * 255.0f + 0.5f ) );
+        gui()->draw_round_rect( ( gui_rect_t ){ rx + 160.0f, cell.y + 30.0f, 110.0f, 44.0f },
+                                4.0f, 4.0f, 4.0f, 4.0f, true, 0.0f, col );
+    }
+    gui()->draw_text( rx + 160.0f, cell.y + 82.0f, INK_DIM,
+                      s_pulse_cpu_on ? "CPU: re-emit" : "CPU: off" );
+
+    gui()->draw_text( rx, cell.y + 116.0f, INK_DIM, "toggle the CPU box below;" );
+    gui()->draw_text( rx, cell.y + 134.0f, INK_DIM, "the meter window reports" );
+    gui()->draw_text( rx, cell.y + 152.0f, INK_DIM, "what each one costs." );
+
+
+    gui()->checkbox( "animate the CPU box (re-emits this window every frame)", &s_pulse_cpu_on );
+}
+
+/*==============================================================================================
+    window_pulse_meter -- the readout, in a window that does not disturb what it reads
+
+    This started life as three lines of text inside panel_pulse, and it quietly broke the whole
+    demo: a readout whose digits change every frame is a command whose bytes change every frame,
+    so it dirtied the specimen window's hash -- the very window whose retention it was reporting.
+    The meter was measuring itself, and the CPU box's contribution vanished into the noise.
+
+    GUI_WIN_DEBUG_BAND is the library's answer to exactly this.  A debug-band window packs into
+    the second arena band, is EXCLUDED from the render stats it may itself display, and never
+    raises frame_dirty -- so a live readout can neither pollute its own numbers nor defeat the
+    idle skip for the rest of the app.  Any self-measuring UI wants this flag; a diagnostic that
+    perturbs the thing it measures is worse than none.
+==============================================================================================*/
+
+static void
+window_pulse_meter( void )
+{
+    gui()->window_set_next_pos( 20.0f, 510.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 300.0f, 190.0f, GUI_COND_ONCE );
+
+    if ( gui()->window_begin( "pulse -- retention meter", GUI_WIN_DEBUG_BAND ) )
+    {
+        gui()->stack();
+
+        gui_render_stats_t st = gui()->render_stats();
+        gui()->textf( "windows retained  %u / %u", st.win_retained, st.win_total );
+        gui()->textf( "verts retained    %u / %u", st.vert_retained, st.vert_count );
+        gui()->separator();
+
+        if ( s_pulse_cpu_on )
+        {
+            gui()->text( "CPU box ON: the stage window" );
+            gui()->text( "re-tessellates every frame." );
+        }
+        else
+        {
+            gui()->text( "shader pulses only: nothing" );
+            gui()->text( "re-tessellates. Scroll the" );
+            gui()->text( "stage to the pulse panel." );
+        }
+    }
+    gui()->window_end();
+}
+
+/*==============================================================================================
     panel_box -- the DECORATOR: a surface behind a run of widgets
 
     Every other surface in this sandbox belongs to a THING -- a widget's face, a window body --
@@ -1004,6 +1152,93 @@ window_controls( void )
     gui()->window_end();
 }
 
+/*==============================================================================================
+    panel_sdf -- the DISTANCE-FIELD font: the same text through a different sampling model
+
+    Every other glyph in this sandbox comes from the coverage atlas, sampled NEAREST, where the
+    texel IS the alpha.  That is the right answer for editor chrome and the wrong one for game UI,
+    because a coverage glyph only knows what it looks like at the size it was baked -- filter it and
+    it blurs, and the reason motion-snap was once reverted is that the crisp answer and the smooth
+    answer cannot come from one texture.
+
+    So they come from two.  This font's bytes are a SIGNED DISTANCE (128 = on the outline), it packs
+    into its own atlas, and its draws carry GUI_TEX_SDF so the flush binds the bilinear sampler and
+    the fragment recovers coverage from a screen-space derivative instead of reading it.  Nothing
+    above the tessellator changed: the metrics are identical, so layout, measurement and hit-testing
+    cannot tell the two apart, and a run of each still merges by the ordinary tex_idx rule.
+
+    At 1:1 the two rows below should look the same -- that IS the test, because it means the
+    derivative reconstruction agrees with the rasterizer that baked the coverage twin.  What the
+    distance field buys is what happens away from 1:1, and the draw call that scales or rotates a
+    run is the next step, not this one.
+
+    The asset is GENERATED, not committed:  bin\font_tool.exe CascadiaMono 16 -sdf
+==============================================================================================*/
+
+static u32  s_sdf_font = 0;      /* 0 = not loaded (font id 0 is the default bitmap font) */
+static bool s_sdf_atlas_on = false;
+
+/* Loaded once after boot: font_load ACTIVATES what it loads, so the default is put back. */
+static void
+load_sdf_font( void )
+{
+    char path[ 576 ];
+    snprintf( path, sizeof( path ), "%s/assets/font/CascadiaMono_16px_sdf.orb_font", sys_root_dir() );
+
+    u32 prev = gui()->font_active_id();
+    s_sdf_font = gui()->font_load( path );
+    gui()->font_use( prev );
+
+    if ( s_sdf_font == 0 )
+        printf( "[sb_gui_brush] no SDF font at '%s' -- bake one with: font_tool CascadiaMono 16 -sdf\n",
+                path );
+}
+
+static void
+panel_sdf( void )
+{
+    gui()->separator_text( "distance-field text -- a third sampling model, same draw call" );
+
+    if ( s_sdf_font == 0 )
+    {
+        gui()->text_colored( AMBER, "no SDF font loaded" );
+        gui()->text( "bake one:  bin\\font_tool.exe CascadiaMono 16 -sdf" );
+        return;
+    }
+
+    static const char* const SPECIMEN = "Handgloves 0123 @#& -- the quick brown fox";
+
+    gui_rect_t cell = gui()->canvas( s_sdf_atlas_on ? 370.0f : 96.0f );
+    f32        x    = cell.x + 8.0f;
+    f32        y    = cell.y + 8.0f;
+
+    /* The A/B.  Same string, same colour, same pen -- only the font id differs, and with it the
+       atlas, the sampler and the fragment's branch. */
+    gui()->draw_text( x, y, INK_DIM, "coverage (NEAREST, texel = alpha):" );
+    gui()->draw_text( x, y + 18.0f, INK, SPECIMEN );
+
+    gui()->font_use( s_sdf_font );
+    gui()->draw_text( x, y + 44.0f, INK_DIM, "distance field (LINEAR, texel = distance):" );
+    gui()->draw_text( x, y + 62.0f, INK, SPECIMEN );
+    gui()->font_use( 0 );
+
+    /* The field itself, as a picture.  An R8 texture through the RGBA model reads as a RED CHANNEL
+       (a format with no green/blue/alpha samples as 0,0,1), which is fine here -- what is worth
+       seeing is the SHAPE of the data: soft ramps around every glyph instead of the hard coverage
+       islands the other atlas holds.
+       The whole 1024x1024 atlas is shown, and the font's page is ONE tenant occupying the top-left
+       512x512 of it, so the glyphs sit in the upper-left quadrant with the rest cleared to 0.  That
+       is worth seeing too: an SDF page is several times the area of its coverage twin, which is the
+       reason this atlas has dimensions of its own. */
+    if ( s_sdf_atlas_on )
+    {
+        gui_rect_t a = { x, y + 90.0f, 260.0f, 260.0f };
+        gui()->draw_texture_in( a, gui()->font_atlas_idx( s_sdf_font ), 0xFFFFFFFFu );
+    }
+
+    gui()->checkbox( "show the distance-field atlas", &s_sdf_atlas_on );
+}
+
 static void
 window_stage( void )
 {
@@ -1021,7 +1256,9 @@ window_stage( void )
         panel_widget();
         panel_motion();
         panel_surface();
+        panel_pulse();
         panel_box();
+        panel_sdf();
     }
     gui()->window_end();
 }
@@ -1031,6 +1268,7 @@ build_frame( void )
 {
     window_controls();
     window_stage();
+    window_pulse_meter();
 }
 
 /*==============================================================================================
@@ -1084,6 +1322,9 @@ main( int argc, char** argv )
     /* After boot: the sprite atlas creates itself on the first registration, and that needs the
        live rhi context boot just stood up. */
     build_art();
+
+    /* Same reason as build_art: a font's pixels reach the GPU through the live rhi context. */
+    load_sdf_font();
 
     /* Register the kit's style source once, for good: it owns the motion rates from the first
        frame, and the art skin is a branch INSIDE it rather than a second source swapped in. */

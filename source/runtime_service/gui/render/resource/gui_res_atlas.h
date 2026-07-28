@@ -2,25 +2,30 @@
 
     runtime_service/gui/render/resource/gui_res_atlas.h -- The GUI resource atlases.
 
-    TWO atlases over one packer implementation, split by what a texel MEANS -- which is the only
-    axis that matters, because it is what the fragment shader branches on:
+    THREE atlases over one packer implementation, split by what a texel MEANS -- which is the only
+    axis that matters, because it is what the fragment shader branches on (gui_tex_mode_t) and what
+    decides the sampler:
 
         the COVERAGE atlas (res_atlas_*)  -- R8, always resident.  Glyphs, icons, and the
             solid / dash drawing assists.  The texel's R channel is alpha, the vertex colour is
             the RGB, so everything in it tints and everything in it batches together.
         the SPRITE atlas  (res_sprite_*)  -- RGBA8, created LAZILY on the first registration.
             Authored art: sprite quads and nine-slice frames.  The texel IS the colour and the
-            vertex colour tints it (GUI_TEX_RGBA_BIT on the command's tex_idx selects that
-            sampling model).  A build that registers no sprite pays nothing -- no CPU buffer,
+            vertex colour tints it (GUI_TEX_RGBA in the command's tex_idx mode field selects
+            that sampling model).  A build that registers no sprite pays nothing -- no CPU buffer,
             no GPU texture, no bindless slot.
+        the SDF atlas     (res_sdf_*)     -- R8, created LAZILY on the first distance-field font.
+            The byte is a SIGNED DISTANCE (128 = the outline, orb_font.h), so it must be sampled
+            LINEAR; that is the one thing it could not share with the coverage atlas, which must
+            stay NEAREST or bitmap glyphs stop being crisp.  Scalable text lives here.
 
-    The two cannot share a texture (one format each) and therefore never share a draw call, but
-    each is internally ONE texture with ONE bindless slot, so all art within a kind still batches:
-    a window's whole nine-slice frame plus every sprite on it is one draw, exactly as its text and
-    fills are one draw.  They share this file, the packer, and the tenant/repack machinery -- the
-    instance record below is the only thing there are two of.
+    No two can share a texture -- a pixel format apart, or a sampler apart -- and so never share a
+    draw call, but each is internally ONE texture with ONE bindless slot, so all art within a kind
+    still batches: a window's whole nine-slice frame plus every sprite on it is one draw, exactly as
+    its text and fills are one draw.  They share this file, the packer, and the tenant/repack
+    machinery -- the instance record below is the only thing there are three of.
 
-    Everything from here down describes both, with the coverage atlas as the example.
+    Everything from here down describes all three, with the coverage atlas as the example.
 
     Every resource -- font glyph atlases, the runtime icon set, the drawing assists, and sprites --
     is packed into its atlas as a rectangular "tenant".  Because they all
@@ -63,9 +68,28 @@
 
 /* One owned R8 texture, 1 byte / pixel.  512x512 = 256 KiB resident CPU + 256 KiB GPU: fits the
    default UI font(s) plus the editor icon set with room to spare.  Bump to 1024 (or larger) if a
-   build packs many large fonts/icons and res_atlas_add starts reporting the atlas full. */
+   build packs many large fonts/icons and res_atlas_add starts reporting the atlas full.
+   Dimensions are PER INSTANCE (see the record in the .c) precisely because the SDF atlas cannot
+   share these -- see below. */
 #define GUI_RES_ATLAS_W            512u
 #define GUI_RES_ATLAS_H            512u
+
+/* The SDF atlas is WIDER, and that is a property of the data rather than a tuning knob.  A
+   distance-field glyph carries `spread` px of field on all four sides, so it costs several times
+   the area of its coverage twin, and the baker's skyline fills WIDTH first: a 16px face at spread 8
+   packs 512 wide.  A font's whole baked page arrives as ONE tenant, so a 512-wide page cannot go
+   into a 512-wide atlas at any occupancy -- the tenant plus its ring is simply larger than the
+   texture.  That failure is what these dimensions exist to prevent, and its only symptom is one
+   upload warning: the atlas stays empty and every glyph samples zero.
+   Height is modest because the baker crops the page to the rows it actually packed
+   (dev_font_bake_write), so a 16px face is ~512x153 and three fit here.  512 KiB, paid only by a
+   build that loads a distance-field font -- the instance is created lazily.  A much larger face
+   wants a taller atlas; res_add says so loudly rather than silently dropping the page. */
+#define GUI_SDF_ATLAS_W            1024u
+#define GUI_SDF_ATLAS_H            512u
+
+/* Widest any instance may be -- sizes the per-instance packer node scratch. */
+#define GUI_RES_ATLAS_MAX_W        GUI_SDF_ATLAS_W
 
 /* Max distinct packed rects: font slots (<= GUI_FONT_REGISTRY_MAX) + icons (<= ICON_MAX).  The
    sprite atlas shares the instance record and therefore this bound; it needs far fewer. */
@@ -136,6 +160,29 @@ f32  res_sprite_inv_w        ( void );          // 1 / atlas pixel width  (per-s
 f32  res_sprite_inv_h        ( void );          // 1 / atlas pixel height
 u32  res_sprite_generation   ( void );          // bumps on every UV-affecting structural change
 u32  res_sprite_bytes        ( void );          // GPU bytes held (0 until created)
+
+/*==============================================================================================
+    The SDF ATLAS (R8 distance field) -- the same six verbs again, one texel meaning apart.
+
+    Byte-for-byte the same shape as the coverage atlas; the difference is that 128 means "on the
+    outline" rather than "half covered" (orb_font.h, sdf_range), so it must be sampled LINEAR for
+    the fragment to take a derivative across it.  Since a sampler is chosen per DRAW, that is
+    exactly why distance-field glyphs need their own texture instead of a flag on the shared one --
+    the coverage atlas must stay NEAREST or bitmap text stops being crisp.
+
+    Created by the first res_sdf_add (an SDF font loading), and like the sprite atlas every other
+    verb answers the not-ready value until then, so nothing has to be ordered against it.
+==============================================================================================*/
+
+u32  res_sdf_add             ( const u8* src, u32 w, u32 h );    // 1-based tenant handle (0 = full)
+bool res_sdf_update          ( u32 handle, const u8* src, u32 w, u32 h );
+void res_sdf_origin          ( u32 handle, u32* ox, u32* oy );
+
+u32  res_sdf_idx             ( void );          // bindless slot (0 = never created / not ready)
+f32  res_sdf_inv_w           ( void );          // 1 / atlas pixel width  (per-glyph UV scale)
+f32  res_sdf_inv_h           ( void );          // 1 / atlas pixel height
+u32  res_sdf_generation      ( void );          // bumps on every UV-affecting structural change
+u32  res_sdf_bytes           ( void );          // GPU bytes held (0 until created)
 
 // clang-format on
 /*============================================================================================*/

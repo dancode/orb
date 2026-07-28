@@ -67,6 +67,7 @@
    `rest_look` is the plane the span sits in when sel is not moving it -- GUI_LOOK_NORMAL for an
    item, and the caller's own pick for the still painters, which is how draw_face_look reaches the
    SELECT plane without pretending to be mid-transition. */
+
 static void
 face_span( u8 role, u8 rest_role, u8 rest_phase, u8 rest_look, gui_style_mix_t m,
            u8* a_role, u8* a_phase, u8* a_look,

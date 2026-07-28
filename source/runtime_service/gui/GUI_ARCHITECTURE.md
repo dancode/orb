@@ -18,7 +18,10 @@ There are only three real things:
   draw unit).  Rounded shapes are not tessellated: the vertex carries an SDF coordinate and a
   packed mode (the EFFECT BAND, `gui_draw_vert_t` in gui.h) and the fragment resolves the
   boundary, so a rounded fill / frame / shadow is four quads with exact edges.  The mode rides
-  the vertex rather than a push constant precisely so an effect can never split a batch.
+  the vertex rather than a push constant precisely so an effect can never split a batch.  The
+  band's one frame-constant input, the clock, goes the other way: `pc.time` (wrapped seconds,
+  fed by `gui_render_set_time` from frame_begin) is written once per surface, so a time-driven
+  effect re-emits no geometry and adds no draw call.  GUI_FX_PULSE is the first mode to read it.
 - **INTERACT SERVER** (`core/`, unit `gui_core.c`): io routing + dedicated retained-mode
   storage -- the id namespace, the keyed state pool, the ambient interaction record, the item
   protocol, the pane/z contest, anim utilities. ALL retained record types live in its storage

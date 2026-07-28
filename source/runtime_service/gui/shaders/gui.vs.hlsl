@@ -18,7 +18,8 @@ struct gui_pc_t
     uint     samp_idx;   // bindless sampler slot
     uint     dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color
     uint     dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
-    uint     rgba_tex;   // 1 = sample tex_idx as a full RGBA image, not R8 coverage
+    uint     tex_mode;   // sampling model (gui_tex_mode_t): 0 = R8 coverage, 1 = full RGBA image
+    float    time;       // effect-band frame clock, wrapped seconds (GUI_FX_TIME_WRAP)
 };
 [[vk::push_constant]] gui_pc_t pc;
 

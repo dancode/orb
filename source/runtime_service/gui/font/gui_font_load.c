@@ -29,16 +29,29 @@ font_slot_load( font_slot_t* slot, const char* path )
     if ( !f )
         return false;
 
-    /* Validate orb font format header.  v3 (pure glyph coverage) and v2 (legacy, trailing reserved
-       band) are byte-compatible on disk -- the band, if present, just rides along as dead space in
-       this font's packed rect -- so accept either. */
+    /* Validate the orb_font header.  Read the v2/v3 BASE first and only then the v4 tail, because
+       the tail does not exist in an older file and a blind sizeof read would swallow the first
+       glyph record.  The zeroed tail is exactly the legacy meaning (sdf_range 0 = coverage), so
+       nothing downstream needs to know which version it got.
+       v3 (pure glyph coverage) and v2 (legacy, trailing reserved band) stay byte-compatible on
+       disk -- the band, if present, just rides along as dead space in this font's packed rect. */
 
     orb_font_header_t hdr;
-    if ( fread( &hdr, sizeof( hdr ), 1, f ) != 1
+    memset( &hdr, 0, sizeof( hdr ) );
+    if ( fread( &hdr, ORB_FONT_HEADER_BASE_SIZE, 1, f ) != 1
          || hdr.magic   != ORB_FONT_MAGIC
-         || ( hdr.version != 3u && hdr.version != 2u )
+         || hdr.version  < 2u || hdr.version > ORB_FONT_VERSION
          || hdr.glyph_count == 0 || hdr.glyph_count > 256
          || hdr.atlas_w == 0     || hdr.atlas_h == 0 )
+    {
+        fclose( f );
+        return false;
+    }
+
+    if ( hdr.version >= 4u
+         && fread( (u8*)&hdr + ORB_FONT_HEADER_BASE_SIZE, 1,
+                   sizeof( hdr ) - ORB_FONT_HEADER_BASE_SIZE, f )
+            != sizeof( hdr ) - ORB_FONT_HEADER_BASE_SIZE )
     {
         fclose( f );
         return false;
@@ -77,9 +90,10 @@ font_slot_load( font_slot_t* slot, const char* path )
        .orb_font has no integer upscale, so metrics are exact. */
 
     free( slot->pixels );
-    slot->pixels  = pixels;
-    slot->atlas_w = hdr.atlas_w;
-    slot->atlas_h = hdr.atlas_h;
+    slot->pixels    = pixels;
+    slot->atlas_w   = hdr.atlas_w;
+    slot->atlas_h   = hdr.atlas_h;
+    slot->sdf_range = hdr.sdf_range;   /* 0 for every pre-v4 font: coverage, as before */
 
     slot->ascent  = hdr.ascent;
     slot->descent = hdr.descent;
@@ -93,8 +107,11 @@ font_slot_load( font_slot_t* slot, const char* path )
         .size   = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
     };
 
-    printf( "[gui] loaded font '%s' (char_h=%.1f line_h=%.1f)\n",
-            path, slot->metrics.char_h, slot->metrics.line_h );
+    printf( "[gui] loaded font '%s' (char_h=%.1f line_h=%.1f%s",
+            path, slot->metrics.char_h, slot->metrics.line_h,
+            slot->sdf_range ? ", " : ")\n" );
+    if ( slot->sdf_range )
+        printf( "sdf spread %u px)\n", slot->sdf_range );
 
     return true;
 }
