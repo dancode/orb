@@ -1,19 +1,40 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/resource/gui_res_atlas.h -- The shared GUI resource atlas.
+    runtime_service/gui/render/resource/gui_res_atlas.h -- The GUI resource atlases.
 
-    ONE owned R8 coverage texture (GUI_RES_ATLAS_W x GUI_RES_ATLAS_H) with a single bindless slot.
-    Every core UI draw resource -- font glyph atlases, the runtime icon set, and the solid/dash
-    drawing assists -- is packed into this one texture as a rectangular "tenant".  Because they all
+    TWO atlases over one packer implementation, split by what a texel MEANS -- which is the only
+    axis that matters, because it is what the fragment shader branches on:
+
+        the COVERAGE atlas (res_atlas_*)  -- R8, always resident.  Glyphs, icons, and the
+            solid / dash drawing assists.  The texel's R channel is alpha, the vertex colour is
+            the RGB, so everything in it tints and everything in it batches together.
+        the SPRITE atlas  (res_sprite_*)  -- RGBA8, created LAZILY on the first registration.
+            Authored art: sprite quads and nine-slice frames.  The texel IS the colour and the
+            vertex colour tints it (GUI_TEX_RGBA_BIT on the command's tex_idx selects that
+            sampling model).  A build that registers no sprite pays nothing -- no CPU buffer,
+            no GPU texture, no bindless slot.
+
+    The two cannot share a texture (one format each) and therefore never share a draw call, but
+    each is internally ONE texture with ONE bindless slot, so all art within a kind still batches:
+    a window's whole nine-slice frame plus every sprite on it is one draw, exactly as its text and
+    fills are one draw.  They share this file, the packer, and the tenant/repack machinery -- the
+    instance record below is the only thing there are two of.
+
+    Everything from here down describes both, with the coverage atlas as the example.
+
+    Every resource -- font glyph atlases, the runtime icon set, the drawing assists, and sprites --
+    is packed into its atlas as a rectangular "tenant".  Because they all
     resolve to the same bindless index (res_atlas_idx), the tessellator's tex_idx-adjacency batcher
     (tess_ensure_gpu_cmd) merges text, solid fills, dashed lines and icons into one draw call per
-    clip/viewport scope instead of one per resource.  User RGBA images stay their own tex_idx (they
-    are not tenants here) -- the atlas is the DEFAULT that covers core UI, not the only texture.
+    clip/viewport scope instead of one per resource.  A user's OWN RGBA image (a scene render
+    target handed to draw_texture_in) stays its own tex_idx and is not a tenant of either atlas --
+    these cover the resources gui itself owns, not every texture that can reach the draw list.
 
-    Layout: a fixed full-width assist band (white texel + GUI_DASH_PATTERN_COUNT dash rows) is
-    reserved at the very bottom of the texture, exactly as each font atlas used to carry per-atlas
-    (font_finalize_atlas), but now once for the whole GUI and independent of any loaded font.  The
-    remaining top region is an incremental stb_rect_pack area: fonts and icons are packed as they
+    Layout: the coverage atlas reserves a fixed full-width assist band (white texel +
+    GUI_DASH_PATTERN_COUNT dash rows) at the very bottom of the texture, exactly as each font atlas
+    used to carry per-atlas (font_finalize_atlas), but now once for the whole GUI and independent of
+    any loaded font.  The sprite atlas has no assists and packs its full height.  The
+    remaining region is an incremental stb_rect_pack area: tenants are packed as they
     are registered (res_atlas_add) -- adding one rect is a single incremental pack call, no repack.
     A repack (res_atlas_repack, driven from res_atlas_add / res_atlas_update) only runs when a rect
     no longer fits or a tenant is resized; it re-blits every tenant from its retained CPU source, so
@@ -26,11 +47,12 @@
     reload mutates pixels within the persistent texture rather than churning the bindless slot -- the
     VK_ERROR_DEVICE_LOST hazard the per-font-atlas rebuild used to guard against does not arise.
 
-    res_atlas_generation bumps on every structural (UV-affecting) change so the retained render cache
-    can fold it into its per-window hash and re-tessellate geometry whose baked UVs went stale.
+    res_atlas_generation / res_sprite_generation bump on every structural (UV-affecting) change so
+    the retained render cache can fold them into its per-window hash and re-tessellate geometry
+    whose baked UVs went stale.
 
     Included by gui_render.c before the pipeline stages that sample it, and by gui_draw.c, whose
-    fonts and icons are this atlas's tenants -- they pack in from outside the render unit.
+    fonts, icons and sprites are these atlases' tenants -- they pack in from outside the render unit.
 
 ==============================================================================================*/
 #pragma once
@@ -45,8 +67,14 @@
 #define GUI_RES_ATLAS_W            512u
 #define GUI_RES_ATLAS_H            512u
 
-/* Max distinct packed rects: font slots (<= GUI_FONT_REGISTRY_MAX) + icons (<= ICON_MAX). */
+/* Max distinct packed rects: font slots (<= GUI_FONT_REGISTRY_MAX) + icons (<= ICON_MAX).  The
+   sprite atlas shares the instance record and therefore this bound; it needs far fewer. */
 #define GUI_RES_ATLAS_MAX_TENANTS  320u
+
+/* The sprite atlas: same dimensions, 4 bytes / pixel = 1 MiB resident CPU + 1 MiB GPU.  It is
+   created LAZILY on the first res_sprite_add, so that megabyte is only paid by a build that
+   actually registers authored art. */
+#define GUI_SPR_ATLAS_BPP          4u
 
 /* 1px gutter around every packed rect -- keeps a rect's edge texels from being reached by a
    neighbour under any future non-nearest sampling, and matches the old icon-atlas ICON_PAD. */
@@ -60,8 +88,8 @@
 ==============================================================================================*/
 
 bool res_atlas_init          ( void );   // create the texture + resident buffer, paint the assist band
-void res_atlas_shutdown      ( void );   // destroy the texture, free the resident buffer + tenant sources
-bool res_atlas_flush_upload  ( void );   // re-upload if dirty (deferred); true when pixels were sent
+void res_atlas_shutdown      ( void );   // destroy BOTH atlases, free resident buffers + tenant sources
+bool res_atlas_flush_upload  ( void );   // re-upload either atlas if dirty; true when pixels were sent
 
 /*==============================================================================================
     Tenant registration -- fonts (draw/gui_glyph_internal.c) and icons (gui_icon.c) pack through here.
@@ -89,6 +117,25 @@ f32  res_atlas_inv_w         ( void );          // 1 / atlas pixel width  (per-g
 f32  res_atlas_inv_h         ( void );          // 1 / atlas pixel height
 u32  res_atlas_generation    ( void );          // bumps on every UV-affecting structural change
 u32  res_atlas_bytes         ( void );          // GPU bytes held (W*H, R8) -- memory accounting
+
+/*==============================================================================================
+    The SPRITE atlas (RGBA8) -- same six verbs, one texel meaning apart.
+
+    Every entry point mirrors its coverage twin above with one difference: `src` is w*h*4 bytes of
+    RGBA8 rather than w*h bytes of coverage.  The first res_sprite_add creates the texture; before
+    that res_sprite_idx() reports 0 and a sprite draw is a no-op, so nothing has to be ordered
+    against a sprite atlas that may never exist.
+==============================================================================================*/
+
+u32  res_sprite_add          ( const u8* rgba, u32 w, u32 h );   // 1-based tenant handle (0 = full)
+bool res_sprite_update       ( u32 handle, const u8* rgba, u32 w, u32 h );
+void res_sprite_origin       ( u32 handle, u32* ox, u32* oy );
+
+u32  res_sprite_idx          ( void );          // bindless slot (0 = never created / not ready)
+f32  res_sprite_inv_w        ( void );          // 1 / atlas pixel width  (per-sprite UV scale)
+f32  res_sprite_inv_h        ( void );          // 1 / atlas pixel height
+u32  res_sprite_generation   ( void );          // bumps on every UV-affecting structural change
+u32  res_sprite_bytes        ( void );          // GPU bytes held (0 until created)
 
 // clang-format on
 /*============================================================================================*/

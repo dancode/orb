@@ -74,6 +74,14 @@ static struct
     rhi_sampler_t   font_sampler;       // sampler for font textures (point clamp)
     u32             font_sampler_idx;   // bindless slot for font_sampler
 
+    /* Second sampler, bilinear, for the full-RGBA sampling model: authored sprite art and a
+       caller's own textures (a scene render target).  Which one a draw binds is DERIVED from
+       GUI_TEX_RGBA_BIT rather than carried per command, because the bit already answers the
+       question -- coverage is glyphs and icons, which must stay point-sampled to render crisp,
+       and colour is a picture, which must filter or it blocks up the moment it is stretched. */
+    rhi_sampler_t   image_sampler;      // sampler for RGBA images (bilinear clamp)
+    u32             image_sampler_idx;  // bindless slot for image_sampler
+
     gui_render_mode_t debug_mode;     // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
 
 } s_render;
@@ -294,6 +302,21 @@ render_init( void )
     }
     s_render.font_sampler_idx = rhi()->register_sampler( s_render.font_sampler );
 
+    /* The image sampler: bilinear, and CLAMP on both axes -- a sprite never tiles through the
+       sampler (the tessellator repeats quads for that), and REPEAT here would wrap a stretched
+       piece onto its neighbour in the atlas.  Non-fatal if it fails: image draws fall back to the
+       point sampler below, which looks blocky but renders. */
+    s_render.image_sampler = rhi()->sampler_create( &( rhi_sampler_desc_t ){
+        .min_filter = RHI_FILTER_LINEAR,
+        .mag_filter = RHI_FILTER_LINEAR,
+        .mip_filter = RHI_FILTER_NEAREST,
+        .address_u  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .address_v  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .address_w  = RHI_ADDRESS_MODE_CLAMP_TO_EDGE,
+    } );
+    if ( rhi_handle_valid( s_render.image_sampler ) )
+        s_render.image_sampler_idx = rhi()->register_sampler( s_render.image_sampler );
+
     /* Fonts boot in the DRAW unit now (gui_draw_boot, after the whole server stands up) --
        the shared atlas carries the opaque white texel solid-color draws sample, so solids
        and text still share one texture and merge into one draw. */
@@ -320,6 +343,10 @@ render_shutdown( void )
         rhi()->unregister_sampler( s_render.font_sampler_idx );
     if ( rhi_handle_valid( s_render.font_sampler ) )
         rhi()->sampler_destroy( s_render.font_sampler );
+    if ( s_render.image_sampler_idx )
+        rhi()->unregister_sampler( s_render.image_sampler_idx );
+    if ( rhi_handle_valid( s_render.image_sampler ) )
+        rhi()->sampler_destroy( s_render.image_sampler );
 
     if ( rhi_handle_valid( s_render.pipeline_wire ) )
         rhi()->pipeline_destroy( s_render.pipeline_wire );
@@ -559,6 +586,10 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
 
             push.tex_idx  = dc->tex_idx & ~GUI_TEX_RGBA_BIT;
             push.rgba_tex = ( dc->tex_idx & GUI_TEX_RGBA_BIT ) ? 1u : 0u;
+            /* Sampling model picks the sampler: colour filters, coverage stays point-sampled so
+               glyphs render crisp.  Falls back to the point sampler if the bilinear one failed. */
+            push.samp_idx = ( push.rgba_tex && s_render.image_sampler_idx )
+                          ? s_render.image_sampler_idx : s_render.font_sampler_idx;
             if ( batch_view )
                 push.dbg_tint = render_batch_debug_color( draw_calls );
             rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );

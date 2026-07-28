@@ -35,8 +35,10 @@
     own, and all trail the pipeline includes because a snapshot must see what it copies.
 
     resource/gui_atlas.h/.c         -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
-    resource/gui_res_atlas.h/.c     -- THE shared R8 atlas (one texture, one bindless slot) fonts and
-                                        icons pack into as tenants, so all core UI draws batch together
+    resource/gui_res_atlas.h/.c     -- the TWO resource atlases over one packer: the R8 COVERAGE atlas
+                                        (one texture, one bindless slot) fonts and icons pack into so
+                                        all core UI draws batch together, and the RGBA SPRITE atlas
+                                        for authored art, created lazily on its first registration
 
     pipeline/gui_shader.h           -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
     pipeline/gui_emit_draw.c        -- EMIT: CPU draw list: draw_reset, draw_push_* (incl. draw_push_icon), s_draw
@@ -79,16 +81,17 @@
     Unity build
 ==============================================================================================*/
 
-// resource/ -- foundation: the shared GPU-atlas helper, then the single shared resource atlas, then
-// fonts + icons built on it.  gui_atlas.h/.c factors out the raw create/upload/destroy of one GPU
-// texture; gui_res_atlas.h/.c owns THE shared R8 atlas (one texture, one bindless slot) that fonts
-// and icons pack into as tenants so all core UI draws share tex_idx and batch together.
+// resource/ -- foundation: the GPU-atlas helper, then the resource atlases, then fonts + icons +
+// sprites built on them.  gui_atlas.h/.c factors out the raw create/upload/destroy of one GPU
+// texture at either pixel format; gui_res_atlas.h/.c owns both atlases (one texture and one
+// bindless slot each) that fonts, icons and sprites pack into as tenants, so everything of a kind
+// shares tex_idx and batches together.
 #include "runtime_service/gui/render/resource/gui_atlas.h"
 #include "runtime_service/gui/render/resource/gui_atlas.c"
 #include "runtime_service/gui/render/resource/gui_res_atlas.h"
 #include "runtime_service/gui/render/resource/gui_res_atlas.c"
-/* Fonts + icons live in the draw unit (gui_draw.c) -- the server
-   renders from the shared atlas they push into; glyph/icon UV lookups at tess/emit time go
+/* Fonts, icons and sprites live in the draw unit (gui_draw.c) -- the server
+   renders from the atlases they push into; glyph/icon/sprite UV lookups at tess/emit time go
    through the glyph/sprite source contract in gui_render.h. */
 
 // pipeline/ -- types and embedded shader bytecode only, no logic.

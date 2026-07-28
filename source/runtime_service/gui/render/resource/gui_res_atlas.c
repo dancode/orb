@@ -1,15 +1,22 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/resource/gui_res_atlas.c -- The shared GUI resource atlas.
+    runtime_service/gui/render/resource/gui_res_atlas.c -- The GUI resource atlases.
 
-    See gui_res_atlas.h for the rationale.  This file owns the one R8 texture, the resident CPU
-    buffer, the master stb_rect_pack area, the fixed assist band, and the tenant table (one retained
-    pixel copy per packed font/icon so a repack can re-blit without going back to disk).
+    See gui_res_atlas.h for the rationale.  This file owns the two textures, their resident CPU
+    buffers, the master stb_rect_pack area of each, the coverage atlas's fixed assist band, and the
+    tenant tables (one retained pixel copy per packed tenant so a repack can re-blit without going
+    back to disk).
+
+    ONE mechanism, two instances.  Everything below the "Instances" banner takes a res_atlas_t* and
+    is blind to which atlas it is working on; the only things that differ are `bpp` (1 = coverage,
+    4 = colour) and `assist` (whether the bottom band is reserved).  The public res_atlas_* /
+    res_sprite_* pairs at the foot are the two bindings of that one mechanism -- which is why adding
+    the sprite atlas cost a struct and a set of wrappers rather than a second packer.
 
     Included by gui_render.c after resource/gui_atlas.c (whose create/upload/destroy it wraps) and
     before every pipeline stage, which resolve their UVs out of what is packed here.  The tenants
-    themselves -- fonts and icons -- are the DRAW unit's, one level up: they pack in from outside
-    through the res_atlas_* entry points this file exports via gui_res_atlas.h.
+    themselves -- fonts, icons and sprites -- are the DRAW unit's, one level up: they pack in from
+    outside through the entry points this file exports via gui_res_atlas.h.
 
 ==============================================================================================*/
 // clang-format off
@@ -21,32 +28,47 @@
 #include "developer/dev_font/stb_rect_pack.h"
 
 /* Assist band: one white row + the dash rows, full-width, pinned to the bottom of the texture so
-   the packer (which works the top region) never touches it and its UVs never move on a repack. */
+   the packer (which works the top region) never touches it and its UVs never move on a repack.
+   The coverage atlas alone carries it -- the assists ARE coverage. */
 #define RES_ASSIST_ROWS   ( 1u + GUI_DASH_PATTERN_COUNT )
-
-/* Usable packing height: everything above the assist band. */
-#define RES_PACK_H        ( GUI_RES_ATLAS_H - RES_ASSIST_ROWS )
 
 /* On-fraction (dash / period) of each baked dash row; a dashed line picks the nearest at tess time.
    Moved here from the font registry -- the dash rows are an atlas-level asset now, not per-font. */
 static const f32 s_dash_duty[ GUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0.7f };
 
-/* One packed tenant: its retained R8 source and its current pixel rect in the atlas. */
+/* One packed tenant: its retained source pixels and its current pixel rect in the atlas. */
 typedef struct
 {
     bool used;
-    u8*  src;         // owned copy of the coverage bytes (w*h), kept for re-blit on repack
+    u8*  src;         // owned copy of the source bytes (w*h*bpp), kept for re-blit on repack
     u32  w, h;        // source pixel dimensions
     u32  ox, oy;      // current pixel origin (top-left) in the atlas
 
 } res_tenant_t;
 
-static struct
+/* One atlas instance.  `bpp` and `assist` are the entire difference between the two. */
+typedef struct
 {
     gui_atlas_t    atlas;                            // owned GPU texture + bindless index
-    u8*            pixels;                           // resident CPU staging (W*H, R8)
+    u8*            pixels;                           // resident CPU staging (W*H*bpp)
 
-    stbrp_context  pack;                             // master packer over the top RES_PACK_H region
+    u32            bpp;                              // 1 = R8 coverage, 4 = RGBA8 colour
+    bool           assist;                           // reserve + paint the bottom assist band
+    const char*    debug_name;                       // GPU-side label, also the "atlas full" tag
+
+    /* Gutter policy.  `pad` is what the packer adds to every rect; `inset` is how far inside its
+       packed cell the tenant actually sits, so pad - inset is what remains on the far edges.
+       Coverage packs (w+1, h+1) at the cell origin: one gutter row/column shared between
+       neighbours, which is all NEAREST sampling ever needs.  The sprite atlas packs (w+2, h+2) at
+       cell origin + 1, giving each tenant a private 1px ring on ALL FOUR sides, and `extrude`
+       fills that ring with a copy of the tenant's own edge -- because a sprite is sampled LINEAR,
+       and a bilinear tap at the outer edge of a sprite would otherwise pull in the transparent
+       gutter and fringe every piece of art in the atlas. */
+    u32            pad;                              // packer margin added to each rect
+    u32            inset;                            // tenant origin offset inside its packed cell
+    bool           extrude;                          // replicate the tenant's edge into the ring
+
+    stbrp_context  pack;                             // master packer over the packable region
     stbrp_node     nodes[ GUI_RES_ATLAS_W ];
 
     res_tenant_t   tenants[ GUI_RES_ATLAS_MAX_TENANTS ];
@@ -58,27 +80,49 @@ static struct
     bool           dirty;                            // resident buffer changed -> needs GPU re-upload
     bool           ready;                            // texture created and registered
 
-} s_res;
+} res_atlas_t;
+
+/*==============================================================================================
+    Instances
+
+    s_res is stood up by res_atlas_init at backend boot and lives for the process.  s_spr is
+    created by the first res_sprite_add and not before: a build that registers no authored art
+    pays neither the megabyte nor the bindless slot.
+==============================================================================================*/
+
+static res_atlas_t s_res;   // COVERAGE: glyphs, icons, the drawing assists
+static res_atlas_t s_spr;   // SPRITE:   authored RGBA art (sprite quads, nine-slice frames)
+
+/* Rows this atlas leaves to the packer -- everything above its (optional) assist band. */
+static u32
+res_pack_h( const res_atlas_t* a )
+{
+    return a->assist ? ( GUI_RES_ATLAS_H - RES_ASSIST_ROWS ) : GUI_RES_ATLAS_H;
+}
 
 /*==============================================================================================
     Assist band -- paint the white texel row + dash rows into the bottom RES_ASSIST_ROWS rows and
     resolve their (fixed) UVs.  Called at init and after every repack (which clears the buffer).
+    A no-op on an atlas that carries no assists.
 ==============================================================================================*/
 
 static void
-res_paint_assist( void )
+res_paint_assist( res_atlas_t* a )
 {
+    if ( !a->assist )
+        return;
+
     u32 white_row = GUI_RES_ATLAS_H - RES_ASSIST_ROWS;   // first band row
     u32 dash_row0 = white_row + 1u;                      // dash rows follow the white row
 
     /* White texel strip: fill the white row opaque so any texel in it samples r=1.0. */
-    memset( &s_res.pixels[ white_row * GUI_RES_ATLAS_W ], 0xFF, GUI_RES_ATLAS_W );
+    memset( &a->pixels[ white_row * GUI_RES_ATLAS_W ], 0xFF, GUI_RES_ATLAS_W );
 
     /* Each dash row encodes ONE period: the leftmost duty*W texels opaque, the rest zero.  A dashed
        line samples the row with REPEAT-U so the full-width period tiles along the line. */
     for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
     {
-        u8* row = &s_res.pixels[ ( dash_row0 + p ) * GUI_RES_ATLAS_W ];
+        u8* row = &a->pixels[ ( dash_row0 + p ) * GUI_RES_ATLAS_W ];
         u32 on  = (u32)( s_dash_duty[ p ] * (f32)GUI_RES_ATLAS_W + 0.5f );
         if ( on < 1 )                on = 1;
         if ( on > GUI_RES_ATLAS_W )  on = GUI_RES_ATLAS_W;
@@ -86,30 +130,68 @@ res_paint_assist( void )
         memset( row, 0xFF, on );                // on-run
     }
 
-    s_res.white_u = 0.5f / (f32)GUI_RES_ATLAS_W;
-    s_res.white_v = ( (f32)white_row + 0.5f ) / (f32)GUI_RES_ATLAS_H;
+    a->white_u = 0.5f / (f32)GUI_RES_ATLAS_W;
+    a->white_v = ( (f32)white_row + 0.5f ) / (f32)GUI_RES_ATLAS_H;
     for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
-        s_res.dash_v[ p ] = ( (f32)( dash_row0 + p ) + 0.5f ) / (f32)GUI_RES_ATLAS_H;
+        a->dash_v[ p ] = ( (f32)( dash_row0 + p ) + 0.5f ) / (f32)GUI_RES_ATLAS_H;
 }
 
-/* Blit a tenant's retained source into the resident buffer at its current origin. */
+/* One pixel of the resident buffer, as bytes. */
+static u8*
+res_px( res_atlas_t* a, u32 x, u32 y )
+{
+    return &a->pixels[ ( (size_t)y * GUI_RES_ATLAS_W + x ) * a->bpp ];
+}
+
+/* Replicate a tenant's outermost row / column one pixel outward on all four sides (corners
+   included).  Only meaningful on an atlas whose tenants carry a private ring (inset >= 1); see the
+   gutter-policy note on the instance record for why the sprite atlas needs it and the coverage
+   atlas does not. */
 static void
-res_blit_tenant( const res_tenant_t* t )
+res_extrude_tenant( res_atlas_t* a, const res_tenant_t* t )
 {
-    for ( u32 r = 0; r < t->h; ++r )
-        memcpy( &s_res.pixels[ ( t->oy + r ) * GUI_RES_ATLAS_W + t->ox ], &t->src[ r * t->w ], t->w );
+    u32 bpp = a->bpp, x0 = t->ox, y0 = t->oy, x1 = t->ox + t->w - 1, y1 = t->oy + t->h - 1;
+
+    for ( u32 x = x0; x <= x1; ++x )                 /* top / bottom edges */
+    {
+        memcpy( res_px( a, x, y0 - 1 ), res_px( a, x, y0 ), bpp );
+        memcpy( res_px( a, x, y1 + 1 ), res_px( a, x, y1 ), bpp );
+    }
+    for ( u32 y = y0; y <= y1; ++y )                 /* left / right edges */
+    {
+        memcpy( res_px( a, x0 - 1, y ), res_px( a, x0, y ), bpp );
+        memcpy( res_px( a, x1 + 1, y ), res_px( a, x1, y ), bpp );
+    }
+    memcpy( res_px( a, x0 - 1, y0 - 1 ), res_px( a, x0, y0 ), bpp );   /* corners */
+    memcpy( res_px( a, x1 + 1, y0 - 1 ), res_px( a, x1, y0 ), bpp );
+    memcpy( res_px( a, x0 - 1, y1 + 1 ), res_px( a, x0, y1 ), bpp );
+    memcpy( res_px( a, x1 + 1, y1 + 1 ), res_px( a, x1, y1 ), bpp );
 }
 
-/* Pack one (w+PAD, h+PAD) rect into the master packer; on success reports its origin. */
-static bool
-res_pack_one( u32 w, u32 h, u32* ox, u32* oy )
+/* Blit a tenant's retained source into the resident buffer at its current origin.  Row-major, and
+   `bpp` scales both strides -- the one place the two pixel formats differ inside the mechanism. */
+static void
+res_blit_tenant( res_atlas_t* a, const res_tenant_t* t )
 {
-    stbrp_rect rc = { .w = (stbrp_coord)( w + GUI_RES_ATLAS_PAD ),
-                      .h = (stbrp_coord)( h + GUI_RES_ATLAS_PAD ) };
-    if ( !stbrp_pack_rects( &s_res.pack, &rc, 1 ) || !rc.was_packed )
+    u32 bpp = a->bpp;
+    for ( u32 r = 0; r < t->h; ++r )
+        memcpy( res_px( a, t->ox, t->oy + r ), &t->src[ (size_t)r * t->w * bpp ], (size_t)t->w * bpp );
+
+    if ( a->extrude )
+        res_extrude_tenant( a, t );
+}
+
+/* Pack one (w+pad, h+pad) rect into the master packer; on success reports the tenant's origin --
+   the packed cell's, moved in by `inset` so the tenant sits inside its own gutter ring. */
+static bool
+res_pack_one( res_atlas_t* a, u32 w, u32 h, u32* ox, u32* oy )
+{
+    stbrp_rect rc = { .w = (stbrp_coord)( w + a->pad ),
+                      .h = (stbrp_coord)( h + a->pad ) };
+    if ( !stbrp_pack_rects( &a->pack, &rc, 1 ) || !rc.was_packed )
         return false;
-    *ox = (u32)rc.x;
-    *oy = (u32)rc.y;
+    *ox = (u32)rc.x + a->inset;
+    *oy = (u32)rc.y + a->inset;
     return true;
 }
 
@@ -120,22 +202,22 @@ res_pack_one( u32 w, u32 h, u32* ox, u32* oy )
 ==============================================================================================*/
 
 static bool
-res_repack( void )
+res_repack( res_atlas_t* a )
 {
-    stbrp_init_target( &s_res.pack, GUI_RES_ATLAS_W, RES_PACK_H, s_res.nodes, GUI_RES_ATLAS_W );
+    stbrp_init_target( &a->pack, GUI_RES_ATLAS_W, (int)res_pack_h( a ), a->nodes, GUI_RES_ATLAS_W );
 
     /* Place tallest tenants first: stb_rect_pack's skyline packs tighter that way, and an
        incremental burst of registrations can otherwise leave later (larger) rects homeless. */
     u32 order[ GUI_RES_ATLAS_MAX_TENANTS ];
     u32 n = 0;
     for ( u32 i = 0; i < GUI_RES_ATLAS_MAX_TENANTS; ++i )
-        if ( s_res.tenants[ i ].used )
+        if ( a->tenants[ i ].used )
             order[ n++ ] = i;
-    for ( u32 a = 0; a + 1 < n; ++a )
-        for ( u32 b = a + 1; b < n; ++b )
-            if ( s_res.tenants[ order[ b ] ].h > s_res.tenants[ order[ a ] ].h )
+    for ( u32 x = 0; x + 1 < n; ++x )
+        for ( u32 y = x + 1; y < n; ++y )
+            if ( a->tenants[ order[ y ] ].h > a->tenants[ order[ x ] ].h )
             {
-                u32 tmp = order[ a ]; order[ a ] = order[ b ]; order[ b ] = tmp;
+                u32 tmp = order[ x ]; order[ x ] = order[ y ]; order[ y ] = tmp;
             }
 
     /* Pack into scratch origins first and commit only if EVERY tenant fits.  A mid-loop failure
@@ -144,134 +226,145 @@ res_repack( void )
     u32 nx[ GUI_RES_ATLAS_MAX_TENANTS ];
     u32 ny[ GUI_RES_ATLAS_MAX_TENANTS ];
     for ( u32 k = 0; k < n; ++k )
-        if ( !res_pack_one( s_res.tenants[ order[ k ] ].w, s_res.tenants[ order[ k ] ].h,
+        if ( !res_pack_one( a, a->tenants[ order[ k ] ].w, a->tenants[ order[ k ] ].h,
                             &nx[ k ], &ny[ k ] ) )
             return false;
 
-    memset( s_res.pixels, 0, GUI_RES_ATLAS_W * GUI_RES_ATLAS_H );
-    res_paint_assist();
+    memset( a->pixels, 0, (size_t)GUI_RES_ATLAS_W * GUI_RES_ATLAS_H * a->bpp );
+    res_paint_assist( a );
     for ( u32 k = 0; k < n; ++k )
     {
-        res_tenant_t* t = &s_res.tenants[ order[ k ] ];
+        res_tenant_t* t = &a->tenants[ order[ k ] ];
         t->ox = nx[ k ];
         t->oy = ny[ k ];
-        res_blit_tenant( t );
+        res_blit_tenant( a, t );
     }
 
-    s_res.dirty = true;
+    a->dirty = true;
     return true;
 }
 
 /*==============================================================================================
-    Lifecycle
+    Instance lifecycle -- create / destroy one atlas.  res_init is what res_atlas_init calls at
+    boot for the coverage atlas and what the first res_sprite_add calls for the sprite atlas.
 ==============================================================================================*/
 
-bool
-res_atlas_init( void )
+static bool
+res_init( res_atlas_t* a, u32 bpp, bool assist, bool extrude, const char* debug_name )
 {
-    memset( &s_res, 0, sizeof( s_res ) );
+    memset( a, 0, sizeof( *a ) );
+    a->bpp        = bpp;
+    a->assist     = assist;
+    a->extrude    = extrude;
+    a->debug_name = debug_name;
+
+    /* An extruding atlas needs the ring on all four sides, so it pads by two and seats the tenant
+       one in; a plain one keeps the single shared gutter it always had. */
+    a->inset      = extrude ? 1u : 0u;
+    a->pad        = extrude ? ( 2u * GUI_RES_ATLAS_PAD ) : GUI_RES_ATLAS_PAD;
 
     /* Resident CPU copy: cleared to 0 (transparent) so unpacked space samples as empty. */
-    s_res.pixels = (u8*)calloc( GUI_RES_ATLAS_W * GUI_RES_ATLAS_H, 1 );
-    if ( !s_res.pixels )
+    a->pixels = (u8*)calloc( (size_t)GUI_RES_ATLAS_W * GUI_RES_ATLAS_H * bpp, 1 );
+    if ( !a->pixels )
         return false;
 
     /* Packer works the region ABOVE the assist band; the band itself is fixed and never packed. */
-    stbrp_init_target( &s_res.pack, GUI_RES_ATLAS_W, RES_PACK_H, s_res.nodes, GUI_RES_ATLAS_W );
-    res_paint_assist();
+    stbrp_init_target( &a->pack, GUI_RES_ATLAS_W, (int)res_pack_h( a ), a->nodes, GUI_RES_ATLAS_W );
+    res_paint_assist( a );
 
-    if ( !gui_atlas_create( &s_res.atlas, GUI_RES_ATLAS_W, GUI_RES_ATLAS_H, s_res.pixels, "gui_res_atlas" ) )
+    if ( !gui_atlas_create( &a->atlas, GUI_RES_ATLAS_W, GUI_RES_ATLAS_H, bpp, a->pixels, debug_name ) )
     {
-        free( s_res.pixels ); s_res.pixels = NULL;
+        free( a->pixels ); a->pixels = NULL;
         return false;
     }
 
-    s_res.generation = 1;
-    s_res.ready      = true;
+    a->generation = 1;
+    a->ready      = true;
     return true;
 }
 
-void
-res_atlas_shutdown( void )
+static void
+res_destroy( res_atlas_t* a )
 {
     for ( u32 i = 0; i < GUI_RES_ATLAS_MAX_TENANTS; ++i )
     {
-        free( s_res.tenants[ i ].src );
-        s_res.tenants[ i ].src = NULL;
+        free( a->tenants[ i ].src );
+        a->tenants[ i ].src = NULL;
     }
-    gui_atlas_destroy( &s_res.atlas );
-    free( s_res.pixels );
-    s_res.pixels = NULL;
-    s_res.ready  = false;
+    gui_atlas_destroy( &a->atlas );
+    free( a->pixels );
+    a->pixels = NULL;
+    a->ready  = false;
 }
 
 /* Returns true when pixels actually reached the GPU this call.  The frame loop turns that into a
    forced rebuild: new resident art (an icon registered between frames) only becomes visible once a
    widget emits it, and on a clean frame no widget runs at all. */
-bool
-res_atlas_flush_upload( void )
+static bool
+res_flush( res_atlas_t* a )
 {
-    if ( !s_res.ready || !s_res.dirty )
+    if ( !a->ready || !a->dirty )
         return false;
-    gui_atlas_upload( &s_res.atlas, s_res.pixels );
-    s_res.dirty = false;
+    gui_atlas_upload( &a->atlas, a->pixels );
+    a->dirty = false;
     return true;
 }
 
 /*==============================================================================================
-    Tenant registration
+    Tenant registration -- the mechanism, over either instance.
 ==============================================================================================*/
 
-u32
-res_atlas_add( const u8* src, u32 w, u32 h )
+static u32
+res_add( res_atlas_t* a, const u8* src, u32 w, u32 h )
 {
-    if ( !s_res.ready || !src || w == 0 || h == 0 )
+    if ( !a->ready || !src || w == 0 || h == 0 )
         return 0;
-    if ( w + GUI_RES_ATLAS_PAD > GUI_RES_ATLAS_W || h + GUI_RES_ATLAS_PAD > RES_PACK_H )
+    if ( w + a->pad > GUI_RES_ATLAS_W || h + a->pad > res_pack_h( a ) )
         return 0;
 
-    /* Claim a tenant slot and take our own copy of the coverage (needed to re-blit on a repack). */
+    /* Claim a tenant slot and take our own copy of the pixels (needed to re-blit on a repack). */
     u32 idx = GUI_RES_ATLAS_MAX_TENANTS;
     for ( u32 i = 0; i < GUI_RES_ATLAS_MAX_TENANTS; ++i )
-        if ( !s_res.tenants[ i ].used ) { idx = i; break; }
+        if ( !a->tenants[ i ].used ) { idx = i; break; }
     if ( idx == GUI_RES_ATLAS_MAX_TENANTS )
         return 0;
 
-    u8* copy = (u8*)malloc( (size_t)w * h );
+    size_t bytes = (size_t)w * h * a->bpp;
+    u8*    copy  = (u8*)malloc( bytes );
     if ( !copy )
         return 0;
-    memcpy( copy, src, (size_t)w * h );
+    memcpy( copy, src, bytes );
 
-    res_tenant_t* t = &s_res.tenants[ idx ];
+    res_tenant_t* t = &a->tenants[ idx ];
     t->used = true;
     t->src  = copy;
     t->w    = w;
     t->h    = h;
 
     /* Fast path: one incremental pack call.  On a full packer, fold this tenant into a repack. */
-    if ( res_pack_one( w, h, &t->ox, &t->oy ) )
+    if ( res_pack_one( a, w, h, &t->ox, &t->oy ) )
     {
-        res_blit_tenant( t );
-        s_res.dirty = true;
+        res_blit_tenant( a, t );
+        a->dirty = true;
     }
-    else if ( !res_repack() )   /* repack places every used tenant, including this one */
+    else if ( !res_repack( a ) )   /* repack places every used tenant, including this one */
     {
         free( t->src );
         *t = ( res_tenant_t ){ 0 };
         return 0;
     }
 
-    ++s_res.generation;
+    ++a->generation;
     return idx + 1;   /* 1-based handle; 0 reserved for "none" */
 }
 
-bool
-res_atlas_update( u32 handle, const u8* src, u32 w, u32 h )
+static bool
+res_update( res_atlas_t* a, u32 handle, const u8* src, u32 w, u32 h )
 {
-    if ( !s_res.ready || handle == 0 || handle > GUI_RES_ATLAS_MAX_TENANTS || !src || w == 0 || h == 0 )
+    if ( !a->ready || handle == 0 || handle > GUI_RES_ATLAS_MAX_TENANTS || !src || w == 0 || h == 0 )
         return false;
 
-    res_tenant_t* t = &s_res.tenants[ handle - 1 ];
+    res_tenant_t* t = &a->tenants[ handle - 1 ];
     if ( !t->used )
         return false;
 
@@ -279,22 +372,22 @@ res_atlas_update( u32 handle, const u8* src, u32 w, u32 h )
     {
         /* Same footprint: replace pixels and re-blit in place -- no repack, origin unchanged.  Bump
            generation anyway: glyph shapes / metrics changed, so cached geometry must re-tessellate. */
-        memcpy( t->src, src, (size_t)w * h );
-        res_blit_tenant( t );
-        s_res.dirty = true;
-        ++s_res.generation;
+        memcpy( t->src, src, (size_t)w * h * a->bpp );
+        res_blit_tenant( a, t );
+        a->dirty = true;
+        ++a->generation;
         return true;
     }
 
-    if ( w + GUI_RES_ATLAS_PAD > GUI_RES_ATLAS_W || h + GUI_RES_ATLAS_PAD > RES_PACK_H )
+    if ( w + a->pad > GUI_RES_ATLAS_W || h + a->pad > res_pack_h( a ) )
         return false;
 
     /* Different footprint: swap the source and repack (this tenant's old rect is freed, origins may
        move).  On failure the tenant keeps its old (still-blitted) pixels -- restore its source. */
-    u8* copy = (u8*)malloc( (size_t)w * h );
+    u8* copy = (u8*)malloc( (size_t)w * h * a->bpp );
     if ( !copy )
         return false;
-    memcpy( copy, src, (size_t)w * h );
+    memcpy( copy, src, (size_t)w * h * a->bpp );
 
     u8* old_src = t->src;
     u32 old_w = t->w, old_h = t->h;
@@ -302,38 +395,65 @@ res_atlas_update( u32 handle, const u8* src, u32 w, u32 h )
     t->w   = w;
     t->h   = h;
 
-    if ( !res_repack() )
+    if ( !res_repack( a ) )
     {
         free( t->src );
         t->src = old_src;
         t->w   = old_w;
         t->h   = old_h;
-        res_repack();   /* restore the previous layout so the atlas stays consistent */
+        res_repack( a );   /* restore the previous layout so the atlas stays consistent */
         return false;
     }
 
     free( old_src );
-    ++s_res.generation;
+    ++a->generation;
     return true;
 }
 
-void
-res_atlas_origin( u32 handle, u32* ox, u32* oy )
+static void
+res_origin( const res_atlas_t* a, u32 handle, u32* ox, u32* oy )
 {
-    if ( handle == 0 || handle > GUI_RES_ATLAS_MAX_TENANTS || !s_res.tenants[ handle - 1 ].used )
+    if ( handle == 0 || handle > GUI_RES_ATLAS_MAX_TENANTS || !a->tenants[ handle - 1 ].used )
     {
         if ( ox ) *ox = 0;
         if ( oy ) *oy = 0;
         return;
     }
-    const res_tenant_t* t = &s_res.tenants[ handle - 1 ];
+    const res_tenant_t* t = &a->tenants[ handle - 1 ];
     if ( ox ) *ox = t->ox;
     if ( oy ) *oy = t->oy;
 }
 
 /*==============================================================================================
-    Sampling accessors
+    THE COVERAGE ATLAS -- public binding.  Stood up at backend boot; shutdown tears down BOTH
+    instances, since the sprite atlas has no lifecycle entry point of its own (it is created on
+    demand and lives until the backend goes down).
 ==============================================================================================*/
+
+bool res_atlas_init( void )
+{
+    memset( &s_spr, 0, sizeof( s_spr ) );   /* not created until the first sprite registers */
+    return res_init( &s_res, 1u, true, false, "gui_res_atlas" );
+}
+
+void res_atlas_shutdown( void )
+{
+    res_destroy( &s_res );
+    res_destroy( &s_spr );
+}
+
+/* Both atlases flush here so the frame loop keeps ONE upload seam.  Not short-circuited: a dirty
+   sprite atlas must upload even when the coverage atlas is clean, and the caller's "pixels were
+   sent" verdict is the OR of the two. */
+bool res_atlas_flush_upload( void )
+{
+    bool sent = res_flush( &s_res );
+    return res_flush( &s_spr ) || sent;
+}
+
+u32  res_atlas_add       ( const u8* src, u32 w, u32 h )              { return res_add   ( &s_res, src, w, h ); }
+bool res_atlas_update    ( u32 h_, const u8* src, u32 w, u32 h )      { return res_update( &s_res, h_, src, w, h ); }
+void res_atlas_origin    ( u32 handle, u32* ox, u32* oy )             { res_origin( &s_res, handle, ox, oy ); }
 
 u32  res_atlas_idx        ( void ) { return s_res.atlas.atlas_idx; }
 f32  res_atlas_inv_w      ( void ) { return 1.0f / (f32)GUI_RES_ATLAS_W; }
@@ -362,6 +482,32 @@ res_atlas_dash_v( f32 duty )
     }
     return s_res.dash_v[ best ];
 }
+
+/*==============================================================================================
+    THE SPRITE ATLAS -- public binding, created on demand.
+
+    res_sprite_add is the only entry point that can bring the texture into existence; every other
+    verb reads an atlas that may never have been created and answers the not-ready value (0 index,
+    0 bytes, origin 0,0).  That is what lets the whole sprite path be optional with no ordering
+    rule for a host to remember.
+==============================================================================================*/
+
+u32
+res_sprite_add( const u8* rgba, u32 w, u32 h )
+{
+    if ( !s_spr.ready && !res_init( &s_spr, GUI_SPR_ATLAS_BPP, false, true, "gui_sprite_atlas" ) )
+        return 0;
+    return res_add( &s_spr, rgba, w, h );
+}
+
+bool res_sprite_update ( u32 handle, const u8* rgba, u32 w, u32 h ) { return res_update( &s_spr, handle, rgba, w, h ); }
+void res_sprite_origin ( u32 handle, u32* ox, u32* oy )             { res_origin( &s_spr, handle, ox, oy ); }
+
+u32  res_sprite_idx        ( void ) { return s_spr.atlas.atlas_idx; }
+f32  res_sprite_inv_w      ( void ) { return 1.0f / (f32)GUI_RES_ATLAS_W; }
+f32  res_sprite_inv_h      ( void ) { return 1.0f / (f32)GUI_RES_ATLAS_H; }
+u32  res_sprite_generation ( void ) { return s_spr.generation; }
+u32  res_sprite_bytes      ( void ) { return s_spr.ready ? GUI_RES_ATLAS_W * GUI_RES_ATLAS_H * GUI_SPR_ATLAS_BPP : 0u; }
 
 // clang-format on
 /*============================================================================================*/

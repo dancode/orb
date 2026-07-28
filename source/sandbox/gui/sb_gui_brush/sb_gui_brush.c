@@ -1,0 +1,650 @@
+/*==============================================================================================
+
+    sandbox/gui/sb_gui_brush/sb_gui_brush.c -- the BRUSH test bed: sprites, nine-slice, and the
+    widened paint floor.
+
+    What this proves, in the order the panels prove it:
+
+        1  the four brush kinds fill the SAME rect through the SAME call (draw_brush), so a
+           surface's look is a value a caller passes, not a function a caller picks
+        2  a nine-slice holds its authored corners at every size -- the whole reason sprites
+           carry slice insets, shown as one sprite drawn at six sizes at once
+        3  stretch vs TILE, the flips, the tint, and the `scale` field, all live
+        4  a CUSTOM WIDGET skinned entirely by a brush: rect + item() + draw_brush, no chrome,
+           no style grid -- the payoff, since that widget's face is now data its caller owns
+
+    Every sprite here is authored PROCEDURALLY at startup (paint_* below) and registered through
+    gui()->register_sprite, so the sandbox has zero asset dependencies and the art is readable as
+    code.  A real kit would gui()->load_sprite a PNG instead; nothing downstream can tell the
+    difference -- same atlas, same tenant, same batching.
+
+    Controls live in the left window; the specimen and the proof strips are drawn into the right
+    one.  Both are ordinary stock windows, because none of this needed a new container.
+
+==============================================================================================*/
+
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+
+#include "orb.h"
+#include "engine/mod/mod_host.h"
+#include "engine/ref/ref_host.h"
+#include "engine/sys/sys_host.h"
+#include "engine/app/app_host.h"
+#include "engine/core/core_host.h"
+#include "runtime_service/rhi/rhi_host.h"
+#include "runtime_service/gui/gui_host.h"
+
+// clang-format off
+
+#define INK       GUI_COLOR( 0xE8, 0xE0, 0xD0, 0xFF )
+#define INK_DIM   GUI_COLOR( 0x90, 0x8C, 0x84, 0xFF )
+#define AMBER     GUI_COLOR( 0xFF, 0xA0, 0x20, 0xFF )
+#define TEAL      GUI_COLOR( 0x20, 0xC0, 0xB0, 0xFF )
+#define PLUM      GUI_COLOR( 0xB0, 0x60, 0xE0, 0xFF )
+
+/*==============================================================================================
+    A tiny RGBA painting kit -- enough to author the demo art in code.
+
+    Straight (non-premultiplied) alpha, RGBA byte order, row-major: exactly what
+    register_sprite takes and what stb_image would have decoded a PNG into.
+==============================================================================================*/
+
+#define ART_MAX  ( 64 * 64 )
+
+typedef struct
+{
+    u8  px[ ART_MAX * 4 ];
+    u32 w, h;
+
+} art_t;
+
+static void
+art_begin( art_t* a, u32 w, u32 h )
+{
+    memset( a, 0, sizeof( *a ) );
+    a->w = w;
+    a->h = h;
+}
+
+/* Blend one RGBA texel over what is already there (source-over, straight alpha). */
+static void
+art_px( art_t* a, i32 x, i32 y, u32 r, u32 g, u32 b, u32 alpha )
+{
+    if ( x < 0 || y < 0 || (u32)x >= a->w || (u32)y >= a->h || alpha == 0 )
+        return;
+
+    u8* p  = &a->px[ ( (u32)y * a->w + (u32)x ) * 4 ];
+    f32 sa = (f32)alpha / 255.0f;
+    f32 da = (f32)p[ 3 ] / 255.0f;
+    f32 oa = sa + da * ( 1.0f - sa );
+    if ( oa <= 0.0001f ) { p[ 0 ] = p[ 1 ] = p[ 2 ] = p[ 3 ] = 0; return; }
+
+    f32 sc[ 3 ] = { (f32)r, (f32)g, (f32)b };
+    for ( u32 i = 0; i < 3; ++i )
+        p[ i ] = (u8)( ( sc[ i ] * sa + (f32)p[ i ] * da * ( 1.0f - sa ) ) / oa + 0.5f );
+    p[ 3 ] = (u8)( oa * 255.0f + 0.5f );
+}
+
+static void
+art_rect( art_t* a, i32 x, i32 y, i32 w, i32 h, u32 r, u32 g, u32 b, u32 alpha )
+{
+    for ( i32 j = y; j < y + h; ++j )
+        for ( i32 i = x; i < x + w; ++i )
+            art_px( a, i, j, r, g, b, alpha );
+}
+
+/*==============================================================================================
+    The demo art
+
+    Four pieces, each chosen to exercise one thing the brush has to get right.
+==============================================================================================*/
+
+/* PANEL FRAME -- 48x48, sliced 16 all round.  An outer rule, an inner bevel (light top-left,
+   dark bottom-right), a stud in each corner, and a flat interior.  The studs are the test: they
+   live entirely inside the corner slices, so they must stay 16x16 and perfectly round no matter
+   how far the frame is stretched. */
+static void
+paint_frame( art_t* a )
+{
+    art_begin( a, 48, 48 );
+
+    art_rect( a, 0, 0, 48, 48, 0x2A, 0x2D, 0x34, 0xFF );          /* interior fill        */
+    art_rect( a, 0, 0, 48,  1, 0x6E, 0x76, 0x88, 0xFF );          /* outer rule           */
+    art_rect( a, 0, 47, 48,  1, 0x6E, 0x76, 0x88, 0xFF );
+    art_rect( a, 0, 0,  1, 48, 0x6E, 0x76, 0x88, 0xFF );
+    art_rect( a, 47, 0,  1, 48, 0x6E, 0x76, 0x88, 0xFF );
+
+    art_rect( a, 2, 2, 44,  1, 0x9A, 0xA4, 0xB8, 0xFF );          /* inner bevel, lit     */
+    art_rect( a, 2, 2,  1, 44, 0x9A, 0xA4, 0xB8, 0xFF );
+    art_rect( a, 2, 45, 44, 1, 0x1A, 0x1C, 0x20, 0xFF );          /* inner bevel, shaded  */
+    art_rect( a, 45, 2,  1, 44, 0x1A, 0x1C, 0x20, 0xFF );
+
+    /* A stud in each corner: a filled disc with a lit rim, drawn with per-texel coverage so the
+       edges are smooth -- this is the detail that would smear if the slice were wrong. */
+    const i32 cx[ 4 ] = { 8, 39, 8, 39 };
+    const i32 cy[ 4 ] = { 8, 8, 39, 39 };
+    for ( u32 k = 0; k < 4; ++k )
+        for ( i32 j = -6; j <= 6; ++j )
+            for ( i32 i = -6; i <= 6; ++i )
+            {
+                f32 d = sqrtf( (f32)( i * i + j * j ) );
+                if ( d > 5.5f ) continue;
+                u32 cov = ( d > 4.5f ) ? (u32)( ( 5.5f - d ) * 255.0f ) : 255u;
+                bool rim = ( d > 3.4f );
+                art_px( a, cx[ k ] + i, cy[ k ] + j,
+                        rim ? 0xC8 : 0x50, rim ? 0xA0 : 0x54, rim ? 0x40 : 0x5E, cov );
+            }
+}
+
+/* BUTTON FACE -- 24x24, sliced 8 all round.  Rounded corners carried in ALPHA (so the corners
+   really are transparent, not "the background colour painted in"), a vertical gloss ramp, and a
+   lit top edge.  The 8x8 middle is what stretches across a button of any width. */
+static void
+paint_button( art_t* a )
+{
+    art_begin( a, 24, 24 );
+
+    for ( i32 y = 0; y < 24; ++y )
+    {
+        f32 t   = (f32)y / 23.0f;                                  /* gloss ramp, top to bottom */
+        u32 lum = (u32)( 92.0f - 40.0f * t );
+        for ( i32 x = 0; x < 24; ++x )
+        {
+            /* Corner coverage: distance from the nearest corner's 7px arc centre. */
+            f32 cxp = ( x < 12 ) ? 7.0f : 16.0f;
+            f32 cyp = ( y < 12 ) ? 7.0f : 16.0f;
+            f32 dx  = ( x < 7 || x > 16 ) ? (f32)x - cxp : 0.0f;
+            f32 dy  = ( y < 7 || y > 16 ) ? (f32)y - cyp : 0.0f;
+            f32 d   = sqrtf( dx * dx + dy * dy );
+            if ( d > 7.5f ) continue;
+            u32 cov = ( d > 6.5f ) ? (u32)( ( 7.5f - d ) * 255.0f ) : 255u;
+
+            art_px( a, x, y, lum, lum + 4, lum + 12, cov );
+        }
+    }
+    art_rect( a, 7, 1, 10, 1, 0xC0, 0xC8, 0xD8, 0xB0 );            /* lit top edge */
+}
+
+/* CHEVRON RIBBON -- 24x16, sliced { 8, 8, 0, 0 }: horizontal slices only, so the caps hold and
+   only the 8px middle repeats.  The middle carries ONE chevron, which is what makes the
+   difference between TILE and stretch obvious at a glance -- stretched it smears into a wedge,
+   tiled it marches. */
+static void
+paint_ribbon( art_t* a )
+{
+    art_begin( a, 24, 16 );
+
+    art_rect( a, 0, 3, 24, 10, 0x30, 0x34, 0x3C, 0xFF );           /* band */
+    art_rect( a, 0, 3, 24,  1, 0x60, 0x68, 0x78, 0xFF );
+    art_rect( a, 0, 12, 24, 1, 0x18, 0x1A, 0x1E, 0xFF );
+
+    art_rect( a, 1, 5,  4, 6, 0xC8, 0xA0, 0x40, 0xFF );            /* left cap  */
+    art_rect( a, 19, 5, 4, 6, 0xC8, 0xA0, 0x40, 0xFF );            /* right cap */
+
+    for ( i32 i = 0; i < 4; ++i )                                  /* one chevron in the middle */
+    {
+        art_rect( a, 8 + i, 5 + i, 2, 2, 0x40, 0xC0, 0xB0, 0xFF );
+        art_rect( a, 15 - i, 5 + i, 2, 2, 0x40, 0xC0, 0xB0, 0xFF );
+    }
+}
+
+/* ORB -- 32x32, NO slice.  A shaded sphere with an off-centre highlight: unsliced art, so it
+   stretches whole.  Its asymmetric highlight is what makes FLIP_X / FLIP_Y visible. */
+static void
+paint_orb( art_t* a )
+{
+    art_begin( a, 32, 32 );
+
+    for ( i32 y = 0; y < 32; ++y )
+        for ( i32 x = 0; x < 32; ++x )
+        {
+            f32 dx = (f32)x - 15.5f, dy = (f32)y - 15.5f;
+            f32 d  = sqrtf( dx * dx + dy * dy );
+            if ( d > 15.5f ) continue;
+            u32 cov = ( d > 14.5f ) ? (u32)( ( 15.5f - d ) * 255.0f ) : 255u;
+
+            f32 hx = (f32)x - 10.0f, hy = (f32)y - 9.0f;           /* highlight, up and left */
+            f32 hd = sqrtf( hx * hx + hy * hy );
+            f32 lit = 1.0f - hd / 22.0f;
+            if ( lit < 0.0f ) lit = 0.0f;
+
+            art_px( a, x, y, (u32)( 40.0f + 200.0f * lit ), (u32)( 70.0f + 170.0f * lit ),
+                    (u32)( 130.0f + 120.0f * lit ), cov );
+        }
+}
+
+/*==============================================================================================
+    Registration -- one pass at startup, after gui()->boot (the atlas needs a live rhi context).
+==============================================================================================*/
+
+typedef struct
+{
+    gui_sprite_id_t frame, button, ribbon, orb;
+
+} sprites_t;
+
+static sprites_t s_art;
+
+static gui_sprite_id_t
+register_art( const char* name, const art_t* a, gui_pad_t slice )
+{
+    gui_sprite_id_t id = gui()->register_sprite( name, a->w, a->h, a->px );
+    if ( id == GUI_SPRITE_NONE )
+    {
+        printf( "[sb_gui_brush] sprite '%s' failed to register\n", name );
+        return id;
+    }
+    gui()->sprite_set_slice( id, slice );
+    return id;
+}
+
+static void
+build_art( void )
+{
+    art_t a;
+
+    paint_frame ( &a );  s_art.frame  = register_art( "frame",  &a, ( gui_pad_t ){ 16, 16, 16, 16 } );
+    paint_button( &a );  s_art.button = register_art( "button", &a, ( gui_pad_t ){  8,  8,  8,  8 } );
+    paint_ribbon( &a );  s_art.ribbon = register_art( "ribbon", &a, ( gui_pad_t ){  8,  8,  0,  0 } );
+    paint_orb   ( &a );  s_art.orb    = register_art( "orb",    &a, ( gui_pad_t ){  0,  0,  0,  0 } );
+
+    /* Report what landed, and what slice each carries -- a test bed should say what it built, and
+       a zero id here is the one failure that would otherwise show up as an empty panel. */
+    const gui_sprite_id_t ids [ 4 ] = { s_art.frame, s_art.button, s_art.ribbon, s_art.orb };
+    const char* const     name[ 4 ] = { "frame", "button", "ribbon", "orb" };
+    for ( u32 i = 0; i < 4; ++i )
+    {
+        gui_vec2_t sz = gui()->sprite_size( ids[ i ] );
+        gui_pad_t  sl = gui()->sprite_slice( ids[ i ] );
+        printf( "[sb_gui_brush] sprite %-7s id=%u  %.0fx%.0f  slice l%.0f r%.0f t%.0f b%.0f\n",
+                name[ i ], ids[ i ], sz.x, sz.y, sl.l, sl.r, sl.t, sl.b );
+    }
+    fflush( stdout );
+}
+
+/*==============================================================================================
+    Live controls -- the brush the specimen panels are filled with
+==============================================================================================*/
+
+static i32  s_kind    = GUI_BRUSH_NINE;
+static i32  s_pick    = 0;          /* index into the sprite list below */
+static f32  s_w       = 320.0f;
+static f32  s_h       = 200.0f;
+static f32  s_scale   = 1.0f;
+static bool s_tile    = false;
+static bool s_flip_x  = false;
+static bool s_flip_y  = false;
+static bool s_tinted  = false;
+static bool s_guides  = true;
+
+static const char* const k_kind_name[] = { "SOLID", "GRADIENT", "SPRITE", "NINE" };
+static const char* const k_pick_name[] = { "frame", "button", "ribbon", "orb" };
+
+static gui_sprite_id_t
+picked_sprite( void )
+{
+    switch ( s_pick )
+    {
+        case 1:  return s_art.button;
+        case 2:  return s_art.ribbon;
+        case 3:  return s_art.orb;
+        default: return s_art.frame;
+    }
+}
+
+/* THE brush the whole demo paints through -- one value, assembled from the controls. */
+static gui_brush_t
+current_brush( void )
+{
+    u16 flags = 0;
+    if ( s_tile )   flags |= GUI_BRUSH_TILE;
+    if ( s_flip_x ) flags |= GUI_BRUSH_FLIP_X;
+    if ( s_flip_y ) flags |= GUI_BRUSH_FLIP_Y;
+
+    return ( gui_brush_t ){
+        .kind   = (u8)s_kind,
+        .flags  = flags,
+        .col_a  = ( s_kind == GUI_BRUSH_SPRITE || s_kind == GUI_BRUSH_NINE )
+                      ? ( s_tinted ? AMBER : 0u )          /* 0 = untinted, the sprite's own colours */
+                      : GUI_COLOR( 0x30, 0x50, 0x80, 0xFF ),
+        .col_b  = PLUM,
+        .sprite = picked_sprite(),
+        .scale  = s_scale,
+    };
+}
+
+/*==============================================================================================
+    Panel 1 -- the specimen: one rect, one draw_brush call, over a checker so alpha reads true
+==============================================================================================*/
+
+static void
+draw_slice_guides( gui_rect_t r )
+{
+    gui_pad_t sl = gui()->sprite_slice( picked_sprite() );
+    if ( sl.l + sl.r + sl.t + sl.b <= 0.0f || s_kind != GUI_BRUSH_NINE )
+        return;
+
+    /* Where the nine-slice actually cut, in destination pixels -- the same insets the
+       tessellator used, so a mismatch between art and expectation shows up here first. */
+    f32 L = sl.l * s_scale, R = sl.r * s_scale, T = sl.t * s_scale, B = sl.b * s_scale;
+    u32 g = GUI_COLOR( 0xFF, 0x40, 0x40, 0x90 );
+
+    gui()->draw_dashed_line( r.x + L, r.y, r.x + L, r.y + r.h, 4.0f, 4.0f, 1.0f, g );
+    gui()->draw_dashed_line( r.x + r.w - R, r.y, r.x + r.w - R, r.y + r.h, 4.0f, 4.0f, 1.0f, g );
+    gui()->draw_dashed_line( r.x, r.y + T, r.x + r.w, r.y + T, 4.0f, 4.0f, 1.0f, g );
+    gui()->draw_dashed_line( r.x, r.y + r.h - B, r.x + r.w, r.y + r.h - B, 4.0f, 4.0f, 1.0f, g );
+}
+
+static void
+panel_specimen( void )
+{
+    gui()->separator_text( "specimen -- one rect, one draw_brush" );
+
+    /* Reserve the tallest the sliders can ask for, so the panels below never jump as it resizes. */
+    gui_rect_t cell = gui()->canvas( 420.0f );
+    gui_rect_t r    = { cell.x + 8.0f, cell.y + 8.0f, s_w, s_h };
+
+    /* Coarse cells on purpose.  draw_checker is clamped to 64x64, and every cell used to cost a
+       command slot -- a fine checker over a panel this size is how this sandbox first ate the
+       entire frame's command budget and drew nothing but its own backdrop.  The checker batches
+       now, but a 20px cell is also just easier to read alpha against. */
+    gui()->draw_checker( cell, 20.0f, GUI_COLOR( 0x24, 0x24, 0x28, 0xFF ),
+                                      GUI_COLOR( 0x2C, 0x2C, 0x32, 0xFF ) );
+
+    gui_brush_t b = current_brush();
+    gui()->draw_brush( r, &b );
+
+    if ( s_guides )
+        draw_slice_guides( r );
+}
+
+/*==============================================================================================
+    Panel 2 -- the proof: ONE sprite, six sizes, corners unchanged
+
+    This is the panel the whole feature exists for.  Every box below is the same 48x48 art through
+    the same brush; only the rect differs.  A stretched quad would smear the corner studs into
+    ovals -- they stay round, because the corner pieces are never scaled.
+==============================================================================================*/
+
+static void
+panel_sizes( void )
+{
+    gui()->separator_text( "one sprite, six sizes -- the corners never scale" );
+
+    gui_rect_t cell = gui()->canvas( 190.0f );
+    gui_brush_t b   = ( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_art.frame, .scale = 1.0f };
+
+    static const f32 W[ 6 ] = { 48.0f, 64.0f, 96.0f, 140.0f, 200.0f, 280.0f };
+    static const f32 H[ 6 ] = { 48.0f, 96.0f, 64.0f, 170.0f,  90.0f, 130.0f };
+
+    f32 x = cell.x + 6.0f;
+    for ( u32 i = 0; i < 6; ++i )
+    {
+        gui()->draw_brush( ( gui_rect_t ){ x, cell.y + 8.0f, W[ i ], H[ i ] }, &b );
+        x += W[ i ] + 10.0f;
+    }
+}
+
+/*==============================================================================================
+    Panel 3 -- the four kinds, same rect, same call
+
+    SOLID is exactly what draw_fill always did.  The point of the row is that nothing about the
+    CALL changes across it: four values, one verb.
+==============================================================================================*/
+
+static void
+panel_kinds( void )
+{
+    gui()->separator_text( "the four kinds -- identical rects, identical call" );
+
+    gui_rect_t cell = gui()->canvas( 120.0f );
+
+    const gui_brush_t kinds[ 4 ] = {
+        { .kind = GUI_BRUSH_SOLID,    .col_a = GUI_COLOR( 0x30, 0x50, 0x80, 0xFF ) },
+        { .kind = GUI_BRUSH_GRADIENT, .col_a = TEAL, .col_b = PLUM, .flags = GUI_BRUSH_VERTICAL },
+        { .kind = GUI_BRUSH_SPRITE,   .sprite = s_art.frame, .scale = 1.0f },
+        { .kind = GUI_BRUSH_NINE,     .sprite = s_art.frame, .scale = 1.0f },
+    };
+
+    f32 x = cell.x + 6.0f;
+    for ( u32 i = 0; i < 4; ++i )
+    {
+        gui_rect_t r = { x, cell.y + 6.0f, 150.0f, 76.0f };
+        gui()->draw_brush( r, &kinds[ i ] );
+        gui()->draw_text_in( ( gui_rect_t ){ x, cell.y + 88.0f, 150.0f, 20.0f },
+                             GUI_ALIGN_CENTER, INK_DIM, k_kind_name[ i ] );
+        x += 162.0f;
+    }
+}
+
+/*==============================================================================================
+    Panel 4 -- stretch vs tile, on the sprite authored to show the difference
+==============================================================================================*/
+
+static void
+panel_tile( void )
+{
+    gui()->separator_text( "stretch vs TILE -- the middle track is what repeats" );
+
+    gui_rect_t cell = gui()->canvas( 110.0f );
+
+    gui_brush_t stretch = { .kind = GUI_BRUSH_NINE, .sprite = s_art.ribbon, .scale = 2.0f };
+    gui_brush_t tiled   = { .kind = GUI_BRUSH_NINE, .sprite = s_art.ribbon, .scale = 2.0f,
+                            .flags = GUI_BRUSH_TILE };
+
+    gui()->draw_brush( ( gui_rect_t ){ cell.x + 6.0f, cell.y + 8.0f,  560.0f, 32.0f }, &stretch );
+    gui()->draw_text( cell.x + 576.0f, cell.y + 16.0f, INK_DIM, "stretch" );
+
+    gui()->draw_brush( ( gui_rect_t ){ cell.x + 6.0f, cell.y + 52.0f, 560.0f, 32.0f }, &tiled );
+    gui()->draw_text( cell.x + 576.0f, cell.y + 60.0f, INK_DIM, "TILE" );
+}
+
+/*==============================================================================================
+    Panel 5 -- a custom widget skinned entirely by a brush.
+
+    rect + item() + draw_brush, and nothing else: no chrome, no style grid, no stock render.  The
+    widget picks its face by PHASE the way every widget in the library does (item_phase), but the
+    three faces it picks between are brushes its CALLER handed it -- which is the whole point.
+    Swap the array and the widget restyles without being touched.
+==============================================================================================*/
+
+static bool
+brush_button( const char* label, gui_rect_t r, const gui_brush_t face[ GUI_PHASE_COUNT ] )
+{
+    gui_item_state_t st = gui()->item( label, r );
+
+    gui()->draw_brush( r, &face[ gui()->item_phase( st ) ] );
+    gui()->draw_text_in( r, GUI_ALIGN_CENTER, INK, label );
+
+    return st.clicked;
+}
+
+static void
+panel_widget( void )
+{
+    static u32 s_clicks = 0;
+
+    gui()->separator_text( "a custom widget whose face is a brush (hover / press it)" );
+
+    gui_rect_t cell = gui()->canvas( 96.0f );
+
+    /* Three faces, one per phase -- the caller's data, not the library's. */
+    const gui_brush_t art_face[ GUI_PHASE_COUNT ] = {
+        [ GUI_PHASE_IDLE   ] = { .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f },
+        [ GUI_PHASE_HOT    ] = { .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f,
+                                 .col_a = GUI_COLOR( 0xFF, 0xD8, 0xA0, 0xFF ) },
+        [ GUI_PHASE_ACTIVE ] = { .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f,
+                                 .col_a = AMBER },
+        [ GUI_PHASE_DIM    ] = { .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f,
+                                 .col_a = GUI_COLOR( 0x60, 0x60, 0x60, 0xFF ) },
+    };
+
+    /* The SAME widget over flat brushes -- same code path, different data. */
+    const gui_brush_t flat_face[ GUI_PHASE_COUNT ] = {
+        [ GUI_PHASE_IDLE   ] = { .kind = GUI_BRUSH_GRADIENT, .col_a = GUI_COLOR( 0x3A, 0x3E, 0x48, 0xFF ),
+                                 .col_b = GUI_COLOR( 0x24, 0x26, 0x2C, 0xFF ), .flags = GUI_BRUSH_VERTICAL },
+        [ GUI_PHASE_HOT    ] = { .kind = GUI_BRUSH_GRADIENT, .col_a = GUI_COLOR( 0x50, 0x56, 0x64, 0xFF ),
+                                 .col_b = GUI_COLOR( 0x30, 0x34, 0x3C, 0xFF ), .flags = GUI_BRUSH_VERTICAL },
+        [ GUI_PHASE_ACTIVE ] = { .kind = GUI_BRUSH_SOLID, .col_a = GUI_COLOR( 0x60, 0x40, 0x18, 0xFF ) },
+        [ GUI_PHASE_DIM    ] = { .kind = GUI_BRUSH_SOLID, .col_a = GUI_COLOR( 0x28, 0x28, 0x2C, 0xFF ) },
+    };
+
+    if ( brush_button( "nine-slice face", ( gui_rect_t ){ cell.x + 6.0f, cell.y + 8.0f, 190.0f, 40.0f },
+                       art_face ) )
+        ++s_clicks;
+    if ( brush_button( "gradient face", ( gui_rect_t ){ cell.x + 208.0f, cell.y + 8.0f, 190.0f, 40.0f },
+                       flat_face ) )
+        ++s_clicks;
+
+    char msg[ 64 ];
+    snprintf( msg, sizeof( msg ), "%u clicks -- one widget, two skins", s_clicks );
+    gui()->draw_text( cell.x + 6.0f, cell.y + 62.0f, INK_DIM, msg );
+}
+
+/*==============================================================================================
+    The control window
+==============================================================================================*/
+
+static void
+window_controls( void )
+{
+    gui()->window_set_next_pos( 20.0f, 20.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 300.0f, 470.0f, GUI_COND_ONCE );
+
+    if ( gui()->window_begin( "brush", GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+
+        gui()->separator_text( "brush" );
+        gui()->combo( "kind", &s_kind, k_kind_name, 4 );
+        gui()->combo( "sprite", &s_pick, k_pick_name, 4 );
+
+        gui()->separator_text( "specimen rect" );
+        gui()->slider_float( "width", &s_w, 32.0f, 560.0f );
+        gui()->slider_float( "height", &s_h, 32.0f, 400.0f );
+
+        gui()->separator_text( "sprite options" );
+        gui()->slider_float( "scale", &s_scale, 0.25f, 4.0f );
+        gui()->checkbox( "tile middle", &s_tile );
+        gui()->checkbox( "flip x", &s_flip_x );
+        gui()->checkbox( "flip y", &s_flip_y );
+        gui()->checkbox( "tint amber", &s_tinted );
+
+        gui()->separator_text( "debug" );
+        gui()->checkbox( "slice guides", &s_guides );
+
+        gui()->separator();
+        gui()->text( "scale multiplies the slice insets," );
+        gui()->text( "so one sprite serves many UI scales." );
+    }
+    gui()->window_end();
+}
+
+static void
+window_stage( void )
+{
+    gui()->window_set_next_pos( 340.0f, 20.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 920.0f, 900.0f, GUI_COND_ONCE );
+
+    if ( gui()->window_begin( "sprites + nine-slice", GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+
+        panel_specimen();
+        panel_sizes();
+        panel_kinds();
+        panel_tile();
+        panel_widget();
+    }
+    gui()->window_end();
+}
+
+static void
+build_frame( void )
+{
+    window_controls();
+    window_stage();
+}
+
+/*==============================================================================================
+    Host
+==============================================================================================*/
+
+int
+main( int argc, char** argv )
+{
+    UNUSED( argc );
+    UNUSED( argv );
+
+    mod_system_init();
+    mod_static( sys );
+    mod_static( ref );
+    mod_static( app );
+    mod_static( core );
+    mod_static( rhi );
+    mod_static( gui );
+
+    if ( !mod_init_all() )
+    {
+        fprintf( stderr, "[sb_gui_brush] mod_init_all failed: %s\n", mod_last_error() );
+        mod_system_exit();
+        return 1;
+    }
+
+    mod_set_log_fn( core_log_fn );
+    app_set_log_fn( core_log_fn );
+    core()->log_set_min_level( LOG_LEVEL_INFO );
+
+    int ret_code = 1;
+
+    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+        .title     = "ORB -- gui brush",
+        .w         = 1280, .h = 940,
+        .os_chrome = true,
+        .font      = GUI_FONT_CASCADIA_MONO_16,
+        .clock = sys_tick_seconds,
+        .sleep = sys_sleep_milliseconds,
+        .wait  = sys_wait_for_os_events_ms,
+        .clear = { 0.12f, 0.12f, 0.15f, 1.00f },
+        .debug = true,
+    } );
+    if ( vp0 == GUI_VP_INVALID )
+    {
+        fprintf( stderr, "[sb_gui_brush] gui->boot failed\n" );
+        goto shutdown;
+    }
+
+    /* After boot: the sprite atlas creates itself on the first registration, and that needs the
+       live rhi context boot just stood up. */
+    build_art();
+
+    f32 dt = 0.0f;
+    while ( gui()->boot_poll( &dt ) )
+    {
+        if ( gui()->frame_begin( dt ) )
+        {
+            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            build_frame();
+            gui()->ctx_end();
+        }
+        gui()->frame_end();
+
+        gui()->boot_present_begin( NULL );
+        gui()->boot_present_end();
+
+        gui()->frame_pace( 4, 16 );
+    }
+
+    ret_code = 0;
+
+shutdown:
+    if ( vp0 != GUI_VP_INVALID ) gui()->shutdown();
+    rhi()->shutdown();
+    mod_system_exit();
+    return ret_code;
+}
+
+// clang-format on
+/*============================================================================================*/

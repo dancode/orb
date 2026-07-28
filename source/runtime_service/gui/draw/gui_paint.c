@@ -26,6 +26,44 @@ f32 text_center_y( f32 y, f32 h ) { return y + ( h - font_char_h() ) * 0.5f; }
 void draw_fill   ( gui_rect_t r, u32 col )        { draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col ); }
 void draw_outline( gui_rect_t r, f32 t, u32 col ) { draw_push_rect_outline( r.x, r.y, r.w, r.h, t, 0, col ); }
 
+/* The WIDENED paint floor: fill a rect with a brush instead of a colour.
+
+   draw_fill above is this function's SOLID case and stays the spelling for it -- a widget that
+   only ever fills with a colour should not have to say so in a struct.  What the brush adds is
+   that "fill this rect" and "with what" are finally two separate questions, so a caller can hand a
+   gradient or authored art to code that was written before either existed.  A NULL brush, or an
+   unknown kind, falls back to a solid col_a: an unrecognised brush must still paint something,
+   because the alternative is a widget that silently vanishes.
+
+   Deliberately thin.  Every branch is one push, no branch inspects style, and nothing here is
+   stateful -- the brush arrived as a parameter, exactly like the colour it replaced, so this stays
+   inside the draw unit's parameter-purity rule. */
+void
+draw_fill_brush( gui_rect_t r, const gui_brush_t* b )
+{
+    if ( !b )
+        return;
+
+    switch ( b->kind )
+    {
+        case GUI_BRUSH_GRADIENT:
+            draw_push_rect_gradient( r.x, r.y, r.w, r.h, b->col_a, b->col_b,
+                                     ( b->flags & GUI_BRUSH_VERTICAL ) == 0 );
+            break;
+
+        case GUI_BRUSH_SPRITE:
+        case GUI_BRUSH_NINE:
+            draw_push_sprite( r.x, r.y, r.w, r.h, b->sprite, b->col_a, b->scale, b->flags,
+                              b->kind == GUI_BRUSH_NINE );
+            break;
+
+        case GUI_BRUSH_SOLID:
+        default:
+            draw_fill( r, b->col_a );
+            break;
+    }
+}
+
 /* Width / draw of a label's visible span (markers stripped; label_vis_len is the grammar's
    seam -- authored core-side so the rule cannot drift between units). */
 f32 label_width( const char* s )

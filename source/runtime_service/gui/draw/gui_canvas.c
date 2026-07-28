@@ -220,6 +220,74 @@ gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr )
     gui_draw_texture_in( r, bindless_idx, tint_abgr );
 }
 
+/*==============================================================================================
+    Sprites -- authored RGBA art, and the nine-slice that makes it resize.
+
+    The caller's door onto draw/gui_sprite.c.  Registration mirrors the icon verbs one for one
+    (register / load / find / size), which is deliberate: the two differ in what a texel MEANS,
+    not in how you get one, so a reader who knows the icon API already knows this one.
+
+    The one verb with no icon twin is set_slice, and it is the reason sprites exist as their own
+    kind: it declares the four insets that let ONE piece of art fill ANY rect without distorting
+    its corners.  Set it once after registering; every fill of that sprite inherits it.
+==============================================================================================*/
+
+gui_sprite_id_t
+gui_register_sprite( const char* name, u32 w, u32 h, const u8* rgba )
+{
+    return sprite_register( name, w, h, rgba );
+}
+
+gui_sprite_id_t
+gui_load_sprite( const char* name, const char* path )
+{
+    char resolved[ 576 ];
+    fmt_snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), path );
+    return sprite_load_file( name, resolved );
+}
+
+gui_sprite_id_t gui_find_sprite( const char* name )                     { return sprite_find( name ); }
+gui_vec2_t      gui_sprite_size( gui_sprite_id_t id )                   { return sprite_size( id ); }
+bool            gui_sprite_set_slice( gui_sprite_id_t id, gui_pad_t s ) { return sprite_set_slice( id, s ); }
+gui_pad_t       gui_sprite_slice( gui_sprite_id_t id )                  { return sprite_slice( id ); }
+
+/* Fill r with the sprite -- nine-sliced when it carries insets, stretched when it does not.
+
+   FILLS rather than aspect-fits, which is the opposite of draw_icon_in and correct for both: an
+   icon is a symbol that must keep its proportions inside whatever cell it lands in, and a sprite
+   is most often a SURFACE -- a frame, a panel skin, a button face -- whose whole job is to cover
+   the rect it was given.  A caller who wants a sprite fitted has gui_rect_align to do it with. */
+void
+gui_draw_sprite_in( gui_rect_t r, gui_sprite_id_t id, u32 tint_abgr )
+{
+    draw_push_sprite( r.x, r.y, r.w, r.h, id, tint_abgr, 1.0f, 0, true );
+}
+
+void
+gui_image_sprite( gui_sprite_id_t id, f32 w, f32 h, u32 tint_abgr )
+{
+    gui_rect_t r = cell_next_w( w, h );   /* reserve a w x h layout slot (like image) */
+    gui_draw_sprite_in( r, id, tint_abgr );
+}
+
+/*==============================================================================================
+    draw_brush -- the widened paint floor, published.
+
+    gui()->draw_rect fills a rect with a colour; this fills one with a gui_brush_t, which is the
+    same thing plus three more answers to "with what".  It is the door a custom widget paints its
+    face through if it wants to be skinnable by whoever uses it:
+
+        gui()->draw_brush( face, &( gui_brush_t ){ .kind   = GUI_BRUSH_NINE,
+                                                   .sprite = my_button_art,
+                                                   .scale  = ui_scale } );
+==============================================================================================*/
+
+void
+gui_draw_brush( gui_rect_t r, const gui_brush_t* brush )
+{
+    draw_fill_brush( r, brush );
+}
+
 /* Font atlas access -- bridges the font registry (gui_font.h / gui_render.h) to the RGBA texture
    primitives above, so a caller can preview a font's live GPU atlas (a texture like any other) via
    image_texture / draw_texture_in without reaching into the backend's internal font_slot_t. */

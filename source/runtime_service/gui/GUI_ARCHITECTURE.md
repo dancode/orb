@@ -9,7 +9,10 @@ There are only three real things:
 
 - **RENDER SERVER** (`render/`, unit `gui_render.c`): a 2d batch renderer with a narrow
   push-primitive surface any 2d utility can emit to -- draw list, tessellation, retained
-  geometry cache, the shared atlas, GPU flush. Knows nothing of ids-as-identity, interact
+  geometry cache, the two resource atlases, GPU flush.  The atlases split by what a texel MEANS,
+  since that is what the fragment shader branches on: R8 COVERAGE (glyphs, icons, assists -- the
+  vertex colour paints it, sampled NEAREST so text stays crisp) and RGBA SPRITE (authored art --
+  the vertex colour tints it, sampled LINEAR, created lazily on the first registration). Knows nothing of ids-as-identity, interact
   state, style, or layout. Renders from an atlas that is PUSHED to it; it does not know what
   a font is (the glyph/sprite source contract in `render/gui_render.h` is implemented by the
   draw unit).
@@ -34,7 +37,7 @@ The two servers NEVER see each other. Everything else is a LIBRARY over them:
     --------------   ---------   -----------------------------   --------------------------------
     gui_rect.c       rect/       rect/gui_rect.h                 leaf: geometry + color + GUI_WARN_ONCE
     gui_render.c     render/     render/gui_render.h             RENDER SERVER
-    gui_draw.c       draw/       draw/gui_draw.h                 drawing routines + font/icon resources
+    gui_draw.c       draw/       draw/gui_draw.h                 drawing routines + font/icon/sprite resources
     gui_core.c       core/       core/gui_core.h + gui_ctx.h     INTERACT SERVER (services + storage)
     gui_style.c      style/      style/gui_style.h               state flags in, colors/metrics out
     gui_interact.c   interact/   interact/gui_interact.h         gesture mechanisms (move/resize/drag/feat)
@@ -204,6 +207,15 @@ Three roles, one contract (the units carry the same names):
   `draw_outline( r, t, col )` in `draw/gui_paint.c`, plus the parameter-pure `draw_*` symbol
   palette in `draw/gui_symbol.c`): widgets speak rects; only the render server emit layer
   (`draw_push_*`) speaks scalar x/y/w/h with UV + texture arguments.
+
+  That floor is WIDENED by one verb: `draw_fill_brush( r, brush )` fills a rect with a
+  `gui_brush_t` (gui.h) -- solid, gradient, sprite, nine-slice -- instead of a bare colour, and
+  `draw_fill` is its SOLID case. The widening is what stops the palette growing a verb per fill
+  kind: a brush is a plain descriptor, so a face can live in a caller's own theme and be handed
+  to a widget written before that fill kind existed. A NINE brush expands to up to nine quads at
+  TESSELLATION time (`tess_sprite`), holding its authored corners at any destination size, and
+  the whole frame stays ONE command in ONE batch. Public face: `gui()->draw_brush` over the
+  sprite registry (`register_sprite` / `load_sprite` / `sprite_set_slice`, `draw/gui_sprite.c`).
 
 A widget (the chrome unit) is the only combiner: it asks composition for a rect, hands it to
 behavior, hands both results to presentation. The public `gui_item`/`canvas`/`draw_*` verbs

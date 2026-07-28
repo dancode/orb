@@ -128,6 +128,19 @@ void gui_draw_icon_in( gui_rect_t r, gui_icon_id_t id, u32 col );
 void gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
 void gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
 
+/* sprites -- authored RGBA art + the nine-slice that lets it fill any rect */
+gui_sprite_id_t gui_register_sprite( const char* name, u32 w, u32 h, const u8* rgba );
+gui_sprite_id_t gui_load_sprite( const char* name, const char* path );
+gui_sprite_id_t gui_find_sprite( const char* name );
+bool gui_sprite_set_slice( gui_sprite_id_t id, gui_pad_t slice );
+gui_pad_t gui_sprite_slice( gui_sprite_id_t id );
+gui_vec2_t gui_sprite_size( gui_sprite_id_t id );
+void gui_image_sprite( gui_sprite_id_t id, f32 w, f32 h, u32 tint_abgr );
+void gui_draw_sprite_in( gui_rect_t r, gui_sprite_id_t id, u32 tint_abgr );
+
+/* the widened paint floor -- fill a rect with a brush (solid / gradient / sprite / nine-slice) */
+void gui_draw_brush( gui_rect_t r, const gui_brush_t* brush );
+
 /* font atlas access -- bindless index + pixel size for previewing a font's live GPU atlas */
 u32 gui_font_atlas_idx( u32 font_id );
 gui_vec2_t gui_font_atlas_size( u32 font_id );

@@ -350,17 +350,29 @@ draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b )
     if ( cols > 64 ) cols = 64;
     if ( rows > 64 ) rows = 64;
 
+    /* Batched through the rect POOL, not one command per cell.  This is the exact caller
+       draw_push_rect_list was added for: at the 64x64 clamp a checker is 4096 quads, four times
+       the whole per-frame command budget in a normal build, so the one-command-per-cell form did
+       not merely cost slots -- it silently ate the budget and every shape emitted after it in the
+       frame vanished.  Chunked a row at a time so the scratch stays a fixed 64 entries and a full
+       checker costs 64 commands instead of 4096. */
+    gui_rect_col_t run[ 64 ];
+
     f32 save = draw_rounding();
     draw_set_rounding( 0.0f );
     for ( u32 yy = 0; yy < rows; ++yy )
+    {
+        u32 n = 0;
         for ( u32 xx = 0; xx < cols; ++xx )
         {
             f32 px = box.x + xx * cell, py = box.y + yy * cell;
             f32 cw = px + cell > box.x + box.w ? box.x + box.w - px : cell;
             f32 ch = py + cell > box.y + box.h ? box.y + box.h - py : cell;
             bool is_odd_cell = ( ( xx + yy ) & 1u ) != 0;
-            draw_push_rect_filled( px, py, cw, ch, 0, 0, 1, 1, 0, is_odd_cell ? col_b : col_a );
+            run[ n++ ] = ( gui_rect_col_t ){ px, py, cw, ch, is_odd_cell ? col_b : col_a };
         }
+        draw_push_rect_list( run, n );
+    }
     draw_set_rounding( save );
 }
 

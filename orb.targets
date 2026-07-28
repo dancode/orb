@@ -682,6 +682,15 @@ target sb_gui_base						# minimal gui frame loop: boot + empty ctx begin/end + p
     dep         mod sys ref job app core
     dep         rhi gui base
 
+target sb_gui_brush						# brush + sprite atlas + nine-slice test bed
+
+    type        exe
+    root        source/sandbox/gui/sb_gui_brush
+    folder      09_SANDBOX/GUI
+    unit        sb_gui_brush.c
+    dep         mod sys ref job app core
+    dep         rhi gui base
+
 target sb_gui_console					# Quake-style dev console over core cvar/console
 
     type        exe
@@ -1087,6 +1096,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     add         sb_gui   			# gui demo
     add         sb_gui_base   		# minimal gui frame loop (boot + empty ctx begin/end)
     add         sb_gui_example   	# gui feature explorer (end-to-end demos)
+    add         sb_gui_brush   		# brush + sprite atlas + nine-slice test bed
     add         sb_gui_console   	# quake-style dev console
     add         sb_gui_dock   		# docking test bed
     add         sb_gui_diablo   	# rect-first ui layer proof

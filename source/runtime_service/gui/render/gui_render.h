@@ -84,6 +84,16 @@ void font_glyph    ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
 bool icon_get      ( gui_icon_id_t id,
                      f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );
 
+/* Sprite lookup: UVs, pixel size, and the nine-slice insets for a registered sprite (defined in
+   draw/gui_sprite.c).  Resolved at TESSELLATION time rather than emit time -- unlike an icon,
+   whose UVs the emit layer bakes into its command -- because the slice expansion needs the source
+   pixel size and insets anyway, and resolving late means a sprite-atlas repack corrects itself
+   through the ordinary re-tessellate path (res_sprite_generation is folded into the window hash).
+   A NULL out-param is skipped; `slice` is {0,0,0,0} for a sprite with no insets. */
+bool sprite_get    ( gui_sprite_id_t id,
+                     f32* u0, f32* v0, f32* u1, f32* v1,
+                     u32* w, u32* h, gui_pad_t* slice );
+
 /*==============================================================================================
     Shared resource atlas (resource/gui_res_atlas.c)
 
@@ -149,6 +159,14 @@ void draw_push_rect_list        ( const gui_rect_col_t* rects, u32 count );
    icon_get (the sprite source contract above); reuses draw_push_rect_filled -- an icon is just a
    textured quad, sampled from the same shared atlas as text. */
 void draw_push_icon             ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr );
+
+/* Push one sprite over a rect.  `nine` asks for the slice expansion (up to 9 quads from this ONE
+   command, all in the same batch); a sprite with no authored insets draws as a single stretched
+   quad regardless.  `scale` multiplies the slice insets and the tile pitch so one piece of art
+   serves several UI scales (0 or 1 = authored size), `flags` is gui_brush_flags_t (tile / flips),
+   and `abgr` tints (0 = untinted).  Nothing is resolved here: the id travels to the tessellator. */
+void draw_push_sprite           ( f32 x, f32 y, f32 w, f32 h, gui_sprite_id_t id,
+                                  u32 abgr, f32 scale, u16 flags, bool nine );
 
 void draw_push_rect_gradient    ( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal );
 

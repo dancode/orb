@@ -71,6 +71,17 @@ typedef u32 gui_id_t;
 typedef u32 gui_icon_id_t;
 #define GUI_ICON_NONE 0u
 
+/* Sprite handle -- identifies one piece of authored RGBA art packed into the sprite atlas
+   (register_sprite / load_sprite).  Where an icon is a COVERAGE mask the vertex colour paints,
+   a sprite carries its own colour and the vertex colour only tints it -- the difference between
+   a symbol and a picture.  A sprite optionally carries nine-slice insets (sprite_set_slice), and
+   then any rect it fills keeps its corners at authored size while its edges and middle stretch or
+   tile: that is what makes a frame, a panel skin, or a button face art rather than code.  0 means
+   "no sprite" (an unregistered name or a full atlas), and every draw helper no-ops on it. */
+
+typedef u32 gui_sprite_id_t;
+#define GUI_SPRITE_NONE 0u
+
 /* Opaque viewport handle -- a render surface backed by an OS window.  Returned by
    viewport_open; passed to render, viewport_resize, viewport_close, and
    window_set_next_viewport.  GUI_VP_INVALID (UINT32_MAX) signals failure or no assignment. */
@@ -1236,6 +1247,63 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
     ( ( ( u32 )( a ) << 24 ) | ( ( u32 )( b ) << 16 ) | ( ( u32 )( g ) << 8 ) | ( u32 )( r ) )
 
 /*==============================================================================================
+    GUI_DRAW -- the BRUSH: what fills a rect
+
+    The paint floor used to be one u32: draw_fill( rect, colour ).  Colour being the only thing a
+    rect could be filled with is why every richer fill had to become a VERB of its own --
+    draw_gradient, draw_texture_in, draw_checker, draw_shadow -- and why none of them compose: a
+    widget written against draw_fill cannot be handed a gradient, and a window frame cannot be
+    handed authored art, without forking the code that paints it.
+
+    A brush is that one u32 widened into a value.  It is a plain descriptor -- no handle, no
+    lifetime, no allocation -- so it is passed as a compound literal exactly like every other desc
+    in the library, stored in a theme, or held by a widget:
+
+        gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = frame } );
+
+    GUI_BRUSH_SOLID with col_a is EXACTLY draw_fill, so the floor did not move -- it only grew
+    three more things it can say.  What it buys is that the growth stops: a future effect brush
+    (SDF rounding, glow, blur-behind) is one more kind, not one more verb, and every render that
+    already speaks brushes picks it up for free.
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_BRUSH_SOLID = 0,   // col_a floods the rect -- the draw_fill equivalent, and the zero value
+    GUI_BRUSH_GRADIENT,    // col_a -> col_b across the rect (axis from GUI_BRUSH_VERTICAL)
+    GUI_BRUSH_SPRITE,      // one sprite stretched over the rect, multiplied by col_a as a tint
+    GUI_BRUSH_NINE,        // the sprite's nine-slice expanded over the rect (corners kept, per
+                           //   sprite_set_slice; falls back to SPRITE when it carries no insets)
+
+} gui_brush_kind_t;
+
+typedef enum
+{
+    GUI_BRUSH_VERTICAL = 1 << 0,   // GRADIENT: ramp top->bottom instead of left->right
+    GUI_BRUSH_TILE     = 1 << 1,   // NINE: repeat the edge / centre pieces at authored size
+                                   //   rather than stretching them (a patterned border)
+    GUI_BRUSH_FLIP_X   = 1 << 2,   // SPRITE / NINE: mirror horizontally
+    GUI_BRUSH_FLIP_Y   = 1 << 3,   // SPRITE / NINE: mirror vertically
+
+} gui_brush_flags_t;
+
+/* A tint of 0 means UNTINTED (white), not "invisible": a sprite brush that had to spell out
+   GUI_COLOR(255,255,255,255) to show its own colours would make the common case the loud one.
+   Pass an explicit alpha in col_a to fade a sprite. */
+typedef struct
+{
+    u8              kind;     // gui_brush_kind_t
+    u8              _pad;
+    u16             flags;    // gui_brush_flags_t
+    u32             col_a;    // SOLID / GRADIENT: the (first) colour.  SPRITE / NINE: tint (0 = none)
+    u32             col_b;    // GRADIENT: the far-edge colour
+    gui_sprite_id_t sprite;   // SPRITE / NINE: the art
+    f32             scale;    // SPRITE / NINE: px scale applied to slice insets and tile pitch,
+                              //   so one sprite serves several UI scales (0 or 1 = authored size)
+
+} gui_brush_t;
+
+/*==============================================================================================
     GUI_DRAW -- line / path stroking
 
     Thickness, pixel-snapping, and where a stroke sits relative to the ideal path it is drawn from.
@@ -1354,6 +1422,8 @@ typedef enum
     GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U
     GUI_CMD_RECT_GRADIENT,   // filled rect, col_a->col_b blended by per-vertex color (one quad)
     GUI_CMD_RECT_LIST,       // batch of solid rects from the per-frame rect pool (one cmd, N quads)
+    GUI_CMD_SPRITE,          // RGBA sprite quad; nine-slice expanded at tessellation when the
+                             //   sprite carries slice insets (1, 3 or 9 quads from one command)
 
 } gui_cmd_type_t;
 
@@ -1408,6 +1478,14 @@ typedef struct
            command for the whole batch -- the dense-shape escape valve (timeline bars, graph
            columns).  Always square, white texel, per-entry color; entries share the clip. */
         struct { u32 offset; u32 count; } rect_list;
+        /* Sprite quad.  The sprite ID travels, not its UVs: placement in the sprite atlas can move
+           under a repack, so the tessellator resolves through the sprite source contract at flush
+           time exactly as a glyph does, and res_sprite_generation folds into the window hash to
+           force that re-resolve.  nine != 0 asks for the slice expansion (a sprite with no insets
+           draws as one stretched quad either way); it pairs with flags as a u16 rather than a bool
+           so the member carries no tail padding -- the retained-cache hash folds these bytes raw
+           and stale padding from a differently-typed command would read as a spurious change. */
+        struct { f32 x, y, w, h; f32 scale; u32 sprite; u32 abgr; u16 flags; u16 nine; } sprite;
     };
 } gui_cmd_t;
 

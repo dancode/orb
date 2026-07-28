@@ -35,6 +35,10 @@
 void draw_fill   ( gui_rect_t r, u32 col );
 void draw_outline( gui_rect_t r, f32 t, u32 col );
 
+/* The same floor, widened: fill a rect with a gui_brush_t (solid / gradient / sprite / nine-slice)
+   instead of a bare colour.  draw_fill IS its SOLID case; see the definition for why both exist. */
+void draw_fill_brush( gui_rect_t r, const gui_brush_t* b );
+
 /* Text painters (font metrics ride the atlas the render server was handed). */
 f32  text_center_y( f32 y, f32 h );              /* baseline y centering one line in a row     */
 f32  label_width( const char* s );               /* visible-span width per the label grammar   */
@@ -99,6 +103,19 @@ void            icon_load_builtins( void );                                // re
 gui_icon_id_t   icon_find         ( const char* name );
 bool            icon_atlas_init   ( void );   // enable icon registration (shared atlas owns GPU)
 void            icon_atlas_shutdown( void );  // clear the icon table
+
+/* Sprite registry + nine-slice authoring (draw/gui_sprite.c).  The colour sibling of the icon
+   table: an icon is coverage the vertex colour paints, a sprite is art the vertex colour tints.
+   sprite_get (the source contract the TESSELLATOR resolves through, since the slice expansion
+   needs the source size) is declared in render/gui_render.h.  There is no init -- the sprite
+   atlas creates itself on the first registration. */
+gui_sprite_id_t sprite_register        ( const char* name, u32 w, u32 h, const u8* rgba );
+gui_sprite_id_t sprite_load_file       ( const char* name, const char* path );  // decode PNG/... -> RGBA8
+gui_sprite_id_t sprite_find            ( const char* name );
+bool            sprite_set_slice       ( gui_sprite_id_t id, gui_pad_t slice );  // insets in SOURCE px
+gui_pad_t       sprite_slice           ( gui_sprite_id_t id );
+gui_vec2_t      sprite_size            ( gui_sprite_id_t id );                   // native pixel size
+void            sprite_registry_shutdown( void );
 
 // clang-format on
 /*============================================================================================*/

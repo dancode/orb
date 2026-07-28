@@ -29,7 +29,7 @@ backend_memory( u32 live_viewports )
     s.viewport_count    = live_viewports;
     s.gpu_vertex_bytes  = live_viewports * RHI_MAX_FRAMES_IN_FLIGHT * (u32)GUI_VB_REGION_BYTES;
     s.gpu_index_bytes   = live_viewports * RHI_MAX_FRAMES_IN_FLIGHT * (u32)GUI_IB_REGION_BYTES;
-    s.gpu_texture_bytes = res_atlas_bytes();
+    s.gpu_texture_bytes = res_atlas_bytes() + res_sprite_bytes();   /* sprite atlas: 0 until used */
 #ifdef GUI_DEBUG_OVERLAY
     /* The overlay's own VB/IB (one region per viewport per frame-in-flight, dbg_init). */
     if ( rhi_handle_valid( s_dbg.vb ) )
@@ -59,8 +59,10 @@ backend_memory( u32 live_viewports )
        tables) -- reported through its seam so the bucket stays populated. */
     s.cpu_font_bytes = draw_unit_mem_bytes();
 
-    /* Shared resource atlas (packer + tenant bookkeeping). */
-    s.cpu_res_bytes = (u32)sizeof( s_res );
+    /* The two resource atlases (packer + tenant bookkeeping).  Both instance records are always
+       resident; only the sprite atlas's PIXEL buffer is conditional, and that is GPU/heap, not a
+       static -- see gpu_texture_bytes above. */
+    s.cpu_res_bytes = (u32)( sizeof( s_res ) + sizeof( s_spr ) );
 
     /* RENDER: pipeline/sampler/push state + the embedded SPIR-V bytecode (.rdata). */
     s.cpu_render_bytes = (u32)( sizeof( s_render )

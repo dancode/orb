@@ -510,6 +510,44 @@ typedef struct gui_api_s
     void ( *image_texture   )( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
     void ( *draw_texture_in )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
 
+    /* Sprites -- authored RGBA art, packed into a sprite atlas of their own so a whole skin is
+       still ONE draw call.  The registration verbs mirror the icon ones exactly (register / load /
+       find / size), because the two kinds differ in what a texel MEANS -- an icon is coverage the
+       colour paints, a sprite is a picture the colour tints -- not in how you obtain one.
+       register_sprite takes raw RGBA8 (row-major, w*h*4, straight alpha); load_sprite decodes an
+       image file through asset_path like load_icon.
+
+       set_slice is the verb with no icon twin, and the reason sprites are their own kind: it
+       declares four insets, in SOURCE pixels, that cut the art into nine pieces.  A sliced sprite
+       filling any rect keeps its four corners at authored size while its edges and centre stretch
+       (or tile, with GUI_BRUSH_TILE) -- so one 32x32 PNG is a window frame at every window size.
+       Set it once after registering; every fill of that sprite inherits it.
+
+       image_sprite flows in the layout like image(); draw_sprite_in FILLS a rect the caller
+       already holds (it does not aspect-fit the way draw_icon_in does -- a sprite is usually a
+       surface, and its job is to cover what it was given).  tint 0 means untinted. */
+
+    gui_sprite_id_t ( *register_sprite )( const char* name, u32 w, u32 h, const u8* rgba );
+    gui_sprite_id_t ( *load_sprite     )( const char* name, const char* path );
+    gui_sprite_id_t ( *find_sprite     )( const char* name );
+    bool            ( *sprite_set_slice)( gui_sprite_id_t id, gui_pad_t slice );
+    gui_pad_t       ( *sprite_slice    )( gui_sprite_id_t id );
+    gui_vec2_t      ( *sprite_size     )( gui_sprite_id_t id );
+    void            ( *image_sprite    )( gui_sprite_id_t id, f32 w, f32 h, u32 tint_abgr );
+    void            ( *draw_sprite_in  )( gui_rect_t r, gui_sprite_id_t id, u32 tint_abgr );
+
+    /* draw_brush -- the paint floor, widened.  draw_rect fills a rect with a colour; this fills
+       one with a gui_brush_t (gui.h), which is the same thing plus three more answers to "with
+       what": a gradient, a stretched sprite, or a nine-slice.  THE door a custom widget should
+       paint its face through if it wants to be skinnable by whoever uses it, since a brush can be
+       stored in the caller's own theme and swapped without touching the widget:
+
+           gui()->draw_brush( face, &( gui_brush_t ){ .kind   = GUI_BRUSH_NINE,
+                                                      .sprite = my_button_art,
+                                                      .scale  = ui_scale } ); */
+
+    void ( *draw_brush )( gui_rect_t r, const gui_brush_t* brush );
+
     /* Font atlas access -- the bindless index + pixel size backing a loaded font id, for previewing
        its live GPU atlas through image_texture / draw_texture_in above (0 / {0,0} if empty). */
     u32        ( *font_atlas_idx  )( u32 font_id );

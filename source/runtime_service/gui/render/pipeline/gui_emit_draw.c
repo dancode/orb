@@ -170,7 +170,19 @@ static inline bool
 draw_emit_blocked( void )
 {
     if ( s_draw.cmd_count >= GUI_MAX_CMDS )
+    {
+        /* Say so.  Every other fixed pool in the gui follows the loud-overflow rule (GUI_WARN_ONCE,
+           rect/gui_rect.h): degrade gracefully, but report once so the symptom traces to its cap.
+           This one -- the pool most likely to saturate, since a single dense drawer can exhaust it
+           in one call -- was the exception, and a silent drop here is the worst possible failure
+           mode: emission simply STOPS mid-frame, so the shapes that vanish are the ones with
+           nothing wrong with them, and the real culprit (whatever ran earlier and spent the
+           budget) is still on screen looking fine. */
+        GUI_WARN_ONCE( "draw command list full (%u) -- shapes emitted after this point are dropped "
+                       "for the rest of the frame; raise GUI_MAX_CMDS or batch dense fills through "
+                       "draw_rects\n", (u32)GUI_MAX_CMDS );
         return true;
+    }
 
     if ( STEP_EMIT_SUPPRESSED() )
         return true;
@@ -697,6 +709,7 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &s_draw.rect_pool[ c->rect_list.offset ],
                        c->rect_list.count * (u32)sizeof( gui_rect_col_t ) );   /* content while L1-hot */
             break;
+        case GUI_CMD_SPRITE:        h = fnv1a( h, &c->sprite, sizeof c->sprite ); break;
     }
     return h;
 }
@@ -800,6 +813,53 @@ draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
     if ( !icon_get( id, &u0, &v0, &u1, &v1, NULL, NULL ) )
         return;
     draw_push_rect_filled( x, y, w, h, u0, v0, u1, v1, res_atlas_idx(), abgr );
+}
+
+/*==============================================================================================
+    draw_push_sprite -- emit one sprite quad (optionally nine-sliced) as ONE semantic command.
+
+    The command carries the sprite ID, not its UVs.  An icon resolves at emit because a quad is all
+    it will ever be; a sprite must not, for two reasons that both point the same way: the slice
+    expansion needs the source's pixel size and insets (which only the registry has), and a
+    sprite-atlas repack moves UVs under a command that may live in the retained cache for many
+    frames.  Resolving in the tessellator puts both facts in one place and lets the ordinary
+    generation-fold re-tessellate path correct a repack with no re-emit.
+
+    One command however many quads it becomes, which is the point: a nine-slice frame costs one
+    command slot and one batch, so a window can afford an authored border on every panel.
+==============================================================================================*/
+
+void
+draw_push_sprite( f32 x, f32 y, f32 w, f32 h, gui_sprite_id_t id,
+                  u32 abgr, f32 scale, u16 flags, bool nine )
+{
+    if ( id == GUI_SPRITE_NONE || draw_emit_blocked() )
+        return;
+
+    /* A tint of 0 means UNTINTED -- the sprite's own colours at full alpha (the gui_brush_t rule).
+       Only an explicit tint can fade a sprite, and one faded to zero alpha is invisible under
+       blending, so it drops here exactly as a transparent fill does. */
+    u32 col = draw_apply_alpha( abgr ? abgr : 0xFFFFFFFFu );
+    if ( ( col >> 24 ) == 0u )
+        return;
+
+    if ( draw_cull_box( x, y, w, h ) )
+        return;
+
+    gui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type           = GUI_CMD_SPRITE;
+    c->clip_idx       = s_draw.cur_clip_idx;
+    c->vp             = (u8)s_draw.cur_vp;
+    c->sprite.x       = x;
+    c->sprite.y       = y;
+    c->sprite.w       = w;
+    c->sprite.h       = h;
+    c->sprite.scale   = ( scale > 0.0f ) ? scale : 1.0f;
+    c->sprite.sprite  = id;
+    c->sprite.abgr    = col;
+    c->sprite.flags   = flags;
+    c->sprite.nine    = nine ? 1u : 0u;
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
 /*==============================================================================================

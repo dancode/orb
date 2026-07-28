@@ -18,6 +18,8 @@
         gui_glyph_internal.c / gui_glyph.c   -- glyph atlas upload + UV dispatch (the metrics half
                                                  of fonts is the font/ leaf, below this unit)
         gui_icon.c / gui_icon_load.c         -- icon registry + PNG -> R8 loader
+        gui_sprite.c                         -- sprite registry + nine-slice + PNG -> RGBA loader
+                                                 (shares gui_icon_load.c's stb_image + file slurp)
         gui_paint.c                          -- paint floor + fitted text painters
         gui_symbol.c                         -- symbol marks + shape palette + gui_draw_* surface
         gui_canvas.c                         -- custom-draw placement/metric/hit-test API
@@ -51,6 +53,7 @@
 #include "runtime_service/gui/draw/gui_glyph.c"
 #include "runtime_service/gui/draw/gui_icon.c"
 #include "runtime_service/gui/draw/gui_icon_load.c"
+#include "runtime_service/gui/draw/gui_sprite.c"
 
 #include "runtime_service/gui/draw/gui_paint.c"
 #include "runtime_service/gui/draw/gui_symbol.c"
@@ -84,16 +87,18 @@ gui_draw_boot( void )
 void
 gui_draw_shutdown( void )
 {
+    sprite_registry_shutdown();
     icon_atlas_shutdown();
     font_shutdown();
 }
 
 /* The draw unit's fixed statics, for the decentralized memory accounting: the icon tables (the
-   loaded-font registry + its resident pixels are the font/ resource's, counted there). */
+   loaded-font registry + its resident pixels are the font/ resource's, counted there; the two
+   ATLASES are the render server's and counted there). */
 u32
 draw_unit_mem_bytes( void )
 {
-    return (u32)( sizeof( s_icons ) + sizeof( s_builtin_icons ) );
+    return (u32)( sizeof( s_icons ) + sizeof( s_builtin_icons ) + sizeof( s_sprites ) );
 }
 
 /*============================================================================================*/
