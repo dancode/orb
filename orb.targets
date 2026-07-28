@@ -691,6 +691,15 @@ target sb_gui_brush						# brush + sprite atlas + nine-slice test bed
     dep         mod sys ref job app core
     dep         rhi gui base
 
+target sb_gui_sdf						# distance-field text: scale, rotation, hud numbers
+
+    type        exe
+    root        source/sandbox/gui/sb_gui_sdf
+    folder      09_SANDBOX/GUI
+    unit        sb_gui_sdf.c
+    dep         mod sys ref job app core
+    dep         rhi gui base
+
 target sb_gui_console					# Quake-style dev console over core cvar/console
 
     type        exe
@@ -1097,6 +1106,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     add         sb_gui_base   		# minimal gui frame loop (boot + empty ctx begin/end)
     add         sb_gui_example   	# gui feature explorer (end-to-end demos)
     add         sb_gui_brush   		# brush + sprite atlas + nine-slice test bed
+    add         sb_gui_sdf   		# distance-field text: scale, rotation, hud numbers
     add         sb_gui_console   	# quake-style dev console
     add         sb_gui_dock   		# docking test bed
     add         sb_gui_diablo   	# rect-first ui layer proof

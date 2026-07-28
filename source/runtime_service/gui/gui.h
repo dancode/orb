@@ -1587,6 +1587,7 @@ typedef enum
     GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads
     GUI_CMD_TRIANGLE,        // solid triangle
     GUI_CMD_TEXT,            // glyph run from the font atlas
+    GUI_CMD_TEXT_XF,         // glyph run under a uniform scale + a rotation about its origin
     GUI_CMD_CIRCLE_FILLED,   // filled disc (triangle fan)
     GUI_CMD_LINE,            // single stroke segment
     GUI_CMD_POLYLINE,        // multi-segment antialiased polyline
@@ -1675,6 +1676,18 @@ typedef struct
            sentinel (clip_x0 = -GUI_TEXT_NO_CLIP, clip_x1 = +GUI_TEXT_NO_CLIP) means unclipped
            and takes the original whole-run fast path. */
         struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; } text;
+        /* The same glyph run under a uniform SCALE and a ROTATION about (x, y) -- (x, y) is both
+           the run's top-left in its own space and the pivot, so a caller places any other pivot by
+           moving the origin.  rot is radians in screen space (the angle algebra above: 0 points
+           +x, positive turns clockwise).
+           Its own command rather than two more fields on text, for the same reason shadow is not
+           a feather on rect: text is the hot path every chrome label goes through, and it is also
+           the shape the text CONSUMERS assume -- the selection capture hit-tests axis-aligned runs
+           and the glyph clip window cuts on a screen-x boundary, neither of which survives a
+           rotation.  A separate type is what lets both of them skip a transformed run cleanly
+           instead of measuring it wrong.  No clip window: the GPU scissor is its only clip.
+           Nothing here is snapped to the pixel grid -- see tess_text_xf. */
+        struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr; } text_xf;
         struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;
         struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
         struct { u32 pt_offset; u32 pt_count; f32 thickness;

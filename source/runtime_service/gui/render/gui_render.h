@@ -192,6 +192,10 @@ void draw_push_text_n           ( f32 x, f32 y, u32 abgr, const char* str, u32 n
 void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n,
                                   f32 clip_x0, f32 clip_x1 );
 
+/* A run scaled about, and rotated about, (x, y).  Separate from the three above because a
+   transformed run is a different SHAPE, not a parameterized one -- see the text_xf command. */
+void draw_push_text_xf          ( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot );
+
 /* True when a box cannot touch the active clip -- the exact scissor test every draw_push_* runs
    before spending a command slot.  Exposed so a widget can skip its whole PAINT PREP (value
    snprintf, measure walks, fit logic) for a scrolled-out rect in one test, instead of paying the

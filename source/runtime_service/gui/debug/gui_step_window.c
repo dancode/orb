@@ -55,7 +55,7 @@ static i32  s_step_rate = 20;   /* capped at 60: the whole drag range stays in t
 static f32  s_step_accum;
 
 static const char* k_step_type_name[] = {
-    "rect_filled", "rect_outline", "triangle", "text", "circle_filled",
+    "rect_filled", "rect_outline", "triangle", "text", "text_xf", "circle_filled",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
     "sprite", "shadow", "pulse",
 };
@@ -142,6 +142,13 @@ step_cmd_detail( const step_cmd_info_t* ci )
             fmt_snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
             row2 = b2;
             break;
+        case GUI_CMD_TEXT_XF:
+            gui_textf( "pos %.0f,%.0f   len %u   scale %.2f   rot %.0f deg",
+                       c->text_xf.x, c->text_xf.y, c->text_xf.len, c->text_xf.scale,
+                       gui_degrees( c->text_xf.rot ) );
+            fmt_snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
+            row2 = b2;
+            break;
         case GUI_CMD_CIRCLE_FILLED:
             gui_textf( "center %.0f,%.0f   r %.1f", c->circle.cx, c->circle.cy, c->circle.r );
             fmt_snprintf( b2, sizeof( b2 ), "segs %u", c->circle.segs );
@@ -213,6 +220,7 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_RECT_OUTLINE:  step_swatch( r, r.x, "color", c->rect_outline.abgr ); break;
                 case GUI_CMD_TRIANGLE:      step_swatch( r, r.x, "color", c->tri.abgr );          break;
                 case GUI_CMD_TEXT:          step_swatch( r, r.x, "color", c->text.abgr );         break;
+                case GUI_CMD_TEXT_XF:       step_swatch( r, r.x, "color", c->text_xf.abgr );      break;
                 case GUI_CMD_CIRCLE_FILLED: step_swatch( r, r.x, "color", c->circle.abgr );       break;
                 case GUI_CMD_LINE:          step_swatch( r, r.x, "color", c->line.abgr );         break;
                 case GUI_CMD_POLYLINE:      step_swatch( r, r.x, "color", c->polyline.abgr );     break;

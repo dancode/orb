@@ -481,6 +481,24 @@ typedef struct gui_api_s
     void ( *draw_text_in      )( gui_rect_t r, gui_align_t align, u32 col, const char* str );
     void ( *draw_text_clipped )( gui_rect_t r, gui_align_t align, u32 col, const char* str );
 
+    /* draw_text_xf -- the same run as draw_text, scaled uniformly and rotated about (x, y).
+       `rot` is radians in screen space (0 points +x, positive turns clockwise -- gui_radians()).
+       (x, y) is both the anchor and the pivot; to turn a label about its own middle, offset the
+       anchor by the rotated half-extent of text_size().  Single line: '\n' is not a break here.
+
+       WHAT IT LOOKS LIKE IS THE FONT'S DOING, not this call's.  The geometry is exact at any
+       scale and angle either way, but a COVERAGE font is point-sampled, so magnifying one
+       magnifies its texels; a DISTANCE-FIELD font (font_tool -sdf) resolves its edge in the
+       fragment from a screen-space derivative and therefore stays sharp at any size and any
+       angle, with no parameter here to tune and no second draw call -- an SDF run and the
+       upright text beside it merge into one batch when they share a font.
+
+       Cost, stated plainly: the transform is baked into vertices, so a run that MOVES
+       re-tessellates on the frames it moves (unlike draw_pulse, which animates in the fragment
+       and never re-emits).  That is a few quads, not a frame -- but a hundred spinning labels is
+       a hundred runs of glyph work per frame, and a caller wanting that should say so knowingly. */
+    void ( *draw_text_xf )( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot );
+
     /* Icons -- a runtime-built R8 atlas of arbitrary symbols (folder, gear, check, editor glyphs).
        register_icon packs a raw monochrome bitmap (row-major coverage, w*h bytes) and returns a
        handle (0 = atlas full); the pixels live in the same flush as text and tint by `col`.

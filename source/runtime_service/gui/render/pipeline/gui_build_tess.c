@@ -725,6 +725,84 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
     }
 }
 
+/* One textured quad placed by an affine map: the local rect (lx, ly, lw, lh) is rotated by the
+   prebuilt (cs, sn) and translated to the run origin (px, py).  Same four vertices and two
+   triangles tess_rect_filled writes -- and one thing it does NOT do: SNAP.  tess_rect_filled
+   floors the origin to the pixel grid so straight edges stay crisp, which is right for chrome and
+   wrong here twice over.  Snapping only the origin of a rotated quad moves the whole shape without
+   straightening anything, and snapping a scaled run's per-glyph origins quantizes the advances --
+   the pen drifts by up to half a pixel per glyph and the word visibly breathes as the scale
+   animates.  A transformed run is sub-pixel by nature; the distance field is what makes that
+   legible (gui.h, GUI_TEX_SDF). */
+static void
+tess_quad_xf( f32 px, f32 py, f32 cs, f32 sn,
+              f32 lx, f32 ly, f32 lw, f32 lh,
+              f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
+{
+    if ( s_tess.vert_count + 4 > GUI_MAX_VERTS || s_tess.idx_count + 6 > GUI_MAX_IDX )
+    {
+        s_tess.overflow = true;
+        return;
+    }
+    if ( !tess_ensure_gpu_cmd( tex_idx ) )
+        return;
+
+    f32 qx[ 4 ] = { lx,      lx + lw, lx + lw, lx      };
+    f32 qy[ 4 ] = { ly,      ly,      ly + lh, ly + lh };
+    f32 qu[ 4 ] = { u0,      u1,      u1,      u0      };
+    f32 qv[ 4 ] = { v0,      v0,      v1,      v1      };
+
+    u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
+    gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
+    for ( u32 i = 0; i < 4; ++i )
+        v[ i ] = ( gui_draw_vert_t ){ px + qx[ i ] * cs - qy[ i ] * sn,
+                                      py + qx[ i ] * sn + qy[ i ] * cs,
+                                      qu[ i ], qv[ i ], abgr };
+    s_tess.vert_count += 4;
+
+    u16* idx = &s_tess.indices[ s_tess.idx_count ];
+    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
+    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
+    s_tess.idx_count += 6;
+
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 6;
+}
+
+/* Tessellate a glyph run under a uniform scale and a rotation about its origin (the text_xf
+   command).  The run is laid out in its OWN space -- pen at 0, the font's unscaled advances -- and
+   the whole of it is mapped once per glyph quad, so the transform never accumulates: 200 glyphs in
+   and the pen is still exactly `sum(advance) * scale` from the origin along the rotated axis.
+
+   Nothing about the ATLAS side changes: the same font_glyph UVs, the same tex, the same batch key
+   as the 1:1 path, so a rotated run merges into the very same draw call as the upright text beside
+   it as long as both are in the same font.  What makes it LOOK right rather than merely be placed
+   right is the sampling model -- a coverage font is point-sampled and will show its texels here,
+   while a distance-field font resolves its edge in the fragment from a screen-space derivative and
+   is therefore indifferent to both the scale and the angle. */
+static void
+tess_text_xf( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 scale, f32 rot )
+{
+    u32 tex = font_tex();
+    if ( tex == 0 || scale <= 0.0f )
+        return;
+
+    f32 cs = cosf( rot ), sn = sinf( rot );
+    f32 pen = 0.0f;                      /* run-local, UNSCALED: scale is applied at the map */
+
+    for ( u32 i = 0; i < n && str[ i ]; ++i )
+    {
+        f32 u0, v0, u1, v1, ox, oy, gw, gh, advance;
+        font_glyph( (u8)str[ i ], &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
+
+        if ( gw > 0.0f && gh > 0.0f )
+            tess_quad_xf( x, y, cs, sn,
+                          ( pen + ox ) * scale, oy * scale, gw * scale, gh * scale,
+                          u0, v0, u1, v1, tex, abgr );
+
+        pen += advance;
+    }
+}
+
 /* Tessellate a dashed / dotted line as one oriented textured quad sampling the atlas dash row.
    U spans 0..len/period so the row tiles along the line under REPEAT-U addressing; V selects the
    baked row whose on-fraction is closest to `duty`.  O(1) geometry regardless of line length --
@@ -1043,6 +1121,12 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
             case GUI_CMD_TEXT:
                 tess_text_n( c->text.x, c->text.y, c->text.abgr, s_draw.text_pool + c->text.off,
                              c->text.len, c->text.clip_x0, c->text.clip_x1 );
+                break;
+
+            case GUI_CMD_TEXT_XF:
+                tess_text_xf( c->text_xf.x, c->text_xf.y, c->text_xf.abgr,
+                              s_draw.text_pool + c->text_xf.off, c->text_xf.len,
+                              c->text_xf.scale, c->text_xf.rot );
                 break;
 
             case GUI_CMD_CIRCLE_FILLED:

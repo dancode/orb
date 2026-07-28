@@ -573,6 +573,9 @@ it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
   `invisible_button` is its click bit. A custom widget = rect + `item()` + `draw_*`.
 - Custom draw: `canvas(h)` reserves a cell; `draw_rect/line/circle/text/draw_text_in` take
   caller rects, composing with split/carve/anchor. Colors are u32 ABGR (`GUI_COLOR(r,g,b,a)`).
+  `draw_text_xf` is the same run scaled and rotated about its anchor -- the game-UI door. What it
+  looks like is the FONT's doing: a coverage bake magnifies its texels, a distance-field bake
+  (`font_tool -sdf`) resolves its edge in the fragment and is indifferent to scale and angle.
 - Style: `style_get()` + edit + `style_apply()`, or scoped `push_style_color/pop_style_color`.
   `push_style_face` is the same verb over the FACE plane (art on a cell, see the presentation
   note above); `style_brush_add` registers a brush in the set's pool and must be called from the

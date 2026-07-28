@@ -58,6 +58,16 @@ gui_draw_text( f32 x, f32 y, u32 abgr, const char* str )
     draw_push_text( x, y, abgr, str );
 }
 
+/* The transformed run: laid out from (x, y) exactly as draw_text lays one out, then scaled and
+   turned about that same point.  (x, y) is therefore both the anchor and the pivot; any other
+   pivot is the caller moving the anchor, which is a two-line rotation the caller already has the
+   measurements for (text_size) and which no single set of parameters here could generalize. */
+void
+gui_draw_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
+{
+    draw_push_text_xf( x, y, abgr, str, scale, rot );
+}
+
 /* Volatile widgets (gui()->volatile_cb / volatile_begin / volatile_end) live in their own file --
    chrome/widgets/gui_volatile.c -- rather than here, since they're a distinct cross-cutting feature
    spanning both units, not a custom-draw escape hatch. */

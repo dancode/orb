@@ -413,6 +413,33 @@ step_cmd_bounds( const gui_cmd_t* c )
             if ( c->text.clip_x1 < x1 ) x1 = c->text.clip_x1;
             return ( gui_rect_t ){ x0, c->text.y, x1 > x0 ? x1 - x0 : 0.0f, font_line_h() };
         }
+        /* Transformed run: the same advance walk gives the run's own box, which is then rotated
+           about the origin and re-bounded -- the highlight is an AABB over a shape that is not
+           one, exactly as it is for a triangle. */
+        case GUI_CMD_TEXT_XF:
+        {
+            const char* s = s_step.text_pool + c->text_xf.off;
+            f32         w = 0.0f;
+            for ( u32 i = 0; i < c->text_xf.len && s[ i ]; ++i )
+            {
+                f32 u0, v0, u1, v1, ox, oy, gw, gh, adv;
+                font_glyph( (u8)s[ i ], &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &adv );
+                w += adv;
+            }
+            f32 cs = cosf( c->text_xf.rot ), sn = sinf( c->text_xf.rot );
+            f32 lw = w * c->text_xf.scale, lh = font_line_h() * c->text_xf.scale;
+            f32 qx[ 4 ] = { 0.0f, lw, lw,   0.0f };
+            f32 qy[ 4 ] = { 0.0f, 0.0f, lh, lh   };
+            f32 x0 = 0.0f, x1 = 0.0f, y0 = 0.0f, y1 = 0.0f;
+            for ( u32 i = 0; i < 4; ++i )
+            {
+                f32 px = qx[ i ] * cs - qy[ i ] * sn;
+                f32 py = qx[ i ] * sn + qy[ i ] * cs;
+                if ( px < x0 ) x0 = px;   if ( px > x1 ) x1 = px;
+                if ( py < y0 ) y0 = py;   if ( py > y1 ) y1 = py;
+            }
+            return ( gui_rect_t ){ c->text_xf.x + x0, c->text_xf.y + y0, x1 - x0, y1 - y0 };
+        }
         case GUI_CMD_CIRCLE_FILLED:
             return ( gui_rect_t ){ c->circle.cx - c->circle.r, c->circle.cy - c->circle.r,
                                    2.0f * c->circle.r, 2.0f * c->circle.r };
@@ -468,7 +495,9 @@ step_cmd_info( u32 index, step_cmd_info_t* out )
     out->cmd    = *c;
     out->bounds = step_cmd_bounds( c );
     out->clip   = s_step.clip_table[ c->clip_idx ];
-    out->text   = ( c->type == GUI_CMD_TEXT ) ? s_step.text_pool + c->text.off : NULL;
+    out->text   = ( c->type == GUI_CMD_TEXT )    ? s_step.text_pool + c->text.off
+                : ( c->type == GUI_CMD_TEXT_XF ) ? s_step.text_pool + c->text_xf.off
+                                                 : NULL;
     out->owner  = s_step.cmd_owner[ fi ];
 
     /* Owning segment tag (display domain). */

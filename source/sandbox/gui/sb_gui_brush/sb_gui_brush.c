@@ -1152,93 +1152,6 @@ window_controls( void )
     gui()->window_end();
 }
 
-/*==============================================================================================
-    panel_sdf -- the DISTANCE-FIELD font: the same text through a different sampling model
-
-    Every other glyph in this sandbox comes from the coverage atlas, sampled NEAREST, where the
-    texel IS the alpha.  That is the right answer for editor chrome and the wrong one for game UI,
-    because a coverage glyph only knows what it looks like at the size it was baked -- filter it and
-    it blurs, and the reason motion-snap was once reverted is that the crisp answer and the smooth
-    answer cannot come from one texture.
-
-    So they come from two.  This font's bytes are a SIGNED DISTANCE (128 = on the outline), it packs
-    into its own atlas, and its draws carry GUI_TEX_SDF so the flush binds the bilinear sampler and
-    the fragment recovers coverage from a screen-space derivative instead of reading it.  Nothing
-    above the tessellator changed: the metrics are identical, so layout, measurement and hit-testing
-    cannot tell the two apart, and a run of each still merges by the ordinary tex_idx rule.
-
-    At 1:1 the two rows below should look the same -- that IS the test, because it means the
-    derivative reconstruction agrees with the rasterizer that baked the coverage twin.  What the
-    distance field buys is what happens away from 1:1, and the draw call that scales or rotates a
-    run is the next step, not this one.
-
-    The asset is GENERATED, not committed:  bin\font_tool.exe CascadiaMono 16 -sdf
-==============================================================================================*/
-
-static u32  s_sdf_font = 0;      /* 0 = not loaded (font id 0 is the default bitmap font) */
-static bool s_sdf_atlas_on = false;
-
-/* Loaded once after boot: font_load ACTIVATES what it loads, so the default is put back. */
-static void
-load_sdf_font( void )
-{
-    char path[ 576 ];
-    snprintf( path, sizeof( path ), "%s/assets/font/CascadiaMono_16px_sdf.orb_font", sys_root_dir() );
-
-    u32 prev = gui()->font_active_id();
-    s_sdf_font = gui()->font_load( path );
-    gui()->font_use( prev );
-
-    if ( s_sdf_font == 0 )
-        printf( "[sb_gui_brush] no SDF font at '%s' -- bake one with: font_tool CascadiaMono 16 -sdf\n",
-                path );
-}
-
-static void
-panel_sdf( void )
-{
-    gui()->separator_text( "distance-field text -- a third sampling model, same draw call" );
-
-    if ( s_sdf_font == 0 )
-    {
-        gui()->text_colored( AMBER, "no SDF font loaded" );
-        gui()->text( "bake one:  bin\\font_tool.exe CascadiaMono 16 -sdf" );
-        return;
-    }
-
-    static const char* const SPECIMEN = "Handgloves 0123 @#& -- the quick brown fox";
-
-    gui_rect_t cell = gui()->canvas( s_sdf_atlas_on ? 370.0f : 96.0f );
-    f32        x    = cell.x + 8.0f;
-    f32        y    = cell.y + 8.0f;
-
-    /* The A/B.  Same string, same colour, same pen -- only the font id differs, and with it the
-       atlas, the sampler and the fragment's branch. */
-    gui()->draw_text( x, y, INK_DIM, "coverage (NEAREST, texel = alpha):" );
-    gui()->draw_text( x, y + 18.0f, INK, SPECIMEN );
-
-    gui()->font_use( s_sdf_font );
-    gui()->draw_text( x, y + 44.0f, INK_DIM, "distance field (LINEAR, texel = distance):" );
-    gui()->draw_text( x, y + 62.0f, INK, SPECIMEN );
-    gui()->font_use( 0 );
-
-    /* The field itself, as a picture.  An R8 texture through the RGBA model reads as a RED CHANNEL
-       (a format with no green/blue/alpha samples as 0,0,1), which is fine here -- what is worth
-       seeing is the SHAPE of the data: soft ramps around every glyph instead of the hard coverage
-       islands the other atlas holds.
-       The whole 1024x1024 atlas is shown, and the font's page is ONE tenant occupying the top-left
-       512x512 of it, so the glyphs sit in the upper-left quadrant with the rest cleared to 0.  That
-       is worth seeing too: an SDF page is several times the area of its coverage twin, which is the
-       reason this atlas has dimensions of its own. */
-    if ( s_sdf_atlas_on )
-    {
-        gui_rect_t a = { x, y + 90.0f, 260.0f, 260.0f };
-        gui()->draw_texture_in( a, gui()->font_atlas_idx( s_sdf_font ), 0xFFFFFFFFu );
-    }
-
-    gui()->checkbox( "show the distance-field atlas", &s_sdf_atlas_on );
-}
-
 static void
 window_stage( void )
 {
@@ -1258,7 +1171,6 @@ window_stage( void )
         panel_surface();
         panel_pulse();
         panel_box();
-        panel_sdf();
     }
     gui()->window_end();
 }
@@ -1322,9 +1234,6 @@ main( int argc, char** argv )
     /* After boot: the sprite atlas creates itself on the first registration, and that needs the
        live rhi context boot just stood up. */
     build_art();
-
-    /* Same reason as build_art: a font's pixels reach the GPU through the live rhi context. */
-    load_sdf_font();
 
     /* Register the kit's style source once, for good: it owns the motion rates from the first
        frame, and the art skin is a branch INSIDE it rather than a second source swapped in. */

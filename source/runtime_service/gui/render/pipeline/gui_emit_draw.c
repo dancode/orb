@@ -701,6 +701,18 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &c->text.abgr,    sizeof c->text.abgr );
             h = fnv1a( h, s_draw.text_pool + c->text.off, c->text.len );   /* content while L1-hot */
             break;
+        /* Folds scale and rot, so a run that spins re-tessellates every frame it moves.  That is
+           the honest cost and the difference from PULSE: a pulse animates in the FRAGMENT off
+           pc.time and its geometry never changes, while a transform is baked into vertices. */
+        case GUI_CMD_TEXT_XF:
+            h = fnv1a( h, &c->text_xf.x,     sizeof c->text_xf.x );
+            h = fnv1a( h, &c->text_xf.y,     sizeof c->text_xf.y );
+            h = fnv1a( h, &c->text_xf.len,   sizeof c->text_xf.len );
+            h = fnv1a( h, &c->text_xf.scale, sizeof c->text_xf.scale );
+            h = fnv1a( h, &c->text_xf.rot,   sizeof c->text_xf.rot );
+            h = fnv1a( h, &c->text_xf.abgr,  sizeof c->text_xf.abgr );
+            h = fnv1a( h, s_draw.text_pool + c->text_xf.off, c->text_xf.len );
+            break;
         case GUI_CMD_CIRCLE_FILLED: h = fnv1a( h, &c->circle, sizeof c->circle ); break;
         case GUI_CMD_LINE:          h = fnv1a( h, &c->line,   sizeof c->line );   break;
         case GUI_CMD_POLYLINE:
@@ -1155,6 +1167,53 @@ void
 draw_push_text( f32 x, f32 y, u32 abgr, const char* str )
 {
     draw_push_text_n( x, y, abgr, str, 0xFFFFFFFFu );
+}
+
+/*==============================================================================================
+    draw_push_text_xf -- emit a TRANSFORMED glyph run: scaled uniformly and rotated about (x, y).
+
+    Everything the 1:1 push does with the string is done identically here (pool copy, so a stack
+    buffer is fine).  What is deliberately NOT done is the vertical band cull: that test assumes a
+    run lights pixels within a line height of y, which is exactly the assumption a scale and a
+    rotation break -- a run rotated 90 degrees reaches its own WIDTH away from y.  Computing the
+    true footprint would mean measuring the string here, so a transformed run simply relies on the
+    GPU scissor, the same way every non-text shape does.  Only the empty-clip case still cuts, and
+    that one is free.
+==============================================================================================*/
+
+void
+draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
+{
+    if ( !str || scale <= 0.0f || draw_emit_blocked() )
+        return;
+    if ( rect_empty( clip_current() ) )
+        return;
+
+    u32 len = (u32)strlen( str );
+    if ( s_draw.text_pool_used + len + 1 > GUI_MAX_TEXT_POOL )
+    {
+        GUI_WARN_ONCE( "frame text pool full (%u bytes) -- further text this frame "
+                       "is dropped. Raise GUI_MAX_TEXT_POOL (gui.h).\n", (unsigned)GUI_MAX_TEXT_POOL );
+        return;
+    }
+    u32   off = s_draw.text_pool_used;
+    char* dst = s_draw.text_pool + off;
+    memcpy( dst, str, len );
+    dst[ len ]            = '\0';
+    s_draw.text_pool_used += len + 1;
+
+    gui_cmd_t* c     = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type          = GUI_CMD_TEXT_XF;
+    c->clip_idx      = s_draw.cur_clip_idx;
+    c->vp            = (u8)s_draw.cur_vp;
+    c->text_xf.x     = x;
+    c->text_xf.y     = y;
+    c->text_xf.off   = off;
+    c->text_xf.len   = len;
+    c->text_xf.scale = scale;
+    c->text_xf.rot   = rot;
+    c->text_xf.abgr  = draw_apply_alpha( abgr );
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
 // clang-format on

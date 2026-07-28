@@ -74,6 +74,7 @@ const gui_api_t g_gui_api_struct =
     .text_size                          = gui_text_size,
     .draw_text_in                       = gui_draw_text_in,
     .draw_text_clipped                  = gui_draw_text_clipped,
+    .draw_text_xf                       = gui_draw_text_xf,
     .register_icon                      = gui_register_icon,
     .load_icon                          = gui_load_icon,
     .find_icon                          = gui_find_icon,
