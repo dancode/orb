@@ -134,10 +134,12 @@ text_xf_centered( f32 cx, f32 cy, u32 col, const char* s, f32 scale, f32 rot )
     Shared controls
 ==============================================================================================*/
 
-/* Short on purpose: at 5x a 32px mono face spends ~96 px per character, so a longer word simply
-   runs out of the half-panel it is being compared in -- and a demo that clips its own point is a
-   worse demo than a short one. */
-static const char* const SPECIMEN = "Sharp";
+/* Five characters, chosen not typeset: at 5x a 32px mono face spends ~96 px each, so a longer word
+   runs out of the half-panel it is being compared in.  These five are the ones that BROKE -- 'a',
+   'g' and 'e' join a bowl to a stroke and '0' is Cascadia's dotted zero, which are exactly the two
+   shapes FreeType's contour merge gets wrong (font_tool's sdf_repair_signs).  If a bake ever
+   regresses there, it shows up here first and at the largest size the panel offers. */
+static const char* const SPECIMEN = "Page0";
 
 static f32  s_scale   = 2.0f;
 static f32  s_rot_deg = -18.0f;

@@ -156,6 +156,66 @@ info_glob_cb( const char* filename, const char* full_path, void* userdata )
     return true;
 }
 
+/*==============================================================================================
+    sdf_repair_signs -- take the field's SIGN from the RASTERIZER, not from the contour merge.
+
+    FreeType builds a distance field per CONTOUR and combines them with
+    `min( max over clockwise contours, min over counter-clockwise contours )` (ftsdf.c,
+    sdf_generate_with_overlaps).  That rule has two failure modes, and neither is tunable:
+
+      * A FILLED ISLAND INSIDE A HOLE is not expressible at all.  The hole is a counter-clockwise
+        contour, so it VETOES every pixel inside it via the min -- including pixels that a later
+        clockwise contour fills back in.  Cascadia Mono's dotted zero is exactly this shape, and
+        its dot was missing from the field entirely: solid ink reading 63..100 where 128 is the
+        outline.  Nothing about spread, hinting or the `overlaps` property touches it.
+      * A CONTOUR THAT INTERSECTS ITSELF cannot be split apart, and FreeType's own documentation
+        says so.  A crossbar running into a bowl ('e', 'a') slips the sign by a few byte steps at
+        the junction -- the smaller, subtler version of the same hole.
+
+    The rasterizer has neither problem: it fills by nonzero winding, so islands, holes and
+    self-intersections all come out right.  So the baker renders each glyph BOTH ways and lets the
+    coverage decide the sign, flipping any texel the two disagree about with FreeType's own
+    invert_sign (255 - v, ftsdfcommon.c).
+
+    ONLY the unambiguous extremes are touched -- fully covered (255) must be inside, fully empty
+    (0) must be outside.  Partial coverage is the antialiased boundary band, where an 8-bit area
+    estimate is a WORSE authority than the analytic field, and a rule that reached in there would
+    "repair" texels that were right.  In practice this is a handful of texels per face: the flip
+    restores the sign, and the magnitude it restores is close enough that the edge lands within a
+    fraction of a pixel of where the outline actually is.
+
+    Alignment comes from the BEARINGS rather than from `spread`, so the repair still lines up if
+    FreeType ever changes how it pads: the coverage bitmap's top-left sits at
+    (cov_left - field_left, field_top - cov_top) inside the field bitmap.  If that does not land
+    wholly inside, the glyph is left alone rather than repaired against the wrong texels.
+==============================================================================================*/
+
+static uint32_t
+sdf_repair_signs( dev_font_glyph_t* r, const uint8_t* cov, int cw, int ch, int cleft, int ctop )
+{
+    int dx = cleft - r->bearing_x;
+    int dy = r->bearing_y - ctop;
+    if ( dx < 0 || dy < 0 || dx + cw > r->w || dy + ch > r->h )
+        return 0;
+
+    uint32_t fixed = 0;
+    for ( int y = 0; y < ch; ++y )
+    {
+        for ( int x = 0; x < cw; ++x )
+        {
+            uint8_t  c = cov[ (size_t)y * cw + x ];
+            uint8_t* v = &r->bitmap[ (size_t)( y + dy ) * r->w + ( x + dx ) ];
+
+            if ( ( c == 255 && *v < 128 ) || ( c == 0 && *v > 128 ) )
+            {
+                *v = (uint8_t)( 255 - *v );
+                ++fixed;
+            }
+        }
+    }
+    return fixed;
+}
+
 /* basename of a path (after the last '/' or '\\'). */
 static const char*
 path_base( const char* p )
@@ -419,21 +479,55 @@ main( int argc, char** argv )
     int32_t line_gap = (int32_t)( face->size->metrics.height    >> 6 ) - ascent + descent;
 
     memset( s_glyphs, 0, sizeof( s_glyphs ) );
-    uint32_t raw_count = 0;
+    uint32_t raw_count   = 0;
+    uint32_t sdf_fixed   = 0;   /* texels the sign repair flipped, over the whole face */
+    uint32_t sdf_fixed_g = 0;   /* glyphs that needed at least one                     */
 
     for ( uint32_t cp = ORB_FONT_CP_FIRST; cp <= ORB_FONT_CP_LAST; ++cp )
     {
         FT_UInt glyph_idx = FT_Get_Char_Index( face, (FT_ULong)cp );
 
+        /* THE SIGN ORACLE.  An SDF bake rasterizes the glyph's coverage FIRST and keeps it, because
+           the field the renderer produces below can have the wrong sign where contours meet and the
+           rasterizer never does (sdf_repair_signs).  It has to happen first and in its own load:
+           FT_Render_Glyph consumes the slot's outline, so the glyph is loaded twice. */
+        uint8_t* cov_px   = NULL;
+        int      cov_w    = 0, cov_h = 0, cov_left = 0, cov_top = 0;
+        if ( sdf_range && FT_Load_Glyph( face, glyph_idx, FT_LOAD_RENDER ) == 0
+                       && face->glyph->bitmap.width > 0 && face->glyph->bitmap.rows > 0 )
+        {
+            FT_GlyphSlot cg = face->glyph;
+            cov_w    = (int)cg->bitmap.width;
+            cov_h    = (int)cg->bitmap.rows;
+            cov_left = (int)cg->bitmap_left;
+            cov_top  = (int)cg->bitmap_top;
+            cov_px   = (uint8_t*)malloc( (size_t)cov_w * (size_t)cov_h );
+            if ( cov_px )
+                for ( int row = 0; row < cov_h; ++row )
+                    memcpy( cov_px + (size_t)row * cov_w,
+                            cg->bitmap.buffer + (size_t)row * (uint32_t)cg->bitmap.pitch,
+                            (size_t)cov_w );
+        }
+
         /* Coverage renders in one step; the SDF renderer runs over the OUTLINE, so the glyph is
-           loaded unrendered and rasterized separately. */
+           loaded unrendered and rasterized separately.
+           HINTING STAYS ON for the SDF path, and that was measured rather than assumed: dropping
+           it (the obvious guess, since grid-fitting is meaningless for a field meant to be scaled)
+           made the holes WORSE and moved every advance, which would end the property that an SDF
+           face measures identically to its coverage twin. */
         if ( FT_Load_Glyph( face, glyph_idx, sdf_range ? FT_LOAD_DEFAULT : FT_LOAD_RENDER ) )
+        {
+            free( cov_px );
             continue;
+        }
 
         FT_GlyphSlot g = face->glyph;
 
         if ( sdf_range && FT_Render_Glyph( g, FT_RENDER_MODE_SDF ) )
+        {
+            free( cov_px );
             continue;   /* a glyph with no outline (space) simply has nothing to render */
+        }
 
         dev_font_glyph_t* r = &s_glyphs[ raw_count++ ];
 
@@ -475,11 +569,26 @@ main( int argc, char** argv )
                 uint8_t*       dst = r->bitmap + (size_t)row * r->w;
                 memcpy( dst, src, (size_t)r->w );
             }
+
+            if ( cov_px )
+            {
+                uint32_t n = sdf_repair_signs( r, cov_px, cov_w, cov_h, cov_left, cov_top );
+                sdf_fixed += n;
+                if ( n ) ++sdf_fixed_g;
+            }
         }
+
+        free( cov_px );
     }
 
     FT_Done_Face( face );
     FT_Done_FreeType( ft );
+
+    /* Reported rather than silent: a repair count that suddenly jumps on a new face is the signal
+       that its outlines hit the merge's blind spot hard, and a count of 0 is worth seeing too. */
+    if ( sdf_range )
+        printf( "[font_tool] sdf sign repair: %u texel%s across %u glyph%s\n",
+                sdf_fixed, sdf_fixed == 1 ? "" : "s", sdf_fixed_g, sdf_fixed_g == 1 ? "" : "s" );
 
     bool ok = dev_font_bake_write( out_path, s_glyphs, raw_count,
                                    ascent, descent, line_gap, size_px, sdf_range, ttf_path );
