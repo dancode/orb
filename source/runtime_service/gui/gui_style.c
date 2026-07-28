@@ -11,8 +11,9 @@
     PURITY: resolution takes interact state as PARAMETERS -- col_item_bg( st ),
     col_frame_bg( st, idle ) -- never queried from the interact server, so this unit is usable
     for HUD theming with no interact server present.  The one exception rides core's anim
-    utility EXPLICITLY: col_item_bg_anim( id, st ) keys a damper through gui_anim4 (a keyed-
-    state tenant) -- a deliberate, documented core dependency, not a hidden query.
+    utility EXPLICITLY: style_mix( id, st, sel ) keys a damper through gui_anim4 (a keyed-state
+    tenant) -- a deliberate, documented core dependency, not a hidden query.  Everything that
+    SPENDS a mix (style_col_mix and friends) is as pure as the cell reads beside it.
 
     This unit includes NO render header and calls NO draw_* routine (the acceptance
     criterion): applying a resolved value to the draw state (alpha, rounding) is the impure
@@ -42,6 +43,7 @@
 
 ==============================================================================================*/
 
+#include <stdio.h>    /* GUI_WARN_ONCE (rect/gui_rect.h) -- every unit root provides it */
 #include <string.h>   /* strcmp -- theme name lookup */
 
 #include "orb.h"

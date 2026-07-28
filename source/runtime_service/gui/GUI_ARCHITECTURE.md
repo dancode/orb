@@ -227,6 +227,22 @@ Three roles, one contract (the units carry the same names):
   draw it. Each painter mirrors one colour projection (`col_item_bg` -> `draw_face_item`, and so
   on) so a site converts by changing one call.
 
+  WHEN a widget's surface changes is the MIX (`gui_style_mix_t`, `style_mix`). Phase and look are
+  enumerations, and an enumeration cannot say "most of the way to hovered" -- which is why widgets
+  used to snap, and why an "animated" twin of each projection would only have spread the same snap
+  over twice the surface. The mix is the CONTINUOUS coordinate over the same grid: three weights
+  (toward HOT, toward ACTIVE, toward SELECT) damped in one `gui_anim4` slot. The read is split
+  from the spend, and that split is what makes motion affordable everywhere: `style_mix` is the
+  one call that touches storage, and a widget reads it ONCE and spends it on every row it paints
+  (`style_col_mix` for the surface, the border, the ink), so a three-part widget costs one probe
+  and its parts arrive together. Storage stays proportional to items IN MOTION -- the weights rest
+  at zero, so a settled widget's slot evicts and an idle UI holds nothing. `GUI_ID_NONE` opts out
+  with no probe at all. The three rates are style vars (`GUI_VAR_ANIM_HOT` / `_ACTIVE` /
+  `_SELECT`, class `GUI_CLASS_RATE`), so a theme owns the feel of the entire widget set and
+  setting them to 0 makes the library snap down the same code path -- there is no animation
+  branch. Faces CROSS-FADE rather than blend, since art does not interpolate: `face_span`
+  collapses the mix onto the two cells the item lies between and alpha-composites them.
+
 A widget (the chrome unit) is the only combiner: it asks composition for a rect, hands it to
 behavior, hands both results to presentation. The public `gui_item`/`canvas`/`draw_*` verbs
 are the caller's door onto the same roles, skin optional -- the game-UI path.
@@ -259,7 +275,7 @@ The canonical leaf widget is four lines, one per seam:
 gui_id_t         id = item_id( label );
 gui_rect_t       r  = cell_next_w( label_natural_w( label ), WIDGET_H );
 gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
-draw_fill( r, col_item_bg_anim( id, st ) );
+draw_face_item( r, id, st, false );   /* surface: face if the theme has one, mixed colour if not */
 ```
 
 The style vocabulary itself (`WIDGET_*` / `WIN_*` / `COL_*` macros) lives with its resolver in
@@ -542,6 +558,10 @@ it with `gui()->empty( 0.0f, band.h )` so the window sizes around it.
   `push_style_face` is the same verb over the FACE plane (art on a cell, see the presentation
   note above); `style_brush_add` registers a brush in the set's pool and must be called from the
   set's SOURCE, since the pool is cleared at every landing.
+- Motion: `style_mix( id, st, selected )` -> three damped weights; `style_color_mix( role, mix )`
+  and `draw_face_mix( rect, role, mix )` spend them. Read the mix once per item and spend it on
+  every row that item paints. `GUI_VAR_ANIM_HOT` / `_ACTIVE` / `_SELECT` set the rates (Hz;
+  0 = snap) for the whole widget set.
   A kit that owns the whole application's look registers `style_source_set(fn, user)` on the
   default set; the source is invoked at every style landing (font / theme / scale) to re-install
   `style_edit()`, seeded from the chrome theme first so it need only overwrite what it owns.

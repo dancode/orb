@@ -73,6 +73,10 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
 
     [ GUI_VAR_DISABLED_ALPHA  ] = { "Disabled Alpha",  GUI_CLASS_RATIO  },
 
+    [ GUI_VAR_ANIM_HOT        ] = { "Hover Rate",      GUI_CLASS_RATE   },
+    [ GUI_VAR_ANIM_ACTIVE     ] = { "Press Rate",      GUI_CLASS_RATE   },
+    [ GUI_VAR_ANIM_SELECT     ] = { "Select Rate",     GUI_CLASS_RATE   },
+
     [ GUI_VAR_CHECK_SHAPE     ] = { "Check Shape",     GUI_CLASS_SHAPE  },
     [ GUI_VAR_BULLET_SHAPE    ] = { "Bullet Shape",    GUI_CLASS_SHAPE  },
     [ GUI_VAR_ARROW_SHAPE     ] = { "Arrow Shape",     GUI_CLASS_SHAPE  },
@@ -119,6 +123,7 @@ static const char* const k_class_name[ GUI_CLASS_COUNT ] =
     [ GUI_CLASS_SKIN   ] = "Skin",
     [ GUI_CLASS_PITCH  ] = "Lattice",
     [ GUI_CLASS_RATIO  ] = "Ratios",
+    [ GUI_CLASS_RATE   ] = "Motion",
     [ GUI_CLASS_SHAPE  ] = "Shapes",
 };
 
@@ -242,7 +247,12 @@ var_is_pixels( u8 cls )
         [ GUI_VAR_GRID_Q          ] = ( GRID_Q ), \
         /* 3. RATIOS -- unitless */ \
         [ GUI_VAR_DISABLED_ALPHA  ] = 0.5f, \
-        /* 4. SHAPE PICKS */ \
+        /* 4. RATES -- Hz-like damper speeds; 0 snaps.  Press is quicker than hover on purpose: \
+              a hover is an invitation and may drift, a press is an answer and must land. */ \
+        [ GUI_VAR_ANIM_HOT        ] = 10.0f, \
+        [ GUI_VAR_ANIM_ACTIVE     ] = 20.0f, \
+        [ GUI_VAR_ANIM_SELECT     ] = 12.0f, \
+        /* 5. SHAPE PICKS */ \
         [ GUI_VAR_CHECK_SHAPE     ] = GUI_CHECK_TICK, \
         [ GUI_VAR_BULLET_SHAPE    ] = GUI_BULLET_DISC, \
         [ GUI_VAR_ARROW_SHAPE     ] = GUI_ARROW_FILLED, \

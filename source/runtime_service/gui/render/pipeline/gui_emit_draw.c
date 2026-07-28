@@ -544,12 +544,22 @@ draw_push_clip_root( void )
     color's A byte by it.  The item-flag resolver lowers it for the span of a disabled widget so
     the whole widget dims with no per-widget code, and the frame / chrome seams reset it to 1.0
     (chrome is not an item, so it always paints opaque).  At 1.0 the byte is returned unchanged.
+
+    draw_get_alpha reads it back, which a caller needs to NEST a fade inside whatever the ambient
+    span already installed -- multiply by the current value and restore it, rather than clobbering
+    a disabled widget back to opaque halfway through its own paint.
 ==============================================================================================*/
 
 void
 draw_set_alpha( f32 a )
 {
     s_draw.alpha = a < 0.0f ? 0.0f : ( a > 1.0f ? 1.0f : a );
+}
+
+f32
+draw_get_alpha( void )
+{
+    return s_draw.alpha;
 }
 
 static u32

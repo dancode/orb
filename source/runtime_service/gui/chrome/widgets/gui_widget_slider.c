@@ -90,9 +90,13 @@ value_step_i32( i32* v, i32 nav_adjust, i32 step, i32 lo, i32 hi )
 /* Draw a slider's track, the fill bar up to t (0..1), the knob, and -- unless GUI_ITEM_NO_VALUE_TEXT
    is set -- value_text centered on top, fitted to the inner width. */
 static void
-slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value_text )
+slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value_text )
 {
     t = saturate( t );
+
+    /* ONE mix for the whole control: track, fill bar and knob are three rows of a single
+       interaction and have to travel together, which two probes would not guarantee. */
+    gui_style_mix_t mix = style_mix( id, st, false );
 
     /* Track frame -- the widget BODY, so it lifts exactly like every other control face: the same
        col_frame_bg step the checkbox box, the drag box, and the input field take (BG[HOT] on
@@ -101,7 +105,7 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
        colour, so hovering painted the EMPTY remainder the same blue as the filled part and every
        slider read as 100% full.  The knob does NOT ride this row (see col_grab below) -- if it
        did it would match the hovered track exactly and vanish into it. */
-    draw_face_field( track_r, st, GUI_ROLE_ACCENT, GUI_PHASE_DIM, 0u, 0.0f );
+    draw_face_field_mix( track_r, mix, GUI_ROLE_ACCENT, GUI_PHASE_DIM, 0u, 0.0f );
     /* Captured for keyboard value edit (st.focused -- see nav_item_register) gets the same border
        lift text/numeric fields use on focus, so going from nav highlight to Left/Right-adjust reads
        as a real state change instead of an invisible one. */
@@ -122,7 +126,7 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
     if ( fill_w > 0.0f )
         draw_round_rect_ex( ( gui_rect_t ){ track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f },
                             ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, true, 0.0f,
-                            style_col( GUI_ROLE_ACCENT, gui_item_phase( st ) ) );
+                            style_col_mix( GUI_ROLE_ACCENT, mix ) );
 
     /* Knob (grab): the GRAB row, which exists precisely so this element has somewhere to stand.
        It is the only part of the slider with two lifting neighbours -- the track beneath it and
@@ -137,7 +141,7 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
         f32 kcx = knob_x + SLIDER_KNOB_W * 0.5f;
         f32 kcy = track_r.y + track_r.h * 0.5f;
         f32 kr  = track_r.h * 0.5f;
-        draw_circle( kcx, kcy, kr, true,  0.0f,      col_grab( st ) );
+        draw_circle( kcx, kcy, kr, true,  0.0f,      style_col_mix( GUI_ROLE_GRAB, mix ) );
         draw_circle( kcx, kcy, kr, false, WIN_BORDER, COL_BORDER_IDLE );
     }
     else
@@ -145,7 +149,7 @@ slider_render( gui_rect_t track_r, gui_item_state_t st, f32 t, const char* value
         f32 save_round = draw_rounding();
         draw_set_rounding( ROUND_WIDGET );
         gui_rect_t knob_r = { knob_x, track_r.y, SLIDER_KNOB_W, track_r.h };
-        draw_fill   ( knob_r, col_grab( st ) );
+        draw_fill   ( knob_r, style_col_mix( GUI_ROLE_GRAB, mix ) );
         draw_outline( knob_r, WIN_BORDER, COL_BORDER_IDLE );
         draw_set_rounding( save_round );
     }
@@ -211,7 +215,7 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
         f32  t_cur = ( hi > lo ) ? ( ( *v - lo ) / ( hi - lo ) ) : 0.0f;
         char buf[ 32 ];
         fmt_snprintf( buf, sizeof( buf ), SLIDER_FLOAT_FMT, *v );
-        slider_render( track_r, st, t_cur, buf );
+        slider_render( id, track_r, st, t_cur, buf );
     }
     return changed;
 }
@@ -256,7 +260,7 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
         f32  t_cur = ( hi > lo ) ? ( (f32)( *v - lo ) / (f32)( hi - lo ) ) : 0.0f;
         char buf[ 32 ];
         fmt_snprintf( buf, sizeof( buf ), "%d", *v );
-        slider_render( track_r, st, t_cur, buf );
+        slider_render( id, track_r, st, t_cur, buf );
     }
     return changed;
 }
@@ -361,10 +365,10 @@ drag_text_enter( gui_id_t id, gui_item_state_t* st )
 /* Draw the input-style frame a drag box wears in text-entry mode -- distinct from the slider-track
    frame so the mode switch reads at a glance, and identical to the numeric input field. */
 static void
-drag_text_frame( gui_rect_t box_r, gui_item_state_t st )
+drag_text_frame( gui_id_t id, gui_rect_t box_r, gui_item_state_t st )
 {
     if ( st.focused ) draw_face( box_r, GUI_ROLE_BG, GUI_PHASE_ACTIVE );
-    else              draw_face_field( box_r, st, GUI_ROLE_BG, GUI_PHASE_IDLE, 0u, 0.0f );
+    else              draw_face_field( box_r, id, st, GUI_ROLE_BG, GUI_PHASE_IDLE, 0u, 0.0f );
     draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
 }
 
@@ -380,7 +384,7 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
     if ( text_mode )
     {
         /* Text entry: a plain "%d" seeds the editor even when `format` carries a caption. */
-        drag_text_frame( box_r, st );
+        drag_text_frame( id, box_r, st );
         double out;
         if ( num_edit_field( id, box_r, st, "%d", true, (double)*v, &out ) )
         {
@@ -422,7 +426,7 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
              && value_step_i32( v, st.nav_adjust, (i32)( v_speed + 0.5f ), v_min, v_max ) )
             changed = true;
 
-        u32 bg = col_frame_bg( st, COL_ACCENT_DIM );
+        u32 bg = col_frame_bg_mix( style_mix( id, st, false ), COL_ACCENT_DIM );
         draw_fill( box_r, bg );
         draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
     }
@@ -482,7 +486,7 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
     if ( text_mode )
     {
         /* Text entry: seed with a decoration-free "%g" (fmt may carry a caption like "X: %.2f"). */
-        drag_text_frame( box_r, st );
+        drag_text_frame( id, box_r, st );
         double out;
         if ( num_edit_field( id, box_r, st, "%g", false, (double)*v, &out ) )
         {
@@ -528,7 +532,7 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
         if ( st.nav_adjust != 0 && value_step_f32( v, st.nav_adjust, v_speed, fmt, v_min, v_max ) )
             changed = true;
 
-        u32 bg = col_frame_bg( st, COL_ACCENT_DIM );
+        u32 bg = col_frame_bg_mix( style_mix( id, st, false ), COL_ACCENT_DIM );
         draw_fill( box_r, bg );
         draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
     }
@@ -683,7 +687,7 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
     {
         f32 sv = draw_rounding();
         draw_set_rounding( 2.0f );
-        draw_face_item( preview_r, pst );
+        draw_face_item( preview_r, id_combine( id, 1u ), pst, false );
         gui_rect_t inner = { preview_r.x + 2.0f, preview_r.y + 2.0f,
                              preview_r.w - 4.0f,  preview_r.h - 4.0f };
         if ( pa < 255u )

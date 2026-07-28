@@ -32,7 +32,7 @@ gui_collapsing_header( const char* label )
     if ( st.clicked ) hs->open = !hs->open;
 
     /* Clickable bar with hover/active feedback, an arrow box on the left, then the label. */
-    draw_face_item( r, st );
+    draw_face_item( r, id, st, false );
 
     gui_rect_t arrow = { r.x, r.y, r.h, r.h };          /* a square the height of the bar */
     draw_collapse_arrow( arrow, !hs->open, COL_TEXT_IDLE );    /* closed -> points right */
@@ -69,9 +69,11 @@ gui_tree_node( const char* label )
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
     if ( st.clicked ) hs->open = !hs->open;
 
-    /* No framed bar: tint only on hover / active / nav (like selectable), so a tree is a list of rows. */
-    if ( st.hover || st.active || st.nav )
-        draw_face_item( r, st );
+    /* No framed bar: tint only while the row is lit (like selectable), so a tree is a list of rows.
+       Gated on the MIX, not the live flags -- the fade out happens after the cursor has left. */
+    gui_style_mix_t mix = style_mix( id, st, false );
+    if ( mix.hot > 0.0f || mix.act > 0.0f )
+        draw_face_mix( r, GUI_ROLE_BG, mix );
 
     gui_rect_t arrow = { r.x, r.y, r.h, r.h };          /* fold arrow in a square at the left */
     draw_collapse_arrow( arrow, !hs->open, COL_TEXT_IDLE );    /* closed -> points right */

@@ -38,7 +38,7 @@ input_text_begin( const char* label )
     gui_rect_t       box_r = cell_next( WIDGET_H );
     gui_item_state_t st    = item_state( id, box_r, ITEM_FOCUSABLE );
     if ( st.focused ) draw_face( box_r, GUI_ROLE_BG, GUI_PHASE_ACTIVE );
-    else              draw_face_field( box_r, st, GUI_ROLE_BG, GUI_PHASE_IDLE, 0u, 0.0f );
+    else              draw_face_field( box_r, id, st, GUI_ROLE_BG, GUI_PHASE_IDLE, 0u, 0.0f );
     draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
     return ( input_text_frame_t ){ id, box_r, st };
 }

@@ -280,14 +280,31 @@ build_art( void )
 
 static bool s_skin = false;   /* is the art theme installed? */
 
+/* The three motion rates, owned HERE rather than left in the style.
+
+   style_edit() writes the INSTALLED layer, and a landing -- a font change, a theme change, ticking
+   the skin box below -- re-derives that layer from the active theme, so an ad-hoc poke is live
+   until the next landing and then gone.  A kit that OWNS a value installs it from its style
+   SOURCE, which is re-run at every landing by definition.  That is the whole reason this source is
+   registered unconditionally instead of only while the art skin is on. */
+static f32 s_rate_hot = 10.0f;
+static f32 s_rate_act = 20.0f;
+static f32 s_rate_sel = 12.0f;
+
 static void
-art_theme_source( void* user )
+sb_style_source( void* user )
 {
     UNUSED( user );
 
     gui_style_t* st = gui()->style_edit();
-    if ( s_art.frame == GUI_SPRITE_NONE )
-        return;                       /* art not registered yet -- leave the theme's colours */
+
+    /* Always ours: the motion budget, re-installed over whatever the theme just landed. */
+    st->var[ GUI_VAR_ANIM_HOT    ] = s_rate_hot;
+    st->var[ GUI_VAR_ANIM_ACTIVE ] = s_rate_act;
+    st->var[ GUI_VAR_ANIM_SELECT ] = s_rate_sel;
+
+    if ( !s_skin || s_art.frame == GUI_SPRITE_NONE )
+        return;                       /* no art (or none registered yet) -- theme colours stand */
 
     /* Register this theme's art, then name the handles from cells.  Tinting is how ONE piece of
        art serves a whole phase ramp: the same button face, lit for hover and warmed for press,
@@ -334,7 +351,7 @@ static void
 skin_apply( bool on )
 {
     s_skin = on;
-    gui()->style_source_set( on ? art_theme_source : NULL, NULL );
+    gui()->style_source_set( sb_style_source, NULL );   /* re-registering runs the landing */
 }
 
 /*==============================================================================================
@@ -577,8 +594,146 @@ panel_widget( void )
 }
 
 /*==============================================================================================
+    MOTION -- the mix, watched
+
+    Every widget in the library now travels between style cells instead of snapping between them,
+    and this panel is where that becomes visible rather than merely felt.  One probe widget reads
+    ONE mix and spends it on three different rows of the grid -- its surface, its border and its
+    ink -- which is the whole argument for splitting the read from the spend: three parts, one
+    damper slot, and they arrive together because they share the weights.
+
+    The bars underneath are the raw channels.  Hover the probe and watch `hot` climb; hold the
+    button and watch `act` overtake it; click to toggle and watch `sel` cross on its own rate.
+==============================================================================================*/
+
+static bool s_probe_on = false;
+
+static void
+weight_bar( gui_rect_t r, const char* name, f32 v, u32 col )
+{
+    char txt[ 32 ];
+
+    gui()->draw_brush( ( gui_rect_t ){ r.x, r.y, r.w, r.h },
+                       &( gui_brush_t ){ .kind = GUI_BRUSH_SOLID,
+                                         .col_a = GUI_COLOR( 0x22, 0x22, 0x28, 0xFF ) } );
+    if ( v > 0.0f )
+        gui()->draw_brush( ( gui_rect_t ){ r.x, r.y, r.w * v, r.h },
+                           &( gui_brush_t ){ .kind = GUI_BRUSH_SOLID, .col_a = col } );
+
+    snprintf( txt, sizeof( txt ), "%s %.2f", name, (double)v );
+    gui()->draw_text( r.x + r.w + 10.0f, r.y - 2.0f, INK_DIM, txt );
+}
+
+static void
+panel_motion( void )
+{
+    /* Any stable id keys a mix -- it does not have to be a widget's own.  A constant is honest
+       here because there is exactly one probe. */
+    const gui_id_t PROBE = 0x51DE0001u;
+
+    gui()->separator_text( "motion -- ONE mix, spent on three rows (hover / hold / click)" );
+
+    gui_rect_t cell = gui()->canvas( 150.0f );
+
+    gui_rect_t       r  = { cell.x + 6.0f, cell.y + 8.0f, 300.0f, 44.0f };
+    gui_item_state_t st = gui()->item( "probe", r );
+    if ( st.clicked )
+        s_probe_on = !s_probe_on;
+
+    gui_style_mix_t m = gui()->style_mix( PROBE, st, s_probe_on );
+
+    gui()->draw_face_mix( r, GUI_ROLE_BG, m );                                 /* surface */
+    gui()->draw_frame( r, 0x00000000u,
+                       gui()->style_color_mix( GUI_ROLE_BORDER, m ), 1.0f );   /* border  */
+    gui()->draw_text_in( r, GUI_ALIGN_CENTER,
+                         gui()->style_color_mix( GUI_ROLE_TEXT, m ),           /* ink     */
+                         s_probe_on ? "selected -- click to clear" : "hover, hold, click me" );
+
+    f32 by = cell.y + 66.0f;
+    weight_bar( ( gui_rect_t ){ cell.x + 6.0f, by,         180.0f, 12.0f }, "hot", m.hot,
+                GUI_COLOR( 0x60, 0xA0, 0xE0, 0xFF ) );
+    weight_bar( ( gui_rect_t ){ cell.x + 6.0f, by + 20.0f, 180.0f, 12.0f }, "act", m.act, AMBER );
+    weight_bar( ( gui_rect_t ){ cell.x + 6.0f, by + 40.0f, 180.0f, 12.0f }, "sel", m.sel,
+                GUI_COLOR( 0x80, 0xD0, 0x80, 0xFF ) );
+
+    gui()->draw_text( cell.x + 330.0f, cell.y + 12.0f, INK_DIM,
+                      "one gui_anim4 slot, three channels," );
+    gui()->draw_text( cell.x + 330.0f, cell.y + 30.0f, INK_DIM,
+                      "evicted the moment all three settle." );
+}
+
+/*==============================================================================================
     The control window
 ==============================================================================================*/
+
+/* A multi-line tooltip on the slider just emitted.  Each rate drives ONE channel of the mix, and
+   which widgets that channel can even reach is the part that is not guessable from a number --
+   which is why the select tooltip spends its last three lines saying where it does nothing. */
+static void
+rate_help( const char* title, const char* const* lines )
+{
+    /* tooltip_begin does NOT test hover -- it opens the window unconditionally, and the CALLER
+       guards.  (set_item_tooltip is the one-liner that does this for you.)  Without this line all
+       three tooltips open every frame on the one shared tooltip window, stacked at the cursor, and
+       the narrower one's right border lands in the middle of the wider one's text. */
+    if ( !gui()->is_item_hovered() )
+        return;                       /* nothing was opened, so there is nothing to close */
+
+    /* begin GATES THE BODY, end is UNCONDITIONAL -- it reattaches the overlay that begin detached
+       whether or not the body ran, so an early return between the two leaks that detach. */
+    if ( gui()->tooltip_begin() )
+    {
+        gui()->stack();   /* a tooltip body is a fresh region -- declare a layout mode first */
+
+        gui()->separator_text( title );
+        for ( u32 i = 0; lines[ i ]; ++i )
+            gui()->text( lines[ i ] );
+
+        gui()->separator();
+        gui()->text( "Hz-like damper speed: 10 ~ 250 ms to 95%," );
+        gui()->text( "20 ~ 150 ms. 0 snaps with no animation." );
+        gui()->text( "Live readout: the hot / act / sel bars in" );
+        gui()->text( "the motion panel of the stage window." );
+    }
+    gui()->tooltip_end();
+}
+
+/* Three side-by-side cells, each isolating ONE mix channel.  Hover the first, hold the second,
+   click the third; each shows only the weight its slider drives, plus the live number. */
+static void
+rate_swatch( void )
+{
+    static const char* const k_name[ 3 ] = { "hover", "press", "select" };
+    static bool              s_sel       = false;
+
+    gui_rect_t row = gui()->canvas( 42.0f );
+    f32        w   = ( row.w - 16.0f ) / 3.0f;
+
+    for ( u32 i = 0; i < 3; ++i )
+    {
+        gui_rect_t       r  = { row.x + (f32)i * ( w + 8.0f ), row.y, w, 26.0f };
+        gui_item_state_t st = gui()->item( k_name[ i ], r );
+
+        if ( i == 2 && st.clicked )
+            s_sel = !s_sel;
+
+        /* The full mix, then spend ONE weight of it -- the other two are zeroed so this cell can
+           only ever show the channel its slider owns. */
+        gui_style_mix_t full = gui()->style_mix( 0xB0A70000u + i, st, ( i == 2 ) && s_sel );
+        gui_style_mix_t one  = { ( i == 0 ) ? full.hot : 0.0f,
+                                 ( i == 1 ) ? full.act : 0.0f,
+                                 ( i == 2 ) ? full.sel : 0.0f };
+
+        gui()->draw_face_mix( r, GUI_ROLE_BG, one );
+        gui()->draw_frame( r, 0x00000000u, gui()->style_color_mix( GUI_ROLE_BORDER, one ), 1.0f );
+
+        char txt[ 32 ];
+        f32  v = ( i == 0 ) ? one.hot : ( i == 1 ) ? one.act : one.sel;
+        snprintf( txt, sizeof( txt ), "%s %.2f", k_name[ i ], (double)v );
+        gui()->draw_text_in( r, GUI_ALIGN_CENTER,
+                             gui()->style_color_mix( GUI_ROLE_TEXT, one ), txt );
+    }
+}
 
 static void
 window_controls( void )
@@ -620,6 +775,74 @@ window_controls( void )
         gui()->text( "every widget already paints through" );
         gui()->text( "the grid, so all of them change." );
 
+        /* The motion budget of the ENTIRE widget set, in three numbers.  Drag them and every
+           transition in the application retimes live; drop them to 0 and the library snaps,
+           down the same code path -- there is no animation branch to turn off. */
+        gui()->separator_text( "motion (Hz -- 0 snaps)" );
+        {
+            gui()->slider_float( "hover", &s_rate_hot, 0.0f, 40.0f );
+            rate_help( "hover  -- the HOT weight", ( const char*[] ){
+                "How fast a surface lights UNDER THE CURSOR",
+                "and fades back out once it leaves.",
+                "Watch: the [hover] swatch below, or sweep the",
+                "cursor across the buttons. At 2 Hz they glow in",
+                "slowly and linger behind the cursor; at 40 Hz",
+                "they snap.",
+                "Reaches EVERY button, menu row, tree node, list",
+                "row, combo, input box, slider track and",
+                "scrollbar grab -- the whole widget set.", NULL } );
+
+            gui()->slider_float( "press", &s_rate_act, 0.0f, 40.0f );
+            rate_help( "press  -- the ACTIVE weight", ( const char*[] ){
+                "How fast a surface darkens while you HOLD the",
+                "mouse button down on it.",
+                "Watch: press and HOLD the [press] swatch below",
+                "without releasing.",
+                "Default is faster than hover on purpose -- a",
+                "hover is an invitation and may drift, a press is",
+                "an answer and must land.",
+                "Drop it to 2 Hz and every button in the app",
+                "feels mushy under the finger.", NULL } );
+
+            gui()->slider_float( "select", &s_rate_sel, 0.0f, 40.0f );
+            rate_help( "select -- the SELECT weight", ( const char*[] ){
+                "How fast a thing crosses between the NORMAL and",
+                "SELECT colour planes once it is CHOSEN.",
+                "Watch: CLICK the [select] swatch below to toggle",
+                "it, or click the probe in the stage window.",
+                "IF THIS SLIDER SEEMS TO DO NOTHING, that is",
+                "correct and worth knowing: only a widget that can",
+                "be CHOSEN has a SELECT plane to cross to. A plain",
+                "button never leaves NORMAL, so no value here will",
+                "ever move one.", NULL } );
+
+            /* One swatch per channel, each painted from a mix with only ITS channel live, so a
+               slider has something to watch that CANNOT be confused with the other two.  The
+               same style_mix every widget uses -- these just spend one weight instead of all
+               three, which is the freedom that splitting the read from the spend buys. */
+            rate_swatch();
+
+            if ( gui()->button( "snap all" ) )
+                s_rate_hot = s_rate_act = s_rate_sel = 0.0f;
+            gui()->same_line( -1.0f );          /* -1 = the theme gap; 0 means a LITERAL zero gap */
+            if ( gui()->button( "default" ) )
+            {
+                s_rate_hot = 10.0f;
+                s_rate_act = 20.0f;
+                s_rate_sel = 12.0f;
+            }
+
+            /* Push the live values into the installed layer every frame.  The source above is what
+               makes them SURVIVE a landing; this is what makes a drag visible on the very next
+               frame without paying a full landing per frame of the drag.  Note what is NOT here:
+               style_apply(), which re-derives the installed layer from the theme base and would
+               throw this write away -- the bug that made these three sliders spring back. */
+            gui_style_t* est = gui()->style_edit();
+            est->var[ GUI_VAR_ANIM_HOT    ] = s_rate_hot;
+            est->var[ GUI_VAR_ANIM_ACTIVE ] = s_rate_act;
+            est->var[ GUI_VAR_ANIM_SELECT ] = s_rate_sel;
+        }
+
         gui()->separator();
         gui()->text( "scale multiplies the slice insets," );
         gui()->text( "so one sprite serves many UI scales." );
@@ -642,6 +865,7 @@ window_stage( void )
         panel_kinds();
         panel_tile();
         panel_widget();
+        panel_motion();
     }
     gui()->window_end();
 }
@@ -704,6 +928,11 @@ main( int argc, char** argv )
     /* After boot: the sprite atlas creates itself on the first registration, and that needs the
        live rhi context boot just stood up. */
     build_art();
+
+    /* Register the kit's style source once, for good: it owns the motion rates from the first
+       frame, and the art skin is a branch INSIDE it rather than a second source swapped in. */
+    gui()->style_source_set( sb_style_source, NULL );
+
 
     f32 dt = 0.0f;
     while ( gui()->boot_poll( &dt ) )

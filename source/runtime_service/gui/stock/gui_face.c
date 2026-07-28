@@ -17,17 +17,22 @@
     and width to the painter rather than drawing them itself, and the painter decides; that is the
     only reason these take border arguments at all.
 
+    EVERY painter here takes an id, and that is the second thing this file is for: the id buys the
+    item a MIX (style_mix), so its surface travels between cells instead of snapping between them.
+    Motion is therefore the default and stillness the opt-out -- pass GUI_ID_NONE and no damper
+    slot is touched at all, which is what a decorative fill and a replaying volatile block want.
+    A widget that paints more than one row should read style_mix ITSELF, once, and hand the same
+    mix to each painter, so its surface / border / ink move together off one probe.
+
     Each painter MIRRORS one colour projection, and the mirroring is the point: a site converting
     from colour to face changes one call and nothing else, because the coordinates it was already
     passing are the coordinates the face plane is indexed by.
 
         style_col        ( role, phase )        ->  draw_face      ( r, role, phase )
         style_col_look   ( role, phase, look )  ->  draw_face_look ( r, role, phase, look )
-        col_item_bg      ( st )                 ->  draw_face_item ( r, st )
-        col_item_bg_look ( st, look )           ->  draw_face_item_look( r, st, look )
-        col_item_bg_anim ( id, st )             ->  draw_face_item_anim( r, id, st )
-        col_frame_bg     ( st, idle )           ->  draw_face_field( r, st, idle_role, idle_phase )
-        col_grab         ( st )                 ->  draw_face_grab ( r, st )
+        col_item_bg_mix  ( id, st, sel )        ->  draw_face_item ( r, id, st, sel )
+        col_grab_mix     ( id, st )             ->  draw_face_grab ( r, id, st, ... )
+        col_frame_bg_mix ( mix, idle )          ->  draw_face_field( r, id, st, idle_cell, ... )
 
     Included by gui_stock.c before the widget renders, which paint through it.
 
@@ -36,26 +41,115 @@
 
 /*==============================================================================================
     The one primitive -- every painter below is this with its coordinates worked out.
+
+    A cell here is (rest_role, rest_phase) plus a `role` whose HOT and ACTIVE cells the item
+    lifts to.  The two collapse for the common widget -- rest IS (role, IDLE) -- and separate
+    only for a framed FIELD, which rests somewhere of its caller's choosing (a slider groove on
+    ACCENT/DIM, an input box on BG/IDLE) and lifts to the shared BG cells like every other
+    framed control.  That is col_frame_bg's shape, expressed as cells so the rest state can
+    carry a FACE too: a groove and an input box are exactly what a skin most wants to author.
 ==============================================================================================*/
 
-/* Fill r for the cell (look, role, phase): the cell's face brush if it has one, else a flat fill
-   of its colour with an optional border.  border_w <= 0 means no border either way.
+/* Collapse the continuous mix onto the two cells the item lies BETWEEN, and how far it has come.
 
-   `fallback_col` exists for the one shape the grid cannot express: col_frame_bg's caller-supplied
-   idle colour (a slider groove rests on ACCENT/DIM, an input on BG/IDLE).  Pass 0 to mean "use
-   the cell's own colour", which is what every other caller wants. */
+   Art does not interpolate.  Where the colour spender blends the whole row at once, a face can
+   only ever be a crossfade of two pieces of art -- so this picks the two, which is all the eye
+   reads anyway.
+
+   Travel along the phase axis is ONE monotone position, IDLE -> HOT -> ACTIVE, because that is
+   the interaction path itself: you hover before you press, and release before you leave.  Adding
+   the two weights therefore gives a single 0..2 coordinate whose halves are the two spans.
+
+   The look axis is a separate crossfade, and it TAKES PRECEDENCE while it is the one moving: a
+   row becoming selected under the cursor reads as the selection arriving, not as a hover, so
+   both ends of the span hold the phase still and differ only by plane.
+
+   `rest_look` is the plane the span sits in when sel is not moving it -- GUI_LOOK_NORMAL for an
+   item, and the caller's own pick for the still painters, which is how draw_face_look reaches the
+   SELECT plane without pretending to be mid-transition. */
 static void
-face_paint( gui_rect_t r, u8 role, u8 phase, u8 look, u32 fallback_col,
-            u32 border_col, f32 border_w )
+face_span( u8 role, u8 rest_role, u8 rest_phase, u8 rest_look, gui_style_mix_t m,
+           u8* a_role, u8* a_phase, u8* a_look,
+           u8* b_role, u8* b_phase, u8* b_look, f32* w )
 {
-    const gui_brush_t* b = style_face_look( role, phase, look );
-    if ( b )
+    f32 pos = m.hot + m.act;              /* 0 = at rest, 1 = fully hot, 2 = fully active */
+
+    if ( pos <= 1.0f )
     {
-        draw_fill_brush( r, b );      /* art carries its own edge -- no border over the top */
-        return;
+        *a_role = rest_role;  *a_phase = rest_phase;
+        *b_role = role;       *b_phase = GUI_PHASE_HOT;
+        *w      = pos;
+    }
+    else
+    {
+        *a_role = role;       *a_phase = GUI_PHASE_HOT;
+        *b_role = role;       *b_phase = GUI_PHASE_ACTIVE;
+        *w      = pos - 1.0f;
+    }
+    *a_look = *b_look = rest_look;
+
+    if ( m.sel >= 1.0f )                  /* settled on the far plane */
+    {
+        *a_look = *b_look = GUI_LOOK_SELECT;
+    }
+    else if ( m.sel > 0.0f )              /* crossing planes -- hold the phase, fade the look */
+    {
+        bool far_end = ( *w >= 0.5f );
+        u8   c_role  = far_end ? *b_role  : *a_role;
+        u8   c_phase = far_end ? *b_phase : *a_phase;
+
+        *a_role = *b_role  = c_role;
+        *a_phase = *b_phase = c_phase;
+        *a_look = GUI_LOOK_NORMAL;
+        *b_look = GUI_LOOK_SELECT;
+        *w      = m.sel;
+    }
+}
+
+/* Fill r for an item at mix `m`: its cells' faces if the theme authored any, else the blended
+   colour with an optional border.  border_w <= 0 means no border either way. */
+static void
+face_paint( gui_rect_t r, u8 role, u8 rest_role, u8 rest_phase, u8 rest_look,
+            gui_style_mix_t m, u32 border_col, f32 border_w )
+{
+    u8  ar, ap, al, br, bp, bl;
+    f32 w;
+    face_span( role, rest_role, rest_phase, rest_look, m, &ar, &ap, &al, &br, &bp, &bl, &w );
+
+    const gui_brush_t* a = style_face_look( ar, ap, al );
+    const gui_brush_t* b = ( w > 0.0f ) ? style_face_look( br, bp, bl ) : NULL;
+
+    if ( a || b )
+    {
+        /* The near end goes down opaque -- its brush, or its flat colour when only the far end
+           carries art.  That colour base is what lets a HALF-skinned theme (a hover face over a
+           plain resting cell, which is a completely reasonable thing to author) cross-fade into
+           its art instead of popping into it. */
+        if ( a ) draw_fill_brush( r, a );
+        else     draw_fill( r, style_col_look( ar, ap, al ) );
+
+        if ( w > 0.0f )
+        {
+            /* Multiply the AMBIENT alpha rather than setting it: the disabled-item span has
+               already lowered it, and clobbering that here would make a disabled widget flash
+               back to full opacity for the length of every transition. */
+            f32 amb = draw_get_alpha();
+            draw_set_alpha( amb * w );
+            if ( b ) draw_fill_brush( r, b );
+            else     draw_fill( r, style_col_look( br, bp, bl ) );
+            draw_set_alpha( amb );
+        }
+        return;                            /* art carries its own edge -- no border over the top */
     }
 
-    u32 col = fallback_col ? fallback_col : style_col_look( role, phase, look );
+    /* No art anywhere on this span: the plain colour path, and still exactly one quad.  The
+       spender is the EXACT one (style_col_mix / col_frame_bg_mix), not the two-cell span above --
+       colour has no reason to approximate, and a face-painted widget must read identically to a
+       colour-painted one that never asked about art. */
+    u32 col = ( rest_role == role && rest_phase == GUI_PHASE_IDLE && rest_look == GUI_LOOK_NORMAL )
+            ? style_col_mix( role, m )                                        /* the item shape */
+            : col_frame_bg_mix( m, style_col_look( rest_role, rest_phase, rest_look ) );
+
     if ( border_w > 0.0f )
         gui_draw_frame( r, col, border_col, border_w );
     else
@@ -63,84 +157,92 @@ face_paint( gui_rect_t r, u8 role, u8 phase, u8 look, u32 fallback_col,
 }
 
 /*==============================================================================================
-    The cell painters -- a (role, phase) the caller knows.
+    The cell painters -- a (role, phase) the caller knows, with no interaction behind it.
+
+    These have no id and no mix by design: a static rule, a panel band, a title bar is not an
+    item, so there is nothing for it to travel between.
 ==============================================================================================*/
+
+static gui_style_mix_t
+mix_still( void )
+{
+    return ( gui_style_mix_t ){ 0.0f, 0.0f, 0.0f };
+}
 
 void draw_face( gui_rect_t r, u8 role, u8 phase )
 {
-    face_paint( r, role, phase, GUI_LOOK_NORMAL, 0u, 0u, 0.0f );
+    face_paint( r, role, role, phase, GUI_LOOK_NORMAL, mix_still(), 0u, 0.0f );
 }
 
 void draw_face_look( gui_rect_t r, u8 role, u8 phase, u8 look )
 {
-    face_paint( r, role, phase, look, 0u, 0u, 0.0f );
+    face_paint( r, role, role, phase, look, mix_still(), 0u, 0.0f );
 }
 
 void draw_face_frame( gui_rect_t r, u8 role, u8 phase, u32 border_col, f32 border_w )
 {
-    face_paint( r, role, phase, GUI_LOOK_NORMAL, 0u, border_col, border_w );
+    face_paint( r, role, role, phase, GUI_LOOK_NORMAL, mix_still(), border_col, border_w );
 }
 
 /*==============================================================================================
-    The state painters -- a phase distilled from live interaction, the common case.
+    The item painters -- an id and live interaction, so the surface MOVES.
 
-    Each takes the interact state a widget already holds and folds it through gui_item_phase, the
-    same three-way rule every render uses, so a face-painted widget and a colour-painted one pick
-    the same cell from the same evidence.
+    Each reads the mix itself, which is the one-call convenience; a widget painting several rows
+    should call style_mix once and use the _mix forms below instead, so everything it paints
+    shares a single probe and a single set of weights.
 ==============================================================================================*/
 
-void draw_face_item( gui_rect_t r, gui_item_state_t st )
+void draw_face_item( gui_rect_t r, gui_id_t id, gui_item_state_t st, bool selected )
 {
-    face_paint( r, GUI_ROLE_BG, (u8)gui_item_phase( st ), GUI_LOOK_NORMAL, 0u, 0u, 0.0f );
+    face_paint( r, GUI_ROLE_BG, GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_LOOK_NORMAL,
+                style_mix( id, st, selected ), 0u, 0.0f );
 }
 
-void draw_face_item_look( gui_rect_t r, gui_item_state_t st, gui_style_look_t look )
+void draw_face_item_frame( gui_rect_t r, gui_id_t id, gui_item_state_t st, bool selected,
+                           u32 border_col, f32 border_w )
 {
-    face_paint( r, GUI_ROLE_BG, (u8)gui_item_phase( st ), (u8)look, 0u, 0u, 0.0f );
+    face_paint( r, GUI_ROLE_BG, GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_LOOK_NORMAL,
+                style_mix( id, st, selected ), border_col, border_w );
 }
 
-void draw_face_item_frame( gui_rect_t r, gui_item_state_t st, u32 border_col, f32 border_w )
+void draw_face_grab( gui_rect_t r, gui_id_t id, gui_item_state_t st, u32 border_col, f32 border_w )
 {
-    face_paint( r, GUI_ROLE_BG, (u8)gui_item_phase( st ), GUI_LOOK_NORMAL, 0u,
-                border_col, border_w );
+    face_paint( r, GUI_ROLE_GRAB, GUI_ROLE_GRAB, GUI_PHASE_IDLE, GUI_LOOK_NORMAL,
+                style_mix( id, st, false ), border_col, border_w );
 }
 
-void draw_face_grab( gui_rect_t r, gui_item_state_t st, u32 border_col, f32 border_w )
-{
-    face_paint( r, GUI_ROLE_GRAB, (u8)gui_item_phase( st ), GUI_LOOK_NORMAL, 0u,
-                border_col, border_w );
-}
-
-/* The col_frame_bg shape: a framed FIELD that rests on a colour of its caller's choosing and
-   lifts to the shared BG hot / active cells when engaged.  The resting cell is named as a
-   (role, phase) rather than passed as a colour so the rest state can carry a face too -- a slider
-   groove and an input box are exactly the widgets a skin most wants to author. */
+/* The col_frame_bg shape: a framed FIELD resting on a cell of its caller's choosing that lifts to
+   the shared BG hot / active cells when engaged. */
 void
-draw_face_field( gui_rect_t r, gui_item_state_t st, u8 idle_role, u8 idle_phase,
+draw_face_field( gui_rect_t r, gui_id_t id, gui_item_state_t st, u8 idle_role, u8 idle_phase,
                  u32 border_col, f32 border_w )
 {
-    if ( st.active || st.hover || st.nav )
-    {
-        u8 phase = st.active ? GUI_PHASE_ACTIVE : GUI_PHASE_HOT;
-        face_paint( r, GUI_ROLE_BG, phase, GUI_LOOK_NORMAL, 0u, border_col, border_w );
-        return;
-    }
-    face_paint( r, idle_role, idle_phase, GUI_LOOK_NORMAL, 0u, border_col, border_w );
+    face_paint( r, GUI_ROLE_BG, idle_role, idle_phase, GUI_LOOK_NORMAL,
+                style_mix( id, st, false ), border_col, border_w );
 }
 
-/* The animated face.  A brush cannot be interpolated -- its phases are separate pieces of art, and
-   crossfading two nine-slices is not a blend, it is two draws -- so a cell WITH a face takes the
-   phase step cleanly and a cell without keeps the damped colour it always had.  That asymmetry is
-   honest rather than a gap: authored art expresses its own state change, which is why the sandbox's
-   hover face is a different brush and not the same one lerped. */
-void
-draw_face_item_anim( gui_rect_t r, gui_id_t id, gui_item_state_t st )
+/*==============================================================================================
+    The same painters over a mix the caller ALREADY HAS -- the multi-row form.
+
+    A widget that paints a surface, a border and an ink wants all three to arrive together off
+    one probe.  It reads style_mix once and spends it here and on style_col_mix, rather than
+    calling the item painters above and letting each re-probe the same slot.
+==============================================================================================*/
+
+void draw_face_mix( gui_rect_t r, u8 role, gui_style_mix_t m )
 {
-    const gui_brush_t* b = style_face_look( GUI_ROLE_BG, (u8)gui_item_phase( st ), GUI_LOOK_NORMAL );
-    if ( b )
-        draw_fill_brush( r, b );
-    else
-        draw_fill( r, col_item_bg_anim( id, st ) );
+    face_paint( r, role, role, GUI_PHASE_IDLE, GUI_LOOK_NORMAL, m, 0u, 0.0f );
+}
+
+void draw_face_mix_frame( gui_rect_t r, u8 role, gui_style_mix_t m, u32 border_col, f32 border_w )
+{
+    face_paint( r, role, role, GUI_PHASE_IDLE, GUI_LOOK_NORMAL, m, border_col, border_w );
+}
+
+void draw_face_field_mix( gui_rect_t r, gui_style_mix_t m, u8 idle_role, u8 idle_phase,
+                          u32 border_col, f32 border_w )
+{
+    face_paint( r, GUI_ROLE_BG, idle_role, idle_phase, GUI_LOOK_NORMAL, m, border_col, border_w );
 }
 
 /*==============================================================================================
@@ -155,9 +257,13 @@ draw_face_item_anim( gui_rect_t r, gui_id_t id, gui_item_state_t st )
 const gui_brush_t* gui_style_face     ( gui_style_role_t r, gui_style_phase_t p )                     { return style_face( (u8)r, (u8)p ); }
 const gui_brush_t* gui_style_face_look( gui_style_role_t r, gui_style_phase_t p, gui_style_look_t l ) { return style_face_look( (u8)r, (u8)p, (u8)l ); }
 
+gui_style_mix_t gui_style_mix      ( gui_id_t id, gui_item_state_t st, bool selected )        { return style_mix( id, st, selected ); }
+u32             gui_style_color_mix( gui_style_role_t r, gui_style_mix_t m )                  { return style_col_mix( (u8)r, m ); }
+
 void gui_draw_face     ( gui_rect_t box, gui_style_role_t r, gui_style_phase_t p )                     { draw_face( box, (u8)r, (u8)p ); }
 void gui_draw_face_look( gui_rect_t box, gui_style_role_t r, gui_style_phase_t p, gui_style_look_t l ) { draw_face_look( box, (u8)r, (u8)p, (u8)l ); }
-void gui_draw_face_item( gui_rect_t box, gui_item_state_t st )                                         { draw_face_item( box, st ); }
+void gui_draw_face_item( gui_rect_t box, gui_id_t id, gui_item_state_t st, bool selected )             { draw_face_item( box, id, st, selected ); }
+void gui_draw_face_mix ( gui_rect_t box, gui_style_role_t r, gui_style_mix_t m )                       { draw_face_mix( box, (u8)r, m ); }
 
 // clang-format on
 /*============================================================================================*/

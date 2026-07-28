@@ -101,9 +101,9 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
     draw_face( track, GUI_ROLE_ACCENT, GUI_PHASE_DIM );
     draw_set_rounding( ROUND_WIDGET );
     if ( vertical )
-        draw_face_grab( ( gui_rect_t ){ track.x, knob_off, track.w, knob_len }, st, 0u, 0.0f );
+        draw_face_grab( ( gui_rect_t ){ track.x, knob_off, track.w, knob_len }, id, st, 0u, 0.0f );
     else
-        draw_face_grab( ( gui_rect_t ){ knob_off, track.y, knob_len, track.h }, st, 0u, 0.0f );
+        draw_face_grab( ( gui_rect_t ){ knob_off, track.y, knob_len, track.h }, id, st, 0u, 0.0f );
     draw_set_rounding( save_round );
 }
 

@@ -1509,7 +1509,28 @@ typedef struct gui_api_s
 
     void ( *draw_face      )( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase );
     void ( *draw_face_look )( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
-    void ( *draw_face_item )( gui_rect_t r, gui_item_state_t st );
+
+    /* THE MIX -- the continuous coordinate over the same grid (gui_style_mix_t, gui.h), and what
+       makes a widget MOVE between cells instead of snapping between them.
+
+           gui_style_mix_t m = gui()->style_mix( id, st, selected );   // one probe, damped
+           gui()->draw_face_mix( box, GUI_ROLE_BG, m );                // surface
+           u32 ink = gui()->style_color_mix( GUI_ROLE_TEXT, m );       // ...and its ink, together
+
+       style_mix is the only call here that touches storage: one 16-byte damper slot per item IN
+       MOTION, which evicts the moment the item settles.  Read it ONCE per item and spend it on
+       every row that item paints, so its parts travel together instead of each running a damper
+       of their own.  GUI_ID_NONE opts out with no probe at all, and the three GUI_VAR_ANIM_*
+       rates put the feel of the whole widget set in the theme's hands -- set them to 0 and the
+       library snaps, down the same code path.
+
+       draw_face_item is the one-call form for a widget that paints a single surface: it reads
+       the mix itself.  Faces cross-fade rather than blend, since art does not interpolate. */
+    void ( *draw_face_item )( gui_rect_t r, gui_id_t id, gui_item_state_t st, bool selected );
+    void ( *draw_face_mix  )( gui_rect_t r, gui_style_role_t role, gui_style_mix_t mix );
+
+    gui_style_mix_t ( *style_mix       )( gui_id_t id, gui_item_state_t st, bool selected );
+    u32             ( *style_color_mix )( gui_style_role_t role, gui_style_mix_t mix );
 
     /* The schema, described by the engine that owns it -- so a style editor WALKS the six axes
        (role, phase, look, seed, ramp, var) instead of keeping parallel tables in step with enums
@@ -1808,6 +1829,25 @@ typedef struct gui_api_s
 
            gui()->button( "Hover me" );
            gui()->set_item_tooltip( "Does the thing" );
+
+        tooltip_begin does NOT test hover -- it OPENS the window, unconditionally, and the caller
+        guards.  set_item_tooltip does that guard for you; the multi-widget form cannot, because
+        only the caller knows which item the body belongs to:
+
+           gui()->slider_float( "rate", &v, 0.0f, 40.0f );
+           if ( gui()->is_item_hovered() )
+           {
+               if ( gui()->tooltip_begin() )
+               {
+                   gui()->stack();      // the body is a fresh region: declare a mode first
+                   gui()->text( "..." );
+               }
+               gui()->tooltip_end();    // UNCONDITIONAL -- it reattaches what begin detached
+           }
+
+        Forgetting the guard is quiet rather than loud: every unguarded tooltip in the frame opens
+        the ONE shared tooltip window at the cursor, so they stack and paint their borders through
+        each other's text instead of simply appearing at the wrong time.
 
         help_marker draws a dim "(?)" hint that pops `text` on hover -- the Dear ImGui footnote,
         typically emitted on the same line after a control:

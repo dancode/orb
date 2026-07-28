@@ -121,7 +121,14 @@ static void
 stock_button_label( gui_rect_t r, const char* text )
 {
     f32 avail = r.w - 2.0f * WIDGET_PAD;
-    if ( label_width( text ) <= avail )
+
+    /* Half-pixel slack, and it is load-bearing.  A natural-width button is sized as
+       label_natural_w = label_width + 2 * WIDGET_PAD, so on the overwhelmingly common path this
+       comparison is an EQUALITY in disguise -- and an exact float equality that rounds a hair the
+       wrong way makes a button ellipsize its OWN label ("snap (all 0)" -> "snap (all..."), which
+       is the one thing a self-fitting widget must never do at its natural size.  Nothing
+       sub-pixel is drawable, so the slack cannot cost a legible glyph. */
+    if ( label_width( text ) <= avail + 0.5f )
         gui_draw_text_in( r, GUI_ALIGN_CENTER, STYLE_COL( TEXT, IDLE ), text );
     else
         draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ),
@@ -130,8 +137,8 @@ stock_button_label( gui_rect_t r, const char* text )
 
 /* stock_button -- THE reference render over gui_comp_button: a flat, hover/press-animated fill +
    a centered (or ellipsized) label; the label doubles as the component id ("##"/"###" rules
-   apply).  col_item_bg_anim rides the keyed damper over the SAME grid cells style_col
-   resolves, so stock and chrome animate alike -- this IS the face chrome's gui_button uses.
+   apply).  draw_face_item rides the keyed mix over the SAME grid cells style_col resolves,
+   so stock and chrome animate alike -- this IS the face chrome's gui_button uses.
    A user forks it by keeping gui_comp_button and swapping only these draw_* calls.  True on click. */
 bool
 gui_stock_button( gui_rect_t r, const char* label )
@@ -139,7 +146,7 @@ gui_stock_button( gui_rect_t r, const char* label )
     gui_id_t          id = item_id( label );       /* the keyed id for the animation damper */
     gui_comp_button_t b  = gui_comp_button( label, r );
 
-    draw_face_item_anim( r, id, b.state );
+    draw_face_item( r, id, b.state, false );
 
     char vis[ 128 ];
     stock_button_label( r, stock_visible_text( label, vis, sizeof vis ) );
@@ -160,7 +167,8 @@ gui_stock_check( gui_rect_t r, const char* id_str, bool* v )
 {
     gui_comp_check_t c = gui_comp_check( id_str, r, v );
 
-    draw_face_item_frame( c.box, c.state, STYLE_COL( BORDER, IDLE ), WIN_BORDER );
+    draw_face_item_frame( c.box, item_id( id_str ), c.state, false,
+                          STYLE_COL( BORDER, IDLE ), WIN_BORDER );
     if ( *v )
         gui_draw_check_mark( gui_rect_pad( c.box, c.box.w * 0.22f ), STYLE_COL( MARK, IDLE ) );
 
@@ -183,19 +191,21 @@ gui_stock_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
        Value bar: the ACCENT row, lifted while engaged so it stays brighter than the lifted groove
        under it.  Handle: the GRAB row, the theme's contrast anchor, which is what keeps it legible
        against BOTH of its neighbours instead of matching one of them in some phase. */
-    gui_style_phase_t ph = gui_item_phase( s.state );
+    /* ONE mix for the whole control: groove and handle are two rows of one interaction, so they
+       must lift and settle together -- two probes would let them drift a frame apart. */
+    gui_style_mix_t mix = style_mix( item_id( id_str ), s.state, false );
 
     gui_rect_t track = gui_rect_align( r, r.w, r.h * 0.30f, GUI_ALIGN_CENTER );
-    draw_face_field( track, s.state, GUI_ROLE_ACCENT, GUI_PHASE_DIM,
-                     STYLE_COL( BORDER, DIM ), 1.0f );
+    draw_face_field_mix( track, mix, GUI_ROLE_ACCENT, GUI_PHASE_DIM,
+                         STYLE_COL( BORDER, DIM ), 1.0f );
     gui_rect_t fill = gui_rect_pad( track, 1.0f );
     fill.w *= s.frac;
     if ( fill.w > 0.0f )
-        gui_draw_rect( fill.x, fill.y, fill.w, fill.h, style_col( GUI_ROLE_ACCENT, ph ) );
+        gui_draw_rect( fill.x, fill.y, fill.w, fill.h, style_col_mix( GUI_ROLE_ACCENT, mix ) );
 
     /* Handle: the component's x + width, the render's height (80% of r, centered). */
     gui_rect_t handle = { s.handle.x, r.y + r.h * 0.10f, s.handle.w, r.h * 0.80f };
-    draw_face_grab( handle, s.state, STYLE_COL( BORDER, IDLE ), 1.0f );
+    draw_face_mix_frame( handle, GUI_ROLE_GRAB, mix, STYLE_COL( BORDER, IDLE ), 1.0f );
 
     return s.changed;
 }
@@ -224,8 +234,10 @@ gui_stock_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* 
     gui_comp_cycle_t cy = gui_comp_cycle( id_str, r, idx, count );
 
     /* Each cap is a control face and lifts like one (col_item_bg, border held) -- see stock_check. */
-    draw_face_item_frame( cy.prev_box, cy.prev.state, STYLE_COL( BORDER, IDLE ), WIN_BORDER );
-    draw_face_item_frame( cy.next_box, cy.next.state, STYLE_COL( BORDER, IDLE ), WIN_BORDER );
+    draw_face_item_frame( cy.prev_box, id_combine( item_id( id_str ), 1u ), cy.prev.state, false,
+                          STYLE_COL( BORDER, IDLE ), WIN_BORDER );
+    draw_face_item_frame( cy.next_box, id_combine( item_id( id_str ), 2u ), cy.next.state, false,
+                          STYLE_COL( BORDER, IDLE ), WIN_BORDER );
     gui_draw_chevron( gui_rect_pad( cy.prev_box, cy.prev_box.w * 0.30f ), GUI_DIR_LEFT,  2.0f, STYLE_COL( TEXT, IDLE ) );
     gui_draw_chevron( gui_rect_pad( cy.next_box, cy.next_box.w * 0.30f ), GUI_DIR_RIGHT, 2.0f, STYLE_COL( TEXT, IDLE ) );
 
@@ -252,7 +264,8 @@ gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
     if ( st.focused )
         draw_face_frame( r, GUI_ROLE_BG, GUI_PHASE_ACTIVE, STYLE_COL( BORDER, ACTIVE ), WIN_BORDER );
     else
-        draw_face_item_frame( r, st, STYLE_COL( BORDER, IDLE ), WIN_BORDER );
+        draw_face_item_frame( r, item_id( id_str ), st, false,
+                              STYLE_COL( BORDER, IDLE ), WIN_BORDER );
 
     /* Selection band and caret read the same cells chrome's edit_paint uses: a selection is a
        pressed FACE (BG[ACTIVE]) and a caret is TEXT, neither of which is an accent -- ACCENT is
@@ -282,16 +295,22 @@ gui_stock_selectable( gui_rect_t r, const char* label, bool* selected )
 {
     gui_comp_selectable_t s = gui_comp_selectable( label, r, selected );
 
-    bool on = ( selected && *selected );
-    if ( on || s.state.hover || s.state.nav )
-        draw_face_item_look( r, s.state, on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL );
+    /* The row is transparent at REST, so its mix has to be read before the emit is skipped:
+       a row fading back out is neither hovered nor selected any more, and testing the live flags
+       would cut the fade off at its first frame.  The weights are what say "still moving". */
+    bool            on  = ( selected && *selected );
+    gui_style_mix_t mix = style_mix( item_id( label ), s.state, on );
+    if ( mix.hot > 0.0f || mix.act > 0.0f || mix.sel > 0.0f )
+        draw_face_mix( r, GUI_ROLE_BG, mix );
 
     char        vis[ 128 ];
     const char* text = stock_visible_text( label, vis, sizeof vis );
     gui_rect_t  tr   = { r.x + WIDGET_PAD, r.y, r.w - 2.0f * WIDGET_PAD, r.h };
+    /* The ink crosses with the surface, but on the LOOK axis alone: a row's text is not meant to
+       brighten under the cursor, only to change with what the row has become. */
+    gui_style_mix_t ink = { 0.0f, 0.0f, mix.sel };
     gui_draw_text_in( tr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
-                      style_col_look( GUI_ROLE_TEXT, GUI_PHASE_IDLE,
-                                      on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL ), text );
+                      style_col_mix( GUI_ROLE_TEXT, ink ), text );
 
     return s.state.clicked;
 }

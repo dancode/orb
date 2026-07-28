@@ -49,7 +49,7 @@ gui_button( const char* label )
 {
     /* Placement is all chrome adds: reserve the natural-width cell (shrinks to it in stack /
        same_line, fills to fit in columns), then paint the stock face through the element core.
-       Since the color seam closed (stock_button uses the same col_item_bg_anim over the same
+       Since the color seam closed (stock_button uses the same animated face over the same
        style_col palette), the core paints exactly what this widget used to -- this is the
        canonical four-line widget collapsed to composer + core. */
     gui_rect_t r = cell_next_w( label_natural_w( label ), WIDGET_H );
@@ -86,7 +86,7 @@ gui_button_fill( const char* label )
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_face_item_anim( r, id, st );
+    draw_face_item( r, id, st, false );
     draw_button_label( r, label );
 
     return st.clicked;
@@ -108,7 +108,7 @@ gui_small_button( const char* label )
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_face_item( r, st );
+    draw_face_item( r, id, st, false );
     draw_button_label( r, label );
 
     return st.clicked;
@@ -147,7 +147,7 @@ gui_arrow_button( const char* label, gui_dir_t dir )
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_face_item( r, st );
+    draw_face_item( r, id, st, false );
     draw_arrow( r, dir, COL_TEXT_IDLE );
 
     return st.clicked;
@@ -259,9 +259,9 @@ checkable_cell( gui_id_t id, const char* label )
 ==============================================================================================*/
 
 static void
-checkbox_face( gui_rect_t box, gui_item_state_t st, bool on )
+checkbox_face( gui_rect_t box, gui_id_t id, gui_item_state_t st, bool on )
 {
-    draw_face_item( box, st );
+    draw_face_item( box, id, st, false );
     draw_outline( box, WIN_BORDER, COL_BORDER_IDLE );
     /* Indicator: a 'v' tick (default), a filled disc, or an 'X' cross per GUI_VAR_CHECK_SHAPE. */
     if ( on ) draw_check_indicator( box, COL_MARK_IDLE );
@@ -273,7 +273,7 @@ gui_checkbox( const char* label, bool* v )
     gui_id_t         id = item_id( label );
     checkable_cell_t c  = checkable_cell( id, label );
 
-    checkbox_face( c.box, c.st, *v );
+    checkbox_face( c.box, id, c.st, *v );
 
     /* The label, when the field kept it -- plainly, no ellipsis (markers still stripped); a label
        too wide for its track overflows and is bounded by the window clip, matching text() and the
@@ -327,7 +327,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
        collapses the dot to nothing as soon as it reaches rad, and at the default indicator size
        it does exactly that.  A mark sizes itself to the box it sits in. */
     draw_push_circle_filled( cx, cy, rad,              segs, COL_BORDER_IDLE );
-    draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, col_item_bg( c.st ) );
+    draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, col_item_bg_mix( id, c.st, false ) );
     if ( on )
         draw_push_circle_filled( cx, cy, rad * 0.55f, segs, COL_MARK_IDLE );
 
@@ -369,15 +369,16 @@ gui_selectable( const char* label, bool* selected )
        sinks under a press.  It used to be `on ? COL_BG_ACTIVE : COL_BG_HOT`, which spent the
        selection to say it and left the most-clicked widget in the library with no hover feedback
        at all.  Idle and unchosen still paints nothing, so the region background shows through. */
-    bool on = ( selected && *selected );
-    if ( on || st.hover || st.nav )
-        draw_face_item_look( r, st, on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL );
+    bool            on  = ( selected && *selected );
+    gui_style_mix_t mix = style_mix( id, st, on );
+    if ( mix.hot > 0.0f || mix.act > 0.0f || mix.sel > 0.0f )
+        draw_face_mix( r, GUI_ROLE_BG, mix );
 
     /* Label, left-aligned with the standard padding -- read through the SAME plane as the fill,
        so a kit that recolours the selection can recolour what is written on it. */
+    gui_style_mix_t ink = { 0.0f, 0.0f, mix.sel };
     draw_label( r.x + WIDGET_PAD, text_center_y( r.y, r.h ),
-                style_col_look( GUI_ROLE_TEXT, GUI_PHASE_IDLE,
-                                on ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL ), label );
+                style_col_mix( GUI_ROLE_TEXT, ink ), label );
     cell_reach( r.x + WIDGET_PAD + label_width( label ) );   /* natural width may exceed the row */
 
     if ( st.clicked && selected )

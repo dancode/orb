@@ -112,6 +112,7 @@ bool            res_atlas_flush_upload  ( void );   // re-upload if dirty; true 
 void draw_reset( i32 display_w, i32 display_h );    // clear the list at the top of frame_begin
 
 void draw_set_alpha             ( f32 a );          // global opacity multiplier folded into every pushed shape
+f32  draw_get_alpha             ( void );           // ...read back, so a nested fade can multiply and restore
 void draw_set_rounding          ( f32 r );          // corner radius folded into every pushed filled/outline rect
 f32  draw_rounding              ( void );           // current ambient radius (save/restore around a sub-element)
 void draw_set_text_clip_x       ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run

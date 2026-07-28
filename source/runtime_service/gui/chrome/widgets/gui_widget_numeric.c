@@ -34,7 +34,7 @@ num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
 {
     /* Box background and border. */
     if ( st.focused ) draw_face( box_r, GUI_ROLE_BG, GUI_PHASE_ACTIVE );
-    else              draw_face_field( box_r, st, GUI_ROLE_BG, GUI_PHASE_IDLE, 0u, 0.0f );
+    else              draw_face_field( box_r, id, st, GUI_ROLE_BG, GUI_PHASE_IDLE, 0u, 0.0f );
     draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
 
     /* input_* seed the editor with the same format they display, so the field opens on the value
@@ -62,7 +62,7 @@ static bool
 num_step_button( gui_id_t id, gui_rect_t r, bool is_minus )
 {
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
-    draw_face_item( r, st );
+    draw_face_item( r, id, st, false );
     draw_outline( r, WIN_BORDER, COL_BORDER_IDLE );
     const char* sym = is_minus ? "-" : "+";
     f32 sw = font_text_w( sym );

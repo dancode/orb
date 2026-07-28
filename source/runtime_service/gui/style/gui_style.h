@@ -14,7 +14,7 @@
     owning a subset of one.
     Resolution is PURE: interact state arrives as PARAMETERS (col_item_bg( st )),
     never queried from core, so style resolves with no interact server present -- the one
-    sanctioned exception is col_item_bg_anim's explicit ride on core's keyed anim utility.
+    sanctioned exception is style_mix's explicit ride on core's keyed anim utility.
 
 ==============================================================================================*/
 
@@ -244,12 +244,23 @@ f32 lat_round    ( f32 v, u32 q );
 extern u32 s_font_size;         /* style/gui_theme.c -- active em (0 = never set) */
 
 /* State -> color projections (gui_style_core.c) -- pure: the state flags arrive as
-   parameters; col_item_bg_anim alone rides core's keyed anim utility, explicitly. */
+   parameters, so these resolve identically with no interact server present. */
 u32 col_item_bg( gui_item_state_t st );
 u32 col_item_bg_look( gui_item_state_t st, gui_style_look_t look );
-u32 col_item_bg_anim( gui_id_t id, gui_item_state_t st );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color );
 u32 col_grab( gui_item_state_t st );
+
+/* The MIX (gui_style_core.c) -- the same projections over a CONTINUOUS grid coordinate, which is
+   what lets a widget move between cells instead of snapping between them.  style_mix is the one
+   read here that rides core's keyed anim utility (explicitly, and it is the only sanctioned
+   exception to the purity rule); everything spending a mix is as pure as the reads above.
+   Call style_mix ONCE per item and spend the result on every row that item paints. */
+gui_style_mix_t style_mix( gui_id_t id, gui_item_state_t st, bool selected );
+
+u32 style_col_mix   ( u8 role, gui_style_mix_t m );
+u32 col_frame_bg_mix( gui_style_mix_t m, u32 idle_color );
+u32 col_item_bg_mix ( gui_id_t id, gui_item_state_t st, bool selected );
+u32 col_grab_mix    ( gui_id_t id, gui_item_state_t st );
 
 /* Ink for a glyph on a bare icon button (fills only when hot/active) -- caption buttons, the dock
    maximize pin, a tab close cross.  Uses the SAME hover-or-active predicate those callers fill

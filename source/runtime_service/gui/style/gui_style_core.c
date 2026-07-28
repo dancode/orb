@@ -1056,27 +1056,106 @@ u32 col_grab( gui_item_state_t st )
                                                          : GUI_PHASE_IDLE );
 }
 
-/* Animated background for a pushbutton-like widget: col_item_bg with the hover/active
-   transitions smoothed through the animation service (core/gui_anim.c) -- the ONE projection
-   that rides the interact server, explicitly: the damper is
-   keyed retained state, so the caller passes the id and core owns the storage.  Two damper
-   channels in one gui_anim4 slot -- a hot layer (hover / nav focus) at speed 10 and an active
-   layer (pressed) at speed 20 -- both rest at 0 so they ramp up from the palette base; the
-   spare two channels sit unused (0/0/0) and are free for a widget-specific flourish later.
-   Composite over the palette: BG -> HOT by the hot channel, then that -> ACT by the active
-   one.  The primitive owns all storage, settle, and wants_redraw bookkeeping in a single peek;
-   an idle widget with no history lands on COL_BG_IDLE. */
+/*==============================================================================================
+    The MIX -- the continuous coordinate over the same grid.
 
-#define ANIM_TAG_BG  0xA501u   /* id_combine salt: keeps this slot distinct from all other per-widget state */
+    Everything above resolves a cell: it names one phase and one look and reads the colour there.
+    That is why a widget SNAPS.  Nothing in the projections is wrong, and adding an "animated"
+    twin of each would only spread the same snap over twice the surface -- the enumeration itself
+    is the ceiling, because you cannot name a cell halfway between IDLE and HOT.
 
-u32
-col_item_bg_anim( gui_id_t id, gui_item_state_t st )
+    So the mix breaks the read in two.  style_mix distils live interaction into three continuous
+    weights and is the ONE thing here that touches storage; style_col_mix spends those weights on
+    a row of the grid and is as pure as every projection above it.  The split is what makes motion
+    affordable to apply EVERYWHERE rather than at the four sites that could justify a damper:
+
+      - ONE probe per item, not per painted thing.  A widget reads the mix once and spends it on
+        its surface, its border and its ink, so a three-part widget costs one 16-byte slot -- and
+        the three arrive together, because they share weights instead of each damping separately.
+      - Storage stays proportional to items IN MOTION.  The weights rest at zero, so a settled
+        widget's slot goes cold and evicts (gui_anim4's contract); an idle UI holds nothing.
+      - id == GUI_ID_NONE opts out completely: the weights come back hard 0/1 with no probe at
+        all, which is what a non-interactive caller and a replaying volatile block both want.
+      - The rates are style vars, so a theme owns the feel of the whole widget set, and setting
+        them to 0 makes the library snap -- the same code path, no animation branch anywhere.
+==============================================================================================*/
+
+#define ANIM_TAG_MIX  0xA501u   /* id_combine salt: keeps this slot distinct from all other per-widget state */
+
+/* Distil (interaction, selection) into the continuous grid coordinate, damped.
+
+   The three channels ride ONE gui_anim4 slot at three theme rates.  Note the rest vector: hot and
+   act rest at 0 so they ramp UP from the palette base on first sight, but sel rests at whatever it
+   currently IS -- an item that is already selected the first time it is drawn must not slide into
+   selection, while one that BECOMES selected must.  gui_anim4 seeds a history-less channel from
+   rest, so naming rest per channel is the whole of that distinction. */
+gui_style_mix_t
+style_mix( gui_id_t id, gui_item_state_t st, bool selected )
 {
-    gui_anim4_t rest   = { 0.0f, 0.0f, 0.0f, 0.0f };
-    gui_anim4_t target = { ( st.hover || st.nav ) ? 1.0f : 0.0f, st.active ? 1.0f : 0.0f, 0.0f, 0.0f };
-    gui_anim4_t speed  = { 10.0f, 20.0f, 0.0f, 0.0f };
-    gui_anim4_t a      = gui_anim4( id_combine( id, ANIM_TAG_BG ), rest, target, speed );
-    return col_lerp( col_lerp( COL_BG_IDLE, COL_BG_HOT, a.x ), COL_BG_ACTIVE, a.y );
+    gui_style_mix_t want = { ( st.hover || st.nav ) ? 1.0f : 0.0f,
+                             st.active              ? 1.0f : 0.0f,
+                             selected               ? 1.0f : 0.0f };
+
+    if ( id == GUI_ID_NONE )
+        return want;   /* no identity -> no storage -> no motion, by the caller's choice */
+
+    gui_anim4_t rest   = { 0.0f, 0.0f, want.sel, 0.0f };
+    gui_anim4_t target = { want.hot, want.act, want.sel, 0.0f };
+    gui_anim4_t speed  = { style_var( GUI_VAR_ANIM_HOT ),
+                           style_var( GUI_VAR_ANIM_ACTIVE ),
+                           style_var( GUI_VAR_ANIM_SELECT ), 0.0f };
+
+    gui_anim4_t a = gui_anim4( id_combine( id, ANIM_TAG_MIX ), rest, target, speed );
+    return ( gui_style_mix_t ){ a.x, a.y, a.z };
+}
+
+/* IDLE -> HOT -> ACTIVE composited by the two phase weights, in that order: a press reads on top
+   of a hover because you cannot press what you are not over. */
+static u32
+mix_phase( u32 idle, u32 hot, u32 act, gui_style_mix_t m )
+{
+    return col_lerp( col_lerp( idle, hot, m.hot ), act, m.act );
+}
+
+/* Spend a mix on one role: the phase composite within each look plane, then the two planes
+   crossfaded by sel.  Pure -- no storage, no interact server, callable with a hand-built mix.
+
+   The sel early-out is not just a speed trim: an unselected item must read EXACTLY what
+   style_col( role, phase ) would give it, and short-circuiting before the second plane is what
+   guarantees that rather than relying on col_lerp( n, s, 0 ) rounding back to n. */
+u32
+style_col_mix( u8 role, gui_style_mix_t m )
+{
+    u32 n = mix_phase( style_col_look( role, GUI_PHASE_IDLE,   GUI_LOOK_NORMAL ),
+                       style_col_look( role, GUI_PHASE_HOT,    GUI_LOOK_NORMAL ),
+                       style_col_look( role, GUI_PHASE_ACTIVE, GUI_LOOK_NORMAL ), m );
+    if ( m.sel <= 0.0f )
+        return n;
+
+    u32 s = mix_phase( style_col_look( role, GUI_PHASE_IDLE,   GUI_LOOK_SELECT ),
+                       style_col_look( role, GUI_PHASE_HOT,    GUI_LOOK_SELECT ),
+                       style_col_look( role, GUI_PHASE_ACTIVE, GUI_LOOK_SELECT ), m );
+    return ( m.sel >= 1.0f ) ? s : col_lerp( n, s, m.sel );
+}
+
+/* col_frame_bg through a mix: the caller's resting colour lifting to the shared BG hot / active
+   cells.  No look axis -- a framed field is not a thing you select, it is a thing you type in. */
+u32
+col_frame_bg_mix( gui_style_mix_t m, u32 idle_color )
+{
+    return mix_phase( idle_color, COL_BG_HOT, COL_BG_ACTIVE, m );
+}
+
+/* The two one-call shorthands, for the widgets that paint a single surface and want the whole
+   read in one line.  Both are style_mix + style_col_mix with the role filled in. */
+u32 col_item_bg_mix( gui_id_t id, gui_item_state_t st, bool selected )
+{
+    return style_col_mix( GUI_ROLE_BG, style_mix( id, st, selected ) );
+}
+
+u32 col_grab_mix( gui_id_t id, gui_item_state_t st )
+{
+    return style_col_mix( GUI_ROLE_GRAB, style_mix( id, st, false ) );
 }
 
 /* True while NO ambient style scope is open -- the volatile-replay precondition check

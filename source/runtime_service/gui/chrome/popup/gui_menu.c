@@ -76,9 +76,12 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
     if ( ( st.hover || st.nav ) && g_ctx->popup.open_count > s_popup_begin_count )
         g_ctx->popup.open_count = s_popup_begin_count;
 
-    /* Row highlight on hover / nav (active tint while pressed). */
-    if ( st.hover || st.nav )
-        draw_face_item( r, st );
+    /* Row highlight on hover / nav (active tint while pressed).  ONE mix for the row and its
+       check gutter, gated on the weights rather than the live flags so the highlight fades out
+       after the cursor has moved on instead of being cut at its first frame. */
+    gui_style_mix_t mix = style_mix( id, st, false );
+    if ( mix.hot > 0.0f || mix.act > 0.0f )
+        draw_face_mix( r, GUI_ROLE_BG, mix );
 
     /* A fixed check-mark gutter on the left so checkable and plain items align.  With
        GUI_MENU_CHECK_BOX (default) a bordered idle box is always drawn when the item has a
@@ -93,7 +96,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
         bool draw_box = ( style_shape( GUI_VAR_MENU_CHECK ) == GUI_MENU_CHECK_BOX );
         if ( draw_box )
         {
-            draw_face_item( ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, st );
+            draw_face_mix( ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, GUI_ROLE_BG, mix );
             draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER_IDLE );
         }
         if ( *selected )
@@ -207,10 +210,10 @@ gui_menu_begin( const char* label )
     /* Entry visuals: lit while hovered / nav-highlighted or while its submenu is open.  An open
        entry is the CHOSEN one of its bar -- the SELECT plane -- so it keeps its hover step and a
        cursor moving along an open menu bar still reads as moving. */
-    if ( st.hover || st.nav || this_open )
+    gui_style_mix_t bmix = style_mix( id, st, this_open );
+    if ( bmix.hot > 0.0f || bmix.act > 0.0f || bmix.sel > 0.0f )
         draw_push_rect_filled( box.x, box.y, box.w, box.h, 0,0,1,1, 0,
-                               this_open ? col_item_bg_look( st, GUI_LOOK_SELECT )
-                                         : COL_BG_HOT );
+                               style_col_mix( GUI_ROLE_BG, bmix ) );
 
     draw_label( box.x + WIDGET_PAD, text_center_y( box.y, box.h ), COL_TEXT_IDLE, label );
 

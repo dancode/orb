@@ -90,7 +90,7 @@ gui_toolbar_button( const char* id_str, gui_icon_id_t icon, const char* tooltip 
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_face_item_anim( r, id, st );
+    draw_face_item( r, id, st, false );
     gui_draw_icon_in( toolbar_icon_rect( r ), icon, 0xFFFFFFFFu );
 
     if ( tooltip && tooltip[ 0 ] )
@@ -114,11 +114,9 @@ gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char*
     bool               on = ( v && *v );
 
     /* A toggle that is ON is a CHOSEN item, not a held one: the SELECT plane, so it still lights
-       under the cursor.  The animated face stays on the unchosen path -- the damper interpolates
-       within a plane, and a toggle flip is a state change to show at once, not to ease into. */
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
-                           on ? col_item_bg_look( st, GUI_LOOK_SELECT )
-                              : col_item_bg_anim( id, st ) );
+       under the cursor.  The flip between planes is the mix's third channel, at its own rate --
+       it used to snap, because there was no coordinate between the two planes to travel along. */
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, col_item_bg_mix( id, st, on ) );
     if ( on )
         draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER_IDLE );
 
@@ -175,9 +173,7 @@ gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* 
 
     /* An open dropdown is the chosen entry of the bar, same as a menu bar's open title. */
     bool this_open = popup_is_open_id( pid );
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0,
-                           this_open ? col_item_bg_look( st, GUI_LOOK_SELECT )
-                                     : col_item_bg_anim( id, st ) );
+    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, col_item_bg_mix( id, st, this_open ) );
 
     gui_rect_t icon_r  = { r.x, r.y, WIDGET_H, r.h };
     gui_rect_t arrow_r = { r.x + WIDGET_H, r.y, TB_DD_ARROW_W, r.h };

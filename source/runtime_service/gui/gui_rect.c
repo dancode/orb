@@ -9,6 +9,7 @@
 
 ==============================================================================================*/
 
+#include <stdio.h>    /* GUI_WARN_ONCE (rect/gui_rect.h) -- every unit root provides it */
 #include "orb.h"
 
 #include "runtime_service/gui/rect/gui_rect.h"

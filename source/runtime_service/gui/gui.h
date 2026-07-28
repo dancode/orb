@@ -408,6 +408,37 @@ typedef enum
 } gui_style_look_t;
 
 /*==============================================================================================
+    GUI_STYLE -- the MIX: where an item sits BETWEEN cells
+
+    The phase and look axes are enumerations, and an enumeration cannot express "most of the way
+    to hovered".  That is the whole reason a widget snaps: it names one cell per frame, so the
+    only motion available to it is the jump from one cell to the next.
+
+    A mix is the continuous coordinate over the same grid -- three weights that say how far the
+    item has travelled from its resting cell toward each of the cells it can reach:
+
+        hot   0 -> 1   toward the HOT phase    (cursor over / keyboard nav on it)
+        act   0 -> 1   toward the ACTIVE phase (pressed / captured)
+        sel   0 -> 1   toward the SELECT look  (chosen: toggled, open, selected row)
+
+    Read it once per item with style_mix (gui()->style_mix), which owns the damper storage, then
+    spend it on as many rows of the grid as the widget paints -- surface, border, ink.  One probe
+    drives all of them, and they arrive together because they share the weights rather than each
+    running a damper of its own.
+
+    All zero is the resting item and 1/0/0 a fully hovered one, so a caller that wants no motion
+    can build a mix by hand and never touch the animation service at all.
+==============================================================================================*/
+
+typedef struct gui_style_mix_t
+{
+    f32 hot;   // 0..1 travel toward GUI_PHASE_HOT
+    f32 act;   // 0..1 travel toward GUI_PHASE_ACTIVE
+    f32 sel;   // 0..1 travel toward GUI_LOOK_SELECT
+
+} gui_style_mix_t;
+
+/*==============================================================================================
     GUI_STYLE -- the seed palette: what a theme AUTHORS
 
     The grid above is what a RENDER reads.  It is not what a theme WRITES.  Those used to be the
@@ -579,6 +610,16 @@ typedef enum
 
     GUI_VAR_DISABLED_ALPHA, // opacity a disabled item draws at (1 = no dim at all)
 
+    /* 4. RATE -- how fast an item travels between cells, in Hz-like damper speed (10 ~ 250 ms to
+       95%, 20 ~ 150 ms).  These are the whole motion budget of the widget set: every surface,
+       border and ink that animates reads its speed from one of the three, so a theme sets the
+       FEEL of the entire UI in three numbers -- and setting them to 0 makes the whole library
+       snap, which is the accessibility answer and the "I hate animation" answer at once. */
+
+    GUI_VAR_ANIM_HOT,       // rate the hover / nav highlight fades in and out
+    GUI_VAR_ANIM_ACTIVE,    // rate the pressed state fades -- faster: a press must feel immediate
+    GUI_VAR_ANIM_SELECT,    // rate a selection / toggle crosses to the SELECT plane
+
     GUI_VAR_COUNT,          // var count -- not a var
 
 } gui_style_var_t;
@@ -594,6 +635,7 @@ typedef enum
      SKIN     yes          no                 a paint-only radius, same reason
      PITCH    no           n/a                the lattice quantum itself, in raw pixels
      RATIO    no           n/a                a unitless 0..1 fraction -- no pixels to scale
+     RATE     no           n/a                an animation speed in Hz -- a duration, not a size
      SHAPE    no           n/a                an enum pick carried in the f32 slot
 
    RATIO exists because every other non-pick class is em-SCALED, and scaling a fraction is
@@ -601,6 +643,11 @@ typedef enum
    SHAPE either, despite sharing "unscaled" -- a shape is a pick a tool offers as a combo over
    named values, a ratio is a number it offers as a 0..1 slider, and that difference is the
    whole reason an editor asks for the class.
+
+   RATE is unscaled for the same reason and a different one: a transition that took 150 ms at a
+   small font must still take 150 ms at a large one, because the eye is not typographic.  It is
+   its own class rather than a RATIO because it is not bounded by 1 -- an editor offers it as a
+   Hz slider running well past it, and 0 means "instant", not "invisible".
 
    This replaced an ordering trap: the scaled span used to be an enum range, so a metric declared
    past the marker silently never scaled.  A class is declared at the same site as the name, so
@@ -612,6 +659,7 @@ typedef enum
     GUI_CLASS_SKIN,
     GUI_CLASS_PITCH,
     GUI_CLASS_RATIO,
+    GUI_CLASS_RATE,
     GUI_CLASS_SHAPE,
     GUI_CLASS_COUNT
 

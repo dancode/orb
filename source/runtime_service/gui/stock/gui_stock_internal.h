@@ -42,16 +42,26 @@ void draw_rule           ( f32 x, f32 yc, f32 w, f32 thickness, u32 col );
 /* The FACE painters (stock/gui_face.c) -- fill a rect for a style CELL: the cell's brush when the
    theme authored one, its flat colour when it did not, and NO border over authored art.  Each
    mirrors one colour projection so a site converts by changing one call (see the file banner).
-   Consumed by the stock renders here and by every chrome widget that paints a surface. */
+   Consumed by the stock renders here and by every chrome widget that paints a surface.
+
+   Every ITEM painter takes an id and animates through style_mix; GUI_ID_NONE opts out with no
+   damper slot touched.  A widget painting more than one row reads style_mix once itself and
+   uses the _mix forms, so its parts move together off a single probe. */
 void draw_face           ( gui_rect_t r, u8 role, u8 phase );
 void draw_face_look      ( gui_rect_t r, u8 role, u8 phase, u8 look );
 void draw_face_frame     ( gui_rect_t r, u8 role, u8 phase, u32 border_col, f32 border_w );
-void draw_face_item      ( gui_rect_t r, gui_item_state_t st );
-void draw_face_item_look ( gui_rect_t r, gui_item_state_t st, gui_style_look_t look );
-void draw_face_item_frame( gui_rect_t r, gui_item_state_t st, u32 border_col, f32 border_w );
-void draw_face_item_anim ( gui_rect_t r, gui_id_t id, gui_item_state_t st );
-void draw_face_grab      ( gui_rect_t r, gui_item_state_t st, u32 border_col, f32 border_w );
-void draw_face_field     ( gui_rect_t r, gui_item_state_t st, u8 idle_role, u8 idle_phase,
+
+void draw_face_item      ( gui_rect_t r, gui_id_t id, gui_item_state_t st, bool selected );
+void draw_face_item_frame( gui_rect_t r, gui_id_t id, gui_item_state_t st, bool selected,
+                           u32 border_col, f32 border_w );
+void draw_face_grab      ( gui_rect_t r, gui_id_t id, gui_item_state_t st,
+                           u32 border_col, f32 border_w );
+void draw_face_field     ( gui_rect_t r, gui_id_t id, gui_item_state_t st,
+                           u8 idle_role, u8 idle_phase, u32 border_col, f32 border_w );
+
+void draw_face_mix       ( gui_rect_t r, u8 role, gui_style_mix_t m );
+void draw_face_mix_frame ( gui_rect_t r, u8 role, gui_style_mix_t m, u32 border_col, f32 border_w );
+void draw_face_field_mix ( gui_rect_t r, gui_style_mix_t m, u8 idle_role, u8 idle_phase,
                            u32 border_col, f32 border_w );
 
 u32 stock_unit_mem_bytes( void );          /* the stock unit's fixed statics */
