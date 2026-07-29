@@ -160,6 +160,13 @@ void draw_set_root_clip         ( f32 w, f32 h );               // set clip_stac
 void draw_push_rect_filled      ( f32 x, f32 y, f32 w, f32 h,
                                   f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr );
 
+/* The same quad, declared to be a PICTURE rather than a glyph -- so the ambient rounding radius
+   applies to it.  draw_push_rect_filled rounds solid fills only, because icons come through it
+   too and an icon must not have its corners cut.  Only a caller showing an arbitrary texture as
+   an image should use this (gui_draw_texture_in). */
+void draw_push_image            ( f32 x, f32 y, f32 w, f32 h,
+                                  f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr );
+
 /* Push `count` solid rects as ONE semantic command (per-frame rect pool, one quad each at
    flush) -- the dense-shape escape valve for callers that would otherwise exhaust GUI_MAX_CMDS
    (timeline bars, graph columns).  Square, current clip, per-entry color. */

@@ -698,10 +698,14 @@ draw_clamp_rounding( f32 w, f32 h )
 }
 
 /*==============================================================================================
-    draw_push_rect_filled -- emit a filled / textured quad semantic command.
+    draw_push_rect_filled / draw_push_image -- emit a filled / textured quad semantic command.
 
     tex_idx == 0 is the solid-color convention (resolved to the atlas white texel at tessellation
     time).  Pixel-grid snapping and GPU batching happen at flush time in the tessellation pass.
+
+    Two entry points over one body, differing only in whether the ambient rounding radius applies.
+    See the comments on each below -- the split is about what the quad MEANS (picture vs glyph),
+    which only the caller knows, not about what it carries.
 ==============================================================================================*/
 
 /*==============================================================================================
@@ -782,10 +786,12 @@ draw_hash_cmd( const gui_cmd_t* c )
     return h;
 }
 
-void
-draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      /* rect */
-                       f32 u0, f32 v0, f32 u1, f32 v1,  /* uv */
-                       u32 tex_idx, u32 abgr )          /* texture slot + color */
+/* The shared body.  `roundable` says whether the ambient radius is allowed to reach this quad --
+   see the two wrappers below for the rule and why it is not simply "does it have a texture". */
+static void
+draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
+               f32 u0, f32 v0, f32 u1, f32 v1,
+               u32 tex_idx, u32 abgr, bool roundable )
 {
     if ( draw_emit_blocked() )
         return;
@@ -819,10 +825,39 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      /* rect */
     c->rect.tex_idx = tex_idx;
     c->rect.abgr    = col;
 
-    /* Round solid-color fills only; a textured quad (glyph / image) keeps square UVs. */
-
-    c->rect.rounding = ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f;
+    c->rect.rounding = roundable ? draw_clamp_rounding( w, h ) : 0.0f;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+}
+
+/*  The general quad.  Rounds SOLID fills only, and the reason is not that the tessellator cannot
+    round a texture -- it can, and tess_fx_box interpolates UVs across the authored box and clamps
+    them over the falloff skirt precisely so a rounded textured quad cannot bleed into its atlas
+    neighbour.  The reason is what else comes through here: draw_push_icon routes every icon quad
+    to this function, and an icon is a COVERAGE glyph, not a picture.  Rounding it would cut the
+    corners off the symbol rather than off a frame, and it would happen silently to any icon that
+    happened to be drawn inside a draw_set_rounding scope.
+    A caller that really is drawing a picture says so by calling draw_push_image below. */
+void
+draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      /* rect */
+                       f32 u0, f32 v0, f32 u1, f32 v1,  /* uv */
+                       u32 tex_idx, u32 abgr )          /* texture slot + color */
+{
+    draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr, tex_idx == 0 );
+}
+
+/*  An IMAGE: an arbitrary bindless texture the caller is showing as a picture (a scene render
+    target, a loaded photo).  Identical to the above in every respect except that the ambient
+    radius reaches it, which is the whole point of the split -- "a picture can have rounded
+    corners, a glyph cannot" is the rule, and the call site is the only place that knows which of
+    the two it is holding.  The rounded corner is exact, not a mask: the fragment resolves the
+    boundary from the same signed-distance field a rounded fill uses, with the texture sampling
+    underneath it (gui.h, the effect band). */
+void
+draw_push_image( f32 x, f32 y, f32 w, f32 h,
+                 f32 u0, f32 v0, f32 u1, f32 v1,
+                 u32 tex_idx, u32 abgr )
+{
+    draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr, true );
 }
 
 /*==============================================================================================

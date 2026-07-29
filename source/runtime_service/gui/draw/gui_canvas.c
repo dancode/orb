@@ -211,6 +211,17 @@ gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col )
     sampling, with the tint color multiplied in (0 defaults to opaque white = untinted).  The
     caller owns the texture and its bindless registration (rhi register_texture) and must keep
     the slot alive until the frame that last referenced it has retired.
+
+    HONOURS the ambient rounding radius (draw_set_rounding), which image() and icons do not:
+
+        f32 save = gui()->draw_rounding();
+        gui()->draw_set_rounding( 8.0f );
+        gui()->draw_texture_in( r, scene_tex, 0 );     // rounded viewport / thumbnail
+        gui()->draw_set_rounding( save );
+
+    The corner is EXACT, not a stencil or a mask -- the fragment resolves the boundary from the
+    same signed-distance field a rounded fill uses, and the texture samples underneath it, so the
+    cost is the one quad the square version cost and the batch is unchanged.
 ==============================================================================================*/
 
 void
@@ -218,9 +229,13 @@ gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr )
 {
     if ( bindless_idx == 0 )
         return;   /* 0 is the RHI empty slot -- nothing to sample */
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0, 0, 1, 1,
-                           bindless_idx | GUI_TEX_MODE( GUI_TEX_RGBA ),
-                           tint_abgr ? tint_abgr : 0xFFFFFFFFu );
+    /* draw_push_IMAGE, not rect_filled: this is the one textured quad the ambient rounding radius
+       reaches, because it is the one that is a picture rather than a glyph.  The corner is resolved
+       by the fragment's distance field with the texture sampling underneath, so a rounded thumbnail
+       or a rounded viewport costs the same one quad a square one does. */
+    draw_push_image( r.x, r.y, r.w, r.h, 0, 0, 1, 1,
+                     bindless_idx | GUI_TEX_MODE( GUI_TEX_RGBA ),
+                     tint_abgr ? tint_abgr : 0xFFFFFFFFu );
 }
 
 void
