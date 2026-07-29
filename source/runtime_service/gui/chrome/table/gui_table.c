@@ -278,7 +278,7 @@ table_draw_borders( gui_table_t* t, f32 content_bottom )
 
     /* Outer frame around the used table box. */
     if ( t->flags & GUI_TABLE_BORDERS_OUTER )
-        draw_push_rect_outline( x0, y0, w, h, 1.0f, 0, COL_BORDER_IDLE );
+        draw_push_rect_outline( x0, y0, w, h, 1.0f, COL_BORDER_IDLE );
 
     /* Column-resize feedback: recolor the hot / dragged boundary in COL_BORDER_HOT, drawn LAST so
        it wins over the BORDERS_V divider that sits at the same x (and over the outer frame).  Drawn
@@ -520,10 +520,10 @@ table_draw_header( gui_table_t* t )
 
             if ( t->persist->sort_dir == 0 )    /* ascending: tip at top */
                 draw_push_triangle( tx - aw * 0.5f, ty + ah, tx, ty, tx + aw * 0.5f, ty + ah,
-                                    0, COL_TEXT_IDLE );
+                                    COL_TEXT_IDLE );
             else                                 /* descending: tip at bottom */
                 draw_push_triangle( tx - aw * 0.5f, ty, tx, ty + ah, tx + aw * 0.5f, ty,
-                                    0, COL_TEXT_IDLE );
+                                    COL_TEXT_IDLE );
         }
     }
 

@@ -263,7 +263,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             f32 det_save = draw_rounding();
             draw_set_rounding( 0.0f );   /* small box glyph stays square */
             if ( attached )
-                draw_push_rect_outline( ix, iy, isz, isz, 1.0f, 0, icol );
+                draw_push_rect_outline( ix, iy, isz, isz, 1.0f, icol );
             else
                 draw_push_rect_filled( ix, iy, isz, isz, 0.0f, 0.0f, 1.0f, 1.0f, 0, icol );
             draw_set_rounding( det_save );
@@ -345,7 +345,7 @@ window_end_size_grip( gui_window_t* win, bool native, u8 hot_edges )
 
         /* Filled right-angle triangle, lit while hovered or actively resizing. */
         draw_push_triangle( gr.x + g, gr.y, gr.x + g, gr.y + g, gr.x, gr.y + g,
-                            0, ( hot || resizing ) ? COL_BORDER_HOT : COL_TEXT_DIM );
+                            ( hot || resizing ) ? COL_BORDER_HOT : COL_TEXT_DIM );
     }
 }
 
@@ -578,7 +578,7 @@ gui_window_end( void )
            border input is OS-routed).  Restored right after for the chrome that follows. */
         if ( frame_only )
             draw_set_sort_key( GUI_REGION_Z );
-        draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, 0, COL_BORDER_IDLE );
+        draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, COL_BORDER_IDLE );
         if ( frame_only )
             draw_set_sort_key( win ? win->z : 0 );
     }

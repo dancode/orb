@@ -319,17 +319,16 @@ gui_radio_button( const char* label, i32* v, i32 value )
     f32 cy  = c.box.y + CHECKBOX_SZ * 0.5f;
     f32 rad = CHECKBOX_SZ * 0.5f;
 
-    const u32 segs = 16;   /* ignored -- the disc is a distance field, exact at any size (gui.h) */
-    bool      on   = ( v && *v == value );
+    bool on = ( v && *v == value );
 
     /* Border ring, then the well (hover/active tinted like a button knob), then the selected dot.
        The dot is a FRACTION of the disc, not the radius less a padding metric: an absolute inset
        collapses the dot to nothing as soon as it reaches rad, and at the default indicator size
        it does exactly that.  A mark sizes itself to the box it sits in. */
-    draw_push_circle_filled( cx, cy, rad,              segs, COL_BORDER_IDLE );
-    draw_push_circle_filled( cx, cy, rad - WIN_BORDER, segs, col_item_bg_mix( id, c.st, false ) );
+    draw_push_circle_filled( cx, cy, rad,              COL_BORDER_IDLE );
+    draw_push_circle_filled( cx, cy, rad - WIN_BORDER, col_item_bg_mix( id, c.st, false ) );
     if ( on )
-        draw_push_circle_filled( cx, cy, rad * 0.55f, segs, COL_MARK_IDLE );
+        draw_push_circle_filled( cx, cy, rad * 0.55f, COL_MARK_IDLE );
 
     if ( c.show_label ) draw_label_fit( c.label_x, c.label_y, COL_TEXT_IDLE, label, c.label_w );
 

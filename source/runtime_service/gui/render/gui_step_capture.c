@@ -380,14 +380,12 @@ step_cmd_bounds( const gui_cmd_t* c )
             return ( gui_rect_t ){ c->gradient.x, c->gradient.y, c->gradient.w, c->gradient.h };
         /* The soft skirt is real painted area, so the highlight has to cover it -- a shadow
            outlined at its box alone looks like the highlight is the thing that is wrong. */
-        case GUI_CMD_SHADOW:
+        case GUI_CMD_FX_BOX:
         {
-            f32 g = c->shadow.feather * 0.5f;
-            return ( gui_rect_t ){ c->shadow.x - g, c->shadow.y - g,
-                                   c->shadow.w + 2.0f * g, c->shadow.h + 2.0f * g };
+            f32 g = c->fx_box.feather * 0.5f;
+            return ( gui_rect_t ){ c->fx_box.x - g, c->fx_box.y - g,
+                                   c->fx_box.w + 2.0f * g, c->fx_box.h + 2.0f * g };
         }
-        case GUI_CMD_PULSE:
-            return ( gui_rect_t ){ c->pulse.x, c->pulse.y, c->pulse.w, c->pulse.h };
         case GUI_CMD_ROUND_RECT_EX:
             return ( gui_rect_t ){ c->round_rect.x, c->round_rect.y,
                                    c->round_rect.w, c->round_rect.h };
@@ -451,9 +449,6 @@ step_cmd_bounds( const gui_cmd_t* c )
             }
             return ( gui_rect_t ){ c->text_xf.x + x0, c->text_xf.y + y0, x1 - x0, y1 - y0 };
         }
-        case GUI_CMD_CIRCLE_FILLED:
-            return ( gui_rect_t ){ c->circle.cx - c->circle.r, c->circle.cy - c->circle.r,
-                                   2.0f * c->circle.r, 2.0f * c->circle.r };
         case GUI_CMD_LINE:
         case GUI_CMD_DASHED_LINE:
         {

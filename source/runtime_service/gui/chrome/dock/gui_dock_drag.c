@@ -211,7 +211,7 @@ static void
 dock_chip_draw( gui_rect_t cr, bool on )
 {
     draw_push_rect_filled ( cr.x, cr.y, cr.w, cr.h, 0, 0, 1, 1, 0, on ? COL_BG_HOT : COL_BG_IDLE );
-    draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, 0, COL_BORDER_IDLE );
+    draw_push_rect_outline( cr.x, cr.y, cr.w, cr.h, WIN_BORDER, COL_BORDER_IDLE );
 }
 
 /* The "tab here" glyph: a small square inset in a center chip (kept square while the chip itself
@@ -222,7 +222,7 @@ dock_chip_tab_glyph( gui_rect_t cr )
     f32 ins = cr.w * 0.28f;
     draw_set_rounding( 0.0f );
     draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
-                            WIN_BORDER, 0, COL_TEXT_IDLE );
+                            WIN_BORDER, COL_TEXT_IDLE );
     draw_set_rounding( ROUND_WIDGET );
 }
 
@@ -254,7 +254,7 @@ dock_drag_float_target( gui_id_t win_id, u32 vp, f32 s )
     dock_overlay_begin( vp );
 
     draw_push_rect_filled ( base.x, base.y, base.w, base.h, 0, 0, 1, 1, 0, DOCK_OVERLAY_FILL );
-    draw_push_rect_outline( base.x, base.y, base.w, base.h, WIN_BORDER, 0, DOCK_OVERLAY_LINE );
+    draw_push_rect_outline( base.x, base.y, base.w, base.h, WIN_BORDER, DOCK_OVERLAY_LINE );
 
     /* The hot center chip with its "tab here" glyph, over the title band. */
     gui_rect_t cr = { base.x + base.w * 0.5f - s * 0.5f, base.y + ( WIN_TITLE_H - s ) * 0.5f, s, s };
@@ -365,7 +365,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         gui_rect_t base = outer ? root->rect : leaf->rect;
         gui_rect_t hr   = dock_zone_region( base, (dock_zone_t)s_dock_drag.zone );
         draw_push_rect_filled ( hr.x, hr.y, hr.w, hr.h, 0, 0, 1, 1, 0, DOCK_OVERLAY_FILL );
-        draw_push_rect_outline( hr.x, hr.y, hr.w, hr.h, WIN_BORDER, 0, DOCK_OVERLAY_LINE );
+        draw_push_rect_outline( hr.x, hr.y, hr.w, hr.h, WIN_BORDER, DOCK_OVERLAY_LINE );
     }
 
     /* Strip drop: the hot "tab here" chip sits on the tab band itself (the float-strip visual),
@@ -689,7 +689,7 @@ dock_window_chrome( gui_dock_node_t* node )
        angles.  Drawn before the undock handler so it never reads `node` after a drag-out collapses
        an emptied node. */
     draw_set_rounding( 0.0f );
-    draw_push_rect_outline( x, y, w, s_build.win.h, WIN_BORDER, 0, COL_BORDER_IDLE );
+    draw_push_rect_outline( x, y, w, s_build.win.h, WIN_BORDER, COL_BORDER_IDLE );
 
     /* Keyboard-focus marker: the node's active tab is the window being ended here, so overlay the
        focus border when it is the focused window -- the docked twin of window_end's marker. */

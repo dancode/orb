@@ -118,7 +118,7 @@ gui_toolbar_toggle( const char* id_str, gui_icon_id_t icon, bool* v, const char*
        it used to snap, because there was no coordinate between the two planes to travel along. */
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0,0,1,1, 0, col_item_bg_mix( id, st, on ) );
     if ( on )
-        draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, 0, COL_BORDER_IDLE );
+        draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, COL_BORDER_IDLE );
 
     gui_draw_icon_in( toolbar_icon_rect( r ), icon, 0xFFFFFFFFu );
 

@@ -37,10 +37,10 @@ draw_arrow( gui_rect_t box, gui_dir_t dir, u32 color )
 
     switch ( dir )
     {
-        case GUI_DIR_LEFT:  draw_push_triangle( cx - s, cy,     cx + s, cy - s, cx + s, cy + s, 0, color ); break;
-        case GUI_DIR_RIGHT: draw_push_triangle( cx + s, cy,     cx - s, cy - s, cx - s, cy + s, 0, color ); break;
-        case GUI_DIR_UP:    draw_push_triangle( cx,     cy - s, cx - s, cy + s, cx + s, cy + s, 0, color ); break;
-        case GUI_DIR_DOWN:  draw_push_triangle( cx,     cy + s, cx - s, cy - s, cx + s, cy - s, 0, color ); break;
+        case GUI_DIR_LEFT:  draw_push_triangle( cx - s, cy,     cx + s, cy - s, cx + s, cy + s, color ); break;
+        case GUI_DIR_RIGHT: draw_push_triangle( cx + s, cy,     cx - s, cy - s, cx - s, cy + s, color ); break;
+        case GUI_DIR_UP:    draw_push_triangle( cx,     cy - s, cx - s, cy + s, cx + s, cy + s, color ); break;
+        case GUI_DIR_DOWN:  draw_push_triangle( cx,     cy + s, cx - s, cy - s, cx + s, cy - s, color ); break;
     }
 }
 
@@ -81,7 +81,7 @@ draw_check_indicator( gui_rect_t box, u32 col )
            metric instead lets the mark vanish outright the moment that metric reaches the box's
            half-extent -- which it does at the default indicator size. */
         draw_push_circle_filled( box.x + box.w * 0.5f, box.y + box.h * 0.5f,
-                                 box.w * 0.30f, 16, col );
+                                 box.w * 0.30f, col );
     else if ( style == GUI_CHECK_CROSS )
         draw_close_x( box, col );
     else
@@ -112,7 +112,7 @@ draw_frame( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
     draw_set_rounding( ROUND_WIDGET );
     draw_push_rect_filled( r.x, r.y, r.w, r.h, 0, 0, 1, 1, 0, col_bg );
     if ( border > 0.0f )
-        draw_push_rect_outline( r.x, r.y, r.w, r.h, border, 0, col_border );
+        draw_push_rect_outline( r.x, r.y, r.w, r.h, border, col_border );
     draw_set_rounding( save );
 }
 

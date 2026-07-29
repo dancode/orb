@@ -194,6 +194,12 @@ void draw_push_sprite           ( f32 x, f32 y, f32 w, f32 h, gui_sprite_id_t id
 
 void draw_push_rect_gradient    ( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal );
 
+/* The antialiasing band a shape gets when nothing asked for a softer one -- one pixel, centred on
+   the boundary.  Named because it is the difference between "rounded" and "rounded and crisp":
+   every rounded fill and frame tessellates with it, and the emit side bakes it into the commands
+   (a pulse's feather) so a retained command re-tessellates with the width it was authored at. */
+#define TESS_FX_AA  1.0f
+
 /* Push a soft rounded box -- the SDF surface behind draw_shadow.  `feather` is the TOTAL width of
    the falloff band and it straddles the boundary, so the geometry reaches feather/2 past the box
    on every side while the shape itself stays exactly where it was authored. */
@@ -215,9 +221,12 @@ void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
 void draw_push_arc              ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr );
 void draw_push_pie              ( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr );
 
-void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr );
-void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr );
-void draw_push_circle_filled    ( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr );
+void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr );
+void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr );
+
+/* A filled disc IS a rounded rect whose radius reached the half-extent -- this pushes
+   GUI_CMD_RECT_FILLED with rounding = r, not a command of its own. */
+void draw_push_circle_filled    ( f32 cx, f32 cy, f32 r, u32 abgr );
 void draw_push_text             ( f32 x, f32 y, u32 abgr, const char* str );
 void draw_push_text_n           ( f32 x, f32 y, u32 abgr, const char* str, u32 n );
 void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n,

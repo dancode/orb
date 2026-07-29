@@ -736,6 +736,31 @@ draw_clamp_rounding( f32 w, f32 h )
     directly instead.
 ==============================================================================================*/
 
+/* Payload byte count per command type, for the plain POD commands: one fnv1a fold of the union
+   member, nothing else.  Only the four pool-backed commands (TEXT, TEXT_XF, POLYLINE, RECT_LIST)
+   need code of their own -- they hash pool CONTENT and must skip their pool-offset fields, which
+   shift whenever an earlier-emitted window changes its pool volume and would falsely dirty an
+   unrelated window.  Every union member starts at the same address, so the fold reads &c->rect
+   as the generic payload pointer. */
+static const u8 k_cmd_hash_len[] = {
+    [GUI_CMD_RECT_FILLED]   = sizeof( ( (gui_cmd_t*)0 )->rect ),
+    [GUI_CMD_RECT_OUTLINE]  = sizeof( ( (gui_cmd_t*)0 )->rect_outline ),
+    [GUI_CMD_TRIANGLE]      = sizeof( ( (gui_cmd_t*)0 )->tri ),
+    [GUI_CMD_LINE]          = sizeof( ( (gui_cmd_t*)0 )->line ),
+    [GUI_CMD_DASHED_LINE]   = sizeof( ( (gui_cmd_t*)0 )->dash ),
+    [GUI_CMD_RECT_GRADIENT] = sizeof( ( (gui_cmd_t*)0 )->gradient ),
+    [GUI_CMD_SPRITE]        = sizeof( ( (gui_cmd_t*)0 )->sprite ),
+    /* Folds rate whole, so a pulse hashes stable frame-to-frame (it animates in the FRAGMENT off
+       pc.time -- the geometry never changes, which is the entire point of the mode). */
+    [GUI_CMD_FX_BOX]        = sizeof( ( (gui_cmd_t*)0 )->fx_box ),
+    [GUI_CMD_ROUND_RECT_EX] = sizeof( ( (gui_cmd_t*)0 )->round_rect ),
+    /* Both sectors fold the same member.  A spinner's start angle moves every frame, so this
+       dirties every frame -- honestly, since the geometry really does rotate.  (A spinner that
+       wanted free animation would be a shader-clock mode like PULSE, not a re-emit.) */
+    [GUI_CMD_ARC]           = sizeof( ( (gui_cmd_t*)0 )->arc ),
+    [GUI_CMD_PIE]           = sizeof( ( (gui_cmd_t*)0 )->arc ),
+};
+
 static u32
 draw_hash_cmd( const gui_cmd_t* c )
 {
@@ -749,9 +774,6 @@ draw_hash_cmd( const gui_cmd_t* c )
     h = fnv1a_u32( h, s_draw.clip_hash_cache[ c->clip_idx ] );
     switch ( c->type )
     {
-        case GUI_CMD_RECT_FILLED:   h = fnv1a( h, &c->rect,         sizeof c->rect );         break;
-        case GUI_CMD_RECT_OUTLINE:  h = fnv1a( h, &c->rect_outline, sizeof c->rect_outline ); break;
-        case GUI_CMD_TRIANGLE:      h = fnv1a( h, &c->tri,          sizeof c->tri );          break;
         case GUI_CMD_TEXT:
             h = fnv1a( h, &c->text.x,       sizeof c->text.x );
             h = fnv1a( h, &c->text.y,       sizeof c->text.y );
@@ -777,8 +799,6 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &c->text_xf.font,  sizeof c->text_xf.font );
             h = fnv1a( h, s_draw.text_pool + c->text_xf.off, c->text_xf.len );
             break;
-        case GUI_CMD_CIRCLE_FILLED: h = fnv1a( h, &c->circle, sizeof c->circle ); break;
-        case GUI_CMD_LINE:          h = fnv1a( h, &c->line,   sizeof c->line );   break;
         case GUI_CMD_POLYLINE:
             h = fnv1a( h, &c->polyline.pt_count,  sizeof c->polyline.pt_count );
             h = fnv1a( h, &c->polyline.thickness, sizeof c->polyline.thickness );
@@ -788,72 +808,88 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &s_draw.points[ c->polyline.pt_offset ],
                        c->polyline.pt_count * (u32)sizeof( gui_vec2_t ) );   /* content while L1-hot */
             break;
-        case GUI_CMD_DASHED_LINE:   h = fnv1a( h, &c->dash,     sizeof c->dash );     break;
-        case GUI_CMD_RECT_GRADIENT: h = fnv1a( h, &c->gradient, sizeof c->gradient ); break;
         case GUI_CMD_RECT_LIST:
             h = fnv1a_u32( h, c->rect_list.count );
             h = fnv1a( h, &s_draw.rect_pool[ c->rect_list.offset ],
                        c->rect_list.count * (u32)sizeof( gui_rect_col_t ) );   /* content while L1-hot */
             break;
-        case GUI_CMD_SPRITE:        h = fnv1a( h, &c->sprite, sizeof c->sprite ); break;
-        case GUI_CMD_SHADOW:        h = fnv1a( h, &c->shadow, sizeof c->shadow ); break;
-        case GUI_CMD_PULSE:         h = fnv1a( h, &c->pulse,  sizeof c->pulse  ); break;
-        case GUI_CMD_ROUND_RECT_EX: h = fnv1a( h, &c->round_rect, sizeof c->round_rect ); break;
-        /* Both sectors fold the same member.  A spinner's start angle moves every frame, so this
-           dirties every frame -- honestly, since the geometry really does rotate.  (A spinner that
-           wanted free animation would be a shader-clock mode like PULSE, not a re-emit.) */
-        case GUI_CMD_ARC:
-        case GUI_CMD_PIE:           h = fnv1a( h, &c->arc, sizeof c->arc ); break;
+        default:
+            h = fnv1a( h, &c->rect, k_cmd_hash_len[ c->type ] );
+            break;
     }
     return h;
 }
 
-/* The shared body.  `roundable` says whether the ambient radius is allowed to reach this quad --
-   see the two wrappers below for the rule and why it is not simply "does it have a texture". */
+/*==============================================================================================
+    draw_cmd_open / draw_cmd_seal -- the shared preamble and postamble of every shape push.
+
+    open runs the four gates every push owes, in the one order that is correct (blocked first so
+    the stepper's owner stamp lands; a fully transparent shape contributes nothing under alpha
+    blending, src*0 + dst = dst; the cull is exact against the active scissor), then allocates
+    the slot and stamps the header.  `vis_col` is the shape's colour with the ambient alpha
+    ALREADY folded (a multi-colour shape passes the OR of its folded colours -- visible if any
+    end is).  `pad` grows the cull box on every side for shapes whose geometry reaches past the
+    authored rect (the SDF AA skirt, a shadow's feather).  Returns NULL when the shape must not
+    spend a slot; otherwise the caller fills the payload and calls seal, which bakes the
+    retained-cache hash while the bytes are L1-hot.
+
+    The four pool-backed pushes (text, text_xf, polyline via gui_emit_path.c, rect_list) keep
+    their own preambles: each has a pool copy that must succeed BEFORE a slot may be spent, and
+    a cull that is not an axis-aligned box test.
+==============================================================================================*/
+
+static gui_cmd_t*
+draw_cmd_open( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
+{
+    if ( draw_emit_blocked() )
+        return NULL;
+    if ( ( vis_col >> 24 ) == 0u )
+        return NULL;
+    if ( draw_cull_box( x - pad, y - pad, w + 2.0f * pad, h + 2.0f * pad ) )
+        return NULL;
+
+    gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type      = type;
+    c->clip_idx  = s_draw.cur_clip_idx;
+    c->vp        = (u8)s_draw.cur_vp;
+    return c;
+}
+
+static void
+draw_cmd_seal( void )
+{
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] =
+        draw_hash_cmd( &s_draw.cmds[ s_draw.cmd_count - 1 ] );
+}
+
+/* The shared body.  `rounding` arrives explicit and already resolved -- the wrappers below fold
+   the ambient radius in (or not: see the roundable rule on each), and the disc passes its own. */
 static void
 draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
                f32 u0, f32 v0, f32 u1, f32 v1,
-               u32 tex_idx, u32 abgr, bool roundable )
+               u32 tex_idx, u32 abgr, f32 rounding )
 {
-    if ( draw_emit_blocked() )
-        return;
-
-    /* Fully transparent fills contribute nothing under alpha blending (src*0 + dst = dst).
-       Drop them before they cost a command + triangles -- e.g. a hidden window body whose
-       COL_WINDOW_BG was pushed to alpha 0, as the perf overlay does. Also covers a textured
-       quad tinted to zero alpha, which is likewise invisible. */
-
-    u32 col = draw_apply_alpha( abgr );
-    if (( col >> 24 ) == 0u )
-        return;
-
     /* A rounded quad becomes an SDF surface whose AA skirt reaches past the authored rect
-       (tess_fx_box), so cull it with the same one pixel of slack pulse and round_rect_ex use --
-       a shape flush against the clip edge keeps its feathered edge.  Square quads cull tight. */
-    f32 rounding = roundable ? draw_clamp_rounding( w, h ) : 0.0f;
-    f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
-    if ( draw_cull_box( x - pad, y - pad, w + 2.0f * pad, h + 2.0f * pad ) )
-        return;                         /* scissored to nothing -- drop before it costs a slot */
+       (tess_fx_box), so cull it with one pixel of slack -- a shape flush against the clip edge
+       keeps its feathered edge.  Square quads cull tight. */
+    f32 pad = ( rounding > 0.0f ) ? 1.0f : 0.0f;
+    u32 col = draw_apply_alpha( abgr );
 
-    /* fill in the command struct */
-
-    gui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type         = GUI_CMD_RECT_FILLED;
-    c->clip_idx     = s_draw.cur_clip_idx;
-    c->vp           = (u8)s_draw.cur_vp;
-    c->rect.x       = x;
-    c->rect.y       = y;
-    c->rect.w       = w;
-    c->rect.h       = h;
-    c->rect.u0      = u0;
-    c->rect.v0      = v0;
-    c->rect.u1      = u1;
-    c->rect.v1      = v1;
-    c->rect.tex_idx = tex_idx;
-    c->rect.abgr    = col;
-
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_RECT_FILLED, col, x, y, w, h, pad );
+    if ( !c )
+        return;
+    c->rect.x        = x;
+    c->rect.y        = y;
+    c->rect.w        = w;
+    c->rect.h        = h;
+    c->rect.u0       = u0;
+    c->rect.v0       = v0;
+    c->rect.u1       = u1;
+    c->rect.v1       = v1;
+    c->rect.tex_idx  = tex_idx;
+    c->rect.abgr     = col;
     c->rect.rounding = rounding;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    draw_cmd_seal();
 }
 
 /*  The general quad.  Rounds SOLID fills only, and the reason is not that the tessellator cannot
@@ -869,7 +905,8 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      /* rect */
                        f32 u0, f32 v0, f32 u1, f32 v1,  /* uv */
                        u32 tex_idx, u32 abgr )          /* texture slot + color */
 {
-    draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr, tex_idx == 0 );
+    draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr,
+                   ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f );
 }
 
 /*  An IMAGE: an arbitrary bindless texture the caller is showing as a picture (a scene render
@@ -884,7 +921,22 @@ draw_push_image( f32 x, f32 y, f32 w, f32 h,
                  f32 u0, f32 v0, f32 u1, f32 v1,
                  u32 tex_idx, u32 abgr )
 {
-    draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr, true );
+    draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr, draw_clamp_rounding( w, h ) );
+}
+
+/*==============================================================================================
+    draw_push_circle_filled -- a filled disc, which IS a rounded rect whose radius reached the
+    half-extent.  Not a command type of its own: the tessellator already derives everything a
+    disc needs from that shape (the SDF boundary, and the no-snap rule -- a square box whose
+    radius reached its half-extent has no straight edge to keep crisp, and quantizing a moving
+    dot's centre is exactly what must not happen).  The radius is passed EXPLICIT, bypassing the
+    ambient rounding -- a disc is fully round by definition, not by scope.
+==============================================================================================*/
+
+void
+draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 abgr )
+{
+    draw_rect_cmd( cx - r, cy - r, r * 2.0f, r * 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, abgr, r );
 }
 
 /*==============================================================================================
@@ -925,7 +977,7 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
     c->vp                 = (u8)s_draw.cur_vp;
     c->rect_list.offset   = offset;
     c->rect_list.count    = s_draw.rect_count - offset;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );   /* entries are L1-hot here */
+    draw_cmd_seal();   /* entries are L1-hot here */
 }
 
 /*==============================================================================================
@@ -970,33 +1022,27 @@ void
 draw_push_sprite( f32 x, f32 y, f32 w, f32 h, gui_sprite_id_t id,
                   u32 abgr, f32 scale, u16 flags, bool nine )
 {
-    if ( id == GUI_SPRITE_NONE || draw_emit_blocked() )
+    if ( id == GUI_SPRITE_NONE )
         return;
 
     /* A tint of 0 means UNTINTED -- the sprite's own colours at full alpha (the gui_brush_t rule).
        Only an explicit tint can fade a sprite, and one faded to zero alpha is invisible under
-       blending, so it drops here exactly as a transparent fill does. */
+       blending, so it drops exactly as a transparent fill does. */
     u32 col = draw_apply_alpha( abgr ? abgr : 0xFFFFFFFFu );
-    if ( ( col >> 24 ) == 0u )
-        return;
 
-    if ( draw_cull_box( x, y, w, h ) )
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_SPRITE, col, x, y, w, h, 0.0f );
+    if ( !c )
         return;
-
-    gui_cmd_t* c    = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type           = GUI_CMD_SPRITE;
-    c->clip_idx       = s_draw.cur_clip_idx;
-    c->vp             = (u8)s_draw.cur_vp;
-    c->sprite.x       = x;
-    c->sprite.y       = y;
-    c->sprite.w       = w;
-    c->sprite.h       = h;
-    c->sprite.scale   = ( scale > 0.0f ) ? scale : 1.0f;
-    c->sprite.sprite  = id;
-    c->sprite.abgr    = col;
-    c->sprite.flags   = flags;
-    c->sprite.nine    = nine ? 1u : 0u;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    c->sprite.x      = x;
+    c->sprite.y      = y;
+    c->sprite.w      = w;
+    c->sprite.h      = h;
+    c->sprite.scale  = ( scale > 0.0f ) ? scale : 1.0f;
+    c->sprite.sprite = id;
+    c->sprite.abgr   = col;
+    c->sprite.flags  = flags;
+    c->sprite.nine   = nine ? 1u : 0u;
+    draw_cmd_seal();
 }
 
 /*==============================================================================================
@@ -1010,107 +1056,74 @@ draw_push_sprite( f32 x, f32 y, f32 w, f32 h, gui_sprite_id_t id,
 void
 draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal )
 {
-    if ( draw_emit_blocked() )
-        return;
-    /* Both ends fully transparent: nothing blends in anywhere along the ramp -- drop it (same
-       rule as draw_push_rect_filled).  One opaque end keeps the quad, of course. */
+    /* Visible if EITHER end is: the OR'd alpha is the visibility word draw_cmd_open tests. */
     u32 ca = draw_apply_alpha( col_a );
     u32 cb = draw_apply_alpha( col_b );
-    if ( ( ( ca | cb ) >> 24 ) == 0u )
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_RECT_GRADIENT, ca | cb, x, y, w, h, 0.0f );
+    if ( !c )
         return;
-    if ( draw_cull_box( x, y, w, h ) )
-        return;
-    gui_cmd_t* c          = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type                 = GUI_CMD_RECT_GRADIENT;
-    c->clip_idx             = s_draw.cur_clip_idx;
-    c->vp                   = (u8)s_draw.cur_vp;
-    c->gradient.x           = x;
-    c->gradient.y           = y;
-    c->gradient.w           = w;
-    c->gradient.h           = h;
-    c->gradient.col_a       = ca;
-    c->gradient.col_b       = cb;
-    c->gradient.horizontal  = horizontal;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    c->gradient.x          = x;
+    c->gradient.y          = y;
+    c->gradient.w          = w;
+    c->gradient.h          = h;
+    c->gradient.col_a      = ca;
+    c->gradient.col_b      = cb;
+    c->gradient.horizontal = horizontal;
+    draw_cmd_seal();
 }
 
 /*==============================================================================================
-    draw_push_shadow -- emit a soft rounded box as one semantic command.
+    draw_push_shadow / draw_push_pulse -- the two faces of GUI_CMD_FX_BOX, one body.
 
-    `feather` is the total width of the falloff band, which straddles the shape's boundary: the
-    fill is solid feather/2 inside the box and gone feather/2 outside it.  One command, one SDF
-    surface, four quads -- and because the effect travels per vertex it merges into whatever GPU
-    batch is already open, so putting a shadow behind every floating panel costs no draw calls.
+    A shadow is the surface with a WIDE feather: the falloff band straddles the shape's boundary
+    (solid feather/2 inside the box, gone feather/2 outside), and because the effect travels per
+    vertex it merges into whatever GPU batch is already open -- a shadow behind every floating
+    panel costs no draw calls.
+
+    A pulse is the surface whose alpha breathes on pc.time in the FRAGMENT.  Geometrically it is
+    a plain rounded fill, and that identity is the feature: the command's bytes never change, so
+    its hash never changes, so the window's cached geometry stays valid and the pulse costs zero
+    re-tessellation while it runs.  `rate` is in Hz (quantized to 1/4 Hz, gui_fx_pack_pulse),
+    `depth` the 0..1 fraction of alpha removed at the trough.  The caller still owes one
+    request_redraw per frame: the clock advancing is not what schedules a frame (GUI_FX_TIME_WRAP).
 ==============================================================================================*/
+
+static void
+draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
+                 f32 rate, f32 depth, u32 abgr )
+{
+    /* Cull against the GROWN box: the falloff skirt is real geometry (feather/2 past the rect,
+       plus the tessellator's pixel of slack), and a shadow whose box is just off screen still
+       paints a band on it. */
+    f32 pad = feather * 0.5f + 1.0f;
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_FX_BOX, col, x, y, w, h, pad );
+    if ( !c )
+        return;
+    c->fx_box.x        = x;
+    c->fx_box.y        = y;
+    c->fx_box.w        = w;
+    c->fx_box.h        = h;
+    c->fx_box.rounding = rounding;
+    c->fx_box.feather  = feather;
+    c->fx_box.rate     = rate;
+    c->fx_box.depth    = depth;
+    c->fx_box.abgr     = col;
+    draw_cmd_seal();
+}
 
 void
 draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
 {
-    if ( draw_emit_blocked() )
-        return;
-    u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u )
-        return;
-    /* Cull against the GROWN box: the skirt is real geometry and a shadow whose box is just off
-       screen still paints a band on it. */
-    f32 g = feather * 0.5f + 1.0f;
-    if ( draw_cull_box( x - g, y - g, w + 2.0f * g, h + 2.0f * g ) )
-        return;
-
-    gui_cmd_t* c      = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type           = GUI_CMD_SHADOW;
-    c->clip_idx       = s_draw.cur_clip_idx;
-    c->vp             = (u8)s_draw.cur_vp;
-    c->shadow.x        = x;
-    c->shadow.y        = y;
-    c->shadow.w        = w;
-    c->shadow.h        = h;
-    c->shadow.rounding = rounding;
-    c->shadow.feather  = feather;
-    c->shadow.abgr     = col;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0.0f, 0.0f, abgr );
 }
-
-/*==============================================================================================
-    draw_push_pulse -- emit a rounded box whose alpha breathes in the SHADER.
-
-    Geometrically identical to a rounded fill, and that identity is the feature: the command's
-    bytes do not change from frame to frame, so its hash does not change, so the window's cached
-    geometry stays valid and the pulse costs zero re-tessellation while it runs.  (The upload is
-    a separate matter: the frame's vertex region is written whole either way.)
-    An equivalent CPU animation -- easing the color's alpha and re-emitting -- would dirty the
-    window's hash every single frame and re-tessellate everything in it.
-
-    `rate` is in Hz (quantized to 1/4 Hz, see gui_fx_pack_pulse) and `depth` is the 0..1 fraction
-    of alpha removed at the trough.  The caller still owes one request_redraw per frame: the clock
-    advancing is not what schedules a frame (gui.h, GUI_FX_TIME_WRAP).
-==============================================================================================*/
 
 void
 draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, u32 abgr )
 {
-    if ( draw_emit_blocked() )
-        return;
-    u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u )
-        return;
-    /* One pixel of slack matches the tessellator's own pad -- the AA skirt is real geometry. */
-    if ( draw_cull_box( x - 1.0f, y - 1.0f, w + 2.0f, h + 2.0f ) )
-        return;
-
-    gui_cmd_t* c      = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type           = GUI_CMD_PULSE;
-    c->clip_idx       = s_draw.cur_clip_idx;
-    c->vp             = (u8)s_draw.cur_vp;
-    c->pulse.x        = x;
-    c->pulse.y        = y;
-    c->pulse.w        = w;
-    c->pulse.h        = h;
-    c->pulse.rounding = rounding;
-    c->pulse.rate     = rate;
-    c->pulse.depth    = depth;
-    c->pulse.abgr     = col;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, rate, depth, abgr );
 }
 
 /*==============================================================================================
@@ -1129,19 +1142,12 @@ void
 draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
                          f32 rtl, f32 rtr, f32 rbr, f32 rbl, u32 abgr )
 {
-    if ( draw_emit_blocked() )
-        return;
-    u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u )
-        return;
     /* One pixel of slack matches the tessellator's own pad -- the AA skirt is real geometry. */
-    if ( draw_cull_box( x - 1.0f, y - 1.0f, w + 2.0f, h + 2.0f ) )
-        return;
+    u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c        = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type             = GUI_CMD_ROUND_RECT_EX;
-    c->clip_idx         = s_draw.cur_clip_idx;
-    c->vp               = (u8)s_draw.cur_vp;
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ROUND_RECT_EX, col, x, y, w, h, 1.0f );
+    if ( !c )
+        return;
     c->round_rect.x     = x;
     c->round_rect.y     = y;
     c->round_rect.w     = w;
@@ -1151,7 +1157,7 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
     c->round_rect.rbr   = rbr;
     c->round_rect.rbl   = rbl;
     c->round_rect.abgr  = col;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    draw_cmd_seal();
 }
 
 /*==============================================================================================
@@ -1171,27 +1177,20 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
 static void
 draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr )
 {
-    if ( draw_emit_blocked() )
-        return;
     u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u )
-        return;
-    f32 g = r + thickness * 0.5f + 1.0f;   /* + the tessellator's own AA pad */
-    if ( draw_cull_box( cx - g, cy - g, g * 2.0f, g * 2.0f ) )
-        return;
+    f32 g   = r + thickness * 0.5f;   /* the tessellator's own AA pad rides draw_cmd_open's `pad` */
 
-    gui_cmd_t* c        = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type             = type;
-    c->clip_idx         = s_draw.cur_clip_idx;
-    c->vp               = (u8)s_draw.cur_vp;
-    c->arc.cx           = cx;
-    c->arc.cy           = cy;
-    c->arc.r            = r;
-    c->arc.thickness    = thickness;
-    c->arc.a0           = a0;
-    c->arc.a1           = a1;
-    c->arc.abgr         = col;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    gui_cmd_t* c = draw_cmd_open( type, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->arc.cx        = cx;
+    c->arc.cy        = cy;
+    c->arc.r         = r;
+    c->arc.thickness = thickness;
+    c->arc.a0        = a0;
+    c->arc.a1        = a1;
+    c->arc.abgr      = col;
+    draw_cmd_seal();
 }
 
 void
@@ -1211,33 +1210,25 @@ draw_push_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr )
 ==============================================================================================*/
 
 void
-draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr )
+draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 {
-    (void)tex_idx;   /* outlines are always solid-color; tessellation uses the white texel */
-    if ( draw_emit_blocked() )
-        return;
-    /* Skip a fully transparent border (e.g. the perf overlay pushes COL_BORDER_IDLE to alpha 0). */
-    u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u )
-        return;
     /* Rounded outlines become GUI_FX_RING surfaces with an AA skirt past the authored rect --
        the same 1 px cull slack the rounded fill takes (see draw_rect_cmd). */
     f32 rounding = draw_clamp_rounding( w, h );
     f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
-    if ( draw_cull_box( x - pad, y - pad, w + 2.0f * pad, h + 2.0f * pad ) )
+    u32 col      = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_RECT_OUTLINE, col, x, y, w, h, pad );
+    if ( !c )
         return;
-    gui_cmd_t* c       = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type              = GUI_CMD_RECT_OUTLINE;
-    c->clip_idx          = s_draw.cur_clip_idx;
-    c->vp                = (u8)s_draw.cur_vp;
-    c->rect_outline.x    = x;
-    c->rect_outline.y    = y;
-    c->rect_outline.w    = w;
-    c->rect_outline.h    = h;
-    c->rect_outline.t    = t;
-    c->rect_outline.abgr = col;
+    c->rect_outline.x        = x;
+    c->rect_outline.y        = y;
+    c->rect_outline.w        = w;
+    c->rect_outline.h        = h;
+    c->rect_outline.t        = t;
+    c->rect_outline.abgr     = col;
     c->rect_outline.rounding = rounding;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    draw_cmd_seal();
 }
 
 /*==============================================================================================
@@ -1245,66 +1236,25 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
 ==============================================================================================*/
 
 void
-draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr )
+draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
 {
-    (void)tex_idx;   /* triangles are always solid-color */
-    if ( draw_emit_blocked() )
-        return;
-    /* Fully transparent -- invisible under alpha blending (same rule as draw_push_rect_filled). */
     u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u )
-        return;
+
     /* Cull against the bounding box of the three vertices. */
     f32 minx = ax < bx ? ( ax < cx ? ax : cx ) : ( bx < cx ? bx : cx );
     f32 maxx = ax > bx ? ( ax > cx ? ax : cx ) : ( bx > cx ? bx : cx );
     f32 miny = ay < by ? ( ay < cy ? ay : cy ) : ( by < cy ? by : cy );
     f32 maxy = ay > by ? ( ay > cy ? ay : cy ) : ( by > cy ? by : cy );
-    if ( draw_cull_box( minx, miny, maxx - minx, maxy - miny ) )
-        return;
-    gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type        = GUI_CMD_TRIANGLE;
-    c->clip_idx    = s_draw.cur_clip_idx;
-    c->vp          = (u8)s_draw.cur_vp;
-    c->tri.ax      = ax; c->tri.ay = ay;
-    c->tri.bx      = bx; c->tri.by = by;
-    c->tri.cx      = cx; c->tri.cy = cy;
-    c->tri.abgr    = col;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
-}
 
-/*==============================================================================================
-    draw_push_circle_filled -- emit a filled disc semantic command.
-
-    `segments` no longer reaches the geometry: the disc tessellates as one signed-distance surface
-    whose boundary is exact at any size (tess_circle_filled), so there is no polygon to choose a
-    resolution for.  The parameter stays because every call site that computes one is still saying
-    something reasonable, and a caller that asks for 64 segments should get a better circle than it
-    asked for rather than a compile error.  It is still folded into the command hash -- it is part
-    of the record, and in practice it is derived from the radius, which already dirties.
-==============================================================================================*/
-
-void
-draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
-{
-    if ( segments < 3 ) segments = 3;
-    if ( draw_emit_blocked() )
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_TRIANGLE, col, minx, miny,
+                                  maxx - minx, maxy - miny, 0.0f );
+    if ( !c )
         return;
-    /* Fully transparent -- invisible under alpha blending (same rule as draw_push_rect_filled). */
-    u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u )
-        return;
-    if ( draw_cull_box( cx - r, cy - r, 2.0f * r, 2.0f * r ) )
-        return;
-    gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type        = GUI_CMD_CIRCLE_FILLED;
-    c->clip_idx    = s_draw.cur_clip_idx;
-    c->vp          = (u8)s_draw.cur_vp;
-    c->circle.cx   = cx;
-    c->circle.cy   = cy;
-    c->circle.r    = r;
-    c->circle.segs = segments;
-    c->circle.abgr = col;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    c->tri.ax   = ax; c->tri.ay = ay;
+    c->tri.bx   = bx; c->tri.by = by;
+    c->tri.cx   = cx; c->tri.cy = cy;
+    c->tri.abgr = col;
+    draw_cmd_seal();
 }
 
 /*==============================================================================================
@@ -1380,7 +1330,7 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     c->text.abgr    = draw_apply_alpha( abgr );
     c->text.edge    = s_draw.text_edge;
     c->text.font    = (u16)s_draw.cur_font;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );   /* text bytes are L1-hot here */
+    draw_cmd_seal();   /* text bytes are L1-hot here */
 }
 
 /* Text that inherits the ambient text-clip window: the common path for widget content.  Normally
@@ -1437,7 +1387,7 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
     c->text_xf.abgr  = draw_apply_alpha( abgr );
     c->text_xf.edge  = s_draw.text_edge;
     c->text_xf.font  = (u16)s_draw.cur_font;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    draw_cmd_seal();
 }
 
 // clang-format on

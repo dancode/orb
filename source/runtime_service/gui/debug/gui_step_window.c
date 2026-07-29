@@ -55,9 +55,9 @@ static i32  s_step_rate = 20;   /* capped at 60: the whole drag range stays in t
 static f32  s_step_accum;
 
 static const char* k_step_type_name[] = {
-    "rect_filled", "rect_outline", "triangle", "text", "text_xf", "circle_filled",
+    "rect_filled", "rect_outline", "triangle", "text", "text_xf",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
-    "sprite", "shadow", "pulse", "round_rect_ex", "arc", "pie",
+    "sprite", "fx_box", "round_rect_ex", "arc", "pie",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -156,11 +156,6 @@ step_cmd_detail( const step_cmd_info_t* ci )
             fmt_snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
             row2 = b2;
             break;
-        case GUI_CMD_CIRCLE_FILLED:
-            gui_textf( "center %.0f,%.0f   r %.1f", c->circle.cx, c->circle.cy, c->circle.r );
-            fmt_snprintf( b2, sizeof( b2 ), "segs %u", c->circle.segs );
-            row2 = b2;
-            break;
         case GUI_CMD_LINE:
             gui_textf( "%.0f,%.0f -> %.0f,%.0f", c->line.x0, c->line.y0, c->line.x1, c->line.y1 );
             fmt_snprintf( b2, sizeof( b2 ), "t %.1f", c->line.thickness );
@@ -188,18 +183,11 @@ step_cmd_detail( const step_cmd_info_t* ci )
         case GUI_CMD_RECT_LIST:
             gui_textf( "%u rects   pool offset %u", c->rect_list.count, c->rect_list.offset );
             break;
-        case GUI_CMD_SHADOW:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->shadow.x, c->shadow.y,
-                       c->shadow.w, c->shadow.h );
-            fmt_snprintf( b2, sizeof( b2 ), "round %.1f   feather %.1f", c->shadow.rounding,
-                          c->shadow.feather );
-            row2 = b2;
-            break;
-        case GUI_CMD_PULSE:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->pulse.x, c->pulse.y,
-                       c->pulse.w, c->pulse.h );
-            fmt_snprintf( b2, sizeof( b2 ), "round %.1f   rate %.2f Hz   depth %.2f",
-                          c->pulse.rounding, c->pulse.rate, c->pulse.depth );
+        case GUI_CMD_FX_BOX:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->fx_box.x, c->fx_box.y,
+                       c->fx_box.w, c->fx_box.h );
+            fmt_snprintf( b2, sizeof( b2 ), "round %.1f   feather %.1f   rate %.2f Hz   depth %.2f",
+                          c->fx_box.rounding, c->fx_box.feather, c->fx_box.rate, c->fx_box.depth );
             row2 = b2;
             break;
         case GUI_CMD_ROUND_RECT_EX:
@@ -246,12 +234,10 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_TRIANGLE:      step_swatch( r, r.x, "color", c->tri.abgr );          break;
                 case GUI_CMD_TEXT:          step_swatch( r, r.x, "color", c->text.abgr );         break;
                 case GUI_CMD_TEXT_XF:       step_swatch( r, r.x, "color", c->text_xf.abgr );      break;
-                case GUI_CMD_CIRCLE_FILLED: step_swatch( r, r.x, "color", c->circle.abgr );       break;
                 case GUI_CMD_LINE:          step_swatch( r, r.x, "color", c->line.abgr );         break;
                 case GUI_CMD_POLYLINE:      step_swatch( r, r.x, "color", c->polyline.abgr );     break;
                 case GUI_CMD_DASHED_LINE:   step_swatch( r, r.x, "color", c->dash.abgr );         break;
-                case GUI_CMD_SHADOW:        step_swatch( r, r.x, "color", c->shadow.abgr );       break;
-                case GUI_CMD_PULSE:         step_swatch( r, r.x, "color", c->pulse.abgr );        break;
+                case GUI_CMD_FX_BOX:        step_swatch( r, r.x, "color", c->fx_box.abgr );       break;
                 case GUI_CMD_ROUND_RECT_EX: step_swatch( r, r.x, "color", c->round_rect.abgr );   break;
                 case GUI_CMD_ARC:
                 case GUI_CMD_PIE:           step_swatch( r, r.x, "color", c->arc.abgr );          break;

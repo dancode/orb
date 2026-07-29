@@ -17,7 +17,7 @@
     Most commands carry one abgr, but GUI_CMD_RECT_GRADIENT carries two and lets the GPU's
     per-vertex color interpolation blend them, so draw_gradient is an exact one-quad blend (not
     banded).  draw_shadow and the uniform-radius draw_round_rect hand their shape to the FRAGMENT
-    (GUI_CMD_SHADOW / a rounded rect command, both SDF surfaces -- see the effect band in gui.h):
+    (GUI_CMD_FX_BOX / a rounded rect command, both SDF surfaces -- see the effect band in gui.h):
     exact edges at any radius and softness, four quads, no batch split.  Only genuinely per-corner
     radii still walk a tessellated perimeter here.  Everything here is pixel-exact.
 
@@ -75,7 +75,7 @@ sym_fill_convex( const gui_vec2_t* pts, u32 n, u32 col )
 {
     for ( u32 i = 1; i + 1 < n; ++i )
         draw_push_triangle( pts[ 0 ].x, pts[ 0 ].y, pts[ i ].x, pts[ i ].y,
-                            pts[ i + 1 ].x, pts[ i + 1 ].y, 0, col );
+                            pts[ i + 1 ].x, pts[ i + 1 ].y, col );
 }
 
 /*==============================================================================================
@@ -154,7 +154,7 @@ draw_dropdown_arrow( gui_rect_t box, u32 color )
 void
 draw_bullet( f32 cx, f32 cy, f32 r, u32 color )
 {
-    draw_push_circle_filled( cx, cy, r, 12, color );
+    draw_push_circle_filled( cx, cy, r, color );
 }
 
 /* Arrow whose apex points AT a specific coordinate (Dear ImGui RenderArrowPointingAt): a filled
@@ -166,10 +166,10 @@ draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 color )
 {
     switch ( dir )
     {
-        case GUI_DIR_LEFT:  draw_push_triangle( tx, ty, tx + half, ty - half, tx + half, ty + half, 0, color ); break;
-        case GUI_DIR_RIGHT: draw_push_triangle( tx, ty, tx - half, ty - half, tx - half, ty + half, 0, color ); break;
-        case GUI_DIR_UP:    draw_push_triangle( tx, ty, tx - half, ty + half, tx + half, ty + half, 0, color ); break;
-        case GUI_DIR_DOWN:  draw_push_triangle( tx, ty, tx - half, ty - half, tx + half, ty - half, 0, color ); break;
+        case GUI_DIR_LEFT:  draw_push_triangle( tx, ty, tx + half, ty - half, tx + half, ty + half, color ); break;
+        case GUI_DIR_RIGHT: draw_push_triangle( tx, ty, tx - half, ty - half, tx - half, ty + half, color ); break;
+        case GUI_DIR_UP:    draw_push_triangle( tx, ty, tx - half, ty + half, tx + half, ty + half, color ); break;
+        case GUI_DIR_DOWN:  draw_push_triangle( tx, ty, tx - half, ty - half, tx + half, ty - half, color ); break;
     }
 }
 
@@ -290,8 +290,7 @@ draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
 {
     if ( filled )
     {
-        /* The segment count is vestigial -- kept only because the signature takes one. */
-        draw_push_circle_filled( cx, cy, r, sym_arc_segs( r, SYM_TAU ), col );
+        draw_push_circle_filled( cx, cy, r, col );
         return;
     }
 
@@ -308,7 +307,7 @@ draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
         f32 save = draw_rounding();
         draw_set_rounding( outer );
         draw_push_rect_outline( cx - outer, cy - outer, outer * 2.0f, outer * 2.0f,
-                                thickness, 0, col );
+                                thickness, col );
         draw_set_rounding( save );
         return;
     }
@@ -590,7 +589,7 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
         draw_set_rounding( r_tl );
         if ( filled ) draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0, 0, 1, 1, 0, col );
         else          draw_push_rect_outline( box.x, box.y, box.w, box.h,
-                                              thickness < 1.0f ? 1.0f : thickness, 0, col );
+                                              thickness < 1.0f ? 1.0f : thickness, col );
         draw_set_rounding( save );
         return;
     }

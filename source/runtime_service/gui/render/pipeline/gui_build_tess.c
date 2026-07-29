@@ -758,10 +758,8 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
                       u0, v0, u1, v1, tex_idx, abgr );
 }
 
-/* The antialiasing band a shape gets when nothing asked for a softer one -- one pixel, centred on
-   the boundary.  Named because it is the difference between "rounded" and "rounded and crisp",
-   and every rounded fill and frame in the library goes through it. */
-#define TESS_FX_AA  1.0f
+/* TESS_FX_AA -- the default 1 px antialiasing band -- lives in gui_render.h now: the emit side
+   bakes it into commands (a pulse's feather) as well. */
 
 /* Tessellate a solid triangle into s_tess. */
 static void
@@ -784,35 +782,22 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
 /*==============================================================================================
     tess_circle_filled -- a disc, which is a rounded box whose radius reached its half-extent.
 
-    There is no circle primitive here and there does not need to be one.  tess_fx_box clamps the
-    corner radius to half the short side, so a SQUARE box asking for a radius of its own half-extent
-    degenerates exactly to a disc -- same field, same four quadrant quads, same fragment.  What used
-    to be here was a triangle fan, and it was wrong in the way every tessellated curve is wrong: the
-    boundary was a polygon, so its smoothness was bought with segment count and its edge was not
-    antialiased at all (fan vertices carry fx 0, so the fragment applied no coverage).  Callers paid
-    for that in the only currency the fan understood -- sym_arc_segs scales with radius, up to 64
-    segments for a large disc, and even a bullet point spent 12.
+    There is no circle primitive anywhere in the pipeline and there does not need to be one:
+    tess_fx_box clamps the corner radius to half the short side, so a SQUARE box asking for a
+    radius of its own half-extent degenerates exactly to a disc -- same field, same four quadrant
+    quads, same fragment, 16 verts / 24 idx at any size, antialiased.  The emit side agrees
+    (draw_push_circle_filled emits GUI_CMD_RECT_FILLED with rounding = r); this helper survives
+    for tess_fx_arc's full-turn PIE route.
 
-        fan, 12 seg   13 verts / 36 idx    faceted, aliased
-        fan, 64 seg   65 verts / 192 idx   smooth, aliased
-        the field     16 verts /  24 idx   exact at any size, antialiased
-
-    It is cheaper in indices than even the smallest fan, and it is the only one of the three whose
-    edge is actually correct.  `segs` is therefore ignored -- kept on the command (and in the public
-    signature) because it costs nothing and every call site passing a count is still saying something
-    true about the shape it wants, just no longer something this layer needs to be told.
-
-    NOT grid-snapped, unlike every other shape that goes through tess_fx_box -- it does not have to
-    ask for that, because tess_fx_box derives it: a square whose radius reached its half-extent has
-    no straight edge for snapping to keep crisp, and quantizing a circle's centre is exactly what a
-    small moving dot must not do.  A circular RING satisfies the same test, so the two stay aligned
-    when drawn concentrically.
+    NOT grid-snapped, and it does not have to ask: tess_fx_box derives it -- a square whose radius
+    reached its half-extent has no straight edge for snapping to keep crisp, and quantizing a
+    circle's centre is exactly what a small moving dot must not do.  A circular RING satisfies the
+    same test, so the two stay aligned when drawn concentrically.
 ==============================================================================================*/
 
 static void
-tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 segs, u32 abgr )
+tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
 {
-    (void)segs;
     tess_fx_box( pcx - r, pcy - r, r * 2.0f, r * 2.0f,
                  r, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
                  0, 0, 1, 1, 0, abgr );
@@ -903,7 +888,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1, bool pie, u
     {
         if ( pie )
         {
-            tess_circle_filled( pcx, pcy, r, 0, abgr );
+            tess_circle_filled( pcx, pcy, r, abgr );
             return;
         }
         if ( thickness <= GUI_FX_BORDER_MAX )
@@ -1338,52 +1323,6 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     tess_prim_commit( 8u, 12u );
 }
 
-/* Fast path for an axis-aligned line: a horizontal (y0==y1) or vertical (x0==x1) line has no
-   diagonal edge to feather, so a crisp grid-snapped quad beats any field -- 4 verts / 6 idx against
-   the capsule's 8 / 12, and crisper, because there is nothing to antialias.  This is the common
-   case (separators, frame borders, table grid lines, underlines).  Sub-pixel thickness fades the
-   alpha exactly as tess_stroke_poly_aa does so a hairline keeps its weight.  Returns false for a
-   diagonal, which falls through to tess_fx_segment.
-
-   BACKSTOP, not the live path: gui_draw_line already routes every H/V segment through
-   stroke_axis_aligned_rect at EMIT (gui_emit_path.c), and that is the only producer of
-   GUI_CMD_LINE, so this currently never fires.  It is kept because it is the tessellator's own
-   guarantee -- a future producer that pushes GUI_CMD_LINE directly gets the crisp quad without
-   having to know the emit layer's fast path exists. */
-static bool
-tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
-{
-    bool horizontal = ( y0 == y1 );
-    bool vertical   = ( x0 == x1 );
-    if ( !horizontal && !vertical )
-        return false;            /* diagonal -- needs the AA stroker */
-    if ( thickness <= 0.0f )
-        return true;             /* axis-aligned but nothing to draw -- consumed */
-
-    /* Sub-pixel coverage: hold a 1px footprint and fade peak alpha (mirrors the AA stroker). */
-    f32 a_scale = 1.0f;
-    if ( thickness < 1.0f ) { a_scale = thickness; thickness = 1.0f; }
-    u32 a_in = (u32)( ( ( abgr >> 24 ) & 0xFFu ) * a_scale + 0.5f );
-    u32 col  = ( abgr & 0x00FFFFFFu ) | ( a_in << 24 );
-
-    /* Centre the band on the line, exactly as the stroker does (CMD_LINE passes center_off 0).
-       tess_rect_filled grid-snaps the origin, so the quad lands crisp on the pixel grid. */
-    f32 half = thickness * 0.5f;
-    if ( horizontal )
-    {
-        f32 xa = x0 < x1 ? x0 : x1;
-        f32 xb = x0 < x1 ? x1 : x0;
-        tess_rect_filled( xa, y0 - half, xb - xa, thickness, 0, 0, 1, 1, 0, col );
-    }
-    else /* vertical */
-    {
-        f32 ya = y0 < y1 ? y0 : y1;
-        f32 yb = y0 < y1 ? y1 : y0;
-        tess_rect_filled( x0 - half, ya, thickness, yb - ya, 0, 0, 1, 1, 0, col );
-    }
-    return true;
-}
-
 /* Volatile-widget seam (render/pipeline/gui_build_volatile.c, included right after this file in
    the gui_render.c unity build).  tess_dispatch calls volatile_range_close once a tagged command
    RANGE's vertices/indices/GPU commands are fully written; it records the block's slot-relative
@@ -1491,23 +1430,18 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                                        c->rect_outline.t, c->rect_outline.abgr );
                 break;
 
-            /* One surface with a wide feather.  What used to be six stacked rects pretending to
-               be a gaussian is now the exact same falloff the corners use, only spread out. */
-            case GUI_CMD_SHADOW:
-                tess_fx_box( c->shadow.x, c->shadow.y, c->shadow.w, c->shadow.h,
-                             c->shadow.rounding, c->shadow.feather, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
-                             0, 0, 1, 1, 0, c->shadow.abgr );
-                break;
-
-            /* Geometrically a plain rounded fill -- the only thing PULSE changes is the packed
-               word, and therefore the fragment.  That is the point: the vertices this produces are
-               correct for every frame the pulse runs, so the window's retained slot is never
-               invalidated and the breathing costs no re-tessellation at all. */
-            case GUI_CMD_PULSE:
-                tess_fx_box( c->pulse.x, c->pulse.y, c->pulse.w, c->pulse.h,
-                             c->pulse.rounding, TESS_FX_AA, 0.0f,
-                             c->pulse.rate, c->pulse.depth, GUI_FX_PULSE,
-                             0, 0, 1, 1, 0, c->pulse.abgr );
+            /* The parameterized surface: a shadow is the wide feather (what used to be six
+               stacked rects pretending to be a gaussian is the exact same falloff the corners
+               use, only spread out), a pulse the shader-clock word -- geometrically a plain
+               rounded fill whose vertices are correct for every frame it runs, so the retained
+               slot never invalidates and the breathing costs no re-tessellation.  rate > 0 IS
+               the mode: a still box and a zero-rate pulse are the same shape to the fragment. */
+            case GUI_CMD_FX_BOX:
+                tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
+                             c->fx_box.rounding, c->fx_box.feather, 0.0f,
+                             c->fx_box.rate, c->fx_box.depth,
+                             ( c->fx_box.rate > 0.0f ) ? GUI_FX_PULSE : GUI_FX_BOX,
+                             0, 0, 1, 1, 0, c->fx_box.abgr );
                 break;
 
             /* Four quadrants, four radii, four words -- and still one surface, one command and no
@@ -1560,22 +1494,13 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                               c->text_xf.scale, c->text_xf.rot );
                 break;
 
-            /* A disc is a square SDF box whose radius reached its half-extent -- 16 verts, exactly
-               antialiased, and `segs` no longer means anything (see tess_circle_filled). */
-            case GUI_CMD_CIRCLE_FILLED:
-                tess_circle_filled( c->circle.cx, c->circle.cy, c->circle.r,
-                                    c->circle.segs, c->circle.abgr );
-                break;
-
-            /* Two paths, and neither is the ribbon stroker any more.  Axis-aligned takes the
-               grid-snapped quad -- crisper than a field, because there is no diagonal edge to
-               antialias.  Everything else is a CAPSULE: one segment has no joints, which is the
-               only thing that kept the ribbon (see tess_fx_segment). */
+            /* Always a CAPSULE, because only diagonals ever arrive: gui_draw_line routes every
+               axis-aligned segment through a grid-snapped rect at EMIT (stroke_axis_aligned_rect,
+               gui_emit_path.c), and that is the sole producer of GUI_CMD_LINE.  One segment has
+               no joints, which is the only thing that kept the ribbon (see tess_fx_segment). */
             case GUI_CMD_LINE:
-                if ( !tess_axis_line( c->line.x0, c->line.y0, c->line.x1, c->line.y1,
-                                      c->line.thickness, c->line.abgr ) )
-                    tess_fx_segment( c->line.x0, c->line.y0, c->line.x1, c->line.y1,
-                                     c->line.thickness, c->line.abgr );
+                tess_fx_segment( c->line.x0, c->line.y0, c->line.x1, c->line.y1,
+                                 c->line.thickness, c->line.abgr );
                 break;
 
             case GUI_CMD_POLYLINE:

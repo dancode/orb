@@ -97,7 +97,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
         if ( draw_box )
         {
             draw_face_mix( ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, GUI_ROLE_BG, mix );
-            draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, 0, COL_BORDER_IDLE );
+            draw_push_rect_outline( bx, by, CHECKBOX_SZ, CHECKBOX_SZ, WIN_BORDER, COL_BORDER_IDLE );
         }
         if ( *selected )
             draw_check_indicator( ( gui_rect_t ){ bx, by, CHECKBOX_SZ, CHECKBOX_SZ }, COL_MARK_IDLE );

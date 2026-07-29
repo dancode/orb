@@ -96,7 +96,7 @@ gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t
     /* Box frame: a button-tinted field, a down arrow boxed at the right edge, and the preview text
        fitted into the room before the arrow. */
     draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0,0,1,1, 0, col_item_bg_mix( id, st, false ) );
-    draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, 0, COL_BORDER_IDLE );
+    draw_push_rect_outline( box.x, box.y, box.w, box.h, WIN_BORDER, COL_BORDER_IDLE );
 
     gui_rect_t arrow = { box.x + box.w - box.h, box.y, box.h, box.h };
     draw_arrow( arrow, GUI_DIR_DOWN, COL_TEXT_IDLE );

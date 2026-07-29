@@ -680,7 +680,7 @@ dock_tree_placeholders( gui_dock_node_t* n )
         {
             draw_set_rounding( 0.0f );   /* empty node tiles flush in the dock grid -- keep it square */
             draw_push_rect_filled ( n->rect.x, n->rect.y, n->rect.w, n->rect.h, 0, 0, 1, 1, 0, COL_PANEL_DIM );
-            draw_push_rect_outline( n->rect.x, n->rect.y, n->rect.w, n->rect.h, WIN_BORDER, 0, COL_BORDER_IDLE );
+            draw_push_rect_outline( n->rect.x, n->rect.y, n->rect.w, n->rect.h, WIN_BORDER, COL_BORDER_IDLE );
         }
         return;
     }

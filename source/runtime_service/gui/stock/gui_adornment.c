@@ -143,7 +143,7 @@ draw_nav_ring( gui_rect_t r, bool captured )
 {
     draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
                             r.w + 2.0f * NAV_RING, r.h + 2.0f * NAV_RING,
-                            WIN_BORDER, 0, captured ? COL_MARK_ACTIVE : COL_MARK_HOT );
+                            WIN_BORDER, captured ? COL_MARK_ACTIVE : COL_MARK_HOT );
 }
 
 /* Focused-window frame: a bolder, accent-coloured outline painted over the window's own border to
@@ -166,7 +166,7 @@ draw_window_focus_border( gui_rect_t r )
 void
 draw_drop_ring( gui_rect_t r )
 {
-    draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, 0, COL_MARK_HOT );
+    draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, COL_MARK_HOT );
 }
 
 /* Child box chrome (flow/gui_layout_child.c invokes these around its region): the body

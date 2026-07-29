@@ -1850,12 +1850,13 @@ typedef void ( *gui_volatile_fn )( gui_id_t id, bool is_replay );
 
 typedef enum
 {
-    GUI_CMD_RECT_FILLED,     // filled rectangle or textured quad (glyph)
-    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads
+    GUI_CMD_RECT_FILLED,     // filled rectangle or textured quad (glyph); rounding > 0 makes it
+                             //   an SDF surface -- a filled DISC is this command at radius ==
+                             //   half-extent (draw_push_circle_filled), not a type of its own
+    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads (GUI_FX_RING when rounded)
     GUI_CMD_TRIANGLE,        // solid triangle
     GUI_CMD_TEXT,            // glyph run from the font atlas
     GUI_CMD_TEXT_XF,         // glyph run under a uniform scale + a rotation about its origin
-    GUI_CMD_CIRCLE_FILLED,   // filled disc: one GUI_FX_BOX surface at radius == half-extent
     GUI_CMD_LINE,            // single stroke segment
     GUI_CMD_POLYLINE,        // multi-segment antialiased polyline
     GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U
@@ -1863,8 +1864,8 @@ typedef enum
     GUI_CMD_RECT_LIST,       // batch of solid rects from the per-frame rect pool (one cmd, N quads)
     GUI_CMD_SPRITE,          // RGBA sprite quad; nine-slice expanded at tessellation when the
                              //   sprite carries slice insets (1, 3 or 9 quads from one command)
-    GUI_CMD_SHADOW,          // soft rounded box: one GUI_FX_BOX surface with a wide feather
-    GUI_CMD_PULSE,           // rounded box whose alpha breathes on the shader clock (GUI_FX_PULSE)
+    GUI_CMD_FX_BOX,          // the parameterized GUI_FX_BOX surface: a soft shadow (wide feather)
+                             //   or a shader-clock pulse (rate/depth) -- one member, mode derived
     GUI_CMD_ROUND_RECT_EX,   // filled box with a PER-CORNER radius: four GUI_FX_BOX quadrants,
                              // each carrying its own packed word
     GUI_CMD_ARC,             // stroked circular arc, round caps: one GUI_FX_ARC quad
@@ -1940,7 +1941,7 @@ gui_tex_index( u32 tex_idx )
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (17 values)
+    u8 type;       // gui_cmd_type_t, fits u8 (15 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
@@ -1980,9 +1981,6 @@ typedef struct
            Nothing here is snapped to the pixel grid -- see tess_text_xf. */
         struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr; u32 edge;
                  u16 font; } text_xf;
-        /* segs is IGNORED -- the disc is a distance field now, exact at any size (gui_build_tess.c,
-           tess_circle_filled).  Kept so call sites that reason in segments still compile. */
-        struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;
         struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
         struct { u32 pt_offset; u32 pt_count; f32 thickness;
                  gui_stroke_align_t align; bool closed;         u32 abgr; } polyline;
@@ -2004,21 +2002,16 @@ typedef struct
            so the member carries no tail padding -- the retained-cache hash folds these bytes raw
            and stale padding from a differently-typed command would read as a spurious change. */
         struct { f32 x, y, w, h; f32 scale; u32 sprite; u32 abgr; u16 flags; u16 nine; } sprite;
-        /* Soft shadow / glow.  Its own member rather than a `feather` bolted onto rect: only this
-           command needs one, and rect is the hot variant every fill goes through -- widening it
-           would grow the whole command pool to carry a field almost nothing sets.  The shape is
-           the box, rounded by `rounding`; `feather` is the total width of the falloff band, which
-           straddles the boundary (half in, half out), so the geometry it tessellates to reaches
-           feather/2 past the box on every side. */
-        struct { f32 x, y, w, h; f32 rounding, feather;           u32 abgr; } shadow;
-        /* Pulsing rounded box.  The same surface a rounded fill emits, except its alpha is a
-           function of pc.time evaluated in the FRAGMENT.  That is the whole reason it exists as a
-           command instead of a caller animating the color: the geometry never changes, so the
-           window's retained slot stays valid and nothing re-tessellates while it breathes.  The
-           upload is unchanged -- retention saves the tessellation, not the buffer write.  The
-           frame must still be PRESENTED -- see GUI_FX_TIME_WRAP -- so a caller runs one
-           request_redraw per frame and pays no emit for it. */
-        struct { f32 x, y, w, h; f32 rounding, rate, depth;       u32 abgr; } pulse;
+        /* The parameterized GUI_FX_BOX surface -- one member serving the soft shadow / glow
+           (a wide `feather`, the total width of the falloff band straddling the boundary, so the
+           geometry reaches feather/2 past the box on every side) and the pulsing box (`rate` in
+           Hz + `depth` 0..1, alpha breathing on pc.time in the FRAGMENT -- geometry never
+           changes, so the retained slot stays valid and nothing re-tessellates while it runs;
+           the frame must still be PRESENTED, see GUI_FX_TIME_WRAP).  The mode is derived at
+           tessellation: rate > 0 is a PULSE, else a BOX.  Its own member rather than
+           feather/rate/depth bolted onto rect: rect is the hot variant every fill goes through,
+           and widening it would grow the whole command pool for fields almost nothing sets. */
+        struct { f32 x, y, w, h; f32 rounding, feather, rate, depth; u32 abgr; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME four quadrant quads a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape

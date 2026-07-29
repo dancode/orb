@@ -150,12 +150,12 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
             {
                 /* Restore: two overlapping boxes, a back one up-right and a front one down-left. */
                 f32 o = floorf( s * 0.5f );
-                draw_push_rect_outline( cx - s + o, cy - s - o, 2.0f * s, 2.0f * s, t, 0, col );
-                draw_push_rect_outline( cx - s - o, cy - s + o, 2.0f * s, 2.0f * s, t, 0, col );
+                draw_push_rect_outline( cx - s + o, cy - s - o, 2.0f * s, 2.0f * s, t, col );
+                draw_push_rect_outline( cx - s - o, cy - s + o, 2.0f * s, 2.0f * s, t, col );
             }
             else
             {
-                draw_push_rect_outline( cx - s, cy - s, 2.0f * s, 2.0f * s, t, 0, col );
+                draw_push_rect_outline( cx - s, cy - s, 2.0f * s, 2.0f * s, t, col );
             }
             break;
 

@@ -456,7 +456,7 @@ select_paint_overlay( gui_id_t win, gui_rect_t body )
     /* Marquee outline over everything (its fill sits under the content, from paint_under). */
     if ( live_box && span.x1 > span.x0 && span.y1 > span.y0 )
         draw_push_rect_outline( span.x0, span.y0, span.x1 - span.x0, span.y1 - span.y0,
-                                1.0f, 0,
+                                1.0f,
                                 ( style_col_look( GUI_ROLE_PANEL, GUI_PHASE_IDLE, GUI_LOOK_SELECT )
                                   & 0x00FFFFFFu ) | 0xC0000000u );
 

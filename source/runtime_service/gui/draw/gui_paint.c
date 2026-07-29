@@ -24,7 +24,7 @@ f32 text_center_y( f32 y, f32 h ) { return y + ( h - font_char_h() ) * 0.5f; }
    the symbol palette (gui_symbol.c). */
 
 void draw_fill   ( gui_rect_t r, u32 col )        { draw_push_rect_filled ( r.x, r.y, r.w, r.h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col ); }
-void draw_outline( gui_rect_t r, f32 t, u32 col ) { draw_push_rect_outline( r.x, r.y, r.w, r.h, t, 0, col ); }
+void draw_outline( gui_rect_t r, f32 t, u32 col ) { draw_push_rect_outline( r.x, r.y, r.w, r.h, t, col ); }
 
 /* The WIDENED paint floor: fill a rect with a brush instead of a colour.
 
@@ -114,7 +114,7 @@ draw_ellipsis( f32 x, f32 y, u32 c )
     {
         u32 a   = (u32)( (f32)a0 * fade[ i ] + 0.5f );
         u32 col = rgb | ( a << 24 );
-        draw_push_circle_filled( x + r * 2.0f + (f32)i * r * 3.5f, cy, r, 10u, col );
+        draw_push_circle_filled( x + r * 2.0f + (f32)i * r * 3.5f, cy, r, col );
     }
 }
 
