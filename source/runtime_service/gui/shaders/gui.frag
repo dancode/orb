@@ -63,7 +63,7 @@ float fx_coverage()
     // 0 NONE, and the two modes that are not shapes: 4 TILE_U acted in the vertex stage, 5
     // TEXT_EDGE acts on the COLOR in the SDF branch below.  All three contribute full coverage --
     // the band names what the fragment does, and "nothing, here" is a legal answer.
-    if ( mode == 0u || mode >= 4u )
+    if ( mode == 0u || mode == 4u || mode == 5u )
         return 1.0;
 
     float radius  = float( ( v_fx >>  4 ) & 0xFFFu ) * 0.125;
@@ -71,9 +71,24 @@ float fx_coverage()
     float border  = float( ( v_fx >> 25 ) & 0x7Fu  ) * 0.125;
 
     vec2  q = v_fx_coord;
-    float d = min( max( q.x, q.y ), 0.0 ) + length( max( q, vec2( 0.0 ) ) ) - radius;
-    if ( mode == 2u )
-        d = abs( d + border * 0.5 ) - border * 0.5;
+    float d;
+
+    // mode 6 SEG -- a CAPSULE: the distance to a line segment, minus its half-thickness.  q.x is
+    // |along| - halflen and q.y is the SIGNED across-axis offset, which needs no fold because
+    // length() squares it.  That asymmetry is the point: the box folds both axes at the vertex
+    // because both subtract a half-extent, so it costs four quadrant quads; the segment subtracts
+    // on one axis only and costs two.  No interior term either -- this form is already the exact
+    // signed distance in the core, where the rounded box's length-only form saturates.
+    if ( mode == 6u )
+    {
+        d = length( vec2( max( q.x, 0.0 ), q.y ) ) - radius;
+    }
+    else
+    {
+        d = min( max( q.x, q.y ), 0.0 ) + length( max( q, vec2( 0.0 ) ) ) - radius;
+        if ( mode == 2u )
+            d = abs( d + border * 0.5 ) - border * 0.5;
+    }
 
     float cov = ( feather <= 0.0 ) ? ( d <= 0.0 ? 1.0 : 0.0 )
                                    : clamp( 0.5 - d / feather, 0.0, 1.0 );

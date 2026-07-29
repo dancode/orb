@@ -994,6 +994,101 @@ tess_stroke_poly_aa( const gui_vec2_t* pts, u32 n, f32 thickness, f32 center_off
     tess_prim_commit( nv, ni );
 }
 
+/*==============================================================================================
+    tess_fx_segment -- one line segment as a CAPSULE distance field.
+
+    The diagonal stroke, resolved by the fragment instead of approximated in geometry.  What the
+    ribbon stroker above does for a single segment is lay three bands across it -- a solid core and
+    two outer bands dropped to alpha 0 -- so the hardware's colour interpolation fakes an edge
+    gradient.  That is 18 indices, a fixed one-pixel falloff, and square butt caps, and it is an
+    approximation on both axes at once.  A capsule is the exact same shape written down: the
+    distance from a point to a segment, minus the half-thickness.  Two quads, 12 indices, an edge
+    that is correct at any angle, and round caps that cost nothing because they ARE the field.
+
+    TWO quads, not the box's four: the fold is forced by the SUBTRACTION of a half-extent (gui.h),
+    and a capsule subtracts only along its axis.  The across-axis offset rides signed and the
+    fragment squares it inside length().
+
+    Round caps extend half a thickness past each endpoint, where the ribbon stopped square.  That
+    is a real visual change, it is what a stroke is supposed to look like, and at the widths this
+    path sees (diagonal hairlines and connector wires) it is a sub-pixel difference.
+
+    Only DIAGONALS come here.  Axis-aligned lines keep the grid-snapped quad below -- 4 verts, 6
+    indices, and crisper than any field, since a horizontal edge has nothing to antialias.  And
+    POLYLINES keep the ribbon: N capsules would overlap at every joint, and two overlapping
+    translucent strokes composite darker than one, so a semi-transparent path would grow a bead at
+    each vertex.  The ribbon's miter solve exists precisely to emit each pixel once.
+==============================================================================================*/
+
+static void
+tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
+{
+    if ( thickness <= 0.0f )
+        return;
+
+    f32 dx = x1 - x0, dy = y1 - y0;
+    f32 len = sqrtf( dx * dx + dy * dy );
+    if ( len < 1e-4f )
+        return;
+
+    /* Sub-pixel coverage, matched to the ribbon stroker rather than left to the field: hold a 1 px
+       footprint and fade peak alpha.  The field would happily render a 0.4 px capsule, but it would
+       weigh a hairline differently than every other line in the library, and consistency across the
+       two paths is worth more here than the extra correctness. */
+    f32 a_scale = 1.0f;
+    if ( thickness < 1.0f )
+    {
+        a_scale   = ( thickness < 0.0f ) ? 0.0f : thickness;
+        thickness = 1.0f;
+    }
+    u32 a_in = (u32)( ( ( abgr >> 24 ) & 0xFFu ) * a_scale + 0.5f );
+    u32 col  = ( abgr & 0x00FFFFFFu ) | ( a_in << 24 );
+
+    f32 inv = 1.0f / len;
+    f32 ux  = dx * inv, uy = dy * inv;      /* unit vector along the segment  */
+    f32 nx  = -uy,      ny = ux;            /* unit normal across it          */
+    f32 r   = thickness * 0.5f;             /* the capsule radius             */
+    f32 hl  = len * 0.5f;                   /* half-length: what q.x subtracts */
+    f32 mx  = ( x0 + x1 ) * 0.5f, my = ( y0 + y1 ) * 0.5f;
+
+    /* Geometry must clear the boundary by the falloff plus a pixel of slack, exactly as the box
+       surface does -- the round cap needs the radius on top, since the cap bulges past the end. */
+    f32 pad = TESS_FX_AA * 0.5f + 1.0f;
+    f32 ea  = hl + r + pad;                 /* extent along the axis, from the midpoint */
+    f32 ec  = r + pad;                      /* extent across it                         */
+
+    f32              wu, wv;
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin( 8u, 12u, &wu, &wv, &v, &idx, &base ) )
+        return;
+    s_tess.cur_fx = gui_fx_pack( GUI_FX_SEG, r, TESS_FX_AA, 0.0f );
+
+    /* Corner of one quad in its own half: `a` runs 0 -> ea away from the midpoint (so |along| is
+       simply a, and its sign is constant over the quad -- the whole reason for the split), `b`
+       spans the full width signed. */
+    static const f32 qa[ 4 ] = {  0.0f, 1.0f, 1.0f,  0.0f };
+    static const f32 qb[ 4 ] = { -1.0f, -1.0f, 1.0f, 1.0f };
+
+    for ( u32 s = 0; s < 2; ++s )
+    {
+        f32 sa = ( s == 0 ) ? 1.0f : -1.0f;     /* which side of the midpoint this quad covers */
+        for ( u32 c = 0; c < 4; ++c )
+        {
+            f32 a = qa[ c ] * ea, b = qb[ c ] * ec;
+            v[ s * 4 + c ] = gui_vert_fxc( mx + sa * a * ux + b * nx,
+                                           my + sa * a * uy + b * ny,
+                                           wu, wv, col, a - hl, b );
+        }
+        u16 q = (u16)( base + s * 4u );
+        idx[ s * 6 + 0 ] = q + 0; idx[ s * 6 + 1 ] = q + 1; idx[ s * 6 + 2 ] = q + 2;
+        idx[ s * 6 + 3 ] = q + 0; idx[ s * 6 + 4 ] = q + 2; idx[ s * 6 + 5 ] = q + 3;
+    }
+
+    tess_prim_commit( 8u, 12u );
+}
+
 /* Fast path for an axis-aligned line: a horizontal (y0==y1) or vertical (x0==x1) line has no
    diagonal edge to feather, so a crisp grid-snapped quad is indistinguishable from the AA stroke
    while costing a fraction of the geometry -- 4 verts / 6 idx vs. 8 verts / 18 idx, and none of the
@@ -1187,17 +1282,16 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
                                     c->circle.segs, c->circle.abgr );
                 break;
 
+            /* Two paths, and neither is the ribbon stroker any more.  Axis-aligned takes the
+               grid-snapped quad -- crisper than a field, because there is no diagonal edge to
+               antialias.  Everything else is a CAPSULE: one segment has no joints, which is the
+               only thing that kept the ribbon (see tess_fx_segment). */
             case GUI_CMD_LINE:
-            {
-                /* Axis-aligned lines take the crisp-quad fast path; only diagonals reach the
-                   AA stroker (tess_axis_line returns false for those). */
-                if ( tess_axis_line( c->line.x0, c->line.y0, c->line.x1, c->line.y1,
-                                     c->line.thickness, c->line.abgr ) )
-                    break;
-                gui_vec2_t pts[ 2 ] = { { c->line.x0, c->line.y0 }, { c->line.x1, c->line.y1 } };
-                tess_stroke_poly_aa( pts, 2, c->line.thickness, 0.0f, false, c->line.abgr );
+                if ( !tess_axis_line( c->line.x0, c->line.y0, c->line.x1, c->line.y1,
+                                      c->line.thickness, c->line.abgr ) )
+                    tess_fx_segment( c->line.x0, c->line.y0, c->line.x1, c->line.y1,
+                                     c->line.thickness, c->line.abgr );
                 break;
-            }
 
             case GUI_CMD_POLYLINE:
             {

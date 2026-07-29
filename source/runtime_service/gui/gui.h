@@ -1490,6 +1490,8 @@ typedef enum
     GUI_FX_TILE_U    = 4,  /* VERTEX stage: multiply u by a repeat count (see GUI_FX_TILE_MAX)  */
     GUI_FX_TEXT_EDGE = 5,  /* SDF text drawn with a second colour OUTSIDE the glyph boundary    */
 
+    GUI_FX_SEG       = 6,  /* CAPSULE: a line segment `radius` px thick, with round caps        */
+
 } gui_fx_mode_t;
 
 /* The effect coordinate (ex, ey) is the shape-local quantity `|p| - c`, where p is the vertex's
@@ -1497,7 +1499,20 @@ typedef enum
    radius).  The absolute value is why an SDF box is tessellated as four QUADRANT quads rather
    than one: within a quadrant the sign of p is constant, so |p| is affine in p and the hardware's
    linear interpolation reproduces it exactly.  Across one quad it would fold at the centre line.
-   The fragment then needs only `d = length( max( ex_ey, 0 ) ) - radius`. */
+   The fragment then needs only `d = length( max( ex_ey, 0 ) ) - radius`.
+
+   Note precisely WHY the fold has to happen at the vertex: it is the SUBTRACTION of c that forces
+   it.  c is not in the packed word, so the fragment cannot redo `|p| - c` itself.  An axis with no
+   subtraction needs no fold at all -- which is the whole reason GUI_FX_SEG costs half what a box
+   does.  A capsule subtracts a half-length on the along-axis only, so that axis folds (two quads,
+   split at the midpoint perpendicular) while the across-axis rides SIGNED and the fragment squares
+   it inside length().  Two quads, and the shape is a rotated segment with exact round caps:
+
+       ex = |p_along| - halflen        ey = p_across  (signed)
+       d  = length( vec2( max( ex, 0 ), ey ) ) - radius
+
+   That form is the true distance to the segment inside and out, so unlike the rounded box it needs
+   no interior-distance term to stay correct in its core. */
 
 /* The packed effect word.  Every field is a fixed-point pixel quantity sized to its physical
    range: a corner radius can be half a panel, a shadow's falloff is tens of pixels, a border is
