@@ -120,10 +120,12 @@ static struct
        this server cannot see it -- the same one-way seam gui_render_set_mode crosses. */
     f32 fx_time;                      // seconds since the first frame, wrapped; -> pc.time
 
-    /* Lifetime totals for the two redundancy filters in gui_render_flush, reported at shutdown.
-       The filters are invisible by construction -- they change no pixel -- so without a count
-       there is no way to tell whether they are earning anything on a real UI. */
-    u64 state_draws;                  // draw calls walked (the denominator for both below)
+    /* Lifetime per-draw-state totals from gui_render_flush, reported at shutdown.  The scissor
+       filter is invisible by construction -- it changes no pixel -- so without a count there is no
+       way to tell whether it is earning anything on a real UI.  The push figure is no longer a
+       filter yield but a cost: the tail is per-FLUSH now, so state_flushes is its denominator. */
+    u64 state_draws;                  // draw calls walked (the scissor filter's denominator)
+    u64 state_flushes;                // surface flushes walked (the push denominator)
     u64 state_pushes;                 // 20-byte tail pushes actually issued
     u64 state_scissors;               // scissor sets actually issued
 
@@ -400,21 +402,29 @@ render_shutdown( void )
     // Peak draw calls in a single frame -- a measure of batching effectiveness.
     printf( "[gui] peak draw calls in a frame: %u\n", cache_draw_call_hwm() );
 
-    /* Redundancy-filter yield.  The push figure counts 20-byte tails; the mvp is one 64-byte write
-       per flush, so the old cost was state_draws * 84 bytes and the new one is roughly
-       state_pushes * 20 -- the ratio is the honest measure of what the split bought.  Since the
-       texture left the block the tail is frame-constant in NORMAL rendering, so this now reads
-       ~100% suppressed; the number stays interesting for the BATCH view, whose per-draw tint is
-       the only thing left that moves it. */
+    /* Per-draw state cost.  The two halves are no longer the same kind of number and are not
+       reported as though they were:
+
+         pushes   -- 20-byte tail writes.  Once per FLUSH in normal rendering (the tail is
+                     frame-constant since the texture moved into the vertex), plus one per draw in
+                     the BATCH view, which is the only thing left that changes it.  Quoted against
+                     flushes, so a run that stayed in normal rendering reads ~1.00 and a session
+                     spent in the batch view reads far higher -- printing it as a "% suppressed"
+                     against draws would just assert 100% forever and measure nothing.
+         scissors -- a real redundancy filter with a real hit rate: the clip rect is the only thing
+                     that cuts a batch, so consecutive commands often share one, and the suppressed
+                     figure is what that saves. */
     if ( s_render.state_draws )
     {
-        printf( "[gui] per-draw state: %llu pushes + %llu scissors over %llu draws "
-                "(%.0f%% / %.0f%% suppressed)\n",
-                (unsigned long long)s_render.state_pushes,
+        printf( "[gui] per-draw state: %llu scissors over %llu draws (%.0f%% suppressed); "
+                "%llu tail pushes over %llu flushes (%.2f per flush)\n",
                 (unsigned long long)s_render.state_scissors,
                 (unsigned long long)s_render.state_draws,
-                100.0 * ( 1.0 - (f64)s_render.state_pushes   / (f64)s_render.state_draws ),
-                100.0 * ( 1.0 - (f64)s_render.state_scissors / (f64)s_render.state_draws ) );
+                100.0 * ( 1.0 - (f64)s_render.state_scissors / (f64)s_render.state_draws ),
+                (unsigned long long)s_render.state_pushes,
+                (unsigned long long)s_render.state_flushes,
+                s_render.state_flushes ? (f64)s_render.state_pushes / (f64)s_render.state_flushes
+                                       : 0.0 );
     }
 
     /* The last submitted frame may still be executing on the GPU; the destroys below
@@ -643,28 +653,33 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        the effect band's clock costs no batch split and no per-draw work (gui.h, GUI_FX_TIME_WRAP). */
     push.time = s_render.fx_time;
 
-    /* The mvp, once for the flush.  Everything the walk touches lives in the tail. */
+    /*  THE WHOLE BLOCK, ONCE, before the walk -- head and tail both.
+
+        The tail used to be per-draw state behind a redundancy filter, and it no longer is.  It
+        carried tex_idx, tex_mode and samp_idx, three fields that genuinely changed from one draw
+        call to the next, so a shadow copy and a memcmp paid for themselves.  All three moved into
+        the vertex.  What is left -- both sampler slots, dbg_flat, the frame clock -- is written
+        here and is constant for the entire flush, so the filter had degenerated into comparing
+        twenty bytes against themselves once per draw call, forever, to answer "no" every time.
+
+        Pushing it once and dropping the filter is the honest shape.  ONE field still moves, and
+        only in the BATCH debug view: dbg_tint, which is deliberately different per draw call so a
+        colour change marks a batch split.  That case re-pushes the tail explicitly in the loop --
+        an unconditional write in a debug view, rather than a test every normal frame pays for.
+
+        The SCISSOR filter below is untouched and still earns its keep: the clip rect is the one
+        thing that cuts a batch (tess_ensure_gpu_cmd), so consecutive commands frequently share
+        one -- volatile-block edges and slot boundaries force a new command without changing the
+        clip at all.  `have_scissor` rather than a sentinel because every rect value is legitimate
+        (0,0,0,0 is a fully clipped draw), so there is nothing safe to pre-seed with.  */
+    const u8* tail = (const u8*)&push + GUI_PUSH_TAIL_OFF;
     rhi()->cmd_push_constants( cmd, &push, GUI_PUSH_TAIL_OFF, 0 );
+    rhi()->cmd_push_constants( cmd, tail, GUI_PUSH_TAIL_SIZE, GUI_PUSH_TAIL_OFF );
+    ++s_render.state_pushes;
+    ++s_render.state_flushes;
 
-    /* Redundancy filters for the two pieces of per-draw state.  Both are pure duplicate-call
-       elimination -- the GPU sees the identical state either way, so nothing below can change
-       what is drawn, only how much command buffer it takes to say it.
-
-       They are lopsided now, and it is worth saying why rather than leaving the symmetry implied.
-       A batch is cut by a CLIP change alone (tess_ensure_gpu_cmd; the texture stopped being a
-       batch key when it moved into the vertex), so the scissor filter suppresses only the runs of
-       commands a forced boundary split -- volatile-block edges and slot boundaries -- while the
-       TAIL filter now suppresses essentially everything: in NORMAL rendering nothing in the tail
-       changes for a whole flush, so it fires once.  The BATCH debug view is the one caller that
-       still moves it, one dbg_tint per draw.  The filter stays because that view exists and
-       because the cost of asking is a 20-byte memcmp.
-
-       `have_*` rather than a sentinel value: every field is a legitimate value (scissor 0,0,0,0 is
-       a fully clipped draw), so there is nothing safe to pre-seed with. */
     rhi_rect_t last_scissor = { 0 };
     bool       have_scissor = false;
-    u8         last_tail[ GUI_PUSH_TAIL_SIZE ];
-    bool       have_tail    = false;
 
     u32 draw_calls = 0;   // indexed draws actually emitted this surface (one per non-empty command)
 
@@ -722,17 +737,13 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
                 ++s_render.state_scissors;
             }
 
+            /* The one piece of tail state that is genuinely per-draw, and only in the debug view
+               that wants it: a distinct tint per draw call, so a colour change marks a batch split.
+               Normal rendering never reaches this -- its tail went out once, above. */
             if ( batch_view )
-                push.dbg_tint = render_batch_debug_color( draw_calls );
-
-            /* The 20-byte tail, and only when it moved.  Compared as bytes rather than field by
-               field so a field added to the block is covered without touching this line. */
-            const u8* tail = (const u8*)&push + GUI_PUSH_TAIL_OFF;
-            if ( !have_tail || memcmp( tail, last_tail, GUI_PUSH_TAIL_SIZE ) != 0 )
             {
+                push.dbg_tint = render_batch_debug_color( draw_calls );
                 rhi()->cmd_push_constants( cmd, tail, GUI_PUSH_TAIL_SIZE, GUI_PUSH_TAIL_OFF );
-                memcpy( last_tail, tail, GUI_PUSH_TAIL_SIZE );
-                have_tail = true;
                 ++s_render.state_pushes;
             }
 
