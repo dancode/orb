@@ -45,6 +45,29 @@ typedef struct
 
 } gui_push_t;         // total 88 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
+/*  The block SPLITS at the matrix.  The mvp is 64 of those 88 bytes and is constant for a whole
+    flush -- it depends only on the surface size -- so re-sending it with every draw call spent
+    ~73% of the push traffic restating a number that never moved.  It is written ONCE before the
+    dispatch walk; each draw then updates only the 24-byte tail, and only when the tail actually
+    changes (see the redundancy filter in gui_render_flush).
+
+    Vulkan leaves push constants undefined until written, and the head is written after this
+    flush's cmd_bind_pipeline, so a scene pass that bound its own pipeline earlier in the command
+    buffer cannot leave a stale matrix behind.
+
+    Derived with offsetof rather than spelled 64/24: the struct is free to be reordered pre-ship
+    (CLAUDE.md), and the assert below is what makes that safe -- the split is only valid while the
+    mvp is first and the tail is everything after it.  */
+#define GUI_PUSH_TAIL_OFF   ( (u32)offsetof( gui_push_t, tex_idx ) )
+#define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, tex_idx ) ) )
+
+ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
+                   "the mvp must lead gui_push_t -- the per-draw push writes everything after it" );
+ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF == sizeof( ( (gui_push_t*)0 )->mvp ),
+                   "gui_push_t tail must start immediately after the mvp" );
+ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF % 4 == 0 && GUI_PUSH_TAIL_SIZE % 4 == 0,
+                   "vkCmdPushConstants requires 4-byte aligned offset and size" );
+
 /*==============================================================================================
     Per-frame geometry regions.
 
@@ -89,6 +112,13 @@ static struct
        Held here rather than read from the IO snapshot because s_io lives in the frontend unit and
        this server cannot see it -- the same one-way seam gui_render_set_mode crosses. */
     f32 fx_time;                      // seconds since the first frame, wrapped; -> pc.time
+
+    /* Lifetime totals for the two redundancy filters in gui_render_flush, reported at shutdown.
+       The filters are invisible by construction -- they change no pixel -- so without a count
+       there is no way to tell whether they are earning anything on a real UI. */
+    u64 state_draws;                  // draw calls walked (the denominator for both below)
+    u64 state_pushes;                 // 24-byte tail pushes actually issued
+    u64 state_scissors;               // scissor sets actually issued
 
 } s_render;
 
@@ -345,6 +375,20 @@ render_shutdown( void )
     // Peak draw calls in a single frame -- a measure of batching effectiveness.
     printf( "[gui] peak draw calls in a frame: %u\n", cache_draw_call_hwm() );
 
+    /* Redundancy-filter yield.  The push figure counts 24-byte tails; the mvp is one 64-byte write
+       per flush, so the old cost was state_draws * 88 bytes and the new one is roughly
+       state_pushes * 24 -- the ratio is the honest measure of what the split bought. */
+    if ( s_render.state_draws )
+    {
+        printf( "[gui] per-draw state: %llu pushes + %llu scissors over %llu draws "
+                "(%.0f%% / %.0f%% suppressed)\n",
+                (unsigned long long)s_render.state_pushes,
+                (unsigned long long)s_render.state_scissors,
+                (unsigned long long)s_render.state_draws,
+                100.0 * ( 1.0 - (f64)s_render.state_pushes   / (f64)s_render.state_draws ),
+                100.0 * ( 1.0 - (f64)s_render.state_scissors / (f64)s_render.state_draws ) );
+    }
+
     /* The last submitted frame may still be executing on the GPU; the destroys below
        (font textures, samplers, pipelines) are immediate, so drain the device first. */
     rhi()->device_wait_idle();
@@ -564,6 +608,25 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        the effect band's clock costs no batch split and no per-draw work (gui.h, GUI_FX_TIME_WRAP). */
     push.time = s_render.fx_time;
 
+    /* The mvp, once for the flush.  Everything the walk touches lives in the tail. */
+    rhi()->cmd_push_constants( cmd, &push, GUI_PUSH_TAIL_OFF, 0 );
+
+    /* Redundancy filters for the two pieces of per-draw state.  Both are pure duplicate-call
+       elimination -- the GPU sees the identical state either way, so nothing below can change
+       what is drawn, only how much command buffer it takes to say it.
+
+       They pay off because the two things that split a batch are INDEPENDENT: tess_ensure_gpu_cmd
+       breaks on a texture change OR a clip change (gui_build_tess.c), so a run of commands that
+       split on texture shares one clip rect, and a run that split on clipping shares one texture.
+       Whichever axis moved, the other one is usually still saying the same thing it said last draw.
+
+       `have_*` rather than a sentinel value: every field is a legitimate value (scissor 0,0,0,0 is
+       a fully clipped draw; tex_idx 0 is a real slot), so there is nothing safe to pre-seed with. */
+    rhi_rect_t last_scissor = { 0 };
+    bool       have_scissor = false;
+    u8         last_tail[ GUI_PUSH_TAIL_SIZE ];
+    bool       have_tail    = false;
+
     u32 draw_calls = 0;   // indexed draws actually emitted this surface (one per non-empty command)
 
     /* Walk s_dispatch[] (z-sorted slot pointers) back-to-front.  Each slot owns a contiguous region
@@ -605,12 +668,20 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
             if ( sx1 < sx0 ) sx1 = sx0;
             if ( sy1 < sy0 ) sy1 = sy0;
 
-            rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){
+            rhi_rect_t scissor = {
                 .x      = sx0,
                 .y      = sy0,
                 .width  = sx1 - sx0,
                 .height = sy1 - sy0,
-            } );
+            };
+            ++s_render.state_draws;
+            if ( !have_scissor || memcmp( &scissor, &last_scissor, sizeof( scissor ) ) != 0 )
+            {
+                rhi()->cmd_set_scissor( cmd, &scissor );
+                last_scissor = scissor;
+                have_scissor = true;
+                ++s_render.state_scissors;
+            }
 
             push.tex_idx  = gui_tex_index( dc->tex_idx );
             push.tex_mode = (u32)gui_tex_mode( dc->tex_idx );
@@ -624,7 +695,17 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
                           ? s_render.image_sampler_idx : s_render.font_sampler_idx;
             if ( batch_view )
                 push.dbg_tint = render_batch_debug_color( draw_calls );
-            rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
+
+            /* The 24-byte tail, and only when it moved.  Compared as bytes rather than field by
+               field so a field added to the block is covered without touching this line. */
+            const u8* tail = (const u8*)&push + GUI_PUSH_TAIL_OFF;
+            if ( !have_tail || memcmp( tail, last_tail, GUI_PUSH_TAIL_SIZE ) != 0 )
+            {
+                rhi()->cmd_push_constants( cmd, tail, GUI_PUSH_TAIL_SIZE, GUI_PUSH_TAIL_OFF );
+                memcpy( last_tail, tail, GUI_PUSH_TAIL_SIZE );
+                have_tail = true;
+                ++s_render.state_pushes;
+            }
 
             rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){
                 .index_count    = dc->elem_count,
