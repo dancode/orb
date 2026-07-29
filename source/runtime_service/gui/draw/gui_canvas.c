@@ -328,6 +328,45 @@ gui_draw_rounding( void )
     return draw_rounding();
 }
 
+/*==============================================================================================
+    Text edge -- the same ambient discipline, for the second colour outside a glyph.
+
+    An outline and a drop shadow stop being separate features once the glyph is a distance field:
+    both are "fill the band from the boundary out to `width`", which the fragment already has
+    everything it needs to do.  So this is not a second draw of the run in a darker colour offset
+    by a pixel -- it is the SAME quad, the same batch, and the same glyph sample, with the fill
+    composited over the widened band.  Cost is one packed word on the text command.
+
+    SDF fonts only: a coverage glyph has no signed distance to widen and ignores the setting.
+    Width is limited in practice by the spread baked into the atlas, past which the field is flat
+    and the outline stops growing rather than tearing.  Save and restore like the radius above:
+
+        u32 save = gui()->draw_text_edge();
+        gui()->draw_set_text_edge( 2.0f, 0xFF000000u );   // 2 px black outline
+        gui()->draw_text( x, y, 0xFFFFFFFFu, "Title" );
+        gui()->draw_set_text_edge_raw( save );
+==============================================================================================*/
+
+void
+gui_draw_set_text_edge( f32 width, u32 abgr )
+{
+    draw_set_text_edge( width, abgr );
+}
+
+u32
+gui_draw_text_edge( void )
+{
+    return draw_text_edge();
+}
+
+/* Restore a saved word verbatim.  The pair exists because the packed form is the only lossless
+   thing to hand back -- re-deriving it from a width and a colour would re-quantize both. */
+void
+gui_draw_set_text_edge_raw( u32 edge )
+{
+    draw_set_text_edge_raw( edge );
+}
+
 /* Font atlas access -- bridges the font registry (gui_font.h / gui_render.h) to the RGBA texture
    primitives above, so a caller can preview a font's live GPU atlas (a texture like any other) via
    image_texture / draw_texture_in without reaching into the backend's internal font_slot_t. */

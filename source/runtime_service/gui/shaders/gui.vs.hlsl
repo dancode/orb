@@ -13,16 +13,20 @@
 
 struct gui_pc_t
 {
-    float4x4 mvp;        // column-major pixel-space ortho (Vulkan clip space)
-    uint     tex_idx;    // bindless texture slot
-    uint     samp_idx;   // bindless sampler slot
-    uint     dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color
-    uint     dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
-    uint     tex_mode;   // sampling model (gui_tex_mode_t): 0 = R8 coverage, 1 = full RGBA image
-    float    time;       // effect-band frame clock, wrapped seconds (GUI_FX_TIME_WRAP)
+    float4x4 mvp;          // column-major pixel-space ortho (Vulkan clip space)
+    uint     samp_point;   // bindless sampler slot: NEAREST, for the coverage model
+    uint     samp_image;   // bindless sampler slot: LINEAR, for every model that filters
+    uint     dbg_flat;     // debug: 1 = ignore atlas coverage, output a flat color
+    uint     dbg_tint;     // debug: packed RGBA8 batch tint (0 = use vertex color)
+    float    time;         // effect-band frame clock, wrapped seconds (GUI_FX_TIME_WRAP)
 };
 [[vk::push_constant]] gui_pc_t pc;
 
+// FOUR of these six attributes are PACKED in memory (gui.h): uv is two unorm16, color is four
+// unorm8, and the effect coord is two halves.  None of that appears here, and that is the point --
+// vertex fetch widens normalized and half formats to 32-bit float before the shader sees them, so
+// the declarations below are what they were when every field was full width.  The vertex is 28
+// bytes instead of 36 for no shader change at all.
 struct vs_in_t
 {
     [[vk::location( 0 )]] float2 pos      : POSITION;
@@ -30,10 +34,12 @@ struct vs_in_t
     [[vk::location( 2 )]] float4 color    : COLOR0;      // UNORM4 attrib -> normalized float4
     [[vk::location( 3 )]] float2 fx_coord : TEXCOORD1;    // effect coord: |p| - c, shape-local px
     [[vk::location( 4 )]] uint   fx       : TEXCOORD2;    // packed effect word; low nibble 0 = none
+    [[vk::location( 5 )]] uint   tex      : TEXCOORD3;    // sampling model (top 2 bits) | slot
 };
 
 // nointerpolation on fx: the effect word names the SHAPE, which is constant over it -- an
-// interpolated bit field would blend a radius into a mode.
+// interpolated bit field would blend a radius into a mode.  Same for tex, and more sharply:
+// that one is a descriptor index.
 struct vs_out_t
 {
     float4                  sv_pos   : SV_Position;
@@ -41,6 +47,7 @@ struct vs_out_t
     float2                  uv       : TEXCOORD0;
     float2                  fx_coord : TEXCOORD1;
     nointerpolation uint    fx       : TEXCOORD2;
+    nointerpolation uint    tex      : TEXCOORD3;
 };
 
 // Decode an sRGB-encoded color to linear light.  UI colors are authored in sRGB (the values you
@@ -73,8 +80,17 @@ vs_out_t main( vs_in_t v )
     o.sv_pos.y = -o.sv_pos.y;    // cancel the cook's -fvk-invert-y: mvp is already Vulkan-style
     // RGB linear, alpha untouched -- alpha is coverage, which is already a linear quantity.
     o.color    = float4( srgb_to_linear( v.color.rgb ), v.color.a );
+
+    // GUI_FX_TILE_U: the stored U is normalized 0..1 (all UNORM16X2 can hold) and the repeat count
+    // rides the effect word.  Scaling HERE rather than in the fragment is what keeps it free: the
+    // hardware interpolates the scaled value exactly as it would have interpolated a wide U, so a
+    // dashed line is still one quad tiling the atlas stipple row under the sampler's REPEAT.
     o.uv       = v.uv;
+    if ( ( v.fx & 0xFu ) == 4u )
+        o.uv.x *= float( ( v.fx >> 4 ) & 0xFFFFFFu ) * 0.0625;
+
     o.fx_coord = v.fx_coord;
     o.fx       = v.fx;
+    o.tex      = v.tex;
     return o;
 }

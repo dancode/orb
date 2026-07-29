@@ -45,8 +45,9 @@ vk_pipeline_validate( rhi_pipeline_t handle )
 /*==============================================================================================
     Vertex input compatibility -- attrib VkFormat vs reflected shader input VkFormat.
 
-    Exact equality is too strict: vertex fetch converts normalized/scaled integer formats to
-    float at read time, so e.g. R8G8B8A8_UNORM legally feeds a float4 input.  What must match
+    Exact equality is too strict: vertex fetch converts normalized, half, and scaled integer
+    formats to 32-bit float at read time, so e.g. R8G8B8A8_UNORM legally feeds a float4 input
+    and R16G16_SFLOAT legally feeds a float2 -- that is what makes packing free.  What must match
     is the NUMERIC CLASS the shader sees (float vs int vs uint), and the attrib must supply at
     least as many components as the shader reads (a wider attrib is legal; missing components
     are not).  Only the formats the RHI can actually meet are classified -- rhi_vertex_format_t
@@ -70,7 +71,10 @@ vk_vertex_format_classify( u32 fmt )
         case VK_FORMAT_R32G32_SFLOAT:       return ( vk_vtx_class_t ){ 1, 2 };
         case VK_FORMAT_R32G32B32_SFLOAT:    return ( vk_vtx_class_t ){ 1, 3 };
         case VK_FORMAT_R32G32B32A32_SFLOAT: return ( vk_vtx_class_t ){ 1, 4 };
-        case VK_FORMAT_R8G8B8A8_UNORM:      return ( vk_vtx_class_t ){ 1, 4 };   // fetch converts to float
+        case VK_FORMAT_R8G8B8A8_UNORM:      return ( vk_vtx_class_t ){ 1, 4 };   // packed, fetch widens
+        case VK_FORMAT_R16G16_SFLOAT:       return ( vk_vtx_class_t ){ 1, 2 };   // packed, fetch widens
+        case VK_FORMAT_R16G16B16A16_SFLOAT: return ( vk_vtx_class_t ){ 1, 4 };   // packed, fetch widens
+        case VK_FORMAT_R16G16_UNORM:        return ( vk_vtx_class_t ){ 1, 2 };   // packed, fetch widens
         case VK_FORMAT_R32_SINT:            return ( vk_vtx_class_t ){ 2, 1 };
         case VK_FORMAT_R32G32_SINT:         return ( vk_vtx_class_t ){ 2, 2 };
         case VK_FORMAT_R32G32B32_SINT:      return ( vk_vtx_class_t ){ 2, 3 };
@@ -81,6 +85,19 @@ vk_vertex_format_classify( u32 fmt )
         case VK_FORMAT_R32G32B32A32_UINT:   return ( vk_vtx_class_t ){ 3, 4 };
         default:                            return ( vk_vtx_class_t ){ 0, 0 };
     }
+}
+
+/*  The packed formats are all mandatory vertex-buffer support in the Vulkan spec, but mandatory
+    is a promise, not an observation -- ask the device.  A format the fetch unit cannot read
+    produces undefined attribute values, i.e. silently wrong geometry; failing pipeline creation
+    with the offending location named is the far cheaper outcome. */
+
+static bool
+vk_vertex_format_supported( VkFormat fmt )
+{
+    VkFormatProperties props = { 0 };
+    vkGetPhysicalDeviceFormatProperties( vk.physical_device, fmt, &props );
+    return ( props.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT ) != 0;
 }
 
 static bool
@@ -187,6 +204,16 @@ vk_pipeline_create( const rhi_pipeline_desc_t* desc )
             vtx_attribs[ i ].location = desc->attribs[ i ].location;
             vtx_attribs[ i ].offset   = desc->attribs[ i ].offset;
             vtx_attribs[ i ].format   = rhi_vertex_format_to_vk( desc->attribs[ i ].format );
+
+            if ( !vk_vertex_format_supported( vtx_attribs[ i ].format ) )
+            {
+                LOG_ERROR( "pipeline_create: '%s' attrib at location %u uses rhi format %u "
+                           "(vkfmt %u), which this device cannot fetch from a vertex buffer",
+                           desc->debug_name ? desc->debug_name : "(unnamed)",
+                           desc->attribs[ i ].location, ( u32 )desc->attribs[ i ].format,
+                           ( u32 )vtx_attribs[ i ].format );
+                return ( rhi_pipeline_t ){ RHI_NULL_HANDLE };
+            }
         }
 
         /* Every reflected shader input must be fed; extra attributes are legal and ignored. */

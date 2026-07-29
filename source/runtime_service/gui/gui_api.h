@@ -582,6 +582,29 @@ typedef struct gui_api_s
     void ( *draw_set_rounding )( f32 r );
     f32  ( *draw_rounding     )( void );
 
+    /* Ambient TEXT EDGE -- a second colour painted OUTSIDE the glyph boundary, giving outlined and
+       drop-shadowed text.  Slate spends a whole extra vertex field (SecondaryColor) on this; here
+       it is a packed word on the text command, because once a glyph is a distance field the outline
+       is not a second copy of the run -- it is the SAME quad, the same batch and the same texture
+       sample, with the fill composited over a band widened by `width` pixels.  Nothing about the
+       geometry changes, so an outline is affordable on body text, not just on titles.
+
+       SDF fonts ONLY (a .orb_font baked with a spread): a coverage glyph has no signed distance to
+       widen and ignores this.  Useful width is bounded by the baked spread, past which the field is
+       flat and the outline stops growing rather than tearing.  A width of 0 clears it.
+
+       Ambient like the radius above, and saved/restored the same way -- but through the RAW pair,
+       since re-packing a width and a colour would re-quantize both on each nesting level:
+
+           u32 save = gui()->draw_text_edge();
+           gui()->draw_set_text_edge( 2.0f, 0xFF000000u );   // 2 px black outline
+           gui()->draw_text( x, y, 0xFFFFFFFFu, "Title" );
+           gui()->draw_set_text_edge_raw( save ); */
+
+    void ( *draw_set_text_edge     )( f32 width, u32 abgr );
+    u32  ( *draw_text_edge         )( void );
+    void ( *draw_set_text_edge_raw )( u32 edge );
+
     /* Font atlas access -- the bindless index + pixel size backing a loaded font id, for previewing
        its live GPU atlas through image_texture / draw_texture_in above (0 / {0,0} if empty). */
     u32        ( *font_atlas_idx  )( u32 font_id );

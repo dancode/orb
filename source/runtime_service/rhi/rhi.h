@@ -281,16 +281,35 @@ typedef enum rhi_compare_op_e
 
 } rhi_compare_op_t;
 
+/*  Vertex attribute formats -- how bytes in the vertex buffer are laid out, NOT how the shader
+    reads them.  The fetch unit widens every normalized and half format to 32-bit float on the
+    way in, so a shader always declares a plain float input and never learns the attribute was
+    packed.  That is the whole point: packing shrinks bandwidth without touching shader source.
+
+    A name carries the component WIDTH whenever it is not 32 bits (UNORM8X4, UNORM16X2), so a
+    packed format can never be misread as a wide one.
+
+    Two caveats on the packed formats:
+      - They are mandatory vertex-buffer formats per the Vulkan spec, but the backend asks the
+        device anyway and refuses the pipeline rather than fetching garbage on a driver that
+        disagrees.
+      - They only reach the GPU through a hand-authored attrib list.  The layout DERIVED from
+        shader reflection (attrib_count == 0) can only ever be the unpacked 32-bit reading,
+        because reflection describes the shader side, which is float either way. */
+
 typedef enum rhi_vertex_format_e
 {
-    RHI_VERTEX_FORMAT_FLOAT   = 0,
-    RHI_VERTEX_FORMAT_FLOAT2  = 1,
-    RHI_VERTEX_FORMAT_FLOAT3  = 2,
-    RHI_VERTEX_FORMAT_FLOAT4  = 3,
-    RHI_VERTEX_FORMAT_UINT    = 4,
-    RHI_VERTEX_FORMAT_UINT2   = 5,
-    RHI_VERTEX_FORMAT_UINT4   = 6,
-    RHI_VERTEX_FORMAT_UNORM4  = 7,      /* packed 8-bit RGBA normalized */
+    RHI_VERTEX_FORMAT_FLOAT     = 0,    /*  4 B  -> float                        */
+    RHI_VERTEX_FORMAT_FLOAT2    = 1,    /*  8 B  -> float2                       */
+    RHI_VERTEX_FORMAT_FLOAT3    = 2,    /* 12 B  -> float3                       */
+    RHI_VERTEX_FORMAT_FLOAT4    = 3,    /* 16 B  -> float4                       */
+    RHI_VERTEX_FORMAT_UINT      = 4,    /*  4 B  -> uint                         */
+    RHI_VERTEX_FORMAT_UINT2     = 5,    /*  8 B  -> uint2                        */
+    RHI_VERTEX_FORMAT_UINT4     = 6,    /* 16 B  -> uint4                        */
+    RHI_VERTEX_FORMAT_UNORM8X4  = 7,    /*  4 B  -> float4 in [0,1]  packed RGBA */
+    RHI_VERTEX_FORMAT_HALF2     = 8,    /*  4 B  -> float2           16-bit pair */
+    RHI_VERTEX_FORMAT_HALF4     = 9,    /*  8 B  -> float4                       */
+    RHI_VERTEX_FORMAT_UNORM16X2 = 10,   /*  4 B  -> float2 in [0,1]  packed UV   */
 
 } rhi_vertex_format_t;
 

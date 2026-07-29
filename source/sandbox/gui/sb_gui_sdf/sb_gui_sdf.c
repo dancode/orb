@@ -19,6 +19,10 @@
            Every one is a different scale and a different angle, and they are still one batch.
         4  THE FIELD.  The atlas as a picture, with the numbers -- what a distance field costs in
            texels, which is the one place it is genuinely more expensive than a bitmap.
+        5  THE EDGE.  An outline and a drop shadow, from the SAME quad as the fill -- the fragment
+           already holds a signed distance, so a second threshold on it is a second colour.  The
+           panel's point is the counter: toggling the outline moves neither the draw calls nor the
+           vertex count, where the usual offset-second-run costs both.
 
     The batch readout under the ladder is load-bearing, not decoration: it is what says these are
     not a special path.  Two fonts split it (a coverage atlas is NEAREST, a field atlas LINEAR, so
@@ -378,6 +382,86 @@ panel_field( void )
 }
 
 /*==============================================================================================
+    5  THE EDGE -- a second colour outside the glyph, from the same quad
+
+    The panel exists to make one number visible: the draw-call and vertex totals do not move when
+    the outline goes on.  A drop shadow drawn the usual way is the run emitted TWICE, offset, which
+    doubles the glyph quads and re-treads the whole text path; here the fragment already holds a
+    signed distance to the glyph edge, so "outline" is that same distance compared against a second
+    threshold.  One sample, one quad, one batch.
+
+    It is a DISTANCE-FIELD feature and the coverage side is drawn beside it to show why: a coverage
+    glyph has an alpha ramp, not a signed distance, so there is nothing to offset outward and the
+    setting is ignored rather than approximated.
+==============================================================================================*/
+
+static f32  s_edge_w   = 2.0f;
+static f32  s_edge_sc  = 2.2f;
+static bool s_edge_on  = true;
+
+static void
+panel_edge( void )
+{
+    gui()->separator_text( "5  the edge -- outline and shadow with no second pass" );
+
+    if ( s_font_sdf == 0 )
+        return;
+
+    gui()->checkbox( "outline", &s_edge_on );
+    gui()->slider_float( "width (px)", &s_edge_w, 0.0f, 8.0f );
+    gui()->slider_float( "scale", &s_edge_sc, 0.8f, 4.0f );
+
+    gui_rect_t cell = gui()->canvas( 220.0f );
+    gui()->draw_rect( cell.x, cell.y, cell.w, cell.h, PANEL );
+    gui()->push_clip( cell.x, cell.y, cell.w, cell.h );
+
+    /* The width is authored in glyph-space pixels, so it scales with the text -- an outline that
+       stayed 2 px while the run grew to 4x would read as a hairline. */
+    f32 w   = s_edge_on ? s_edge_w * s_edge_sc : 0.0f;
+    f32 x   = cell.x + 24.0f;
+    f32 row = cell.y + 46.0f;
+
+    gui()->font_use( s_font_sdf );
+
+    /* Three uses of the SAME mechanism: an outline that separates light text from a busy ground,
+       a heavier dark rim, and a coloured glow.  Only the packed word differs between them. */
+    static const struct { const char* label; u32 fill; u32 edge; } k_edge[] = {
+        { "Outlined",  GUI_COLOR( 0xF4, 0xEC, 0xDC, 0xFF ), GUI_COLOR( 0x00, 0x00, 0x00, 0xFF ) },
+        { "Heavy rim", GUI_COLOR( 0xFF, 0xC8, 0x40, 0xFF ), GUI_COLOR( 0x20, 0x10, 0x00, 0xFF ) },
+        { "Glow",      GUI_COLOR( 0xFF, 0xFF, 0xFF, 0xFF ), GUI_COLOR( 0x30, 0x90, 0xFF, 0xC0 ) },
+    };
+
+    for ( u32 i = 0; i < 3; ++i )
+    {
+        u32 save = gui()->draw_text_edge();
+        gui()->draw_set_text_edge( w, k_edge[ i ].edge );
+        gui()->draw_text_xf( x, row, k_edge[ i ].fill, k_edge[ i ].label, s_edge_sc, 0.0f );
+        gui()->draw_set_text_edge_raw( save );
+        row += 26.0f * s_edge_sc + 8.0f;
+    }
+
+    /* The coverage twin, with the identical setting applied -- it should look exactly as it does
+       with the outline off.  That is the ignore, not a bug. */
+    if ( s_font_cov )
+    {
+        u32 save = gui()->draw_text_edge();
+        gui()->font_use( s_font_cov );
+        gui()->draw_set_text_edge( w, GUI_COLOR( 0x00, 0x00, 0x00, 0xFF ) );
+        gui()->draw_text_xf( cell.x + cell.w * 0.55f, cell.y + 46.0f,
+                             GUI_COLOR( 0xF4, 0xEC, 0xDC, 0xFF ), "coverage", s_edge_sc, 0.0f );
+        gui()->draw_set_text_edge_raw( save );
+    }
+
+    gui()->font_use( 0 );
+    gui()->pop_clip();
+
+    gui_render_stats_t rs = gui()->render_stats();
+    gui()->textf( "%u draw calls   %u verts -- toggle the outline and watch neither move; a "
+                  "second offset run would add four verts per glyph",
+                  rs.draw_calls, rs.vert_count );
+}
+
+/*==============================================================================================
     Frame
 ==============================================================================================*/
 
@@ -398,6 +482,7 @@ build_frame( void )
         panel_ladder();
         panel_turn();
         panel_hud();
+        panel_edge();
         panel_field();
     }
     gui()->window_end();

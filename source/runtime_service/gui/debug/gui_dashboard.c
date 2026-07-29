@@ -74,7 +74,7 @@ gui_id_t g_dash_window_id = 0;
 #define DASH_COL_FIF_IDLE   GUI_COLOR( 0x40, 0x40, 0x48, 0xFF )
 #define DASH_COL_SPAN_VERT  GUI_COLOR( 0x66, 0xBB, 0xEE, 0xFF )
 #define DASH_COL_SPAN_IDX   GUI_COLOR( 0xBB, 0x88, 0xEE, 0xFF )
-#define DASH_COL_CUT_TEX    GUI_COLOR( 0xF0, 0xC0, 0x40, 0xFF )
+/* No CUT_TEX: a texture change stopped cutting batches when the texture moved into the vertex. */
 #define DASH_COL_CUT_CLIP   GUI_COLOR( 0xE0, 0x50, 0xE0, 0xFF )
 #define DASH_COL_CUT_FORCE  GUI_COLOR( 0xFF, 0xFF, 0xFF, 0xC0 )
 
@@ -464,19 +464,20 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
 
             if ( k > 0 )
             {
-                /* Why this command split from the previous one -- the batch-cut cause. */
+                /* Why this command split from the previous one -- the batch-cut cause.  Only two
+                   remain: the texture stopped cutting batches when it moved into the vertex
+                   (gui.h), so a split is a clip-rect change or a forced boundary. */
                 const dash_cmd_t* pc  = &sn->cmds[ sl->cmd_base + k - 1 ];
-                u32               cut = ( dc->tex_idx != pc->tex_idx ) ? DASH_COL_CUT_TEX
-                                      : ( dc->clip.x != pc->clip.x || dc->clip.y != pc->clip.y
+                u32               cut = ( dc->clip.x != pc->clip.x || dc->clip.y != pc->clip.y
                                        || dc->clip.w != pc->clip.w || dc->clip.h != pc->clip.h )
                                                                        ? DASH_COL_CUT_CLIP
                                                                        : DASH_COL_CUT_FORCE;
                 gui_draw_rect( bx - 2.0f, y + 1.0f, 1.0f, row_h - 3.0f, cut );
             }
 
-            u32 bcol = ( dc->tex_idx == sn->font_atlas )
-                     ? ( col | 0xFF000000u )
-                     : GUI_COLOR( 0x50, 0xC0, 0xB0, 0xFF );   /* icon/other atlas */
+            /* One colour per batch: a batch can now MIX atlases, so "which texture is this" is no
+               longer a property of the bar -- it belongs to the individual vertices inside it. */
+            u32 bcol = col | 0xFF000000u;
             gui_rect_t bar = { bx, y + 2.0f, bw, row_h - 5.0f };
             gui_draw_rect( bar.x, bar.y, bar.w, bar.h, bcol );
 
@@ -486,7 +487,7 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
                 {
                     gui_stack();
                     gui_textf( "draw %u of %s", k, dash_name( sl->win, nb, sizeof( nb ) ) );
-                    gui_textf( "%u indices (%u tris)  tex %u", dc->elem_count,
+                    gui_textf( "%u indices (%u tris)  first tex %u", dc->elem_count,
                                dc->elem_count / 3u, dc->tex_idx );
                     gui_textf( "clip %.0f,%.0f  %.0fx%.0f", dc->clip.x, dc->clip.y,
                                dc->clip.w, dc->clip.h );

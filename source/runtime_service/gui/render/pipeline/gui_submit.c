@@ -36,14 +36,19 @@
 typedef struct
 {
     f32 mvp[ 16 ];      // column-major ortho matrix       64 bytes
-    u32 tex_idx;        // bindless texture slot            4 bytes
-    u32 samp_idx;       // bindless sampler slot            4 bytes
+    u32 samp_point;     // bindless sampler: NEAREST        4 bytes
+    u32 samp_image;     // bindless sampler: LINEAR         4 bytes
     u32 dbg_flat;       // debug: 1 = flat color (no atlas) 4 bytes
     u32 dbg_tint;       // debug: packed RGBA8 batch tint   4 bytes
-    u32 tex_mode;       // gui_tex_mode_t sampling model    4 bytes
     f32 time;           // frame clock, wrapped seconds     4 bytes
 
-} gui_push_t;         // total 88 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;         // total 84 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+
+/*  The texture and its sampling model USED to live here, one pair per draw call, and that is
+    exactly what forced a draw call per texture.  They moved into the vertex (gui.h): the fragment
+    reads the slot from the vertex and picks between the two SAMPLERS below by model, so what
+    remains in this block is per-FRAME state only.  In normal rendering nothing in the tail changes
+    across a whole flush -- the redundancy filter below pushes it once and then goes quiet.  */
 
 /*  The block SPLITS at the matrix.  The mvp is 64 of those 88 bytes and is constant for a whole
     flush -- it depends only on the surface size -- so re-sending it with every draw call spent
@@ -58,8 +63,8 @@ typedef struct
     Derived with offsetof rather than spelled 64/24: the struct is free to be reordered pre-ship
     (CLAUDE.md), and the assert below is what makes that safe -- the split is only valid while the
     mvp is first and the tail is everything after it.  */
-#define GUI_PUSH_TAIL_OFF   ( (u32)offsetof( gui_push_t, tex_idx ) )
-#define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, tex_idx ) ) )
+#define GUI_PUSH_TAIL_OFF   ( (u32)offsetof( gui_push_t, samp_point ) )
+#define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, samp_point ) ) )
 
 ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
                    "the mvp must lead gui_push_t -- the per-draw push writes everything after it" );
@@ -265,16 +270,33 @@ render_init( void )
         }
     }
 
-    // Vertex layout: float2 pos @0, float2 uv @8, UNORM4 color @16, float2 fx coord @20,
-    // UINT fx word @28, stride=32.  Locations 3/4 are the effect band (gui.h): every primitive
-    // that is not an SDF surface leaves the word 0, and the fragment tests that first.
-    rhi_vertex_attrib_t attribs[ 5 ] = {
-        { .binding = 0, .location = 0, .offset =  0, .format = RHI_VERTEX_FORMAT_FLOAT2 },
-        { .binding = 0, .location = 1, .offset =  8, .format = RHI_VERTEX_FORMAT_FLOAT2 },
-        { .binding = 0, .location = 2, .offset = 16, .format = RHI_VERTEX_FORMAT_UNORM4 },
-        { .binding = 0, .location = 3, .offset = 20, .format = RHI_VERTEX_FORMAT_FLOAT2 },
-        { .binding = 0, .location = 4, .offset = 28, .format = RHI_VERTEX_FORMAT_UINT   },
+    // Vertex layout: FLOAT2 pos @0, UNORM16X2 uv @8, UNORM8X4 color @12, HALF2 fx coord @16,
+    // UINT fx word @20, UINT tex word @24, stride=28.  Locations 3/4 are the effect band (gui.h):
+    // every primitive that is not an SDF surface leaves the word 0, and the fragment tests that
+    // first.  Location 5 is the sampling model + bindless slot, which rides the vertex so that a
+    // texture change cannot open a draw call.
+    //
+    // FOUR of the six are packed formats, and the shaders declare all four as plain floats: vertex
+    // fetch widens normalized and half attributes on the way in, so the packing is invisible above
+    // this line.  It is validated, not assumed -- pipeline_create checks every attribute against
+    // the reflected shader input for numeric class and component count, and rejects the pipeline
+    // (rather than fetching garbage) if the device cannot read one of these formats at all.
+    rhi_vertex_attrib_t attribs[ 6 ] = {
+        { .binding = 0, .location = 0, .offset =  0, .format = RHI_VERTEX_FORMAT_FLOAT2     },
+        { .binding = 0, .location = 1, .offset =  8, .format = RHI_VERTEX_FORMAT_UNORM16X2  },
+        { .binding = 0, .location = 2, .offset = 12, .format = RHI_VERTEX_FORMAT_UNORM8X4   },
+        { .binding = 0, .location = 3, .offset = 16, .format = RHI_VERTEX_FORMAT_HALF2      },
+        { .binding = 0, .location = 4, .offset = 20, .format = RHI_VERTEX_FORMAT_UINT       },
+        { .binding = 0, .location = 5, .offset = 24, .format = RHI_VERTEX_FORMAT_UINT       },
     };
+
+    /* The layout above is spelled in literal offsets, so pin it to the struct it must mirror --
+       a field inserted into gui_draw_vert_t would otherwise shift every attribute silently. */
+    ORB_STATIC_ASSERT( sizeof( gui_draw_vert_t ) == 28, "gui vertex layout is stated in literal offsets" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, uv  ) ==  8, "uv attribute offset drifted" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, fxc ) == 16, "fx coord attribute offset drifted" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, fx  ) == 20, "fx attribute offset drifted" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, tex ) == 24, "tex attribute offset drifted" );
 
     // Alpha blend: out = src_rgb*src_a + dst_rgb*(1-src_a).
     rhi_color_target_t color_target = {
@@ -294,8 +316,9 @@ render_init( void )
     rhi_pipeline_desc_t pdesc = {
         .vert               = vert,
         .frag               = frag,
-        .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ], attribs[ 3 ], attribs[ 4 ] },
-        .attrib_count       = 5,
+        .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ],
+                                attribs[ 3 ], attribs[ 4 ], attribs[ 5 ] },
+        .attrib_count       = 6,
         .vertex_stride      = sizeof( gui_draw_vert_t ),
         .cull               = RHI_CULL_NONE,
         .polygon_mode       = RHI_POLYGON_FILL,
@@ -595,7 +618,14 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
     // Ortho matrix: pixel [0,w]x[0,h] -> NDC [-1,+1]x[-1,+1].
     gui_push_t push;
     render_ortho( push.mvp, (f32)win_w, (f32)win_h );
-    push.samp_idx = s_render.font_sampler_idx;
+
+    /* Both samplers travel every flush and the FRAGMENT picks between them per vertex, by sampling
+       model.  Coverage is the one model that must stay point-sampled -- a filtered glyph atlas
+       stops being crisp (see the motion-snap revert) -- and everything else filters.  Falls back to
+       the point sampler if the bilinear one failed to create. */
+    push.samp_point = s_render.font_sampler_idx;
+    push.samp_image = s_render.image_sampler_idx ? s_render.image_sampler_idx
+                                                 : s_render.font_sampler_idx;
 
     /* Debug render-mode push state.  dbg_flat makes the fragment bypass the atlas and emit a flat
        color: WIREFRAME keeps each window's vertex color (tint 0), BATCH overrides it per draw call
@@ -683,16 +713,6 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
                 ++s_render.state_scissors;
             }
 
-            push.tex_idx  = gui_tex_index( dc->tex_idx );
-            push.tex_mode = (u32)gui_tex_mode( dc->tex_idx );
-            /* The sampler is DERIVED from the model, never carried: COVERAGE is the one model that
-               must stay point-sampled (a filtered glyph atlas stops being crisp -- see the motion-
-               snap revert), and everything else filters.  Testing "not COVERAGE" rather than "is
-               RGBA" is deliberate: a distance-field model is coverage that FILTERS, so it lands on
-               the right side of this line the day it exists without touching it.  Falls back to the
-               point sampler if the bilinear one failed to create. */
-            push.samp_idx = ( push.tex_mode != (u32)GUI_TEX_COVERAGE && s_render.image_sampler_idx )
-                          ? s_render.image_sampler_idx : s_render.font_sampler_idx;
             if ( batch_view )
                 push.dbg_tint = render_batch_debug_color( draw_calls );
 

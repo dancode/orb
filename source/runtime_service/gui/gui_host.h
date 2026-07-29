@@ -144,6 +144,11 @@ void gui_draw_brush( gui_rect_t r, const gui_brush_t* brush );
 void gui_draw_set_rounding( f32 r );
 f32  gui_draw_rounding( void );
 
+/* ambient second colour outside the glyph edge -- outlined / shadowed SDF text from one quad */
+void gui_draw_set_text_edge( f32 width, u32 abgr );
+u32  gui_draw_text_edge( void );
+void gui_draw_set_text_edge_raw( u32 edge );
+
 /* font atlas access -- bindless index + pixel size for previewing a font's live GPU atlas */
 u32 gui_font_atlas_idx( u32 font_id );
 gui_vec2_t gui_font_atlas_size( u32 font_id );

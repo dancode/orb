@@ -5,18 +5,21 @@
 
 struct gui_pc_t
 {
-    float4x4 mvp;        // column-major pixel-space ortho (Vulkan clip space)
-    uint     tex_idx;    // bindless texture slot
-    uint     samp_idx;   // bindless sampler slot
-    uint     dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color
-    uint     dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
-    uint     tex_mode;   // sampling model (gui_tex_mode_t): 0 = R8 coverage, 1 = full RGBA image
-    float    time;       // effect-band frame clock, wrapped seconds (GUI_FX_TIME_WRAP)
+    float4x4 mvp;          // column-major pixel-space ortho (Vulkan clip space)
+    uint     samp_point;   // bindless sampler slot: NEAREST, for the coverage model
+    uint     samp_image;   // bindless sampler slot: LINEAR, for every model that filters
+    uint     dbg_flat;     // debug: 1 = ignore atlas coverage, output a flat color
+    uint     dbg_tint;     // debug: packed RGBA8 batch tint (0 = use vertex color)
+    float    time;         // effect-band frame clock, wrapped seconds (GUI_FX_TIME_WRAP)
 };
 [[vk::push_constant]] gui_pc_t pc;
 
 [[vk::binding( 0, 0 )]] Texture2D    u_textures[] : register( t0, space0 );
 [[vk::binding( 1, 0 )]] SamplerState u_samplers[] : register( s0, space0 );
+
+// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_MODE_MASK in gui.h -- keep the three in step.
+#define TEX_MODE_SHIFT  30u
+#define TEX_INDEX_MASK  0x3FFFFFFFu
 
 struct ps_in_t
 {
@@ -25,6 +28,7 @@ struct ps_in_t
     float2                  uv       : TEXCOORD0;
     float2                  fx_coord : TEXCOORD1;
     nointerpolation uint    fx       : TEXCOORD2;
+    nointerpolation uint    tex      : TEXCOORD3;
 };
 
 // The effect band (gui.h): coverage of the shape this fragment's vertex named, 1.0 when it named
@@ -47,7 +51,10 @@ struct ps_in_t
 float fx_coverage( float2 fx_coord, uint fx )
 {
     uint mode = fx & 0xFu;
-    if ( mode == 0u )
+    // 0 NONE, and the two modes that are not shapes: 4 TILE_U acted in the vertex stage, 5
+    // TEXT_EDGE acts on the COLOR in the SDF branch below.  All three contribute full coverage --
+    // the band names what the fragment does, and "nothing, here" is a legal answer.
+    if ( mode == 0u || mode >= 4u )
         return 1.0;
 
     float radius  = float( ( fx >>  4 ) & 0xFFFu ) * 0.125;
@@ -113,7 +120,18 @@ float4 main( ps_in_t i ) : SV_Target0
         return float4( i.color.rgb, 1.0 );    // wireframe keeps each window's own (linear) color
     }
 
-    float4 s   = u_textures[ pc.tex_idx ].Sample( u_samplers[ pc.samp_idx ], i.uv );
+    /* The texture and its sampling model arrive PER VERTEX (gui.h), so one draw call can mix a
+       coverage atlas, an SDF atlas and arbitrary RGBA images.  NonUniformResourceIndex is mandatory
+       here and not a formality: neighbouring primitives in a single draw now legitimately name
+       different descriptors, so the index is not wave-uniform and indexing without it is undefined.
+       The SAMPLER is derived from the model rather than carried -- coverage must stay point-sampled
+       (a filtered glyph atlas stops being crisp) and every other model filters.  Testing "not
+       COVERAGE" means a model added later lands on the filtering side without touching this. */
+    uint   tex_mode = i.tex >> TEX_MODE_SHIFT;
+    uint   tex_slot = i.tex & TEX_INDEX_MASK;
+    uint   samp     = ( tex_mode == 0u ) ? pc.samp_point : pc.samp_image;
+    float4 s        = u_textures[ NonUniformResourceIndex( tex_slot ) ]
+                          .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], i.uv );
     float  cov = fx_coverage( i.fx_coord, i.fx );
 
     // GUI_TEX_RGBA -- full-RGBA image (scene viewport / arbitrary bindless texture): the texel IS
@@ -123,7 +141,7 @@ float4 main( ps_in_t i ) : SV_Target0
     // light and the product means something.
     // Compared against the exact model rather than "non-zero" so a model added later falls through
     // to the coverage path only if that is what it actually wants.
-    if ( pc.tex_mode == 1u )
+    if ( tex_mode == 1u )
         return float4( s.rgb * i.color.rgb, s.a * i.color.a * cov );
 
     // GUI_TEX_SDF -- distance-field text.  The texel is not coverage: 128/255 is exactly ON the
@@ -135,11 +153,39 @@ float4 main( ps_in_t i ) : SV_Target0
     // carry the scale -- which is why an SDF font costs the vertex format nothing.
     // The max() guards the degenerate case: deep inside or far outside the field is flat, fwidth
     // is 0, and d/0 would be a NaN rather than the saturated 1 or 0 that is wanted there.
-    if ( pc.tex_mode == 2u )
+    if ( tex_mode == 2u )
     {
-        float d = s.r - ( 128.0 / 255.0 );
-        return float4( i.color.rgb,
-                       i.color.a * cov * clamp( d / max( fwidth( d ), 1e-6 ) + 0.5, 0.0, 1.0 ) );
+        float d    = s.r - ( 128.0 / 255.0 );
+        float dpx  = d / max( fwidth( d ), 1e-6 );        // signed distance to the edge, in PIXELS
+        float fill = clamp( dpx + 0.5, 0.0, 1.0 );
+
+        // GUI_FX_TEXT_EDGE -- a second colour outside the glyph boundary (Slate's SecondaryColor,
+        // without Slate's vertex field).  Because dpx is already a pixel distance, "outline" is
+        // just the same threshold moved out by `width`: one extra clamp on a number this branch had
+        // to compute anyway, from the ONE texture sample it had already taken.  No second quad, no
+        // offset copy of the run, no batch split -- which is what makes it affordable on body text.
+        if ( ( i.fx & 0xFu ) == 5u )
+        {
+            float wpx = float( ( i.fx >>  4 ) & 0xFFu ) * 0.125;
+            float ea  = float( ( i.fx >> 27 ) & 0x1Fu ) / 31.0;
+            // The edge colour is authored sRGB and rides the effect word, so like the debug tint it
+            // never passed through the vertex stage and is decoded here.  That cost lands only on
+            // outlined glyphs, which is why it is not hoisted.
+            float3 ergb = srgb_to_linear( float3( float( ( i.fx >> 12 ) & 0x1Fu ),
+                                                  float( ( i.fx >> 17 ) & 0x1Fu ),
+                                                  float( ( i.fx >> 22 ) & 0x1Fu ) ) / 31.0 );
+
+            // Source-over of the fill onto the band, resolved analytically: the band contributes
+            // only where the fill does not (1 - fill), so the seam between them is antialiased by
+            // the same coverage that antialiases the glyph, and the two never double-darken.
+            float outer = clamp( dpx + wpx + 0.5, 0.0, 1.0 );
+            float af    = i.color.a * fill;
+            float ao    = ea * outer * ( 1.0 - fill );
+            float at    = af + ao;
+            return float4( ( i.color.rgb * af + ergb * ao ) / max( at, 1e-6 ), at * cov );
+        }
+
+        return float4( i.color.rgb, i.color.a * cov * fill );
     }
 
     // i.color.rgb is already linear light; alpha is coverage, which was linear all along.  s.r is

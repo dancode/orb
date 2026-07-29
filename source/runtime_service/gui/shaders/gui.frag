@@ -6,11 +6,10 @@ layout(set = 0, binding = 1) uniform sampler   u_samplers[];
 
 layout(push_constant) uniform PC {
     mat4 mvp;
-    uint tex_idx;
-    uint samp_idx;
+    uint samp_point;  // bindless sampler slot: NEAREST, for the coverage model
+    uint samp_image;  // bindless sampler slot: LINEAR, for every model that filters
     uint dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color (wireframe / batch view)
     uint dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
-    uint tex_mode;   // sampling model (gui_tex_mode_t): 0 = R8 coverage, 1 = full RGBA image
     float time;      // effect-band frame clock, seconds wrapped to GUI_FX_TIME_WRAP (1024)
 } pc;
 
@@ -18,7 +17,12 @@ layout(location = 0) in  vec4 v_color;
 layout(location = 1) in  vec2 v_uv;
 layout(location = 2) in  vec2 v_fx_coord;
 layout(location = 3) flat in uint v_fx;
+layout(location = 4) flat in uint v_tex;   // sampling model (top 2 bits) | bindless slot
 layout(location = 0) out vec4 out_color;
+
+// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_MODE_MASK in gui.h -- keep the three in step.
+#define TEX_MODE_SHIFT  30u
+#define TEX_INDEX_MASK  0x3FFFFFFFu
 
 // v_color arrives ALREADY LINEAR -- the vertex stage decodes it (see gui.vert), because it is a
 // per-vertex constant and decoding it per fragment spent three pow() on every pixel of the UI.
@@ -56,7 +60,10 @@ vec3 srgb_to_linear( vec3 c )
 float fx_coverage()
 {
     uint mode = v_fx & 0xFu;
-    if ( mode == 0u )
+    // 0 NONE, and the two modes that are not shapes: 4 TILE_U acted in the vertex stage, 5
+    // TEXT_EDGE acts on the COLOR in the SDF branch below.  All three contribute full coverage --
+    // the band names what the fragment does, and "nothing, here" is a legal answer.
+    if ( mode == 0u || mode >= 4u )
         return 1.0;
 
     float radius  = float( ( v_fx >>  4 ) & 0xFFFu ) * 0.125;
@@ -111,7 +118,18 @@ void main()
         return;
     }
 
-    vec4  s   = texture( sampler2D( u_textures[pc.tex_idx], u_samplers[pc.samp_idx] ), v_uv );
+    /* The texture and its sampling model arrive PER VERTEX (gui.h), so one draw call can mix a
+       coverage atlas, an SDF atlas and arbitrary RGBA images.  nonuniformEXT is mandatory here and
+       not a formality: neighbouring primitives in a single draw now legitimately name different
+       descriptors, so the index is not wave-uniform and indexing without it is undefined.
+       The SAMPLER is derived from the model rather than carried -- coverage must stay point-sampled
+       (a filtered glyph atlas stops being crisp) and every other model filters.  Testing "not
+       COVERAGE" means a model added later lands on the filtering side without touching this. */
+    uint  tex_mode = v_tex >> TEX_MODE_SHIFT;
+    uint  tex_slot = v_tex & TEX_INDEX_MASK;
+    uint  samp     = ( tex_mode == 0u ) ? pc.samp_point : pc.samp_image;
+    vec4  s        = texture( sampler2D( u_textures[nonuniformEXT( tex_slot )],
+                                         u_samplers[nonuniformEXT( samp )] ), v_uv );
     float cov = fx_coverage();
 
     // GUI_TEX_RGBA -- full-RGBA image (scene viewport / arbitrary bindless texture): the texel IS
@@ -121,7 +139,7 @@ void main()
     // light and the product means something.
     // Compared against the exact model rather than "non-zero" so a model added later falls through
     // to the coverage path only if that is what it actually wants.
-    if ( pc.tex_mode == 1u )
+    if ( tex_mode == 1u )
     {
         out_color = vec4( s.rgb * v_color.rgb, s.a * v_color.a * cov );
         return;
@@ -136,11 +154,40 @@ void main()
     // carry the scale -- which is why an SDF font costs the vertex format nothing.
     // The max() guards the degenerate case: deep inside or far outside the field is flat, fwidth
     // is 0, and d/0 would be a NaN rather than the saturated 1 or 0 that is wanted there.
-    if ( pc.tex_mode == 2u )
+    if ( tex_mode == 2u )
     {
-        float d = s.r - ( 128.0 / 255.0 );
-        out_color = vec4( v_color.rgb,
-                          v_color.a * cov * clamp( d / max( fwidth( d ), 1e-6 ) + 0.5, 0.0, 1.0 ) );
+        float d    = s.r - ( 128.0 / 255.0 );
+        float dpx  = d / max( fwidth( d ), 1e-6 );        // signed distance to the edge, in PIXELS
+        float fill = clamp( dpx + 0.5, 0.0, 1.0 );
+
+        // GUI_FX_TEXT_EDGE -- a second colour outside the glyph boundary (Slate's SecondaryColor,
+        // without Slate's vertex field).  Because dpx is already a pixel distance, "outline" is
+        // just the same threshold moved out by `width`: one extra clamp on a number this branch had
+        // to compute anyway, from the ONE texture sample it had already taken.  No second quad, no
+        // offset copy of the run, no batch split -- which is what makes it affordable on body text.
+        if ( ( v_fx & 0xFu ) == 5u )
+        {
+            float wpx = float( ( v_fx >>  4 ) & 0xFFu ) * 0.125;
+            float ea  = float( ( v_fx >> 27 ) & 0x1Fu ) / 31.0;
+            // The edge colour is authored sRGB and rides the effect word, so like the debug tint it
+            // never passed through the vertex stage and is decoded here.  That cost lands only on
+            // outlined glyphs, which is why it is not hoisted.
+            vec3  ergb = srgb_to_linear( vec3( float( ( v_fx >> 12 ) & 0x1Fu ),
+                                               float( ( v_fx >> 17 ) & 0x1Fu ),
+                                               float( ( v_fx >> 22 ) & 0x1Fu ) ) / 31.0 );
+
+            // Source-over of the fill onto the band, resolved analytically: the band contributes
+            // only where the fill does not (1 - fill), so the seam between them is antialiased by
+            // the same coverage that antialiases the glyph, and the two never double-darken.
+            float outer = clamp( dpx + wpx + 0.5, 0.0, 1.0 );
+            float af    = v_color.a * fill;
+            float ao    = ea * outer * ( 1.0 - fill );
+            float at    = af + ao;
+            out_color   = vec4( ( v_color.rgb * af + ergb * ao ) / max( at, 1e-6 ), at * cov );
+            return;
+        }
+
+        out_color = vec4( v_color.rgb, v_color.a * cov * fill );
         return;
     }
 

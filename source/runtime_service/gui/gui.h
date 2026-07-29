@@ -1430,22 +1430,65 @@ typedef enum
     Mode 0 (GUI_FX_NONE) is what every other primitive writes, and the fragment tests it first:
     text, lines, sprites and square fills pay one compare and are byte-for-byte unchanged.
 
-    Vertex attribute layout (matches the gui pipeline), 32 bytes, single interleaved binding:
-        location 0 : float2  (x, y)       offset  0   -- pixel-space position
-        location 1 : float2  (u, v)       offset  8   -- texture UV [0..1]
-        location 2 : UNORM4  (abgr u32)   offset 16   -- packed color, R8G8B8A8_UNORM
-        location 3 : float2  (ex, ey)     offset 20   -- effect coordinate (see below)
-        location 4 : UINT    (fx u32)     offset 28   -- packed effect word (flat)
+    Vertex attribute layout (matches the gui pipeline), 28 bytes, single interleaved binding:
+        location 0 : FLOAT2     (x, y)      offset  0   -- pixel-space position
+        location 1 : UNORM16X2  (uv u32)    offset  8   -- texture UV, [0,1] at 1/65535
+        location 2 : UNORM8X4   (abgr u32)  offset 12   -- packed color, R8G8B8A8_UNORM
+        location 3 : HALF2      (fxc u32)   offset 16   -- effect coordinate (see below)
+        location 4 : UINT       (fx u32)    offset 20   -- packed effect word (flat)
+        location 5 : UINT       (tex u32)   offset 24   -- sampling model + bindless slot (flat)
+
+    FOUR of those six are packed, and the shader is unaware of it: the fetch unit widens every
+    normalized and half format to float, so the vertex stage still declares vec2 / vec4 and reads
+    exactly what it read when all six were 32-bit.  The vertex went 36 -> 28 bytes (-22%) for no
+    shader change and no precision anyone can see -- the two decisions worth recording are WHY
+    each packing is safe, because both have a failure mode that is invisible until it is not:
+
+      uv as UNORM16X2 -- 1/65535, against a largest atlas of 1024 px, is 64 steps per texel, so a
+        glyph's sample lands where it did.  What it cannot represent is U OUTSIDE [0,1], and one
+        primitive wanted that: a dashed line spans U 0..len/period and lets the sampler's REPEAT
+        tile the atlas stipple row.  That is what GUI_FX_TILE_U exists for -- the repeat count moved
+        into the effect word and the VERTEX stage multiplies, so the stored UV is back inside [0,1]
+        and the interpolated one is unchanged.  Any future primitive that wants to tile does the
+        same; storing U > 1 now silently CLAMPS.
+
+      fxc as HALF2 -- half is only ~3 decimal digits, and the effect coordinate reaches hundreds of
+        pixels at the centre of a large panel, where its ulp is half a pixel.  It is safe anyway,
+        and for a reason specific to how the field is used: an SDF only matters near its ZERO
+        crossing, and linear interpolation weights each vertex by proximity, so the error there is
+        dominated by the NEAR vertex -- whose value is small (radius + feather, tens of pixels) and
+        whose ulp is therefore ~0.008 px.  The far vertex's half-pixel error arrives multiplied by
+        a barycentric weight of a few percent.  Measured at the boundary of a 1600 px panel the
+        total is under 0.02 px.  A uniform fixed-point encoding would have been WORSE (0.06 px
+        everywhere) despite sounding safer: what matters is precision where the field is zero, not
+        precision on average.
+
+    THE TEXTURE TRAVELS PER VERTEX, for the same reason the effect word does: so it cannot split
+    a batch.  It was a push constant until the atlas forked -- coverage, SDF and sprite art are a
+    pixel format and a sampler apart, so they cannot share a texture, and while the texture was
+    per-DRAW that meant they could not share a draw call either.  A window's background fill, its
+    SDF label and an icon were three draws that alternated with z-order.  Now the only thing that
+    opens a new draw call is a clip-rect change.
+
+    This is the one place the design leans on being bindless.  Slate must batch by texture because
+    it binds a descriptor per batch; we index a 2048-entry array, so the slot is just a number and
+    a number can live in a vertex.  The fragment indexes with nonuniformEXT since neighbouring
+    primitives in one draw now legitimately name different textures.
 ==============================================================================================*/
 
 /* What the fragment does with the effect coordinate.  Four bits, so the band has room to grow
    without touching the vertex again. */
 typedef enum
 {
-    GUI_FX_NONE  = 0,  /* no effect -- (ex, ey) and the parameters are ignored (the default) */
-    GUI_FX_BOX   = 1,  /* filled rounded box: coverage 1 inside the boundary, feathered across it */
-    GUI_FX_RING  = 2,  /* the same boundary as a BAND of `border` px lying INSIDE it             */
-    GUI_FX_PULSE = 3,  /* a BOX whose alpha breathes on pc.time -- the band's first clock reader */
+    GUI_FX_NONE      = 0,  /* no effect -- (ex, ey) and the parameters are ignored (the default) */
+    GUI_FX_BOX       = 1,  /* filled rounded box: coverage 1 inside the boundary, feathered across it */
+    GUI_FX_RING      = 2,  /* the same boundary as a BAND of `border` px lying INSIDE it             */
+    GUI_FX_PULSE     = 3,  /* a BOX whose alpha breathes on pc.time -- the band's first clock reader */
+
+    /* The two modes that are not SHAPES.  Both leave coverage at 1 and act somewhere else in the
+       pipeline -- proof the word is really "what the fragment does", not "which SDF to evaluate". */
+    GUI_FX_TILE_U    = 4,  /* VERTEX stage: multiply u by a repeat count (see GUI_FX_TILE_MAX)  */
+    GUI_FX_TEXT_EDGE = 5,  /* SDF text drawn with a second colour OUTSIDE the glyph boundary    */
 
 } gui_fx_mode_t;
 
@@ -1512,15 +1555,145 @@ gui_fx_pack_pulse( f32 radius, f32 feather, f32 rate, f32 depth )
     return (u32)GUI_FX_PULSE | ( r << 4 ) | ( f << 16 ) | ( hz << 25 ) | ( dp << 29 );
 }
 
+/* TILE_U spends the whole parameter field on one number: how many times the source U span repeats
+   across the primitive.  The stored UV then stays in [0,1] (which is all UNORM16X2 can hold) and
+   the VERTEX stage multiplies, so the value the fragment interpolates is exactly what a wide U
+   would have given -- the two ends are stored exactly, and everything between is a lerp either way.
+   24 bits at 1/16 covers any line on any display; the quantization is a sub-sixteenth of a period
+   of phase at the far end of a stipple, which has no correct value to begin with. */
+#define GUI_FX_TILE_MAX      1048575.9375f   /* 24 bits at 1/16 */
+
+/* TEXT_EDGE re-partitions the word the way PULSE did, and can spend ALL 28 bits because it is the
+   first mode whose SHAPE does not come from (ex, ey) -- an SDF glyph's boundary is in the texture,
+   so radius and feather have nothing to say.  What it buys is Slate's SecondaryColor without
+   Slate's vertex field: a second colour outside the glyph edge, from ONE quad and one draw.
+     width -- 8 bits at 1/8 px, 0..31.875.  Limited in practice by the SPREAD baked into the SDF
+              atlas (gui_font_t.sdf_range): the field saturates past it, so the outline simply
+              stops growing rather than tearing.  Scale the width with the text.
+     colour -- RGBA at 5 bits each.  Coarse on purpose, and it costs nothing where it is used:
+              black and white are exact, and an outline is a pixel or two wide, which is not enough
+              area to show a 1/32 step in a hue. */
+#define GUI_FX_EDGE_MAX      31.875f         /* 8 bits at 1/8 px */
+
+static inline u32
+gui_fx_pack_tile_u( f32 repeats )
+{
+    u32 n = (u32)( repeats * 16.0f + 0.5f ) & 0xFFFFFFu;
+    return (u32)GUI_FX_TILE_U | ( n << 4 );
+}
+
+/* abgr is the same R-in-the-low-byte word every other colour here uses (R8G8B8A8_UNORM order). */
+static inline u32
+gui_fx_pack_text_edge( f32 width, u32 abgr )
+{
+    u32 w = (u32)( width * 8.0f + 0.5f ) & 0xFFu;
+    u32 r = ( ( abgr       ) & 0xFFu ) >> 3;
+    u32 g = ( ( abgr >>  8 ) & 0xFFu ) >> 3;
+    u32 b = ( ( abgr >> 16 ) & 0xFFu ) >> 3;
+    u32 a = ( ( abgr >> 24 ) & 0xFFu ) >> 3;
+    return (u32)GUI_FX_TEXT_EDGE | ( w << 4 ) | ( r << 12 ) | ( g << 17 ) | ( b << 22 ) | ( a << 27 );
+}
+
+/*----------------------------------------------------------------------------------------------
+    The packed vertex, and the two constructors that are the ONLY supported way to build one.
+
+    Positional compound literals are what a struct of six scalars invites, and they are exactly
+    what this layout cannot survive: `{ x, y, u, v, abgr }` against the packed fields would put a
+    float U into a u32 UV slot -- a legal implicit conversion, so a warning at best and a silently
+    black quad at worst.  The constructors take the same floats the old literal did and do the
+    packing, so a call site reads unchanged and a WRONG one does not compile.
+
+    Note what they do NOT set: `tex` and `fx` stay 0 here on purpose.  Both are stamped by the
+    tessellator's single commit point (tess_verts_commit) from ambient state, which is what makes
+    them impossible to forget -- see the comment there.  Both are PRIMITIVE-constant (a shape has
+    one effect word, a glyph run has one outline, a quad has one texture) while the effect
+    COORDINATE is the only part of the band that varies per corner, which is why that is the one
+    thing a constructor still takes.
+----------------------------------------------------------------------------------------------*/
+
 typedef struct
 {
     f32 x, y;     // pixel position
-    f32 u, v;     // texture UV
+    u32 uv;       // texture UV, two unorm16 over [0,1] (gui_uv_pack)
     u32 abgr;     // packed color
-    f32 ex, ey;   // effect coordinate: |p| - c, shape-local pixels (GUI_FX_NONE ignores it)
+    u32 fxc;      // effect coordinate |p| - c as two halves (GUI_FX_NONE ignores it)
     u32 fx;       // packed effect word (gui_fx_pack); low nibble 0 = no effect
+    u32 tex;      // sampling model + bindless slot (GUI_TEX_MODE | index) -- see above
 
 } gui_draw_vert_t;
+
+/* IEEE binary32 -> binary16, round-half-UP (struct/hardware convention is half-to-even, so the two
+   differ by 1 ulp on an exact tie -- 2049 goes to 2050 here and 2048 there).  An exponent past the
+   half range clamps to the largest finite value with the sign kept, which is also where infinities
+   and NaN land; a mantissa carry at the very top of the range is deliberately allowed to ripple
+   into the exponent and produce inf, because that is the correctly rounded answer.
+
+   None of those edges are reachable from an effect coordinate -- these are pixel magnitudes in the
+   hundreds, so the live paths are the normal one and flush-to-subnormal near zero.  Verified
+   against Python's binary16 packing across the range and every boundary listed above. */
+static inline u16
+gui_f16_from_f32( f32 f )
+{
+    union { f32 f; u32 u; } in;
+    in.f = f;
+
+    u32 sign = ( in.u >> 16 ) & 0x8000u;
+    i32 exp  = (i32)( ( in.u >> 23 ) & 0xFFu ) - 127 + 15;
+    u32 man  = in.u & 0x7FFFFFu;
+
+    if ( exp >= 31 )                       /* overflow / inf / nan -> largest finite, sign kept */
+        return (u16)( sign | 0x7BFFu );
+
+    if ( exp <= 0 )                        /* below the normal range -> subnormal, or zero */
+    {
+        if ( exp < -10 )
+            return (u16)sign;
+        man |= 0x800000u;                  /* restore the implicit leading 1 */
+        u32 shift = (u32)( 14 - exp );     /* 14..24 */
+        u32 sub   = ( man >> shift ) + ( ( man >> ( shift - 1 ) ) & 1u );
+        return (u16)( sign | sub );
+    }
+
+    /* Normal.  The round-up carry is allowed to ripple into the exponent -- that is the correct
+       result when a mantissa of all ones rounds up, and it is why this is not masked. */
+    u32 h = sign | ( (u32)exp << 10 ) | ( man >> 13 );
+    return (u16)( h + ( ( man >> 12 ) & 1u ) );
+}
+
+/* UV -> two unorm16.  Clamped, because that is the only thing the format can do with an out-of-
+   range coordinate -- a caller that wants U past 1 asks for GUI_FX_TILE_U instead.
+
+   The assert is the point of this function: clamping is SILENT, and a primitive that quietly loses
+   its tiling renders as one stretched texel rather than as an error.  Debug catches the mistake at
+   the vertex that made it; release keeps the clamp, which at least stays inside the atlas. */
+static inline u32
+gui_uv_pack( f32 u, f32 v )
+{
+    ORB_ASSERT( u >= 0.0f && u <= 1.0f && v >= 0.0f && v <= 1.0f );
+    u = ( u < 0.0f ) ? 0.0f : ( ( u > 1.0f ) ? 1.0f : u );
+    v = ( v < 0.0f ) ? 0.0f : ( ( v > 1.0f ) ? 1.0f : v );
+    return (u32)( u * 65535.0f + 0.5f ) | ( (u32)( v * 65535.0f + 0.5f ) << 16 );
+}
+
+static inline u32
+gui_fxc_pack( f32 ex, f32 ey )
+{
+    return (u32)gui_f16_from_f32( ex ) | ( (u32)gui_f16_from_f32( ey ) << 16 );
+}
+
+/* A vertex with no effect -- what every primitive that is not an SDF surface writes. */
+static inline gui_draw_vert_t
+gui_vert( f32 x, f32 y, f32 u, f32 v, u32 abgr )
+{
+    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, 0u, 0u, 0u };
+}
+
+/* The same, carrying the per-corner effect coordinate.  The effect WORD is ambient (above). */
+static inline gui_draw_vert_t
+gui_vert_fxc( f32 x, f32 y, f32 u, f32 v, u32 abgr, f32 ex, f32 ey )
+{
+    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, gui_fxc_pack( ex, ey ), 0u, 0u };
+}
 
 /*==============================================================================================
     GUI_DRAW -- volatile widget callback
@@ -1610,9 +1783,10 @@ typedef enum
    along (render/resource/gui_res_atlas.h).
 
    It rides the tex_idx rather than taking a field of its own because it is a property of the
-   TEXTURE, not of the shape drawn with it, and because batching already splits on the full 32-bit
-   value -- two models can never merge into one draw call by accident, and no batch key had to grow
-   to say so.  The SAMPLER is then DERIVED from the mode at flush (gui_submit.c) and never carried
+   TEXTURE, not of the shape drawn with it -- so wherever the slot goes, the model goes with it for
+   free.  That is what let both of them move into the VERTEX (see gui_draw_vert_t) without widening
+   anything: one u32 carries the pair, and models now MIX freely inside one draw call rather than
+   being kept apart by it.  The SAMPLER is DERIVED from the mode in the fragment and never carried
    per command: coverage must stay point-sampled or glyphs stop being crisp, colour must filter or
    it blocks up the moment it is stretched.
 
@@ -1675,7 +1849,12 @@ typedef struct
            last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
            sentinel (clip_x0 = -GUI_TEXT_NO_CLIP, clip_x1 = +GUI_TEXT_NO_CLIP) means unclipped
            and takes the original whole-run fast path. */
-        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; } text;
+        /* edge is the ambient TEXT_EDGE word at emit time (0 = none): a second colour painted
+           outside the glyph boundary, resolved by the fragment from the SAME quad, so an outlined
+           or shadowed run costs no extra geometry, no second pass, and no batch split.  It rides
+           the command rather than being re-read at tessellation because the ambient can have moved
+           on by then -- a retained window re-tessellates long after its emit. */
+        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; u32 edge; } text;
         /* The same glyph run under a uniform SCALE and a ROTATION about (x, y) -- (x, y) is both
            the run's top-left in its own space and the pivot, so a caller places any other pivot by
            moving the origin.  rot is radians in screen space (the angle algebra above: 0 points
@@ -1687,7 +1866,7 @@ typedef struct
            rotation.  A separate type is what lets both of them skip a transformed run cleanly
            instead of measuring it wrong.  No clip window: the GPU scissor is its only clip.
            Nothing here is snapped to the pixel grid -- see tess_text_xf. */
-        struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr; } text_xf;
+        struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr; u32 edge; } text_xf;
         struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;
         struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
         struct { u32 pt_offset; u32 pt_count; f32 thickness;

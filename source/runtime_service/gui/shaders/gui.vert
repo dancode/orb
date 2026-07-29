@@ -2,19 +2,24 @@
 
 layout(push_constant) uniform PC {
     mat4 mvp;
-    uint tex_idx;
-    uint samp_idx;
+    uint samp_point;  // bindless sampler slot: NEAREST, for the coverage model
+    uint samp_image;  // bindless sampler slot: LINEAR, for every model that filters
     uint dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color (wireframe / batch view)
     uint dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
-    uint tex_mode;   // sampling model (gui_tex_mode_t): 0 = R8 coverage, 1 = full RGBA image
     float time;      // effect-band frame clock, seconds wrapped to GUI_FX_TIME_WRAP (1024)
 } pc;
 
+// FOUR of these six attributes are PACKED in memory (gui.h): uv is two unorm16, color is four
+// unorm8, and the effect coord is two halves.  None of that appears here, and that is the point --
+// vertex fetch widens normalized and half formats to 32-bit float before the shader sees them, so
+// the declarations below are what they were when every field was full width.  The vertex is 28
+// bytes instead of 36 for no shader change at all.
 layout(location = 0) in vec2 in_pos;
 layout(location = 1) in vec2 in_uv;
 layout(location = 2) in vec4 in_color;
 layout(location = 3) in vec2 in_fx_coord;   // effect coord: |p| - c, shape-local pixels
 layout(location = 4) in uint in_fx;         // packed effect word; low nibble 0 = no effect
+layout(location = 5) in uint in_tex;        // sampling model (top 2 bits) | bindless slot
 
 layout(location = 0) out vec4 v_color;
 layout(location = 1) out vec2 v_uv;
@@ -22,6 +27,8 @@ layout(location = 2) out vec2 v_fx_coord;
 // flat: the effect word names the SHAPE, which is constant over it -- interpolating a bit field
 // would blend a radius into a mode.  Nothing else in the band needs to travel per fragment.
 layout(location = 3) flat out uint v_fx;
+// flat for the same reason, and more sharply: this one is a descriptor index.
+layout(location = 4) flat out uint v_tex;
 
 // Decode an sRGB-encoded color to linear light.  UI colors are authored in sRGB (the values you
 // type as hex / pick in a color picker), but the swapchain is a _SRGB format, so the GPU blends in
@@ -52,7 +59,16 @@ void main()
     gl_Position = pc.mvp * vec4( in_pos, 0.0, 1.0 );
     // RGB linear, alpha untouched -- alpha is coverage, which is already a linear quantity.
     v_color    = vec4( srgb_to_linear( in_color.rgb ), in_color.a );
+
+    // GUI_FX_TILE_U: the stored U is normalized 0..1 (all UNORM16X2 can hold) and the repeat count
+    // rides the effect word.  Scaling HERE rather than in the fragment is what keeps it free: the
+    // hardware interpolates the scaled value exactly as it would have interpolated a wide U, so a
+    // dashed line is still one quad tiling the atlas stipple row under the sampler's REPEAT.
     v_uv       = in_uv;
+    if ( ( in_fx & 0xFu ) == 4u )
+        v_uv.x *= float( ( in_fx >> 4 ) & 0xFFFFFFu ) * 0.0625;
+
     v_fx_coord = in_fx_coord;
     v_fx       = in_fx;
+    v_tex      = in_tex;
 }

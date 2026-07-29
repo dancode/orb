@@ -31,7 +31,10 @@
 typedef struct
 {
     u32          elem_count; // number of indices to emit
-    u32          tex_idx;    // bindless texture slot
+    /* The texture of the command's FIRST primitive, kept for diagnostics only (the dashboard
+       tooltip).  It is no longer a batch key and no longer describes the whole command: the
+       texture rides the vertex now (gui.h, gui_draw_vert_t), so one command can span several. */
+    u32          tex_idx;    // first primitive's model|slot -- diagnostic, not a batch key
     gui_rect_t   clip_rect;  // scissor rect (pixels)
 
 } gui_gpu_cmd_t;
@@ -127,6 +130,11 @@ static struct
        edge instead of bleeding to the enclosing scissor (the self-fit rule at the glyph boundary). */
     f32 text_clip_x0;
     f32 text_clip_x1;
+
+    /* Ambient TEXT_EDGE word folded into every pushed text run; 0 (the default) is a plain run.
+       Stamped onto the command at push time rather than read at tessellation, because a retained
+       window re-tessellates long after the ambient has moved on. */
+    u32 text_edge;
 
 } s_draw;
 
@@ -254,6 +262,7 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.rounding     = 0.0f;            /* square until a seam sets the resolved radius */
     s_draw.text_clip_x0 = -GUI_TEXT_NO_CLIP;  /* unclipped until a seam sets a window */
     s_draw.text_clip_x1 =  GUI_TEXT_NO_CLIP;
+    s_draw.text_edge    = 0u;                 /* plain runs until a caller asks for an edge */
 
 #ifdef GUI_CMD_STEPPER
     s_draw.cur_owner = 0;   /* background/chrome until the first widget stamps */
@@ -596,6 +605,39 @@ draw_rounding( void )
 }
 
 /*==============================================================================================
+    Text edge -- the ambient second colour painted OUTSIDE the glyph boundary.
+
+    An outline and a drop shadow are the same thing to the fragment: widen the glyph's own distance
+    field by `width` pixels and fill the band that opens up.  So this costs one packed word on the
+    text command and nothing else -- no second run, no offset copy of the geometry, no extra draw.
+
+    It needs a DISTANCE FIELD to widen, so it applies to SDF fonts only (gui_font_t.sdf_range > 0);
+    a coverage font has no signed distance to offset and simply ignores the word.  Practical width
+    is bounded by the spread baked into the atlas, past which the field is flat and the outline
+    stops growing.  Set with a width of 0 to clear -- bracketed save/restore like draw_set_rounding.
+==============================================================================================*/
+
+void
+draw_set_text_edge( f32 width, u32 abgr )
+{
+    s_draw.text_edge = ( width > 0.0f ) ? gui_fx_pack_text_edge( width, abgr ) : 0u;
+}
+
+u32
+draw_text_edge( void )
+{
+    return s_draw.text_edge;
+}
+
+/* Restore a previously read word verbatim -- the save/restore twin.  Round-tripping through
+   draw_set_text_edge would re-quantize the width and the colour on every nesting level. */
+void
+draw_set_text_edge_raw( u32 edge )
+{
+    s_draw.text_edge = edge;
+}
+
+/*==============================================================================================
     Ambient text-clip window: a horizontal [x0, x1] pixel window that every subsequent
     draw_push_text / draw_push_text_n hard-clips to at the glyph level (straddling glyphs sliced
     with remapped U, interior glyphs whole, no scissor / no batch split).  A seam that draws text
@@ -699,6 +741,7 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &c->text.clip_x0, sizeof c->text.clip_x0 );
             h = fnv1a( h, &c->text.clip_x1, sizeof c->text.clip_x1 );
             h = fnv1a( h, &c->text.abgr,    sizeof c->text.abgr );
+            h = fnv1a( h, &c->text.edge,    sizeof c->text.edge );
             h = fnv1a( h, s_draw.text_pool + c->text.off, c->text.len );   /* content while L1-hot */
             break;
         /* Folds scale and rot, so a run that spins re-tessellates every frame it moves.  That is
@@ -711,6 +754,7 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &c->text_xf.scale, sizeof c->text_xf.scale );
             h = fnv1a( h, &c->text_xf.rot,   sizeof c->text_xf.rot );
             h = fnv1a( h, &c->text_xf.abgr,  sizeof c->text_xf.abgr );
+            h = fnv1a( h, &c->text_xf.edge,  sizeof c->text_xf.edge );
             h = fnv1a( h, s_draw.text_pool + c->text_xf.off, c->text_xf.len );
             break;
         case GUI_CMD_CIRCLE_FILLED: h = fnv1a( h, &c->circle, sizeof c->circle ); break;
@@ -1150,6 +1194,7 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     c->text.clip_x0 = clip_x0;
     c->text.clip_x1 = clip_x1;
     c->text.abgr    = draw_apply_alpha( abgr );
+    c->text.edge    = s_draw.text_edge;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );   /* text bytes are L1-hot here */
 }
 
@@ -1213,6 +1258,7 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
     c->text_xf.scale = scale;
     c->text_xf.rot   = rot;
     c->text_xf.abgr  = draw_apply_alpha( abgr );
+    c->text_xf.edge  = s_draw.text_edge;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 

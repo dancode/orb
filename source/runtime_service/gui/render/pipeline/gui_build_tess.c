@@ -58,6 +58,11 @@ static struct
 
     gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
     u32         cur_vp;     /* viewport baked from the current semantic command                    */
+    u32         cur_tex;    /* GUI_TEX_MODE | bindless slot stamped into every vertex committed --
+                               set by tess_ensure_gpu_cmd, applied by tess_verts_commit           */
+    u32         cur_fx;     /* packed effect word stamped into every vertex committed.  CLEARED at
+                               the top of each semantic command (tess_dispatch), so a primitive
+                               that wants one sets it and nothing can inherit it afterwards.      */
 
     /* per-slot tesellation context */
 
@@ -144,12 +149,17 @@ tess_reset( void )
 static bool
 tess_ensure_gpu_cmd( u32 tex_idx )
 {
+    /* The texture the vertices about to be written will CARRY (tess_verts_commit stamps it).  It
+       is recorded before the merge test because it is no longer part of it: the texture rides the
+       vertex now, so a texture change costs nothing and must not open a command.  Only the clip
+       rect and the viewport still cut a batch. */
+    s_tess.cur_tex = tex_idx;
+
     if ( s_tess.cmd_count > 0 && !s_tess.force_new_cmd )
     {
         const tess_gpu_cmd_t* prev = &s_tess.gpu_cmds[ s_tess.cmd_count - 1 ];
         const gui_gpu_cmd_t*  cur  = &prev->cmd;
         if ( prev->vp == s_tess.cur_vp
-          && cur->tex_idx       == tex_idx
           && cur->clip_rect.x   == s_tess.cur_clip.x
           && cur->clip_rect.y   == s_tess.cur_clip.y
           && cur->clip_rect.w   == s_tess.cur_clip.w
@@ -174,6 +184,29 @@ tess_ensure_gpu_cmd( u32 tex_idx )
     return true;
 }
 
+/* Take `n` vertices written at s_tess.verts[vert_count] into the buffer, stamping each with the
+   active texture and effect word.
+
+   EVERY vertex writer ends here -- this is the only place vert_count advances, which is what makes
+   those two words impossible to forget.  Both are applied from ambient state rather than passed in,
+   because both are constant over a primitive while only the position/uv/colour vary: cur_tex is set
+   by tess_ensure_gpu_cmd (which a writer must already have called to have a command to append to),
+   and cur_fx is cleared per semantic command and set by the few that want an effect.  So a new
+   primitive type gets both correct by construction; the alternative -- naming them in each compound
+   literal -- fails silently, since a missing trailing initializer is a legal zero, and zero means
+   "the empty bindless descriptor" for one and "no effect" for the other. */
+static void
+tess_verts_commit( u32 n )
+{
+    gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
+    for ( u32 i = 0; i < n; ++i )
+    {
+        v[ i ].tex = s_tess.cur_tex;
+        v[ i ].fx  = s_tess.cur_fx;
+    }
+    s_tess.vert_count += n;
+}
+
 /* Raw vertex/index reservation for stroke tessellation -- mirror of draw_prim_begin/commit. */
 static bool
 tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
@@ -196,7 +229,7 @@ tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
 static void
 tess_prim_commit( u32 nv, u32 ni )
 {
-    s_tess.vert_count += nv;
+    tess_verts_commit( nv );
     s_tess.idx_count  += ni;
     s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
 }
@@ -226,11 +259,11 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
-    v[ 0 ] = ( gui_draw_vert_t ){ x,     y,     u0, v0, abgr };
-    v[ 1 ] = ( gui_draw_vert_t ){ x + w, y,     u1, v0, abgr };
-    v[ 2 ] = ( gui_draw_vert_t ){ x + w, y + h, u1, v1, abgr };
-    v[ 3 ] = ( gui_draw_vert_t ){ x,     y + h, u0, v1, abgr };
-    s_tess.vert_count += 4;
+    v[ 0 ] = gui_vert( x,     y,     u0, v0, abgr );
+    v[ 1 ] = gui_vert( x + w, y,     u1, v0, abgr );
+    v[ 2 ] = gui_vert( x + w, y + h, u1, v1, abgr );
+    v[ 3 ] = gui_vert( x,     y + h, u0, v1, abgr );
+    tess_verts_commit( 4 );
 
     u16* idx = &s_tess.indices[ s_tess.idx_count ];
     idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
@@ -267,11 +300,11 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
-    v[ 0 ] = ( gui_draw_vert_t ){ x,     y,     wu, wv, c0 };
-    v[ 1 ] = ( gui_draw_vert_t ){ x + w, y,     wu, wv, c1 };
-    v[ 2 ] = ( gui_draw_vert_t ){ x + w, y + h, wu, wv, c2 };
-    v[ 3 ] = ( gui_draw_vert_t ){ x,     y + h, wu, wv, c3 };
-    s_tess.vert_count += 4;
+    v[ 0 ] = gui_vert( x,     y,     wu, wv, c0 );
+    v[ 1 ] = gui_vert( x + w, y,     wu, wv, c1 );
+    v[ 2 ] = gui_vert( x + w, y + h, wu, wv, c2 );
+    v[ 3 ] = gui_vert( x,     y + h, wu, wv, c3 );
+    tess_verts_commit( 4 );
 
     u16* idx = &s_tess.indices[ s_tess.idx_count ];
     idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
@@ -557,6 +590,7 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
     }
     if ( !tess_ensure_gpu_cmd( tex_idx ) )
         return;
+    s_tess.cur_fx = fx;      /* the shape's word, stamped onto all 16 (or 32) quadrant vertices */
 
     f32 ulo = ( u0 < u1 ) ? u0 : u1, uhi = ( u0 < u1 ) ? u1 : u0;
     f32 vlo = ( v0 < v1 ) ? v0 : v1, vhi = ( v0 < v1 ) ? v1 : v0;
@@ -587,7 +621,7 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
                 f32 tv = vhi > vlo ? v0 + ( v1 - v0 ) * ( py - y ) / h : v0;
                 if ( tu < ulo ) tu = ulo;  if ( tu > uhi ) tu = uhi;
                 if ( tv < vlo ) tv = vlo;  if ( tv > vhi ) tv = vhi;
-                v[ n * 4 + c ] = ( gui_draw_vert_t ){ px, py, tu, tv, abgr, ax - kx, ay - ky, fx };
+                v[ n * 4 + c ] = gui_vert_fxc( px, py, tu, tv, abgr, ax - kx, ay - ky );
             }
             u16 b = (u16)( base + n * 4 );
             idx[ n * 6 + 0 ] = b + 0; idx[ n * 6 + 1 ] = b + 1; idx[ n * 6 + 2 ] = b + 2;
@@ -595,7 +629,7 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
         }
     }
 
-    s_tess.vert_count += nv;
+    tess_verts_commit( nv );
     s_tess.idx_count  += ni;
     s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
 }
@@ -620,9 +654,11 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
         return;
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
-    s_tess.verts[ s_tess.vert_count++ ] = ( gui_draw_vert_t ){ ax, ay, wu, wv, abgr };
-    s_tess.verts[ s_tess.vert_count++ ] = ( gui_draw_vert_t ){ bx, by, wu, wv, abgr };
-    s_tess.verts[ s_tess.vert_count++ ] = ( gui_draw_vert_t ){ cx, cy, wu, wv, abgr };
+    gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
+    v[ 0 ] = gui_vert( ax, ay, wu, wv, abgr );
+    v[ 1 ] = gui_vert( bx, by, wu, wv, abgr );
+    v[ 2 ] = gui_vert( cx, cy, wu, wv, abgr );
+    tess_verts_commit( 3 );
     s_tess.indices[ s_tess.idx_count++ ] = base + 0;
     s_tess.indices[ s_tess.idx_count++ ] = base + 1;
     s_tess.indices[ s_tess.idx_count++ ] = base + 2;
@@ -648,11 +684,11 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 segs, u32 abgr )
         return;
 
     f32 step = 6.2831853f / (f32)segs;
-    v[ 0 ] = ( gui_draw_vert_t ){ pcx, pcy, wu, wv, abgr };   /* fan centre */
+    v[ 0 ] = gui_vert( pcx, pcy, wu, wv, abgr );   /* fan centre */
     for ( u32 i = 0; i < segs; ++i )
     {
         f32 a = step * (f32)i;
-        v[ 1 + i ] = ( gui_draw_vert_t ){ pcx + cosf( a ) * r, pcy + sinf( a ) * r, wu, wv, abgr };
+        v[ 1 + i ] = gui_vert( pcx + cosf( a ) * r, pcy + sinf( a ) * r, wu, wv, abgr );
     }
 
     u32 k = 0;
@@ -755,10 +791,10 @@ tess_quad_xf( f32 px, f32 py, f32 cs, f32 sn,
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     for ( u32 i = 0; i < 4; ++i )
-        v[ i ] = ( gui_draw_vert_t ){ px + qx[ i ] * cs - qy[ i ] * sn,
-                                      py + qx[ i ] * sn + qy[ i ] * cs,
-                                      qu[ i ], qv[ i ], abgr };
-    s_tess.vert_count += 4;
+        v[ i ] = gui_vert( px + qx[ i ] * cs - qy[ i ] * sn,
+                           py + qx[ i ] * sn + qy[ i ] * cs,
+                           qu[ i ], qv[ i ], abgr );
+    tess_verts_commit( 4 );
 
     u16* idx = &s_tess.indices[ s_tess.idx_count ];
     idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
@@ -834,11 +870,16 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
-    v[ 0 ] = ( gui_draw_vert_t ){ x0 + nx * half, y0 + ny * half, 0.0f, vv, abgr };
-    v[ 1 ] = ( gui_draw_vert_t ){ x1 + nx * half, y1 + ny * half, umax, vv, abgr };
-    v[ 2 ] = ( gui_draw_vert_t ){ x1 - nx * half, y1 - ny * half, umax, vv, abgr };
-    v[ 3 ] = ( gui_draw_vert_t ){ x0 - nx * half, y0 - ny * half, 0.0f, vv, abgr };
-    s_tess.vert_count += 4;
+    /* U runs 0..1 in the VERTEX and is multiplied back up to `umax` periods by the vertex stage:
+       the packed UV cannot hold a coordinate past 1, and the sampler's REPEAT-U is what tiles the
+       atlas dash row (gui.h, GUI_FX_TILE_U).  Interpolation is unaffected -- both ends are stored
+       exactly and a lerp commutes with the scale. */
+    s_tess.cur_fx = gui_fx_pack_tile_u( umax );
+    v[ 0 ] = gui_vert( x0 + nx * half, y0 + ny * half, 0.0f, vv, abgr );
+    v[ 1 ] = gui_vert( x1 + nx * half, y1 + ny * half, 1.0f, vv, abgr );
+    v[ 2 ] = gui_vert( x1 - nx * half, y1 - ny * half, 1.0f, vv, abgr );
+    v[ 3 ] = gui_vert( x0 - nx * half, y0 - ny * half, 0.0f, vv, abgr );
+    tess_verts_commit( 4 );
 
     u16* idx = &s_tess.indices[ s_tess.idx_count ];
     idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
@@ -930,10 +971,10 @@ tess_stroke_poly_aa( const gui_vec2_t* pts, u32 n, f32 thickness, f32 center_off
         gui_vec2_t m  = nrm[ i ];
         f32          cx = pts[ i ].x + m.x * center_off;
         f32          cy = pts[ i ].y + m.y * center_off;
-        v[ 4*i+0 ] = ( gui_draw_vert_t ){ cx + m.x*half,  cy + m.y*half,  wu, wv, col0 };
-        v[ 4*i+1 ] = ( gui_draw_vert_t ){ cx + m.x*inner, cy + m.y*inner, wu, wv, col  };
-        v[ 4*i+2 ] = ( gui_draw_vert_t ){ cx - m.x*inner, cy - m.y*inner, wu, wv, col  };
-        v[ 4*i+3 ] = ( gui_draw_vert_t ){ cx - m.x*half,  cy - m.y*half,  wu, wv, col0 };
+        v[ 4*i+0 ] = gui_vert( cx + m.x*half,  cy + m.y*half,  wu, wv, col0 );
+        v[ 4*i+1 ] = gui_vert( cx + m.x*inner, cy + m.y*inner, wu, wv, col  );
+        v[ 4*i+2 ] = gui_vert( cx - m.x*inner, cy - m.y*inner, wu, wv, col  );
+        v[ 4*i+3 ] = gui_vert( cx - m.x*half,  cy - m.y*half,  wu, wv, col0 );
     }
 
     static const int band[ 3 ][ 2 ] = { { 0, 1 }, { 1, 2 }, { 2, 3 } };
@@ -1061,6 +1102,13 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
         s_tess.cur_clip = s_draw.clip_table[ c->clip_idx ];
         s_tess.cur_vp   = c->vp;
 
+        /* The effect word is ambient over ONE command and cleared here, so a case that sets it
+           cannot leak the effect onto the next primitive.  That containment is the whole reason it
+           can be ambient at all -- it lets an outline reach every glyph of a run, and a shape's
+           word reach all 16 of its quadrant vertices, without threading a parameter through
+           tess_rect_filled, which every fill in the library shares. */
+        s_tess.cur_fx = 0u;
+
         switch ( c->type )
         {
             /* A square rect keeps the one-quad fast path: it is pixel-aligned by construction, so
@@ -1118,12 +1166,17 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
                                c->tri.cx, c->tri.cy, c->tri.abgr );
                 break;
 
+            /* The outline word is set once for the whole run: every glyph quad the loop emits
+               carries it, and the fragment resolves fill and outline from the one distance field
+               it was already sampling. */
             case GUI_CMD_TEXT:
+                s_tess.cur_fx = c->text.edge;
                 tess_text_n( c->text.x, c->text.y, c->text.abgr, s_draw.text_pool + c->text.off,
                              c->text.len, c->text.clip_x0, c->text.clip_x1 );
                 break;
 
             case GUI_CMD_TEXT_XF:
+                s_tess.cur_fx = c->text_xf.edge;
                 tess_text_xf( c->text_xf.x, c->text_xf.y, c->text_xf.abgr,
                               s_draw.text_pool + c->text_xf.off, c->text_xf.len,
                               c->text_xf.scale, c->text_xf.rot );

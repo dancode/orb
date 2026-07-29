@@ -337,12 +337,19 @@ dbg_expand_quad( f32 wu, f32 wv, f32 x, f32 y, f32 w, f32 h, u32 abgr,
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
 
+    /* The overlay is entirely coverage-atlas geometry (white texel + glyphs), so every vertex
+       names the same texture -- but it has to NAME it now: the texture rides the vertex rather
+       than the push constant (gui.h), and slot 0 is the empty bindless descriptor, not a default. */
+    u32 tex = res_atlas_idx() | GUI_TEX_MODE( GUI_TEX_COVERAGE );
+
     u16 base = (u16)*vc;
     gui_draw_vert_t* v = &s_dbg.scratch_verts[ *vc ];
-    v[ 0 ] = ( gui_draw_vert_t ){ x,     y,     wu, wv, abgr };
-    v[ 1 ] = ( gui_draw_vert_t ){ x + w, y,     wu, wv, abgr };
-    v[ 2 ] = ( gui_draw_vert_t ){ x + w, y + h, wu, wv, abgr };
-    v[ 3 ] = ( gui_draw_vert_t ){ x,     y + h, wu, wv, abgr };
+    v[ 0 ] = gui_vert( x,     y,     wu, wv, abgr );
+    v[ 1 ] = gui_vert( x + w, y,     wu, wv, abgr );
+    v[ 2 ] = gui_vert( x + w, y + h, wu, wv, abgr );
+    v[ 3 ] = gui_vert( x,     y + h, wu, wv, abgr );
+    for ( u32 i = 0; i < 4; ++i )
+        v[ i ].tex = tex;
     *vc += 4;
 
     u16* idx = &s_dbg.scratch_idx[ *ic ];
@@ -427,13 +434,17 @@ dbg_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     rhi()->cmd_bind_index_buffer ( cmd, s_dbg.ib, ib_off, RHI_INDEX_TYPE_UINT16 );
     rhi()->cmd_set_scissor       ( cmd, &( rhi_rect_t ){ .x = 0, .y = 0, .width = win_w, .height = win_h } );
 
+    /* The texture and its sampling model left this block for the vertex; what remains is the two
+       sampler slots the fragment picks between, and the debug-view state the overlay never uses. */
     gui_push_t push;
     render_ortho( push.mvp, (f32)win_w, (f32)win_h );
-    push.samp_idx = s_render.font_sampler_idx;
-    push.tex_idx  = res_atlas_idx();
-    push.dbg_flat = 0u;   /* the overlay always renders normally, never flat/batch-tinted */
-    push.dbg_tint = 0u;
-    push.tex_mode = (u32)GUI_TEX_COVERAGE;   /* overlay draws are all font-atlas coverage */
+    push.samp_point = s_render.font_sampler_idx;
+    push.samp_image = s_render.image_sampler_idx ? s_render.image_sampler_idx
+                                                 : s_render.font_sampler_idx;
+    push.dbg_flat   = 0u;   /* the overlay always renders normally, never flat/batch-tinted */
+    push.dbg_tint   = 0u;
+    push.time       = s_render.fx_time;   /* overlay geometry is fx-free, but the block must be
+                                             fully initialized -- this field used to be garbage */
     rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
 
     rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){

@@ -188,15 +188,18 @@ rhi_vertex_format_to_vk( rhi_vertex_format_t f )
 {
     switch ( f )
     {
-        case RHI_VERTEX_FORMAT_FLOAT:  return VK_FORMAT_R32_SFLOAT;
-        case RHI_VERTEX_FORMAT_FLOAT2: return VK_FORMAT_R32G32_SFLOAT;
-        case RHI_VERTEX_FORMAT_FLOAT3: return VK_FORMAT_R32G32B32_SFLOAT;
-        case RHI_VERTEX_FORMAT_FLOAT4: return VK_FORMAT_R32G32B32A32_SFLOAT;
-        case RHI_VERTEX_FORMAT_UINT:   return VK_FORMAT_R32_UINT;
-        case RHI_VERTEX_FORMAT_UINT2:  return VK_FORMAT_R32G32_UINT;
-        case RHI_VERTEX_FORMAT_UINT4:  return VK_FORMAT_R32G32B32A32_UINT;
-        case RHI_VERTEX_FORMAT_UNORM4: return VK_FORMAT_R8G8B8A8_UNORM;
-        default:                       return VK_FORMAT_UNDEFINED;
+        case RHI_VERTEX_FORMAT_FLOAT:     return VK_FORMAT_R32_SFLOAT;
+        case RHI_VERTEX_FORMAT_FLOAT2:    return VK_FORMAT_R32G32_SFLOAT;
+        case RHI_VERTEX_FORMAT_FLOAT3:    return VK_FORMAT_R32G32B32_SFLOAT;
+        case RHI_VERTEX_FORMAT_FLOAT4:    return VK_FORMAT_R32G32B32A32_SFLOAT;
+        case RHI_VERTEX_FORMAT_UINT:      return VK_FORMAT_R32_UINT;
+        case RHI_VERTEX_FORMAT_UINT2:     return VK_FORMAT_R32G32_UINT;
+        case RHI_VERTEX_FORMAT_UINT4:     return VK_FORMAT_R32G32B32A32_UINT;
+        case RHI_VERTEX_FORMAT_UNORM8X4:  return VK_FORMAT_R8G8B8A8_UNORM;
+        case RHI_VERTEX_FORMAT_HALF2:     return VK_FORMAT_R16G16_SFLOAT;
+        case RHI_VERTEX_FORMAT_HALF4:     return VK_FORMAT_R16G16B16A16_SFLOAT;
+        case RHI_VERTEX_FORMAT_UNORM16X2: return VK_FORMAT_R16G16_UNORM;
+        default:                          return VK_FORMAT_UNDEFINED;
     }
 }
 

@@ -121,6 +121,9 @@ void draw_set_alpha             ( f32 a );          // global opacity multiplier
 f32  draw_get_alpha             ( void );           // ...read back, so a nested fade can multiply and restore
 void draw_set_rounding          ( f32 r );          // corner radius folded into every pushed filled/outline rect
 f32  draw_rounding              ( void );           // current ambient radius (save/restore around a sub-element)
+void draw_set_text_edge         ( f32 width, u32 abgr ); // second colour outside the glyph edge (SDF fonts)
+u32  draw_text_edge             ( void );           // current ambient edge word (save/restore around a run)
+void draw_set_text_edge_raw     ( u32 edge );       // ...restore one verbatim (no re-quantization)
 void draw_set_text_clip_x       ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run
 void draw_clear_text_clip       ( void );           // restore the no-clip sentinel (unbounded text)
 void draw_set_sort_key          ( u32 z );          // paint order stamped on new commands (window z)
