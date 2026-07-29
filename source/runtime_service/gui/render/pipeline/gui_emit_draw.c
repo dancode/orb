@@ -80,10 +80,12 @@ static struct
     gui_cmd_t       cmds            [ GUI_MAX_CMDS ];           // semantic command list; one entry per shape
     u32             cmd_hashes      [ GUI_MAX_CMDS ];           // per-command hash baked at emit (for cache diff)
     gui_id_t        cmd_volatile_id [ GUI_MAX_CMDS ];           // GUI_ID_NONE, or the volatile widget owning this cmd
+
 #ifdef GUI_CMD_STEPPER
     gui_id_t        cmd_owner       [ GUI_MAX_CMDS ];           // emitting widget id (0 = chrome); stepper display only
     gui_id_t        cur_owner;                                  // stamped by item_state (STEP_SET_OWNER); 0 at window seams
 #endif
+
     gui_vec2_t      points          [ GUI_MAX_PATH_PTS ];       // point pool for CMD_POLYLINE data; indexed by pt_offset
     gui_rect_col_t  rect_pool       [ GUI_MAX_RECT_ENTRIES ];   // rect pool for CMD_RECT_LIST data; indexed by offset
 
@@ -835,7 +837,9 @@ draw_hash_cmd( const gui_cmd_t* c )
 
     The four pool-backed pushes (text, text_xf, polyline via gui_emit_path.c, rect_list) keep
     their own preambles: each has a pool copy that must succeed BEFORE a slot may be spent, and
-    a cull that is not an axis-aligned box test.
+    a cull that is not an axis-aligned box test.  They still owe the same transparent drop this
+    preamble runs -- alpha 0 is the free visibility toggle everywhere, with one text nuance: a
+    visible TEXT_EDGE keeps a transparent-fill run alive (the outline paints outside the glyph).
 ==============================================================================================*/
 
 static gui_cmd_t*
@@ -1299,6 +1303,15 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     if ( !str || draw_emit_blocked() )
         return;
 
+    /* Transparent drop (the draw_cmd_open rule): a run whose folded fill alpha is 0 lights no
+       pixel, so alpha doubles as a free visibility toggle -- a hidden label costs no command
+       slot, no pool copy, no hash.  The one exception is a visible TEXT_EDGE (its packed alpha
+       lives in bits 27+): the edge band paints OUTSIDE the glyph boundary, so outline-only text
+       over a transparent fill is a real shape and must survive. */
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u && ( s_draw.text_edge >> 27 ) == 0u )
+        return;
+
     /* Vertical cull: a glyph run lights pixels within roughly one line height of y, so if that band
        sits fully above or below the current clip the run is invisible -- a list row scrolled out of
        its box.  Padded a full line each way so ascenders / descenders are never wrongly dropped;
@@ -1327,7 +1340,7 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     c->text.len     = len;   /* always an explicit byte count; never 0xFFFFFFFF after this point */
     c->text.clip_x0 = clip_x0;
     c->text.clip_x1 = clip_x1;
-    c->text.abgr    = draw_apply_alpha( abgr );
+    c->text.abgr    = col;
     c->text.edge    = s_draw.text_edge;
     c->text.font    = (u16)s_draw.cur_font;
     draw_cmd_seal();   /* text bytes are L1-hot here */
@@ -1366,6 +1379,11 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
 {
     if ( !str || scale <= 0.0f || draw_emit_blocked() )
         return;
+
+    /* Transparent drop, with the same TEXT_EDGE exception as draw_push_text_clip_n. */
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u && ( s_draw.text_edge >> 27 ) == 0u )
+        return;
     if ( rect_empty( clip_current() ) )
         return;
 
@@ -1384,7 +1402,7 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
     c->text_xf.len   = len;
     c->text_xf.scale = scale;
     c->text_xf.rot   = rot;
-    c->text_xf.abgr  = draw_apply_alpha( abgr );
+    c->text_xf.abgr  = col;
     c->text_xf.edge  = s_draw.text_edge;
     c->text_xf.font  = (u16)s_draw.cur_font;
     draw_cmd_seal();

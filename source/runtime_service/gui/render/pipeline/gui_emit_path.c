@@ -167,6 +167,13 @@ draw_push_polyline_cmd( const gui_vec2_t* pts, u32 count, f32 thickness,
 {
     if ( count < 2 || draw_emit_blocked() )
         return;
+
+    /* Transparent drop (the draw_cmd_open rule): invisible under blending, so no command slot
+       and no point-pool space -- alpha is the free visibility toggle. */
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
+
     if ( s_draw.pt_count + count > GUI_MAX_PATH_PTS )
         return;   /* point pool exhausted this frame */
 
@@ -197,7 +204,7 @@ draw_push_polyline_cmd( const gui_vec2_t* pts, u32 count, f32 thickness,
     c->polyline.thickness = thickness;
     c->polyline.align     = align;
     c->polyline.closed    = closed;
-    c->polyline.abgr      = draw_apply_alpha( abgr );
+    c->polyline.abgr      = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );   /* points are L1-hot here */
 }
 
@@ -220,6 +227,14 @@ gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
 {
     if ( thickness <= 0.0f )
         return;
+
+    /* Transparent drop before either path: the rect fast path would catch it one call deeper,
+       but the capsule path would spend a slot.  `abgr` still travels raw to the rect path, whose
+       own alpha fold produces this same value -- folding is deterministic, not cumulative. */
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
+
     /* H/V fast path: axis-aligned lines become a snapped solid rect -- crisp like a separator. */
     if ( stroke_axis_aligned_rect( x0, y0, x1, y1, thickness, GUI_STROKE_CENTER_BIASED, abgr ) )
         return;
@@ -235,7 +250,7 @@ gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     c->line.x0        = x0; c->line.y0 = y0;
     c->line.x1        = x1; c->line.y1 = y1;
     c->line.thickness = thickness;
-    c->line.abgr      = draw_apply_alpha( abgr );
+    c->line.abgr      = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
@@ -248,6 +263,12 @@ gui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thi
 {
     if ( thickness <= 0.0f || dash <= 0.0f )
         return;
+
+    /* Transparent drop (the draw_cmd_open rule): alpha is the free visibility toggle. */
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
+
     f32 period = dash + ( gap > 0.0f ? gap : dash );
     if ( period <= 0.0f || draw_emit_blocked() )
         return;
@@ -262,7 +283,7 @@ gui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thi
     c->dash.thickness = thickness;
     c->dash.period    = period;
     c->dash.duty      = dash / period;
-    c->dash.abgr      = draw_apply_alpha( abgr );
+    c->dash.abgr      = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
