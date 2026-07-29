@@ -519,6 +519,32 @@ typedef struct gui_api_s
     void          ( *image         )( gui_icon_id_t id, f32 w, f32 h, u32 col );
     void          ( *draw_icon_in  )( gui_rect_t r, gui_icon_id_t id, u32 col );
 
+    /* The _sdf twins register the same coverage as a DISTANCE FIELD instead: the bytes are
+       transformed and land in the distance-field atlas, and the fragment then recovers the edge
+       from the field's screen-space derivative rather than from a texel.  What that buys is an
+       icon that is exact at ANY size, survives rotation, and can take a GUI_FX_TEXT_EDGE outline
+       or glow -- none of which a coverage icon can do, because a coverage atlas must be sampled
+       NEAREST or bitmap text stops being crisp.
+
+       It is a per-icon choice and both kinds are wanted.  Keep COVERAGE for pixel-precise art: a
+       16 px symbol tuned to the grid, anything with 1 px detail or deliberately hard corners, all
+       of which a field rounds off.  Reach for SDF when the icon is drawn at sizes other than the
+       one it was authored at, or wants an outline.  Mixing them is free -- the sampling model
+       travels in the vertex, so a coverage icon, an SDF icon, a glyph run and a fill still share
+       one draw call.  Everything downstream of the id is identical: find_icon, icon_size, image
+       and draw_icon_in do not know or care which kind they hold.
+
+       The source art wants to differ though, and this is the part to get right.  A field is
+       transformed at the SOURCE resolution and stored at `out_max` (longest edge, 0 = 64), so the
+       source should be several times that -- transforming a 16 px bitmap yields a smooth field
+       around a 16 px staircase, which is no better than the bitmap.  The art also needs a
+       transparent MARGIN: a shape running to the edge of its own bitmap has no outside there for
+       the field to fall off into, so that edge draws hard and takes no outline (it logs a note if
+       you do it). */
+    gui_icon_id_t ( *register_icon_sdf )( const char* name, u32 w, u32 h, const u8* coverage,
+                                          u32 out_max );
+    gui_icon_id_t ( *load_icon_sdf     )( const char* name, const char* path, u32 out_max );
+
 
     /* RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
        image) as a full-color quad; the texel is the color, tint_abgr multiplies (0 = untinted).

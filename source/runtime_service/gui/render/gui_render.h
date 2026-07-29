@@ -90,6 +90,13 @@ u32  font_tex      ( void );
 bool icon_get      ( gui_icon_id_t id,
                      f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );
 
+/* The tex_idx an icon quad must carry, with the sampling model already in its mode field -- the
+   icon twin of font_tex, and for the same reason: which atlas an icon lives in is a property of
+   the ICON.  A coverage icon and a distance-field one differ in what a texel means, so they cannot
+   share a texture (the sampler is per draw), but they still share a DRAW CALL, because this number
+   travels in the vertex.  0 when the backing atlas is not up yet. */
+u32  icon_tex      ( gui_icon_id_t id );
+
 /* Sprite lookup: UVs, pixel size, and the nine-slice insets for a registered sprite (defined in
    draw/gui_sprite.c).  Resolved at TESSELLATION time rather than emit time -- unlike an icon,
    whose UVs the emit layer bakes into its command -- because the slice expansion needs the source

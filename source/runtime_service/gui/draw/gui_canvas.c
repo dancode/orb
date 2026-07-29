@@ -165,6 +165,24 @@ gui_load_icon( const char* name, const char* path )
     return icon_load_file( name, resolved );
 }
 
+/* The distance-field twins.  Same inputs plus the stored-field size; everything downstream of the
+   id -- find, size, image, draw_icon_in -- is unchanged, because the fork is in what a texel means
+   and that travels in the vertex, not in the API. */
+
+gui_icon_id_t
+gui_register_icon_sdf( const char* name, u32 w, u32 h, const u8* coverage, u32 out_max )
+{
+    return icon_register_sdf( name, w, h, coverage, out_max );
+}
+
+gui_icon_id_t
+gui_load_icon_sdf( const char* name, const char* path, u32 out_max )
+{
+    char resolved[ 576 ];
+    fmt_snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), path );
+    return icon_load_file_sdf( name, resolved, out_max );
+}
+
 gui_icon_id_t
 gui_find_icon( const char* name )
 {

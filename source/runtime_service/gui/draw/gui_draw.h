@@ -99,6 +99,12 @@ bool font_atlas_sync        ( void );                       // upload (re)loaded
    source half the emit layer consumes) is declared in render/gui_render.h. */
 gui_icon_id_t   icon_register     ( const char* name, u32 w, u32 h, const u8* coverage );
 gui_icon_id_t   icon_load_file    ( const char* name, const char* path );  // decode PNG/... -> R8 coverage -> icon_register
+/* The distance-field pair.  Same coverage input; the bytes are transformed (draw/gui_icon_sdf.c)
+   and land in the SDF atlas instead, so the icon becomes resolution independent and takes an
+   outline.  out_max is the longest edge of the STORED field (0 = default); the SOURCE should be
+   several times that and should carry a transparent margin. */
+gui_icon_id_t   icon_register_sdf ( const char* name, u32 w, u32 h, const u8* coverage, u32 out_max );
+gui_icon_id_t   icon_load_file_sdf( const char* name, const char* path, u32 out_max );
 void            icon_load_builtins( void );                                // register the engine's built-in icon set from disk
 gui_icon_id_t   icon_find         ( const char* name );
 bool            icon_atlas_init   ( void );   // enable icon registration (shared atlas owns GPU)

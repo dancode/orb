@@ -77,15 +77,25 @@ icon_read_file( const char* path, u32* out_size )
 }
 
 /*==============================================================================================
-    icon_load_file -- decode an image file to R8 coverage and register it as an icon.
+    icon_load_file / icon_load_file_sdf -- decode an image file to R8 coverage and register it.
 
     Returns the new icon id, or GUI_ICON_NONE if the file is missing, undecodable, or the icon
     atlas is full.  A missing file is a quiet failure (the caller decides whether that matters);
     a present-but-broken file logs, since it signals a real asset problem.
+
+    Two entry points over one decode.  The DECODE is identical -- both want the same R8 coverage
+    out of the same PNG -- and only the registration forks, which is the honest shape: coverage is
+    what an image file holds, and whether it is stored as coverage or transformed into a distance
+    field is a decision about how it will be DRAWN, not about how it is read.
+
+    Note the asymmetry the SDF path wants from its source art, though (gui_icon_sdf.c): it should
+    be several times the size it will be displayed at, and it should carry a transparent margin.
+    Neither is true of a good coverage icon, which wants to be authored at exactly its display size
+    and can fill its bitmap to the edge.  The same PNG is rarely the best input to both.
 ==============================================================================================*/
 
-gui_icon_id_t
-icon_load_file( const char* name, const char* path )
+static gui_icon_id_t
+icon_load_file_impl( const char* name, const char* path, bool sdf, u32 out_max )
 {
     if ( !name || !path )
         return GUI_ICON_NONE;
@@ -155,9 +165,22 @@ icon_load_file( const char* name, const char* path )
         printf( "[gui] icon '%s' has no visible pixels -- '%s' decoded fully %s (%dx%d)\n",
                 name, path, use_alpha ? "transparent" : "black", w, h );
 
-    gui_icon_id_t id = icon_register( name, (u32)w, (u32)h, coverage );
+    gui_icon_id_t id = sdf ? icon_register_sdf( name, (u32)w, (u32)h, coverage, out_max )
+                           : icon_register    ( name, (u32)w, (u32)h, coverage );
     free( coverage );
     return id;
+}
+
+gui_icon_id_t
+icon_load_file( const char* name, const char* path )
+{
+    return icon_load_file_impl( name, path, false, 0 );
+}
+
+gui_icon_id_t
+icon_load_file_sdf( const char* name, const char* path, u32 out_max )
+{
+    return icon_load_file_impl( name, path, true, out_max );
 }
 
 /*==============================================================================================

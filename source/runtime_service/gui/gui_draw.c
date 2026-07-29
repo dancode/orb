@@ -51,6 +51,7 @@
 
 #include "runtime_service/gui/draw/gui_glyph_internal.c"
 #include "runtime_service/gui/draw/gui_glyph.c"
+#include "runtime_service/gui/draw/gui_icon_sdf.c"
 #include "runtime_service/gui/draw/gui_icon.c"
 #include "runtime_service/gui/draw/gui_icon_load.c"
 #include "runtime_service/gui/draw/gui_sprite.c"

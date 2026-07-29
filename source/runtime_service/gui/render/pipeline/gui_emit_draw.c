@@ -929,6 +929,10 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
     An icon is just a textured quad sourced from the icon atlas instead of the font atlas, so
     this reuses draw_push_rect_filled wholesale; icon_get (the sprite source contract, supplied
     by the draw unit) hands back the cached UVs.  No-op for an invalid id.
+
+    The texture comes from icon_tex( id ) rather than res_atlas_idx(), which is the entire draw-side
+    cost of icons being able to be distance fields: an icon names its own atlas AND its own sampling
+    model, and one draw call still holds a coverage icon, an SDF icon, a glyph run and a fill.
 ==============================================================================================*/
 
 void
@@ -937,7 +941,10 @@ draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
     f32 u0, v0, u1, v1;
     if ( !icon_get( id, &u0, &v0, &u1, &v1, NULL, NULL ) )
         return;
-    draw_push_rect_filled( x, y, w, h, u0, v0, u1, v1, res_atlas_idx(), abgr );
+    u32 tex = icon_tex( id );
+    if ( tex == 0u )
+        return;   /* SDF atlas not stood up yet -- skip the quad, as a glyph run does */
+    draw_push_rect_filled( x, y, w, h, u0, v0, u1, v1, tex, abgr );
 }
 
 /*==============================================================================================
