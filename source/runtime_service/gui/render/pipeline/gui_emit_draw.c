@@ -238,16 +238,19 @@ draw_set_cmd_owner( gui_id_t id )
 void
 draw_reset( i32 display_w, i32 display_h )
 {
+    /* Volatile range tags must not survive into a frame whose command indices shifted: a stale
+       tag on an unrelated command would exclude it from its window's hash, split it out of its
+       batch, and let a volatile patch stomp its geometry.  Clearing the PREVIOUS frame's used
+       range is complete: tags only ever land at indices below that frame's cmd_count
+       (volatile_cb_close brackets live commands), so everything above the high-water mark is
+       already zero by induction from the zeroed static.  Must run before cmd_count resets.
+       (GUI_ID_NONE is 0.) */
+    memset( s_draw.cmd_volatile_id, 0, s_draw.cmd_count * sizeof( s_draw.cmd_volatile_id[ 0 ] ) );
+
     s_draw.cmd_count       = 0;
     s_draw.pt_count        = 0;
     s_draw.rect_count      = 0;
     s_draw.text_pool_used  = 0;
-
-    /* Volatile range tags must not survive into a frame whose command indices shifted: a stale
-       tag on an unrelated command would exclude it from its window's hash, split it out of its
-       batch, and let a volatile patch stomp its geometry.  One clear here covers every push path
-       (GUI_ID_NONE is 0). */
-    memset( s_draw.cmd_volatile_id, 0, sizeof( s_draw.cmd_volatile_id ) );
     s_draw.cur_win         = 0;   /* background; windows tag it via draw_set_window */
     s_draw.cur_z           = 0;   /* background; windows raise it via draw_set_sort_key */
     s_draw.cur_vp          = 0;   /* main viewport; windows route via draw_set_viewport */
