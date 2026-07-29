@@ -43,8 +43,8 @@ typedef struct
     backend-private; nothing above the backend unit touches it.  s_draw holds only semantic
     commands (gui_cmd_t) -- no vtx/idx buffers.
 
-    cur_clip/cur_vp are written by tess_dispatch before each primitive so tess_ensure_gpu_cmd
-    can stamp the correct context onto new GPU commands without extra parameters.  cur_clip is
+    cur_clip/cur_vp are written by tess_dispatch before each primitive and ARE the batch key, which
+    is why tess_ensure_gpu_cmd takes no parameters -- it reads them from here.  cur_clip is
     resolved from s_draw.clip_table[c->clip_idx]; z is per-segment and is not tracked here.
 ==============================================================================================*/
 
@@ -59,7 +59,7 @@ static struct
     gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
     u32         cur_vp;     /* viewport baked from the current semantic command                    */
     u32         cur_tex;    /* GUI_TEX_MODE | bindless slot stamped into every vertex committed --
-                               set by tess_ensure_gpu_cmd, applied by tess_verts_commit           */
+                               set by tess_set_tex, applied by tess_verts_commit.  NOT a batch key */
     u32         cur_fx;     /* packed effect word stamped into every vertex committed.  CLEARED at
                                the top of each semantic command (tess_dispatch), so a primitive
                                that wants one sets it and nothing can inherit it afterwards.      */
@@ -84,7 +84,7 @@ static struct
 
     /* Set before each cache_tess_window call so tess_ensure_gpu_cmd always opens a fresh
        command for the first primitive of a new slot, even when the previous slot's last
-       command shares the same clip/tex/vp (same-position windows would otherwise merge
+       command shares the same clip/vp (same-position windows would otherwise merge
        across the slot boundary and corrupt elem_count + first_index tracking). */
     bool force_new_cmd;
 
@@ -141,20 +141,28 @@ tess_reset( void )
     s_tess.overflow        = false;
 }
 
-/* Ensure the current open GPU command matches (texture, clip, viewport), opening a new one at any
-   mismatch.  z is per-segment (not per-command) so it is not a batch boundary here; the segment
-   system already guarantees all commands in one window's tessellation pass share the same z.
-   Returns false when the command table is full and no matching command is open -- the caller must
-   drop its primitive, or its geometry would append to a command with the wrong clip/texture. */
-static bool
-tess_ensure_gpu_cmd( u32 tex_idx )
+/* Name the texture the vertices about to be written will CARRY (tess_verts_commit stamps it onto
+   each one).  Deliberately NOT part of opening a batch, and separated from it so that reads: the
+   texture rides the vertex now, so a texture change costs nothing and must not open a command.
+   Pair it with tess_ensure_gpu_cmd below -- order between the two does not matter, only that both
+   happen before the primitive's vertices are committed. */
+static void
+tess_set_tex( u32 tex_idx )
 {
-    /* The texture the vertices about to be written will CARRY (tess_verts_commit stamps it).  It
-       is recorded before the merge test because it is no longer part of it: the texture rides the
-       vertex now, so a texture change costs nothing and must not open a command.  Only the clip
-       rect and the viewport still cut a batch. */
     s_tess.cur_tex = tex_idx;
+}
 
+/* Ensure a GPU command is open whose (clip, viewport) match the ambient pair, opening a new one at
+   any mismatch.  THAT PAIR IS THE WHOLE BATCH KEY, which is why this takes no arguments: the
+   texture and the effect word both travel per vertex and cannot cut a draw call, and z is
+   per-segment rather than per-command (the segment system already guarantees every command in one
+   window's tessellation pass shares a z).  A new primitive type therefore batches correctly by
+   construction -- there is nothing left to pass in and get wrong.
+   Returns false when the command table is full and no matching command is open -- the caller must
+   drop its primitive, or its geometry would append to a command with the wrong clip. */
+static bool
+tess_ensure_gpu_cmd( void )
+{
     if ( s_tess.cmd_count > 0 && !s_tess.force_new_cmd )
     {
         const tess_gpu_cmd_t* prev = &s_tess.gpu_cmds[ s_tess.cmd_count - 1 ];
@@ -174,9 +182,11 @@ tess_ensure_gpu_cmd( u32 tex_idx )
     s_tess.force_new_cmd = false;
     /* Vertex span of this command starts at the current vert_count; the next command's vbase (or
        the final vert_count for the last) bounds it.  Lets a surface upload only its own vertices.
-       ibase records where this command's indices start -- its draw call's first_index. */
+       ibase records where this command's indices start -- its draw call's first_index.
+       tex_idx is the ambient texture at the moment the command opened, i.e. the FIRST primitive's,
+       and is diagnostic only (the dashboard tooltip) -- the command may go on to span several. */
     s_tess.gpu_cmds[ s_tess.cmd_count++ ] = ( tess_gpu_cmd_t ){
-        .cmd   = { .elem_count = 0, .tex_idx = tex_idx, .clip_rect = s_tess.cur_clip },
+        .cmd   = { .elem_count = 0, .tex_idx = s_tess.cur_tex, .clip_rect = s_tess.cur_clip },
         .vp    = s_tess.cur_vp,
         .vbase = s_tess.vert_count,
         .ibase = s_tess.idx_count,
@@ -190,8 +200,8 @@ tess_ensure_gpu_cmd( u32 tex_idx )
    EVERY vertex writer ends here -- this is the only place vert_count advances, which is what makes
    those two words impossible to forget.  Both are applied from ambient state rather than passed in,
    because both are constant over a primitive while only the position/uv/colour vary: cur_tex is set
-   by tess_ensure_gpu_cmd (which a writer must already have called to have a command to append to),
-   and cur_fx is cleared per semantic command and set by the few that want an effect.  So a new
+   by tess_set_tex (which every writer calls alongside tess_ensure_gpu_cmd, to have a command to
+   append to), and cur_fx is cleared per semantic command and set by the few that want one.  A new
    primitive type gets both correct by construction; the alternative -- naming them in each compound
    literal -- fails silently, since a missing trailing initializer is a legal zero, and zero means
    "the empty bindless descriptor" for one and "no effect" for the other. */
@@ -217,7 +227,8 @@ tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
         s_tess.overflow = true;
         return false;
     }
-    if ( !tess_ensure_gpu_cmd( res_atlas_idx() ) )
+    tess_set_tex( res_atlas_idx() );
+    if ( !tess_ensure_gpu_cmd() )
         return false;
     res_atlas_white_uv( wu, wv );
     *out_base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
@@ -254,7 +265,8 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
     }
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
-    if ( !tess_ensure_gpu_cmd( tex_idx ) )
+    tess_set_tex( tex_idx );
+    if ( !tess_ensure_gpu_cmd() )
         return;
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
@@ -289,7 +301,8 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
 
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
-    if ( !tess_ensure_gpu_cmd( res_atlas_idx() ) )
+    tess_set_tex( res_atlas_idx() );
+    if ( !tess_ensure_gpu_cmd() )
         return;
 
     /* Corner colors walk col_a -> col_b along the chosen axis (TL, TR, BR, BL winding). */
@@ -598,7 +611,8 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
         s_tess.overflow = true;
         return;
     }
-    if ( !tess_ensure_gpu_cmd( tex_idx ) )
+    tess_set_tex( tex_idx );
+    if ( !tess_ensure_gpu_cmd() )
         return;
     s_tess.cur_fx = fx;      /* the shape's word, stamped onto all 16 (or 32) quadrant vertices */
 
@@ -660,7 +674,8 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     }
     f32 wu, wv;
     res_atlas_white_uv( &wu, &wv );
-    if ( !tess_ensure_gpu_cmd( res_atlas_idx() ) )
+    tess_set_tex( res_atlas_idx() );
+    if ( !tess_ensure_gpu_cmd() )
         return;
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
@@ -790,7 +805,8 @@ tess_quad_xf( f32 px, f32 py, f32 cs, f32 sn,
         s_tess.overflow = true;
         return;
     }
-    if ( !tess_ensure_gpu_cmd( tex_idx ) )
+    tess_set_tex( tex_idx );
+    if ( !tess_ensure_gpu_cmd() )
         return;
 
     f32 qx[ 4 ] = { lx,      lx + lw, lx + lw, lx      };
@@ -875,7 +891,8 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
     f32 umax = len / period;                     /* number of tiled periods -> U span */
     f32 vv   = res_atlas_dash_v( duty );
 
-    if ( !tess_ensure_gpu_cmd( res_atlas_idx() ) )
+    tess_set_tex( res_atlas_idx() );
+    if ( !tess_ensure_gpu_cmd() )
         return;
 
     u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
@@ -1166,9 +1183,11 @@ static void volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 cmd
    being tessellated (informational; volatile rows already know their window from emit-time
    stamping).  Before tessellating a command we activate its
    font so the tess-time lookups -- font_glyph (UVs), font_atlas_idx (atlas), the white texel and
-   dash rows -- resolve from the right atlas; tess_ensure_gpu_cmd then splits the GPU batch on the
-   resulting atlas change.  The active font is saved and restored so the BUILD phase leaves the
-   global font state (used by the next frame's layout) untouched. */
+   dash rows -- resolve from the right atlas.  The resulting atlas change does NOT split the GPU
+   batch: it only changes the word tess_set_tex stamps into the following vertices, so a bitmap
+   label, an SDF heading and the fill behind them go out in one draw call.  The active font is
+   saved and restored so the BUILD phase leaves the global font state (used by the next frame's
+   layout) untouched. */
 static void
 tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 count, gui_id_t win )
 {
