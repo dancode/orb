@@ -256,19 +256,53 @@ draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness
         gui_draw_polyline( pts, sides, thickness < 1.0f ? 1.0f : thickness, GUI_STROKE_CENTER, true, col );
 }
 
-/* Circle at arbitrary radius: filled (single backend disc command) or stroked (a closed polyline
-   ring of `thickness`).  The ring is the outlined form -- pass filled = false with a thickness. */
+/* Circle at arbitrary radius: filled or stroked (a ring of `thickness`).  The ring is the outlined
+   form -- pass filled = false with a thickness.
+
+   NEITHER form samples the circle any more.  Both are signed-distance surfaces the fragment
+   resolves, so the boundary is exact at any radius and the geometry is fixed-cost: what used to be
+   "how many segments can we afford" is not a question this function has to answer.  It matters most
+   at the SMALL end, which is where these actually get used -- sym_arc_segs gives a 10 px mark ten
+   segments, so a "circle" that size was a visible decagon.
+
+       ring r = 10   40 verts / 180 idx  ->  32 / 48
+       ring r = 100  256 verts / 1152 idx -> 32 / 48
+
+   A ring is a rounded rect whose radius reached its half-extent, which is why it needs no shape of
+   its own: GUI_FX_RING already paints a band `border` px wide lying INSIDE the boundary.  Two
+   details make it match what the polyline drew:
+     - GUI_STROKE_CENTER centres the band ON radius r, so the band spans [r - t/2, r + t/2].  The
+       SDF band hangs inside its boundary, so the boundary is r + t/2.
+     - tess_fx_box does not grid-snap a circle (it derives that), so a ring and a filled disc at the
+       same centre stay concentric to the sub-pixel.  Concentric marks are the common case here. */
 void
 draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
 {
     if ( filled )
     {
-        /* The segment count is vestigial for the FILL -- that path is a distance field now and is
-           exact at any radius (gui.h, GUI_CMD_CIRCLE_FILLED).  The RING below still walks a real
-           polygon, which is why sym_arc_segs survives at all in this function. */
+        /* The segment count is vestigial -- kept only because the signature takes one. */
         draw_push_circle_filled( cx, cy, r, sym_arc_segs( r, SYM_TAU ), col );
         return;
     }
+
+    if ( thickness < 1.0f ) thickness = 1.0f;
+
+    /* A band wider than the packed word's border field cannot be described to the fragment, so the
+       heavy case keeps the polyline rather than silently drawing a thinner ring.  At 15.875 px this
+       is a hoop, not an outline, and nothing in the library asks for one. */
+    if ( thickness <= GUI_FX_BORDER_MAX )
+    {
+        f32 outer = r + thickness * 0.5f;
+        /* draw_push_rect_outline takes its radius from the AMBIENT rounding, clamped to half the
+           extent -- so asking for the full half-extent is how a square becomes a circle here. */
+        f32 save = draw_rounding();
+        draw_set_rounding( outer );
+        draw_push_rect_outline( cx - outer, cy - outer, outer * 2.0f, outer * 2.0f,
+                                thickness, 0, col );
+        draw_set_rounding( save );
+        return;
+    }
+
     u32 segs = sym_arc_segs( r, SYM_TAU );
     gui_vec2_t pts[ 64 ];
     for ( u32 i = 0; i < segs; ++i )
@@ -276,7 +310,7 @@ draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
         f32 a = SYM_TAU * ( (f32)i / (f32)segs );
         pts[ i ] = sv2( cx + cosf( a ) * r, cy + sinf( a ) * r );
     }
-    gui_draw_polyline( pts, segs, thickness < 1.0f ? 1.0f : thickness, GUI_STROKE_CENTER, true, col );
+    gui_draw_polyline( pts, segs, thickness, GUI_STROKE_CENTER, true, col );
 }
 
 /* Stroked arc from a0 to a1 (radians) -- a spinner sweep, a knob track, a radial-menu rim. */

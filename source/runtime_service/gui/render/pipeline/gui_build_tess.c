@@ -551,24 +551,11 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
    bleed into its atlas neighbour where the coverage has already faded to nothing. */
 static void
 tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rate, f32 depth,
-             gui_fx_mode_t mode, bool snap,
+             gui_fx_mode_t mode,
              f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
     if ( w <= 0.0f || h <= 0.0f )
         return;
-
-    /* Origin grid-snapped like tess_rect_filled: a shape's STRAIGHT edges must stay crisp, and only
-       its corners want sub-pixel resolution.  Every box-ish shape wants that -- and a DISC does not,
-       which is the one caller that passes false.  A circle has no straight edge to keep crisp: its
-       whole boundary is curve the fragment resolves, so snapping buys nothing and costs the thing
-       that actually matters for a small dot, which is being able to sit between pixels.  Snapping
-       the origin of a shape whose centre is (x + r) quantizes that centre, so a dot animating along
-       a path visibly steps instead of gliding. */
-    if ( snap )
-    {
-        x = floorf( x + 0.5f );
-        y = floorf( y + 0.5f );
-    }
 
     /* Clamp EVERY parameter to what the packed word can carry, here and not only in the packer.
        The packer saturates (gui_fx_fixed), but saturating there alone would silently disagree with
@@ -591,6 +578,24 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
     if ( rate    > GUI_FX_RATE_MAX ) rate = GUI_FX_RATE_MAX;
     if ( depth   < 0.0f ) depth = 0.0f;
     if ( depth   > 1.0f ) depth = 1.0f;
+
+    /* Grid-snap the origin like tess_rect_filled -- UNLESS the shape is a circle.
+       Snapping exists to keep STRAIGHT edges crisp, and it is derived rather than passed in
+       because the condition is a property of the shape, not of the caller: a shape has no straight
+       edge in either axis exactly when it is square and its radius reached the half-extent.  That
+       is a disc, and it is also a circular RING -- so both fall out of one test, which is what
+       keeps them aligned.  It matters that they agree: a filled disc and a ring drawn at the same
+       centre would otherwise sit up to half a pixel apart, and concentric marks are precisely how
+       these get used.
+       Snapping a circle is not merely pointless but harmful.  Its origin is (centre - r), so
+       snapping quantizes the CENTRE, and a small dot animating along a path steps instead of
+       gliding.  A pill (w != h, r == the short half-extent) still snaps, correctly -- it does have
+       two straight edges. */
+    if ( !( hx == hy && r >= lim ) )
+    {
+        x = floorf( x + 0.5f );
+        y = floorf( y + 0.5f );
+    }
 
     /* tex_idx 0 = solid-color convention, same as tess_rect_filled: the atlas white texel. */
     f32 wu, wv;
@@ -723,9 +728,11 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     signature) because it costs nothing and every call site passing a count is still saying something
     true about the shape it wants, just no longer something this layer needs to be told.
 
-    NOT grid-snapped, unlike every other shape that goes through tess_fx_box: see the snap argument
-    there.  A disc has no straight edge that snapping would keep crisp, and quantizing its centre is
-    exactly what a small moving dot must not do.
+    NOT grid-snapped, unlike every other shape that goes through tess_fx_box -- it does not have to
+    ask for that, because tess_fx_box derives it: a square whose radius reached its half-extent has
+    no straight edge for snapping to keep crisp, and quantizing a circle's centre is exactly what a
+    small moving dot must not do.  A circular RING satisfies the same test, so the two stay aligned
+    when drawn concentrically.
 ==============================================================================================*/
 
 static void
@@ -733,7 +740,7 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 segs, u32 abgr )
 {
     (void)segs;
     tess_fx_box( pcx - r, pcy - r, r * 2.0f, r * 2.0f,
-                 r, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX, false,
+                 r, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
                  0, 0, 1, 1, 0, abgr );
 }
 
@@ -1238,7 +1245,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
             case GUI_CMD_RECT_FILLED:
                 if ( c->rect.rounding > 0.0f )
                     tess_fx_box( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
-                                 c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX, true,
+                                 c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
                                  c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
                                  c->rect.tex_idx, c->rect.abgr );
                 else
@@ -1254,7 +1261,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
                     tess_fx_box( c->rect_outline.x, c->rect_outline.y,
                                  c->rect_outline.w, c->rect_outline.h,
                                  c->rect_outline.rounding, TESS_FX_AA, c->rect_outline.t,
-                                 0.0f, 0.0f, GUI_FX_RING, true,
+                                 0.0f, 0.0f, GUI_FX_RING,
                                  0, 0, 1, 1, 0, c->rect_outline.abgr );
                 else
                     tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
@@ -1266,7 +1273,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
                be a gaussian is now the exact same falloff the corners use, only spread out. */
             case GUI_CMD_SHADOW:
                 tess_fx_box( c->shadow.x, c->shadow.y, c->shadow.w, c->shadow.h,
-                             c->shadow.rounding, c->shadow.feather, 0.0f, 0.0f, 0.0f, GUI_FX_BOX, true,
+                             c->shadow.rounding, c->shadow.feather, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
                              0, 0, 1, 1, 0, c->shadow.abgr );
                 break;
 
@@ -1277,7 +1284,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
             case GUI_CMD_PULSE:
                 tess_fx_box( c->pulse.x, c->pulse.y, c->pulse.w, c->pulse.h,
                              c->pulse.rounding, TESS_FX_AA, 0.0f,
-                             c->pulse.rate, c->pulse.depth, GUI_FX_PULSE, true,
+                             c->pulse.rate, c->pulse.depth, GUI_FX_PULSE,
                              0, 0, 1, 1, 0, c->pulse.abgr );
                 break;
 
