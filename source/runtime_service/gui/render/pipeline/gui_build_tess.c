@@ -217,23 +217,57 @@ tess_verts_commit( u32 n )
     s_tess.vert_count += n;
 }
 
-/* Raw vertex/index reservation for stroke tessellation -- mirror of draw_prim_begin/commit. */
+/*==============================================================================================
+    tess_prim_begin / tess_prim_commit -- the reservation every primitive goes through.
+
+    Four steps, in this order, and every one of them is a place a hand-written primitive gets it
+    subtly wrong:
+
+      1. Check BOTH budgets before writing anything, and set the sticky overflow flag rather than
+         truncating -- a primitive that emits its vertices and then discovers it has no room for
+         indices leaves geometry the index buffer never references.
+      2. Name the texture and open a GPU command, in that order relative to the writes.
+      3. Hand back a base that is SLOT-RELATIVE (vert_count - slot_vert_base).  Indices are
+         0-relative within a window slot and shifted at draw time by vertex_offset; an absolute
+         base here is the class of bug the force_new_cmd slot boundary was about, and it does not
+         show up until two windows land at the same position.
+      4. On commit, advance idx_count AND fold ni into the open command's elem_count.  Forgetting
+         the second silently drops the primitive -- the vertices are uploaded, the draw call just
+         never reads them.
+
+    tex_idx is a parameter rather than assumed because that is what stopped five primitives from
+    using this: it hardcoded the coverage atlas, so anything sampling its own texture (a glyph run,
+    an image, a nine-slice piece) had to repeat all four steps by hand.  The texture is no longer a
+    batch key, so passing it here costs nothing -- it only names what the vertices will carry.
+==============================================================================================*/
+
 static bool
-tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
-                 gui_draw_vert_t** out_v, u16** out_i, u16* out_base )
+tess_prim_begin_tex( u32 nv, u32 ni, u32 tex_idx,
+                     gui_draw_vert_t** out_v, u16** out_i, u16* out_base )
 {
     if ( s_tess.vert_count + nv > GUI_MAX_VERTS || s_tess.idx_count + ni > GUI_MAX_IDX )
     {
         s_tess.overflow = true;
         return false;
     }
-    tess_set_tex( res_atlas_idx() );
+    tess_set_tex( tex_idx );
     if ( !tess_ensure_gpu_cmd() )
         return false;
-    res_atlas_white_uv( wu, wv );
     *out_base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
     *out_v    = &s_tess.verts  [ s_tess.vert_count ];
     *out_i    = &s_tess.indices[ s_tess.idx_count  ];
+    return true;
+}
+
+/* The solid-colour form: the coverage atlas, plus its white texel's UV -- what every primitive
+   that paints a flat colour rather than sampling art wants. */
+static bool
+tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
+                 gui_draw_vert_t** out_v, u16** out_i, u16* out_base )
+{
+    if ( !tess_prim_begin_tex( nv, ni, res_atlas_idx(), out_v, out_i, out_base ) )
+        return false;
+    res_atlas_white_uv( wu, wv );
     return true;
 }
 
@@ -245,18 +279,23 @@ tess_prim_commit( u32 nv, u32 ni )
     s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
 }
 
+/* Two triangles over four corners wound TL, TR, BR, BL -- the index pattern of every quad in this
+   file, written once.  `base` is the slot-relative index of the quad's first vertex. */
+static void
+tess_quad_idx( u16* idx, u16 base )
+{
+    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
+    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
+}
+
 /* Tessellate a filled quad into s_tess.  abgr has alpha pre-baked by the emit side. */
 static void
 tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
                   f32 u0, f32 v0, f32 u1, f32 v1,
                   u32 tex_idx, u32 abgr )
 {
-    if ( s_tess.vert_count + 4 > GUI_MAX_VERTS || s_tess.idx_count + 6 > GUI_MAX_IDX )
-    {
-        s_tess.overflow = true;
-        return;
-    }
-    /* tex_idx 0 = solid-color convention: route to the font atlas's white texel. */
+    /* tex_idx 0 = solid-color convention: route to the font atlas's white texel.  Resolved before
+       the reservation, because it decides which texture the vertices will carry. */
     if ( tex_idx == 0 )
     {
         tex_idx = res_atlas_idx();
@@ -265,24 +304,19 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
     }
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
-    tess_set_tex( tex_idx );
-    if ( !tess_ensure_gpu_cmd() )
+
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin_tex( 4u, 6u, tex_idx, &v, &idx, &base ) )
         return;
 
-    u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
-    gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     v[ 0 ] = gui_vert( x,     y,     u0, v0, abgr );
     v[ 1 ] = gui_vert( x + w, y,     u1, v0, abgr );
     v[ 2 ] = gui_vert( x + w, y + h, u1, v1, abgr );
     v[ 3 ] = gui_vert( x,     y + h, u0, v1, abgr );
-    tess_verts_commit( 4 );
-
-    u16* idx = &s_tess.indices[ s_tess.idx_count ];
-    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
-    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
-    s_tess.idx_count += 6;
-
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 6;
+    tess_quad_idx( idx, base );
+    tess_prim_commit( 4u, 6u );
 }
 
 /* Tessellate a two-color gradient quad: col_a / col_b on opposite edges, sampled at the white
@@ -291,18 +325,14 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
 static void
 tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal )
 {
-    if ( s_tess.vert_count + 4 > GUI_MAX_VERTS || s_tess.idx_count + 6 > GUI_MAX_IDX )
-    {
-        s_tess.overflow = true;
-        return;
-    }
-    f32 wu, wv;
-    res_atlas_white_uv( &wu, &wv );
-
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
-    tess_set_tex( res_atlas_idx() );
-    if ( !tess_ensure_gpu_cmd() )
+
+    f32              wu, wv;
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
         return;
 
     /* Corner colors walk col_a -> col_b along the chosen axis (TL, TR, BR, BL winding). */
@@ -311,19 +341,12 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
     u32 c2 = col_b;                          /* bottom-right */
     u32 c3 = horizontal ? col_a : col_b;     /* bottom-left  */
 
-    u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
-    gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     v[ 0 ] = gui_vert( x,     y,     wu, wv, c0 );
     v[ 1 ] = gui_vert( x + w, y,     wu, wv, c1 );
     v[ 2 ] = gui_vert( x + w, y + h, wu, wv, c2 );
     v[ 3 ] = gui_vert( x,     y + h, wu, wv, c3 );
-    tess_verts_commit( 4 );
-
-    u16* idx = &s_tess.indices[ s_tess.idx_count ];
-    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
-    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
-    s_tess.idx_count += 6;
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 6;
+    tess_quad_idx( idx, base );
+    tess_prim_commit( 4u, 6u );
 }
 
 /*==============================================================================================
@@ -605,14 +628,11 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
         }
     }
 
-    u32 nv = 4u * nbox * 4u, ni = 4u * nbox * 6u;
-    if ( s_tess.vert_count + nv > GUI_MAX_VERTS || s_tess.idx_count + ni > GUI_MAX_IDX )
-    {
-        s_tess.overflow = true;
-        return;
-    }
-    tess_set_tex( tex_idx );
-    if ( !tess_ensure_gpu_cmd() )
+    u32              nv = 4u * nbox * 4u, ni = 4u * nbox * 6u;
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin_tex( nv, ni, tex_idx, &v, &idx, &base ) )
         return;
     s_tess.cur_fx = fx;      /* the shape's word, stamped onto all 16 (or 32) quadrant vertices */
 
@@ -625,10 +645,7 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
     static const f32 qu[ 4 ] = { 0.0f, 1.0f, 1.0f, 0.0f };
     static const f32 qv[ 4 ] = { 0.0f, 0.0f, 1.0f, 1.0f };
 
-    u16              base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
-    gui_draw_vert_t* v    = &s_tess.verts[ s_tess.vert_count ];
-    u16*             idx  = &s_tess.indices[ s_tess.idx_count ];
-    u32              n    = 0;                     /* quad counter across quadrants x boxes */
+    u32 n = 0;                                     /* quad counter across quadrants x boxes */
 
     for ( u32 q = 0; q < 4; ++q )
     {
@@ -647,15 +664,11 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
                 if ( tv < vlo ) tv = vlo;  if ( tv > vhi ) tv = vhi;
                 v[ n * 4 + c ] = gui_vert_fxc( px, py, tu, tv, abgr, ax - kx, ay - ky );
             }
-            u16 b = (u16)( base + n * 4 );
-            idx[ n * 6 + 0 ] = b + 0; idx[ n * 6 + 1 ] = b + 1; idx[ n * 6 + 2 ] = b + 2;
-            idx[ n * 6 + 3 ] = b + 0; idx[ n * 6 + 4 ] = b + 2; idx[ n * 6 + 5 ] = b + 3;
+            tess_quad_idx( &idx[ n * 6 ], (u16)( base + n * 4 ) );
         }
     }
 
-    tess_verts_commit( nv );
-    s_tess.idx_count  += ni;
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
+    tess_prim_commit( nv, ni );
 }
 
 /* The antialiasing band a shape gets when nothing asked for a softer one -- one pixel, centred on
@@ -667,27 +680,18 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
 static void
 tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
 {
-    if ( s_tess.vert_count + 3 > GUI_MAX_VERTS || s_tess.idx_count + 3 > GUI_MAX_IDX )
-    {
-        s_tess.overflow = true;
-        return;
-    }
-    f32 wu, wv;
-    res_atlas_white_uv( &wu, &wv );
-    tess_set_tex( res_atlas_idx() );
-    if ( !tess_ensure_gpu_cmd() )
+    f32              wu, wv;
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin( 3u, 3u, &wu, &wv, &v, &idx, &base ) )
         return;
 
-    u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
-    gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     v[ 0 ] = gui_vert( ax, ay, wu, wv, abgr );
     v[ 1 ] = gui_vert( bx, by, wu, wv, abgr );
     v[ 2 ] = gui_vert( cx, cy, wu, wv, abgr );
-    tess_verts_commit( 3 );
-    s_tess.indices[ s_tess.idx_count++ ] = base + 0;
-    s_tess.indices[ s_tess.idx_count++ ] = base + 1;
-    s_tess.indices[ s_tess.idx_count++ ] = base + 2;
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 3;
+    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
+    tess_prim_commit( 3u, 3u );
 }
 
 /* Tessellate a filled disc as a single triangle fan: one centre vertex plus a ring of `segs`
@@ -800,13 +804,10 @@ tess_quad_xf( f32 px, f32 py, f32 cs, f32 sn,
               f32 lx, f32 ly, f32 lw, f32 lh,
               f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
-    if ( s_tess.vert_count + 4 > GUI_MAX_VERTS || s_tess.idx_count + 6 > GUI_MAX_IDX )
-    {
-        s_tess.overflow = true;
-        return;
-    }
-    tess_set_tex( tex_idx );
-    if ( !tess_ensure_gpu_cmd() )
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin_tex( 4u, 6u, tex_idx, &v, &idx, &base ) )
         return;
 
     f32 qx[ 4 ] = { lx,      lx + lw, lx + lw, lx      };
@@ -814,20 +815,12 @@ tess_quad_xf( f32 px, f32 py, f32 cs, f32 sn,
     f32 qu[ 4 ] = { u0,      u1,      u1,      u0      };
     f32 qv[ 4 ] = { v0,      v0,      v1,      v1      };
 
-    u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
-    gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     for ( u32 i = 0; i < 4; ++i )
         v[ i ] = gui_vert( px + qx[ i ] * cs - qy[ i ] * sn,
                            py + qx[ i ] * sn + qy[ i ] * cs,
                            qu[ i ], qv[ i ], abgr );
-    tess_verts_commit( 4 );
-
-    u16* idx = &s_tess.indices[ s_tess.idx_count ];
-    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
-    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
-    s_tess.idx_count += 6;
-
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 6;
+    tess_quad_idx( idx, base );
+    tess_prim_commit( 4u, 6u );
 }
 
 /* Tessellate a glyph run under a uniform scale and a rotation about its origin (the text_xf
@@ -878,12 +871,6 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
     f32 len = sqrtf( dx * dx + dy * dy );
     if ( len < 1e-4f )
         return;
-    if ( s_tess.vert_count + 4 > GUI_MAX_VERTS || s_tess.idx_count + 6 > GUI_MAX_IDX )
-    {
-        s_tess.overflow = true;
-        return;
-    }
-
     f32 inv  = 1.0f / len;
     f32 ux   = dx * inv, uy = dy * inv;          /* unit vector along the line  */
     f32 nx   = -uy,      ny = ux;                /* unit normal across the line */
@@ -891,12 +878,12 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
     f32 umax = len / period;                     /* number of tiled periods -> U span */
     f32 vv   = res_atlas_dash_v( duty );
 
-    tess_set_tex( res_atlas_idx() );
-    if ( !tess_ensure_gpu_cmd() )
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin_tex( 4u, 6u, res_atlas_idx(), &v, &idx, &base ) )
         return;
 
-    u16 base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
-    gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     /* U runs 0..1 in the VERTEX and is multiplied back up to `umax` periods by the vertex stage:
        the packed UV cannot hold a coordinate past 1, and the sampler's REPEAT-U is what tiles the
        atlas dash row (gui.h, GUI_FX_TILE_U).  Interpolation is unaffected -- both ends are stored
@@ -906,13 +893,8 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
     v[ 1 ] = gui_vert( x1 + nx * half, y1 + ny * half, 1.0f, vv, abgr );
     v[ 2 ] = gui_vert( x1 - nx * half, y1 - ny * half, 1.0f, vv, abgr );
     v[ 3 ] = gui_vert( x0 - nx * half, y0 - ny * half, 0.0f, vv, abgr );
-    tess_verts_commit( 4 );
-
-    u16* idx = &s_tess.indices[ s_tess.idx_count ];
-    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
-    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
-    s_tess.idx_count += 6;
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 6;
+    tess_quad_idx( idx, base );
+    tess_prim_commit( 4u, 6u );
 }
 
 /*==============================================================================================
@@ -1111,9 +1093,7 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
                                            my + sa * a * uy + b * ny,
                                            wu, wv, col, a - hl, b );
         }
-        u16 q = (u16)( base + s * 4u );
-        idx[ s * 6 + 0 ] = q + 0; idx[ s * 6 + 1 ] = q + 1; idx[ s * 6 + 2 ] = q + 2;
-        idx[ s * 6 + 3 ] = q + 0; idx[ s * 6 + 4 ] = q + 2; idx[ s * 6 + 5 ] = q + 3;
+        tess_quad_idx( &idx[ s * 6 ], (u16)( base + s * 4u ) );
     }
 
     tess_prim_commit( 8u, 12u );
