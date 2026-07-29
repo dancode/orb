@@ -50,11 +50,10 @@ typedef struct
     remains in this block is per-FRAME state only.  In normal rendering nothing in the tail changes
     across a whole flush -- the redundancy filter below pushes it once and then goes quiet.  */
 
-/*  The block SPLITS at the matrix.  The mvp is 64 of those 84 bytes and is constant for a whole
-    flush -- it depends only on the surface size -- so re-sending it with every draw call spent
-    ~76% of the push traffic restating a number that never moved.  It is written ONCE before the
-    dispatch walk; each draw then updates only the 20-byte tail, and only when the tail actually
-    changes (see the redundancy filter in gui_render_flush).
+/*  The whole block is written ONCE per flush, before the dispatch walk -- everything in it is
+    frame-constant now.  The tail offset below survives for the ONE consumer that still rewrites
+    mid-walk: the BATCH debug view, whose per-draw tint is deliberately different per draw call
+    (see gui_render_flush).
 
     Vulkan leaves push constants undefined until written, and the head is written after this
     flush's cmd_bind_pipeline, so a scene pass that bound its own pipeline earlier in the command
@@ -126,7 +125,7 @@ static struct
        filter yield but a cost: the tail is per-FLUSH now, so state_flushes is its denominator. */
     u64 state_draws;                  // draw calls walked (the scissor filter's denominator)
     u64 state_flushes;                // surface flushes walked (the push denominator)
-    u64 state_pushes;                 // 20-byte tail pushes actually issued
+    u64 state_pushes;                 // push-constant writes issued (1 whole block per flush + tail re-pushes)
     u64 state_scissors;               // scissor sets actually issued
 
 } s_render;
@@ -673,8 +672,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         clip at all.  `have_scissor` rather than a sentinel because every rect value is legitimate
         (0,0,0,0 is a fully clipped draw), so there is nothing safe to pre-seed with.  */
     const u8* tail = (const u8*)&push + GUI_PUSH_TAIL_OFF;
-    rhi()->cmd_push_constants( cmd, &push, GUI_PUSH_TAIL_OFF, 0 );
-    rhi()->cmd_push_constants( cmd, tail, GUI_PUSH_TAIL_SIZE, GUI_PUSH_TAIL_OFF );
+    rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
     ++s_render.state_pushes;
     ++s_render.state_flushes;
 

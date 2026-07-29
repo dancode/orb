@@ -827,8 +827,13 @@ draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
     if (( col >> 24 ) == 0u )
         return;
 
-    if ( draw_cull_box( x, y, w, h ))   /* scissored to nothing -- drop before it costs a slot */
-        return;
+    /* A rounded quad becomes an SDF surface whose AA skirt reaches past the authored rect
+       (tess_fx_box), so cull it with the same one pixel of slack pulse and round_rect_ex use --
+       a shape flush against the clip edge keeps its feathered edge.  Square quads cull tight. */
+    f32 rounding = roundable ? draw_clamp_rounding( w, h ) : 0.0f;
+    f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
+    if ( draw_cull_box( x - pad, y - pad, w + 2.0f * pad, h + 2.0f * pad ) )
+        return;                         /* scissored to nothing -- drop before it costs a slot */
 
     /* fill in the command struct */
 
@@ -847,7 +852,7 @@ draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
     c->rect.tex_idx = tex_idx;
     c->rect.abgr    = col;
 
-    c->rect.rounding = roundable ? draw_clamp_rounding( w, h ) : 0.0f;
+    c->rect.rounding = rounding;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
@@ -1215,7 +1220,11 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
     u32 col = draw_apply_alpha( abgr );
     if ( ( col >> 24 ) == 0u )
         return;
-    if ( draw_cull_box( x, y, w, h ) )
+    /* Rounded outlines become GUI_FX_RING surfaces with an AA skirt past the authored rect --
+       the same 1 px cull slack the rounded fill takes (see draw_rect_cmd). */
+    f32 rounding = draw_clamp_rounding( w, h );
+    f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
+    if ( draw_cull_box( x - pad, y - pad, w + 2.0f * pad, h + 2.0f * pad ) )
         return;
     gui_cmd_t* c       = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type              = GUI_CMD_RECT_OUTLINE;
@@ -1227,7 +1236,7 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr
     c->rect_outline.h    = h;
     c->rect_outline.t    = t;
     c->rect_outline.abgr = col;
-    c->rect_outline.rounding = draw_clamp_rounding( w, h );
+    c->rect_outline.rounding = rounding;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
@@ -1307,6 +1316,33 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr )
     (used to skip "##label" suffixes).
 ==============================================================================================*/
 
+/* Copy one run into the frame text pool -- the single body behind both text pushes.  Returns
+   false (loudly, once) when the pool is exhausted; *out_off is the stored offset.  The pool copy
+   is what lets callers pass stack-local buffers (textf, snprintf labels): nothing about the
+   caller's string needs to outlive the call. */
+static bool
+draw_text_pool_copy( const char* str, u32 len, u32* out_off )
+{
+    if ( s_draw.text_pool_used + len + 1 > GUI_MAX_TEXT_POOL )
+    {
+        /* Drop the label rather than store a dangling pointer -- but never silently.  Text
+           vanishing with rects still painting reads as a font bug, not a pool cap, so name the
+           real cause. */
+        GUI_WARN_ONCE( "frame text pool full (%u bytes) -- further text this frame "
+                       "is dropped. Raise GUI_MAX_TEXT_POOL (gui.h).\n", (unsigned)GUI_MAX_TEXT_POOL );
+        ORB_ASSERT_MSG_ONCE( false, "gui text pool exhausted -- labels dropped; raise "
+                                    "GUI_MAX_TEXT_POOL (gui.h)" );
+        return false;
+    }
+    u32   off = s_draw.text_pool_used;   /* offset stored in the cmd; pointer stays local */
+    char* dst = s_draw.text_pool + off;
+    memcpy( dst, str, len );
+    dst[ len ]            = '\0';
+    s_draw.text_pool_used += len + 1;
+    *out_off = off;
+    return true;
+}
+
 void
 draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 clip_x1 )
 {
@@ -1325,27 +1361,11 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
             return;
     }
 
-    /* Resolve length at push time (sentinel means NUL-terminated). */
+    /* Resolve length at push time (sentinel means NUL-terminated), then pool the bytes. */
     u32 len = ( n == 0xFFFFFFFFu ) ? (u32)strlen( str ) : n;
-
-    /* Copy into the text pool so callers can use stack-local buffers (textf, snprintf labels).
-       The pool pointer is valid until draw_reset clears it at the top of the next frame_begin. */
-    if ( s_draw.text_pool_used + len + 1 > GUI_MAX_TEXT_POOL )
-    {
-        /* Pool exhausted: drop the label rather than store a dangling pointer -- but never
-           silently.  Text vanishing with rects still painting reads as a font bug, not a pool
-           cap, so name the real cause. */
-        GUI_WARN_ONCE( "frame text pool full (%u bytes) -- further text this frame "
-                       "is dropped. Raise GUI_MAX_TEXT_POOL (gui.h).\n", (unsigned)GUI_MAX_TEXT_POOL );
-        ORB_ASSERT_MSG_ONCE( false, "gui text pool exhausted -- labels dropped; raise "
-                                    "GUI_MAX_TEXT_POOL (gui.h)" );
+    u32 off;
+    if ( !draw_text_pool_copy( str, len, &off ) )
         return;
-    }
-    u32   off = s_draw.text_pool_used;   /* offset stored in the cmd; pointer stays local */
-    char* dst = s_draw.text_pool + off;
-    memcpy( dst, str, len );
-    dst[ len ]            = '\0';
-    s_draw.text_pool_used += len + 1;
 
     gui_cmd_t* c  = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type         = GUI_CMD_TEXT;
@@ -1400,17 +1420,9 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
         return;
 
     u32 len = (u32)strlen( str );
-    if ( s_draw.text_pool_used + len + 1 > GUI_MAX_TEXT_POOL )
-    {
-        GUI_WARN_ONCE( "frame text pool full (%u bytes) -- further text this frame "
-                       "is dropped. Raise GUI_MAX_TEXT_POOL (gui.h).\n", (unsigned)GUI_MAX_TEXT_POOL );
+    u32 off;
+    if ( !draw_text_pool_copy( str, len, &off ) )
         return;
-    }
-    u32   off = s_draw.text_pool_used;
-    char* dst = s_draw.text_pool + off;
-    memcpy( dst, str, len );
-    dst[ len ]            = '\0';
-    s_draw.text_pool_used += len + 1;
 
     gui_cmd_t* c     = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type          = GUI_CMD_TEXT_XF;

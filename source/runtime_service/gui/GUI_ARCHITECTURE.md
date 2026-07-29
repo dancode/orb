@@ -312,8 +312,9 @@ OS services it cannot reach (clock/sleep/wait) are injected via `frame_set_hooks
 
 Immediate mode with a retained twist: widgets re-emit every frame, but geometry is cached per
 window slot and a clean frame (identical command hash, no input) skips emit entirely
-(`set_retained_skip`, `frame_begin` returning false). Text renders from ONE global active font
-at deferred tessellation time -- `push_font`/`pop_font` cannot scope a second font per-run.
+(`set_retained_skip`, `frame_begin` returning false). Each text command carries its own font id
+(`push_font`/`pop_font` scope per run); the backend re-activates it at deferred tessellation, so
+mixing fonts in one window costs extra text commands, never a batch or segment split.
 
 ## Frame lifecycle -- two tiers
 

@@ -1934,7 +1934,7 @@ gui_tex_index( u32 tex_idx )
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (15 values)
+    u8 type;       // gui_cmd_type_t, fits u8 (17 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
