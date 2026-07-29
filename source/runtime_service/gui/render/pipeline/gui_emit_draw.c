@@ -1108,6 +1108,13 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx,
 
 /*==============================================================================================
     draw_push_circle_filled -- emit a filled disc semantic command.
+
+    `segments` no longer reaches the geometry: the disc tessellates as one signed-distance surface
+    whose boundary is exact at any size (tess_circle_filled), so there is no polygon to choose a
+    resolution for.  The parameter stays because every call site that computes one is still saying
+    something reasonable, and a caller that asks for 64 segments should get a better circle than it
+    asked for rather than a compile error.  It is still folded into the command hash -- it is part
+    of the record, and in practice it is derived from the radius, which already dirties.
 ==============================================================================================*/
 
 void

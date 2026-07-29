@@ -551,16 +551,24 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
    bleed into its atlas neighbour where the coverage has already faded to nothing. */
 static void
 tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rate, f32 depth,
-             gui_fx_mode_t mode,
+             gui_fx_mode_t mode, bool snap,
              f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
     if ( w <= 0.0f || h <= 0.0f )
         return;
 
-    /* Origin grid-snapped like tess_rect_filled: the shape's straight edges must stay crisp, and
-       only its corners want sub-pixel resolution. */
-    x = floorf( x + 0.5f );
-    y = floorf( y + 0.5f );
+    /* Origin grid-snapped like tess_rect_filled: a shape's STRAIGHT edges must stay crisp, and only
+       its corners want sub-pixel resolution.  Every box-ish shape wants that -- and a DISC does not,
+       which is the one caller that passes false.  A circle has no straight edge to keep crisp: its
+       whole boundary is curve the fragment resolves, so snapping buys nothing and costs the thing
+       that actually matters for a small dot, which is being able to sit between pixels.  Snapping
+       the origin of a shape whose centre is (x + r) quantizes that centre, so a dot animating along
+       a path visibly steps instead of gliding. */
+    if ( snap )
+    {
+        x = floorf( x + 0.5f );
+        y = floorf( y + 0.5f );
+    }
 
     /* Clamp EVERY parameter to what the packed word can carry, here and not only in the packer.
        The packer saturates (gui_fx_fixed), but saturating there alone would silently disagree with
@@ -694,40 +702,39 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     tess_prim_commit( 3u, 3u );
 }
 
-/* Tessellate a filled disc as a single triangle fan: one centre vertex plus a ring of `segs`
-   perimeter vertices, with each fan triangle sharing the ring.  One batch open + one white-uv
-   lookup for the whole disc (vs. the old per-triangle path that re-ran tess_ensure_gpu_cmd /
-   font_white_uv / font_atlas_idx and emitted 3 unshared vertices for every segment), so a disc
-   costs segs+1 vertices instead of 3*segs.  Same index count and winding. */
+/*==============================================================================================
+    tess_circle_filled -- a disc, which is a rounded box whose radius reached its half-extent.
+
+    There is no circle primitive here and there does not need to be one.  tess_fx_box clamps the
+    corner radius to half the short side, so a SQUARE box asking for a radius of its own half-extent
+    degenerates exactly to a disc -- same field, same four quadrant quads, same fragment.  What used
+    to be here was a triangle fan, and it was wrong in the way every tessellated curve is wrong: the
+    boundary was a polygon, so its smoothness was bought with segment count and its edge was not
+    antialiased at all (fan vertices carry fx 0, so the fragment applied no coverage).  Callers paid
+    for that in the only currency the fan understood -- sym_arc_segs scales with radius, up to 64
+    segments for a large disc, and even a bullet point spent 12.
+
+        fan, 12 seg   13 verts / 36 idx    faceted, aliased
+        fan, 64 seg   65 verts / 192 idx   smooth, aliased
+        the field     16 verts /  24 idx   exact at any size, antialiased
+
+    It is cheaper in indices than even the smallest fan, and it is the only one of the three whose
+    edge is actually correct.  `segs` is therefore ignored -- kept on the command (and in the public
+    signature) because it costs nothing and every call site passing a count is still saying something
+    true about the shape it wants, just no longer something this layer needs to be told.
+
+    NOT grid-snapped, unlike every other shape that goes through tess_fx_box: see the snap argument
+    there.  A disc has no straight edge that snapping would keep crisp, and quantizing its centre is
+    exactly what a small moving dot must not do.
+==============================================================================================*/
+
 static void
 tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 segs, u32 abgr )
 {
-    if ( segs < 3 ) segs = 3;
-
-    u32 nv = segs + 1, ni = segs * 3;             /* centre vertex + one fan triangle per segment */
-    f32 wu, wv;
-    gui_draw_vert_t* v;
-    u16* idx;
-    u16  base;
-    if ( !tess_prim_begin( nv, ni, &wu, &wv, &v, &idx, &base ) )
-        return;
-
-    f32 step = 6.2831853f / (f32)segs;
-    v[ 0 ] = gui_vert( pcx, pcy, wu, wv, abgr );   /* fan centre */
-    for ( u32 i = 0; i < segs; ++i )
-    {
-        f32 a = step * (f32)i;
-        v[ 1 + i ] = gui_vert( pcx + cosf( a ) * r, pcy + sinf( a ) * r, wu, wv, abgr );
-    }
-
-    u32 k = 0;
-    for ( u32 i = 0; i < segs; ++i )
-    {
-        idx[ k++ ] = base;
-        idx[ k++ ] = (u16)( base + 1 + i );
-        idx[ k++ ] = (u16)( base + 1 + ( i + 1 ) % segs );
-    }
-    tess_prim_commit( nv, ni );
+    (void)segs;
+    tess_fx_box( pcx - r, pcy - r, r * 2.0f, r * 2.0f,
+                 r, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX, false,
+                 0, 0, 1, 1, 0, abgr );
 }
 
 /* Tessellate a glyph run from the font atlas into s_tess, hard-clipped to the horizontal pixel
@@ -1231,7 +1238,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
             case GUI_CMD_RECT_FILLED:
                 if ( c->rect.rounding > 0.0f )
                     tess_fx_box( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
-                                 c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
+                                 c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX, true,
                                  c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
                                  c->rect.tex_idx, c->rect.abgr );
                 else
@@ -1247,7 +1254,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
                     tess_fx_box( c->rect_outline.x, c->rect_outline.y,
                                  c->rect_outline.w, c->rect_outline.h,
                                  c->rect_outline.rounding, TESS_FX_AA, c->rect_outline.t,
-                                 0.0f, 0.0f, GUI_FX_RING,
+                                 0.0f, 0.0f, GUI_FX_RING, true,
                                  0, 0, 1, 1, 0, c->rect_outline.abgr );
                 else
                     tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
@@ -1259,7 +1266,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
                be a gaussian is now the exact same falloff the corners use, only spread out. */
             case GUI_CMD_SHADOW:
                 tess_fx_box( c->shadow.x, c->shadow.y, c->shadow.w, c->shadow.h,
-                             c->shadow.rounding, c->shadow.feather, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
+                             c->shadow.rounding, c->shadow.feather, 0.0f, 0.0f, 0.0f, GUI_FX_BOX, true,
                              0, 0, 1, 1, 0, c->shadow.abgr );
                 break;
 
@@ -1270,7 +1277,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
             case GUI_CMD_PULSE:
                 tess_fx_box( c->pulse.x, c->pulse.y, c->pulse.w, c->pulse.h,
                              c->pulse.rounding, TESS_FX_AA, 0.0f,
-                             c->pulse.rate, c->pulse.depth, GUI_FX_PULSE,
+                             c->pulse.rate, c->pulse.depth, GUI_FX_PULSE, true,
                              0, 0, 1, 1, 0, c->pulse.abgr );
                 break;
 
@@ -1295,6 +1302,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
                               c->text_xf.scale, c->text_xf.rot );
                 break;
 
+            /* A disc is a square SDF box whose radius reached its half-extent -- 16 verts, exactly
+               antialiased, and `segs` no longer means anything (see tess_circle_filled). */
             case GUI_CMD_CIRCLE_FILLED:
                 tess_circle_filled( c->circle.cx, c->circle.cy, c->circle.r,
                                     c->circle.segs, c->circle.abgr );

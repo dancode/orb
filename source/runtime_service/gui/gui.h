@@ -1794,7 +1794,7 @@ typedef enum
     GUI_CMD_TRIANGLE,        // solid triangle
     GUI_CMD_TEXT,            // glyph run from the font atlas
     GUI_CMD_TEXT_XF,         // glyph run under a uniform scale + a rotation about its origin
-    GUI_CMD_CIRCLE_FILLED,   // filled disc (triangle fan)
+    GUI_CMD_CIRCLE_FILLED,   // filled disc: one GUI_FX_BOX surface at radius == half-extent
     GUI_CMD_LINE,            // single stroke segment
     GUI_CMD_POLYLINE,        // multi-segment antialiased polyline
     GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U
@@ -1900,6 +1900,8 @@ typedef struct
            instead of measuring it wrong.  No clip window: the GPU scissor is its only clip.
            Nothing here is snapped to the pixel grid -- see tess_text_xf. */
         struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr; u32 edge; } text_xf;
+        /* segs is IGNORED -- the disc is a distance field now, exact at any size (gui_build_tess.c,
+           tess_circle_filled).  Kept so call sites that reason in segments still compile. */
         struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;
         struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
         struct { u32 pt_offset; u32 pt_count; f32 thickness;

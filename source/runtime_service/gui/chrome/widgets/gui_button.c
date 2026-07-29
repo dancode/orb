@@ -319,7 +319,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
     f32 cy  = c.box.y + CHECKBOX_SZ * 0.5f;
     f32 rad = CHECKBOX_SZ * 0.5f;
 
-    const u32 segs = 16;   /* facets -- round at widget sizes */
+    const u32 segs = 16;   /* ignored -- the disc is a distance field, exact at any size (gui.h) */
     bool      on   = ( v && *v == value );
 
     /* Border ring, then the well (hover/active tinted like a button knob), then the selected dot.

@@ -263,6 +263,9 @@ draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
 {
     if ( filled )
     {
+        /* The segment count is vestigial for the FILL -- that path is a distance field now and is
+           exact at any radius (gui.h, GUI_CMD_CIRCLE_FILLED).  The RING below still walks a real
+           polygon, which is why sym_arc_segs survives at all in this function. */
         draw_push_circle_filled( cx, cy, r, sym_arc_segs( r, SYM_TAU ), col );
         return;
     }
