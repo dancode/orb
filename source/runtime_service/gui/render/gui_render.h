@@ -194,6 +194,12 @@ void draw_push_shadow           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
 void draw_push_pulse            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth,
                                   u32 abgr );
 
+/* Push a filled box with four independent corner radii (tab / notch / asymmetric card).  Ignores
+   the ambient rounding -- the caller names every corner.  Solid colour, filled only; the stroked
+   form stays a perimeter polyline. */
+void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
+                                  f32 rtl, f32 rtr, f32 rbr, f32 rbl, u32 abgr );
+
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr );
 void draw_push_circle_filled    ( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr );

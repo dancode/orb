@@ -271,12 +271,24 @@ tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
     return true;
 }
 
+/* The INDEX half of tess_prim_commit, separable because one primitive can commit its vertices in
+   more than one chunk.  Exactly one does: the rounded box stamps a different effect word onto each
+   quadrant when the corners differ, and the word is applied by tess_verts_commit -- so the vertices
+   go in four passes while the indices, which belong to the single reservation, are accounted once.
+   Splitting rather than reserving four times is what keeps the shape ALL-OR-NOTHING: four separate
+   reservations could each fail on its own and leave a rounded rect missing a corner. */
+static void
+tess_prim_commit_idx( u32 ni )
+{
+    s_tess.idx_count  += ni;
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
+}
+
 static void
 tess_prim_commit( u32 nv, u32 ni )
 {
     tess_verts_commit( nv );
-    s_tess.idx_count  += ni;
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
+    tess_prim_commit_idx( ni );
 }
 
 /* Two triangles over four corners wound TL, TR, BR, BL -- the index pattern of every quad in this
@@ -543,16 +555,37 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     a batch split of zero.
 ==============================================================================================*/
 
-/* Emit one SDF surface.  `r` is the corner radius and `feather` the total width of the falloff band
-   straddling the boundary (0 = hard edge); both are read by every mode.  The remaining parameters
-   are MODE-SPECIFIC, mirroring the fx word's own re-partitioning -- `border` is the band width for
-   GUI_FX_RING, `rate`/`depth` the wave for GUI_FX_PULSE, and each mode ignores the other's.  UVs
-   span the AUTHORED box and are clamped over the grown skirt, so a textured rounded quad cannot
-   bleed into its atlas neighbour where the coverage has already faded to nothing. */
+/* Emit one SDF surface.  `r4` is the corner radius PER QUADRANT, in the tessellation order
+   top-left, top-right, bottom-right, bottom-left (tess_fx_box passes four copies of one radius;
+   only tess_round_rect_ex passes four different ones), and `feather` the total width of the falloff
+   band straddling the boundary (0 = hard edge); both are read by every mode.  The remaining
+   parameters are MODE-SPECIFIC, mirroring the fx word's own re-partitioning -- `border` is the band
+   width for GUI_FX_RING, `rate`/`depth` the wave for GUI_FX_PULSE, and each mode ignores the
+   other's.  UVs span the AUTHORED box and are clamped over the grown skirt, so a textured rounded
+   quad cannot bleed into its atlas neighbour where the coverage has already faded to nothing.
+
+   Per-corner radii are nearly free HERE and nowhere else, which is the whole reason this generalized
+   rather than growing a second tessellator: a quadrant quad already covers exactly one corner, so
+   the geometry does not change at all -- only which word gets stamped onto its four vertices.  What
+   it costs is that the vertices commit in four chunks instead of one (tess_prim_commit_idx).
+
+   Why neighbouring quadrants cannot seam, which is the part that has to be true for any of this to
+   work.  Each quadrant measures from its OWN radius, so the obvious worry is that the two sides of a
+   shared centre line disagree.  They cannot.  Take the horizontal one (ay = 0): ey is r - hy, and r
+   is clamped to lim <= hy, so ey <= 0 for every radius.  The y term therefore drops out of both
+   branches of the field and what remains is
+
+       d = max( ax - hx, -hy )
+
+   in which r has cancelled.  The same holds on the vertical centre line.  The fold lines are
+   precisely where the corner radius stops contributing, so the two sides agree EXACTLY -- not
+   approximately, and not merely because the interior saturates.  This is why per-corner radii place
+   no new restriction on feather. */
 static void
-tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rate, f32 depth,
-             gui_fx_mode_t mode,
-             f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
+tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
+                  f32 feather, f32 border, f32 rate, f32 depth,
+                  gui_fx_mode_t mode,
+                  f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
     if ( w <= 0.0f || h <= 0.0f )
         return;
@@ -567,9 +600,23 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
        short side), which is the one idiom that reaches past 511.875 px. */
     f32 hx = w * 0.5f, hy = h * 0.5f;
     f32 lim = ( hx < hy ) ? hx : hy;
-    if ( r > lim ) r = lim;                       /* a radius past half the short side is a capsule */
-    if ( r > GUI_FX_RADIUS_MAX ) r = GUI_FX_RADIUS_MAX;
-    if ( r < 0.0f ) r = 0.0f;
+
+    f32 rq[ 4 ];
+    f32 rmin, rmax;
+    for ( u32 i = 0; i < 4; ++i )
+    {
+        f32 r = r4[ i ];
+        if ( r > lim ) r = lim;                   /* a radius past half the short side is a capsule */
+        if ( r > GUI_FX_RADIUS_MAX ) r = GUI_FX_RADIUS_MAX;
+        if ( r < 0.0f ) r = 0.0f;
+        rq[ i ] = r;
+    }
+    rmin = rmax = rq[ 0 ];
+    for ( u32 i = 1; i < 4; ++i )
+    {
+        if ( rq[ i ] < rmin ) rmin = rq[ i ];
+        if ( rq[ i ] > rmax ) rmax = rq[ i ];
+    }
     if ( feather < 0.0f ) feather = 0.0f;
     if ( feather > GUI_FX_FEATHER_MAX ) feather = GUI_FX_FEATHER_MAX;
     if ( border  < 0.0f ) border  = 0.0f;
@@ -590,8 +637,9 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
        Snapping a circle is not merely pointless but harmful.  Its origin is (centre - r), so
        snapping quantizes the CENTRE, and a small dot animating along a path steps instead of
        gliding.  A pill (w != h, r == the short half-extent) still snaps, correctly -- it does have
-       two straight edges. */
-    if ( !( hx == hy && r >= lim ) )
+       two straight edges.  With per-corner radii the test reads rMIN: a shape is a disc only when
+       EVERY corner reached the limit, and one square corner is a straight edge worth snapping. */
+    if ( !( hx == hy && rmin >= lim ) )
     {
         x = floorf( x + 0.5f );
         y = floorf( y + 0.5f );
@@ -610,9 +658,6 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
     f32 pad = feather * 0.5f + 1.0f;              /* room for the falloff, plus a pixel of slack */
     f32 ehx = hx + pad, ehy = hy + pad;           /* grown half-extent (geometry only)           */
     f32 cx  = x + hx,   cy  = y + hy;
-    f32 kx  = hx - r,   ky  = hy - r;             /* the centre rect: |p| - k is the effect coord */
-    u32 fx  = ( mode == GUI_FX_PULSE ) ? gui_fx_pack_pulse( r, feather, rate, depth )
-                                       : gui_fx_pack( mode, r, feather, border );
 
     /* The per-quadrant coverage, in quadrant-local |p| space: one box normally, two forming an L
        when a RING has an interior worth skipping.
@@ -626,10 +671,14 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
     f32 hi_x[ 2 ] = { ehx,  0.0f }, hi_y[ 2 ] = { ehy,  0.0f };
     u32 nbox = 1;
 
-    if ( mode == GUI_FX_RING )
+    /* rmin == rmax gates the hole to a UNIFORM radius: the inscribed box below is derived from one
+       radius, and with four it would have to be the intersection of four different erosions.  Not
+       worth deriving -- the only per-corner caller is a FILL, which has no hole.  A mixed-radius
+       ring would simply pay for interior fragments it does not paint. */
+    if ( mode == GUI_FX_RING && rmin == rmax )
     {
         f32 reach = border + feather * 0.5f;
-        f32 er    = r - reach;                    /* the eroded shape's radius */
+        f32 er    = rmax - reach;                 /* the eroded shape's radius */
         if ( er < 0.0f ) er = 0.0f;
         f32 hix = ( hx - reach - er ) + er * 0.70710678f;
         f32 hiy = ( hy - reach - er ) + er * 0.70710678f;
@@ -647,7 +696,6 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
     u16              base;
     if ( !tess_prim_begin_tex( nv, ni, tex_idx, &v, &idx, &base ) )
         return;
-    s_tess.cur_fx = fx;      /* the shape's word, stamped onto all 16 (or 32) quadrant vertices */
 
     f32 ulo = ( u0 < u1 ) ? u0 : u1, uhi = ( u0 < u1 ) ? u1 : u0;
     f32 vlo = ( v0 < v1 ) ? v0 : v1, vhi = ( v0 < v1 ) ? v1 : v0;
@@ -662,6 +710,13 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
 
     for ( u32 q = 0; q < 4; ++q )
     {
+        /* This quadrant's corner, and therefore its own centre rect and its own word.  When every
+           corner matches (tess_fx_box, the overwhelmingly common case) all four words are identical
+           and this is exactly what a single stamp produced. */
+        f32 kx = hx - rq[ q ], ky = hy - rq[ q ];
+        u32 fx = ( mode == GUI_FX_PULSE ) ? gui_fx_pack_pulse( rq[ q ], feather, rate, depth )
+                                          : gui_fx_pack( mode, rq[ q ], feather, border );
+
         for ( u32 k = 0; k < nbox; ++k, ++n )
         {
             for ( u32 c = 0; c < 4; ++c )
@@ -679,9 +734,28 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
             }
             tess_quad_idx( &idx[ n * 6 ], (u16)( base + n * 4 ) );
         }
+
+        /* Commit THIS quadrant's vertices under its own word.  tess_verts_commit stamps at the
+           current vert_count and advances it, so successive chunks land on successive quads of the
+           one reservation -- which is why the writes above still index `v` from the base. */
+        s_tess.cur_fx = fx;
+        tess_verts_commit( nbox * 4u );
     }
 
-    tess_prim_commit( nv, ni );
+    tess_prim_commit_idx( ni );
+}
+
+/* The uniform-radius entry every rounded shape in the library goes through.  Four copies of one
+   radius is not a workaround -- it is the honest statement that a rounded rect is the special case
+   of a per-corner one, and it keeps a single tessellator for both. */
+static void
+tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rate, f32 depth,
+             gui_fx_mode_t mode,
+             f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
+{
+    const f32 r4[ 4 ] = { r, r, r, r };
+    tess_fx_box_core( x, y, w, h, r4, feather, border, rate, depth, mode,
+                      u0, v0, u1, v1, tex_idx, abgr );
 }
 
 /* The antialiasing band a shape gets when nothing asked for a softer one -- one pixel, centred on
@@ -742,6 +816,33 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 segs, u32 abgr )
     tess_fx_box( pcx - r, pcy - r, r * 2.0f, r * 2.0f,
                  r, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
                  0, 0, 1, 1, 0, abgr );
+}
+
+/*==============================================================================================
+    tess_round_rect_ex -- a fill whose four corners have four different radii.
+
+    The tab, the notch, the asymmetric card: shapes that used to walk a per-corner perimeter (up to
+    72 sampled points) and fan it into as many separate TRIANGLE commands, with a polygonal boundary
+    and no antialiasing at all.  Here it is the same 16 vertices a uniform rounded rect costs, and
+    the boundary is exact, because a quadrant quad already sees exactly one corner -- the radii live
+    in four packed words, not in the geometry.
+
+        perimeter fan, 4 rounded corners   ~70 verts / ~200 idx, 62 commands, aliased
+        the field                           16 verts /   24 idx,  1 command,  antialiased
+
+    Solid colour and the standard 1 px AA band, because that is what the callers want -- not a
+    limit of the field (tess_fx_box_core shows the quadrants agree exactly at any feather).
+==============================================================================================*/
+
+static void
+tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
+                    f32 rtl, f32 rtr, f32 rbr, f32 rbl, u32 abgr )
+{
+    /* Quadrant order: top-left, top-right, bottom-right, bottom-left (sx/sy in tess_fx_box_core),
+       which is the order gui_cmd_t.round_rect declares its radii in. */
+    const f32 r4[ 4 ] = { rtl, rtr, rbr, rbl };
+    tess_fx_box_core( x, y, w, h, r4, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
+                      0, 0, 1, 1, 0, abgr );
 }
 
 /* Tessellate a glyph run from the font atlas into s_tess, hard-clipped to the horizontal pixel
@@ -1283,6 +1384,16 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              c->pulse.rounding, TESS_FX_AA, 0.0f,
                              c->pulse.rate, c->pulse.depth, GUI_FX_PULSE,
                              0, 0, 1, 1, 0, c->pulse.abgr );
+                break;
+
+            /* Four quadrants, four radii, four words -- and still one surface, one command and no
+               batch split, exactly like the uniform fill it generalizes. */
+            case GUI_CMD_ROUND_RECT_EX:
+                tess_round_rect_ex( c->round_rect.x, c->round_rect.y,
+                                    c->round_rect.w, c->round_rect.h,
+                                    c->round_rect.rtl, c->round_rect.rtr,
+                                    c->round_rect.rbr, c->round_rect.rbl,
+                                    c->round_rect.abgr );
                 break;
 
             case GUI_CMD_TRIANGLE:

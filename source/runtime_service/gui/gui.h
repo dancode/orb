@@ -1804,6 +1804,8 @@ typedef enum
                              //   sprite carries slice insets (1, 3 or 9 quads from one command)
     GUI_CMD_SHADOW,          // soft rounded box: one GUI_FX_BOX surface with a wide feather
     GUI_CMD_PULSE,           // rounded box whose alpha breathes on the shader clock (GUI_FX_PULSE)
+    GUI_CMD_ROUND_RECT_EX,   // filled box with a PER-CORNER radius: four GUI_FX_BOX quadrants,
+                             // each carrying its own packed word
 
 } gui_cmd_type_t;
 
@@ -1869,7 +1871,7 @@ gui_tex_index( u32 tex_idx )
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (13 values)
+    u8 type;       // gui_cmd_type_t, fits u8 (15 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
@@ -1948,6 +1950,18 @@ typedef struct
            frame must still be PRESENTED -- see GUI_FX_TIME_WRAP -- so a caller runs one
            request_redraw per frame and pays no emit for it. */
         struct { f32 x, y, w, h; f32 rounding, rate, depth;       u32 abgr; } pulse;
+        /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
+           the SAME four quadrant quads a uniform rounded rect emits; the one thing that differs is
+           that each quad carries its own packed word, because the radius is the only shape
+           parameter that lives in the WORD rather than in the vertices.  A quadrant already sees
+           exactly one corner, so per-corner radii cost no extra geometry -- only the four separate
+           stamps (see tess_fx_box_core).
+           The field order IS the quadrant order the tessellator walks (top-left, top-right,
+           bottom-right, bottom-left), so the two cannot drift apart.
+           Filled and solid-colour only.  The stroked form stays a perimeter polyline: GUI_FX_RING
+           derives its interior hole from a single radius, and generalizing that is not worth it for
+           a shape whose outline the polyline already draws correctly. */
+        struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl;          u32 abgr; } round_rect;
     };
 } gui_cmd_t;
 

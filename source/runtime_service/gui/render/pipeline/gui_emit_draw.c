@@ -798,6 +798,7 @@ draw_hash_cmd( const gui_cmd_t* c )
         case GUI_CMD_SPRITE:        h = fnv1a( h, &c->sprite, sizeof c->sprite ); break;
         case GUI_CMD_SHADOW:        h = fnv1a( h, &c->shadow, sizeof c->shadow ); break;
         case GUI_CMD_PULSE:         h = fnv1a( h, &c->pulse,  sizeof c->pulse  ); break;
+        case GUI_CMD_ROUND_RECT_EX: h = fnv1a( h, &c->round_rect, sizeof c->round_rect ); break;
     }
     return h;
 }
@@ -1092,6 +1093,47 @@ draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, 
     c->pulse.rate     = rate;
     c->pulse.depth    = depth;
     c->pulse.abgr     = col;
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+}
+
+/*==============================================================================================
+    draw_push_round_rect_ex -- emit a filled box with four independent corner radii.
+
+    The ambient rounding does NOT apply here and is not consulted: a caller reaching for this is
+    naming every corner, and silently folding in a scope-level radius is how a tab ends up rounded
+    on the two corners it wanted square.  The radii are clamped to the box at tessellation time
+    (tess_fx_box_core), so an over-large one degenerates to a capsule rather than inverting.
+
+    No feather parameter, because no caller wants one -- a per-corner shape is a tab or a card, and
+    a soft-edged one would go through draw_push_shadow.  Nothing in the field prevents it.
+==============================================================================================*/
+
+void
+draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
+                         f32 rtl, f32 rtr, f32 rbr, f32 rbl, u32 abgr )
+{
+    if ( draw_emit_blocked() )
+        return;
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
+    /* One pixel of slack matches the tessellator's own pad -- the AA skirt is real geometry. */
+    if ( draw_cull_box( x - 1.0f, y - 1.0f, w + 2.0f, h + 2.0f ) )
+        return;
+
+    gui_cmd_t* c        = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type             = GUI_CMD_ROUND_RECT_EX;
+    c->clip_idx         = s_draw.cur_clip_idx;
+    c->vp               = (u8)s_draw.cur_vp;
+    c->round_rect.x     = x;
+    c->round_rect.y     = y;
+    c->round_rect.w     = w;
+    c->round_rect.h     = h;
+    c->round_rect.rtl   = rtl;
+    c->round_rect.rtr   = rtr;
+    c->round_rect.rbr   = rbr;
+    c->round_rect.rbl   = rbl;
+    c->round_rect.abgr  = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 

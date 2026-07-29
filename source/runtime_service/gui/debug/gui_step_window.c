@@ -57,7 +57,7 @@ static f32  s_step_accum;
 static const char* k_step_type_name[] = {
     "rect_filled", "rect_outline", "triangle", "text", "text_xf", "circle_filled",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
-    "sprite", "shadow", "pulse",
+    "sprite", "shadow", "pulse", "round_rect_ex",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -195,6 +195,15 @@ step_cmd_detail( const step_cmd_info_t* ci )
                           c->pulse.rounding, c->pulse.rate, c->pulse.depth );
             row2 = b2;
             break;
+        case GUI_CMD_ROUND_RECT_EX:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->round_rect.x, c->round_rect.y,
+                       c->round_rect.w, c->round_rect.h );
+            /* Listed in quadrant order, which is also the order they tessellate in. */
+            fmt_snprintf( b2, sizeof( b2 ), "r tl %.1f  tr %.1f  br %.1f  bl %.1f",
+                          c->round_rect.rtl, c->round_rect.rtr,
+                          c->round_rect.rbr, c->round_rect.rbl );
+            row2 = b2;
+            break;
     }
     gui_text( row2 ? row2 : " " );
 
@@ -227,6 +236,7 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_DASHED_LINE:   step_swatch( r, r.x, "color", c->dash.abgr );         break;
                 case GUI_CMD_SHADOW:        step_swatch( r, r.x, "color", c->shadow.abgr );       break;
                 case GUI_CMD_PULSE:         step_swatch( r, r.x, "color", c->pulse.abgr );        break;
+                case GUI_CMD_ROUND_RECT_EX: step_swatch( r, r.x, "color", c->round_rect.abgr );   break;
                 default:                                                                          break;
             }
             break;

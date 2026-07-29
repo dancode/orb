@@ -222,19 +222,29 @@ round_rect_perimeter_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, gui_v
     return n;
 }
 
-/* Per-corner rounded rect, filled (triangle fan) or stroked (closed polyline).  The general path
-   for tab / notch / asymmetric shapes; for a uniform radius prefer the public draw_round_rect,
-   which delegates to the backend's single-command rounded rect. */
+/* Per-corner rounded rect, filled or stroked.  The general path for tab / notch / asymmetric
+   shapes; for a uniform radius prefer the public draw_round_rect, which delegates to the backend's
+   single-command rounded rect.
+
+   The two halves no longer share a path, and the split is the point.  FILLED is a distance-field
+   surface -- one command, 16 vertices, an exact antialiased boundary at any radius -- because a
+   quadrant quad already covers exactly one corner, so four radii cost four packed words and no
+   extra geometry.  It used to fan the sampled perimeter into up to 62 separate TRIANGLE commands
+   with a polygonal, unantialiased edge.  STROKED still walks the perimeter: an outline of four
+   different radii is not a shape GUI_FX_RING can describe (its band is derived from one), and the
+   closed antialiased polyline draws it correctly already. */
 void
 draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
                     bool filled, f32 thickness, u32 col )
 {
+    if ( filled )
+    {
+        draw_push_round_rect_ex( b.x, b.y, b.w, b.h, rtl, rtr, rbr, rbl, col );
+        return;
+    }
     gui_vec2_t pts[ 4 * 17 + 4 ];
     u32 n = round_rect_perimeter_ex( b, rtl, rtr, rbr, rbl, pts );
-    if ( filled )
-        sym_fill_convex( pts, n, col );
-    else
-        gui_draw_polyline( pts, n, thickness < 1.0f ? 1.0f : thickness, GUI_STROKE_CENTER, true, col );
+    gui_draw_polyline( pts, n, thickness < 1.0f ? 1.0f : thickness, GUI_STROKE_CENTER, true, col );
 }
 
 /* Regular n-gon centred at (cx,cy), circumradius r, first vertex at angle `rot`.  Filled (fan) or
