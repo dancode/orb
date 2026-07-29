@@ -3,22 +3,30 @@
     runtime_service/gui/render/pipeline/gui_emit_path.c -- Line and path stroking.
 
     Pushes stroke SEMANTIC commands (CMD_LINE / CMD_POLYLINE / CMD_DASHED_LINE) into s_draw;
-    the actual antialiased geometry is produced at flush time by tess_stroke_poly_aa /
-    tess_axis_line / tess_dashed_line (gui_build_tess.c).  Two layers:
+    the actual geometry is produced at flush time by tess_fx_segment / tess_stroke_poly_aa /
+    tess_dashed_line (gui_build_tess.c).  Two layers:
 
         draw_line / draw_polyline    -- immediate: stroke a single segment or a point array now.
         path_line_to / path_stroke   -- retained: accumulate points, then stroke the whole run.
 
     Pixel model (see draw_push_rect_filled): integer coordinates fall on the lines *between*
     pixels, so a crisp axis-aligned stroke is one whose two edges both land on integers.  A
-    horizontal / vertical single line therefore takes a snapped-rectangle fast path (no
-    antialiasing, perfectly crisp like a separator); any other angle -- and every multi-segment
-    polyline -- is stroked as an expanded quad strip with a 1px alpha-fading edge, so diagonals and
-    the corners between segments stay smooth.
+    horizontal / vertical single line therefore takes a snapped-rectangle fast path here, at EMIT
+    (stroke_axis_aligned_rect) -- no antialiasing, perfectly crisp like a separator.  Everything
+    else splits by whether it has JOINTS:
 
-    Antialiasing is free in the fragment shader here: output alpha is vertex-alpha * texel, and the
-    solid path samples the white texel (alpha 1), so a vertex authored with alpha 0 contributes
-    nothing -- the feather is pure geometry, no shader or vertex-format change.
+        one segment  -- a CAPSULE distance field, resolved in the fragment (tess_fx_segment).
+                        Exact at any angle, round caps, two quads.
+        a polyline   -- the ribbon stroker's expanded quad strip with a 1px alpha-fading edge
+                        (tess_stroke_poly_aa).  N capsules would overlap at every joint and two
+                        overlapping translucent strokes composite darker than one, so a
+                        semi-transparent path would bead at each vertex; the miter solve exists
+                        precisely to emit each pixel once.
+
+    The ribbon's antialiasing is free in the fragment shader: output alpha is vertex-alpha * texel,
+    and the solid path samples the white texel (alpha 1), so a vertex authored with alpha 0
+    contributes nothing -- the feather is pure geometry, no shader or vertex-format change.  The
+    capsule's is free for a different reason: the field IS the edge.
 
     Included by gui_render.c immediately after gui_emit_draw.c (uses s_draw, draw_cull_box,
     draw_push_rect_filled, draw_apply_alpha, draw_hash_cmd).
@@ -205,7 +213,8 @@ gui_draw_polyline( const gui_vec2_t* pts, u32 count, f32 thickness,
 }
 
 /* Stroke a single segment.  Horizontal / vertical lines render pixel-crisp (snapped rect);
-   diagonal lines are pushed as CMD_LINE (tessellated as an antialiased 2-point polyline). */
+   diagonal lines are pushed as CMD_LINE and resolved by the FRAGMENT as a capsule distance field
+   (tess_fx_segment) -- exact at any angle, with round caps. */
 void
 gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
 {
@@ -214,7 +223,7 @@ gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     /* H/V fast path: axis-aligned lines become a snapped solid rect -- crisp like a separator. */
     if ( stroke_axis_aligned_rect( x0, y0, x1, y1, thickness, GUI_STROKE_CENTER_BIASED, abgr ) )
         return;
-    /* Diagonal: push a CMD_LINE; tessellated at flush as a 2-point antialiased stroke. */
+    /* Diagonal: push a CMD_LINE; tessellated at flush into two quads carrying a capsule field. */
     if ( draw_emit_blocked() )
         return;
     if ( stroke_seg_culled( x0, y0, x1, y1, thickness ) )

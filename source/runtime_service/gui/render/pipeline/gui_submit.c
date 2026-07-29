@@ -30,7 +30,7 @@
 
 // clang-format off
 /*==============================================================================================
-    Push constant layout (88 bytes; must match gui_shader.h GLSL source)
+    Push constant layout (84 bytes; must match gui_shader.h GLSL source)
 ==============================================================================================*/
 
 typedef struct
@@ -50,10 +50,10 @@ typedef struct
     remains in this block is per-FRAME state only.  In normal rendering nothing in the tail changes
     across a whole flush -- the redundancy filter below pushes it once and then goes quiet.  */
 
-/*  The block SPLITS at the matrix.  The mvp is 64 of those 88 bytes and is constant for a whole
+/*  The block SPLITS at the matrix.  The mvp is 64 of those 84 bytes and is constant for a whole
     flush -- it depends only on the surface size -- so re-sending it with every draw call spent
-    ~73% of the push traffic restating a number that never moved.  It is written ONCE before the
-    dispatch walk; each draw then updates only the 24-byte tail, and only when the tail actually
+    ~76% of the push traffic restating a number that never moved.  It is written ONCE before the
+    dispatch walk; each draw then updates only the 20-byte tail, and only when the tail actually
     changes (see the redundancy filter in gui_render_flush).
 
     Vulkan leaves push constants undefined until written, and the head is written after this
@@ -100,14 +100,16 @@ static struct
 {
     rhi_pipeline_t  pipeline;           // compiled pipeline: gui shaders + vertex layout + alpha blend
     rhi_pipeline_t  pipeline_wire;      // same pipeline in VK_POLYGON_MODE_LINE (wireframe debug view)
-    rhi_sampler_t   font_sampler;       // sampler for font textures (point clamp)
+    rhi_sampler_t   font_sampler;       // coverage sampler: point, U repeats (dash tiling), V clamps
     u32             font_sampler_idx;   // bindless slot for font_sampler
 
-    /* Second sampler, bilinear, for the full-RGBA sampling model: authored sprite art and a
-       caller's own textures (a scene render target).  Which one a draw binds is DERIVED from
-       the tex_idx MODE FIELD rather than carried per command, because the model already answers
-       the question -- coverage is glyphs and icons, which must stay point-sampled to render crisp,
-       and colour is a picture, which must filter or it blocks up the moment it is stretched. */
+    /* Second sampler, bilinear, for the sampling models that filter: authored sprite art, a
+       caller's own textures (a scene render target), and distance-field glyphs.  BOTH slots are
+       pushed every flush and the FRAGMENT chooses between them from the vertex's model field, so a
+       draw call binds neither in particular -- which is exactly what lets one batch mix a point-
+       sampled glyph atlas with a filtered image.  The model answers the question on its own:
+       coverage is glyphs and icons, which must stay point-sampled to render crisp, and everything
+       else is a picture or a field, which must filter. */
     rhi_sampler_t   image_sampler;      // sampler for RGBA images (bilinear clamp)
     u32             image_sampler_idx;  // bindless slot for image_sampler
 
@@ -122,7 +124,7 @@ static struct
        The filters are invisible by construction -- they change no pixel -- so without a count
        there is no way to tell whether they are earning anything on a real UI. */
     u64 state_draws;                  // draw calls walked (the denominator for both below)
-    u64 state_pushes;                 // 24-byte tail pushes actually issued
+    u64 state_pushes;                 // 20-byte tail pushes actually issued
     u64 state_scissors;               // scissor sets actually issued
 
 } s_render;
@@ -398,9 +400,12 @@ render_shutdown( void )
     // Peak draw calls in a single frame -- a measure of batching effectiveness.
     printf( "[gui] peak draw calls in a frame: %u\n", cache_draw_call_hwm() );
 
-    /* Redundancy-filter yield.  The push figure counts 24-byte tails; the mvp is one 64-byte write
-       per flush, so the old cost was state_draws * 88 bytes and the new one is roughly
-       state_pushes * 24 -- the ratio is the honest measure of what the split bought. */
+    /* Redundancy-filter yield.  The push figure counts 20-byte tails; the mvp is one 64-byte write
+       per flush, so the old cost was state_draws * 84 bytes and the new one is roughly
+       state_pushes * 20 -- the ratio is the honest measure of what the split bought.  Since the
+       texture left the block the tail is frame-constant in NORMAL rendering, so this now reads
+       ~100% suppressed; the number stays interesting for the BATCH view, whose per-draw tint is
+       the only thing left that moves it. */
     if ( s_render.state_draws )
     {
         printf( "[gui] per-draw state: %llu pushes + %llu scissors over %llu draws "
@@ -645,13 +650,17 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        elimination -- the GPU sees the identical state either way, so nothing below can change
        what is drawn, only how much command buffer it takes to say it.
 
-       They pay off because the two things that split a batch are INDEPENDENT: tess_ensure_gpu_cmd
-       breaks on a texture change OR a clip change (gui_build_tess.c), so a run of commands that
-       split on texture shares one clip rect, and a run that split on clipping shares one texture.
-       Whichever axis moved, the other one is usually still saying the same thing it said last draw.
+       They are lopsided now, and it is worth saying why rather than leaving the symmetry implied.
+       A batch is cut by a CLIP change alone (tess_ensure_gpu_cmd; the texture stopped being a
+       batch key when it moved into the vertex), so the scissor filter suppresses only the runs of
+       commands a forced boundary split -- volatile-block edges and slot boundaries -- while the
+       TAIL filter now suppresses essentially everything: in NORMAL rendering nothing in the tail
+       changes for a whole flush, so it fires once.  The BATCH debug view is the one caller that
+       still moves it, one dbg_tint per draw.  The filter stays because that view exists and
+       because the cost of asking is a 20-byte memcmp.
 
        `have_*` rather than a sentinel value: every field is a legitimate value (scissor 0,0,0,0 is
-       a fully clipped draw; tex_idx 0 is a real slot), so there is nothing safe to pre-seed with. */
+       a fully clipped draw), so there is nothing safe to pre-seed with. */
     rhi_rect_t last_scissor = { 0 };
     bool       have_scissor = false;
     u8         last_tail[ GUI_PUSH_TAIL_SIZE ];
@@ -716,7 +725,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
             if ( batch_view )
                 push.dbg_tint = render_batch_debug_color( draw_calls );
 
-            /* The 24-byte tail, and only when it moved.  Compared as bytes rather than field by
+            /* The 20-byte tail, and only when it moved.  Compared as bytes rather than field by
                field so a field added to the block is covered without touching this line. */
             const u8* tail = (const u8*)&push + GUI_PUSH_TAIL_OFF;
             if ( !have_tail || memcmp( tail, last_tail, GUI_PUSH_TAIL_SIZE ) != 0 )

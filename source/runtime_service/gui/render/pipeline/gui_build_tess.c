@@ -526,12 +526,22 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
 
+    /* Clamp EVERY parameter to what the packed word can carry, here and not only in the packer.
+       The packer saturates (gui_fx_fixed), but saturating there alone would silently disagree with
+       the geometry this function builds from the same numbers: the effect coordinate is `|p| - k`
+       with k = half-extent minus RADIUS, and the falloff skirt is sized from FEATHER, so a value
+       the fragment never sees would leave the vertices describing a different shape than the one
+       the fragment resolves.  Both sides have to be clamped to the same number.  The radius bound
+       bites in practice on a tall "fully round" pill (draw_set_rounding( 9999 ) clamped to half the
+       short side), which is the one idiom that reaches past 511.875 px. */
     f32 hx = w * 0.5f, hy = h * 0.5f;
     f32 lim = ( hx < hy ) ? hx : hy;
     if ( r > lim ) r = lim;                       /* a radius past half the short side is a capsule */
+    if ( r > GUI_FX_RADIUS_MAX ) r = GUI_FX_RADIUS_MAX;
     if ( r < 0.0f ) r = 0.0f;
     if ( feather < 0.0f ) feather = 0.0f;
     if ( feather > GUI_FX_FEATHER_MAX ) feather = GUI_FX_FEATHER_MAX;
+    if ( border  < 0.0f ) border  = 0.0f;
     if ( border  > GUI_FX_BORDER_MAX  ) border  = GUI_FX_BORDER_MAX;
     if ( rate    < 0.0f ) rate  = 0.0f;
     if ( rate    > GUI_FX_RATE_MAX ) rate = GUI_FX_RATE_MAX;
@@ -1036,9 +1046,9 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
        weigh a hairline differently than every other line in the library, and consistency across the
        two paths is worth more here than the extra correctness. */
     f32 a_scale = 1.0f;
-    if ( thickness < 1.0f )
+    if ( thickness < 1.0f )                 /* thickness > 0 by the guard above */
     {
-        a_scale   = ( thickness < 0.0f ) ? 0.0f : thickness;
+        a_scale   = thickness;
         thickness = 1.0f;
     }
     u32 a_in = (u32)( ( ( abgr >> 24 ) & 0xFFu ) * a_scale + 0.5f );
@@ -1048,6 +1058,9 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     f32 ux  = dx * inv, uy = dy * inv;      /* unit vector along the segment  */
     f32 nx  = -uy,      ny = ux;            /* unit normal across it          */
     f32 r   = thickness * 0.5f;             /* the capsule radius             */
+    /* Clamped for the same reason tess_fx_box clamps its radius: the geometry below is sized from
+       `r`, so the fragment's saturated copy of it has to be the same number. */
+    if ( r > GUI_FX_RADIUS_MAX ) r = GUI_FX_RADIUS_MAX;
     f32 hl  = len * 0.5f;                   /* half-length: what q.x subtracts */
     f32 mx  = ( x0 + x1 ) * 0.5f, my = ( y0 + y1 ) * 0.5f;
 
@@ -1090,11 +1103,17 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
 }
 
 /* Fast path for an axis-aligned line: a horizontal (y0==y1) or vertical (x0==x1) line has no
-   diagonal edge to feather, so a crisp grid-snapped quad is indistinguishable from the AA stroke
-   while costing a fraction of the geometry -- 4 verts / 6 idx vs. 8 verts / 18 idx, and none of the
-   per-point miter-normal solve.  This is the common case (separators, frame borders, table grid
-   lines, underlines).  Sub-pixel thickness fades the alpha exactly as tess_stroke_poly_aa does so a
-   hairline keeps its weight.  Returns false for a diagonal line, which falls back to the stroker. */
+   diagonal edge to feather, so a crisp grid-snapped quad beats any field -- 4 verts / 6 idx against
+   the capsule's 8 / 12, and crisper, because there is nothing to antialias.  This is the common
+   case (separators, frame borders, table grid lines, underlines).  Sub-pixel thickness fades the
+   alpha exactly as tess_stroke_poly_aa does so a hairline keeps its weight.  Returns false for a
+   diagonal, which falls through to tess_fx_segment.
+
+   BACKSTOP, not the live path: gui_draw_line already routes every H/V segment through
+   stroke_axis_aligned_rect at EMIT (gui_emit_path.c), and that is the only producer of
+   GUI_CMD_LINE, so this currently never fires.  It is kept because it is the tessellator's own
+   guarantee -- a future producer that pushes GUI_CMD_LINE directly gets the crisp quad without
+   having to know the emit layer's fast path exists. */
 static bool
 tess_axis_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
 {

@@ -117,30 +117,41 @@
         location 3 flat in uint v_fx;
         location 4 flat in uint v_tex;
         location 0 out vec4 out_color;
-        fx_coverage(): mode = v_fx & 0xF; mode 0 -> 1.0 (early out).  Else unpack
-              radius (bits 4..15, 1/8 px), feather (16..24, 1/4 px), border (25..31, 1/8 px);
+        fx_coverage(): mode = v_fx & 0xF; modes 0 / 4 / 5 -> 1.0 (early out -- the two that are
+              not shapes act elsewhere).  Else unpack radius (bits 4..15, 1/8 px), feather
+              (16..24, 1/4 px), border (25..31, 1/8 px);
               q = v_fx_coord;
-              d = min(max(q.x, q.y), 0) + length(max(q, 0)) - radius;   // exact inside AND out
-              mode 2 (RING): d = |d + border/2| - border/2;
+              mode 6 (SEG): d = length(vec2(max(q.x, 0), q.y)) - radius;   // capsule, no fold on y
+              else          d = min(max(q.x, q.y), 0) + length(max(q, 0)) - radius;
+                            mode 2 (RING): d = |d + border/2| - border/2;
               cov = feather > 0 ? clamp(0.5 - d/feather, 0, 1) : (d <= 0 ? 1 : 0);
               mode 3 (PULSE): rate = bits 25..28 * 1/4 Hz, depth = bits 29..31 / 7;
                               cov *= 1 - depth * (0.5 - 0.5*cos(2*pi * rate * pc.time));
               return cov;
-              The min/max interior term is load-bearing: without it the field saturates at
-              -radius everywhere inside, so a border wider than the radius fills the whole
-              interior and a shadow softer than the radius never reaches full opacity.
+              The min/max interior term is load-bearing on the BOX form: without it the field
+              saturates at -radius everywhere inside, so a border wider than the radius fills the
+              whole interior and a shadow softer than the radius never reaches full opacity.  The
+              capsule needs no such term -- its form is already exact in the core.
         main: if (dbg_flat) out_color = dbg_tint ? vec4(srgb_to_linear(unpack(dbg_tint)), a)
                                                 : vec4(v_color.rgb, 1);   // tint is the ONLY
               else                                        // color still decoded in the fragment
-              { vec4 s = texture(sampler2D(u_textures[tex_idx], u_samplers[samp_idx]), v_uv);
+              { uint mode = v_tex >> 30, slot = v_tex & 0x3FFFFFFF;   // both FROM THE VERTEX
+                uint samp = mode == 0 ? pc.samp_point : pc.samp_image;
+                vec4 s = texture(sampler2D(u_textures[nonuniformEXT(slot)],
+                                           u_samplers [nonuniformEXT(samp)]), v_uv);
                 float cov = fx_coverage();
-                if (tex_mode == 1) out_color = vec4(s.rgb * v_color.rgb,
-                                               s.a * v_color.a * cov);  // texel arrives linear
-                else if (tex_mode == 2) {                               // distance field
-                    float d = s.r - 128.0/255.0;                        // 128 = on the outline
-                    out_color = vec4(v_color.rgb, v_color.a * cov *
-                                     clamp(d / max(fwidth(d), 1e-6) + 0.5, 0, 1)); }
-                else          out_color = vec4(v_color.rgb, v_color.a * s.r * cov); }
+                if (mode == 1) out_color = vec4(s.rgb * v_color.rgb,
+                                                s.a * v_color.a * cov);  // texel arrives linear
+                else if (mode == 2) {                                    // distance field
+                    float d = s.r - 128.0/255.0;                         // 128 = on the outline
+                    float dpx = d / max(fwidth(d), 1e-6);                // edge distance in PIXELS
+                    float fill = clamp(dpx + 0.5, 0, 1);
+                    if ((v_fx & 0xF) == 5) {                             // GUI_FX_TEXT_EDGE
+                        // widen the same threshold by `width` and source-over the fill onto the
+                        // band, so the seam is antialiased once and never double-darkens
+                        ... out_color = vec4(mix of v_color and the unpacked edge colour); }
+                    else out_color = vec4(v_color.rgb, v_color.a * cov * fill); }
+                else           out_color = vec4(v_color.rgb, v_color.a * s.r * cov); }
               The debug views (dbg_flat) bypass fx_coverage: they exist to show the geometry
               actually submitted, and an SDF surface's four quadrant quads are what you want to
               see there.

@@ -1539,13 +1539,31 @@ typedef enum
    Any other period sees one discontinuity every ~17 minutes. */
 #define GUI_FX_TIME_WRAP     1024.0
 
-/* mode | radius (1/8 px) | feather (1/4 px) | border (1/8 px).  Callers clamp; this only packs. */
+/* Clamp a fixed-point field into the range its bit width can hold, BEFORE the shift.  Every packer
+   below goes through it, and the reason is that the alternative -- masking after the shift, which
+   is what the packers used to do -- turns an out-of-range value into a WRAPPED one: a 600 px corner
+   radius (a "fully round" pill on a tall panel, the idiom being `draw_set_rounding( 9999 )` clamped
+   to half the short side) came out the far side as 88 px, and the shape simply looked wrong with
+   nothing to point at.  Saturating is not merely safer, it is the only answer that is ever wanted:
+   every one of these fields is a physical pixel quantity whose max is past what the rasterizer can
+   show, so a value beyond it means "as much as you have".  Negatives clamp to 0 for a second
+   reason -- converting a negative float to unsigned is undefined behaviour in C. */
+static inline u32
+gui_fx_fixed( f32 v, f32 scale, u32 max_q )
+{
+    if ( !( v > 0.0f ) ) return 0u;                    /* also catches NaN */
+    f32 q = v * scale + 0.5f;
+    return ( q >= (f32)max_q ) ? max_q : (u32)q;
+}
+
+/* mode | radius (1/8 px) | feather (1/4 px) | border (1/8 px).  Each field saturates at its own
+   maximum (GUI_FX_*_MAX above) rather than wrapping -- see gui_fx_fixed. */
 static inline u32
 gui_fx_pack( gui_fx_mode_t mode, f32 radius, f32 feather, f32 border )
 {
-    u32 r = (u32)( radius  * 8.0f + 0.5f ) & 0xFFFu;
-    u32 f = (u32)( feather * 4.0f + 0.5f ) & 0x1FFu;
-    u32 b = (u32)( border  * 8.0f + 0.5f ) & 0x7Fu;
+    u32 r = gui_fx_fixed( radius,  8.0f, 0xFFFu );
+    u32 f = gui_fx_fixed( feather, 4.0f, 0x1FFu );
+    u32 b = gui_fx_fixed( border,  8.0f, 0x7Fu  );
     return ( (u32)mode & 0xFu ) | ( r << 4 ) | ( f << 16 ) | ( b << 25 );
 }
 
@@ -1563,10 +1581,10 @@ gui_fx_pack( gui_fx_mode_t mode, f32 radius, f32 feather, f32 border )
 static inline u32
 gui_fx_pack_pulse( f32 radius, f32 feather, f32 rate, f32 depth )
 {
-    u32 r  = (u32)( radius  * 8.0f + 0.5f ) & 0xFFFu;
-    u32 f  = (u32)( feather * 4.0f + 0.5f ) & 0x1FFu;
-    u32 hz = (u32)( rate    * 4.0f + 0.5f ) & 0xFu;
-    u32 dp = (u32)( depth * GUI_FX_DEPTH_STEPS + 0.5f ) & 0x7u;
+    u32 r  = gui_fx_fixed( radius,  8.0f, 0xFFFu );
+    u32 f  = gui_fx_fixed( feather, 4.0f, 0x1FFu );
+    u32 hz = gui_fx_fixed( rate,    4.0f, 0xFu   );
+    u32 dp = gui_fx_fixed( depth, GUI_FX_DEPTH_STEPS, 0x7u );
     return (u32)GUI_FX_PULSE | ( r << 4 ) | ( f << 16 ) | ( hz << 25 ) | ( dp << 29 );
 }
 
@@ -1593,7 +1611,7 @@ gui_fx_pack_pulse( f32 radius, f32 feather, f32 rate, f32 depth )
 static inline u32
 gui_fx_pack_tile_u( f32 repeats )
 {
-    u32 n = (u32)( repeats * 16.0f + 0.5f ) & 0xFFFFFFu;
+    u32 n = gui_fx_fixed( repeats, 16.0f, 0xFFFFFFu );
     return (u32)GUI_FX_TILE_U | ( n << 4 );
 }
 
@@ -1601,7 +1619,7 @@ gui_fx_pack_tile_u( f32 repeats )
 static inline u32
 gui_fx_pack_text_edge( f32 width, u32 abgr )
 {
-    u32 w = (u32)( width * 8.0f + 0.5f ) & 0xFFu;
+    u32 w = gui_fx_fixed( width, 8.0f, 0xFFu );
     u32 r = ( ( abgr       ) & 0xFFu ) >> 3;
     u32 g = ( ( abgr >>  8 ) & 0xFFu ) >> 3;
     u32 b = ( ( abgr >> 16 ) & 0xFFu ) >> 3;
@@ -2447,10 +2465,11 @@ typedef struct
    would sit right at the 65535 ceiling).  The 3x index ratio clears both mixes with room
    to spare -- quads run 6 idx per 4 verts (1.5:1) and AA paths / arcs stay under 2:1 --
    so geometry that would exceed it overflows a frame's tessellation, not the buffer
-   sizing.  The per-frame region sizes that fall out of these (VB 640 KB, IB 192 KB) are
-   both 256-byte aligned, so each frame-in-flight region stays independently addressable
-   -- note that this only matters if the VB/IB are ever moved off HOST_COHERENT memory, in
-   which case regions would need rounding up to nonCoherentAtomSize to flush apart. */
+   sizing.  The per-frame region sizes that fall out of these (VB 896 KB at the packed
+   28-byte vertex, IB 192 KB) are both 256-byte aligned, so each frame-in-flight region
+   stays independently addressable -- note that this only matters if the VB/IB are ever
+   moved off HOST_COHERENT memory, in which case regions would need rounding up to
+   nonCoherentAtomSize to flush apart. */
 
 #ifdef GUI_STRESS_TEST
 
@@ -2476,7 +2495,7 @@ typedef struct
 
 #endif
 
-#define GUI_MAX_IDX          ( GUI_MAX_VERTS * 3 )   /* 2x index ratio suits quad-dominated UI   */
+#define GUI_MAX_IDX          ( GUI_MAX_VERTS * 3 )   /* 3x clears quads (1.5:1) and AA strips     */
 #define GUI_CLIP_DEPTH       32                      /* push_clip / pop_clip nesting depth       */
 
 /* Command segments: one contiguous span of the command list per (z, vp) the emit path stamps, cut

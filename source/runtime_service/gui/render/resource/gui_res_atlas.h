@@ -19,21 +19,24 @@
             LINEAR; that is the one thing it could not share with the coverage atlas, which must
             stay NEAREST or bitmap glyphs stop being crisp.  Scalable text lives here.
 
-    No two can share a texture -- a pixel format apart, or a sampler apart -- and so never share a
-    draw call, but each is internally ONE texture with ONE bindless slot, so all art within a kind
-    still batches: a window's whole nine-slice frame plus every sprite on it is one draw, exactly as
-    its text and fills are one draw.  They share this file, the packer, and the tenant/repack
-    machinery -- the instance record below is the only thing there are three of.
+    No two can share a texture -- a pixel format apart, or a sampler apart -- but they DO share a
+    draw call: the bindless slot and its sampling model ride the vertex now (gui.h,
+    gui_draw_vert_t), so a window's nine-slice frame, its bitmap labels and an SDF heading go out
+    together and only a clip change cuts the batch.  Each is still internally ONE texture with ONE
+    bindless slot, which is what keeps the vertex word constant across a whole kind.  They share
+    this file, the packer, and the tenant/repack machinery -- the instance record below is the only
+    thing there are three of.
 
     Everything from here down describes all three, with the coverage atlas as the example.
 
     Every resource -- font glyph atlases, the runtime icon set, the drawing assists, and sprites --
-    is packed into its atlas as a rectangular "tenant".  Because they all
-    resolve to the same bindless index (res_atlas_idx), the tessellator's tex_idx-adjacency batcher
-    (tess_ensure_gpu_cmd) merges text, solid fills, dashed lines and icons into one draw call per
-    clip/viewport scope instead of one per resource.  A user's OWN RGBA image (a scene render
-    target handed to draw_texture_in) stays its own tex_idx and is not a tenant of either atlas --
-    these cover the resources gui itself owns, not every texture that can reach the draw list.
+    is packed into its atlas as a rectangular "tenant".  They all resolve to the same bindless index
+    (res_atlas_idx), which no longer decides the batching -- the tessellator cuts a draw call on a
+    clip/viewport change alone -- but still decides how much of the texture cache one draw touches:
+    text, solid fills, dashed lines and icons read one 1024-square R8 image between them.  A user's
+    OWN RGBA image (a scene render target handed to draw_texture_in) stays its own tex_idx and is
+    not a tenant of either atlas -- these cover the resources gui itself owns, not every texture
+    that can reach the draw list.
 
     Layout: the coverage atlas reserves a fixed full-width assist band (white texel +
     GUI_DASH_PATTERN_COUNT dash rows) at the very bottom of the texture, exactly as each font atlas
