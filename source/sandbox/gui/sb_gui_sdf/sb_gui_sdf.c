@@ -59,6 +59,7 @@
 #define HIT       GUI_COLOR( 0xFF, 0x70, 0x50, 0xFF )
 #define HEAL      GUI_COLOR( 0x60, 0xE0, 0x80, 0xFF )
 #define PANEL     GUI_COLOR( 0x18, 0x18, 0x1E, 0xFF )
+#define EDGE      GUI_COLOR( 0x3A, 0x3A, 0x44, 0xFF )
 
 /*==============================================================================================
     The two fonts under test
@@ -345,6 +346,34 @@ panel_hud( void )
 
 static bool s_show_field = true;
 
+/* One atlas preview, fitted rather than filled.
+   An atlas is a picture with a fixed shape -- 512x512 for the coverage bake, 1024x512 for the
+   field -- and draw_texture_in FILLS the rect it is given.  Handing both the same box therefore
+   squashes one and stretches the other, which makes two identical bakes look like different ones
+   and hides the fact that the field atlas is the WIDER texture.  So the box gives, not the image:
+   scale to the tighter axis, centre the result, and outline the slot so the unused space is
+   visible as unused space rather than read as part of the atlas. */
+static void
+atlas_preview( gui_rect_t slot, const char* label, u32 font_id, gui_vec2_t px )
+{
+    gui()->draw_text( slot.x, slot.y, INK_DIM, label );
+
+    gui_rect_t box = { slot.x, slot.y + 20.0f, slot.w, slot.h - 20.0f };
+    if ( px.x <= 0.0f || px.y <= 0.0f )
+        return;
+
+    f32 s = ( box.w / px.x < box.h / px.y ) ? box.w / px.x : box.h / px.y;
+    f32 w = px.x * s, h = px.y * s;
+    gui_rect_t fit = { box.x + ( box.w - w ) * 0.5f, box.y + ( box.h - h ) * 0.5f, w, h };
+
+    gui()->draw_frame( box, 0u, EDGE, 1.0f );
+    gui()->draw_texture_in( fit, gui()->font_atlas_idx( font_id ), 0xFFFFFFFFu );
+
+    char cap[ 64 ];
+    snprintf( cap, sizeof( cap ), "%.0fx%.0f at %.0f%%", px.x, px.y, s * 100.0f );
+    gui()->draw_text( slot.x, slot.y + slot.h - 14.0f, INK_DIM, cap );
+}
+
 static void
 panel_field( void )
 {
@@ -369,16 +398,12 @@ panel_field( void )
        of ink; the field holds a soft ramp reaching `spread` pixels out from every outline, which
        is exactly the information the fragment differentiates and exactly what the extra texels
        are buying. */
-    gui_rect_t r = gui()->canvas( 250.0f );
+    gui_rect_t r = gui()->canvas( 270.0f );
     f32        w = ( r.w - 24.0f ) * 0.5f;
 
-    gui()->draw_text( r.x, r.y, INK_DIM, "coverage" );
-    gui()->draw_texture_in( ( gui_rect_t ){ r.x, r.y + 20.0f, w, 220.0f },
-                            gui()->font_atlas_idx( s_font_cov ), 0xFFFFFFFFu );
-
-    gui()->draw_text( r.x + w + 24.0f, r.y, INK_DIM, "distance field" );
-    gui()->draw_texture_in( ( gui_rect_t ){ r.x + w + 24.0f, r.y + 20.0f, w, 220.0f },
-                            gui()->font_atlas_idx( s_font_sdf ), 0xFFFFFFFFu );
+    atlas_preview( ( gui_rect_t ){ r.x, r.y, w, 250.0f }, "coverage", s_font_cov, cov_sz );
+    atlas_preview( ( gui_rect_t ){ r.x + w + 24.0f, r.y, w, 250.0f },
+                   "distance field", s_font_sdf, sdf_sz );
 }
 
 /*==============================================================================================
