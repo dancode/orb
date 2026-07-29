@@ -43,12 +43,36 @@ struct vs_out_t
     nointerpolation uint    fx       : TEXCOORD2;
 };
 
+// Decode an sRGB-encoded color to linear light.  UI colors are authored in sRGB (the values you
+// type as hex / pick in a color picker), but the swapchain is a _SRGB format, so the GPU blends in
+// linear space and re-encodes on store.  The vertex color arrives as raw UNORM bytes (no automatic
+// decode), so it has to be linearized for alpha blending to be physically correct.
+//
+// It happens HERE, not in the fragment, because the quantity is per-vertex constant: decoding it
+// per fragment ran three pow() over every pixel of every panel to recompute a number that changes
+// four times per quad.  UI is fill-bound -- a docked layout is mostly large flat rects -- so this
+// was the most expensive thing in the fragment shader and the least necessary.
+//
+// The consequence is that a MULTI-COLOR quad now interpolates in linear light rather than in sRGB.
+// For every primitive whose four vertices share one color (fills, text, sprites, SDF surfaces) the
+// result is bit-identical.  It differs for GUI_CMD_RECT_GRADIENT, which exists precisely to let the
+// hardware blend two colors: its midpoint is now the photometric mean rather than the perceptual
+// one, and reads lighter.  That is the same rule the alpha blend already follows, so the two are
+// consistent for the first time -- but it IS a visible change to authored gradients.
+float3 srgb_to_linear( float3 c )
+{
+    float3 lo = c / 12.92;
+    float3 hi = pow( ( c + 0.055 ) / 1.055, 2.4 );
+    return lerp( hi, lo, step( c, 0.04045 ) );    // c <= 0.04045 selects lo (GLSL mix + cutoff)
+}
+
 vs_out_t main( vs_in_t v )
 {
     vs_out_t o;
     o.sv_pos   = mul( pc.mvp, float4( v.pos, 0.0, 1.0 ) );
     o.sv_pos.y = -o.sv_pos.y;    // cancel the cook's -fvk-invert-y: mvp is already Vulkan-style
-    o.color    = v.color;
+    // RGB linear, alpha untouched -- alpha is coverage, which is already a linear quantity.
+    o.color    = float4( srgb_to_linear( v.color.rgb ), v.color.a );
     o.uv       = v.uv;
     o.fx_coord = v.fx_coord;
     o.fx       = v.fx;

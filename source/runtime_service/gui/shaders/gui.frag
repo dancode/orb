@@ -20,11 +20,12 @@ layout(location = 2) in  vec2 v_fx_coord;
 layout(location = 3) flat in uint v_fx;
 layout(location = 0) out vec4 out_color;
 
-// Decode an sRGB-encoded color to linear light. UI colors are authored in sRGB
-// (the values you type as hex / pick in a color picker), but the swapchain is a
-// _SRGB format, so the GPU blends in linear space and re-encodes on store. The
-// vertex color arrives as raw UNORM bytes (no automatic decode), so we linearize
-// it here to keep alpha blending physically correct -- the normal game-engine path.
+// v_color arrives ALREADY LINEAR -- the vertex stage decodes it (see gui.vert), because it is a
+// per-vertex constant and decoding it per fragment spent three pow() on every pixel of the UI.
+// Nothing below this line linearizes the vertex color; doing so would decode it twice.
+//
+// This function survives for the one color that does NOT come down the pipe: the debug batch tint,
+// which is authored sRGB in a push constant and read only by the debug view below.
 vec3 srgb_to_linear( vec3 c )
 {
     bvec3 cutoff = lessThanEqual( c, vec3( 0.04045 ) );
@@ -95,21 +96,18 @@ void main()
     // see when asking why a shape looks the way it does.
     if ( pc.dbg_flat != 0u )
     {
-        vec3  rgb;
-        float a;
         if ( pc.dbg_tint != 0u )
         {
-            rgb = vec3( float(  pc.dbg_tint        & 0xFFu ),
-                        float( (pc.dbg_tint >> 8 )  & 0xFFu ),
-                        float( (pc.dbg_tint >> 16 ) & 0xFFu ) ) / 255.0;
-            a   = float( (pc.dbg_tint >> 24 ) & 0xFFu ) / 255.0;
+            // The tint is authored sRGB and rides the push constant, so it is the one color that
+            // still needs decoding here -- it never went through the vertex stage.
+            vec3 rgb = vec3( float(  pc.dbg_tint        & 0xFFu ),
+                             float( (pc.dbg_tint >> 8 )  & 0xFFu ),
+                             float( (pc.dbg_tint >> 16 ) & 0xFFu ) ) / 255.0;
+            out_color = vec4( srgb_to_linear( rgb ),
+                              float( (pc.dbg_tint >> 24 ) & 0xFFu ) / 255.0 );
+            return;
         }
-        else
-        {
-            rgb = v_color.rgb;   // wireframe keeps each window's own color
-            a   = 1.0;
-        }
-        out_color = vec4( srgb_to_linear( rgb ), a );
+        out_color = vec4( v_color.rgb, 1.0 );   // wireframe keeps each window's own (linear) color
         return;
     }
 
@@ -119,12 +117,13 @@ void main()
     // GUI_TEX_RGBA -- full-RGBA image (scene viewport / arbitrary bindless texture): the texel IS
     // the color, with the vertex color acting as a tint.  The texel arrives LINEAR: _SRGB-format
     // textures are hardware-decoded at sample time, and UNORM render targets hold linear data.
-    // Only the authored tint color needs the sRGB decode.
+    // The tint is linear too (decoded in the vertex stage), so both sides of this multiply are
+    // light and the product means something.
     // Compared against the exact model rather than "non-zero" so a model added later falls through
     // to the coverage path only if that is what it actually wants.
     if ( pc.tex_mode == 1u )
     {
-        out_color = vec4( s.rgb * srgb_to_linear( v_color.rgb ), s.a * v_color.a * cov );
+        out_color = vec4( s.rgb * v_color.rgb, s.a * v_color.a * cov );
         return;
     }
 
@@ -140,12 +139,13 @@ void main()
     if ( pc.tex_mode == 2u )
     {
         float d = s.r - ( 128.0 / 255.0 );
-        out_color = vec4( srgb_to_linear( v_color.rgb ),
+        out_color = vec4( v_color.rgb,
                           v_color.a * cov * clamp( d / max( fwidth( d ), 1e-6 ) + 0.5, 0.0, 1.0 ) );
         return;
     }
 
-    // Only RGB is gamma-decoded; alpha is linear coverage. s.r is the glyph coverage
-    // from the R8 atlas (1.0 for the white solid-color pixel, so non-text draws pass through).
-    out_color = vec4( srgb_to_linear( v_color.rgb ), v_color.a * s.r * cov );
+    // v_color.rgb is already linear light; alpha is coverage, which was linear all along. s.r is
+    // the glyph coverage from the R8 atlas (1.0 for the white solid-color pixel, so non-text draws
+    // pass through).
+    out_color = vec4( v_color.rgb, v_color.a * s.r * cov );
 }
