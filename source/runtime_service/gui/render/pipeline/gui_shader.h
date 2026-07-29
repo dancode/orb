@@ -24,7 +24,7 @@
         dbg_tint != 0 -- packed RGBA8 batch tint used as that flat color (R = low byte); 0
                          falls back to the vertex color (what the wireframe view uses).
 
-    The sampling model is the top 2 bits of the VERTEX's tex word -- what a texel means
+    The sampling model is the top 4 bits of the VERTEX's tex word -- what a texel means
     (gui_tex_mode_t in gui.h).  The fragment splits the word into model + bindless slot:
         0 GUI_TEX_COVERAGE -- R8 coverage path: the texel's R channel is glyph alpha and the
                          vertex color supplies RGB (fonts, icons, solid fills via white texel).
@@ -38,7 +38,7 @@
                          AA band is one pixel wide at ANY scale or rotation and no parameter has
                          to carry the scale.  Vertex color supplies RGB, as for coverage.
     The SAMPLER is derived from this value IN THE FRAGMENT rather than carried, so a model is a
-    texel interpretation AND a filtering rule in one number; one spare value remains.  The fragment
+    texel interpretation AND a filtering rule in one number; thirteen spare values remain.  The fragment
     compares the exact model rather than testing non-zero, so a value added later cannot silently
     inherit whichever branch happened to be the fallback.  Both sampler slots ride the push
     constant (samp_point / samp_image) and the model selects between them per vertex.
@@ -74,6 +74,15 @@
                          fragment squares it inside length().  It also needs no interior-distance
                          term -- that form is already the exact signed distance in the core.
 
+        7 GUI_FX_ARC / 8 GUI_FX_PIE -- circular sectors in ONE quad.  A circle subtracts no
+                         half-extent, so the effect coord is the raw SIGNED offset (CPU-rotated so
+                         the bisector points +y) and the sign carries the angle -- which |p| would
+                         have erased.  The word re-partitions completely: ra (bits 4..15, 1/8 px),
+                         tube (16..22, 1/8 px half-thickness; PIE packs 0), aperture (23..31, 9
+                         bits over 0..pi, HALF the sweep).  No feather field: a sector gets a
+                         fixed 1 px band (`0.5 - d`).  NOTE the fragment routes `mode >= 7` here,
+                         so a mode 9+ must edit that branch.
+
     time is that band's clock, and it is the one effect input that belongs in the push constant:
     it is the same number for every shape in the frame, so per-vertex it would tax every glyph to
     repeat itself, and per-draw it costs nothing because the flush writes it once and leaves it.
@@ -90,7 +99,7 @@
         location 2 in  vec4 in_color;      // UNORM8X4   attrib -> normalized float4
         location 3 in  vec2 in_fx_coord;   // HALF2      attrib -> float2; |p| - c, shape-local px
         location 4 in  uint in_fx;         // packed effect word
-        location 5 in  uint in_tex;        // sampling model (top 2 bits) | bindless slot
+        location 5 in  uint in_tex;        // sampling model (top 4 bits) | bindless slot
         location 0 out vec4 v_color;
         location 1 out vec2 v_uv;
         location 2 out vec2 v_fx_coord;
@@ -118,7 +127,11 @@
         location 4 flat in uint v_tex;
         location 0 out vec4 out_color;
         fx_coverage(): mode = v_fx & 0xF; modes 0 / 4 / 5 -> 1.0 (early out -- the two that are
-              not shapes act elsewhere).  Else unpack radius (bits 4..15, 1/8 px), feather
+              not shapes act elsewhere).
+              mode >= 7 (ARC/PIE): own decode (ra/tube/aperture, see the sector block above);
+              q = (|x|, y); PIE = max(disc, signed radial-edge distance), ARC = annulus cut to
+              the wedge with round caps; return clamp(0.5 - ds, 0, 1).
+              Else unpack radius (bits 4..15, 1/8 px), feather
               (16..24, 1/4 px), border (25..31, 1/8 px);
               q = v_fx_coord;
               mode 6 (SEG): d = length(vec2(max(q.x, 0), q.y)) - radius;   // capsule, no fold on y
@@ -135,7 +148,7 @@
         main: if (dbg_flat) out_color = dbg_tint ? vec4(srgb_to_linear(unpack(dbg_tint)), a)
                                                 : vec4(v_color.rgb, 1);   // tint is the ONLY
               else                                        // color still decoded in the fragment
-              { uint mode = v_tex >> 30, slot = v_tex & 0x3FFFFFFF;   // both FROM THE VERTEX
+              { uint mode = v_tex >> 28, slot = v_tex & 0x0FFFFFFF;   // both FROM THE VERTEX
                 uint samp = mode == 0 ? pc.samp_point : pc.samp_image;
                 vec4 s = texture(sampler2D(u_textures[nonuniformEXT(slot)],
                                            u_samplers [nonuniformEXT(samp)]), v_uv);
@@ -453,7 +466,7 @@ static const u32 s_gui_frag_spirv[] =
     0x0004002B, 0x00000051, 0x00000169, 0x00000018, 0x00040020, 0x00000173,
     0x00000001, 0x0000012D, 0x0004003B, 0x00000173, 0x00000174, 0x00000001,
     0x0004003B, 0x00000036, 0x0000017D, 0x00000001, 0x0004002B, 0x00000033,
-    0x0000017F, 0x0000001E, 0x0004002B, 0x00000033, 0x00000183, 0x3FFFFFFF,
+    0x0000017F, 0x0000001C, 0x0004002B, 0x00000033, 0x00000183, 0x0FFFFFFF,
     0x0004002B, 0x00000051, 0x0000018B, 0x00000001, 0x0004002B, 0x00000051,
     0x0000018F, 0x00000002, 0x00040020, 0x00000193, 0x00000007, 0x0000012D,
     0x00090019, 0x00000195, 0x00000006, 0x00000001, 0x00000000, 0x00000000,

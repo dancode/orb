@@ -17,12 +17,12 @@ layout(location = 0) in  vec4 v_color;
 layout(location = 1) in  vec2 v_uv;
 layout(location = 2) in  vec2 v_fx_coord;
 layout(location = 3) flat in uint v_fx;
-layout(location = 4) flat in uint v_tex;   // sampling model (top 2 bits) | bindless slot
+layout(location = 4) flat in uint v_tex;   // sampling model (top 4 bits) | bindless slot
 layout(location = 0) out vec4 out_color;
 
 // Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_MODE_MASK in gui.h -- keep the three in step.
-#define TEX_MODE_SHIFT  30u
-#define TEX_INDEX_MASK  0x3FFFFFFFu
+#define TEX_MODE_SHIFT  28u
+#define TEX_INDEX_MASK  0x0FFFFFFFu
 
 // v_color arrives ALREADY LINEAR -- the vertex stage decodes it (see gui.vert), because it is a
 // per-vertex constant and decoding it per fragment spent three pow() on every pixel of the UI.

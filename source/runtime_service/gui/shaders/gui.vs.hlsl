@@ -34,7 +34,7 @@ struct vs_in_t
     [[vk::location( 2 )]] float4 color    : COLOR0;      // UNORM4 attrib -> normalized float4
     [[vk::location( 3 )]] float2 fx_coord : TEXCOORD1;    // effect coord: |p| - c, shape-local px
     [[vk::location( 4 )]] uint   fx       : TEXCOORD2;    // packed effect word; low nibble 0 = none
-    [[vk::location( 5 )]] uint   tex      : TEXCOORD3;    // sampling model (top 2 bits) | slot
+    [[vk::location( 5 )]] uint   tex      : TEXCOORD3;    // sampling model (top 4 bits) | slot
 };
 
 // nointerpolation on fx: the effect word names the SHAPE, which is constant over it -- an

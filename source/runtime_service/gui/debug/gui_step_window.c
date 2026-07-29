@@ -118,10 +118,17 @@ step_cmd_detail( const step_cmd_info_t* ci )
             gui_textf( "rect %.0f,%.0f  %.0f x %.0f   round %.1f",
                        c->rect.x, c->rect.y, c->rect.w, c->rect.h, c->rect.rounding );
             /* Naming the sampling model matters here: a glyph run that landed in the wrong one is
-               invisible in the geometry and obvious in this label. */
-            static const char* const k_tex_mode[ 4 ] = { "", "  (rgba)", "  (sdf)", "  (mode 3)" };
-            fmt_snprintf( b2, sizeof( b2 ), "tex %u%s", gui_tex_index( c->rect.tex_idx ),
-                          k_tex_mode[ gui_tex_mode( c->rect.tex_idx ) ] );
+               invisible in the geometry and obvious in this label.  The mode field is 4 bits, so
+               an unnamed value prints numerically rather than indexing off a table's end. */
+            {
+                static const char* const k_tex_mode[ 3 ] = { "", "  (rgba)", "  (sdf)" };
+                u32  tmode = (u32)gui_tex_mode( c->rect.tex_idx );
+                char msfx[ 16 ];
+                if ( tmode >= 3 )
+                    fmt_snprintf( msfx, sizeof( msfx ), "  (mode %u)", tmode );
+                fmt_snprintf( b2, sizeof( b2 ), "tex %u%s", gui_tex_index( c->rect.tex_idx ),
+                              tmode < 3 ? k_tex_mode[ tmode ] : msfx );
+            }
             row2 = b2;
             break;
         case GUI_CMD_RECT_OUTLINE:

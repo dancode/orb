@@ -19,7 +19,7 @@ layout(location = 1) in vec2 in_uv;
 layout(location = 2) in vec4 in_color;
 layout(location = 3) in vec2 in_fx_coord;   // effect coord: |p| - c, shape-local pixels
 layout(location = 4) in uint in_fx;         // packed effect word; low nibble 0 = no effect
-layout(location = 5) in uint in_tex;        // sampling model (top 2 bits) | bindless slot
+layout(location = 5) in uint in_tex;        // sampling model (top 4 bits) | bindless slot
 
 layout(location = 0) out vec4 v_color;
 layout(location = 1) out vec2 v_uv;

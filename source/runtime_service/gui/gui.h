@@ -1876,7 +1876,7 @@ typedef enum
    the tessellator's clip test never triggers and the whole-run fast path is taken. */
 #define GUI_TEXT_NO_CLIP 1e30f
 
-/* THE SAMPLING MODEL -- the top 2 bits of a rect command's tex_idx.  What a texel MEANS to the
+/* THE SAMPLING MODEL -- the top 4 bits of a rect command's tex_idx.  What a texel MEANS to the
    fragment: the one axis the shader branches on, and the axis the two atlases are already split
    along (render/resource/gui_res_atlas.h).
 
@@ -1889,10 +1889,16 @@ typedef enum
    it blocks up the moment it is stretched.
 
    That derivation is the whole reason this is a mode and not the bool it started as: SDF was added
-   as a VALUE here, not as a format change.  Three of the four are spent; the last stays unnamed
-   until something emits it, the same rule the effect band's spare modes follow. */
-#define GUI_TEX_MODE_SHIFT  30u
-#define GUI_TEX_MODE_MASK   ( 3u << GUI_TEX_MODE_SHIFT )
+   as a VALUE here, not as a format change.  Three of the sixteen are spent; the rest stay unnamed
+   until something emits them, the same rule the effect band's spare modes follow.
+
+   FOUR bits, matching GUI_FX_MODE_BITS -- the two mode fields answer the same kind of question and
+   grow by the same rule.  The bits come out of the INDEX half, which never needed them: the RHI's
+   bindless array is 2048 entries (11 bits) and the low 28 hold 268M.  This word is the shader
+   contract: the shift below must equal TEX_MODE_SHIFT in gui.frag / gui.ps.hlsl (and the
+   paraphrase in gui_shader.h) -- change one, change all, resplice the SPIR-V. */
+#define GUI_TEX_MODE_SHIFT  28u
+#define GUI_TEX_MODE_MASK   ( 0xFu << GUI_TEX_MODE_SHIFT )
 #define GUI_TEX_MODE( m )   ( (u32)( m ) << GUI_TEX_MODE_SHIFT )
 
 typedef enum

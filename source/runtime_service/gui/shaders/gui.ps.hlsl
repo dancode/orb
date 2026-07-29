@@ -18,8 +18,8 @@ struct gui_pc_t
 [[vk::binding( 1, 0 )]] SamplerState u_samplers[] : register( s0, space0 );
 
 // Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_MODE_MASK in gui.h -- keep the three in step.
-#define TEX_MODE_SHIFT  30u
-#define TEX_INDEX_MASK  0x3FFFFFFFu
+#define TEX_MODE_SHIFT  28u
+#define TEX_INDEX_MASK  0x0FFFFFFFu
 
 struct ps_in_t
 {
