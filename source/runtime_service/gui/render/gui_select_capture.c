@@ -8,7 +8,7 @@
 
     At the build seam -- segments closed, every emit pool complete, nothing tessellated yet
     (the same seam the command stepper freezes at) -- the GUI_CMD_TEXT commands of each
-    marked window are copied (position, byte range, segment font/vp, clip) into a run buffer
+    marked window are copied (position, byte range, font/vp, clip) into a run buffer
     that survives the next draw_reset.  The controller works against LAST frame's runs: one
     frame of self-measurement lag, invisible because window content is static while the user
     sweeps a selection.
@@ -102,7 +102,7 @@ select_capture_build( void )
             gui_select_run_t* r = &s_select_cap.runs[ s_select_cap.run_count++ ];
             r->win  = seg->win;
             r->vp   = seg->vp;
-            r->font = seg->font;
+            r->font = (u16)cmd->text.font;   /* per COMMAND now, not per segment (gui.h) */
             r->x    = cmd->text.x;
             r->y    = cmd->text.y;
             r->off  = s_select_cap.text_used;

@@ -94,7 +94,7 @@ select_body_rect( void )
 }
 
 /*==============================================================================================
-    Font-correct measurement.  Runs carry their segment's font id; every metric walk below
+    Font-correct measurement.  Runs carry their own font id; every metric walk below
     activates it first so a push_font'd run measures true.  select_window_end restores the
     font it entered with before returning, so later chrome (titlebar text) is unaffected.
 ==============================================================================================*/

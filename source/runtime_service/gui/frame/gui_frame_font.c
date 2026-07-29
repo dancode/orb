@@ -76,7 +76,7 @@ gui_font_load( const char* path )
     if ( id == 0 )
         return 0;
     gui_style_apply();
-    draw_set_font( font_active_id() );   // load also activates -> retag the atlas batch context
+    draw_set_font( font_active_id() );   // load also activates -> stamp it onto subsequent text
     return id;
 }
 
@@ -110,9 +110,9 @@ gui_font_use( u32 id )
 {
     font_use( id );
     gui_style_apply();
-    /* The active font is also the per-segment atlas batch context: cut a new draw segment so the
-       tessellator re-activates this font for the span and its glyphs / fills / dashes sample the
-       right atlas.  font_use ignores a bad id, so tag with whatever is actually active now. */
+    /* Tell the emit layer which font to stamp onto subsequent TEXT commands.  Cuts no segment --
+       the font selects glyph metrics and atlas UVs, not a draw batch (see draw_set_font).
+       font_use ignores a bad id, so tag with whatever is actually active now. */
     draw_set_font( font_active_id() );
 }
 

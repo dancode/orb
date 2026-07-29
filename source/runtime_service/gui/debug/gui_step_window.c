@@ -401,8 +401,15 @@ step_window( bool* open )
                            step_name( ci.win, nb, sizeof( nb ) ) );
                 gui_textf( "widget %s", ci.owner ? step_name( ci.owner, ob, sizeof( ob ) )
                                                  : "(chrome)" );
-                gui_textf( "z %u   vp %u   font %u   clip %.0f,%.0f %.0fx%.0f",
-                           ci.z, ci.vp, ci.font, ci.clip.x, ci.clip.y, ci.clip.w, ci.clip.h );
+                /* The font is the COMMAND's own now, so it reads "-" on everything that is not a
+                   glyph run rather than reporting whatever its segment happened to be tagged. */
+                char fb[ 12 ];
+                if ( ci.cmd.type == GUI_CMD_TEXT || ci.cmd.type == GUI_CMD_TEXT_XF )
+                    fmt_snprintf( fb, sizeof( fb ), "%u", ci.font );
+                else
+                    fmt_snprintf( fb, sizeof( fb ), "-" );
+                gui_textf( "z %u   vp %u   font %s   clip %.0f,%.0f %.0fx%.0f",
+                           ci.z, ci.vp, fb, ci.clip.x, ci.clip.y, ci.clip.w, ci.clip.h );
                 step_cmd_detail( &ci );
             }
 

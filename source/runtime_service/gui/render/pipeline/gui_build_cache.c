@@ -5,7 +5,7 @@
     The render pipeline has three phases.  This file is the middle one:
 
         EMIT   (gui_emit_draw.c)  widgets push semantic shapes -> s_draw command list,
-                                   cut into per-(win,z,vp,font,band) segments, one hash baked per command.
+                                   cut into per-(win,z,vp,band) segments, one hash baked per command.
         BUILD  (this file)        once per frame: diff each window's commands against last frame,
                                    reuse unchanged geometry in place, tessellate changed windows,
                                    then z-sort the result into a dispatch table.
@@ -447,7 +447,7 @@ cache_diff_windows( void )
             total_cmd += segs[ si ].hi - segs[ si ].lo;
 
         /* Find or create the per-window record.  The memo short-circuits the scan for the common
-           run of consecutive same-window segments (a window's clip pushes / font swaps). */
+           run of consecutive same-window segments (a window's z / viewport / band changes). */
         u32 bi;
         if ( memo_bi < s_cache.cur_n && s_cache.cur[ memo_bi ].win == win )
             bi = memo_bi;
@@ -485,10 +485,14 @@ cache_diff_windows( void )
             s_seg_next[ s_cache.cur[ bi ].seg_tail ] = (u16)si;
         s_cache.cur[ bi ].seg_tail = (u16)si;
 
-        /* Fold z, vp, font, and EVERY atlas generation into the hash.  The font id alone is not
-           enough: a live re-bake (font_load_into) changes glyph geometry, and a shared-atlas repack
-           can shift every tenant's UVs, all while the font id and the (now shared, stable) bindless
-           index are unchanged.  The generations bump on any such structural change, so folding
+        /* Fold z, vp, band and EVERY atlas generation into the hash.  The FONT ID is no longer
+           folded here because it is no longer on the segment -- it rides each text command and is
+           folded by draw_hash_cmd, whose result this loop already accumulates below, so a font
+           change still dirties its window exactly as before.
+           The generations are a separate requirement and are unchanged: an id alone was never
+           enough, because a live re-bake (font_load_into) changes glyph geometry and a shared-atlas
+           repack can shift every tenant's UVs, all while the font id and the (shared, stable)
+           bindless index stay put.  The generations bump on any such structural change, so folding
            them forces the affected windows to re-tessellate against the new packing.  The sprite
            atlas is folded on the same rule and for a sharper reason: a sprite command carries only
            its ID, so its UVs are resolved fresh at every tessellation -- this is what makes that
@@ -500,7 +504,6 @@ cache_diff_windows( void )
         u32 h   = s_cache.cur[ bi ].hash;
         h = fnv1a_u32( h, segs[ si ].z    );
         h = fnv1a_u32( h, segs[ si ].vp   );
-        h = fnv1a_u32( h, segs[ si ].font );
         h = fnv1a_u32( h, segs[ si ].band );   /* band flip must re-tessellate (slot changes ends) */
         h = fnv1a_u32( h, gen              );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
@@ -679,13 +682,14 @@ tess_volatile_range( u32 i, u32 seg_hi, gui_id_t vid, u32* out_hi, u32* out_anch
 }
 
 /* Permutation output scratch, reused by every cache_tess_window call (cache_build_frame is
-   single-threaded and guarded against re-entry).  s_win_font[] carries the segment's font
-   alongside each reordered index because the clip sort crosses segment boundaries -- the font
-   is a per-segment property, not per-command, so it must travel with its commands.
-   u16: order values are command indices (< GUI_MAX_CMDS, asserted u16-safe at gui_cmd_seg_t);
-   font ids are registry slots (< GUI_FONT_REGISTRY_MAX). */
+   single-threaded and guarded against re-entry).  ONE array: the reordered command indices.
+   There used to be a parallel s_win_font[] beside it, carrying each entry's segment font because
+   the clip sort crosses segment boundaries and a per-segment property has to be re-attached to
+   every command individually once its segment is torn apart.  That array existed purely because
+   the font was on the wrong record; it is on the text commands now (gui.h), so it needs no
+   escort.  u16: order values are command indices (< GUI_MAX_CMDS, asserted u16-safe at
+   gui_cmd_seg_t). */
 static u16 s_win_order[ GUI_MAX_CMDS ];
-static u16 s_win_font [ GUI_MAX_CMDS ];
 
 static void
 cache_tess_window( const render_win_hash_t* wh )
@@ -746,8 +750,8 @@ cache_tess_window( const render_win_hash_t* wh )
         for ( u16 si = wh->seg_head; si != SEG_CHAIN_END; si = s_seg_next[ si ] )
             for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
                 if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
-                    { s_win_font[ n ] = segs[ si ].font; s_win_order[ n++ ] = (u16)i; }
-        tess_dispatch( s_draw.cmds, s_win_order, s_win_font, n, wh->win );
+                    s_win_order[ n++ ] = (u16)i;
+        tess_dispatch( s_draw.cmds, s_win_order, n, wh->win );
         return;
     }
 
@@ -782,7 +786,6 @@ cache_tess_window( const render_win_hash_t* wh )
                 u8 ci = s_draw.cmds[ i ].clip_idx;
                 if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
                 u32 g = clip_group_of( &cg, ci );
-                s_win_font [ grp_off[ g ] ]   = segs[ si ].font;
                 s_win_order[ grp_off[ g ]++ ] = (u16)i;
             }
             else
@@ -795,7 +798,6 @@ cache_tess_window( const render_win_hash_t* wh )
                     for ( u32 j = i; j < hi; ++j )
                         if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ j ].clip_idx ] ) )
                         {
-                            s_win_font [ grp_off[ g ] ]   = segs[ si ].font;
                             s_win_order[ grp_off[ g ]++ ] = (u16)j;
                         }
                 }
@@ -804,7 +806,7 @@ cache_tess_window( const render_win_hash_t* wh )
         }
     }
 
-    tess_dispatch( s_draw.cmds, s_win_order, s_win_font, n, wh->win );
+    tess_dispatch( s_draw.cmds, s_win_order, n, wh->win );
 }
 
 /*==============================================================================================

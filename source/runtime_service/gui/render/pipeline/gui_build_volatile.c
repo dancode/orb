@@ -423,7 +423,6 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 cmd_open )
    is single-threaded within the build).  u16 like the cache_tess_window scratch: command
    indices fit (asserted at gui_cmd_seg_t). */
 static u16 s_patch_order[ GUI_MAX_CMDS ];
-static u16 s_patch_font [ GUI_MAX_CMDS ];
 
 static bool
 volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
@@ -439,10 +438,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     u32 n = 0;
     for ( u32 i = lo; i < hi; ++i )
         if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
-        {
-            s_patch_font [ n ] = row->font;
             s_patch_order[ n++ ] = (u16)i;
-        }
 
     u32  vert_ck    = s_tess.vert_count;
     u32  idx_ck     = s_tess.idx_count;
@@ -473,7 +469,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     s_tess.force_new_cmd  = true;
     s_volatile_patching   = true;
 
-    tess_dispatch( s_draw.cmds, s_patch_order, s_patch_font, n, row->win );
+    tess_dispatch( s_draw.cmds, s_patch_order, n, row->win );
 
     s_volatile_patching = false;
 

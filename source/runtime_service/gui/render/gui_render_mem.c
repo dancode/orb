@@ -54,9 +54,9 @@ backend_memory( u32 live_viewports )
                              + sizeof( s_win_cached ) + sizeof( s_win_cached_count )
                              + sizeof( s_win_cached_win ) + sizeof( s_win_cached_live )
                              + sizeof( s_cache ) + sizeof( s_stats ) + sizeof( s_seg_next )
-                             + sizeof( s_win_order ) + sizeof( s_win_font )
+                             + sizeof( s_win_order )
                              + sizeof( s_volatile )
-                             + sizeof( s_patch_order ) + sizeof( s_patch_font ) );
+                             + sizeof( s_patch_order ) );
 
     /* Fonts + icons are the DRAW unit's statics now (registry slots, reload queue, icon
        tables) -- reported through its seam so the bucket stays populated. */

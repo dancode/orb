@@ -131,7 +131,7 @@ void draw_set_viewport          ( u32 vp );         // viewport index stamped on
 void draw_set_band              ( u32 band );       // arena band: 0 = main UI, 1 = debug (GUI_WIN_DEBUG_BAND)
 u32  draw_band                  ( void );           // current band (sampled for popup band inheritance)
 void draw_set_window            ( gui_id_t win );   // stable window id stamped on new commands (cache key)
-void draw_set_font              ( u32 font );       // active font id -> per-segment atlas batch context (push/pop/use_font)
+void draw_set_font              ( u32 font );       // active font id, stamped onto each TEXT command (push/pop/use_font)
 
 /* The paint cursor as one record (state in gui_emit_draw.c; here -- the definer's
    side of the seam): the command segment tag (owning window, sort key, viewport, arena band --
@@ -232,7 +232,7 @@ typedef struct
 {
     gui_id_t   win;      /* owning window (segment tag) */
     u32        vp;       /* viewport the run renders on */
-    u32        font;     /* font id active for the run's segment (measure with THIS font) */
+    u32        font;     /* the run's own font id (measure with THIS font) */
     f32        x, y;     /* glyph-run origin (top-left of the glyph box) */
     u32        off, len; /* byte range into the capture text pool (select_run_text) */
     gui_rect_t clip;     /* scissor rect the run rendered under */
@@ -605,14 +605,15 @@ extern gui_id_t g_dash_window_id;
         const char* text;     /* TEXT: frozen pool string; NULL for every other type */
         gui_id_t    win;      /* owning segment tag (the retained-cache window key) */
         gui_id_t    owner;    /* emitting widget id (0 = chrome/background) */
-        u32         z, vp, font;
+        u32         z, vp;    /* owning segment's tag */
+        u32         font;     /* TEXT / TEXT_XF: the run's own font id; 0 for every other type */
 
     } step_cmd_info_t;
 
     typedef struct
     {
         gui_id_t   win;
-        u32        z, vp, font;
+        u32        z, vp;     /* the segment key -- no font: it is per COMMAND now (gui.h) */
         u32        lo, hi;    /* frozen command range [lo, hi) -- seek targets */
         gui_rect_t bounds;    /* union of the member commands' bboxes */
 

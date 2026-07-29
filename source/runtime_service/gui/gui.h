@@ -1887,7 +1887,15 @@ typedef struct
            or shadowed run costs no extra geometry, no second pass, and no batch split.  It rides
            the command rather than being re-read at tessellation because the ambient can have moved
            on by then -- a retained window re-tessellates long after its emit. */
-        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; u32 edge; } text;
+        /* font is the registry id whose glyph metrics and atlas UVs this run resolves from -- the
+           ONLY thing the font decides.  It rides the command rather than the command SEGMENT (where
+           it used to live) because a segment is the backend's batch-dispatch unit and the font is
+           not a batch key: every font packs into one shared atlas, so a font change moves no
+           texture, and even when it does the texture rides the vertex and cannot cut a draw call
+           either.  A per-command property tagging a batch unit was forcing a segment split for a
+           lookup -- see draw_set_font. */
+        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; u32 edge;
+                 u16 font; } text;
         /* The same glyph run under a uniform SCALE and a ROTATION about (x, y) -- (x, y) is both
            the run's top-left in its own space and the pivot, so a caller places any other pivot by
            moving the origin.  rot is radians in screen space (the angle algebra above: 0 points
@@ -1899,7 +1907,8 @@ typedef struct
            rotation.  A separate type is what lets both of them skip a transformed run cleanly
            instead of measuring it wrong.  No clip window: the GPU scissor is its only clip.
            Nothing here is snapped to the pixel grid -- see tess_text_xf. */
-        struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr; u32 edge; } text_xf;
+        struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr; u32 edge;
+                 u16 font; } text_xf;
         /* segs is IGNORED -- the disc is a distance field now, exact at any size (gui_build_tess.c,
            tess_circle_filled).  Kept so call sites that reason in segments still compile. */
         struct { f32 cx, cy, r; u32 segs;                        u32 abgr; } circle;
@@ -2582,7 +2591,7 @@ typedef struct
 {
     u32 cmd_count;          // semantic draw commands the UI emitted
     u32 clip_count;         // clip table entries referenced by those commands (debug band excluded)
-    u32 seg_count;          // command segments cut this frame (per-(win,z,vp,font,band) spans)
+    u32 seg_count;          // command segments cut this frame (per-(win,z,vp,band) spans)
     u32 text_pool_used;     // bytes of the per-frame text pool consumed (cap: GUI_MAX_TEXT_POOL)
     u32 vert_count;         // tessellated vertices (total, including retained)
     u32 tri_count;          // tessellated triangles (total, including retained)

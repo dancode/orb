@@ -1173,17 +1173,21 @@ static void volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 cmd
 
    `order` is a permutation of [0,count): the indices grouped by clip within each z-run (built by
    cache_tess_window) so equal-clip commands tessellate contiguously and collapse into one GPU batch.
-   `fonts` is the parallel font id of each ordered entry (its segment's font).  `win` is the window
-   being tessellated (informational; volatile rows already know their window from emit-time
-   stamping).  Before tessellating a command we activate its
-   font so the tess-time lookups -- font_glyph (UVs), font_atlas_idx (atlas), the white texel and
-   dash rows -- resolve from the right atlas.  The resulting atlas change does NOT split the GPU
-   batch: it only changes the word tess_set_tex stamps into the following vertices, so a bitmap
-   label, an SDF heading and the fill behind them go out in one draw call.  The active font is
-   saved and restored so the BUILD phase leaves the global font state (used by the next frame's
-   layout) untouched. */
+   `win` is the window being tessellated (informational; volatile rows already know their window
+   from emit-time stamping).
+
+   The FONT is activated per TEXT COMMAND, from the command's own font id, and only by the two cases
+   that read glyphs.  It used to arrive as a `fonts[]` array parallel to `order` -- one entry per
+   ordered command, reconstructing a per-segment property after the clip sort had torn the segments
+   apart -- and it used to be switched at the top of this loop for every command, text or not.
+   Neither was needed: a fill, a line and a sprite never call font_glyph, and the font is per-command
+   data now (gui.h).  Activating it changes which atlas the glyph lookups resolve from and nothing
+   else; it does NOT split the GPU batch, since it only alters the word tess_set_tex stamps into the
+   following vertices.  A bitmap label, an SDF heading and the fill behind them still go out as one
+   draw call.  The active font is saved and restored so the BUILD phase leaves the global font state
+   (used by the next frame's layout) untouched. */
 static void
-tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 count, gui_id_t win )
+tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win )
 {
     u32 saved_font = font_active_id();
     u32 cur_font   = saved_font;
@@ -1217,13 +1221,6 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
                 ib_open  = s_tess.idx_count;
                 cmd_open = s_tess.cmd_count;
             }
-        }
-
-        /* Switch the atlas batch context to this command's segment font when it changes. */
-        if ( fonts[ oi ] != cur_font )
-        {
-            cur_font = fonts[ oi ];
-            font_use( cur_font );
         }
 
         s_tess.cur_clip = s_draw.clip_table[ c->clip_idx ];
@@ -1296,13 +1293,20 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, const u16* fonts, u32 co
             /* The outline word is set once for the whole run: every glyph quad the loop emits
                carries it, and the fragment resolves fill and outline from the one distance field
                it was already sampling. */
+            /* The only two cases that read glyphs, and therefore the only two that care which font
+               is active.  Guarded on a change rather than set unconditionally because a run of
+               labels in one font is the overwhelmingly common case and font_use rebuilds metrics. */
             case GUI_CMD_TEXT:
+                if ( c->text.font != cur_font )
+                    font_use( cur_font = c->text.font );
                 s_tess.cur_fx = c->text.edge;
                 tess_text_n( c->text.x, c->text.y, c->text.abgr, s_draw.text_pool + c->text.off,
                              c->text.len, c->text.clip_x0, c->text.clip_x1 );
                 break;
 
             case GUI_CMD_TEXT_XF:
+                if ( c->text_xf.font != cur_font )
+                    font_use( cur_font = c->text_xf.font );
                 s_tess.cur_fx = c->text_xf.edge;
                 tess_text_xf( c->text_xf.x, c->text_xf.y, c->text_xf.abgr,
                               s_draw.text_pool + c->text_xf.off, c->text_xf.len,

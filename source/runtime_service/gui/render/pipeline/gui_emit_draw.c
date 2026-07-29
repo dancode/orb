@@ -42,24 +42,32 @@ typedef struct
 /*==============================================================================================
     Draw list -- the per-frame command buffer and segment table.
 
-    Commands are pushed into cmds[] by the widget layer.  Whenever (win, z, vp, font, band)
-    changes, the current open span is closed and a new one is opened, so the buffer is
-    partitioned into contiguous per-(win,z,vp,font,band) segments.  cache_tess_window walks
-    these segments per window rather than re-scanning the full command buffer.  [lo, hi) is a
-    half-open range; the final segment's hi is closed at build time.  win=0 is the background
-    (non-window) draw layer.
+    Commands are pushed into cmds[] by the widget layer.  Whenever (win, z, vp, band) changes,
+    the current open span is closed and a new one is opened, so the buffer is partitioned into
+    contiguous per-(win,z,vp,band) segments.  cache_tess_window walks these segments per window
+    rather than re-scanning the full command buffer.  [lo, hi) is a half-open range; the final
+    segment's hi is closed at build time.  win=0 is the background (non-window) draw layer.
+
+    The FONT used to be a fifth axis here and is not one any more.  A segment exists to partition
+    the command list for backend dispatch, so its key should be the things that decide dispatch --
+    which window owns the geometry, where it sorts, which surface it lands on, which arena band it
+    is accounted to.  A font decides none of those.  It decides where a glyph's UVs come from, which
+    is per-command information, and since every font packs into the one shared atlas a font change
+    usually moves no texture at all; even when it does (a distance-field font has its own atlas) the
+    texture rides the VERTEX and cannot cut a draw call.  So the font was cutting segments to carry
+    a lookup.  It now rides the text commands that actually use it (gui.h), which is why nothing
+    below threads a font through the permutation any more.
 ==============================================================================================*/
 
 /* Packed to 16 bytes: GUI_MAX_SEGS of these live here, and the command stepper keeps two more
    full copies (segs + disp_segs).  Every narrow field's range is capped by construction: lo/hi
-   by GUI_MAX_CMDS (asserted below), font by GUI_FONT_REGISTRY_MAX (16), vp by GUI_MAX_VIEWPORTS
-   (4), band is 0/1.  z stays u32 -- it carries full sort keys (popup/overlay z-bands). */
+   by GUI_MAX_CMDS (asserted below), vp by GUI_MAX_VIEWPORTS (4), band is 0/1.  z stays u32 -- it
+   carries full sort keys (popup/overlay z-bands). */
 typedef struct
 {
     gui_id_t win;
     u32      z;
     u16      lo, hi;   /* half-open command range into s_draw.cmds[] */
-    u16      font;
     u8       vp;
     u8       band;     /* arena band: 0 = main UI, 1 = debug/diagnostic UI (GUI_WIN_DEBUG_BAND) */
 
@@ -95,9 +103,9 @@ static struct
     gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */
     u32             cur_z;          /* sort key tracked per-segment (draw_seg_retag; NOT baked per command) */
     u32             cur_vp;         /* viewport index stamped onto new commands (set by begin/window_end)  */
-    u32             cur_font;       /* active font id tracked per-segment (draw_set_font); the segment is the
-                                       font/atlas batch context -- text glyphs, fills (white texel) and dashed
-                                       lines all resolve from it at tessellation time.  NOT baked per command. */
+    u32             cur_font;       /* active font id (draw_set_font), stamped ONTO each text command as it
+                                       is pushed.  Not a segment axis: it selects glyph metrics and atlas
+                                       UVs, which is per-command data, and cuts no batch. */
     u32             cur_band;       /* arena band tracked per-segment (draw_set_band); 0 = main UI,
                                        1 = debug band (self-measuring diagnostic windows).  NOT per command. */
 
@@ -246,7 +254,7 @@ draw_reset( i32 display_w, i32 display_h )
 
     /* Open the first command segment: background (win 0, z 0, main viewport, active font, main band). */
     s_draw.seg_count       = 1;
-    s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ .font = (u16)s_draw.cur_font };
+    s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ 0 };
 
     /* Seed the clip table: slot 0 = full display rect.  clip_idx_stack[0] and cur_clip_idx both
        start at 0 so every emitter finds the root clip without a push being required first. */
@@ -398,18 +406,18 @@ draw_set_root_clip( f32 w, f32 h )
     s_draw.cur_clip_idx        = ci;
 }
 
-/* Re-tag subsequent commands with (win, z, vp, font, band), cutting a new command segment at the
-   boundary.  Each draw_set_* setter passes the current value for the other four axes, so any one
+/* Re-tag subsequent commands with (win, z, vp, band), cutting a new command segment at the
+   boundary.  Each draw_set_* setter passes the current value for the other three axes, so any one
    of them changing opens a fresh span.  If
    the current segment is still empty (no command emitted since it opened) its tag is simply rewritten
    in place, so back-to-back set_window / set_sort_key / set_viewport calls before any draw never spawn
    empty spans.  On overflow the open segment is just extended (its tag may then be stale, but only in
    the pathological >1024-segment case, which cache_tess_window already falls back to natural order). */
 static void
-draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font, u32 band )
+draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 band )
 {
     bool same_tag = win == s_draw.cur_win && z == s_draw.cur_z && vp == s_draw.cur_vp
-                    && font == s_draw.cur_font && band == s_draw.cur_band;
+                    && band == s_draw.cur_band;
     if ( same_tag )
         return;   /* no real change -- keep the open segment as is */
 
@@ -425,7 +433,6 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font, u32 band )
         s_draw.cur_win  = win;
         s_draw.cur_z    = z;
         s_draw.cur_vp   = vp;
-        s_draw.cur_font = font;
         s_draw.cur_band = band;
         return;
     }
@@ -436,14 +443,13 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font, u32 band )
         cur->win  = win;   /* segment empty so far: retag in place rather than splitting */
         cur->z    = z;
         cur->vp   = (u8)vp;
-        cur->font = (u16)font;
         cur->band = (u8)band;
     }
     else if ( s_draw.seg_count < GUI_MAX_SEGS )
     {
         cur->hi                           = (u16)s_draw.cmd_count;   /* close the span here */
         s_draw.segs[ s_draw.seg_count++ ] =
-            ( gui_cmd_seg_t ){ .win = win, .z = z, .vp = (u8)vp, .font = (u16)font,
+            ( gui_cmd_seg_t ){ .win = win, .z = z, .vp = (u8)vp,
                                .band = (u8)band, .lo = (u16)s_draw.cmd_count,
                                .hi = (u16)s_draw.cmd_count };
     }
@@ -451,7 +457,6 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font, u32 band )
     s_draw.cur_win  = win;
     s_draw.cur_z    = z;
     s_draw.cur_vp   = vp;
-    s_draw.cur_font = font;
     s_draw.cur_band = band;
 }
 
@@ -464,21 +469,30 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 font, u32 band )
 void
 draw_set_window( gui_id_t win )
 {
-    draw_seg_retag( win, s_draw.cur_z, s_draw.cur_vp, s_draw.cur_font, s_draw.cur_band );
+    draw_seg_retag( win, s_draw.cur_z, s_draw.cur_vp, s_draw.cur_band );
 }
 
 /*==============================================================================================
-    draw_set_font -- make `font` the atlas batch context for subsequent commands.  Cuts a new
-    command segment at the boundary (a font change is a texture switch, hence a draw-batch seam),
-    so the tessellator can re-activate the font for that span and every glyph / fill / dashed line
-    in it samples the right atlas.  Driven by gui_font_use (push/pop/use_font) alongside the layout
-    metric rebuild, so a second font on screen is a per-segment context, not per-command data.
+    draw_set_font -- make `font` the one every subsequent TEXT command is stamped with.
+
+    Bookkeeping only: no segment is cut, and nothing else in the command list notices.  It used to
+    cut one, on the reasoning that a font change is a texture switch and therefore a draw-batch
+    seam.  Neither half of that survived.  Every font packs into the ONE shared coverage atlas, so
+    changing font usually changes no texture whatsoever -- and the case that does (a distance-field
+    font, which needs its own atlas because it must be sampled LINEAR) still cannot open a draw
+    call, because the texture rides the vertex.  A segment split was buying nothing and costing a
+    partition of the command list.
+
+    So the font is what it always actually was -- the lookup a glyph run resolves its metrics and
+    UVs from -- and it travels with the run.  Driven by gui_font_use (push / pop / use_font)
+    alongside the layout metric rebuild.  A caller mixing regular and bold in one paragraph now
+    costs exactly two text commands, not two command segments.
 ==============================================================================================*/
 
 void
 draw_set_font( u32 font )
 {
-    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, s_draw.cur_vp, font, s_draw.cur_band );
+    s_draw.cur_font = font;
 }
 
 /*==============================================================================================
@@ -489,7 +503,7 @@ draw_set_font( u32 font )
 void
 draw_set_sort_key( u32 z )
 {
-    draw_seg_retag( s_draw.cur_win, z, s_draw.cur_vp, s_draw.cur_font, s_draw.cur_band );
+    draw_seg_retag( s_draw.cur_win, z, s_draw.cur_vp, s_draw.cur_band );
 }
 
 /*==============================================================================================
@@ -504,7 +518,7 @@ draw_set_sort_key( u32 z )
 void
 draw_set_viewport( u32 vp )
 {
-    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp, s_draw.cur_font, s_draw.cur_band );
+    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp, s_draw.cur_band );
 }
 
 /*==============================================================================================
@@ -519,7 +533,7 @@ draw_set_viewport( u32 vp )
 void
 draw_set_band( u32 band )
 {
-    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, s_draw.cur_vp, s_draw.cur_font, band );
+    draw_seg_retag( s_draw.cur_win, s_draw.cur_z, s_draw.cur_vp, band );
 }
 
 /* Current band -- saved/restored by the popup layer alongside the sort key, and sampled at popup
@@ -681,7 +695,7 @@ draw_scope( void )
 void
 draw_scope_set( gui_draw_scope_t s )
 {
-    draw_seg_retag( s.window, s.sort_key, s.viewport, s_draw.cur_font, s.band );
+    draw_seg_retag( s.window, s.sort_key, s.viewport, s.band );
     s_draw.text_clip_x0 = s.text_clip_x0;
     s_draw.text_clip_x1 = s.text_clip_x1;
 }
@@ -746,6 +760,7 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &c->text.clip_x1, sizeof c->text.clip_x1 );
             h = fnv1a( h, &c->text.abgr,    sizeof c->text.abgr );
             h = fnv1a( h, &c->text.edge,    sizeof c->text.edge );
+            h = fnv1a( h, &c->text.font,    sizeof c->text.font );
             h = fnv1a( h, s_draw.text_pool + c->text.off, c->text.len );   /* content while L1-hot */
             break;
         /* Folds scale and rot, so a run that spins re-tessellates every frame it moves.  That is
@@ -759,6 +774,7 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &c->text_xf.rot,   sizeof c->text_xf.rot );
             h = fnv1a( h, &c->text_xf.abgr,  sizeof c->text_xf.abgr );
             h = fnv1a( h, &c->text_xf.edge,  sizeof c->text_xf.edge );
+            h = fnv1a( h, &c->text_xf.font,  sizeof c->text_xf.font );
             h = fnv1a( h, s_draw.text_pool + c->text_xf.off, c->text_xf.len );
             break;
         case GUI_CMD_CIRCLE_FILLED: h = fnv1a( h, &c->circle, sizeof c->circle ); break;
@@ -1237,6 +1253,7 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     c->text.clip_x1 = clip_x1;
     c->text.abgr    = draw_apply_alpha( abgr );
     c->text.edge    = s_draw.text_edge;
+    c->text.font    = (u16)s_draw.cur_font;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );   /* text bytes are L1-hot here */
 }
 
@@ -1301,6 +1318,7 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
     c->text_xf.rot   = rot;
     c->text_xf.abgr  = draw_apply_alpha( abgr );
     c->text_xf.edge  = s_draw.text_edge;
+    c->text_xf.font  = (u16)s_draw.cur_font;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 

@@ -344,7 +344,7 @@ step_restore_emit( void )
             s_draw.segs[ ns ].hi = (u16)cur;
         ++ns;
     }
-    s_draw.segs[ ns++ ] = ( gui_cmd_seg_t ){ .font = (u16)s_draw.cur_font, .lo = (u16)cur, .hi = (u16)cur };
+    s_draw.segs[ ns++ ] = ( gui_cmd_seg_t ){ .lo = (u16)cur, .hi = (u16)cur };
     s_draw.seg_count    = ns;
 }
 
@@ -500,15 +500,19 @@ step_cmd_info( u32 index, step_cmd_info_t* out )
                                                  : NULL;
     out->owner  = s_step.cmd_owner[ fi ];
 
+    /* The font is the COMMAND's own now (gui.h), and only a glyph run has one. */
+    out->font = ( c->type == GUI_CMD_TEXT )    ? c->text.font
+              : ( c->type == GUI_CMD_TEXT_XF ) ? c->text_xf.font
+                                               : 0u;
+
     /* Owning segment tag (display domain). */
-    out->win = 0;  out->z = 0;  out->vp = 0;  out->font = 0;
+    out->win = 0;  out->z = 0;  out->vp = 0;
     for ( u32 si = 0; si < s_step.seg_count; ++si )
         if ( index >= s_step.disp_segs[ si ].lo && index < s_step.disp_segs[ si ].hi )
         {
             out->win  = s_step.disp_segs[ si ].win;
             out->z    = s_step.disp_segs[ si ].z;
             out->vp   = s_step.disp_segs[ si ].vp;
-            out->font = s_step.disp_segs[ si ].font;
             break;
         }
     return true;
@@ -531,7 +535,6 @@ step_seg_info( u32 index, step_seg_info_t* out )
     out->win  = sg->win;
     out->z    = sg->z;
     out->vp   = sg->vp;
-    out->font = sg->font;
     out->lo   = sg->lo;
     out->hi   = sg->hi;
 
