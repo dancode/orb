@@ -799,6 +799,11 @@ draw_hash_cmd( const gui_cmd_t* c )
         case GUI_CMD_SHADOW:        h = fnv1a( h, &c->shadow, sizeof c->shadow ); break;
         case GUI_CMD_PULSE:         h = fnv1a( h, &c->pulse,  sizeof c->pulse  ); break;
         case GUI_CMD_ROUND_RECT_EX: h = fnv1a( h, &c->round_rect, sizeof c->round_rect ); break;
+        /* Both sectors fold the same member.  A spinner's start angle moves every frame, so this
+           dirties every frame -- honestly, since the geometry really does rotate.  (A spinner that
+           wanted free animation would be a shader-clock mode like PULSE, not a re-emit.) */
+        case GUI_CMD_ARC:
+        case GUI_CMD_PIE:           h = fnv1a( h, &c->arc, sizeof c->arc ); break;
     }
     return h;
 }
@@ -1135,6 +1140,58 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
     c->round_rect.rbl   = rbl;
     c->round_rect.abgr  = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+}
+
+/*==============================================================================================
+    draw_push_arc / draw_push_pie -- emit a circular sector as one semantic command.
+
+    Angles are radians in screen space (0 points +x, positive turns clockwise).  A reversed range
+    and a sweep past a full turn are both normalized at tessellation, so a caller animating an
+    angle never has to wrap it.
+
+    The cull box is the whole circle rather than the sector's own bounds.  It is a conservative
+    test against the scissor and nothing more -- computing the tight rotated extent to reject a few
+    more off-screen arcs would cost every on-screen one two transcendentals it does not otherwise
+    need at emit time.  The TESSELLATOR does compute the tight box, where it pays for itself in
+    fragments rather than in a rejection that usually fails anyway.
+==============================================================================================*/
+
+static void
+draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr )
+{
+    if ( draw_emit_blocked() )
+        return;
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
+    f32 g = r + thickness * 0.5f + 1.0f;   /* + the tessellator's own AA pad */
+    if ( draw_cull_box( cx - g, cy - g, g * 2.0f, g * 2.0f ) )
+        return;
+
+    gui_cmd_t* c        = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type             = type;
+    c->clip_idx         = s_draw.cur_clip_idx;
+    c->vp               = (u8)s_draw.cur_vp;
+    c->arc.cx           = cx;
+    c->arc.cy           = cy;
+    c->arc.r            = r;
+    c->arc.thickness    = thickness;
+    c->arc.a0           = a0;
+    c->arc.a1           = a1;
+    c->arc.abgr         = col;
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+}
+
+void
+draw_push_arc( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr )
+{
+    draw_sector_cmd( GUI_CMD_ARC, cx, cy, r, thickness, a0, a1, abgr );
+}
+
+void
+draw_push_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr )
+{
+    draw_sector_cmd( GUI_CMD_PIE, cx, cy, r, 0.0f, a0, a1, abgr );
 }
 
 /*==============================================================================================

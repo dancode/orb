@@ -845,6 +845,130 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
                       0, 0, 1, 1, 0, abgr );
 }
 
+/*==============================================================================================
+    tess_fx_arc -- a circular sector, stroked (ARC) or filled (PIE), in ONE quad.
+
+    The last sampled curve in the library.  An arc used to be up to 66 points from cos/sin fed to
+    the polyline ribbon (~130 vertices, and a visible polygon at small radii where sym_arc_segs
+    gives a 10 px mark ten segments); a pie fanned the same points from the centre, which cost 65
+    separate TRIANGLE commands -- 6% of the entire per-frame command budget for one shape.
+
+        spinner, r = 24    ~90 verts / ~260 idx, 1 cmd,  faceted, ribbon-AA
+        pie,     r = 40    ~66 verts / ~195 idx, 65 cmds, faceted, no AA
+        the field            4 verts /    6 idx,  1 cmd,  exact, antialiased
+
+    ONE quad, where the rounded box needs four, because a circular shape subtracts no half-extent:
+    its effect coordinate is the raw signed offset from the centre, which is affine everywhere, so
+    nothing has to fold at the vertex (gui.h).  Keeping the sign is also the only reason an arc is
+    expressible at all -- |p| would erase the angle.
+
+    What the CPU does here is the per-shape work the fragment must not repeat: rotate the coordinate
+    frame so the sector's bisector points +y.  That turns two absolute angles into one aperture (the
+    shape is then symmetric about local x = 0, which the fragment folds itself) and it costs four
+    vertices instead of every pixel.  The matrix is a reflection and its own inverse, so the same
+    two lines map local -> world here as map world -> local conceptually.
+
+    The quad is the sector's bounding box IN THAT LOCAL FRAME, not the circle's: a 90-degree arc
+    covers about a quarter of the disc's area, so the fragment cost tracks the shape rather than the
+    circle it belongs to.  A full turn is not a sector at all and routes to the exact ring / disc
+    primitives instead -- cheaper, and it sidesteps the aperture = pi degenerate.
+==============================================================================================*/
+
+#define TESS_HALF_PI  1.57079632679490f
+#define TESS_TAU      6.28318530717959f
+
+static void
+tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1, bool pie, u32 abgr )
+{
+    if ( r <= 0.0f )
+        return;
+
+    /* Normalize the sweep so the bisector/aperture split below is always well formed.  A reversed
+       range is the same sector drawn the other way round, which for a symmetric shape is the same
+       sector. */
+    f32 sweep = a1 - a0;
+    if ( sweep < 0.0f ) { f32 t = a0; a0 = a1; a1 = t; sweep = -sweep; }
+    if ( sweep <= 0.0f )
+        return;
+    if ( sweep > TESS_TAU ) { sweep = TESS_TAU; a1 = a0 + TESS_TAU; }
+
+    /* A full turn is not a sector, and the exact primitives are cheaper: a PIE is a disc, and an
+       ARC is a closed ring whose interior GUI_FX_RING carves away -- worth real fragments on a
+       large one.  The ring is only taken when the band FITS ITS BORDER FIELD, which caps lower
+       (GUI_FX_BORDER_MAX) than the tube field a sector carries; a thicker band falls through rather
+       than silently drawing thinner.  Falling through is correct, not a fallback: at aperture pi the
+       sector formula is the exact full annulus, it merely rasterizes the hole as well.
+       This is reachable -- draw_progress_arc at 100% is exactly a full sweep. */
+    if ( sweep >= TESS_TAU )
+    {
+        if ( pie )
+        {
+            tess_circle_filled( pcx, pcy, r, 0, abgr );
+            return;
+        }
+        if ( thickness <= GUI_FX_BORDER_MAX )
+        {
+            /* The same shape draw_circle's unfilled path asks for, measured from the OUTER boundary
+               inward -- so the band still straddles r. */
+            f32 outer = r + thickness * 0.5f;
+            tess_fx_box( pcx - outer, pcy - outer, outer * 2.0f, outer * 2.0f,
+                         outer, TESS_FX_AA, thickness, 0.0f, 0.0f, GUI_FX_RING,
+                         0, 0, 1, 1, 0, abgr );
+            return;
+        }
+    }
+
+    /* Clamp to what the word can carry, on BOTH sides as tess_fx_box does: the box below is sized
+       from these same numbers, so a value the fragment never sees would leave the vertices
+       describing a different shape than the one it resolves. */
+    f32 ra = r;
+    if ( ra > GUI_FX_RADIUS_MAX ) ra = GUI_FX_RADIUS_MAX;
+    f32 rb = pie ? 0.0f : thickness * 0.5f;
+    if ( rb < 0.0f ) rb = 0.0f;
+    if ( rb > GUI_FX_ARC_TUBE_MAX ) rb = GUI_FX_ARC_TUBE_MAX;
+
+    f32 am = ( a0 + a1 ) * 0.5f;          /* the bisector, which becomes local +y */
+    f32 ap = sweep * 0.5f;                /* the half-aperture measured from it   */
+    f32 sm = sinf( am ), cm = cosf( am );
+    f32 sa = sinf( ap ), ca = cosf( ap );
+
+    /* The sector's bounding box in local space.  x is bounded by the widest point of the sweep
+       (sin saturates at 1 once the aperture passes a quarter turn) plus the tube; y runs from the
+       far edge of the sweep up to the bisector's own rim.  A PIE also contains its centre, which a
+       narrow sweep's box would otherwise sit entirely above. */
+    f32 pad  = TESS_FX_AA * 0.5f + 1.0f;
+    f32 xext = ( ( ap >= TESS_HALF_PI ) ? ra : ra * sa ) + rb + pad;
+    f32 ymax = ra + rb + pad;
+    f32 ymin = ra * ca - rb - pad;
+    if ( pie && ymin > -pad )
+        ymin = -pad;
+
+    f32              wu, wv;
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
+        return;
+
+    s_tess.cur_fx = gui_fx_pack_arc( pie ? GUI_FX_PIE : GUI_FX_ARC, ra, rb, ap );
+
+    static const f32 lsx[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };
+    static const u32 lsy[ 4 ] = {  0u,   0u,   1u,   1u   };
+
+    for ( u32 i = 0; i < 4; ++i )
+    {
+        f32 lx = lsx[ i ] * xext;
+        f32 ly = lsy[ i ] ? ymax : ymin;
+        /* local -> world.  Reflection + rotation; the pipeline does not cull, so the winding this
+           flips for bisectors in the lower half plane costs nothing. */
+        f32 px = pcx - sm * lx + cm * ly;
+        f32 py = pcy + cm * lx + sm * ly;
+        v[ i ] = gui_vert_fxc( px, py, wu, wv, abgr, lx, ly );
+    }
+    tess_quad_idx( idx, base );
+    tess_prim_commit( 4u, 6u );
+}
+
 /* Tessellate a glyph run from the font atlas into s_tess, hard-clipped to the horizontal pixel
    window [clip_x0, clip_x1].  Glyphs fully outside the window are skipped; glyphs fully inside emit
    whole; the (at most two) straddling glyphs are cut on a pixel boundary with their U remapped by
@@ -1394,6 +1518,18 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                                     c->round_rect.rtl, c->round_rect.rtr,
                                     c->round_rect.rbr, c->round_rect.rbl,
                                     c->round_rect.abgr );
+                break;
+
+            /* The two sectors share a command member and differ only in the field the fragment
+               evaluates: round caps on a band, or sharp radial edges on a wedge. */
+            case GUI_CMD_ARC:
+                tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, c->arc.thickness,
+                             c->arc.a0, c->arc.a1, false, c->arc.abgr );
+                break;
+
+            case GUI_CMD_PIE:
+                tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, 0.0f,
+                             c->arc.a0, c->arc.a1, true, c->arc.abgr );
                 break;
 
             case GUI_CMD_TRIANGLE:

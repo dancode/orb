@@ -1492,6 +1492,12 @@ typedef enum
 
     GUI_FX_SEG       = 6,  /* CAPSULE: a line segment `radius` px thick, with round caps        */
 
+    /* The two CIRCULAR-SECTOR modes.  Both read the effect coordinate as a SIGNED offset from the
+       shape centre, already rotated so the sector's bisector points +y in that local frame -- see
+       the note below on why these need no fold and therefore cost ONE quad. */
+    GUI_FX_ARC       = 7,  /* annular sector: a band of `tube` px centred on radius ra, round caps */
+    GUI_FX_PIE       = 8,  /* filled wedge: the disc of radius ra cut to the aperture, sharp edges */
+
 } gui_fx_mode_t;
 
 /* The effect coordinate (ex, ey) is the shape-local quantity `|p| - c`, where p is the vertex's
@@ -1512,7 +1518,34 @@ typedef enum
        d  = length( vec2( max( ex, 0 ), ey ) ) - radius
 
    That form is the true distance to the segment inside and out, so unlike the rounded box it needs
-   no interior-distance term to stay correct in its core. */
+   no interior-distance term to stay correct in its core.
+
+   THE SECTOR MODES FOLD NOTHING, and that is what makes an arc affordable.  Re-read the rule above:
+   the fold is forced by the SUBTRACTION of c, not by the absolute value.  A circular shape has
+   c = 0 -- the centre rect of a disc is a point -- so there is nothing to subtract, the effect
+   coordinate is just p, and p is affine in the vertex position over the WHOLE shape.  One quad
+   interpolates it exactly.  The fragment applies its own abs() to the interpolated value, which is
+   exact because the value it folds is.
+
+   Getting the fold for free is not the point though; getting the ANGLE is.  |p| destroys the sign
+   and with it any way to tell where on the circle a fragment lies, which is why no amount of
+   quadrant-folding could ever have expressed an arc.  Signed p keeps it, so a sector costs:
+
+       ex, ey = p rotated so the sector's bisector points +y     (the CPU does this rotation)
+       q      = ( |ex|, ey )                                     (the fragment's own fold)
+       ARC    = the distance to the circle of radius ra, cut to the aperture, minus the tube
+       PIE    = that disc intersected with the angular half-plane
+
+   The rotation is on the CPU because it is per-shape, not per-fragment: four vertices pay for it
+   instead of every pixel, and it means the packed word carries ONE aperture rather than two
+   absolute angles.  The frame is a reflection (det -1), which is harmless -- the shape is symmetric
+   about the bisector by construction, and the pipeline does not cull.
+
+   One precision note specific to these modes.  Every other mode's coordinate is near ZERO at the
+   boundary, which is the whole argument for HALF2 above; a sector's is near ra, so its ulp at the
+   boundary is the ulp of ra rather than of a corner radius.  At UI radii (<= 64 px) that is 0.03 px
+   and invisible; by 512 px it is 0.25 px.  Arcs that large are not a UI shape, but that is where
+   the limit is and it is not the same limit the box has. */
 
 /* The packed effect word.  Every field is a fixed-point pixel quantity sized to its physical
    range: a corner radius can be half a panel, a shadow's falloff is tens of pixels, a border is
@@ -1613,6 +1646,34 @@ gui_fx_pack_tile_u( f32 repeats )
 {
     u32 n = gui_fx_fixed( repeats, 16.0f, 0xFFFFFFu );
     return (u32)GUI_FX_TILE_U | ( n << 4 );
+}
+
+/* ARC / PIE re-partition the word one more time, and they are the first modes to spend the whole 28
+   bits on GEOMETRY.  There is no feather field: a sector is a stroke, a stroke wants exactly one
+   pixel of antialiasing, and the 9 bits a feather would cost buy the aperture instead -- which is
+   the parameter without which the shape does not exist at all.  The fragment hardcodes the 1 px
+   band (see gui.frag); tess_fx_arc sizes its skirt from the same constant.
+     ra       -- 12 bits at 1/8 px, the sector's own radius: the CENTRELINE for an ARC, the outer
+                 edge for a PIE.  Shares GUI_FX_RADIUS_MAX with the box modes.
+     tube     --  7 bits at 1/8 px, HALF the stroke thickness, so the band spans ra +/- tube.  PIE
+                 packs 0.  A thickness past 2 * GUI_FX_ARC_TUBE_MAX is a hoop rather than a stroke
+                 and the symbol layer keeps the polyline for it, exactly as draw_circle does.
+     aperture --  9 bits over 0..pi: HALF the swept angle, measured from the bisector.  Half rather
+                 than the full sweep because the CPU has already rotated the coordinate to put the
+                 bisector on +y, which buys the symmetry that turns two absolute angles into one
+                 number.  512 steps over pi is 0.35 degrees -- finer than a progress readout at any
+                 radius a UI draws. */
+#define GUI_FX_ARC_TUBE_MAX        15.875f   /* 7 bits at 1/8 px: max HALF-thickness */
+#define GUI_FX_ARC_APERTURE_STEPS  511.0f    /* 9 bits over 0..pi */
+#define GUI_FX_PI                  3.14159265358979f
+
+static inline u32
+gui_fx_pack_arc( gui_fx_mode_t mode, f32 ra, f32 tube, f32 aperture )
+{
+    u32 r = gui_fx_fixed( ra,   8.0f, 0xFFFu );
+    u32 t = gui_fx_fixed( tube, 8.0f, 0x7Fu  );
+    u32 a = gui_fx_fixed( aperture, GUI_FX_ARC_APERTURE_STEPS / GUI_FX_PI, 0x1FFu );
+    return ( (u32)mode & 0xFu ) | ( r << 4 ) | ( t << 16 ) | ( a << 23 );
 }
 
 /* abgr is the same R-in-the-low-byte word every other colour here uses (R8G8B8A8_UNORM order). */
@@ -1806,6 +1867,8 @@ typedef enum
     GUI_CMD_PULSE,           // rounded box whose alpha breathes on the shader clock (GUI_FX_PULSE)
     GUI_CMD_ROUND_RECT_EX,   // filled box with a PER-CORNER radius: four GUI_FX_BOX quadrants,
                              // each carrying its own packed word
+    GUI_CMD_ARC,             // stroked circular arc, round caps: one GUI_FX_ARC quad
+    GUI_CMD_PIE,             // filled wedge, sharp radial edges: one GUI_FX_PIE quad
 
 } gui_cmd_type_t;
 
@@ -1962,6 +2025,15 @@ typedef struct
            derives its interior hole from a single radius, and generalizing that is not worth it for
            a shape whose outline the polyline already draws correctly. */
         struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl;          u32 abgr; } round_rect;
+        /* Circular sector -- ONE member serving GUI_CMD_ARC and GUI_CMD_PIE, which differ only in
+           the field the fragment evaluates, not in anything they carry.  Angles are radians in
+           screen space (0 points +x, positive turns clockwise, matching text_xf.rot); a1 < a0 is
+           normalized at tessellation and a sweep of a full turn routes to the exact ring / disc
+           primitives instead.  `thickness` is the stroke width for ARC and is ignored by PIE.
+           This is the shape the library used to SAMPLE: up to 66 points fanned or stroked, so a
+           pie was up to 65 separate TRIANGLE commands and a spinner ~130 vertices.  Both are now
+           one quad, because a circular field needs no quadrant fold (see the effect band). */
+        struct { f32 cx, cy, r, thickness, a0, a1;                u32 abgr; } arc;
     };
 } gui_cmd_t;
 

@@ -57,6 +57,45 @@ float fx_coverage( float2 fx_coord, uint fx )
     if ( mode == 0u || mode == 4u || mode == 5u )
         return 1.0;
 
+    // modes 7 ARC and 8 PIE -- circular sectors.  Taken before the shared decode below because they
+    // re-partition the word completely: there is no feather field (a sector gets a fixed 1 px band,
+    // which is what `0.5 - d` is), and the 9 bits it would have cost carry the APERTURE instead.
+    //
+    // fx_coord is SIGNED here, not folded, and already rotated by the CPU so the sector's bisector
+    // points +y (gui.h).  That is the whole trick: a circular shape subtracts no half-extent, so its
+    // coordinate is affine over one quad and the sign survives -- and the sign is the angle, without
+    // which neither of these shapes can be expressed at all.  The fold below is the fragment's own,
+    // exact because the value it folds is exact.
+    if ( mode >= 7u )
+    {
+        float  ra = float( ( fx >>  4 ) & 0xFFFu ) * 0.125;
+        float  rb = float( ( fx >> 16 ) & 0x7Fu  ) * 0.125;
+        float  ap = float( ( fx >> 23 ) & 0x1FFu ) * ( 3.14159265 / 511.0 );
+        float2 sc = float2( sin( ap ), cos( ap ) );  // the aperture as a direction, once per fragment
+        float2 q  = float2( abs( fx_coord.x ), fx_coord.y );
+        float  ds;
+
+        if ( mode == 8u )
+        {
+            // PIE: the disc intersected with the angular wedge.  `l` is the disc, `m` the distance
+            // to the radial edge (a segment from the centre out to the rim, hence the clamp to ra),
+            // and the cross product's sign says which side of that edge we are on -- so max() keeps
+            // the edges SHARP where the arc's round caps would have rounded them.
+            float l = length( q ) - ra;
+            float m = length( q - sc * clamp( dot( q, sc ), 0.0, ra ) );
+            ds = max( l, m * sign( sc.y * q.x - sc.x * q.y ) );
+        }
+        else
+        {
+            // ARC: exact distance to the circle of radius ra, cut to the aperture, then thickened
+            // by the tube.  Inside the wedge it is the annulus; outside it is the distance to the
+            // nearest endpoint, which is what gives the stroke its round caps for free.
+            ds = ( ( sc.y * q.x > sc.x * q.y ) ? length( q - sc * ra )
+                                               : abs( length( q ) - ra ) ) - rb;
+        }
+        return saturate( 0.5 - ds );
+    }
+
     float radius  = float( ( fx >>  4 ) & 0xFFFu ) * 0.125;
     float feather = float( ( fx >> 16 ) & 0x1FFu ) * 0.25;
     float border  = float( ( fx >> 25 ) & 0x7Fu  ) * 0.125;

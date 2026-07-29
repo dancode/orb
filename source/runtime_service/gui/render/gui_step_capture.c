@@ -391,6 +391,14 @@ step_cmd_bounds( const gui_cmd_t* c )
         case GUI_CMD_ROUND_RECT_EX:
             return ( gui_rect_t ){ c->round_rect.x, c->round_rect.y,
                                    c->round_rect.w, c->round_rect.h };
+        /* The whole circle, not the sector: a highlight that over-covers still points at the right
+           shape, and the tight extent would need the rotated local box rebuilt here. */
+        case GUI_CMD_ARC:
+        case GUI_CMD_PIE:
+        {
+            f32 g = c->arc.r + c->arc.thickness * 0.5f;
+            return ( gui_rect_t ){ c->arc.cx - g, c->arc.cy - g, g * 2.0f, g * 2.0f };
+        }
         case GUI_CMD_TRIANGLE:
         {
             f32 x0 = c->tri.ax, x1 = c->tri.ax, y0 = c->tri.ay, y1 = c->tri.ay;

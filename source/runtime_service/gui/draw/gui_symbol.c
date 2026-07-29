@@ -323,24 +323,41 @@ draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
     gui_draw_polyline( pts, segs, thickness, GUI_STROKE_CENTER, true, col );
 }
 
-/* Stroked arc from a0 to a1 (radians) -- a spinner sweep, a knob track, a radial-menu rim. */
+/* Stroked arc from a0 to a1 (radians) -- a spinner sweep, a knob track, a radial-menu rim.
+
+   A distance field now, so the curve is exact at any radius and the cost is four vertices instead
+   of the ~130 the sampled ribbon spent.  It matters most where these actually get used: sym_arc_segs
+   gave a 12 px spinner about ten segments, so the "circle" it swept was a visible decagon. */
 static void
 draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )
 {
+    if ( thickness < 1.0f ) thickness = 1.0f;
+
+    /* A band wider than the packed word's tube field cannot be described to the fragment, so the
+       heavy case keeps the polyline rather than silently drawing a thinner arc -- the same rule and
+       the same reason as draw_circle's fat ring. */
+    if ( thickness * 0.5f <= GUI_FX_ARC_TUBE_MAX )
+    {
+        draw_push_arc( cx, cy, r, thickness, a0, a1, col );
+        return;
+    }
     gui_vec2_t pts[ 66 ];
     u32 n = sym_arc( cx, cy, r, a0, a1, pts );
-    gui_draw_polyline( pts, n, thickness < 1.0f ? 1.0f : thickness, GUI_STROKE_CENTER, false, col );
+    gui_draw_polyline( pts, n, thickness, GUI_STROKE_CENTER, false, col );
 }
 
-/* Filled pie / wedge from a0 to a1 (radians): a triangle fan from the centre over the arc.  A full
-   sweep is a disc; a partial one is a pie slice (knobs, radial menus, donut segments). */
+/* Filled pie / wedge from a0 to a1 (radians): knobs, radial menus, donut segments.  A full sweep
+   is a disc.
+
+   This was the worst offender in the library.  A fan over the sampled arc emitted n-2 SEPARATE
+   triangle commands -- up to 65 of a 1024 budget for ONE shape, with a polygonal rim and no
+   antialiasing at all.  The wedge is now a single quad whose radial edges stay sharp and whose rim
+   is exact, which is the combination a fan could never give: rounding the caps would have been
+   wrong here, and a fan could not round anything. */
 static void
 draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )
 {
-    gui_vec2_t pts[ 67 ];
-    pts[ 0 ] = sv2( cx, cy );
-    u32 n = sym_arc( cx, cy, r, a0, a1, pts + 1 );
-    sym_fill_convex( pts, n + 1, col );
+    draw_push_pie( cx, cy, r, a0, a1, col );
 }
 
 /*==============================================================================================

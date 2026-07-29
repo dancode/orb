@@ -200,6 +200,14 @@ void draw_push_pulse            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
 void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
                                   f32 rtl, f32 rtr, f32 rbr, f32 rbl, u32 abgr );
 
+/* Push a circular sector -- a stroked arc with round caps, or a filled wedge with sharp radial
+   edges.  Angles are radians in screen space (0 points +x, positive turns clockwise); a reversed
+   range or a sweep past a full turn is normalized at tessellation.  One quad either way.
+   draw_push_arc's thickness is bounded by 2 * GUI_FX_ARC_TUBE_MAX -- past that the caller keeps a
+   polyline, exactly as draw_circle does for a fat ring. */
+void draw_push_arc              ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr );
+void draw_push_pie              ( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr );
+
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 tex_idx, u32 abgr );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 tex_idx, u32 abgr );
 void draw_push_circle_filled    ( f32 cx, f32 cy, f32 r, u32 segments, u32 abgr );

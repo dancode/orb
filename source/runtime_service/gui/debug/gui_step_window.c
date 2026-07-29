@@ -57,7 +57,7 @@ static f32  s_step_accum;
 static const char* k_step_type_name[] = {
     "rect_filled", "rect_outline", "triangle", "text", "text_xf", "circle_filled",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
-    "sprite", "shadow", "pulse", "round_rect_ex",
+    "sprite", "shadow", "pulse", "round_rect_ex", "arc", "pie",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -204,6 +204,15 @@ step_cmd_detail( const step_cmd_info_t* ci )
                           c->round_rect.rbr, c->round_rect.rbl );
             row2 = b2;
             break;
+        /* Angles in degrees: the command stores radians, but nobody debugs a sweep in radians. */
+        case GUI_CMD_ARC:
+        case GUI_CMD_PIE:
+            gui_textf( "centre %.0f,%.0f   r %.1f", c->arc.cx, c->arc.cy, c->arc.r );
+            fmt_snprintf( b2, sizeof( b2 ), "%.1f -> %.1f deg   sweep %.1f   t %.1f",
+                          c->arc.a0 * 57.2957795f, c->arc.a1 * 57.2957795f,
+                          ( c->arc.a1 - c->arc.a0 ) * 57.2957795f, c->arc.thickness );
+            row2 = b2;
+            break;
     }
     gui_text( row2 ? row2 : " " );
 
@@ -237,6 +246,8 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_SHADOW:        step_swatch( r, r.x, "color", c->shadow.abgr );       break;
                 case GUI_CMD_PULSE:         step_swatch( r, r.x, "color", c->pulse.abgr );        break;
                 case GUI_CMD_ROUND_RECT_EX: step_swatch( r, r.x, "color", c->round_rect.abgr );   break;
+                case GUI_CMD_ARC:
+                case GUI_CMD_PIE:           step_swatch( r, r.x, "color", c->arc.abgr );          break;
                 default:                                                                          break;
             }
             break;
