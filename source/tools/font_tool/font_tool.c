@@ -17,9 +17,11 @@
 
     -sdf bakes a SIGNED DISTANCE FIELD rather than coverage, which is what makes text scale and
     rotate cleanly (the GUI samples it LINEAR and recovers the edge with a screen-space
-    derivative).  It is FreeType-only -- the runtime stb baker cannot produce one -- and it is the
-    reason this tool is the offline path.  Distance-field glyphs are bigger (each grows by the
-    spread on all four sides), so an SDF bake wants more atlas than the same face in coverage.
+    derivative).  It is the reason this tool is the offline path -- the runtime stb baker stays
+    coverage-only.  Distance-field glyphs are bigger (each grows by the spread on all four sides),
+    so an SDF bake wants more atlas than the same face in coverage.  The field is built HERE, by
+    supersampling and a distance transform, NOT by FreeType's sdf renderer -- see the baker
+    section below for why that module cannot be used.
 
     Link deps: freetype.lib (import lib for freetype.dll), dev_font (shared bake back-end)
 
@@ -33,10 +35,11 @@
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
+#include <math.h>         /* sqrtf -- the distance transform */
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
-#include FT_MODULE_H      /* FT_Property_Set -- the sdf renderer's `spread` */
+#include FT_OUTLINE_H     /* scale + rasterize the hinted outline for the field */
 
 #include "tools/font_tool/orb_font.h"
 #include "developer/dev_font/dev_font.h"   /* shared path resolver, output dirs, bake back-end */
@@ -55,12 +58,14 @@
 /* The baked codepoint range and glyph count come from the format contract (orb_font.h):
    ORB_FONT_CP_FIRST / ORB_FONT_CP_LAST / ORB_FONT_CP_COUNT. */
 
-/* SDF spread, in pixels: how far the distance field reaches either side of the outline.  The bounds
-   are FreeType's own (src/sdf/ftsdfcommon.h) and it rejects anything outside them, so they are
-   checked here to fail with a usable message instead of an FT error code.
+/* SDF spread, in pixels: how far the distance field reaches either side of the outline.  The range
+   is inherited from FreeType's sdf module, which the baker no longer uses -- kept because it is a
+   sane band and because every bake in the wild was made inside it.
    The spread costs atlas area -- every glyph rect grows by 2*spread on BOTH axes -- and buys the
    range over which effects that read distance (outline, glow) still have a gradient to read.  8 is
-   ample for text at UI sizes; raise it only for a font meant to be scaled up hard. */
+   ample for text at UI sizes; raise it only for a font meant to be scaled up hard.
+   It is also the ENCODING's resolution: 127 byte steps span the spread, so a wider spread trades
+   near-edge precision for reach (at 8, one step is 0.063 px). */
 #define FONT_SDF_SPREAD_DEFAULT  8
 #define FONT_SDF_SPREAD_MIN      2
 #define FONT_SDF_SPREAD_MAX      32
@@ -157,63 +162,215 @@ info_glob_cb( const char* filename, const char* full_path, void* userdata )
 }
 
 /*==============================================================================================
-    sdf_repair_signs -- take the field's SIGN from the RASTERIZER, not from the contour merge.
+    THE DISTANCE FIELD BAKER
 
-    FreeType builds a distance field per CONTOUR and combines them with
+    Deliberately NOT FreeType's `sdf` renderer, and the reason is structural rather than a matter
+    of tuning.  That module builds a field per CONTOUR and combines them with
     `min( max over clockwise contours, min over counter-clockwise contours )` (ftsdf.c,
-    sdf_generate_with_overlaps).  That rule has two failure modes, and neither is tunable:
+    sdf_generate_with_overlaps), which has two failure modes it cannot be talked out of:
 
-      * A FILLED ISLAND INSIDE A HOLE is not expressible at all.  The hole is a counter-clockwise
-        contour, so it VETOES every pixel inside it via the min -- including pixels that a later
-        clockwise contour fills back in.  Cascadia Mono's dotted zero is exactly this shape, and
-        its dot was missing from the field entirely: solid ink reading 63..100 where 128 is the
-        outline.  Nothing about spread, hinting or the `overlaps` property touches it.
+      * A FILLED ISLAND INSIDE A HOLE is not expressible.  The hole is a counter-clockwise
+        contour, so the min VETOES every pixel inside it -- including the ones a later clockwise
+        contour fills back in.  Cascadia Mono's DOTTED ZERO is exactly that shape, and its dot was
+        absent from the field entirely: solid ink reading 63..100 where 128 is the outline.  Note
+        this breaks the MAGNITUDES too, not just the signs, so no repair pass can recover it --
+        the field around the dot encodes distance to the COUNTER's edge, and the dot's own edge is
+        simply not in the data.
       * A CONTOUR THAT INTERSECTS ITSELF cannot be split apart, and FreeType's own documentation
-        says so.  A crossbar running into a bowl ('e', 'a') slips the sign by a few byte steps at
-        the junction -- the smaller, subtler version of the same hole.
+        says so.  A crossbar running into a bowl ('e', 'a') slips the sign a few byte steps at the
+        junction.
 
-    The rasterizer has neither problem: it fills by nonzero winding, so islands, holes and
-    self-intersections all come out right.  So the baker renders each glyph BOTH ways and lets the
-    coverage decide the sign, flipping any texel the two disagree about with FreeType's own
-    invert_sign (255 - v, ftsdfcommon.c).
+    What replaces it is the oldest and least clever method there is (Valve, Green 2007), and its
+    virtue is that no step of it has an opinion about contours:
 
-    ONLY the unambiguous extremes are touched -- fully covered (255) must be inside, fully empty
-    (0) must be outside.  Partial coverage is the antialiased boundary band, where an 8-bit area
-    estimate is a WORSE authority than the analytic field, and a rule that reached in there would
-    "repair" texels that were right.  In practice this is a handful of texels per face: the flip
-    restores the sign, and the magnitude it restores is close enough that the edge lands within a
-    fraction of a pixel of where the outline actually is.
+        1  rasterize the glyph at N times the target size with the ORDINARY rasterizer, whose
+           nonzero-winding fill already resolves overlaps, self-intersections and islands
+        2  threshold to a binary inside/outside mask
+        3  exact Euclidean distance transform (Felzenszwalb-Huttenlocher) of both classes
+        4  signed distance in fine pixels -> target pixels -> the byte encoding
 
-    Alignment comes from the BEARINGS rather than from `spread`, so the repair still lines up if
-    FreeType ever changes how it pads: the coverage bitmap's top-left sits at
-    (cov_left - field_left, field_top - cov_top) inside the field bitmap.  If that does not land
-    wholly inside, the glyph is left alone rather than repaired against the wrong texels.
+    Accuracy: at N = 16 the edge is located to about 1/32 of a target pixel, while the byte
+    encoding at spread 8 can only resolve 8/127 = 0.063 px.  So the METHOD is not the limit here,
+    the FORMAT is -- which is the position worth being in.  What this does not give is MSDF: a
+    single channel still rounds a sharp corner, and fixing that means median-of-3 over three
+    channels (msdfgen), a fourth atlas in UNORM, and a shader change.
+
+    THE SUPERSAMPLED RENDER IS THE SAME OUTLINE, NOT A SECOND ONE.  The obvious way to get it --
+    set the pixel size to N times the target and load again -- silently bakes a DIFFERENT shape,
+    because hinting grid-fits to whatever size is current and at N times the size it effectively
+    stops.  Measured: 77 texels of the 32px face then disagreed with its coverage twin about which
+    side of the outline they were on, not because the field was wrong but because the two bakes
+    were no longer the same glyph.  So the outline is loaded ONCE at the target size, hinted, and
+    then SCALED UP as geometry (FT_Outline_Transform) before rasterizing.  The field is thus the
+    exact shape the coverage twin has, at N times the resolution, and the box it is rendered into
+    is the ink box grown by `spread` -- so output texel (x, y) is fine cell (x*N + N/2, y*N + N/2)
+    and the registration needs no bearing arithmetic at all.
 ==============================================================================================*/
 
-static uint32_t
-sdf_repair_signs( dev_font_glyph_t* r, const uint8_t* cov, int cw, int ch, int cleft, int ctop )
+#define SDF_FINE_MIN   4     /* supersample floor -- large faces would otherwise blow the grid */
+#define SDF_FINE_MAX   16    /* and its ceiling: past this the byte encoding is the limit      */
+#define SDF_INF        1e20f
+
+/* One dimension of the exact squared distance transform: d[q] = min over p of (q-p)^2 + f[p].
+   The lower envelope of a set of parabolas, walked in O(n) -- Felzenszwalb & Huttenlocher 2012.
+   `v` (hull vertices) and `z` (hull breakpoints) are caller-owned scratch of n and n+1. */
+static void
+edt_1d( const float* f, float* d, int* v, float* z, int n )
 {
-    int dx = cleft - r->bearing_x;
-    int dy = r->bearing_y - ctop;
-    if ( dx < 0 || dy < 0 || dx + cw > r->w || dy + ch > r->h )
-        return 0;
+    int k  = 0;
+    v[ 0 ] = 0;
+    z[ 0 ] = -SDF_INF;
+    z[ 1 ] = +SDF_INF;
 
-    uint32_t fixed = 0;
-    for ( int y = 0; y < ch; ++y )
+    for ( int q = 1; q < n; ++q )
     {
-        for ( int x = 0; x < cw; ++x )
+        float s;
+        for ( ;; )
         {
-            uint8_t  c = cov[ (size_t)y * cw + x ];
-            uint8_t* v = &r->bitmap[ (size_t)( y + dy ) * r->w + ( x + dx ) ];
+            s = ( ( f[ q ] + (float)( q * q ) ) - ( f[ v[ k ] ] + (float)( v[ k ] * v[ k ] ) ) )
+              / (float)( 2 * q - 2 * v[ k ] );
+            if ( s <= z[ k ] && k > 0 )
+                --k;
+            else
+                break;
+        }
+        ++k;
+        v[ k ]     = q;
+        z[ k ]     = s;
+        z[ k + 1 ] = +SDF_INF;
+    }
 
-            if ( ( c == 255 && *v < 128 ) || ( c == 0 && *v > 128 ) )
-            {
-                *v = (uint8_t)( 255 - *v );
-                ++fixed;
-            }
+    k = 0;
+    for ( int q = 0; q < n; ++q )
+    {
+        while ( z[ k + 1 ] < (float)q )
+            ++k;
+        float dq = (float)( q - v[ k ] );
+        d[ q ]   = dq * dq + f[ v[ k ] ];
+    }
+}
+
+/* Squared EDT of a w*h grid in place: columns, then rows.  `f` holds 0 at seed cells and SDF_INF
+   elsewhere on entry, squared distance to the nearest seed on exit. */
+static void
+edt_2d( float* f, int w, int h, float* col, float* d, int* v, float* z )
+{
+    for ( int x = 0; x < w; ++x )
+    {
+        for ( int y = 0; y < h; ++y )
+            col[ y ] = f[ (size_t)y * w + x ];
+        edt_1d( col, d, v, z, h );
+        for ( int y = 0; y < h; ++y )
+            f[ (size_t)y * w + x ] = d[ y ];
+    }
+    for ( int y = 0; y < h; ++y )
+    {
+        float* row = f + (size_t)y * w;
+        edt_1d( row, d, v, z, w );
+        memcpy( row, d, (size_t)w * sizeof( float ) );
+    }
+}
+
+/* Turn a supersampled coverage mask into the field.  `fine` is (ow*n) x (oh*n) and covers exactly
+   the ow x oh output box, so a texel's centre is fine cell (x*n + n/2, y*n + n/2) and there is no
+   registration to get wrong.  Returns NULL only on an allocation failure. */
+static uint8_t*
+sdf_field_from_mask( const uint8_t* fine, int ow, int oh, int n, int spread )
+{
+    int gw = ow * n;
+    int gh = oh * n;
+
+    uint8_t* out  = (uint8_t*)malloc( (size_t)ow * (size_t)oh );
+    float*   din  = (float*)malloc( (size_t)gw * (size_t)gh * sizeof( float ) );
+    float*   dout = (float*)malloc( (size_t)gw * (size_t)gh * sizeof( float ) );
+    int      mx   = gw > gh ? gw : gh;
+    float*   col  = (float*)malloc( (size_t)mx * sizeof( float ) );
+    float*   dsc  = (float*)malloc( (size_t)mx * sizeof( float ) );
+    int*     vsc  = (int*)malloc( (size_t)mx * sizeof( int ) );
+    float*   zsc  = (float*)malloc( (size_t)( mx + 1 ) * sizeof( float ) );
+
+    if ( !out || !din || !dout || !col || !dsc || !vsc || !zsc )
+    {
+        free( out );
+        out = NULL;
+        goto done;
+    }
+
+    /* Two transforms off one mask: `din` seeds on OUTSIDE cells, so an inside cell learns its
+       distance to the boundary, and `dout` seeds on INSIDE cells for the reverse. */
+    for ( int i = 0; i < gw * gh; ++i )
+    {
+        bool inside = fine[ i ] >= 128;
+        din [ i ]   = inside ? SDF_INF : 0.0f;
+        dout[ i ]   = inside ? 0.0f    : SDF_INF;
+    }
+    edt_2d( din,  gw, gh, col, dsc, vsc, zsc );
+    edt_2d( dout, gw, gh, col, dsc, vsc, zsc );
+
+    for ( int y = 0; y < oh; ++y )
+    {
+        for ( int x = 0; x < ow; ++x )
+        {
+            size_t i  = (size_t)( y * n + n / 2 ) * gw + ( x * n + n / 2 );
+            bool   in = ( dout[ i ] == 0.0f );    /* seeded 0 exactly on the inside cells */
+
+            /* Distances run centre to centre, so the boundary sits half a fine pixel inside the
+               measurement; take that off, then convert fine pixels to target pixels. */
+            float dist = in ? ( sqrtf( din[ i ] ) - 0.5f ) : -( sqrtf( dout[ i ] ) - 0.5f );
+            dist      /= (float)n;
+
+            /* FreeType's encoding kept byte for byte -- 128 is the outline and 127 steps span
+               `spread` px -- so nothing downstream of the format had to learn a second one. */
+            int b = (int)( 128.0f + dist * 127.0f / (float)spread + 0.5f );
+            if ( b < 0 )   b = 0;
+            if ( b > 255 ) b = 255;
+            out[ (size_t)y * ow + x ] = (uint8_t)b;
         }
     }
-    return fixed;
+
+done:
+    free( din ); free( dout ); free( col ); free( dsc ); free( vsc ); free( zsc );
+    return out;
+}
+
+/* Rasterize the slot's CURRENT (already hinted, target-size) outline at n times scale into the
+   ow x oh output box grown from the ink box by `spread`.  The outline is scaled as geometry and
+   translated so the box's top-left lands on the mask's (0,0); `cleft`/`ctop` are the ink box's
+   bearings, in target pixels, y positive up.  Caller frees. */
+static uint8_t*
+sdf_render_fine( FT_Library lib, FT_Outline* outline,
+                 int ow, int oh, int cleft, int ctop, int spread, int n )
+{
+    int      gw   = ow * n;
+    int      gh   = oh * n;
+    uint8_t* mask = (uint8_t*)calloc( (size_t)gw * (size_t)gh, 1 );
+    if ( !mask )
+        return NULL;
+
+    FT_Matrix m = { (FT_Fixed)n << 16, 0, 0, (FT_Fixed)n << 16 };
+    FT_Outline_Transform( outline, &m );
+
+    /* Box edges in target px (y up): left is the ink box pushed out by the spread, bottom is the
+       top minus the full box height.  Shift the (already n-scaled) outline so those land on 0. */
+    int box_left   = cleft - spread;
+    int box_bottom = ( ctop + spread ) - oh;
+    FT_Outline_Translate( outline, -(FT_Pos)box_left * 64 * n, -(FT_Pos)box_bottom * 64 * n );
+
+    FT_Bitmap bm;
+    memset( &bm, 0, sizeof( bm ) );
+    bm.width      = (unsigned int)gw;
+    bm.rows       = (unsigned int)gh;
+    bm.pitch      = gw;
+    bm.num_grays  = 256;
+    bm.pixel_mode = FT_PIXEL_MODE_GRAY;
+    bm.buffer     = mask;
+
+    if ( FT_Outline_Get_Bitmap( lib, outline, &bm ) )
+    {
+        free( mask );
+        return NULL;
+    }
+    return mask;
 }
 
 /* basename of a path (after the last '/' or '\\'). */
@@ -445,89 +602,29 @@ main( int argc, char** argv )
     /* Set pixel size; 0 for width means "same as height". */
     FT_Set_Pixel_Sizes( face, 0, (FT_UInt)size_px );
 
-    /* The sdf renderer reads its spread from a MODULE property, not from the render call, so it is
-       set once here and applies to every FT_Render_Glyph below. */
-    if ( sdf_range )
-    {
-        FT_UInt spread = (FT_UInt)sdf_range;
-        if ( FT_Property_Set( ft, "sdf", "spread", &spread ) )
-        {
-            fprintf( stderr, "error: FreeType rejected sdf spread %u\n", spread );
-            FT_Done_Face( face );
-            FT_Done_FreeType( ft );
-            return 1;
-        }
-
-        /* OVERLAPPING CONTOURS.  Off by default in FreeType, and leaving it off is what puts HOLES
-           in a rendered glyph: where two contours overlap -- a stem meeting its serif, an arm
-           meeting its stem -- the default merge resolves the sign wrong and the field reports
-           "outside" in the middle of solid ink.  It costs bake time (a separate field per contour,
-           merged) and this is an offline tool, so correctness wins unconditionally. */
-        FT_Bool overlaps = 1;
-        if ( FT_Property_Set( ft, "sdf", "overlaps", &overlaps ) )
-        {
-            fprintf( stderr, "error: FreeType rejected sdf overlaps\n" );
-            FT_Done_Face( face );
-            FT_Done_FreeType( ft );
-            return 1;
-        }
-    }
-
     /* global metrics -- FreeType uses 26.6 fixed-point, >> 6 converts to integer pixels */
     int32_t ascent   = (int32_t)( face->size->metrics.ascender  >> 6 );
     int32_t descent  = (int32_t)( face->size->metrics.descender >> 6 );
     int32_t line_gap = (int32_t)( face->size->metrics.height    >> 6 ) - ascent + descent;
 
     memset( s_glyphs, 0, sizeof( s_glyphs ) );
-    uint32_t raw_count   = 0;
-    uint32_t sdf_fixed   = 0;   /* texels the sign repair flipped, over the whole face */
-    uint32_t sdf_fixed_g = 0;   /* glyphs that needed at least one                     */
+    uint32_t raw_count = 0;
+
+    /*------------------------------------------------------------------------------------------
+        PASS 1 -- at the TARGET size, hinted.  This is the authority for every NUMBER a glyph
+        carries: advance, bearings and the ink box.  An SDF bake takes its metrics from here too
+        and only borrows the shape from pass 2, which is what keeps the two bakes of one face
+        measuring identically down to the pixel.
+    ------------------------------------------------------------------------------------------*/
 
     for ( uint32_t cp = ORB_FONT_CP_FIRST; cp <= ORB_FONT_CP_LAST; ++cp )
     {
         FT_UInt glyph_idx = FT_Get_Char_Index( face, (FT_ULong)cp );
 
-        /* THE SIGN ORACLE.  An SDF bake rasterizes the glyph's coverage FIRST and keeps it, because
-           the field the renderer produces below can have the wrong sign where contours meet and the
-           rasterizer never does (sdf_repair_signs).  It has to happen first and in its own load:
-           FT_Render_Glyph consumes the slot's outline, so the glyph is loaded twice. */
-        uint8_t* cov_px   = NULL;
-        int      cov_w    = 0, cov_h = 0, cov_left = 0, cov_top = 0;
-        if ( sdf_range && FT_Load_Glyph( face, glyph_idx, FT_LOAD_RENDER ) == 0
-                       && face->glyph->bitmap.width > 0 && face->glyph->bitmap.rows > 0 )
-        {
-            FT_GlyphSlot cg = face->glyph;
-            cov_w    = (int)cg->bitmap.width;
-            cov_h    = (int)cg->bitmap.rows;
-            cov_left = (int)cg->bitmap_left;
-            cov_top  = (int)cg->bitmap_top;
-            cov_px   = (uint8_t*)malloc( (size_t)cov_w * (size_t)cov_h );
-            if ( cov_px )
-                for ( int row = 0; row < cov_h; ++row )
-                    memcpy( cov_px + (size_t)row * cov_w,
-                            cg->bitmap.buffer + (size_t)row * (uint32_t)cg->bitmap.pitch,
-                            (size_t)cov_w );
-        }
-
-        /* Coverage renders in one step; the SDF renderer runs over the OUTLINE, so the glyph is
-           loaded unrendered and rasterized separately.
-           HINTING STAYS ON for the SDF path, and that was measured rather than assumed: dropping
-           it (the obvious guess, since grid-fitting is meaningless for a field meant to be scaled)
-           made the holes WORSE and moved every advance, which would end the property that an SDF
-           face measures identically to its coverage twin. */
-        if ( FT_Load_Glyph( face, glyph_idx, sdf_range ? FT_LOAD_DEFAULT : FT_LOAD_RENDER ) )
-        {
-            free( cov_px );
+        if ( FT_Load_Glyph( face, glyph_idx, FT_LOAD_RENDER ) )
             continue;
-        }
 
         FT_GlyphSlot g = face->glyph;
-
-        if ( sdf_range && FT_Render_Glyph( g, FT_RENDER_MODE_SDF ) )
-        {
-            free( cov_px );
-            continue;   /* a glyph with no outline (space) simply has nothing to render */
-        }
 
         dev_font_glyph_t* r = &s_glyphs[ raw_count++ ];
 
@@ -536,21 +633,11 @@ main( int argc, char** argv )
         r->h         = (int)g->bitmap.rows;
         r->advance   = (int)( g->advance.x >> 6 );
 
-        /* THE BEARING SOURCE DIFFERS BY MODE, and it is not a style choice.  The SDF renderer grows
-           the bitmap by `spread` on every side and compensates by moving slot->bitmap_left/_top
-           itself (src/sdf/ftsdfrend.c) -- so the placement lives THERE, and horiBearing, which
-           describes the OUTLINE, would sit the field `spread` px off in both axes.  The coverage
-           path keeps reading horiBearing so existing bakes stay byte-identical. */
-        if ( sdf_range )
-        {
-            r->bearing_x = (int)g->bitmap_left;
-            r->bearing_y = (int)g->bitmap_top;    // already positive-above-baseline, as orb_font wants
-        }
-        else
-        {
-            r->bearing_x = (int)( g->metrics.horiBearingX >> 6 );
-            r->bearing_y = (int)( g->metrics.horiBearingY >> 6 );   // FT convention: positive = above baseline
-        }
+        /* horiBearing describes the OUTLINE and bitmap_left/_top the RASTERIZED box; for a plain
+           coverage render they agree, and horiBearing is what every earlier bake used, so it stays
+           the source here.  Pass 2 grows both by `spread` for a field. */
+        r->bearing_x = (int)( g->metrics.horiBearingX >> 6 );
+        r->bearing_y = (int)( g->metrics.horiBearingY >> 6 );   // FT convention: positive = above baseline
 
         /* copy bitmap pixels; pitch may exceed width due to alignment */
         if ( r->w > 0 && r->h > 0 )
@@ -569,26 +656,66 @@ main( int argc, char** argv )
                 uint8_t*       dst = r->bitmap + (size_t)row * r->w;
                 memcpy( dst, src, (size_t)r->w );
             }
+        }
+    }
 
-            if ( cov_px )
+    /*------------------------------------------------------------------------------------------
+        PASS 2 -- the field.  A second pass rather than work folded into the first because
+        FT_LOAD_RENDER above consumed the outline, and this needs it back.  The pixel size never
+        changes: the supersampling is a transform on the outline, not a reload at another size.
+    ------------------------------------------------------------------------------------------*/
+
+    if ( sdf_range )
+    {
+        int fine_n = 512 / size_px;
+        if ( fine_n < SDF_FINE_MIN ) fine_n = SDF_FINE_MIN;
+        if ( fine_n > SDF_FINE_MAX ) fine_n = SDF_FINE_MAX;
+
+        int spread = (int)sdf_range;
+
+        for ( uint32_t i = 0; i < raw_count; ++i )
+        {
+            dev_font_glyph_t* r = &s_glyphs[ i ];
+            if ( r->w <= 0 || r->h <= 0 )
+                continue;                       /* whitespace: no ink, so no field */
+
+            FT_UInt glyph_idx = FT_Get_Char_Index( face, (FT_ULong)r->codepoint );
+            if ( FT_Load_Glyph( face, glyph_idx, FT_LOAD_DEFAULT ) )
+                continue;
+
+            int ow = r->w + 2 * spread;
+            int oh = r->h + 2 * spread;
+
+            uint8_t* mask = sdf_render_fine( ft, &face->glyph->outline, ow, oh,
+                                             r->bearing_x, r->bearing_y, spread, fine_n );
+            uint8_t* field = mask ? sdf_field_from_mask( mask, ow, oh, fine_n, spread ) : NULL;
+            free( mask );
+
+            if ( !field )
             {
-                uint32_t n = sdf_repair_signs( r, cov_px, cov_w, cov_h, cov_left, cov_top );
-                sdf_fixed += n;
-                if ( n ) ++sdf_fixed_g;
+                fprintf( stderr, "error: cannot build the distance field for U+%04X\n",
+                         r->codepoint );
+                FT_Done_Face( face );
+                FT_Done_FreeType( ft );
+                return 1;
             }
+
+            /* The field IS the ink box grown by `spread` on all four sides, so the bearings move
+               with it -- the same adjustment FreeType's own sdf renderer used to make, which is
+               why the runtime loader needed no change when the generator was replaced. */
+            free( r->bitmap );
+            r->bitmap     = field;
+            r->bearing_x -= spread;
+            r->bearing_y += spread;
+            r->w          = ow;
+            r->h          = oh;
         }
 
-        free( cov_px );
+        printf( "[font_tool] distance field: %dx supersample, spread %u px\n", fine_n, sdf_range );
     }
 
     FT_Done_Face( face );
     FT_Done_FreeType( ft );
-
-    /* Reported rather than silent: a repair count that suddenly jumps on a new face is the signal
-       that its outlines hit the merge's blind spot hard, and a count of 0 is worth seeing too. */
-    if ( sdf_range )
-        printf( "[font_tool] sdf sign repair: %u texel%s across %u glyph%s\n",
-                sdf_fixed, sdf_fixed == 1 ? "" : "s", sdf_fixed_g, sdf_fixed_g == 1 ? "" : "s" );
 
     bool ok = dev_font_bake_write( out_path, s_glyphs, raw_count,
                                    ascent, descent, line_gap, size_px, sdf_range, ttf_path );
