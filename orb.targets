@@ -693,6 +693,14 @@ target sb_gui_brush						# brush + sprite atlas + nine-slice test bed
     dep         mod sys ref job app core
     dep         rhi gui base
 
+target sb_gui_test						# HEADLESS assertion tests: fx word, packing, rect kit, log sink
+
+    type        exe
+    root        source/sandbox/gui/sb_gui_test
+    folder      09_SANDBOX/GUI
+    unit        sb_gui_test.c
+    dep         gui base
+
 target sb_gui_sdf						# distance-field text: scale, rotation, hud numbers
 
     type        exe
