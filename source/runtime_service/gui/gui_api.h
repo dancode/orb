@@ -126,9 +126,10 @@ typedef struct gui_api_s
 
 
     /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are no longer emitted
-       by host code.  debug_enable( true ) arms an internal hotkey driver (numpad '.' arms the group,
-       then P / O / F10 ...) and gui emits them itself, last in the default context's build -- see
-       debug_enable (GUI_DEBUG section).  The perf overlay's clock arrives once through frame_set_hooks. */
+       by host code.  debug_enable( true ) arms an internal hotkey driver ('.' -- main row or numpad
+       -- arms the group, then F9 / F10 ...) and gui emits them itself, last in the default
+       context's build -- see debug_enable (GUI_DEBUG section).  The perf overlay's clock arrives
+       once through frame_set_hooks. */
 
     /* Frame hooks -- one-time wiring (after init) of the host OS services gui cannot reach itself
        (gui links only app + rhi, no sys):
@@ -518,6 +519,11 @@ typedef struct gui_api_s
     gui_vec2_t    ( *icon_size     )( gui_icon_id_t id );
     void          ( *image         )( gui_icon_id_t id, f32 w, f32 h, u32 col );
     void          ( *draw_icon_in  )( gui_rect_t r, gui_icon_id_t id, u32 col );
+    /* draw_icon_in turned about the fitted box's centre (radians, screen space) -- compass
+       needles, minimap markers, spinner glyphs.  An SDF icon turns clean at any angle (its edge
+       resolves in the fragment); a coverage icon shows its texels, the same split the two font
+       bakes have.  One quad, same batch. */
+    void          ( *draw_icon_xf  )( gui_rect_t r, gui_icon_id_t id, u32 col, f32 rot );
 
     /* The _sdf twins register the same coverage as a DISTANCE FIELD instead: the bytes are
        transformed and land in the distance-field atlas, and the fragment then recovers the edge
@@ -553,6 +559,9 @@ typedef struct gui_api_s
 
     void ( *image_texture   )( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
     void ( *draw_texture_in )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
+    /* The rotated form (radians, about the rect centre).  Ignores the ambient rounding --
+       a rounded rotated picture stacks draw_box_xf behind a plain one instead. */
+    void ( *draw_texture_xf )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr, f32 rot );
 
     /* Sprites -- authored RGBA art, packed into a sprite atlas of their own so a whole skin is
        still ONE draw call.  The registration verbs mirror the icon ones exactly (register / load /
@@ -670,6 +679,25 @@ typedef struct gui_api_s
     void ( *draw_circle            )( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
     void ( *draw_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
     void ( *draw_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
+    /* The arc cut by an angular dash pattern -- dotted rings, marching ants, tick dials.  dash/gap
+       are arc-length pixels at radius r (the draw_dashed_line vocabulary); the period is snapped so
+       whole cycles fit the sweep, so a closed dashed ring meets itself without a seam.  Animate by
+       rotating a0/a1 together: the pattern rides the sector's frame.  Still ONE quad. */
+    void ( *draw_arc_dashed        )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
+                                      f32 dash, f32 gap, u32 col );
+    /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1) by ANGLE -- the hot/cold value
+       arc.  A per-vertex colour cannot express this (it varies by angle, not position); the
+       fragment lerps it from the aperture it already computes.  Still ONE quad. */
+    void ( *draw_arc_gradient      )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
+                                      u32 col_a, u32 col_b );
+    /* The SDF box under a rotation about its centre (radians, screen space) -- rotated cards,
+       tilted badges, the plate behind rotated text.  feather 0 = crisp 1 px AA; wider = a rotated
+       soft shadow.  Same four quadrant quads as the upright box. */
+    void ( *draw_box_xf            )( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col );
+    /* Per-corner radii AND a feather -- the soft drop shadow under a tab or asymmetric card,
+       which draw_shadow (one radius) cannot shape.  feather 0 is the crisp per-corner fill. */
+    void ( *draw_round_rect_shadow )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
+                                      f32 feather, u32 col );
     void ( *draw_bezier_quad       )( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
     void ( *draw_bezier_cubic      )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
     void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
@@ -2432,11 +2460,12 @@ typedef struct gui_api_s
        adds nothing to its loop.  Every hotkey below is gated behind a master ARM so the broad
        single-letter keys never fire during normal use:
 
-         NP_DOT  master arm ('.'): toggle every debug hotkey below on / off as a group; off by
-                 default, so nothing below responds until it is armed.  Disarming resets every
-                 debug mode back to normal (overlays off, selector menu closed, render mode
-                 normal, layers cleared) and re-arming restores the selector menu's remembered
-                 lever values (debug_restore, gui_frame_overlay.c)
+         '.'     master arm (main row or NP_DOT): toggle every debug hotkey below on / off as a
+                 group; off by default, so nothing below responds until it is armed.  Disarming
+                 resets every debug mode back to normal (overlays off, selector menu closed,
+                 render mode normal, layers cleared) and re-arming restores the selector menu's
+                 remembered lever values (debug_restore, gui_frame_overlay.c).  While a stepper
+                 freeze is live the main-row '.' scrubs the replay instead; NP_DOT still disarms.
          NP1-NP5 debug overlay layers (window frames / interaction rects / resize bands / layout /
                  clips; Debug builds)
          NP6     content-rect outlines over scrollable regions (GUI_DBG_CONTENT -- drawn in

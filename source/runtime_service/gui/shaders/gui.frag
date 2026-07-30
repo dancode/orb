@@ -99,10 +99,29 @@ float fx_coverage()
             // ARC: exact distance to the circle of radius ra, cut to the aperture, then thickened
             // by the tube.  Inside the wedge it is the annulus; outside it is the distance to the
             // nearest endpoint, which is what gives the stroke its round caps for free.
+            // Modes 9 (ARC_DASH) and 10 (ARC_GRAD) are this same band -- the dash cut is below,
+            // the gradient acts on the COLOR in main() (the TEXT_EDGE precedent).
             ds = ( ( sc.y * q.x > sc.x * q.y ) ? length( q - sc * ra )
                                                : abs( length( q ) - ra ) ) - rb;
         }
-        return clamp( 0.5 - ds, 0.0, 1.0 );
+        float cov = clamp( 0.5 - ds, 0.0, 1.0 );
+
+        // mode 9 ARC_DASH -- the band cut by an angular dash pattern.  This mode is SELF-SAMPLED
+        // (gui.h): the uv word carries (period / TAU, duty) instead of texcoords, flat across the
+        // quad so it interpolates exactly.  theta is the SIGNED angle from the bisector (the same
+        // signed coordinate the aperture cut uses); the pattern anchors at the sweep start, and
+        // the emit side pre-quantized the period so whole cycles fit -- a closed ring has no seam.
+        // The cut edge is antialiased in ARC-LENGTH pixels (angle error times ra).
+        if ( mode == 9u )
+        {
+            float T     = max( v_uv.x, 1.0 / 65535.0 ) * 6.28318531;
+            float duty  = v_uv.y;
+            float t     = atan( v_fx_coord.x, v_fx_coord.y ) + ap;
+            float m     = t - T * floor( t / T );
+            float d_on  = min( m, duty * T - m );          // signed: > 0 inside an on-run
+            cov = min( cov, clamp( 0.5 + d_on * ra, 0.0, 1.0 ) );
+        }
+        return cov;
     }
 
     float radius  = float( ( v_fx >>  4 ) & 0xFFFu ) * 0.125;
@@ -186,6 +205,30 @@ void main()
                                          u_samplers[nonuniformEXT( samp )] ), v_uv );
     float cov = fx_coverage();
 
+    // SELF-SAMPLED fx modes (9+): the shape is solid colour by definition, so the texel is not
+    // consulted -- the uv word carried mode parameters instead (the sample above read a garbage
+    // location of a VALID texture, which is harmless and cheaper than a divergent skip).  Mode 10
+    // additionally sweeps the colour toward a second RGBA8 riding that word, lerped by the same
+    // signed angle the aperture cut uses -- the gradient a 4-corner vertex colour cannot express.
+    vec4 vcol = v_color;
+    uint fxm  = v_fx & 0xFu;
+    if ( fxm >= 9u )
+    {
+        s = vec4( 1.0 );
+        if ( fxm == 10u )
+        {
+            uint  bu = uint( round( v_uv.x * 65535.0 ) );
+            uint  bv = uint( round( v_uv.y * 65535.0 ) );
+            vec4  c2 = vec4( float( bu & 0xFFu ), float( bu >> 8 ),
+                             float( bv & 0xFFu ), float( bv >> 8 ) ) / 255.0;
+            c2.rgb   = srgb_to_linear( c2.rgb );   // authored sRGB, never saw the vertex stage
+            float ap = float( ( v_fx >> 23 ) & 0x1FFu ) * ( 3.14159265 / 511.0 );
+            float t  = clamp( ( atan( v_fx_coord.x, v_fx_coord.y ) + ap )
+                              / max( 2.0 * ap, 1e-4 ), 0.0, 1.0 );
+            vcol = mix( vcol, c2, t );
+        }
+    }
+
     // GUI_TEX_RGBA -- full-RGBA image (scene viewport / arbitrary bindless texture): the texel IS
     // the color, with the vertex color acting as a tint.  The texel arrives LINEAR: _SRGB-format
     // textures are hardware-decoded at sample time, and UNORM render targets hold linear data.
@@ -245,8 +288,8 @@ void main()
         return;
     }
 
-    // v_color.rgb is already linear light; alpha is coverage, which was linear all along. s.r is
-    // the glyph coverage from the R8 atlas (1.0 for the white solid-color pixel, so non-text draws
-    // pass through).
-    out_color = vec4( v_color.rgb, v_color.a * s.r * cov );
+    // vcol.rgb is already linear light (v_color, or the mode-10 sweep of it); alpha is coverage,
+    // which was linear all along.  s.r is the glyph coverage from the R8 atlas (1.0 for the white
+    // solid-color pixel and for the self-sampled modes, so non-text draws pass through).
+    out_color = vec4( vcol.rgb, vcol.a * s.r * cov );
 }

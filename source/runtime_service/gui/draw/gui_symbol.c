@@ -239,7 +239,7 @@ draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
 {
     if ( filled )
     {
-        draw_push_round_rect_ex( b.x, b.y, b.w, b.h, rtl, rtr, rbr, rbl, col );
+        draw_push_round_rect_ex( b.x, b.y, b.w, b.h, rtl, rtr, rbr, rbl, 0.0f, col );
         return;
     }
     gui_vec2_t pts[ 4 * 17 + 4 ];
@@ -601,6 +601,33 @@ void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 
 void gui_draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col ) { draw_circle( cx, cy, r, filled, thickness, col ); }
 void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )  { draw_arc( cx, cy, r, a0, a1, thickness, col ); }
 void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )                 { draw_pie( cx, cy, r, a0, a1, col ); }
+
+/* The self-sampled sector variants -- both bind straight to their backend primitives; the emit
+   side owns the dash quantization and the gradient's reversed-range colour swap. */
+void gui_draw_arc_dashed( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
+                          f32 dash, f32 gap, u32 col )
+{
+    if ( thickness < 1.0f ) thickness = 1.0f;
+    draw_push_arc_dashed( cx, cy, r, thickness, a0, a1, dash, gap, col );
+}
+void gui_draw_arc_gradient( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
+                            u32 col_a, u32 col_b )
+{
+    if ( thickness < 1.0f ) thickness = 1.0f;
+    draw_push_arc_gradient( cx, cy, r, thickness, a0, a1, col_a, col_b );
+}
+
+/* The rotated SDF box, and the per-corner soft shadow -- the two rect-family verbs the effect
+   band supported all along and nothing exposed. */
+void gui_draw_box_xf( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col )
+{
+    draw_push_box_xf( box.x, box.y, box.w, box.h, rounding, feather, rot, col );
+}
+void gui_draw_round_rect_shadow( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
+                                 f32 feather, u32 col )
+{
+    draw_push_round_rect_ex( box.x, box.y, box.w, box.h, r_tl, r_tr, r_br, r_bl, feather, col );
+}
 
 /* curves */
 void gui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col )

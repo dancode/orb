@@ -383,12 +383,27 @@ step_cmd_bounds( const gui_cmd_t* c )
         case GUI_CMD_FX_BOX:
         {
             f32 g = c->fx_box.feather * 0.5f;
+            if ( c->fx_box.rot != 0.0f )
+            {
+                /* Rotated: the rotated AABB of the grown box, the emit-side cull's arithmetic. */
+                f32 cs = cosf( c->fx_box.rot ), sn = sinf( c->fx_box.rot );
+                f32 hx = c->fx_box.w * 0.5f + g, hy = c->fx_box.h * 0.5f + g;
+                f32 ex = fabsf( hx * cs ) + fabsf( hy * sn );
+                f32 ey = fabsf( hx * sn ) + fabsf( hy * cs );
+                return ( gui_rect_t ){ c->fx_box.x + c->fx_box.w * 0.5f - ex,
+                                       c->fx_box.y + c->fx_box.h * 0.5f - ey,
+                                       ex * 2.0f, ey * 2.0f };
+            }
             return ( gui_rect_t ){ c->fx_box.x - g, c->fx_box.y - g,
                                    c->fx_box.w + 2.0f * g, c->fx_box.h + 2.0f * g };
         }
         case GUI_CMD_ROUND_RECT_EX:
-            return ( gui_rect_t ){ c->round_rect.x, c->round_rect.y,
-                                   c->round_rect.w, c->round_rect.h };
+        {
+            /* Grown by the feather like FX_BOX: the soft skirt is real painted area. */
+            f32 g = c->round_rect.feather * 0.5f;
+            return ( gui_rect_t ){ c->round_rect.x - g, c->round_rect.y - g,
+                                   c->round_rect.w + 2.0f * g, c->round_rect.h + 2.0f * g };
+        }
         /* The whole circle, not the sector: a highlight that over-covers still points at the right
            shape, and the tight extent would need the rotated local box rebuilt here. */
         case GUI_CMD_ARC:
@@ -396,6 +411,26 @@ step_cmd_bounds( const gui_cmd_t* c )
         {
             f32 g = c->arc.r + c->arc.thickness * 0.5f;
             return ( gui_rect_t ){ c->arc.cx - g, c->arc.cy - g, g * 2.0f, g * 2.0f };
+        }
+        case GUI_CMD_ARC_DASH:
+        {
+            f32 g = c->arc_dash.r + c->arc_dash.thickness * 0.5f;
+            return ( gui_rect_t ){ c->arc_dash.cx - g, c->arc_dash.cy - g, g * 2.0f, g * 2.0f };
+        }
+        case GUI_CMD_ARC_GRAD:
+        {
+            f32 g = c->arc_grad.r + c->arc_grad.thickness * 0.5f;
+            return ( gui_rect_t ){ c->arc_grad.cx - g, c->arc_grad.cy - g, g * 2.0f, g * 2.0f };
+        }
+        /* The rotated AABB, exactly as the emit-side cull computes it. */
+        case GUI_CMD_IMAGE_XF:
+        {
+            f32 cs = cosf( c->image_xf.rot ), sn = sinf( c->image_xf.rot );
+            f32 hx = c->image_xf.w * 0.5f, hy = c->image_xf.h * 0.5f;
+            f32 ex = fabsf( hx * cs ) + fabsf( hy * sn );
+            f32 ey = fabsf( hx * sn ) + fabsf( hy * cs );
+            return ( gui_rect_t ){ c->image_xf.x + hx - ex, c->image_xf.y + hy - ey,
+                                   ex * 2.0f, ey * 2.0f };
         }
         case GUI_CMD_TRIANGLE:
         {

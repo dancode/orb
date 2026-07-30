@@ -215,6 +215,27 @@ gui_draw_icon_in( gui_rect_t r, gui_icon_id_t id, u32 col )
     draw_push_icon( box.x, box.y, box.w, box.h, id, col ? col : 0xFFFFFFFFu );
 }
 
+/* The same aspect-fitted icon, turned about the fitted box's centre (radians, screen space).
+   Compass needles, minimap markers, spinner glyphs.  What keeps it clean at any angle is the
+   icon's own sampling model: an SDF icon resolves its edge in the fragment and turns like SDF
+   text does; a coverage icon shows its texels, exactly as the two font bakes differ. */
+void
+gui_draw_icon_xf( gui_rect_t r, gui_icon_id_t id, u32 col, f32 rot )
+{
+    u32 iw = 0, ih = 0;
+    if ( !icon_get( id, NULL, NULL, NULL, NULL, &iw, &ih ) || iw == 0 || ih == 0 )
+        return;
+
+    f32 sx  = r.w / (f32)iw;
+    f32 sy  = r.h / (f32)ih;
+    f32 s   = sx < sy ? sx : sy;
+    f32 w   = (f32)iw * s;
+    f32 h   = (f32)ih * s;
+    gui_rect_t box = rect_align( r, w, h, GUI_ALIGN_HCENTER | GUI_ALIGN_VCENTER );
+
+    draw_push_icon_xf( box.x, box.y, box.w, box.h, id, rot, col ? col : 0xFFFFFFFFu );
+}
+
 void
 gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col )
 {
@@ -254,6 +275,20 @@ gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr )
     draw_push_image( r.x, r.y, r.w, r.h, 0, 0, 1, 1,
                      bindless_idx | GUI_TEX_MODE( GUI_TEX_RGBA ),
                      tint_abgr ? tint_abgr : 0xFFFFFFFFu );
+}
+
+/* The rotated form -- one RGBA quad about its centre.  Does NOT honour the ambient rounding
+   (draw_texture_in's one extra): a rotated field and a rotated picture are both fine alone, but
+   the rounded textured quad routes through the axis-aligned box tessellator; a caller wanting a
+   rounded rotated picture stacks gui_draw_box_xf behind it instead. */
+void
+gui_draw_texture_xf( gui_rect_t r, u32 bindless_idx, u32 tint_abgr, f32 rot )
+{
+    if ( bindless_idx == 0 )
+        return;   /* 0 is the RHI empty slot -- nothing to sample */
+    draw_push_image_xf( r.x, r.y, r.w, r.h, 0, 0, 1, 1,
+                        bindless_idx | GUI_TEX_MODE( GUI_TEX_RGBA ), rot,
+                        tint_abgr ? tint_abgr : 0xFFFFFFFFu );
 }
 
 void

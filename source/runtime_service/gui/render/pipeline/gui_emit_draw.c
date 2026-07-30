@@ -764,6 +764,9 @@ static const u8 k_cmd_hash_len[] = {
        wanted free animation would be a shader-clock mode like PULSE, not a re-emit.) */
     [GUI_CMD_ARC]           = sizeof( ( (gui_cmd_t*)0 )->arc ),
     [GUI_CMD_PIE]           = sizeof( ( (gui_cmd_t*)0 )->arc ),
+    [GUI_CMD_ARC_DASH]      = sizeof( ( (gui_cmd_t*)0 )->arc_dash ),
+    [GUI_CMD_ARC_GRAD]      = sizeof( ( (gui_cmd_t*)0 )->arc_grad ),
+    [GUI_CMD_IMAGE_XF]      = sizeof( ( (gui_cmd_t*)0 )->image_xf ),
 };
 
 static u32
@@ -1012,6 +1015,57 @@ draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
 }
 
 /*==============================================================================================
+    draw_push_image_xf / draw_push_icon_xf -- one textured quad turned about its centre.
+
+    The text_xf treatment applied to a single quad: four positions rotate, the UVs interpolate
+    exactly as they would upright, and what makes the result legible at any angle is the sampling
+    model riding the tex word -- an SDF icon resolves its edge from the screen-space derivative
+    and turns cleanly, a coverage icon shows its texels (the same rule the two font bakes follow).
+    Compass needles, minimap markers, spinner glyphs.
+==============================================================================================*/
+
+void
+draw_push_image_xf( f32 x, f32 y, f32 w, f32 h,
+                    f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, f32 rot, u32 abgr )
+{
+    /* Rotated-AABB cull, the draw_push_box_xf rule; the quad has no skirt, so 1 px of slack. */
+    f32 cs = cosf( rot ), sn = sinf( rot );
+    f32 hx = w * 0.5f, hy = h * 0.5f;
+    f32 ex = fabsf( hx * cs ) + fabsf( hy * sn );
+    f32 ey = fabsf( hx * sn ) + fabsf( hy * cs );
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_IMAGE_XF, col,
+                                  x + hx - ex, y + hy - ey, ex * 2.0f, ey * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->image_xf.x       = x;
+    c->image_xf.y       = y;
+    c->image_xf.w       = w;
+    c->image_xf.h       = h;
+    c->image_xf.u0      = u0;
+    c->image_xf.v0      = v0;
+    c->image_xf.u1      = u1;
+    c->image_xf.v1      = v1;
+    c->image_xf.rot     = rot;
+    c->image_xf.tex_idx = tex_idx;
+    c->image_xf.abgr    = col;
+    draw_cmd_seal();
+}
+
+void
+draw_push_icon_xf( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, f32 rot, u32 abgr )
+{
+    f32 u0, v0, u1, v1;
+    if ( !icon_get( id, &u0, &v0, &u1, &v1, NULL, NULL ) )
+        return;
+    u32 tex = icon_tex( id );
+    if ( tex == 0u )
+        return;   /* SDF atlas not stood up yet -- skip the quad, as draw_push_icon does */
+    draw_push_image_xf( x, y, w, h, u0, v0, u1, v1, tex, rot, abgr );
+}
+
+/*==============================================================================================
     draw_push_sprite -- emit one sprite quad (optionally nine-sliced) as ONE semantic command.
 
     The command carries the sprite ID, not its UVs.  An icon resolves at emit because a quad is all
@@ -1098,15 +1152,27 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
 
 static void
 draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
-                 f32 rate, f32 depth, u32 abgr )
+                 f32 rate, f32 depth, f32 rot, u32 abgr )
 {
     /* Cull against the GROWN box: the falloff skirt is real geometry (feather/2 past the rect,
        plus the tessellator's pixel of slack), and a shadow whose box is just off screen still
-       paints a band on it. */
+       paints a band on it.  A rotated box culls against its rotated AABB -- computed here rather
+       than approximated with the diagonal, because the exact box is four multiplies and the
+       diagonal wrongly keeps every long thin rotated bar on screen. */
     f32 pad = feather * 0.5f + 1.0f;
+    f32 bx = x, by = y, bw = w, bh = h;
+    if ( rot != 0.0f )
+    {
+        f32 cs = cosf( rot ), sn = sinf( rot );
+        f32 hx = w * 0.5f, hy = h * 0.5f;
+        f32 ex = fabsf( hx * cs ) + fabsf( hy * sn );
+        f32 ey = fabsf( hx * sn ) + fabsf( hy * cs );
+        bx = x + hx - ex;  by = y + hy - ey;
+        bw = ex * 2.0f;    bh = ey * 2.0f;
+    }
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_FX_BOX, col, x, y, w, h, pad );
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_FX_BOX, col, bx, by, bw, bh, pad );
     if ( !c )
         return;
     c->fx_box.x        = x;
@@ -1117,6 +1183,7 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
     c->fx_box.feather  = feather;
     c->fx_box.rate     = rate;
     c->fx_box.depth    = depth;
+    c->fx_box.rot      = rot;
     c->fx_box.abgr     = col;
     draw_cmd_seal();
 }
@@ -1124,13 +1191,24 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
 void
 draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 void
 draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, rate, depth, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, rate, depth, 0.0f, abgr );
+}
+
+/* The rotated box: same surface, four corner positions turned about the box centre.  The default
+   1 px AA is folded in here (a caller passing feather 0 wants a crisp edge, not a hard one) --
+   the same bake draw_push_pulse does. */
+void
+draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot, u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding,
+                     ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
+                     0.0f, 0.0f, rot, abgr );
 }
 
 /*==============================================================================================
@@ -1141,29 +1219,34 @@ draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, 
     on the two corners it wanted square.  The radii are clamped to the box at tessellation time
     (tess_fx_box_core), so an over-large one degenerates to a capsule rather than inverting.
 
-    No feather parameter, because no caller wants one -- a per-corner shape is a tab or a card, and
-    a soft-edged one would go through draw_push_shadow.  Nothing in the field prevents it.
+    `feather` widens the falloff band exactly as draw_push_shadow's does: 0 gets the standard 1 px
+    AA, wider makes the per-corner SOFT SHADOW -- the drop shadow under a tab or an asymmetric
+    card, which draw_push_shadow (one radius) could not shape.  The quadrants agree at any feather
+    (tess_fx_box_core's centre-line proof), so softness places no per-corner restriction.
 ==============================================================================================*/
 
 void
 draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
-                         f32 rtl, f32 rtr, f32 rbr, f32 rbl, u32 abgr )
+                         f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather, u32 abgr )
 {
-    /* One pixel of slack matches the tessellator's own pad -- the AA skirt is real geometry. */
+    /* Cull against the grown box: the falloff skirt is real geometry (feather/2 past the rect,
+       plus the tessellator's pixel of slack) -- the draw_push_shadow rule. */
+    f32 pad = ( feather > 0.0f ? feather * 0.5f : 0.0f ) + 1.0f;
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ROUND_RECT_EX, col, x, y, w, h, 1.0f );
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ROUND_RECT_EX, col, x, y, w, h, pad );
     if ( !c )
         return;
-    c->round_rect.x     = x;
-    c->round_rect.y     = y;
-    c->round_rect.w     = w;
-    c->round_rect.h     = h;
-    c->round_rect.rtl   = rtl;
-    c->round_rect.rtr   = rtr;
-    c->round_rect.rbr   = rbr;
-    c->round_rect.rbl   = rbl;
-    c->round_rect.abgr  = col;
+    c->round_rect.x       = x;
+    c->round_rect.y       = y;
+    c->round_rect.w       = w;
+    c->round_rect.h       = h;
+    c->round_rect.rtl     = rtl;
+    c->round_rect.rtr     = rtr;
+    c->round_rect.rbr     = rbr;
+    c->round_rect.rbl     = rbl;
+    c->round_rect.feather = feather;
+    c->round_rect.abgr    = col;
     draw_cmd_seal();
 }
 
@@ -1210,6 +1293,91 @@ void
 draw_push_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr )
 {
     draw_sector_cmd( GUI_CMD_PIE, cx, cy, r, 0.0f, a0, a1, abgr );
+}
+
+/*==============================================================================================
+    draw_push_arc_dashed / draw_push_arc_gradient -- the self-sampled sector variants.
+
+    Both are the plain arc's geometry with one extra word of parameters riding the quad's flat uv
+    to the fragment (GUI_FX_ARC_DASH / GUI_FX_ARC_GRAD, gui.h).  Emit's share of the work:
+
+    DASH quantizes the caller's pixel vocabulary (dash/gap arc-length px at radius r, the
+    draw_dashed_line terms) into an angular period that divides the sweep a WHOLE number of times.
+    Snapping here rather than in the fragment is what keeps a closed dashed ring from showing a
+    seam where the pattern meets itself -- and it costs one round() per push, not per pixel.
+
+    GRADIENT folds the ambient alpha into BOTH ends; visibility is the OR of the folded colours,
+    the draw_push_rect_gradient rule.
+==============================================================================================*/
+
+void
+draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                      f32 dash, f32 gap, u32 abgr )
+{
+    if ( r <= 0.0f || dash <= 0.0f )
+        return;
+
+    /* Angular period from the pixel vocabulary, then snapped so N whole cycles fit the sweep. */
+    f32 sweep = a1 - a0;
+    if ( sweep < 0.0f ) sweep = -sweep;
+    if ( sweep > 2.0f * GUI_FX_PI ) sweep = 2.0f * GUI_FX_PI;
+    f32 period = ( dash + ( gap > 0.0f ? gap : dash ) ) / r;
+    f32 n      = floorf( sweep / period + 0.5f );
+    if ( n < 1.0f ) n = 1.0f;
+    period = sweep / n;
+
+    u32 col = draw_apply_alpha( abgr );
+    f32 g   = r + thickness * 0.5f;
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ARC_DASH, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->arc_dash.cx        = cx;
+    c->arc_dash.cy        = cy;
+    c->arc_dash.r         = r;
+    c->arc_dash.thickness = thickness;
+    c->arc_dash.a0        = a0;
+    c->arc_dash.a1        = a1;
+    c->arc_dash.period    = period;
+    c->arc_dash.duty      = dash / ( dash + ( gap > 0.0f ? gap : dash ) );
+    c->arc_dash.abgr      = col;
+    draw_cmd_seal();
+}
+
+void
+draw_push_arc_gradient( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                        u32 col_a, u32 col_b )
+{
+    if ( r <= 0.0f )
+        return;
+
+    /* Normalize a reversed range HERE, not at tessellation: the tessellator's swap is invisible
+       for a symmetric arc but this one is not -- swapping the endpoints without swapping the
+       colours would silently flip the gradient. */
+    if ( a1 < a0 )
+    {
+        f32 t = a0; a0 = a1; a1 = t;
+        u32 u = col_a; col_a = col_b; col_b = u;
+    }
+
+    /* Visible if EITHER end is -- the OR'd alpha is the visibility word draw_cmd_open tests. */
+    u32 ca = draw_apply_alpha( col_a );
+    u32 cb = draw_apply_alpha( col_b );
+    f32 g  = r + thickness * 0.5f;
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ARC_GRAD, ca | cb,
+                                  cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->arc_grad.cx        = cx;
+    c->arc_grad.cy        = cy;
+    c->arc_grad.r         = r;
+    c->arc_grad.thickness = thickness;
+    c->arc_grad.a0        = a0;
+    c->arc_grad.a1        = a1;
+    c->arc_grad.col_a     = ca;
+    c->arc_grad.col_b     = cb;
+    draw_cmd_seal();
 }
 
 /*==============================================================================================

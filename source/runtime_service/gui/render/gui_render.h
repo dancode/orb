@@ -184,6 +184,14 @@ void draw_push_rect_list        ( const gui_rect_col_t* rects, u32 count );
    textured quad, sampled from the same shared atlas as text. */
 void draw_push_icon             ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr );
 
+/* The same textured quad under a rotation about its CENTRE (radians, screen space) -- the text_xf
+   treatment for one quad.  UVs interpolate across the turned quad exactly as they would upright;
+   what makes it look right at any angle is the icon's sampling model (an SDF icon resolves its
+   edge from the screen-space derivative, a coverage icon shows its texels -- the text_xf rule). */
+void draw_push_image_xf         ( f32 x, f32 y, f32 w, f32 h,
+                                  f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, f32 rot, u32 abgr );
+void draw_push_icon_xf          ( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, f32 rot, u32 abgr );
+
 /* Push one sprite over a rect.  `nine` asks for the slice expansion (up to 9 quads from this ONE
    command, all in the same batch); a sprite with no authored insets draws as a single stretched
    quad regardless.  `scale` multiplies the slice insets and the tile pitch so one piece of art
@@ -207,11 +215,18 @@ void draw_push_shadow           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
 void draw_push_pulse            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth,
                                   u32 abgr );
 
+/* The same SDF box surface under a rotation about its CENTRE (radians, screen space).  The fx
+   coordinate is box-local and affine, so only the four corner positions turn -- same quadrant
+   quads, same field, no snap (a rotated box has no axis-aligned edge to keep crisp). */
+void draw_push_box_xf           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot,
+                                  u32 abgr );
+
 /* Push a filled box with four independent corner radii (tab / notch / asymmetric card).  Ignores
    the ambient rounding -- the caller names every corner.  Solid colour, filled only; the stroked
-   form stays a perimeter polyline. */
+   form stays a perimeter polyline.  `feather` widens the falloff band exactly as draw_push_shadow's
+   does (0 = the standard 1 px AA) -- the per-corner soft shadow. */
 void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
-                                  f32 rtl, f32 rtr, f32 rbr, f32 rbl, u32 abgr );
+                                  f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather, u32 abgr );
 
 /* Push a circular sector -- a stroked arc with round caps, or a filled wedge with sharp radial
    edges.  Angles are radians in screen space (0 points +x, positive turns clockwise); a reversed
@@ -220,6 +235,18 @@ void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
    polyline, exactly as draw_circle does for a fat ring. */
 void draw_push_arc              ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr );
 void draw_push_pie              ( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr );
+
+/* The arc cut by an angular dash pattern.  `dash` / `gap` are arc-length PIXELS at radius r (the
+   draw_dashed_line vocabulary); the push converts to an angular period and quantizes it so a WHOLE
+   number of cycles fits the sweep -- a closed dashed ring meets itself without a seam.  Animate the
+   pattern by rotating a0/a1 together: the dashes ride the sector's local frame (marching ants). */
+void draw_push_arc_dashed       ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                                  f32 dash, f32 gap, u32 abgr );
+
+/* The arc whose colour sweeps col_a (at a0) -> col_b (at a1) by ANGLE -- the gradient a 4-corner
+   vertex colour cannot express.  col_b rides the quad's flat uv word (GUI_FX_ARC_GRAD). */
+void draw_push_arc_gradient     ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                                  u32 col_a, u32 col_b );
 
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr );

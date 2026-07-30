@@ -58,6 +58,7 @@ static const char* k_step_type_name[] = {
     "rect_filled", "rect_outline", "triangle", "text", "text_xf",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
     "sprite", "fx_box", "round_rect_ex", "arc", "pie",
+    "arc_dash", "arc_grad", "image_xf",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -208,6 +209,29 @@ step_cmd_detail( const step_cmd_info_t* ci )
                           ( c->arc.a1 - c->arc.a0 ) * 57.2957795f, c->arc.thickness );
             row2 = b2;
             break;
+        case GUI_CMD_ARC_DASH:
+            gui_textf( "centre %.0f,%.0f   r %.1f   t %.1f", c->arc_dash.cx, c->arc_dash.cy,
+                       c->arc_dash.r, c->arc_dash.thickness );
+            fmt_snprintf( b2, sizeof( b2 ), "%.1f -> %.1f deg   period %.1f deg   duty %.2f",
+                          c->arc_dash.a0 * 57.2957795f, c->arc_dash.a1 * 57.2957795f,
+                          c->arc_dash.period * 57.2957795f, c->arc_dash.duty );
+            row2 = b2;
+            break;
+        case GUI_CMD_ARC_GRAD:
+            gui_textf( "centre %.0f,%.0f   r %.1f   t %.1f", c->arc_grad.cx, c->arc_grad.cy,
+                       c->arc_grad.r, c->arc_grad.thickness );
+            fmt_snprintf( b2, sizeof( b2 ), "%.1f -> %.1f deg",
+                          c->arc_grad.a0 * 57.2957795f, c->arc_grad.a1 * 57.2957795f );
+            row2 = b2;
+            break;
+        case GUI_CMD_IMAGE_XF:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f   rot %.0f deg", c->image_xf.x, c->image_xf.y,
+                       c->image_xf.w, c->image_xf.h, gui_degrees( c->image_xf.rot ) );
+            fmt_snprintf( b2, sizeof( b2 ), "tex %u (mode %u)",
+                          gui_tex_index( c->image_xf.tex_idx ),
+                          (u32)gui_tex_mode( c->image_xf.tex_idx ) );
+            row2 = b2;
+            break;
     }
     gui_text( row2 ? row2 : " " );
 
@@ -219,6 +243,12 @@ step_cmd_detail( const step_cmd_info_t* ci )
         {
             f32 x = step_swatch( r, r.x, "col_a", c->gradient.col_a );
             step_swatch( r, x, "col_b", c->gradient.col_b );
+            break;
+        }
+        case GUI_CMD_ARC_GRAD:
+        {
+            f32 x = step_swatch( r, r.x, "col_a", c->arc_grad.col_a );
+            step_swatch( r, x, "col_b", c->arc_grad.col_b );
             break;
         }
         case GUI_CMD_RECT_LIST:
@@ -241,6 +271,8 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_ROUND_RECT_EX: step_swatch( r, r.x, "color", c->round_rect.abgr );   break;
                 case GUI_CMD_ARC:
                 case GUI_CMD_PIE:           step_swatch( r, r.x, "color", c->arc.abgr );          break;
+                case GUI_CMD_ARC_DASH:      step_swatch( r, r.x, "color", c->arc_dash.abgr );     break;
+                case GUI_CMD_IMAGE_XF:      step_swatch( r, r.x, "color", c->image_xf.abgr );     break;
                 default:                                                                          break;
             }
             break;

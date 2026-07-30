@@ -581,9 +581,14 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
    precisely where the corner radius stops contributing, so the two sides agree EXACTLY -- not
    approximately, and not merely because the interior saturates.  This is why per-corner radii place
    no new restriction on feather. */
+/* `rot` turns the whole surface about the box CENTRE (radians, screen space; 0 = the common
+   axis-aligned path).  Only the four corner POSITIONS rotate -- the effect coordinate stays in
+   box-local |p| space, which interpolation preserves because it is affine in the position.  The
+   UVs are computed from the UNROTATED position first, so a textured rotated box still maps its
+   picture across the authored rect and clamps over the skirt exactly as the upright one does. */
 static void
 tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
-                  f32 feather, f32 border, f32 rate, f32 depth,
+                  f32 feather, f32 border, f32 rate, f32 depth, f32 rot,
                   gui_fx_mode_t mode,
                   f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
@@ -638,8 +643,10 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        snapping quantizes the CENTRE, and a small dot animating along a path steps instead of
        gliding.  A pill (w != h, r == the short half-extent) still snaps, correctly -- it does have
        two straight edges.  With per-corner radii the test reads rMIN: a shape is a disc only when
-       EVERY corner reached the limit, and one square corner is a straight edge worth snapping. */
-    if ( !( hx == hy && rmin >= lim ) )
+       EVERY corner reached the limit, and one square corner is a straight edge worth snapping.
+       A ROTATED box never snaps: it has no axis-aligned edge to keep crisp, and quantizing its
+       centre is the animated-dot mistake again (tess_quad_xf's rule). */
+    if ( rot == 0.0f && !( hx == hy && rmin >= lim ) )
     {
         x = floorf( x + 0.5f );
         y = floorf( y + 0.5f );
@@ -658,6 +665,8 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     f32 pad = feather * 0.5f + 1.0f;              /* room for the falloff, plus a pixel of slack */
     f32 ehx = hx + pad, ehy = hy + pad;           /* grown half-extent (geometry only)           */
     f32 cx  = x + hx,   cy  = y + hy;
+    f32 rcs = 1.0f, rsn = 0.0f;                   /* the rotation, hoisted out of the corner loop */
+    if ( rot != 0.0f ) { rcs = cosf( rot ); rsn = sinf( rot ); }
 
     /* The per-quadrant coverage, in quadrant-local |p| space: one box normally, two forming an L
        when a RING has an interior worth skipping.
@@ -730,6 +739,14 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
                 f32 tv = vhi > vlo ? v0 + ( v1 - v0 ) * ( py - y ) / h : v0;
                 if ( tu < ulo ) tu = ulo;  if ( tu > uhi ) tu = uhi;
                 if ( tv < vlo ) tv = vlo;  if ( tv > vhi ) tv = vhi;
+                /* The turn, LAST: uv came from the unrotated position, the effect coord is
+                   box-local either way, so only the world position rotates about the centre. */
+                if ( rot != 0.0f )
+                {
+                    f32 dx = px - cx, dy = py - cy;
+                    px = cx + dx * rcs - dy * rsn;
+                    py = cy + dx * rsn + dy * rcs;
+                }
                 v[ n * 4 + c ] = gui_vert_fxc( px, py, tu, tv, abgr, ax - kx, ay - ky );
             }
             tess_quad_idx( &idx[ n * 6 ], (u16)( base + n * 4 ) );
@@ -750,11 +767,11 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
    of a per-corner one, and it keeps a single tessellator for both. */
 static void
 tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rate, f32 depth,
-             gui_fx_mode_t mode,
+             f32 rot, gui_fx_mode_t mode,
              f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
     const f32 r4[ 4 ] = { r, r, r, r };
-    tess_fx_box_core( x, y, w, h, r4, feather, border, rate, depth, mode,
+    tess_fx_box_core( x, y, w, h, r4, feather, border, rate, depth, rot, mode,
                       u0, v0, u1, v1, tex_idx, abgr );
 }
 
@@ -799,7 +816,7 @@ static void
 tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
 {
     tess_fx_box( pcx - r, pcy - r, r * 2.0f, r * 2.0f,
-                 r, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
+                 r, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
                  0, 0, 1, 1, 0, abgr );
 }
 
@@ -821,12 +838,14 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
 
 static void
 tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
-                    f32 rtl, f32 rtr, f32 rbr, f32 rbl, u32 abgr )
+                    f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather, u32 abgr )
 {
     /* Quadrant order: top-left, top-right, bottom-right, bottom-left (sx/sy in tess_fx_box_core),
-       which is the order gui_cmd_t.round_rect declares its radii in. */
+       which is the order gui_cmd_t.round_rect declares its radii in.  feather below the standard
+       AA band clamps up -- 0 means "crisp", never "hard-edged". */
     const f32 r4[ 4 ] = { rtl, rtr, rbr, rbl };
-    tess_fx_box_core( x, y, w, h, r4, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
+    tess_fx_box_core( x, y, w, h, r4, ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
+                      0.0f, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
                       0, 0, 1, 1, 0, abgr );
 }
 
@@ -862,15 +881,23 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
 #define TESS_HALF_PI  1.57079632679490f
 #define TESS_TAU      6.28318530717959f
 
+/* `mode` is one of the four sector modes: GUI_FX_ARC / GUI_FX_PIE take the classic path, and the
+   two SELF-SAMPLED variants (GUI_FX_ARC_DASH / GUI_FX_ARC_GRAD) additionally carry (uvx, uvy) --
+   the parameter pair the fragment recovers from the quad's flat uv word (gui.h).  ARC/PIE ignore
+   the pair and stamp the white texel as every solid shape does. */
 static void
-tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1, bool pie, u32 abgr )
+tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
+             gui_fx_mode_t mode, f32 uvx, f32 uvy, u32 abgr )
 {
     if ( r <= 0.0f )
         return;
 
+    bool pie = ( mode == GUI_FX_PIE );
+
     /* Normalize the sweep so the bisector/aperture split below is always well formed.  A reversed
        range is the same sector drawn the other way round, which for a symmetric shape is the same
-       sector. */
+       sector.  (The gradient is NOT symmetric; its emit side pre-normalizes and swaps the colours,
+       so by here every reversed range really is harmless.) */
     f32 sweep = a1 - a0;
     if ( sweep < 0.0f ) { f32 t = a0; a0 = a1; a1 = t; sweep = -sweep; }
     if ( sweep <= 0.0f )
@@ -883,8 +910,11 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1, bool pie, u
        (GUI_FX_BORDER_MAX) than the tube field a sector carries; a thicker band falls through rather
        than silently drawing thinner.  Falling through is correct, not a fallback: at aperture pi the
        sector formula is the exact full annulus, it merely rasterizes the hole as well.
-       This is reachable -- draw_progress_arc at 100% is exactly a full sweep. */
-    if ( sweep >= TESS_TAU )
+       This is reachable -- draw_progress_arc at 100% is exactly a full sweep.
+       The SELF-SAMPLED variants never reroute: their pattern / gradient lives in the sector decode,
+       which the exact ring does not run -- and at aperture pi the sector formula serves them
+       exactly, so a closed dashed ring is this same one quad. */
+    if ( sweep >= TESS_TAU && ( mode == GUI_FX_ARC || mode == GUI_FX_PIE ) )
     {
         if ( pie )
         {
@@ -897,7 +927,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1, bool pie, u
                inward -- so the band still straddles r. */
             f32 outer = r + thickness * 0.5f;
             tess_fx_box( pcx - outer, pcy - outer, outer * 2.0f, outer * 2.0f,
-                         outer, TESS_FX_AA, thickness, 0.0f, 0.0f, GUI_FX_RING,
+                         outer, TESS_FX_AA, thickness, 0.0f, 0.0f, 0.0f, GUI_FX_RING,
                          0, 0, 1, 1, 0, abgr );
             return;
         }
@@ -935,7 +965,16 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1, bool pie, u
     if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
         return;
 
-    s_tess.cur_fx = gui_fx_pack_arc( pie ? GUI_FX_PIE : GUI_FX_ARC, ra, rb, ap );
+    s_tess.cur_fx = gui_fx_pack_arc( mode, ra, rb, ap );
+
+    /* Self-sampled modes carry their parameter pair in the uv lanes; the fragment never samples
+       there (coverage is forced to 1 for mode >= 9), so the white texel is not needed and the
+       atlas stays bound only to keep the descriptor index valid. */
+    if ( mode >= GUI_FX_ARC_DASH )
+    {
+        wu = uvx;
+        wv = uvy;
+    }
 
     static const f32 lsx[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };
     static const u32 lsy[ 4 ] = {  0u,   0u,   1u,   1u   };
@@ -1406,7 +1445,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_RECT_FILLED:
                 if ( c->rect.rounding > 0.0f )
                     tess_fx_box( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
-                                 c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
+                                 c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
                                  c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
                                  c->rect.tex_idx, c->rect.abgr );
                 else
@@ -1422,7 +1461,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                     tess_fx_box( c->rect_outline.x, c->rect_outline.y,
                                  c->rect_outline.w, c->rect_outline.h,
                                  c->rect_outline.rounding, TESS_FX_AA, c->rect_outline.t,
-                                 0.0f, 0.0f, GUI_FX_RING,
+                                 0.0f, 0.0f, 0.0f, GUI_FX_RING,
                                  0, 0, 1, 1, 0, c->rect_outline.abgr );
                 else
                     tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
@@ -1439,7 +1478,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_FX_BOX:
                 tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
                              c->fx_box.rounding, c->fx_box.feather, 0.0f,
-                             c->fx_box.rate, c->fx_box.depth,
+                             c->fx_box.rate, c->fx_box.depth, c->fx_box.rot,
                              ( c->fx_box.rate > 0.0f ) ? GUI_FX_PULSE : GUI_FX_BOX,
                              0, 0, 1, 1, 0, c->fx_box.abgr );
                 break;
@@ -1451,20 +1490,54 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                                     c->round_rect.w, c->round_rect.h,
                                     c->round_rect.rtl, c->round_rect.rtr,
                                     c->round_rect.rbr, c->round_rect.rbl,
-                                    c->round_rect.abgr );
+                                    c->round_rect.feather, c->round_rect.abgr );
                 break;
 
-            /* The two sectors share a command member and differ only in the field the fragment
-               evaluates: round caps on a band, or sharp radial edges on a wedge. */
+            /* The sectors share their geometry and differ only in the field the fragment
+               evaluates: round caps on a band, sharp radial edges on a wedge, and the two
+               self-sampled variants whose extra word rides the quad's flat uv. */
             case GUI_CMD_ARC:
                 tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, c->arc.thickness,
-                             c->arc.a0, c->arc.a1, false, c->arc.abgr );
+                             c->arc.a0, c->arc.a1, GUI_FX_ARC, 0.0f, 0.0f, c->arc.abgr );
                 break;
 
             case GUI_CMD_PIE:
                 tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, 0.0f,
-                             c->arc.a0, c->arc.a1, true, c->arc.abgr );
+                             c->arc.a0, c->arc.a1, GUI_FX_PIE, 0.0f, 0.0f, c->arc.abgr );
                 break;
+
+            /* uv lane packing is the shader contract for the self-sampled pair (gui.h): DASH
+               sends (period / TAU, duty), GRAD splits col_b's four bytes across the two unorm16
+               lanes.  Both values are k/65535 exact through the pack and back. */
+            case GUI_CMD_ARC_DASH:
+                tess_fx_arc( c->arc_dash.cx, c->arc_dash.cy, c->arc_dash.r,
+                             c->arc_dash.thickness, c->arc_dash.a0, c->arc_dash.a1,
+                             GUI_FX_ARC_DASH,
+                             c->arc_dash.period / TESS_TAU, c->arc_dash.duty,
+                             c->arc_dash.abgr );
+                break;
+
+            case GUI_CMD_ARC_GRAD:
+                tess_fx_arc( c->arc_grad.cx, c->arc_grad.cy, c->arc_grad.r,
+                             c->arc_grad.thickness, c->arc_grad.a0, c->arc_grad.a1,
+                             GUI_FX_ARC_GRAD,
+                             (f32)(   c->arc_grad.col_b         & 0xFFFFu ) / 65535.0f,
+                             (f32)( ( c->arc_grad.col_b >> 16 ) & 0xFFFFu ) / 65535.0f,
+                             c->arc_grad.col_a );
+                break;
+
+            /* One textured quad about its centre -- the glyph-run transform (tess_quad_xf)
+               with the pivot every icon caller wants.  No snap, by the transformed-quad rule. */
+            case GUI_CMD_IMAGE_XF:
+            {
+                f32 hx = c->image_xf.w * 0.5f, hy = c->image_xf.h * 0.5f;
+                tess_quad_xf( c->image_xf.x + hx, c->image_xf.y + hy,
+                              cosf( c->image_xf.rot ), sinf( c->image_xf.rot ),
+                              -hx, -hy, c->image_xf.w, c->image_xf.h,
+                              c->image_xf.u0, c->image_xf.v0, c->image_xf.u1, c->image_xf.v1,
+                              c->image_xf.tex_idx, c->image_xf.abgr );
+                break;
+            }
 
             case GUI_CMD_TRIANGLE:
                 tess_triangle( c->tri.ax, c->tri.ay, c->tri.bx, c->tri.by,

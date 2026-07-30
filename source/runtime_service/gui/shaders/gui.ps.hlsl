@@ -48,7 +48,7 @@ struct ps_in_t
 //
 // pc.time -- the wrapped frame clock -- is the band's animation seam, and PULSE is what reading it
 // looks like: frame-constant, so it costs no vertex change, no re-emit and no batch split.
-float fx_coverage( float2 fx_coord, uint fx )
+float fx_coverage( float2 fx_coord, uint fx, float2 uv )
 {
     uint mode = fx & 0xFu;
     // 0 NONE, and the two modes that are not shapes: 4 TILE_U acted in the vertex stage, 5
@@ -90,10 +90,30 @@ float fx_coverage( float2 fx_coord, uint fx )
             // ARC: exact distance to the circle of radius ra, cut to the aperture, then thickened
             // by the tube.  Inside the wedge it is the annulus; outside it is the distance to the
             // nearest endpoint, which is what gives the stroke its round caps for free.
+            // Modes 9 (ARC_DASH) and 10 (ARC_GRAD) are this same band -- the dash cut is below,
+            // the gradient acts on the COLOR in main() (the TEXT_EDGE precedent).
             ds = ( ( sc.y * q.x > sc.x * q.y ) ? length( q - sc * ra )
                                                : abs( length( q ) - ra ) ) - rb;
         }
-        return saturate( 0.5 - ds );
+        float cov = saturate( 0.5 - ds );
+
+        // mode 9 ARC_DASH -- the band cut by an angular dash pattern.  This mode is SELF-SAMPLED
+        // (gui.h): the uv word carries (period / TAU, duty) instead of texcoords, flat across the
+        // quad so it interpolates exactly.  theta is the SIGNED angle from the bisector (the same
+        // signed coordinate the aperture cut uses); the pattern anchors at the sweep start, and
+        // the emit side pre-quantized the period so whole cycles fit -- a closed ring has no seam.
+        // The cut edge is antialiased in ARC-LENGTH pixels (angle error times ra).  The mod is
+        // floor-based on purpose: fmod truncates and goes wrong for the cap's small negatives.
+        if ( mode == 9u )
+        {
+            float T    = max( uv.x, 1.0 / 65535.0 ) * 6.28318531;
+            float duty = uv.y;
+            float t    = atan2( fx_coord.x, fx_coord.y ) + ap;
+            float m    = t - T * floor( t / T );
+            float d_on = min( m, duty * T - m );           // signed: > 0 inside an on-run
+            cov = min( cov, saturate( 0.5 + d_on * ra ) );
+        }
+        return cov;
     }
 
     float radius  = float( ( fx >>  4 ) & 0xFFFu ) * 0.125;
@@ -186,7 +206,31 @@ float4 main( ps_in_t i ) : SV_Target0
     uint   samp     = ( tex_mode == 0u ) ? pc.samp_point : pc.samp_image;
     float4 s        = u_textures[ NonUniformResourceIndex( tex_slot ) ]
                           .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], i.uv );
-    float  cov = fx_coverage( i.fx_coord, i.fx );
+    float  cov = fx_coverage( i.fx_coord, i.fx, i.uv );
+
+    // SELF-SAMPLED fx modes (9+): the shape is solid colour by definition, so the texel is not
+    // consulted -- the uv word carried mode parameters instead (the sample above read a garbage
+    // location of a VALID texture, which is harmless and cheaper than a divergent skip).  Mode 10
+    // additionally sweeps the colour toward a second RGBA8 riding that word, lerped by the same
+    // signed angle the aperture cut uses -- the gradient a 4-corner vertex colour cannot express.
+    float4 vcol = i.color;
+    uint   fxm  = i.fx & 0xFu;
+    if ( fxm >= 9u )
+    {
+        s = float4( 1.0, 1.0, 1.0, 1.0 );
+        if ( fxm == 10u )
+        {
+            uint   bu = uint( round( i.uv.x * 65535.0 ) );
+            uint   bv = uint( round( i.uv.y * 65535.0 ) );
+            float4 c2 = float4( float( bu & 0xFFu ), float( bu >> 8 ),
+                                float( bv & 0xFFu ), float( bv >> 8 ) ) / 255.0;
+            c2.rgb    = srgb_to_linear( c2.rgb );   // authored sRGB, never saw the vertex stage
+            float ap  = float( ( i.fx >> 23 ) & 0x1FFu ) * ( 3.14159265 / 511.0 );
+            float t   = saturate( ( atan2( i.fx_coord.x, i.fx_coord.y ) + ap )
+                                  / max( 2.0 * ap, 1e-4 ) );
+            vcol = lerp( vcol, c2, t );
+        }
+    }
 
     // GUI_TEX_RGBA -- full-RGBA image (scene viewport / arbitrary bindless texture): the texel IS
     // the color, with the vertex color acting as a tint.  The texel arrives LINEAR: _SRGB-format
@@ -242,8 +286,8 @@ float4 main( ps_in_t i ) : SV_Target0
         return float4( i.color.rgb, i.color.a * cov * fill );
     }
 
-    // i.color.rgb is already linear light; alpha is coverage, which was linear all along.  s.r is
-    // the glyph coverage from the R8 atlas (1.0 for the white solid-color pixel, so non-text draws
-    // pass through).
-    return float4( i.color.rgb, i.color.a * s.r * cov );
+    // vcol.rgb is already linear light (i.color, or the mode-10 sweep of it); alpha is coverage,
+    // which was linear all along.  s.r is the glyph coverage from the R8 atlas (1.0 for the white
+    // solid-color pixel and for the self-sampled modes, so non-text draws pass through).
+    return float4( vcol.rgb, vcol.a * s.r * cov );
 }

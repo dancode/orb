@@ -127,10 +127,12 @@ gui_icon_id_t gui_find_icon( const char* name );
 gui_vec2_t gui_icon_size( gui_icon_id_t id );
 void gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col );
 void gui_draw_icon_in( gui_rect_t r, gui_icon_id_t id, u32 col );
+void gui_draw_icon_xf( gui_rect_t r, gui_icon_id_t id, u32 col, f32 rot );
 
 /* RGBA textures -- arbitrary bindless texture as a full-color quad (scene viewport) */
 void gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
 void gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
+void gui_draw_texture_xf( gui_rect_t r, u32 bindless_idx, u32 tint_abgr, f32 rot );
 
 /* sprites -- authored RGBA art + the nine-slice that lets it fill any rect */
 gui_sprite_id_t gui_register_sprite( const char* name, u32 w, u32 h, const u8* rgba );
@@ -171,6 +173,10 @@ void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 
 void gui_draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
 void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
 void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
+void gui_draw_arc_dashed( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, f32 dash, f32 gap, u32 col );
+void gui_draw_arc_gradient( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col_a, u32 col_b );
+void gui_draw_box_xf( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col );
+void gui_draw_round_rect_shadow( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 feather, u32 col );
 void gui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
 void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
 void gui_draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );

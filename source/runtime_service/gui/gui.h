@@ -1492,11 +1492,21 @@ typedef enum
 
     GUI_FX_SEG       = 6,  /* CAPSULE: a line segment `radius` px thick, with round caps        */
 
-    /* The two CIRCULAR-SECTOR modes.  Both read the effect coordinate as a SIGNED offset from the
+    /* The CIRCULAR-SECTOR modes.  All read the effect coordinate as a SIGNED offset from the
        shape centre, already rotated so the sector's bisector points +y in that local frame -- see
        the note below on why these need no fold and therefore cost ONE quad. */
     GUI_FX_ARC       = 7,  /* annular sector: a band of `tube` px centred on radius ra, round caps */
     GUI_FX_PIE       = 8,  /* filled wedge: the disc of radius ra cut to the aperture, sharp edges */
+
+    /* The SELF-SAMPLED sector modes.  From 9 up a mode declares its shape solid colour by
+       definition: the fragment does not consult the texel (coverage forced 1), which FREES the
+       vertex's 32-bit uv word to carry mode-specific parameters -- the quad stamps the same value
+       on all four corners, interpolation is flat, and unorm16 round-trips k/65535 exactly.  The
+       same ARC word partition (ra | tube | aperture) still applies; only the uv payload differs. */
+    GUI_FX_ARC_DASH  = 9,  /* ARC whose coverage is cut by an angular dash pattern: uv.x = the dash
+                              period as a fraction of a full turn, uv.y = the on-duty fraction   */
+    GUI_FX_ARC_GRAD  = 10, /* ARC whose colour sweeps from the vertex colour at the sector start
+                              to a second RGBA8 riding the uv word (x = r|g<<8, y = b|a<<8)      */
 
 } gui_fx_mode_t;
 
@@ -1870,6 +1880,12 @@ typedef enum
                              // each carrying its own packed word
     GUI_CMD_ARC,             // stroked circular arc, round caps: one GUI_FX_ARC quad
     GUI_CMD_PIE,             // filled wedge, sharp radial edges: one GUI_FX_PIE quad
+    GUI_CMD_ARC_DASH,        // arc cut by an angular dash pattern (GUI_FX_ARC_DASH): dotted rings,
+                             //   marching ants, tick dials -- still one quad
+    GUI_CMD_ARC_GRAD,        // arc whose colour sweeps col_a -> col_b along the sector
+                             //   (GUI_FX_ARC_GRAD): the hot/cold value arc -- still one quad
+    GUI_CMD_IMAGE_XF,        // textured quad under a rotation about its centre: rotated icons,
+                             //   images, markers -- the text_xf treatment for one quad
 
 } gui_cmd_type_t;
 
@@ -1941,7 +1957,7 @@ gui_tex_index( u32 tex_idx )
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (15 values)
+    u8 type;       // gui_cmd_type_t, fits u8 (18 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
@@ -2010,8 +2026,12 @@ typedef struct
            the frame must still be PRESENTED, see GUI_FX_TIME_WRAP).  The mode is derived at
            tessellation: rate > 0 is a PULSE, else a BOX.  Its own member rather than
            feather/rate/depth bolted onto rect: rect is the hot variant every fill goes through,
-           and widening it would grow the whole command pool for fields almost nothing sets. */
-        struct { f32 x, y, w, h; f32 rounding, feather, rate, depth; u32 abgr; } fx_box;
+           and widening it would grow the whole command pool for fields almost nothing sets.
+           `rot` (radians, screen space, about the box CENTRE) turns the whole surface: the fx
+           coordinate is box-local and affine, so rotating the four corner POSITIONS preserves the
+           field under interpolation -- a rotated card costs the same four quadrant quads.  0 for
+           every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap. */
+        struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME four quadrant quads a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape
@@ -2022,8 +2042,11 @@ typedef struct
            bottom-right, bottom-left), so the two cannot drift apart.
            Filled and solid-colour only.  The stroked form stays a perimeter polyline: GUI_FX_RING
            derives its interior hole from a single radius, and generalizing that is not worth it for
-           a shape whose outline the polyline already draws correctly. */
-        struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl;          u32 abgr; } round_rect;
+           a shape whose outline the polyline already draws correctly.
+           `feather` is the falloff band exactly as fx_box carries it -- 0 gets the standard 1 px
+           AA, wider makes the per-corner SOFT SHADOW (the tab / asymmetric-card drop shadow); the
+           quadrants agree at any feather (tess_fx_box_core's centre-line proof). */
+        struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather; u32 abgr; } round_rect;
         /* Circular sector -- ONE member serving GUI_CMD_ARC and GUI_CMD_PIE, which differ only in
            the field the fragment evaluates, not in anything they carry.  Angles are radians in
            screen space (0 points +x, positive turns clockwise, matching text_xf.rot); a1 < a0 is
@@ -2033,6 +2056,21 @@ typedef struct
            pie was up to 65 separate TRIANGLE commands and a spinner ~130 vertices.  Both are now
            one quad, because a circular field needs no quadrant fold (see the effect band). */
         struct { f32 cx, cy, r, thickness, a0, a1;                u32 abgr; } arc;
+        /* The arc under an angular dash cut.  `period` is radians per dash+gap cycle -- the emit
+           side quantizes it so a WHOLE number of cycles fits the sweep, which is what keeps a
+           closed dashed ring from showing a seam where the pattern meets itself; `duty` is the
+           on-fraction.  Both ride the quad's flat uv word to the fragment (GUI_FX_ARC_DASH). */
+        struct { f32 cx, cy, r, thickness, a0, a1; f32 period, duty; u32 abgr; } arc_dash;
+        /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1).  col_b rides the quad's flat
+           uv word; the fragment lerps by angle/aperture (GUI_FX_ARC_GRAD) -- the one gradient a
+           4-corner vertex colour could never express, because it varies by ANGLE, not position. */
+        struct { f32 cx, cy, r, thickness, a0, a1; u32 col_a, col_b; } arc_grad;
+        /* A textured quad under a rotation about its CENTRE -- the text_xf treatment applied to
+           one quad (tess_quad_xf).  UVs resolve at emit exactly as draw_push_icon's do: an icon
+           is a quad forever, and the atlas UV moves only on a bake, which reloads everything.
+           Centre pivot rather than the text anchor because a marker / needle / spinner glyph
+           turns about its own middle -- the one pivot every caller was computing anyway. */
+        struct { f32 x, y, w, h; f32 u0, v0, u1, v1; f32 rot; u32 tex_idx; u32 abgr; } image_xf;
     };
 } gui_cmd_t;
 

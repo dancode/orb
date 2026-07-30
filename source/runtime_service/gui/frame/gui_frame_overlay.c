@@ -431,7 +431,8 @@ gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
 
         NP_DOT  master arm ('.'): toggle EVERY debug hotkey on / off as a group.  Off by default;
                 everything below is inert until it is armed, and disarming resets every debug mode
-                back to normal (overlays off, render mode normal, layers cleared).
+                back to normal (overlays off, render mode normal, layers cleared).  The main-row
+                '.' arms too (laptop keyboards), except while a stepper freeze owns it for scrub.
         NP1-NP6 debug layers (window / interact / resize / layout / clip / content rects)
         F8      command stepper: show / hide the control window (Capture there freezes the frame)
         F9      render mode: normal -> wireframe -> batch tint
@@ -466,7 +467,7 @@ void gui_debug_enable( bool enable )
 {
     s_debug_enabled = enable;
     if ( enable )
-        printf( "[gui] debug driver on -- press numpad '.' (NP_DOT) to arm the debug hotkeys\n" );
+        printf( "[gui] debug driver on -- press '.' (main row or numpad) to arm the debug hotkeys\n" );
 }
 
 bool gui_debug_is_enabled( void ) { return s_debug_enabled; }
@@ -557,8 +558,16 @@ debug_hotkeys( void )
        normal use and only respond after an explicit opt-in.  Disarming resets every debug mode to
        normal (debug_reset), so one press returns the view to a clean state.  Fenced by
        want_capture_keyboard like the letter keys (numpad '.' is text input with Num Lock on), so it
-       never fires while a text field is focused.  Chosen because it is rarely bound elsewhere. */
-    if ( !gui_want_capture_keyboard() && gui_is_key_pressed( APP_KEY_NP_DOT ) )
+       never fires while a text field is focused.  Chosen because it is rarely bound elsewhere.
+       The MAIN-ROW '.' arms too -- laptop keyboards have no numpad -- except while a stepper
+       freeze is active, where '.' is the scrub-forward key below and owns the row; NP_DOT still
+       disarms during a freeze. */
+    bool arm_toggle = gui_is_key_pressed( APP_KEY_NP_DOT );
+#ifdef GUI_CMD_STEPPER
+    if ( !step_frozen() )
+#endif
+        arm_toggle = arm_toggle || gui_is_key_pressed( APP_KEY_PERIOD );
+    if ( !gui_want_capture_keyboard() && arm_toggle )
     {
         s_dbg_hotkeys_armed = !s_dbg_hotkeys_armed;
         printf( "[gui] debug hotkeys: %s\n", s_dbg_hotkeys_armed ? "ARMED" : "off" );
