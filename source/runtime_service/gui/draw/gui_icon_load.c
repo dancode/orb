@@ -114,8 +114,8 @@ icon_load_file_impl( const char* name, const char* path, bool sdf, u32 out_max )
     free( file );
     if ( !rgba )
     {
-        printf( "[gui] icon '%s' decode failed ('%s'): %s\n",
-                name, path, stbi_failure_reason() );
+        gui_log( GUI_LOG_WARN, "icon '%s' decode failed ('%s'): %s",
+                 name, path, stbi_failure_reason() );
         return GUI_ICON_NONE;
     }
 
@@ -162,8 +162,8 @@ icon_load_file_impl( const char* name, const char* path, bool sdf, u32 out_max )
        flat-colour image whose shape was meant to be in an alpha channel that is not there) rather
        than intended art -- say so, since it would otherwise register a valid-but-invisible icon. */
     if ( peak == 0 )
-        printf( "[gui] icon '%s' has no visible pixels -- '%s' decoded fully %s (%dx%d)\n",
-                name, path, use_alpha ? "transparent" : "black", w, h );
+        gui_log( GUI_LOG_WARN, "icon '%s' has no visible pixels -- '%s' decoded fully %s (%dx%d)",
+                 name, path, use_alpha ? "transparent" : "black", w, h );
 
     gui_icon_id_t id = sdf ? icon_register_sdf( name, (u32)w, (u32)h, coverage, out_max )
                            : icon_register    ( name, (u32)w, (u32)h, coverage );
@@ -225,8 +225,8 @@ icon_load_builtins( void )
     }
 
     if ( loaded > 0 )
-        printf( "[gui] loaded %u/%u built-in icons\n",
-                loaded, (u32)ARRAY_COUNT( s_builtin_icons ) );
+        gui_log( GUI_LOG_INFO, "loaded %u/%u built-in icons",
+                 loaded, (u32)ARRAY_COUNT( s_builtin_icons ) );
 }
 
 // clang-format on

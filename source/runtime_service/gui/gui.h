@@ -51,6 +51,7 @@
 ==============================================================================================*/
 
 #include "orb.h"
+#include "runtime_service/gui/log/gui_log.h"        // GUI_LOG leaf floor: gui_log + GUI_WARN_ONCE
 #include "runtime_service/gui/rect/gui_rect.h"      // GUI_RECT leaf kit: geometry types + carve math
 
 // clang-format off

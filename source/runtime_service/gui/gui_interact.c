@@ -34,7 +34,6 @@
 
 ==============================================================================================*/
 
-#include <stdio.h>    /* GUI_WARN_ONCE (rect/gui_rect.h) -- every unit root provides it */
 #include <string.h>   /* memset / memcpy / strncmp -- the drag payload slot */
 
 #include "orb.h"

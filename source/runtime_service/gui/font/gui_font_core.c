@@ -74,8 +74,8 @@ font_text_w( const char* str )
 void
 font_print_active( void )
 {
-    printf( "[gui] set font [%u] '<loaded>' (char_h=%.1f line_h=%.1f)\n",
-            s_active_id, s_font->char_h, s_font->line_h );
+    gui_log( GUI_LOG_INFO, "set font [%u] '<loaded>' (char_h=%.1f line_h=%.1f)",
+             s_active_id, s_font->char_h, s_font->line_h );
 }
 
 /*==============================================================================================

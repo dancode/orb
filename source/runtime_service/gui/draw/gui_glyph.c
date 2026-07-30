@@ -37,11 +37,11 @@ font_atlas_sync( void )
 
         if ( !font_slot_upload( slot ) )   /* slot keeps its previous atlas tenant; say so */
         {
-            /* Flushed: an unflushed warning is how this went unnoticed once already.  The symptom
-               downstream is silent -- the font's glyphs simply sample an empty atlas -- so this
-               line is the only thing that names the cause, and it must survive a redirect. */
-            printf( "[gui] WARNING: font atlas upload failed for slot %u\n", id );
-            fflush( stdout );
+            /* The symptom downstream is silent -- the font's glyphs simply sample an empty atlas
+               -- so this line is the only thing that names the cause, and an unflushed warning is
+               how it went unnoticed once already.  gui_log's default sink flushes; a host sink
+               owns that guarantee itself. */
+            gui_log( GUI_LOG_WARN, "font atlas upload failed for slot %u", id );
             slot->needs_upload = false;    // don't retry a doomed upload every frame
             continue;
         }

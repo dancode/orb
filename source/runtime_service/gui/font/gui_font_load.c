@@ -107,11 +107,14 @@ font_slot_load( font_slot_t* slot, const char* path )
         .size   = (f32)hdr.font_size,   // nominal type size (em) -- layout proportion base
     };
 
-    printf( "[gui] loaded font '%s' (char_h=%.1f line_h=%.1f%s",
-            path, slot->metrics.char_h, slot->metrics.line_h,
-            slot->sdf_range ? ", " : ")\n" );
+    /* One call per message: the split printf this replaced assembled one line across two calls,
+       which a sink that frames per message cannot reassemble. */
     if ( slot->sdf_range )
-        printf( "sdf spread %u px)\n", slot->sdf_range );
+        gui_log( GUI_LOG_INFO, "loaded font '%s' (char_h=%.1f line_h=%.1f, sdf spread %u px)",
+                 path, slot->metrics.char_h, slot->metrics.line_h, slot->sdf_range );
+    else
+        gui_log( GUI_LOG_INFO, "loaded font '%s' (char_h=%.1f line_h=%.1f)",
+                 path, slot->metrics.char_h, slot->metrics.line_h );
 
     return true;
 }

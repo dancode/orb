@@ -69,6 +69,25 @@ typedef struct gui_api_s
         Every section below emits inside the frame scope this one opens.
     =============================================================================================================*/
 
+    /* Diagnostics sink -- route every gui diagnostic (pool overflows, load failures, contract
+       violations, the stats dumps) to a host callback instead of stdout.
+
+       gui deps are { rhi, app }, deliberately not core, so core's LOG_* macros are out of reach
+       from inside gui; this hook is how the two meet without gui taking the dependency.  A
+       typical host binds it to its own logger in one line:
+
+           static void host_gui_log( gui_log_level_t lvl, const char* msg, void* user )
+           { (void)user; LOG_INFO( "[gui] %s", msg ); }        // or switch on lvl
+           gui()->log_set_fn( host_gui_log, NULL );
+
+       Install BEFORE init() to catch the init-path diagnostics.  Passing NULL restores the
+       default sink (printf + fflush), which is also what an unwired gui uses -- so this is
+       optional, and skipping it leaves the pre-hook behavior exactly as it was.  The message is
+       formatted, NUL-terminated, carries no "[gui] " prefix and no trailing newline, and is
+       valid only for the duration of the call.  See log/gui_log.h for the full contract. */
+
+    void                ( *log_set_fn )         ( gui_log_fn fn, void* user );
+
     /* GPU resource lifecycle.
 
         init()

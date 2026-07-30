@@ -19,7 +19,6 @@
 
 ==============================================================================================*/
 
-#include <stdio.h>    /* GUI_WARN_ONCE (rect/gui_rect.h) -- every unit root provides it */
 #include <math.h>     /* floorf -- the slider snap grid */
 
 #include "orb.h"

@@ -123,9 +123,13 @@ gui_mem_stats( void )
     return s;
 }
 
-/* Dump the full breakdown to stdout as a sectioned table: GPU / CPU static / CPU heap, each with
-   its own subtotal, then the grand total.  Bytes and KiB side by side so small (font glyph tables)
-   and large (geometry buffers) buckets are both legible at a glance. */
+/* Dump the full breakdown as a sectioned table: GPU / CPU static / CPU heap, each with its own
+   subtotal, then the grand total.  Bytes and KiB side by side so small (font glyph tables) and
+   large (geometry buffers) buckets are both legible at a glance.
+
+   One gui_log per ROW rather than one per table: a sink frames per message, so a table emitted as
+   a single blob would arrive as one unsplittable line.  Row-at-a-time costs nothing here (this is
+   an explicitly requested dump, not a frame path) and keeps every line individually greppable. */
 void
 gui_print_mem_stats( void )
 {
@@ -133,12 +137,12 @@ gui_print_mem_stats( void )
     const f32 kb = 1024.0f;
 
     #define GUI_MEM_ROW( label, bytes ) \
-        printf( "  %-22s %10u B  (%8.1f KB)\n", (label), (u32)(bytes), (u32)(bytes) / kb )
+        gui_log( GUI_LOG_INFO, "  %-22s %10u B  (%8.1f KB)", (label), (u32)(bytes), (u32)(bytes) / kb )
 
-    printf( "[gui] memory usage -- full breakdown:\n" );
+    gui_log( GUI_LOG_INFO, "memory usage -- full breakdown:" );
 
-    printf( "  -- GPU device (%u live surface%s) ------------------------\n",
-            s.viewport_count, s.viewport_count == 1u ? "" : "s" );
+    gui_log( GUI_LOG_INFO, "  -- GPU device (%u live surface%s) ------------------------",
+             s.viewport_count, s.viewport_count == 1u ? "" : "s" );
     GUI_MEM_ROW( "vertex buffers",   s.gpu_vertex_bytes  );
     GUI_MEM_ROW( "index buffers",    s.gpu_index_bytes   );
     GUI_MEM_ROW( "font atlas texture", s.gpu_texture_bytes );
@@ -146,7 +150,7 @@ gui_print_mem_stats( void )
         GUI_MEM_ROW( "debug overlay buffers", s.gpu_debug_bytes );
     GUI_MEM_ROW( "  GPU subtotal",   s.gpu_total         );
 
-    printf( "  -- CPU static (fixed backend buffers) ------------------\n" );
+    gui_log( GUI_LOG_INFO, "  -- CPU static (fixed backend buffers) ------------------" );
     GUI_MEM_ROW( "draw command list",  s.cpu_drawlist_bytes );
     GUI_MEM_ROW( "tessellation stage", s.cpu_tess_bytes     );
     GUI_MEM_ROW( "retained cache",     s.cpu_cache_bytes    );
@@ -159,14 +163,14 @@ gui_print_mem_stats( void )
     GUI_MEM_ROW( "frontend statics",   s.cpu_frontend_bytes );
     GUI_MEM_ROW( "  CPU static subtotal", s.cpu_static_total );
 
-    printf( "  -- CPU heap (%u context%s) -----------------------------\n",
-            s.context_count, s.context_count == 1u ? "" : "s" );
+    gui_log( GUI_LOG_INFO, "  -- CPU heap (%u context%s) -----------------------------",
+             s.context_count, s.context_count == 1u ? "" : "s" );
     GUI_MEM_ROW( "context blocks",        s.cpu_context_bytes );
     GUI_MEM_ROW( "  CPU heap subtotal",   s.cpu_dynamic_total );
 
-    printf( "  --------------------------------------------------------\n" );
-    printf( "  %-22s %10u B  (%8.1f KB)  (%.1f MB)\n",
-            "TOTAL", s.total_bytes, s.total_bytes / kb, s.total_bytes / ( kb * kb ) );
+    gui_log( GUI_LOG_INFO, "  --------------------------------------------------------" );
+    gui_log( GUI_LOG_INFO, "  %-22s %10u B  (%8.1f KB)  (%.1f MB)",
+             "TOTAL", s.total_bytes, s.total_bytes / kb, s.total_bytes / ( kb * kb ) );
 
     #undef GUI_MEM_ROW
 }

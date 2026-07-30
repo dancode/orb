@@ -467,7 +467,8 @@ void gui_debug_enable( bool enable )
 {
     s_debug_enabled = enable;
     if ( enable )
-        printf( "[gui] debug driver on -- press '.' (main row or numpad) to arm the debug hotkeys\n" );
+        gui_log( GUI_LOG_INFO,
+                 "debug driver on -- press '.' (main row or numpad) to arm the debug hotkeys" );
 }
 
 bool gui_debug_is_enabled( void ) { return s_debug_enabled; }
@@ -570,7 +571,7 @@ debug_hotkeys( void )
     if ( !gui_want_capture_keyboard() && arm_toggle )
     {
         s_dbg_hotkeys_armed = !s_dbg_hotkeys_armed;
-        printf( "[gui] debug hotkeys: %s\n", s_dbg_hotkeys_armed ? "ARMED" : "off" );
+        gui_log( GUI_LOG_INFO, "debug hotkeys: %s", s_dbg_hotkeys_armed ? "ARMED" : "off" );
         if ( s_dbg_hotkeys_armed )
             debug_restore();
         else
@@ -586,13 +587,13 @@ debug_hotkeys( void )
         gui_render_mode_t m = ( gui_render_get_mode() + 1 ) % GUI_RENDER_MODE_COUNT;
         gui_render_set_mode( m );
         static const char* names[] = { "normal", "wireframe", "batch" };
-        printf( "[gui] render mode: %s\n", names[ m ] );
+        gui_log( GUI_LOG_INFO, "render mode: %s", names[ m ] );
         redraw_request();
     }
     if ( gui_is_key_pressed( APP_KEY_F10 ) )
     {
         s_dbg_dash_open = !s_dbg_dash_open;
-        printf( "[gui] pipeline dashboard: %s\n", s_dbg_dash_open ? "open" : "closed" );
+        gui_log( GUI_LOG_INFO, "pipeline dashboard: %s", s_dbg_dash_open ? "open" : "closed" );
         redraw_request();
     }
 
@@ -604,7 +605,7 @@ debug_hotkeys( void )
     if ( gui_is_key_pressed( APP_KEY_F8 ) )
     {
         s_dbg_step_open = !s_dbg_step_open;
-        printf( "[gui] command stepper window: %s\n", s_dbg_step_open ? "open" : "closed" );
+        gui_log( GUI_LOG_INFO, "command stepper window: %s", s_dbg_step_open ? "open" : "closed" );
         redraw_request();
     }
 #endif
@@ -672,7 +673,7 @@ debug_hotkeys( void )
             else
                 c = c + stride;               /* seek clamps to the frozen command count */
             step_seek( c );
-            printf( "[gui] command stepper: %u/%u\n", step_cursor(), step_count() );
+            gui_log( GUI_LOG_INFO, "command stepper: %u/%u", step_cursor(), step_count() );
             redraw_request();
         }
     }

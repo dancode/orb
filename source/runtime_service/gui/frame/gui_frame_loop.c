@@ -50,8 +50,8 @@ static void boot_shell_emit( void );
         if ( !reported_ && !( cond ) )                                              \
         {                                                                           \
             reported_ = true;                                                       \
-            printf( "[gui] CONTRACT: " __VA_ARGS__ );                               \
-            fflush( stdout );        /* flush before the once-assert can trap */    \
+            /* the default sink flushes, so this lands before the assert can trap */\
+            gui_log( GUI_LOG_ERROR, "CONTRACT: " __VA_ARGS__ );                     \
             ORB_ASSERT_MSG_ONCE( cond, "gui lifecycle contract violated -- see the "\
                                        "[gui] CONTRACT line above" );               \
         }                                                                           \
@@ -105,15 +105,17 @@ gui_init( gui_builtin_font_t font )
 
     if ( s_gui_ready )
     {
-        printf( "[gui] CONTRACT: init() called twice -- shutdown() before re-initializing.\n" );
+        gui_log( GUI_LOG_ERROR, "CONTRACT: init() called twice -- shutdown() before "
+                                "re-initializing." );
         return false;
     }
 
     if ( !rhi_context_any_live() )
     {
-        printf( "[gui] CONTRACT: init() before a live rhi device -- call rhi()->init() and "
-                "rhi()->context_open( win ) for the window gui will render into, THEN init(). "
-                "Without a device there is no pipeline and every frame renders nothing.\n" );
+        gui_log( GUI_LOG_ERROR,
+                 "CONTRACT: init() before a live rhi device -- call rhi()->init() and "
+                 "rhi()->context_open( win ) for the window gui will render into, THEN init(). "
+                 "Without a device there is no pipeline and every frame renders nothing." );
         return false;
     }
 
@@ -148,7 +150,7 @@ gui_init( gui_builtin_font_t font )
        own font_load() activates one. */
 
     if ( font != GUI_FONT_NONE && font_load_builtin( font ) == false ) {
-         printf( "[gui] WARNING: built-in font load failed; continuing without text\n" );
+         gui_log( GUI_LOG_WARN, "built-in font load failed; continuing without text" );
     }
 
     gui_style_apply();
@@ -159,7 +161,7 @@ gui_init( gui_builtin_font_t font )
 #ifdef GUI_DEBUG_OVERLAY
     /* Debug overlay GPU buffers.  Non-fatal: a failure just leaves the overlay dark. */
     if ( dbg_init() == false ) {
-         printf( "[gui] WARNING: debug overlay buffers failed; overlay disabled\n" );
+         gui_log( GUI_LOG_WARN, "debug overlay buffers failed; overlay disabled" );
     }
 #endif
 

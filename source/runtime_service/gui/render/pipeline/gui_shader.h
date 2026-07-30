@@ -56,14 +56,17 @@
 
     Two of the modes are not shapes at all, which is what the word really means -- "what does the
     fragment do here", not "which SDF is this":
+
         4 GUI_FX_TILE_U    -- acts in the VERTEX stage: multiplies u by a packed repeat count.
                          The stored UV is UNORM16X2 and cannot exceed 1, so a dashed line keeps
                          its count here and still tiles the atlas stipple row from ONE quad.
+
         5 GUI_FX_TEXT_EDGE -- acts on the COLOR, inside the SDF branch: paints a second colour in
                          a band `width` pixels outside the glyph boundary (outline / drop shadow)
                          from the same quad, same batch and same texture sample.  It can spend all
                          28 parameter bits because its shape comes from the texture, not from
                          (ex, ey) -- so radius and feather have nothing to say.
+
     Both return full coverage from fx_coverage(); neither adds geometry or a draw call.
 
         6 GUI_FX_SEG       -- a CAPSULE: the distance to a line segment, minus its half-thickness,
@@ -101,9 +104,11 @@
     + depth take the 7 that RING spends on `border`) rather than widening the vertex.
 
     Vertex GLSL (shaders/gui.vert):
+
         version 450
         push_constant PC { mat4 mvp; uint samp_point; uint samp_image; uint dbg_flat;
                            uint dbg_tint; float time; } pc;
+
         location 0 in  vec2 in_pos;        // FLOAT2     attrib
         location 1 in  vec2 in_uv;         // UNORM16X2  attrib -> normalized float2
         location 2 in  vec4 in_color;      // UNORM8X4   attrib -> normalized float4
@@ -115,29 +120,35 @@
         location 2 out vec2 v_fx_coord;
         location 3 flat out uint v_fx;     // flat: a bit field must not interpolate
         location 4 flat out uint v_tex;    // flat: this one is a descriptor index
+
         srgb_to_linear(c): c <= 0.04045 ? c/12.92 : pow((c + 0.055)/1.055, 2.4)
         main: gl_Position = pc.mvp * vec4(in_pos, 0, 1);
+
               v_color = vec4(srgb_to_linear(in_color.rgb), in_color.a);   // see the note below
               v_uv = in_uv, scaled by the repeat count when the mode is GUI_FX_TILE_U;
               pass the other two varyings through.
+
         Note that FOUR of the six attributes are packed in memory and none of them say so here:
         vertex fetch widens normalized and half formats to float before the shader runs, which is
         the entire reason the vertex could go 36 -> 28 bytes with no shader change.
 
     Fragment GLSL (shaders/gui.frag):
+
         version 450 + GL_EXT_nonuniform_qualifier
         set=0 binding=0 texture2D u_textures[];
         set=0 binding=1 sampler   u_samplers[];
         push_constant PC { mat4 mvp; uint samp_point; uint samp_image; uint dbg_flat;
                            uint dbg_tint; float time; } pc;
+
         location 0 in  vec4 v_color;
         location 1 in  vec2 v_uv;
         location 2 in  vec2 v_fx_coord;
         location 3 flat in uint v_fx;
         location 4 flat in uint v_tex;
         location 0 out vec4 out_color;
-        fx_coverage(): mode = v_fx & 0xF; modes 0 / 4 / 5 -> 1.0 (early out -- the two that are
-              not shapes act elsewhere).
+
+        fx_coverage(): mode = v_fx & 0xF; modes 0 / 4 / 5 -> 1.0 (early out -- the two that are not shapes act elsewhere).
+
               mode >= 7 (ARC/PIE): own decode (ra/tube/aperture, see the sector block above);
               q = (|x|, y); PIE = max(disc, signed radial-edge distance), ARC = annulus cut to
               the wedge with round caps; return clamp(0.5 - ds, 0, 1).
@@ -151,10 +162,12 @@
               mode 3 (PULSE): rate = bits 25..28 * 1/4 Hz, depth = bits 29..31 / 7;
                               cov *= 1 - depth * (0.5 - 0.5*cos(2*pi * rate * pc.time));
               return cov;
+
               The min/max interior term is load-bearing on the BOX form: without it the field
               saturates at -radius everywhere inside, so a border wider than the radius fills the
               whole interior and a shadow softer than the radius never reaches full opacity.  The
               capsule needs no such term -- its form is already exact in the core.
+
         main: if (dbg_flat) out_color = dbg_tint ? vec4(srgb_to_linear(unpack(dbg_tint)), a)
                                                 : vec4(v_color.rgb, 1);   // tint is the ONLY
               else                                        // color still decoded in the fragment
@@ -174,6 +187,7 @@
                         // band, so the seam is antialiased once and never double-darkens
                         ... out_color = vec4(mix of v_color and the unpacked edge colour); }
                     else out_color = vec4(v_color.rgb, v_color.a * cov * fill); }
+
                 else           out_color = vec4(v_color.rgb, v_color.a * s.r * cov); }
               The debug views (dbg_flat) bypass fx_coverage: they exist to show the geometry
               actually submitted, and an SDF surface's four quadrant quads are what you want to

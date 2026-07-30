@@ -400,15 +400,8 @@ dbg_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     if ( ic == 0 ) return;
 
     if ( s_dbg.overflow )
-    {
-        static bool warned = false;
-        if ( !warned )
-        {
-            printf( "[gui] WARNING: debug overlay command list overflow -- some rects dropped "
-                    "(cap %u).\n", GUI_DBG_MAX_CMDS );
-            warned = true;
-        }
-    }
+        GUI_WARN_ONCE( "debug overlay command list overflow -- some rects dropped (cap %u).\n",
+                       GUI_DBG_MAX_CMDS );
 
     u32 frame  = rhi()->cmd_frame_index( cmd );
     u32 vb_off = ( frame * GUI_MAX_VIEWPORTS + vp ) * (u32)GUI_DBG_VB_REGION_BYTES;

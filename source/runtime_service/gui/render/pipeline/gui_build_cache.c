@@ -829,18 +829,19 @@ cache_tess_window( const render_win_hash_t* wh )
 static void
 cache_dump_slots( const char* tag )
 {
-    printf( "[gui] cached geometry [%s]: %u slots  tess v=%u/%u i=%u/%u c=%u/%u\n",
-            tag ? tag : "dump", s_slot_count, s_tess.vert_count, GUI_MAX_VERTS,
-            s_tess.idx_count, GUI_MAX_IDX, s_tess.cmd_count, GUI_MAX_CMDS );
+    gui_log( GUI_LOG_INFO, "cached geometry [%s]: %u slots  tess v=%u/%u i=%u/%u c=%u/%u",
+             tag ? tag : "dump", s_slot_count, s_tess.vert_count, GUI_MAX_VERTS,
+             s_tess.idx_count, GUI_MAX_IDX, s_tess.cmd_count, GUI_MAX_CMDS );
     for ( u32 i = 0; i < s_slot_count; ++i )
     {
         const win_geo_slot_t* s = &s_slots[ i ];
-        printf( "  [%2u] win=%-11u z=%-4u vp=%u  vert[%u..%u)/%u  idx[%u..%u)/%u  cmd[%u..%u)  gen=%u%s\n",
-                i, s->win, s->z, s->vp,
-                s->vert_base, s->vert_base + s->vert_count, s->vert_alloc,
-                s->idx_base,  s->idx_base  + s->idx_count,  s->idx_alloc,
-                s->cmd_base,  s->cmd_base  + s->cmd_count,  s->tess_gen,
-                s->valid ? "" : "  (INVALID)" );
+        gui_log( GUI_LOG_INFO,
+                 "  [%2u] win=%-11u z=%-4u vp=%u  vert[%u..%u)/%u  idx[%u..%u)/%u  cmd[%u..%u)  gen=%u%s",
+                 i, s->win, s->z, s->vp,
+                 s->vert_base, s->vert_base + s->vert_count, s->vert_alloc,
+                 s->idx_base,  s->idx_base  + s->idx_count,  s->idx_alloc,
+                 s->cmd_base,  s->cmd_base  + s->cmd_count,  s->tess_gen,
+                 s->valid ? "" : "  (INVALID)" );
     }
 }
 
@@ -1328,13 +1329,14 @@ cache_build_frame( void )
            reached, so the report points at the culprit instead of just "something overflowed".  A
            NONE id means the spill happened outside the per-window loop (a deferred volatile patch). */
         const char* nm = ( ps.overflow_win != GUI_ID_NONE ) ? gui_debug_name( ps.overflow_win ) : NULL;
-        printf( "[gui] WARNING: draw list overflow -- geometry dropped tessellating window '%s' "
-                "(id 0x%08X); arena filled to %u/%u verts, %u/%u idx, %u/%u gpu cmds. "
-                "Raise GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS.\n",
-                nm ? nm : "<unnamed>", (unsigned)ps.overflow_win,
-                ps.overflow_at_vert, GUI_MAX_VERTS, ps.overflow_at_idx, GUI_MAX_IDX,
-                ps.overflow_at_cmd, GUI_MAX_CMDS );
-        fflush( stdout );   /* flush the diagnostic before the once-assert below can trap */
+        /* The default sink flushes, so this lands before the once-assert below can trap. */
+        gui_log( GUI_LOG_WARN,
+                 "draw list overflow -- geometry dropped tessellating window '%s' "
+                 "(id 0x%08X); arena filled to %u/%u verts, %u/%u idx, %u/%u gpu cmds. "
+                 "Raise GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS.",
+                 nm ? nm : "<unnamed>", (unsigned)ps.overflow_win,
+                 ps.overflow_at_vert, GUI_MAX_VERTS, ps.overflow_at_idx, GUI_MAX_IDX,
+                 ps.overflow_at_cmd, GUI_MAX_CMDS );
     }
     if ( s_tess.overflow )
         s_tess_stats.overflow_ever = true;

@@ -240,14 +240,9 @@ window_shelf_take_slot( const gui_window_t* win )
 
         if ( len >= GUI_SHELF_SCRATCH_MAX )
         {
-            static bool warned = false;
-            if ( !warned )
-            {
-                printf( "[gui] WARNING: more than %u windows minimized on one shelf at once -- "
-                        "extras skip the rebase and keep their old slot.\n", (u32)GUI_SHELF_SCRATCH_MAX );
-                fflush( stdout );   /* flush the diagnostic before the once-assert can trap */
-                warned = true;
-            }
+            GUI_WARN_ONCE( "more than %u windows minimized on one shelf at once -- "
+                           "extras skip the rebase and keep their old slot.\n",
+                           (u32)GUI_SHELF_SCRATCH_MAX );
             ORB_ASSERT_MSG_ONCE( false, "gui shelf overflow -- more than GUI_SHELF_SCRATCH_MAX "
                                         "windows minimized on one surface at once" );
             break;

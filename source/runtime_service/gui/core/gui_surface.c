@@ -86,15 +86,9 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
         }
         else
         {
-            static bool warned = false;
-            if ( !warned )
-            {
-                printf( "[gui] WARNING: more than %u windows live on the main surface this frame -- "
-                        "extra windows share one transient scratch slot and lose persisted state. "
-                        "Raise gui_config.max_windows.\n", g_ctx->win.max );
-                fflush( stdout );   /* flush the diagnostic before the once-assert can trap */
-                warned = true;
-            }
+            GUI_WARN_ONCE( "more than %u windows live on the main surface this frame -- "
+                           "extra windows share one transient scratch slot and lose persisted "
+                           "state.  Raise gui_config.max_windows.\n", g_ctx->win.max );
             ORB_ASSERT_MSG_ONCE( false, "gui window pool overflow -- more than max_windows windows "
                                         "live at once; extras fall back to a shared scratch slot. "
                                         "Raise gui_config.max_windows" );

@@ -30,6 +30,11 @@ mod_desc_t* gui_get_mod_desc( void );
 
 /*===============================================  GUI_FRAME  ===============================================*/
 
+/* diagnostics sink -- install before gui_init() to capture the init-path messages; NULL
+   restores the default printf sink.  Declared in log/gui_log.h; repeated here because this
+   header is the host's index of the direct-call surface.  See gui_api.h for the contract. */
+void gui_log_set_fn( gui_log_fn fn, void* user );
+
 bool gui_init( gui_builtin_font_t font );
 void gui_shutdown( void );
 

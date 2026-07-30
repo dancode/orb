@@ -168,6 +168,7 @@ target gui
     type        static
     root        source/runtime_service/gui
     folder      03_RUNTIME/SERVICE
+    unit        gui_log.c   				# GUI_LOG unit: leaf diagnostics floor (gui_log + host sink)
     unit        gui_rect.c  				# GUI_RECT unit: leaf geometry + color primitives
     unit        gui_font.c   				# GUI_FONT unit: leaf font-metrics library (measurement, not drawing)
     unit        gui.c   					# gui module face: vtable + descriptor + DLL exports
@@ -190,6 +191,7 @@ target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the lo
     type        static
     root        source/runtime_service/gui
     folder      03_RUNTIME/SERVICE
+    unit        gui_log.c    # GUI_LOG unit: leaf diagnostics floor (gui_log + host sink)
     unit        gui_rect.c   # GUI_RECT unit: leaf geometry + color primitives
     unit        gui_font.c   # GUI_FONT unit: leaf font-metrics library (measurement, not drawing)
     unit        gui.c   # gui module face: vtable + descriptor + DLL exports

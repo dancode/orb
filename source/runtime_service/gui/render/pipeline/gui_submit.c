@@ -253,7 +253,7 @@ render_init( void )
 
     if ( render_try_oshd_shaders( &vert, &frag ) )
     {
-        printf( "[gui] using cooked shaders (bin/shaders/gui.{vs,ps}.oshd)\n" );
+        gui_log( GUI_LOG_INFO, "using cooked shaders (bin/shaders/gui.{vs,ps}.oshd)" );
     }
     else
     {
@@ -393,13 +393,13 @@ static void
 render_shutdown( void )
 {
     // Peak draw-list usage over the run, so the caps can be tuned with real numbers.
-    printf( "[gui] peak draw-list usage: verts %u/%u (%.1f%%), idx %u/%u (%.1f%%)%s\n",
-            s_tess_stats.vert_hwm, GUI_MAX_VERTS, 100.0f * s_tess_stats.vert_hwm / (f32)GUI_MAX_VERTS,
-            s_tess_stats.idx_hwm,  GUI_MAX_IDX,   100.0f * s_tess_stats.idx_hwm  / (f32)GUI_MAX_IDX,
-            s_tess_stats.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
+    gui_log( GUI_LOG_INFO, "peak draw-list usage: verts %u/%u (%.1f%%), idx %u/%u (%.1f%%)%s",
+             s_tess_stats.vert_hwm, GUI_MAX_VERTS, 100.0f * s_tess_stats.vert_hwm / (f32)GUI_MAX_VERTS,
+             s_tess_stats.idx_hwm,  GUI_MAX_IDX,   100.0f * s_tess_stats.idx_hwm  / (f32)GUI_MAX_IDX,
+             s_tess_stats.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
 
     // Peak draw calls in a single frame -- a measure of batching effectiveness.
-    printf( "[gui] peak draw calls in a frame: %u\n", cache_draw_call_hwm() );
+    gui_log( GUI_LOG_INFO, "peak draw calls in a frame: %u", cache_draw_call_hwm() );
 
     /* Per-draw state cost.  The two halves are no longer the same kind of number and are not
        reported as though they were:
@@ -415,15 +415,16 @@ render_shutdown( void )
                      figure is what that saves. */
     if ( s_render.state_draws )
     {
-        printf( "[gui] per-draw state: %llu scissors over %llu draws (%.0f%% suppressed); "
-                "%llu tail pushes over %llu flushes (%.2f per flush)\n",
-                (unsigned long long)s_render.state_scissors,
-                (unsigned long long)s_render.state_draws,
-                100.0 * ( 1.0 - (f64)s_render.state_scissors / (f64)s_render.state_draws ),
-                (unsigned long long)s_render.state_pushes,
-                (unsigned long long)s_render.state_flushes,
-                s_render.state_flushes ? (f64)s_render.state_pushes / (f64)s_render.state_flushes
-                                       : 0.0 );
+        gui_log( GUI_LOG_INFO,
+                 "per-draw state: %llu scissors over %llu draws (%.0f%% suppressed); "
+                 "%llu tail pushes over %llu flushes (%.2f per flush)",
+                 (unsigned long long)s_render.state_scissors,
+                 (unsigned long long)s_render.state_draws,
+                 100.0 * ( 1.0 - (f64)s_render.state_scissors / (f64)s_render.state_draws ),
+                 (unsigned long long)s_render.state_pushes,
+                 (unsigned long long)s_render.state_flushes,
+                 s_render.state_flushes ? (f64)s_render.state_pushes / (f64)s_render.state_flushes
+                                        : 0.0 );
     }
 
     /* The last submitted frame may still be executing on the GPU; the destroys below

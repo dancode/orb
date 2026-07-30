@@ -84,7 +84,8 @@ sprite_register( const char* name, u32 w, u32 h, const u8* rgba )
         return GUI_SPRITE_NONE;
     if ( s_sprites.count >= SPRITE_MAX )
     {
-        printf( "[gui] sprite registry full (%u) -- '%s' rejected\n", SPRITE_MAX, name ? name : "?" );
+        gui_log( GUI_LOG_WARN, "sprite registry full (%u) -- '%s' rejected",
+                 SPRITE_MAX, name ? name : "?" );
         return GUI_SPRITE_NONE;
     }
 
@@ -93,7 +94,8 @@ sprite_register( const char* name, u32 w, u32 h, const u8* rgba )
     u32 tenant = res_sprite_add( rgba, w, h );
     if ( tenant == 0 )
     {
-        printf( "[gui] sprite atlas full -- '%s' (%ux%u) rejected\n", name ? name : "?", w, h );
+        gui_log( GUI_LOG_WARN, "sprite atlas full -- '%s' (%ux%u) rejected",
+                 name ? name : "?", w, h );
         return GUI_SPRITE_NONE;
     }
 
@@ -243,7 +245,8 @@ sprite_load_file( const char* name, const char* path )
     free( file );
     if ( !rgba )
     {
-        printf( "[gui] sprite '%s' decode failed ('%s'): %s\n", name, path, stbi_failure_reason() );
+        gui_log( GUI_LOG_WARN, "sprite '%s' decode failed ('%s'): %s",
+                 name, path, stbi_failure_reason() );
         return GUI_SPRITE_NONE;
     }
 

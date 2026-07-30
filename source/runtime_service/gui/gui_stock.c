@@ -51,7 +51,6 @@
 
 ==============================================================================================*/
 
-#include <stdio.h>    /* GUI_WARN_ONCE (rect/gui_rect.h) -- every unit root provides it */
 #include <math.h>     /* floorf -- the symbol glyph metrics */
 #include <string.h>
 

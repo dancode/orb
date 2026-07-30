@@ -119,8 +119,7 @@ icon_register( const char* name, u32 w, u32 h, const u8* coverage )
     u32 tenant = res_atlas_add( coverage, w, h );
     if ( tenant == 0 )
     {
-        printf( "[gui] icon atlas full -- '%s' (%ux%u) rejected\n", name ? name : "?", w, h );
-        fflush( stdout );   /* a rejection must survive a redirected log (the font-upload lesson) */
+        gui_log( GUI_LOG_WARN, "icon atlas full -- '%s' (%ux%u) rejected", name ? name : "?", w, h );
         return GUI_ICON_NONE;
     }
     return icon_record( name, w, h, tenant, false );
@@ -169,10 +168,10 @@ icon_register_sdf( const char* name, u32 w, u32 h, const u8* coverage, u32 out_m
 
     if ( icon_sdf_touches_border( coverage, w, h ) )
     {
-        printf( "[gui] icon '%s' reaches the edge of its own bitmap -- its distance field cannot "
-                "fall off there, so that edge draws hard and takes no outline; add a transparent "
-                "margin to the source art\n", name ? name : "?" );
-        fflush( stdout );
+        gui_log( GUI_LOG_WARN,
+                 "icon '%s' reaches the edge of its own bitmap -- its distance field cannot "
+                 "fall off there, so that edge draws hard and takes no outline; add a transparent "
+                 "margin to the source art", name ? name : "?" );
     }
 
     u8* field = (u8*)malloc( (size_t)ow * oh );
@@ -191,8 +190,8 @@ icon_register_sdf( const char* name, u32 w, u32 h, const u8* coverage, u32 out_m
     free( field );
     if ( tenant == 0 )
     {
-        printf( "[gui] sdf atlas full -- icon '%s' (%ux%u) rejected\n", name ? name : "?", ow, oh );
-        fflush( stdout );   /* a rejection must survive a redirected log (the font-upload lesson) */
+        gui_log( GUI_LOG_WARN, "sdf atlas full -- icon '%s' (%ux%u) rejected",
+                 name ? name : "?", ow, oh );
         return GUI_ICON_NONE;
     }
     return icon_record( name, ow, oh, tenant, true );

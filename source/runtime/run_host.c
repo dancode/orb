@@ -211,6 +211,30 @@ static bool     s_gui_inited  = false;
 static bool     s_console     = false;
 
 /*==============================================================================================
+    gui diagnostics sink -- the seam between gui and core's log.
+
+    gui deps are { rhi, app }, deliberately not core, so nothing inside gui can reach LOG_*; left
+    unwired it writes to stdout and its diagnostics miss the ring, the log file, and the console.
+    This callback is the whole of the bridge, installed before gui()->init() below.
+
+    Straight passthrough with "%s": the message arrives already formatted, and any '%' surviving
+    in it (a percentage in the draw-list stats, say) would be read as a conversion otherwise.
+    The channel is "gui", so `log gui <level>` tunes this stream alone.
+==============================================================================================*/
+
+static void
+run_host_gui_log( gui_log_level_t level, const char* msg, void* user )
+{
+    (void)user;
+
+    log_level_t lvl = ( level == GUI_LOG_ERROR ) ? LOG_LEVEL_ERROR
+                    : ( level == GUI_LOG_WARN  ) ? LOG_LEVEL_WARN
+                                                 : LOG_LEVEL_INFO;
+
+    core()->log_write( lvl, "gui", "%s", msg );
+}
+
+/*==============================================================================================
     Host-owned handles -- the alternative to hardcoding context 0 / viewport 0 in hosts.
     Valid from on_ready onward; sentinels when the owning service is absent.
 ==============================================================================================*/
@@ -543,6 +567,14 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                    the loop and its pacing. */
 
                 const run_gui_desc_t* gd = desc->gui;
+
+                /* Route gui diagnostics into core's log BEFORE init(), so the init-path
+                   messages (contract violations, a failed font load) land in the same ring,
+                   file, and console as everything else.  gui deps are { rhi, app } -- it cannot
+                   reach core itself -- so this callback is the whole of the seam.  Writing on
+                   the "gui" channel gets it per-channel verbosity control for free (channels
+                   auto-register on first write; the `log` console command lists them). */
+                gui()->log_set_fn( run_host_gui_log, NULL );
 
                 if ( !gui()->init( gd ? gd->font : GUI_FONT_NONE ) )
                 {

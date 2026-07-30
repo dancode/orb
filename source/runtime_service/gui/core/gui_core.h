@@ -22,8 +22,8 @@
     Every fixed pool in the gui saturates the same way: never fail hard, never be silent.  The
     overflowing site degrades gracefully (drop / share / evict) but reports ONCE per run, so the
     symptom traces to its cap instead of reading as a rendering or input bug.  The report macro
-    is GUI_WARN_ONCE, and it lives in the leaf shared kit (rect/gui_rect.h) rather than here --
-    the render server's pools follow the same rule and must not reach into this header for it.
+    is GUI_WARN_ONCE, and it lives in the leaf diagnostics floor (log/gui_log.h) rather than here
+    -- the render server's pools follow the same rule and must not reach into this header for it.
 ==============================================================================================*/
 
 /*==============================================================================================
