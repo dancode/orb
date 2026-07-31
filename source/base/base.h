@@ -26,6 +26,7 @@
 #include "base/math_color.h"
 #include "base/math_rng.h"
 #include "base/char.h"
+#include "base/utf8.h"
 #include "base/str.h"
 #include "base/str_buf.h"
 #include "base/str_arena.h"

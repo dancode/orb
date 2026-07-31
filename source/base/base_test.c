@@ -17,6 +17,7 @@
 ==============================================================================================*/
 
 #include "base/str_test.c"
+#include "base/utf8_test.c"
 
 /*==============================================================================================
     char: classification
@@ -1048,6 +1049,12 @@ base_run_tests( void )
 
     test_register( "char_classify", test_char_classify );
     test_register( "char_convert", test_char_convert );
+
+    test_register( "utf8_decode_valid", test_utf8_decode_valid );
+    test_register( "utf8_decode_invalid", test_utf8_decode_invalid );
+    test_register( "utf8_encode", test_utf8_encode );
+    test_register( "utf8_step", test_utf8_step );
+    test_register( "utf16_surrogates", test_utf16_surrogates );
 
     test_register( "mem_copy_move", test_mem_copy_move );
     test_register( "mem_set_zero", test_mem_set_zero );

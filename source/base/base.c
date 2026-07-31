@@ -24,6 +24,7 @@
 
 #include "base/mem.c"
 #include "base/char.c"
+#include "base/utf8.c"
 #include "base/bit.c"
 #include "base/math.c"
 #include "base/math_rng.c"
