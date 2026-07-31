@@ -52,6 +52,13 @@ typedef struct
     i32                 descent;            // pixels below baseline (negative)
     orb_font_glyph_t    lookup[ ORB_FONT_CP_COUNT ];  // codepoints 32..126; advance == 0 = missing
 
+    /* Extended glyph records -- everything a -range bake carries beyond ASCII.  Sorted by codepoint
+       for binary search (font_slot_cp); owned here like `pixels` (malloc'd by the loader, freed on
+       reload / registry reset).  NULL/0 for an ASCII-only font, which keeps the dense lookup[] the
+       entire fast path. */
+    orb_font_glyph_t*   ext;                // sorted extended records (owned here); NULL if none
+    u32                 ext_count;          // records in ext[]
+
     u8*                 pixels;             // resident R8 glyph bitmap (owned here); NULL until loaded
     u32                 atlas_w;            // pixel width  of `pixels` (the packed .orb_font atlas)
     u32                 atlas_h;            // pixel height of `pixels`
@@ -94,7 +101,7 @@ const char*     font_builtin_rel_path  ( gui_builtin_font_t font ); // preset's 
 f32             font_char_h        ( void );                   // glyph-box height of the active font (ascent+descent)
 f32             font_line_h        ( void );                   // line advance of the active font
 f32             font_em            ( void );                   // nominal type size (em) -- the layout proportion base
-f32             font_char_advance  ( u8 ch );                  // horizontal advance of one glyph
+f32             font_char_advance  ( u32 cp );                 // horizontal advance of one codepoint
 f32             font_text_w        ( const char* str );        // pixel width of a NUL-terminated run
 f32             font_text_w_n      ( const char* str, u32 n ); // pixel width of the first n characters
 void            font_print_active  ( void );                   // log the active font's id + metrics
@@ -106,6 +113,11 @@ void            font_print_active  ( void );                   // log the active
     the render side reads slot->pixels via font_slot_ptr to upload.  font_registry_reset clears the
     registry (and frees resident pixels) at shutdown.
 ==============================================================================================*/
+
+/* Glyph record for a codepoint in a slot: dense lookup[] for ASCII, binary search in ext[] beyond,
+   and a miss resolves to '?' -- the one lookup rule measure (font_char_advance) and draw
+   (font_slot_glyph, render-side) both go through, so they can never disagree. */
+const orb_font_glyph_t* font_slot_cp( const font_slot_t* slot, u32 cp );
 
 void            font_use                ( u32 id );     // make an already-loaded id active
 u32             font_active_id          ( void );       // id of the active slot (save/restore)

@@ -8,10 +8,10 @@
     position, a saturating quantizer that wraps instead, a half-float that rounds the wrong way
     on a tie.  Those are the failures no screenshot shows and no demo catches.
 
-    So this target opens NO window and needs NO device.  It links exactly two objects out of
-    gui.lib -- the GUI_RECT leaf and the GUI_LOG leaf, both self-contained by charter -- plus
-    the packing helpers, which are static inline in gui.h and cost nothing to link at all.
-    That is what makes it runnable in a build step rather than by hand.
+    So this target opens NO window and needs NO device.  It links three objects out of
+    gui.lib -- the GUI_RECT leaf, the GUI_LOG leaf, and the GUI_FONT resource (no atlas, no GPU
+    by charter) -- plus the packing helpers, which are static inline in gui.h and cost nothing
+    to link at all.  That is what makes it runnable in a build step rather than by hand.
 
     Scope is deliberately the PURE surface.  Anything needing a live gui context (the style
     bake, dock serialization, the id scope stack, table sort) is out of reach until it can be
@@ -24,6 +24,7 @@
         test_pack.c  -- vertex packing: binary16, UV, effect coord, the tex mode/index split
         test_rect.c  -- the GUI_RECT leaf kit: rectcut, containment, alignment, colour blend
         test_log.c   -- the GUI_LOG sink contract + the GUI_WARN_ONCE latch
+        test_font.c  -- the two-tier glyph lookup: ASCII dense tier, ext binary search, '?' miss
 
 ==============================================================================================*/
 
@@ -71,6 +72,7 @@ cstr_equal( const char* a, const char* b )
 #include "sandbox/gui/sb_gui_test/test_pack.c"
 #include "sandbox/gui/sb_gui_test/test_rect.c"
 #include "sandbox/gui/sb_gui_test/test_log.c"
+#include "sandbox/gui/sb_gui_test/test_font.c"
 
 /*============================================================================================*/
 
@@ -120,6 +122,11 @@ main( int argc, char* argv[] )
     test_register( "log_truncation",      test_log_truncation );
     test_register( "log_set_fn",          test_log_set_fn );
     test_register( "warn_once",           test_warn_once );
+
+    /* GUI_FONT -- the two-tier glyph lookup */
+    test_register( "font_cp_ascii",       test_font_cp_ascii );
+    test_register( "font_cp_ext_search",  test_font_cp_ext_search );
+    test_register( "font_cp_ext_empty",   test_font_cp_ext_empty );
 
     return test_run( "sb_gui" );
 }

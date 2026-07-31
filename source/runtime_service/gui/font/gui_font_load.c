@@ -57,19 +57,39 @@ font_slot_load( font_slot_t* slot, const char* path )
         return false;
     }
 
-    /* Build the lookup table from glyph records.  Records outside the ASCII span (a font_tool
-       -range bake) are dropped here for now -- extended lookup is the next campaign slice -- so
-       such a font loads and renders its ASCII subset, with '?' for the rest. */
+    /* Split glyph records into the two lookup tiers: ASCII lands in the dense lookup[] (indexed
+       cp-32, the fast path), everything else -- a font_tool -range bake -- goes to ext[], kept
+       sorted by codepoint for binary search (font_slot_cp).  A bake writes ranges in ascending
+       codepoint order so the insertion sort below is normally a straight append; it exists so a
+       hand-assembled file still resolves correctly. */
 
     orb_font_glyph_t lookup[ ORB_FONT_CP_COUNT ];
     memset( lookup, 0, sizeof( lookup ) );
+
+    /* Sized by glyph_count -- a -range bake may carry NO ASCII records at all, so that is the only
+       safe bound.  Freed below if nothing extended actually landed. */
+    orb_font_glyph_t* ext = (orb_font_glyph_t*)malloc( hdr.glyph_count * sizeof( orb_font_glyph_t ) );
+    u32               ext_count = 0;
+    if ( !ext ) { fclose( f ); return false; }
+
     for ( u32 i = 0; i < hdr.glyph_count; ++i )
     {
         orb_font_glyph_t g;
-        if ( fread( &g, sizeof( g ), 1, f ) != 1 ) { fclose( f ); return false; }
+        if ( fread( &g, sizeof( g ), 1, f ) != 1 ) { free( ext ); fclose( f ); return false; }
         if ( g.codepoint >= ORB_FONT_CP_FIRST && g.codepoint <= ORB_FONT_CP_LAST )
+        {
             lookup[ g.codepoint - ORB_FONT_CP_FIRST ] = g;
+        }
+        else if ( g.codepoint > ORB_FONT_CP_LAST )   /* below-space records are dead weight */
+        {
+            u32 at = ext_count;
+            while ( at > 0 && ext[ at - 1 ].codepoint > g.codepoint ) { ext[ at ] = ext[ at - 1 ]; --at; }
+            ext[ at ] = g;
+            ++ext_count;
+        }
     }
+
+    if ( ext_count == 0 ) { free( ext ); ext = NULL; }
 
     /* Read the full baked atlas into a fresh CPU buffer.  v3 fonts are pure glyph coverage; a legacy
        v2 font also carries a blank bottom band, which just rides along as dead space inside this
@@ -77,11 +97,12 @@ font_slot_load( font_slot_t* slot, const char* path )
 
     u32 pixel_count = hdr.atlas_w * hdr.atlas_h;
     u8* pixels      = (u8*)malloc( pixel_count );
-    if ( !pixels ) { fclose( f ); return false; }
+    if ( !pixels ) { free( ext ); fclose( f ); return false; }
 
     if ( fread( pixels, 1, pixel_count, f ) != pixel_count )
     {
         free( pixels );
+        free( ext );
         fclose( f );
         return false;
     }
@@ -100,6 +121,9 @@ font_slot_load( font_slot_t* slot, const char* path )
     slot->ascent  = hdr.ascent;
     slot->descent = hdr.descent;
     memcpy( slot->lookup, lookup, sizeof( lookup ) );
+    free( slot->ext );
+    slot->ext       = ext;
+    slot->ext_count = ext_count;
 
     slot->used         = true;
     slot->needs_upload = true;

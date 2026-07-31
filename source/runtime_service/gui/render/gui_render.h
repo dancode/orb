@@ -77,8 +77,8 @@ void backend_exit( void );
    unit's font resources, draw/gui_glyph.c).  The active-font selection + metrics the tessellator
    also reads (font_use / font_active_id / font_valid / font_line_h) are the font/ resource, pulled in
    above -- measuring text is sizes-and-math, not a render resource. */
-void font_glyph    ( u8 ch, f32* u0, f32* v0, f32* u1, f32* v1,
-                            f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
+void font_glyph    ( u32 cp, f32* u0, f32* v0, f32* u1, f32* v1,
+                             f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
 
 /* The tex_idx a glyph draw of the ACTIVE font must carry: its backing atlas's bindless slot with
    the sampling model already in the mode field (gui.h).  The tessellator asks rather than reaching

@@ -699,7 +699,7 @@ target sb_gui_test						# HEADLESS assertion tests: fx word, packing, rect kit, 
     root        source/sandbox/gui/sb_gui_test
     folder      09_SANDBOX/GUI
     unit        sb_gui_test.c
-    dep         gui base
+    dep         gui base sys
 
 target sb_gui_sdf						# distance-field text: scale, rotation, hud numbers
 

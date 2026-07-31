@@ -88,12 +88,13 @@ font_slot_tex( const font_slot_t* slot )
 ==============================================================================================*/
 
 static void
-font_slot_glyph( const font_slot_t* slot, u8 ch,
+font_slot_glyph( const font_slot_t* slot, u32 cp,
                  f32* u0, f32* v0, f32* u1, f32* v1,
                  f32* ox, f32* oy, f32* gw, f32* gh, f32* advance )
 {
-    if ( ch < ORB_FONT_CP_FIRST || ch > ORB_FONT_CP_LAST ) ch = (u8)'?';
-    const orb_font_glyph_t* g = &slot->lookup[ ch - ORB_FONT_CP_FIRST ];
+    /* One lookup rule shared with the measure path (font_slot_cp): ASCII dense, extended by
+       binary search, miss -> '?'. */
+    const orb_font_glyph_t* g = font_slot_cp( slot, cp );
 
     /* Glyph atlas_x/atlas_y are in the font's own baked pixel space; rebase by the font's live
        page origin in the shared atlas (valid across repacks) and scale by the shared atlas dims.

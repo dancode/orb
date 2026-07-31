@@ -18,15 +18,28 @@ static u32              s_active_id = 0;                        // active slot i
 static font_metrics_t*  s_font      = NULL;                     // active font's metrics (read by every accessor)
 
 /*==============================================================================================
-    Per-glyph advance for a slot.  Out-of-range bytes advance as '?' -- matching what the draw
-    path (font_glyph, render-side) renders for them, so measure and draw agree.
+    font_slot_cp -- glyph record for a codepoint.  The ONE lookup rule: ASCII 32..126 indexes the
+    dense lookup[] directly (the fast path every label takes), anything above binary-searches the
+    sorted ext[] records, and a miss -- control byte, or a codepoint the bake didn't carry --
+    resolves to '?', matching what the draw path renders so measure and draw agree.
 ==============================================================================================*/
 
-static f32
-font_slot_char_advance( const font_slot_t* slot, u8 ch )
+const orb_font_glyph_t*
+font_slot_cp( const font_slot_t* slot, u32 cp )
 {
-    if ( ch < ORB_FONT_CP_FIRST || ch > ORB_FONT_CP_LAST ) ch = (u8)'?';
-    return (f32)slot->lookup[ ch - ORB_FONT_CP_FIRST ].advance;
+    if ( cp - ORB_FONT_CP_FIRST < ORB_FONT_CP_COUNT )
+        return &slot->lookup[ cp - ORB_FONT_CP_FIRST ];
+
+    u32 lo = 0, hi = slot->ext_count;
+    while ( lo < hi )
+    {
+        u32 mid = ( lo + hi ) >> 1;
+        u32 c   = slot->ext[ mid ].codepoint;
+        if ( c == cp ) return &slot->ext[ mid ];
+        if ( c < cp )  lo = mid + 1;
+        else           hi = mid;
+    }
+    return &slot->lookup[ (u32)'?' - ORB_FONT_CP_FIRST ];
 }
 
 /*==============================================================================================
@@ -38,9 +51,9 @@ f32  font_line_h      ( void ) { return s_font->line_h; }
 f32  font_em          ( void ) { return s_font->size;   }   // nominal type size (em) -- layout base
 
 f32
-font_char_advance( u8 ch )
+font_char_advance( u32 cp )
 {
-    return font_slot_char_advance( s_active, ch );
+    return (f32)font_slot_cp( s_active, cp )->advance;
 }
 
 /* Width of the first n bytes of str (stops early at a NUL).  Labels measure only their visible
@@ -49,9 +62,10 @@ font_char_advance( u8 ch )
 f32
 font_text_w_n( const char* str, u32 n )
 {
-    /* font_slot_char_advance hand-inlined with the slot hoisted: this is the hottest inner loop
-       in the emit path (every label, cell, and value text measures through it), and a debug
-       build (/Od) pays a real call per character through the helper form. */
+    /* font_slot_cp's ASCII fast path hand-inlined with the slot hoisted: this is the hottest
+       inner loop in the emit path (every label, cell, and value text measures through it), and a
+       debug build (/Od) pays a real call per character through the helper form.  Byte-stepping is
+       correct here until the UTF-8 decode slice moves this seam to codepoints. */
     const font_slot_t* slot = s_active;
     f32                w    = 0.0f;
     for ( u32 i = 0; i < n && str[ i ]; ++i )
@@ -147,7 +161,10 @@ void
 font_registry_reset( void )
 {
     for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
+    {
         free( s_fonts[ i ].pixels );
+        free( s_fonts[ i ].ext );
+    }
     memset( s_fonts, 0, sizeof( s_fonts ) );
     s_active    = NULL;
     s_active_id = 0;
@@ -162,7 +179,8 @@ font_unit_mem_bytes( void )
     u32 b = (u32)sizeof( s_fonts );
     for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
         if ( s_fonts[ i ].used )
-            b += s_fonts[ i ].atlas_w * s_fonts[ i ].atlas_h;
+            b += s_fonts[ i ].atlas_w * s_fonts[ i ].atlas_h
+               + s_fonts[ i ].ext_count * (u32)sizeof( orb_font_glyph_t );
     return b;
 }
 

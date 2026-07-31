@@ -88,12 +88,12 @@ font_slot_atlas_size( u32 id )
 ==============================================================================================*/
 
 void
-font_glyph( u8 ch,
+font_glyph( u32 cp,
             f32* u0, f32* v0, f32* u1, f32* v1,
             f32* ox, f32* oy, f32* gw, f32* gh,
             f32* advance )
 {
-    font_slot_glyph( font_active_slot(), ch, u0, v0, u1, v1, ox, oy, gw, gh, advance );
+    font_slot_glyph( font_active_slot(), cp, u0, v0, u1, v1, ox, oy, gw, gh, advance );
 }
 
 /* Companion to font_glyph: the mode-tagged tex_idx a run of those glyphs draws with. */
