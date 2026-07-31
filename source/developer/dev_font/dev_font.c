@@ -47,10 +47,11 @@ POP_WARNINGS
 /* Baked codepoint range comes from the format contract (orb_font.h): ORB_FONT_CP_FIRST/LAST/COUNT
    is the ASCII default (this file's own stb baker bakes exactly that); ORB_FONT_MAX_GLYPHS caps
    what the shared back-end accepts, since font_tool -range feeds extended sets through it. */
-#define GLYPH_PAD     1
-#define ATLAS_MIN     64        // smallest atlas size attempted (px, square)
-#define ATLAS_MAX     1024      // largest atlas size attempted (px, square); also static buffer cap
-#define DEV_PATH_MAX  512
+#define GLYPH_PAD        1
+#define ATLAS_MIN        64                          // smallest page attempted (px, square)
+#define ATLAS_NODE_MAX   ORB_FONT_PAGE_MAX_W_SDF     // widest pack target -> stbrp node count
+#define ATLAS_PIXEL_MAX  ( 1024u * 1024u )           // page buffer capacity (1 MiB BSS)
+#define DEV_PATH_MAX     512
 
 /*==============================================================================================
     Platform path helpers
@@ -68,10 +69,10 @@ POP_WARNINGS
     Static storage (atlas lives in BSS, not the stack)
 ==============================================================================================*/
 
-static stbrp_node       s_nodes  [ ATLAS_MAX ];
-/* Square atlas, at most ATLAS_MAX per side (glyphs are packed full-height; no reserved band).
-   1 MiB of BSS at 1024 -- dev-only tooling, and heap-free by the library's charter. */
-static u8               s_atlas  [ ATLAS_MAX * ATLAS_MAX ];
+static stbrp_node       s_nodes  [ ATLAS_NODE_MAX ];
+/* Page buffer -- glyphs are packed full-height, no reserved band; dev-only tooling, and
+   heap-free by the library's charter.  Every ladder candidate below asserts it fits this. */
+static u8               s_atlas  [ ATLAS_PIXEL_MAX ];
 /* Rasterized-glyph scratch for THIS file's stb baker, which bakes the ASCII contract only. */
 static dev_font_glyph_t s_glyphs [ ORB_FONT_CP_COUNT ];
 /* Pack scratch + output records for dev_font_bake_write -- sized to the format cap, not the
@@ -330,18 +331,50 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
         ++rect_count;
     }
 
+    /* Candidate page sizes per DESTINATION, tried in order, first fit wins.  Squares first --
+       every bake that fit one before keeps its exact output -- then talls pinned at the
+       destination atlas's width cap (orb_font.h).  Wider is impossible: the page becomes ONE
+       tenant of that atlas and its width cap is a hard placement bound.  Wider is also what to
+       WANT within the bound: crop height ~= glyph area / width, so the widest legal page is the
+       shortest tenant, and height is the axis the runtime atlas actually runs out of.
+       Coverage has no 512 square -- a 512-wide page + 1px pad already misses the 512-wide
+       coverage atlas, so that rung could only produce unloadable files.  The SDF ladder keeps it
+       (512 + 2 fits the 1024-wide SDF atlas), preserving existing SDF bakes byte for byte. */
+    typedef struct { u32 w, h; } atlas_try_t;
+    static const atlas_try_t s_tries_coverage[] = {
+        { 64, 64 }, { 128, 128 }, { 256, 256 },
+        { ORB_FONT_PAGE_MAX_W_COVERAGE, 512 },
+        { ORB_FONT_PAGE_MAX_W_COVERAGE, 1024 },
+        { ORB_FONT_PAGE_MAX_W_COVERAGE, 2048 },
+    };
+    static const atlas_try_t s_tries_sdf[] = {
+        { 64, 64 }, { 128, 128 }, { 256, 256 }, { 512, 512 },
+        { ORB_FONT_PAGE_MAX_W_SDF, 512 },
+        { ORB_FONT_PAGE_MAX_W_SDF, 1024 },
+    };
+    _Static_assert( ORB_FONT_PAGE_MAX_W_COVERAGE * 2048u <= ATLAS_PIXEL_MAX,
+                    "coverage ladder exceeds the page buffer" );
+    _Static_assert( ORB_FONT_PAGE_MAX_W_SDF * 1024u <= ATLAS_PIXEL_MAX,
+                    "sdf ladder exceeds the page buffer" );
+
+    const atlas_try_t* tries     = sdf_range ? s_tries_sdf : s_tries_coverage;
+    u32                try_count = sdf_range
+                                 ? (u32)( sizeof( s_tries_sdf )      / sizeof( atlas_try_t ) )
+                                 : (u32)( sizeof( s_tries_coverage ) / sizeof( atlas_try_t ) );
+
     stbrp_context pack_ctx;
     u32           atlas_w = ATLAS_MIN, atlas_h = ATLAS_MIN;
 
     if ( rect_count > 0 )
     {
         atlas_w = atlas_h = 0;
-        for ( u32 try_size = ATLAS_MIN; try_size <= ATLAS_MAX; try_size *= 2 )
+        for ( u32 t = 0; t < try_count; ++t )
         {
             for ( int i = 0; i < rect_count; ++i )
                 rects[ i ].was_packed = 0;
 
-            stbrp_init_target( &pack_ctx, (int)try_size, (int)try_size, s_nodes, (int)try_size );
+            stbrp_init_target( &pack_ctx, (int)tries[ t ].w, (int)tries[ t ].h,
+                               s_nodes, (int)tries[ t ].w );
             /* BL (the default heuristic) does not check the height bound while searching for a
                placement -- only BF does (see stb_rect_pack.h stbrp__skyline_find_best_pos).
                Without this, a "successful" pack can silently place a rect below the requested
@@ -349,15 +382,16 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
             stbrp_setup_heuristic( &pack_ctx, STBRP_HEURISTIC_Skyline_BF_sortHeight );
             if ( stbrp_pack_rects( &pack_ctx, rects, rect_count ) )
             {
-                atlas_w = atlas_h = try_size;
+                atlas_w = tries[ t ].w;
+                atlas_h = tries[ t ].h;
                 break;
             }
         }
 
         if ( atlas_w == 0 )
         {
-            set_error( "%ux%u atlas too small for %u glyphs at %d px -- try a smaller size",
-                       ATLAS_MAX, ATLAS_MAX, count, size_px );
+            set_error( "%ux%u atlas too small for %u glyphs at %d px -- try a smaller size or range",
+                       tries[ try_count - 1u ].w, tries[ try_count - 1u ].h, count, size_px );
             return false;
         }
     }
