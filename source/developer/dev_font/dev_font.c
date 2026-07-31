@@ -44,10 +44,12 @@ POP_WARNINGS
     Constants
 ==============================================================================================*/
 
-/* Baked codepoint range comes from the format contract (orb_font.h): ORB_FONT_CP_FIRST/LAST/COUNT. */
+/* Baked codepoint range comes from the format contract (orb_font.h): ORB_FONT_CP_FIRST/LAST/COUNT
+   is the ASCII default (this file's own stb baker bakes exactly that); ORB_FONT_MAX_GLYPHS caps
+   what the shared back-end accepts, since font_tool -range feeds extended sets through it. */
 #define GLYPH_PAD     1
 #define ATLAS_MIN     64        // smallest atlas size attempted (px, square)
-#define ATLAS_MAX     512       // largest atlas size attempted (px, square); also static buffer cap
+#define ATLAS_MAX     1024      // largest atlas size attempted (px, square); also static buffer cap
 #define DEV_PATH_MAX  512
 
 /*==============================================================================================
@@ -67,10 +69,15 @@ POP_WARNINGS
 ==============================================================================================*/
 
 static stbrp_node       s_nodes  [ ATLAS_MAX ];
-/* Square atlas, at most ATLAS_MAX per side (glyphs are packed full-height; no reserved band). */
+/* Square atlas, at most ATLAS_MAX per side (glyphs are packed full-height; no reserved band).
+   1 MiB of BSS at 1024 -- dev-only tooling, and heap-free by the library's charter. */
 static u8               s_atlas  [ ATLAS_MAX * ATLAS_MAX ];
-/* Rasterized-glyph scratch handed to dev_font_bake_write (BSS, not the stack). */
+/* Rasterized-glyph scratch for THIS file's stb baker, which bakes the ASCII contract only. */
 static dev_font_glyph_t s_glyphs [ ORB_FONT_CP_COUNT ];
+/* Pack scratch + output records for dev_font_bake_write -- sized to the format cap, not the
+   ASCII count, because font_tool -range feeds extended sets through the shared back-end. */
+static stbrp_rect       s_rects      [ ORB_FONT_MAX_GLYPHS ];
+static orb_font_glyph_t s_out_glyphs [ ORB_FONT_MAX_GLYPHS ];
 
 /*==============================================================================================
     Module state
@@ -295,9 +302,9 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
                      int ascent, int descent, int line_gap, int size_px,
                      u32 sdf_range, const char* label )
 {
-    if ( count > ORB_FONT_CP_COUNT )
+    if ( count > ORB_FONT_MAX_GLYPHS )
     {
-        set_error( "glyph count %u exceeds baked range %u", count, (u32)ORB_FONT_CP_COUNT );
+        set_error( "glyph count %u exceeds format cap %u", count, (u32)ORB_FONT_MAX_GLYPHS );
         return false;
     }
 
@@ -311,8 +318,8 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
         so no reserved band is packed here.
     ------------------------------------------------------------------------------------------*/
 
-    stbrp_rect rects[ ORB_FONT_CP_COUNT ];
-    int        rect_count = 0;
+    stbrp_rect* rects      = s_rects;
+    int         rect_count = 0;
 
     for ( u32 i = 0; i < count; ++i )
     {
@@ -363,8 +370,8 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
 
     u32 packed_area = 0;
 
-    orb_font_glyph_t out_glyphs[ ORB_FONT_CP_COUNT ];
-    memset( out_glyphs, 0, sizeof( out_glyphs ) );
+    orb_font_glyph_t* out_glyphs = s_out_glyphs;
+    memset( out_glyphs, 0, (size_t)count * sizeof( orb_font_glyph_t ) );
 
     /* Pre-fill every record with codepoint and advance; non-bitmapped glyphs (whitespace) keep
        zero atlas coords and zero dimensions, which the renderer treats as invisible. */

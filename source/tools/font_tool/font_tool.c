@@ -10,7 +10,10 @@
         font_tool.exe <input.ttf> <size_px> <output.orb_font> [-sdf[=spread]]
         font_tool.exe info [<file.orb_font> | <dir>]...   -- print .orb_font header internals
 
-    Bakes the ASCII printable range U+0020 (space) .. U+007E (tilde), 95 glyphs.
+    Bakes the ASCII printable range U+0020 (space) .. U+007E (tilde), 95 glyphs, by default.
+    -range=<spec> bakes beyond ASCII: comma-separated preset names (ascii, latin1, latin, greek,
+    cyrillic) and/or explicit LO-HI codepoint spans (hex or decimal).  Codepoints the face does
+    not map are skipped -- glyph records are sparse by codepoint, so holes cost nothing.
     .orb_font output atlas is R8 grayscale, sized to the smallest power-of-two square that fits
     every packed glyph.  Rasterization is the only font_tool-specific step -- packing, atlas
     blit and the .orb_font write are shared with the runtime baker via dev_font_bake_write().
@@ -72,9 +75,185 @@
 
 /*==============================================================================================
     Static storage -- rasterized glyphs handed to the shared back-end (BSS, not the stack).
+    Sized to the format cap, not the ASCII count: -range feeds extended sets through here.
 ==============================================================================================*/
 
-static dev_font_glyph_t  s_glyphs[ ORB_FONT_CP_COUNT ];
+static dev_font_glyph_t  s_glyphs[ ORB_FONT_MAX_GLYPHS ];
+
+/*==============================================================================================
+    Codepoint ranges -- what -range=<spec> parses into.
+
+    No -range on the command line means exactly the ASCII contract from orb_font.h, so a default
+    bake stays byte-identical to every bake made before the flag existed.  A spec is comma-
+    separated tokens, each a preset name or an explicit LO[-HI] span (hex or decimal):
+        -range=latin1        -range=latin,greek,cyrillic        -range=ascii,0x2022
+    Spans are sorted and merged before baking, so overlapping presets never bake a glyph twice.
+==============================================================================================*/
+
+#define FONT_RANGE_MAX  32
+
+typedef struct { uint32_t lo, hi; } cp_range_t;
+
+static cp_range_t s_ranges[ FONT_RANGE_MAX ];
+static int        s_range_count = 0;
+static char       s_range_suffix[ 48 ];   /* derived-filename tag ("_latin1"); empty = default */
+
+typedef struct
+{
+    const char* name;
+    cp_range_t  span[ 2 ];
+    int         count;
+
+} range_preset_t;
+
+/* Presets are PRINTABLE spans; a codepoint the face has no glyph for is skipped at bake, so a
+   generous span costs nothing in the file. */
+static const range_preset_t s_presets[] = {
+    { "ascii",    { { 0x0020, 0x007E } },                     1 },   /* the default            */
+    { "latin1",   { { 0x0020, 0x007E }, { 0x00A0, 0x00FF } }, 2 },   /* + Latin-1 Supplement   */
+    { "latin",    { { 0x0020, 0x007E }, { 0x00A0, 0x017F } }, 2 },   /* + Latin Extended-A     */
+    { "greek",    { { 0x0370, 0x03FF } },                     1 },   /* Greek and Coptic       */
+    { "cyrillic", { { 0x0400, 0x04FF } },                     1 },   /* Cyrillic               */
+};
+
+static int
+range_add( uint32_t lo, uint32_t hi )
+{
+    if ( s_range_count == FONT_RANGE_MAX )
+    {
+        fprintf( stderr, "error: -range has too many spans (max %d)\n", FONT_RANGE_MAX );
+        return 0;
+    }
+    s_ranges[ s_range_count ].lo = lo;
+    s_ranges[ s_range_count ].hi = hi;
+    ++s_range_count;
+    return 1;
+}
+
+/* One spec token: a preset name, a single codepoint, or "LO-HI" (strtoul base 0: hex or decimal). */
+static int
+range_parse_token( const char* tok, size_t len )
+{
+    char          buf[ 32 ];
+    char*         end;
+    unsigned long lo, hi;
+
+    for ( size_t i = 0; i < sizeof( s_presets ) / sizeof( s_presets[ 0 ] ); ++i )
+    {
+        const range_preset_t* p = &s_presets[ i ];
+        if ( strlen( p->name ) == len && strncmp( tok, p->name, len ) == 0 )
+        {
+            for ( int s = 0; s < p->count; ++s )
+                if ( !range_add( p->span[ s ].lo, p->span[ s ].hi ) )
+                    return 0;
+            return 1;
+        }
+    }
+
+    if ( len == 0 || len >= sizeof( buf ) )
+        goto bad;
+    memcpy( buf, tok, len );
+    buf[ len ] = '\0';
+
+    lo = strtoul( buf, &end, 0 );
+    hi = lo;
+    if ( end == buf )
+        goto bad;
+    if ( *end == '-' )
+    {
+        const char* hs = end + 1;
+        hi = strtoul( hs, &end, 0 );
+        if ( end == hs )
+            goto bad;
+    }
+    if ( *end != '\0' || lo < 0x20 || hi < lo || hi > 0x10FFFF )
+        goto bad;
+    return range_add( (uint32_t)lo, (uint32_t)hi );
+
+bad:
+    fprintf( stderr, "error: bad -range token '%.*s' (preset name or LO[-HI], e.g. latin1 or 0xA0-0xFF)\n",
+             (int)len, tok );
+    return 0;
+}
+
+static int
+range_parse_spec( const char* spec )
+{
+    const char* p = spec;
+    while ( *p )
+    {
+        const char* q = p;
+        while ( *q && *q != ',' )
+            ++q;
+        if ( !range_parse_token( p, (size_t)( q - p ) ) )
+            return 0;
+        p = ( *q == ',' ) ? q + 1 : q;
+    }
+    if ( s_range_count == 0 )
+    {
+        fprintf( stderr, "error: -range spec is empty\n" );
+        return 0;
+    }
+    return 1;
+}
+
+/* Sort by lo and merge touching spans, so overlapping tokens never bake a codepoint twice. */
+static void
+range_normalize( void )
+{
+    for ( int i = 1; i < s_range_count; ++i )     /* insertion sort -- the list is tiny */
+    {
+        cp_range_t r = s_ranges[ i ];
+        int        j = i;
+        while ( j > 0 && s_ranges[ j - 1 ].lo > r.lo )
+        {
+            s_ranges[ j ] = s_ranges[ j - 1 ];
+            --j;
+        }
+        s_ranges[ j ] = r;
+    }
+
+    int w = 0;
+    for ( int i = 1; i < s_range_count; ++i )
+    {
+        if ( s_ranges[ i ].lo <= s_ranges[ w ].hi + 1u )
+        {
+            if ( s_ranges[ i ].hi > s_ranges[ w ].hi )
+                s_ranges[ w ].hi = s_ranges[ i ].hi;
+        }
+        else
+        {
+            s_ranges[ ++w ] = s_ranges[ i ];
+        }
+    }
+    s_range_count = w + 1;
+}
+
+static uint32_t
+range_codepoint_count( void )
+{
+    uint32_t n = 0;
+    for ( int i = 0; i < s_range_count; ++i )
+        n += s_ranges[ i ].hi - s_ranges[ i ].lo + 1u;
+    return n;
+}
+
+/* Filename tag for a derived output path: '_' + the spec with anything unsafe mapped to '-'
+   ("latin,greek" -> "_latin-greek"), so bakes of different ranges never overwrite each other. */
+static void
+range_make_suffix( const char* spec )
+{
+    int n                 = 0;
+    s_range_suffix[ n++ ] = '_';
+    for ( const char* p = spec; *p && n < (int)sizeof( s_range_suffix ) - 1; ++p )
+    {
+        char c = *p;
+        if ( c >= 'A' && c <= 'Z' )
+            c = (char)( c - 'A' + 'a' );
+        s_range_suffix[ n++ ] = ( ( c >= 'a' && c <= 'z' ) || ( c >= '0' && c <= '9' ) ) ? c : '-';
+    }
+    s_range_suffix[ n ] = '\0';
+}
 
 /*==============================================================================================
     path_has_orb_font_ext -- returns 1 if path ends in ".orb_font" (case-insensitive).
@@ -433,13 +612,25 @@ main( int argc, char** argv )
     if ( argc >= 2 && strcmp( argv[ 1 ], "info" ) == 0 )
         return run_info( argc - 2, argv + 2 );
 
-    /* Optional -sdf[=spread], accepted anywhere in the argument list and filtered out here so the
-       positional parsing below stays exactly as it was. */
+    /* Optional -sdf[=spread] and -range=<spec>, accepted anywhere in the argument list and
+       filtered out here so the positional parsing below stays exactly as it was. */
     uint32_t sdf_range = 0;
     char*    fargv[ 8 ];
     int      fargc = 0;
     for ( int i = 0; i < argc; ++i )
     {
+        if ( strncmp( argv[ i ], "-range", 6 ) == 0 )
+        {
+            if ( argv[ i ][ 6 ] != '=' || !argv[ i ][ 7 ] )
+            {
+                fprintf( stderr, "error: -range needs a spec, e.g. -range=latin1\n" );
+                return 1;
+            }
+            if ( !range_parse_spec( argv[ i ] + 7 ) )
+                return 1;
+            range_make_suffix( argv[ i ] + 7 );
+            continue;
+        }
         if ( strncmp( argv[ i ], "-sdf", 4 ) == 0
              && ( argv[ i ][ 4 ] == '\0' || argv[ i ][ 4 ] == '=' ) )
         {
@@ -462,12 +653,14 @@ main( int argc, char** argv )
 
     if ( argc < 3 || argc > 4 )
     {
-        fprintf( stderr, "usage: font_tool <input.ttf | \"Font Name\"> <size_px> [output.orb_font] [-sdf[=spread]]\n" );
+        fprintf( stderr, "usage: font_tool <input.ttf | \"Font Name\"> <size_px> [output.orb_font] [-sdf[=spread]] [-range=<spec>]\n" );
         fprintf( stderr, "       font_tool info [<file.orb_font> | <dir>]...   (print header internals)\n" );
         fprintf( stderr, "       input may be a path, a bare filename, or an installed font name\n" );
-        fprintf( stderr, "       output defaults to assets/font/<name>_<size>px[_sdf].orb_font\n" );
+        fprintf( stderr, "       output defaults to assets/font/<name>_<size>px[_<range>][_sdf].orb_font\n" );
         fprintf( stderr, "       -sdf bakes a distance field (default spread %d px) instead of coverage\n",
                  FONT_SDF_SPREAD_DEFAULT );
+        fprintf( stderr, "       -range bakes beyond ASCII: presets ascii|latin1|latin|greek|cyrillic\n" );
+        fprintf( stderr, "              and/or LO-HI codepoint spans, comma-separated (default: ascii)\n" );
         return 1;
     }
 
@@ -491,6 +684,19 @@ main( int argc, char** argv )
     if ( size_px < 6 || size_px > 256 )
     {
         fprintf( stderr, "error: size_px must be 6..256\n" );
+        return 1;
+    }
+
+    /* No -range on the command line: exactly the ASCII contract, as every bake before the flag. */
+    if ( s_range_count == 0 )
+        range_add( ORB_FONT_CP_FIRST, ORB_FONT_CP_LAST );
+    range_normalize();
+
+    uint32_t cp_total = range_codepoint_count();
+    if ( cp_total > ORB_FONT_MAX_GLYPHS )
+    {
+        fprintf( stderr, "error: -range spans %u codepoints, format cap is %u\n",
+                 cp_total, ORB_FONT_MAX_GLYPHS );
         return 1;
     }
 
@@ -551,11 +757,11 @@ main( int argc, char** argv )
         for ( size_t i = stem_len; i-- > 0; )
             if ( base[ i ] == '.' ) { stem_len = i; break; }
 
-        /* The _sdf suffix keeps the two bakes of one face at one size from overwriting each other --
-           they are different assets, and a build may well want both. */
+        /* The _<range> and _sdf suffixes keep the bakes of one face at one size from overwriting
+           each other -- they are different assets, and a build may well want several. */
         int n = snprintf( s_out_buf, sizeof( s_out_buf ),
-                          "%s" OUT_SEP "%.*s_%dpx%s.orb_font", font_dir, (int)stem_len, base, size_px,
-                          sdf_range ? "_sdf" : "" );
+                          "%s" OUT_SEP "%.*s_%dpx%s%s.orb_font", font_dir, (int)stem_len, base, size_px,
+                          s_range_suffix, sdf_range ? "_sdf" : "" );
         if ( n <= 0 || n >= (int)sizeof( s_out_buf ) )
         {
             fprintf( stderr, "error: derived output path too long\n" );
@@ -617,9 +823,17 @@ main( int argc, char** argv )
         measuring identically down to the pixel.
     ------------------------------------------------------------------------------------------*/
 
-    for ( uint32_t cp = ORB_FONT_CP_FIRST; cp <= ORB_FONT_CP_LAST; ++cp )
+    for ( int ri = 0; ri < s_range_count; ++ri )
+    for ( uint32_t cp = s_ranges[ ri ].lo; cp <= s_ranges[ ri ].hi; ++cp )
     {
         FT_UInt glyph_idx = FT_Get_Char_Index( face, (FT_ULong)cp );
+
+        /* Outside ASCII, a codepoint the face does not map is SKIPPED -- records are sparse by
+           codepoint, so a hole costs nothing, whereas loading glyph 0 would bake one .notdef box
+           per hole.  Inside ASCII, glyph 0 still bakes, keeping the default output byte-identical
+           to bakes made before -range existed. */
+        if ( glyph_idx == 0 && cp > ORB_FONT_CP_LAST )
+            continue;
 
         if ( FT_Load_Glyph( face, glyph_idx, FT_LOAD_RENDER ) )
             continue;
@@ -716,6 +930,10 @@ main( int argc, char** argv )
 
     FT_Done_Face( face );
     FT_Done_FreeType( ft );
+
+    if ( s_range_suffix[ 0 ] )
+        printf( "[font_tool] range: %u codepoints in %d spans, %u glyphs mapped by the face\n",
+                cp_total, s_range_count, raw_count );
 
     bool ok = dev_font_bake_write( out_path, s_glyphs, raw_count,
                                    ascent, descent, line_gap, size_px, sdf_range, ttf_path );

@@ -36,12 +36,21 @@
    (the tail zero-fills, and zero is exactly the legacy meaning).  Asserted below. */
 #define ORB_FONT_HEADER_BASE_SIZE  36u
 
-/* Baked codepoint range -- the ASCII printable span U+0020 (space) .. U+007E (tilde).  This is the
-   format contract shared by both bakers (dev_font, font_tool) and the runtime loader, so the glyph
-   count and the codepoint->slot mapping have exactly one definition. */
+/* DEFAULT baked codepoint range -- the ASCII printable span U+0020 (space) .. U+007E (tilde).
+   This is the contract shared by both bakers (dev_font, font_tool) and the runtime loader's dense
+   ASCII table, so the glyph count and the codepoint->slot mapping have exactly one definition.
+   Glyph records are sparse by codepoint on disk, so a file may carry MORE than this span
+   (font_tool -range); anything up to ORB_FONT_MAX_GLYPHS records is a valid file. */
 #define ORB_FONT_CP_FIRST  32u
 #define ORB_FONT_CP_LAST   126u
 #define ORB_FONT_CP_COUNT  ( ORB_FONT_CP_LAST - ORB_FONT_CP_FIRST + 1u )   /* 95 */
+
+/* Cap on glyph records in one file.  Bounds every fixed buffer on both sides of the format --
+   baker scratch, pack rects, and the runtime loader's sanity check -- so "how many glyphs can a
+   font carry" has exactly one answer.  Sized for full European coverage (Latin + Extended-A +
+   Greek + Cyrillic is ~700) with headroom; CJK-scale sets are a different architecture (demand
+   paging), not a bigger constant. */
+#define ORB_FONT_MAX_GLYPHS  2048u
 
 typedef struct
 {

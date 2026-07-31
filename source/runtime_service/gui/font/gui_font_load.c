@@ -41,7 +41,7 @@ font_slot_load( font_slot_t* slot, const char* path )
     if ( fread( &hdr, ORB_FONT_HEADER_BASE_SIZE, 1, f ) != 1
          || hdr.magic   != ORB_FONT_MAGIC
          || hdr.version  < 2u || hdr.version > ORB_FONT_VERSION
-         || hdr.glyph_count == 0 || hdr.glyph_count > 256
+         || hdr.glyph_count == 0 || hdr.glyph_count > ORB_FONT_MAX_GLYPHS
          || hdr.atlas_w == 0     || hdr.atlas_h == 0 )
     {
         fclose( f );
@@ -57,7 +57,9 @@ font_slot_load( font_slot_t* slot, const char* path )
         return false;
     }
 
-    /* Build the lookup table from glyph records. */
+    /* Build the lookup table from glyph records.  Records outside the ASCII span (a font_tool
+       -range bake) are dropped here for now -- extended lookup is the next campaign slice -- so
+       such a font loads and renders its ASCII subset, with '?' for the rest. */
 
     orb_font_glyph_t lookup[ ORB_FONT_CP_COUNT ];
     memset( lookup, 0, sizeof( lookup ) );
