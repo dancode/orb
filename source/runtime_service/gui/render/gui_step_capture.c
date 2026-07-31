@@ -445,11 +445,15 @@ step_cmd_bounds( const gui_cmd_t* c )
         {
             const char* s = s_step.text_pool + c->text.off;
             f32         w = 0.0f;
-            for ( u32 i = 0; i < c->text.len && s[ i ]; ++i )
+            u32         i = 0;
+            while ( i < c->text.len && s[ i ] )
             {
+                u32 adv_b;
                 f32 u0, v0, u1, v1, ox, oy, gw, gh, adv;
-                font_glyph( (u8)s[ i ], &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &adv );
+                font_glyph( utf8_decode( &s[ i ], &adv_b ),
+                            &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &adv );
                 w += adv;
+                i += adv_b;
             }
             /* Fold the glyph-level hard-clip window in, when one was baked. */
             f32 x0 = c->text.x, x1 = c->text.x + w;
@@ -462,13 +466,17 @@ step_cmd_bounds( const gui_cmd_t* c )
            one, exactly as it is for a triangle. */
         case GUI_CMD_TEXT_XF:
         {
-            const char* s = s_step.text_pool + c->text_xf.off;
-            f32         w = 0.0f;
-            for ( u32 i = 0; i < c->text_xf.len && s[ i ]; ++i )
+            const char* s  = s_step.text_pool + c->text_xf.off;
+            f32         w  = 0.0f;
+            u32         bi = 0;
+            while ( bi < c->text_xf.len && s[ bi ] )
             {
+                u32 adv_b;
                 f32 u0, v0, u1, v1, ox, oy, gw, gh, adv;
-                font_glyph( (u8)s[ i ], &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &adv );
+                font_glyph( utf8_decode( &s[ bi ], &adv_b ),
+                            &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &adv );
                 w += adv;
+                bi += adv_b;
             }
             f32 cs = cosf( c->text_xf.rot ), sn = sinf( c->text_xf.rot );
             f32 lw = w * c->text_xf.scale, lh = font_line_h() * c->text_xf.scale;

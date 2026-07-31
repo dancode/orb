@@ -17,6 +17,7 @@
 #include <string.h>   /* memset/memcpy                               */
 
 #include "orb.h"
+#include "base/utf8.h"   /* codepoint stepping in font_text_w_n's measure loop */
 
 #include "runtime_service/gui/font/gui_font.h"
 #include "runtime_service/gui/font/gui_font_core.c"       // registry + metric readers

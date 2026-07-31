@@ -1011,11 +1011,15 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
     if ( tex == 0 )
         return;                       /* the font's atlas is not up yet -- nothing to sample */
 
-    for ( u32 i = 0; i < n && str[ i ]; ++i )
+    u32 i = 0;
+    while ( i < n && str[ i ] )
     {
-        u8  ch = (u8)str[ i ];
+        u32 adv_b;
+        u32 cp = utf8_decode( &str[ i ], &adv_b );
+        i += adv_b;
+
         f32 u0, v0, u1, v1, ox, oy, gw, gh, advance;
-        font_glyph( ch, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
+        font_glyph( cp, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
 
         if ( gw > 0.0f && gh > 0.0f )
         {
@@ -1107,10 +1111,15 @@ tess_text_xf( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 scale, f32 rot
     f32 cs = cosf( rot ), sn = sinf( rot );
     f32 pen = 0.0f;                      /* run-local, UNSCALED: scale is applied at the map */
 
-    for ( u32 i = 0; i < n && str[ i ]; ++i )
+    u32 i = 0;
+    while ( i < n && str[ i ] )
     {
+        u32 adv_b;
+        u32 cp = utf8_decode( &str[ i ], &adv_b );
+        i += adv_b;
+
         f32 u0, v0, u1, v1, ox, oy, gw, gh, advance;
-        font_glyph( (u8)str[ i ], &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
+        font_glyph( cp, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
 
         if ( gw > 0.0f && gh > 0.0f )
             tess_quad_xf( x, y, cs, sn,

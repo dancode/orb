@@ -147,10 +147,11 @@ draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w )
     u32 n = 0;
     while ( n < len && s[ n ] )
     {
-        f32 adv = font_char_advance( (u8)s[ n ] );
+        u32 adv_b;
+        f32 adv = font_char_advance( utf8_decode( &s[ n ], &adv_b ) );
         if ( w + adv > budget ) break;
         w += adv;
-        ++n;
+        n += adv_b;   /* whole sequences only: the cut can never land mid-glyph */
     }
 
     draw_push_text_n( x, y, c, s, n );

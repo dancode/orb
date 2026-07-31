@@ -34,6 +34,7 @@
 #include "orb.h"
 #include "base/fmt.h"
 #include "base/math.h"
+#include "base/utf8.h"   // codepoint stepping on the fitted-text measure seam
 
 /* This unit's world, and nothing above it (the include list IS the dependency graph).
    Drawing routines over the render server's primitives -- parameter-pure, so no

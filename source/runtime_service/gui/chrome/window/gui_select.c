@@ -112,8 +112,13 @@ select_x_at( const gui_select_run_t* r, u32 chr )
 {
     const char* s = select_run_text( r );
     f32         x = r->x;
-    for ( u32 i = 0; i < chr && i < r->len; ++i )
-        x += font_char_advance( (u8)s[ i ] );
+    u32         i = 0;
+    while ( i < chr && i < r->len )
+    {
+        u32 adv_b;
+        x += font_char_advance( utf8_decode( &s[ i ], &adv_b ) );
+        i += adv_b;
+    }
     return x;
 }
 
@@ -124,12 +129,15 @@ select_chr_from_x( const gui_select_run_t* r, f32 px )
 {
     const char* s = select_run_text( r );
     f32         x = r->x;
-    for ( u32 i = 0; i < r->len; ++i )
+    u32         i = 0;
+    while ( i < r->len )
     {
-        f32 adv = font_char_advance( (u8)s[ i ] );
+        u32 adv_b;
+        f32 adv = font_char_advance( utf8_decode( &s[ i ], &adv_b ) );
         if ( px < x + adv * 0.5f )
-            return i;
+            return i;                          /* i is always a sequence boundary */
         x += adv;
+        i += adv_b;
     }
     return r->len;
 }

@@ -68,6 +68,7 @@
 
 #include "orb.h"
 #include "base/fmt.h"   // fmt_snprintf / fmt_vsnprintf -- CRT-free formatting on the per-frame text paths
+#include "base/utf8.h"  // codepoint stepping in the glyph-run tessellators + stepper AABB walks
 
 /* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
    THE RENDER SERVER sees the public gui types, the engine APIs, and its own header -- never

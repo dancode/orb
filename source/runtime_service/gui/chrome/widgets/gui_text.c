@@ -83,7 +83,10 @@ text_wrap_walk( const char* s, f32 max_w, bool draw, f32 x, f32 y0, u32 col )
 
         while ( *p && *p != '\n' )
         {
-            f32 adv = font_char_advance( (u8)*p );
+            /* One codepoint per step: p always sits on a lead byte, so the ' ' / '\n' byte tests
+               stay exact (a continuation byte can never equal either). */
+            u32 adv_b;
+            f32 adv = font_char_advance( utf8_decode( p, &adv_b ) );
             if ( *p == ' ' ) brk = p;                         /* a space is where we may wrap */
             if ( w + adv > max_w && p != line_beg )
             {
@@ -91,7 +94,7 @@ text_wrap_walk( const char* s, f32 max_w, bool draw, f32 x, f32 y0, u32 col )
                 break;                                        /* (long word: hard break here) */
             }
             w += adv;
-            ++p;
+            p += adv_b;
         }
 
         if ( draw )

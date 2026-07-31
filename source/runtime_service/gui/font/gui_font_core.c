@@ -58,21 +58,35 @@ font_char_advance( u32 cp )
 
 /* Width of the first n bytes of str (stops early at a NUL).  Labels measure only their visible
    span this way -- the bytes before a "##" marker -- so reserved label space matches what draws.
-   Out-of-range bytes advance as '?', matching what the draw path (font_glyph) renders. */
+   Bytes decode as UTF-8: a multi-byte sequence measures as its one codepoint, and anything the
+   font lacks (or a malformed byte) advances as '?', matching what the draw path renders. */
 f32
 font_text_w_n( const char* str, u32 n )
 {
     /* font_slot_cp's ASCII fast path hand-inlined with the slot hoisted: this is the hottest
        inner loop in the emit path (every label, cell, and value text measures through it), and a
-       debug build (/Od) pays a real call per character through the helper form.  Byte-stepping is
-       correct here until the UTF-8 decode slice moves this seam to codepoints. */
+       debug build (/Od) pays a real call per character through the helper form.  Only a lead byte
+       >= 0x80 takes the decode + helper road; ASCII text never leaves the dense table. */
     const font_slot_t* slot = s_active;
     f32                w    = 0.0f;
-    for ( u32 i = 0; i < n && str[ i ]; ++i )
+    u32                i    = 0;
+    while ( i < n && str[ i ] )
     {
-        u8 ch = (u8)str[ i ];
-        if ( ch < ORB_FONT_CP_FIRST || ch > ORB_FONT_CP_LAST ) ch = (u8)'?';
-        w += (f32)slot->lookup[ ch - ORB_FONT_CP_FIRST ].advance;
+        u8 b = (u8)str[ i ];
+        if ( b < 0x80u )
+        {
+            u32 idx = (u32)b - ORB_FONT_CP_FIRST;
+            if ( idx >= ORB_FONT_CP_COUNT ) idx = (u32)'?' - ORB_FONT_CP_FIRST;
+            w += (f32)slot->lookup[ idx ].advance;
+            ++i;
+        }
+        else
+        {
+            u32 adv_b;
+            u32 cp = utf8_decode( &str[ i ], &adv_b );
+            w += (f32)font_slot_cp( slot, cp )->advance;
+            i += adv_b;
+        }
     }
     return w;
 }

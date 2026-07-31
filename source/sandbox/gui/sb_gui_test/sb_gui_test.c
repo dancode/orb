@@ -127,6 +127,7 @@ main( int argc, char* argv[] )
     test_register( "font_cp_ascii",       test_font_cp_ascii );
     test_register( "font_cp_ext_search",  test_font_cp_ext_search );
     test_register( "font_cp_ext_empty",   test_font_cp_ext_empty );
+    test_register( "font_measure_utf8",   test_font_measure_utf8 );
 
     return test_run( "sb_gui" );
 }

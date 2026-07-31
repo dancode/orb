@@ -40,6 +40,7 @@
 #include "base/fmt.h"         // fmt_snprintf -- the drag payload type tag
 #include "base/math.h"        // f32_lerp -- the feat kit's tweens
 #include "base/math_ease.h"   // f32_ease_out_cubic -- feat_ease
+#include "base/utf8.h"        // codepoint stepping on the caret measure seams (text_x_at / text_offset_at)
 
 /* This unit's world, and nothing above it (the include list IS the dependency graph).
    Gestures over the interact server; the style header is here for the WIN_BORDER metric

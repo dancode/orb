@@ -85,8 +85,13 @@ f32
 text_x_at( const char* buf, u32 off )
 {
     f32 x = 0.0f;
-    for ( u32 i = 0; i < off && buf[ i ]; ++i )
-        x += font_char_advance( (u8)buf[ i ] );
+    u32 i = 0;
+    while ( i < off && buf[ i ] )
+    {
+        u32 adv_b;
+        x += font_char_advance( utf8_decode( &buf[ i ], &adv_b ) );
+        i += adv_b;
+    }
     return x;
 }
 
@@ -97,11 +102,14 @@ u32
 text_offset_at( const char* buf, u32 len, f32 px )
 {
     f32 x = 0.0f;
-    for ( u32 i = 0; i < len; ++i )
+    u32 i = 0;
+    while ( i < len )
     {
-        f32 adv = font_char_advance( (u8)buf[ i ] );
-        if ( px < x + adv * 0.5f ) return i;
+        u32 adv_b;
+        f32 adv = font_char_advance( utf8_decode( &buf[ i ], &adv_b ) );
+        if ( px < x + adv * 0.5f ) return i;   /* i is always a sequence boundary */
         x += adv;
+        i += adv_b;
     }
     return len;
 }

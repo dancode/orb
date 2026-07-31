@@ -31,6 +31,7 @@
 #include "base/fmt.h"
 #include "base/math.h"
 #include "base/math_ease.h"
+#include "base/utf8.h"        // codepoint stepping on the wrap-walk + selection measure seams
 
 /* This unit's world -- everything below it (the include list IS the dependency graph).
    Chrome is policy over the whole stack; the render header carries its documented server
