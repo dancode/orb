@@ -63,7 +63,20 @@ gui_comp_input( const char* id_str, gui_rect_t rect, f32 pad, char* buf, u32 buf
             if ( sx0 < clip_x0 ) sx0 = clip_x0;
             if ( sx1 > clip_x1 ) sx1 = clip_x1;
             if ( sx1 > sx0 )
-                out.selection = ( gui_rect_t ){ sx0, content.y + 1.0f, sx1 - sx0, content.h - 2.0f };
+            {
+                /* The band is the GLYPH BOX bled a pixel each way, held inside the rect -- not a
+                   slice of the rect itself.  Row height is a style metric and the glyph box is a
+                   font metric: cut the band from the row and it centres on the ROW, which sits
+                   below the ink whenever the font is shorter than the row (latin ink crowds the
+                   top of the box and leaves the descender band empty).  Same anchor the chrome
+                   editors and the window-level select highlight use. */
+                f32 sy = out.text_y - 1.0f;
+                f32 sh = font_char_h() + 2.0f;
+                if ( sy < content.y ) { sh -= content.y - sy; sy = content.y; }
+                if ( sy + sh > content.y + content.h ) sh = content.y + content.h - sy;
+
+                out.selection = ( gui_rect_t ){ sx0, sy, sx1 - sx0, sh };
+            }
         }
 
         /* Caret: a 1px column, visible the first half of each 1 s blink cycle. */

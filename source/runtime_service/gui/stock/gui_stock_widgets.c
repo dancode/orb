@@ -258,20 +258,19 @@ gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
     gui_comp_input_t in = gui_comp_input( id_str, r, WIDGET_PAD, buf, bufsz );
     gui_item_state_t st = in.state;
 
-    /* Face lifts along BG (focus pinned to ACTIVE, the captured face), border carries focus alone
-       on BORDER[ACTIVE] -- the same two rules chrome's input_text uses, so the pair really is one
-       look driven by one component. */
-    if ( st.focused )
-        draw_face_frame( r, GUI_ROLE_BG, GUI_PHASE_ACTIVE, STYLE_COL( BORDER, ACTIVE ), WIN_BORDER );
-    else
-        draw_face_item_frame( r, item_id( id_str ), st, false,
-                              STYLE_COL( BORDER, IDLE ), WIN_BORDER );
+    /* Face rests on BG[IDLE] through every phase, border carries focus alone on BORDER[ACTIVE] --
+       the same two rules chrome's input_text uses, so the pair really is one look driven by one
+       component.  A field is typed INTO, not clicked, so it does not spend the phase axis (the
+       reasoning is written out once, at input_text_begin). */
+    draw_face_frame( r, GUI_ROLE_BG, GUI_PHASE_IDLE,
+                     st.focused ? STYLE_COL( BORDER, ACTIVE ) : STYLE_COL( BORDER, IDLE ),
+                     WIN_BORDER );
 
-    /* Selection band and caret read the same cells chrome's edit_paint uses: a selection is a
-       pressed FACE (BG[ACTIVE]) and a caret is TEXT, neither of which is an accent -- ACCENT is
-       the value a control holds, and a text field's value is its glyphs. */
+    /* Selection band and caret read the same cells chrome's edit_paint uses: a selection is the
+       BG face on the SELECT plane -- a control surface, chosen -- and a caret is TEXT.  Neither is
+       an accent: ACCENT is the value a control holds, and a text field's value is its glyphs. */
     if ( in.selection.w > 0.0f )
-        draw_fill( in.selection, STYLE_COL( BG, ACTIVE ) );
+        draw_fill( in.selection, style_col_look( GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_LOOK_SELECT ) );
 
     draw_push_text_clip_n( in.text_x, in.text_y, STYLE_COL( TEXT, IDLE ), buf, 0xFFFFFFFFu,
                            in.content.x, in.content.x + in.content.w );

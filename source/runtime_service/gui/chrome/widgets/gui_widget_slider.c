@@ -365,10 +365,9 @@ drag_text_enter( gui_id_t id, gui_item_state_t* st )
 /* Draw the input-style frame a drag box wears in text-entry mode -- distinct from the slider-track
    frame so the mode switch reads at a glance, and identical to the numeric input field. */
 static void
-drag_text_frame( gui_id_t id, gui_rect_t box_r, gui_item_state_t st )
+drag_text_frame( gui_rect_t box_r, gui_item_state_t st )
 {
-    if ( st.focused ) draw_face( box_r, GUI_ROLE_BG, GUI_PHASE_ACTIVE );
-    else              draw_face_field( box_r, id, st, GUI_ROLE_BG, GUI_PHASE_IDLE, 0u, 0.0f );
+    draw_face( box_r, GUI_ROLE_BG, GUI_PHASE_IDLE );
     draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
 }
 
@@ -384,7 +383,7 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
     if ( text_mode )
     {
         /* Text entry: a plain "%d" seeds the editor even when `format` carries a caption. */
-        drag_text_frame( id, box_r, st );
+        drag_text_frame( box_r, st );
         double out;
         if ( num_edit_field( id, box_r, st, "%d", true, (double)*v, &out ) )
         {
@@ -486,7 +485,7 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
     if ( text_mode )
     {
         /* Text entry: seed with a decoration-free "%g" (fmt may carry a caption like "X: %.2f"). */
-        drag_text_frame( id, box_r, st );
+        drag_text_frame( box_r, st );
         double out;
         if ( num_edit_field( id, box_r, st, "%g", false, (double)*v, &out ) )
         {

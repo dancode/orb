@@ -21,6 +21,43 @@
 ==============================================================================================*/
 // clang-format off
 
+/* The text-selection band's colour, and the one spelling of it for both editors.
+
+   BG on the SELECT plane -- "a control surface, chosen, at rest" -- which is the same reasoning
+   gui_select.c's marquee runs on, one role down because a field's ground is a control face and
+   not a container.  It used to reach for COL_BG_ACTIVE, the PRESSED control face, which was
+   invisible for exactly the reason a pressed face is the wrong cell: the field itself was
+   painted with BG/ACTIVE while focused, and a selection can only ever be drawn while focused,
+   so highlight and ground were the same colour by construction.  Fields rest on BG/IDLE now
+   (input_text_begin), so the band reads against the ground it is actually drawn on.
+
+   No COL_* macro: the colour macros spell (role, phase) on the NORMAL plane only, deliberately
+   (see style/gui_style.h) -- a look is named at the read site. */
+static u32
+edit_sel_color( void )
+{
+    return style_col_look( GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_LOOK_SELECT );
+}
+
+/* The selection band for one text run: the GLYPH BOX of the line, bled a pixel each way, held
+   inside `bound`.  Anchored to the text's own y and char_h rather than to the widget's row,
+   because those two are independent -- the row is a style metric and the glyph box is a font
+   metric, so a band cut from the row sits centred on the row and NOT on the ink whenever the
+   font is shorter than the row (the extra height reads as a low-hanging fill, since latin ink
+   crowds the top of the box and leaves the descender band empty).  Same anchor the multiline
+   editor and the window-level select highlight use. */
+static gui_rect_t
+edit_sel_band( f32 x0, f32 x1, f32 text_y, gui_rect_t bound )
+{
+    f32 y = text_y - 1.0f;
+    f32 h = font_char_h() + 2.0f;
+
+    if ( y < bound.y ) { h -= bound.y - y; y = bound.y; }
+    if ( y + h > bound.y + bound.h ) h = bound.y + bound.h - y;
+
+    return ( gui_rect_t ){ x0, y, x1 - x0, h };
+}
+
 /* Paint a focused-or-not field over its content rect: the selection highlight behind the text,
    the glyph-clipped text, and the blinking caret -- all inside the content interior so scrolled
    content does not bleed past the border.  Reads the state the engine left on the slot
@@ -53,8 +90,7 @@ edit_paint( gui_rect_t content, const char* buf, const gui_edit_state_t* es, boo
         if ( sx0 < clip_x0 ) sx0 = clip_x0;
         if ( sx1 > clip_x1 ) sx1 = clip_x1;
         if ( sx1 > sx0 )
-            draw_fill( ( gui_rect_t ){ sx0, content.y + 1.0f, sx1 - sx0, content.h - 2.0f },
-                       COL_BG_ACTIVE );
+            draw_fill( edit_sel_band( sx0, sx1, text_y, content ), edit_sel_color() );
     }
 
     draw_push_text_clip_n( text_x, text_y, COL_TEXT_IDLE, buf, 0xFFFFFFFFu, clip_x0, clip_x1 );

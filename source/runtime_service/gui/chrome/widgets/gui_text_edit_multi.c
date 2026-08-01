@@ -84,8 +84,7 @@ medit_paint( gui_rect_t inner, const char* buf, u32 len, const gui_medit_state_t
             if ( sx0 < clip_x0 ) sx0 = clip_x0;
             if ( sx1 > clip_x1 ) sx1 = clip_x1;
             if ( sx1 > sx0 )
-                draw_fill( ( gui_rect_t ){ sx0, ry - 1.0f, sx1 - sx0, char_h + 2.0f },
-                           COL_BG_ACTIVE );
+                draw_fill( edit_sel_band( sx0, sx1, ry, inner ), edit_sel_color() );
         }
 
         if ( le > ls )
@@ -131,9 +130,10 @@ medit_field_edit( gui_id_t id, char* buf, u32 bufsz )
 
     gui_item_state_t st = item_state( id, content, ITEM_FOCUSABLE );
 
-    /* Field-tinted fill under the text: the input-box read on top of the child's own frame. */
-    if ( st.focused ) draw_face( content, GUI_ROLE_BG, GUI_PHASE_ACTIVE );
-    else              draw_face_field( content, id, st, GUI_ROLE_BG, GUI_PHASE_IDLE, 0u, 0.0f );
+    /* Field fill under the text: the input-box read on top of the child's own frame.  Resting
+       cell only, hot or focused -- the single-line field's rule and for its reasons
+       (input_text_begin); here the child's frame carries the focus border. */
+    draw_face( content, GUI_ROLE_BG, GUI_PHASE_IDLE );
 
     /* Content rect: the cell inset by WIDGET_PAD on left / right (the engine + paint work in this
        space, so neither sees the widget's padding); vertical extent unchanged -- rows start at

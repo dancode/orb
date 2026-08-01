@@ -37,8 +37,18 @@ input_text_begin( const char* label )
     gui_field_row( label );
     gui_rect_t       box_r = cell_next( WIDGET_H );
     gui_item_state_t st    = item_state( id, box_r, ITEM_FOCUSABLE );
-    if ( st.focused ) draw_face( box_r, GUI_ROLE_BG, GUI_PHASE_ACTIVE );
-    else              draw_face_field( box_r, id, st, GUI_ROLE_BG, GUI_PHASE_IDLE, 0u, 0.0f );
+
+    /* A field's ground does not travel: BG/IDLE hot, focused, or at rest.  The phase axis is
+       what a BUTTON spends -- it lights under the cursor and sinks under a press because those
+       are the two halves of "you may click this, and you did".  A text field offers neither: it
+       is a surface you type INTO, its engaged state lasts as long as the caret is in it rather
+       than as long as a button is held, and the ink plus the caret already say so.  Spending
+       BG/ACTIVE on focus also cost the selection band its only distinct cell -- the highlight
+       drew the pressed face over a pressed face (see edit_sel_color).
+
+       The border carries focus, which is the whole affordance a field needs and the one place
+       the signal cannot be mistaken for content. */
+    draw_face( box_r, GUI_ROLE_BG, GUI_PHASE_IDLE );
     draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
     return ( input_text_frame_t ){ id, box_r, st };
 }
