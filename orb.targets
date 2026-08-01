@@ -693,7 +693,7 @@ target sb_gui_brush						# brush + sprite atlas + nine-slice test bed
     dep         mod sys ref job app core
     dep         rhi gui base
 
-target sb_gui_test						# HEADLESS assertion tests: fx word, packing, rect kit, log sink
+target sb_gui_test						# HEADLESS assertion tests: fx word, packing, rect kit, log sink, font lookup, caret math
 
     type        exe
     root        source/sandbox/gui/sb_gui_test
@@ -1142,6 +1142,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     add         sb_gui_timeline   	# prof timeline overlay + workload
     add         sb_gui_editor   	# game-engine editor shell
     add         sb_gui_font   		# font find/bake/preview/export bench
+	add 		sb_gui_utf			# utf rendering test
 	
 	add 		gui_stress			# ensure compiled in build.
     add         sb_gui_stress   	# gui load-limit stress bench

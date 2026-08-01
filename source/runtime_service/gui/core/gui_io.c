@@ -115,16 +115,18 @@ key_claim( app_key_t k )
     field to consume this frame, cleared by io_frame_end after.
 ==============================================================================================*/
 
-/* Copy n bytes of `s` to the OS clipboard, dropping control characters (a single-line field's
-   selection never legitimately contains any, but this keeps the published text clean).  Builds
-   a NUL-terminated temporary because the source is a slice of a larger buffer. */
+/* Copy n bytes of `s` to the OS clipboard, dropping control characters EXCEPT '\n' and '\t' --
+   a multiline selection legitimately carries both and must round-trip with its line breaks
+   (a single-line selection never contains either, so it is unaffected).  UTF-8 passes through
+   untouched: every byte of a sequence is >= 0x80.  Builds a NUL-terminated temporary because
+   the source is a slice of a larger buffer. */
 void
 gui_clipboard_set( const char* s, u32 n )
 {
     char tmp[ sizeof( ( (gui_io_t*)0 )->paste ) ];
     u32  w = 0;
     for ( u32 i = 0; i < n && w + 1u < sizeof( tmp ); ++i )
-        if ( (u8)s[ i ] >= 0x20u && (u8)s[ i ] != 0x7Fu )
+        if ( (u8)s[ i ] >= 0x20u ? (u8)s[ i ] != 0x7Fu : ( s[ i ] == '\n' || s[ i ] == '\t' ) )
             tmp[ w++ ] = s[ i ];
     tmp[ w ] = '\0';
     app()->clipboard_set( tmp );
@@ -132,7 +134,9 @@ gui_clipboard_set( const char* s, u32 n )
 
 /* Write pasted text arriving via APP_EV_CLIPBOARD straight into s_io.paste for the focused field
    to consume this frame; io_frame_end clears it after.  s_io_paste_set marks that a paste
-   happened so an empty-string paste is not mistaken for no paste. */
+   happened so an empty-string paste is not mistaken for no paste.  The cap may cut an oversize
+   paste mid-UTF-8-sequence; that is tolerated -- the edit engines decode-step the buffer and
+   drop a trailing partial sequence as malformed, so nothing invalid reaches a field. */
 static void
 io_add_paste( const char* text )
 {

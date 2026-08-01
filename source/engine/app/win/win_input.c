@@ -240,6 +240,8 @@ static char s_clipboard_staging[ WIN_CLIPBOARD_MAX ];
 
 /* Publish NUL-terminated UTF-8 `text` to the OS clipboard as CF_UNICODETEXT.  Silently no-ops if
    the clipboard cannot be opened (another process owns it) -- a copy is best-effort, never fatal.
+   Line breaks publish as CRLF -- the engine's '\n' is not what other Windows apps expect to
+   paste -- and the paste consumers (gui edit engines) fold incoming CRLF back down to '\n'.
    Malformed UTF-8 publishes as U+FFFD (the decoder's replacement), never as raw bytes. */
 static void
 win_clipboard_set( const char* text )
@@ -252,8 +254,8 @@ win_clipboard_set( const char* text )
     size_t n = 0;
     while ( text[ n ] ) ++n;                            /* UTF-8 length, sans the NUL */
 
-    /* Worst case one UTF-16 unit per UTF-8 byte (pure ASCII), plus the terminator. */
-    HGLOBAL mem = GlobalAlloc( GMEM_MOVEABLE, ( n + 1u ) * sizeof( WCHAR ) );
+    /* Worst case one UTF-16 unit per UTF-8 byte, two when every byte is a '\n' becoming CRLF. */
+    HGLOBAL mem = GlobalAlloc( GMEM_MOVEABLE, ( n * 2u + 1u ) * sizeof( WCHAR ) );
     if ( mem )
     {
         WCHAR* dst = ( WCHAR* )GlobalLock( mem );
@@ -266,6 +268,9 @@ win_clipboard_set( const char* text )
                 u32 adv;
                 u32 cp = utf8_decode( text + i, &adv );
                 i += adv;
+
+                if ( cp == '\n' )
+                    dst[ w++ ] = L'\r';                 /* the LF lands right behind it */
 
                 u16 units[ 2 ];
                 u32 uc = utf16_encode( cp, units );     /* never 0 here: decode yields no surrogates */

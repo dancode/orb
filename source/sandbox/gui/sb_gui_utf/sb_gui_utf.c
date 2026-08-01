@@ -289,13 +289,12 @@ win_sdf( void )
     gui()->draw_text_xf( cx - ( hx * c - hy * sn ), cy - ( hx * sn + hy * c ),
                          AMBER, spin, scale, rot );
 
-    /* A still ring of the same run at fixed angles, for judging edge quality all around. */
-    for ( u32 k = 0; k < 4; ++k )
-    {
-        f32 a  = (f32)k * ( TAU / 8.0f ) + TAU / 16.0f;
-        gui()->draw_text_xf( cell.x + 16.0f, cell.y + 24.0f + (f32)k * 8.0f,
-                             GUI_COLOR( 0x40, 0x44, 0x52, 0x50 ), spin, 0.35f, a * 0.02f );
-    }
+    /* A still ring under the spinner: the same run radiating from the center at six fixed
+       angles (draw_text_xf turns about its anchor), so edge quality is judgeable at every
+       orientation at once while the bright copy animates over it. */
+    for ( u32 k = 0; k < 6; ++k )
+        gui()->draw_text_xf( cx, cy, GUI_COLOR( 0x40, 0x44, 0x52, 0x60 ),
+                             spin, 0.35f, (f32)k * ( TAU / 6.0f ) + TAU / 24.0f );
 
     gui()->font_use( 0 );
     gui()->request_redraw();   /* animated: pull the next frame through the idle skip */
