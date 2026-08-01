@@ -56,9 +56,10 @@
     Updates run on two paths, both through volatile_patch (re-tessellate into scratch at the tail
     of s_tess, capacity-check against the reservation, copy in, rewrite the block's GPU commands):
 
-        volatile_update          -- idle frames: the host calls it in place of
-                                        ctx_begin/emit/ctx_end; each row's callback is re-invoked
-                                        standalone inside replay_scope_enter/_exit and patched.
+        volatile_update          -- idle frames: gui_frame_end calls it when s_frame_dirty is
+                                        false (a host never wires it); each row's callback is
+                                        re-invoked standalone inside replay_scope_enter/_exit
+                                        and patched.
         volatile_patch_reused_window -- real frames where the window's slot is reused: patches from
                                         the commands this frame's live emit already produced.
 
@@ -95,8 +96,8 @@
 #define VOL_LOCAL_MAX     0xFFFFu
 
 /* Field widths: every count and slot-local offset below is u16, so a captured block addresses at
-   most 64K of each resource.  GUI_MAX_VERTS (32K) and GUI_MAX_CMDS (1K) sit under that by
-   construction; GUI_MAX_IDX (3x verts) does NOT, so volatile_range_close refuses to capture a
+   most 64K of each resource.  GUI_MAX_VERTS and GUI_MAX_CMDS sit under that in every build
+   (stress included); GUI_MAX_IDX does NOT, so volatile_range_close refuses to capture a
    block whose indices would not fit rather than truncating the cast -- unreachable for a real
    volatile block (an animating readout is a handful of quads) and independent of how the pools
    are sized later.  tess_gen is full u32 -- it must never alias across a wrap, since it is the
@@ -129,12 +130,13 @@ typedef struct
     bool             foot_unstable;      // latched after VOL_FOOT_STRIKES: stop buying frames for it
 
     /* Ambient s_draw scalars in effect at the moment gui_volatile_begin stamped this row --
-       alpha, rounding, and the text-clip window are read directly off s_draw by the raw draw_
-       calls a callback makes, the same way cur_win/cur_z/cur_vp/cur_font are.  Stamped here and
-       reinstalled by volatile_update for the duration of the standalone replay call so the
-       callback sees the same ambient values it drew with at real emit, whatever the idle frame's
-       leftover s_draw state happens to be. */
+       alpha, rounding, the text-clip window, and the packed text-edge word are read directly off
+       s_draw by the raw draw_ calls a callback makes, the same way cur_win/cur_z/cur_vp/cur_font
+       are.  Stamped here and reinstalled by volatile_update for the duration of the standalone
+       replay call so the callback sees the same ambient values it drew with at real emit,
+       whatever the idle frame's leftover s_draw state happens to be. */
     f32              alpha, rounding, text_clip_x0, text_clip_x1;
+    u32              text_edge;
 
 } gui_volatile_slot_t;
 
@@ -219,6 +221,7 @@ volatile_stamp( f32 x, f32 y, f32 w )
     row->rounding     = s_draw.rounding;
     row->text_clip_x0 = s_draw.text_clip_x0;
     row->text_clip_x1 = s_draw.text_clip_x1;
+    row->text_edge    = s_draw.text_edge;
 }
 
 static bool
@@ -636,6 +639,7 @@ volatile_update( void )
         f32        rounding_ck   = s_draw.rounding;
         f32        tclip_x0_ck   = s_draw.text_clip_x0;
         f32        tclip_x1_ck   = s_draw.text_clip_x1;
+        u32        tedge_ck      = s_draw.text_edge;
 
         s_draw.cur_win      = row->win;
         s_draw.cur_z        = row->z;
@@ -644,14 +648,15 @@ volatile_update( void )
         s_draw.cur_clip_idx = row->clip_idx;
         font_use( row->font );
 
-        /* Same reasoning as the clip-stack force below: alpha/rounding/text-clip are ambient
-           scalars a raw draw_ call reads directly, not part of the minimal scope
+        /* Same reasoning as the clip-stack force below: alpha/rounding/text-clip/text-edge are
+           ambient scalars a raw draw_ call reads directly, not part of the minimal scope
            replay_scope_enter reconstructs, so without this the callback would draw with
            whatever an unrelated idle frame's leftover s_draw state happens to be. */
         s_draw.alpha        = row->alpha;
         s_draw.rounding     = row->rounding;
         s_draw.text_clip_x0 = row->text_clip_x0;
         s_draw.text_clip_x1 = row->text_clip_x1;
+        s_draw.text_edge    = row->text_edge;
 
         /* draw_cull_box (gui_emit_draw.c) tests against clip_stack[clip_depth-1], NOT
            cur_clip_idx -- cur_clip_idx alone is not enough to reproduce the real-emit clip. Force
@@ -709,6 +714,7 @@ volatile_update( void )
         s_draw.rounding             = rounding_ck;
         s_draw.text_clip_x0         = tclip_x0_ck;
         s_draw.text_clip_x1         = tclip_x1_ck;
+        s_draw.text_edge            = tedge_ck;
         font_use( font_ck );
     }
 }

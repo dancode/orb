@@ -9,7 +9,9 @@
         BUILD  (this file)        once per frame: diff each window's commands against last frame,
                                    reuse unchanged geometry in place, tessellate changed windows,
                                    then z-sort the result into a dispatch table.
-        RENDER (gui_submit.c)     once per surface: upload changed geometry and emit one indexed
+        RENDER (gui_submit.c)     once per surface: upload the surface's slot-union span (each
+                                   frame-in-flight region must hold complete geometry, so the
+                                   cache saves TESSELLATION, not upload) and emit one indexed
                                    draw call per cached GPU command.
 
     BUILD runs lazily on the first surface flush (cache_build_frame, guarded by s_frame_built)
@@ -577,8 +579,9 @@ cache_diff_windows( void )
            would report "something changed" forever and frame_dirty would never go false again,
            silently defeating idle-skip for the WHOLE app for as long as the readout is on screen.
            s_cache.cur[i].changed above still flags true so cache_build_frame retessellates the
-           readout's own slot (its digits really did change); only the GLOBAL any_changed signal
-           ignores debug-band windows. */
+           readout's own slot (its digits really did change); the GLOBAL any_changed signal
+           ignores debug-band HASH changes.  (A debug window APPEARING or VANISHING still raises
+           it through the count seed above -- a set change needs a running frame anyway.) */
     }
 
     /* Promote this frame's sorted table to prev for next frame's diff. */
@@ -927,9 +930,24 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
 
     /* Replay GPU commands from the stable cache.  lvbase/libase are slot-local, so
        adding slot->vert_base/idx_base gives the absolute offsets for this frame. */
-    slot->cmd_base  = s_tess.cmd_count;
-    slot->cmd_count = s_win_cached_count[ cache_idx ];
-    u32 nc = slot->cmd_count;
+    slot->cmd_base = s_tess.cmd_count;
+    u32  nc        = s_win_cached_count[ cache_idx ];
+    bool truncated = slot->cmd_base + nc > GUI_MAX_CMDS;
+
+    /* Budget-check the replay like every other gpu_cmds writer (tess_ensure_gpu_cmd bounds the
+       tessellation path, volatile_range_close its dormant pads): at cmd-cap saturation an
+       unchecked copy would run past the array into the arena counters.  Truncation strands any
+       volatile row whose local_cmd_base lies past the cut (the neighbour-rewrite hazard the
+       stable-cache write below documents), so the slot also takes a FRESH generation: no capture
+       exists for it, every patch generation-check fails safely, and the retire path invalidates
+       the window so the next frame re-tessellates through the loudly-warning overflow report. */
+    if ( truncated )
+    {
+        nc              = GUI_MAX_CMDS - slot->cmd_base;
+        slot->tess_gen  = ++s_tess_gen_next;
+        s_tess.overflow = true;
+    }
+    slot->cmd_count = nc;
     for ( u32 k = 0; k < nc; ++k )
     {
         u32 ci = slot->cmd_base + k;
@@ -946,7 +964,7 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
        tail, so the patch's scratch tessellation cannot land on a later slot's live geometry.  The
        slot fields (incl. tess_gen) set here are what volatile_patch resolves and generation-checks
        against then. */
-    slot->cmd_cached = true;   /* reuse only runs when prev cached its full command run */
+    slot->cmd_cached = !truncated;   /* reuse only runs when prev cached its full command run */
     slot->valid      = true;
 }
 
@@ -1028,6 +1046,13 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
         u32 pad_i = slot->idx_count  / 4u;  if ( pad_i < SLOT_IDX_PAD  ) pad_i = SLOT_IDX_PAD;
         slot->vert_alloc = slot->vert_count + pad_v;
         slot->idx_alloc  = slot->idx_count  + pad_i;
+
+        /* Clamp to the arena like volatile_range_close: headroom shrinks before the write head
+           can pass the cap, so fill ratios and the overflow report never read past the pools. */
+        if ( slot->vert_base + slot->vert_alloc > GUI_MAX_VERTS )
+            slot->vert_alloc = GUI_MAX_VERTS - slot->vert_base;
+        if ( slot->idx_base + slot->idx_alloc > GUI_MAX_IDX )
+            slot->idx_alloc = GUI_MAX_IDX - slot->idx_base;
 
         s_tess.vert_count = slot->vert_base + slot->vert_alloc;
         s_tess.idx_count  = slot->idx_base  + slot->idx_alloc;

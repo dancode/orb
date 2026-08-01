@@ -34,7 +34,14 @@ font_slot_load( font_slot_t* slot, const char* path )
        glyph record.  The zeroed tail is exactly the legacy meaning (sdf_range 0 = coverage), so
        nothing downstream needs to know which version it got.
        v3 (pure glyph coverage) and v2 (legacy, trailing reserved band) stay byte-compatible on
-       disk -- the band, if present, just rides along as dead space in this font's packed rect. */
+       disk -- the band, if present, just rides along as dead space in this font's packed rect.
+
+       Dimensions are BOUNDED, not just nonzero: atlas_w * atlas_h sizes a malloc and the memory
+       accounting, and an unchecked product wraps u32 (65536 x 65536 = 0) -- a corrupt file must
+       die here at parse, not survive to a zero-byte buffer with 4-billion-pixel metrics.  Width is
+       the baker's own page contract (ORB_FONT_PAGE_MAX_W_SDF, the wider destination); height has
+       no format cap, so 4096 stands in as "beyond any atlas this could ever land in".  Metrics
+       must give a positive glyph box and line advance -- layout divides by both. */
 
     orb_font_header_t hdr;
     memset( &hdr, 0, sizeof( hdr ) );
@@ -42,7 +49,10 @@ font_slot_load( font_slot_t* slot, const char* path )
          || hdr.magic   != ORB_FONT_MAGIC
          || hdr.version  < 2u || hdr.version > ORB_FONT_VERSION
          || hdr.glyph_count == 0 || hdr.glyph_count > ORB_FONT_MAX_GLYPHS
-         || hdr.atlas_w == 0     || hdr.atlas_h == 0 )
+         || hdr.atlas_w == 0     || hdr.atlas_w > ORB_FONT_PAGE_MAX_W_SDF
+         || hdr.atlas_h == 0     || hdr.atlas_h > 4096u
+         || hdr.ascent <= hdr.descent
+         || hdr.ascent - hdr.descent + hdr.line_gap <= 0 )
     {
         fclose( f );
         return false;
@@ -76,6 +86,13 @@ font_slot_load( font_slot_t* slot, const char* path )
     {
         orb_font_glyph_t g;
         if ( fread( &g, sizeof( g ), 1, f ) != 1 ) { free( ext ); fclose( f ); return false; }
+
+        /* A glyph rect outside the page would sample other tenants' pixels once the page is a
+           tenant of the shared atlas -- reject the file, same as any other corruption. */
+        if ( (u32)g.atlas_x + g.w > hdr.atlas_w || (u32)g.atlas_y + g.h > hdr.atlas_h )
+        {
+            free( ext ); fclose( f ); return false;
+        }
         if ( g.codepoint >= ORB_FONT_CP_FIRST && g.codepoint <= ORB_FONT_CP_LAST )
         {
             lookup[ g.codepoint - ORB_FONT_CP_FIRST ] = g;

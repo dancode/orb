@@ -18,10 +18,47 @@ static u32              s_active_id = 0;                        // active slot i
 static font_metrics_t*  s_font      = NULL;                     // active font's metrics (read by every accessor)
 
 /*==============================================================================================
+    The internal fallback default -- what every reader resolves against when no loaded font is
+    active.  A host that never loads a font (or whose load failed) used to NULL-deref in the metric
+    readers; now it lays out against these nominal 16px metrics and a uniform advance, so the UI
+    keeps its shape and only the glyphs are invisible (w/h 0 -- the tessellator emits no quads and
+    the slot has no atlas tenant).  The ctx_begin contract still names the missing font loudly in
+    asserting builds; this is what "keeps running" looks like everywhere else.
+==============================================================================================*/
+
+static font_slot_t s_fallback;   // built on first use; never registered, never freed
+
+static font_slot_t*
+font_fallback_slot( void )
+{
+    if ( !s_fallback.used )
+    {
+        s_fallback.used    = true;
+        s_fallback.ascent  = 12;
+        s_fallback.descent = -4;
+        s_fallback.metrics = ( font_metrics_t ){ .char_h = 16.0f, .line_h = 18.0f, .size = 16.0f };
+        for ( u32 i = 0; i < ORB_FONT_CP_COUNT; ++i )
+            s_fallback.lookup[ i ].advance = 8;   // half the em: reads as text-shaped space
+    }
+    return &s_fallback;
+}
+
+/* The slot readers actually measure against: the active slot when it holds a LOADED font, else the
+   fallback.  `used` is the test, not NULL -- font_activate can legally aim at a slot nothing was
+   ever loaded into (the render side restores fonts by id), and a zeroed slot measures everything
+   0 x 0, which is the invisible-UI failure the fallback exists to prevent. */
+static font_slot_t*
+font_live_slot( void )
+{
+    return ( s_active && s_active->used ) ? s_active : font_fallback_slot();
+}
+
+/*==============================================================================================
     font_slot_cp -- glyph record for a codepoint.  The ONE lookup rule: ASCII 32..126 indexes the
-    dense lookup[] directly (the fast path every label takes), anything above binary-searches the
-    sorted ext[] records, and a miss -- control byte, or a codepoint the bake didn't carry --
-    resolves to '?', matching what the draw path renders so measure and draw agree.
+    dense lookup[] directly (the fast path every label takes -- returned as-is, so an ASCII slot a
+    -range-only bake left empty answers a zeroed record: advance 0, invisible), anything above
+    binary-searches the sorted ext[] records, and an ext miss resolves to the dense '?' slot.
+    Measure and draw both come through here, so they agree in every case, including the misses.
 ==============================================================================================*/
 
 const orb_font_glyph_t*
@@ -46,14 +83,14 @@ font_slot_cp( const font_slot_t* slot, u32 cp )
     Metric readers -- resolved from s_font / s_active, aimed by font_activate().
 ==============================================================================================*/
 
-f32  font_char_h      ( void ) { return s_font->char_h; }
-f32  font_line_h      ( void ) { return s_font->line_h; }
-f32  font_em          ( void ) { return s_font->size;   }   // nominal type size (em) -- layout base
+f32  font_char_h      ( void ) { return font_live_slot()->metrics.char_h; }
+f32  font_line_h      ( void ) { return font_live_slot()->metrics.line_h; }
+f32  font_em          ( void ) { return font_live_slot()->metrics.size;   }   // nominal type size (em) -- layout base
 
 f32
 font_char_advance( u32 cp )
 {
-    return (f32)font_slot_cp( s_active, cp )->advance;
+    return (f32)font_slot_cp( font_live_slot(), cp )->advance;
 }
 
 /* Width of the first n bytes of str (stops early at a NUL).  Labels measure only their visible
@@ -67,7 +104,7 @@ font_text_w_n( const char* str, u32 n )
        inner loop in the emit path (every label, cell, and value text measures through it), and a
        debug build (/Od) pays a real call per character through the helper form.  Only a lead byte
        >= 0x80 takes the decode + helper road; ASCII text never leaves the dense table. */
-    const font_slot_t* slot = s_active;
+    const font_slot_t* slot = font_live_slot();
     f32                w    = 0.0f;
     u32                i    = 0;
     while ( i < n && str[ i ] )
@@ -84,6 +121,16 @@ font_text_w_n( const char* str, u32 n )
         {
             u32 adv_b;
             u32 cp = utf8_decode( &str[ i ], &adv_b );
+            if ( i + adv_b > n )
+            {
+                /* n splits the sequence.  The draw path copies exactly n bytes and NUL-terminates,
+                   so it sees the truncated lead (and each stranded continuation byte) as one
+                   1-byte U+FFFD -- measure the same bytes the same way or the seam disagrees at a
+                   mid-sequence cut.  No live caller cuts there ("##" markers are ASCII), but the
+                   contract holds for any n. */
+                cp    = UTF8_REPLACEMENT;
+                adv_b = 1u;
+            }
             w += (f32)font_slot_cp( slot, cp )->advance;
             i += adv_b;
         }
@@ -102,8 +149,9 @@ font_text_w( const char* str )
 void
 font_print_active( void )
 {
+    const font_metrics_t* m = &font_live_slot()->metrics;
     gui_log( GUI_LOG_INFO, "set font [%u] '<loaded>' (char_h=%.1f line_h=%.1f)",
-             s_active_id, s_font->char_h, s_font->line_h );
+             s_active_id, m->char_h, m->line_h );
 }
 
 /*==============================================================================================
@@ -126,13 +174,14 @@ font_active_id( void )
     return s_active_id;
 }
 
-/* True once a font has been activated (s_font set by font_activate) and every metrics/glyph
-   accessor is safe to call.  False from init() until a preset or the caller's own font_load()
-   succeeds -- layout code that needs type metrics must gate on this rather than call in blind. */
+/* True once the active slot holds a LOADED font.  False from init() until a preset or the caller's
+   own font_load() succeeds.  The metric readers are safe either way (they resolve to the internal
+   fallback), so this gates "is real type installed", not "is it safe to call" -- hosts still check
+   it to catch a missing font load rather than ship invisible text. */
 bool
 font_valid( void )
 {
-    return s_font != NULL;
+    return s_active != NULL && s_active->used;
 }
 
 /* Point the active-font pointers at slot `id`. */
@@ -161,11 +210,13 @@ font_slot_ptr( u32 id )
     return id < GUI_FONT_REGISTRY_MAX ? &s_fonts[ id ] : NULL;
 }
 
-/* The active slot -- read by the render-side glyph dispatch (font_glyph). */
+/* The active slot -- read by the render-side glyph dispatch (font_glyph).  Resolves through the
+   fallback like the metric readers, so dispatch and measurement can never disagree about which
+   slot a frame's text is shaped by. */
 font_slot_t*
 font_active_slot( void )
 {
-    return s_active;
+    return font_live_slot();
 }
 
 /* Clear the registry and active pointers at shutdown.  Frees each slot's resident glyph pixels;

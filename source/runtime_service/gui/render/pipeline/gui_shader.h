@@ -95,6 +95,11 @@
                          sweeps the vertex colour toward a second RGBA8 in the uv word
                          (x = r|g<<8, y = b|a<<8, authored sRGB, decoded in the fragment) lerped
                          by angle/aperture -- the gradient a 4-corner colour cannot express.
+                         ORDERING TRAP: the RGBA and SDF sampling-model branches early-return with
+                         the PLAIN vertex colour, before the GRAD sweep is applied.  Every sector
+                         today is emitted on the coverage model, so this cannot fire -- but a
+                         future producer stamping ARC_GRAD onto an RGBA/SDF-model vertex would
+                         silently lose its gradient, not glitch loudly.
 
     time is that band's clock, and it is the one effect input that belongs in the push constant:
     it is the same number for every shape in the frame, so per-vertex it would tax every glyph to

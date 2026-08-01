@@ -2005,8 +2005,10 @@ typedef struct
            atlas dash row tiles along the line; duty (on-fraction) picks the nearest baked row. */
         struct { f32 x0, y0, x1, y1, thickness, period, duty;     u32 abgr; } dash;
         /* Gradient rect: one quad with col_a/col_b on opposite edges; the GPU interpolates the
-           per-vertex color across it.  horizontal = left->right, else top->bottom.  Always square. */
-        struct { f32 x, y, w, h; u32 col_a, col_b; bool horizontal; } gradient;
+           per-vertex color across it.  horizontal != 0 = left->right, else top->bottom.  Always
+           square.  u32, not bool, for the same no-tail-padding rule as sprite below -- the
+           retained-cache hash folds these bytes raw. */
+        struct { f32 x, y, w, h; u32 col_a, col_b; u32 horizontal; } gradient;
         /* Rect list: `count` solid fills from the per-frame rect pool (s_draw.rect_pool), one
            command for the whole batch -- the dense-shape escape valve (timeline bars, graph
            columns).  Always square, white texel, per-entry color; entries share the clip. */
@@ -2633,10 +2635,11 @@ typedef struct
 #define GUI_MAX_IDX          ( GUI_MAX_VERTS * 3 )   /* 3x clears quads (1.5:1) and AA strips     */
 #define GUI_CLIP_DEPTH       32                      /* push_clip / pop_clip nesting depth       */
 
-/* Command segments: one contiguous span of the command list per (z, vp) the emit path stamps, cut
-   wherever draw_set_sort_key / draw_set_viewport change the tag.  The render backend orders these
-   spans instead of re-scanning the whole command buffer.  Worst case each command sits in its own
-   segment, plus the open one, so the cap is the command cap + 1. */
+/* Command segments: one contiguous span of the command list per (win, z, vp, band) the emit path
+   stamps, cut wherever a window seam, draw_set_sort_key, draw_set_viewport or draw_set_band
+   changes the tag (draw_seg_retag).  The render backend orders these spans instead of re-scanning
+   the whole command buffer.  Worst case each command sits in its own segment, plus the open one,
+   so the cap is the command cap + 1. */
 
 #define GUI_MAX_SEGS       ( GUI_MAX_CMDS + 1 )
 
@@ -2668,7 +2671,7 @@ typedef struct
 
     u32 gpu_vertex_bytes;       // per-viewport VB regions, summed over live surfaces x frames-in-flight
     u32 gpu_index_bytes;        // per-viewport IB regions, summed over live surfaces x frames-in-flight
-    u32 gpu_texture_bytes;      // font atlases (each already includes its white + dash rows)
+    u32 gpu_texture_bytes;      // the three resource atlases (coverage incl. assist rows, sprite, SDF)
     u32 gpu_debug_bytes;        // debug-overlay VB/IB (Debug builds; 0 when compiled out / not created)
     u32 gpu_total;              // sum of the section above
     u32 viewport_count;         // live GPU surfaces contributing to gpu_vertex/index_bytes
@@ -2679,22 +2682,26 @@ typedef struct
     u32 cpu_tess_bytes;         // BUILD: s_tess CPU vertex / index / GPU-command staging
     u32 cpu_cache_bytes;        // retained cache: slot tables, stable cmd cache, diff records, seg chains,
                                 //   permutation scratch, volatile registry, stats
-    u32 cpu_font_bytes;         // font registry slots (CPU glyph metrics) + reload queue, excl. GPU atlas
-    u32 cpu_res_bytes;          // shared R8 atlas registry (packer/tenants) + icon registry
+    u32 cpu_draw_bytes;         // DRAW unit statics: icon + sprite registries (the font registry moved
+                                //   to the font/ leaf and is counted under cpu_frontend_bytes)
+    u32 cpu_res_bytes;          // the three atlas instance records (packer nodes + tenant bookkeeping)
     u32 cpu_render_bytes;       // RENDER: pipeline/sampler state + embedded SPIR-V bytecode
     u32 cpu_select_bytes;       // text-selection run capture buffer (always compiled; a product feature)
     u32 cpu_debug_bytes;        // debug overlay + name registry + dashboard snapshot + command stepper
                                 //   (each 0 when its feature is compiled out -- Release builds)
     u32 cpu_frontend_bytes;     // frontend statics: io snapshot, style/theme state, layout/id stacks,
-                                //   undo buffers, gesture latches (gui_ui_mem.c) -- small by design;
-                                //   the frontend's real state is the malloc'd context blocks below
+                                //   undo buffers, gesture latches (gui_ui_mem.c) -- plus the font
+                                //   registry, whose per-font resident bitmaps + ext records make this
+                                //   the one frontend bucket that scales with loaded content
     u32 cpu_static_total;       // sum of the section above
 
-    /* --- CPU dynamic memory (heap; one malloc block per live context). --- */
+    /* --- CPU dynamic memory (heap). --- */
 
     u32 cpu_context_bytes;      // sum over live contexts of the single ctx block (header + all pools)
     u32 context_count;          // live contexts contributing to cpu_context_bytes
-    u32 cpu_dynamic_total;      // heap total (== cpu_context_bytes today; named for the section subtotal)
+    u32 cpu_atlas_bytes;        // atlas-owned heap: resident staging mirror + every tenant's retained
+                                //   source copy, summed over all three atlases
+    u32 cpu_dynamic_total;      // heap total: cpu_context_bytes + cpu_atlas_bytes
 
     /* --- Grand total: everything the gui system holds right now. --- */
 

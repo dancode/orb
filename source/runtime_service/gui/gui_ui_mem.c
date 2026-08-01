@@ -4,11 +4,11 @@
 
     The frame-unit counterpart of render/gui_render_mem.c: sizeof-sums every fixed static the
     gui_frame.c unity TU defines into one bucket (cpu_frontend_bytes), plus the carved units'
-    footprints through their *_unit_mem_bytes seams.  Unlike the backend there are no big
-    arenas here -- the real state lives in the malloc'd context blocks, already counted as
-    CPU heap -- so this bucket is expected to register SMALL.  That is the point: the
-    accounting contract is that the grand total is the true resident footprint, and a bucket
-    that is known to be small beats one that is unknown.
+    footprints through their *_unit_mem_bytes seams.  The interaction/layout state proper is
+    small (the real state lives in the malloc'd context blocks, already counted as CPU heap);
+    what makes this bucket scale is the font seam -- each loaded font's resident bitmap and
+    ext glyph records ride through font_unit_mem_bytes, so a -range bake shows up here.  The
+    accounting contract is unchanged: the grand total is the true resident footprint.
 
     Also home to gui_mem_stats / gui_print_mem_stats: the full-footprint aggregation reads BOTH
     servers (backend_memory + the core pool), which makes it orchestrator work, not
@@ -58,8 +58,9 @@ gui_ui_memory( void )
        (gui_chrome.c seam). */
     b += chrome_unit_mem_bytes();
 
-    /* text/ -- THE TEXT LEAF (gui_font.c) accounts for the loaded-font registry (glyph metric
-       tables) via its seam; it moved down from the draw unit so both servers can measure text. */
+    /* text/ -- THE TEXT LEAF (gui_font.c) accounts for the loaded-font registry via its seam:
+       the slot table plus each font's resident bitmap and ext glyph records (heap that scales
+       with what is loaded).  It moved down from the draw unit so both servers can measure text. */
     b += font_unit_mem_bytes();
 
     /* frame/ + root -- lifecycle stacks, boot/present state. */
@@ -109,7 +110,8 @@ gui_mem_stats( void )
     s.cpu_frontend_bytes = gui_ui_memory();
     s.cpu_static_total  += s.cpu_frontend_bytes;
 
-    /* CPU heap: one malloc block per live context (recorded at allocation as _alloc_size). */
+    /* CPU heap: one malloc block per live context (recorded at allocation as _alloc_size), plus
+       the atlas-owned heap the backend already filled in (cpu_atlas_bytes). */
     for ( u32 i = 0; i < s_ctx_pool_count; ++i )
     {
         gui_context_t* ctx = s_ctx_pool[ i ];
@@ -117,7 +119,7 @@ gui_mem_stats( void )
         s.cpu_context_bytes += ctx->_alloc_size;
         ++s.context_count;
     }
-    s.cpu_dynamic_total = s.cpu_context_bytes;
+    s.cpu_dynamic_total = s.cpu_context_bytes + s.cpu_atlas_bytes;
 
     s.total_bytes = s.gpu_total + s.cpu_static_total + s.cpu_dynamic_total;
     return s;
@@ -145,7 +147,7 @@ gui_print_mem_stats( void )
              s.viewport_count, s.viewport_count == 1u ? "" : "s" );
     GUI_MEM_ROW( "vertex buffers",   s.gpu_vertex_bytes  );
     GUI_MEM_ROW( "index buffers",    s.gpu_index_bytes   );
-    GUI_MEM_ROW( "font atlas texture", s.gpu_texture_bytes );
+    GUI_MEM_ROW( "atlas textures",   s.gpu_texture_bytes );
     if ( s.gpu_debug_bytes )
         GUI_MEM_ROW( "debug overlay buffers", s.gpu_debug_bytes );
     GUI_MEM_ROW( "  GPU subtotal",   s.gpu_total         );
@@ -154,8 +156,8 @@ gui_print_mem_stats( void )
     GUI_MEM_ROW( "draw command list",  s.cpu_drawlist_bytes );
     GUI_MEM_ROW( "tessellation stage", s.cpu_tess_bytes     );
     GUI_MEM_ROW( "retained cache",     s.cpu_cache_bytes    );
-    GUI_MEM_ROW( "font registry",      s.cpu_font_bytes     );
-    GUI_MEM_ROW( "atlas + icons",      s.cpu_res_bytes      );
+    GUI_MEM_ROW( "icon + sprite tables", s.cpu_draw_bytes   );
+    GUI_MEM_ROW( "atlas records",      s.cpu_res_bytes      );
     GUI_MEM_ROW( "render + shaders",   s.cpu_render_bytes   );
     GUI_MEM_ROW( "text-select capture", s.cpu_select_bytes  );
     if ( s.cpu_debug_bytes )
@@ -166,6 +168,7 @@ gui_print_mem_stats( void )
     gui_log( GUI_LOG_INFO, "  -- CPU heap (%u context%s) -----------------------------",
              s.context_count, s.context_count == 1u ? "" : "s" );
     GUI_MEM_ROW( "context blocks",        s.cpu_context_bytes );
+    GUI_MEM_ROW( "atlas mirrors + tenants", s.cpu_atlas_bytes );
     GUI_MEM_ROW( "  CPU heap subtotal",   s.cpu_dynamic_total );
 
     gui_log( GUI_LOG_INFO, "  --------------------------------------------------------" );

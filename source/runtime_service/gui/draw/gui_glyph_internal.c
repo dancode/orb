@@ -31,9 +31,18 @@ font_slot_upload( font_slot_t* slot )
 
     /* Which atlas depends on what the bytes mean.  A distance field must be sampled LINEAR and
        coverage must stay NEAREST, and a sampler is chosen per draw, so the two cannot be tenants of
-       one texture -- the split is here, at the one point that decides where pixels land.  A slot
-       never changes kind without reloading, which is what makes the tenant handle unambiguous
-       despite naming a different atlas per slot. */
+       one texture -- the split is here, at the one point that decides where pixels land. */
+
+    /* A reload CAN change the slot's kind (coverage <-> SDF): the handle only indexes the atlas it
+       was created in, so routing it at the other atlas would hit an unrelated tenant.  Release the
+       old tenant and let the pixels re-enter the right atlas as a fresh add below. */
+    if ( slot->atlas_tenant && slot->tenant_sdf != ( slot->sdf_range != 0 ) )
+    {
+        if ( slot->tenant_sdf ) res_sdf_remove  ( slot->atlas_tenant );
+        else                    res_atlas_remove( slot->atlas_tenant );
+        slot->atlas_tenant = 0;
+    }
+
     u32 tenant;
     if ( slot->atlas_tenant )
     {
@@ -53,6 +62,7 @@ font_slot_upload( font_slot_t* slot )
     }
 
     slot->atlas_tenant = tenant;
+    slot->tenant_sdf   = slot->sdf_range != 0;
     slot->needs_upload = false;
     return true;
 }

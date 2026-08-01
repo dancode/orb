@@ -432,6 +432,19 @@ res_update( res_atlas_t* a, u32 handle, const u8* src, u32 w, u32 h )
     return true;
 }
 
+/* Release a tenant: free its retained source and abandon its rect in place.  The stale pixels stay
+   blitted (nothing references them) and the skyline keeps the hole until the next repack reclaims
+   it.  No generation bump -- no surviving tenant's origin moved, so no baked UV went stale. */
+static void
+res_remove( res_atlas_t* a, u32 handle )
+{
+    if ( handle == 0 || handle > GUI_RES_ATLAS_MAX_TENANTS || !a->tenants[ handle - 1 ].used )
+        return;
+    res_tenant_t* t = &a->tenants[ handle - 1 ];
+    free( t->src );
+    *t = ( res_tenant_t ){ 0 };
+}
+
 static void
 res_origin( const res_atlas_t* a, u32 handle, u32* ox, u32* oy )
 {
@@ -466,6 +479,26 @@ void res_atlas_shutdown( void )
     res_destroy( &s_sdf );
 }
 
+/* Resident CPU heap one atlas owns: the staging mirror plus every tenant's retained source copy.
+   Summed across the three instances for the memory accounting (gui_render_mem.c) -- the instance
+   RECORDS are statics counted there by sizeof; this is the malloc'd side. */
+static u32
+res_cpu_heap_bytes( const res_atlas_t* a )
+{
+    u32 b = a->pixels ? (u32)( (size_t)a->w * a->h * a->bpp ) : 0u;
+    for ( u32 i = 0; i < GUI_RES_ATLAS_MAX_TENANTS; ++i )
+        if ( a->tenants[ i ].used )
+            b += a->tenants[ i ].w * a->tenants[ i ].h * a->bpp;
+    return b;
+}
+
+u32
+res_atlas_cpu_bytes( void )
+{
+    return res_cpu_heap_bytes( &s_res ) + res_cpu_heap_bytes( &s_spr )
+         + res_cpu_heap_bytes( &s_sdf );
+}
+
 /* Every atlas flushes here so the frame loop keeps ONE upload seam.  Not short-circuited: a dirty
    sprite or SDF atlas must upload even when the coverage atlas is clean, and the caller's "pixels
    were sent" verdict is the OR across all three. */
@@ -478,6 +511,7 @@ bool res_atlas_flush_upload( void )
 
 u32  res_atlas_add       ( const u8* src, u32 w, u32 h )              { return res_add   ( &s_res, src, w, h ); }
 bool res_atlas_update    ( u32 h_, const u8* src, u32 w, u32 h )      { return res_update( &s_res, h_, src, w, h ); }
+void res_atlas_remove    ( u32 handle )                               { res_remove( &s_res, handle ); }
 void res_atlas_origin    ( u32 handle, u32* ox, u32* oy )             { res_origin( &s_res, handle, ox, oy ); }
 
 u32  res_atlas_idx        ( void ) { return s_res.atlas.atlas_idx; }
@@ -560,6 +594,7 @@ res_sdf_add( const u8* src, u32 w, u32 h )
 }
 
 bool res_sdf_update ( u32 handle, const u8* src, u32 w, u32 h ) { return res_update( &s_sdf, handle, src, w, h ); }
+void res_sdf_remove ( u32 handle )                              { res_remove( &s_sdf, handle ); }
 void res_sdf_origin ( u32 handle, u32* ox, u32* oy )            { res_origin( &s_sdf, handle, ox, oy ); }
 
 u32  res_sdf_idx        ( void ) { return s_sdf.atlas.atlas_idx; }

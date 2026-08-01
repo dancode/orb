@@ -58,14 +58,19 @@ backend_memory( u32 live_viewports )
                              + sizeof( s_volatile )
                              + sizeof( s_patch_order ) );
 
-    /* Fonts + icons are the DRAW unit's statics now (registry slots, reload queue, icon
-       tables) -- reported through its seam so the bucket stays populated. */
-    s.cpu_font_bytes = draw_unit_mem_bytes();
+    /* The DRAW unit's statics (icon + sprite registries) -- the font registry moved to the font/
+       leaf and reports through the frontend bucket (gui_ui_mem.c). */
+    s.cpu_draw_bytes = draw_unit_mem_bytes();
 
-    /* The two resource atlases (packer + tenant bookkeeping).  Both instance records are always
-       resident; only the sprite atlas's PIXEL buffer is conditional, and that is GPU/heap, not a
-       static -- see gpu_texture_bytes above. */
-    s.cpu_res_bytes = (u32)( sizeof( s_res ) + sizeof( s_spr ) );
+    /* The three resource atlas instance records (packer nodes + tenant bookkeeping).  All three
+       are always-resident statics; their PIXEL buffers and tenant source copies are heap,
+       reported in cpu_atlas_bytes below. */
+    s.cpu_res_bytes = (u32)( sizeof( s_res ) + sizeof( s_spr ) + sizeof( s_sdf ) );
+
+    /* Atlas-owned heap: each atlas's resident staging mirror plus every tenant's retained source
+       copy (fonts, icons, sprites keep a second CPU copy so a repack never goes back to disk).
+       A dynamic bucket -- it exists only once an atlas / tenant does. */
+    s.cpu_atlas_bytes = res_atlas_cpu_bytes();
 
     /* RENDER: pipeline/sampler/push state + the embedded SPIR-V bytecode (.rdata). */
     s.cpu_render_bytes = (u32)( sizeof( s_render )
@@ -86,7 +91,7 @@ backend_memory( u32 live_viewports )
 #endif
 
     s.cpu_static_total = s.cpu_drawlist_bytes + s.cpu_tess_bytes + s.cpu_cache_bytes
-                       + s.cpu_font_bytes + s.cpu_res_bytes + s.cpu_render_bytes
+                       + s.cpu_draw_bytes + s.cpu_res_bytes + s.cpu_render_bytes
                        + s.cpu_select_bytes + s.cpu_debug_bytes;
     return s;
 }

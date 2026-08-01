@@ -130,6 +130,11 @@ u32  res_atlas_add           ( const u8* src, u32 w, u32 h );
    origins may move).  Returns false on a bad handle or when a resized tenant no longer fits. */
 bool res_atlas_update        ( u32 handle, const u8* src, u32 w, u32 h );
 
+/* Release tenant `handle`: frees its retained source and abandons its rect in place (reclaimed by
+   the next repack).  Exists for the one owner that can switch atlases -- a font reload changing
+   kind (coverage <-> SDF) -- since a handle only indexes the atlas it was created in. */
+void res_atlas_remove        ( u32 handle );
+
 /* Live pixel origin (top-left) of a tenant in the atlas -- valid across repacks.  0,0 if invalid. */
 void res_atlas_origin        ( u32 handle, u32* ox, u32* oy );
 
@@ -144,6 +149,7 @@ f32  res_atlas_inv_w         ( void );          // 1 / atlas pixel width  (per-g
 f32  res_atlas_inv_h         ( void );          // 1 / atlas pixel height
 u32  res_atlas_generation    ( void );          // bumps on every UV-affecting structural change
 u32  res_atlas_bytes         ( void );          // GPU bytes held (W*H, R8) -- memory accounting
+u32  res_atlas_cpu_bytes     ( void );          // CPU heap held by ALL THREE atlases (mirrors + tenant copies)
 
 /*==============================================================================================
     The SPRITE atlas (RGBA8) -- same six verbs, one texel meaning apart.
@@ -179,6 +185,7 @@ u32  res_sprite_bytes        ( void );          // GPU bytes held (0 until creat
 
 u32  res_sdf_add             ( const u8* src, u32 w, u32 h );    // 1-based tenant handle (0 = full)
 bool res_sdf_update          ( u32 handle, const u8* src, u32 w, u32 h );
+void res_sdf_remove          ( u32 handle );                     // release (see res_atlas_remove)
 void res_sdf_origin          ( u32 handle, u32* ox, u32* oy );
 
 u32  res_sdf_idx             ( void );          // bindless slot (0 = never created / not ready)

@@ -454,16 +454,16 @@ void
 gui_ctx_begin( gui_ctx_id_t ctx_handle )
 {
     /* Every widget this context emits lays out off the active font's metrics (s_style, scaled by
-       gui_style_apply/metrics_compute) -- with none activated s_style is still zero-initialized and
-       everything collapses to zero size (see gui_init's font_valid() gate).  Catch the missing
-       font here, at the frame boundary, instead of as an invisible UI downstream: this is the
-       first point in the lifecycle where "no font" is knowably wrong (init() with
-       GUI_FONT_NONE is legal -- the host may load its own before the first frame). */
+       gui_style_apply/metrics_compute).  With no loaded font the readers resolve to the internal
+       fallback (font/gui_font_core.c): layout keeps its shape and nothing crashes, but every glyph
+       is invisible.  Catch the missing font here, at the frame boundary, instead of as blank text
+       downstream: this is the first point in the lifecycle where "no font" is knowably wrong
+       (init() with GUI_FONT_NONE is legal -- the host may load its own before the first frame). */
 
     GUI_CONTRACT( font_valid(),
-                  "ctx_begin() with no active font -- s_style is still the zero-font base, so "
-                  "every widget measures 0 x 0 and the UI paints nothing.  Pass a built-in font "
-                  "to init(), or font_load() one before the first frame.\n" );
+                  "ctx_begin() with no loaded font -- widgets lay out on the internal fallback "
+                  "metrics and all text draws as blank space.  Pass a built-in font to init(), or "
+                  "font_load() one before the first frame.\n" );
 
     /* The build must sit inside the frame: emitted before frame_begin the widgets land in a draw
        list that is about to be reset, emitted after frame_end in one already sealed and rendered. */

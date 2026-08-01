@@ -48,6 +48,9 @@ typedef struct
     font_metrics_t      metrics;            // resolved metrics; the active pointer aims here
     bool                used;               // slot occupied
     u32                 atlas_tenant;       // handle into the shared resource atlas (render-filled)
+    bool                tenant_sdf;         // atlas the tenant was created in (render-filled) -- a
+                                            // handle only indexes its own atlas, so a reload that
+                                            // changes kind must release before re-adding
     i32                 ascent;             // pixels above baseline (positive)
     i32                 descent;            // pixels below baseline (negative)
     orb_font_glyph_t    lookup[ ORB_FONT_CP_COUNT ];  // codepoints 32..126; advance == 0 = missing
@@ -96,6 +99,8 @@ const char*     font_builtin_rel_path  ( gui_builtin_font_t font ); // preset's 
 /*==============================================================================================
     Metric readers -- the active font's measurement surface.  Pure sizes + math over the loaded
     tables; callable from anywhere (layout, the interact text-edit mechanism, the tessellator).
+    Always safe: with no loaded font they resolve to an internal fallback (nominal metrics, uniform
+    advance, invisible glyphs), so a missing font degrades to blank text rather than a crash.
 ==============================================================================================*/
 
 f32             font_char_h        ( void );                   // glyph-box height of the active font (ascent+descent)
@@ -103,7 +108,7 @@ f32             font_line_h        ( void );                   // line advance o
 f32             font_em            ( void );                   // nominal type size (em) -- the layout proportion base
 f32             font_char_advance  ( u32 cp );                 // horizontal advance of one codepoint
 f32             font_text_w        ( const char* str );        // pixel width of a NUL-terminated run
-f32             font_text_w_n      ( const char* str, u32 n ); // pixel width of the first n characters
+f32             font_text_w_n      ( const char* str, u32 n ); // pixel width of the first n BYTES (UTF-8 decoded)
 void            font_print_active  ( void );                   // log the active font's id + metrics
 
 /*==============================================================================================
@@ -121,7 +126,7 @@ const orb_font_glyph_t* font_slot_cp( const font_slot_t* slot, u32 cp );
 
 void            font_use                ( u32 id );     // make an already-loaded id active
 u32             font_active_id          ( void );       // id of the active slot (save/restore)
-bool            font_valid              ( void );       // true once a font is installed (gates glyph reads)
+bool            font_valid              ( void );       // true once a LOADED font is active (readers are fallback-safe either way)
 void            font_activate           ( u32 id );     // point the active pointers at slot id
 u32             font_alloc_slot         ( void );       // first free id in 1..MAX-1, or 0 if full
 font_slot_t*    font_slot_ptr           ( u32 id );     // registry slot by id (loader fill target); NULL if OOR

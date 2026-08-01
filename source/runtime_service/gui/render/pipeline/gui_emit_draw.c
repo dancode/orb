@@ -89,7 +89,7 @@ static struct
     gui_vec2_t      points          [ GUI_MAX_PATH_PTS ];       // point pool for CMD_POLYLINE data; indexed by pt_offset
     gui_rect_col_t  rect_pool       [ GUI_MAX_RECT_ENTRIES ];   // rect pool for CMD_RECT_LIST data; indexed by offset
 
-    gui_cmd_seg_t   segs            [ GUI_MAX_SEGS ];            // per-(win,z,vp,font,band) spans, in emit order
+    gui_cmd_seg_t   segs            [ GUI_MAX_SEGS ];            // per-(win,z,vp,band) spans, in emit order
     u32             seg_count;                                  // spans open this frame (>= 1; segs[0] is the bg span)
 
     /* Flat string pool: draw_push_text_n copies every string here so that stack-local buffers
@@ -176,7 +176,7 @@ fnv1a_u32( u32 h, u32 v )
 }
 
 /*==============================================================================================
-    COMMDN STEPPING
+    COMMAND STEPPING
 
     draw_emit_blocked -- the one gate every draw_push_* entry point checks before spending a
     command slot (and, by early-outing first, any pool space): the command list is full, or the

@@ -37,10 +37,12 @@ font_atlas_sync( void )
 
         if ( !font_slot_upload( slot ) )   /* slot keeps its previous atlas tenant; say so */
         {
-            /* The symptom downstream is silent -- the font's glyphs simply sample an empty atlas
-               -- so this line is the only thing that names the cause, and an unflushed warning is
-               how it went unnoticed once already.  gui_log's default sink flushes; a host sink
-               owns that guarantee itself. */
+            /* The symptom downstream is silent -- a never-uploaded slot keeps tenant 0, whose
+               origin answers (0,0), so its glyphs sample UVs rebased to the atlas top-left (other
+               tenants' pixels or the assist rows: visual garbage, not blank).  This line is the
+               only thing that names the cause, and an unflushed warning is how it went unnoticed
+               once already.  gui_log's default sink flushes; a host sink owns that guarantee
+               itself. */
             gui_log( GUI_LOG_WARN, "font atlas upload failed for slot %u", id );
             slot->needs_upload = false;    // don't retry a doomed upload every frame
             continue;
