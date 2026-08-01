@@ -499,9 +499,9 @@ gui_help_marker( const char* text )
     gui_rect_t   r  = cell_next_w( mw, mh );
     gui_rect_t   tr = rect_align( r, mw, mh, lf()->mod.align );
 
-    /* Hoverable but inert: the returned click is ignored, only st.hover drives the brighten. */
+    /* Hoverable but inert: the returned click is ignored, the state only drives the brighten. */
     gui_item_state_t st = item_state( id, tr, ITEM_BUTTON );
-    draw_push_text( tr.x, tr.y, st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM, mark );
+    draw_push_text( tr.x, tr.y, col_btn_glyph( st ), mark );
     cell_reach( tr.x + mw );
 
     /* Bind the tooltip to the mark just emitted (s_scope.last_id / hover_id were set above). */

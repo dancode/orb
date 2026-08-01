@@ -1042,6 +1042,39 @@ col_btn_glyph( gui_item_state_t st )
     return ( st.hover || st.active ) ? COL_TEXT_IDLE : COL_TEXT_DIM;
 }
 
+/* The border of a focusable FIELD -- input box, numeric field, drag box, slider track.  A
+   field's ground does not travel the phase axis (input_text_begin carries the reasoning), so the
+   border alone says "the caret is here", on BORDER[ACTIVE].  Seven widgets spelled this ternary
+   by hand before it had a name; one projection is what keeps an eighth from drifting. */
+u32
+col_field_border( gui_item_state_t st )
+{
+    return st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE;
+}
+
+/* The tab chip -- the TITLE band speaking ( state, current ).  TITLE[ACTIVE] is baked as the
+   BODY colour ("a live tab IS its panel"), so the CURRENT chip reads it to merge into the
+   content below -- and a PRESSED chip reads the same cell, previewing the join a release
+   commits.  The current chip deliberately shows no hover: clicking it again does nothing, so
+   lighting it would promise a click it cannot deliver.  This projection is why the tab bar and
+   the dock strip cannot drift apart: both spend it, neither spells the mapping. */
+u32
+col_tab_bg( gui_item_state_t st, bool current )
+{
+    u8 phase = ( current || st.active ) ? GUI_PHASE_ACTIVE
+             : ( st.hover || st.nav )   ? GUI_PHASE_HOT
+                                        : GUI_PHASE_IDLE;
+    return style_col( GUI_ROLE_TITLE, phase );
+}
+
+/* The chip's ink, keyed on the SAME predicate as its fill -- the col_btn_glyph rule: splitting
+   the two is what puts DIM ink on a live face. */
+u32
+col_tab_ink( gui_item_state_t st, bool current )
+{
+    return ( current || st.hover || st.nav || st.active ) ? COL_TEXT_IDLE : COL_TEXT_DIM;
+}
+
 /* The movable part of a track control -- slider knob, scrollbar thumb -- off the GRAB row.
    Its own role rather than col_item_bg because a knob has TWO lifting neighbours: the track under
    it rides BG and the value fill beside it rides ACCENT, so a knob on either row matches one of

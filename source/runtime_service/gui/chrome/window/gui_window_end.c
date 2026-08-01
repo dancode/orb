@@ -137,7 +137,7 @@ window_end_titlebar( gui_window_t* win, bool native )
                even while the body is still easing shut -- s_build.win.collapsed is the visual fact and
                lags during the tween. */
             draw_collapse_arrow( arrow_r, win ? win->collapsed : s_build.win.collapsed,
-                                 arrow_st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM );
+                                 col_btn_glyph( arrow_st ) );
             text_x = s_build.win.x + title_h;   /* title follows the arrow square */
         }
 
@@ -256,7 +256,7 @@ window_end_titlebar( gui_window_t* win, bool native )
             /* Icon: an outlined box when docked (click to pop out), a filled box when floating
                (click to dock back in). */
             bool attached = !win || win->viewport == 0;
-            u32  icol     = det_st.hover ? COL_TEXT_IDLE : COL_TEXT_DIM;
+            u32  icol     = col_btn_glyph( det_st );
             f32  isz      = title_h * 0.42f;
             f32  ix       = det_r.x + ( det_r.w - isz ) * 0.5f;
             f32  iy       = det_r.y + ( det_r.h - isz ) * 0.5f;

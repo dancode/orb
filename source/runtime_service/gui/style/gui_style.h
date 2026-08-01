@@ -267,6 +267,18 @@ u32 col_grab_mix    ( gui_id_t id, gui_item_state_t st );
    on; splitting the two is what put DIM ink on an ACTIVE fill.  See the definition. */
 u32 col_btn_glyph( gui_item_state_t st );
 
+/* Border of a focusable FIELD (input box, numeric field, drag box, slider track): the face rests
+   on its ground and the border alone carries focus, on BORDER[ACTIVE].  One spelling for the rule
+   the whole field family shares; the reasoning is written out once, at input_text_begin. */
+u32 col_field_border( gui_item_state_t st );
+
+/* Tab chip face / ink -- the TITLE band speaking ( state, current ).  The current chip reads
+   TITLE[ACTIVE], the body colour (a live tab IS its panel -- see the bake); a pressed chip reads
+   the same cell, previewing the join a release commits; the rest lift along the band.  See the
+   definitions for why the current chip shows no hover. */
+u32 col_tab_bg ( gui_item_state_t st, bool current );
+u32 col_tab_ink( gui_item_state_t st, bool current );
+
 /* The per-item ambient wrappers that DRIVE the seam hooks above (item_flags_resolve /
    item_flags_chrome_reset) live in stock/gui_adornment.c, declared in stock/gui_stock_internal.h:
    they apply draw-state consequences, and style never paints. */

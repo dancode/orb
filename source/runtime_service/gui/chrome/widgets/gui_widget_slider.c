@@ -109,7 +109,7 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
     /* Captured for keyboard value edit (st.focused -- see nav_item_register) gets the same border
        lift text/numeric fields use on focus, so going from nav highlight to Left/Right-adjust reads
        as a real state change instead of an invisible one. */
-    draw_outline( track_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
+    draw_outline( track_r, WIN_BORDER, col_field_border( st ) );
 
     /* Fill bar up to t.  Round only the start (left) corners to match the track frame; keep the
        leading (right) edge facing the knob square, so a rounded leading edge never leaves a gap
@@ -368,7 +368,7 @@ static void
 drag_text_frame( gui_rect_t box_r, gui_item_state_t st )
 {
     draw_face( box_r, GUI_ROLE_BG, GUI_PHASE_IDLE );
-    draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
+    draw_outline( box_r, WIN_BORDER, col_field_border( st ) );
 }
 
 static bool
@@ -427,7 +427,7 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
 
         u32 bg = col_frame_bg_mix( style_mix( id, st, false ), COL_ACCENT_DIM );
         draw_fill( box_r, bg );
-        draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
+        draw_outline( box_r, WIN_BORDER, col_field_border( st ) );
     }
 
     /* Value text -- unless the focused editor already painted its own (and caret), or the box is
@@ -533,7 +533,7 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
 
         u32 bg = col_frame_bg_mix( style_mix( id, st, false ), COL_ACCENT_DIM );
         draw_fill( box_r, bg );
-        draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
+        draw_outline( box_r, WIN_BORDER, col_field_border( st ) );
     }
 
     /* Value text -- unless the focused editor already painted its own (and caret), or the box is
@@ -692,7 +692,10 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
         if ( pa < 255u )
             draw_checker( inner, 3.0f, GUI_COLOR( 200, 200, 200, 255 ), GUI_COLOR( 100, 100, 100, 255 ) );
         draw_fill( inner, abgr );
-        draw_outline( preview_r, WIN_BORDER, pst.hover ? COL_BG_HOT : COL_BORDER_IDLE );
+        /* A line is BORDER, never a BG face -- and nav lights it like a hover, per the house
+           predicate. */
+        draw_outline( preview_r, WIN_BORDER,
+                      ( pst.hover || pst.nav ) ? COL_BORDER_HOT : COL_BORDER_IDLE );
         draw_set_rounding( sv );
     }
 

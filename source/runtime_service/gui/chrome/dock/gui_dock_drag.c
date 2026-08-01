@@ -607,10 +607,11 @@ dock_window_chrome( gui_dock_node_t* node )
         gui_id_t     tid = id_combine( node->id, DOCK_TAB_SALT + i );
         gui_item_state_t st  = item_state( tid, tr, ITEM_BUTTON );
 
-        /* Active tab takes the body colour so it reads as joined to the content below; the rest stay
-           on the title band, lifting to the hover colour under the cursor. */
-        u32 bg   = is_active ? COL_TITLE_ACTIVE : ( st.hover ? COL_TITLE_HOT : COL_TITLE_IDLE );
-        u32 tcol = ( is_active || st.hover ) ? COL_TEXT_IDLE : COL_TEXT_DIM;
+        /* Chip face + ink off the shared tab projection: the current chip takes the body colour
+           (joined to the content below), a pressed chip previews that join, the rest stay on the
+           title band, lifting under the cursor. */
+        u32 bg   = col_tab_bg ( st, is_active );
+        u32 tcol = col_tab_ink( st, is_active );
         /* Tabs in a docked node stay square: the active tab takes the body colour to read as joined
            to the content below, and a rounded corner would break that seam. */
         draw_push_rect_filled( tr.x, tr.y, tr.w, tr.h, 0, 0, 1, 1, 0, bg );

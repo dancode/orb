@@ -49,7 +49,7 @@ input_text_begin( const char* label )
        The border carries focus, which is the whole affordance a field needs and the one place
        the signal cannot be mistaken for content. */
     draw_face( box_r, GUI_ROLE_BG, GUI_PHASE_IDLE );
-    draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
+    draw_outline( box_r, WIN_BORDER, col_field_border( st ) );
     return ( input_text_frame_t ){ id, box_r, st };
 }
 

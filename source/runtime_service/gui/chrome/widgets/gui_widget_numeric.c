@@ -35,7 +35,7 @@ num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
     /* Box background and border -- the text-field treatment: a resting ground that never travels
        the phase axis, focus on the border (input_text_begin carries the reasoning). */
     draw_face( box_r, GUI_ROLE_BG, GUI_PHASE_IDLE );
-    draw_outline( box_r, WIN_BORDER, st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE );
+    draw_outline( box_r, WIN_BORDER, col_field_border( st ) );
 
     /* input_* seed the editor with the same format they display, so the field opens on the value
        exactly as it was shown. */

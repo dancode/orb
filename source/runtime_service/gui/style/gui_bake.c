@@ -265,10 +265,13 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     col[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( control, press, accent ), step );
     col[ GUI_ROLE_BG ][ GUI_PHASE_DIM    ] = bake_recess( control, recess );
 
-    /* BORDER -- structure at rest, signal when live. */
+    /* BORDER -- structure at rest, signal when live.  ACTIVE takes a second lift step so the
+       focus ring reads brighter than a hovered edge -- the HOT -> ACTIVE spacing the ACCENT row
+       keeps.  When the two cells were equal, "hovered edge" and "focused ring" were the same
+       colour by construction, which quietly voided the border-carries-focus rule. */
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_IDLE   ] = line;
-    col[ GUI_ROLE_BORDER ][ GUI_PHASE_HOT    ] = bake_lift( accent, step, pole );
-    col[ GUI_ROLE_BORDER ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step, pole );
+    col[ GUI_ROLE_BORDER ][ GUI_PHASE_HOT    ] = bake_lift( accent, step,        pole );
+    col[ GUI_ROLE_BORDER ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step * 2.0f, pole );
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_DIM    ] = bake_fade( line, fade, ground );
 
     /* TEXT -- ink does not react BY CHOICE: all four cells start from the one ink, because text

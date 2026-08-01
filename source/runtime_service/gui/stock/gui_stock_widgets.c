@@ -262,9 +262,7 @@ gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
        the same two rules chrome's input_text uses, so the pair really is one look driven by one
        component.  A field is typed INTO, not clicked, so it does not spend the phase axis (the
        reasoning is written out once, at input_text_begin). */
-    draw_face_frame( r, GUI_ROLE_BG, GUI_PHASE_IDLE,
-                     st.focused ? STYLE_COL( BORDER, ACTIVE ) : STYLE_COL( BORDER, IDLE ),
-                     WIN_BORDER );
+    draw_face_frame( r, GUI_ROLE_BG, GUI_PHASE_IDLE, col_field_border( st ), WIN_BORDER );
 
     /* Selection band and caret read the same cells chrome's edit_paint uses: a selection is the
        BG face on the SELECT plane -- a control surface, chosen -- and a caret is TEXT.  Neither is

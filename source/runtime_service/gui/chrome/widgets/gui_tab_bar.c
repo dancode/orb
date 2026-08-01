@@ -221,10 +221,11 @@ gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags 
         redraw_request();
     }
 
-    /* Active chip takes the body colour (joined to the content below); the rest sit on the title
-       band and lift to the hover colour under the cursor.  Square, like the dock tabs. */
-    u32 bg   = is_active ? COL_TITLE_ACTIVE : ( st.hover ? COL_TITLE_HOT : COL_TITLE_IDLE );
-    u32 tcol = ( is_active || st.hover ) ? COL_TEXT_IDLE : COL_TEXT_DIM;
+    /* Chip face + ink off the shared tab projection: the current chip takes the body colour
+       (joined to the content below), a pressed chip previews that join, the rest sit on the
+       title band and lift under the cursor.  Square, like the dock tabs. */
+    u32 bg   = col_tab_bg ( st, is_active );
+    u32 tcol = col_tab_ink( st, is_active );
 
     f32 save_round = draw_rounding();
     draw_set_rounding( 0.0f );
@@ -241,7 +242,7 @@ gui_tab_item_begin( const char* label, bool* p_open, gui_tab_item_flags_t flags 
         gui_item_state_t cst = item_state( cid, close_r, ITEM_BUTTON );
         if ( cst.hover || cst.active )
             draw_push_rect_filled( close_r.x, close_r.y, close_r.w, close_r.h, 0, 0, 1, 1, 0,
-                                   COL_BG_HOT );
+                                   cst.active ? COL_BG_ACTIVE : COL_BG_HOT );
         gui_draw_close( close_r, col_btn_glyph( cst ) );
         if ( cst.clicked )
         {
