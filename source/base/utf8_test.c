@@ -183,6 +183,18 @@ test_utf16_surrogates( void )
     test_equal( 0x1F600u, utf16_pair_to_cp( 0xD83Du, 0xDE00u ) );
     test_equal( 0x10000u, utf16_pair_to_cp( 0xD800u, 0xDC00u ) );    /* first pair */
     test_equal( 0x10FFFFu, utf16_pair_to_cp( 0xDBFFu, 0xDFFFu ) );   /* last pair */
+
+    /* utf16_encode: the inverse direction (the clipboard-out seam). */
+    u16 u[ 2 ];
+    test_equal( 1u, utf16_encode( 0x0041u, u ) );    test_equal( 0x0041u, u[ 0 ] );
+    test_equal( 1u, utf16_encode( 0x20ACu, u ) );    test_equal( 0x20ACu, u[ 0 ] );
+    test_equal( 1u, utf16_encode( 0xFFFDu, u ) );    test_equal( 0xFFFDu, u[ 0 ] );
+    test_equal( 2u, utf16_encode( 0x1F600u, u ) );
+    test_equal( 0xD83Du, u[ 0 ] );                   test_equal( 0xDE00u, u[ 1 ] );
+    test_equal( 2u, utf16_encode( 0x10FFFFu, u ) );
+    test_equal( 0xDBFFu, u[ 0 ] );                   test_equal( 0xDFFFu, u[ 1 ] );
+    test_equal( 0u, utf16_encode( 0xD800u, u ) );    /* surrogate half: drop  */
+    test_equal( 0u, utf16_encode( 0x110000u, u ) );  /* past U+10FFFF: drop   */
 }
 
 /*============================================================================================*/

@@ -52,6 +52,7 @@
 #include "base/fmt.h"
 #include "base/math.h"        // f32_lerp -- from/to interpolation for the animation service
 #include "base/math_ease.h"   // f32_ease_* shapers -- the easing curves the animation service applies
+#include "base/utf8.h"        // utf8_encode -- io_add_char encodes typed codepoints into frame text
 
 /* This unit's world, and nothing above it (the include list IS the dependency graph).
    The interact server sees the public types, the engine APIs, and its own two headers --

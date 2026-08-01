@@ -249,6 +249,20 @@ medit_insert( char* buf, u32 bufsz, u32* len, gui_medit_state_t* es, char ch )
     return true;
 }
 
+/* Insert one whole UTF-8 sequence (nb bytes at seq) at the caret; false, buffer untouched, when
+   it does not fit.  All-or-nothing so a full buffer can never hold a partial sequence. */
+static bool
+medit_insert_seq( char* buf, u32 bufsz, u32* len, gui_medit_state_t* es, const char* seq, u32 nb )
+{
+    if ( *len + nb >= bufsz ) return false;
+    memmove( buf + es->cursor + nb, buf + es->cursor, *len - es->cursor + 1u );
+    memcpy( buf + es->cursor, seq, nb );
+    *len       += nb;
+    es->cursor += nb;
+    es->anchor  = es->cursor;
+    return true;
+}
+
 /* Vertical caret move by `drow` display lines, aiming at the sticky preferred column.
    Up on the first line pins to offset 0 and Down on the last pins to len (the standard
    "nothing above / below" caret behavior).  Horizontal moves and edits invalidate pref_x;
@@ -331,23 +345,30 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
             has_sel = false; sel_lo = sel_hi = es->cursor;
         }
         /* Newlines survive a multiline paste: CRLF and lone CR normalise to '\n', tabs expand
-           to four spaces (the atlas has no tab glyph), other control bytes drop. */
-        for ( const char* c = s_io.paste; *c; ++c )
+           to four spaces (the atlas has no tab glyph), other control bytes and malformed UTF-8
+           drop; everything else inserts one whole sequence at a time. */
+        for ( const char* c = s_io.paste; *c; )
         {
-            char ch = *c;
-            if ( ch == '\r' )
+            if ( *c == '\r' )
             {
-                if ( c[ 1 ] == '\n' ) continue;   /* CRLF: the LF carries the break */
-                ch = '\n';
+                if ( c[ 1 ] != '\n' )             /* lone CR carries the break itself */
+                    if ( !medit_insert( buf, bufsz, &len, es, '\n' ) ) break;
+                ++c;                              /* CRLF: the LF next iteration carries it */
+                continue;
             }
-            if ( ch == '\t' )
+            if ( *c == '\t' )
             {
                 for ( int sp = 0; sp < 4; ++sp )
                     if ( !medit_insert( buf, bufsz, &len, es, ' ' ) ) break;
+                ++c;
                 continue;
             }
-            if ( ( (u8)ch < 0x20u && ch != '\n' ) || (u8)ch == 0x7Fu ) continue;
-            if ( !medit_insert( buf, bufsz, &len, es, ch ) ) break;
+            u32 nb;
+            u32 cp = utf8_decode( c, &nb );
+            if ( cp == UTF8_REPLACEMENT && nb == 1u )        { ++c;     continue; }
+            if ( ( cp < 0x20u && cp != '\n' ) || cp == 0x7Fu ) { c += nb; continue; }
+            if ( !medit_insert_seq( buf, bufsz, &len, es, c, nb ) ) break;
+            c += nb;
         }
         medit_undo_push( &s_medit_undo, buf, es->cursor, es->anchor );
         changed = true;
@@ -406,7 +427,11 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
         else
         {
             if ( !shift && has_sel ) { es->cursor = es->anchor = sel_lo; }
-            else if ( es->cursor > 0 ) { --es->cursor; if ( !shift ) es->anchor = es->cursor; }
+            else if ( es->cursor > 0 )
+            {
+                es->cursor = (u32)utf8_prev( buf, (i32)es->cursor );   /* whole codepoint back */
+                if ( !shift ) es->anchor = es->cursor;
+            }
         }
         blink = true;
         es->pref_valid = 0;
@@ -429,7 +454,11 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
         else
         {
             if ( !shift && has_sel ) { es->cursor = es->anchor = sel_hi; }
-            else if ( es->cursor < len ) { ++es->cursor; if ( !shift ) es->anchor = es->cursor; }
+            else if ( es->cursor < len )
+            {
+                es->cursor = (u32)utf8_next( buf, (i32)len, (i32)es->cursor );   /* whole codepoint on */
+                if ( !shift ) es->anchor = es->cursor;
+            }
         }
         blink = true;
         es->pref_valid = 0;
@@ -490,8 +519,8 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
        (the horizontal / vertical moves above may have collapsed or extended it this frame). */
     medit_sel( es, &sel_lo, &sel_hi, &has_sel );
 
-    /* Backspace: delete the selection, or the byte before the caret ('\n' included, which
-       joins the line onto the previous one). */
+    /* Backspace: delete the selection, or the whole character before the caret ('\n' included,
+       which joins the line onto the previous one; a multi-byte sequence erases whole). */
     if ( s_io.keys_pressed_repeat[ APP_KEY_BACKSPACE ] )
     {
         if ( has_sel )
@@ -502,7 +531,7 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
         }
         else if ( es->cursor > 0 )
         {
-            medit_erase( buf, &len, es, es->cursor - 1u, es->cursor );
+            medit_erase( buf, &len, es, (u32)utf8_prev( buf, (i32)es->cursor ), es->cursor );
             medit_undo_push( &s_medit_undo, buf, es->cursor, es->anchor );
             changed = true;
         }
@@ -511,7 +540,7 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
         es->pref_valid = 0;
     }
 
-    /* Delete: delete the selection, or the byte after the caret. */
+    /* Delete: delete the selection, or the whole character after the caret. */
     if ( s_io.keys_pressed_repeat[ APP_KEY_DELETE ] )
     {
         if ( has_sel )
@@ -522,7 +551,7 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
         }
         else if ( es->cursor < len )
         {
-            medit_erase( buf, &len, es, es->cursor, es->cursor + 1u );
+            medit_erase( buf, &len, es, es->cursor, (u32)utf8_next( buf, (i32)len, (i32)es->cursor ) );
             medit_undo_push( &s_medit_undo, buf, es->cursor, es->anchor );
             changed = true;
         }
@@ -552,20 +581,26 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
         es->pref_valid = 0;
     }
 
-    /* Character input: replace the selection with the first incoming char, insert the rest at
-       the advancing caret.  Control bytes are rejected here exactly like the single-line field
+    /* Character input: replace the selection with the first incoming character, insert the rest
+       at the advancing caret, one whole UTF-8 sequence at a time (the frame text is UTF-8,
+       io_add_char).  Control bytes are rejected here exactly like the single-line field
        (Enter's '\r' echo in the text stream must not double-insert the newline). */
-    for ( const char* ch = ctrl ? "" : s_io.text; *ch; ++ch )
+    for ( const char* ch = ctrl ? "" : s_io.text; *ch; )
     {
-        if ( (u8)*ch < 0x20u || (u8)*ch == 0x7Fu ) continue;
+        u32 nb;
+        u32 cp = utf8_decode( ch, &nb );
+        if ( cp == UTF8_REPLACEMENT && nb == 1u ) { ++ch;     continue; }
+        if ( cp < 0x20u || cp == 0x7Fu )          { ch += nb; continue; }
 
         if ( has_sel )
         {
             s_medit_undo.last_was_char = false;
             medit_erase( buf, &len, es, sel_lo, sel_hi );
             has_sel = false; sel_lo = sel_hi = es->cursor;
+            changed = true;   /* the erase already changed the buffer */
         }
-        if ( !medit_insert( buf, bufsz, &len, es, *ch ) ) break;
+        if ( !medit_insert_seq( buf, bufsz, &len, es, ch, nb ) ) break;
+        ch += nb;
         changed = true;
         blink   = true;
         es->pref_valid = 0;

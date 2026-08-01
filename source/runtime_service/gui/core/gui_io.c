@@ -154,11 +154,19 @@ io_add_char( u32 codepoint )
     if ( codepoint < 0x20u || codepoint == 0x7Fu )
         return;
 
-    /* ASCII only: codepoints >127 collapse to '?'. */
-    if ( s_io_text_len + 1u < sizeof( s_io.text ) )
+    /* Encode into the frame text as UTF-8 -- the engine's strings are UTF-8 bytes, and the
+       platform already delivered a whole UTF-32 codepoint (surrogates paired at the WM_CHAR
+       seam).  utf8_encode returns 0 for an unpaired half or out-of-range value: drop.  Whole
+       sequences only -- a full buffer rejects the entire character, never a partial byte. */
+    char seq[ UTF8_MAX_BYTES ];
+    u32  nb = utf8_encode( codepoint, seq );
+    if ( nb == 0u )
+        return;
+    if ( s_io_text_len + nb < sizeof( s_io.text ) )
     {
-        s_io.text[ s_io_text_len++ ] = ( codepoint < 128u ) ? (char)codepoint : '?';
-        s_io.text[ s_io_text_len   ] = '\0';
+        for ( u32 i = 0; i < nb; ++i )
+            s_io.text[ s_io_text_len++ ] = seq[ i ];
+        s_io.text[ s_io_text_len ] = '\0';
     }
 }
 

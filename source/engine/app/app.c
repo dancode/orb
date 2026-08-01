@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include "orb.h"
+#include "base/utf8.h"   /* WM_CHAR surrogate pairing + the UTF-8 <-> UTF-16 clipboard seam */
 
 // clang-format off
 /*==============================================================================================

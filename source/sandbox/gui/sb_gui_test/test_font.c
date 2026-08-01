@@ -91,25 +91,36 @@ test_font_cp_ext_search( void )
     test_true( font_slot_cp( slot, 0x0101u )->advance == '?' );
 }
 
+/* Fill the LAST registry slot with the synthetic font (advance == codepoint & 0xFFFF, ext
+   carries e-acute / euro / the grinning-face emoji) and activate it.  Shared by the measure
+   case below and the caret cases in test_edit.c -- the readers under test all measure through
+   the active-slot pointer, not a parameter.  Idempotent; the ext store is static and never
+   freed (no registry reset runs in this bed). */
 static void
-test_font_measure_utf8( void )
+font_case_activate( void )
 {
-    /* font_text_w_n decodes UTF-8 -- the one measure loop with its own hand-inlined fast path,
-       so it can drift from font_slot_cp independently.  Advances encode the codepoint, so each
-       expected width names exactly which glyphs were counted.  Uses a real registry slot +
-       font_activate: the reader measures through the active-slot pointer, not a parameter. */
     font_slot_t* slot = font_slot_ptr( GUI_FONT_REGISTRY_MAX - 1 );
     memset( slot, 0, sizeof( *slot ) );
     for ( u32 cp = ORB_FONT_CP_FIRST; cp <= ORB_FONT_CP_LAST; ++cp )
         slot->lookup[ cp - ORB_FONT_CP_FIRST ] = font_case_rec( cp );
 
-    static orb_font_glyph_t ext[ 2 ];   /* static, never freed: no registry reset runs here */
-    ext[ 0 ]        = font_case_rec( 0x00E9u );   /* e-acute */
-    ext[ 1 ]        = font_case_rec( 0x20ACu );   /* euro    */
+    static orb_font_glyph_t ext[ 3 ];
+    ext[ 0 ]        = font_case_rec( 0x00E9u );    /* e-acute, 2 bytes   */
+    ext[ 1 ]        = font_case_rec( 0x20ACu );    /* euro, 3 bytes      */
+    ext[ 2 ]        = font_case_rec( 0x1F600u );   /* emoji, 4 bytes     */
     slot->ext       = ext;
-    slot->ext_count = 2;
+    slot->ext_count = 3;
     slot->used      = true;
     font_activate( GUI_FONT_REGISTRY_MAX - 1 );
+}
+
+static void
+test_font_measure_utf8( void )
+{
+    /* font_text_w_n decodes UTF-8 -- the one measure loop with its own hand-inlined fast path,
+       so it can drift from font_slot_cp independently.  Advances encode the codepoint, so each
+       expected width names exactly which glyphs were counted. */
+    font_case_activate();
 
     /* Pure ASCII: the dense fast path, one advance per byte. */
     test_true( font_text_w_n( "abc", 3 ) == (f32)( 'a' + 'b' + 'c' ) );

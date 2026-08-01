@@ -177,6 +177,28 @@ utf16_pair_to_cp( u32 hi, u32 lo )
     return 0x10000u + ( ( hi - 0xD800u ) << 10 ) + ( lo - 0xDC00u );
 }
 
+// Encode a codepoint as UTF-16: 1 unit in the BMP, 2 (a surrogate pair) above it.
+// Returns units written, or 0 if cp is a surrogate or past U+10FFFF -- drop, like utf8_encode.
+ORB_INLINE u32
+utf16_encode( u32 cp, u16 out[ 2 ] )
+{
+    if ( ( cp - 0xD800u ) < 0x800u )
+        return 0;
+    if ( cp < 0x10000u )
+    {
+        out[ 0 ] = ( u16 )cp;
+        return 1;
+    }
+    if ( cp <= UTF8_MAX_CP )
+    {
+        cp -= 0x10000u;
+        out[ 0 ] = ( u16 )( 0xD800u + ( cp >> 10 ) );
+        out[ 1 ] = ( u16 )( 0xDC00u + ( cp & 0x3FFu ) );
+        return 2;
+    }
+    return 0;
+}
+
 // clang-format on
 /*============================================================================================*/
 #endif    // UTF8_H

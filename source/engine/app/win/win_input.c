@@ -222,20 +222,25 @@ win_relative_clip( app_window_t* win )
 }
 
 /*==============================================================================================
-    Clipboard (Win32, CF_TEXT)
+    Clipboard (Win32, CF_UNICODETEXT)
 
-    The engine is ASCII-only, so CF_TEXT (ANSI) is the natural exchange format.  win_clipboard_set
-    publishes a string to the OS clipboard; win_clipboard_read pulls the current text into a static
-    staging buffer whose lifetime spans only until the next read — long enough for the host to copy
-    it out of the APP_EV_CLIPBOARD event the same frame it is posted (see input_handle_paste).
+    The engine's strings are UTF-8; the OS clipboard's canonical text format is UTF-16, so this
+    seam converts in both directions (the ONLY place the engine touches UTF-16 besides WM_CHAR).
+    CF_UNICODETEXT rather than CF_TEXT because the ANSI format round-trips through the active
+    codepage and mangles anything outside it; Windows synthesizes CF_TEXT from CF_UNICODETEXT
+    for legacy consumers automatically.  win_clipboard_set publishes a string to the OS
+    clipboard; win_clipboard_read pulls the current text into a static staging buffer whose
+    lifetime spans only until the next read -- long enough for the host to copy it out of the
+    APP_EV_CLIPBOARD event the same frame it is posted (see input_handle_paste).
 ==============================================================================================*/
 
-#define WIN_CLIPBOARD_MAX 1024   /* staging cap for a single paste (single-line fields are tiny) */
+#define WIN_CLIPBOARD_MAX 1024   /* UTF-8 staging cap for a single paste (single-line fields are tiny) */
 
 static char s_clipboard_staging[ WIN_CLIPBOARD_MAX ];
 
-/* Publish NUL-terminated `text` to the OS clipboard as CF_TEXT.  Silently no-ops if the
-   clipboard cannot be opened (another process owns it) -- a copy is best-effort, never fatal. */
+/* Publish NUL-terminated UTF-8 `text` to the OS clipboard as CF_UNICODETEXT.  Silently no-ops if
+   the clipboard cannot be opened (another process owns it) -- a copy is best-effort, never fatal.
+   Malformed UTF-8 publishes as U+FFFD (the decoder's replacement), never as raw bytes. */
 static void
 win_clipboard_set( const char* text )
 {
@@ -245,18 +250,31 @@ win_clipboard_set( const char* text )
     EmptyClipboard();
 
     size_t n = 0;
-    while ( text[ n ] ) ++n;                            /* length, sans the NUL */
+    while ( text[ n ] ) ++n;                            /* UTF-8 length, sans the NUL */
 
-    HGLOBAL mem = GlobalAlloc( GMEM_MOVEABLE, n + 1u ); /* +1 for the NUL terminator */
+    /* Worst case one UTF-16 unit per UTF-8 byte (pure ASCII), plus the terminator. */
+    HGLOBAL mem = GlobalAlloc( GMEM_MOVEABLE, ( n + 1u ) * sizeof( WCHAR ) );
     if ( mem )
     {
-        char* dst = ( char* )GlobalLock( mem );
+        WCHAR* dst = ( WCHAR* )GlobalLock( mem );
         if ( dst )
         {
-            for ( size_t i = 0; i < n; ++i ) dst[ i ] = text[ i ];
-            dst[ n ] = '\0';
+            size_t w = 0;
+            size_t i = 0;
+            while ( i < n )
+            {
+                u32 adv;
+                u32 cp = utf8_decode( text + i, &adv );
+                i += adv;
+
+                u16 units[ 2 ];
+                u32 uc = utf16_encode( cp, units );     /* never 0 here: decode yields no surrogates */
+                for ( u32 u = 0; u < uc; ++u )
+                    dst[ w++ ] = units[ u ];
+            }
+            dst[ w ] = L'\0';
             GlobalUnlock( mem );
-            SetClipboardData( CF_TEXT, mem );           /* clipboard now owns `mem` */
+            SetClipboardData( CF_UNICODETEXT, mem );    /* clipboard now owns `mem` */
         }
         else
         {
@@ -267,30 +285,44 @@ win_clipboard_set( const char* text )
     CloseClipboard();
 }
 
-/* Read the OS clipboard text into the staging buffer and return it (always NUL-terminated;
-   empty string when the clipboard holds no text or cannot be opened).  Control characters are
-   left intact here -- the single-line consumer strips them, matching the CHAR-event contract. */
+/* Read the OS clipboard text into the staging buffer as UTF-8 and return it (always
+   NUL-terminated; empty string when the clipboard holds no text or cannot be opened).  Orphan
+   surrogate halves drop; control characters are left intact -- the consumers strip what their
+   field kind rejects, matching the CHAR-event contract. */
 static const char*
 win_clipboard_read( void )
 {
     s_clipboard_staging[ 0 ] = '\0';
 
-    if ( !IsClipboardFormatAvailable( CF_TEXT ) ) return s_clipboard_staging;
-    if ( !OpenClipboard( NULL ) )                 return s_clipboard_staging;
+    if ( !IsClipboardFormatAvailable( CF_UNICODETEXT ) ) return s_clipboard_staging;
+    if ( !OpenClipboard( NULL ) )                        return s_clipboard_staging;
 
-    HGLOBAL mem = GetClipboardData( CF_TEXT );
+    HGLOBAL mem = GetClipboardData( CF_UNICODETEXT );
     if ( mem )
     {
-        const char* src = ( const char* )GlobalLock( mem );
+        const WCHAR* src = ( const WCHAR* )GlobalLock( mem );
         if ( src )
         {
-            u32 i = 0;
-            while ( src[ i ] && i + 1u < sizeof( s_clipboard_staging ) )
+            u32 w = 0;
+            for ( u32 i = 0; src[ i ]; ++i )
             {
-                s_clipboard_staging[ i ] = src[ i ];
-                ++i;
+                u32 cp = src[ i ];
+                if ( utf16_is_high( cp ) && utf16_is_low( src[ i + 1u ] ) )
+                {
+                    cp = utf16_pair_to_cp( cp, src[ i + 1u ] );
+                    ++i;                               /* consumed the low half too */
+                }
+                else if ( utf16_is_high( cp ) || utf16_is_low( cp ) )
+                    continue;                          /* orphan half: drop */
+
+                char seq[ UTF8_MAX_BYTES ];
+                u32  nb = utf8_encode( cp, seq );
+                if ( w + nb + 1u > sizeof( s_clipboard_staging ) )
+                    break;                             /* whole sequences only: never cut mid-glyph */
+                for ( u32 b = 0; b < nb; ++b )
+                    s_clipboard_staging[ w++ ] = seq[ b ];
             }
-            s_clipboard_staging[ i ] = '\0';
+            s_clipboard_staging[ w ] = '\0';
             GlobalUnlock( mem );
         }
     }
@@ -427,8 +459,36 @@ input_handle_key_up( WPARAM vk, LPARAM lp, win_id_t win_id )
 static void
 input_handle_char( WPARAM wp, win_id_t win_id )
 {
+    /* WM_CHAR delivers UTF-16 code units (the window class is W), so a supplementary-plane
+       character -- an emoji -- arrives as TWO messages: high surrogate, then low.  Pair them
+       across calls and post one UTF-32 codepoint; the event contract (app_text_event_t) has
+       always promised UTF-32, this is what finally honours it above the BMP.  An orphan half
+       (a low with no high pending, or a high followed by a non-low) is dropped: half a
+       codepoint is not text. */
+    static u32 s_pending_high = 0;
+
+    u32 unit = ( u32 )wp;
+    u32 cp;
+    if ( utf16_is_high( unit ) )
+    {
+        s_pending_high = unit;      /* hold; the low half completes it next message */
+        return;
+    }
+    if ( utf16_is_low( unit ) )
+    {
+        if ( !s_pending_high )
+            return;
+        cp             = utf16_pair_to_cp( s_pending_high, unit );
+        s_pending_high = 0;
+    }
+    else
+    {
+        cp             = unit;
+        s_pending_high = 0;         /* a non-low after a high orphans the pending half */
+    }
+
     app_event_t ev         = win_make_event( APP_EV_CHAR, win_id );
-    ev.data.text.codepoint = ( u32 )wp;
+    ev.data.text.codepoint = cp;
     ev.data.text.mod       = win_get_mod();
     win_post_event( &ev );
 }

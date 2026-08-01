@@ -33,15 +33,17 @@
    widget, and the multiline wrapper all share one definition. */
 
 /* Character class for double-click word selection: a click extends over the maximal run of
-   one class.  0 = whitespace, 1 = word (alphanumeric or underscore), 2 = punctuation/other --
-   the classic "select word, or select a run of symbols" split.  Newlines count as whitespace
-   for the multiline engine (gui_text_edit_multi.c); a single-line buffer never contains them. */
+   one class.  0 = whitespace, 1 = word (alphanumeric, underscore, or any byte >= 0x80 -- every
+   UTF-8 lead and continuation byte, so an accented word is one run and no class boundary can
+   fall inside a sequence), 2 = punctuation/other -- the classic "select word, or select a run
+   of symbols" split.  Newlines count as whitespace for the multiline engine
+   (gui_text_edit_multi.c); a single-line buffer never contains them. */
 int
 char_class( u8 c )
 {
     if ( c == ' ' || c == '\t' || c == '\n' || c == '\r' )        return 0;
     if ( ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
-         ( c >= '0' && c <= '9' ) || c == '_' )                   return 1;
+         ( c >= '0' && c <= '9' ) || c == '_' || c >= 0x80u )     return 1;
     return 2;
 }
 
@@ -314,6 +316,20 @@ edit_run_key_hook( char* buf, u32 bufsz, gui_edit_state_t* es, u32* len_io )
     }
 }
 
+/* Insert one whole UTF-8 sequence (nb bytes at seq) at the caret; false, buffer untouched, when
+   it does not fit.  All-or-nothing so a full buffer can never hold a partial sequence. */
+static bool
+edit_insert_seq( char* buf, u32 bufsz, u32* len, gui_edit_state_t* es, const char* seq, u32 nb )
+{
+    if ( *len + nb >= bufsz ) return false;
+    memmove( buf + es->cursor + nb, buf + es->cursor, *len - es->cursor + 1u );
+    memcpy( buf + es->cursor, seq, nb );
+    *len       += nb;
+    es->cursor += (u16)nb;
+    es->anchor  = es->cursor;
+    return true;
+}
+
 /* Keyboard command handling for a focused field: clipboard copy/cut/paste, undo/redo, caret
    navigation (Left/Right/Home/End, word jumps, Ctrl+A), backspace/delete, character insertion,
    and the Enter/Escape submit/revert.  Threads len (kept in step with buf), the result flags,
@@ -365,16 +381,19 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
             es->cursor = es->anchor = (u16)sel_lo;
             has_sel = false; sel_lo = sel_hi = es->cursor;
         }
-        /* Insert each pasted byte at the advancing caret, skipping control characters
-           (a single-line field rejects newlines / tabs) and stopping at capacity. */
-        for ( const char* c = s_io.paste; *c && len + 1u < bufsz; ++c )
+        /* Insert the paste one whole UTF-8 sequence at a time at the advancing caret, skipping
+           control characters (a single-line field rejects newlines / tabs) and malformed bytes
+           (a lone continuation or invalid lead decodes to U+FFFD with a 1-byte step -- dropping
+           it is what keeps the buffer valid UTF-8), stopping at capacity. */
+        for ( const char* c = s_io.paste; *c; )
         {
-            if ( (u8)*c < 0x20u || (u8)*c == 0x7Fu ) continue;
-            memmove( buf + es->cursor + 1u, buf + es->cursor, len - es->cursor + 1u );
-            buf[ es->cursor ] = *c;
-            ++len; ++es->cursor;
+            u32 nb;
+            u32 cp = utf8_decode( c, &nb );
+            if ( cp == UTF8_REPLACEMENT && nb == 1u ) { ++c;     continue; }  /* malformed: drop */
+            if ( cp < 0x20u || cp == 0x7Fu )          { c += nb; continue; }
+            if ( !edit_insert_seq( buf, bufsz, &len, es, c, nb ) ) break;
+            c += nb;
         }
-        es->anchor  = es->cursor;
         undo_push( &s_undo, buf, es->cursor, es->anchor );
         res.changed = true;
         blink_reset = true;
@@ -430,7 +449,11 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
         else
         {
             if ( !shift && has_sel ) { es->cursor = es->anchor = (u16)sel_lo; }
-            else if ( es->cursor > 0 ) { --es->cursor; if ( !shift ) es->anchor = es->cursor; }
+            else if ( es->cursor > 0 )
+            {
+                es->cursor = (u16)utf8_prev( buf, (i32)es->cursor );   /* whole codepoint back */
+                if ( !shift ) es->anchor = es->cursor;
+            }
         }
         blink_reset = true;
     }
@@ -453,7 +476,11 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
         else
         {
             if ( !shift && has_sel ) { es->cursor = es->anchor = (u16)sel_hi; }
-            else if ( es->cursor < len ) { ++es->cursor; if ( !shift ) es->anchor = es->cursor; }
+            else if ( es->cursor < len )
+            {
+                es->cursor = (u16)utf8_next( buf, (i32)len, (i32)es->cursor );   /* whole codepoint on */
+                if ( !shift ) es->anchor = es->cursor;
+            }
         }
         blink_reset = true;
     }
@@ -490,10 +517,12 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
         }
         else if ( es->cursor > 0 )
         {
-            --es->cursor;
-            memmove( buf + es->cursor, buf + es->cursor + 1u, len - es->cursor );
-            --len; buf[ len ] = '\0';
-            es->anchor = es->cursor;
+            /* Erase the WHOLE preceding sequence -- one Backspace removes one character,
+               and a partial erase would leave invalid UTF-8 in the buffer. */
+            u32 prev = (u32)utf8_prev( buf, (i32)es->cursor );
+            memmove( buf + prev, buf + es->cursor, len - es->cursor + 1u );
+            len       -= ( es->cursor - prev );
+            es->cursor = es->anchor = (u16)prev;
             undo_push( &s_undo, buf, es->cursor, es->anchor );
             res.changed = true;
         }
@@ -514,8 +543,10 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
         }
         else if ( es->cursor < len )
         {
-            memmove( buf + es->cursor, buf + es->cursor + 1u, len - es->cursor );
-            --len; buf[ len ] = '\0';
+            /* Whole following sequence, the forward twin of Backspace. */
+            u32 nxt = (u32)utf8_next( buf, (i32)len, (i32)es->cursor );
+            memmove( buf + es->cursor, buf + nxt, len - nxt + 1u );
+            len -= ( nxt - es->cursor );
             undo_push( &s_undo, buf, es->cursor, es->anchor );
             res.changed = true;
         }
@@ -523,34 +554,36 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
         blink_reset = true;
     }
 
-    /* Character input: replace the selection with the first incoming char, then insert
-       any remaining chars at the advancing caret.  Selection is cleared after the first
-       replacement so subsequent chars in the same frame insert normally.  Skipped while
-       Ctrl is held so shortcut combos (Ctrl+C/V/X/A) never leak a stray glyph. */
-    for ( const char* ch = ctrl ? "" : s_io.text; *ch; ++ch )
+    /* Character input: replace the selection with the first incoming character, then insert
+       any remaining ones at the advancing caret.  The frame text is UTF-8 (io_add_char), so
+       stepping and insertion go one whole sequence at a time.  Selection is cleared after the
+       first replacement so subsequent characters in the same frame insert normally.  Skipped
+       while Ctrl is held so shortcut combos (Ctrl+C/V/X/A) never leak a stray glyph. */
+    for ( const char* ch = ctrl ? "" : s_io.text; *ch; )
     {
+        u32 nb;
+        u32 cp = utf8_decode( ch, &nb );
+
         /* Single-line field: reject control characters (tab, CR, ...) exactly like the
-           paste path above -- a consumed Tab must not leak a '\t' glyph into the buffer. */
-        if ( (u8)*ch < 0x20u || (u8)*ch == 0x7Fu ) continue;
+           paste path above -- a consumed Tab must not leak a '\t' glyph into the buffer.
+           Malformed bytes cannot appear here (io_add_char encodes), but drop them anyway. */
+        if ( cp == UTF8_REPLACEMENT && nb == 1u ) { ++ch;      continue; }
+        if ( cp < 0x20u || cp == 0x7Fu )          { ch += nb;  continue; }
 
         if ( has_sel )
         {
             /* Selection replacement ends the current char group (ring[cur] already holds
                the pre-replacement state) but does not push a redundant duplicate. */
             s_undo.last_was_char = false;
-            memmove( buf + sel_lo + 1u, buf + sel_hi, len - sel_hi + 1u );
-            buf[ sel_lo ] = *ch;
-            len          -= ( sel_hi - sel_lo ) - 1u;
-            es->cursor    = es->anchor = (u16)( sel_lo + 1u );
-            has_sel       = false; sel_lo = sel_hi = es->cursor;
+            memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
+            len -= ( sel_hi - sel_lo );
+            es->cursor = es->anchor = (u16)sel_lo;
+            has_sel    = false; sel_lo = sel_hi = es->cursor;
+            res.changed = true;   /* the erase already changed the buffer, even if the
+                                     insert below finds no room */
         }
-        else if ( len + 1u < bufsz )
-        {
-            memmove( buf + es->cursor + 1u, buf + es->cursor, len - es->cursor + 1u );
-            buf[ es->cursor ] = *ch;
-            ++len; ++es->cursor;
-            es->anchor = es->cursor;
-        }
+        if ( !edit_insert_seq( buf, bufsz, &len, es, ch, nb ) ) break;
+        ch += nb;
         res.changed = true;
         blink_reset = true;
     }
