@@ -129,19 +129,48 @@ color_remember_hs( const f32* v, f32 h, f32 s )
     writeback stays with the caller.
 ==============================================================================================*/
 
+/* Integer formats are space-padded to a fixed 3-digit field (R/G/B/A max 255, H max 360,
+   S/V max 100 -- all <= 3 digits) so the monospace label width never changes with the value.
+   Constant width keeps every box's centered text on a stable column: it no longer ticks
+   forward at a different resize threshold than its neighbors.  Float labels are already
+   constant width ("0.00".."1.00").  File scope so color_comps_min_w measures with the SAME
+   formats the boxes print -- the measure and the print cannot drift apart. */
+static const char* s_col_fmt_rgb_i[] = { "R:%3d",  "G:%3d",  "B:%3d",  "A:%3d"  };
+static const char* s_col_fmt_rgb_f[] = { "R:%.2f", "G:%.2f", "B:%.2f", "A:%.2f" };
+static const char* s_col_fmt_hsv_i[] = { "H:%3d",  "S:%3d",  "V:%3d",  "A:%3d"  };
+static const char* s_col_fmt_hsv_f[] = { "H:%.2f", "S:%.2f", "V:%.2f", "A:%.2f" };
+
+/* The per-component integer ceiling (H is 0..360, S/V 0..100, everything else 0..255). */
+static i32
+color_comp_max( u32 i, bool is_hsv )
+{
+    return ( is_hsv && i == 0 ) ? 360 : ( ( is_hsv && i < 3u ) ? 100 : 255 );
+}
+
+/* The row width the comps boxes NEED, measured from the widest value each box can print with
+   its own format (the "size to the widest element" rule): every box holds its longest text
+   plus the WIDGET_PAD clip margins drag_value_text keeps, plus the inter-box gaps. */
+static f32
+color_comps_min_w( u32 comps, bool is_hsv, bool is_flt )
+{
+    f32 box_w = 0.0f;
+    for ( u32 i = 0; i < comps; ++i )
+    {
+        char buf[ 16 ];
+        if ( is_flt )
+            fmt_snprintf( buf, sizeof( buf ), is_hsv ? s_col_fmt_hsv_f[ i ] : s_col_fmt_rgb_f[ i ], 1.0f );
+        else
+            fmt_snprintf( buf, sizeof( buf ), is_hsv ? s_col_fmt_hsv_i[ i ] : s_col_fmt_rgb_i[ i ],
+                          color_comp_max( i, is_hsv ) );
+        f32 w = font_text_w_n( buf, 0xFFFFFFFFu ) + 2.0f * WIDGET_PAD;
+        if ( w > box_w ) box_w = w;
+    }
+    return (f32)comps * box_w + (f32)( comps - 1u ) * WIDGET_GAP;
+}
+
 static bool
 color_comps_boxes( gui_id_t id, gui_rect_t ctrl, f32* v, f32* hsv, u32 comps, bool is_hsv, bool is_flt )
 {
-    /* Integer formats are space-padded to a fixed 3-digit field (R/G/B/A max 255, H max 360,
-       S/V max 100 -- all <= 3 digits) so the monospace label width never changes with the value.
-       Constant width keeps every box's centered text on a stable column: it no longer ticks
-       forward at a different resize threshold than its neighbors.  Float labels are already
-       constant width ("0.00".."1.00"). */
-    static const char* s_rgb_i[] = { "R:%3d",  "G:%3d",  "B:%3d",  "A:%3d"  };
-    static const char* s_rgb_f[] = { "R:%.2f", "G:%.2f", "B:%.2f", "A:%.2f" };
-    static const char* s_hsv_i[] = { "H:%3d",  "S:%3d",  "V:%3d",  "A:%3d"  };
-    static const char* s_hsv_f[] = { "H:%.2f", "S:%.2f", "V:%.2f", "A:%.2f" };
-
     bool changed = false;
     f32  gap     = WIDGET_GAP;
     f32  slot    = ( ctrl.w - gap * (f32)( comps - 1u ) ) / (f32)comps;   /* ideal fractional width */
@@ -158,7 +187,7 @@ color_comps_boxes( gui_id_t id, gui_rect_t ctrl, f32* v, f32* hsv, u32 comps, bo
 
         if ( is_flt )
         {
-            const char* fmt = is_hsv ? s_hsv_f[ i ] : s_rgb_f[ i ];
+            const char* fmt = is_hsv ? s_col_fmt_hsv_f[ i ] : s_col_fmt_rgb_f[ i ];
             if ( drag_float_box( cid, drag_r, &val, 0.005f, 0.0f, 1.0f, fmt ) )
             {
                 if ( is_hsv ) hsv[ i ] = val; else v[ i ] = val;
@@ -167,10 +196,9 @@ color_comps_boxes( gui_id_t id, gui_rect_t ctrl, f32* v, f32* hsv, u32 comps, bo
         }
         else
         {
-            i32         max_v = ( is_hsv && i == 0 ) ? 360
-                              : ( ( is_hsv && i < 3u ) ? 100 : 255 );
+            i32         max_v = color_comp_max( i, is_hsv );
             i32         ival  = (i32)( val * (f32)max_v + 0.5f );
-            const char* fmt   = is_hsv ? s_hsv_i[ i ] : s_rgb_i[ i ];
+            const char* fmt   = is_hsv ? s_col_fmt_hsv_i[ i ] : s_col_fmt_rgb_i[ i ];
             if ( drag_int_box( cid, drag_r, &ival, 1.0f, 0, max_v, fmt ) )
             {
                 val = (f32)ival / (f32)max_v;
@@ -295,7 +323,6 @@ color_hex_field( gui_id_t hid, f32* v, bool has_alpha )
 #define PICKER_BAR_W        14.0f    /* hue / alpha bar width */
 #define PICKER_SIDE_MAX     240.0f   /* SV square edge cap -- keeps wide windows sane */
 #define PICKER_SIDE_MIN     140.0f   /* SV square edge floor -- below this the block overflows the view instead */
-#define PICKER_INPUTS_MIN_W 220.0f   /* content width floor while the drag row shows: 4 boxes of "R:255" */
 #define PICKER_CURSOR_R     4.5f
 
 /* The white-in-black marker line across a vertical bar at fraction t (0 = top). */
@@ -347,12 +374,16 @@ color_picker_body( gui_id_t id, f32* v, u32 n, gui_color_edit_flags_t flags )
        overflow seam).  A canvas fills its track, and a filled cell deliberately contributes no
        width to the region's content_w (the anti-feedback rule in line_place_cell) -- so inside
        an autosize popup, whose seed is narrower than the picker, nothing would ever ask the
-       window to grow and the whole block would stay clamped at its floor.  Reaching the true
-       right edge (plus the drag row's floor while inputs show) is what makes the popup open at
-       a usable size; in a wide window the reach lands inside the view and is a no-op. */
+       window to grow and the whole block would stay clamped at its floor.  The want is built
+       around the WIDEST element: the square + bars edge, or the drag row's measured need
+       (color_comps_min_w -- each box fits its longest printable value), whichever is wider.
+       In a wide window the reach lands inside the view and is a no-op. */
     f32 want_w = side + (f32)bars * ( PICKER_BAR_W + gap );
-    if ( !( flags & GUI_COLOR_EDIT_NO_INPUTS ) && want_w < PICKER_INPUTS_MIN_W )
-        want_w = PICKER_INPUTS_MIN_W;
+    if ( !( flags & GUI_COLOR_EDIT_NO_INPUTS ) )
+    {
+        f32 inputs_min = color_comps_min_w( has_alpha ? 4u : 3u, is_hsv, is_flt );
+        if ( want_w < inputs_min ) want_w = inputs_min;
+    }
     cell_reach( cv.x + want_w );
 
     /* State first, paint after -- the house widget order.  All three surfaces are ITEM_DRAG:

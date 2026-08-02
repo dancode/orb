@@ -389,6 +389,7 @@ ex_widgets_color( void )
         ex_flag_checkbox( "NO_INPUTS (picker: square + bars only)",  &flags, GUI_COLOR_EDIT_NO_INPUTS );
 
         gui()->separator_text( "color_edit3 / color_edit4" );
+        gui()->text_disabled( "Ctrl+Click any value box to type an exact value" );
         static f32 c3[ 3 ] = { 0.4f, 0.7f, 0.1f };
         static f32 c4[ 4 ] = { 0.2f, 0.5f, 0.9f, 0.8f };
         gui()->color_edit3( "rgb",  c3, (gui_color_edit_flags_t)flags );
