@@ -374,7 +374,11 @@ drag_text_frame( gui_rect_t box_r, gui_item_state_t st )
 static bool
 drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format )
 {
-    gui_item_state_t st = item_state( id, box_r, ITEM_DRAG );
+    /* While the numeric scratch owns this box (text-entry mode) it must interact as a FIELD,
+       not a drag: only a FOCUSABLE press re-claims focus, so under ITEM_DRAG the frame's global
+       click-blur would let a caret click inside the box silently drop text mode.  num_edit_active
+       is the persistent owner test, known before item_state. */
+    gui_item_state_t st = item_state( id, box_r, num_edit_active( id ) ? ITEM_FOCUSABLE : ITEM_DRAG );
     drag_text_enter( id, &st );
 
     bool changed   = false;
@@ -476,7 +480,8 @@ static bool
 drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
                 f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
 {
-    gui_item_state_t st = item_state( id, box_r, ITEM_DRAG );
+    /* FOCUSABLE while the scratch owns the box -- see drag_int_box. */
+    gui_item_state_t st = item_state( id, box_r, num_edit_active( id ) ? ITEM_FOCUSABLE : ITEM_DRAG );
     drag_text_enter( id, &st );
 
     bool changed   = false;
