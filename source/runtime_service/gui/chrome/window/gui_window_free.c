@@ -1104,6 +1104,70 @@ gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
     return s_vp_pool[ vp ].caption_inset;   /* published by the begin above */
 }
 
+/*==============================================================================================
+    windows_dpi_rescale -- keep window footprints at their apparent size across a DPI scale step.
+
+    Called from gui_dpi_poll (frame/gui_frame_font.c) after a font retarget: metrics and text just
+    grew by `ratio`, so a rect sized for the old scale now clips its own content and covers less
+    of the screen.  Multiply every persisted free-window rect by the same ratio.  Windows are
+    per-context but the step is global, so every live context's pool is visited (the same rule as
+    the viewport-close migration in frame/gui_viewport.c).
+
+    Docked windows need no special case: the node owns their geometry (splits are RATIOS, so the
+    dock tree tracks its viewport at any scale) and window_begin_docked overwrites the record
+    every frame -- scaling those records is a harmless one-frame no-op.  Skipped records:
+      - windows on a gui-OWNED viewport -- their rect is slaved to the OS surface
+        (window_sync_native pins it), so the OS floater window itself is resized instead, via the
+        same window_resize primitive the autosize grip uses.  Screen POSITION is left alone: it
+        is desktop-absolute, not UI-relative.
+
+    The scaled rects stay lattice-clean: the quantum scales by this same ratio (metrics_compute),
+    so a multiple of the old pitch maps to a multiple of the new one exactly.
+==============================================================================================*/
+
+void
+windows_dpi_rescale( f32 ratio )
+{
+    if ( !( ratio > 0.0f ) || ratio == 1.0f )
+        return;
+
+    for ( u32 c = 0; c < s_ctx_pool_count; ++c )
+    {
+        gui_context_t* ctx = s_ctx_pool[ c ];
+        if ( !ctx )
+            continue;
+
+        for ( u32 i = 0; i < ctx->win.count; ++i )
+        {
+            gui_window_t* win = &ctx->win.pool[ i ];
+            if ( win->id == 0 )
+                continue;
+            if ( win->viewport != 0 && s_vp_pool[ win->viewport ].owned )
+                continue;
+
+            win->x *= ratio;        win->y *= ratio;
+            win->w *= ratio;        win->h *= ratio;
+            win->norm.x *= ratio;   win->norm.y *= ratio;    /* saved min/max restore rect  */
+            win->norm.w *= ratio;   win->norm.h *= ratio;
+            win->reopen.w *= ratio; win->reopen.h *= ratio;  /* closed-floater respawn size */
+        }
+    }
+
+    /* gui-owned OS floaters: grow the OS client area so the pinned shell keeps its footprint. */
+    for ( u32 v = 1; v < GUI_MAX_VIEWPORTS; ++v )
+    {
+        if ( !s_vp_pool[ v ].owned || s_vp_pool[ v ].win_id < 0 )
+            continue;
+
+        i32 w = 0, h = 0;
+        app()->window_get_size( s_vp_pool[ v ].win_id, &w, &h );
+        if ( w > 0 && h > 0 )
+            app()->window_resize( s_vp_pool[ v ].win_id,
+                                  (i32)( (f32)w * ratio + 0.5f ),
+                                  (i32)( (f32)h * ratio + 0.5f ) );
+    }
+}
+
 /* gui_window_end (the deferred chrome: titlebar, buttons, border, resize grip, move grab, and
    drag-to-dock commit) lives in gui_window_end.c, included just after this file -- it reuses
    window_fit_bounds / window_fit_size for the auto-fit grip and the GUI_COLLAPSE/DETACH/CLOSE_SALT

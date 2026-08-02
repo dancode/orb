@@ -532,10 +532,11 @@ metric_quantize( f32 v, u32 q )
    unit must not touch and passes them in as parameters. */
 
 void
-metrics_compute( u32 em, u32 char_h, u32 line_h )
+metrics_compute( u32 em, u32 char_h, u32 line_h, f32 dpi_scale )
 {
     if ( em < 8u ) em = 8u;
     s_font_size = em;
+    if ( !( dpi_scale > 0.0f ) ) dpi_scale = 1.0f;
 
     /* Original numbers based on font size of em=12.
        Scale the base metrics proportionally to the active font's type size. */
@@ -599,6 +600,18 @@ metrics_compute( u32 em, u32 char_h, u32 line_h )
        they keep their scaled pixel value even when they shape geometry. */
 #if GUI_GRID_LATTICE
     u32 q = (u32)s_style_base.var[ GUI_VAR_GRID_Q ];
+    if ( q > 1 && dpi_scale != 1.0f )
+    {
+        /* The lattice follows the DPI scale (NOT the em scale -- a host picking a bigger font at
+           100% keeps its authored pitch): a 4px quantum at 150% becomes 6, so cells keep their
+           apparent size.  Written to the LIVE style, so layout's quant wrappers and the
+           WM_SIZING size_step publish (window_sync_native) follow with no further plumbing.
+           The scaled em metrics and the DPI-rescaled window rects land on this same lattice --
+           both are the base value times the identical bake ratio. */
+        q = (u32)( (f32)q * dpi_scale + 0.5f );
+        if ( q < 1 ) q = 1;
+        s_style.var[ GUI_VAR_GRID_Q ] = (f32)q;
+    }
     if ( q > 1 )
     {
         /* GUI_CLASS_METRIC snaps and nothing else does -- which is exactly why STROKE and SKIN

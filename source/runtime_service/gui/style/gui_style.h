@@ -229,7 +229,7 @@ void style_new_frame( void );
 
 /* The em rescale (style/gui_theme.c) -- gui_style_apply (frame/gui_frame_font.c) reads the active
    font's metrics (draw-unit material style must not touch) and passes them down here. */
-void metrics_compute( u32 em, u32 char_h, u32 line_h );
+void metrics_compute( u32 em, u32 char_h, u32 line_h, f32 dpi_scale );
 
 /* lattice snapping (style/gui_theme.c) -- the grid-quantum rounders composition and chrome
    share (identity when the lattice is off or q <= 1). */

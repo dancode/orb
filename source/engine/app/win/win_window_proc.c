@@ -367,6 +367,36 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
             return TRUE;
         }
 
+        case WM_GETDPISCALEDSIZE:
+        {
+            /* Sent ahead of WM_DPICHANGED (cross-monitor drag / OS scale edit) to let the app
+               choose the new size.  The OS default scales the WINDOW rect linearly, but the
+               frame thickness does not scale linearly with DPI, so the CLIENT area -- the part
+               the engine actually lays out in -- would drift.  Scale the client exactly and
+               rebuild the window size around it with the new DPI's frame. */
+            u32   new_dpi = ( u32 )wp;
+            SIZE* size    = ( SIZE* )lp;
+            if ( !new_dpi || !win->dpi )
+                return FALSE;   /* fall back to the OS default scaling */
+
+            RECT crc;
+            GetClientRect( hwnd, &crc );
+            f32 r  = ( f32 )new_dpi / ( f32 )win->dpi;
+            i32 cw = ( i32 )( ( f32 )crc.right * r + 0.5f );
+            i32 ch = ( i32 )( ( f32 )crc.bottom * r + 0.5f );
+
+            RECT rect = { 0, 0, cw, ch };
+            if ( !win->native.enabled )   /* custom frame: client == window, nothing to add */
+            {
+                DWORD style    = ( DWORD )GetWindowLongW( hwnd, GWL_STYLE );
+                DWORD ex_style = ( DWORD )GetWindowLongW( hwnd, GWL_EXSTYLE );
+                win_dpi_adjust_rect( &rect, style, ex_style, new_dpi );
+            }
+            size->cx = rect.right - rect.left;
+            size->cy = rect.bottom - rect.top;
+        }
+            return TRUE;
+
         case WM_DPICHANGED:
         {
             /* The window crossed onto a monitor with a different scale (or the user edited the

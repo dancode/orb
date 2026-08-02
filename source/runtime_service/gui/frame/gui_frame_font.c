@@ -45,7 +45,9 @@ gui_style_apply( void )
     if ( !font_valid() )
         return;
 
-    metrics_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h() );
+    /* The DPI factor scales only the grid quantum inside -- metrics scale from em, and under
+       font-driven DPI the em already carries the monitor scale. */
+    metrics_compute( (u32)font_em(), (u32)font_char_h(), (u32)font_line_h(), gui_dpi_scale() );
 
     /* A style LANDING: every style block re-derives its installed values from the freshly
        scaled metrics -- the color grid through the theme compile plus whatever a
@@ -228,33 +230,44 @@ gui_dpi_poll( void )
     if ( pick == s_dpi.applied )
         return false;
 
-    /* The base preset lives in init's slot 0; every other bake loads once into its own id.
-       A failed load latches a sentinel so a missing asset costs one attempt, not one per frame. */
+    /* A missing asset latched a sentinel below: one load attempt, not one per frame. */
     #define GUI_DPI_LOAD_FAILED 0xFFFFFFFFu
+    if ( pick != s_dpi.base && s_dpi.loaded_id[ pick ] == GUI_DPI_LOAD_FAILED )
+        return false;
+
+    /* Commit `applied` BEFORE the switch: the gui_style_apply the load/use triggers reads
+       gui_dpi_scale() to scale the grid quantum, and must see the scale being applied, not the
+       one being left.  Rolled back on a failed load. */
+    f32                old_scale = gui_dpi_scale();
+    gui_builtin_font_t prev      = s_dpi.applied;
+    s_dpi.applied                = pick;
+
+    /* The base preset lives in init's slot 0; every other bake loads once into its own id. */
     u32 id = 0;
     if ( pick != s_dpi.base )
     {
         id = s_dpi.loaded_id[ pick ];
-        if ( id == GUI_DPI_LOAD_FAILED )
-            return false;                         // asset missing -- stay at the current bake
         if ( id == 0 )
         {
             id = gui_font_load_builtin( pick );   // new id, activated, layout rescaled
             if ( id == 0 )
             {
+                s_dpi.applied           = prev;
                 s_dpi.loaded_id[ pick ] = GUI_DPI_LOAD_FAILED;
                 return false;
             }
             s_dpi.loaded_id[ pick ] = id;
-            s_dpi.applied           = pick;
-            s_dpi.applied_id        = id;
-            return true;
         }
+        else
+            gui_font_use( id );                   // cached bake: activate + rescale + stamp
     }
-
-    gui_font_use( id );                           // cached bake: activate + rescale + stamp
-    s_dpi.applied    = pick;
+    else
+        gui_font_use( 0 );                        // back to the init preset
     s_dpi.applied_id = id;
+
+    /* Metrics and text just changed by this ratio -- carry the persisted window footprints and
+       the gui-owned floater OS windows along so everything keeps its apparent size. */
+    windows_dpi_rescale( gui_dpi_scale() / old_scale );
     return true;
 }
 
