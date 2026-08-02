@@ -470,6 +470,7 @@ const gui_api_t g_gui_api_struct =
     .color_edit4                        = gui_color_edit4,
     .color_picker3                      = gui_color_picker3,
     .color_picker4                      = gui_color_picker4,
+    .next_input_filter                  = gui_next_input_filter,
     .input_text                         = gui_input_text,
     .input_text_ex                      = gui_input_text_ex,
     .input_text_with_hint               = gui_input_text_with_hint,

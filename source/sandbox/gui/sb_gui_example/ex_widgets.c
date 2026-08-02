@@ -226,6 +226,22 @@ ex_widgets_input_text( void )
         gui()->input_text_ex( "Watched", watched, sizeof( watched ), ex_input_on_change, NULL );
         gui()->textf( "edits: %d   live length: %u", s_edit_count, s_edit_len );
 
+        /* next_input_filter is a one-shot: being immediate mode, calling it before the field
+           every frame is what keeps the field filtered.  Paste obeys the filter too. */
+        gui()->separator_text( "next_input_filter (per-character vocabulary)" );
+        static char f_digits[ 16 ] = "8080";
+        static char f_dec[ 24 ]    = "-3.25e2";
+        static char f_hex[ 16 ]    = "#FF00AA";
+        static char f_name[ 24 ]   = "NoSpacesHere";
+        gui()->next_input_filter( GUI_INPUT_FILTER_DIGITS );
+        gui()->input_text( "digits", f_digits, sizeof( f_digits ) );
+        gui()->next_input_filter( GUI_INPUT_FILTER_DECIMAL );
+        gui()->input_text( "decimal", f_dec, sizeof( f_dec ) );
+        gui()->next_input_filter( GUI_INPUT_FILTER_HEX | GUI_INPUT_FILTER_UPPERCASE );
+        gui()->input_text( "hex (upper)", f_hex, sizeof( f_hex ) );
+        gui()->next_input_filter( GUI_INPUT_FILTER_ALPHA | GUI_INPUT_FILTER_NO_BLANK );
+        gui()->input_text( "alpha, no blanks", f_name, sizeof( f_name ) );
+
         gui()->separator_text( "Programmatic focus + caret" );
         static char target[ 48 ] = "focus lands here";
         if ( gui()->button( "Focus the field" ) )

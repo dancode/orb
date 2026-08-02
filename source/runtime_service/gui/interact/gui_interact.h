@@ -117,6 +117,11 @@ typedef struct { bool changed; bool enter; } input_field_result_t;
 input_field_result_t edit_field( gui_id_t id, gui_rect_t content, gui_item_state_t st,
                                  char* buf, u32 bufsz );
 
+/* Install the character filter (gui_input_filter_t bits) for the NEXT edit_field run; both the
+   typed-char and paste paths gate every codepoint through it.  Per-run: the wrapping widget
+   (input_field_edit) clears it after the engine returns, so it never leaks between fields. */
+void edit_filter_set( u32 filter );
+
 /* Measurement + pure byte-offset helpers, shared with the single-line + multiline wrappers.
    text_x_at / text_offset_at are math over the active font's advances -- the interact-side
    hit-test the widgets reuse to paint the caret and selection. */

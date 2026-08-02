@@ -2121,6 +2121,31 @@ typedef enum
 } gui_dir_t;
 
 /*==============================================================================================
+    GUI_CHROME -- input character filter
+
+    What a text field will ACCEPT, checked per typed or pasted character (rejected characters
+    are dropped silently; a rejected char never eats the selection).  Class bits union: a
+    character passes if ANY named class admits it.  NO_BLANK / UPPERCASE modify on top;
+    UPPERCASE maps before the class check, so lowercase hex typed into HEX|UPPERCASE lands as
+    'A'..'F'.  Installed for the next input widget via gui()->next_input_filter(); the numeric
+    entry fields (Ctrl+Click on a drag/slider box, input_int/_float) and the color hex field
+    install their own internally.
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_INPUT_FILTER_NONE      = 0,
+    GUI_INPUT_FILTER_DIGITS    = 1 << 0,  /* 0-9 */
+    GUI_INPUT_FILTER_INT       = 1 << 1,  /* 0-9 + - */
+    GUI_INPUT_FILTER_DECIMAL   = 1 << 2,  /* 0-9 . + - e E */
+    GUI_INPUT_FILTER_HEX       = 1 << 3,  /* 0-9 a-f A-F # */
+    GUI_INPUT_FILTER_ALPHA     = 1 << 4,  /* a-z A-Z */
+    GUI_INPUT_FILTER_NO_BLANK  = 1 << 5,  /* spaces dropped */
+    GUI_INPUT_FILTER_UPPERCASE = 1 << 6,  /* a-z mapped to A-Z before the class check */
+
+} gui_input_filter_t;
+
+/*==============================================================================================
     GUI_CHROME -- color edit flags
 ==============================================================================================*/
 

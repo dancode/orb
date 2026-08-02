@@ -101,11 +101,12 @@ edit_paint( gui_rect_t content, const char* buf, const gui_edit_state_t* es, boo
         bool in_visible_half_of_blink_cycle = ( ( (u32)( es->blink_t * 2.0f ) ) & 1u ) == 0u;
         if ( in_visible_half_of_blink_cycle )
         {
+            /* The caret box is the GLYPH box -- the same anchor the selection band uses, for the
+               same reason (see edit_sel_band): the row is a style metric and the glyph box a font
+               metric.  Deriving the caret from the row minus WIDGET_PAD collapsed it to a sliver
+               whenever a density pass widened the pad past the font's headroom. */
             f32 cx = text_x + text_x_at( buf, es->cursor );
-            draw_fill( ( gui_rect_t ){ cx, content.y + (f32)WIDGET_PAD,
-                                       (f32)WIN_BORDER,
-                                       content.h - 2.0f * (f32)WIDGET_PAD },
-                       COL_TEXT_IDLE );
+            draw_fill( edit_sel_band( cx, cx + (f32)WIN_BORDER, text_y, content ), COL_TEXT_IDLE );
         }
     }
 }
@@ -148,6 +149,7 @@ input_field_edit( gui_id_t id, gui_rect_t box, gui_item_state_t st, char* buf, u
     /* The engine runs the whole non-paint frame (keys, mouse, pan, blink, undo) and leaves the
        resolved cursor / anchor / pan_x / blink_t on the keyed edit-state slot. */
     input_field_result_t res = edit_field( id, content, st, buf, bufsz );
+    edit_filter_set( GUI_INPUT_FILTER_NONE );   /* the ambient filter is per-run; never leaks */
 
     edit_paint( content, buf, GUI_STATE( gui_edit_state_t, id ), st.focused );
 
@@ -212,6 +214,8 @@ num_edit_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
 
     if ( st.focused )
     {
+        /* A numeric scratch accepts only its own vocabulary (strtod's: decimal or scientific). */
+        edit_filter_set( is_int ? GUI_INPUT_FILTER_INT : GUI_INPUT_FILTER_DECIMAL );
         input_field_result_t res =
             input_field_edit( id, box_r, st, s_num_edit_buf, GUI_NUM_EDIT_CAP, NULL, NULL );
         if ( res.enter )

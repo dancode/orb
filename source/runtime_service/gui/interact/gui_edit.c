@@ -330,6 +330,57 @@ edit_insert_seq( char* buf, u32 bufsz, u32* len, gui_edit_state_t* es, const cha
     return true;
 }
 
+/*==============================================================================================
+    Character filter -- the ambient vocabulary gate for the CURRENT edit_field run.
+
+    A value field (numeric entry, hex color, a caller's digits-only box) installs its filter
+    (edit_filter_set) before running the engine; the wrapping widget clears it after, so a
+    plain text field always runs unfiltered and nothing leaks between fields.  Both insertion
+    paths (typed characters and paste) pass every codepoint through the same gate, so paste
+    cannot smuggle in what typing rejects.
+==============================================================================================*/
+
+static u32 s_edit_filter;   // gui_input_filter_t bits for the current run; 0 = unfiltered
+
+void
+edit_filter_set( u32 filter )
+{
+    s_edit_filter = filter;
+}
+
+/* One incoming codepoint against the ambient filter.  Class bits union: a char passes if ANY
+   named class admits it.  NO_BLANK and UPPERCASE modify on top (case-mapping runs before the
+   class check, so lowercase hex passes a HEX|UPPERCASE filter and lands as 'A'..'F').  Every
+   class is an ASCII vocabulary, so non-ASCII is rejected once any class is named.  Returns
+   false to drop the character; *cp_io may come back case-mapped. */
+static bool
+edit_filter_cp( u32* cp_io )
+{
+    u32 f = s_edit_filter;
+    if ( !f ) return true;
+
+    u32 cp = *cp_io;
+    if ( ( f & GUI_INPUT_FILTER_NO_BLANK ) && cp == ' ' ) return false;
+    if ( ( f & GUI_INPUT_FILTER_UPPERCASE ) && cp >= 'a' && cp <= 'z' )
+        *cp_io = cp = cp - 'a' + 'A';
+
+    u32 classes = f & ( GUI_INPUT_FILTER_DIGITS | GUI_INPUT_FILTER_INT | GUI_INPUT_FILTER_DECIMAL
+                      | GUI_INPUT_FILTER_HEX | GUI_INPUT_FILTER_ALPHA );
+    if ( !classes ) return true;
+    if ( cp > 0x7Fu ) return false;
+
+    bool digit = ( cp >= '0' && cp <= '9' );
+    if ( ( f & GUI_INPUT_FILTER_DIGITS ) && digit ) return true;
+    if ( ( f & GUI_INPUT_FILTER_INT ) && ( digit || cp == '+' || cp == '-' ) ) return true;
+    if ( ( f & GUI_INPUT_FILTER_DECIMAL )
+         && ( digit || cp == '.' || cp == '+' || cp == '-' || cp == 'e' || cp == 'E' ) ) return true;
+    if ( ( f & GUI_INPUT_FILTER_HEX )
+         && ( digit || ( cp >= 'a' && cp <= 'f' ) || ( cp >= 'A' && cp <= 'F' ) || cp == '#' ) ) return true;
+    if ( ( f & GUI_INPUT_FILTER_ALPHA )
+         && ( ( cp >= 'a' && cp <= 'z' ) || ( cp >= 'A' && cp <= 'Z' ) ) ) return true;
+    return false;
+}
+
 /* Keyboard command handling for a focused field: clipboard copy/cut/paste, undo/redo, caret
    navigation (Left/Right/Home/End, word jumps, Ctrl+A), backspace/delete, character insertion,
    and the Enter/Escape submit/revert.  Threads len (kept in step with buf), the result flags,
@@ -391,7 +442,14 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
             u32 cp = utf8_decode( c, &nb );
             if ( cp == UTF8_REPLACEMENT && nb == 1u ) { ++c;     continue; }  /* malformed: drop */
             if ( cp < 0x20u || cp == 0x7Fu )          { c += nb; continue; }
-            if ( !edit_insert_seq( buf, bufsz, &len, es, c, nb ) ) break;
+            u32 fcp = cp;
+            if ( !edit_filter_cp( &fcp ) )            { c += nb; continue; }  /* filtered: drop */
+            if ( fcp != cp )
+            {
+                char mc = (char)fcp;   /* case-mapped (ASCII by construction) */
+                if ( !edit_insert_seq( buf, bufsz, &len, es, &mc, 1u ) ) break;
+            }
+            else if ( !edit_insert_seq( buf, bufsz, &len, es, c, nb ) ) break;
             c += nb;
         }
         undo_push( &s_undo, buf, es->cursor, es->anchor );
@@ -566,9 +624,13 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
 
         /* Single-line field: reject control characters (tab, CR, ...) exactly like the
            paste path above -- a consumed Tab must not leak a '\t' glyph into the buffer.
-           Malformed bytes cannot appear here (io_add_char encodes), but drop them anyway. */
+           Malformed bytes cannot appear here (io_add_char encodes), but drop them anyway.
+           The ambient filter gates BEFORE the selection replacement below, so a rejected
+           character leaves the selection intact rather than eating it. */
         if ( cp == UTF8_REPLACEMENT && nb == 1u ) { ++ch;      continue; }
         if ( cp < 0x20u || cp == 0x7Fu )          { ch += nb;  continue; }
+        u32 fcp = cp;
+        if ( !edit_filter_cp( &fcp ) )            { ch += nb;  continue; }
 
         if ( has_sel )
         {
@@ -582,7 +644,12 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
             res.changed = true;   /* the erase already changed the buffer, even if the
                                      insert below finds no room */
         }
-        if ( !edit_insert_seq( buf, bufsz, &len, es, ch, nb ) ) break;
+        if ( fcp != cp )
+        {
+            char mc = (char)fcp;   /* case-mapped (ASCII by construction) */
+            if ( !edit_insert_seq( buf, bufsz, &len, es, &mc, 1u ) ) break;
+        }
+        else if ( !edit_insert_seq( buf, bufsz, &len, es, ch, nb ) ) break;
         ch += nb;
         res.changed = true;
         blink_reset = true;

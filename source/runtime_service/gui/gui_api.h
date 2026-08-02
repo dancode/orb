@@ -2182,6 +2182,17 @@ typedef struct gui_api_s
     bool ( *color_picker3 )( const char* label, f32 col[ 3 ], gui_color_edit_flags_t flags );
     bool ( *color_picker4 )( const char* label, f32 col[ 4 ], gui_color_edit_flags_t flags );
 
+    /* next_input_filter -- one-shot character filter for the NEXT input widget (see
+       gui_input_filter_t): typed and pasted characters outside the filter's vocabulary are
+       dropped.  Immediate mode: call it before the field every frame to keep it filtered.
+
+           gui()->next_input_filter( GUI_INPUT_FILTER_DIGITS );
+           gui()->input_text( "port", buf, sizeof( buf ) );        // accepts 0-9 only
+
+       The numeric entries (input_int/_float, Ctrl+Click on any drag / slider box) and the
+       color picker's hex field already install their own. */
+    void ( *next_input_filter )( gui_input_filter_t filter );
+
     bool ( *input_text    )( const char* label, char* buf, u32 bufsz );
 
     /* input_text_ex -- like input_text but with an on_change callback fired after any frame

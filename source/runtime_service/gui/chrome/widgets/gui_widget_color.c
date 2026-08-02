@@ -294,6 +294,8 @@ color_hex_field( gui_id_t hid, f32* v, bool has_alpha )
 
     if ( st.focused )
     {
+        /* Hex vocabulary only, typed lowercase upgraded to the display case. */
+        edit_filter_set( GUI_INPUT_FILTER_HEX | GUI_INPUT_FILTER_UPPERCASE );
         if ( input_field_edit( hid, box, st, s_hex_buf, COLOR_HEX_CAP, NULL, NULL ).enter )
             changed = color_hex_parse( s_hex_buf, v, has_alpha );
     }

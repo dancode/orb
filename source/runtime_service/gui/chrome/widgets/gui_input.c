@@ -27,10 +27,25 @@
 
 typedef struct { gui_id_t id; gui_rect_t box; gui_item_state_t st; } input_text_frame_t;
 
+/* next_input_filter -- the one-shot character filter for the NEXT input widget (the push-model
+   one-shot pattern, like next_item_*).  Consumed by input_text_begin, which hands it to the
+   edit engine for that field's run; being immediate mode, a caller keeps a field filtered by
+   calling this before it every frame. */
+static u32 s_input_filter_next;   // gui_input_filter_t bits; 0 = unfiltered
+
+void
+gui_next_input_filter( gui_input_filter_t filter )
+{
+    s_input_filter_next = (u32)filter;
+}
+
 static input_text_frame_t
 input_text_begin( const char* label )
 {
     gui_id_t id = item_id( label );
+
+    edit_filter_set( s_input_filter_next );   /* engine gate for this field's run (cleared there) */
+    s_input_filter_next = 0;
 
     /* Label via the ambient field seam (gui_field_row): aligned column under a form / field_split,
        trailing otherwise, or dropped when hidden / skipped -- then the box fills the control cell. */
